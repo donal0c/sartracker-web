@@ -137,7 +137,7 @@ describe('breadcrumb accumulator', () => {
 
     expect(result.positions.length).toBeLessThanOrEqual(500_000)
     expect(result.metadata.totalObserved).toBe(500_001)
-    expect(durationMs).toBeLessThan(100)
+    expect(durationMs).toBeLessThan(200)
   })
 
   it('does not let a noisy device evict another device from the live breadcrumb budget [DON-159]', () => {

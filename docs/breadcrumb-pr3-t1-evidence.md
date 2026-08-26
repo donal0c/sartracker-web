@@ -3217,3 +3217,52 @@ Current local GREEN before replacement package proof:
 - full deterministic serial gate: 273 files / 2,242 tests;
 - ESLint: PASS; and
 - TypeScript, production build, and bundle budgets: PASS.
+
+### Replacement package and packaged-soak binding
+
+Application head `42f169426170cbc450dd02e32b617c7238f7705e` packages the
+coherent soft-deadline correction. The review source is Donal's Opus artifact
+at <https://claude.ai/code/artifact/2fca49bf-5dbf-4f9b-a75d-5a33573ca7bd>;
+that review was static and did not itself run tests, builds, or packaged proof.
+
+- macOS arm64 package executable SHA-256:
+  `f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+- macOS arm64 `app.asar` SHA-256:
+  `74e292ce8707b3244cd503d5a445fbeda00420e05838233115df05a5bda48aba`;
+- Linux x64 package executable SHA-256:
+  `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`;
+  and
+- Linux x64 `app.asar` SHA-256:
+  `adeb6020e2698d59600f3736eb3a7183f1b51a6a76de12f8d6e347eff16839ad`.
+
+The one permitted replacement packaged CI-scale soak ran serially on the
+reference Ubuntu X11 session with Mesa llvmpipe through ANGLE/OpenGL and passed:
+
+- 6/6 accelerated batches, 8,664/8,664 source-exact positions, and digest
+  `92ba4387791f767ff8f28a32b930c455f1373dd81c1c2f82a79c48031c5c7c13`;
+- one restart, two accepted WebGL launches, and zero renderer crashes;
+- SQLite integrity `ok`, WAL 0/0/0, zero unexplained mission events, and zero
+  redundant-telemetry slope;
+- main-process maximum 8.871 ms and renderer maximum 100.3 ms, both below
+  their gates;
+- all four operator interactions classified `healthy`, with action maximum
+  33.2 ms and external-action maximum 84.452 ms; and
+- peak process-tree RSS 1,148,829,696 bytes.
+
+The post-soak coverage ledger contains one mission row at change sequence 84,
+32 chunk rows, zero pending invalidations, 20,480 bytes across coverage
+tables/indexes, and integrity `ok`. The immutable evidence bundle is
+`output/pr3-packaged-soak/42f169426170cbc450dd02e32b617c7238f7705e/`.
+Its manifest SHA-256 is
+`3a3641ef531e376c7dd3d6eaa9d858101b01c082a47c0a57b56126d80c95c8e4`;
+the soak report SHA-256 is
+`639a5a699c1ad0c1b83abd3757c530807b4f01b803d34da42b6ca86138c801e5`.
+
+The expanded pull-request Linux job then reproduced the full 273-file suite
+and exposed one pre-existing test-contract mismatch: the DON-269 test is named
+and specified as a 200 ms renderer gate but asserted 100 ms. GitHub measured
+140.628 ms, within the actual gate. That RED is corrected by aligning the
+assertion to 200 ms; the focused file passes 26/26 locally. The replacement CI
+run and the amended broad plus three targeted exact-head reviews remain before
+merge readiness. The package, soak, schema, migration, geometry, and runtime
+code are unchanged by this test-only correction.
