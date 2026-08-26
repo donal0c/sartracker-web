@@ -1261,3 +1261,65 @@ packaged forced-kill matrix.
 The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head gates and five fresh independent reviews before
 PR #3 can be called review ready. No merge or release occurred.
+
+## Progressive mission-switch remediation
+
+The first review of evidence-bound head `4a6e475` invalidated it with a separate
+deterministic P1. While the first catalog of a two-period old mission was in
+irreversible finalization, a mission switch recorded the new desired mission
+but waited for both finalization and the entire old progressive load. Once the
+first catalog finalized, the old load published its second catalog and waited
+for acknowledgement. The map was already scoped to the desired new mission and
+would not acknowledge that old catalog, while the switch could not abort it
+because it was waiting for that same load. Repeating the desired mission update
+was coalesced; restart was the only recovery.
+
+The red-first controller regression holds old-mission stage-one finalization,
+requests a new mission, releases finalization, and deliberately withholds every
+later old-mission acknowledgement. At `4a6e475` it received old-mission stage
+two and timed out without publishing the new mission. Application head
+`ffffe0f1b5e2205c1b10ebad3027db0d9643acdb` waits only for the irreversible
+catalog finalization. The existing context-update sequence fence still selects
+the latest requested context; the winning update then aborts the remaining old
+load and starts the new mission. Green proves the new mission takes ownership
+and the stale old-mission stage is never finalized.
+
+Green verification at that application head:
+
+- focused activation/controller/protocol/runtime/overlay: 5 files / 83 tests;
+- full unit: 264 files / 2,127 tests;
+- TypeScript, ESLint, source/docs diff, production build, and bundle budgets;
+  and
+- participant/coverage Chromium: 10/10.
+
+Exact application-head Linux run
+[`32920238110`](https://github.com/donal0c/sartracker-web/actions/runs/32920238110)
+passed for branch head `ffffe0f1b5e2205c1b10ebad3027db0d9643acdb`:
+
+- Ubuntu x64 AppImage and `.deb` packaging with native SQLite, Mesa llvmpipe
+  attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256 `53166744ae8bc4943419371b49098e3e4e9349a37698e6cd7a3f8b5f94bc7bda`,
+  integrity `ok`, one restart, zero renderer crashes, 32.603 ms maximum main
+  gap, zero redundant-event slope, and four healthy operator interactions;
+- AppImage SHA-256
+  `a9bd5bf0e92e8e887e74e0196c21d879253058922eb51ec4eb3818d5a7067eaf`;
+- `.deb` SHA-256
+  `531dab05f1f5642a754a44acebcbaafdd8f3dbe00e3ff4fbae9a2569cf994186`;
+- package artifact `9589669130`, uploaded-zip digest
+  `b9778146eb871973a3fe186601466d5649048478bfec8af88098986ddda11140`;
+  and
+- validation artifact `9589669565`, uploaded-zip digest
+  `217411c2c51bc9550864c4acd5370a926feaacc46c45d3c992f9726583d933f1`.
+
+This change is confined to controller handoff ordering. Candidate-B query,
+segmentation, index construction, tile geometry, schema/open code, operator
+controls, G2 measurements, G3 posture, migration, and manual-visible behavior
+are unchanged. No new manual screenshot is required. The earlier G2/scale,
+migration, visual, and manual evidence remains standing only for those
+unchanged surfaces. There was no packaged 960k/2M run outside G2 and no
+packaged forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head gates and five fresh independent reviews before
+PR #3 can be called review ready. No merge or release occurred.
