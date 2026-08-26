@@ -17,6 +17,7 @@ export type MissionRuntimeState = {
 
 const DEFAULT_GOVERNANCE_RUNTIME: MissionGovernanceRuntimeState = {
   governanceMission: null,
+  governanceEvidenceHealth: null,
 }
 
 export type MissionStoreState = MissionRuntimeState & MissionGovernanceRuntimeState & {

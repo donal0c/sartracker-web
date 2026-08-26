@@ -277,7 +277,7 @@ describe('polling manager', () => {
       intervalMs: 5_000,
       staleThresholdMs: 60 * 60 * 1000,
       getHistoryResetKey: () => 'mission-1',
-      beginCurrentPositionObservation: () => ({
+      beginMissionEvidenceObservation: () => ({
         missionId: null,
         complete: vi.fn(),
       }),
@@ -3271,5 +3271,103 @@ describe('polling manager', () => {
     ).not.toContain(oldMissionBreadcrumb.id)
 
     poller.stop()
+  })
+
+  it('keeps fallback breadcrumb publication inside the mission evidence fence [DON-276]', async () => {
+    vi.useRealTimers()
+    const historyPublication = createDeferred<void>()
+    const observationCompletions: ReturnType<typeof vi.fn>[] = []
+    const beginMissionEvidenceObservation = vi.fn((missionId: string | null) => {
+      const complete = vi.fn()
+      observationCompletions.push(complete)
+      return { missionId, complete }
+    })
+    const onSnapshot = vi.fn((snapshot) =>
+      snapshot.rawBreadcrumbsForPersistence?.length > 0
+        ? historyPublication.promise
+        : Promise.resolve(),
+    )
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-fenced-history',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T06:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      beginMissionEvidenceObservation,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.waitFor(() => expect(onSnapshot.mock.calls.some(
+      (call) => call[0].rawBreadcrumbsForPersistence?.length > 0,
+    )).toBe(true))
+
+    expect(beginMissionEvidenceObservation.mock.calls.length).toBeGreaterThanOrEqual(2)
+    const historyCall = onSnapshot.mock.calls.find(
+      (call) => call[0].rawBreadcrumbsForPersistence?.length > 0,
+    )
+    expect(historyCall?.[1]).toMatchObject({
+      historyResetKey: 'mission-fenced-history',
+      missionEvidenceId: 'mission-fenced-history',
+    })
+    expect(observationCompletions.slice(1).some(
+      (completion) => completion.mock.calls.length === 0,
+    )).toBe(true)
+
+    historyPublication.resolve(undefined)
+    await vi.waitFor(() => {
+      for (const completion of observationCompletions) {
+        expect(completion).toHaveBeenCalledOnce()
+      }
+    })
+    await poller.stop()
+  })
+
+  it('keeps direct reconciliation persistence inside the mission evidence fence [DON-276]', async () => {
+    vi.useRealTimers()
+    const historyPersistence = createDeferred<{ readonly changed: boolean }>()
+    const observationCompletions: ReturnType<typeof vi.fn>[] = []
+    const beginMissionEvidenceObservation = vi.fn((missionId: string | null) => {
+      const complete = vi.fn()
+      observationCompletions.push(complete)
+      return { missionId, complete }
+    })
+    const persistenceCompletions: ReturnType<typeof vi.fn>[] = []
+    const persistHistoryChunk = vi.fn(() => {
+      const completion = observationCompletions.at(-1)
+      if (completion !== undefined) persistenceCompletions.push(completion)
+      return historyPersistence.promise
+    })
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-fenced-reconciliation',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T06:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      beginMissionEvidenceObservation,
+      persistHistoryChunk,
+      onSnapshot: vi.fn().mockResolvedValue(undefined),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.waitFor(() => expect(persistHistoryChunk).toHaveBeenCalled())
+
+    expect(beginMissionEvidenceObservation.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(persistenceCompletions.length).toBeGreaterThan(0)
+    for (const completion of persistenceCompletions) {
+      expect(completion).not.toHaveBeenCalled()
+    }
+
+    historyPersistence.resolve({ changed: true })
+    await vi.waitFor(() => {
+      for (const completion of persistenceCompletions) {
+        expect(completion).toHaveBeenCalledOnce()
+      }
+    })
+    await poller.stop()
   })
 })

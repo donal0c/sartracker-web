@@ -240,12 +240,12 @@ async function createWindow(crashLog, runtimeLog, rendererTeardownCoordinator) {
   const rendererUrl = process.env.ELECTRON_RENDERER_URL
   if (rendererUrl !== undefined && rendererUrl.trim() !== '') {
     await window.loadURL(withOptionalValidationQuery(rendererUrl))
-    return
+  } else {
+    const indexUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html'))
+    addValidationQueryIfRequested(indexUrl)
+    await window.loadURL(indexUrl.toString())
   }
-
-  const indexUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html'))
-  addValidationQueryIfRequested(indexUrl)
-  await window.loadURL(indexUrl.toString())
+  await rendererTeardownCoordinator.markRendererAvailable()
 }
 
 /**
@@ -281,8 +281,12 @@ function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtim
     }
     event.preventDefault()
     void rendererTeardownCoordinator.prepare(window, 'renderer_reload').then(() => {
+      return rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
+    }).then(() => {
       allowNextUnload = true
       return window.loadURL(targetUrl)
+    }).then(() => {
+      return rendererTeardownCoordinator.markRendererAvailable()
     }).catch((error) => {
       reportUnsafeRendererTeardown(error, runtimeLog)
     })
@@ -302,9 +306,16 @@ function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtim
     if (reloadInProgress) return
     reloadInProgress = true
     void rendererTeardownCoordinator.prepare(window, 'renderer_reload').then(() => {
+      return rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
+    }).then(() => {
       allowNextUnload = true
-      reloadInProgress = false
+      window.webContents.once('did-finish-load', () => {
+        void rendererTeardownCoordinator.markRendererAvailable().catch((error) => {
+          reportUnsafeRendererRestore(error, runtimeLog)
+        })
+      })
       window.webContents.reload()
+      reloadInProgress = false
     }).catch((error) => {
       reloadInProgress = false
       reportUnsafeRendererTeardown(error, runtimeLog)

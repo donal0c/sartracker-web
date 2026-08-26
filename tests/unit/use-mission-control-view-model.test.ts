@@ -217,6 +217,16 @@ describe('useMissionControlViewModel', () => {
     useMissionStore.setState({
       governanceController,
       governanceMission: createMission({ id: 'mission-finished', status: 'finished' }),
+      governanceEvidenceHealth: {
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      },
     })
     useIngestHealthStore.setState({
       evidenceHealth: {
@@ -266,6 +276,16 @@ describe('useMissionControlViewModel', () => {
     useMissionStore.setState({
       governanceController,
       governanceMission: createMission({ id: 'mission-finished', status: 'finished' }),
+      governanceEvidenceHealth: {
+        state: 'critical',
+        reason: 'outbox_corrupt_record',
+        pendingCount: 0,
+        corruptCount: 1,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      },
     })
     useIngestHealthStore.setState({
       evidenceHealth: {
@@ -330,6 +350,7 @@ function resetStores(): void {
     currentMission: null,
     recoverableMission: null,
     governanceMission: null,
+    governanceEvidenceHealth: null,
     controller: null,
     governanceController: null,
   })

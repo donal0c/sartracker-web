@@ -517,6 +517,7 @@ describe('Electron main startup', () => {
           createRendererTeardownCoordinator: () => ({
             prepare: vi.fn(),
             markRendererUnavailable,
+            markRendererAvailable: vi.fn(),
             dispose: vi.fn(),
           }),
         }
@@ -576,6 +577,7 @@ describe('Electron main startup', () => {
           createRendererTeardownCoordinator: () => ({
             prepare: vi.fn(),
             markRendererUnavailable,
+            markRendererAvailable: vi.fn(),
             dispose: vi.fn(),
           }),
         }
@@ -628,6 +630,7 @@ describe('Electron main startup', () => {
           createRendererTeardownCoordinator: () => ({
             prepare: vi.fn(),
             markRendererUnavailable,
+            markRendererAvailable: vi.fn(),
             dispose: vi.fn(),
           }),
         }
@@ -812,6 +815,7 @@ describe('Electron main startup', () => {
           createRendererTeardownCoordinator: () => ({
             prepare: vi.fn(),
             markRendererUnavailable,
+            markRendererAvailable: vi.fn(),
             ensureUnexpectedRendererLossFenced,
             dispose: vi.fn(),
           }),
@@ -853,6 +857,7 @@ describe('Electron main startup', () => {
           createRendererTeardownCoordinator: () => ({
             prepare,
             markRendererUnavailable: vi.fn(),
+            markRendererAvailable: vi.fn(),
             ensureUnexpectedRendererLossFenced: vi.fn(),
             dispose: vi.fn(),
           }),
@@ -917,6 +922,7 @@ describe('Electron main startup', () => {
           createRendererTeardownCoordinator: () => ({
             prepare: vi.fn(),
             markRendererUnavailable: vi.fn(),
+            markRendererAvailable: vi.fn(),
             ensureUnexpectedRendererLossFenced,
             dispose: vi.fn(),
           }),
@@ -984,6 +990,7 @@ function createElectronMock(
         id: 1,
         isDestroyed: vi.fn(() => false),
         on: vi.fn(),
+        once: vi.fn(),
         reload: vi.fn(),
         send: vi.fn(),
         setWindowOpenHandler: vi.fn(),

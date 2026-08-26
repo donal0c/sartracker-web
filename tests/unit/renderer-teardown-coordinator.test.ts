@@ -29,6 +29,7 @@ const {
   }) => {
     readonly prepare: (window: unknown, reason: string) => Promise<unknown>
     readonly markRendererUnavailable: () => Promise<unknown>
+    readonly markRendererAvailable: () => Promise<void>
     readonly ensureUnexpectedRendererLossFenced: () => Promise<unknown>
     readonly dispose: () => void
   }
@@ -266,6 +267,37 @@ describe('renderer teardown coordinator', () => {
       { mode: 'durable_loss_marker', missionId: 'mission-1' },
       { mode: 'durable_loss_marker', missionId: 'mission-1' },
     ])
+  })
+
+  it('starts a new durable loss occurrence after a replacement renderer becomes available [DON-276]', async () => {
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    missionStore.listMissionIdsAwaitingEvidenceClosure
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(['mission-after-replacement'])
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-replacement-generation',
+      setTimeout: vi.fn(() => 11),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+
+    await expect(coordinator.markRendererUnavailable()).resolves.toEqual({
+      mode: 'no_unfinalized_mission',
+    })
+    await coordinator.markRendererAvailable()
+    await expect(coordinator.markRendererUnavailable()).resolves.toEqual({
+      mode: 'durable_loss_marker',
+      missionId: 'mission-after-replacement',
+    })
+
+    expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledOnce()
+    expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledWith({
+      mission_id: 'mission-after-replacement',
+      reason: 'renderer_pending_evidence_lost',
+    })
   })
 
   it('retries a failed unexpected-renderer-loss fence before allowing later lifecycle work [DON-276]', async () => {

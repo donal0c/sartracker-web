@@ -3072,3 +3072,86 @@ next commit binds only evidence and current handoff state; executable code and
 test trees remain byte-identical to `a4de1f0`. One fresh broad exact-head review
 plus the three targeted exact-head rechecks remains required. No merge or
 release occurred.
+
+## Final bounded-review evidence-lifecycle attack — RED, 2026-08-26
+
+The amended one-broad-plus-targeted review wave was paused after independent
+renderer, persistence and concurrency retraces converged on the same lifecycle
+seam. Central source retrace confirmed four release-blocking RED reasons before
+production code changed:
+
+- `markRendererUnavailable()` retained the first successfully settled crash
+  fence forever. A later explicit renderer crash therefore reused an older
+  `no_unfinalized_mission` or loss result instead of recording a new durable
+  loss generation. This can either erase a later mission's renderer-only
+  evidence entirely or leave an earlier admin acknowledgement incorrectly
+  valid after another loss.
+- a breadcrumb-history snapshot could start before Finish but publish through
+  the async `onSnapshot` path without joining the mission observation fence.
+  Finish could make the mission inactive first, after which the queued accepted
+  fixes were silently discarded by the active-mission persistence check.
+- startup hydrated evidence health only for the active mission. After restart,
+  a finished mission with permanent renderer evidence loss remained blocked in
+  the backend, but the governance UI did not have its mission-scoped reason and
+  could not offer the narrow audited acknowledgement path.
+- the browser-validation store retained evidence loss in session storage but
+  its coverage claim considered only participant backfill. After reload it
+  could return `databaseReady: true` for a mission with known evidence loss,
+  allowing the validation UI to exercise a false Complete/100% path that the
+  production backend correctly blocks.
+
+The required RED regressions are: two explicit crash incidents produce two
+durable loss occurrences while a concurrent lifecycle join still coalesces;
+pre-Finish history publication is joined or rejected before persistence scope
+closes; governance startup rehydrates the exact finished mission's health and
+uses it for acknowledgement containment; and browser coverage claims remain
+blocked across a retained-loss reload. No production fix is credited until all
+four fail for the recorded reason and then pass together.
+
+The four core REDs failed exactly as recorded: the replacement-renderer API did
+not exist; the governance runtime never read finished-mission health; the
+browser claim returned `databaseReady: true` with no blockers after retained
+loss; and neither fallback breadcrumb publication nor direct reconciliation
+persistence entered the mission observation fence. The first corrected visual
+run then found a fifth edge at the same seam: loss injected after the finished
+mission had already been selected left governance health stale until reload,
+so the durable finalization refusal showed only a generic error. A focused RED
+proved that blocked finalization did not refresh mission-scoped health.
+
+The coherent GREEN uses explicit renderer-incident generations. Concurrent
+quit, relaunch, or restore work joins the current durable loss fence; only a
+successfully loaded replacement renderer marks that incident closed, after
+which another fault creates another durable loss occurrence. Current fixes,
+fallback breadcrumb publications, and direct reconciliation writes now use one
+mission-scoped admission counter. Finish closes admission, drains everything
+already accepted, then changes durable mission status; later history remains
+outside the closed mission without delaying current safety positions.
+
+Governance now owns health for its exact finished/finalized mission, reloads it
+at startup, refreshes it again after a blocked finalization, and never projects
+that warning onto a different active or recoverable mission. The browser
+validation claim mirrors the production mission-scoped ingest blocker across
+session reload and after acknowledgement, so its Complete/100% oracle cannot
+certify known loss.
+
+Final pre-commit local GREEN:
+
+- focused evidence-lifecycle set: 9 files / 244 tests;
+- full deterministic serial gate: 273 files / 2,234 tests;
+- ESLint, TypeScript production build, unchanged bundle budgets, diff checks,
+  and changed Electron CJS syntax: PASS;
+- participant/coverage/tracking Chromium: 13/13;
+- loss → Finish → browser reload → acknowledgement → archive Chromium: 1/1;
+- known-loss critical visual Playwright: 1/1;
+- fresh uncached visual review: PASS at
+  `test-results/visual-verification/reports/visual-review-2026-08-26T17-26-45Z.json`;
+  and
+- backend: 51 passed, with the intentional real macOS keychain test ignored.
+
+The fresh broad, persistence, concurrency, and renderer-containment reviewers
+independently converged on only these four original blockers at documentation
+head `d4a6f18`; no additional renderer/input-containment blocker was found.
+Those reviews diagnose the superseded code and do not approve this fix. The
+amended topology therefore requires one fresh broad review plus only the three
+affected targeted exact-head rechecks after the replacement macOS/Linux
+package evidence is bound. No five-review restart, merge, or release occurred.

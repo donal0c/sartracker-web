@@ -9,10 +9,6 @@ import type { MissionTimerState } from './mission-timers'
 import { useMissionTimer } from './use-mission-timer'
 import { useParticipantStore } from '../participants/participant-store'
 import { isMissionModelEnabled } from '../runtime/mission-model-flag'
-import {
-  applyIngestEvidenceHealth,
-  useIngestHealthStore,
-} from '../tracking/ingest-health-store'
 
 const MAX_START_OFFSET_HOURS = 48
 
@@ -73,8 +69,8 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const recoverableMission = useMissionStore((state) => state.recoverableMission)
   const controller = useMissionStore((state) => state.controller)
   const governanceMission = useMissionStore((state) => state.governanceMission)
+  const governanceEvidenceHealth = useMissionStore((state) => state.governanceEvidenceHealth)
   const governanceController = useMissionStore((state) => state.governanceController)
-  const evidenceHealth = useIngestHealthStore((state) => state.evidenceHealth)
   const participantController = useParticipantStore((state) => state.controller)
   const openReviewWorkspace = useMissionReviewWorkspaceStore((state) => state.openWorkspace)
   const focusModeActive = useFocusModeStore((state) => state.active)
@@ -215,12 +211,11 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     setGovernanceFeedback(null)
 
     try {
-      const health = await governanceController.acknowledgeGovernanceEvidenceLoss({
+      await governanceController.acknowledgeGovernanceEvidenceLoss({
         mission_id: governanceMission.id,
         admin_name: selectedAdmin,
         reason: evidenceLossReason,
       })
-      applyIngestEvidenceHealth(health)
       setGovernanceFeedback(
         `Evidence loss acknowledged by ${selectedAdmin}. Complete remains unavailable; Archive & Lock can now retain the mission with this permanent warning.`,
       )
@@ -292,7 +287,12 @@ export function useMissionControlViewModel(): MissionControlViewModel {
       setGovernanceFeedback(`Mission archived to ${result.archive.archive_path}`)
       setShowFinalizeDialog(false)
     } catch (error) {
-      if (isAcknowledgeableEvidenceHealthFinalizationBlock(error, evidenceHealth.reason)) {
+      const currentGovernanceHealth =
+        useMissionStore.getState().governanceEvidenceHealth
+      if (isAcknowledgeableEvidenceHealthFinalizationBlock(
+        error,
+        currentGovernanceHealth?.reason ?? governanceEvidenceHealth?.reason ?? null,
+      )) {
         setActionError(null)
         setShowFinalizeDialog(false)
         setShowEvidenceLossDialog(true)

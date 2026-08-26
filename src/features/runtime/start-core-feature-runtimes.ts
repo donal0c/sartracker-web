@@ -56,6 +56,7 @@ export type CoreFeatureRuntimeMissionStore = Pick<
   MissionStore,
   | 'createMission'
   | 'listMissions'
+  | 'getIngestEvidenceHealth'
   | 'getRecoverableMission'
   | 'pauseMission'
   | 'resumeMission'

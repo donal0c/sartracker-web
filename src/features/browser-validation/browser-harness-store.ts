@@ -1296,6 +1296,10 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     },
     readCoverageClaim: async (input) => {
       const manifest = createBrowserCoverageManifest(state, input.missionId)
+      const evidenceHealth = readBrowserEvidenceHealth(
+        state.evidenceLossByMission,
+        input.missionId,
+      )
       const revisions = new Map(manifest.chunks.map((chunk) => [
         `${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`,
         chunk,
@@ -1304,10 +1308,14 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         const chunk = revisions.get(`${key.device_id}\u0000${coveragePeriodKey(key)}`)
         return chunk === undefined ? [] : [{ key: chunk.key, contentRev: chunk.contentRev }]
       })
+      const blockers = [
+        ...(manifest.backfillIncomplete ? ['backfill_incomplete'] : []),
+        ...(evidenceHealth.state === 'healthy' ? [] : ['ingest_health_degraded']),
+      ]
       return {
         changeSeq: manifest.changeSeq,
-        databaseReady: !manifest.backfillIncomplete,
-        blockers: manifest.backfillIncomplete ? ['backfill_incomplete'] : [],
+        databaseReady: blockers.length === 0,
+        blockers,
         chunkRevisions: selected,
       }
     },

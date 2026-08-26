@@ -107,6 +107,13 @@ function createRendererTeardownCoordinator(dependencies) {
     return attempt
   }
 
+  /** Opens a fresh incident generation only after a replacement renderer loaded. */
+  async function markRendererAvailable() {
+    await ensureUnexpectedRendererLossFenced()
+    unexpectedRendererLossDetected = false
+    unexpectedRendererLossFence = null
+  }
+
   /** Joins or retries the unexpected-loss fence before later lifecycle work. */
   function ensureUnexpectedRendererLossFenced() {
     if (!unexpectedRendererLossDetected) {
@@ -125,6 +132,7 @@ function createRendererTeardownCoordinator(dependencies) {
   return {
     prepare,
     markRendererUnavailable,
+    markRendererAvailable,
     ensureUnexpectedRendererLossFenced,
     dispose,
   }

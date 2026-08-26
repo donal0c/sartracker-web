@@ -319,7 +319,7 @@ export async function startAppRuntime(
           ...(rejectionEvidenceDelivery === null
             ? {}
             : {
-                beginCurrentPositionObservation:
+                beginMissionEvidenceObservation:
                   rejectionEvidenceDelivery.beginMissionObservation,
               }),
           getInitialBreadcrumbFrom: () => {

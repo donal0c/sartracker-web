@@ -60,7 +60,7 @@ type BuildDiagnosticsSnapshotInput = {
   readonly missionStoreInfo: MissionStoreInfo
   readonly missions: readonly Mission[]
   readonly missionRuntime: MissionRuntimeState
-  readonly governanceRuntime: MissionGovernanceRuntimeState
+  readonly governanceRuntime: Pick<MissionGovernanceRuntimeState, 'governanceMission'>
   readonly trackingStatus: TrackingConnectionStatus
   readonly trackingSnapshot: TrackingSnapshot
   readonly diagnosticEvents?: readonly DiagnosticEvent[]

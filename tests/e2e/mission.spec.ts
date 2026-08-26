@@ -174,6 +174,12 @@ test.describe('M5 mission control workflows', () => {
     await page.evaluate(async (id) => {
       await window.__SARTRACKER_BROWSER_HARNESS__?.injectEvidenceLoss(id)
     }, missionId!)
+    await page.reload()
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
+    await page.waitForSelector('canvas', { timeout: 15_000 })
+    await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText(
+      'rejected-position evidence was lost during runtime shutdown',
+    )
 
     await page.getByTestId('mission-finalize-btn').click()
     await page.getByTestId('mission-finalize-confirm').click()

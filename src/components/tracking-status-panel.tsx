@@ -29,6 +29,12 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const setBreadcrumbTrailMode = useTrackingStyleStore((state) => state.setBreadcrumbTrailMode)
   const coverageState = useCoverageStore((state) => state.state)
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
+  const recoverableMissionId = useMissionStore(
+    (state) => state.recoverableMission?.id ?? null,
+  )
+  const governanceEvidenceHealth = useMissionStore(
+    (state) => state.governanceEvidenceHealth,
+  )
   const missionCoverageState = selectCoverageStateForMission(coverageState, missionId)
   const coverageController = useCoverageStore((state) => state.controller)
   const omittedCoverageDeviceCount = useCoverageFilterStore(
@@ -43,7 +49,12 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const storedExactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const exactBreadcrumbDotController = useExactBreadcrumbDotStore((state) => state.controller)
   const ingestHealth = useIngestHealthStore((state) => state.summary)
-  const evidenceHealth = useIngestHealthStore((state) => state.evidenceHealth)
+  const activeEvidenceHealth = useIngestHealthStore((state) => state.evidenceHealth)
+  const evidenceHealth = missionId === null &&
+    recoverableMissionId === null &&
+    governanceEvidenceHealth !== null
+    ? governanceEvidenceHealth
+    : activeEvidenceHealth
   const stationaryAttentionCount = useStationaryAttentionStore((state) =>
     Object.values(state.byDevice).filter((attention) => attention.state === 'attention').length,
   )
@@ -303,9 +314,16 @@ function formatEvidenceFailure(reason: string | null): string {
 }
 
 function formatEvidenceRecovery(reason: string | null): string {
-  return reason === 'renderer_evidence_pending'
-    ? 'until the queued evidence is saved'
-    : 'until storage is repaired'
+  if (reason === 'renderer_evidence_pending') {
+    return 'until the queued evidence is saved'
+  }
+  if (
+    reason === 'renderer_pending_evidence_lost' ||
+    reason === 'renderer_pending_capacity_exhausted'
+  ) {
+    return 'until an authorized admin records the permanent known loss'
+  }
+  return 'until storage is repaired'
 }
 
 function getTrackingModeLabel(mode: 'idle' | 'offline' | 'online', warning: string | null): string {

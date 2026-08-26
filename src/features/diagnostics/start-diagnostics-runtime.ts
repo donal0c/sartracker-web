@@ -42,7 +42,10 @@ type StartDiagnosticsRuntimeDependencies = {
   readonly missionStore: DiagnosticsMissionStoreBoundary
   readonly layerCatalogStore: DiagnosticsLayerCatalogBoundary
   readonly readMissionRuntime: () => MissionRuntimeState
-  readonly readMissionGovernanceRuntime: () => MissionGovernanceRuntimeState
+  readonly readMissionGovernanceRuntime: () => Pick<
+    MissionGovernanceRuntimeState,
+    'governanceMission'
+  >
   readonly readTrackingRuntime: () => {
     readonly status: TrackingConnectionStatus
     readonly snapshot: TrackingSnapshot

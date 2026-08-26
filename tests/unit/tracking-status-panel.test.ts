@@ -184,22 +184,31 @@ describe('TrackingStatusPanel', () => {
     const warning = getText('[data-testid="ingest-evidence-health-warning"]')
     expect(warning).toContain('rejected-position evidence was lost during runtime shutdown')
     expect(warning).toContain('finalization and archive export are blocked')
+    expect(warning).toContain('authorized admin records the permanent known loss')
+    expect(warning).not.toContain('until storage is repaired')
   })
 
   it('keeps acknowledged evidence loss visible without falsely saying archive is blocked [DON-276]', () => {
-    useIngestHealthStore.getState().applyEvidenceHealth({
-      state: 'critical',
-      reason: 'renderer_pending_evidence_lost',
-      pendingCount: 0,
-      corruptCount: 0,
-      conflictCount: 0,
-      rejectedCount: 1,
-      affectedDeviceCount: 1,
-      conflictDeviceIds: [],
-      acknowledgedLoss: {
-        adminName: 'Duty Admin',
-        reason: 'Known runtime loss recorded in incident log.',
-        acknowledgedAt: '2026-08-26T17:00:00.000Z',
+    useMissionStore.setState({
+      governanceMission: {
+        ...mission('mission-finished'),
+        status: 'finished',
+        finish_time: '2026-08-26T16:00:00.000Z',
+      },
+      governanceEvidenceHealth: {
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 1,
+        affectedDeviceCount: 1,
+        conflictDeviceIds: [],
+        acknowledgedLoss: {
+          adminName: 'Duty Admin',
+          reason: 'Known runtime loss recorded in incident log.',
+          acknowledgedAt: '2026-08-26T17:00:00.000Z',
+        },
       },
     })
 
@@ -210,6 +219,31 @@ describe('TrackingStatusPanel', () => {
     expect(warning).toContain('Complete and 100% remain blocked')
     expect(warning).toContain('archive and lock may proceed')
     expect(warning).not.toContain('archive export are blocked')
+  })
+
+  it('does not project an older governance loss onto a recoverable active mission [DON-276]', () => {
+    useMissionStore.setState({
+      recoverableMission: mission('mission-recoverable'),
+      governanceMission: {
+        ...mission('mission-finished'),
+        status: 'finished',
+        finish_time: '2026-08-26T16:00:00.000Z',
+      },
+      governanceEvidenceHealth: {
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 1,
+        affectedDeviceCount: 1,
+        conflictDeviceIds: [],
+      },
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(document.querySelector('[data-testid="ingest-evidence-health-warning"]')).toBeNull()
   })
 
   it('summarizes stationary attention without declaring an emergency [DON-269]', () => {

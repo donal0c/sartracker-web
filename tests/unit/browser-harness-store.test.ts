@@ -621,6 +621,26 @@ describe('browser harness store', () => {
     })
   })
 
+  it('keeps a retained evidence gap in the browser coverage claim after reload [DON-276]', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Reloaded Evidence Gap Mission' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+
+    resetBrowserHarnessStore(false)
+    const restoredStore = getBrowserHarnessStore()
+
+    await expect(restoredStore.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: [],
+    })).resolves.toMatchObject({
+      databaseReady: false,
+      blockers: expect.arrayContaining(['ingest_health_degraded']),
+    })
+  })
+
   it('records opened paths for review workflows', async () => {
     const store = getBrowserHarnessStore()
 

@@ -975,7 +975,10 @@
             finished, an authorized admin may record who reviewed the exact loss occurrence, when, and
             why. That audited acknowledgement permits archive-and-lock while retaining the critical
             warning; it does not clear the marker, recover data, or certify completeness. A later loss
-            occurrence invalidates the earlier acknowledgement and blocks archive again. Distinct
+            occurrence invalidates the earlier acknowledgement and blocks archive again. This remains
+            true across app restart: selecting the finished mission reloads its exact evidence health,
+            and Archive &amp; Lock refreshes that mission-scoped health again if a newer loss arrived
+            after Finish. Distinct
             committed conflicts are never expired or capped;
             identical repeats update first-seen, last-seen, and occurrence count. If the bounded
             renderer intake itself is exhausted, SAR Tracker records a durable evidence-loss marker
@@ -986,7 +989,9 @@
             finalization, or shutdown may proceed. During a settings replacement, runtime restart, or
             shutdown, SAR Tracker stops scheduling new polls, preserves the final current-position
             observation already in flight, and waits for every bounded renderer batch rather than
-            abandoning later batches. If
+            abandoning later batches. Accepted breadcrumb-history writes use the same mission close
+            boundary: anything admitted before Finish reaches durable storage before the mission status
+            changes, while later history cannot leak into the closed mission. If
             a batch cannot be acknowledged, it first records a mission-scoped durable loss marker and
             then shows that rejected-position evidence was lost during runtime shutdown. If even that
             marker cannot be written, runtime replacement fails closed instead of installing a new
@@ -997,7 +1002,9 @@
             that teardown, main durably blocks every unfinalized mission, including a finished mission,
             so a completed lifecycle transition cannot hide renderer-held evidence. An unexpected
             renderer crash is fenced immediately, and normal quit or macOS window recreation cannot
-            overtake that in-flight fence. A fatal main-process fault fences mission evidence
+            overtake that in-flight fence. Once a replacement renderer has loaded safely, it opens a
+            fresh incident generation, so another crash always records another loss occurrence rather
+            than reusing the earlier fence. A fatal main-process fault fences mission evidence
             before relaunch. After any unclean shutdown, SAR Tracker blocks every unfinalized mission
             before the operator window opens, so uncertain evidence cannot later look Complete. The
             active-session marker and its clean removal are file-and-directory synced so a power loss

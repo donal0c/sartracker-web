@@ -65,7 +65,7 @@ type PollingManagerOptions = {
   readonly maxBackoffMs?: number
   readonly getPollingMode?: () => 'active' | 'paused' | 'idle'
   readonly getHistoryResetKey?: () => string | null
-  readonly beginCurrentPositionObservation?: (missionId: string | null) => {
+  readonly beginMissionEvidenceObservation?: (missionId: string | null) => {
     readonly missionId: string | null
     readonly complete: () => void
   }
@@ -250,6 +250,25 @@ export function createPollingManager(
     positions: chunk.positions,
   })
 
+  /** Keeps one accepted history write inside the close-before-Finish fence. */
+  async function runMissionEvidencePersistence<Result>(
+    missionId: string | null,
+    operation: () => Promise<Result>,
+  ): Promise<Result> {
+    if (options.beginMissionEvidenceObservation === undefined) {
+      return operation()
+    }
+    const observation = options.beginMissionEvidenceObservation(missionId)
+    if (observation.missionId === null) {
+      throw new Error('Mission evidence scope closed before tracking history persistence.')
+    }
+    try {
+      return await operation()
+    } finally {
+      observation.complete()
+    }
+  }
+
   const acceptPersistedHistoryChunk = (
     chunk: BreadcrumbHistoryChunk,
     persistedDirectly: boolean,
@@ -304,13 +323,19 @@ export function createPollingManager(
       let persistedDirectly = false
       let persistenceResult: TrackingHistoryChunkPersistenceResult | null = null
       if (options.persistHistoryChunk !== undefined) {
-        persistenceResult = await options.persistHistoryChunk(input)
+        persistenceResult = await runMissionEvidencePersistence(
+          input.expectedMissionId,
+          () => options.persistHistoryChunk!(input),
+        )
         persistedDirectly = true
       } else if (
         chunk.phase === 'initial' &&
         options.persistHistoryChunks !== undefined
       ) {
-        await options.persistHistoryChunks([input])
+        await runMissionEvidencePersistence(
+          input.expectedMissionId,
+          () => options.persistHistoryChunks!([input]),
+        )
         persistedDirectly = true
       }
       acceptPersistedHistoryChunk(
@@ -325,7 +350,10 @@ export function createPollingManager(
       }
       const inputs = chunks.map(createHistoryPersistenceInput)
       if (options.persistHistoryChunks !== undefined) {
-        await options.persistHistoryChunks(inputs)
+        await runMissionEvidencePersistence(
+          inputs[0]?.expectedMissionId ?? null,
+          () => options.persistHistoryChunks!(inputs),
+        )
         if (!isHistoryReconciliationCurrent()) {
           return
         }
@@ -335,9 +363,11 @@ export function createPollingManager(
         return
       }
       if (options.persistHistoryChunk !== undefined) {
-        const results = await Promise.all(
-          inputs.map((input) => options.persistHistoryChunk?.(input)),
-        )
+        const results = await Promise.all(inputs.map((input) =>
+          runMissionEvidencePersistence(
+            input.expectedMissionId,
+            () => options.persistHistoryChunk!(input),
+          )))
         if (!isHistoryReconciliationCurrent()) {
           return
         }
@@ -578,19 +608,31 @@ export function createPollingManager(
       rawBreadcrumbsForPersistence: [],
       breadcrumbMetadata,
     }
-    options.onSnapshot(
+    const historyObservation = rawBreadcrumbsForPersistence.length === 0
+      ? null
+      : options.beginMissionEvidenceObservation?.(activeHistoryResetKey) ?? null
+    const context: TrackingSnapshotContext = {
+      historyResetKey: activeHistoryResetKey,
+      suppressTrackingCache: !writeTrackingCache,
+      ...(historyObservation === null
+        ? {}
+        : { missionEvidenceId: historyObservation.missionId }),
+      ...(latestParticipantRosterAuthoritative
+        ? {}
+        : { participantRosterAuthoritative: false }),
+    }
+    const publication = Promise.resolve().then(() => options.onSnapshot(
       annotateTrackingSnapshotHealth(publishedSnapshot, {
         now: now(),
         deviceStaleThresholdMs: options.staleThresholdMs,
       }),
-      {
-        historyResetKey: activeHistoryResetKey,
-        suppressTrackingCache: !writeTrackingCache,
-        ...(latestParticipantRosterAuthoritative
-          ? {}
-          : { participantRosterAuthoritative: false }),
-      },
-    )
+      context,
+    )).finally(() => historyObservation?.complete())
+    void publication.catch((error) => {
+      logger.warn('Tracking history snapshot publication failed.', {
+        failureKind: classifyTrackingFailure(error),
+      })
+    })
   }
 
   const publishStatus = (overrides: Partial<TrackingConnectionStatus> = {}) => {
@@ -728,7 +770,7 @@ export function createPollingManager(
       const recoveredBeforeCurrentPositions = consecutiveFailures > 0
       let rejectionEvidencePublishedEarly = false
       let earlyCurrentPositionTimer: ReturnType<typeof setTimeout> | null = null
-      const missionObservation = options.beginCurrentPositionObservation?.(
+      const missionObservation = options.beginMissionEvidenceObservation?.(
         pollHistoryResetKey,
       ) ?? {
         missionId: pollHistoryResetKey,
@@ -1039,18 +1081,29 @@ export function createPollingManager(
       }
 
       if (breadcrumbPositions !== previousBreadcrumbPositions) {
-        options.onSnapshot(
-          annotateTrackingSnapshotHealth(rawSnapshot, {
-            now: now(),
-            deviceStaleThresholdMs: options.staleThresholdMs,
-          }),
-          {
-            historyResetKey: pollHistoryResetKey,
-            ...(currentPositionResult.rosterComplete
-              ? {}
-              : { participantRosterAuthoritative: false }),
-          },
-        )
+        const historyObservation = options.beginMissionEvidenceObservation?.(
+          pollHistoryResetKey,
+        ) ?? {
+          missionId: pollHistoryResetKey,
+          complete: () => undefined,
+        }
+        try {
+          await options.onSnapshot(
+            annotateTrackingSnapshotHealth(rawSnapshot, {
+              now: now(),
+              deviceStaleThresholdMs: options.staleThresholdMs,
+            }),
+            {
+              historyResetKey: pollHistoryResetKey,
+              missionEvidenceId: historyObservation.missionId,
+              ...(currentPositionResult.rosterComplete
+                ? {}
+                : { participantRosterAuthoritative: false }),
+            },
+          )
+        } finally {
+          historyObservation.complete()
+        }
       }
       breadcrumbFetchCompleted = true
       // Retain only durable history health; CONNECTION RESTORED is transient.
