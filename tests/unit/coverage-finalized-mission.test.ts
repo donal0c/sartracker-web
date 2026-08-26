@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { createRejectionEvidenceDelivery } from '../../src/features/tracking/rejection-evidence-delivery'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -19,6 +21,9 @@ type Store = {
   readonly addPosition: (input: Readonly<Record<string, unknown>>) => Promise<unknown>
   readonly finishMission: (missionId: string) => Promise<unknown>
   readonly finalizeMission: (missionId: string) => Promise<unknown>
+  readonly listPositions: (missionId: string) => Promise<readonly {
+    readonly source_position_id: string | null
+  }[]>
   readonly readCoverageManifest: (missionId: string, requestId: string) => Promise<Manifest>
 }
 
@@ -41,6 +46,54 @@ afterEach(async () => {
 })
 
 describe('finalized mission coverage classification [DON-276]', () => {
+  it('persists a pre-cutoff accepted fix and its coverage claim before Finish resolves', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-finish-evidence-'))
+    store = createElectronMissionStore({ userDataPath: directory })
+    const mission = await store.createMission({ name: 'Finish evidence fence' })
+    await store.upsertDevice({
+      mission_id: mission.id, device_id: 'device-1', name: 'Device 1',
+      color: '#fff', status: 'online',
+    })
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(async () => ({
+          acknowledgedDeliveryIds: [],
+          health: {
+            state: 'healthy', reason: null, pendingCount: 0, corruptCount: 0,
+            conflictCount: 0, rejectedCount: 0, affectedDeviceCount: 0,
+            conflictDeviceIds: [],
+          },
+        })),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    const observation = delivery.beginMissionObservation(mission.id)
+    const finish = delivery.runWithMissionFinishFence(
+      mission.id,
+      () => store!.finishMission(mission.id),
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    try {
+      await store.addPosition({
+        mission_id: mission.id, device_id: 'device-1', source_position_id: 'pre-cutoff-fix',
+        lat: 52, lon: -9.7, timestamp: '2026-08-26T14:00:00.000Z',
+      })
+    } finally {
+      observation.complete()
+    }
+
+    await expect(finish).resolves.toMatchObject({ status: 'finished' })
+    await expect(store.listPositions(mission.id)).resolves.toEqual([
+      expect.objectContaining({ source_position_id: 'pre-cutoff-fix' }),
+    ])
+    const manifest = await store.readCoverageManifest(mission.id, 'finish-evidence')
+    expect(manifest.chunks).toEqual([
+      expect.objectContaining({ fixCount: 1, fixDigest: expect.any(String) }),
+    ])
+  })
+
   it('keeps evidence read-only while allowing an equivalent derived-cache rebuild', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'sartracker-finalized-coverage-'))
     store = createElectronMissionStore({ userDataPath: directory })

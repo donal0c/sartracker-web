@@ -1004,16 +1004,15 @@
             <figcaption>If shutdown cannot save a rejected-position batch, SAR Tracker keeps live positions explicit and blocks finalization and archive export with a mission-scoped critical warning.</figcaption>
           </figure>
           <div class="note">
-            <strong>Finish and finalization wait for evidence already observed:</strong> Finish drains
-            every renderer-held rejection batch before asking the durable store to finish the mission.
-            Finish keeps mission evidence intake open while its durable transition is in flight. After
-            that transition succeeds, SAR Tracker closes the mission-evidence cutoff, waits for every
-            current-position observation that started before the cutoff, and drains its accepted and
-            rejected evidence. Current safety positions continue to render after the cutoff without being
-            added to the finished mission. If the initial drain cannot complete, Finish is refused and the
-            mission stays active for repair and retry. Finalization waits for the closed observation scope
-            and durable evidence markers before advancing the mission through archive-and-lock. A finalized
-            mission remains read-only.
+            <strong>Finish and finalization wait for evidence already observed:</strong> Finish closes
+            the mission-evidence cutoff before the durable status transition. It then waits for every
+            current-position observation that started before the cutoff and drains its accepted and
+            rejected evidence while the mission is still writable. Only after that evidence is durable
+            does SAR Tracker mark the mission finished. Current safety positions continue to render after
+            the cutoff without being added to the finished mission. If the wait, drain, or durable Finish
+            cannot complete, Finish is refused and the mission stays active for repair and retry.
+            Finalization waits for the closed observation scope and durable evidence markers before
+            advancing the mission through archive-and-lock. A finalized mission remains read-only.
             Any delivery already staged outside the renderer that reaches a finalized mission is retained
             outside the immutable mission ledger, shown as critical late-evidence health, and is not silently
             inserted into the finalized record. A new renderer observation after the seal is shown to the

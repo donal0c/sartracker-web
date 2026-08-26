@@ -45,9 +45,9 @@ describe('rejection evidence delivery [DON-268]', () => {
     expect(persisted).toHaveLength(REJECTION_EVIDENCE_DELIVERY_BATCH_HYPOTHESIS + 2)
   })
 
-  it('accepts and drains rejection evidence that arrives during the durable Finish transition', async () => {
+  it('waits for an in-flight accepted observation before the durable Finish transition', async () => {
     const persisted: string[] = []
-    let resolveFinish: (() => void) | undefined
+    const finishMission = vi.fn().mockResolvedValue('finished')
     const delivery = createRejectionEvidenceDelivery({
       missionStore: {
         recordIngestRejections: vi.fn(async (input) => {
@@ -61,22 +61,23 @@ describe('rejection evidence delivery [DON-268]', () => {
       applyRejections: vi.fn(),
       applyEvidenceHealth: vi.fn(),
     })
+    const missionObservation = delivery.beginMissionObservation('mission-1')
     const finish = delivery.runWithMissionFinishFence(
       'mission-1',
-      () => new Promise<string>((resolve) => {
-        resolveFinish = () => resolve('finished')
-      }),
+      finishMission,
     )
-    await vi.waitFor(() => expect(resolveFinish).toBeTypeOf('function'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(() => delivery.record(
-      [createRejection('source:during-finish')],
-      observation('mission-1'),
-    )).not.toThrow()
-    resolveFinish?.()
+    expect(finishMission).not.toHaveBeenCalled()
+    delivery.record(
+      [createRejection('source:accepted-observation-rejection')],
+      observation(missionObservation.missionId ?? 'mission-1'),
+    )
+    missionObservation.complete()
 
     await expect(finish).resolves.toBe('finished')
-    expect(persisted).toContain('source:during-finish')
+    expect(persisted).toContain('source:accepted-observation-rejection')
+    expect(finishMission).toHaveBeenCalledOnce()
   })
 
   it('waits for an in-flight mission observation before finalization seals evidence intake', async () => {

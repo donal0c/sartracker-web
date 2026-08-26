@@ -45,7 +45,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
 
     for (const required of [
       'keeps the renderer alive until the drain acknowledges',
-      'Finish keeps mission evidence intake open while its durable transition is in flight',
+      'Finish closes the mission-evidence cutoff before the durable status transition',
       'retries the durable capacity-loss marker before Finish, finalization, or shutdown may proceed',
       'every unfinalized mission, including a finished mission',
       'unexpected renderer crash is fenced immediately',

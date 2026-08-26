@@ -323,13 +323,18 @@ export function createRejectionEvidenceDelivery(
     }
     const finalizationEpoch = advanceMissionFinalizationEpoch(missionId)
     finalizationPhaseByMission.set(missionId, 'finishing')
-    let result: Result
+    closeMissionObservationScope(missionId)
     try {
+      await waitForMissionObservations(missionId)
       await drainMissionEvidence(missionId)
       if (finalizationEpochByMission.get(missionId) !== finalizationEpoch) {
         throw new Error('Mission evidence Finish was superseded by administrative unlock.')
       }
-      result = await operation()
+      const result = await operation()
+      if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
+        finalizationPhaseByMission.set(missionId, 'finished')
+      }
+      return result
     } catch (error) {
       if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
         finalizationPhaseByMission.delete(missionId)
@@ -338,19 +343,6 @@ export function createRejectionEvidenceDelivery(
       scheduleFlush()
       throw error
     }
-    closeMissionObservationScope(missionId)
-    await waitForMissionObservations(missionId)
-    try {
-      await drainMissionEvidence(missionId)
-    } catch {
-      // Finish is already durable. Retain the renderer queue and critical health;
-      // finalization and teardown will retry instead of desynchronizing UI state.
-      scheduleFlush()
-    }
-    if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
-      finalizationPhaseByMission.set(missionId, 'finished')
-    }
-    return result
   }
 
   /** Reopens renderer acceptance only after the durable store confirms admin unlock. */

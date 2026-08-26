@@ -693,6 +693,10 @@ export async function startTrackingRuntime(
     },
     onSnapshot: async (snapshot, context) => {
       applyParticipantRosterWithoutBlocking(snapshot.devices, context)
+      const missionEvidenceId = context?.missionEvidenceId === undefined
+        ? context?.historyResetKey ?? null
+        : context.missionEvidenceId
+      const missionEvidenceAccepted = context?.missionEvidenceId !== null
       const operationalSnapshot = filterOperationalSnapshot(
         snapshot,
         context?.historyResetKey ?? currentOperationalContextKey(),
@@ -703,10 +707,8 @@ export async function startTrackingRuntime(
         deferredOperationalSnapshot = {
           snapshot,
           historyResetKey: context?.historyResetKey ?? null,
-          missionEvidenceId: context?.missionEvidenceId === undefined
-            ? context?.historyResetKey ?? null
-            : context.missionEvidenceId,
-          persistAfterHydration: true,
+          missionEvidenceId,
+          persistAfterHydration: missionEvidenceAccepted,
         }
         refreshTrackingStatus()
       } else {
@@ -719,17 +721,17 @@ export async function startTrackingRuntime(
           event: 'tracking_snapshot_applied',
           fields: buildTrackingSnapshotDiagnosticFields(operationalSnapshot),
         })
-        const missionEvidenceSnapshot = filterMissionEvidenceSnapshot(snapshot)
-        missionPersistenceResultIndex = sideEffects.length
-        sideEffects.push(enqueueMissionPersistence(
-          limitSnapshotForMissionPersistence(
-            missionEvidenceSnapshot,
-            dependencies.maxPersistedPositionsPerSnapshot,
-          ),
-          context?.missionEvidenceId === undefined
-            ? context?.historyResetKey ?? null
-            : context.missionEvidenceId,
-        ))
+        if (missionEvidenceAccepted) {
+          const missionEvidenceSnapshot = filterMissionEvidenceSnapshot(snapshot)
+          missionPersistenceResultIndex = sideEffects.length
+          sideEffects.push(enqueueMissionPersistence(
+            limitSnapshotForMissionPersistence(
+              missionEvidenceSnapshot,
+              dependencies.maxPersistedPositionsPerSnapshot,
+            ),
+            missionEvidenceId,
+          ))
+        }
       }
       let trackingCacheDataKey: string | null = null
       let trackingCacheRequestSequence: number | null = null

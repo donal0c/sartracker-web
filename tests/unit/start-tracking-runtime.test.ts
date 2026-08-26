@@ -1384,6 +1384,47 @@ describe('startTrackingRuntime', () => {
     expect(addPositionsBulk).not.toHaveBeenCalled()
   })
 
+  it('keeps a post-cutoff current fix live without admitting it to mission evidence', async () => {
+    const addPositionsBulk = vi.fn().mockResolvedValue([])
+    const applySnapshot = vi.fn()
+    let pollerHooks:
+      | {
+          onSnapshot: (
+            snapshot: TrackingSnapshot,
+            context: {
+              readonly historyResetKey: string | null
+              readonly missionEvidenceId: string | null
+            },
+          ) => void | Promise<void>
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        addPositionsBulk,
+      }),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot(SNAPSHOT, {
+      historyResetKey: 'mission-1',
+      missionEvidenceId: null,
+    })
+
+    expect(applySnapshot).toHaveBeenCalled()
+    expect(addPositionsBulk).not.toHaveBeenCalled()
+  })
+
   it('serializes persistence across replacement runtimes so an older fix cannot win last [DON-260]', async () => {
     let releaseOlderWrite: (() => void) | null = null
     let sharedAddPositionsBulk: ReturnType<typeof vi.fn> | undefined

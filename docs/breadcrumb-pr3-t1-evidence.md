@@ -2747,3 +2747,48 @@ migration surface remain unchanged. There was no pre-merge packaged 960k/2M
 coverage run outside G2 and no packaged forced-kill matrix. Five fresh
 independent PR-3 reviews from zero remain required on the final evidence-bound
 head. No merge or release occurred.
+
+## Pre-cutoff accepted-fix Finish remediation
+
+One of the two broad reviews of evidence-bound head
+`1f34299442f16acdc27e5567d538e3b7240f156e` found a further P1. The renderer
+Finish fence called the durable `finished` transition before waiting for an
+already-started current-position observation. A valid fix arriving during that
+window then queried for an active mission, found none, and could be omitted from
+both the positions table and coverage ledger while Finish still resolved.
+
+Central source retrace confirmed the ordering and the exact persistence path.
+The first RED proved that the durable Finish operation was called while one
+mission observation remained active. A second RED proved that a post-cutoff
+snapshot was still admitted to mission persistence even though its live marker
+remained visible. The operator-manual RED rejected the obsolete claim that
+evidence intake stayed open across the durable status transition.
+
+The corrected boundary now closes admission to new mission observations, waits
+for every already-started observation to finish accepted and rejected evidence
+persistence while the mission remains writable, drains renderer-held evidence,
+and only then commits `finished`. Failure before or during the durable
+transition reopens admission and leaves the mission active. A post-cutoff
+snapshot continues to update current safety positions but is not inserted into
+mission evidence. A real SQLite regression proves that a deferred pre-cutoff
+valid fix exists in the finished mission and that its exact coverage manifest
+contains one fix before Finish resolves.
+
+Local green evidence before commit:
+
+- focused Finish/tracking/coverage/manual set: 6 files / 170 tests;
+- full deterministic unit gate: 272 files / 2,204 tests;
+- ESLint, `tsc --noEmit`, production build, bundle budgets and diff checks;
+- backend: 51 passed, with the intentional real macOS keychain test ignored;
+- participant/coverage/tracking Chromium: 13/13;
+- selected critical visual Playwright: 2/2; and
+- fresh uncached critical visual review: 2/2 PASS at
+  `test-results/visual-verification/reports/visual-review-2026-08-26T14-35-09Z.json`.
+
+The manual now states the actual cutoff order. No visible layout or warning
+surface changed, so the existing screenshots remain accurate. Earlier macOS
+and Ubuntu package/soak evidence is invalidated as exact application-code proof
+by this lifecycle change. Candidate-B geometry/index construction, schema v10,
+G2/G3, exact Dots and the 3.704 GB migration surface are unchanged. Commit,
+push, exact-head macOS/Linux package evidence and five fresh independent PR-3
+reviews from zero remain required. No merge or release occurred.
