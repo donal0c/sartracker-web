@@ -29,6 +29,24 @@ describe('coverage controller [DON-276]', () => {
     })
   })
 
+  it('never completes when a ready claim omits a selected chunk revision', async () => {
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    harness.readClaim.mockResolvedValueOnce({
+      changeSeq: 1,
+      databaseReady: true,
+      blockers: [],
+      chunkRevisions: [],
+    })
+
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'partial',
+      deliveredFixCount: 1,
+      totalFixCount: 1,
+    })
+  })
+
   it('does not republish settled state for a repeated map selection acknowledgement', async () => {
     const harness = createHarness(manifest(1, [[KEY_A, 1]]))
     await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })

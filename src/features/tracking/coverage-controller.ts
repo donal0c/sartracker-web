@@ -426,8 +426,7 @@ export function createCoverageController(input: {
         appliedSelectionKeySet === selectedKeySet(context.selectedKeys) &&
         !refreshRequested &&
         claim.changeSeq === finalSequence &&
-        claim.chunkRevisions.every(({ key, contentRev }) =>
-          delivered[coverageChunkIdentity(key)] === contentRev)
+        claimCoversSelection(claim.chunkRevisions, activeSelected, delivered)
       publish(createActiveState({
         status: deferredRendererFailure !== null
           ? 'error'
@@ -950,6 +949,25 @@ export function createCoverageController(input: {
     },
     getState: () => state,
   }
+}
+
+/** Requires an exact, unique revision attestation for every selected chunk. */
+function claimCoversSelection(
+  revisions: readonly { readonly key: CoverageChunkKey; readonly contentRev: number }[],
+  selected: readonly CoverageManifestChunk[],
+  delivered: Readonly<Record<string, number>>,
+): boolean {
+  if (revisions.length !== selected.length) return false
+  const claimed = new Map<string, number>()
+  for (const revision of revisions) {
+    const identity = coverageChunkIdentity(revision.key)
+    if (claimed.has(identity)) return false
+    claimed.set(identity, revision.contentRev)
+  }
+  return selected.every((chunk) => {
+    const identity = coverageChunkIdentity(chunk.key)
+    return claimed.get(identity) === chunk.contentRev && delivered[identity] === chunk.contentRev
+  })
 }
 
 function withFinalizedCatalog(

@@ -35,7 +35,13 @@ const { createOutingStore } = require('./outing-store.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
-const { readCoverageInventory } = require('./coverage-query.cjs')
+const {
+  readCoverageClaimSnapshot,
+  readCoverageInventory,
+} = require('./coverage-query.cjs')
+const {
+  normalizeCoverageWorkerResult,
+} = require('./coverage-query-result-envelope.cjs')
 const { normalizeCoverageTileAddress } = require('./coverage-tile-address.cjs')
 const { createCoverageTileRunner } = require('./coverage-tile-runner.cjs')
 const {
@@ -185,6 +191,44 @@ function normalizeAuthorizedCoverageCatalogInput(database, value) {
 function readCurrentCoverageInventory(database, missionId) {
   return new Set(readCoverageInventory(database, missionId).map((key) =>
     createCoverageChunkIdentity(key)))
+}
+
+/** Proves that a worker inventory exactly covers current canonical metadata. */
+function assertCoverageResultInventory(database, missionId, chunks, readKey, label) {
+  if (!Array.isArray(chunks)) {
+    throw new Error(`Coverage ${label} result inventory is invalid.`)
+  }
+  const expected = readCurrentCoverageInventory(database, missionId)
+  const observed = new Set()
+  for (const chunk of chunks) {
+    const key = readKey(chunk)
+    if (key === null || typeof key !== 'object' || Array.isArray(key)) {
+      throw new Error(`Coverage ${label} result inventory is invalid.`)
+    }
+    const identity = createCoverageChunkIdentity(key)
+    if (!expected.has(identity) || observed.has(identity)) {
+      throw new Error(`Coverage ${label} result inventory diverged from canonical metadata.`)
+    }
+    observed.add(identity)
+  }
+  if (observed.size !== expected.size) {
+    throw new Error(`Coverage ${label} result inventory omitted canonical chunks.`)
+  }
+}
+
+/** Proves a worker claim exactly matches a bounded direct ledger snapshot. */
+function assertCoverageClaimMatchesDatabase(database, input, claim) {
+  const expected = readCoverageClaimSnapshot(database, input)
+  const same =
+    claim.changeSeq === expected.changeSeq &&
+    claim.databaseReady === expected.databaseReady &&
+    Array.isArray(claim.blockers) &&
+    Array.isArray(claim.chunkRevisions) &&
+    JSON.stringify(claim.blockers) === JSON.stringify(expected.blockers) &&
+    JSON.stringify(claim.chunkRevisions) === JSON.stringify(expected.chunkRevisions)
+  if (!same) {
+    throw new Error('Coverage claim result diverged from current ledger metadata.')
+  }
 }
 
 /** Returns a valid stage token only when a malformed worker result can be discarded safely. */
@@ -549,6 +593,13 @@ function createElectronMissionStore(options) {
             signal,
             false,
           )
+          assertCoverageResultInventory(
+            db,
+            missionId,
+            enumeration.chunks,
+            (chunk) => chunk,
+            'enumeration',
+          )
           recordCoveragePerformance(missionId, {
             lastEnumerationDurationMs: performance.now() - enumerationStartedAt,
           })
@@ -563,6 +614,13 @@ function createElectronMissionStore(options) {
         const manifest = await runCoverageWorker(
           { kind: 'manifest', missionId }, signal, false,
         )
+        assertCoverageResultInventory(
+          db,
+          missionId,
+          manifest.chunks,
+          (chunk) => chunk.key,
+          'manifest',
+        )
         const inserted = applyCoverageManifestInventory(db, {
           missionId,
           expectedChangeSeq: manifest.changeSeq,
@@ -572,6 +630,13 @@ function createElectronMissionStore(options) {
         const currentManifest = inserted === 0
           ? manifest
           : await runCoverageWorker({ kind: 'manifest', missionId }, signal, false)
+        assertCoverageResultInventory(
+          db,
+          missionId,
+          currentManifest.chunks,
+          (chunk) => chunk.key,
+          'manifest',
+        )
         return attachCoveragePerformance(missionId, currentManifest)
       },
     ),
@@ -623,6 +688,7 @@ function createElectronMissionStore(options) {
           signal,
           false,
         )
+        assertCoverageClaimMatchesDatabase(db, normalizedInput, claim)
         const blockers = [...claim.blockers]
         const health = await getIngestEvidenceHealth(
           db,
@@ -1191,7 +1257,10 @@ function createElectronMissionStore(options) {
   /** Serializes chunk payload reads while allowing small manifest/claim reads alongside. */
   function runCoverageWorker(query, signal, serializeChunk) {
     if (!serializeChunk) {
-      return coverageQueryRunner({ databasePath, query, signal })
+      return normalizeCoverageOperation(
+        query,
+        coverageQueryRunner({ databasePath, query, signal }),
+      )
     }
     const previousWorker = coverageChunkWorkerTail
     let releaseWorkerSlot = () => undefined
@@ -1200,7 +1269,10 @@ function createElectronMissionStore(options) {
     return previousWorker.then(() => {
       let operation
       try {
-        operation = coverageQueryRunner({ databasePath, query, signal })
+        operation = normalizeCoverageOperation(
+          query,
+          coverageQueryRunner({ databasePath, query, signal }),
+        )
       } catch (error) {
         releaseWorkerSlot()
         throw error
@@ -1209,6 +1281,16 @@ function createElectronMissionStore(options) {
       void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
       return operation
     })
+  }
+
+  /** Normalizes injected and production worker operations without losing exit ownership. */
+  function normalizeCoverageOperation(query, operation) {
+    const normalized = Promise.resolve(operation).then((result) =>
+      normalizeCoverageWorkerResult(query, result))
+    Object.defineProperty(normalized, 'workerExited', {
+      value: operation.workerExited ?? operation,
+    })
+    return normalized
   }
 }
 

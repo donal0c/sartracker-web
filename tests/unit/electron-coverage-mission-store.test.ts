@@ -309,6 +309,64 @@ describe('Electron coverage mission-store orchestration', () => {
     })
   })
 
+  it('rejects a current-sequence manifest that omits a real stale canonical chunk', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    let omitManifest = false
+    store = createElectronMissionStore({
+      userDataPath: directory,
+      runCoverageQueryInWorker: async (input) => {
+        if (omitManifest && input.query.kind === 'manifest') {
+          const database = new Database(input.databasePath)
+          const changeSeq = Number(database.prepare(`SELECT change_seq
+            FROM coverage_missions WHERE mission_id = ?`)
+            .get(input.query.missionId)?.change_seq ?? 0)
+          database.close()
+          return {
+            changeSeq,
+            enumerated: true,
+            pendingInvalidation: false,
+            backfillIncomplete: false,
+            diagnostics: {
+              queueDepth: 0,
+              oldestQueuedAt: null,
+              pendingChunkCount: 0,
+              staleChunkCount: 0,
+              freshChunkCount: 0,
+              pendingInvalidationCount: 0,
+            },
+            outings: [],
+            chunks: [],
+          }
+        }
+        return runRealCoverageQueryInWorker(input)
+      },
+    })
+    const mission = await seedMission(store)
+    await store.readCoverageManifest(mission.id, 'manifest-fresh')
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [{
+        source_position_id: 'source-3',
+        device_id: 'device-1',
+        lat: 52.02,
+        lon: -9.72,
+        timestamp: '2026-08-24T09:10:00.000Z',
+      }],
+    })
+    omitManifest = true
+
+    await expect(store.readCoverageManifest(mission.id, 'manifest-omitted'))
+      .rejects.toThrow(/coverage manifest.*inventory/iu)
+    const database = new Database(path.join(directory, 'mission-store.sqlite'))
+    expect(database.prepare(`SELECT content_rev, built_rev, fix_count
+      FROM coverage_chunks WHERE mission_id = ?`).get(mission.id)).toEqual({
+      content_rev: 2,
+      built_rev: 1,
+      fix_count: 2,
+    })
+    database.close()
+  })
+
   it('drains invalidations and conditionally marks a complete chunk read fresh', async () => {
     store = await createStore()
     const mission = await seedMission(store)

@@ -153,8 +153,12 @@ function readCoverageManifestSnapshot(database, input) {
       const exactCount = exactSummary?.fix_count ?? chunk.fix_count ?? ledger?.fix_count ?? 0
       const exactDigest = exactSummary?.fix_digest ?? chunk.fix_digest ??
         ledger?.fix_digest ?? createHash('sha256').digest('hex')
-      const exactMinTs = exactSummary?.min_ts ?? chunk.min_ts ?? ledger?.min_ts ?? null
-      const exactMaxTs = exactSummary?.max_ts ?? chunk.max_ts ?? ledger?.max_ts ?? null
+      const exactMinTs = exactSummary === null
+        ? chunk.min_ts ?? ledger?.min_ts ?? null
+        : exactSummary.min_ts
+      const exactMaxTs = exactSummary === null
+        ? chunk.max_ts ?? ledger?.max_ts ?? null
+        : exactSummary.max_ts
       return {
         key: {
           device_id: chunk.device_id,

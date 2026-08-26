@@ -119,6 +119,39 @@ describe('coverage query worker', () => {
       ),
     })).rejects.toThrow(/coverage invalidation result key list/iu)
   })
+
+  it('rejects omitted and request-divergent results for every coverage query kind', async () => {
+    const workerPath = path.resolve(
+      'tests/fixtures/invalid-coverage-query-result-worker.cjs',
+    )
+    const key = { device_id: 'device-1', period_kind: 'unassigned', period_id: '' }
+
+    await expect(runCoverageQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: { kind: 'enumerate', missionId: 'mission-1' },
+      workerPath,
+    })).rejects.toThrow(/coverage enumeration result/iu)
+    await expect(runCoverageQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: { kind: 'manifest', missionId: 'mission-1' },
+      workerPath,
+    })).rejects.toThrow(/coverage manifest result/iu)
+    await expect(runCoverageQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: { kind: 'claim', missionId: 'mission-1', selectedKeys: [key] },
+      workerPath,
+    })).rejects.toThrow(/coverage claim result/iu)
+    await expect(runCoverageQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: { kind: 'chunk-page', missionId: 'mission-1', key, expectedContentRev: 7 },
+      workerPath,
+    })).rejects.toThrow(/coverage chunk page result/iu)
+    await expect(runCoverageQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: { kind: 'chunk-summary', missionId: 'mission-1', key, expectedContentRev: 7 },
+      workerPath,
+    })).rejects.toThrow(/coverage chunk summary result/iu)
+  })
 })
 
 async function createCoverageDatabase(): Promise<string> {
