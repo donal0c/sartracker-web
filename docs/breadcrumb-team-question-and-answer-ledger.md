@@ -565,6 +565,36 @@ BCP-08/BCP-10/BCP-12 evidence consumers.
 
 ---
 
+## PR-5 Implementation Links — 2026-08-27
+
+These links add implementation traceability only; they do not amend or
+reinterpret any team answer.
+
+- `SAR-QA-004`, `SAR-QA-019`: `DON-274`,
+  `tests/unit/gpx-parser.test.ts`, and
+  `tests/unit/electron-mission-evidence-versioning.test.ts` cover exact-byte
+  GPX identity/revisions, retained ordering/elevation/rejections, and explicit
+  fully dated/partially dated/undated evidence without timestamp invention.
+- `SAR-QA-006`, `SAR-QA-007`, `SAR-QA-013`, `SAR-QA-017`, `SAR-QA-021`:
+  `DON-277`, `DON-278`, `tests/unit/electron-mission-replay-query.test.ts`,
+  `tests/unit/electron-mission-replay-runner.test.ts`, and
+  `tests/e2e/mission-review.spec.ts` cover atomic immutable versions,
+  finalized-write fences, deterministic data-known-at-T folding, sole
+  `fixTime` track authority, cancellation/stale-reply containment, explicit
+  limitations and live-map independence.
+- `SAR-QA-009`, `SAR-QA-018`: `DON-279`,
+  `tests/unit/electron-mission-evidence-versioning.test.ts`,
+  `tests/e2e/mission-evidence-search-passes.spec.ts`, and
+  `tests/e2e/visual/visual-mission-evidence-replay.spec.ts` cover stable area
+  identity, repeated assignment/pass records, revisions, and coordinator-only
+  full/partial/aborted declarations with coverage remaining advisory.
+- `SAR-QA-020`: `DON-277` and
+  `tests/unit/electron-mission-evidence-versioning.test.ts` cover retirement,
+  indefinite in-store evidence retention and backend finalized-mission write
+  rejection. Archive encryption/custody remains explicitly assigned to PR-6.
+
+---
+
 ## Closed Duplicate — Do Not Send
 
 ### SAR-DUP-001 — Repeated receipt timestamps for one Traccar row

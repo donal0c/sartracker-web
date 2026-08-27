@@ -1509,11 +1509,23 @@
           <h3>GPX Tracks</h3>
           <p>
             The GPX panel can import files, import a folder, watch a folder, rescan watched folders, and
-            delete imported tracks. These file-system controls are available in the Electron desktop app and
+            remove imported tracks from the active map. Removal retires the import; it does not erase its
+            evidence. These file-system controls are available in the Electron desktop app and
             are disabled in browser-only validation mode. Each imported track also has its own colour
             palette and hex field, so separate GPX files can remain visually distinct on the map and in the
             layer tree.
           </p>
+          <p>
+            Desktop imports preserve the exact GPX source bytes and a SHA-256 content identity. Importing the
+            same bytes through another path is idempotent; changed bytes at the same path create a retained
+            revision. Track, segment and point order, names, elevation and source timestamps are kept. Invalid
+            points or segments are retained as explicit rejections instead of disappearing silently.
+          </p>
+          <div class="note">
+            <strong>GPX time evidence:</strong> fully dated tracks can participate in precise Replay. Partially
+            dated imports separate dated points from static points. Undated points remain visible as static
+            mission evidence but are not placed at an invented time.
+          </div>
           <h3>Helicopters</h3>
           <p>
             The Helicopters panel reserves up to four aviation slots: Rescue 118, Rescue 115, Air Corps 1, and
@@ -1553,6 +1565,31 @@
             audit history is loading, the map, current positions, and mission controls remain available;
             Review shows its loading state and then displays the exact breadcrumb count and bounded newest
             audit page. Closing Review does not change mission evidence or current-position truth.
+          </p>
+          <h3>Mission Evidence Replay</h3>
+          <p>
+            Open the <strong>Replay</strong> tab and choose a local Europe/Dublin time to reconstruct the mission
+            evidence that was known at that time. Replay is read-only: it does not reproduce the coordinator's
+            historic pan, zoom, filters or open panels, and it never replaces or pauses the operational live
+            map. Use <strong>Return to Live / now</strong> to leave Replay.
+          </p>
+          <p>
+            Replay loads exact dated Traccar fixes and GPX points progressively and shows real page progress.
+            Traccar <code>fixTime</code> is the only breadcrumb evidence clock. Evidence recorded after the
+            selected time is not backdated into the view. Warnings identify undated static GPX, missing recorded
+            provenance, and legacy objects whose earlier revision history is unknown.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/mission-evidence-replay.png" alt="Mission Review Replay showing data known at the selected time and an undated GPX evidence limitation" />
+            <figcaption>Replay is visibly distinct from Live and states incomplete or static evidence instead of inventing history.</figcaption>
+          </figure>
+          <h3>Search Areas, Assignments And Passes</h3>
+          <p>
+            The <strong>Search Operations</strong> tab keeps one stable identity for each search area across
+            geometry revisions. Coordinators can record repeated team assignments and repeated passes. Every
+            pass is explicitly declared <strong>fully searched</strong>, <strong>partially searched</strong>, or
+            <strong>aborted</strong> by the coordinator. Any breadcrumb-derived coverage comparison is advisory;
+            it never changes or supplies the declared outcome.
           </p>
           <p>
             The Audit Log shows operator-meaningful events by default — mission lifecycle changes, marker
@@ -1749,7 +1786,7 @@ sh "$COLLECTOR" --screenshot</code></pre>
           <ul>
             <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can import, validate, remove, and serve local official MBTiles packages from app-owned storage, so the original USB or source disk can be unplugged after import. The map reports ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. The Maps menu includes a field-readiness checklist and Settings can export a readiness certificate.</li>
             <li><strong>Settings access:</strong> coordinator and admin rosters are currently local workflow/audit controls, not a strong authentication boundary. Treat Settings access as trusted-machine access until the privileged-settings guard and unlock-authority model are implemented.</li>
-            <li><strong>Replay mode:</strong> settings expose replay defaults, but full replay/training workflow parity is still active work.</li>
+            <li><strong>Replay scope:</strong> Mission Review reconstructs evidence known at the selected time; it intentionally does not reproduce historical screen layout, map camera, panel state, or operator cursor. Archive-backed replay and final release qualification remain part of the Breadcrumb Programme's archive/final stage.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>
             <li><strong>Desktop beta distribution:</strong> current CI beta artifacts are Linux x86_64 AppImage and <code>.deb</code> packages. macOS artifacts are local/manual when needed, and Windows NSIS artifacts remain gated until the Windows official-map smoke passes. Developer ID signing, notarization, DMG packaging, and signed Windows installer behavior remain open release work.</li>

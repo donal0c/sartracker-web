@@ -196,7 +196,7 @@ These are programme gates, subject to measured revision only through an explicit
 
 ## Programme Planning Rule
 
-The programme is delivered through the five ordered PRs in
+The programme is delivered through the six ordered PRs in
 `docs/breadcrumb-programme-execution-policy.md`, followed by one final
 team-facing release. BCP work units remain the just-in-time design and TDD
 boundaries inside those PRs. Each work unit receives a Fable design subsection
@@ -207,3 +207,38 @@ Linear mapping, and completion gate before its production implementation.
 Coverage and replay remain architecturally decoupled even though they ship in
 the same final release. One bounded unpublished packaged checkpoint follows
 the complete-coverage PR; broad qualification is end-weighted to BCP-17.
+
+## PR-5 Implementation Binding (2026-08-27)
+
+PR-5 of six implements the evidence-spine and replay parts of this decision
+without changing any locked team answer:
+
+- schema v12 preserves current projections while atomically appending complete
+  immutable versions and audit identity for markers, drawings, outings, search
+  areas, assignments and passes; legacy rows receive an explicit unknown-history
+  baseline and operator removal becomes retirement rather than physical loss;
+- GPX imports retain exact bytes and SHA-256 identity, path aliases, ordered
+  segments/points, source timestamps and elevation, rejected source elements,
+  timing completeness and immutable revisions; parsing and bulk persistence run
+  outside the Electron main isolate;
+- replay folds lifecycle, participant/group state and mutable evidence using
+  both recorded and effective time, and streams exact `fixTime`/dated-GPX rows
+  from a read-only cancellable worker; undated GPX remains explicit static
+  evidence and unproved legacy/missing-time history remains a machine-readable
+  limitation;
+- stable search-area identity is separate from repeatable assignments and
+  passes; full/partial/aborted remains solely the coordinator's declaration and
+  advisory geometry cannot write that outcome;
+- the operational live map and current-position cadence remain independent of
+  replay/import state. The browser harness mirrors the application port for UI
+  validation but explicitly reports that it cannot prove desktop version
+  history.
+
+The implementation is traced by `DON-274`, `DON-277`, `DON-278`, `DON-279`,
+`tests/unit/electron-mission-evidence-versioning.test.ts`,
+`tests/unit/electron-mission-replay-query.test.ts`,
+`tests/e2e/mission-review.spec.ts`,
+`tests/e2e/mission-evidence-search-passes.spec.ts`, and
+`tests/e2e/visual/visual-mission-evidence-replay.spec.ts`. Archive encryption,
+restore-and-replay qualification, and release/field acceptance remain PR-6 /
+BCP-17 work.

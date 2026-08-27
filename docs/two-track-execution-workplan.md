@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-4 was the bounded `DON-267` field-feedback bridge for canonical `fixTime`, explicit local-time presentation, and current-poll cadence independent of history. PR-5 mission evidence/replay is prepared on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`; do not start its implementation task until Donal gives the explicit go.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) is implemented as one review unit on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`; exact-head review and Linux PR CI are next. PR-6 archive lifecycle follows only after PR-5 is accepted.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -160,6 +160,18 @@ browser, and visual gates remain mandatory. False Complete or 100%, lost
 mission evidence, unbounded Electron-main work, and unresolved safety failures
 remain absolute merge blockers. Repeated confirmed P1/P2 findings at one seam
 trigger an architecture and attack-test pause before more remediation.
+
+PR-5 implementation record (2026-08-27): BCP-11/12a/12b/13 are delivered
+together on `codex/breadcrumb-pr5-evidence-replay`. Schema v12 adds immutable
+mission-object versions, explicit legacy baselines, retirement tombstones and
+backend finalization fences. GPX retains exact source bytes/digest, aliases,
+ordered source evidence, rejections and immutable revisions through a worker.
+Mission Review adds stable search assignments/passes and cancellable,
+progressive data-known-at-T replay without changing the live map. Deterministic
+960k and 2m qualification, full browser/visual gates, macOS package/soak and
+forced-kill recovery are green locally. The Linux workflow now runs the 960k
+qualification beside its packaged build/soak; exact pushed-head CI remains the
+review-entry gate. No release or merge is authorized by this record.
 
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
