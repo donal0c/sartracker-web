@@ -257,17 +257,47 @@ arm64/Node v22.22.3 with timezone `Europe/Dublin`:
 
 | Preset | Fixture SHA-256 | Seek / restart | Import dispatch | Current read during import / replay | Event-loop max | Equality |
 | --- | --- | --- | --- | --- | --- | --- |
-| 960k normal envelope | `5b6529728a8c9d0c0ced4aa11cd5a7f366b98a0540d935f08cb005397e47abd6` | 60.34 / 53.85 ms | 2.41 ms | 0.53 / 0.80 ms | 48.33 ms | exact first page |
-| 2m headroom | `4be522adf9742e12e558bcdd0c243e6afb99c660ffd8e666a8100575c224860c` | 72.59 / 79.01 ms | 1.83 ms | 2.16 / 7.00 ms | 47.31 ms | exact first page |
+| 960k normal envelope | `5b6529728a8c9d0c0ced4aa11cd5a7f366b98a0540d935f08cb005397e47abd6` | 64.96 / 48.97 ms | 2.62 ms | 0.55 / 0.99 ms | 66.55 ms | exact first page |
+| 2m headroom | `4be522adf9742e12e558bcdd0c243e6afb99c660ffd8e666a8100575c224860c` | 62.27 / 53.94 ms | 1.47 ms | 1.85 / 0.95 ms | 53.24 ms | exact first page |
 
 Both presets imported 50,000 GPX points while continuously writing current
-positions. The latest 960k run recorded 1,020 current writes (39.83 ms maximum,
-2.56 ms p95) and an exact 914,001 near-tail page in 55.76 ms. The 2m headroom
-run recorded 982 writes (42.81 ms maximum, 4.26 ms p95) and exact 1,850,001
-near-tail paging in 86.60 ms. Both passed restart equality. The ordinary seek
+positions. The exact `f2f5330b9f124dff4cacbe66aa9b06e408030d4b` 960k run
+recorded 1,043 current writes (60.33 ms maximum, 2.11 ms p95) and an exact
+914,001 near-tail page in 46.08 ms. The 2m headroom run recorded 1,124 writes
+(44.87 ms maximum, 2.16 ms p95) and exact 1,850,001 near-tail paging in
+80.09 ms. Both passed restart equality. The ordinary seek
 stayed below one second and every measured main dispatch/current-read/open/event-
 loop path stayed below the 200 ms hard block. The 2m row remains deliberate
 headroom/renderer-rejection evidence, not a normal mission-size claim.
+
+The unsigned macOS arm64 package built from the same exact head passed the CI
+tracking-soak profile with 6/6 batches, 8,664/8,664 exact positions, zero
+redundant telemetry slope, a 3.96 ms main-process maximum and four healthy
+operator-interaction samples across restart. A separate forced-kill probe copied
+the authentic 960k fixture, killed the process at `backup:started`, recovered
+that exact interruption after restart, passed SQLite recovery and preserved the
+support-bundle privacy exclusions. These are local packaged proofs, not signed,
+Linux, production or field evidence.
+
+Exact-head Linux workflow
+[`33124584731`](https://github.com/donal0c/sartracker-web/actions/runs/33124584731)
+passed on PR merge commit `e6cee4401a0b54a56c27a15d3830fcd04d14dc83`.
+That merge commit has parents exact base `80309c995a18eeb190cce4310c9a46b0f46d5263`
+and candidate `f2f5330b9f124dff4cacbe66aa9b06e408030d4b`, and its tree is byte-identical
+to the candidate tree `8fc61d5577596d53ae5993f410855662832e600b`.
+The Ubuntu x64 run passed 288 files / 2,396 tests, build/bundle budgets,
+AppImage and `.deb` packaging, ELF x86-64 native SQLite inspection, Mesa
+llvmpipe attestation, the 960k qualification (222.80 ms seek, 160.71 ms late
+page, 219.97 ms restart seek, 79.77 ms maximum concurrent current write,
+81.91 ms event-loop maximum, exact restart equality), and the packaged CI soak
+(6/6 batches, 8,664/8,664 exact positions, 37.53 ms main maximum, zero
+redundant telemetry slope, four healthy interactions). The AppImage opened a
+non-black 0.484819-mean content frame and exited cleanly through its window
+control. Artifact SHA-256 values are
+`bda86fafd9d279af67a7c4d35aa40b2e233b9f243683005fe9838f53bca22a16`
+(AppImage) and
+`1569d844987dec05076d3ddfd51b32078f759d1d36272d3821f1a1902876cdad`
+(`.deb`).
 
 A derived 960,000-position authentic-v11 migration profile removed the PR5
 provenance/generation/read-model structures before candidate open. Exact v12
@@ -290,8 +320,9 @@ head and is reported in the PR/final handoff.
 
 ## Proof limits
 
-Exact pushed-head macOS/Linux package/soak/960k evidence and the clean four-
-review wave are completion gates reported externally against the immutable final head.
+The clean four-review wave remains the task-completion gate. The final
+documentation-only binding descendant must receive exact-diff/tree attestation;
+it does not convert the package evidence into release or field proof.
 PR6 and BCP-17 retain archive encryption/custody, restore-and-replay qualification,
 broad multi-machine/live-server/archive qualification, release and field
 acceptance. No merge or release is authorized here.
