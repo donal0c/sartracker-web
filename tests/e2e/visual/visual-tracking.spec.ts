@@ -182,7 +182,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       'Valid current fixes remain visible',
     )
     await expect(page.getByTestId('fix-time-unverified-warning')).toContainText(
-      'not treated as a fresh device fix',
+      'uses server receipt clock, not verified Traccar fixTime',
     )
 
     await captureElementAndRegister(page, 'tracking-status', {
@@ -194,7 +194,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 1. The tracking status must remain ONLINE because valid current fixes are still publishing
 2. A clear roster warning must say current fixes are using last-known device details
 3. A separate position-data warning must report a rejected row and explicitly say valid current fixes remain visible
-4. A separate FIX TIME UNVERIFIED warning must explain that server receipt time is not treated as a fresh device fix
+4. A separate FIX TIME UNVERIFIED warning must identify server-receipt provenance, retain the position for immediate safety, and exclude it from exact breadcrumb evidence
 5. The "Open Devices" action must remain visible so the operator can inspect the accepted fix and rejection detail
 6. The warnings should be prominent amber attention states, not a red offline/emergency presentation
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
@@ -202,7 +202,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         'tracking mode remains online',
         'roster warning is visible',
         'rejected-row warning says valid current fixes remain visible',
-        'server-only timestamp warning says it is not treated as fresh',
+        'server-receipt timestamp warning states immediate-safety visibility and exact-evidence exclusion',
       ],
     })
   })

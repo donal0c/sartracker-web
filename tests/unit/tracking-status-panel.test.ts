@@ -1,7 +1,7 @@
 import React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { TrackingStatusPanel } from '../../src/components/tracking-status-panel'
 import { useDeviceWorkspaceStore } from '../../src/features/tracking/device-workspace-store'
@@ -12,7 +12,6 @@ import { useStationaryAttentionStore } from '../../src/features/tracking/station
 import { useCoverageStore } from '../../src/features/tracking/coverage-store'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import type { Mission } from '../../src/infrastructure/mission-store/tauri-mission-store'
-import { formatOperatorLocalTimestamp } from '../../src/features/tracking/operator-time'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -97,7 +96,7 @@ describe('TrackingStatusPanel', () => {
           battery: null,
           accuracy: null,
           timestamp: '2026-08-22T10:00:00.000Z',
-          timestamp_source: 'server',
+          timestamp_source: 'device',
           fix_time_unverified: true,
           source: 'osmand',
           data_origin: 'live',
@@ -115,10 +114,43 @@ describe('TrackingStatusPanel', () => {
     expect(getText('[data-testid="current-position-ingest-warning"]')).toContain(
       'Valid current fixes remain visible',
     )
-    expect(getText('[data-testid="fix-time-unverified-warning"]')).toContain(
-      'not treated as a fresh device fix',
+    expect(getText('[data-testid="fix-time-unverified-warning"]')).toBe(
+      'FIX TIME UNVERIFIED — 1 position uses device clock, not verified Traccar fixTime. It remains visible for immediate safety but is excluded from exact breadcrumb evidence.',
     )
     expect(getText('[data-testid="tracking-counters"]')).toContain('1')
+  })
+
+  it('identifies unprovable legacy cache provenance without treating it as canonical fixTime [DON-267]', () => {
+    useTrackingStore.setState((state) => ({
+      snapshot: {
+        ...state.snapshot,
+        positions: [{
+          id: 'legacy-position',
+          device_id: 'device-1',
+          lat: 52,
+          lon: -9.7,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: '2026-08-22T10:00:00.000Z',
+          fix_time_unverified: true,
+          source: 'osmand',
+          data_origin: 'cache',
+          cache_age_seconds: 60,
+          device_cache_stale: false,
+        }],
+      },
+    }))
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(getText('[data-testid="fix-time-unverified-warning"]')).toContain(
+      'legacy cache provenance unavailable',
+    )
+    expect(getText('[data-testid="fix-time-unverified-warning"]')).toContain(
+      'excluded from exact breadcrumb evidence',
+    )
   })
 
   it('shows persistent degraded evidence health and first-accepted conflict truth [DON-268]', () => {
@@ -358,6 +390,10 @@ describe('TrackingStatusPanel', () => {
   })
 
   it('shows exact-dot paging in dots mode without presenting the line simplification warning as dot semantics', () => {
+    const resolvedOptions = vi.spyOn(
+      Intl.DateTimeFormat.prototype,
+      'resolvedOptions',
+    ).mockReturnValue({ timeZone: 'Europe/Dublin' } as Intl.ResolvedDateTimeFormatOptions)
     seedSimplifiedLineMetadata()
     useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
     const TrackingStatusPanelWithExactDots = TrackingStatusPanel as React.ComponentType<{
@@ -390,8 +426,9 @@ describe('TrackingStatusPanel', () => {
 
     expect(document.querySelector('[data-testid="breadcrumb-display-summary"]')).toBeNull()
     expect(getText('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBe(
-      `Exact fix inspection — showing 10,000 of 10,001 — ${formatOperatorLocalTimestamp('2026-08-08T00:00:00.000Z')} to ${formatOperatorLocalTimestamp('2026-08-09T12:00:00.000Z')}`,
+      'Exact fix inspection — showing 10,000 of 10,001 — 08/08/2026, 01:00:00 GMT+01:00 (Europe/Dublin) to 09/08/2026, 13:00:00 GMT+01:00 (Europe/Dublin)',
     )
+    resolvedOptions.mockRestore()
   })
 
   it('keeps line simplification and route-error disclosure unchanged in line mode', () => {

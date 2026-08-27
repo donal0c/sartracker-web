@@ -35,6 +35,7 @@ export function formatOperatorLocalTimestamp(
   return `${read('day')}/${read('month')}/${read('year')}, ${read('hour')}:${read('minute')}:${read('second')} ${offset} (${timeZone})`
 }
 
-function resolveOperatorTimeZone(): string {
+/** Resolves the operator IANA timezone, falling back to UTC when unavailable. */
+export function resolveOperatorTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 }

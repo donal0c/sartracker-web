@@ -454,13 +454,19 @@ describe('traccar client', () => {
       fetchFn,
     )
 
-    await expect(client.getBreadcrumbs(
+    await expect(client.getBreadcrumbsWithReport(
       '1',
       new Date('2026-04-06T10:00:00.000Z'),
       new Date('2026-04-06T10:30:00.000Z'),
-    )).resolves.toEqual([
-      expect.objectContaining({ id: '200', timestamp_source: 'fix' }),
-    ])
+    )).resolves.toEqual({
+      accepted: [expect.objectContaining({ id: '200', timestamp_source: 'fix' })],
+      rejected: [expect.objectContaining({
+        deviceId: '1',
+        reason: 'invalid_timestamp',
+        rowIndex: 1,
+        anomalyKey: expect.stringMatching(/^source:/u),
+      })],
+    })
     expect(logger.warn).toHaveBeenCalledWith(
       'Dropped malformed Traccar breadcrumb row.',
       expect.objectContaining({
@@ -492,7 +498,7 @@ describe('traccar client', () => {
         new Date('2026-04-06T10:00:00.000Z'),
         new Date('2026-04-06T10:30:00.000Z'),
       ),
-    ).rejects.toThrow(/No valid Traccar breadcrumb rows/i)
+    ).rejects.toThrow(/1 source row was rejected.*invalid coordinates/i)
   })
 
   it('bounds malformed-row diagnostics while reporting the full drop count [DON-260]', async () => {

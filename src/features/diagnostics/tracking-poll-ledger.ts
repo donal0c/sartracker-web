@@ -35,6 +35,7 @@ type TrackingPollCycleEntry = {
   readonly breadcrumbReturnedCount?: number
   readonly breadcrumbAcceptedCount?: number
   readonly breadcrumbDuplicateCount?: number
+  readonly breadcrumbRejectedCount?: number
   readonly breadcrumbFailedDeviceCount?: number
   readonly breadcrumbWindow?: TrackingBreadcrumbWindowSummary
 }
@@ -350,6 +351,7 @@ function normalizeTrackingPollLedgerEntry(input: unknown): TrackingPollLedgerEnt
     ...copyOptionalCount(candidate, 'breadcrumbReturnedCount'),
     ...copyOptionalCount(candidate, 'breadcrumbAcceptedCount'),
     ...copyOptionalCount(candidate, 'breadcrumbDuplicateCount'),
+    ...copyOptionalCount(candidate, 'breadcrumbRejectedCount'),
     ...copyOptionalCount(candidate, 'breadcrumbFailedDeviceCount'),
     ...copyOptionalBreadcrumbWindow(candidate),
   }
@@ -397,6 +399,7 @@ function copyOptionalCount(
     | 'breadcrumbReturnedCount'
     | 'breadcrumbAcceptedCount'
     | 'breadcrumbDuplicateCount'
+    | 'breadcrumbRejectedCount'
     | 'breadcrumbFailedDeviceCount',
 ): Partial<TrackingPollCycleEntry> {
   const value = normalizeCount(candidate[key])

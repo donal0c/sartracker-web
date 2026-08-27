@@ -816,9 +816,17 @@ describe('polling manager', () => {
       expect.objectContaining({
         kind: 'poll_cycle',
         outcome: 'recovered',
-        phase: 'breadcrumbs',
+        phase: 'current_positions',
         consecutiveFailures: 0,
         outageDurationMs: expect.any(Number),
+      }),
+    )
+    expect(onPollDiagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'poll_cycle',
+        outcome: 'success',
+        phase: 'breadcrumbs',
+        consecutiveFailures: 0,
       }),
     )
 
@@ -964,11 +972,13 @@ describe('polling manager', () => {
       getBreadcrumbs: vi.fn().mockReturnValue(unresolvedHistory.promise),
     })
     const onSnapshot = vi.fn()
+    const onPollDiagnostic = vi.fn()
     const poller = createPollingManager(client, {
       intervalMs: 5_000,
       staleThresholdMs: 60 * 60 * 1000,
       onSnapshot,
       onStatusChange: vi.fn(),
+      onPollDiagnostic,
       now: () => new Date('2026-08-27T07:00:00.000Z'),
     })
 
@@ -977,13 +987,59 @@ describe('polling manager', () => {
     expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
     expect(client.getBreadcrumbs).toHaveBeenCalledTimes(NORMALIZED_DEVICES.length)
 
-    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.advanceTimersByTimeAsync(15_000)
 
-    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(4)
     expect(client.getBreadcrumbs).toHaveBeenCalledTimes(NORMALIZED_DEVICES.length)
     expect(onSnapshot.mock.calls.filter((call) =>
       call[0].positions.length === NORMALIZED_POSITIONS.length,
-    )).toHaveLength(2)
+    )).toHaveLength(4)
+    expect(onPollDiagnostic.mock.calls.map((call) => call[0]).filter((entry) =>
+      entry.kind === 'poll_cycle' && entry.phase === 'current_positions',
+    )).toHaveLength(4)
+    expect(onPollDiagnostic.mock.calls.map((call) => call[0]).filter((entry) =>
+      entry.kind === 'poll_cycle' && entry.phase === 'breadcrumbs',
+    )).toHaveLength(0)
+    poller.stop()
+  })
+
+  it('surfaces rejected breadcrumb rows with a count while valid exact fixes continue [DON-267] [DON-268]', async () => {
+    const rejection = {
+      deviceId: '1',
+      reason: 'invalid_timestamp' as const,
+      rowIndex: 1,
+      anomalyKey: 'source:history-rejected',
+      sourcePositionId: 'history-rejected',
+      canonicalEvidence: { id: 'history-rejected' },
+    }
+    const client = createClient({
+      getBreadcrumbsWithReport: vi.fn().mockResolvedValue({
+        accepted: NORMALIZED_BREADCRUMBS,
+        rejected: [rejection],
+      }),
+    })
+    const onBreadcrumbRejections = vi.fn()
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-a',
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      onBreadcrumbRejections,
+      now: () => new Date('2026-08-27T07:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onBreadcrumbRejections).toHaveBeenCalledWith([rejection], {
+      missionId: 'mission-a',
+      observedAt: '2026-08-27T07:00:00.000Z',
+    })
+    expect(onStatusChange.mock.calls.map((call) => call[0]?.warning)).toContain(
+      'BREADCRUMB EVIDENCE WARNING — the latest affected history response rejected 1 source row. Valid canonical fixTime evidence remains available; rejected rows stay excluded and are reported.',
+    )
     poller.stop()
   })
 

@@ -18,6 +18,7 @@ import type {
   CurrentPositionRejection,
   CurrentPositionRejectionReason,
 } from './ingest-health'
+import { formatCurrentPositionRejectionReason } from './ingest-health'
 import {
   createRejectedPositionAnomalyKey,
   createRejectedPositionEvidence,
@@ -46,6 +47,8 @@ export type CurrentPositionNormalizationResult = {
   readonly rejected: readonly CurrentPositionRejection[]
 }
 
+export type BreadcrumbNormalizationResult = CurrentPositionNormalizationResult
+
 export type DeviceRosterNormalizationResult = {
   readonly accepted: readonly NormalizedTrackingDevice[]
   /** False when any server row was rejected during normalization. */
@@ -64,6 +67,11 @@ type TraccarClient = {
     from: Date,
     to: Date,
   ) => Promise<readonly NormalizedTrackingPosition[]>
+  readonly getBreadcrumbsWithReport: (
+    deviceId: string,
+    from: Date,
+    to: Date,
+  ) => Promise<BreadcrumbNormalizationResult>
 }
 
 type TraccarClientLogger = {
@@ -303,6 +311,38 @@ export function createTraccarClient(
     return { accepted: result.accepted, complete: result.droppedCount === 0 }
   }
 
+  /** Fetches exact history with bounded structured evidence for every rejected row. */
+  const getBreadcrumbsWithReport = async (
+    deviceId: string,
+    from: Date,
+    to: Date,
+  ): Promise<BreadcrumbNormalizationResult> => {
+    const data = await fetchJson('/api/positions', {
+      deviceId,
+      from: from.toISOString(),
+      to: to.toISOString(),
+    })
+    if (!Array.isArray(data)) {
+      throw new Error('Expected an array from breadcrumb positions.')
+    }
+
+    const result = normalizeTraccarRows({
+      endpoint: '/api/positions',
+      rows: data,
+      deviceId,
+      emptyMessage: `No valid Traccar breadcrumb rows were returned for device ${deviceId}.`,
+      warningMessage: 'Dropped malformed Traccar breadcrumb row.',
+      logger,
+      includeStructuredRejections: true,
+      allowAllRejected: true,
+      normalize: (position) => normalizeTraccarBreadcrumbPosition(
+        position as RawPositionInput,
+        'live',
+      ),
+    })
+    return { accepted: result.accepted, rejected: result.rejected }
+  }
+
   return {
     authenticate: async () => {
       if (config.token || sessionCookie !== null) {
@@ -341,29 +381,29 @@ export function createTraccarClient(
     },
     getCurrentPositionsWithReport,
     getBreadcrumbs: async (deviceId, from, to) => {
-      const data = await fetchJson('/api/positions', {
-        deviceId,
-        from: from.toISOString(),
-        to: to.toISOString(),
-      })
-      if (!Array.isArray(data)) {
-        throw new Error('Expected an array from breadcrumb positions.')
+      const result = await getBreadcrumbsWithReport(deviceId, from, to)
+      if (result.accepted.length === 0 && result.rejected.length > 0) {
+        throw new Error(createAllRejectedBreadcrumbMessage(deviceId, result.rejected))
       }
-
-      return normalizeTraccarRows({
-        endpoint: '/api/positions',
-        rows: data,
-        deviceId,
-        emptyMessage: `No valid Traccar breadcrumb rows were returned for device ${deviceId}.`,
-        warningMessage: 'Dropped malformed Traccar breadcrumb row.',
-        logger,
-        normalize: (position) => normalizeTraccarBreadcrumbPosition(
-          position as RawPositionInput,
-          'live',
-        ),
-      }).accepted
+      return result.accepted
     },
+    getBreadcrumbsWithReport,
   }
+}
+
+/** Summarizes an all-rejected history response without retaining source payloads. */
+function createAllRejectedBreadcrumbMessage(
+  deviceId: string,
+  rejections: readonly CurrentPositionRejection[],
+): string {
+  const reasonCounts = new Map<CurrentPositionRejectionReason, number>()
+  for (const rejection of rejections) {
+    reasonCounts.set(rejection.reason, (reasonCounts.get(rejection.reason) ?? 0) + 1)
+  }
+  const reasons = [...reasonCounts.entries()]
+    .map(([reason, count]) => `${formatCurrentPositionRejectionReason(reason)}: ${count}`)
+    .join(', ')
+  return `${rejections.length} source ${rejections.length === 1 ? 'row was' : 'rows were'} rejected for device ${deviceId} (${reasons}); no exact breadcrumb evidence was accepted.`
 }
 
 function classifyRequestPhase(

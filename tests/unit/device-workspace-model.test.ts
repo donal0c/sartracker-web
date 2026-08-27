@@ -84,6 +84,9 @@ describe('device workspace model', () => {
       accuracyDisplay: '7.5 m',
     })
     expect(rows[0]?.fixTimeDisplay).not.toBe('N/A')
+    expect(rows[0]?.lastSeenDisplay).toMatch(
+      /^10\/04\/2026, \d{2}:00:00 GMT[+-]\d{2}:\d{2} \(.+\)$/u,
+    )
     expect(rows[1]).toMatchObject({
       deviceId: 'bravo',
       sourceDisplay: 'Stale',
@@ -186,6 +189,9 @@ describe('device workspace model', () => {
       warning: 'OFFLINE MODE — showing last known positions.',
     })
     expect(summary.lastSuccessAtDisplay).not.toBe('N/A')
+    expect(summary.lastSuccessAtDisplay).toMatch(
+      /^10\/04\/2026, \d{2}:01:00 GMT[+-]\d{2}:\d{2} \(.+\)$/u,
+    )
   })
 
   it('scopes device search to the active list filter', () => {

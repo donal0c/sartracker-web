@@ -66,6 +66,7 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - Existing paged exact Breadcrumb Dots remain an inspection/export mechanism, not the complete operational coverage view.
 - Exact inspection remains page-complete and explicit about scope. A 37,479-fix result traverses as 10,000 + 10,000 + 10,000 + 7,479; a 10,000-fix page is not evidence loss.
 - Live-current polling owns an independent cadence. Slow, failed, or unresolved initial/incremental history cannot postpone the next current-position request or publication; history remains single-flight and coalesced.
+- Diagnostics follow the same scheduling boundary: every completed current-position poll emits its own `current_positions` cycle with current-lane duration and recovery evidence, while started history work emits a separate `breadcrumbs` cycle. Coalesced-away history demand never erases the corresponding current-poll record.
 
 ### Source-fix time and immutability (`SAR-QA-006`, `SAR-QA-013`, `SAR-QA-021`)
 
@@ -81,6 +82,7 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - If the same source identity ever arrives with different content, SAR Tracker preserves the first accepted fix as displayed truth, records the conflicting observation as an anomaly, and warns the operator. It never silently overwrites either observation.
 - Late or out-of-order fixes remain accepted when valid and are ordered by canonical `fixTime` while retaining receipt time separately.
 - Invalid/rejected fixes never become position truth, but their rejection and reason remain durable and operator-visible.
+- Rejected breadcrumb-history rows are reported with a bounded operator count and delivered to the same durable anomaly-evidence boundary without replacing the latest-current rejection summary. A response with no acceptable rows states the rejected count and reason rather than presenting an unexplained empty device history.
 - The absence of conflicts in a bounded live-server sample is not proof that conflicts are impossible.
 
 ### Timeline replay (`SAR-QA-007`, `SAR-QA-017`)

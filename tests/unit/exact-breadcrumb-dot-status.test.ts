@@ -128,6 +128,7 @@ describe('ExactBreadcrumbDotStatus', () => {
         },
         onEarlier: () => controllerReference.current?.showEarlier(),
         onLater: () => controllerReference.current?.showLater(),
+        timeZone: 'Europe/Dublin',
       })
       if (root === null) {
         render(element)
@@ -161,7 +162,9 @@ describe('ExactBreadcrumbDotStatus', () => {
     ))
     await vi.waitFor(() => expect(getText(
       '[data-testid="exact-breadcrumb-dot-page-summary"]',
-    )).toContain('GMT'))
+    )).toBe(
+      'Exact fix inspection — showing 1 of 2 — 08/08/2026, 01:00:50 GMT+01:00 (Europe/Dublin)',
+    ))
     expect(queryPage).toHaveBeenCalledTimes(2)
   })
 })

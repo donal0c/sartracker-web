@@ -331,7 +331,11 @@ function DevicesWorkspaceContent(props: {
 
                 <dl className="space-y-3 text-sm text-stone-300">
                   <Detail label="Status" value={selectedRow.status} />
-                  <Detail label="Last Seen" value={selectedRow.lastSeenDisplay} />
+                  <Detail
+                    label="Last Seen"
+                    value={selectedRow.lastSeenDisplay}
+                    testId={`device-inspector-last-seen-${selectedRow.deviceId}`}
+                  />
                   <Detail
                     label="Fix Time"
                     value={selectedRow.fixTimeDisplay}

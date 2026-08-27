@@ -372,6 +372,9 @@ export async function startAppRuntime(
           onStatusChange: hooks.onStatusChange,
           onCurrentPositionRejections:
             rejectionEvidenceDelivery?.record ?? applyCurrentPositionRejections,
+          ...(rejectionEvidenceDelivery === null
+            ? {}
+            : { onBreadcrumbRejections: rejectionEvidenceDelivery.recordEvidence }),
           onPollDiagnostic: hooks.onPollDiagnostic,
         }),
       createTrackingCache:

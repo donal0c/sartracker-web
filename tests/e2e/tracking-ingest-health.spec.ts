@@ -67,7 +67,7 @@ test.describe('BCP-01 current-position ingest health', () => {
       'Valid current fixes remain visible',
     )
     await expect(page.getByTestId('fix-time-unverified-warning')).toContainText(
-      'not treated as a fresh device fix',
+      'uses server receipt clock, not verified Traccar fixTime',
     )
     await expect(page.getByTestId('tracking-counters')).toContainText('1')
 
@@ -78,6 +78,9 @@ test.describe('BCP-01 current-position ingest health', () => {
     await expect(page.getByTestId('device-source-alpha')).toContainText('Fix time unverified')
     await expect(page.getByTestId('device-fix-time-alpha')).toHaveText(
       '22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin)',
+    )
+    await expect(page.getByTestId('device-inspector-last-seen-alpha')).toHaveText(
+      '22/08/2026, 11:00:00 GMT+01:00 (Europe/Dublin)',
     )
   })
 

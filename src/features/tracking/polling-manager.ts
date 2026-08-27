@@ -25,6 +25,7 @@ import {
 } from './current-position-poll'
 import type { CurrentPositionRejection } from './ingest-health'
 import type {
+  BreadcrumbNormalizationResult,
   CurrentPositionNormalizationResult,
   DeviceRosterNormalizationResult,
 } from './traccar-client'
@@ -51,6 +52,11 @@ export type TrackingPollerClient = {
     from: Date,
     to: Date,
   ) => Promise<readonly NormalizedTrackingPosition[]>
+  readonly getBreadcrumbsWithReport?: (
+    deviceId: string,
+    from: Date,
+    to: Date,
+  ) => Promise<BreadcrumbNormalizationResult>
 }
 
 type PollingManagerLogger = {
@@ -108,6 +114,13 @@ type PollingManagerOptions = {
   ) => void | Promise<void>
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
   readonly onCurrentPositionRejections?: (
+    rejections: readonly CurrentPositionRejection[],
+    context: {
+      readonly missionId: string | null
+      readonly observedAt: string
+    },
+  ) => void
+  readonly onBreadcrumbRejections?: (
     rejections: readonly CurrentPositionRejection[],
     context: {
       readonly missionId: string | null
@@ -181,10 +194,6 @@ type HistoryRefreshRequest = {
   readonly generation: number
   readonly currentPollSequence: number
   readonly historyResetKey: string | null
-  readonly pollStartedAt: string
-  readonly recovered: boolean
-  readonly outageStartedAt: string | null
-  readonly currentPositionCount: number
 }
 
 /**
@@ -224,6 +233,7 @@ export function createPollingManager(
   let initialSeedAbortController: AbortController | null = null
   let breadcrumbFetchCompleted = false
   let breadcrumbStatusWarning: string | null = null
+  let breadcrumbIngestWarning: string | null = null
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
   let latestDevices: readonly NormalizedTrackingDevice[] = []
   let latestParticipantRosterAuthoritative = false
@@ -327,8 +337,15 @@ export function createPollingManager(
   }
 
   const historyReconciler = createBreadcrumbHistoryReconciler({
-    fetchBreadcrumbs: (deviceId, from, to) =>
-      client.getBreadcrumbs(deviceId, from, to),
+    fetchBreadcrumbs: async (deviceId, from, to) => {
+      const expectedHistoryResetKey = activeHistoryResetKey
+      return (await fetchBreadcrumbsWithEvidence(
+        deviceId,
+        from,
+        to,
+        expectedHistoryResetKey,
+      )).accepted
+    },
     onChunk: async (chunk) => {
       if (!isHistoryReconciliationCurrent()) {
         return
@@ -437,7 +454,10 @@ export function createPollingManager(
       if (lastSuccessAt !== null && consecutiveFailures === 0) {
         publishStatus({
           mode: 'online',
-          warning: breadcrumbStatusWarning,
+          warning: combineTrackingWarnings(
+            breadcrumbStatusWarning,
+            breadcrumbIngestWarning,
+          ),
         })
       }
     },
@@ -678,6 +698,51 @@ export function createPollingManager(
     return true
   }
 
+  /** Reports rejected history rows without exposing source payloads or blocking valid fixes. */
+  function publishBreadcrumbRejections(
+    rejections: readonly CurrentPositionRejection[],
+    missionId: string | null,
+  ): void {
+    if (rejections.length === 0) return
+    breadcrumbIngestWarning = createBreadcrumbIngestWarning(rejections.length)
+    try {
+      options.onBreadcrumbRejections?.(rejections, {
+        missionId,
+        observedAt: now().toISOString(),
+      })
+    } catch (error) {
+      logger.warn('Breadcrumb rejection evidence delivery failed.', {
+        failureKind: classifyTrackingFailure(error),
+      })
+    }
+  }
+
+  /** Fetches exact history plus structured rejection evidence for one source response. */
+  async function fetchBreadcrumbsWithEvidence(
+    deviceId: string,
+    from: Date,
+    to: Date,
+    expectedHistoryResetKey: string | null,
+  ): Promise<BreadcrumbNormalizationResult> {
+    const result = await (
+      client.getBreadcrumbsWithReport?.(deviceId, from, to) ??
+      client.getBreadcrumbs(deviceId, from, to).then((accepted) => ({
+        accepted,
+        rejected: [],
+      }))
+    )
+    if (
+      running &&
+      !stopping &&
+      activeHistoryResetKey === expectedHistoryResetKey &&
+      (options.getHistoryResetKey?.() ?? null) === expectedHistoryResetKey &&
+      (options.getPollingMode?.() ?? 'active') === 'active'
+    ) {
+      publishBreadcrumbRejections(result.rejected, expectedHistoryResetKey)
+    }
+    return result
+  }
+
   const scheduleNextPoll = (delayMs: number) => {
     if (!running || stopping) {
       return
@@ -736,6 +801,7 @@ export function createPollingManager(
         }
         breadcrumbFetchCompleted = false
         breadcrumbStatusWarning = null
+        breadcrumbIngestWarning = null
         latestRosterWarning = null
         latestBreadcrumbTimestampByDevice.clear()
         historyReconciler.reset()
@@ -881,6 +947,7 @@ export function createPollingManager(
                 warning: combineTrackingWarnings(
                   'Current fixes loaded; refreshing device roster.',
                   createRejectedCurrentPositionWarning(result.rejected),
+                  breadcrumbIngestWarning,
                 ),
               })
             }
@@ -984,21 +1051,34 @@ export function createPollingManager(
         warning: combineTrackingWarnings(
           currentPositionResult.rosterWarning,
           createRejectedCurrentPositionWarning(currentPositionResult.rejected),
-          !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
-            ? 'Current fixes loaded; loading breadcrumb history.'
-            : breadcrumbStatusWarning ??
-              (recovered ? 'CONNECTION RESTORED' : null),
+          breadcrumbIngestWarning,
+          recovered
+            ? 'CONNECTION RESTORED'
+            : !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
+              ? 'Current fixes loaded; loading breadcrumb history.'
+              : breadcrumbStatusWarning,
         ),
+      })
+      const completedAt = now().toISOString()
+      options.onPollDiagnostic?.({
+        ts: completedAt,
+        kind: 'poll_cycle',
+        outcome: recovered ? 'recovered' : 'success',
+        phase: 'current_positions',
+        durationMs: calculateDurationMs(pollStartedAt, completedAt),
+        consecutiveFailures: 0,
+        retryDelayMs: pollIntervalMs,
+        ...(recovered && firstFailureAt !== null
+          ? { outageDurationMs: calculateDurationMs(firstFailureAt, completedAt) }
+          : {}),
+        deviceCount: devices.length,
+        currentPositionCount: acceptedPositions.length,
       })
       scheduleNextPoll(pollIntervalMs)
       requestHistoryRefresh({
         generation,
         currentPollSequence: pollSequence,
         historyResetKey: pollHistoryResetKey,
-        pollStartedAt,
-        recovered,
-        outageStartedAt: firstFailureAt,
-        currentPositionCount: acceptedPositions.length,
       })
       firstFailureAt = null
     } catch (error) {
@@ -1070,8 +1150,9 @@ export function createPollingManager(
       while (pendingHistoryRefresh !== null && running && !stopping) {
         const request = pendingHistoryRefresh
         pendingHistoryRefresh = null
+        const historyStartedAt = now().toISOString()
         try {
-          await refreshHistory(request)
+          await refreshHistory(request, historyStartedAt)
         } catch (error) {
           if (!isHistoryRefreshCurrent(request)) continue
           breadcrumbStatusWarning =
@@ -1085,6 +1166,7 @@ export function createPollingManager(
               warning: combineTrackingWarnings(
                 latestRosterWarning,
                 breadcrumbStatusWarning,
+                breadcrumbIngestWarning,
               ),
             })
           }
@@ -1094,7 +1176,7 @@ export function createPollingManager(
             kind: 'poll_cycle',
             outcome: 'failure',
             phase: 'breadcrumbs',
-            durationMs: calculateDurationMs(request.pollStartedAt, completedAt),
+            durationMs: calculateDurationMs(historyStartedAt, completedAt),
             consecutiveFailures: 0,
             retryDelayMs: pollIntervalMs,
             failureKind: classifyTrackingFailure(error),
@@ -1103,15 +1185,17 @@ export function createPollingManager(
       }
     } finally {
       historyRefreshInFlight = false
-      if (pendingHistoryRefresh !== null && running && !stopping) {
-        void drainHistoryRefreshQueue()
-      }
     }
   }
 
   /** Refreshes breadcrumb evidence without owning the live-current poll cadence. */
-  async function refreshHistory(request: HistoryRefreshRequest): Promise<void> {
+  async function refreshHistory(
+    request: HistoryRefreshRequest,
+    historyStartedAt: string,
+  ): Promise<void> {
     if (!isHistoryRefreshCurrent(request)) return
+    // Keep one stable fetch/diagnostic cohort for this history request while
+    // snapshots deliberately pair its evidence with the newest live roster.
     const historyDevices = latestDevices
     const breadcrumbPositionsBeforeSeed = breadcrumbPositions
     const seedState = await seedInitialBreadcrumbs()
@@ -1150,7 +1234,11 @@ export function createPollingManager(
     }
 
     const breadcrumbDevices = selectBreadcrumbDevices(historyDevices)
-    const breadcrumbFetchPromise = fetchIncrementalBreadcrumbs(historyDevices, seedState)
+    const breadcrumbFetchPromise = fetchIncrementalBreadcrumbs(
+      historyDevices,
+      seedState,
+      request,
+    )
     if (seedState === 'loaded') {
       const initialBreadcrumbFrom = options.getInitialBreadcrumbFrom?.() ?? null
       const selectionKey = JSON.stringify([
@@ -1248,12 +1336,12 @@ export function createPollingManager(
     if (canPublishHistoryStatus(request)) {
       publishStatus({
         mode: 'online',
-        recovered: request.recovered,
         warning: combineTrackingWarnings(
           latestRosterWarning,
+          breadcrumbIngestWarning,
           createBreadcrumbCompletionWarning(
             breadcrumbFetch,
-            request.recovered,
+            false,
             seedState,
             historyReconciler.getProgress(),
           ),
@@ -1265,21 +1353,12 @@ export function createPollingManager(
     options.onPollDiagnostic?.({
       ts: completedAt,
       kind: 'poll_cycle',
-      outcome: request.recovered ? 'recovered' : 'success',
+      outcome: 'success',
       phase: 'breadcrumbs',
-      durationMs: calculateDurationMs(request.pollStartedAt, completedAt),
+      durationMs: calculateDurationMs(historyStartedAt, completedAt),
       consecutiveFailures: 0,
       retryDelayMs: pollIntervalMs,
-      ...(request.recovered && request.outageStartedAt !== null
-        ? {
-            outageDurationMs: calculateDurationMs(
-              request.outageStartedAt,
-              completedAt,
-            ),
-          }
-        : {}),
       deviceCount: historyDevices.length,
-      currentPositionCount: request.currentPositionCount,
       breadcrumbRequestedDeviceCount: breadcrumbFetch.requestedDeviceCount,
       breadcrumbReturnedCount: breadcrumbFetch.positions.length,
       breadcrumbAcceptedCount: acceptedBreadcrumbCount,
@@ -1287,6 +1366,7 @@ export function createPollingManager(
         0,
         breadcrumbFetch.positions.length - acceptedBreadcrumbCount,
       ),
+      breadcrumbRejectedCount: breadcrumbFetch.rejectedCount,
       breadcrumbFailedDeviceCount: breadcrumbFetch.failedDeviceCount,
       ...(breadcrumbFetch.window === null
         ? {}
@@ -1467,6 +1547,7 @@ export function createPollingManager(
   async function fetchIncrementalBreadcrumbs(
     devices: readonly NormalizedTrackingDevice[],
     seedState: InitialBreadcrumbSeedState,
+    request: HistoryRefreshRequest,
   ): Promise<BreadcrumbFetchResult> {
     if (seedState === 'failed') {
       return {
@@ -1475,6 +1556,7 @@ export function createPollingManager(
         requestedDeviceCount: 0,
         failedDeviceCount: 0,
         failedDeviceNames: [],
+        rejectedCount: 0,
         window: null,
       }
     }
@@ -1500,16 +1582,18 @@ export function createPollingManager(
                 initialFrom,
               )
 
-        const breadcrumbs = await client.getBreadcrumbs(
+        const result = await fetchBreadcrumbsWithEvidence(
           device.device_id,
           fetchFrom,
           fetchUntil,
+          request.historyResetKey,
         )
+        const breadcrumbs = result.accepted
         const newestTimestamp = getCursorTimestampFromBatch(
           breadcrumbs,
           fetchUntil,
         )
-        if (newestTimestamp !== null) {
+        if (newestTimestamp !== null && isHistoryRefreshCurrent(request)) {
           latestBreadcrumbTimestampByDevice.set(device.device_id, newestTimestamp)
         }
 
@@ -1520,6 +1604,7 @@ export function createPollingManager(
           requestedFrom: fetchFrom.toISOString(),
           requestedTo: fetchUntil.toISOString(),
           newestReturned: newestTimestamp,
+          rejectedCount: result.rejected.length,
         }
       }),
     )
@@ -1527,6 +1612,7 @@ export function createPollingManager(
     const aggregated: NormalizedTrackingPosition[] = []
     const recentPositions: NormalizedTrackingPosition[] = []
     let failedDeviceCount = 0
+    let rejectedCount = 0
     const failedDeviceNames: string[] = []
     for (let index = 0; index < settled.length; index += 1) {
       const result = settled[index]
@@ -1536,6 +1622,7 @@ export function createPollingManager(
       if (result.status === 'fulfilled') {
         aggregated.push(...result.value.breadcrumbs)
         recentPositions.push(...result.value.recentBreadcrumbs)
+        rejectedCount += result.value.rejectedCount
         continue
       }
 
@@ -1555,6 +1642,7 @@ export function createPollingManager(
       requestedDeviceCount: breadcrumbDevices.length,
       failedDeviceCount,
       failedDeviceNames,
+      rejectedCount,
       window: summarizeBreadcrumbWindows(
         settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])),
       ),
@@ -1781,7 +1869,13 @@ type BreadcrumbFetchResult = {
   readonly requestedDeviceCount: number
   readonly failedDeviceCount: number
   readonly failedDeviceNames: readonly string[]
+  readonly rejectedCount: number
   readonly window: TrackingBreadcrumbWindowSummary | null
+}
+
+/** Creates the persistent operator warning for the latest rejected history response. */
+function createBreadcrumbIngestWarning(rejectedCount: number): string {
+  return `BREADCRUMB EVIDENCE WARNING — the latest affected history response rejected ${rejectedCount} source ${rejectedCount === 1 ? 'row' : 'rows'}. Valid canonical fixTime evidence remains available; rejected rows stay excluded and are reported.`
 }
 
 function createBreadcrumbCompletionWarning(

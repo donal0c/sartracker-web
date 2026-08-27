@@ -946,9 +946,11 @@
             when another row from the same provider response is rejected. An amber warning reports the
             rejected position data, and the affected device is marked in the Devices workspace. If the
             device roster cannot refresh, current fixes continue with the last-known device details and
-            an explicit roster warning. A position that has only a provider server timestamp is accepted
-            as <strong>FIX TIME UNVERIFIED</strong>, marked stale, and is never presented as a fresh device
-            fix. These amber warnings require investigation, but they are distinct from the red offline
+            an explicit roster warning. A position whose timestamp comes from a device clock, a provider
+            server-receipt clock, or an older cache without provable clock provenance is accepted only as
+            <strong>FIX TIME UNVERIFIED</strong>. The warning names the available provenance, keeps the
+            location visible for immediate safety, and confirms that it is excluded from exact breadcrumb
+            evidence. These amber warnings require investigation, but they are distinct from the red offline
             state: valid current fixes remain available while the provider connection is otherwise online.
           </div>
           <figure class="screenshot">
@@ -1106,7 +1108,8 @@
             operational map. Each row still shows device health, last seen time, source, current-location
             visibility, speed in <strong>km/h</strong> when Traccar reports speed, and a <strong>Zoom</strong> action for devices with a valid fix. The selected-device inspector separately shows the
             authoritative <strong>Fix Time</strong> as local operator time with an explicit timezone and
-            UTC offset, timestamp source, position-data rejection detail, and
+            UTC offset. The adjacent <strong>Last Seen</strong> value uses the same full date, local timezone,
+            and explicit UTC-offset contract instead of an ambiguous time-only display. The inspector also shows timestamp source, position-data rejection detail, and
             <strong>GPS Accuracy</strong> in metres when
             Traccar supplies it; accuracy is the source measurement, not a claim that the hardware has
             zero physical error. A device needing stationary attention shows the elapsed time and an
@@ -1211,8 +1214,12 @@
             authorized window eligible after a participant is removed, while live current-position scope
             remains active-only. If the boundary expands while a later chunk is still in flight, the later
             chunk is fetched again unless it was already durably acknowledged. This avoids
-            attaching a mission-wide rescan to every live poll. If a device history request fails or contains only malformed rows,
-            Tracking names the incomplete device history and continues showing current fixes.
+            attaching a mission-wide rescan to every live poll. If a device history request fails, Tracking
+            names the incomplete device history and continues showing current fixes. If a history response
+            contains rejected rows, a separate <strong>BREADCRUMB EVIDENCE WARNING</strong> reports the row
+            count; valid canonical fixTime evidence continues, rejected rows stay excluded, and desktop
+            mission evidence retains their bounded anomaly records. An all-rejected response reports that
+            source-row count and reason rather than presenting a generic device failure.
             The separate <strong>Current fixes loaded; loading breadcrumb history</strong> message is
             expected only while the first history request for a mission is unresolved. It must not flash
             again on every normal tracking update; if it does, note the time and export an incident bundle.
@@ -1564,7 +1571,9 @@
           </p>
           <p>
             Diagnostics also keeps a bounded <strong>Tracking Poll Ledger</strong> for the current app
-            session. It records when each Traccar poll started and finished, which safe request phase failed,
+            session. It records every completed current-position poll independently of slower history, and
+            records history work as separate breadcrumb-phase entries. Each duration belongs to its own lane
+            rather than spanning from current-poll start through later history completion. It also records which safe request phase failed,
             retry attempts and delays, broad failure classes such as network, timeout, authentication, or
             server error, and whether a later poll recovered. It records counts and timings only &mdash; never
             device identities, coordinates, provider credentials, or raw server error text. Incident bundles

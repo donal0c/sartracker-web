@@ -58,6 +58,10 @@ export type RejectionEvidenceDelivery = {
     rejections: readonly CurrentPositionRejection[],
     context: RejectionEvidenceObservationContext,
   ) => void
+  readonly recordEvidence: (
+    rejections: readonly CurrentPositionRejection[],
+    context: RejectionEvidenceObservationContext,
+  ) => void
   readonly flushMission: (missionId: string) => Promise<void>
   readonly applyMissionHealth: (missionId: string, health: IngestEvidenceHealth) => void
   readonly runWithMissionFinishFence: <Result>(
@@ -151,6 +155,15 @@ export function createRejectionEvidenceDelivery(
   ): void {
     if (!accepting) return
     dependencies.applyRejections(rejections)
+    recordEvidence(rejections, context)
+  }
+
+  /** Schedules durable anomaly evidence without replacing current-position UI health. */
+  function recordEvidence(
+    rejections: readonly CurrentPositionRejection[],
+    context: RejectionEvidenceObservationContext,
+  ): void {
+    if (!accepting) return
     const finalizationPhase = context.missionId === null
       ? undefined
       : finalizationPhaseByMission.get(context.missionId)
@@ -690,6 +703,7 @@ export function createRejectionEvidenceDelivery(
     dispose,
     flushMission,
     record,
+    recordEvidence,
     recordMissionEvidenceLoss,
     registerMissionObservationSettler,
     reopenMissionEvidenceAfterUnlock,

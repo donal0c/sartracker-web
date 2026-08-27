@@ -256,6 +256,32 @@ describe('rejection evidence delivery [DON-268]', () => {
     })
   })
 
+  it('persists breadcrumb rejection evidence without replacing current-position health [DON-267]', async () => {
+    const applyRejections = vi.fn()
+    const recordIngestRejections = vi.fn(async (input) => ({
+      acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+      health: healthy(),
+    }))
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: { recordIngestRejections },
+      applyRejections,
+      applyEvidenceHealth: vi.fn(),
+    })
+
+    delivery.recordEvidence(
+      [createRejection('source:history-rejected')],
+      observation('mission-1'),
+    )
+
+    expect(applyRejections).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      rejections: [expect.objectContaining({
+        anomalyKey: 'source:history-rejected',
+      })],
+    }))
+  })
+
   it('blocks completeness synchronously while rejected evidence is still renderer-held', async () => {
     let acknowledge: ((value: {
       acknowledgedDeliveryIds: string[]
