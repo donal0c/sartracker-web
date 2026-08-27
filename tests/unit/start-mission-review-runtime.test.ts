@@ -70,6 +70,38 @@ describe('startMissionReviewRuntime', () => {
     }))
   })
 
+  it('cancels and fences replay when the selected mission changes [DON-278]', async () => {
+    let resolveReplay: ((value: ReturnType<typeof replayResult>) => void) | undefined
+    const readMissionReplay = vi.fn().mockImplementation(
+      () => new Promise<ReturnType<typeof replayResult>>((resolve) => { resolveReplay = resolve }),
+    )
+    const cancelMissionReplay = vi.fn().mockResolvedValue(true)
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FIRST_MISSION, SECOND_MISSION]),
+        readMissionReplay,
+        cancelMissionReplay,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+
+    const pendingReplay = runtime.seekReplay('2026-04-10T08:20:00.000Z')
+    await vi.waitFor(() => expect(readMissionReplay).toHaveBeenCalledOnce())
+    const replayRequestId = readMissionReplay.mock.calls[0]?.[1] as string
+    await runtime.selectMission(SECOND_MISSION.id)
+    resolveReplay?.(replayResult('2026-04-10T08:20:00.000Z', 'mission-a-fix'))
+    await pendingReplay
+
+    expect(cancelMissionReplay).toHaveBeenCalledWith(replayRequestId)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      selectedMissionId: SECOND_MISSION.id,
+      replay: expect.objectContaining({ mode: 'live', result: null }),
+    }))
+  })
+
   it('loads audit and exact breadcrumb count through one bounded Review query [DON-251]', async () => {
     const readMissionReview = vi.fn().mockResolvedValue({
       auditEvents: [],
@@ -576,6 +608,9 @@ function replayResult(selectedTime: string, evidenceId: string) {
     selectedTime,
     timezone: 'Europe/Dublin',
     objects: [],
+    totalObjectCount: 0,
+    objectCursor: '0',
+    nextObjectCursor: null,
     tracks: [{
       evidence_id: evidenceId,
       source_type: 'traccar_fix',
@@ -589,8 +624,11 @@ function replayResult(selectedTime: string, evidenceId: string) {
       time_authority: 'fixTime',
       completeness: 'complete',
     }],
+    trackCursor: '0',
+    previousCursor: null,
     totalTrackCount: 1,
     staticGpxPointCount: 0,
+    staticGpxEvidence: [],
     nextCursor: null,
     progress: 1,
     limitations: [],

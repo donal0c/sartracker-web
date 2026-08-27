@@ -12,6 +12,7 @@ type GpxStoreState = GpxRuntimeState & {
 const EMPTY_GPX_RUNTIME: GpxRuntimeState = {
   activeMissionId: null,
   imports: [],
+  outings: [],
   watchedDirectories: [],
   loading: false,
   importing: false,

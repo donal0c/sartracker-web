@@ -58,12 +58,37 @@ Report PASS or FAIL for each item and overall.`,
     await page.getByTestId('open-mission-review-workspace').click()
     await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
     await page.getByTestId('search-operation-coordinator').fill('Coordinator One')
+    await page.getByTestId('search-operation-area').selectOption({ label: 'Area Alpha' })
+    await page.getByTestId('search-operation-outing').selectOption({ label: 'Operational period 1' })
     await page.getByTestId('search-assignment-team').fill('Team 1')
     await page.getByTestId('search-assignment-record').click()
+    await page.getByTestId('search-pass-assignment').selectOption({ index: 1 })
+    await page.getByTestId('search-pass-start').fill('2026-08-27T14:00')
     await page.getByTestId('search-pass-record').click()
     await page.getByTestId('search-pass-outcome').selectOption('full')
     await page.getByTestId('search-pass-record').click()
-    await expect(page.locator('p[data-testid^="search-pass-"]')).toHaveCount(2)
+    await expect(page.locator('[data-testid^="search-pass-search-pass-"]')).toHaveCount(2)
+
+    await captureElementAndRegister(page, 'mission-review-workspace', {
+      testId: 'search-pass-coordinator-entry-authority',
+      testName: 'Coordinator-only search pass entry authority',
+      area: 'mission-review',
+      severity: 'critical',
+      verificationPrompt: `Verify the visible Search Operations entry surface:
+1. It must explicitly say coverage is advisory only.
+2. The outcome control must be labelled coordinator-declared.
+3. Search area, outing, and assignment must be explicit selectors rather than hidden first-item defaults.
+4. The controls must not suggest geometry can automatically declare full completion.
+Report PASS or FAIL for each item and overall.`,
+      playwrightAssertions: [
+        'coverage advisory copy is visible',
+        'coordinator-declared outcome selector is visible',
+        'explicit area, outing, and assignment selectors are visible',
+      ],
+    })
+    await page.getByTestId('mission-review-workspace').evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+    })
 
     await captureElementAndRegister(page, 'search-operations-workspace', {
       testId: 'search-area-repeated-declared-passes',
@@ -74,8 +99,6 @@ Report PASS or FAIL for each item and overall.`,
 1. Area Alpha must have a visible stable identity and geometry revision.
 2. Both partial and full repeated passes must remain visible; one must not overwrite the other.
 3. Each outcome must be explicitly labelled coordinator-declared.
-4. The explanatory copy must say coverage is advisory only.
-5. The controls must not suggest geometry can automatically declare full completion.
 Report PASS or FAIL for each item and overall.`,
       playwrightAssertions: [
         'two distinct pass records are rendered',

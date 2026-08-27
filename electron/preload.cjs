@@ -81,6 +81,8 @@ const MISSION_STORE_CHANNELS = {
   cancelMissionReviewRead: 'sartracker:mission-store:cancel-mission-review-read',
   readMissionReplay: 'sartracker:mission-store:read-mission-replay',
   readMissionReplayTrackChunk: 'sartracker:mission-store:read-mission-replay-track-chunk',
+  readMissionReplayObjectChunk: 'sartracker:mission-store:read-mission-replay-object-chunk',
+  assignGpxImportToOuting: 'sartracker:mission-store:assign-gpx-import-to-outing',
   cancelMissionReplay: 'sartracker:mission-store:cancel-mission-replay',
   listIngestAnomalies: 'sartracker:mission-store:list-ingest-anomalies',
   recordIngestRejections: 'sartracker:mission-store:record-ingest-rejections',

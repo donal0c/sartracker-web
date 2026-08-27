@@ -39,7 +39,7 @@ async function main() {
     const fixture = await generateMissionStoreFixture({
       preset,
       outputPath: fixturePath,
-      force: false,
+      force: true,
       progress: (progress) => {
         if (Number(progress.positions ?? 0) % 200_000 === 0) {
           console.log(`breadcrumb-pr5-qualification: seeded ${Number(progress.positions ?? 0).toLocaleString()} positions`)
@@ -54,8 +54,10 @@ async function main() {
 
     const gpxPath = path.join(runRoot, 'qualification.gpx')
     await writeFile(gpxPath, qualificationGpx(), 'utf8')
-    let store = createElectronMissionStore({ userDataPath, readAdminRoster: async () => [] })
     const heartbeat = startEventLoopHeartbeat()
+    const initialOpenStarted = performance.now()
+    let store = createElectronMissionStore({ userDataPath, readAdminRoster: async () => [] })
+    const initialOpenMs = performance.now() - initialOpenStarted
     try {
       const importStarted = performance.now()
       const importPromise = store.importGpxEvidencePaths({
@@ -80,6 +82,7 @@ async function main() {
       const replay = await replayPromise
       const replaySeekMs = performance.now() - replayStarted
 
+      await store.prepareClose()
       store.close()
       const restartStarted = performance.now()
       store = createElectronMissionStore({ userDataPath, readAdminRoster: async () => [] })
@@ -98,6 +101,7 @@ async function main() {
       const replaySeekGateMs = preset === 'bcp-2m'
         ? HEADROOM_REPLAY_SEEK_GATE_MS
         : REPLAY_SEEK_GATE_MS
+      const eventLoopMaxGapMs = heartbeat.stop()
       const result = {
         schema: 'sartracker-breadcrumb-pr5-qualification-v1',
         generatedAt: new Date().toISOString(),
@@ -137,7 +141,8 @@ async function main() {
         },
         liveReadDuringImport: summarizeRead(liveReadDuringImport),
         liveReadDuringReplay: summarizeRead(liveReadDuringReplay),
-        eventLoopMaxGapMs: round(heartbeat.stop()),
+        eventLoopMaxGapMs: round(eventLoopMaxGapMs),
+        initialOpenMs: round(initialOpenMs),
         restart: {
           openMs: round(restartOpenMs),
           replaySeekMs: round(replayAfterRestart.durationMs),
@@ -148,10 +153,13 @@ async function main() {
           replaySeekGateMs,
           passed: importDispatchMs < MAIN_DISPATCH_HARD_GATE_MS
             && replayDispatchMs < MAIN_DISPATCH_HARD_GATE_MS
+            && initialOpenMs < MAIN_DISPATCH_HARD_GATE_MS
+            && restartOpenMs < MAIN_DISPATCH_HARD_GATE_MS
             && replaySeekMs <= replaySeekGateMs
             && replayAfterRestart.durationMs <= replaySeekGateMs
             && liveReadDuringImport.durationMs < MAIN_DISPATCH_HARD_GATE_MS
             && liveReadDuringReplay.durationMs < MAIN_DISPATCH_HARD_GATE_MS
+            && eventLoopMaxGapMs < MAIN_DISPATCH_HARD_GATE_MS
             && equality,
         },
       }
@@ -160,7 +168,9 @@ async function main() {
       if (!result.gates.passed) throw new Error(`Qualification gates failed: ${JSON.stringify(result)}`)
       console.log(JSON.stringify({ outputPath, ...result }, null, 2))
     } finally {
-      heartbeat.stop()
+      const eventLoopMaxGapMs = heartbeat.stop()
+      if (eventLoopMaxGapMs >= MAIN_DISPATCH_HARD_GATE_MS) process.exitCode = 1
+      await store.prepareClose()
       store.close()
     }
   } finally {

@@ -116,6 +116,8 @@ const MISSION_STORE_CHANNELS = {
   cancelMissionReviewRead: 'sartracker:mission-store:cancel-mission-review-read',
   readMissionReplay: 'sartracker:mission-store:read-mission-replay',
   readMissionReplayTrackChunk: 'sartracker:mission-store:read-mission-replay-track-chunk',
+  readMissionReplayObjectChunk: 'sartracker:mission-store:read-mission-replay-object-chunk',
+  assignGpxImportToOuting: 'sartracker:mission-store:assign-gpx-import-to-outing',
   cancelMissionReplay: 'sartracker:mission-store:cancel-mission-replay',
   listIngestAnomalies: 'sartracker:mission-store:list-ingest-anomalies',
   recordIngestRejections: 'sartracker:mission-store:record-ingest-rejections',
@@ -1175,6 +1177,7 @@ async function startElectronApp() {
       officialMapProxy,
       rendererTeardownCoordinator,
       runtimeLog,
+      missionStore,
     )
   })
 }
@@ -1209,6 +1212,7 @@ async function markCleanExitAndQuit(
   officialMapProxy,
   rendererTeardownCoordinator,
   runtimeLog,
+  missionStore,
 ) {
   if (cleanExitInProgress) {
     return
@@ -1219,8 +1223,10 @@ async function markCleanExitAndQuit(
       await rendererTeardownCoordinator.prepare(window, 'app_quit')
     }
     await rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
+    await missionStore.prepareClose()
     await crashLog.markCleanExit()
     officialMapProxy.close?.()
+    missionStore.close()
     app.exit(0)
   } catch (error) {
     cleanExitInProgress = false

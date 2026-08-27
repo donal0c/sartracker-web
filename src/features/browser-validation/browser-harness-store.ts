@@ -16,6 +16,8 @@ import type {
   MissionReviewReadResult,
   MissionReplayReadInput,
   MissionReplayReadResult,
+  MissionReplayObjectChunkResult,
+  MissionReplayTrackChunkResult,
   MissionStoreInfo,
   MissionParticipant,
   GroupMembershipEvent,
@@ -250,8 +252,10 @@ type BrowserHarnessStore = {
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
+  readonly assignGpxImportToOuting: (input: { readonly import_id: string; readonly outing_id: string; readonly assigned_by?: string | null }) => Promise<GpxTrackImport>
   readonly readMissionReplay: (input: MissionReplayReadInput, requestId?: string) => Promise<MissionReplayReadResult>
-  readonly readMissionReplayTrackChunk: (input: MissionReplayReadInput, requestId?: string) => Promise<Omit<MissionReplayReadResult, 'timezone' | 'objects' | 'staticGpxPointCount' | 'limitations'>>
+  readonly readMissionReplayTrackChunk: (input: MissionReplayReadInput, requestId?: string) => Promise<MissionReplayTrackChunkResult>
+  readonly readMissionReplayObjectChunk: (input: MissionReplayReadInput, requestId?: string) => Promise<MissionReplayObjectChunkResult>
   readonly cancelMissionReplay: (requestId: string) => Promise<boolean>
   readonly listSearchAreas: (missionId: string) => Promise<readonly SearchArea[]>
   readonly listSearchAssignments: (missionId: string) => Promise<readonly SearchAssignment[]>
@@ -1612,7 +1616,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       ensureMissionMutable(input.mission_id, state.missions)
       const existingImport =
         state.gpxImports.find((entry) =>
-          input.content_sha256 != null && entry.content_sha256 === input.content_sha256,
+          entry.mission_id === input.mission_id
+          && input.content_sha256 != null
+          && entry.content_sha256 === input.content_sha256,
         ) ?? state.gpxImports.find(
           (entry) =>
             entry.mission_id === input.mission_id
@@ -1636,6 +1642,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         content_sha256: input.content_sha256 ?? existingImport?.content_sha256 ?? null,
         source_bytes_base64: input.source_bytes_base64 ?? existingImport?.source_bytes_base64 ?? null,
         timing_class: input.timing_class ?? existingImport?.timing_class ?? 'undated',
+        outing_id: input.outing_id ?? existingImport?.outing_id ?? null,
         revision_sequence: revisionSequence,
         retired_at: null,
         retired_by: null,
@@ -1704,6 +1711,33 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return true
     },
+    assignGpxImportToOuting: async (input) => {
+      const existing = state.gpxImports.find((entry) => entry.id === input.import_id)
+      if (existing === undefined || existing.retired_at != null) throw new Error('Active GPX evidence was not found.')
+      ensureMissionMutable(existing.mission_id, state.missions)
+      const outing = state.outings.find((entry) => entry.id === input.outing_id)
+      if (outing?.mission_id !== existing.mission_id) throw new Error('GPX evidence outing is not in the same mission.')
+      const nextSequence = (existing.revision_sequence ?? 1) + 1
+      const recordedAt = new Date().toISOString()
+      const updated: GpxTrackImport = {
+        ...existing,
+        outing_id: outing.id,
+        revision_sequence: nextSequence,
+        updated_at: recordedAt,
+      }
+      const previousPoints = state.gpxEvidencePoints.filter((point) =>
+        point.importId === existing.id && point.revisionSequence === (existing.revision_sequence ?? 1))
+      state = {
+        ...state,
+        gpxImports: state.gpxImports.map((entry) => entry.id === updated.id ? updated : entry),
+        gpxEvidencePoints: [
+          ...state.gpxEvidencePoints,
+          ...previousPoints.map((point) => ({ ...point, revisionSequence: nextSequence, recordedAt })),
+        ],
+      }
+      save()
+      return updated
+    },
     readMissionReplay: async (input) => buildBrowserReplay(state, input),
     readMissionReplayTrackChunk: async (input) => {
       const replay = buildBrowserReplay(state, input)
@@ -1711,9 +1745,23 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         missionId: replay.missionId,
         selectedTime: replay.selectedTime,
         tracks: replay.tracks,
+        trackCursor: replay.trackCursor,
+        previousCursor: replay.previousCursor,
         totalTrackCount: replay.totalTrackCount,
         nextCursor: replay.nextCursor,
         progress: replay.progress,
+      }
+    },
+    readMissionReplayObjectChunk: async (input) => {
+      const replay = buildBrowserReplay(state, input)
+      return {
+        missionId: replay.missionId,
+        selectedTime: replay.selectedTime,
+        objects: replay.objects,
+        totalObjectCount: replay.totalObjectCount,
+        objectCursor: replay.objectCursor,
+        nextObjectCursor: replay.nextObjectCursor,
+        progress: 1,
       }
     },
     cancelMissionReplay: async () => true,
@@ -1729,6 +1777,14 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     upsertSearchAssignment: async (input) => {
       const missionId = String(input.mission_id)
       ensureMissionMutable(missionId, state.missions)
+      const area = state.searchAreas.find((entry) => entry.id === input.search_area_id)
+      if (area?.mission_id !== missionId || area.retired_at !== null || area.status === 'retired') {
+        throw new Error('Search assignment requires an active search area in this mission.')
+      }
+      const outing = state.outings.find((entry) => entry.id === input.outing_id)
+      if (outing?.mission_id !== missionId) {
+        throw new Error('Search assignment requires an outing in this mission.')
+      }
       const existing = state.searchAssignments.find((entry) => entry.id === input.id) ?? null
       const timestamp = new Date().toISOString()
       const assignment: SearchAssignment = {
@@ -1752,6 +1808,15 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     upsertSearchPass: async (input) => {
       const missionId = String(input.mission_id)
       ensureMissionMutable(missionId, state.missions)
+      const area = state.searchAreas.find((entry) => entry.id === input.search_area_id)
+      const assignment = state.searchAssignments.find((entry) => entry.id === input.assignment_id)
+      if (area?.mission_id !== missionId || area.retired_at !== null || area.status === 'retired') {
+        throw new Error('Search pass requires an active search area in this mission.')
+      }
+      if (assignment?.mission_id !== missionId || assignment.search_area_id !== area.id
+        || assignment.retired_at !== null) {
+        throw new Error('Search pass requires an active matching assignment.')
+      }
       const existing = state.searchPasses.find((entry) => entry.id === input.id) ?? null
       const outcome = input.outcome
       if (outcome !== 'full' && outcome !== 'partial' && outcome !== 'aborted') {
@@ -1772,6 +1837,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         version_sequence: (existing?.version_sequence ?? 0) + 1,
         created_at: existing?.created_at ?? timestamp,
         updated_at: timestamp,
+        participant_ids: normalizeBrowserIds(input.participant_ids),
+        clue_ids: normalizeBrowserIds(input.clue_ids),
+        track_evidence_ids: normalizeBrowserIds(input.track_evidence_ids),
       }
       state = { ...state, searchPasses: upsertByStableId(state.searchPasses, pass) }
       save()
@@ -1891,14 +1959,46 @@ function buildBrowserReplay(
   const tracks = allTracks.slice(offset, offset + input.trackLimit)
   const nextOffset = offset + tracks.length
   const staticGpxPointCount = eligibleGpxPoints.filter((point) => point.timestamp === null).length
+  const staticGpxEvidence = state.gpxImports
+    .filter((entry) => entry.mission_id === input.missionId && entry.retired_at == null)
+    .flatMap((entry) => {
+      const revisionSequence = eligibleRevisionByImport.get(entry.id)
+      if (revisionSequence === undefined) return []
+      const staticPoints = eligibleGpxPoints.filter((point) =>
+        point.importId === entry.id
+        && point.revisionSequence === revisionSequence
+        && point.timestamp === null)
+      const firstStaticPoint = staticPoints[0]
+      if (firstStaticPoint === undefined) return []
+      return [{
+        import_id: entry.id,
+        revision_sequence: revisionSequence,
+        source_path: entry.source_path,
+        file_name: entry.file_name,
+        display_name: entry.display_name,
+        content_sha256: entry.content_sha256 ?? null,
+        timing_class: entry.timing_class ?? 'undated' as const,
+        outing_id: entry.outing_id ?? null,
+        completeness: entry.content_sha256 == null ? 'legacy_baseline' as const : 'complete' as const,
+        recorded_at: firstStaticPoint.recordedAt,
+        static_point_count: staticPoints.length,
+        rejection_count: 0,
+      }]
+    })
   return {
     missionId: input.missionId,
     selectedTime,
     timezone: input.timezone ?? 'Europe/Dublin',
     objects: [],
+    totalObjectCount: 0,
+    objectCursor: '0',
+    nextObjectCursor: null,
     tracks,
+    trackCursor: String(offset),
+    previousCursor: offset === 0 ? null : String(Math.max(0, offset - input.trackLimit)),
     totalTrackCount: allTracks.length,
     staticGpxPointCount,
+    staticGpxEvidence,
     nextCursor: nextOffset < allTracks.length ? String(nextOffset) : null,
     progress: allTracks.length === 0 ? 1 : nextOffset / allTracks.length,
     limitations: [
@@ -1913,6 +2013,15 @@ function buildBrowserReplay(
       }]),
     ],
   }
+}
+
+/** Retains a unique bounded list of explicit harness evidence identities. */
+function normalizeBrowserIds(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== ''))]
 }
 
 function readHarnessState(): BrowserHarnessState {

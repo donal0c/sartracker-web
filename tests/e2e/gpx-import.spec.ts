@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('M22 GPX import parity', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&missionModel=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
@@ -16,6 +16,8 @@ test.describe('M22 GPX import parity', () => {
   test('renders imported GPX tracks in the panel, layer catalog, review workspace, and map source', async ({
     page,
   }) => {
+    await page.getByTestId('outing-label-input').fill('Team Alpha outing')
+    await page.getByTestId('outing-start-btn').click()
     await page.evaluate(async () => {
       const harness = window.__SARTRACKER_BROWSER_HARNESS__
       if (harness === undefined) {
@@ -41,6 +43,18 @@ test.describe('M22 GPX import parity', () => {
 
     await expect(page.getByTestId('gpx-import-list')).toContainText('alpha')
     await expect(page.getByTestId('gpx-import-panel')).toContainText('1 imported')
+    const importId = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__
+      ?.readState().gpxImports.find((entry) => entry.display_name === 'alpha')?.id ?? null)
+    expect(importId).not.toBeNull()
+    await page.getByTestId('gpx-outing-assigned-by').fill('Coordinator One')
+    await page.getByTestId(`gpx-import-outing-${importId}`).selectOption({ label: 'Team Alpha outing' })
+    await expect(page.getByTestId('gpx-import-status')).toContainText('new evidence revision')
+    await expect.poll(async () => page.evaluate(() => {
+      const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
+      const imported = state?.gpxImports.find((entry) => entry.display_name === 'alpha')
+      const outing = state?.outings.find((entry) => entry.label === 'Team Alpha outing')
+      return { matches: imported?.outing_id === outing?.id, revision: imported?.revision_sequence }
+    })).toEqual({ matches: true, revision: 2 })
 
     await page.getByTestId('sidebar-tab-layers').click()
     await page.getByTestId('layer-expand-group-gpx-tracks').click()

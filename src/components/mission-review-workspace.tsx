@@ -127,8 +127,8 @@ export function MissionReviewWorkspace() {
           data-testid="mission-review-docked-readonly-note"
           role="status"
         >
-          Review is read-only. Mission controls and the map stay live next to it — close Review or
-          press Esc to return full width.
+          Replay is read-only and the operational map stays live. Search Operations records only
+          explicit coordinator evidence — close Review or press Esc to return full width.
         </p>
       ) : null}
 

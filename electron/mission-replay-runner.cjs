@@ -1,6 +1,7 @@
 const path = require('node:path')
 const { Worker } = require('node:worker_threads')
 const { normalizeReplayInput } = require('./mission-replay-query.cjs')
+const { assertReplayResultBounded } = require('./mission-replay-message-policy.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'mission-replay-worker.cjs')
 
@@ -55,11 +56,13 @@ function runMissionReplayInWorker(input) {
 }
 
 function isBoundedReplayMessage(message, trackLimit) {
-  return message?.type === 'complete'
-    && Number.isInteger(message.workerThreadId)
-    && Array.isArray(message.result?.tracks)
-    && message.result.tracks.length <= trackLimit
-    && (!Array.isArray(message.result.objects) || message.result.objects.length <= 10_000)
+  if (message?.type !== 'complete' || !Number.isInteger(message.workerThreadId)) return false
+  try {
+    assertReplayResultBounded(message.result, trackLimit)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function createAbortError() {

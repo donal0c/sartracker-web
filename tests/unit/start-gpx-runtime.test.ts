@@ -196,7 +196,87 @@ describe('startGpxRuntime', () => {
       }),
     )
   })
+
+  it('does not publish a completed path import after the active mission changes [DON-274]', async () => {
+    let resolveImport: ((value: { imports: readonly { id: string }[]; dispatchDurationMs: number }) => void) | undefined
+    const importGpxEvidencePaths = vi.fn().mockImplementation(
+      () => new Promise((resolve) => { resolveImport = resolve }),
+    )
+    const missionAImport = createStoredImport('gpx-a', 'mission-a')
+    const missionBImport = createStoredImport('gpx-b', 'mission-b')
+    const listGpxImports = vi.fn().mockImplementation(async (missionId: string) =>
+      missionId === 'mission-a' ? [missionAImport] : [missionBImport])
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports,
+        upsertGpxImport: vi.fn(),
+        deleteGpxImport: vi.fn(),
+        importGpxEvidencePaths,
+      },
+      applyRuntime,
+    })
+    await controller.refreshMission('mission-a')
+
+    const pendingImport = controller.importPaths(['/tracks/a.gpx'])
+    await vi.waitFor(() => expect(importGpxEvidencePaths).toHaveBeenCalledOnce())
+    await controller.refreshMission('mission-b')
+    resolveImport?.({ imports: [{ id: missionAImport.id }], dispatchDurationMs: 1 })
+    await pendingImport
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      activeMissionId: 'mission-b',
+      imports: [missionBImport],
+      importing: false,
+    }))
+  })
+
+  it('does not publish a completed renderer-file import after the active mission changes [DON-274]', async () => {
+    let resolveUpsert: ((value: GpxTrackImport) => void) | undefined
+    const missionAImport = createStoredImport('gpx-a', 'mission-a')
+    const missionBImport = createStoredImport('gpx-b', 'mission-b')
+    const upsertGpxImport = vi.fn().mockImplementation(
+      () => new Promise<GpxTrackImport>((resolve) => { resolveUpsert = resolve }),
+    )
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockImplementation(async (missionId: string) =>
+          missionId === 'mission-b' ? [missionBImport] : []),
+        upsertGpxImport,
+        deleteGpxImport: vi.fn(),
+      },
+      applyRuntime,
+    })
+    await controller.refreshMission('mission-a')
+
+    const pendingImport = controller.importFiles([createImportFile('/tracks/a.gpx', 'a.gpx')])
+    await vi.waitFor(() => expect(upsertGpxImport).toHaveBeenCalledOnce())
+    await controller.refreshMission('mission-b')
+    resolveUpsert?.(missionAImport)
+    await pendingImport
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      activeMissionId: 'mission-b',
+      imports: [missionBImport],
+      importing: false,
+    }))
+  })
 })
+
+function createStoredImport(id: string, missionId: string): GpxTrackImport {
+  return {
+    id,
+    mission_id: missionId,
+    source_path: `/tracks/${id}.gpx`,
+    file_name: `${id}.gpx`,
+    display_name: id,
+    geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+    metadata_json: null,
+    imported_at: '2026-04-11T10:00:00.000Z',
+    updated_at: '2026-04-11T10:00:00.000Z',
+  }
+}
 
 function createImportFile(sourcePath: string, fileName: string) {
   return {

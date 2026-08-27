@@ -5,7 +5,13 @@ const { parentPort, threadId, workerData } = require('node:worker_threads')
 
 const Database = require('better-sqlite3')
 const { SaxesParser } = require('saxes')
-const { upsertGpxEvidence } = require('./mission-store.cjs')
+const {
+  finishGpxImportBatch,
+  recordGpxImportBatchSuccess,
+  recordGpxImportFailure,
+  startGpxImportBatch,
+  upsertGpxEvidenceChunked,
+} = require('./mission-store.cjs')
 
 if (parentPort === null) throw new Error('GPX evidence worker requires a parent message port.')
 
@@ -16,45 +22,72 @@ async function run() {
     database.pragma('foreign_keys = ON')
     database.pragma('journal_mode = WAL')
     const imports = []
+    const failures = []
+    startGpxImportBatch(database, {
+      batchId: workerData.batchId,
+      missionId: workerData.missionId,
+      totalFiles: workerData.paths.length,
+    })
     for (const [index, sourcePath] of workerData.paths.entries()) {
       const normalizedPath = validatePath(sourcePath)
-      const sourceBytes = await fs.readFile(normalizedPath)
-      const parsed = parseGpxEvidence(sourceBytes.toString('utf8'), path.basename(normalizedPath))
-      const contentSha256 = createHash('sha256').update(sourceBytes).digest('hex')
-      const stored = upsertGpxEvidence(database, {
-        mission_id: workerData.missionId,
-        source_path: normalizedPath,
-        file_name: path.basename(normalizedPath),
-        display_name: path.basename(normalizedPath).replace(/\.[^.]+$/u, ''),
-        geometry_json: parsed.geometryJson,
-        metadata_json: JSON.stringify({
-          trackCount: parsed.trackCount,
-          pointCount: parsed.points.length,
-          rejectionCount: parsed.rejections.length,
-          timingClass: parsed.timingClass,
-          workerParsed: true,
-        }),
-        content_sha256: contentSha256,
-        source_bytes_base64: sourceBytes.toString('base64'),
-        timing_class: parsed.timingClass,
-        points: parsed.points,
-        rejections: parsed.rejections,
-      })
-      imports.push({
-        id: stored.id,
-        mission_id: stored.mission_id,
-        source_path: stored.source_path,
-        file_name: stored.file_name,
-        display_name: stored.display_name,
-        content_sha256: stored.content_sha256,
-        timing_class: stored.timing_class,
-        revision_sequence: stored.revision_sequence,
-        imported_at: stored.imported_at,
-        updated_at: stored.updated_at,
-      })
+      let sourceBytes = null
+      try {
+        sourceBytes = await fs.readFile(normalizedPath)
+        const decoded = new TextDecoder('utf-8', { fatal: true }).decode(sourceBytes)
+        const parsed = parseGpxEvidence(decoded, path.basename(normalizedPath))
+        const contentSha256 = createHash('sha256').update(sourceBytes).digest('hex')
+        const stored = upsertGpxEvidenceChunked(database, {
+          mission_id: workerData.missionId,
+          source_path: normalizedPath,
+          file_name: path.basename(normalizedPath),
+          display_name: path.basename(normalizedPath).replace(/\.[^.]+$/u, ''),
+          geometry_json: parsed.geometryJson,
+          metadata_json: JSON.stringify({
+            trackCount: parsed.trackCount,
+            pointCount: parsed.points.length,
+            rejectionCount: parsed.rejections.length,
+            timingClass: parsed.timingClass,
+            workerParsed: true,
+          }),
+          content_sha256: contentSha256,
+          source_bytes_base64: sourceBytes.toString('base64'),
+          timing_class: parsed.timingClass,
+          points: parsed.points,
+          rejections: parsed.rejections,
+        })
+        recordGpxImportBatchSuccess(database, workerData.batchId, workerData.missionId)
+        imports.push({
+          id: stored.id,
+          mission_id: stored.mission_id,
+          source_path: stored.source_path,
+          file_name: stored.file_name,
+          display_name: stored.display_name,
+          content_sha256: stored.content_sha256,
+          timing_class: stored.timing_class,
+          outing_id: stored.outing_id,
+          revision_sequence: stored.revision_sequence,
+          imported_at: stored.imported_at,
+          updated_at: stored.updated_at,
+        })
+      } catch (error) {
+        const reason = error instanceof TypeError && /encoded data/u.test(error.message)
+          ? 'GPX source is not valid UTF-8.'
+          : error instanceof Error ? error.message : String(error)
+        recordGpxImportFailure(database, {
+          batchId: workerData.batchId,
+          missionId: workerData.missionId,
+          sourcePath: normalizedPath,
+          fileName: path.basename(normalizedPath),
+          contentSha256: sourceBytes === null ? null : createHash('sha256').update(sourceBytes).digest('hex'),
+          sourceBytesBase64: sourceBytes === null ? null : sourceBytes.toString('base64'),
+          reason,
+        })
+        failures.push({ sourcePath: normalizedPath, reason })
+      }
       parentPort.postMessage({ type: 'progress', completed: index + 1, total: workerData.paths.length })
     }
-    parentPort.postMessage({ type: 'complete', workerThreadId: threadId, imports })
+    finishGpxImportBatch(database, workerData.batchId, workerData.missionId)
+    parentPort.postMessage({ type: 'complete', workerThreadId: threadId, imports, failures })
   } catch (error) {
     parentPort.postMessage({
       type: 'error',

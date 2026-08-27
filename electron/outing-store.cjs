@@ -288,8 +288,10 @@ function assertNoOverlap(db, candidate) {
 function insertAudit(db, missionId, eventType, timestamp, details) {
   const eventId = randomUUID()
   db.prepare(
-    'INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json) VALUES (?, ?, ?, ?, ?)',
-  ).run(eventId, missionId, eventType, timestamp, JSON.stringify(details))
+    `INSERT INTO mission_events (
+      id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
+    ) VALUES (?, ?, ?, ?, ?, ?, 'complete')`,
+  ).run(eventId, missionId, eventType, timestamp, JSON.stringify(details), timestamp)
   return eventId
 }
 

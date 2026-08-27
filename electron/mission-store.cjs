@@ -1,6 +1,6 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
-const { randomUUID } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
 const { runBreadcrumbQueryInWorker } = require('./breadcrumb-query-runner.cjs')
@@ -384,6 +384,7 @@ function createElectronMissionStore(options) {
   const outingFixSummaryControllersByRequestId = new Map()
   const coverageQueryControllersByRequestId = new Map()
   const coverageTileControllersByRequestId = new Map()
+  const activeGpxEvidenceImports = new Set()
   const coverageManifestBuildEvidenceByMission = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
@@ -461,7 +462,15 @@ function createElectronMissionStore(options) {
   }
 
   return {
+    prepareClose: async () => {
+      const active = [...activeGpxEvidenceImports]
+      for (const entry of active) entry.controller.abort()
+      await Promise.allSettled(active.map((entry) => entry.quiesced))
+    },
     close: () => {
+      if (activeGpxEvidenceImports.size > 0) {
+        throw new Error('Cannot close the mission store while GPX evidence imports are active; call prepareClose first.')
+      }
       ingestAnomalyOutbox.dispose()
       for (const controller of activeBreadcrumbQueryControllers) {
         controller.abort()
@@ -1090,6 +1099,11 @@ function createElectronMissionStore(options) {
       requestId,
       'chunk',
     ),
+    readMissionReplayObjectChunk: async (input, requestId) => executeMissionReplayRead(
+      input,
+      requestId,
+      'objects',
+    ),
     cancelMissionReplay: async (requestId) => {
       const normalizedRequestId = normalizeMissionReviewRequestId(requestId, true)
       const activeQuery = missionReplayQueryControllersByRequestId.get(normalizedRequestId)
@@ -1169,7 +1183,7 @@ function createElectronMissionStore(options) {
     upsertGpxImport: async (input) => upsertGpxEvidence(db, input),
     listGpxImports: async (missionId) =>
       all(db, `SELECT * FROM gpx_track_imports
-        WHERE mission_id = ? AND retired_at IS NULL
+        WHERE mission_id = ? AND retired_at IS NULL AND import_state = 'complete'
         ORDER BY display_name ASC, imported_at ASC`, missionId),
     deleteGpxImport: async (importId) => retireGpxEvidence(db, importId),
     listGpxImportRevisions: async (importId) => all(
@@ -1178,13 +1192,25 @@ function createElectronMissionStore(options) {
         WHERE import_id = ? ORDER BY revision_sequence ASC`,
       importId,
     ),
+    assignGpxImportToOuting: async (input) => assignGpxEvidenceToOuting(db, input),
     importGpxEvidencePaths: async (input) => {
       ensureWritableMission(db, input.missionId)
-      return gpxEvidenceImportRunner({
+      const controller = new AbortController()
+      const result = gpxEvidenceImportRunner({
         databasePath,
         missionId: input.missionId,
         paths: input.paths,
+        signal: controller.signal,
       })
+      const entry = {
+        controller,
+        completion: Promise.resolve(result).catch(() => undefined),
+        workerExited: result?.workerExited ?? Promise.resolve(),
+      }
+      entry.quiesced = Promise.allSettled([entry.completion, entry.workerExited])
+      activeGpxEvidenceImports.add(entry)
+      entry.quiesced.finally(() => activeGpxEvidenceImports.delete(entry))
+      return result
     },
     upsertSearchArea: async (input) => upsertSearchArea(db, evidenceVersionStore, input),
     listSearchAreas: async (missionId) => all(
@@ -1211,12 +1237,7 @@ function createElectronMissionStore(options) {
       missionId,
     ),
     upsertSearchPass: async (input) => upsertSearchPass(db, evidenceVersionStore, input),
-    listSearchPasses: async (missionId) => all(
-      db,
-      `SELECT * FROM search_passes WHERE mission_id = ?
-        ORDER BY started_at ASC, id ASC`,
-      missionId,
-    ),
+    listSearchPasses: async (missionId) => listSearchPassRecords(db, missionId),
     listMissionObjectVersions: async (input) => evidenceVersionStore.listVersions(input),
     listLayerCatalogMetadata: async (missionId) => listLayerCatalogMetadata(db, missionId),
     upsertLayerCatalogMetadata: async (input) => upsertLayerCatalogMetadata(db, input),
@@ -1515,6 +1536,7 @@ function migrate(db) {
     CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `)
   const existingSchemaVersion = readStoredSchemaVersion(db)
+  const migrationTime = now()
   if (existingSchemaVersion > CURRENT_SCHEMA_VERSION) {
     throw new Error(
       `Cannot open mission store created by newer mission store schema ${existingSchemaVersion}; this build supports schema ${CURRENT_SCHEMA_VERSION}.`,
@@ -1608,6 +1630,8 @@ function migrate(db) {
       traccar_device_id TEXT NOT NULL,
       change TEXT NOT NULL CHECK (change IN ('member', 'left')),
       observed_at TEXT NOT NULL,
+      recorded_at TEXT,
+      recording_completeness TEXT CHECK(recording_completeness IN ('complete', 'legacy_baseline')),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       FOREIGN KEY (mission_team_id) REFERENCES mission_teams(id)
     );
@@ -1833,16 +1857,17 @@ function migrate(db) {
       content_sha256 TEXT,
       source_bytes_base64 TEXT,
       timing_class TEXT NOT NULL DEFAULT 'undated' CHECK(timing_class IN ('fully_dated', 'partially_dated', 'undated')),
+      outing_id TEXT,
+      import_state TEXT NOT NULL DEFAULT 'complete' CHECK(import_state IN ('staging', 'complete')),
       revision_sequence INTEGER NOT NULL DEFAULT 1,
       retired_at TEXT,
       retired_by TEXT,
       imported_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (outing_id) REFERENCES outings(id),
       UNIQUE (mission_id, source_path)
     );
-    CREATE INDEX IF NOT EXISTS idx_gpx_import_content
-      ON gpx_track_imports(mission_id, content_sha256, retired_at);
     CREATE TABLE IF NOT EXISTS gpx_import_aliases (
       mission_id TEXT NOT NULL,
       import_id TEXT NOT NULL,
@@ -1867,12 +1892,15 @@ function migrate(db) {
       geometry_json TEXT NOT NULL,
       metadata_json TEXT,
       timing_class TEXT NOT NULL CHECK(timing_class IN ('fully_dated', 'partially_dated', 'undated')),
+      outing_id TEXT,
+      import_state TEXT NOT NULL DEFAULT 'complete' CHECK(import_state IN ('staging', 'complete')),
       completeness TEXT NOT NULL CHECK(completeness IN ('complete', 'legacy_baseline')),
       recorded_at TEXT NOT NULL,
       audit_event_id TEXT,
       UNIQUE (import_id, revision_sequence),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       FOREIGN KEY (import_id) REFERENCES gpx_track_imports(id) ON DELETE CASCADE,
+      FOREIGN KEY (outing_id) REFERENCES outings(id),
       FOREIGN KEY (audit_event_id) REFERENCES mission_events(id)
     );
     CREATE INDEX IF NOT EXISTS idx_gpx_revisions_replay
@@ -1905,6 +1933,33 @@ function migrate(db) {
       FOREIGN KEY (import_id, revision_sequence)
         REFERENCES gpx_import_revisions(import_id, revision_sequence) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS gpx_import_batches (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'completed_with_failures', 'interrupted')),
+      total_files INTEGER NOT NULL,
+      completed_files INTEGER NOT NULL DEFAULT 0,
+      failed_files INTEGER NOT NULL DEFAULT 0,
+      started_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      finished_at TEXT,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS gpx_import_failures (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      mission_id TEXT NOT NULL,
+      source_path TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      content_sha256 TEXT,
+      source_bytes_base64 TEXT,
+      reason TEXT NOT NULL,
+      recorded_at TEXT NOT NULL,
+      FOREIGN KEY (batch_id) REFERENCES gpx_import_batches(id) ON DELETE CASCADE,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_gpx_import_failures_mission
+      ON gpx_import_failures(mission_id, recorded_at, batch_id);
     CREATE TABLE IF NOT EXISTS search_areas (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -1975,6 +2030,8 @@ function migrate(db) {
       event_type TEXT NOT NULL,
       timestamp TEXT NOT NULL,
       details_json TEXT,
+      recorded_at TEXT,
+      recording_completeness TEXT CHECK(recording_completeness IN ('complete', 'legacy_baseline')),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_mission_events_replay
@@ -2029,9 +2086,15 @@ function migrate(db) {
     ensureColumnExists(db, 'gpx_track_imports', 'content_sha256', 'TEXT')
     ensureColumnExists(db, 'gpx_track_imports', 'source_bytes_base64', 'TEXT')
     ensureColumnExists(db, 'gpx_track_imports', 'timing_class', "TEXT NOT NULL DEFAULT 'undated'")
+    ensureColumnExists(db, 'gpx_track_imports', 'outing_id', 'TEXT')
+    ensureColumnExists(db, 'gpx_track_imports', 'import_state', "TEXT NOT NULL DEFAULT 'complete'")
     ensureColumnExists(db, 'gpx_track_imports', 'revision_sequence', 'INTEGER NOT NULL DEFAULT 1')
     ensureColumnExists(db, 'gpx_track_imports', 'retired_at', 'TEXT')
     ensureColumnExists(db, 'gpx_track_imports', 'retired_by', 'TEXT')
+    ensureColumnExists(db, 'gpx_import_revisions', 'outing_id', 'TEXT')
+    ensureColumnExists(db, 'gpx_import_revisions', 'import_state', "TEXT NOT NULL DEFAULT 'complete'")
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_gpx_import_content
+      ON gpx_track_imports(mission_id, content_sha256, retired_at);`)
     ensureColumnExists(db, 'positions', 'source_position_id', 'TEXT')
     ensureColumnExists(db, 'positions', 'received_at', 'TEXT')
     ensureColumnExists(db, 'positions', 'content_hash', 'TEXT')
@@ -2048,10 +2111,20 @@ function migrate(db) {
     // Dropping it is metadata-only and restores the bounded startup contract.
     db.exec('DROP INDEX IF EXISTS idx_positions_mission_timestamp;')
     ensureColumnExists(db, 'mission_group_membership_events', 'sequence', 'INTEGER')
+    ensureColumnExists(db, 'mission_group_membership_events', 'recorded_at', 'TEXT')
+    ensureColumnExists(db, 'mission_group_membership_events', 'recording_completeness', 'TEXT')
+    ensureColumnExists(db, 'mission_events', 'recorded_at', 'TEXT')
+    ensureColumnExists(db, 'mission_events', 'recording_completeness', 'TEXT')
     db.exec(`
       UPDATE mission_group_membership_events
-      SET sequence = rowid
-      WHERE sequence IS NULL;
+      SET sequence = COALESCE(sequence, rowid),
+          recorded_at = COALESCE(recorded_at, '${migrationTime}'),
+          recording_completeness = COALESCE(recording_completeness, 'legacy_baseline')
+      WHERE sequence IS NULL OR recorded_at IS NULL OR recording_completeness IS NULL;
+      UPDATE mission_events
+      SET recorded_at = COALESCE(recorded_at, '${migrationTime}'),
+          recording_completeness = COALESCE(recording_completeness, 'legacy_baseline')
+      WHERE recorded_at IS NULL OR recording_completeness IS NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_group_membership_sequence
       ON mission_group_membership_events(sequence);
     `)
@@ -2075,13 +2148,20 @@ function migrate(db) {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_mission_source_position_id
       ON positions(mission_id, source_position_id)
       WHERE source_position_id IS NOT NULL;
-      CREATE INDEX IF NOT EXISTS idx_positions_replay_known_fix
-      ON positions(mission_id, received_at, timestamp, id)
-      WHERE timestamp_source = 'fix';
     `)
 
-    backfillLegacySearchAreas(db, now())
-    backfillLegacyMissionObjectVersions(db, now())
+    backfillLegacySearchAreas(db, migrationTime)
+    backfillLegacyMissionObjectVersions(db, migrationTime)
+    backfillLegacyGpxRevisions(db, migrationTime)
+    recoverStagingGpxImports(db, migrationTime)
+    if (existingSchemaVersion === 0) {
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_positions_replay_known_fix
+        ON positions(mission_id, received_at, timestamp, id)
+        WHERE timestamp_source = 'fix';`)
+    }
+    db.prepare(`UPDATE gpx_import_batches
+      SET status = 'interrupted', updated_at = ?, finished_at = ? WHERE status = 'running'`)
+      .run(migrationTime, migrationTime)
 
     db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
       .run(String(CURRENT_SCHEMA_VERSION))
@@ -2094,6 +2174,49 @@ function tableExists(db, tableName) {
   return db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
   ).get(tableName) !== undefined
+}
+
+/** Retains interrupted staged GPX bytes as explicit failures before removing partial rows. */
+function recoverStagingGpxImports(db, migrationTime) {
+  const staged = db.prepare(`SELECT revisions.*, imports.import_state AS projection_state
+    FROM gpx_import_revisions AS revisions
+    JOIN gpx_track_imports AS imports ON imports.id = revisions.import_id
+    WHERE revisions.import_state = 'staging'
+    ORDER BY revisions.mission_id, revisions.import_id, revisions.revision_sequence`).all()
+  const byMission = new Map()
+  for (const revision of staged) {
+    const values = byMission.get(revision.mission_id) ?? []
+    values.push(revision)
+    byMission.set(revision.mission_id, values)
+  }
+  for (const [missionId, revisions] of byMission) {
+    const batchId = randomUUID()
+    db.prepare(`INSERT INTO gpx_import_batches (
+      id, mission_id, status, total_files, completed_files, failed_files,
+      started_at, updated_at, finished_at
+    ) VALUES (?, ?, 'interrupted', ?, 0, ?, ?, ?, ?)`).run(
+      batchId, missionId, revisions.length, revisions.length,
+      migrationTime, migrationTime, migrationTime,
+    )
+    for (const revision of revisions) {
+      db.prepare(`INSERT INTO gpx_import_failures (
+        id, batch_id, mission_id, source_path, file_name, content_sha256,
+        source_bytes_base64, reason, recorded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        randomUUID(), batchId, missionId, revision.source_path, revision.file_name,
+        revision.content_sha256, revision.source_bytes_base64,
+        'GPX import was interrupted before its staged evidence could be published.',
+        migrationTime,
+      )
+      db.prepare(`DELETE FROM gpx_import_revisions
+        WHERE import_id = ? AND revision_sequence = ?`)
+        .run(revision.import_id, revision.revision_sequence)
+      if (revision.projection_state === 'staging') {
+        db.prepare(`DELETE FROM gpx_track_imports WHERE id = ? AND import_state = 'staging'`)
+          .run(revision.import_id)
+      }
+    }
+  }
 }
 
 /** Backfills candidate-v8 anomaly summaries once; field v7 stores have no rows. */
@@ -4183,6 +4306,9 @@ function upsertSearchAssignment(db, versionStore, input) {
   const area = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(input.search_area_id)
   const outing = db.prepare('SELECT * FROM outings WHERE id = ?').get(input.outing_id)
   if (area?.mission_id !== missionId) throw new Error('Search assignment area is not in this mission.')
+  if (area.retired_at !== null || area.status === 'retired') {
+    throw new Error(`Cannot assign a retired search area ${area.id}.`)
+  }
   if (outing?.mission_id !== missionId) throw new Error('Search assignment outing is not in this mission.')
   const id = input.id ?? randomUUID()
   const existing = db.prepare('SELECT * FROM search_assignments WHERE id = ?').get(id)
@@ -4220,8 +4346,14 @@ function upsertSearchPass(db, versionStore, input) {
   const area = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(input.search_area_id)
   const assignment = db.prepare('SELECT * FROM search_assignments WHERE id = ?').get(input.assignment_id)
   if (area?.mission_id !== missionId) throw new Error('Search pass area is not in this mission.')
+  if (area.retired_at !== null || area.status === 'retired') {
+    throw new Error(`Cannot record a pass against retired search area ${area.id}.`)
+  }
   if (assignment?.mission_id !== missionId || assignment.search_area_id !== area.id) {
     throw new Error('Search pass assignment does not match this mission and area.')
+  }
+  if (assignment.retired_at !== null) {
+    throw new Error(`Cannot record a pass against retired search assignment ${assignment.id}.`)
   }
   if (!['full', 'partial', 'aborted'].includes(input.outcome)) {
     throw new Error('Search pass coordinator outcome is invalid.')
@@ -4269,7 +4401,7 @@ function upsertSearchPass(db, versionStore, input) {
     state: { ...row, ...links, outcome_authority: 'coordinator_declared' },
     afterProjection: () => writeSearchPassLinks(db, id, row.version_sequence, links),
   })
-  return db.prepare('SELECT * FROM search_passes WHERE id = ?').get(id)
+  return { ...db.prepare('SELECT * FROM search_passes WHERE id = ?').get(id), ...links }
 }
 
 function writeSearchOperationVersion(db, versionStore, input) {
@@ -4282,6 +4414,7 @@ function writeSearchOperationVersion(db, versionStore, input) {
   const operation = input.operation ?? (input.existing === undefined ? 'created' : 'updated')
   const recordedAt = input.row.updated_at
   const transaction = db.transaction(() => {
+    ensureWritableMission(db, input.row.mission_id)
     db.prepare(`INSERT INTO ${input.table} (${columns.join(', ')})
       VALUES (${columns.map(() => '?').join(', ')})
       ON CONFLICT(id) DO UPDATE SET ${assignments}`)
@@ -4306,7 +4439,16 @@ function writeSearchOperationVersion(db, versionStore, input) {
       auditEventId,
     })
   })
-  transaction()
+  transaction.immediate()
+}
+
+/** Returns search passes with their exact current-revision evidence links. */
+function listSearchPassRecords(db, missionId) {
+  return db.prepare(`SELECT * FROM search_passes WHERE mission_id = ?
+    ORDER BY started_at ASC, id ASC`).all(missionId).map((pass) => ({
+    ...pass,
+    ...readSearchPassLinks(db, pass.id, Number(pass.version_sequence)),
+  }))
 }
 
 function writeSearchPassLinks(db, passId, versionSequence, links) {
@@ -4333,6 +4475,77 @@ function readSearchPassLinks(db, passId, versionSequence) {
   return result
 }
 
+/** Baselines pre-v12 GPX projections without inventing source time or byte provenance. */
+function backfillLegacyGpxRevisions(db, migrationTime) {
+  const legacyImports = db.prepare(`SELECT * FROM gpx_track_imports AS source
+    WHERE NOT EXISTS (
+      SELECT 1 FROM gpx_import_revisions AS revision WHERE revision.import_id = source.id
+    )
+    ORDER BY source.mission_id ASC, source.id ASC`).all()
+  const insertRevision = db.prepare(`INSERT INTO gpx_import_revisions (
+    id, mission_id, import_id, revision_sequence, content_sha256,
+    source_bytes_base64, source_path, file_name, display_name, geometry_json,
+      metadata_json, timing_class, completeness, recorded_at, audit_event_id
+  ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 'undated', 'legacy_baseline', ?, NULL)`)
+  const insertPoint = db.prepare(`INSERT INTO gpx_evidence_points (
+    import_id, revision_sequence, segment_index, point_index, track_name,
+    lat, lon, elevation, source_time
+  ) VALUES (?, 1, ?, ?, ?, ?, ?, ?, NULL)`)
+  for (const entry of legacyImports) {
+    insertRevision.run(
+      randomUUID(), entry.mission_id, entry.id, entry.content_sha256 ?? null,
+      entry.source_bytes_base64 ?? null, entry.source_path, entry.file_name,
+      entry.display_name, entry.geometry_json, entry.metadata_json ?? null,
+      migrationTime,
+    )
+    for (const point of readLegacyGpxGeometryPoints(entry.geometry_json)) {
+      insertPoint.run(
+        entry.id,
+        point.segmentIndex,
+        point.pointIndex,
+        entry.display_name,
+        point.lat,
+        point.lon,
+        point.elevation,
+      )
+    }
+  }
+}
+
+/** Extracts valid static coordinates from one retained legacy GeoJSON track. */
+function readLegacyGpxGeometryPoints(geometryJson) {
+  let geometry
+  try {
+    geometry = JSON.parse(geometryJson)
+  } catch {
+    return []
+  }
+  const segments = geometry?.type === 'LineString'
+    ? [geometry.coordinates]
+    : geometry?.type === 'MultiLineString' ? geometry.coordinates : []
+  if (!Array.isArray(segments)) return []
+  const points = []
+  for (const [segmentIndex, segment] of segments.entries()) {
+    if (!Array.isArray(segment)) continue
+    for (const [pointIndex, coordinate] of segment.entries()) {
+      if (!Array.isArray(coordinate)) continue
+      const lon = Number(coordinate[0])
+      const lat = Number(coordinate[1])
+      if (!Number.isFinite(lat) || lat < -90 || lat > 90) continue
+      if (!Number.isFinite(lon) || lon < -180 || lon > 180) continue
+      const candidateElevation = coordinate[2]
+      points.push({
+        segmentIndex,
+        pointIndex,
+        lat,
+        lon,
+        elevation: Number.isFinite(candidateElevation) ? Number(candidateElevation) : null,
+      })
+    }
+  }
+  return points
+}
+
 function normalizeIdList(value) {
   if (value === undefined || value === null) return []
   if (!Array.isArray(value)) throw new Error('Search operation evidence links must be a list.')
@@ -4354,12 +4567,79 @@ function assertSameMission(existing, missionId, label, id) {
   }
 }
 
+/** Starts one durable GPX batch marker before any file can be accepted. */
+function startGpxImportBatch(db, input) {
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, input.missionId)
+    db.prepare(`INSERT INTO gpx_import_batches (
+      id, mission_id, status, total_files, completed_files, failed_files,
+      started_at, updated_at, finished_at
+    ) VALUES (?, ?, 'running', ?, 0, 0, ?, ?, NULL)`)
+      .run(input.batchId, input.missionId, input.totalFiles, timestamp, timestamp)
+  })
+  transaction.immediate()
+}
+
+/** Records one retained malformed/read-failed GPX source and advances its batch. */
+function recordGpxImportFailure(db, input) {
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, input.missionId)
+    db.prepare(`INSERT INTO gpx_import_failures (
+      id, batch_id, mission_id, source_path, file_name, content_sha256,
+      source_bytes_base64, reason, recorded_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(
+        randomUUID(), input.batchId, input.missionId, input.sourcePath,
+        input.fileName, input.contentSha256, input.sourceBytesBase64,
+        safeEvidenceFailureReason(input.reason), timestamp,
+      )
+    db.prepare(`UPDATE gpx_import_batches
+      SET failed_files = failed_files + 1, updated_at = ? WHERE id = ?`)
+      .run(timestamp, input.batchId)
+  })
+  transaction.immediate()
+}
+
+/** Advances one successful file in a durable GPX import batch. */
+function recordGpxImportBatchSuccess(db, batchId, missionId) {
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, missionId)
+    db.prepare(`UPDATE gpx_import_batches
+      SET completed_files = completed_files + 1, updated_at = ? WHERE id = ?`)
+      .run(timestamp, batchId)
+  })
+  transaction.immediate()
+}
+
+/** Closes one durable GPX batch with an explicit complete or partial status. */
+function finishGpxImportBatch(db, batchId, missionId) {
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, missionId)
+    db.prepare(`UPDATE gpx_import_batches
+      SET status = CASE WHEN failed_files > 0 THEN 'completed_with_failures' ELSE 'completed' END,
+          updated_at = ?, finished_at = ? WHERE id = ?`)
+      .run(timestamp, timestamp, batchId)
+  })
+  transaction.immediate()
+}
+
+/** Bounds failure text stored and returned to the operator. */
+function safeEvidenceFailureReason(value) {
+  return String(value ?? 'Unknown GPX evidence failure').replace(/[\r\n]+/gu, ' ').trim().slice(0, 1_000)
+}
+
 /** Stores an exact GPX source as append-only evidence, deduplicated by byte digest. */
 function upsertGpxEvidence(db, input) {
   const missionId = input.mission_id
-  ensureWritableMission(db, missionId)
   const timestamp = now()
-  const normalizedHash = normalizeGpxContentHash(input.content_sha256)
+  const normalizedHash = normalizeGpxContentHash(
+    input.content_sha256,
+    input.source_bytes_base64,
+  )
   const existingById = input.id === undefined || input.id === null
     ? undefined
     : db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(input.id)
@@ -4370,13 +4650,18 @@ function upsertGpxEvidence(db, input) {
   if (existing !== undefined && existing.mission_id !== missionId) {
     throw new Error(`Cannot move GPX evidence ${existing.id} to a different mission.`)
   }
+  if (existing?.import_state === 'staging') {
+    throw new Error(`GPX evidence ${existing.id} has an interrupted staged import that must be recovered before retrying.`)
+  }
 
-  if (normalizedHash !== null) {
+  if (normalizedHash !== null && existing === undefined) {
     const contentMatch = db.prepare(`SELECT * FROM gpx_track_imports
       WHERE mission_id = ? AND content_sha256 = ? AND retired_at IS NULL
+        AND import_state = 'complete'
       ORDER BY imported_at ASC LIMIT 1`).get(missionId, normalizedHash)
     if (contentMatch !== undefined && contentMatch.id !== existing?.id) {
       const transaction = db.transaction(() => {
+        ensureWritableMission(db, missionId)
         upsertGpxAlias(db, missionId, contentMatch.id, input.source_path, input.file_name, timestamp)
         insertEvent(db, missionId, 'gpx_import_alias_added', timestamp, {
           gpx_import_id: contentMatch.id,
@@ -4384,7 +4669,7 @@ function upsertGpxEvidence(db, input) {
           content_sha256: normalizedHash,
         })
       })
-      transaction()
+      transaction.immediate()
       return getById(db, 'gpx_track_imports', contentMatch.id, 'GPX import')
     }
   }
@@ -4409,6 +4694,8 @@ function upsertGpxEvidence(db, input) {
     content_sha256: normalizedHash ?? existing?.content_sha256 ?? null,
     source_bytes_base64: input.source_bytes_base64 ?? existing?.source_bytes_base64 ?? null,
     timing_class: normalizeGpxTimingClass(input.timing_class ?? existing?.timing_class ?? 'undated'),
+    outing_id: input.outing_id ?? existing?.outing_id ?? null,
+    import_state: 'complete',
     revision_sequence: revisionSequence,
     retired_at: null,
     retired_by: null,
@@ -4421,6 +4708,7 @@ function upsertGpxEvidence(db, input) {
     : 'complete'
 
   const transaction = db.transaction(() => {
+    ensureWritableMission(db, missionId)
     const columns = Object.keys(row)
     const assignments = columns
       .filter((column) => !IMMUTABLE_UPSERT_COLUMNS.gpx_track_imports.has(column))
@@ -4451,12 +4739,12 @@ function upsertGpxEvidence(db, input) {
       db.prepare(`INSERT INTO gpx_import_revisions (
         id, mission_id, import_id, revision_sequence, content_sha256,
         source_bytes_base64, source_path, file_name, display_name, geometry_json,
-        metadata_json, timing_class, completeness, recorded_at, audit_event_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        metadata_json, timing_class, outing_id, import_state, completeness, recorded_at, audit_event_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'complete', ?, ?, ?)`)
         .run(
           randomUUID(), missionId, id, revisionSequence, row.content_sha256,
           row.source_bytes_base64, input.source_path, row.file_name, row.display_name,
-          row.geometry_json, row.metadata_json, row.timing_class, completeness,
+          row.geometry_json, row.metadata_json, row.timing_class, row.outing_id, completeness,
           timestamp, auditEventId,
         )
       for (const point of input.points ?? []) {
@@ -4484,17 +4772,227 @@ function upsertGpxEvidence(db, input) {
       }
     }
   })
-  transaction()
+  transaction.immediate()
   return getById(db, 'gpx_track_imports', id, 'GPX import')
+}
+
+/** Persists large GPX point sets in short writer slices, publishing only after a final fence. */
+function upsertGpxEvidenceChunked(db, input, chunkSize = 100) {
+  if ((input.points?.length ?? 0) <= chunkSize && (input.rejections?.length ?? 0) <= chunkSize) {
+    return upsertGpxEvidence(db, input)
+  }
+  const missionId = input.mission_id
+  const timestamp = now()
+  const normalizedHash = normalizeGpxContentHash(input.content_sha256, input.source_bytes_base64)
+  const existingById = input.id === undefined || input.id === null
+    ? undefined
+    : db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(input.id)
+  const existingByPath = db.prepare(
+    'SELECT * FROM gpx_track_imports WHERE mission_id = ? AND source_path = ?',
+  ).get(missionId, input.source_path)
+  const existing = existingById ?? existingByPath
+  if (existing !== undefined && existing.mission_id !== missionId) {
+    throw new Error(`Cannot move GPX evidence ${existing.id} to a different mission.`)
+  }
+  if (existing?.import_state === 'staging') {
+    throw new Error(`GPX evidence ${existing.id} has an interrupted staged import that must be recovered before retrying.`)
+  }
+  if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
+    throw new Error(`Cannot update retired GPX evidence ${existing.id}.`)
+  }
+  if (existing === undefined) {
+    const contentMatch = db.prepare(`SELECT * FROM gpx_track_imports
+      WHERE mission_id = ? AND content_sha256 = ? AND retired_at IS NULL
+        AND import_state = 'complete'
+      ORDER BY imported_at ASC LIMIT 1`).get(missionId, normalizedHash)
+    if (contentMatch !== undefined) return upsertGpxEvidence(db, { ...input, points: [], rejections: [] })
+  }
+  if (existing !== undefined && normalizedHash === existing.content_sha256) {
+    return upsertGpxEvidence(db, { ...input, points: [], rejections: [] })
+  }
+
+  const id = existing?.id ?? input.id ?? randomUUID()
+  const revisionSequence = existing === undefined ? 1 : Number(existing.revision_sequence) + 1
+  const completeness = normalizedHash === null || input.source_bytes_base64 === undefined
+    ? 'legacy_baseline'
+    : 'complete'
+  const row = {
+    id,
+    mission_id: missionId,
+    source_path: existing?.source_path ?? input.source_path,
+    file_name: input.file_name,
+    display_name: input.display_name,
+    geometry_json: input.geometry_json,
+    metadata_json: input.metadata_json ?? null,
+    content_sha256: normalizedHash ?? existing?.content_sha256 ?? null,
+    source_bytes_base64: input.source_bytes_base64 ?? existing?.source_bytes_base64 ?? null,
+    timing_class: normalizeGpxTimingClass(input.timing_class ?? existing?.timing_class ?? 'undated'),
+    outing_id: input.outing_id ?? existing?.outing_id ?? null,
+    import_state: 'complete',
+    revision_sequence: revisionSequence,
+    retired_at: null,
+    retired_by: null,
+    imported_at: existing?.imported_at ?? timestamp,
+    updated_at: timestamp,
+  }
+
+  const stage = db.transaction(() => {
+    ensureWritableMission(db, missionId)
+    if (existing === undefined) {
+      const stagedRow = { ...row, import_state: 'staging' }
+      const columns = Object.keys(stagedRow)
+      db.prepare(`INSERT INTO gpx_track_imports (${columns.join(', ')})
+        VALUES (${columns.map(() => '?').join(', ')})`)
+        .run(...columns.map((column) => stagedRow[column]))
+    }
+    db.prepare(`INSERT INTO gpx_import_revisions (
+      id, mission_id, import_id, revision_sequence, content_sha256,
+      source_bytes_base64, source_path, file_name, display_name, geometry_json,
+      metadata_json, timing_class, outing_id, import_state, completeness,
+      recorded_at, audit_event_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'staging', ?, ?, NULL)`)
+      .run(
+        randomUUID(), missionId, id, revisionSequence, row.content_sha256,
+        row.source_bytes_base64, input.source_path, row.file_name, row.display_name,
+        row.geometry_json, row.metadata_json, row.timing_class, row.outing_id,
+        completeness, timestamp,
+      )
+  })
+  stage.immediate()
+
+  const pointStatement = db.prepare(`INSERT INTO gpx_evidence_points (
+    import_id, revision_sequence, segment_index, point_index, track_name,
+    lat, lon, elevation, source_time
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  for (let offset = 0; offset < (input.points?.length ?? 0); offset += chunkSize) {
+    const chunk = input.points.slice(offset, offset + chunkSize)
+    const writeChunk = db.transaction(() => {
+      ensureWritableMission(db, missionId)
+      for (const point of chunk) {
+        pointStatement.run(
+          id, revisionSequence, point.segment_index, point.point_index,
+          point.track_name ?? null, point.lat, point.lon, point.elevation ?? null,
+          point.timestamp === null || point.timestamp === undefined
+            ? null
+            : normalizeIsoTimestamp(point.timestamp, 'GPX source time'),
+        )
+      }
+    })
+    writeChunk.immediate()
+  }
+  const rejectionStatement = db.prepare(`INSERT INTO gpx_evidence_rejections (
+    id, import_id, revision_sequence, kind, segment_index, point_index, reason, source_value
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+  for (let offset = 0; offset < (input.rejections?.length ?? 0); offset += chunkSize) {
+    const chunk = input.rejections.slice(offset, offset + chunkSize)
+    const writeChunk = db.transaction(() => {
+      ensureWritableMission(db, missionId)
+      for (const rejection of chunk) {
+        rejectionStatement.run(
+          randomUUID(), id, revisionSequence, rejection.kind, rejection.segment_index,
+          rejection.point_index ?? null, rejection.reason, rejection.source_value ?? null,
+        )
+      }
+    })
+    writeChunk.immediate()
+  }
+
+  const publish = db.transaction(() => {
+    ensureWritableMission(db, missionId)
+    const columns = Object.keys(row)
+    const assignments = columns
+      .filter((column) => !IMMUTABLE_UPSERT_COLUMNS.gpx_track_imports.has(column))
+      .map((column) => `${column} = excluded.${column}`)
+      .join(', ')
+    db.prepare(`INSERT INTO gpx_track_imports (${columns.join(', ')})
+      VALUES (${columns.map(() => '?').join(', ')})
+      ON CONFLICT(id) DO UPDATE SET ${assignments}`)
+      .run(...columns.map((column) => row[column]))
+    upsertGpxAlias(db, missionId, id, input.source_path, input.file_name, timestamp)
+    const auditEventId = insertEvent(
+      db,
+      missionId,
+      existing === undefined ? 'gpx_import_created' : 'gpx_import_updated',
+      timestamp,
+      {
+        gpx_import_id: id,
+        source_path: input.source_path,
+        content_sha256: row.content_sha256,
+        revision_sequence: revisionSequence,
+        timing_class: row.timing_class,
+        completeness,
+      },
+    )
+    db.prepare(`UPDATE gpx_import_revisions
+      SET import_state = 'complete', audit_event_id = ?
+      WHERE import_id = ? AND revision_sequence = ?`)
+      .run(auditEventId, id, revisionSequence)
+  })
+  publish.immediate()
+  return getById(db, 'gpx_track_imports', id, 'GPX import')
+}
+
+/** Assigns retained GPX evidence to an outing as a new immutable revision. */
+function assignGpxEvidenceToOuting(db, input) {
+  const importId = normalizeRequiredText(input.import_id, 'GPX import')
+  const outingId = normalizeRequiredText(input.outing_id, 'GPX outing')
+  const existing = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(importId)
+  if (existing === undefined || existing.retired_at !== null) {
+    throw new Error(`Active GPX evidence ${importId} was not found.`)
+  }
+  const outing = db.prepare('SELECT * FROM outings WHERE id = ?').get(outingId)
+  if (outing?.mission_id !== existing.mission_id) {
+    throw new Error('GPX evidence outing is not in the same mission.')
+  }
+  if (existing.outing_id === outingId) return existing
+  const timestamp = now()
+  const previousSequence = Number(existing.revision_sequence)
+  const nextSequence = previousSequence + 1
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, existing.mission_id)
+    const auditEventId = insertEvent(db, existing.mission_id, 'gpx_import_outing_assigned', timestamp, {
+      gpx_import_id: importId,
+      outing_id: outingId,
+      assigned_by: normalizeOptionalTextValue(input.assigned_by),
+      revision_sequence: nextSequence,
+    })
+    db.prepare(`UPDATE gpx_track_imports
+      SET outing_id = ?, revision_sequence = ?, updated_at = ? WHERE id = ?`)
+      .run(outingId, nextSequence, timestamp, importId)
+    db.prepare(`INSERT INTO gpx_import_revisions (
+      id, mission_id, import_id, revision_sequence, content_sha256,
+      source_bytes_base64, source_path, file_name, display_name, geometry_json,
+      metadata_json, timing_class, outing_id, completeness, recorded_at, audit_event_id
+    ) SELECT ?, mission_id, import_id, ?, content_sha256, source_bytes_base64,
+      source_path, file_name, display_name, geometry_json, metadata_json, timing_class,
+      ?, completeness, ?, ?
+    FROM gpx_import_revisions WHERE import_id = ? AND revision_sequence = ?`)
+      .run(randomUUID(), nextSequence, outingId, timestamp, auditEventId, importId, previousSequence)
+    db.prepare(`INSERT INTO gpx_evidence_points (
+      import_id, revision_sequence, segment_index, point_index, track_name,
+      lat, lon, elevation, source_time
+    ) SELECT import_id, ?, segment_index, point_index, track_name,
+      lat, lon, elevation, source_time
+    FROM gpx_evidence_points WHERE import_id = ? AND revision_sequence = ?`)
+      .run(nextSequence, importId, previousSequence)
+    db.prepare(`INSERT INTO gpx_evidence_rejections (
+      id, import_id, revision_sequence, kind, segment_index, point_index, reason, source_value
+    ) SELECT lower(hex(randomblob(16))), import_id, ?, kind, segment_index,
+      point_index, reason, source_value
+    FROM gpx_evidence_rejections WHERE import_id = ? AND revision_sequence = ?`)
+      .run(nextSequence, importId, previousSequence)
+  })
+  transaction.immediate()
+  return getById(db, 'gpx_track_imports', importId, 'GPX import')
 }
 
 /** Retires GPX evidence without deleting any source, revision, point, or rejection. */
 function retireGpxEvidence(db, importId) {
   const existing = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(importId)
   if (existing === undefined || existing.retired_at !== null) return false
-  ensureWritableMission(db, existing.mission_id)
   const timestamp = now()
   const transaction = db.transaction(() => {
+    ensureWritableMission(db, existing.mission_id)
     db.prepare('UPDATE gpx_track_imports SET retired_at = ?, updated_at = ? WHERE id = ?')
       .run(timestamp, timestamp, importId)
     insertEvent(db, existing.mission_id, 'gpx_import_deleted', timestamp, {
@@ -4504,7 +5002,7 @@ function retireGpxEvidence(db, importId) {
       retired: true,
     })
   })
-  transaction()
+  transaction.immediate()
   return true
 }
 
@@ -4519,12 +5017,26 @@ function upsertGpxAlias(db, missionId, importId, sourcePath, fileName, timestamp
     .run(missionId, importId, sourcePath, fileName, timestamp, timestamp)
 }
 
-function normalizeGpxContentHash(value) {
+function normalizeGpxContentHash(value, sourceBytesBase64) {
   if (value === undefined || value === null) return null
   if (typeof value !== 'string' || !/^[a-f0-9]{64}$/i.test(value)) {
     throw new Error('GPX source content hash must be a SHA-256 hexadecimal digest.')
   }
-  return value.toLowerCase()
+  const normalized = value.toLowerCase()
+  if (sourceBytesBase64 !== undefined && sourceBytesBase64 !== null) {
+    if (typeof sourceBytesBase64 !== 'string') {
+      throw new Error('GPX retained source bytes must be Base64 text.')
+    }
+    const bytes = Buffer.from(sourceBytesBase64, 'base64')
+    if (bytes.toString('base64') !== sourceBytesBase64.replace(/\s+/gu, '')) {
+      throw new Error('GPX retained source bytes are not valid Base64.')
+    }
+    const actual = createHash('sha256').update(bytes).digest('hex')
+    if (actual !== normalized) {
+      throw new Error('GPX source content hash does not match retained source bytes.')
+    }
+  }
+  return normalized
 }
 
 function normalizeGpxTimingClass(value) {
@@ -4696,10 +5208,19 @@ function appendEvent(db, missionId, eventType, detailsJson, timestamp = now()) {
   insertEvent(db, missionId, eventType, timestamp, detailsJson)
 }
 
-function insertEvent(db, missionId, eventType, timestamp, detailsJson) {
+function insertEvent(db, missionId, eventType, timestamp, detailsJson, recordedAt = now()) {
   const eventId = randomUUID()
-  db.prepare('INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json) VALUES (?, ?, ?, ?, ?)')
-    .run(eventId, missionId, eventType, timestamp, detailsJson === undefined || detailsJson === null ? null : JSON.stringify(detailsJson))
+  db.prepare(`INSERT INTO mission_events (
+    id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
+  ) VALUES (?, ?, ?, ?, ?, ?, 'complete')`)
+    .run(
+      eventId,
+      missionId,
+      eventType,
+      timestamp,
+      detailsJson === undefined || detailsJson === null ? null : JSON.stringify(detailsJson),
+      recordedAt,
+    )
   return eventId
 }
 
@@ -4717,5 +5238,10 @@ function createCoverageRequestAbortError() {
 module.exports = {
   CURRENT_SCHEMA_VERSION,
   createElectronMissionStore,
+  finishGpxImportBatch,
+  recordGpxImportBatchSuccess,
+  recordGpxImportFailure,
+  startGpxImportBatch,
   upsertGpxEvidence,
+  upsertGpxEvidenceChunked,
 }

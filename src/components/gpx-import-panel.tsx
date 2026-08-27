@@ -15,11 +15,13 @@ const gpxImportSource = createDesktopGpxImportSource()
 export function GpxImportPanel() {
   const controller = useGpxStore((state) => state.controller)
   const imports = useGpxStore((state) => state.imports)
+  const outings = useGpxStore((state) => state.outings)
   const watchedDirectories = useGpxStore((state) => state.watchedDirectories)
   const loading = useGpxStore((state) => state.loading)
   const importing = useGpxStore((state) => state.importing)
   const error = useGpxStore((state) => state.error)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [assignmentActor, setAssignmentActor] = useState('')
 
   const desktopAvailable = isTauriRuntimeAvailable() || isElectronRuntimeAvailable()
   const canImport = controller !== null && desktopAvailable && !loading && !importing
@@ -89,6 +91,13 @@ export function GpxImportPanel() {
           {statusMessage}
         </p>
       ) : null}
+      <input
+        className="mt-3 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-xs text-stone-100"
+        data-testid="gpx-outing-assigned-by"
+        onChange={(event) => setAssignmentActor(event.target.value)}
+        placeholder="Coordinator name for outing assignments"
+        value={assignmentActor}
+      />
 
       <div className="mt-4 space-y-3">
         <PanelList
@@ -115,6 +124,10 @@ export function GpxImportPanel() {
             secondary: entry.source_path,
             color: getGpxImportColor(entry.metadata_json),
             onColorChange: (color) => void controller?.updateImportColor(entry.id, color),
+            outingId: entry.outing_id ?? '',
+            outings,
+            outingAssignmentDisabled: assignmentActor.trim() === '',
+            onOutingChange: (outingId: string) => void handleAssignOuting(entry.id, outingId),
             actionLabel: 'Delete',
             onAction: () => void handleDeleteImport(entry.id, entry.display_name),
           }))}
@@ -208,6 +221,14 @@ export function GpxImportPanel() {
         : `GPX import ${displayName} was already removed.`,
     )
   }
+
+  async function handleAssignOuting(importId: string, outingId: string): Promise<void> {
+    if (controller === null || outingId === '' || assignmentActor.trim() === '') return
+    const updated = await controller.assignImportToOuting(importId, outingId, assignmentActor)
+    setStatusMessage(updated === null
+      ? 'GPX outing assignment was unavailable.'
+      : `Assigned ${updated.display_name} to the selected outing as a new evidence revision.`)
+  }
 }
 
 function ActionButton(props: {
@@ -239,6 +260,10 @@ function PanelList(props: {
     readonly secondary: string
     readonly color?: string
     readonly onColorChange?: (color: string) => void
+    readonly outingId?: string
+    readonly outings?: readonly { readonly id: string; readonly label: string }[]
+    readonly outingAssignmentDisabled?: boolean
+    readonly onOutingChange?: (outingId: string) => void
     readonly actionLabel: string
     readonly onAction: () => void
   }[]
@@ -278,6 +303,20 @@ function PanelList(props: {
                   testId={`gpx-import-color-${item.id}`}
                   value={item.color}
                 />
+              ) : null}
+              {item.outings !== undefined && item.onOutingChange !== undefined ? (
+                <label className="text-[11px] text-stone-300">Static evidence outing
+                  <select
+                    className="mt-1 w-full rounded border border-stone-700 bg-stone-950 p-2"
+                    data-testid={`gpx-import-outing-${item.id}`}
+                    disabled={item.outingAssignmentDisabled}
+                    onChange={(event) => item.onOutingChange?.(event.target.value)}
+                    value={item.outingId ?? ''}
+                  >
+                    <option value="">Unassigned — static evidence remains explicit</option>
+                    {item.outings.map((outing) => <option key={outing.id} value={outing.id}>{outing.label}</option>)}
+                  </select>
+                </label>
               ) : null}
             </div>
           ))
