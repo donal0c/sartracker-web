@@ -5124,35 +5124,53 @@ function recordGpxImportFailure(db, input) {
   const timestamp = now()
   const transaction = db.transaction(() => {
     ensureWritableMission(db, input.missionId)
-    db.prepare(`INSERT INTO gpx_import_failures (
-      id, batch_id, mission_id, source_path, file_name, content_sha256,
-      source_bytes_base64, reason, recorded_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(
-        randomUUID(), input.batchId, input.missionId, input.sourcePath,
-        input.fileName, input.contentSha256, input.sourceBytesBase64,
-        safeEvidenceFailureReason(input.reason), timestamp,
-      )
-    db.prepare(`UPDATE gpx_import_batches
-      SET failed_files = failed_files + 1, updated_at = ? WHERE id = ?`)
-      .run(timestamp, input.batchId)
-    db.prepare(`UPDATE gpx_import_source_receipts
-      SET status = 'failed',
-          content_sha256 = COALESCE(content_sha256, ?),
-          source_bytes_base64 = COALESCE(source_bytes_base64, ?),
-          updated_at = ?
-      WHERE batch_id = ? AND mission_id = ? AND source_path = ?
-        AND status IN ('pending', 'retained')`)
-      .run(
-        input.contentSha256,
-        input.sourceBytesBase64,
-        timestamp,
-        input.batchId,
-        input.missionId,
-        input.sourcePath,
-      )
+    recordGpxImportFailureWithinTransaction(db, input, timestamp)
   })
   transaction.immediate()
+}
+
+/** Records one GPX failure exactly once inside an existing writer transaction. */
+function recordGpxImportFailureWithinTransaction(db, input, timestamp) {
+  const existingFailure = db.prepare(`SELECT 1 FROM gpx_import_failures
+    WHERE batch_id = ? AND source_path = ? LIMIT 1`).get(input.batchId, input.sourcePath)
+  if (existingFailure !== undefined) return false
+  const receipt = db.prepare(`SELECT status FROM gpx_import_source_receipts
+    WHERE batch_id = ? AND mission_id = ? AND source_path = ?`).get(
+    input.batchId,
+    input.missionId,
+    input.sourcePath,
+  )
+  if (receipt?.status === 'settled') {
+    throw new Error('Published GPX source evidence cannot be changed into an import failure.')
+  }
+  db.prepare(`INSERT INTO gpx_import_failures (
+    id, batch_id, mission_id, source_path, file_name, content_sha256,
+    source_bytes_base64, reason, recorded_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(
+      randomUUID(), input.batchId, input.missionId, input.sourcePath,
+      input.fileName, input.contentSha256, input.sourceBytesBase64,
+      safeEvidenceFailureReason(input.reason), timestamp,
+    )
+  db.prepare(`UPDATE gpx_import_batches
+    SET failed_files = failed_files + 1, updated_at = ? WHERE id = ?`)
+    .run(timestamp, input.batchId)
+  db.prepare(`UPDATE gpx_import_source_receipts
+    SET status = 'failed',
+        content_sha256 = COALESCE(content_sha256, ?),
+        source_bytes_base64 = COALESCE(source_bytes_base64, ?),
+        updated_at = ?
+    WHERE batch_id = ? AND mission_id = ? AND source_path = ?
+      AND status IN ('pending', 'retained')`)
+    .run(
+      input.contentSha256,
+      input.sourceBytesBase64,
+      timestamp,
+      input.batchId,
+      input.missionId,
+      input.sourcePath,
+    )
+  return true
 }
 
 /** Closes one durable GPX batch with an explicit complete or partial status. */
@@ -5595,6 +5613,45 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
   const publish = db.transaction(() => {
     ensureWritableMission(db, missionId)
     const publicationTimestamp = now()
+    const current = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(id)
+    const currentMatchesStage = existing === undefined
+      ? current?.mission_id === missionId && current.import_state === 'staging'
+        && Number(current.revision_sequence) === revisionSequence
+        && current.source_path === row.source_path
+        && current.content_sha256 === row.content_sha256
+      : current?.mission_id === existing.mission_id && current.import_state === 'complete'
+        && current.retired_at === null
+        && Number(current.revision_sequence) === Number(existing.revision_sequence)
+        && current.source_path === existing.source_path
+        && current.content_sha256 === existing.content_sha256
+        && current.metadata_json === existing.metadata_json
+        && current.outing_id === existing.outing_id
+        && current.updated_at === existing.updated_at
+    if (!currentMatchesStage) {
+      const reason = current?.retired_at !== null && current?.retired_at !== undefined
+        ? 'GPX evidence was retired while its replacement revision was staged; the staged revision was not published.'
+        : 'GPX evidence changed while its replacement revision was staged; the stale revision was not published.'
+      db.prepare(`DELETE FROM gpx_import_revisions
+        WHERE import_id = ? AND revision_sequence = ? AND import_state = 'staging'`)
+        .run(id, revisionSequence)
+      if (existing === undefined) {
+        db.prepare(`DELETE FROM gpx_track_imports
+          WHERE id = ? AND revision_sequence = ? AND import_state = 'staging'`)
+          .run(id, revisionSequence)
+      }
+      if (publicationReceipt !== null) {
+        recordGpxImportFailureWithinTransaction(db, {
+          batchId: publicationReceipt.batchId,
+          missionId: publicationReceipt.missionId,
+          sourcePath: publicationReceipt.sourcePath,
+          fileName: row.file_name,
+          contentSha256: row.content_sha256,
+          sourceBytesBase64: row.source_bytes_base64,
+          reason,
+        }, publicationTimestamp)
+      }
+      return { published: false, reason }
+    }
     const publishedRow = {
       ...row,
       imported_at: existing?.imported_at ?? publicationTimestamp,
@@ -5639,8 +5696,10 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
         publicationTimestamp,
       )
     }
+    return { published: true, reason: null }
   })
-  publish.immediate()
+  const publication = publish.immediate()
+  if (!publication.published) throw new Error(publication.reason)
   return getById(db, 'gpx_track_imports', id, 'GPX import')
 }
 

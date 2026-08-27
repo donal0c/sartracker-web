@@ -54,8 +54,12 @@ instead of the outing assigned to the revision known at T. That head was
 rejected too. Broad and renderer reviews on
 `d57084b95dd208f68690d367533238bbe42a734e` then found that the corrected
 harness still replayed GPX evidence at and after its recorded retirement time,
-unlike the packaged as-of predicate. That head was rejected too. Accepted
-findings and dispositions are:
+unlike the packaged as-of predicate. That head was rejected too. Broad,
+persistence/completeness and renderer/input-containment reviews were clean on
+`dfde1d8f17eff3fdd9205634494255f3ce43395c`, but the concurrency/finalization
+review reproduced a chunked replacement revision overwriting an operator
+retirement that committed while the writer yielded between slices. That head
+was rejected too. Accepted findings and dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -233,6 +237,15 @@ findings and dispositions are:
   boundary: evidence remains eligible before `retired_at` and is excluded at or
   after that instant. Focused harness and operator-level Chromium regressions
   were observed red, then green.
+- chunked GPX publication trusted the projection snapshot captured before its
+  short writer slices, so an operator retirement during those slices could be
+  silently reset to active: the final immediate transaction now revalidates
+  mission identity, import state, revision, retirement and current projection
+  before publication. A losing staged revision is removed with its points,
+  retained source bytes/hash become one explicit durable import failure, the
+  worker catch is idempotent, and the retirement plus earlier complete revision
+  remain authoritative. The controlled exact-head race was observed red, then
+  green, including zero `gpx_import_updated` audit events after retirement.
 
 The corresponding focused regression tests were observed red before the
 production corrections and are retained in the unit, integration, forced-kill,
@@ -244,14 +257,15 @@ substitutes for that wave.
 
 The latest local remediation tree passed:
 
-- full unit: 288 files / 2,397 tests with eight workers; all timing-gate tests
+- full unit: 288 files / 2,398 tests with eight workers; all timing-gate tests
   that exceeded thresholds in oversubscribed default-worker runs passed again
   in their focused 178-test set;
 - backend: 51 passed / 1 ignored;
 - Chromium: 164/164;
 - visual Playwright: 58/58;
 - independent visual gate: fresh uncached full review passed 69/69 with zero
-  failures or reviewer errors at the original critical/high severities;
+  failures or reviewer errors at the original critical/high severities; report
+  `visual-review-2026-08-27T23-47-24Z.json`;
 - TypeScript/Vite production build and bundle budgets, ESLint, changed CommonJS
   syntax checks and `git diff --check`;
 - actual child-process `SIGKILL` at both the pending source-receipt boundary and
@@ -263,29 +277,28 @@ arm64/Node v22.22.3 with timezone `Europe/Dublin`:
 
 | Preset | Fixture SHA-256 | Seek / restart | Import dispatch | Current read during import / replay | Event-loop max | Equality |
 | --- | --- | --- | --- | --- | --- | --- |
-| 960k normal envelope | `5b6529728a8c9d0c0ced4aa11cd5a7f366b98a0540d935f08cb005397e47abd6` | 64.96 / 48.97 ms | 2.62 ms | 0.55 / 0.99 ms | 66.55 ms | exact first page |
-| 2m headroom | `4be522adf9742e12e558bcdd0c243e6afb99c660ffd8e666a8100575c224860c` | 62.27 / 53.94 ms | 1.47 ms | 1.85 / 0.95 ms | 53.24 ms | exact first page |
+| 960k normal envelope | `5b6529728a8c9d0c0ced4aa11cd5a7f366b98a0540d935f08cb005397e47abd6` | 69.78 / 52.81 ms | 2.28 ms | 0.52 / 1.22 ms | 71.25 ms | exact first page |
+| 2m headroom | `4be522adf9742e12e558bcdd0c243e6afb99c660ffd8e666a8100575c224860c` | 60.84 / 51.47 ms | 1.59 ms | 3.18 / 0.89 ms | 71.15 ms | exact first page |
 
-Both presets imported 50,000 GPX points while continuously writing current
-positions. The exact `f2f5330b9f124dff4cacbe66aa9b06e408030d4b` 960k run
-recorded 1,043 current writes (60.33 ms maximum, 2.11 ms p95) and an exact
-914,001 near-tail page in 46.08 ms. The 2m headroom run recorded 1,124 writes
-(44.87 ms maximum, 2.16 ms p95) and exact 1,850,001 near-tail paging in
-80.09 ms. Both passed restart equality. The ordinary seek
+Both replacement-tree presets imported 50,000 GPX points while continuously
+writing current positions. The 960k run recorded 1,054 current writes (64.10
+ms maximum, 2.94 ms p95) and an exact 914,001 near-tail page in 50.40 ms. The
+2m headroom run recorded 1,000 writes (71.09 ms maximum, 4.06 ms p95) and exact
+1,850,001 near-tail paging in 47.19 ms. Both passed restart equality. The ordinary seek
 stayed below one second and every measured main dispatch/current-read/open/event-
 loop path stayed below the 200 ms hard block. The 2m row remains deliberate
 headroom/renderer-rejection evidence, not a normal mission-size claim.
 
-The unsigned macOS arm64 package built from the same exact head passed the CI
+The unsigned macOS arm64 package built from the replacement code tree passed the CI
 tracking-soak profile with 6/6 batches, 8,664/8,664 exact positions, zero
-redundant telemetry slope, a 3.96 ms main-process maximum and four healthy
+redundant telemetry slope, a 2.40 ms main-process maximum and four healthy
 operator-interaction samples across restart. A separate forced-kill probe copied
 the authentic 960k fixture, killed the process at `backup:started`, recovered
 that exact interruption after restart, passed SQLite recovery and preserved the
 support-bundle privacy exclusions. These are local packaged proofs, not signed,
 Linux, production or field evidence.
 
-Exact-head Linux workflow
+The earlier exact-head Linux workflow
 [`33124584731`](https://github.com/donal0c/sartracker-web/actions/runs/33124584731)
 passed on PR merge commit `e6cee4401a0b54a56c27a15d3830fcd04d14dc83`.
 That merge commit has parents exact base `80309c995a18eeb190cce4310c9a46b0f46d5263`
@@ -304,6 +317,11 @@ control. Artifact SHA-256 values are
 (AppImage) and
 `1569d844987dec05076d3ddfd51b32078f759d1d36272d3821f1a1902876cdad`
 (`.deb`).
+
+That Linux run remains valid evidence for the earlier byte tree but does not
+qualify the replacement GPX publication fence. A fresh exact-head Linux run is
+required before the independent review wave and will be bound below without
+claiming release or field proof.
 
 A derived 960,000-position authentic-v11 migration profile removed the PR5
 provenance/generation/read-model structures before candidate open. Exact v12

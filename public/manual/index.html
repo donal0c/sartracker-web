@@ -1550,7 +1550,10 @@
             Every selected desktop file receives a durable receipt before it is read. If the app or computer
             stops during import, the next start shows the interrupted file and failure reason in the GPX panel;
             it does not silently treat the selection as imported. Mission Finish and Finalize remain blocked
-            while a GPX batch, selected-file receipt, or staged revision is unsettled. File names are shown to
+            while a GPX batch, selected-file receipt, or staged revision is unsettled. If an operator retires a
+            track while a replacement revision is still importing, retirement wins: the replacement is not
+            published, its retained source is shown as an explicit failed import, and the retired evidence is
+            never silently returned to the active map. File names are shown to
             the operator, but retained source bytes and full local paths stay behind the desktop boundary.
             The panel shows a bounded issue page and explicitly warns when additional retained issues
             exist beyond that page; a current import refreshes the sanitized issue list immediately.

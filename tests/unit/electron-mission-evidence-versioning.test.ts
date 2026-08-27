@@ -90,6 +90,8 @@ type MissionEvidenceStore = {
 const {
   createElectronMissionStore,
   CURRENT_SCHEMA_VERSION,
+  finishGpxImportBatch,
+  recordGpxImportFailure,
   recordGpxImportSourceReceipt,
   retainGpxImportSourceBytes,
   settleGpxImportSourceReceipt,
@@ -98,6 +100,11 @@ const {
   upsertGpxEvidenceChunked,
 } = require('../../electron/mission-store.cjs') as {
   readonly CURRENT_SCHEMA_VERSION: number
+  readonly finishGpxImportBatch: (
+    db: InstanceType<typeof Database>,
+    batchId: string,
+    missionId: string,
+  ) => void
   readonly upsertGpxEvidence: (
     db: InstanceType<typeof Database>,
     input: Readonly<Record<string, unknown>>,
@@ -109,6 +116,10 @@ const {
     publicationReceipt?: Readonly<Record<string, unknown>>,
   ) => Promise<Readonly<Record<string, unknown>>>
   readonly startGpxImportBatch: (
+    db: InstanceType<typeof Database>,
+    input: Readonly<Record<string, unknown>>,
+  ) => void
+  readonly recordGpxImportFailure: (
     db: InstanceType<typeof Database>,
     input: Readonly<Record<string, unknown>>,
   ) => void
@@ -614,6 +625,108 @@ describe('mission evidence versioning [DON-277]', () => {
     const published = db.prepare(`SELECT recorded_at FROM gpx_import_revisions
       WHERE mission_id = ? AND import_state = 'complete'`).get(mission.id)
     expect(Date.parse(String(published?.recorded_at))).toBeGreaterThan(Date.parse(selectedTime))
+    db.close()
+  })
+
+  it('rejects a staged GPX revision when the operator retires its current evidence [DON-274 DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX Retirement Publication Fence' })
+    const imported = await store.upsertGpxImport(gpxInput(mission.id, {}))
+    const db = openDatabase(await databasePath())
+    const replacementBytes = 'PGdweD5yZXBsYWNlbWVudDwvZ3B4Pg=='
+    const replacementHash = digestBase64(replacementBytes)
+    const sourcePath = '/field/route.gpx'
+    const batchId = 'retirement-publication-fence-batch'
+    const points = Array.from({ length: 200 }, (_, pointIndex) => ({
+      segment_index: 0,
+      point_index: pointIndex,
+      track_name: 'Replacement route',
+      lat: 52 + pointIndex / 100_000,
+      lon: -9.7,
+      elevation: null,
+      timestamp: '2026-08-27T08:00:00Z',
+    }))
+    startGpxImportBatch(db, { batchId, missionId: mission.id, totalFiles: 1 })
+    recordGpxImportSourceReceipt(db, {
+      batchId,
+      missionId: mission.id,
+      sourcePath,
+      fileName: 'route.gpx',
+    })
+    retainGpxImportSourceBytes(db, {
+      batchId,
+      missionId: mission.id,
+      sourcePath,
+      contentSha256: replacementHash,
+      sourceBytesBase64: replacementBytes,
+    })
+
+    const publication = upsertGpxEvidenceChunked(db, gpxInput(mission.id, {
+      id: imported.id,
+      content_sha256: replacementHash,
+      source_bytes_base64: replacementBytes,
+      points,
+    }), 1, { batchId, missionId: mission.id, sourcePath })
+    expect(db.prepare(`SELECT import_state FROM gpx_import_revisions
+      WHERE import_id = ? AND revision_sequence = 2`).get(imported.id))
+      .toMatchObject({ import_state: 'staging' })
+    await expect(store.deleteGpxImport(String(imported.id))).resolves.toBe(true)
+
+    await expect(publication).rejects.toThrow(/retired.*staged.*not published/iu)
+    await expect(store.listGpxImports(mission.id)).resolves.toEqual([])
+    expect(db.prepare(`SELECT retired_at, revision_sequence, content_sha256
+      FROM gpx_track_imports WHERE id = ?`).get(imported.id)).toMatchObject({
+      retired_at: expect.any(String),
+      revision_sequence: 1,
+      content_sha256: imported.content_sha256,
+    })
+    expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_revisions
+      WHERE import_id = ? AND revision_sequence = 2`).get(imported.id)).toMatchObject({ count: 0 })
+    expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_evidence_points
+      WHERE import_id = ? AND revision_sequence = 2`).get(imported.id)).toMatchObject({ count: 0 })
+    expect(db.prepare(`SELECT status, content_sha256, source_bytes_base64
+      FROM gpx_import_source_receipts WHERE batch_id = ? AND source_path = ?`)
+      .get(batchId, sourcePath)).toMatchObject({
+      status: 'failed',
+      content_sha256: replacementHash,
+      source_bytes_base64: replacementBytes,
+    })
+    expect(db.prepare(`SELECT content_sha256, source_bytes_base64, reason
+      FROM gpx_import_failures WHERE batch_id = ? AND source_path = ?`)
+      .get(batchId, sourcePath)).toMatchObject({
+      content_sha256: replacementHash,
+      source_bytes_base64: replacementBytes,
+      reason: expect.stringMatching(/retired.*staged.*not published/iu),
+    })
+    expect(db.prepare(`SELECT status, completed_files, failed_files
+      FROM gpx_import_batches WHERE id = ?`).get(batchId)).toMatchObject({
+      status: 'running',
+      completed_files: 0,
+      failed_files: 1,
+    })
+    recordGpxImportFailure(db, {
+      batchId,
+      missionId: mission.id,
+      sourcePath,
+      fileName: 'route.gpx',
+      contentSha256: replacementHash,
+      sourceBytesBase64: replacementBytes,
+      reason: 'Worker catch observed the already-recorded publication failure.',
+    })
+    expect(db.prepare(`SELECT failed_files FROM gpx_import_batches WHERE id = ?`)
+      .get(batchId)).toMatchObject({ failed_files: 1 })
+    expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_failures
+      WHERE batch_id = ? AND source_path = ?`).get(batchId, sourcePath)).toMatchObject({ count: 1 })
+    finishGpxImportBatch(db, batchId, mission.id)
+    expect(db.prepare(`SELECT status, completed_files, failed_files
+      FROM gpx_import_batches WHERE id = ?`).get(batchId)).toMatchObject({
+      status: 'completed_with_failures',
+      completed_files: 0,
+      failed_files: 1,
+    })
+    expect(db.prepare(`SELECT COUNT(*) AS count FROM mission_events
+      WHERE mission_id = ? AND event_type = 'gpx_import_updated'`).get(mission.id))
+      .toMatchObject({ count: 0 })
     db.close()
   })
 
