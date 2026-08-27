@@ -46,7 +46,12 @@ instruction. That head was rejected. Persistence recheck on
 `1b35786c5de35355724928354789d779a52d186c` then proved that restart
 reconciliation could mistake a matching legacy baseline without exact bytes
 for a completed re-import and clear the receipt's only retained source. That
-head was also rejected. Accepted findings and dispositions are:
+head was also rejected. Broad and persistence reviews were clean on
+`77be02aec37da6e0e032e3921d4bd333b7e20d3f`, but renderer/input-containment
+review proved that browser validation accepted future replay times rejected by
+packaged Electron and filtered historical GPX evidence using its current outing
+instead of the outing assigned to the revision known at T. That head was
+rejected too. Accepted findings and dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -215,7 +220,13 @@ head was also rejected. Accepted findings and dispositions are:
 - admin unlock authorization could outlive another unlock and re-finalization,
   reopening a newer finalized snapshot: authorized and denied paths now bind
   the roster decision to the exact `mission_finalized` audit epoch and recheck
-  it inside the committing transaction.
+  it inside the committing transaction;
+- the browser harness independently drifted from packaged replay: it now
+  rejects invalid and future T, scopes GPX revisions to the selected mission,
+  captures outing assignment on each GPX revision, and derives historical
+  filters, available outings and static evidence from the eligible revision
+  rather than current import state. Focused harness and Chromium regressions
+  were observed red, then green.
 
 The corresponding focused regression tests were observed red before the
 production corrections and are retained in the unit, integration, forced-kill,
@@ -227,11 +238,11 @@ substitutes for that wave.
 
 The latest local remediation tree passed:
 
-- full unit: 288 files / 2,394 tests with eight workers; all timing-gate tests
+- full unit: 288 files / 2,396 tests with eight workers; all timing-gate tests
   that exceeded thresholds in oversubscribed default-worker runs passed again
   in their focused 178-test set;
 - backend: 51 passed / 1 ignored;
-- Chromium: 162/162;
+- Chromium: 163/163;
 - visual Playwright: 58/58;
 - independent visual gate: fresh uncached full review passed 69/69 with zero
   failures or reviewer errors at the original critical/high severities;

@@ -676,6 +676,86 @@ describe('browser harness store', () => {
     )
   })
 
+  it('rejects future replay time with the packaged-store contract [DON-278]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Future Replay Mission' })
+
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T10:00:00.001Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+    })).rejects.toThrow('Mission replay selected time cannot be in the future.')
+  })
+
+  it('filters historical GPX evidence by the outing assigned to its eligible revision [DON-278]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Historical GPX Outing Mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const first = await store.createOuting({
+      mission_id: mission.id,
+      label: 'First outing',
+      started_at: '2026-08-20T08:30:00.000Z',
+    })
+    await store.endOuting({
+      mission_id: mission.id,
+      outing_id: first.id,
+      ended_at: '2026-08-20T10:00:00.000Z',
+    })
+    const second = await store.createOuting({
+      mission_id: mission.id,
+      label: 'Second outing',
+      started_at: '2026-08-20T10:00:00.000Z',
+    })
+    const imported = await store.upsertGpxImport({
+      mission_id: mission.id,
+      source_path: '/tracks/historical-outing.gpx',
+      file_name: 'historical-outing.gpx',
+      display_name: 'Historical outing',
+      geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+      content_sha256: 'a'.repeat(64),
+      source_bytes_base64: 'PGdweCAvPg==',
+      timing_class: 'fully_dated',
+      outing_id: first.id,
+      points: [{
+        segment_index: 0,
+        point_index: 0,
+        track_name: 'Historical outing',
+        lat: 52,
+        lon: -9.7,
+        elevation: null,
+        timestamp: '2026-08-20T09:00:00.000Z',
+      }],
+    })
+    vi.setSystemTime(new Date('2026-08-20T11:00:00.000Z'))
+    await store.assignGpxImportToOuting({ import_id: imported.id, outing_id: second.id })
+
+    const firstOutingReplay = await store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T10:30:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+      outingIds: [first.id],
+    })
+    expect(firstOutingReplay).toMatchObject({
+      totalTrackCount: 1,
+      availableOutingIds: [first.id],
+    })
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T10:30:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+      outingIds: [second.id],
+    })).resolves.toMatchObject({ totalTrackCount: 0 })
+  })
+
   it('persists helicopters per slot and records audit events', async () => {
     const store = getBrowserHarnessStore()
     const mission = await store.createMission({ name: 'Helicopter Mission' })

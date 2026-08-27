@@ -216,6 +216,20 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-replay-workspace')).toContainText('Live map context')
   })
 
+  test('DON-278: browser replay rejects a future selected time like packaged Electron', async ({ page }) => {
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await page.getByTestId('mission-replay-time').fill('2099-01-01T12:00')
+    await page.getByTestId('mission-replay-seek').click()
+
+    await expect(page.getByTestId('mission-replay-error')).toContainText(
+      'Mission replay selected time cannot be in the future.',
+    )
+    await expect(page.getByTestId('mission-replay-error')).toContainText(
+      'The live map has not been changed.',
+    )
+  })
+
   test('shows marker evidence and audit metadata in review flows', async ({ page }) => {
     await createMarker(page, {
       name: 'Evidence Cache',

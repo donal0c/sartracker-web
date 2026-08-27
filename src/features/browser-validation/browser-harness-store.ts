@@ -99,6 +99,8 @@ type BrowserHarnessState = {
 type BrowserGpxEvidencePoint = {
   readonly importId: string
   readonly revisionSequence: number
+  /** Outing assignment captured with this evidence revision, not read from current import state. */
+  readonly outingId?: string | null
   readonly segmentIndex: number
   readonly pointIndex: number
   readonly lat: number
@@ -1658,6 +1660,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           ...(input.points ?? []).map((point) => ({
             importId: gpxImport.id,
             revisionSequence,
+            outingId: gpxImport.outing_id ?? null,
             segmentIndex: point.segment_index,
             pointIndex: point.point_index,
             lat: point.lat,
@@ -1732,7 +1735,12 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         gpxImports: state.gpxImports.map((entry) => entry.id === updated.id ? updated : entry),
         gpxEvidencePoints: [
           ...state.gpxEvidencePoints,
-          ...previousPoints.map((point) => ({ ...point, revisionSequence: nextSequence, recordedAt })),
+          ...previousPoints.map((point) => ({
+            ...point,
+            revisionSequence: nextSequence,
+            outingId: outing.id,
+            recordedAt,
+          })),
         ],
       }
       save()
@@ -1900,7 +1908,14 @@ function buildBrowserReplay(
   state: BrowserHarnessState,
   input: MissionReplayReadInput,
 ): MissionReplayReadResult {
-  const selectedTime = new Date(input.selectedTime).toISOString()
+  const selectedTimeMs = Date.parse(input.selectedTime)
+  if (!Number.isFinite(selectedTimeMs)) {
+    throw new Error('Mission replay selected time is invalid.')
+  }
+  if (selectedTimeMs > Date.now()) {
+    throw new Error('Mission replay selected time cannot be in the future.')
+  }
+  const selectedTime = new Date(selectedTimeMs).toISOString()
   const offset = input.cursor === undefined || input.cursor === null ? 0 : Number(input.cursor)
   const positionTracks = state.positions
     .filter((position) =>
@@ -1924,9 +1939,12 @@ function buildBrowserReplay(
       time_authority: 'fixTime' as const,
       completeness: 'complete' as const,
     }))
+  const missionImportIds = new Set(state.gpxImports
+    .filter((entry) => entry.mission_id === input.missionId)
+    .map((entry) => entry.id))
   const eligibleRevisionByImport = new Map<string, number>()
   for (const point of state.gpxEvidencePoints) {
-    if (point.recordedAt <= selectedTime) {
+    if (missionImportIds.has(point.importId) && point.recordedAt <= selectedTime) {
       eligibleRevisionByImport.set(
         point.importId,
         Math.max(eligibleRevisionByImport.get(point.importId) ?? 0, point.revisionSequence),
@@ -1934,12 +1952,17 @@ function buildBrowserReplay(
     }
   }
   const eligibleGpxPoints = state.gpxEvidencePoints.filter((point) =>
-    point.revisionSequence === eligibleRevisionByImport.get(point.importId)
+    missionImportIds.has(point.importId)
+    && point.revisionSequence === eligibleRevisionByImport.get(point.importId)
     && point.recordedAt <= selectedTime,
   )
+  const eligibleOutingByImport = new Map<string, string | null>()
+  for (const point of eligibleGpxPoints) {
+    eligibleOutingByImport.set(point.importId, point.outingId ?? null)
+  }
   /** Mirrors the production display-only outing filter inside browser validation. */
   const isSelectedGpxImport = (importId: string) => {
-    const outingId = state.gpxImports.find((entry) => entry.id === importId)?.outing_id ?? null
+    const outingId = eligibleOutingByImport.get(importId) ?? null
     return input.outingIds === undefined || (outingId !== null && input.outingIds.includes(outingId))
   }
   const gpxTracks = eligibleGpxPoints
@@ -1970,9 +1993,9 @@ function buildBrowserReplay(
   const staticGpxPointCount = eligibleGpxPoints.filter((point) =>
     point.timestamp === null && isSelectedGpxImport(point.importId)).length
   const staticGpxEvidence = state.gpxImports
-    .filter((entry) => entry.mission_id === input.missionId && entry.retired_at == null
+    .filter((entry) => entry.mission_id === input.missionId
       && (input.outingIds === undefined
-        || (entry.outing_id != null && input.outingIds.includes(entry.outing_id))))
+        || isSelectedGpxImport(entry.id)))
     .flatMap((entry) => {
       const revisionSequence = eligibleRevisionByImport.get(entry.id)
       if (revisionSequence === undefined) return []
@@ -1990,7 +2013,7 @@ function buildBrowserReplay(
         display_name: entry.display_name,
         content_sha256: entry.content_sha256 ?? null,
         timing_class: entry.timing_class ?? 'undated' as const,
-        outing_id: entry.outing_id ?? null,
+        outing_id: eligibleOutingByImport.get(entry.id) ?? null,
         completeness: entry.content_sha256 == null ? 'legacy_baseline' as const : 'complete' as const,
         recorded_at: firstStaticPoint.recordedAt,
         static_point_count: staticPoints.length,
@@ -2014,9 +2037,8 @@ function buildBrowserReplay(
     availableDeviceIds: [...new Set(state.positions
       .filter((position) => position.mission_id === input.missionId)
       .map((position) => position.device_id))].sort(),
-    availableOutingIds: [...new Set(state.gpxImports
-      .filter((entry) => entry.mission_id === input.missionId && entry.outing_id != null)
-      .map((entry) => entry.outing_id!))].sort(),
+    availableOutingIds: [...new Set([...eligibleOutingByImport.values()]
+      .filter((outingId): outingId is string => outingId !== null))].sort(),
     deviceFilterIds: input.deviceIds ?? [],
     outingFilterIds: input.outingIds ?? [],
     staticGpxEvidence,
