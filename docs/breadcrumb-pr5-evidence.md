@@ -2,8 +2,10 @@
 
 This record binds BCP-11, BCP-12a, BCP-12b and BCP-13 to one pull request.
 It is pre-merge qualification evidence, not production, field, live-Traccar or
-release proof. Exact final-head review results are bound in the final handoff
-after the independent reviewers finish.
+release proof. PR opened/review-ready is an intermediate state. The task is not
+complete until the accepted four-review baseline and required rechecks are clean
+on the current exact head; those external attestations are bound in the PR and
+final coordinator handoff without changing the reviewed tree.
 
 ## Authority and requirement trace
 
@@ -19,12 +21,14 @@ after the independent reviewers finish.
 | `SAR-QA-020` | Finalized missions are read-only; history and revisions remain visible | finalized-fence transaction/race tests, retired-parent tests and replay revision tests; archive/custody remains PR6 |
 | `SAR-QA-021` | Traccar `fixTime` is the sole breadcrumb evidence clock | replay query eligibility/limitation tests and 960k/2m qualification fixtures |
 
-## Initial exact-head independent review and accepted-finding disposition
+## Exact-head independent review and accepted-finding disposition
 
-The four complementary reviewers inspected exact accumulated range
-`80309c995a18eeb190cce4310c9a46b0f46d5263..e26c2c756997a057b4e151bf6ef58a8014c3328c`
-from a clean worktree. None returned clean. Every report was centrally retraced;
-the accepted findings and their dispositions are:
+The initial review work inspected the accumulated PR range from exact base
+`80309c995a18eeb190cce4310c9a46b0f46d5263`. A second four-review exact-head
+wave on `044a73887eef791b18c30df0838b7f1bd021fc56` used the accepted broad,
+persistence/completeness, concurrency/finalization and renderer/input-
+containment charters. None returned clean. Every report was centrally
+source-retraced; accepted findings and dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -73,46 +77,90 @@ the accepted findings and their dispositions are:
 - the qualification heartbeat began after open and did not gate every recorded
   latency: it now starts before initial/restart open and fail-closes on open,
   event-loop, dispatch, live-current read and replay-seek budgets.
+- an explicit GPX identity could rebind another import's canonical/alias path:
+  canonical and alias collisions now reject atomically, with both direction
+  regressions;
+- a selected GPX could be killed before any durable receipt existed: one batch
+  and every selected-file receipt are committed before worker launch, exact
+  bytes/hash are retained before parsing, and actual child-process `SIGKILL`
+  tests cover both pending/pre-read and retained/pre-publish recovery;
+- recovered GPX failures disappeared after restart: bounded persisted issue
+  pages now reach the runtime and GPX panel without absolute paths or bytes;
+- future legacy lifecycle and membership baselines could look like known empty
+  history: replay now emits explicit pre-baseline limitations;
+- replay exposed neither device nor outing filters, and a nine-outing test
+  reused production shaping: display-only filters are explicit and a separate
+  mixed-evidence oracle now checks sampled two-clock states;
+- assignments and passes accepted invented or cross-mission participant, clue
+  and track links: every link is validated in the same mission transaction;
+- file selection failed the whole GPX batch before durable per-file handling:
+  readable siblings now import while missing/malformed siblings settle as
+  explicit independent failures;
+- Finish/Finalize could race an unsettled receipt, and worker-constructor
+  failures could poison shutdown queues: lifecycle gates include batches,
+  receipts and staging in one transaction, while every synchronous constructor
+  failure settles worker ownership;
+- offset-style late replay pages and page-local totals obscured whole state:
+  opaque bidirectional keyset cursors, whole-state totals and an independently
+  calculated near-tail ordinal now prove bounded late pages;
+- unbounded GPX geometry, retained bytes and revision lists could cross IPC:
+  the preload now exposes only bounded keyset pages and dedicated presentation
+  updates; exact source bytes remain backend-only and display geometry is
+  explicitly compacted;
+- watched-directory enumeration could publish into a newly selected mission:
+  the initiating mission identity and generation token are captured before the
+  asynchronous directory read and stale results are discarded;
+- exact whole-state replay totals still performed a cold full-position scan:
+  new stores maintain a transactional two-clock daily read model keyed by
+  `max(fixTime, recorded_at)`, with compact partial-day/device indexes and
+  explicit legacy fallback limitations.
 
 The corresponding focused regression tests were observed red before the
-production corrections and are retained in the unit, integration, Chromium and
-critical-visual suites. The final independent recheck verdicts remain pending;
-PR opened/review-ready is only an intermediate state.
+production corrections and are retained in the unit, integration, forced-kill,
+Chromium and critical-visual suites. The current exact-head independent verdicts
+are recorded externally after the final four-review wave; opening the PR never
+substitutes for that wave.
 
 ## Local deterministic, browser and packaged evidence
 
-The remediation candidate passed:
+The final local remediation tree passed:
 
-- full unit: 282 files / 2,331 tests;
+- full unit: 286 files / 2,361 tests;
 - backend: 51 passed / 1 ignored;
-- Chromium: 161/161;
+- Chromium: 162/162;
 - visual Playwright: 58/58;
-- independent visual gate: 67 pass, one non-blocking high framing failure and
-  zero critical failures; all three PR5 critical entries passed;
+- independent visual gate: the full 68-entry pass correctly rejected one
+  missing visible undated-GPX explanation and one cropped tracking evidence
+  frame; both accepted dispositions passed fresh no-cache focused review at
+  their original critical/high severities;
 - TypeScript/Vite production build and bundle budgets, ESLint, changed CommonJS
   syntax checks and `git diff --check`;
 - unsigned packaged macOS arm64 build;
 - packaged macOS tracking/restart soak: 8,664/8,664 exact positions over two
   launches, integrity `ok`, zero redundant slope, four healthy operator samples,
-  30.70 ms main-process maximum and zero renderer crashes;
-- packaged macOS forced kill/restart against the 607,412,224-byte 960k fixture:
-  kill occurred only after the backup-start marker was durable, restart retained
-  the interrupted-operation marker, support-bundle privacy checks passed and the
-  fail-closed verdict was PASS.
+  4.0 ms main-process maximum and zero renderer crashes;
+- actual child-process `SIGKILL` at both the pending source-receipt boundary and
+  retained-source/pre-publish boundary, followed by restart recovery to explicit
+  failed receipts with bytes/hash present only where they had become durable.
 
 Fresh local synthetic scale qualification used fixture generator v5 on Darwin
 arm64/Node v22.22.3 with timezone `Europe/Dublin`:
 
 | Preset | Fixture SHA-256 | Seek / restart | Import dispatch | Current read during import / replay | Event-loop max | Equality |
 | --- | --- | --- | --- | --- | --- | --- |
-| 960k normal envelope | `3918e2c67ec1ec9d7fc9477b290572c78082cdca2b84ed5dbf83ce4daa99f1c7` | 242.38 / 234.64 ms | 2.08 ms | 0.59 / 1.22 ms | 11.63 ms | exact first page |
-| 2m headroom | `f0fc079fa750d92c603cf92bff2e360fd32178a6111adc2251be1e609d803340` | 441.00 / 430.54 ms | 1.42 ms | 0.65 / 1.04 ms | 11.14 ms | exact first page |
+| 960k normal envelope | `a3237ce4ca959a188fbfd3ffe80e9037d3c2b4230f70bee600ca65e08bf85099` | 59.46 / 53.26 ms | 2.17 ms | 0.60 / 0.94 ms | 47.21 ms | exact first page |
+| 2m headroom | `46a6f9980c184a856832c0c596cbae18c13e963e13707d10ceedbfee0e527afe` | 86.78 / 50.42 ms | 1.51 ms | 24.80 / 0.98 ms | 54.95 ms | exact first page |
 
-Both presets passed their fail-closed gates. The 960k ordinary seek stayed
-below one second and every measured main-isolate dispatch/current-read/open/event-
-loop path stayed below the 200 ms hard block. The 2m row is headroom evidence.
+Both presets imported 50,000 GPX points while continuously writing current
+positions. The 960k run recorded 1,037 current writes (41.92 ms maximum,
+2.52 ms p95) and an exact 914,001 near-tail page in 55.91 ms. The 2m headroom
+run recorded 1,079 writes (47.84 ms maximum, 2.31 ms p95) and exact 1,850,001
+near-tail paging in 69.16 ms. Both passed restart equality. The ordinary seek
+stayed below one second and every measured main dispatch/current-read/open/event-
+loop path stayed below the 200 ms hard block. The 2m row remains deliberate
+headroom/renderer-rejection evidence, not a normal mission-size claim.
 
-The first pushed remediation candidate was correctly rejected by Linux run
+An earlier pushed remediation candidate was correctly rejected by Linux run
 `33096222238`: its 50,000-point GPX/current-write contention regression measured
 330.65 ms against the 200 ms hard block. The source retrace found that short
 transactions alone did not prevent the GPX worker immediately reacquiring WAL
@@ -120,12 +168,13 @@ writer ownership. The worker now yields an explicit writer turn after staging
 and every 25-point slice. The same focused regression was red locally at
 355.27 ms before that yield, then passed five serial repetitions; the focused
 GPX/current/shutdown set passed 24/24 and the full unit suite passed 2,331/2,331.
-Replacement exact-head Linux qualification remains required.
+Replacement exact-head Linux qualification is required on the final pushed
+head and is reported in the PR/final handoff.
 
 ## Proof limits
 
 Exact pushed-head Linux package/soak/960k evidence and the clean four-review
-recheck are still required before this record can support task completion. PR6
-and BCP-17 retain archive encryption/custody, restore-and-replay qualification,
+wave are completion gates reported externally against the immutable final head.
+PR6 and BCP-17 retain archive encryption/custody, restore-and-replay qualification,
 broad multi-machine/live-server/archive qualification, release and field
 acceptance. No merge or release is authorized here.

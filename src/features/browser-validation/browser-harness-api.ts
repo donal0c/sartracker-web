@@ -5,6 +5,7 @@ import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
 import { useMarkerStore } from '../markers/marker-store'
 import type {
+  GpxImportIssue,
   UpsertDrawingInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
@@ -48,6 +49,7 @@ type BrowserHarnessApi = {
       readonly contents: string
     }[],
   ) => Promise<void>
+  readonly injectGpxImportIssues: (issues: readonly GpxImportIssue[]) => void
   readonly seedReadOnlyMapSurface: (input: {
     readonly markers?: readonly UpsertMarkerInput[]
     readonly drawings?: readonly UpsertDrawingInput[]
@@ -183,6 +185,14 @@ export function installBrowserHarnessApi(): void {
       }
 
       await controller.importFiles(files)
+    },
+    injectGpxImportIssues: (issues) => {
+      useGpxStore.setState({
+        importIssues: issues,
+        error: issues.length === 0
+          ? null
+          : `${issues.length} persisted GPX import issue${issues.length === 1 ? '' : 's'} require operator review. Exact failure provenance was retained.`,
+      })
     },
     seedReadOnlyMapSurface: async (input) => {
       const store = getBrowserHarnessStore()

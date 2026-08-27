@@ -1908,7 +1908,8 @@ function buildBrowserReplay(
       && position.timestamp_source === 'fix'
       && position.received_at != null
       && position.received_at <= selectedTime
-      && position.timestamp <= selectedTime,
+      && position.timestamp <= selectedTime
+      && (input.deviceIds === undefined || input.deviceIds.includes(position.device_id)),
     )
     .map((position) => ({
       evidence_id: position.source_position_id ?? position.id,
@@ -1936,8 +1937,16 @@ function buildBrowserReplay(
     point.revisionSequence === eligibleRevisionByImport.get(point.importId)
     && point.recordedAt <= selectedTime,
   )
+  /** Mirrors the production display-only outing filter inside browser validation. */
+  const isSelectedGpxImport = (importId: string) => {
+    const outingId = state.gpxImports.find((entry) => entry.id === importId)?.outing_id ?? null
+    return input.outingIds === undefined || (outingId !== null && input.outingIds.includes(outingId))
+  }
   const gpxTracks = eligibleGpxPoints
-    .filter((point) => point.timestamp !== null && point.timestamp <= selectedTime)
+    .filter((point) => {
+      return point.timestamp !== null && point.timestamp <= selectedTime
+        && isSelectedGpxImport(point.importId)
+    })
     .map((point) => ({
       evidence_id: `${point.importId}:${point.revisionSequence}:${point.segmentIndex}:${point.pointIndex}`,
       source_type: 'gpx_point' as const,
@@ -1958,9 +1967,12 @@ function buildBrowserReplay(
   )
   const tracks = allTracks.slice(offset, offset + input.trackLimit)
   const nextOffset = offset + tracks.length
-  const staticGpxPointCount = eligibleGpxPoints.filter((point) => point.timestamp === null).length
+  const staticGpxPointCount = eligibleGpxPoints.filter((point) =>
+    point.timestamp === null && isSelectedGpxImport(point.importId)).length
   const staticGpxEvidence = state.gpxImports
-    .filter((entry) => entry.mission_id === input.missionId && entry.retired_at == null)
+    .filter((entry) => entry.mission_id === input.missionId && entry.retired_at == null
+      && (input.outingIds === undefined
+        || (entry.outing_id != null && input.outingIds.includes(entry.outing_id))))
     .flatMap((entry) => {
       const revisionSequence = eligibleRevisionByImport.get(entry.id)
       if (revisionSequence === undefined) return []
@@ -1991,6 +2003,7 @@ function buildBrowserReplay(
     timezone: input.timezone ?? 'Europe/Dublin',
     objects: [],
     totalObjectCount: 0,
+    objectTypeCounts: {},
     objectCursor: '0',
     nextObjectCursor: null,
     tracks,
@@ -1998,6 +2011,14 @@ function buildBrowserReplay(
     previousCursor: offset === 0 ? null : String(Math.max(0, offset - input.trackLimit)),
     totalTrackCount: allTracks.length,
     staticGpxPointCount,
+    availableDeviceIds: [...new Set(state.positions
+      .filter((position) => position.mission_id === input.missionId)
+      .map((position) => position.device_id))].sort(),
+    availableOutingIds: [...new Set(state.gpxImports
+      .filter((entry) => entry.mission_id === input.missionId && entry.outing_id != null)
+      .map((entry) => entry.outing_id!))].sort(),
+    deviceFilterIds: input.deviceIds ?? [],
+    outingFilterIds: input.outingIds ?? [],
     staticGpxEvidence,
     nextCursor: nextOffset < allTracks.length ? String(nextOffset) : null,
     progress: allTracks.length === 0 ? 1 : nextOffset / allTracks.length,

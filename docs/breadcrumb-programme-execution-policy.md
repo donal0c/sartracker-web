@@ -118,17 +118,19 @@ PR head, but it cannot merge ahead of its prerequisite.
 ## Review Allocation
 
 Reviews operate on the exact PR head and use independent contexts. They are
-evidence-backed reviews, not votes.
+evidence-backed reviews, not votes. For PR-4 onward, the accepted allocation is
+four complementary reviews on one final code-and-documentation head:
 
-- Review 1: safety-invariant adversary.
-- Review 2: concurrency and failure modes.
-- Review 3: schema, persistence, provenance, and data integrity.
-- Review 4: test adequacy plus architecture and code quality.
-- Review 5, for 10/10 PRs only: independent end-to-end adversarial synthesis.
+- broad life-safety and end-to-end;
+- persistence and completeness;
+- concurrency and finalization; and
+- renderer and input containment.
 
+The former five-independent-review allocation is superseded for these PRs.
 P1 and P2 findings block merge. Any new commit invalidates the affected
-review. Focused delta review closes findings, followed by one final exact-head
-review that checks the cumulative diff and all P1/P2 closures.
+review. Remediation receives one fresh broad exact-head review plus each
+affected focused recheck; all four restart only when a shared state machine,
+cross-boundary contract, or unbounded impact invalidates the original charters.
 
 ### PR-3 Remediation And PR-4-Onward Review Topology
 

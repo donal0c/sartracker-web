@@ -184,6 +184,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByTestId('fix-time-unverified-warning')).toContainText(
       'uses server receipt clock, not verified Traccar fixTime',
     )
+    await page.setViewportSize({ width: 1440, height: 1200 })
 
     await captureElementAndRegister(page, 'tracking-status', {
       testId: 'tracking-current-position-ingest-warning',

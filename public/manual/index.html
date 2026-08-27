@@ -1533,6 +1533,13 @@
             batch is reported explicitly. Successfully accepted files remain visible, while failed source bytes,
             digest and reason remain retained for investigation.
           </p>
+          <p>
+            Every selected desktop file receives a durable receipt before it is read. If the app or computer
+            stops during import, the next start shows the interrupted file and failure reason in the GPX panel;
+            it does not silently treat the selection as imported. Mission Finish and Finalize remain blocked
+            while a GPX batch, selected-file receipt, or staged revision is unsettled. File names are shown to
+            the operator, but retained source bytes and full local paths stay behind the desktop boundary.
+          </p>
           <h3>Helicopters</h3>
           <p>
             The Helicopters panel reserves up to four aviation slots: Rescue 118, Rescue 115, Air Corps 1, and
@@ -1585,6 +1592,11 @@
             Traccar <code>fixTime</code> is the only breadcrumb evidence clock. Evidence recorded after the
             selected time is not backdated into the view. Warnings identify undated static GPX, missing recorded
             provenance, and legacy objects whose earlier revision history is unknown.
+          </p>
+          <p>
+            Display-only filters can narrow exact Traccar tracks by device and dated/static GPX by outing.
+            They do not alter the reconstructed lifecycle, participants, assignments, passes, markers, drawings,
+            or search areas. Undated GPX remains static and is explicitly excluded from precise replay.
           </p>
           <p>
             Use the earlier/later controls to page through reconstructed objects and exact track evidence; later

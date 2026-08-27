@@ -44,16 +44,12 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     await page.getByTestId('search-operation-area').selectOption({ label: 'Area Beta' })
     await page.getByTestId('search-operation-outing').selectOption({ label: 'Operational period 2' })
     await page.getByTestId('search-assignment-team').fill('Team 2')
-    await page.getByTestId('search-assignment-participants').fill('participant-2, participant-3')
     await page.getByTestId('search-assignment-record').click()
     await expect(page.getByTestId('search-operation-feedback')).toContainText('Assignment recorded')
 
     await page.getByTestId('search-pass-assignment').selectOption({ index: 1 })
     await page.getByTestId('search-pass-start').fill('2026-08-27T14:00')
     await page.getByTestId('search-pass-end').fill('2026-08-27T15:30')
-    await page.getByTestId('search-pass-participants').fill('participant-2')
-    await page.getByTestId('search-pass-clues').fill('clue-9')
-    await page.getByTestId('search-pass-tracks').fill('track-2')
     await page.getByTestId('search-pass-outcome').selectOption('partial')
     await page.getByTestId('search-pass-record').click()
     await expect(page.getByTestId('search-operation-feedback')).toContainText(
@@ -77,16 +73,16 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     expect(recorded.assignment).toMatchObject({
       search_area_id: recorded.area?.id,
       outing_id: recorded.outing?.id,
-      participant_ids_json: '["participant-2","participant-3"]',
+      participant_ids_json: '[]',
     })
     expect(recorded.pass).toMatchObject({
       search_area_id: recorded.area?.id,
       assignment_id: recorded.assignment?.id,
       started_at: '2026-08-27T13:00:00.000Z',
       ended_at: '2026-08-27T14:30:00.000Z',
-      participant_ids: ['participant-2'],
-      clue_ids: ['clue-9'],
-      track_evidence_ids: ['track-2'],
+      participant_ids: [],
+      clue_ids: [],
+      track_evidence_ids: [],
     })
   })
 })

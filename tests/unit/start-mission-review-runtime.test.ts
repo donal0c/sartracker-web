@@ -36,6 +36,41 @@ describe('startMissionReviewRuntime', () => {
     )
   })
 
+  it('loads review GPX projections through bounded renderer pages [DON-274]', async () => {
+    const listGpxImports = vi.fn().mockRejectedValue(new Error('unbounded API must not be called'))
+    const listGpxImportPage = vi
+      .fn()
+      .mockResolvedValueOnce({ entries: [{
+        id: 'gpx-1',
+        mission_id: FIRST_MISSION.id,
+        source_path: '/field/gpx-1.gpx',
+        file_name: 'gpx-1.gpx',
+        display_name: 'Team track',
+        geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+        metadata_json: null,
+        imported_at: '2026-04-10T08:00:00.000Z',
+        updated_at: '2026-04-10T08:00:00.000Z',
+      }], nextCursor: null })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listGpxImports, listGpxImportPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+
+    expect(listGpxImports).not.toHaveBeenCalled()
+    expect(listGpxImportPage).toHaveBeenCalledWith({
+      missionId: FIRST_MISSION.id, limit: 25,
+    })
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      snapshot: expect.objectContaining({
+        summary: expect.objectContaining({ gpxImportCount: 1 }),
+      }),
+    }))
+  })
+
   it('cancels superseded replay seeks and publishes only the newest data-known-at-T result [DON-278]', async () => {
     let resolveFirst: ((value: unknown) => void) | undefined
     const readMissionReplay = vi.fn()
@@ -68,6 +103,46 @@ describe('startMissionReviewRuntime', () => {
         }),
       }),
     }))
+  })
+
+  it('keeps display-only device and outing filters on exact-track continuation reads [DON-278]', async () => {
+    const firstResult = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      nextCursor: 'opaque-keyset-cursor',
+      deviceFilterIds: ['device-7'],
+      outingFilterIds: ['outing-3'],
+    }
+    const readMissionReplay = vi.fn().mockResolvedValue(firstResult)
+    const readMissionReplayTrackChunk = vi.fn().mockResolvedValue({
+      missionId: FIRST_MISSION.id,
+      selectedTime: firstResult.selectedTime,
+      tracks: [],
+      trackCursor: '1',
+      previousCursor: 'opaque-previous',
+      totalTrackCount: 1,
+      nextCursor: null,
+      progress: 1,
+    })
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ readMissionReplay, readMissionReplayTrackChunk }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+    await runtime.load(FIRST_MISSION.id)
+
+    await runtime.seekReplay(firstResult.selectedTime, {
+      deviceIds: ['device-7'], outingIds: ['outing-3'],
+    })
+    await runtime.loadNextReplayChunk()
+
+    expect(readMissionReplay).toHaveBeenCalledWith(expect.objectContaining({
+      deviceIds: ['device-7'], outingIds: ['outing-3'],
+    }), expect.any(String))
+    expect(readMissionReplayTrackChunk).toHaveBeenCalledWith(expect.objectContaining({
+      cursor: 'opaque-keyset-cursor',
+      deviceIds: ['device-7'],
+      outingIds: ['outing-3'],
+    }), expect.any(String))
   })
 
   it('cancels and fences replay when the selected mission changes [DON-278]', async () => {
@@ -609,6 +684,7 @@ function replayResult(selectedTime: string, evidenceId: string) {
     timezone: 'Europe/Dublin',
     objects: [],
     totalObjectCount: 0,
+    objectTypeCounts: {},
     objectCursor: '0',
     nextObjectCursor: null,
     tracks: [{
@@ -628,6 +704,10 @@ function replayResult(selectedTime: string, evidenceId: string) {
     previousCursor: null,
     totalTrackCount: 1,
     staticGpxPointCount: 0,
+    availableDeviceIds: ['alpha'],
+    availableOutingIds: [],
+    deviceFilterIds: [],
+    outingFilterIds: [],
     staticGpxEvidence: [],
     nextCursor: null,
     progress: 1,

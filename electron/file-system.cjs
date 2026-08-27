@@ -128,8 +128,6 @@ function createElectronFileSystem(options) {
         const filePath = normalizeRequiredPath(inputPath, 'GPX file')
         assertAllowedPath(filePath, 'GPX file')
         if (!isGpxPath(filePath)) throw new Error(`Only .gpx files can be imported: ${filePath}`)
-        const stat = await fs.stat(filePath).catch(() => null)
-        if (stat === null || !stat.isFile()) throw new Error(`GPX file was not found: ${filePath}`)
         return filePath
       }))
     },

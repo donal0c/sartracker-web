@@ -1,7 +1,7 @@
 const { parentPort, threadId, workerData } = require('node:worker_threads')
 
-const Database = require('better-sqlite3')
 const { assertReplayResultBounded } = require('./mission-replay-message-policy.cjs')
+const { openMissionReplayDatabase } = require('./mission-replay-database.cjs')
 const {
   readMissionReplayObjectChunk,
   readMissionReplayState,
@@ -14,8 +14,7 @@ if (parentPort === null) throw new Error('Mission replay worker requires a paren
 function run() {
   let database
   try {
-    database = new Database(workerData.databasePath, { readonly: true, fileMustExist: true })
-    database.pragma('query_only = ON')
+    database = openMissionReplayDatabase(workerData.databasePath)
     const result = workerData.kind === 'chunk'
       ? readMissionReplayTrackChunk(database, workerData.query)
       : workerData.kind === 'objects'

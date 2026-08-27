@@ -12,14 +12,23 @@ function runGpxEvidenceImportInWorker(input) {
   let resolveWorkerExit
   const workerExited = new Promise((resolve) => { resolveWorkerExit = resolve })
   const result = new Promise((resolve, reject) => {
-    const worker = input.createWorker?.() ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
-      workerData: {
-        databasePath: input.databasePath,
-        missionId: input.missionId,
-        paths: input.paths,
-        batchId: input.batchId ?? randomUUID(),
-      },
-    })
+    let worker
+    try {
+      worker = input.createWorker?.() ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
+        workerData: {
+          databasePath: input.databasePath,
+          missionId: input.missionId,
+          paths: input.paths,
+          batchId: input.batchId ?? randomUUID(),
+          receiptsStarted: input.receiptsStarted === true,
+          pauseAfter: normalizePauseAfter(input.faultInjection?.pauseAfter),
+        },
+      })
+    } catch (error) {
+      resolveWorkerExit()
+      reject(error)
+      return
+    }
     const dispatchDurationMs = performance.now() - startedAt
     let completed = null
     let settled = false
@@ -73,6 +82,11 @@ function runGpxEvidenceImportInWorker(input) {
 function validateInput(input) {
   if (typeof input?.missionId !== 'string' || input.missionId.length < 1 || input.missionId.length > 200) throw new Error('GPX import mission ID is invalid.')
   if (!Array.isArray(input.paths) || input.paths.length < 1 || input.paths.length > 100 || input.paths.some((entry) => typeof entry !== 'string' || entry.length > 4096)) throw new Error('GPX import paths are invalid.')
+}
+
+/** Limits forced-kill fault injection to the two durable receipt boundaries under test. */
+function normalizePauseAfter(value) {
+  return value === 'pending' || value === 'retained' ? value : null
 }
 
 function createAbortError() {

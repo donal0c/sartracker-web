@@ -577,10 +577,13 @@ The consolidated requirement, finding-disposition and qualification record is
   `tests/unit/gpx-parser.test.ts`, and
   `tests/unit/electron-mission-evidence-versioning.test.ts`,
   `tests/unit/electron-gpx-evidence-import-runner.test.ts`, and
+  `tests/unit/electron-gpx-forced-kill-recovery.test.ts`,
+  `tests/unit/electron-gpx-renderer-boundary.test.ts`, and
   `tests/e2e/gpx-import.spec.ts` cover exact-byte
   GPX identity/revisions, retained ordering/elevation/rejections, and explicit
   fully dated/partially dated/undated evidence without timestamp invention,
-  outing assignment, interrupted staging, and shutdown ownership.
+  outing assignment, pre-read/retained forced-kill recovery, bounded renderer
+  projections, persisted restart issues, and shutdown ownership.
 - `SAR-QA-006`, `SAR-QA-007`, `SAR-QA-013`, `SAR-QA-017`, `SAR-QA-021`:
   `DON-277`, `DON-278`, `tests/unit/electron-mission-replay-query.test.ts`,
   `tests/unit/electron-mission-replay-runner.test.ts`, and
@@ -589,12 +592,16 @@ The consolidated requirement, finding-disposition and qualification record is
   finalized-write fences, deterministic data-known-at-T folding, sole
   `fixTime` track authority, cancellation/stale-reply containment, explicit
   limitations and live-map independence.
+  The new-store read model counts evidence at `max(fixTime, recorded_at)`, while
+  opaque keyset pages and device/outing filters remain display-only.
 - `SAR-QA-009`, `SAR-QA-018`: `DON-279`,
   `tests/unit/electron-mission-evidence-versioning.test.ts`,
   `tests/e2e/mission-evidence-search-passes.spec.ts`, and
   `tests/e2e/visual/visual-mission-evidence-replay.spec.ts` cover stable area
   identity, repeated assignment/pass records, revisions, and coordinator-only
-  full/partial/aborted declarations with coverage remaining advisory.
+  full/partial/aborted declarations with coverage remaining advisory. Backend
+  transactions reject invented or cross-mission participant, clue and track
+  evidence links.
 - `SAR-QA-020`: `DON-277` and
   `tests/unit/electron-mission-evidence-versioning.test.ts` cover retirement,
   indefinite in-store evidence retention and backend finalized-mission write

@@ -378,6 +378,23 @@ export type GpxTrackImport = {
   readonly updated_at: string
 }
 
+export type GpxImportIssue = {
+  readonly batch_id: string
+  readonly file_name: string
+  readonly reason: string
+  readonly recorded_at: string
+}
+
+export type GpxImportIssuePage = {
+  readonly entries: readonly GpxImportIssue[]
+  readonly nextCursor: string | null
+}
+
+export type GpxImportPage = {
+  readonly entries: readonly GpxTrackImport[]
+  readonly nextCursor: string | null
+}
+
 export type HelicopterSlotKey = 'slot_1' | 'slot_2' | 'slot_3' | 'slot_4'
 
 export type Helicopter = {
@@ -512,6 +529,10 @@ export type MissionReplayReadInput = {
   readonly cursor?: string | null
   readonly objectLimit?: number
   readonly objectCursor?: string | null
+  /** Display-only Traccar-device filter; never changes reconstructed mission state. */
+  readonly deviceIds?: readonly string[]
+  /** Display-only GPX-outing filter; never changes reconstructed mission state. */
+  readonly outingIds?: readonly string[]
 }
 
 export type MissionReplayReadResult = {
@@ -529,6 +550,7 @@ export type MissionReplayReadResult = {
     readonly state: Readonly<Record<string, unknown>>
   }[]
   readonly totalObjectCount: number
+  readonly objectTypeCounts: Readonly<Record<string, number>>
   readonly objectCursor: string
   readonly nextObjectCursor: string | null
   readonly missionLifecycle?: {
@@ -544,6 +566,10 @@ export type MissionReplayReadResult = {
   readonly previousCursor: string | null
   readonly totalTrackCount: number
   readonly staticGpxPointCount: number
+  readonly availableDeviceIds: readonly string[]
+  readonly availableOutingIds: readonly string[]
+  readonly deviceFilterIds: readonly string[]
+  readonly outingFilterIds: readonly string[]
   readonly staticGpxEvidence: readonly {
     readonly import_id: string
     readonly revision_sequence: number
@@ -976,8 +1002,31 @@ export type MissionStore = {
   readonly deleteHelicopter: (helicopterId: string) => Promise<boolean>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
+  readonly listGpxImportPage?: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<GpxImportPage>
+  readonly listGpxImportIssues?: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<GpxImportIssuePage>
+  readonly updateGpxImportPresentation?: (input: {
+    readonly id: string
+    readonly mission_id: string
+    readonly metadata_json: string | null
+  }) => Promise<GpxTrackImport>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
   readonly listGpxImportRevisions?: (importId: string) => Promise<readonly Readonly<Record<string, unknown>>[]>
+  readonly listGpxImportRevisionPage?: (input: {
+    readonly importId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<{
+    readonly entries: readonly Readonly<Record<string, unknown>>[]
+    readonly nextCursor: string | null
+  }>
   readonly assignGpxImportToOuting?: (input: {
     readonly import_id: string
     readonly outing_id: string

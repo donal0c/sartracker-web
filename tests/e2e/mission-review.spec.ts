@@ -191,6 +191,13 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-replay-reconstructed-state')).toContainText('Known by')
     await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('Traccar fixTime')
     await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('GPX source time')
+    await expect(page.getByTestId('mission-replay-display-filters')).toContainText(
+      'never alter reconstructed mission state',
+    )
+    await page.getByTestId('mission-replay-device-filter-alpha').check()
+    await page.getByTestId('mission-replay-apply-filters').click()
+    await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('Traccar fixTime')
+    await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('GPX source time')
     await expect(page.getByTestId('mission-replay-limitation-browser_harness_version_history_unavailable')).toBeVisible()
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeEnabled()
 

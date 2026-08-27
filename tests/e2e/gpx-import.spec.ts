@@ -11,6 +11,7 @@ test.describe('M22 GPX import parity', () => {
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
     await page.getByTestId('sidebar-tab-tools').click()
+    await expect(page.getByTestId('gpx-import-panel')).toBeVisible()
   })
 
   test('renders imported GPX tracks in the panel, layer catalog, review workspace, and map source', async ({
@@ -80,6 +81,25 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('mission-review-workspace')).toContainText('GPX Imports')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('GPX Import Created')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('/tracks/alpha.gpx')
+  })
+
+  test('shows retained interrupted-import provenance after runtime recovery [DON-274]', async ({ page }) => {
+    await page.evaluate(() => {
+      window.__SARTRACKER_BROWSER_HARNESS__?.injectGpxImportIssues([{
+        batch_id: 'interrupted-batch',
+        file_name: 'team-alpha.gpx',
+        reason: 'Import was interrupted after source bytes were retained.',
+        recorded_at: '2026-08-27T10:00:00.000Z',
+      }])
+    })
+
+    await expect(page.getByTestId('gpx-import-error')).toContainText(
+      '1 persisted GPX import issue',
+    )
+    await expect(page.getByTestId('gpx-import-issues')).toContainText('team-alpha.gpx')
+    await expect(page.getByTestId('gpx-import-issues')).toContainText(
+      'interrupted after source bytes were retained',
+    )
   })
 
   test('DON-194: changes individual GPX colours and keeps the layer tree readable on smaller displays', async ({

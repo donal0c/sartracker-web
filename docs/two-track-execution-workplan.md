@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) is implemented as one review unit on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`; exact-head review and Linux PR CI are next. PR-6 archive lifecycle follows only after PR-5 is accepted.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) is implemented as one review unit on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`. The initial four-review wave was not clean; accepted findings are remediated and the immutable pushed-head Linux gate plus fresh broad/persistence/concurrency/renderer exact-head rechecks are the remaining task-owned completion gates. PR-6 archive lifecycle follows only after Donal accepts PR-5.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -168,8 +168,10 @@ backend finalization fences. GPX retains exact source bytes/digest, aliases,
 ordered source evidence, rejections and immutable revisions through a worker.
 Mission Review adds stable search assignments/passes and cancellable,
 progressive data-known-at-T replay without changing the live map. Deterministic
-960k and 2m qualification, full browser/visual gates, macOS package/soak and
-forced-kill recovery are green locally. The Linux workflow now runs the 960k
+960k and 2m qualification now includes 50,000-point GPX retention with live
+current writes, exact near-tail keyset pages and transactional two-clock daily
+counts; full browser/visual gates, macOS package/soak and actual pending/retained
+GPX `SIGKILL` recovery are green locally. The Linux workflow now runs the 960k
 qualification beside its packaged build/soak; exact pushed-head CI remains the
 review-entry gate. No release or merge is authorized by this record.
 Opening PR #5 and reaching review-ready proof are intermediate states. The

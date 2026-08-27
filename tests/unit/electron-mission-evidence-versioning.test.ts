@@ -22,9 +22,12 @@ type MissionEvidenceStore = {
   close(): void
   info(): Promise<{ readonly schema_version: number; readonly database_path: string }>
   createMission(input: { readonly name: string; readonly start_time?: string }): Promise<{ readonly id: string }>
+  getMission(missionId: string): Promise<{ readonly status: string }>
   addPosition(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   upsertDevice(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
+  addMissionParticipant(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   finishMission(missionId: string): Promise<{ readonly status: string }>
+  finalizeMission(missionId: string): Promise<Readonly<Record<string, unknown>>>
   upsertMarker(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   deleteMarker(markerId: string): Promise<boolean>
   listMarkers(missionId: string): Promise<readonly Readonly<Record<string, unknown>>[]>
@@ -35,6 +38,23 @@ type MissionEvidenceStore = {
   deleteGpxImport(importId: string): Promise<boolean>
   listGpxImports(missionId: string): Promise<readonly Readonly<Record<string, unknown>>[]>
   listGpxImportRevisions(importId: string): Promise<readonly Readonly<Record<string, unknown>>[]>
+  listGpxImportPage(input: Readonly<Record<string, unknown>>): Promise<{
+    readonly entries: readonly Readonly<Record<string, unknown>>[]
+    readonly nextCursor: string | null
+  }>
+  listGpxImportRevisionPage(input: Readonly<Record<string, unknown>>): Promise<{
+    readonly entries: readonly Readonly<Record<string, unknown>>[]
+    readonly nextCursor: string | null
+  }>
+  updateGpxImportPresentation(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
+  listGpxImportIssues(input: {
+    readonly missionId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }): Promise<{
+    readonly entries: readonly Readonly<Record<string, unknown>>[]
+    readonly nextCursor: string | null
+  }>
   assignGpxImportToOuting(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   upsertSearchArea(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   retireSearchArea(areaId: string, actor?: string): Promise<boolean>
@@ -65,12 +85,36 @@ type MissionEvidenceStore = {
   }[]>
 }
 
-const { createElectronMissionStore, CURRENT_SCHEMA_VERSION, upsertGpxEvidence } = require('../../electron/mission-store.cjs') as {
+const {
+  createElectronMissionStore,
+  CURRENT_SCHEMA_VERSION,
+  recordGpxImportSourceReceipt,
+  retainGpxImportSourceBytes,
+  settleGpxImportSourceReceipt,
+  startGpxImportBatch,
+  upsertGpxEvidence,
+} = require('../../electron/mission-store.cjs') as {
   readonly CURRENT_SCHEMA_VERSION: number
   readonly upsertGpxEvidence: (
     db: InstanceType<typeof Database>,
     input: Readonly<Record<string, unknown>>,
   ) => Readonly<Record<string, unknown>>
+  readonly startGpxImportBatch: (
+    db: InstanceType<typeof Database>,
+    input: Readonly<Record<string, unknown>>,
+  ) => void
+  readonly recordGpxImportSourceReceipt: (
+    db: InstanceType<typeof Database>,
+    input: Readonly<Record<string, unknown>>,
+  ) => void
+  readonly retainGpxImportSourceBytes: (
+    db: InstanceType<typeof Database>,
+    input: Readonly<Record<string, unknown>>,
+  ) => void
+  readonly settleGpxImportSourceReceipt: (
+    db: InstanceType<typeof Database>,
+    input: Readonly<Record<string, unknown>>,
+  ) => void
   readonly createElectronMissionStore: (options: {
     readonly userDataPath: string
     readonly evidenceVersionFaultInjection?: { readonly afterProjection?: boolean }
@@ -105,6 +149,58 @@ describe('mission evidence versioning [DON-277]', () => {
       await rm(userDataPath, { recursive: true, force: true })
       userDataPath = null
     }
+  })
+
+  it('indexes explicit missing-time evidence without a mission-wide replay scan [DON-278]', async () => {
+    store = await createStore()
+    const db = openDatabase(await databasePath())
+
+    expect(db.prepare(`SELECT sql FROM sqlite_master
+      WHERE type = 'index' AND name = 'idx_positions_replay_unknown_time'`).get()?.sql)
+      .toMatch(/WHERE timestamp_source IS NULL/u)
+    expect(db.prepare(`SELECT sql FROM sqlite_master
+      WHERE type = 'index' AND name = 'idx_positions_replay_known_at'`).get()?.sql)
+      .toMatch(/CASE WHEN received_at > timestamp THEN received_at ELSE timestamp END/u)
+    expect(db.prepare(`SELECT sql FROM sqlite_master
+      WHERE type = 'table' AND name = 'mission_replay_position_day_counts'`).get()?.sql)
+      .toMatch(/known_day TEXT NOT NULL/u)
+    expect(db.prepare(`SELECT COUNT(*) AS count FROM sqlite_master
+      WHERE type = 'trigger' AND name LIKE 'positions_replay_day_count_%'`).get()?.count)
+      .toBe(3)
+    db.close()
+  })
+
+  it('counts replay eligibility on the later of fixTime and durable recorded time [DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Replay Known-Time Count Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id, device_id: 'device-1', name: 'Device 1',
+      color: '#38bdf8', status: 'online',
+    })
+    const db = openDatabase(await databasePath())
+    const insert = db.prepare(`INSERT INTO positions (
+      id, mission_id, device_id, lat, lon, timestamp, received_at, data_origin, timestamp_source
+    ) VALUES (?, ?, 'device-1', 52, -9.7, ?, ?, 'live', ?)`)
+    insert.run('same-day', mission.id, '2026-08-26T23:00:00.000Z', '2026-08-26T23:00:01.000Z', 'fix')
+    insert.run('late-known', mission.id, '2026-08-26T23:30:00.000Z', '2026-08-27T00:00:01.000Z', 'fix')
+    insert.run('unproved', mission.id, '2026-08-27T01:00:00.000Z', '2026-08-27T01:00:01.000Z', null)
+
+    expect(db.prepare(`SELECT known_day, position_count
+      FROM mission_replay_position_day_counts WHERE mission_id = ? ORDER BY known_day`).all(mission.id))
+      .toEqual([
+        { known_day: '2026-08-26', position_count: 1 },
+        { known_day: '2026-08-27', position_count: 1 },
+      ])
+
+    db.prepare(`UPDATE positions SET timestamp_source = 'fix' WHERE id = 'unproved'`).run()
+    db.prepare(`DELETE FROM positions WHERE id = 'late-known'`).run()
+    expect(db.prepare(`SELECT known_day, position_count
+      FROM mission_replay_position_day_counts WHERE mission_id = ? ORDER BY known_day`).all(mission.id))
+      .toEqual([
+        { known_day: '2026-08-26', position_count: 1 },
+        { known_day: '2026-08-27', position_count: 1 },
+      ])
+    db.close()
   })
 
   it('writes projection, immutable version, and audit identity in one transaction', async () => {
@@ -347,6 +443,62 @@ describe('mission evidence versioning [DON-277]', () => {
     recoveredDb.close()
   })
 
+  it('recovers pre-read and retained-source receipts as explicit durable failures [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX Receipt Recovery Mission' })
+    const databaseFile = await databasePath()
+    const receiptDb = openDatabase(databaseFile)
+    startGpxImportBatch(receiptDb, {
+      batchId: 'receipt-batch',
+      missionId: mission.id,
+      totalFiles: 2,
+    })
+    recordGpxImportSourceReceipt(receiptDb, {
+      batchId: 'receipt-batch',
+      missionId: mission.id,
+      sourcePath: '/field/not-read.gpx',
+      fileName: 'not-read.gpx',
+    })
+    recordGpxImportSourceReceipt(receiptDb, {
+      batchId: 'receipt-batch',
+      missionId: mission.id,
+      sourcePath: '/field/retained.gpx',
+      fileName: 'retained.gpx',
+    })
+    retainGpxImportSourceBytes(receiptDb, {
+      batchId: 'receipt-batch',
+      missionId: mission.id,
+      sourcePath: '/field/retained.gpx',
+      contentSha256: digestBase64('PGdweD5yZXRhaW5lZDwvZ3B4Pg=='),
+      sourceBytesBase64: 'PGdweD5yZXRhaW5lZDwvZ3B4Pg==',
+    })
+    receiptDb.close()
+    store.close()
+    store = null
+
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    const recoveredDb = openDatabase(databaseFile)
+    expect(recoveredDb.prepare(`SELECT source_path, content_sha256, source_bytes_base64, reason
+      FROM gpx_import_failures WHERE batch_id = ? ORDER BY source_path`).all('receipt-batch'))
+      .toEqual([
+        expect.objectContaining({
+          source_path: '/field/not-read.gpx',
+          content_sha256: null,
+          source_bytes_base64: null,
+          reason: expect.stringMatching(/before source bytes were retained/i),
+        }),
+        expect.objectContaining({
+          source_path: '/field/retained.gpx',
+          content_sha256: digestBase64('PGdweD5yZXRhaW5lZDwvZ3B4Pg=='),
+          source_bytes_base64: 'PGdweD5yZXRhaW5lZDwvZ3B4Pg==',
+          reason: expect.stringMatching(/after source bytes were retained/i),
+        }),
+      ])
+    expect(recoveredDb.prepare(`SELECT status, failed_files FROM gpx_import_batches
+      WHERE id = ?`).get('receipt-batch')).toMatchObject({ status: 'interrupted', failed_files: 2 })
+    recoveredDb.close()
+  })
+
   it('deduplicates GPX by exact content and preserves changed files as revisions [DON-274]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'GPX Evidence Mission' })
@@ -355,6 +507,7 @@ describe('mission evidence versioning [DON-277]', () => {
       content_sha256: digestBase64('PGdweD5maXJzdDwvZ3B4Pg=='),
       source_bytes_base64: 'PGdweD5maXJzdDwvZ3B4Pg==',
     }))
+    expect(first).not.toHaveProperty('source_bytes_base64')
     const alias = await store.upsertGpxImport(gpxInput(mission.id, {
       source_path: '/copied/route.gpx',
       content_sha256: digestBase64('PGdweD5maXJzdDwvZ3B4Pg=='),
@@ -380,6 +533,16 @@ describe('mission evidence versioning [DON-277]', () => {
       'PGdweD5maXJzdDwvZ3B4Pg==',
       'PGdweD5zZWNvbmQ8L2dweD4=',
     ])
+    const rendererPage = await store.listGpxImportPage({ missionId: mission.id, limit: 1 })
+    const revisionPage = await store.listGpxImportRevisionPage({ importId: first.id, limit: 1 })
+    const presentation = await store.updateGpxImportPresentation({
+      id: first.id,
+      mission_id: mission.id,
+      metadata_json: '{"color":"#F032E6"}',
+    })
+    expect(JSON.stringify({ rendererPage, revisionPage, presentation }))
+      .not.toContain('source_bytes_base64')
+    expect(revisionPage.entries[0]).not.toHaveProperty('geometry_json')
 
     await expect(store.deleteGpxImport(String(first.id))).resolves.toBe(true)
     await expect(store.listGpxImports(mission.id)).resolves.toEqual([])
@@ -388,6 +551,51 @@ describe('mission evidence versioning [DON-277]', () => {
       .toMatchObject({ retired_at: expect.any(String) })
     expect(db.prepare('SELECT COUNT(*) AS count FROM gpx_import_aliases WHERE import_id = ?').get(first.id))
       .toMatchObject({ count: 2 })
+    db.close()
+  })
+
+  it('rejects an explicit GPX ID whose source path belongs to different evidence [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX Identity Collision Mission' })
+    const first = await store.upsertGpxImport(gpxInput(mission.id, {
+      id: 'gpx-first',
+      source_path: '/field/first.gpx',
+      source_bytes_base64: 'PGdweD5maXJzdDwvZ3B4Pg==',
+      content_sha256: digestBase64('PGdweD5maXJzdDwvZ3B4Pg=='),
+    }))
+    const second = await store.upsertGpxImport(gpxInput(mission.id, {
+      id: 'gpx-second',
+      source_path: '/field/second.gpx',
+      source_bytes_base64: 'PGdweD5zZWNvbmQ8L2dweD4=',
+      content_sha256: digestBase64('PGdweD5zZWNvbmQ8L2dweD4='),
+    }))
+    const secondAlias = await store.upsertGpxImport(gpxInput(mission.id, {
+      source_path: '/field/second-copy.gpx',
+      source_bytes_base64: 'PGdweD5zZWNvbmQ8L2dweD4=',
+      content_sha256: digestBase64('PGdweD5zZWNvbmQ8L2dweD4='),
+    }))
+    expect(secondAlias.id).toBe(second.id)
+
+    await expect(store.upsertGpxImport(gpxInput(mission.id, {
+      id: first.id,
+      source_path: '/field/second.gpx',
+      source_bytes_base64: 'PGdweD5jaGFuZ2VkPC9ncHg+',
+      content_sha256: digestBase64('PGdweD5jaGFuZ2VkPC9ncHg+'),
+    }))).rejects.toThrow(/identity.*path|path.*different GPX evidence/i)
+    await expect(store.upsertGpxImport(gpxInput(mission.id, {
+      id: first.id,
+      source_path: '/field/second-copy.gpx',
+      source_bytes_base64: 'PGdweD5jaGFuZ2VkPC9ncHg+',
+      content_sha256: digestBase64('PGdweD5jaGFuZ2VkPC9ncHg+'),
+    }))).rejects.toThrow(/identity.*path|path.*different GPX evidence/i)
+
+    const db = openDatabase(await databasePath())
+    expect(db.prepare(`SELECT import_id FROM gpx_import_aliases
+      WHERE mission_id = ? AND source_path = ?`).get(mission.id, '/field/second.gpx'))
+      .toMatchObject({ import_id: second.id })
+    expect(db.prepare(`SELECT import_id FROM gpx_import_aliases
+      WHERE mission_id = ? AND source_path = ?`).get(mission.id, '/field/second-copy.gpx'))
+      .toMatchObject({ import_id: second.id })
     db.close()
   })
 
@@ -465,12 +673,36 @@ describe('mission evidence versioning [DON-277]', () => {
       geometry_json: '{"type":"Polygon","coordinates":[]}',
       updated_by: 'Coordinator One',
     })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'device-1',
+      name: 'Hill Team 1',
+      color: '#ef4444',
+      status: 'online',
+    })
+    const participant = await store.addMissionParticipant({
+      mission_id: mission.id,
+      kind: 'device',
+      ref: 'device-1',
+      confirmed_by: 'Coordinator One',
+    })
+    const clue = await store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER })
+    const trackEvidence = await store.addPosition({
+      mission_id: mission.id,
+      device_id: 'device-1',
+      source_position_id: 'search-pass-fix-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-08-27T08:30:00Z',
+      received_at: '2026-08-27T08:30:01Z',
+      timestamp_source: 'fix',
+    })
     const firstAssignment = await store.upsertSearchAssignment({
       mission_id: mission.id,
       search_area_id: area.id,
       outing_id: outing.id,
       team_id: 'team-1',
-      participant_ids: ['participant-1'],
+      participant_ids: [participant.id],
       notes: 'First attempt',
       updated_by: 'Coordinator One',
     })
@@ -492,9 +724,9 @@ describe('mission evidence versioning [DON-277]', () => {
       outcome: 'full',
       notes: 'Coordinator declaration',
       coordinator_name: 'Coordinator One',
-      participant_ids: ['participant-1'],
-      clue_ids: [],
-      track_evidence_ids: ['device-1'],
+      participant_ids: [participant.id],
+      clue_ids: [clue.id],
+      track_evidence_ids: [trackEvidence.id],
     })
     await store.upsertSearchPass({
       ...pass,
@@ -524,6 +756,130 @@ describe('mission evidence versioning [DON-277]', () => {
     await store.finishMission(mission.id)
     await expect(store.upsertSearchPass({ ...pass, outcome: 'aborted' }))
       .rejects.toThrow(/finished mission|read-only/i)
+  })
+
+  it('rejects invented and cross-mission search-pass evidence links [DON-279]', async () => {
+    store = await createStore()
+    const otherMission = await store.createMission({ name: 'Other mission' })
+    const foreignClue = await store.upsertMarker({ mission_id: otherMission.id, ...SAMPLE_MARKER })
+    await store.upsertDevice({
+      mission_id: otherMission.id, device_id: 'foreign-device', name: 'Foreign device',
+      color: '#ef4444', status: 'online',
+    })
+    const foreignTrack = await store.addPosition({
+      mission_id: otherMission.id, device_id: 'foreign-device', source_position_id: 'foreign-fix',
+      lat: 52, lon: -9.7, timestamp: '2026-08-27T07:00:00Z',
+      received_at: '2026-08-27T07:00:01Z', timestamp_source: 'fix',
+    })
+    await store.finishMission(otherMission.id)
+    const mission = await store.createMission({ name: 'Link validation mission' })
+    const outing = await store.createOuting({ mission_id: mission.id, label: 'Outing' })
+    const area = await store.upsertSearchArea({
+      mission_id: mission.id,
+      name: 'Area',
+      status: 'active',
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+      updated_by: 'Coordinator',
+    })
+    const assignment = await store.upsertSearchAssignment({
+      mission_id: mission.id,
+      search_area_id: area.id,
+      outing_id: outing.id,
+      team_id: 'team-1',
+      participant_ids: [],
+      updated_by: 'Coordinator',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id, device_id: 'mission-device', name: 'Mission device',
+      color: '#3b82f6', status: 'online',
+    })
+    const participant = await store.addMissionParticipant({
+      mission_id: mission.id, kind: 'device', ref: 'mission-device', confirmed_by: 'Coordinator',
+    })
+    const clue = await store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER })
+    const track = await store.addPosition({
+      mission_id: mission.id, device_id: 'mission-device', source_position_id: 'mission-fix',
+      lat: 52, lon: -9.7, timestamp: '2026-08-27T08:00:00Z',
+      received_at: '2026-08-27T08:00:01Z', timestamp_source: 'fix',
+    })
+    const basePass = {
+      mission_id: mission.id,
+      search_area_id: area.id,
+      assignment_id: assignment.id,
+      started_at: '2026-08-27T08:00:00Z',
+      outcome: 'partial',
+      coordinator_name: 'Coordinator',
+    }
+    await expect(store.upsertSearchPass({
+      ...basePass,
+      participant_ids: ['invented-participant'],
+      clue_ids: [clue.id],
+      track_evidence_ids: [track.id],
+    })).rejects.toThrow(/participant.*not in this mission/i)
+    await expect(store.upsertSearchPass({
+      ...basePass,
+      participant_ids: [participant.id],
+      clue_ids: [foreignClue.id],
+      track_evidence_ids: [track.id],
+    })).rejects.toThrow(/clue.*not in this mission/i)
+    await expect(store.upsertSearchPass({
+      ...basePass,
+      participant_ids: [participant.id],
+      clue_ids: [clue.id],
+      track_evidence_ids: [foreignTrack.id],
+    })).rejects.toThrow(/track evidence.*not in this mission/i)
+    await expect(store.upsertSearchPass({
+      ...basePass,
+      participant_ids: [participant.id],
+      clue_ids: [clue.id],
+      track_evidence_ids: [track.id],
+    })).resolves.toMatchObject({ outcome: 'partial' })
+  })
+
+  it('rejects invented and cross-mission participant assignments [DON-279]', async () => {
+    store = await createStore()
+    const otherMission = await store.createMission({ name: 'Foreign participant mission' })
+    await store.upsertDevice({
+      mission_id: otherMission.id, device_id: 'foreign-device', name: 'Foreign device',
+      color: '#ef4444', status: 'online',
+    })
+    const foreignParticipant = await store.addMissionParticipant({
+      mission_id: otherMission.id, kind: 'device', ref: 'foreign-device', confirmed_by: 'Coordinator',
+    })
+    await store.finishMission(otherMission.id)
+    const mission = await store.createMission({ name: 'Assignment link mission' })
+    await store.upsertDevice({
+      mission_id: mission.id, device_id: 'mission-device', name: 'Mission device',
+      color: '#3b82f6', status: 'online',
+    })
+    const participant = await store.addMissionParticipant({
+      mission_id: mission.id, kind: 'device', ref: 'mission-device', confirmed_by: 'Coordinator',
+    })
+    const outing = await store.createOuting({ mission_id: mission.id, label: 'Outing' })
+    const area = await store.upsertSearchArea({
+      mission_id: mission.id,
+      name: 'Area',
+      status: 'active',
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+      updated_by: 'Coordinator',
+    })
+    const assignment = {
+      mission_id: mission.id,
+      search_area_id: area.id,
+      outing_id: outing.id,
+      team_id: 'team-1',
+      updated_by: 'Coordinator',
+    }
+
+    await expect(store.upsertSearchAssignment({
+      ...assignment, participant_ids: ['invented-participant'],
+    })).rejects.toThrow(/participant.*not in this mission/i)
+    await expect(store.upsertSearchAssignment({
+      ...assignment, participant_ids: [foreignParticipant.id],
+    })).rejects.toThrow(/participant.*not in this mission/i)
+    await expect(store.upsertSearchAssignment({
+      ...assignment, participant_ids: [participant.id],
+    })).resolves.toMatchObject({ participant_ids_json: JSON.stringify([participant.id]) })
   })
 
   it('rejects assignments and passes whose area or assignment has been retired [DON-279]', async () => {
@@ -634,6 +990,95 @@ describe('mission evidence versioning [DON-277]', () => {
     db.close()
   })
 
+  it('imports readable siblings while durably recording a missing selected GPX file [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX Missing Sibling Mission' })
+    const validPath = path.join(userDataPath!, 'readable.gpx')
+    const missingPath = path.join(userDataPath!, 'missing.gpx')
+    await writeFile(validPath, '<gpx version="1.1"><trk><trkseg><trkpt lat="52" lon="-9.7"/><trkpt lat="52.01" lon="-9.71"/></trkseg></trk></gpx>')
+
+    const result = await store.importGpxEvidencePaths({
+      missionId: mission.id,
+      paths: [missingPath, validPath],
+    })
+
+    expect(result.imports).toHaveLength(1)
+    expect(result.failures).toEqual([
+      expect.objectContaining({ sourcePath: missingPath, reason: expect.stringMatching(/ENOENT|not found/i) }),
+    ])
+    const db = openDatabase(await databasePath())
+    expect(db.prepare(`SELECT status, completed_files, failed_files FROM gpx_import_batches
+      WHERE mission_id = ? ORDER BY started_at DESC LIMIT 1`).get(mission.id)).toMatchObject({
+      status: 'completed_with_failures',
+      completed_files: 1,
+      failed_files: 1,
+    })
+    expect(db.prepare(`SELECT status FROM gpx_import_source_receipts
+      WHERE mission_id = ? AND source_path = ?`).get(mission.id, missingPath))
+      .toMatchObject({ status: 'failed' })
+    db.close()
+  })
+
+  it('blocks Finish and Finalize while durable GPX state is unsettled [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX Lifecycle Gate Mission' })
+    const databaseFile = await databasePath()
+    const db = openDatabase(databaseFile)
+    startGpxImportBatch(db, {
+      batchId: 'active-batch',
+      missionId: mission.id,
+      totalFiles: 1,
+    })
+    recordGpxImportSourceReceipt(db, {
+      batchId: 'active-batch',
+      missionId: mission.id,
+      sourcePath: '/field/active.gpx',
+      fileName: 'active.gpx',
+    })
+    db.close()
+
+    await expect(store.finishMission(mission.id)).rejects.toThrow(/GPX evidence import.*unsettled/i)
+    expect((await store.getMission(mission.id)).status).toBe('active')
+
+    const forceFinishedDb = openDatabase(databaseFile)
+    forceFinishedDb.prepare("UPDATE missions SET status = 'finished', finish_time = ? WHERE id = ?")
+      .run(new Date().toISOString(), mission.id)
+    forceFinishedDb.close()
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/GPX evidence import.*unsettled/i)
+  })
+
+  it('returns bounded persisted GPX import issues without retained bytes or absolute paths [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX Issue Page Mission' })
+    const validPath = path.join(userDataPath!, 'valid-page.gpx')
+    await writeFile(validPath, '<gpx version="1.1"><trk><trkseg><trkpt lat="52" lon="-9.7"/><trkpt lat="52.01" lon="-9.71"/></trkseg></trk></gpx>')
+    const missingPaths = Array.from({ length: 3 }, (_unused, index) =>
+      path.join(userDataPath!, `missing-page-${index}.gpx`))
+    await store.importGpxEvidencePaths({ missionId: mission.id, paths: [validPath, ...missingPaths] })
+
+    const firstPage = await store.listGpxImportIssues({ missionId: mission.id, limit: 2 })
+    expect(firstPage.entries).toHaveLength(2)
+    expect(firstPage.nextCursor).toEqual(expect.any(String))
+    expect(JSON.stringify(firstPage)).not.toContain('source_bytes_base64')
+    expect(JSON.stringify(firstPage)).not.toContain(userDataPath)
+    for (const entry of firstPage.entries) {
+      expect(entry).toEqual(expect.objectContaining({
+        batch_id: expect.any(String),
+        file_name: expect.stringMatching(/\.gpx$/),
+        reason: expect.any(String),
+        recorded_at: expect.any(String),
+      }))
+    }
+    const secondPage = await store.listGpxImportIssues({
+      missionId: mission.id,
+      cursor: firstPage.nextCursor ?? undefined,
+      limit: 2,
+    })
+    expect(secondPage.entries).toHaveLength(1)
+    await expect(store.listGpxImportIssues({ missionId: mission.id, limit: 101 }))
+      .rejects.toThrow(/limit/i)
+  })
+
   it('cancels and joins active GPX workers before allowing mission-store shutdown [DON-274]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-shutdown-'))
     let importSignal: AbortSignal | undefined
@@ -670,29 +1115,58 @@ describe('mission evidence versioning [DON-277]', () => {
     let reportStarted: (() => void) | undefined
     const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
     const started = new Promise<void>((resolve) => { reportStarted = resolve })
-    const runner = (async (input: { readonly databasePath: string; readonly missionId: string }) => {
+    const runner = (async (input: {
+      readonly batchId: string
+      readonly databasePath: string
+      readonly missionId: string
+    }) => {
       reportStarted?.()
       await writeGate
       const workerDb = openDatabase(input.databasePath)
       try {
+        const sourceBytesBase64 = 'PGdweD5maXJzdDwvZ3B4Pg=='
+        retainGpxImportSourceBytes(workerDb, {
+          batchId: input.batchId,
+          missionId: input.missionId,
+          sourcePath: '/field/late.gpx',
+          contentSha256: digestBase64(sourceBytesBase64),
+          sourceBytesBase64,
+        })
+        const imported = upsertGpxEvidence(workerDb, gpxInput(input.missionId, {
+          source_path: '/field/late.gpx',
+          content_sha256: digestBase64(sourceBytesBase64),
+          source_bytes_base64: sourceBytesBase64,
+        }))
+        settleGpxImportSourceReceipt(workerDb, {
+          batchId: input.batchId,
+          missionId: input.missionId,
+          sourcePath: '/field/late.gpx',
+        })
+        workerDb.prepare(`UPDATE gpx_import_batches SET status = 'completed', finished_at = ?
+          WHERE id = ?`).run(new Date().toISOString(), input.batchId)
         return {
-          imports: [upsertGpxEvidence(workerDb, gpxInput(input.missionId, {}))],
+          imports: [imported],
           failures: [],
           dispatchDurationMs: 0,
         }
       } finally {
         workerDb.close()
       }
-    }) as (input: { readonly databasePath: string; readonly missionId: string }) => Promise<unknown>
+    }) as (input: {
+      readonly batchId: string
+      readonly databasePath: string
+      readonly missionId: string
+    }) => Promise<unknown>
     store = createElectronMissionStore({ userDataPath, runGpxEvidenceImportInWorker: runner })
     const mission = await store.createMission({ name: 'GPX Finalization Fence Mission' })
     const importing = store.importGpxEvidencePaths({ missionId: mission.id, paths: ['/field/late.gpx'] })
     await started
-    await store.finishMission(mission.id)
+    await expect(store.finishMission(mission.id)).rejects.toThrow(/GPX evidence import.*unsettled/i)
     releaseWrite?.()
 
-    await expect(importing).rejects.toThrow(/finished mission/i)
-    await expect(store.listGpxImports(mission.id)).resolves.toEqual([])
+    await expect(importing).resolves.toMatchObject({ imports: [expect.objectContaining({ id: expect.any(String) })] })
+    await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
+    await expect(store.listGpxImports(mission.id)).resolves.toHaveLength(1)
   })
 
   it('keeps synchronous current-position writes below the 200 ms hard gate during a 50k-point GPX import [DON-274]', async () => {

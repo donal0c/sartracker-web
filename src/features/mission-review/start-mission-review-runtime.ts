@@ -28,6 +28,7 @@ type MissionReviewStoreBoundary = Pick<
   | 'listDrawings'
   | 'listHelicopters'
   | 'listGpxImports'
+  | 'listGpxImportPage'
   | 'listSearchAreas'
   | 'listSearchAssignments'
   | 'listSearchPasses'
@@ -71,7 +72,10 @@ export type MissionReviewController = {
   readonly refreshSelectedMission: () => Promise<void>
   /** Reloads the selected mission with telemetry events shown or hidden. */
   readonly setIncludeTelemetry: (includeTelemetry: boolean) => Promise<void>
-  readonly seekReplay: (selectedTime: string) => Promise<void>
+  readonly seekReplay: (selectedTime: string, filters?: {
+    readonly deviceIds?: readonly string[]
+    readonly outingIds?: readonly string[]
+  }) => Promise<void>
   readonly loadNextReplayChunk: () => Promise<void>
   readonly loadPreviousReplayChunk: () => Promise<void>
   readonly loadNextReplayObjects: () => Promise<void>
@@ -152,8 +156,8 @@ export async function startMissionReviewRuntime(
       state = { ...state, includeTelemetry }
       await loadMission(state.selectedMissionId, true)
     },
-    seekReplay: async (selectedTime) => {
-      await seekReplay(selectedTime)
+    seekReplay: async (selectedTime, filters) => {
+      await seekReplay(selectedTime, filters)
     },
     loadNextReplayChunk: async () => {
       await loadNextReplayChunk()
@@ -282,7 +286,7 @@ export async function startMissionReviewRuntime(
           'listHelicopters' in dependencies.missionStore
             ? dependencies.missionStore.listHelicopters(selectedMission.id)
             : Promise.resolve([]),
-          dependencies.missionStore.listGpxImports(selectedMission.id),
+          readGpxImportProjections(selectedMission.id, currentToken),
           dependencies.layerCatalogStore.listMetadata(selectedMission.id),
           dependencies.missionStore.listSearchAreas?.(selectedMission.id) ?? Promise.resolve([]),
           dependencies.missionStore.listSearchAssignments?.(selectedMission.id) ?? Promise.resolve([]),
@@ -343,11 +347,27 @@ export async function startMissionReviewRuntime(
     }
   }
 
+  /** Defers the paged GPX projection reader until review data is requested. */
+  async function readGpxImportProjections(
+    missionId: string,
+    requestToken: number,
+  ) {
+    const { readAllGpxImportProjections } = await import('../gpx/read-gpx-import-pages')
+    return await readAllGpxImportProjections(
+      dependencies.missionStore,
+      missionId,
+      () => requestToken === refreshToken,
+    )
+  }
+
   function cancelActiveReviewRead(): void {
     cancelReviewReadIfActive(activeReviewRequestId)
   }
 
-  async function seekReplay(selectedTime: string): Promise<void> {
+  async function seekReplay(selectedTime: string, filters?: {
+    readonly deviceIds?: readonly string[]
+    readonly outingIds?: readonly string[]
+  }): Promise<void> {
     const selectedMissionId = state.selectedMissionId
     if (selectedMissionId === null) return
     if (dependencies.missionStore.readMissionReplay === undefined) {
@@ -381,6 +401,8 @@ export async function startMissionReviewRuntime(
         timezone: 'Europe/Dublin',
         trackLimit: 500,
         objectLimit: 100,
+        ...(filters?.deviceIds === undefined ? {} : { deviceIds: filters.deviceIds }),
+        ...(filters?.outingIds === undefined ? {} : { outingIds: filters.outingIds }),
       }, requestId)
       if (currentToken !== replayToken || activeReplayRequestId !== requestId) return
       activeReplayRequestId = null
@@ -429,6 +451,12 @@ export async function startMissionReviewRuntime(
         trackLimit: 500,
         objectLimit: 100,
         cursor,
+        ...(replay.result.deviceFilterIds.length === 0
+          ? {}
+          : { deviceIds: replay.result.deviceFilterIds }),
+        ...(replay.result.outingFilterIds.length === 0
+          ? {}
+          : { outingIds: replay.result.outingFilterIds }),
       }, requestId)
       if (currentToken !== replayToken || activeReplayRequestId !== requestId) return
       activeReplayRequestId = null

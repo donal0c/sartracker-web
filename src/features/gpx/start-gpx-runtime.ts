@@ -1,4 +1,5 @@
 import type {
+  GpxImportIssue,
   GpxTrackImport,
   Outing,
   UpsertGpxTrackImportInput,
@@ -8,7 +9,28 @@ import { digestGpxSource, parseGpxFile } from './gpx-parser'
 
 type GpxStoreBoundary = {
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
+  readonly listGpxImportPage?: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<{
+    readonly entries: readonly GpxTrackImport[]
+    readonly nextCursor: string | null
+  }>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
+  readonly updateGpxImportPresentation?: (input: {
+    readonly id: string
+    readonly mission_id: string
+    readonly metadata_json: string | null
+  }) => Promise<GpxTrackImport>
+  readonly listGpxImportIssues?: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<{
+    readonly entries: readonly GpxImportIssue[]
+    readonly nextCursor: string | null
+  }>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
   readonly listOutings?: (missionId: string) => Promise<readonly Outing[]>
   readonly assignGpxImportToOuting?: (input: { readonly import_id: string; readonly outing_id: string; readonly assigned_by?: string | null }) => Promise<GpxTrackImport>
@@ -39,6 +61,7 @@ export type GpxRuntimeState = {
   readonly imports: readonly GpxTrackImport[]
   readonly outings: readonly Outing[]
   readonly watchedDirectories: readonly string[]
+  readonly importIssues: readonly GpxImportIssue[]
   readonly loading: boolean
   readonly importing: boolean
   readonly error: string | null
@@ -67,6 +90,7 @@ const EMPTY_RUNTIME: GpxRuntimeState = {
   imports: [],
   outings: [],
   watchedDirectories: [],
+  importIssues: [],
   loading: false,
   importing: false,
   error: null,
@@ -90,6 +114,7 @@ export async function startGpxRuntime(
         imports: missionId === previousMissionId ? state.imports : [],
         outings: missionId === previousMissionId ? state.outings : [],
         watchedDirectories: missionId === previousMissionId ? state.watchedDirectories : [],
+        importIssues: missionId === previousMissionId ? state.importIssues : [],
         loading: missionId !== null,
         importing: missionId === previousMissionId ? state.importing : false,
         error: null,
@@ -102,6 +127,7 @@ export async function startGpxRuntime(
           imports: [],
           outings: [],
           watchedDirectories: [],
+          importIssues: [],
           loading: false,
         }
         publishRuntime()
@@ -109,9 +135,14 @@ export async function startGpxRuntime(
       }
 
       try {
-        const [imports, outings] = await Promise.all([
-          dependencies.gpxStore.listGpxImports(missionId),
+        const [imports, outings, issuePage] = await Promise.all([
+          readGpxImportProjections(
+            missionId,
+            () => token === refreshToken && state.activeMissionId === missionId,
+          ),
           dependencies.gpxStore.listOutings?.(missionId) ?? Promise.resolve([]),
+          dependencies.gpxStore.listGpxImportIssues?.({ missionId, limit: 100 })
+            ?? Promise.resolve({ entries: [], nextCursor: null }),
         ])
         if (token !== refreshToken || state.activeMissionId !== missionId) {
           return
@@ -122,8 +153,11 @@ export async function startGpxRuntime(
           activeMissionId: missionId,
           imports,
           outings,
+          importIssues: issuePage.entries,
           loading: false,
-          error: null,
+          error: issuePage.entries.length === 0
+            ? null
+            : `${issuePage.entries.length} persisted GPX import issue${issuePage.entries.length === 1 ? '' : 's'} require operator review. Exact failure provenance was retained.`,
         }
         publishRuntime()
       } catch (error) {
@@ -135,6 +169,7 @@ export async function startGpxRuntime(
           ...state,
           imports: [],
           outings: [],
+          importIssues: [],
           loading: false,
           error: toErrorMessage(error),
         }
@@ -151,15 +186,22 @@ export async function startGpxRuntime(
         return null
       }
 
-      const updatedImport = await dependencies.gpxStore.upsertGpxImport({
-        id: existingImport.id,
-        mission_id: existingImport.mission_id,
-        source_path: existingImport.source_path,
-        file_name: existingImport.file_name,
-        display_name: existingImport.display_name,
-        geometry_json: existingImport.geometry_json,
-        metadata_json: writeGpxImportColorMetadata(existingImport.metadata_json, color),
-      })
+      const metadataJson = writeGpxImportColorMetadata(existingImport.metadata_json, color)
+      const updatedImport = dependencies.gpxStore.updateGpxImportPresentation === undefined
+        ? await dependencies.gpxStore.upsertGpxImport({
+            id: existingImport.id,
+            mission_id: existingImport.mission_id,
+            source_path: existingImport.source_path,
+            file_name: existingImport.file_name,
+            display_name: existingImport.display_name,
+            geometry_json: existingImport.geometry_json,
+            metadata_json: metadataJson,
+          })
+        : await dependencies.gpxStore.updateGpxImportPresentation({
+            id: existingImport.id,
+            mission_id: existingImport.mission_id,
+            metadata_json: metadataJson,
+          })
 
       state = {
         ...state,
@@ -187,17 +229,24 @@ export async function startGpxRuntime(
       }
       publishRuntime()
 
+      const missionId = state.activeMissionId
+      const missionToken = refreshToken
+
       if (
         dependencies.gpxStore.importGpxEvidencePaths !== undefined
         && dependencies.watchSource.listDirectoryPaths !== undefined
       ) {
-        return await importPathsIntoRuntime(
-          await dependencies.watchSource.listDirectoryPaths(normalizedPath),
-        )
+        const paths = await dependencies.watchSource.listDirectoryPaths(normalizedPath)
+        if (missionId === null || missionToken !== refreshToken || state.activeMissionId !== missionId) {
+          return []
+        }
+        return await importPathsIntoRuntime(paths, missionId, missionToken)
       }
-      return await importFilesIntoRuntime(
-        await dependencies.watchSource.listDirectoryFiles(normalizedPath),
-      )
+      const files = await dependencies.watchSource.listDirectoryFiles(normalizedPath)
+      if (missionId === null || missionToken !== refreshToken || state.activeMissionId !== missionId) {
+        return []
+      }
+      return await importFilesIntoRuntime(files, missionId, missionToken)
     },
     removeWatchedDirectory: (directoryPath: string) => {
       const normalizedPath = directoryPath.trim()
@@ -216,19 +265,22 @@ export async function startGpxRuntime(
         return []
       }
 
+      const missionId = state.activeMissionId
+      const missionToken = refreshToken
+      if (missionId === null) return []
       const imported: GpxTrackImport[] = []
       for (const directoryPath of state.watchedDirectories) {
         if (
           dependencies.gpxStore.importGpxEvidencePaths !== undefined
           && dependencies.watchSource.listDirectoryPaths !== undefined
         ) {
-          imported.push(...(await importPathsIntoRuntime(
-            await dependencies.watchSource.listDirectoryPaths(directoryPath),
-          )))
+          const paths = await dependencies.watchSource.listDirectoryPaths(directoryPath)
+          if (missionToken !== refreshToken || state.activeMissionId !== missionId) return []
+          imported.push(...(await importPathsIntoRuntime(paths, missionId, missionToken)))
         } else {
-          imported.push(...(await importFilesIntoRuntime(
-            await dependencies.watchSource.listDirectoryFiles(directoryPath),
-          )))
+          const files = await dependencies.watchSource.listDirectoryFiles(directoryPath)
+          if (missionToken !== refreshToken || state.activeMissionId !== missionId) return []
+          imported.push(...(await importFilesIntoRuntime(files, missionId, missionToken)))
         }
       }
 
@@ -277,8 +329,15 @@ export async function startGpxRuntime(
 
   async function importFilesIntoRuntime(
     files: readonly GpxImportFileInput[],
+    expectedMissionId: string | null = state.activeMissionId,
+    expectedMissionToken: number = refreshToken,
   ): Promise<readonly GpxTrackImport[]> {
-    if (state.activeMissionId === null || files.length === 0) {
+    if (
+      expectedMissionId === null
+      || expectedMissionToken !== refreshToken
+      || state.activeMissionId !== expectedMissionId
+      || files.length === 0
+    ) {
       return []
     }
 
@@ -289,8 +348,8 @@ export async function startGpxRuntime(
     }
     publishRuntime()
 
-    const missionId = state.activeMissionId
-    const missionToken = refreshToken
+    const missionId = expectedMissionId
+    const missionToken = expectedMissionToken
 
     try {
       if (missionId === null) {
@@ -383,10 +442,20 @@ export async function startGpxRuntime(
     }
   }
 
-  async function importPathsIntoRuntime(paths: readonly string[]): Promise<readonly GpxTrackImport[]> {
-    const missionId = state.activeMissionId
-    const missionToken = refreshToken
-    if (missionId === null || paths.length === 0 || dependencies.gpxStore.importGpxEvidencePaths === undefined) {
+  async function importPathsIntoRuntime(
+    paths: readonly string[],
+    expectedMissionId: string | null = state.activeMissionId,
+    expectedMissionToken: number = refreshToken,
+  ): Promise<readonly GpxTrackImport[]> {
+    const missionId = expectedMissionId
+    const missionToken = expectedMissionToken
+    if (
+      missionId === null
+      || missionToken !== refreshToken
+      || state.activeMissionId !== missionId
+      || paths.length === 0
+      || dependencies.gpxStore.importGpxEvidencePaths === undefined
+    ) {
       return []
     }
     state = { ...state, importing: true, error: null }
@@ -394,7 +463,10 @@ export async function startGpxRuntime(
     try {
       const result = await dependencies.gpxStore.importGpxEvidencePaths({ missionId, paths })
       if (missionToken !== refreshToken || state.activeMissionId !== missionId) return []
-      const imports = await dependencies.gpxStore.listGpxImports(missionId)
+      const imports = await readGpxImportProjections(
+        missionId,
+        () => missionToken === refreshToken && state.activeMissionId === missionId,
+      )
       if (missionToken !== refreshToken || state.activeMissionId !== missionId) return []
       const importedIds = new Set(result.imports.map((entry) => entry.id))
       const failures = 'failures' in result && Array.isArray(result.failures) ? result.failures : []
@@ -418,6 +490,15 @@ export async function startGpxRuntime(
 
   function publishRuntime(): void {
     dependencies.applyRuntime(state)
+  }
+
+  /** Defers page-reader code until a mission actually needs GPX projections. */
+  async function readGpxImportProjections(
+    missionId: string,
+    isCurrent: () => boolean,
+  ): Promise<readonly GpxTrackImport[]> {
+    const { readAllGpxImportProjections } = await import('./read-gpx-import-pages')
+    return await readAllGpxImportProjections(dependencies.gpxStore, missionId, isCurrent)
   }
 }
 

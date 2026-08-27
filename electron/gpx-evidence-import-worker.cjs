@@ -7,8 +7,10 @@ const Database = require('better-sqlite3')
 const { SaxesParser } = require('saxes')
 const {
   finishGpxImportBatch,
-  recordGpxImportBatchSuccess,
   recordGpxImportFailure,
+  recordGpxImportSourceReceipt,
+  retainGpxImportSourceBytes,
+  settleGpxImportSourceReceipt,
   startGpxImportBatch,
   upsertGpxEvidenceChunked,
 } = require('./mission-store.cjs')
@@ -23,19 +25,40 @@ async function run() {
     database.pragma('journal_mode = WAL')
     const imports = []
     const failures = []
-    startGpxImportBatch(database, {
-      batchId: workerData.batchId,
-      missionId: workerData.missionId,
-      totalFiles: workerData.paths.length,
-    })
+    if (workerData.receiptsStarted !== true) {
+      startGpxImportBatch(database, {
+        batchId: workerData.batchId,
+        missionId: workerData.missionId,
+        totalFiles: workerData.paths.length,
+      })
+    }
     for (const [index, sourcePath] of workerData.paths.entries()) {
-      const normalizedPath = validatePath(sourcePath)
+      let normalizedPath = sourcePath
       let sourceBytes = null
       try {
+        normalizedPath = validatePath(sourcePath)
+        if (workerData.receiptsStarted !== true) {
+          recordGpxImportSourceReceipt(database, {
+            batchId: workerData.batchId,
+            missionId: workerData.missionId,
+            sourcePath: normalizedPath,
+            fileName: path.basename(normalizedPath),
+          })
+        }
+        pauseForForcedKill('pending')
         sourceBytes = await fs.readFile(normalizedPath)
+        const contentSha256 = createHash('sha256').update(sourceBytes).digest('hex')
+        const sourceBytesBase64 = sourceBytes.toString('base64')
+        retainGpxImportSourceBytes(database, {
+          batchId: workerData.batchId,
+          missionId: workerData.missionId,
+          sourcePath: normalizedPath,
+          contentSha256,
+          sourceBytesBase64,
+        })
+        pauseForForcedKill('retained')
         const decoded = new TextDecoder('utf-8', { fatal: true }).decode(sourceBytes)
         const parsed = parseGpxEvidence(decoded, path.basename(normalizedPath))
-        const contentSha256 = createHash('sha256').update(sourceBytes).digest('hex')
         const stored = await upsertGpxEvidenceChunked(database, {
           mission_id: workerData.missionId,
           source_path: normalizedPath,
@@ -50,12 +73,16 @@ async function run() {
             workerParsed: true,
           }),
           content_sha256: contentSha256,
-          source_bytes_base64: sourceBytes.toString('base64'),
+          source_bytes_base64: sourceBytesBase64,
           timing_class: parsed.timingClass,
           points: parsed.points,
           rejections: parsed.rejections,
         })
-        recordGpxImportBatchSuccess(database, workerData.batchId, workerData.missionId)
+        settleGpxImportSourceReceipt(database, {
+          batchId: workerData.batchId,
+          missionId: workerData.missionId,
+          sourcePath: normalizedPath,
+        })
         imports.push({
           id: stored.id,
           mission_id: stored.mission_id,
@@ -202,6 +229,12 @@ function validatePath(value) {
     throw new Error('GPX evidence worker path is invalid.')
   }
   return path.normalize(value)
+}
+
+/** Holds the worker at one durable boundary until the forced-kill harness terminates the process. */
+function pauseForForcedKill(phase) {
+  if (workerData.pauseAfter !== phase) return
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
 }
 
 run()

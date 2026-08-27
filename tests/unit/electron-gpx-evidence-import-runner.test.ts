@@ -11,6 +11,22 @@ const { runGpxEvidenceImportInWorker } = require('../../electron/gpx-evidence-im
 }
 
 describe('GPX evidence import worker runner [DON-277]', () => {
+  it('settles the worker-exit join when worker construction fails synchronously', async () => {
+    const constructionFailure = new Error('worker construction failed')
+    const importResult = runGpxEvidenceImportInWorker({
+      databasePath: '/tmp/unused.sqlite',
+      missionId: 'mission-1',
+      paths: ['/tmp/evidence.gpx'],
+      createWorker: () => { throw constructionFailure },
+    })
+
+    await expect(importResult).rejects.toBe(constructionFailure)
+    await expect(Promise.race([
+      importResult.workerExited.then(() => 'settled'),
+      new Promise((resolve) => setTimeout(() => resolve('timed-out'), 50)),
+    ])).resolves.toBe('settled')
+  })
+
   it('terminates and joins an import worker when shutdown cancels it', async () => {
     const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
     const terminate = vi.fn(async () => {

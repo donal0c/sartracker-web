@@ -23,6 +23,8 @@ export function MissionReplayTab(props: {
   readonly replay: MissionReplayRuntimeState
 }) {
   const [selectedLocalTime, setSelectedLocalTime] = useState(() => formatDublinDateTimeLocal(props.missionEndTime))
+  const [deviceFilterIds, setDeviceFilterIds] = useState<readonly string[]>([])
+  const [outingFilterIds, setOutingFilterIds] = useState<readonly string[]>([])
   const selectedTime = readDublinSelection(selectedLocalTime)
   const result = props.replay.result
 
@@ -42,12 +44,40 @@ export function MissionReplayTab(props: {
       <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400" htmlFor="mission-replay-time">Selected local time — Europe/Dublin</label>
       <div className="mt-3 flex flex-wrap gap-3">
         <input className="rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 font-mono text-sm text-stone-100" data-testid="mission-replay-time" id="mission-replay-time" onChange={(event) => setSelectedLocalTime(event.target.value)} step="0.001" type="datetime-local" value={selectedLocalTime} />
-        <button className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 disabled:opacity-40" data-testid="mission-replay-seek" disabled={selectedTime.iso === null || props.controller === null || props.replay.loading} onClick={() => selectedTime.iso === null ? undefined : void props.controller?.seekReplay(selectedTime.iso)} type="button">{props.replay.loading ? 'Loading evidence…' : 'Replay data known at this time'}</button>
+        <button className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 disabled:opacity-40" data-testid="mission-replay-seek" disabled={selectedTime.iso === null || props.controller === null || props.replay.loading} onClick={() => selectedTime.iso === null ? undefined : void props.controller?.seekReplay(selectedTime.iso, {
+          ...(deviceFilterIds.length === 0 ? {} : { deviceIds: deviceFilterIds }),
+          ...(outingFilterIds.length === 0 ? {} : { outingIds: outingFilterIds }),
+        })} type="button">{props.replay.loading ? 'Loading evidence…' : 'Replay data known at this time'}</button>
       </div>
       {selectedTime.error === null ? null : <p className="mt-3 text-sm text-rose-200" data-testid="mission-replay-time-error" role="alert">{selectedTime.error}</p>}
     </section>
     {props.replay.error !== null ? <p className="rounded-xl border border-rose-400/40 bg-rose-400/10 p-4 text-sm text-rose-100" data-testid="mission-replay-error" role="alert">Replay is incomplete: {props.replay.error}. The live map has not been changed.</p> : null}
     {result !== null ? <>
+      <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="mission-replay-display-filters">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Display-only track filters</p>
+        <p className="mt-2 text-xs text-stone-400">These filters narrow exact track and static GPX evidence only. They never alter reconstructed mission state.</p>
+        {result.limitations.some((item) => item.code === 'undated_gpx_static') ? <p className="mt-2 text-xs font-medium text-amber-200">Undated GPX remains static and is excluded from precise replay.</p> : null}
+        <div className="mt-3 grid gap-4 md:grid-cols-2">
+          <ReplayFilterGroup
+            label="Traccar devices"
+            onChange={setDeviceFilterIds}
+            options={result.availableDeviceIds}
+            selected={deviceFilterIds}
+            testIdPrefix="mission-replay-device-filter"
+          />
+          <ReplayFilterGroup
+            label="GPX outings"
+            onChange={setOutingFilterIds}
+            options={result.availableOutingIds}
+            selected={outingFilterIds}
+            testIdPrefix="mission-replay-outing-filter"
+          />
+        </div>
+        <button className="mt-4 rounded-lg border border-amber-400/50 px-3 py-2 text-xs font-semibold text-amber-100" data-testid="mission-replay-apply-filters" disabled={selectedTime.iso === null || props.controller === null || props.replay.loading} onClick={() => selectedTime.iso === null ? undefined : void props.controller?.seekReplay(selectedTime.iso, {
+          ...(deviceFilterIds.length === 0 ? {} : { deviceIds: deviceFilterIds }),
+          ...(outingFilterIds.length === 0 ? {} : { outingIds: outingFilterIds }),
+        })} type="button">Apply display filters</button>
+      </section>
       <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5">
         <div className="flex justify-between gap-4"><p className="font-mono text-sm text-stone-200">{result.tracks.length.toLocaleString()} / {result.totalTrackCount.toLocaleString()} dated points</p><span className="font-mono text-xs text-stone-400">{Math.round(result.progress * 100)}%</span></div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-stone-800" role="progressbar" aria-valuenow={Math.round(result.progress * 100)}><div className="h-full bg-amber-400" style={{ width: `${result.progress * 100}%` }} /></div>
@@ -59,8 +89,8 @@ export function MissionReplayTab(props: {
       </section>
       {result.limitations.map((item) => <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid={`mission-replay-limitation-${item.code}`} key={item.code}><strong>Evidence limitation:</strong> {item.message}</p>)}
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric label="Versioned objects" value={result.objects.length} />
-        <Metric label="Outing states" value={result.objects.filter((item) => item.object_type === 'outing').length} />
+        <Metric label="Versioned objects" value={result.totalObjectCount} />
+        <Metric label="Outing states" value={result.objectTypeCounts.outing ?? 0} />
         <Metric label="Dated track points" value={result.totalTrackCount} />
         <Metric label="Static undated GPX" value={result.staticGpxPointCount} />
       </div>
@@ -200,6 +230,32 @@ export function SearchOperationsTab(props: {
     </section> : null}
     {props.operations.areas.length === 0 ? <p className="text-sm text-stone-400">No stable search areas recorded.</p> : props.operations.areas.map((entry) => <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid={`search-area-${entry.id}`} key={entry.id}><h3 className="font-semibold text-stone-100">{entry.name}</h3><p className="mt-1 font-mono text-[11px] text-stone-500">Stable area {entry.id} · geometry revision {entry.version_sequence}</p>{props.operations.passes.filter((pass) => pass.search_area_id === entry.id).map((pass) => <div className="mt-3 rounded-xl border border-stone-800 p-3 text-sm" data-testid={`search-pass-${pass.id}`} key={pass.id}><p><strong>Coordinator-declared: {pass.outcome}</strong> · revision {pass.version_sequence}</p><p className="mt-1 text-xs text-stone-400">{formatReplayTime(pass.started_at, 'Europe/Dublin')} → {pass.ended_at === null ? 'active' : formatReplayTime(pass.ended_at, 'Europe/Dublin')}</p><p className="mt-1 text-xs text-stone-500">Links: {pass.participant_ids?.length ?? 0} participants · {pass.clue_ids?.length ?? 0} clues · {pass.track_evidence_ids?.length ?? 0} tracks</p></div>)}</section>)}
   </div>
+}
+
+/** Renders one bounded multi-select used only to narrow replay track display. */
+function ReplayFilterGroup(props: {
+  readonly label: string
+  readonly options: readonly string[]
+  readonly selected: readonly string[]
+  readonly onChange: (selected: readonly string[]) => void
+  readonly testIdPrefix: string
+}) {
+  return <fieldset className="rounded-xl border border-stone-800 p-3">
+    <legend className="px-1 text-xs font-semibold text-stone-200">{props.label}</legend>
+    {props.options.length === 0 ? <p className="text-xs text-stone-500">No eligible evidence sources at this time.</p> : <div className="mt-1 max-h-32 space-y-2 overflow-y-auto">
+      {props.options.map((option) => <label className="flex items-center gap-2 text-xs text-stone-300" key={option}>
+        <input
+          checked={props.selected.includes(option)}
+          data-testid={`${props.testIdPrefix}-${option}`}
+          onChange={(event) => props.onChange(event.target.checked
+            ? [...props.selected, option]
+            : props.selected.filter((entry) => entry !== option))}
+          type="checkbox"
+        />
+        <span className="font-mono">{option}</span>
+      </label>)}
+    </div>}
+  </fieldset>
 }
 
 function Metric(props: { readonly label: string; readonly value: number }) {

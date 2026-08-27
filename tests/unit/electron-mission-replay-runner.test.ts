@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const { runMissionReplayInWorker } = require('../../electron/mission-replay-runner.cjs') as {
-  runMissionReplayInWorker(input: Readonly<Record<string, unknown>>): Promise<unknown>
+  runMissionReplayInWorker(input: Readonly<Record<string, unknown>>): Promise<unknown> & {
+    readonly workerExited: Promise<void>
+  }
 }
 
 describe('mission replay worker runner [DON-278]', () => {
@@ -32,5 +34,25 @@ describe('mission replay worker runner [DON-278]', () => {
     controller.abort()
     await expect(query).rejects.toMatchObject({ name: 'AbortError' })
     expect(terminate).toHaveBeenCalledOnce()
+  })
+
+  it('settles workerExited when Worker construction throws synchronously', async () => {
+    const constructionError = new Error('worker constructor unavailable')
+    const query = runMissionReplayInWorker({
+      databasePath: '/tmp/unused.sqlite',
+      kind: 'state',
+      query: {
+        missionId: 'mission-1',
+        selectedTime: '2026-08-27T08:00:00Z',
+        trackLimit: 100,
+      },
+      createWorker: () => { throw constructionError },
+    })
+
+    await expect(query).rejects.toBe(constructionError)
+    await expect(Promise.race([
+      query.workerExited.then(() => 'exited'),
+      new Promise((resolve) => setTimeout(() => resolve('timed-out'), 50)),
+    ])).resolves.toBe('exited')
   })
 })

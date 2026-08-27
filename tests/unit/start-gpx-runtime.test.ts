@@ -125,6 +125,72 @@ describe('startGpxRuntime', () => {
     )
   })
 
+  it('loads GPX renderer projections through bounded pages instead of the unbounded evidence API [DON-274]', async () => {
+    const imports = [
+      createStoredImport('gpx-a', 'mission-1'),
+      createStoredImport('gpx-b', 'mission-1'),
+      createStoredImport('gpx-c', 'mission-1'),
+    ]
+    const listGpxImports = vi.fn().mockRejectedValue(new Error('unbounded API must not be called'))
+    const listGpxImportPage = vi
+      .fn()
+      .mockResolvedValueOnce({ entries: imports.slice(0, 2), nextCursor: 'page-2' })
+      .mockResolvedValueOnce({ entries: imports.slice(2), nextCursor: null })
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports,
+        listGpxImportPage,
+        upsertGpxImport: vi.fn(),
+        deleteGpxImport: vi.fn(),
+      },
+      applyRuntime,
+    })
+
+    await controller.refreshMission('mission-1')
+
+    expect(listGpxImports).not.toHaveBeenCalled()
+    expect(listGpxImportPage).toHaveBeenNthCalledWith(1, {
+      missionId: 'mission-1', limit: 25,
+    })
+    expect(listGpxImportPage).toHaveBeenNthCalledWith(2, {
+      missionId: 'mission-1', cursor: 'page-2', limit: 25,
+    })
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ imports }))
+  })
+
+  it('publishes persisted GPX import failures after restart without exposing retained bytes or paths [DON-274]', async () => {
+    const applyRuntime = vi.fn()
+    const listGpxImportIssues = vi.fn().mockResolvedValue({
+      entries: [{
+        batch_id: 'batch-interrupted',
+        file_name: 'team-track.gpx',
+        reason: 'Import was interrupted after source bytes were retained.',
+        recorded_at: '2026-08-27T10:00:00.000Z',
+      }],
+      nextCursor: null,
+    })
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockResolvedValue([]),
+        listGpxImportIssues,
+        upsertGpxImport: vi.fn(),
+        deleteGpxImport: vi.fn(),
+      },
+      applyRuntime,
+    })
+
+    await controller.refreshMission('mission-1')
+
+    expect(listGpxImportIssues).toHaveBeenCalledWith({ missionId: 'mission-1', limit: 100 })
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      importIssues: [expect.objectContaining({ file_name: 'team-track.gpx' })],
+      error: expect.stringMatching(/1 persisted GPX import issue/i),
+    }))
+    expect(JSON.stringify(applyRuntime.mock.calls)).not.toContain('source_bytes_base64')
+    expect(JSON.stringify(applyRuntime.mock.calls)).not.toContain('/private/')
+  })
+
   it('updates one imported GPX colour while preserving the track geometry and metadata', async () => {
     const imports: readonly GpxTrackImport[] = [
       {
@@ -151,17 +217,17 @@ describe('startGpxRuntime', () => {
       },
     ]
     const applyRuntime = vi.fn()
-    const upsertGpxImport = vi.fn().mockImplementation(async (input) => ({
+    const updateGpxImportPresentation = vi.fn().mockImplementation(async (input) => ({
       ...imports.find((entry) => entry.id === input.id),
-      ...input,
-      metadata_json: input.metadata_json ?? null,
+      metadata_json: input.metadata_json,
       imported_at: '2026-04-11T10:00:00.000Z',
       updated_at: '2026-04-11T10:05:00.000Z',
     }))
     const controller = await startGpxRuntime({
       gpxStore: {
         listGpxImports: vi.fn().mockResolvedValue(imports),
-        upsertGpxImport,
+        upsertGpxImport: vi.fn(),
+        updateGpxImportPresentation,
         deleteGpxImport: vi.fn(),
       },
       applyRuntime,
@@ -174,16 +240,14 @@ describe('startGpxRuntime', () => {
     expect(colourController.updateImportColor).toBeTypeOf('function')
     await colourController.updateImportColor?.('gpx-1', '#F032E6')
 
-    expect(upsertGpxImport).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(updateGpxImportPresentation).toHaveBeenCalledWith(
+      {
         id: 'gpx-1',
         mission_id: 'mission-1',
-        source_path: '/tracks/alpha.gpx',
-        display_name: 'Alpha Route',
-        geometry_json: imports[0]!.geometry_json,
         metadata_json: JSON.stringify({ trackCount: 1, pointCount: 2, color: '#F032E6' }),
-      }),
+      },
     )
+    expect(JSON.stringify(updateGpxImportPresentation.mock.calls)).not.toContain('coordinates')
     expect(applyRuntime).toHaveBeenLastCalledWith(
       expect.objectContaining({
         imports: [
@@ -229,6 +293,78 @@ describe('startGpxRuntime', () => {
       imports: [missionBImport],
       importing: false,
     }))
+  })
+
+  it('discards watched-directory paths enumerated for a mission that is no longer active [DON-274]', async () => {
+    let resolvePaths: ((paths: readonly string[]) => void) | undefined
+    const listDirectoryPaths = vi.fn().mockImplementation(
+      () => new Promise<readonly string[]>((resolve) => { resolvePaths = resolve }),
+    )
+    const importGpxEvidencePaths = vi.fn().mockResolvedValue({
+      imports: [],
+      failures: [],
+      dispatchDurationMs: 1,
+    })
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockResolvedValue([]),
+        upsertGpxImport: vi.fn(),
+        deleteGpxImport: vi.fn(),
+        importGpxEvidencePaths,
+      },
+      watchSource: {
+        listDirectoryFiles: vi.fn(),
+        listDirectoryPaths,
+      },
+      applyRuntime: vi.fn(),
+    })
+    await controller.refreshMission('mission-a')
+
+    const pendingEnumeration = controller.addWatchedDirectory('/mission-a-watch')
+    await vi.waitFor(() => expect(listDirectoryPaths).toHaveBeenCalledOnce())
+    await controller.refreshMission('mission-b')
+    resolvePaths?.(['/mission-a-watch/alpha.gpx'])
+    await pendingEnumeration
+
+    expect(importGpxEvidencePaths).not.toHaveBeenCalled()
+  })
+
+  it('discards rescanned paths when the mission changes during directory enumeration [DON-274]', async () => {
+    let resolveRescan: ((paths: readonly string[]) => void) | undefined
+    const listDirectoryPaths = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(() => new Promise<readonly string[]>((resolve) => {
+        resolveRescan = resolve
+      }))
+    const importGpxEvidencePaths = vi.fn().mockResolvedValue({
+      imports: [],
+      failures: [],
+      dispatchDurationMs: 1,
+    })
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockResolvedValue([]),
+        upsertGpxImport: vi.fn(),
+        deleteGpxImport: vi.fn(),
+        importGpxEvidencePaths,
+      },
+      watchSource: {
+        listDirectoryFiles: vi.fn(),
+        listDirectoryPaths,
+      },
+      applyRuntime: vi.fn(),
+    })
+    await controller.refreshMission('mission-a')
+    await controller.addWatchedDirectory('/mission-a-watch')
+
+    const pendingRescan = controller.rescanWatchedDirectories()
+    await vi.waitFor(() => expect(listDirectoryPaths).toHaveBeenCalledTimes(2))
+    await controller.refreshMission('mission-b')
+    resolveRescan?.(['/mission-a-watch/alpha.gpx'])
+    await pendingRescan
+
+    expect(importGpxEvidencePaths).not.toHaveBeenCalled()
   })
 
   it('does not publish a completed renderer-file import after the active mission changes [DON-274]', async () => {

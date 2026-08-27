@@ -17,6 +17,7 @@ export function GpxImportPanel() {
   const imports = useGpxStore((state) => state.imports)
   const outings = useGpxStore((state) => state.outings)
   const watchedDirectories = useGpxStore((state) => state.watchedDirectories)
+  const importIssues = useGpxStore((state) => state.importIssues)
   const loading = useGpxStore((state) => state.loading)
   const importing = useGpxStore((state) => state.importing)
   const error = useGpxStore((state) => state.error)
@@ -85,6 +86,24 @@ export function GpxImportPanel() {
         <p className="mt-3 text-sm text-rose-300" data-testid="gpx-import-error">
           {error}
         </p>
+      ) : null}
+      {importIssues.length > 0 ? (
+        <section
+          aria-label="Retained GPX import issues"
+          className="mt-3 rounded-xl border border-rose-500/40 bg-rose-950/20 p-3"
+          data-testid="gpx-import-issues"
+        >
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-rose-200">
+            Retained import issues
+          </h4>
+          <ul className="mt-2 space-y-2">
+            {importIssues.map((issue) => (
+              <li className="text-xs text-rose-100" key={`${issue.batch_id}:${issue.file_name}:${issue.recorded_at}`}>
+                <strong>{issue.file_name}</strong>: {issue.reason}
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
       {statusMessage !== null ? (
         <p className="mt-3 text-sm text-emerald-300" data-testid="gpx-import-status">

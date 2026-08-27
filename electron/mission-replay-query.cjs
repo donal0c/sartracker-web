@@ -4,12 +4,13 @@ const MAX_REPLAY_TRACK_LIMIT = 1_000
 const MAX_REPLAY_OBJECT_LIMIT = 100
 const MAX_REPLAY_OBJECT_STATE_BYTES = 4_096
 const MAX_REPLAY_CURSOR_OFFSET = 10_000_000
+const MAX_REPLAY_FILTER_IDS = 200
 
 /** Builds the deterministic metadata snapshot and first bounded exact-track page for data known at T. */
 function readMissionReplayState(database, input) {
   const normalized = normalizeReplayInput(input)
   const objectResult = readObjectRows(database, normalized, 0)
-  const trackResult = readTrackRows(database, normalized, 0)
+  const trackResult = readTrackRows(database, normalized, null)
   const staticGpxEvidence = readStaticGpxEvidence(database, normalized)
   const limitations = readReplayLimitations(
     database,
@@ -24,6 +25,7 @@ function readMissionReplayState(database, input) {
     timezone: normalized.timezone,
     objects: objectResult.objects,
     totalObjectCount: objectResult.totalObjectCount,
+    objectTypeCounts: objectResult.objectTypeCounts,
     objectCursor: '0',
     nextObjectCursor: objectResult.nextObjectCursor,
     missionLifecycle: readMissionLifecycle(database, normalized),
@@ -36,6 +38,10 @@ function readMissionReplayState(database, input) {
     staticGpxPointCount: trackResult.staticGpxPointCount,
     staticGpxEvidence: staticGpxEvidence.rows,
     nextCursor: trackResult.nextCursor,
+    availableDeviceIds: readAvailableDeviceIds(database, normalized),
+    availableOutingIds: readAvailableOutingIds(database, normalized),
+    deviceFilterIds: normalized.deviceIds ?? [],
+    outingFilterIds: normalized.outingIds ?? [],
     progress: trackResult.totalTrackCount === 0
       ? 1
       : trackResult.tracks.length / trackResult.totalTrackCount,
@@ -108,29 +114,31 @@ function readMissionReplayObjectChunk(database, input) {
 /** Reads one bounded continuation page from exact Traccar/GPX source evidence. */
 function readMissionReplayTrackChunk(database, input) {
   const normalized = normalizeReplayInput(input)
-  const offset = normalizeReplayCursor(input.cursor)
-  const result = readTrackRows(database, normalized, offset)
+  const cursor = normalizeReplayTrackCursor(input.cursor)
+  const result = readTrackRows(database, normalized, cursor)
   return {
     missionId: normalized.missionId,
     selectedTime: normalized.selectedTime,
     tracks: result.tracks,
-    trackCursor: String(offset),
-    previousCursor: offset === 0 ? null : String(Math.max(0, offset - normalized.trackLimit)),
+    trackCursor: String(result.offset),
+    previousCursor: result.previousCursor,
     totalTrackCount: result.totalTrackCount,
     nextCursor: result.nextCursor,
     progress: result.totalTrackCount === 0
       ? 1
-      : Math.min(1, (offset + result.tracks.length) / result.totalTrackCount),
+      : Math.min(1, (result.offset + result.tracks.length) / result.totalTrackCount),
   }
 }
 
 function readObjectRows(database, input, offset) {
-  const total = database.prepare(`SELECT COUNT(*) AS count FROM (
+  const totals = database.prepare(`SELECT object_type, COUNT(*) AS count FROM (
     SELECT object_type, object_id FROM mission_object_versions
     WHERE mission_id = ? AND recorded_at <= ? AND effective_at <= ?
     GROUP BY object_type, object_id
-  )`).get(input.missionId, input.selectedTime, input.selectedTime)
-  const totalObjectCount = Number(total?.count ?? 0)
+  ) GROUP BY object_type ORDER BY object_type ASC`)
+    .all(input.missionId, input.selectedTime, input.selectedTime)
+  const objectTypeCounts = Object.fromEntries(totals.map((row) => [row.object_type, Number(row.count)]))
+  const totalObjectCount = totals.reduce((sum, row) => sum + Number(row.count), 0)
   const rows = database.prepare(`WITH ranked AS (
     SELECT *, ROW_NUMBER() OVER (
       PARTITION BY object_type, object_id
@@ -168,32 +176,41 @@ function readObjectRows(database, input, offset) {
   return {
     objects,
     totalObjectCount,
+    objectTypeCounts,
     summarizedObjectCount,
     nextObjectCursor: nextOffset < totalObjectCount ? String(nextOffset) : null,
   }
 }
 
-function readTrackRows(database, input, offset) {
-  const tracks = readTrackRowsBySourceIndex(database, input, offset)
+function readTrackRows(database, input, cursor) {
+  const page = readTrackRowsBySourceIndex(database, input, cursor)
   const positionStats = readPositionReplayStats(database, input)
   const totalTrackCount = countReplayTrackRows(database, input, positionStats.eligibleCount)
   const staticGpxPointCount = countStaticGpxPoints(database, input)
-  const nextOffset = offset + tracks.length
   return {
-    tracks,
+    tracks: page.rows.map(stripReplayOrderFields),
+    offset: page.offset,
     totalTrackCount,
     staticGpxPointCount,
     positionStats,
-    nextCursor: nextOffset < totalTrackCount ? String(nextOffset) : null,
+    previousCursor: page.offset === 0 || page.rows.length === 0
+      ? null
+      : encodeReplayTrackCursor('before', page.offset, page.rows[0]),
+    nextCursor: page.offset + page.rows.length < totalTrackCount && page.rows.length > 0
+      ? encodeReplayTrackCursor('after', page.offset + page.rows.length, page.rows.at(-1))
+      : null,
   }
 }
 
-/** Merges one deterministic page using the existing mission/device/fixTime index. */
-function readTrackRowsBySourceIndex(database, input, offset) {
-  const batchSize = Math.min(100, input.trackLimit)
-  const deviceIds = database.prepare(`SELECT DISTINCT device_id
-    FROM positions INDEXED BY idx_positions_mission_device_timestamp
+/** Merges one deterministic keyset page using the existing mission/device/fixTime index. */
+function readTrackRowsBySourceIndex(database, input, cursor) {
+  const direction = cursor?.direction ?? 'after'
+  const key = cursor?.key ?? null
+  const batchSize = Math.min(20, input.trackLimit)
+  const deviceIds = database.prepare(`SELECT device_id FROM devices
     WHERE mission_id = ? ORDER BY device_id ASC`).all(input.missionId)
+    .map((row) => row.device_id)
+    .filter((deviceId) => input.deviceIds === null || input.deviceIds.includes(deviceId))
   const selectDeviceRows = `SELECT
       id AS evidence_id, 'traccar_fix' AS source_type, device_id AS track_id,
       timestamp AS effective_at, received_at AS recorded_at, lat, lon,
@@ -202,59 +219,99 @@ function readTrackRowsBySourceIndex(database, input, offset) {
     FROM positions INDEXED BY idx_positions_mission_device_timestamp
     WHERE mission_id = ? AND device_id = ? AND timestamp_source = 'fix'
       AND received_at IS NOT NULL AND received_at <= ? AND timestamp <= ?`
+  const keyPredicate = direction === 'after'
+    ? ` AND timestamp >= ? AND (timestamp > ? OR (timestamp = ? AND received_at > ?)
+        OR (timestamp = ? AND received_at = ? AND 0 > ?)
+        OR (timestamp = ? AND received_at = ? AND 0 = ? AND id > ?))`
+    : ` AND timestamp <= ? AND (timestamp < ? OR (timestamp = ? AND received_at < ?)
+        OR (timestamp = ? AND received_at = ? AND 0 < ?)
+        OR (timestamp = ? AND received_at = ? AND 0 = ? AND id < ?))`
+  const order = direction === 'after' ? 'ASC' : 'DESC'
   const readDeviceFirst = database.prepare(`${selectDeviceRows}
-    ORDER BY timestamp ASC, received_at ASC, id ASC LIMIT ?`)
-  const readDeviceAfter = database.prepare(`${selectDeviceRows}
-      AND (timestamp > ?
-        OR (timestamp = ? AND received_at > ?)
-        OR (timestamp = ? AND received_at = ? AND id > ?))
-    ORDER BY timestamp ASC, received_at ASC, id ASC LIMIT ?`)
-  const sources = []
-  for (const row of deviceIds) {
-    const firstRows = readDeviceFirst.all(
-      input.missionId, row.device_id, input.selectedTime, input.selectedTime, batchSize,
-    )
-    if (firstRows.length > 0) {
-      sources.push({
-        rows: firstRows,
-        index: 0,
-        fetchNext: (last) => readDeviceAfter.all(
-          input.missionId, row.device_id, input.selectedTime, input.selectedTime,
-          last.effective_at, last.effective_at, last.recorded_at,
-          last.effective_at, last.recorded_at, last.evidence_id, batchSize,
-        ),
-      })
-    }
+    ORDER BY timestamp ${order}, received_at ${order}, id ${order} LIMIT ?`)
+  const readDeviceRows = database.prepare(`${selectDeviceRows}${keyPredicate}
+    ORDER BY timestamp ${order}, received_at ${order}, id ${order} LIMIT ?`)
+  const readDevicePage = (deviceId, boundary) => boundary === null
+    ? readDeviceFirst.all(
+        input.missionId, deviceId, input.selectedTime, input.selectedTime, batchSize,
+      )
+    : readDeviceRows.all(
+        input.missionId, deviceId, input.selectedTime, input.selectedTime,
+        boundary.effectiveAt, ...replayKeyParameters(boundary), batchSize,
+      )
+  const sources = deviceIds.flatMap((deviceId) => {
+    const rows = readDevicePage(deviceId, key)
+    return rows.length === 0 ? [] : [{
+      rows,
+      index: 0,
+      fetchNext: (last) => readDevicePage(deviceId, replayKeyFromRow(last)),
+    }]
+  })
+  const readGpxPage = (boundary) => readInitialGpxTrackRows(
+    database, input, boundary, direction, batchSize,
+  )
+  const firstGpxPage = readGpxPage(key)
+  if (firstGpxPage.length > 0) {
+    sources.push({
+      rows: firstGpxPage,
+      index: 0,
+      fetchNext: (last) => readGpxPage(replayKeyFromRow(last)),
+    })
   }
-  const gpxRows = readInitialGpxTrackRows(database, input, offset + input.trackLimit)
-  if (gpxRows.length > 0) sources.push({ rows: gpxRows, index: 0, fetchNext: null })
-  const tracks = []
-  let visited = 0
-  while (tracks.length < input.trackLimit) {
+  const rows = []
+  while (rows.length < input.trackLimit) {
     let selectedSource = null
     for (const source of sources) {
       const candidate = source.rows[source.index]
       if (candidate !== undefined && (selectedSource === null
-        || compareReplayTrackRows(candidate, selectedSource.rows[selectedSource.index]) < 0)) {
+        || (direction === 'after'
+          ? compareReplayTrackRows(candidate, selectedSource.rows[selectedSource.index]) < 0
+          : compareReplayTrackRows(candidate, selectedSource.rows[selectedSource.index]) > 0))) {
         selectedSource = source
       }
     }
     if (selectedSource === null) break
     const selected = selectedSource.rows[selectedSource.index]
-    if (visited >= offset) tracks.push(stripReplayOrderFields(selected))
-    visited += 1
+    rows.push(selected)
     selectedSource.index += 1
-    if (selectedSource.index === selectedSource.rows.length && selectedSource.fetchNext !== null
+    if (selectedSource.index === selectedSource.rows.length
       && selectedSource.rows.length === batchSize) {
       selectedSource.rows = selectedSource.fetchNext(selected)
       selectedSource.index = 0
     }
   }
-  return tracks
+  if (direction === 'before') rows.reverse()
+  const offset = direction === 'before'
+    ? Math.max(0, Number(cursor?.offset ?? 0) - rows.length)
+    : Number(cursor?.offset ?? 0)
+  return { rows, offset }
 }
 
-/** Reads only the GPX candidates that could enter the bounded initial merged page. */
-function readInitialGpxTrackRows(database, input, candidateLimit) {
+/** Extracts the private deterministic order key retained only inside the replay worker. */
+function replayKeyFromRow(row) {
+  return {
+    effectiveAt: row.effective_at,
+    recordedAt: row.recorded_at,
+    sourceOrder: Number(row.source_order),
+    stableOrder: row.stable_order,
+  }
+}
+
+/** Reads only GPX candidates adjacent to the requested deterministic keyset boundary. */
+function readInitialGpxTrackRows(database, input, key, direction, candidateLimit) {
+  const outingFilter = sqlIdFilter('eligible_gpx.outing_id', input.outingIds)
+  const keyPredicate = key === null ? '' : direction === 'after'
+    ? ` AND (points.source_time > ? OR (points.source_time = ? AND eligible_gpx.recorded_at > ?)
+        OR (points.source_time = ? AND eligible_gpx.recorded_at = ? AND 1 > ?)
+        OR (points.source_time = ? AND eligible_gpx.recorded_at = ? AND 1 = ? AND
+          (eligible_gpx.import_id || ':' || printf('%08d', points.segment_index) || ':' ||
+            printf('%08d', points.point_index)) > ?))`
+    : ` AND (points.source_time < ? OR (points.source_time = ? AND eligible_gpx.recorded_at < ?)
+        OR (points.source_time = ? AND eligible_gpx.recorded_at = ? AND 1 < ?)
+        OR (points.source_time = ? AND eligible_gpx.recorded_at = ? AND 1 = ? AND
+          (eligible_gpx.import_id || ':' || printf('%08d', points.segment_index) || ':' ||
+            printf('%08d', points.point_index)) < ?))`
+  const order = direction === 'after' ? 'ASC' : 'DESC'
   return database.prepare(`WITH eligible_gpx AS (
       SELECT revisions.*,
         ROW_NUMBER() OVER (
@@ -282,12 +339,13 @@ function readInitialGpxTrackRows(database, input, candidateLimit) {
       ON points.import_id = eligible_gpx.import_id
       AND points.revision_sequence = eligible_gpx.revision_sequence
     WHERE eligible_gpx.replay_rank = 1 AND points.source_time IS NOT NULL
-      AND points.source_time <= ?
-    ORDER BY points.source_time ASC, eligible_gpx.recorded_at ASC,
-      eligible_gpx.import_id ASC, points.segment_index ASC, points.point_index ASC
+      AND points.source_time <= ?${outingFilter.sql}${keyPredicate}
+    ORDER BY points.source_time ${order}, eligible_gpx.recorded_at ${order},
+      eligible_gpx.import_id ${order}, points.segment_index ${order}, points.point_index ${order}
     LIMIT ?`).all(
     input.missionId, input.selectedTime, input.selectedTime,
-    input.selectedTime, candidateLimit,
+    input.selectedTime, ...outingFilter.params,
+    ...(key === null ? [] : replayKeyParameters(key)), candidateLimit,
   )
 }
 
@@ -306,8 +364,9 @@ function stripReplayOrderFields(row) {
 }
 
 function countReplayTrackRows(database, input, eligiblePositionCount) {
+  const outingFilter = sqlIdFilter('eligible_gpx.outing_id', input.outingIds)
   const row = database.prepare(`WITH eligible_gpx AS (
-      SELECT revisions.import_id, revisions.revision_sequence,
+      SELECT revisions.import_id, revisions.revision_sequence, revisions.outing_id,
         ROW_NUMBER() OVER (
           PARTITION BY revisions.import_id
           ORDER BY revisions.recorded_at DESC, revisions.revision_sequence DESC
@@ -326,38 +385,40 @@ function countReplayTrackRows(database, input, eligiblePositionCount) {
           AND points.revision_sequence = eligible_gpx.revision_sequence
         WHERE eligible_gpx.replay_rank = 1
           AND points.source_time IS NOT NULL
-          AND points.source_time <= ?`)
+          AND points.source_time <= ?${outingFilter.sql}`)
     .get(
       input.missionId, input.selectedTime, input.selectedTime,
-      input.selectedTime,
+      input.selectedTime, ...outingFilter.params,
     )
   return eligiblePositionCount + Number(row?.count ?? 0)
 }
 
 /** Aggregates exact-replay eligibility and explicit legacy gaps in one mission scan. */
 function readPositionReplayStats(database, input) {
+  const deviceFilter = sqlIdFilter('device_id', input.deviceIds)
   const hasReplayIndex = database.prepare(`SELECT 1 FROM sqlite_master
     WHERE type = 'index' AND name = 'idx_positions_replay_known_fix'`).get() !== undefined
-  if (hasReplayIndex) {
-    const eligible = database.prepare(`SELECT COUNT(*) AS count
-      FROM positions INDEXED BY idx_positions_replay_known_fix
-      WHERE mission_id = ? AND timestamp_source = 'fix' AND received_at IS NOT NULL
-        AND received_at <= ? AND timestamp <= ?`)
-      .get(input.missionId, input.selectedTime, input.selectedTime)
-    const exact = database.prepare(`SELECT COUNT(*) AS count
-      FROM positions INDEXED BY idx_positions_replay_known_fix
-      WHERE mission_id = ? AND timestamp_source = 'fix'`).get(input.missionId)
+  const hasUnknownTimeIndex = database.prepare(`SELECT 1 FROM sqlite_master
+    WHERE type = 'index' AND name = 'idx_positions_replay_unknown_time'`).get() !== undefined
+  const hasKnownAtIndexes = ['idx_positions_replay_known_at', 'idx_positions_replay_device_known_at']
+    .every((name) => database.prepare(`SELECT 1 FROM sqlite_master
+      WHERE type = 'index' AND name = ?`).get(name) !== undefined)
+  const hasKnownDayCounts = database.prepare(`SELECT 1 FROM sqlite_master
+    WHERE type = 'table' AND name = 'mission_replay_position_day_counts'`).get() !== undefined
+  if (hasReplayIndex && hasUnknownTimeIndex && hasKnownAtIndexes && hasKnownDayCounts) {
+    const eligibleCount = countKnownReplayPositions(database, input)
     const missingRecorded = database.prepare(`SELECT COUNT(*) AS count
       FROM positions INDEXED BY idx_positions_replay_known_fix
-      WHERE mission_id = ? AND timestamp_source = 'fix' AND received_at IS NULL`)
-      .get(input.missionId)
-    const total = database.prepare(`SELECT COUNT(*) AS count
-      FROM positions INDEXED BY idx_positions_mission_device_timestamp
-      WHERE mission_id = ?`).get(input.missionId)
+      WHERE mission_id = ? AND timestamp_source = 'fix' AND received_at IS NULL${deviceFilter.sql}`)
+      .get(input.missionId, ...deviceFilter.params)
+    const unproved = database.prepare(`SELECT COUNT(*) AS count
+      FROM positions INDEXED BY idx_positions_replay_unknown_time
+      WHERE mission_id = ? AND timestamp_source IS NULL${deviceFilter.sql}`)
+      .get(input.missionId, ...deviceFilter.params)
     return {
-      eligibleCount: Number(eligible?.count ?? 0),
+      eligibleCount,
       missingRecordedCount: Number(missingRecorded?.count ?? 0),
-      unprovedTimeCount: Math.max(0, Number(total?.count ?? 0) - Number(exact?.count ?? 0)),
+      unprovedTimeCount: Number(unproved?.count ?? 0),
     }
   }
   const row = database.prepare(`SELECT
@@ -366,7 +427,8 @@ function readPositionReplayStats(database, input) {
       SUM(CASE WHEN timestamp_source = 'fix' AND received_at IS NULL THEN 1 ELSE 0 END) AS missing_recorded_count,
       SUM(CASE WHEN timestamp_source IS NULL THEN 1 ELSE 0 END) AS unproved_time_count
     FROM positions INDEXED BY idx_positions_mission_device_timestamp
-    WHERE mission_id = ?`).get(input.selectedTime, input.selectedTime, input.missionId)
+    WHERE mission_id = ?${deviceFilter.sql}`)
+    .get(input.selectedTime, input.selectedTime, input.missionId, ...deviceFilter.params)
   return {
     eligibleCount: Number(row?.eligible_count ?? 0),
     missingRecordedCount: Number(row?.missing_recorded_count ?? 0),
@@ -374,7 +436,38 @@ function readPositionReplayStats(database, input) {
   }
 }
 
+/** Counts exact fixes known by T from complete days plus one bounded indexed day slice. */
+function countKnownReplayPositions(database, input) {
+  const knownDay = input.selectedTime.slice(0, 10)
+  const dayStart = `${knownDay}T00:00:00.000Z`
+  const knownAtExpression = 'CASE WHEN received_at > timestamp THEN received_at ELSE timestamp END'
+  if (input.deviceIds === null) {
+    const completeDays = Number(database.prepare(`SELECT COALESCE(SUM(position_count), 0) AS count
+      FROM mission_replay_position_day_counts
+      WHERE mission_id = ? AND known_day < ?`).get(input.missionId, knownDay)?.count ?? 0)
+    const partialDay = Number(database.prepare(`SELECT COUNT(*) AS count
+      FROM positions INDEXED BY idx_positions_replay_known_at
+      WHERE mission_id = ? AND timestamp_source = 'fix' AND received_at IS NOT NULL
+        AND ${knownAtExpression} >= ? AND ${knownAtExpression} <= ?`)
+      .get(input.missionId, dayStart, input.selectedTime)?.count ?? 0)
+    return completeDays + partialDay
+  }
+  const completeDayCount = database.prepare(`SELECT COALESCE(SUM(position_count), 0) AS count
+    FROM mission_replay_position_day_counts
+    WHERE mission_id = ? AND device_id = ? AND known_day < ?`)
+  const partialDayCount = database.prepare(`SELECT COUNT(*) AS count
+    FROM positions INDEXED BY idx_positions_replay_device_known_at
+    WHERE mission_id = ? AND device_id = ? AND timestamp_source = 'fix'
+      AND received_at IS NOT NULL AND ${knownAtExpression} >= ? AND ${knownAtExpression} <= ?`)
+  return input.deviceIds.reduce((total, deviceId) => total
+    + Number(completeDayCount.get(input.missionId, deviceId, knownDay)?.count ?? 0)
+    + Number(partialDayCount.get(
+      input.missionId, deviceId, dayStart, input.selectedTime,
+    )?.count ?? 0), 0)
+}
+
 function countStaticGpxPoints(database, input) {
+  const outingFilter = sqlIdFilter('eligible.outing_id', input.outingIds)
   const row = database.prepare(`WITH eligible AS (
       SELECT revisions.*,
         ROW_NUMBER() OVER (
@@ -393,13 +486,14 @@ function countStaticGpxPoints(database, input) {
     JOIN gpx_evidence_points AS points
       ON points.import_id = eligible.import_id
       AND points.revision_sequence = eligible.revision_sequence
-    WHERE eligible.replay_rank = 1 AND points.source_time IS NULL`)
-    .get(input.missionId, input.selectedTime, input.selectedTime)
+    WHERE eligible.replay_rank = 1 AND points.source_time IS NULL${outingFilter.sql}`)
+    .get(input.missionId, input.selectedTime, input.selectedTime, ...outingFilter.params)
   return Number(row?.count ?? 0)
 }
 
 /** Returns bounded provenance summaries for static GPX evidence eligible at T. */
 function readStaticGpxEvidence(database, input) {
+  const outingFilter = sqlIdFilter('eligible.outing_id', input.outingIds)
   const baseSql = `WITH eligible AS (
       SELECT revisions.*,
         ROW_NUMBER() OVER (
@@ -421,7 +515,7 @@ function readStaticGpxEvidence(database, input) {
           WHERE rejections.import_id = eligible.import_id
             AND rejections.revision_sequence = eligible.revision_sequence) AS rejection_count
       FROM eligible
-      WHERE eligible.replay_rank = 1
+      WHERE eligible.replay_rank = 1${outingFilter.sql}
         AND EXISTS (
           SELECT 1 FROM gpx_evidence_points AS points
           WHERE points.import_id = eligible.import_id
@@ -429,7 +523,7 @@ function readStaticGpxEvidence(database, input) {
             AND points.source_time IS NULL
         )
     )`
-  const parameters = [input.missionId, input.selectedTime, input.selectedTime]
+  const parameters = [input.missionId, input.selectedTime, input.selectedTime, ...outingFilter.params]
   const count = database.prepare(`${baseSql} SELECT COUNT(*) AS count FROM static_imports`)
     .get(...parameters)
   const rows = database.prepare(`${baseSql}
@@ -510,6 +604,17 @@ function readReplayLimitations(
       count: Number(legacyLifecycle.count),
     })
   }
+  const futureLegacyLifecycle = database.prepare(`SELECT MIN(recorded_at) AS boundary_time
+    FROM mission_events WHERE mission_id = ? AND recording_completeness = 'legacy_baseline'
+      AND recorded_at > ?`).get(input.missionId, input.selectedTime)
+  if (futureLegacyLifecycle?.boundary_time !== null
+    && futureLegacyLifecycle?.boundary_time !== undefined) {
+    limitations.push({
+      code: 'legacy_lifecycle_history_unknown_before_baseline',
+      message: 'Mission lifecycle history is unknown before the recorded migration baseline.',
+      boundaryTime: futureLegacyLifecycle.boundary_time,
+    })
+  }
   const legacyMembership = database.prepare(`SELECT COUNT(*) AS count
     FROM mission_group_membership_events
     WHERE mission_id = ? AND recording_completeness = 'legacy_baseline'
@@ -519,6 +624,18 @@ function readReplayLimitations(
       code: 'legacy_membership_baseline_only',
       message: 'Earlier recorded-at provenance is unknown for one or more migrated group membership events.',
       count: Number(legacyMembership.count),
+    })
+  }
+  const futureLegacyMembership = database.prepare(`SELECT MIN(recorded_at) AS boundary_time
+    FROM mission_group_membership_events
+    WHERE mission_id = ? AND recording_completeness = 'legacy_baseline'
+      AND recorded_at > ?`).get(input.missionId, input.selectedTime)
+  if (futureLegacyMembership?.boundary_time !== null
+    && futureLegacyMembership?.boundary_time !== undefined) {
+    limitations.push({
+      code: 'legacy_membership_history_unknown_before_baseline',
+      message: 'Group membership history is unknown before the recorded migration baseline.',
+      boundaryTime: futureLegacyMembership.boundary_time,
     })
   }
   if (summarizedObjectCount > 0) {
@@ -550,10 +667,29 @@ function normalizeReplayInput(input) {
     selectedTime: new Date(input.selectedTime).toISOString(),
     trackLimit: input.trackLimit,
     objectLimit,
+    deviceIds: normalizeReplayFilterIds(input.deviceIds, 'device'),
+    outingIds: normalizeReplayFilterIds(input.outingIds, 'outing'),
     timezone: typeof input.timezone === 'string' && input.timezone.trim() !== ''
       ? input.timezone.trim()
       : 'Europe/Dublin',
   }
+}
+
+/** Validates one bounded display-only evidence-source filter. */
+function normalizeReplayFilterIds(value, label) {
+  if (value === undefined || value === null) return null
+  if (!Array.isArray(value) || value.length > MAX_REPLAY_FILTER_IDS) {
+    throw new Error(`Mission replay ${label} filter is invalid.`)
+  }
+  const normalized = []
+  for (const item of value) {
+    if (typeof item !== 'string' || item.trim() === '' || item.length > 200) {
+      throw new Error(`Mission replay ${label} filter is invalid.`)
+    }
+    const id = item.trim()
+    if (!normalized.includes(id)) normalized.push(id)
+  }
+  return normalized.sort((left, right) => left.localeCompare(right))
 }
 
 /** Returns a small explicit summary when a version state is too large for worker IPC. */
@@ -593,6 +729,97 @@ function normalizeReplayCursor(value) {
   return offset
 }
 
+/** Decodes one opaque, versioned, bidirectional exact-track cursor. */
+function normalizeReplayTrackCursor(value) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string' || value.length > 2_000 || !/^[A-Za-z0-9_-]+$/u.test(value)) {
+    throw new Error('Mission replay cursor is invalid.')
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
+    if (parsed?.v !== 1 || !['after', 'before'].includes(parsed.direction)
+      || !Number.isSafeInteger(parsed.offset) || parsed.offset < 0
+      || parsed.offset > MAX_REPLAY_CURSOR_OFFSET || !Array.isArray(parsed.key)
+      || parsed.key.length !== 4 || typeof parsed.key[0] !== 'string'
+      || typeof parsed.key[1] !== 'string' || ![0, 1].includes(parsed.key[2])
+      || typeof parsed.key[3] !== 'string') {
+      throw new Error('invalid shape')
+    }
+    return {
+      direction: parsed.direction,
+      offset: parsed.offset,
+      key: {
+        effectiveAt: parsed.key[0],
+        recordedAt: parsed.key[1],
+        sourceOrder: parsed.key[2],
+        stableOrder: parsed.key[3],
+      },
+    }
+  } catch {
+    throw new Error('Mission replay cursor is invalid.')
+  }
+}
+
+/** Encodes a deterministic track row boundary without exposing it as an SQL offset. */
+function encodeReplayTrackCursor(direction, offset, row) {
+  return Buffer.from(JSON.stringify({
+    v: 1,
+    direction,
+    offset,
+    key: [row.effective_at, row.recorded_at, Number(row.source_order), row.stable_order],
+  }), 'utf8').toString('base64url')
+}
+
+/** Expands a replay order key for the explicit SQLite lexicographic predicate. */
+function replayKeyParameters(key) {
+  return [
+    key.effectiveAt,
+    key.effectiveAt, key.recordedAt,
+    key.effectiveAt, key.recordedAt, key.sourceOrder,
+    key.effectiveAt, key.recordedAt, key.sourceOrder, key.stableOrder,
+  ]
+}
+
+/** Builds a parameterized, bounded IN filter; an explicit empty list matches no source. */
+function sqlIdFilter(column, ids) {
+  if (ids === null) return { sql: '', params: [] }
+  if (ids.length === 0) return { sql: ' AND 0', params: [] }
+  return { sql: ` AND ${column} IN (${ids.map(() => '?').join(', ')})`, params: ids }
+}
+
+/** Lists bounded Traccar device filter choices known by the selected replay time. */
+function readAvailableDeviceIds(database, input) {
+  const hasDevicesTable = database.prepare(`SELECT 1 FROM sqlite_master
+    WHERE type = 'table' AND name = 'devices'`).get() !== undefined
+  const rows = hasDevicesTable
+    ? database.prepare(`SELECT device_id FROM devices
+        WHERE mission_id = ? ORDER BY device_id ASC LIMIT ?`)
+      .all(input.missionId, MAX_REPLAY_FILTER_IDS)
+    : database.prepare(`SELECT DISTINCT device_id FROM positions
+        WHERE mission_id = ? ORDER BY device_id ASC LIMIT ?`)
+      .all(input.missionId, MAX_REPLAY_FILTER_IDS)
+  return rows
+    .map((row) => row.device_id)
+}
+
+/** Lists bounded GPX outing filter choices known by the selected replay time. */
+function readAvailableOutingIds(database, input) {
+  return database.prepare(`WITH eligible AS (
+      SELECT revisions.outing_id,
+        ROW_NUMBER() OVER (PARTITION BY revisions.import_id
+          ORDER BY revisions.recorded_at DESC, revisions.revision_sequence DESC) AS replay_rank
+      FROM gpx_import_revisions AS revisions
+      JOIN gpx_track_imports AS imports ON imports.id = revisions.import_id
+      WHERE revisions.mission_id = ? AND revisions.import_state = 'complete'
+        AND revisions.recorded_at <= ?
+        AND (imports.retired_at IS NULL OR imports.retired_at > ?)
+    )
+    SELECT DISTINCT outing_id FROM eligible
+    WHERE replay_rank = 1 AND outing_id IS NOT NULL ORDER BY outing_id ASC LIMIT ?`)
+    .all(input.missionId, input.selectedTime, input.selectedTime, MAX_REPLAY_FILTER_IDS)
+    .map((row) => row.outing_id)
+}
+
 function parseState(value, objectType, objectId) {
   try {
     const parsed = JSON.parse(value)
@@ -607,6 +834,7 @@ module.exports = {
   MAX_REPLAY_TRACK_LIMIT,
   MAX_REPLAY_OBJECT_LIMIT,
   normalizeReplayInput,
+  encodeReplayTrackCursor,
   readMissionReplayObjectChunk,
   readMissionReplayState,
   readMissionReplayTrackChunk,

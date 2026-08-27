@@ -12,9 +12,16 @@ function runMissionReplayInWorker(input) {
   let resolveWorkerExit
   const workerExited = new Promise((resolve) => { resolveWorkerExit = resolve })
   const result = new Promise((resolve, reject) => {
-    const worker = input.createWorker?.() ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
-      workerData: { databasePath: input.databasePath, query: input.query, kind: input.kind },
-    })
+    let worker
+    try {
+      worker = input.createWorker?.() ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
+        workerData: { databasePath: input.databasePath, query: input.query, kind: input.kind },
+      })
+    } catch (error) {
+      resolveWorkerExit()
+      reject(error)
+      return
+    }
     let settled = false
     let completed = null
     const timeout = setTimeout(() => rejectAndTerminate(new Error('Mission replay worker timed out.')), 30_000)
