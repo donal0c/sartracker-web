@@ -526,18 +526,7 @@ describe('polling manager', () => {
     poller.stop()
   })
 
-  it('admits history before transport so stop waits for late rejected-row evidence [DON-267]', async () => {
-    const history = createDeferred<{
-      readonly accepted: readonly NormalizedTrackingPosition[]
-      readonly rejected: readonly {
-        readonly deviceId: string
-        readonly reason: 'invalid_timestamp'
-        readonly rowIndex: number
-        readonly anomalyKey: string
-        readonly sourcePositionId: string
-        readonly canonicalEvidence: Readonly<Record<string, unknown>>
-      }[]
-    }>()
+  it('waits for durable rejected-row evidence that arrived before stop [DON-267]', async () => {
     const rejection = {
       deviceId: '1',
       reason: 'invalid_timestamp' as const,
@@ -547,9 +536,13 @@ describe('polling manager', () => {
       canonicalEvidence: { source_position_id: 'late-rejection', device_id: '1' },
     }
     const completedObservations: ReturnType<typeof vi.fn>[] = []
-    const onBreadcrumbRejections = vi.fn()
+    const rejectionWrite = createDeferred<void>()
+    const onBreadcrumbRejections = vi.fn().mockReturnValue(rejectionWrite.promise)
     const poller = createPollingManager(createClient({
-      getBreadcrumbsWithReport: vi.fn().mockReturnValue(history.promise),
+      getBreadcrumbsWithReport: vi.fn().mockResolvedValue({
+        accepted: [],
+        rejected: [rejection],
+      }),
     }), {
       intervalMs: 5_000,
       staleThresholdMs: 60 * 60 * 1000,
@@ -567,6 +560,7 @@ describe('polling manager', () => {
 
     poller.start()
     await vi.advanceTimersByTimeAsync(0)
+    expect(onBreadcrumbRejections).toHaveBeenCalled()
     expect(completedObservations.length).toBeGreaterThanOrEqual(2)
     expect(completedObservations.at(-1)).not.toHaveBeenCalled()
 
@@ -575,13 +569,60 @@ describe('polling manager', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(stopped).toBe(false)
 
-    history.resolve({ accepted: [], rejected: [rejection] })
+    rejectionWrite.resolve(undefined)
     await stop
     expect(onBreadcrumbRejections).toHaveBeenCalledWith([rejection], {
       missionId: 'mission-finish-fence',
       observedAt: '2026-08-27T09:00:00.000Z',
     })
     expect(completedObservations.at(-1)).toHaveBeenCalledOnce()
+  })
+
+  it('cancels unresolved admitted history transport on stop without fabricating evidence [DON-267]', async () => {
+    const historySignals: AbortSignal[] = []
+    const getBreadcrumbs = vi.fn((
+      _deviceId: string,
+      _from: Date,
+      _to: Date,
+      signal?: AbortSignal,
+    ) => {
+      if (signal !== undefined) {
+        historySignals.push(signal)
+        return new Promise<readonly NormalizedTrackingPosition[]>((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            reject(new DOMException('History request stopped.', 'AbortError'))
+          }, { once: true })
+        })
+      }
+      return Promise.resolve([])
+    })
+    const onBreadcrumbRejections = vi.fn()
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(createClient({ getBreadcrumbs }), {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-shutdown-cancel',
+      onBreadcrumbRejections,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-08-27T09:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(historySignals.length).toBeGreaterThan(0)
+
+    let stopped = false
+    const stop = poller.stop().then(() => { stopped = true })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(historySignals.every((signal) => signal.aborted)).toBe(true)
+    expect(stopped).toBe(true)
+    expect(onBreadcrumbRejections).not.toHaveBeenCalled()
+    expect(onSnapshot.mock.calls.flatMap((call) =>
+      call[0].rawBreadcrumbsForPersistence ?? [],
+    )).toEqual([])
+    await stop
   })
 
   it('starts a new mission history task without waiting for superseded transport [DON-267]', async () => {

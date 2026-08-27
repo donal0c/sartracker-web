@@ -1512,6 +1512,9 @@ export function createPollingManager(
     }
     initialSeedAbortController?.abort()
     canonicalizationInFlight?.abortController.abort()
+    historyTransportAbortController.abort(
+      new DOMException('Tracking history stopped before transport completed.', 'AbortError'),
+    )
     settleCurrentPositionForStop?.()
     if (currentPositionObservationInFlight !== null) {
       await currentPositionObservationInFlight
