@@ -29,7 +29,7 @@ import { useStationaryAttentionStore } from '../features/tracking/stationary-att
 
 const DEVICES_WORKSPACE_TITLE_ID = 'devices-workspace-title'
 const DEVICE_ROW_GRID_COLUMNS =
-  'grid-cols-[minmax(7.5rem,1fr)_minmax(9rem,1.2fr)_4rem_6rem_7rem_5.5rem_6rem_8rem]'
+  'grid-cols-[minmax(7.5rem,1fr)_minmax(9rem,1.2fr)_4rem_6rem_11.5rem_5.5rem_6rem_8rem]'
 
 /**
  * Renders the dedicated tracking devices workspace used for roster-scale operations.
@@ -331,8 +331,16 @@ function DevicesWorkspaceContent(props: {
 
                 <dl className="space-y-3 text-sm text-stone-300">
                   <Detail label="Status" value={selectedRow.status} />
-                  <Detail label="Last Seen" value={selectedRow.lastSeenDisplay} />
-                  <Detail label="Fix Time" value={selectedRow.fixTimeDisplay} />
+                  <Detail
+                    label="Last Seen"
+                    value={selectedRow.lastSeenDisplay}
+                    testId={`device-inspector-last-seen-${selectedRow.deviceId}`}
+                  />
+                  <Detail
+                    label="Fix Time"
+                    value={selectedRow.fixTimeDisplay}
+                    testId={`device-fix-time-${selectedRow.deviceId}`}
+                  />
                   <Detail label="Source" value={selectedRow.sourceDisplay} />
                   {selectedRow.ingestWarning === null ? null : (
                     <Detail label="Position Data" value={selectedRow.ingestWarning} />
@@ -551,10 +559,10 @@ function DeviceRow(props: {
         {props.row.status}
       </span>
       <span
-        className="font-mono text-xs text-stone-300"
+        className="font-mono text-[10px] leading-4 text-stone-300"
         data-testid={`device-last-seen-${props.row.deviceId}`}
       >
-        {props.row.lastSeenDisplay}
+        <CompactOperatorTimestamp value={props.row.lastSeenDisplay} />
       </span>
       <span
         className={`text-xs font-semibold ${
@@ -607,11 +615,32 @@ function DeviceRow(props: {
   )
 }
 
-function Detail(props: { readonly label: string; readonly value: string }) {
+/** Keeps the full explicit timestamp scannable in two stable roster lines. */
+function CompactOperatorTimestamp(props: { readonly value: string }) {
+  const zoneStart = props.value.indexOf(' GMT')
+  if (zoneStart < 0) return props.value
+  return (
+    <>
+      <span className="block whitespace-nowrap">{props.value.slice(0, zoneStart)}</span>
+      <span className="block whitespace-nowrap">{props.value.slice(zoneStart + 1)}</span>
+    </>
+  )
+}
+
+function Detail(props: {
+  readonly label: string
+  readonly value: string
+  readonly testId?: string
+}) {
   return (
     <div className="flex items-center justify-between gap-4">
       <dt className="sar-meta-label">{props.label}</dt>
-      <dd className="font-mono text-right text-stone-100">{props.value}</dd>
+      <dd
+        className="font-mono text-right text-stone-100"
+        data-testid={props.testId}
+      >
+        {props.value}
+      </dd>
     </div>
   )
 }

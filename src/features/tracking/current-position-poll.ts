@@ -22,6 +22,12 @@ export type CurrentPositionPollResult = CurrentPositionNormalizationResult & {
   readonly rosterComplete: boolean
 }
 
+type CurrentPositionPollOptions = {
+  readonly rosterGraceMs?: number
+  readonly setTimeout?: typeof globalThis.setTimeout
+  readonly settleRosterGrace?: Promise<void>
+}
+
 /**
  * Fetches roster metadata and current positions independently so roster failure
  * cannot withhold a valid current-position publication.
@@ -29,22 +35,34 @@ export type CurrentPositionPollResult = CurrentPositionNormalizationResult & {
 export async function fetchRosterAndCurrentPositions(
   client: CurrentPositionPollClient,
   lastKnownDevices: readonly NormalizedTrackingDevice[],
+  options: CurrentPositionPollOptions = {},
 ): Promise<CurrentPositionPollResult> {
-  const [rosterResult, positionsResult] = await Promise.allSettled([
+  const rosterPromise = Promise.resolve(
     client.getDevicesWithReport?.() ?? client.getDevices().then((accepted) => ({
       accepted,
       complete: true,
     })),
-    client.getCurrentPositions(),
-  ])
+  )
+  const positions = await client.getCurrentPositions()
+  const rosterResult = await settleRosterWithinGrace(
+    rosterPromise,
+    options.rosterGraceMs ?? 50,
+    options.setTimeout ?? globalThis.setTimeout,
+    options.settleRosterGrace,
+  )
 
-  if (positionsResult.status === 'rejected') {
-    throw positionsResult.reason
+  if (rosterResult.status === 'pending') {
+    return {
+      ...positions,
+      devices: lastKnownDevices,
+      rosterWarning: 'Current fixes loaded; refreshing device roster.',
+      rosterFailure: null,
+      rosterComplete: false,
+    }
   }
-
   if (rosterResult.status === 'rejected') {
     return {
-      ...positionsResult.value,
+      ...positions,
       devices: lastKnownDevices,
       rosterWarning: ROSTER_UNAVAILABLE_WARNING,
       rosterFailure: rosterResult.reason,
@@ -53,10 +71,37 @@ export async function fetchRosterAndCurrentPositions(
   }
 
   return {
-    ...positionsResult.value,
+    ...positions,
     devices: rosterResult.value.accepted,
     rosterWarning: null,
     rosterFailure: null,
     rosterComplete: rosterResult.value.complete,
   }
+}
+
+/** Waits only the small metadata grace period; roster transport remains detached. */
+async function settleRosterWithinGrace(
+  roster: Promise<DeviceRosterNormalizationResult>,
+  graceMs: number,
+  scheduleTimeout: typeof globalThis.setTimeout,
+  settleRosterGrace?: Promise<void>,
+): Promise<
+  | { readonly status: 'fulfilled'; readonly value: DeviceRosterNormalizationResult }
+  | { readonly status: 'rejected'; readonly reason: unknown }
+  | { readonly status: 'pending' }
+> {
+  let timer: ReturnType<typeof globalThis.setTimeout> | null = null
+  const grace = new Promise<{ readonly status: 'pending' }>((resolve) => {
+    timer = scheduleTimeout(() => resolve({ status: 'pending' }), graceMs)
+  })
+  const settled = roster.then(
+    (value) => ({ status: 'fulfilled' as const, value }),
+    (reason: unknown) => ({ status: 'rejected' as const, reason }),
+  )
+  const forced = settleRosterGrace?.then(() => ({ status: 'pending' as const }))
+  const result = await Promise.race(
+    forced === undefined ? [settled, grace] : [settled, grace, forced],
+  )
+  if (timer !== null) globalThis.clearTimeout(timer)
+  return result
 }

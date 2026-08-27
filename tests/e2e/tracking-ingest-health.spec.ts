@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 test.describe('BCP-01 current-position ingest health', () => {
+  test.use({ timezoneId: 'Europe/Dublin' })
+
   test.beforeEach(async ({ page }) => {
     await page.goto('/?missionHarness=1')
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
@@ -38,7 +40,7 @@ test.describe('BCP-01 current-position ingest health', () => {
           speed: 1,
           battery: 85,
           accuracy: 8,
-          timestamp: new Date().toISOString(),
+          timestamp: '2026-08-22T15:10:17.000Z',
           timestamp_source: 'server',
           fix_time_unverified: true,
           source: 'osmand',
@@ -52,7 +54,7 @@ test.describe('BCP-01 current-position ingest health', () => {
         mode: 'online',
         consecutiveFailures: 0,
         recovered: false,
-        lastSuccessAt: new Date().toISOString(),
+        lastSuccessAt: '2026-08-22T15:10:17.000Z',
         warning: 'DEVICE ROSTER UNAVAILABLE — current fixes are using last-known device details.',
       })
       applyCurrentPositionRejections([
@@ -60,12 +62,15 @@ test.describe('BCP-01 current-position ingest health', () => {
       ])
     })
 
+    await expect(page.getByTestId('tracking-status')).toContainText(
+      'Last success22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin)',
+    )
     await expect(page.getByTestId('tracking-warning')).toContainText('ROSTER UNAVAILABLE')
     await expect(page.getByTestId('current-position-ingest-warning')).toContainText(
       'Valid current fixes remain visible',
     )
     await expect(page.getByTestId('fix-time-unverified-warning')).toContainText(
-      'not treated as a fresh device fix',
+      'uses server receipt clock, not verified Traccar fixTime',
     )
     await expect(page.getByTestId('tracking-counters')).toContainText('1')
 
@@ -74,6 +79,13 @@ test.describe('BCP-01 current-position ingest health', () => {
       'Position row rejected',
     )
     await expect(page.getByTestId('device-source-alpha')).toContainText('Fix time unverified')
+    await expect(page.getByTestId('device-fix-time-alpha')).toHaveText(
+      '22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin)',
+    )
+    await expect(page.getByTestId('device-inspector-last-seen-alpha')).toHaveText(
+      '22/08/2026, 11:00:00 GMT+01:00 (Europe/Dublin)',
+    )
+    await expect(page.getByTestId('device-last-seen-alpha').locator('span')).toHaveCount(2)
   })
 
   test('clears rejection and unverified-time warnings after a clean verified poll [DON-267]', async ({

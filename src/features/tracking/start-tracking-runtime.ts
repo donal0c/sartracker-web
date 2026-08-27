@@ -28,7 +28,11 @@ import type {
   TrackingSnapshotContext,
 } from './polling-manager'
 import type { BreadcrumbSelectionMetadata } from './breadcrumb-accumulator'
-import type { DeviceRosterNormalizationResult } from './traccar-client'
+import type {
+  BreadcrumbNormalizationResult,
+  DeviceRosterNormalizationResult,
+} from './traccar-client'
+import type { CurrentPositionRejection } from './ingest-health'
 import { useMissionStore } from '../mission/mission-store'
 import { useActiveMissionDevicesStore } from './active-mission-devices-store'
 import type {
@@ -38,6 +42,10 @@ import type {
 import { runParticipantBackfillPass } from '../participants/participant-backfill-runtime'
 import { createOperationalPositionRetention } from '../participants/operational-position-retention'
 import type { IngestEvidenceLossReason } from '../../domain/tracking-ingest-evidence'
+import {
+  filterCanonicalFixTimeEvidencePositions,
+  filterCanonicalFixTimeEvidenceSnapshot,
+} from './canonical-fix-time-evidence'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -129,6 +137,7 @@ export type TrackingRuntimeMissionStore = {
     readonly accuracy?: number | null
     readonly source?: string | null
     readonly timestamp: string
+    readonly timestamp_source?: 'fix' | null
     readonly data_origin?: 'live' | 'cache'
   }[]>
   readonly listRecentPositions?: (
@@ -146,6 +155,7 @@ export type TrackingRuntimeMissionStore = {
     readonly accuracy?: number | null
     readonly source?: string | null
     readonly timestamp: string
+    readonly timestamp_source?: 'fix' | null
     readonly data_origin?: 'live' | 'cache'
   }[]>
   readonly listBreadcrumbPositions?: (
@@ -165,6 +175,7 @@ export type TrackingRuntimeMissionStore = {
       readonly accuracy?: number | null
       readonly source?: string | null
       readonly timestamp: string
+      readonly timestamp_source?: 'fix' | null
       readonly data_origin?: 'live' | 'cache'
     }[]
     readonly deviceTotals: readonly {
@@ -217,6 +228,7 @@ export type TrackingRuntimeMissionStore = {
     readonly accuracy?: number | null
     readonly source?: string | null
     readonly timestamp?: string | null
+    readonly timestamp_source?: 'fix' | null
     readonly data_origin?: 'live' | 'cache'
   }) => Promise<unknown>
   readonly addPositionsBulk?: (input: {
@@ -232,6 +244,7 @@ export type TrackingRuntimeMissionStore = {
       readonly accuracy?: number | null
       readonly source?: string | null
       readonly timestamp?: string | null
+      readonly timestamp_source?: 'fix' | null
       readonly data_origin?: 'live' | 'cache'
     }[]
   }) => Promise<unknown>
@@ -251,6 +264,7 @@ export type TrackingRuntimeMissionStore = {
       readonly accuracy?: number | null
       readonly source?: string | null
       readonly timestamp?: string | null
+      readonly timestamp_source?: 'fix' | null
       readonly data_origin?: 'live' | 'cache'
     }[]
     readonly checkpoints: readonly {
@@ -298,6 +312,10 @@ type StartTrackingRuntimeDependencies = {
   readonly recordMissionEvidenceLoss?:
     | ((missionId: string, reason: IngestEvidenceLossReason) => Promise<void>)
     | undefined
+  readonly recordBreadcrumbRejections?: (
+    rejections: readonly CurrentPositionRejection[],
+    context: { readonly missionId: string; readonly observedAt: string },
+  ) => Promise<void>
   readonly beginMissionEvidenceObservation?: (missionId: string) => {
     readonly missionId: string | null
     readonly complete: () => void
@@ -367,6 +385,7 @@ export async function startTrackingRuntime(
       }
     | null = null
   let participantBackfillInFlight = false
+  let participantBackfillTask: Promise<void> | null = null
   let acceptingRuntimeUpdates = true
   const operationalPositionRetention = createOperationalPositionRetention()
   let deferredOperationalSnapshot: {
@@ -578,6 +597,7 @@ export async function startTrackingRuntime(
                     accuracy: position.accuracy,
                     source: position.source,
                     timestamp: position.timestamp,
+                    timestamp_source: 'fix' as const,
                     data_origin: position.data_origin,
                   })),
                 )
@@ -654,6 +674,7 @@ export async function startTrackingRuntime(
             accuracy: position.accuracy,
             source: position.source,
             timestamp: position.timestamp,
+            timestamp_source: 'fix' as const,
             data_origin: position.data_origin,
           }))
           if (
@@ -972,6 +993,9 @@ export async function startTrackingRuntime(
     await deferredMissionEvidence.settleForStop((missionId) =>
       readParticipationScopeStatus() === 'ready' &&
       useMissionStore.getState().currentMission?.id === missionId)
+    if (participantBackfillTask !== null) {
+      await participantBackfillTask
+    }
     participantBackfillAbortController.abort()
     invalidateTrackingRuntimeGeneration(runtimeGeneration)
   }
@@ -987,13 +1011,15 @@ export async function startTrackingRuntime(
     ) return
 
     participantBackfillInFlight = true
-    void runNextParticipantBackfillPass().catch((error) => {
+    const task = runNextParticipantBackfillPass().catch((error) => {
       if (!participantBackfillAbortController.signal.aborted) {
         logger.warn('Participant history backfill pass failed; it will retry.', error)
       }
     }).finally(() => {
       participantBackfillInFlight = false
+      if (participantBackfillTask === task) participantBackfillTask = null
     })
+    participantBackfillTask = task
   }
 
   async function runNextParticipantBackfillPass(): Promise<void> {
@@ -1005,13 +1031,26 @@ export async function startTrackingRuntime(
     ) ?? []
     const checkpoint = checkpoints.find((candidate) => candidate.completed !== 1)
     if (checkpoint === undefined) return
-    await runParticipantBackfillPass({
-      checkpoint,
-      getBreadcrumbs: client.getBreadcrumbs,
-      persistChunk: dependencies.missionStore.persistTrackingHistoryBatch!,
-      updateCheckpoint: dependencies.missionStore.upsertParticipantBackfillCheckpoint!,
-      signal: participantBackfillAbortController.signal,
-    })
+    const observation = dependencies.beginMissionEvidenceObservation?.(
+      checkpoint.mission_id,
+    ) ?? { missionId: checkpoint.mission_id, complete: () => undefined }
+    if (observation.missionId === null) {
+      throw new Error('Participant history evidence scope closed before backfill admission.')
+    }
+    try {
+      await runParticipantBackfillPass({
+        checkpoint,
+        getBreadcrumbsWithReport: client.getBreadcrumbsWithReport,
+        ...(dependencies.recordBreadcrumbRejections === undefined
+          ? {}
+          : { recordRejections: dependencies.recordBreadcrumbRejections }),
+        persistChunk: dependencies.missionStore.persistTrackingHistoryBatch!,
+        updateCheckpoint: dependencies.missionStore.upsertParticipantBackfillCheckpoint!,
+        signal: participantBackfillAbortController.signal,
+      })
+    } finally {
+      observation.complete()
+    }
   }
 
   function enqueueMissionPersistence(
@@ -1252,10 +1291,11 @@ export async function startTrackingRuntime(
 
   /** Applies evidence windows independently from immediate current-position visibility. */
   function filterMissionEvidenceSnapshot(snapshot: TrackingSnapshot): TrackingSnapshot {
-    if (dependencies.missionModelEnabled !== true) return snapshot
+    const canonicalSnapshot = filterCanonicalFixTimeEvidenceSnapshot(snapshot)
+    if (dependencies.missionModelEnabled !== true) return canonicalSnapshot
     const scope = dependencies.readParticipationScope?.()
-    return scope?.filterEvidenceSnapshot(snapshot, now().toISOString()) ?? {
-      ...snapshot,
+    return scope?.filterEvidenceSnapshot(canonicalSnapshot, now().toISOString()) ?? {
+      ...canonicalSnapshot,
       devices: [],
       positions: [],
       breadcrumbs: [],
@@ -1269,8 +1309,9 @@ export async function startTrackingRuntime(
     readonly positions: readonly NormalizedTrackingPosition[]
     readonly historyFrom: string | null
   } {
+    const canonicalPositions = filterCanonicalFixTimeEvidencePositions(input.positions)
     if (dependencies.missionModelEnabled !== true) {
-      return { input, positions: input.positions, historyFrom: input.historyFrom }
+      return { input, positions: canonicalPositions, historyFrom: input.historyFrom }
     }
     if (readParticipationScopeStatus() !== 'ready') {
       throw new Error(
@@ -1285,7 +1326,7 @@ export async function startTrackingRuntime(
     }
     return {
       input,
-      positions: input.positions.filter((position) =>
+      positions: canonicalPositions.filter((position) =>
         scope.includesAt(position.device_id, position.timestamp)),
       historyFrom: scope.firstEvidenceTimestampAtOrAfter(
         input.deviceId,
@@ -1396,14 +1437,15 @@ function isParticipantRosterClient(client: unknown): client is ParticipantRoster
 }
 
 function hasBreadcrumbClient(client: unknown): client is Pick<ParticipantRosterClient, never> & {
-  readonly getBreadcrumbs: (
+  readonly getBreadcrumbsWithReport: (
     deviceId: string,
     from: Date,
     to: Date,
-  ) => Promise<readonly NormalizedTrackingPosition[]>
+    signal?: AbortSignal,
+  ) => Promise<BreadcrumbNormalizationResult>
 } {
   return typeof client === 'object' && client !== null &&
-    typeof (client as { readonly getBreadcrumbs?: unknown }).getBreadcrumbs === 'function'
+    typeof (client as { readonly getBreadcrumbsWithReport?: unknown }).getBreadcrumbsWithReport === 'function'
 }
 
 function createBreadcrumbRendererSessionId(): string {
@@ -1620,12 +1662,16 @@ async function persistTrackingSnapshot(
     readonly accuracy?: number | null
     readonly source?: string | null
     readonly timestamp?: string | null
+    readonly timestamp_source?: 'fix' | null
     readonly data_origin?: 'live' | 'cache'
   }[] = []
   const newPositionKeys: string[] = []
   const stagedPositionKeys = new Set<string>()
 
   for (const position of [...getBreadcrumbsForMissionPersistence(snapshot), ...snapshot.positions]) {
+    if (position.timestamp_source !== 'fix' || position.fix_time_unverified === true) {
+      continue
+    }
     const positionKeys = createIncomingPositionCacheKeys(position)
     const cacheLookupKeys = positionKeys
     if (
@@ -1650,6 +1696,7 @@ async function persistTrackingSnapshot(
       accuracy: position.accuracy,
       source: position.source,
       timestamp: position.timestamp,
+      timestamp_source: 'fix',
       data_origin: position.data_origin,
     })
     newPositionKeys.push(...positionKeys)
@@ -1852,6 +1899,7 @@ async function getInitialPersistedBreadcrumbs(
         lon < -180 ||
         lon > 180 ||
         timestamp === null
+        || position.timestamp_source !== 'fix'
       ) {
         droppedPositionCount += 1
         return []
@@ -1872,6 +1920,8 @@ async function getInitialPersistedBreadcrumbs(
         accuracy: position.accuracy ?? null,
         source: position.source ?? null,
         timestamp,
+        timestamp_source: 'fix',
+        fix_time_unverified: false,
         data_origin: position.data_origin ?? 'live',
         cache_age_seconds: null,
         device_cache_stale: false,

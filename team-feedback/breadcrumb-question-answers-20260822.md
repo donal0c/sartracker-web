@@ -175,3 +175,15 @@ Never invent timestamp.
 Yes to read-only, with revisions.
 Retention of finalised mission - indefinite. No deletion.
 Encrypt yes when finalised, archived and locked.
+
+---
+
+Field follow-up supplied after the original answer rounds. The wording below is preserved verbatim; no receipt date is inferred.
+
+SAR Tracker showed raw 2026-08-22T15:10:17.000Z while Traccar Replay showed 22/08/2026 16:10:17 during Irish summer time.
+
+“Showing 10,000 exact fixes of 37,479.”
+
+“current fixes were slow to come in.”
+
+Following discussion with Sean we believe the breadcrumb fixed time should be taken from Traccar server and not from any other time.

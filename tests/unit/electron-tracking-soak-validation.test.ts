@@ -44,6 +44,7 @@ describe('Electron tracking soak validation boundary [DON-246]', () => {
       ...BASE_SETTINGS,
       trackingPollIntervalMs: 25,
       trackingMinimumPollIntervalMs: 25,
+      trackingHistoryAntiEntropyIntervalMs: 25,
     })
   })
 

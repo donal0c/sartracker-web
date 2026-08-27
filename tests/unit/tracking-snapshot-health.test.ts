@@ -29,6 +29,8 @@ const LIVE_SNAPSHOT: TrackingSnapshot = {
       battery: null,
       accuracy: null,
       timestamp: '2026-04-06T10:30:00.000Z',
+      timestamp_source: 'fix',
+      fix_time_unverified: false,
       source: 'traccar',
       data_origin: 'live',
       cache_age_seconds: null,
@@ -85,6 +87,25 @@ describe('tracking snapshot health', () => {
           timestamp_source: 'device' as const,
           fix_time_unverified: true,
         })),
+      },
+      {
+        now: new Date('2026-04-06T10:30:01.000Z'),
+        deviceStaleThresholdMs: 60 * 60 * 1000,
+      },
+    )
+
+    expect(snapshot.positions[0]?.fix_time_unverified).toBe(true)
+  })
+
+  it('marks a location with missing timestamp provenance explicitly unverified [DON-267] [SAR-QA-021]', () => {
+    const snapshot = annotateTrackingSnapshotHealth(
+      {
+        ...LIVE_SNAPSHOT,
+        positions: LIVE_SNAPSHOT.positions.map((position) => {
+          const withoutSource = { ...position }
+          delete withoutSource.timestamp_source
+          return withoutSource
+        }),
       },
       {
         now: new Date('2026-04-06T10:30:01.000Z'),

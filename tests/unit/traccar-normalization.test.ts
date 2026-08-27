@@ -73,7 +73,7 @@ describe('traccar normalization', () => {
     expect(position.speed).toBeCloseTo(18.52, 3)
   })
 
-  it('falls back to deviceTime or serverTime when fixTime is absent', () => {
+  it('keeps a device-time-only current location explicitly fix-time unverified [DON-267] [SAR-QA-021]', () => {
     const position = normalizeTraccarPosition(
       {
         ...positionsFixture[0],
@@ -85,6 +85,7 @@ describe('traccar normalization', () => {
 
     expect(position.timestamp).toBe('2026-04-06T10:29:59.000Z')
     expect(position.timestamp_source).toBe('device')
+    expect(position.fix_time_unverified).toBe(true)
     expect(position.data_origin).toBe('cache')
   })
 

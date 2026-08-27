@@ -58,6 +58,14 @@ export type RejectionEvidenceDelivery = {
     rejections: readonly CurrentPositionRejection[],
     context: RejectionEvidenceObservationContext,
   ) => void
+  readonly recordEvidence: (
+    rejections: readonly CurrentPositionRejection[],
+    context: RejectionEvidenceObservationContext,
+  ) => void
+  readonly recordEvidenceAndFlush: (
+    rejections: readonly CurrentPositionRejection[],
+    context: RejectionEvidenceObservationContext,
+  ) => Promise<void>
   readonly flushMission: (missionId: string) => Promise<void>
   readonly applyMissionHealth: (missionId: string, health: IngestEvidenceHealth) => void
   readonly runWithMissionFinishFence: <Result>(
@@ -87,6 +95,7 @@ export function createRejectionEvidenceDelivery(
   dependencies: RejectionEvidenceDeliveryDependencies,
 ): RejectionEvidenceDelivery {
   const pendingByMissionAndAnomaly = new Map<string, PendingRejectionEnvelope>()
+  const acknowledgedMissionAnomalies = new Set<string>()
   const createDeliveryId = dependencies.createDeliveryId ?? createRejectedPositionDeliveryId
   const setTimeoutFn = dependencies.setTimeout ?? globalThis.setTimeout
   const clearTimeoutFn = dependencies.clearTimeout ?? globalThis.clearTimeout
@@ -151,6 +160,15 @@ export function createRejectionEvidenceDelivery(
   ): void {
     if (!accepting) return
     dependencies.applyRejections(rejections)
+    recordEvidence(rejections, context)
+  }
+
+  /** Schedules durable anomaly evidence without replacing current-position UI health. */
+  function recordEvidence(
+    rejections: readonly CurrentPositionRejection[],
+    context: RejectionEvidenceObservationContext,
+  ): void {
+    if (!accepting) return
     const finalizationPhase = context.missionId === null
       ? undefined
       : finalizationPhaseByMission.get(context.missionId)
@@ -171,7 +189,10 @@ export function createRejectionEvidenceDelivery(
         continue
       }
       const pendingKey = createPendingKey(context.missionId, rejection.anomalyKey)
-      if (pendingByMissionAndAnomaly.has(pendingKey)) {
+      if (
+        pendingByMissionAndAnomaly.has(pendingKey) ||
+        acknowledgedMissionAnomalies.has(pendingKey)
+      ) {
         continue
       }
       if (
@@ -201,6 +222,17 @@ export function createRejectionEvidenceDelivery(
       publishRendererPendingHealth()
     }
     scheduleFlush()
+  }
+
+  /** Stages one response and waits until its mission evidence is durable. */
+  async function recordEvidenceAndFlush(
+    rejections: readonly CurrentPositionRejection[],
+    context: RejectionEvidenceObservationContext,
+  ): Promise<void> {
+    recordEvidence(rejections, context)
+    if (context.missionId !== null) {
+      await flushMission(context.missionId)
+    }
   }
 
   /** Prevents a superseded runtime from publishing later health. */
@@ -453,6 +485,7 @@ export function createRejectionEvidenceDelivery(
       for (const [pendingKey, envelope] of pendingByMissionAndAnomaly) {
         if (acknowledged.has(envelope.deliveryId)) {
           pendingByMissionAndAnomaly.delete(pendingKey)
+          acknowledgedMissionAnomalies.add(pendingKey)
           removedCount += 1
         }
       }
@@ -690,6 +723,8 @@ export function createRejectionEvidenceDelivery(
     dispose,
     flushMission,
     record,
+    recordEvidence,
+    recordEvidenceAndFlush,
     recordMissionEvidenceLoss,
     registerMissionObservationSettler,
     reopenMissionEvidenceAfterUnlock,

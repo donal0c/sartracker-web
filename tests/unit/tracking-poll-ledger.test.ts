@@ -29,6 +29,7 @@ describe('tracking poll ledger', () => {
         breadcrumbReturnedCount: 4,
         breadcrumbAcceptedCount: 4,
         breadcrumbDuplicateCount: 0,
+        breadcrumbRejectedCount: 2,
         breadcrumbFailedDeviceCount: 0,
       })
     }
@@ -56,17 +57,28 @@ describe('tracking poll ledger', () => {
       ts: '2026-07-12T09:54:37.597Z',
       kind: 'poll_cycle',
       outcome: 'recovered',
-      phase: 'breadcrumbs',
+      phase: 'current_positions',
       durationMs: 211,
       consecutiveFailures: 0,
       retryDelayMs: 0,
       outageDurationMs: 156_166,
       deviceCount: 32,
       currentPositionCount: 7,
+    })
+    recordTrackingPollLedgerEntry({
+      ts: '2026-07-12T09:54:38.000Z',
+      kind: 'poll_cycle',
+      outcome: 'success',
+      phase: 'breadcrumbs',
+      durationMs: 403,
+      consecutiveFailures: 0,
+      retryDelayMs: 0,
+      deviceCount: 32,
       breadcrumbRequestedDeviceCount: 1,
       breadcrumbReturnedCount: 4,
       breadcrumbAcceptedCount: 4,
       breadcrumbDuplicateCount: 0,
+      breadcrumbRejectedCount: 2,
       breadcrumbFailedDeviceCount: 0,
       breadcrumbWindow: {
         previousCursorEarliest: '2026-07-12T09:54:30.000Z',
@@ -82,9 +94,10 @@ describe('tracking poll ledger', () => {
     const report = formatTrackingPollLedger(readTrackingPollLedger())
 
     expect(report).toContain('[tracking-poll-ledger]')
-    expect(report).toContain('retained entry count: 2')
+    expect(report).toContain('retained entry count: 3')
     expect(report).toContain('"failureKind":"timeout"')
     expect(report).toContain('"outageDurationMs":156166')
+    expect(report).toContain('"breadcrumbRejectedCount":2')
     expect(report).toContain('"requestedFromEarliest":"2026-07-12T09:49:30.000Z"')
     expect(report).toContain('"previousCursorEarliest":"2026-07-12T09:54:30.000Z"')
     expect(report).not.toMatch(/password|token|authorization|latitude|longitude|deviceId/u)

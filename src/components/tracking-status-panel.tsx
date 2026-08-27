@@ -11,6 +11,8 @@ import { useCoverageFilterStore } from '../features/tracking/coverage-filter-sto
 import { CoverageStatusPanel } from './coverage-status-panel'
 import { useMissionStore } from '../features/mission/mission-store'
 import { selectCoverageStateForMission } from '../features/tracking/mission-coverage-scope'
+import type { NormalizedTrackingPosition } from '../features/tracking/tracking-types'
+import { formatOperatorLocalTimestamp } from '../features/tracking/operator-time'
 
 type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
@@ -60,9 +62,10 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   )
   const exactBreadcrumbDotState = props.exactBreadcrumbDotState ?? storedExactBreadcrumbDotState
   const staleDeviceCount = snapshot.positions.filter((position) => position.device_cache_stale).length
-  const unverifiedFixTimeCount = snapshot.positions.filter(
+  const unverifiedFixTimePositions = snapshot.positions.filter(
     (position) => position.fix_time_unverified === true,
-  ).length
+  )
+  const unverifiedFixTimeCount = unverifiedFixTimePositions.length
   const cachedDeviceCount = snapshot.positions.filter((position) => position.data_origin === 'cache').length
   const boundedBreadcrumbDeviceCount =
     snapshot.breadcrumbMetadata?.deviceBudgets.filter((budget) => budget.truncated).length ?? 0
@@ -186,8 +189,10 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           data-testid="fix-time-unverified-warning"
         >
           FIX TIME UNVERIFIED — {unverifiedFixTimeCount}{' '}
-          {unverifiedFixTimeCount === 1 ? 'position has' : 'positions have'} server receipt time
-          only and {unverifiedFixTimeCount === 1 ? 'is' : 'are'} not treated as a fresh device fix.
+          {unverifiedFixTimeCount === 1 ? 'position uses' : 'positions use'}{' '}
+          {describeUnverifiedFixTimeSources(unverifiedFixTimePositions)}, not verified Traccar fixTime.
+          {' '}{unverifiedFixTimeCount === 1 ? 'It remains' : 'They remain'} visible for immediate
+          safety but {unverifiedFixTimeCount === 1 ? 'is' : 'are'} excluded from exact breadcrumb evidence.
         </p>
       )}
 
@@ -271,10 +276,10 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
       </div>
 
       <div className="mt-4 space-y-3 border-t border-[var(--sar-line)] pt-4">
-        <div className="sar-readout flex items-center justify-between px-3 py-2 text-[11px] font-medium text-stone-300">
-          <span>Last success</span>
-          <span className="font-mono font-bold text-stone-300">
-            {status.lastSuccessAt ? new Date(status.lastSuccessAt).toLocaleTimeString() : 'N/A'}
+        <div className="sar-readout px-3 py-2 text-[11px] font-medium text-stone-300">
+          <span className="block">Last success</span>
+          <span className="mt-1 block text-right font-mono font-bold text-stone-300">
+            {formatOperatorLocalTimestamp(status.lastSuccessAt)}
           </span>
         </div>
         {status.warning === null ? (
@@ -285,6 +290,28 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
       </div>
     </div>
   )
+}
+
+/** Describes only clock provenance categories, never position or device identity. */
+function describeUnverifiedFixTimeSources(
+  positions: readonly NormalizedTrackingPosition[],
+): string {
+  const counts = positions.reduce(
+    (result, position) => {
+      if (position.timestamp_source === 'device') result.device += 1
+      else if (position.timestamp_source === 'server') result.server += 1
+      else result.legacy += 1
+      return result
+    },
+    { device: 0, server: 0, legacy: 0 },
+  )
+  return [
+    counts.device === 0 ? null : `${counts.device === 1 ? '' : `${counts.device} × `}device clock`,
+    counts.server === 0 ? null : `${counts.server === 1 ? '' : `${counts.server} × `}server receipt clock`,
+    counts.legacy === 0
+      ? null
+      : `${counts.legacy === 1 ? '' : `${counts.legacy} × `}legacy cache provenance unavailable`,
+  ].filter((label): label is string => label !== null).join('; ')
 }
 
 function formatEvidenceFailure(reason: string | null): string {

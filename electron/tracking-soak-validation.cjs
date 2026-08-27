@@ -26,6 +26,11 @@ function applyTrackingSoakRuntimeOverride(runtimeSettings, options = {}) {
     ...runtimeSettings,
     trackingPollIntervalMs: intervalMs,
     trackingMinimumPollIntervalMs: intervalMs,
+    // The packaged soak compresses live polling by the same factor. Keep its
+    // anti-entropy repair clock in that explicit validation profile too, or a
+    // deliberately late historical fix can outlive the bounded CI job even
+    // though production recovery remains correctly scheduled at five minutes.
+    trackingHistoryAntiEntropyIntervalMs: intervalMs,
   }
 }
 

@@ -5,6 +5,7 @@ import {
   type CurrentPositionIngestHealthSummary,
 } from './ingest-health'
 import type { DeviceStationaryAttention } from './stationary-attention-store'
+import { formatOperatorLocalTimestamp } from './operator-time'
 
 export type DeviceWorkspaceRow = {
   readonly deviceId: string
@@ -78,8 +79,8 @@ export function buildDeviceWorkspaceRows(
         longitude: position?.lon ?? null,
         dataOrigin: position?.data_origin ?? null,
         lastSeen: device.last_seen,
-        lastSeenDisplay: formatTimestamp(device.last_seen),
-        fixTimeDisplay: formatTimestamp(position?.timestamp ?? null),
+        lastSeenDisplay: formatOperatorLocalTimestamp(device.last_seen),
+        fixTimeDisplay: formatOperatorLocalTimestamp(position?.timestamp ?? null),
         sourceDisplay:
           position === null
             ? 'No fix'
@@ -174,7 +175,7 @@ export function buildDeviceWorkspaceSummary(
     hiddenDevices: rows.filter((row) => row.hidden).length,
     staleDevices: rows.filter((row) => row.stale).length,
     cachedDevices: rows.filter((row) => row.dataOrigin === 'cache').length,
-    lastSuccessAtDisplay: formatTimestamp(status.lastSuccessAt),
+    lastSuccessAtDisplay: formatOperatorLocalTimestamp(status.lastSuccessAt),
     warning: status.warning,
     mode: status.mode,
   }
@@ -198,12 +199,4 @@ function applyDeviceWorkspaceFilter(
     case 'stale':
       return rows.filter((row) => row.stale)
   }
-}
-
-function formatTimestamp(value: string | null): string {
-  if (value === null) {
-    return 'N/A'
-  }
-
-  return new Date(value).toLocaleTimeString()
 }

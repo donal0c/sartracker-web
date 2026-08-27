@@ -213,7 +213,7 @@ function readTimestampProvenance(
   entry: Record<string, unknown>,
 ): Pick<NormalizedTrackingPosition, 'timestamp_source' | 'fix_time_unverified'> {
   if (entry.timestamp_source == null) {
-    return {}
+    return { fix_time_unverified: true }
   }
   if (
     entry.timestamp_source !== 'fix' &&
@@ -226,7 +226,7 @@ function readTimestampProvenance(
   return {
     timestamp_source: entry.timestamp_source,
     fix_time_unverified:
-      entry.timestamp_source === 'server' ||
+      entry.timestamp_source !== 'fix' ||
       readOptionalBoolean(
         entry.fix_time_unverified,
         'Cached tracking unverified-fix-time flag',

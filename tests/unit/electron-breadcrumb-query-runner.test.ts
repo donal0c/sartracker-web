@@ -101,7 +101,8 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
         accuracy REAL,
         source TEXT,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
     `)
     const insert = database.prepare(`
@@ -175,7 +176,8 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
         lat REAL NOT NULL,
         lon REAL NOT NULL,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
       CREATE INDEX idx_positions_mission_device_timestamp
         ON positions(mission_id, device_id, timestamp);
@@ -252,7 +254,8 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
         lat REAL NOT NULL,
         lon REAL NOT NULL,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
       INSERT INTO positions (
         id, mission_id, device_id, source_position_id, lat, lon, timestamp,
@@ -331,7 +334,8 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
         accuracy REAL,
         source TEXT,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
     `)
     const insert = database.prepare(`
@@ -389,7 +393,8 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
         lat REAL NOT NULL,
         lon REAL NOT NULL,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
     `)
     const insert = database.prepare(`
@@ -457,7 +462,8 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
         lat REAL NOT NULL,
         lon REAL NOT NULL,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
     `)
     const insert = database.prepare(`
@@ -546,7 +552,8 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
         lat REAL NOT NULL,
         lon REAL NOT NULL,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
       INSERT INTO positions (
         id, mission_id, device_id, source_position_id, lat, lon, timestamp,
@@ -584,7 +591,8 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
         lat REAL NOT NULL,
         lon REAL NOT NULL,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
       INSERT INTO positions (
         id, mission_id, device_id, source_position_id, lat, lon, timestamp,
@@ -626,7 +634,8 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
         accuracy REAL,
         source TEXT,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
       INSERT INTO positions (
         id, mission_id, device_id, source_position_id, lat, lon, timestamp,
@@ -671,7 +680,8 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
         accuracy REAL,
         source TEXT,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
       INSERT INTO positions (
         id, mission_id, device_id, source_position_id, lat, lon, timestamp,

@@ -75,6 +75,36 @@ afterEach(async () => {
 })
 
 describe('exact SQLite-backed breadcrumb dots', () => {
+  it('excludes stored rows whose authoritative fixTime provenance is unproved [DON-267] [SAR-QA-021]', () => {
+    const database = createDatabase(':memory:')
+    database.prepare('INSERT INTO missions (id, start_time) VALUES (?, ?)')
+      .run('mission-provenance', '2026-08-22T00:00:00.000Z')
+    database.prepare('INSERT INTO devices (id, mission_id, device_id) VALUES (?, ?, ?)')
+      .run('device-row', 'mission-provenance', 'device-1')
+    const insert = database.prepare(`INSERT INTO positions (
+      id, mission_id, device_id, source_position_id, lat, lon, timestamp,
+      data_origin, timestamp_source
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    insert.run(
+      'canonical', 'mission-provenance', 'device-1', 'source-canonical',
+      52, -9, '2026-08-22T15:10:17.000Z', 'live', 'fix',
+    )
+    insert.run(
+      'legacy-unproved', 'mission-provenance', 'device-1', 'source-legacy',
+      52.1, -9.1, '2026-08-22T15:11:17.000Z', 'live', null,
+    )
+
+    const page = loadExactDotQuery()(database, {
+      missionId: 'mission-provenance',
+      activeDeviceIds: ['device-1'],
+      limit: 10_000,
+      direction: 'latest',
+    })
+    expect(page.totalPositionCount).toBe(1)
+    expect(page.positions.map((position) => position.id)).toEqual(['canonical'])
+    database.close()
+  })
+
   it('excludes pre-mission current fixes from exact history while retaining in-window fixes', () => {
     const database = createDatabase(':memory:')
     const missionStart = '2026-08-08T19:48:56.767Z'
@@ -758,6 +788,7 @@ function createDatabase(databasePath: string, initialize = true) {
         lon REAL NOT NULL,
         timestamp TEXT NOT NULL,
         data_origin TEXT NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix',
         UNIQUE (mission_id, device_id, source_position_id)
       );
       CREATE INDEX idx_positions_mission_device_timestamp

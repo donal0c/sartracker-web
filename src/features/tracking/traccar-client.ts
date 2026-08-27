@@ -1,4 +1,5 @@
 import {
+  normalizeTraccarBreadcrumbPosition,
   normalizeTraccarDevice,
   normalizeTraccarGroup,
   normalizeTraccarPosition,
@@ -17,6 +18,7 @@ import type {
   CurrentPositionRejection,
   CurrentPositionRejectionReason,
 } from './ingest-health'
+import { formatCurrentPositionRejectionReason } from './ingest-health'
 import {
   createRejectedPositionAnomalyKey,
   createRejectedPositionEvidence,
@@ -45,6 +47,8 @@ export type CurrentPositionNormalizationResult = {
   readonly rejected: readonly CurrentPositionRejection[]
 }
 
+export type BreadcrumbNormalizationResult = CurrentPositionNormalizationResult
+
 export type DeviceRosterNormalizationResult = {
   readonly accepted: readonly NormalizedTrackingDevice[]
   /** False when any server row was rejected during normalization. */
@@ -62,7 +66,14 @@ type TraccarClient = {
     deviceId: string,
     from: Date,
     to: Date,
+    signal?: AbortSignal,
   ) => Promise<readonly NormalizedTrackingPosition[]>
+  readonly getBreadcrumbsWithReport: (
+    deviceId: string,
+    from: Date,
+    to: Date,
+    signal?: AbortSignal,
+  ) => Promise<BreadcrumbNormalizationResult>
 }
 
 type TraccarClientLogger = {
@@ -128,6 +139,7 @@ export function createTraccarClient(
   const fetchJson = async (
     path: string,
     params?: Record<string, string>,
+    signal?: AbortSignal,
   ): Promise<unknown> => {
     const url = new URL(path, `${baseUrl}/`)
     if (params !== undefined) {
@@ -141,18 +153,19 @@ export function createTraccarClient(
     const maxAttempts = maxRetries + 1
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      signal?.throwIfAborted()
       if (attempt > 0) {
-        await sleep(retryBaseMs * 2 ** (attempt - 1))
+        await sleep(retryBaseMs * 2 ** (attempt - 1), signal)
       }
 
       const attemptStartedAt = Date.now()
       try {
         const response = await fetchWithTimeout(url.toString(), {
           headers: buildHeaders(),
-        })
+        }, signal)
 
         if (isAuthenticationResponse(response)) {
-          return await retryAfterAuthenticationFailure(url.toString())
+          return await retryAfterAuthenticationFailure(url.toString(), signal)
         }
 
         if (!response.ok) {
@@ -194,8 +207,15 @@ export function createTraccarClient(
     throw lastError ?? new Error('Traccar request failed unexpectedly.')
   }
 
-  const fetchWithTimeout = async (url: string, init: RequestInit): Promise<Response> => {
+  const fetchWithTimeout = async (
+    url: string,
+    init: RequestInit,
+    signal?: AbortSignal,
+  ): Promise<Response> => {
     const controller = new AbortController()
+    const abortFromCaller = () => controller.abort(signal?.reason)
+    signal?.addEventListener('abort', abortFromCaller, { once: true })
+    if (signal?.aborted === true) abortFromCaller()
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
     try {
       return await fetchFn(url, {
@@ -204,10 +224,14 @@ export function createTraccarClient(
       })
     } finally {
       window.clearTimeout(timeout)
+      signal?.removeEventListener('abort', abortFromCaller)
     }
   }
 
-  const retryAfterAuthenticationFailure = async (url: string): Promise<unknown> => {
+  const retryAfterAuthenticationFailure = async (
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> => {
     sessionCookie = null
 
     if (config.token) {
@@ -221,7 +245,7 @@ export function createTraccarClient(
     await authenticateWithCredentials()
     const response = await fetchWithTimeout(url, {
       headers: buildHeaders(),
-    })
+    }, signal)
 
     if (isAuthenticationResponse(response)) {
       sessionCookie = null
@@ -302,6 +326,47 @@ export function createTraccarClient(
     return { accepted: result.accepted, complete: result.droppedCount === 0 }
   }
 
+  /** Fetches exact history with bounded structured evidence for every rejected row. */
+  const getBreadcrumbsWithReport = async (
+    deviceId: string,
+    from: Date,
+    to: Date,
+    signal?: AbortSignal,
+  ): Promise<BreadcrumbNormalizationResult> => {
+    const data = await fetchJson('/api/positions', {
+      deviceId,
+      from: from.toISOString(),
+      to: to.toISOString(),
+    }, signal)
+    if (!Array.isArray(data)) {
+      throw new Error('Expected an array from breadcrumb positions.')
+    }
+
+    const result = normalizeTraccarRows({
+      endpoint: '/api/positions',
+      rows: data,
+      deviceId,
+      emptyMessage: `No valid Traccar breadcrumb rows were returned for device ${deviceId}.`,
+      warningMessage: 'Dropped malformed Traccar breadcrumb row.',
+      logger,
+      includeStructuredRejections: true,
+      allowAllRejected: true,
+      normalize: (position) => {
+        const normalized = normalizeTraccarBreadcrumbPosition(
+          position as RawPositionInput,
+          'live',
+        )
+        if (normalized.device_id !== deviceId) {
+          throw new Error(
+            `Breadcrumb deviceId ${normalized.device_id} did not match requested deviceId ${deviceId}.`,
+          )
+        }
+        return normalized
+      },
+    })
+    return { accepted: result.accepted, rejected: result.rejected }
+  }
+
   return {
     authenticate: async () => {
       if (config.token || sessionCookie !== null) {
@@ -339,27 +404,30 @@ export function createTraccarClient(
       return result.accepted
     },
     getCurrentPositionsWithReport,
-    getBreadcrumbs: async (deviceId, from, to) => {
-      const data = await fetchJson('/api/positions', {
-        deviceId,
-        from: from.toISOString(),
-        to: to.toISOString(),
-      })
-      if (!Array.isArray(data)) {
-        throw new Error('Expected an array from breadcrumb positions.')
+    getBreadcrumbs: async (deviceId, from, to, signal) => {
+      const result = await getBreadcrumbsWithReport(deviceId, from, to, signal)
+      if (result.accepted.length === 0 && result.rejected.length > 0) {
+        throw new Error(createAllRejectedBreadcrumbMessage(deviceId, result.rejected))
       }
-
-      return normalizeTraccarRows({
-        endpoint: '/api/positions',
-        rows: data,
-        deviceId,
-        emptyMessage: `No valid Traccar breadcrumb rows were returned for device ${deviceId}.`,
-        warningMessage: 'Dropped malformed Traccar breadcrumb row.',
-        logger,
-        normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
-      }).accepted
+      return result.accepted
     },
+    getBreadcrumbsWithReport,
   }
+}
+
+/** Summarizes an all-rejected history response without retaining source payloads. */
+function createAllRejectedBreadcrumbMessage(
+  deviceId: string,
+  rejections: readonly CurrentPositionRejection[],
+): string {
+  const reasonCounts = new Map<CurrentPositionRejectionReason, number>()
+  for (const rejection of rejections) {
+    reasonCounts.set(rejection.reason, (reasonCounts.get(rejection.reason) ?? 0) + 1)
+  }
+  const reasons = [...reasonCounts.entries()]
+    .map(([reason, count]) => `${formatCurrentPositionRejectionReason(reason)}: ${count}`)
+    .join(', ')
+  return `${rejections.length} source ${rejections.length === 1 ? 'row was' : 'rows were'} rejected for device ${deviceId} (${reasons}); no exact breadcrumb evidence was accepted.`
 }
 
 function classifyRequestPhase(
@@ -519,8 +587,17 @@ function createHttpError(response: Response): Error {
   return new Error(`HTTP ${response.status}: ${response.statusText}`)
 }
 
-function sleep(delayMs: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, delayMs)
+function sleep(delayMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, delayMs)
+    const abort = () => {
+      window.clearTimeout(timeout)
+      reject(signal?.reason ?? new DOMException('History request aborted.', 'AbortError'))
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted === true) abort()
   })
 }

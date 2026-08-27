@@ -256,6 +256,32 @@ describe('rejection evidence delivery [DON-268]', () => {
     })
   })
 
+  it('persists breadcrumb rejection evidence without replacing current-position health [DON-267]', async () => {
+    const applyRejections = vi.fn()
+    const recordIngestRejections = vi.fn(async (input) => ({
+      acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+      health: healthy(),
+    }))
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: { recordIngestRejections },
+      applyRejections,
+      applyEvidenceHealth: vi.fn(),
+    })
+
+    delivery.recordEvidence(
+      [createRejection('source:history-rejected')],
+      observation('mission-1'),
+    )
+
+    expect(applyRejections).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      rejections: [expect.objectContaining({
+        anomalyKey: 'source:history-rejected',
+      })],
+    }))
+  })
+
   it('blocks completeness synchronously while rejected evidence is still renderer-held', async () => {
     let acknowledge: ((value: {
       acknowledgedDeliveryIds: string[]
@@ -491,7 +517,7 @@ describe('rejection evidence delivery [DON-268]', () => {
     expect(applyEvidenceHealth).toHaveBeenLastCalledWith(healthy())
   })
 
-  it('uses one stable delivery identity for repeated retrieval of the same rejection', async () => {
+  it('does not restage an acknowledged anomaly when the source row is retrieved again', async () => {
     const calls: string[] = []
     const delivery = createRejectionEvidenceDelivery({
       missionStore: {
@@ -507,9 +533,9 @@ describe('rejection evidence delivery [DON-268]', () => {
     delivery.record([createRejection('source:123')], observation('mission-1'))
     await vi.waitFor(() => expect(calls).toHaveLength(1))
     delivery.record([createRejection('source:123')], observation('mission-1'))
-    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
 
-    expect(calls[0]).toBe(calls[1])
+    expect(calls).toEqual([expect.any(String)])
   })
 
   it('delivers a unique-evidence storm in bounded batches without dropping records', async () => {

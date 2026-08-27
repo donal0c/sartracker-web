@@ -240,6 +240,7 @@ export type Position = {
   readonly received_at?: string | null
   readonly content_hash?: string | null
   readonly source_kind?: 'traccar' | null
+  readonly timestamp_source?: 'fix' | null
 }
 
 export type IngestAnomaly = {
@@ -519,6 +520,7 @@ export type AddPositionInput = {
   readonly accuracy?: number | null
   readonly source?: string | null
   readonly timestamp?: string | null
+  readonly timestamp_source?: 'fix' | null
   readonly data_origin?: 'live' | 'cache' | null
 }
 

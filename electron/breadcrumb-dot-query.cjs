@@ -39,7 +39,8 @@ function listExactBreadcrumbDotPageSnapshot(db, query) {
   const countDevicePositions = db.prepare(
     `SELECT COUNT(*) AS total
      FROM positions
-     WHERE mission_id = ? AND device_id = ? AND timestamp >= ?`,
+     WHERE mission_id = ? AND device_id = ? AND timestamp_source = 'fix'
+       AND timestamp >= ?`,
   )
   const totalPositionCount = deviceIds.reduce(
     (total, deviceId) =>
@@ -68,7 +69,8 @@ function listExactBreadcrumbDotPageSnapshot(db, query) {
         `SELECT id, source_position_id, device_id, lat, lon, timestamp, data_origin,
                 ${POSITION_IDENTITY_SQL} AS position_identity
          FROM positions
-         WHERE mission_id = ? AND device_id = ? AND timestamp >= ?${pageSelection.whereSql}
+         WHERE mission_id = ? AND device_id = ? AND timestamp_source = 'fix'
+           AND timestamp >= ?${pageSelection.whereSql}
          ORDER BY timestamp ${pageSelection.order},
                   position_identity ${pageSelection.order}
          LIMIT ?`,
@@ -250,7 +252,8 @@ function hasPositionBeyond(db, missionId, missionStart, deviceIds, key, directio
     return db.prepare(
       `SELECT 1 AS found
        FROM positions
-       WHERE mission_id = ? AND device_id = ? AND timestamp >= ? AND ${boundary.sql}
+       WHERE mission_id = ? AND device_id = ? AND timestamp_source = 'fix'
+         AND timestamp >= ? AND ${boundary.sql}
        LIMIT 1`,
     ).get(missionId, deviceId, missionStart, ...boundary.parameters) !== undefined
   })

@@ -112,12 +112,32 @@ export function normalizeTraccarPosition(
     accuracy: asOptionalTelemetryNumber(raw.accuracy),
     timestamp: timestampResolution.timestamp,
     timestamp_source: timestampResolution.source,
-    fix_time_unverified: timestampResolution.source === 'server',
+    fix_time_unverified: timestampResolution.source !== 'fix',
     source: asOptionalTelemetryString(raw.protocol),
     data_origin: dataOrigin,
     cache_age_seconds: null,
     device_cache_stale: false,
   }
+}
+
+/**
+ * Normalizes exact breadcrumb evidence only when Traccar supplied position fixTime.
+ * Device and server clocks may support live location visibility, but they are
+ * never substitutes for the source fix instant in mission evidence.
+ */
+export function normalizeTraccarBreadcrumbPosition(
+  raw: RawTraccarPosition,
+  dataOrigin: TrackingDataOrigin,
+): NormalizedTrackingPosition {
+  if (raw.fixTime == null) {
+    throw new Error('Traccar breadcrumb position fixTime is required for exact history evidence.')
+  }
+
+  const position = normalizeTraccarPosition(raw, dataOrigin)
+  if (position.timestamp_source !== 'fix' || position.fix_time_unverified === true) {
+    throw new Error('Traccar breadcrumb position fixTime is required for exact history evidence.')
+  }
+  return position
 }
 
 function resolveTimestamp(raw: RawTraccarPosition): {

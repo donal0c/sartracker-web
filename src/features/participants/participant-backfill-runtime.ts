@@ -2,17 +2,25 @@ import type {
   ParticipantBackfillCheckpoint,
   PersistTrackingHistoryBatchInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
-import type { NormalizedTrackingPosition } from '../tracking/tracking-types'
+import type {
+  BreadcrumbNormalizationResult,
+} from '../tracking/traccar-client'
+import type { CurrentPositionRejection } from '../tracking/ingest-health'
 
 const BACKFILL_CHUNK_MILLISECONDS = 2 * 60 * 60 * 1_000
 
 type ParticipantBackfillPassDependencies = {
   readonly checkpoint: ParticipantBackfillCheckpoint
-  readonly getBreadcrumbs: (
+  readonly getBreadcrumbsWithReport: (
     deviceId: string,
     from: Date,
     to: Date,
-  ) => Promise<readonly NormalizedTrackingPosition[]>
+    signal?: AbortSignal,
+  ) => Promise<BreadcrumbNormalizationResult>
+  readonly recordRejections?: (
+    rejections: readonly CurrentPositionRejection[],
+    context: { readonly missionId: string; readonly observedAt: string },
+  ) => Promise<void>
   readonly persistChunk: (input: PersistTrackingHistoryBatchInput) => Promise<unknown>
   readonly updateCheckpoint: (input: {
     readonly mission_id: string
@@ -44,13 +52,31 @@ export async function runParticipantBackfillPass(
     return
   }
 
-  const positions = await dependencies.getBreadcrumbs(
+  const report = await dependencies.getBreadcrumbsWithReport(
     checkpoint.traccar_device_id,
     from,
     to,
+    dependencies.signal,
   )
   throwIfAborted(dependencies.signal)
-  const boundedPositions = positions.filter((position) => {
+  if (report.rejected.length > 0) {
+    if (dependencies.recordRejections === undefined) {
+      throw new Error(
+        'Participant history rejected source rows without a durable evidence recorder.',
+      )
+    }
+    await dependencies.recordRejections(report.rejected, {
+      missionId: checkpoint.mission_id,
+      observedAt: new Date().toISOString(),
+    })
+    throwIfAborted(dependencies.signal)
+  }
+  if (report.accepted.some((position) => position.timestamp_source !== 'fix')) {
+    throw new Error(
+      'Participant history client returned accepted evidence without authoritative fixTime provenance.',
+    )
+  }
+  const boundedPositions = report.accepted.filter((position) => {
     const timestamp = Date.parse(position.timestamp)
     return timestamp >= from.getTime() && timestamp <= to.getTime()
   })
@@ -67,6 +93,7 @@ export async function runParticipantBackfillPass(
       accuracy: position.accuracy,
       source: position.source,
       timestamp: position.timestamp,
+      timestamp_source: 'fix',
       data_origin: position.data_origin,
     })),
     checkpoints: [],

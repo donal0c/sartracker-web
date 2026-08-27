@@ -62,6 +62,7 @@ function summarizeCoverageChunksForDevice(
       position.timestamp
     FROM positions AS position
     WHERE position.mission_id = ? AND position.device_id = ?
+      AND position.timestamp_source = 'fix'
     ORDER BY position.timestamp ASC, position.id ASC`)
     .raw()
     .iterate(missionId, deviceId)
@@ -366,7 +367,8 @@ function analyzeCoverageInvalidation(database, input) {
 /** Builds the indexed per-device range probe used by invalidation analysis. */
 function createInvalidationDeviceRangeQuery(database, hasRangeEnd) {
   return database.prepare(`SELECT id FROM positions
-    WHERE mission_id = ? AND device_id = ? AND timestamp >= ?
+    WHERE mission_id = ? AND device_id = ? AND timestamp_source = 'fix'
+      AND timestamp >= ?
       ${hasRangeEnd ? 'AND timestamp < ?' : ''}
     ORDER BY timestamp ASC, id ASC LIMIT 1`)
 }
@@ -478,6 +480,7 @@ function createCoverageRowsQuery(database, missionId, key, cursor = null, limit 
           position.device_id, position.timestamp, position.lat, position.lon
         FROM positions AS position
         WHERE position.mission_id = ? AND position.device_id = ?
+          AND position.timestamp_source = 'fix'
           AND position.timestamp >= ?${endSql}${cursorSql}
         ORDER BY position.timestamp ASC, position.id ASC${limitSql}`),
       params: [
@@ -497,7 +500,8 @@ function createCoverageRowsQuery(database, missionId, key, cursor = null, limit 
     statement: database.prepare(`SELECT position.id, position.source_position_id,
         position.device_id, position.timestamp, position.lat, position.lon
       FROM positions AS position
-      WHERE position.mission_id = ? AND position.device_id = ?${cursorSql}
+      WHERE position.mission_id = ? AND position.device_id = ?
+        AND position.timestamp_source = 'fix'${cursorSql}
         AND NOT EXISTS (
           SELECT 1 FROM outings AS outing
           WHERE outing.mission_id = position.mission_id

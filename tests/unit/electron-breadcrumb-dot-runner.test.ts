@@ -43,7 +43,8 @@ describe('exact breadcrumb-dot worker runner', () => {
         lat REAL NOT NULL,
         lon REAL NOT NULL,
         timestamp TEXT NOT NULL,
-        data_origin TEXT NOT NULL
+        data_origin TEXT NOT NULL,
+        timestamp_source TEXT NOT NULL DEFAULT 'fix'
       );
       INSERT INTO missions VALUES
         ('mission-a', '2026-08-10T09:00:00.000Z');
@@ -51,7 +52,7 @@ describe('exact breadcrumb-dot worker runner', () => {
         ('device-local-1', 'mission-a', 'device-1');
       INSERT INTO positions VALUES
         ('local-1', 'mission-a', 'device-1', 'source-1', 52.1, -9.1,
-         '2026-08-10T10:00:00.000Z', 'live');
+         '2026-08-10T10:00:00.000Z', 'live', 'fix');
     `)
     database.close()
 

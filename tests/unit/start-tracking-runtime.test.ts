@@ -1111,6 +1111,59 @@ describe('startTrackingRuntime', () => {
     )
   })
 
+  it('keeps time-unverified current locations visible but outside mission persistence [DON-267] [SAR-QA-021]', async () => {
+    const addPositionsBulk = vi.fn().mockResolvedValue(undefined)
+    const applySnapshot = vi.fn()
+    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+    const verifiedCurrent = { ...SNAPSHOT.positions[0]!, id: 'verified-current' }
+    const unverifiedCurrent = {
+      ...SNAPSHOT.positions[1]!,
+      id: 'unverified-current',
+      timestamp_source: 'device' as const,
+      fix_time_unverified: true,
+    }
+    const verifiedHistory = { ...SNAPSHOT.breadcrumbs[0]!, id: 'verified-history' }
+    const unverifiedHistory = {
+      ...SNAPSHOT.breadcrumbs[1]!,
+      id: 'unverified-history',
+      timestamp_source: 'server' as const,
+      fix_time_unverified: true,
+    }
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPositionsBulk,
+      }),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      missionModelEnabled: false,
+      writeCache: false,
+    })
+
+    const operationalSnapshot: TrackingSnapshot = {
+      devices: SNAPSHOT.devices,
+      positions: [verifiedCurrent, unverifiedCurrent],
+      breadcrumbs: [verifiedHistory, unverifiedHistory],
+      rawBreadcrumbsForPersistence: [verifiedHistory, unverifiedHistory],
+    }
+    await pollerHooks?.onSnapshot(operationalSnapshot)
+
+    expect(applySnapshot).toHaveBeenCalledWith(operationalSnapshot)
+    const persistedIds = addPositionsBulk.mock.calls[0]?.[0].positions.map(
+      (position: { readonly source_position_id: string }) => position.source_position_id,
+    )
+    expect(persistedIds).toEqual(['verified-history', 'verified-current'])
+  })
+
   it('batches all device upserts into a single upsertDevicesBulk call when available [DON-240]', async () => {
     // Regression guard for the beta.9 field freeze: at synchronous=FULL, one fsync per commit,
     // a per-device upsert loop meant N fsync'd writes on the main process every poll. With many
@@ -1296,7 +1349,10 @@ describe('startTrackingRuntime', () => {
   })
 
   it('publishes selected current positions without waiting for participant backfill [DON-271]', async () => {
-    const backfill = createDeferred<readonly TrackingSnapshot['positions'][number][]>()
+    const backfill = createDeferred<{
+      readonly accepted: readonly TrackingSnapshot['positions'][number][]
+      readonly rejected: readonly never[]
+    }>()
     const applySnapshot = vi.fn()
     let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
     const client = {
@@ -1304,7 +1360,7 @@ describe('startTrackingRuntime', () => {
       getDevices: vi.fn().mockResolvedValue(SNAPSHOT.devices),
       getGroups: vi.fn().mockResolvedValue([]),
       getCurrentPositions: vi.fn().mockResolvedValue(SNAPSHOT.positions),
-      getBreadcrumbs: vi.fn().mockReturnValue(backfill.promise),
+      getBreadcrumbsWithReport: vi.fn().mockReturnValue(backfill.promise),
     }
     const checkpoint = {
       mission_id: 'mission-1',
@@ -1316,7 +1372,7 @@ describe('startTrackingRuntime', () => {
       updated_at: '2026-04-06T10:00:00.000Z',
     }
 
-    await startTrackingRuntime({
+    const stop = await startTrackingRuntime({
       config: { baseUrl: 'http://test:8082' },
       createClient: vi.fn().mockReturnValue(client),
       createPoller: vi.fn().mockImplementation((_client, hooks) => {
@@ -1347,9 +1403,17 @@ describe('startTrackingRuntime', () => {
     await pollerHooks?.onSnapshot(SNAPSHOT)
 
     expect(applySnapshot).toHaveBeenCalledWith(SNAPSHOT)
-    expect(client.getBreadcrumbs).toHaveBeenCalled()
-    backfill.resolve([])
-    await Promise.resolve()
+    expect(client.getBreadcrumbsWithReport).toHaveBeenCalled()
+    let stopped = false
+    const stopping = stop().then(() => { stopped = true })
+    for (let turn = 0; turn < 10; turn += 1) await Promise.resolve()
+    expect(stopped).toBe(false)
+    expect(client.getBreadcrumbsWithReport.mock.calls[0]?.[3]).toMatchObject({
+      aborted: false,
+    })
+    backfill.resolve({ accepted: [], rejected: [] })
+    await stopping
+    expect(stopped).toBe(true)
   })
 
   it('grandfathers legacy tracking persistence when the mission model flag is off [DON-271]', async () => {
@@ -1987,6 +2051,7 @@ describe('startTrackingRuntime', () => {
             accuracy: null,
             source: 'traccar',
             timestamp: '2026-04-06T10:05:00.000Z',
+            timestamp_source: 'fix',
             data_origin: 'live',
           },
           {
@@ -2000,6 +2065,7 @@ describe('startTrackingRuntime', () => {
             accuracy: null,
             source: 'traccar',
             timestamp: '2026-04-06T10:03:00.000Z',
+            timestamp_source: 'fix',
             data_origin: 'cache',
           },
         ]),
@@ -2090,6 +2156,7 @@ describe('startTrackingRuntime', () => {
         lat: 52.01,
         lon: -9.01,
         timestamp: '2026-04-06T02:00:00.000Z',
+        timestamp_source: 'fix',
         data_origin: 'live',
       }],
       deviceTotals: [{ device_id: '1', total: 7_200 }],
@@ -2835,6 +2902,7 @@ describe('startTrackingRuntime', () => {
         lat: SNAPSHOT.positions[0]!.lat,
         lon: SNAPSHOT.positions[0]!.lon,
         timestamp: SNAPSHOT.positions[0]!.timestamp,
+        timestamp_source: 'fix',
         data_origin: 'live',
       },
     ])
@@ -2883,6 +2951,7 @@ describe('startTrackingRuntime', () => {
           lat: 52.01,
           lon: -9.01,
           timestamp: '2026-04-06T10:05:00.000Z',
+          timestamp_source: 'fix',
           data_origin: 'live',
         },
       ],
@@ -2950,6 +3019,7 @@ describe('startTrackingRuntime', () => {
               lat: 52.01,
               lon: -9.01,
               timestamp: '2026-02-28T10:05:00.000Z',
+              timestamp_source: 'fix',
               data_origin: 'live',
             },
           ],
@@ -3002,6 +3072,7 @@ describe('startTrackingRuntime', () => {
           lat: 52.01,
           lon: -9.01,
           timestamp: '2026-02-28T10:05:00.000Z',
+          timestamp_source: 'fix',
           data_origin: 'live',
         },
         {
@@ -3073,6 +3144,7 @@ describe('startTrackingRuntime', () => {
             lat: 52.01,
             lon: -9.01,
             timestamp: '2026-07-28T10:00:00.000Z',
+            timestamp_source: 'fix',
             data_origin: 'live',
           },
         ],
@@ -3128,6 +3200,7 @@ describe('startTrackingRuntime', () => {
             lat: 52.01,
             lon: -9.01,
             timestamp: '2026-07-28T10:00:00.000Z',
+            timestamp_source: 'fix',
             data_origin: 'live',
           },
         ],

@@ -57,31 +57,39 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - Stationary evaluation must account for reported GPS accuracy and must describe an attention condition, not automatically declare an emergency.
 - Meaningful movement clears the attention state. Acknowledgement/presentation details are a usability decision inside the stationary-attention chunk and must not erase the underlying state.
 
-### Complete breadcrumb coverage (`SAR-FIELD-001`, `SAR-QA-001`, `SAR-QA-003`, `SAR-QA-008`)
+### Complete breadcrumb coverage (`SAR-FIELD-001`, `SAR-FIELD-002`, `SAR-QA-001`, `SAR-QA-002`, `SAR-QA-003`, `SAR-QA-008`)
 
 - Default history view shows all accepted breadcrumbs for all selected participants across the complete mission to date.
 - The coordinator may omit historical data selectively by device and outing without deleting or changing evidence.
 - Older coverage may load progressively, with newest/current operational information first.
 - Progress must be derived from a real database completeness watermark. It must never be an estimated animation.
 - Existing paged exact Breadcrumb Dots remain an inspection/export mechanism, not the complete operational coverage view.
+- Exact inspection remains page-complete and explicit about scope. A 37,479-fix result traverses as 10,000 + 10,000 + 10,000 + 7,479; a 10,000-fix page is not evidence loss.
+- Live-current polling owns an independent cadence. Slow, failed, or unresolved initial/incremental history cannot postpone the next current-position request or publication; history remains single-flight and coalesced.
+- Diagnostics follow the same scheduling boundary: every completed current-position poll emits its own `current_positions` cycle with current-lane duration and recovery evidence, while started history work emits a separate `breadcrumbs` cycle. Coalesced-away history demand never erases the corresponding current-poll record.
 
-### Source-fix immutability (`SAR-QA-006`, `SAR-QA-013`)
+### Source-fix time and immutability (`SAR-QA-006`, `SAR-QA-013`, `SAR-QA-021`)
 
+- Traccar API position `fixTime` is the only authoritative breadcrumb evidence time. Device, server-receipt, SAR Tracker receipt, and PC clocks never substitute for it in exact history, persistence, ordering, coverage, export, or replay.
+- A current location without valid `fixTime` may remain visible for immediate operator safety only when explicitly time-unverified. It does not enter breadcrumb/timeline evidence under another clock.
+- Evidence is stored as canonical UTC. Operator-facing fix times present the same instant in local time with an explicit timezone and UTC offset.
+- SAR Tracker never invents a timestamp.
 - Operators have no ability to edit or delete Traccar fixes.
 - Identical source fixes are idempotent duplicates.
 - Repeated SAR Tracker retrieval of the same immutable Traccar database row is
   not a new source observation or breadcrumb. Per-poll delivery accounting is
   transport diagnostics, not separate mission evidence (`SAR-DUP-001`).
 - If the same source identity ever arrives with different content, SAR Tracker preserves the first accepted fix as displayed truth, records the conflicting observation as an anomaly, and warns the operator. It never silently overwrites either observation.
-- Late or out-of-order fixes remain accepted when valid and are ordered by fix time while retaining receipt time.
+- Late or out-of-order fixes remain accepted when valid and are ordered by canonical `fixTime` while retaining receipt time separately.
 - Invalid/rejected fixes never become position truth, but their rejection and reason remain durable and operator-visible.
+- Rejected breadcrumb-history rows are reported with a bounded operator count and delivered to the same durable anomaly-evidence boundary without replacing the latest-current rejection summary. A response with no acceptable rows states the rejected count and reason rather than presenting an unexplained empty device history.
 - The absence of conflicts in a bounded live-server sample is not proof that conflicts are impossible.
 
 ### Timeline replay (`SAR-QA-007`, `SAR-QA-017`)
 
 - Timeline replay reconstructs the mission data known at the selected time: tracks, positions, clues, markers, drawings, search areas, assignments, passes, and lifecycle state as applicable.
 - Replay does not reproduce the exact map zoom, pan, open panels, or transient screen layout used by the coordinator.
-- Fix time, receipt time, creation time, edit time, and effective/discovery time remain distinct where relevant.
+- Canonical Traccar `fixTime`, receipt time, creation time, edit time, and effective/discovery time remain distinct where relevant; none silently substitutes for another.
 - Mutable operational objects use explicit versions so later edits never destroy prior mission state.
 
 ### Search areas and repeated passes (`SAR-QA-009`, `SAR-QA-018`)

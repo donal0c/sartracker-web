@@ -296,13 +296,13 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    // Let the whenReady() bootstrap chain register IPC handlers.
-    await new Promise((resolve) => setTimeout(resolve, 50))
-
-    const recordHandlerCall = electronMock.ipcMain.handle.mock.calls.find(
-      ([channel]) => channel === 'sartracker:record-diagnostic-event',
-    )
-    expect(recordHandlerCall).toBeDefined()
+    let recordHandlerCall: (typeof electronMock.ipcMain.handle.mock.calls)[number] | undefined
+    await vi.waitFor(() => {
+      recordHandlerCall = electronMock.ipcMain.handle.mock.calls.find(
+        ([channel]) => channel === 'sartracker:record-diagnostic-event',
+      )
+      expect(recordHandlerCall).toBeDefined()
+    })
     const recordHandler = recordHandlerCall?.[1] as (
       event: unknown,
       input: unknown,
@@ -586,13 +586,16 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    const uncaughtHandler = processOn.mock.calls
-      .filter(([eventName]) => eventName === 'uncaughtException')
-      .map(([, listener]) => listener)
-      .find((listener) => String(listener).includes('handleFatalMainProcessError')) as
+    let uncaughtHandler: ((error: Error) => void) | undefined
+    await vi.waitFor(() => {
+      uncaughtHandler = processOn.mock.calls
+        .filter(([eventName]) => eventName === 'uncaughtException')
+        .map(([, listener]) => listener)
+        .find((listener) => String(listener).includes('handleFatalMainProcessError')) as
       | ((error: Error) => void)
       | undefined
+      expect(uncaughtHandler).toBeDefined()
+    })
 
     uncaughtHandler?.(new Error('fatal persistence fault'))
 

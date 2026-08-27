@@ -156,10 +156,12 @@ type ElectronMissionStore = {
     readonly lat: number
     readonly lon: number
     readonly timestamp?: string
+    readonly timestamp_source?: 'fix'
   }) => Promise<{
     readonly id: string
     readonly source_position_id: string | null
     readonly device_id: string
+    readonly timestamp_source: 'fix' | null
   }>
   readonly addPositionsBulk: (input: {
     readonly mission_id: string
@@ -174,6 +176,7 @@ type ElectronMissionStore = {
       readonly accuracy?: number | null
       readonly source?: string | null
       readonly timestamp?: string | null
+      readonly timestamp_source?: 'fix'
       readonly data_origin?: 'live' | 'cache'
     }[]
   }) => Promise<readonly {
@@ -190,6 +193,7 @@ type ElectronMissionStore = {
       readonly lat: number
       readonly lon: number
       readonly timestamp?: string | null
+      readonly timestamp_source?: 'fix'
     }[]
     readonly checkpoints: readonly {
       readonly device_id: string
@@ -209,6 +213,7 @@ type ElectronMissionStore = {
       readonly lat: number
       readonly lon: number
       readonly timestamp: string
+      readonly timestamp_source?: 'fix'
     }[]
     readonly checkpoints: readonly {
       readonly device_id: string
@@ -231,6 +236,7 @@ type ElectronMissionStore = {
     readonly device_id: string
     readonly timestamp: string
     readonly data_origin: string
+    readonly timestamp_source: 'fix' | null
   }[]>
   readonly listRecentPositions: (
     missionId: string,
@@ -513,6 +519,47 @@ describe('electron mission store', () => {
     }
   })
 
+  it('round-trips authoritative fixTime provenance through SQLite and restart [DON-267] [SAR-QA-021]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Fix provenance mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-fix',
+      name: 'Tracker Fix',
+      color: '#00AAFF',
+      status: 'online',
+    })
+    await expect(store.addPosition({
+      mission_id: mission.id,
+      source_position_id: 'fix-1',
+      device_id: 'tracker-fix',
+      lat: 52,
+      lon: -9,
+      timestamp: '2026-08-22T15:10:17.000Z',
+      timestamp_source: 'fix',
+    })).resolves.toMatchObject({ timestamp_source: 'fix' })
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.listPositions(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        source_position_id: 'fix-1',
+        timestamp: '2026-08-22T15:10:17.000Z',
+        timestamp_source: 'fix',
+      }),
+    ])
+
+    const info = await store.info()
+    const db = new Database(info.database_path, { readonly: true })
+    try {
+      expect(db.prepare(
+        'SELECT timestamp_source FROM positions WHERE source_position_id = ?',
+      ).get('fix-1')).toEqual({ timestamp_source: 'fix' })
+    } finally {
+      db.close()
+    }
+  })
+
   it('lists active, paused, and finished missions that still need renderer evidence closure', async () => {
     store = await createStore()
     const finished = await store.createMission({ name: 'Finished Evidence Scope' })
@@ -663,7 +710,7 @@ describe('electron mission store', () => {
   })
 
   it('migrates a schema-6 store to the durable tracking-history checkpoint schema', async () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(10)
+    expect(CURRENT_SCHEMA_VERSION).toBe(11)
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-checkpoint-migration-'))
     const databasePath = path.join(userDataPath, 'mission-store.sqlite')
     const legacyDb = new Database(databasePath)
@@ -677,7 +724,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 10 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 11 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -692,7 +739,7 @@ describe('electron mission store', () => {
         migratedDb
           .prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
           .get(),
-      ).toEqual({ value: '10' })
+      ).toEqual({ value: '11' })
     } finally {
       migratedDb.close()
     }
@@ -734,7 +781,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 10 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 11 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -794,7 +841,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 10 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 11 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -934,7 +981,7 @@ describe('electron mission store', () => {
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM outings').get()).toEqual({ count: 0 })
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM devices').get()).toEqual({ count: 2 })
       expect(migratedDb.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
-        .toEqual({ value: '10' })
+        .toEqual({ value: '11' })
       expect(migratedDb.prepare(`SELECT name FROM sqlite_master
           WHERE type = 'index' AND name IN (
             'idx_mission_participants_active_device',
@@ -1136,6 +1183,7 @@ describe('electron mission store', () => {
       lat: 52 + index / 1_000_000,
       lon: -9.7 - index / 1_000_000,
       timestamp: new Date(baseMs + index * 1_000).toISOString(),
+      timestamp_source: 'fix' as const,
       data_origin: 'live' as const,
     }))
     await store.addPositionsBulk({
@@ -1457,6 +1505,7 @@ describe('electron mission store', () => {
       lat: 52 + index / 10_000_000,
       lon: -9.7 - index / 10_000_000,
       timestamp: new Date(Date.UTC(2026, 7, 9, 0, 0, index)).toISOString(),
+      timestamp_source: 'fix' as const,
     }))
 
     const result = await store.persistTrackingPositionsBulk({
@@ -2548,6 +2597,7 @@ describe('electron mission store', () => {
         lat: 52.0599,
         lon: -9.5045,
         timestamp: '2026-08-08T01:00:00.000Z',
+        timestamp_source: 'fix',
       }],
       checkpoints: [{
         device_id: 'tracker-1',

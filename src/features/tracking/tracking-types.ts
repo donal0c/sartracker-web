@@ -34,7 +34,7 @@ export type NormalizedTrackingPosition = {
   readonly timestamp: string
   /** The upstream clock that supplied {@link timestamp}; absent only on legacy cache rows. */
   readonly timestamp_source?: TrackingTimestampSource
-  /** True when server receipt time is the only available timestamp for the fix. */
+  /** True when Traccar fixTime was unavailable and a non-authoritative live clock was used. */
   readonly fix_time_unverified?: boolean
   readonly source: string | null
   readonly data_origin: TrackingDataOrigin

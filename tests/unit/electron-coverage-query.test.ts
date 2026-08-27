@@ -128,7 +128,9 @@ describe('Electron coverage query', () => {
     database.exec(`
       INSERT INTO devices VALUES ('row-1', 'mission-1', 'device-1');
       INSERT INTO devices VALUES ('row-2', 'mission-1', 'device-2');
-      INSERT INTO positions VALUES
+      INSERT INTO positions (
+        id, mission_id, device_id, source_position_id, timestamp, lat, lon
+      ) VALUES
         ('row-a', 'mission-1', 'device-1', NULL, '2026-08-24T09:00:00.000Z', 52, -9.7);
     `)
 
@@ -348,7 +350,9 @@ describe('Electron coverage query', () => {
     })
 
     database.exec(`
-      INSERT INTO positions VALUES
+      INSERT INTO positions (
+        id, mission_id, device_id, source_position_id, timestamp, lat, lon
+      ) VALUES
         ('position-late', 'mission-1', 'device-1', 'source-late', '2026-08-24T10:04:00.000Z', 52.01, -9.71);
       UPDATE coverage_chunks SET content_rev = 2
       WHERE mission_id = 'mission-1' AND device_id = 'device-1'
@@ -400,7 +404,8 @@ function createSchema(database: Database): void {
     );
     CREATE TABLE positions (
       id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, device_id TEXT NOT NULL,
-      source_position_id TEXT, timestamp TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL
+      source_position_id TEXT, timestamp TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL,
+      timestamp_source TEXT DEFAULT 'fix'
     );
     CREATE INDEX idx_positions_mission_device_timestamp
       ON positions(mission_id, device_id, timestamp);
@@ -442,7 +447,9 @@ function seedMissionModel(database: Database): void {
     INSERT INTO devices VALUES ('row-1', 'mission-1', 'device-1');
     INSERT INTO outings (id, mission_id, started_at, ended_at) VALUES
       ('outing-1', 'mission-1', '2026-08-24T10:00:00.000Z', '2026-08-24T11:00:00.000Z');
-    INSERT INTO positions VALUES
+    INSERT INTO positions (
+      id, mission_id, device_id, source_position_id, timestamp, lat, lon
+    ) VALUES
       ('position-1', 'mission-1', 'device-1', 'source-1', '2026-08-24T10:05:00.000Z', 52.001, -9.701),
       ('position-2', 'mission-1', 'device-1', 'source-2', '2026-08-24T10:10:00.000Z', 52.002, -9.702),
       ('position-3', 'mission-1', 'device-1', NULL, '2026-08-24T12:00:00.000Z', 52.003, -9.703);
