@@ -774,7 +774,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
 
     const beforeQuitHandler = electronMock.app.on.mock.calls.find(
       ([eventName]) => eventName === 'before-quit',
@@ -828,7 +830,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
     const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
     const rendererGoneHandler = createdWindow.webContents.on.mock.calls.find(
       ([eventName]) => eventName === 'render-process-gone',
@@ -870,7 +874,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
     const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
     electronMock.BrowserWindow.getAllWindows.mockReturnValue([createdWindow])
     const beforeQuitHandler = electronMock.app.on.mock.calls.find(
