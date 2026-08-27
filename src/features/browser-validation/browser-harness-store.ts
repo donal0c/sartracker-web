@@ -1940,7 +1940,10 @@ function buildBrowserReplay(
       completeness: 'complete' as const,
     }))
   const missionImportIds = new Set(state.gpxImports
-    .filter((entry) => entry.mission_id === input.missionId)
+    .filter((entry) => entry.mission_id === input.missionId
+      && (entry.retired_at === null
+        || entry.retired_at === undefined
+        || entry.retired_at > selectedTime))
     .map((entry) => entry.id))
   const eligibleRevisionByImport = new Map<string, number>()
   for (const point of state.gpxEvidencePoints) {
@@ -1993,7 +1996,7 @@ function buildBrowserReplay(
   const staticGpxPointCount = eligibleGpxPoints.filter((point) =>
     point.timestamp === null && isSelectedGpxImport(point.importId)).length
   const staticGpxEvidence = state.gpxImports
-    .filter((entry) => entry.mission_id === input.missionId
+    .filter((entry) => missionImportIds.has(entry.id)
       && (input.outingIds === undefined
         || isSelectedGpxImport(entry.id)))
     .flatMap((entry) => {

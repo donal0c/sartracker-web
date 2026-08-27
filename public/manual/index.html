@@ -1512,7 +1512,9 @@
           <p>
             The GPX panel can import files, import a folder, watch a folder, rescan watched folders, and
             remove imported tracks from the active map. Removal retires the import; it does not erase its
-            evidence. These file-system controls are available in the Electron desktop app and
+            evidence. Replay before the recorded retirement time can still show it; Replay at or after
+            retirement excludes it from the reconstructed active evidence while its revision and audit history
+            remain retained. These file-system controls are available in the Electron desktop app and
             are disabled in browser-only validation mode. Each imported track also has its own colour
             palette and hex field, so separate GPX files can remain visually distinct on the map and in the
             layer tree.

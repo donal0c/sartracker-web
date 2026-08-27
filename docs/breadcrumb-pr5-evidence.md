@@ -51,7 +51,11 @@ head was also rejected. Broad and persistence reviews were clean on
 review proved that browser validation accepted future replay times rejected by
 packaged Electron and filtered historical GPX evidence using its current outing
 instead of the outing assigned to the revision known at T. That head was
-rejected too. Accepted findings and dispositions are:
+rejected too. Broad and renderer reviews on
+`d57084b95dd208f68690d367533238bbe42a734e` then found that the corrected
+harness still replayed GPX evidence at and after its recorded retirement time,
+unlike the packaged as-of predicate. That head was rejected too. Accepted
+findings and dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -225,7 +229,9 @@ rejected too. Accepted findings and dispositions are:
   rejects invalid and future T, scopes GPX revisions to the selected mission,
   captures outing assignment on each GPX revision, and derives historical
   filters, available outings and static evidence from the eligible revision
-  rather than current import state. Focused harness and Chromium regressions
+  rather than current import state. It also applies the production retirement
+  boundary: evidence remains eligible before `retired_at` and is excluded at or
+  after that instant. Focused harness and operator-level Chromium regressions
   were observed red, then green.
 
 The corresponding focused regression tests were observed red before the
@@ -238,11 +244,11 @@ substitutes for that wave.
 
 The latest local remediation tree passed:
 
-- full unit: 288 files / 2,396 tests with eight workers; all timing-gate tests
+- full unit: 288 files / 2,397 tests with eight workers; all timing-gate tests
   that exceeded thresholds in oversubscribed default-worker runs passed again
   in their focused 178-test set;
 - backend: 51 passed / 1 ignored;
-- Chromium: 163/163;
+- Chromium: 164/164;
 - visual Playwright: 58/58;
 - independent visual gate: fresh uncached full review passed 69/69 with zero
   failures or reviewer errors at the original critical/high severities;

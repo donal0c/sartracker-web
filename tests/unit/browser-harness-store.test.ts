@@ -756,6 +756,66 @@ describe('browser harness store', () => {
     })).resolves.toMatchObject({ totalTrackCount: 0 })
   })
 
+  it('excludes GPX evidence only after its recorded retirement time [DON-278]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Historical GPX Retirement Mission' })
+    const imported = await store.upsertGpxImport({
+      mission_id: mission.id,
+      source_path: '/tracks/retired.gpx',
+      file_name: 'retired.gpx',
+      display_name: 'Retired evidence',
+      geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+      content_sha256: 'b'.repeat(64),
+      source_bytes_base64: 'PGdweCAvPg==',
+      timing_class: 'partially_dated',
+      points: [
+        {
+          segment_index: 0,
+          point_index: 0,
+          track_name: 'Retired evidence',
+          lat: 52,
+          lon: -9.7,
+          elevation: null,
+          timestamp: '2026-08-20T09:00:00.000Z',
+        },
+        {
+          segment_index: 0,
+          point_index: 1,
+          track_name: 'Retired evidence',
+          lat: 52.01,
+          lon: -9.71,
+          elevation: null,
+          timestamp: null,
+        },
+      ],
+    })
+    vi.setSystemTime(new Date('2026-08-20T11:00:00.000Z'))
+    await store.deleteGpxImport(imported.id)
+
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T10:30:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+    })).resolves.toMatchObject({
+      totalTrackCount: 1,
+      staticGpxPointCount: 1,
+      staticGpxEvidence: [expect.objectContaining({ import_id: imported.id })],
+    })
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T11:00:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+    })).resolves.toMatchObject({
+      totalTrackCount: 0,
+      staticGpxPointCount: 0,
+      staticGpxEvidence: [],
+    })
+  })
+
   it('persists helicopters per slot and records audit events', async () => {
     const store = getBrowserHarnessStore()
     const mission = await store.createMission({ name: 'Helicopter Mission' })

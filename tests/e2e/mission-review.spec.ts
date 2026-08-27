@@ -230,6 +230,36 @@ test.describe('M15 mission review workspace', () => {
     )
   })
 
+  test('DON-278: retired GPX is absent from later browser replay like packaged Electron', async ({ page }) => {
+    await page.getByTestId('sidebar-tab-tools').click()
+    await page.evaluate(async () => {
+      await window.__SARTRACKER_BROWSER_HARNESS__?.importGpxFiles([{
+        sourcePath: '/tracks/retired-replay.gpx',
+        fileName: 'retired-replay.gpx',
+        contents: `<gpx version="1.1"><trk><trkseg>
+          <trkpt lat="52" lon="-9.7"><time>2026-04-10T16:50:00Z</time></trkpt>
+          <trkpt lat="52.01" lon="-9.71"></trkpt>
+        </trkseg></trk></gpx>`,
+      }])
+    })
+    await expect(page.getByTestId('gpx-import-list')).toContainText('retired-replay')
+    await page.getByTestId('gpx-import-list').getByRole('button', { name: 'Retire' }).click()
+    await expect(page.getByTestId('gpx-import-status')).toContainText(
+      'Its evidence remains in mission history.',
+    )
+
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await page.getByTestId('mission-replay-seek').click()
+
+    await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText(
+      'No precisely dated track evidence was eligible at this time.',
+    )
+    await expect(page.getByTestId('mission-replay-static-gpx-evidence')).toContainText(
+      'No static GPX evidence was eligible at this time.',
+    )
+  })
+
   test('shows marker evidence and audit metadata in review flows', async ({ page }) => {
     await createMarker(page, {
       name: 'Evidence Cache',
