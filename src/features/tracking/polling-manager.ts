@@ -68,6 +68,7 @@ type PollingManagerLogger = {
 type PollingManagerOptions = {
   readonly intervalMs: number
   readonly minimumIntervalMs?: number
+  readonly historyAntiEntropyIntervalMs?: number
   readonly staleThresholdMs: number
   readonly retryBaseMs?: number
   readonly maxBackoffMs?: number
@@ -475,6 +476,9 @@ export function createPollingManager(
         })
       }
     },
+    ...(options.historyAntiEntropyIntervalMs === undefined
+      ? {}
+      : { antiEntropyIntervalMs: options.historyAntiEntropyIntervalMs }),
     shouldContinue: isHistoryReconciliationCurrent,
     logger,
     setTimeout: scheduleTimeout,

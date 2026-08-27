@@ -109,6 +109,7 @@ export type RuntimeBootstrapSettings = {
   readonly autosaveIntervalMs: number
   readonly trackingPollIntervalMs: number
   readonly trackingMinimumPollIntervalMs?: number
+  readonly trackingHistoryAntiEntropyIntervalMs?: number
   readonly trackingCacheEnabled: boolean
   readonly trackingConfig: {
     readonly baseUrl: string

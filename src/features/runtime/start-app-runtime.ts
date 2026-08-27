@@ -77,6 +77,7 @@ type StartAppRuntimeDependencies = {
     readonly autosaveIntervalMs: number
     readonly trackingPollIntervalMs: number
     readonly trackingMinimumPollIntervalMs?: number
+    readonly trackingHistoryAntiEntropyIntervalMs?: number
     readonly trackingCacheEnabled: boolean
     readonly stationaryAttentionConfig?: {
       readonly heartbeatWindowMs: number
@@ -315,6 +316,12 @@ export async function startAppRuntime(
           ...(runtimeSettings.trackingMinimumPollIntervalMs === undefined
             ? {}
             : { minimumIntervalMs: runtimeSettings.trackingMinimumPollIntervalMs }),
+          ...(runtimeSettings.trackingHistoryAntiEntropyIntervalMs === undefined
+            ? {}
+            : {
+                historyAntiEntropyIntervalMs:
+                  runtimeSettings.trackingHistoryAntiEntropyIntervalMs,
+              }),
           staleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
           maxBackoffMs: 60_000,
           getPollingMode: () => {
