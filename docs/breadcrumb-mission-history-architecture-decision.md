@@ -108,9 +108,11 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - GPX source bytes receive a content hash; changed content creates a new immutable revision.
 - Point timestamps and elevation are retained when present; rejected points/segments are recorded.
 - SAR Tracker never invents GPX timestamps.
-- GPX numeric source scalars are non-empty strict decimals. Source time is
-  precise only when it is a full calendar-valid ISO date-time carrying `Z` or
-  an explicit offset; permissive platform coercion is never evidence authority.
+- GPX numeric source scalars are non-empty XML Schema decimals, without
+  exponent notation or nonzero-to-zero underflow. Source time is precise only
+  when it is a full calendar-valid XML Schema date-time carrying `Z` or an
+  explicit offset within `±14:00`; permissive platform coercion is never
+  evidence authority.
 - One source file is limited to 8 MiB for bounded exact-byte retention. Larger
   files fail explicitly and must be split; concurrent imports serialize so
   identical content retains one canonical identity plus path aliases.

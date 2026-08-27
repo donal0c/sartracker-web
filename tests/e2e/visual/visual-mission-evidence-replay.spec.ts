@@ -69,6 +69,7 @@ Report PASS or FAIL for each item and overall.`,
     await page.getByTestId('search-assignment-record').click()
     await page.getByTestId('search-pass-assignment').selectOption({ index: 1 })
     await page.getByTestId('search-pass-start').fill('2026-08-27T14:00')
+    await page.getByTestId('search-pass-end').fill('2026-08-27T15:00')
     await page.getByTestId('search-pass-record').click()
     await page.getByTestId('search-pass-outcome').selectOption('full')
     await page.getByTestId('search-pass-record').click()
@@ -109,6 +110,37 @@ Report PASS or FAIL for each item and overall.`,
         'two distinct pass records are rendered',
         'stable Area Alpha is visible',
         'coordinator-declared labels are visible',
+      ],
+    })
+
+    await page.keyboard.press('Escape')
+    await page.getByTestId('outing-end-btn').click()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await page.getByTestId('mission-finalize-btn').click()
+    await page.getByTestId('mission-finalize-confirm').click()
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
+    await expect(page.getByTestId('search-operations-read-only')).toBeVisible()
+    await expect(page.getByTestId('search-operations-workspace')).toContainText('Area Alpha')
+    await expect(page.locator('[data-testid^="search-pass-search-pass-"]')).toHaveCount(2)
+    await expect(page.getByTestId('search-assignment-record')).toBeDisabled()
+    await expect(page.getByTestId('search-pass-record')).toBeDisabled()
+
+    await captureElementAndRegister(page, 'search-operations-workspace', {
+      testId: 'search-operations-finalized-read-only',
+      testName: 'Finalized mission search operations remain visibly read-only',
+      area: 'mission-review',
+      severity: 'critical',
+      verificationPrompt: `Verify the finalized Search Operations surface:
+1. It must explicitly say the finished or finalized mission is read-only.
+2. It must direct the operator to governed resume or unlock before recording changes.
+3. The entry controls must look disabled and must not present an enabled Record action.
+Report PASS or FAIL for each item and overall.`,
+      playwrightAssertions: [
+        'read-only governance notice is visible',
+        'assignment and pass Record buttons are disabled',
+        'retained Area Alpha and both passes remain present in the scrollable workspace',
       ],
     })
   })

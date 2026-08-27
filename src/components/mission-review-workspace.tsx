@@ -247,7 +247,11 @@ export function MissionReviewWorkspace() {
                   </Suspense>
                 ) : activeTab === 'search-operations' ? (
                   <Suspense fallback={<EmptyState message="Loading search operations…" />}>
-                    <SearchOperationsTab controller={controller} operations={searchOperations} />
+                    <SearchOperationsTab
+                      controller={controller}
+                      operations={searchOperations}
+                      readOnly={snapshot.mission.status === 'finished' || snapshot.mission.status === 'finalized'}
+                    />
                   </Suspense>
                 ) : activeTab === 'marker-log' ? (
                   <MarkerLogTab

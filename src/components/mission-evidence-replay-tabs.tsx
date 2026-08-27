@@ -138,6 +138,7 @@ export function MissionReplayTab(props: {
 export function SearchOperationsTab(props: {
   readonly controller: MissionReviewController | null
   readonly operations: { readonly areas: readonly SearchArea[]; readonly assignments: readonly SearchAssignment[]; readonly passes: readonly SearchPass[]; readonly outings: readonly Outing[] }
+  readonly readOnly: boolean
 }) {
   const [teamId, setTeamId] = useState('')
   const [coordinatorName, setCoordinatorName] = useState('')
@@ -162,7 +163,7 @@ export function SearchOperationsTab(props: {
   const assignment = eligibleAssignments.find((entry) => entry.id === selectedAssignmentId) ?? null
 
   const recordAssignment = async () => {
-    if (area === null || outing === null || props.controller === null) return
+    if (props.readOnly || area === null || outing === null || props.controller === null) return
     setError(null)
     try {
       await props.controller.recordSearchAssignment({
@@ -179,7 +180,7 @@ export function SearchOperationsTab(props: {
     }
   }
   const recordPass = async () => {
-    if (area === null || assignment === null || props.controller === null) return
+    if (props.readOnly || area === null || assignment === null || props.controller === null) return
     setError(null)
     try {
       const startedAt = parseDublinDateTimeLocal(passStartedLocal)
@@ -204,7 +205,13 @@ export function SearchOperationsTab(props: {
 
   return <div className="space-y-4" data-testid="search-operations-workspace">
     <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5"><p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Stable search operations</p><p className="mt-2 text-sm text-stone-300">Areas keep one stable identity across revisions and repeated assignments. Pass outcomes are coordinator-entered declarations; coverage is advisory only.</p></section>
+    {props.readOnly ? <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="search-operations-read-only">This finished or finalized mission is read-only. Retained assignments and passes remain visible; resume or unlock the mission through governance before recording changes.</p> : null}
     {props.operations.areas.length > 0 ? <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="search-operation-entry">
+      <fieldset
+        aria-disabled={props.readOnly}
+        className={props.readOnly ? 'opacity-50' : undefined}
+        disabled={props.readOnly}
+      >
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-xs text-stone-300">Search area<select className="mt-1 w-full bg-stone-950 p-2" data-testid="search-operation-area" onChange={(event) => { setSelectedAreaId(event.target.value); setSelectedAssignmentId('') }} value={area?.id ?? ''}><option value="">Select search area</option>{props.operations.areas.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
         <label className="text-xs text-stone-300">Outing<select className="mt-1 w-full bg-stone-950 p-2" data-testid="search-operation-outing" onChange={(event) => { setSelectedOutingId(event.target.value); setSelectedAssignmentId('') }} value={outing?.id ?? ''}><option value="">Select outing</option>{props.operations.outings.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}</select></label>
@@ -213,7 +220,7 @@ export function SearchOperationsTab(props: {
         <input className="rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100" data-testid="search-assignment-participants" onChange={(event) => setAssignmentParticipantIds(event.target.value)} placeholder="Participant IDs, comma separated" value={assignmentParticipantIds} />
         <input className="rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100" data-testid="search-assignment-notes" onChange={(event) => setAssignmentNotes(event.target.value)} placeholder="Assignment notes" value={assignmentNotes} />
       </div>
-      <button className="mt-3" data-testid="search-assignment-record" disabled={area === null || outing === null || teamId.trim() === '' || coordinatorName.trim() === ''} onClick={() => void recordAssignment()} type="button">Record assignment for selected area and outing</button>
+      <button className="mt-3 disabled:opacity-40" data-testid="search-assignment-record" disabled={props.readOnly || area === null || outing === null || teamId.trim() === '' || coordinatorName.trim() === ''} onClick={() => void recordAssignment()} type="button">Record assignment for selected area and outing</button>
       <div className="mt-5 grid gap-3 md:grid-cols-2">
         <label className="text-xs text-stone-300">Assignment<select className="mt-1 w-full bg-stone-950 p-2" data-testid="search-pass-assignment" onChange={(event) => setSelectedAssignmentId(event.target.value)} value={assignment?.id ?? ''}><option value="">Select assignment</option>{eligibleAssignments.map((entry) => <option key={entry.id} value={entry.id}>{entry.team_id} · {entry.id}</option>)}</select></label>
         <label className="text-xs text-stone-300">Coordinator-declared outcome<select className="mt-1 w-full bg-stone-950 p-2" data-testid="search-pass-outcome" onChange={(event) => setOutcome(event.target.value as typeof outcome)} value={outcome}><option value="full">Fully searched</option><option value="partial">Partially searched</option><option value="aborted">Aborted</option></select></label>
@@ -224,7 +231,8 @@ export function SearchOperationsTab(props: {
         <input className="bg-stone-950 p-2" data-testid="search-pass-tracks" onChange={(event) => setTrackEvidenceIds(event.target.value)} placeholder="Track evidence IDs, comma separated" value={trackEvidenceIds} />
         <input className="bg-stone-950 p-2" data-testid="search-pass-notes" onChange={(event) => setPassNotes(event.target.value)} placeholder="Pass notes" value={passNotes} />
       </div>
-      <button className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-stone-950 disabled:opacity-40" data-testid="search-pass-record" disabled={assignment === null || coordinatorName.trim() === '' || passStartedLocal.trim() === ''} onClick={() => void recordPass()} type="button">Record coordinator-declared pass</button>
+      <button className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-stone-950 disabled:opacity-40" data-testid="search-pass-record" disabled={props.readOnly || assignment === null || coordinatorName.trim() === '' || passStartedLocal.trim() === ''} onClick={() => void recordPass()} type="button">Record coordinator-declared pass</button>
+      </fieldset>
       {message !== null ? <p className="mt-3 text-sm text-emerald-200" data-testid="search-operation-feedback">{message}</p> : null}
       {error !== null ? <p className="mt-3 text-sm text-rose-200" data-testid="search-operation-error" role="alert">{error}</p> : null}
     </section> : null}

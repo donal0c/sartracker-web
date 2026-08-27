@@ -1531,9 +1531,11 @@
             <strong>GPX time evidence:</strong> fully dated tracks can participate in precise Replay. Partially
             dated imports separate dated points from static points. Undated points remain visible as static
             mission evidence but are not placed at an invented time.
-            Source timestamps must be full calendar-valid ISO date-times with <code>Z</code> or an
-            explicit offset. Partial or local-offset-free values are retained as invalid-timestamp
-            rejections rather than converted by permissive platform date parsing.
+            Numeric values use the GPX decimal form; exponent text that could underflow into an invented zero
+            is rejected. Source timestamps must be full calendar-valid XML Schema date-times with
+            <code>Z</code> or an explicit offset within <code>±14:00</code>. Partial, local-offset-free, year-zero,
+            or out-of-range-offset values are retained as invalid-timestamp rejections rather than converted
+            by permissive platform parsing.
           </div>
           <p>
             To link static GPX evidence to an outing, enter the coordinator name and choose the outing on the
@@ -1633,6 +1635,8 @@
             Europe/Dublin local times, and add participant, clue and track-evidence identities where available.
             The recorded pass displays its declared outcome, exact time window, revision and evidence-link counts;
             SAR Tracker never substitutes the first area or outing and never invents a zero-duration pass.
+            Finished and finalized missions keep these retained records visible but disable the Search Operations
+            entry form; use the governed resume or unlock action before recording another assignment or pass.
           </p>
           <p>
             The Audit Log shows operator-meaningful events by default — mission lifecycle changes, marker

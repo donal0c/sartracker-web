@@ -133,22 +133,50 @@ describe('gpx parser', () => {
       sourcePath: '/tracks/strict-scalars.gpx',
       contents: `<gpx version="1.1" creator="vitest"><trk><trkseg>
         <trkpt lat="" lon=""><ele> </ele><time>2026</time></trkpt>
+        <trkpt lat="1e-9999" lon="-1e-9999" />
         <trkpt lat="52" lon="-9.7"><ele> </ele><time>2026-08-27T08:00:00</time></trkpt>
         <trkpt lat="52.01" lon="-9.71"><time>2026-02-30T08:00:00Z</time></trkpt>
       </trkseg></trk></gpx>`,
     })
 
     expect(parsed.points).toEqual([
-      expect.objectContaining({ pointIndex: 1, elevation: null, timestamp: null }),
       expect.objectContaining({ pointIndex: 2, elevation: null, timestamp: null }),
+      expect.objectContaining({ pointIndex: 3, elevation: null, timestamp: null }),
     ])
     expect(parsed.rejections).toEqual(expect.arrayContaining([
       expect.objectContaining({ pointIndex: 0, reason: 'invalid_coordinates' }),
-      expect.objectContaining({ pointIndex: 1, reason: 'invalid_elevation' }),
+      expect.objectContaining({ pointIndex: 1, reason: 'invalid_coordinates' }),
+      expect.objectContaining({ pointIndex: 2, reason: 'invalid_elevation' }),
+      expect.objectContaining({ pointIndex: 2, reason: 'invalid_timestamp' }),
+      expect.objectContaining({ pointIndex: 3, reason: 'invalid_timestamp' }),
+    ]))
+    expect(JSON.stringify(parsed)).not.toContain('2026-01-01T00:00:00.000Z')
+  })
+
+  it('rejects timezone offsets outside the XML Schema dateTime boundary [DON-274]', () => {
+    const parsed = parseGpxFile({
+      fileName: 'strict-offsets.gpx',
+      sourcePath: '/tracks/strict-offsets.gpx',
+      contents: `<gpx version="1.1" creator="vitest"><trk><trkseg>
+        <trkpt lat="52" lon="-9.7"><time>2026-08-27T08:00:00+23:00</time></trkpt>
+        <trkpt lat="52.01" lon="-9.71"><time>2026-08-27T08:01:00-14:01</time></trkpt>
+        <trkpt lat="52.02" lon="-9.72"><time>0000-08-27T08:02:00Z</time></trkpt>
+        <trkpt lat="52.03" lon="-9.73"><time>2026-08-27T08:03:00+14:00</time></trkpt>
+      </trkseg></trk></gpx>`,
+    })
+
+    expect(parsed.timingClass).toBe('partially_dated')
+    expect(parsed.points.map((point) => point.timestamp)).toEqual([
+      null,
+      null,
+      null,
+      '2026-08-26T18:03:00.000Z',
+    ])
+    expect(parsed.rejections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ pointIndex: 0, reason: 'invalid_timestamp' }),
       expect.objectContaining({ pointIndex: 1, reason: 'invalid_timestamp' }),
       expect.objectContaining({ pointIndex: 2, reason: 'invalid_timestamp' }),
     ]))
-    expect(JSON.stringify(parsed)).not.toContain('2026-01-01T00:00:00.000Z')
   })
 
   it('hashes exact source bytes rather than source path aliases [DON-274]', async () => {

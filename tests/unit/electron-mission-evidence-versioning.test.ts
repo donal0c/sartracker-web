@@ -996,6 +996,7 @@ describe('mission evidence versioning [DON-277]', () => {
     const sourcePath = path.join(userDataPath!, 'strict-scalars.gpx')
     await writeFile(sourcePath, `<gpx version="1.1"><trk><trkseg>
       <trkpt lat="" lon=""><ele></ele><time>2026</time></trkpt>
+      <trkpt lat="1e-9999" lon="-1e-9999" />
       <trkpt lat="52" lon="-9.7"><ele> </ele><time>2026-08-27T08:00:00</time></trkpt>
       <trkpt lat="52.01" lon="-9.71"><time>2026-02-30T08:00:00Z</time></trkpt>
     </trkseg></trk></gpx>`)
@@ -1006,16 +1007,48 @@ describe('mission evidence versioning [DON-277]', () => {
     const db = openDatabase(await databasePath())
     expect(db.prepare(`SELECT point_index, elevation, source_time FROM gpx_evidence_points
       ORDER BY point_index`).all()).toEqual([
-      { point_index: 1, elevation: null, source_time: null },
       { point_index: 2, elevation: null, source_time: null },
+      { point_index: 3, elevation: null, source_time: null },
     ])
     expect(db.prepare(`SELECT point_index, reason FROM gpx_evidence_rejections
       ORDER BY point_index, reason`).all()).toEqual(expect.arrayContaining([
       { point_index: 0, reason: 'invalid_coordinates' },
-      { point_index: 1, reason: 'invalid_elevation' },
+      { point_index: 1, reason: 'invalid_coordinates' },
+      { point_index: 2, reason: 'invalid_elevation' },
+      { point_index: 2, reason: 'invalid_timestamp' },
+      { point_index: 3, reason: 'invalid_timestamp' },
+    ]))
+    db.close()
+  })
+
+  it('rejects out-of-range timezone offsets in the production worker [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Strict GPX Offset Mission' })
+    const sourcePath = path.join(userDataPath!, 'strict-offsets.gpx')
+    await writeFile(sourcePath, `<gpx version="1.1"><trk><trkseg>
+      <trkpt lat="52" lon="-9.7"><time>2026-08-27T08:00:00+23:00</time></trkpt>
+      <trkpt lat="52.01" lon="-9.71"><time>2026-08-27T08:01:00-14:01</time></trkpt>
+      <trkpt lat="52.02" lon="-9.72"><time>0000-08-27T08:02:00Z</time></trkpt>
+      <trkpt lat="52.03" lon="-9.73"><time>2026-08-27T08:03:00+14:00</time></trkpt>
+    </trkseg></trk></gpx>`)
+
+    await expect(store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] }))
+      .resolves.toMatchObject({ imports: [expect.objectContaining({ timing_class: 'partially_dated' })] })
+
+    const db = openDatabase(await databasePath())
+    expect(db.prepare(`SELECT point_index, source_time FROM gpx_evidence_points
+      ORDER BY point_index`).all()).toEqual([
+      { point_index: 0, source_time: null },
+      { point_index: 1, source_time: null },
+      { point_index: 2, source_time: null },
+      { point_index: 3, source_time: '2026-08-26T18:03:00.000Z' },
+    ])
+    expect(db.prepare(`SELECT point_index, reason FROM gpx_evidence_rejections
+      ORDER BY point_index`).all()).toEqual([
+      { point_index: 0, reason: 'invalid_timestamp' },
       { point_index: 1, reason: 'invalid_timestamp' },
       { point_index: 2, reason: 'invalid_timestamp' },
-    ]))
+    ])
     db.close()
   })
 

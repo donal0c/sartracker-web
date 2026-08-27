@@ -1,4 +1,4 @@
-const STRICT_DECIMAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/u
+const STRICT_DECIMAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/u
 const EXPLICIT_ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/u
 
 /** Parses one non-empty finite decimal without JavaScript's empty-string coercion. */
@@ -25,9 +25,10 @@ export function parseExplicitGpxTimestamp(source) {
   const offsetHour = match[7] === undefined ? 0 : Number(match[7])
   const offsetMinute = match[8] === undefined ? 0 : Number(match[8])
   if (
-    month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)
+    year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)
     || hour > 23 || minute > 59 || second > 59
-    || offsetHour > 23 || offsetMinute > 59
+    || offsetHour > 14 || offsetMinute > 59
+    || (offsetHour === 14 && offsetMinute !== 0)
   ) return null
   const epoch = Date.parse(normalized)
   return Number.isFinite(epoch) ? new Date(epoch).toISOString() : null

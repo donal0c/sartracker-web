@@ -15,6 +15,7 @@ test.describe('M15 mission review workspace', () => {
 
   test('shows mission details, audit history, and opens archive paths', async ({ page }) => {
     await createMarker(page, { name: 'Boot Print', typeLabel: 'Clue', position: { x: 460, y: 260 } })
+    await createSearchArea(page, 'Finalized Area')
     await injectTrackingSnapshot(page)
 
     await page.getByTestId('mission-finish-btn').click()
@@ -32,6 +33,16 @@ test.describe('M15 mission review workspace', () => {
       .toContain('finalized')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('Mission Finalized')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('Boot Print')
+
+    await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
+    await expect(page.getByTestId('search-operations-workspace')).toContainText('Finalized Area')
+    await expect(page.getByTestId('search-operations-read-only')).toContainText(
+      'finished or finalized mission is read-only',
+    )
+    await expect(page.getByTestId('search-assignment-record')).toBeDisabled()
+    await expect(page.getByTestId('search-pass-record')).toBeDisabled()
+
+    await page.getByRole('button', { name: 'Mission Details', exact: true }).click()
 
     await page.getByTestId(/mission-review-open-path-/).first().click()
     await expect(page.getByTestId('mission-review-path-feedback')).toContainText('Opened')
@@ -279,6 +290,21 @@ async function createMarker(
   await page.getByTestId('marker-save-btn').scrollIntoViewIfNeeded()
   await page.getByTestId('marker-save-btn').click()
   await expect(dialog).toBeHidden()
+}
+
+async function createSearchArea(page: import('@playwright/test').Page, name: string) {
+  await page.getByTestId('drawing-toolbar-expand').click()
+  await page.getByTestId('drawing-tool-search_area').click({ force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x: 500, y: 180 }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x: 650, y: 220 }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x: 540, y: 340 }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({
+    position: { x: 540, y: 340 },
+    button: 'right',
+    force: true,
+  })
+  await page.getByTestId('drawing-name-input').fill(name)
+  await page.getByTestId('drawing-save-btn').click()
 }
 
 async function injectTrackingSnapshot(page: import('@playwright/test').Page) {

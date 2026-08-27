@@ -30,8 +30,10 @@ persistence/completeness, concurrency/finalization and renderer/input-
 containment charters. None returned clean. Every report was centrally
 source-retraced. A later complete four-review wave on
 `aaeaeb769b181f9fd9da1d07b2fa6ae9d4e81e19` also returned not clean and is
-the source of the final seven dispositions below. Accepted findings and
-dispositions are:
+the source of the next seven dispositions below. Broad, persistence and
+renderer rechecks on `afc4880ab104ea0cbe75a3f139575c6f3b8c52f2` then found
+the remaining scalar, workplan and finalized-UI findings; the concurrency slot
+was not spent on an already-invalid head. Accepted findings and dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -140,6 +142,17 @@ dispositions are:
 - canonical programme policy and baton text still described five PRs and PR1:
   policy, branch exception, grouping, workplan and current baton now agree on
   six PRs with PR5 evidence/replay and PR6 archive lifecycle.
+- exponent-form GPX decimals could underflow nonzero values into exact zero,
+  while timezone offsets beyond XML Schema's `±14:00` boundary and year zero
+  could become precise UTC evidence: shared parsing now accepts only the GPX
+  decimal lexical form and calendar-valid explicit timestamps within the
+  source schema boundary, with browser and production-worker regressions;
+- the Search Operations entry form stayed enabled for finished/finalized
+  missions until the backend rejected the write: retained assignments and
+  passes remain visible, but the form is explicitly read-only and directs the
+  operator to governed resume/unlock before recording changes;
+- one canonical workplan row still placed BCP-17 after five PRs: the row now
+  agrees with the six-PR programme sequence.
 
 The corresponding focused regression tests were observed red before the
 production corrections and are retained in the unit, integration, forced-kill,
@@ -151,11 +164,11 @@ substitutes for that wave.
 
 The latest local remediation tree passed:
 
-- full unit: 287 files / 2,371 tests;
+- full unit: 288 files / 2,374 tests;
 - backend: 51 passed / 1 ignored;
 - Chromium: 162/162;
 - visual Playwright: 58/58;
-- independent visual gate: fresh uncached full review passed 68/68 with zero
+- independent visual gate: fresh uncached full review passed 69/69 with zero
   failures or reviewer errors at the original critical/high severities;
 - TypeScript/Vite production build and bundle budgets, ESLint, changed CommonJS
   syntax checks and `git diff --check`;
@@ -168,12 +181,12 @@ arm64/Node v22.22.3 with timezone `Europe/Dublin`:
 
 | Preset | Fixture SHA-256 | Seek / restart | Import dispatch | Current read during import / replay | Event-loop max | Equality |
 | --- | --- | --- | --- | --- | --- | --- |
-| 960k normal envelope | `a3237ce4ca959a188fbfd3ffe80e9037d3c2b4230f70bee600ca65e08bf85099` | 61.42 / 51.94 ms | 2.22 ms | 0.52 / 1.00 ms | 60.13 ms | exact first page |
+| 960k normal envelope | `a3237ce4ca959a188fbfd3ffe80e9037d3c2b4230f70bee600ca65e08bf85099` | 61.34 / 55.48 ms | 3.42 ms | 1.21 / 0.93 ms | 38.24 ms | exact first page |
 | 2m headroom | `46a6f9980c184a856832c0c596cbae18c13e963e13707d10ceedbfee0e527afe` | 73.25 / 67.91 ms | 6.07 ms | 13.60 / 1.00 ms | 47.44 ms | exact first page |
 
 Both presets imported 50,000 GPX points while continuously writing current
-positions. The 960k run recorded 1,102 current writes (57.53 ms maximum,
-1.97 ms p95) and an exact 914,001 near-tail page in 47.76 ms. The 2m headroom
+positions. The 960k run recorded 1,025 current writes (38.18 ms maximum,
+2.41 ms p95) and an exact 914,001 near-tail page in 65.61 ms. The 2m headroom
 run recorded 1,122 writes (42.01 ms maximum, 2.08 ms p95) and exact 1,850,001
 near-tail paging in 75.89 ms. Both passed restart equality. The ordinary seek
 stayed below one second and every measured main dispatch/current-read/open/event-
