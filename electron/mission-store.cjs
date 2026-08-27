@@ -2439,9 +2439,41 @@ function recoverUnsettledGpxImportReceipts(db, migrationTime) {
   const receipts = db.prepare(`SELECT * FROM gpx_import_source_receipts
     WHERE status IN ('pending', 'retained')
     ORDER BY mission_id, batch_id, source_path`).all()
-  const batchIds = new Set()
+  const batchIds = new Set(db.prepare(`SELECT id FROM gpx_import_batches
+    WHERE status = 'running'`).all().map((batch) => batch.id))
+  const interruptedBatchIds = new Set()
   for (const receipt of receipts) {
     batchIds.add(receipt.batch_id)
+    const publishedRevision = receipt.status === 'retained'
+      ? db.prepare(`SELECT 1 FROM gpx_import_revisions AS revisions
+          JOIN gpx_track_imports AS imports
+            ON imports.id = revisions.import_id
+            AND imports.revision_sequence = revisions.revision_sequence
+          LEFT JOIN gpx_import_aliases AS aliases
+            ON aliases.mission_id = revisions.mission_id
+            AND aliases.import_id = revisions.import_id
+            AND aliases.source_path = ?
+          WHERE revisions.mission_id = ? AND revisions.content_sha256 = ?
+            AND revisions.import_state = 'complete'
+            AND imports.import_state = 'complete' AND imports.retired_at IS NULL
+            AND (revisions.source_path = ? OR aliases.source_path IS NOT NULL)
+          LIMIT 1`)
+        .get(
+          receipt.source_path,
+          receipt.mission_id,
+          receipt.content_sha256,
+          receipt.source_path,
+        )
+      : undefined
+    if (publishedRevision !== undefined) {
+      settleGpxImportSourceReceiptWithinTransaction(db, {
+        batchId: receipt.batch_id,
+        missionId: receipt.mission_id,
+        sourcePath: receipt.source_path,
+      }, migrationTime)
+      continue
+    }
+    interruptedBatchIds.add(receipt.batch_id)
     const existing = db.prepare(`SELECT 1 FROM gpx_import_failures
       WHERE batch_id = ? AND source_path = ? LIMIT 1`).get(receipt.batch_id, receipt.source_path)
     if (existing === undefined) {
@@ -2462,11 +2494,23 @@ function recoverUnsettledGpxImportReceipts(db, migrationTime) {
       .run(migrationTime, receipt.batch_id, receipt.source_path)
   }
   for (const batchId of batchIds) {
+    const counts = db.prepare(`SELECT
+        (SELECT COUNT(*) FROM gpx_import_source_receipts
+          WHERE batch_id = ? AND status = 'settled') AS completed_files,
+        (SELECT COUNT(*) FROM gpx_import_failures WHERE batch_id = ?) AS failed_files,
+        (SELECT total_files FROM gpx_import_batches WHERE id = ?) AS total_files`)
+      .get(batchId, batchId, batchId)
+    const completed = Number(counts?.completed_files ?? 0)
+    const failed = Number(counts?.failed_files ?? 0)
+    const total = Number(counts?.total_files ?? 0)
+    const fullyAccounted = completed + failed === total
+    const status = interruptedBatchIds.has(batchId) || !fullyAccounted
+      ? 'interrupted'
+      : failed === 0 ? 'completed' : 'completed_with_failures'
     db.prepare(`UPDATE gpx_import_batches
-      SET status = 'interrupted',
-          failed_files = (SELECT COUNT(*) FROM gpx_import_failures WHERE batch_id = ?),
+      SET status = ?, completed_files = ?, failed_files = ?,
           updated_at = ?, finished_at = ?
-      WHERE id = ?`).run(batchId, migrationTime, migrationTime, batchId)
+      WHERE id = ?`).run(status, completed, failed, migrationTime, migrationTime, batchId)
   }
 }
 
@@ -3437,17 +3481,23 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
   if (mission.status !== 'finalized') {
     throw new Error('Only finalized missions can be unlocked.')
   }
+  const finalizedEpoch = readLatestMissionFinalizedEpoch(db, input.mission_id)
   const adminRoster = typeof readAdminRoster === 'function' ? await readAdminRoster() : []
   if (!adminRoster.map((value) => value.trim()).includes(input.admin_name.trim())) {
-    appendEvent(db, input.mission_id, 'mission_unlock_denied', {
-      admin_name: input.admin_name,
-      reason: input.reason,
-      resulting_status: 'finalized',
+    const deniedTransaction = db.transaction(() => {
+      assertMissionUnlockEpoch(db, input.mission_id, finalizedEpoch)
+      insertEvent(db, input.mission_id, 'mission_unlock_denied', now(), {
+        admin_name: input.admin_name,
+        reason: input.reason,
+        resulting_status: 'finalized',
+      })
     })
+    deniedTransaction.immediate()
     throw new Error('Selected admin is not authorized to unlock finalized missions.')
   }
   const timestamp = now()
   const transaction = db.transaction(() => {
+    assertMissionUnlockEpoch(db, input.mission_id, finalizedEpoch)
     db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finished', input.mission_id)
     insertEvent(db, input.mission_id, 'mission_unlocked', timestamp, {
       admin_name: input.admin_name,
@@ -3457,6 +3507,23 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
   })
   transaction()
   return getMission(db, input.mission_id)
+}
+
+/** Reads the immutable audit identity of the currently finalized mission epoch. */
+function readLatestMissionFinalizedEpoch(db, missionId) {
+  return db.prepare(`SELECT rowid FROM mission_events
+    WHERE mission_id = ? AND event_type = 'mission_finalized'
+    ORDER BY rowid DESC LIMIT 1`).get(missionId)?.rowid ?? null
+}
+
+/** Prevents an authorization decision from being applied to a newer finalization epoch. */
+function assertMissionUnlockEpoch(db, missionId, expectedEpoch) {
+  if (
+    getMission(db, missionId).status !== 'finalized' ||
+    readLatestMissionFinalizedEpoch(db, missionId) !== expectedEpoch
+  ) {
+    throw new Error('Mission finalization changed while admin authorization was checked. Review and retry the unlock.')
+  }
 }
 
 function upsertDevice(db, input) {
@@ -5011,18 +5078,23 @@ function settleGpxImportSourceReceipt(db, input) {
   const timestamp = now()
   const transaction = db.transaction(() => {
     ensureWritableMission(db, input.missionId)
-    const result = db.prepare(`UPDATE gpx_import_source_receipts
-      SET status = 'settled', source_bytes_base64 = NULL, updated_at = ?
-      WHERE batch_id = ? AND mission_id = ? AND source_path = ? AND status = 'retained'`)
-      .run(timestamp, input.batchId, input.missionId, input.sourcePath)
-    if (result.changes !== 1) {
-      throw new Error('GPX source receipt was not retained when the import was published.')
-    }
-    db.prepare(`UPDATE gpx_import_batches
-      SET completed_files = completed_files + 1, updated_at = ? WHERE id = ?`)
-      .run(timestamp, input.batchId)
+    settleGpxImportSourceReceiptWithinTransaction(db, input, timestamp)
   })
   transaction.immediate()
+}
+
+/** Settles one retained source receipt inside its caller's publication transaction. */
+function settleGpxImportSourceReceiptWithinTransaction(db, input, timestamp) {
+  const result = db.prepare(`UPDATE gpx_import_source_receipts
+    SET status = 'settled', source_bytes_base64 = NULL, updated_at = ?
+    WHERE batch_id = ? AND mission_id = ? AND source_path = ? AND status = 'retained'`)
+    .run(timestamp, input.batchId, input.missionId, input.sourcePath)
+  if (result.changes !== 1) {
+    throw new Error('GPX source receipt was not retained when the import was published.')
+  }
+  db.prepare(`UPDATE gpx_import_batches
+    SET completed_files = completed_files + 1, updated_at = ? WHERE id = ?`)
+    .run(timestamp, input.batchId)
 }
 
 /** Records one retained malformed/read-failed GPX source and advances its batch. */
@@ -5198,7 +5270,7 @@ function decodeGpxImportIssueCursor(value) {
 }
 
 /** Stores an exact GPX source as append-only evidence, deduplicated by byte digest. */
-function upsertGpxEvidence(db, input) {
+function upsertGpxEvidence(db, input, publicationReceipt = null) {
   const missionId = input.mission_id
   const timestamp = now()
   const normalizedHash = normalizeGpxContentHash(
@@ -5238,6 +5310,9 @@ function upsertGpxEvidence(db, input) {
           source_path: input.source_path,
           content_sha256: normalizedHash,
         })
+        if (publicationReceipt !== null) {
+          settleGpxImportSourceReceiptWithinTransaction(db, publicationReceipt, timestamp)
+        }
       })
       transaction.immediate()
       return getById(db, 'gpx_track_imports', contentMatch.id, 'GPX import')
@@ -5342,6 +5417,9 @@ function upsertGpxEvidence(db, input) {
           )
       }
     }
+    if (publicationReceipt !== null) {
+      settleGpxImportSourceReceiptWithinTransaction(db, publicationReceipt, timestamp)
+    }
   })
   transaction.immediate()
   return getById(db, 'gpx_track_imports', id, 'GPX import')
@@ -5353,9 +5431,9 @@ function yieldGpxWriterTurn() {
 }
 
 /** Persists large GPX point sets in short writer slices, publishing only after a final fence. */
-async function upsertGpxEvidenceChunked(db, input, chunkSize = 25) {
+async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationReceipt = null) {
   if ((input.points?.length ?? 0) <= chunkSize && (input.rejections?.length ?? 0) <= chunkSize) {
-    return upsertGpxEvidence(db, input)
+    return upsertGpxEvidence(db, input, publicationReceipt)
   }
   const missionId = input.mission_id
   const timestamp = now()
@@ -5386,10 +5464,18 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25) {
       WHERE mission_id = ? AND content_sha256 = ? AND retired_at IS NULL
         AND import_state = 'complete'
       ORDER BY imported_at ASC LIMIT 1`).get(missionId, normalizedHash)
-    if (contentMatch !== undefined) return upsertGpxEvidence(db, { ...input, points: [], rejections: [] })
+    if (contentMatch !== undefined) return upsertGpxEvidence(
+      db,
+      { ...input, points: [], rejections: [] },
+      publicationReceipt,
+    )
   }
   if (existing !== undefined && normalizedHash === existing.content_sha256) {
-    return upsertGpxEvidence(db, { ...input, points: [], rejections: [] })
+    return upsertGpxEvidence(
+      db,
+      { ...input, points: [], rejections: [] },
+      publicationReceipt,
+    )
   }
 
   const id = existing?.id ?? input.id ?? randomUUID()
@@ -5486,7 +5572,13 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25) {
 
   const publish = db.transaction(() => {
     ensureWritableMission(db, missionId)
-    const columns = Object.keys(row)
+    const publicationTimestamp = now()
+    const publishedRow = {
+      ...row,
+      imported_at: existing?.imported_at ?? publicationTimestamp,
+      updated_at: publicationTimestamp,
+    }
+    const columns = Object.keys(publishedRow)
     const assignments = columns
       .filter((column) => !IMMUTABLE_UPSERT_COLUMNS.gpx_track_imports.has(column))
       .map((column) => `${column} = excluded.${column}`)
@@ -5494,13 +5586,17 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25) {
     db.prepare(`INSERT INTO gpx_track_imports (${columns.join(', ')})
       VALUES (${columns.map(() => '?').join(', ')})
       ON CONFLICT(id) DO UPDATE SET ${assignments}`)
-      .run(...columns.map((column) => row[column]))
-    upsertGpxAlias(db, missionId, id, input.source_path, input.file_name, timestamp)
+      .run(...columns.map((column) => publishedRow[column]))
+    if (existing === undefined) {
+      db.prepare(`UPDATE gpx_track_imports SET imported_at = ? WHERE id = ?`)
+        .run(publicationTimestamp, id)
+    }
+    upsertGpxAlias(db, missionId, id, input.source_path, input.file_name, publicationTimestamp)
     const auditEventId = insertEvent(
       db,
       missionId,
       existing === undefined ? 'gpx_import_created' : 'gpx_import_updated',
-      timestamp,
+      publicationTimestamp,
       {
         gpx_import_id: id,
         source_path: input.source_path,
@@ -5511,9 +5607,16 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25) {
       },
     )
     db.prepare(`UPDATE gpx_import_revisions
-      SET import_state = 'complete', audit_event_id = ?
+      SET import_state = 'complete', recorded_at = ?, audit_event_id = ?
       WHERE import_id = ? AND revision_sequence = ?`)
-      .run(auditEventId, id, revisionSequence)
+      .run(publicationTimestamp, auditEventId, id, revisionSequence)
+    if (publicationReceipt !== null) {
+      settleGpxImportSourceReceiptWithinTransaction(
+        db,
+        publicationReceipt,
+        publicationTimestamp,
+      )
+    }
   })
   publish.immediate()
   return getById(db, 'gpx_track_imports', id, 'GPX import')

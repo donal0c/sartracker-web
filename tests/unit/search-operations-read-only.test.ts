@@ -41,7 +41,7 @@ describe('search operations finalized-mission containment [DON-279]', () => {
     })))
 
     expect(host.querySelector('[data-testid="search-operations-read-only"]')?.textContent)
-      .toMatch(/finished or finalized.*read-only.*resume or unlock/i)
+      .toMatch(/finished or finalized.*permanently read-only.*retained.*visible/i)
     expect((host.querySelector('[data-testid="search-operation-entry"] fieldset') as HTMLFieldSetElement).disabled)
       .toBe(true)
     expect((host.querySelector('[data-testid="search-assignment-record"]') as HTMLButtonElement).disabled)

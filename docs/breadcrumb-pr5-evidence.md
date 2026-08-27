@@ -38,7 +38,11 @@ was not spent on an already-invalid head. Broad review on
 nonzero decimal underflow path; persistence returned clean on that head, but
 its affected scalar recheck is required again. Concurrency review on the same
 head found that independent replay SELECTs and later page workers could observe
-different WAL states. Accepted findings and dispositions are:
+different WAL states. Fresh broad, persistence and concurrency reviews on
+`f87d75873f11d12d249e3afbc482703b25f99ff4` then found a chunked-GPX
+knowledge-time leak, a published-evidence receipt crash gap, a stale admin
+unlock authorization race and an impossible Search Operations correction
+instruction. That head was rejected. Accepted findings and dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -184,10 +188,27 @@ different WAL states. Accepted findings and dispositions are:
   source schema boundary, with browser and production-worker regressions;
 - the Search Operations entry form stayed enabled for finished/finalized
   missions until the backend rejected the write: retained assignments and
-  passes remain visible, but the form is explicitly read-only and directs the
-  operator to governed resume/unlock before recording changes;
+  passes remain visible, but the form is explicitly and permanently read-only;
+  truthful copy says that new records require an active mission and does not
+  claim that unlocking makes finished evidence writable;
 - one canonical workplan row still placed BCP-17 after five PRs: the row now
-  agrees with the six-PR programme sequence.
+  agrees with the six-PR programme sequence;
+- chunked GPX revisions used their staging timestamp as `recorded_at`, so a
+  fresh historical re-seek could include evidence published after T: revision,
+  canonical-import, alias and audit publication clocks are now assigned in the
+  final immediate transaction, with a real staged-import regression proving a
+  T between stage and publish remains unchanged;
+- GPX publication and retained-source receipt settlement were separate
+  transactions, so a crash between them produced a false unpublished-evidence
+  failure on restart: worker publication now settles the exact receipt and
+  batch count in the same transaction. Startup closes fully accounted running
+  batches and reconciles older unsettled receipts only against the active
+  canonical import's current complete revision, exact hash and canonical or
+  active alias path; retired and superseded revisions remain explicit failures;
+- admin unlock authorization could outlive another unlock and re-finalization,
+  reopening a newer finalized snapshot: authorized and denied paths now bind
+  the roster decision to the exact `mission_finalized` audit epoch and recheck
+  it inside the committing transaction.
 
 The corresponding focused regression tests were observed red before the
 production corrections and are retained in the unit, integration, forced-kill,
@@ -199,7 +220,7 @@ substitutes for that wave.
 
 The latest local remediation tree passed:
 
-- full unit: 288 files / 2,388 tests with eight workers; all timing-gate tests
+- full unit: 288 files / 2,393 tests with eight workers; all timing-gate tests
   that exceeded thresholds in oversubscribed default-worker runs passed again
   in their focused 178-test set;
 - backend: 51 passed / 1 ignored;

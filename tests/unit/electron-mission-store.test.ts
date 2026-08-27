@@ -3651,6 +3651,57 @@ describe('electron mission store', () => {
     ).toEqual([firstFinalize.archive.archive_path, secondFinalize.archive.archive_path])
   })
 
+  it('rejects a stale admin unlock after another unlock and re-finalization [DON-278]', async () => {
+    let releaseFirstRoster = () => undefined
+    let releaseSecondRoster = () => undefined
+    let rosterReads = 0
+    let signalBothReads = () => undefined
+    const bothReads = new Promise<void>((resolve) => { signalBothReads = resolve })
+    const firstRoster = new Promise<readonly string[]>((resolve) => {
+      releaseFirstRoster = () => resolve(['Duty Admin'])
+    })
+    const secondRoster = new Promise<readonly string[]>((resolve) => {
+      releaseSecondRoster = () => resolve(['Duty Admin'])
+    })
+    store = await createStore({
+      readAdminRoster: async () => {
+        rosterReads += 1
+        if (rosterReads === 2) signalBothReads()
+        return rosterReads === 1 ? firstRoster : secondRoster
+      },
+    })
+    const mission = await store.createMission({ name: 'Concurrent Unlock Mission' })
+    await store.finishMission(mission.id)
+    await store.finalizeMission(mission.id)
+
+    const unlocks = [
+      store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'First correction request.',
+      }),
+      store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Second correction request.',
+      }),
+    ]
+    await bothReads
+    releaseFirstRoster()
+    await expect(unlocks[0]).resolves.toMatchObject({ status: 'finished' })
+    await expect(store.finalizeMission(mission.id)).resolves.toMatchObject({
+      mission: { status: 'finalized' },
+    })
+    releaseSecondRoster()
+
+    await expect(unlocks[1]).rejects.toThrow(/finalization changed|only finalized/iu)
+    const unlockEvents = (await store.listMissionEvents(mission.id)).filter(
+      (event) => event.event_type === 'mission_unlocked',
+    )
+    expect(unlockEvents).toHaveLength(1)
+    await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
+  })
+
   it('createMissionArchive builds an archive for a finished mission (DON-162 / DON-34)', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Direct Archive Mission' })

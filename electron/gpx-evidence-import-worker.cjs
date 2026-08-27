@@ -9,7 +9,6 @@ const {
   recordGpxImportFailure,
   recordGpxImportSourceReceipt,
   retainGpxImportSourceBytes,
-  settleGpxImportSourceReceipt,
   startGpxImportBatch,
   upsertGpxEvidenceChunked,
 } = require('./mission-store.cjs')
@@ -78,8 +77,7 @@ async function run() {
           timing_class: parsed.timingClass,
           points: parsed.points,
           rejections: parsed.rejections,
-        })
-        settleGpxImportSourceReceipt(database, {
+        }, 25, {
           batchId: workerData.batchId,
           missionId: workerData.missionId,
           sourcePath: normalizedPath,

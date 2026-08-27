@@ -37,7 +37,7 @@ test.describe('M15 mission review workspace', () => {
     await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
     await expect(page.getByTestId('search-operations-workspace')).toContainText('Finalized Area')
     await expect(page.getByTestId('search-operations-read-only')).toContainText(
-      'finished or finalized mission is read-only',
+      'finished or finalized mission is permanently read-only',
     )
     await expect(page.getByTestId('search-assignment-record')).toBeDisabled()
     await expect(page.getByTestId('search-pass-record')).toBeDisabled()

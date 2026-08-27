@@ -134,7 +134,7 @@ Report PASS or FAIL for each item and overall.`,
       severity: 'critical',
       verificationPrompt: `Verify the finalized Search Operations surface:
 1. It must explicitly say the finished or finalized mission is read-only.
-2. It must direct the operator to governed resume or unlock before recording changes.
+2. It must state truthfully that retained Search Operations records remain permanently read-only.
 3. The entry controls must look disabled and must not present an enabled Record action.
 Report PASS or FAIL for each item and overall.`,
       playwrightAssertions: [

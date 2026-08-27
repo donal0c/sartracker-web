@@ -95,12 +95,19 @@ const {
   settleGpxImportSourceReceipt,
   startGpxImportBatch,
   upsertGpxEvidence,
+  upsertGpxEvidenceChunked,
 } = require('../../electron/mission-store.cjs') as {
   readonly CURRENT_SCHEMA_VERSION: number
   readonly upsertGpxEvidence: (
     db: InstanceType<typeof Database>,
     input: Readonly<Record<string, unknown>>,
   ) => Readonly<Record<string, unknown>>
+  readonly upsertGpxEvidenceChunked: (
+    db: InstanceType<typeof Database>,
+    input: Readonly<Record<string, unknown>>,
+    chunkSize?: number,
+    publicationReceipt?: Readonly<Record<string, unknown>>,
+  ) => Promise<Readonly<Record<string, unknown>>>
   readonly startGpxImportBatch: (
     db: InstanceType<typeof Database>,
     input: Readonly<Record<string, unknown>>,
@@ -569,6 +576,177 @@ describe('mission evidence versioning [DON-277]', () => {
       reason: expect.stringMatching(/interrupted/i),
     })
     recoveredDb.close()
+  })
+
+  it('records chunked GPX evidence at publication so replay before publication stays unchanged [DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX Publication Knowledge Time' })
+    const db = openDatabase(await databasePath())
+    const points = Array.from({ length: 200 }, (_, pointIndex) => ({
+      segment_index: 0,
+      point_index: pointIndex,
+      track_name: 'Delayed route',
+      lat: 52 + pointIndex / 100_000,
+      lon: -9.7,
+      elevation: null,
+      timestamp: '2026-08-27T08:00:00Z',
+    }))
+
+    const publication = upsertGpxEvidenceChunked(db, gpxInput(mission.id, {
+      source_path: '/field/delayed-route.gpx',
+      file_name: 'delayed-route.gpx',
+      display_name: 'Delayed route',
+      points,
+    }), 1)
+    const staged = db.prepare(`SELECT recorded_at FROM gpx_import_revisions
+      WHERE mission_id = ? AND import_state = 'staging'`).get(mission.id)
+    expect(staged).toMatchObject({ recorded_at: expect.any(String) })
+    const selectedTime = new Date(Date.parse(String(staged?.recorded_at)) + 1).toISOString()
+
+    await publication
+    const replay = await store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime,
+      timezone: 'Europe/Dublin',
+      trackLimit: 1_000,
+    })
+    expect(replay).toMatchObject({ totalTrackCount: 0, staticGpxPointCount: 0 })
+    const published = db.prepare(`SELECT recorded_at FROM gpx_import_revisions
+      WHERE mission_id = ? AND import_state = 'complete'`).get(mission.id)
+    expect(Date.parse(String(published?.recorded_at))).toBeGreaterThan(Date.parse(selectedTime))
+    db.close()
+  })
+
+  it('atomically settles the retained source receipt with GPX publication [DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Atomic GPX Receipt Mission' })
+    const db = openDatabase(await databasePath())
+    startGpxImportBatch(db, {
+      batchId: 'atomic-publication-batch',
+      missionId: mission.id,
+      totalFiles: 1,
+    })
+    recordGpxImportSourceReceipt(db, {
+      batchId: 'atomic-publication-batch',
+      missionId: mission.id,
+      sourcePath: '/field/atomic.gpx',
+      fileName: 'atomic.gpx',
+    })
+    const sourceBytesBase64 = 'PGdweD5hdG9taWM8L2dweD4='
+    retainGpxImportSourceBytes(db, {
+      batchId: 'atomic-publication-batch',
+      missionId: mission.id,
+      sourcePath: '/field/atomic.gpx',
+      contentSha256: digestBase64(sourceBytesBase64),
+      sourceBytesBase64,
+    })
+
+    await upsertGpxEvidenceChunked(db, gpxInput(mission.id, {
+      source_path: '/field/atomic.gpx',
+      file_name: 'atomic.gpx',
+      source_bytes_base64: sourceBytesBase64,
+      content_sha256: digestBase64(sourceBytesBase64),
+    }), 25, {
+      batchId: 'atomic-publication-batch',
+      missionId: mission.id,
+      sourcePath: '/field/atomic.gpx',
+    })
+    expect(db.prepare(`SELECT status, source_bytes_base64 FROM gpx_import_source_receipts
+      WHERE batch_id = ? AND source_path = ?`).get('atomic-publication-batch', '/field/atomic.gpx'))
+      .toMatchObject({ status: 'settled', source_bytes_base64: null })
+    expect(db.prepare(`SELECT completed_files, failed_files FROM gpx_import_batches WHERE id = ?`)
+      .get('atomic-publication-batch')).toMatchObject({ completed_files: 1, failed_files: 0 })
+    db.close()
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    const recovered = openDatabase(await databasePath())
+    expect(recovered.prepare(`SELECT status FROM gpx_import_batches WHERE id = ?`)
+      .get('atomic-publication-batch')).toMatchObject({ status: 'completed' })
+    expect(recovered.prepare(`SELECT COUNT(*) AS count FROM gpx_import_failures WHERE batch_id = ?`)
+      .get('atomic-publication-batch')).toMatchObject({ count: 0 })
+    recovered.close()
+  })
+
+  it('does not reconcile an unsettled receipt against retired GPX evidence [DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Retired GPX Receipt Mission' })
+    const imported = await store.upsertGpxImport(gpxInput(mission.id, {}))
+    await store.deleteGpxImport(String(imported.id))
+    const db = openDatabase(await databasePath())
+    startGpxImportBatch(db, {
+      batchId: 'retired-evidence-batch',
+      missionId: mission.id,
+      totalFiles: 1,
+    })
+    recordGpxImportSourceReceipt(db, {
+      batchId: 'retired-evidence-batch',
+      missionId: mission.id,
+      sourcePath: '/field/route.gpx',
+      fileName: 'route.gpx',
+    })
+    retainGpxImportSourceBytes(db, {
+      batchId: 'retired-evidence-batch',
+      missionId: mission.id,
+      sourcePath: '/field/route.gpx',
+      contentSha256: digestBase64('PGdweD5maXJzdDwvZ3B4Pg=='),
+      sourceBytesBase64: 'PGdweD5maXJzdDwvZ3B4Pg==',
+    })
+    db.close()
+    store.close()
+
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    const recovered = openDatabase(await databasePath())
+    expect(recovered.prepare(`SELECT status FROM gpx_import_source_receipts
+      WHERE batch_id = ?`).get('retired-evidence-batch')).toMatchObject({ status: 'failed' })
+    expect(recovered.prepare(`SELECT status, failed_files FROM gpx_import_batches
+      WHERE id = ?`).get('retired-evidence-batch'))
+      .toMatchObject({ status: 'interrupted', failed_files: 1 })
+    expect(recovered.prepare(`SELECT reason FROM gpx_import_failures
+      WHERE batch_id = ?`).get('retired-evidence-batch'))
+      .toMatchObject({ reason: expect.stringMatching(/before evidence was published/iu) })
+    recovered.close()
+  })
+
+  it('does not reconcile against a superseded hash on an active GPX import [DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Superseded GPX Receipt Mission' })
+    await store.upsertGpxImport(gpxInput(mission.id, {}))
+    const replacementBytes = 'PGdweD5zZWNvbmQ8L2dweD4='
+    await store.upsertGpxImport(gpxInput(mission.id, {
+      content_sha256: digestBase64(replacementBytes),
+      source_bytes_base64: replacementBytes,
+    }))
+    const db = openDatabase(await databasePath())
+    startGpxImportBatch(db, {
+      batchId: 'superseded-evidence-batch',
+      missionId: mission.id,
+      totalFiles: 1,
+    })
+    recordGpxImportSourceReceipt(db, {
+      batchId: 'superseded-evidence-batch',
+      missionId: mission.id,
+      sourcePath: '/field/route.gpx',
+      fileName: 'route.gpx',
+    })
+    retainGpxImportSourceBytes(db, {
+      batchId: 'superseded-evidence-batch',
+      missionId: mission.id,
+      sourcePath: '/field/route.gpx',
+      contentSha256: digestBase64('PGdweD5maXJzdDwvZ3B4Pg=='),
+      sourceBytesBase64: 'PGdweD5maXJzdDwvZ3B4Pg==',
+    })
+    db.close()
+    store.close()
+
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    const recovered = openDatabase(await databasePath())
+    expect(recovered.prepare(`SELECT status FROM gpx_import_source_receipts
+      WHERE batch_id = ?`).get('superseded-evidence-batch')).toMatchObject({ status: 'failed' })
+    expect(recovered.prepare(`SELECT status, failed_files FROM gpx_import_batches
+      WHERE id = ?`).get('superseded-evidence-batch'))
+      .toMatchObject({ status: 'interrupted', failed_files: 1 })
+    recovered.close()
   })
 
   it('recovers pre-read and retained-source receipts as explicit durable failures [DON-274]', async () => {

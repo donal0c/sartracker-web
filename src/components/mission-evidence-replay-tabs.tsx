@@ -205,7 +205,7 @@ export function SearchOperationsTab(props: {
 
   return <div className="space-y-4" data-testid="search-operations-workspace">
     <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5"><p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Stable search operations</p><p className="mt-2 text-sm text-stone-300">Areas keep one stable identity across revisions and repeated assignments. Pass outcomes are coordinator-entered declarations; coverage is advisory only.</p></section>
-    {props.readOnly ? <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="search-operations-read-only">This finished or finalized mission is read-only. Retained assignments and passes remain visible; resume or unlock the mission through governance before recording changes.</p> : null}
+    {props.readOnly ? <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="search-operations-read-only">This finished or finalized mission is permanently read-only. Retained assignments and passes remain visible for evidence review; new records require an active mission.</p> : null}
     {props.operations.areas.length > 0 ? <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="search-operation-entry">
       <fieldset
         aria-disabled={props.readOnly}
