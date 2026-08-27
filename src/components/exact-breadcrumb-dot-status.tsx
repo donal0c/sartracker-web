@@ -1,4 +1,5 @@
 import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcrumb-dot-controller'
+import { formatOperatorLocalTimestamp } from '../features/tracking/operator-time'
 
 type ExactBreadcrumbDotStatusProps = {
   readonly state: ExactBreadcrumbDotState | {
@@ -12,6 +13,7 @@ type ExactBreadcrumbDotStatusProps = {
   }
   readonly onEarlier: () => void
   readonly onLater: () => void
+  readonly timeZone?: string
 }
 
 /** Renders the explicit scope and navigation state for exact breadcrumb dots. */
@@ -42,6 +44,18 @@ export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
     return null
   }
 
+  const formattedFrom = formatOperatorLocalTimestamp(
+    props.state.fromTimestamp,
+    props.timeZone === undefined ? {} : { timeZone: props.timeZone },
+  )
+  const formattedTo = formatOperatorLocalTimestamp(
+    props.state.toTimestamp,
+    props.timeZone === undefined ? {} : { timeZone: props.timeZone },
+  )
+  const formattedRange = props.state.fromTimestamp === props.state.toTimestamp
+    ? formattedFrom
+    : `${formattedFrom} to ${formattedTo}`
+
   return (
     <div className="mb-4 border-l-4 border-l-sky-400 bg-sky-400/10 px-3 py-2 text-xs font-medium leading-relaxed text-sky-100">
       <p data-testid="exact-breadcrumb-dot-page-summary">
@@ -49,7 +63,7 @@ export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
         {props.state.totalPositionCount.toLocaleString()}
         {props.state.fromTimestamp === null || props.state.toTimestamp === null
           ? null
-          : ` — ${props.state.fromTimestamp} to ${props.state.toTimestamp}`}
+          : ` — ${formattedRange}`}
       </p>
       <div className="mt-2 flex gap-2">
         <button

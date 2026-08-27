@@ -115,6 +115,7 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
+    await expect.poll(server.getSuccessfulSessionRequestCount).toBeGreaterThanOrEqual(2)
 
     server.setAvailable(false)
     await expect(page.getByTestId('tracking-status')).toContainText('OFFLINE MODE', {
@@ -464,6 +465,7 @@ async function routeTraccarSuccess(
 
 async function routeControllableTraccar(page: import('@playwright/test').Page) {
   let available = true
+  let successfulSessionRequestCount = 0
   const fulfill = async (
     route: import('@playwright/test').Route,
     body: unknown,
@@ -477,6 +479,7 @@ async function routeControllableTraccar(page: import('@playwright/test').Page) {
   }
 
   await page.route('http://traccar.test:8082/api/session', async (route) => {
+    if (available) successfulSessionRequestCount += 1
     await fulfill(route, { id: 4, email: 'apiuser' })
   })
   await page.route('http://traccar.test:8082/api/devices', async (route) => {
@@ -507,6 +510,7 @@ async function routeControllableTraccar(page: import('@playwright/test').Page) {
     setAvailable: (next: boolean) => {
       available = next
     },
+    getSuccessfulSessionRequestCount: () => successfulSessionRequestCount,
   }
 }
 

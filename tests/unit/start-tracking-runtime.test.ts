@@ -1111,6 +1111,59 @@ describe('startTrackingRuntime', () => {
     )
   })
 
+  it('keeps time-unverified current locations visible but outside mission persistence [DON-267] [SAR-QA-021]', async () => {
+    const addPositionsBulk = vi.fn().mockResolvedValue(undefined)
+    const applySnapshot = vi.fn()
+    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+    const verifiedCurrent = { ...SNAPSHOT.positions[0]!, id: 'verified-current' }
+    const unverifiedCurrent = {
+      ...SNAPSHOT.positions[1]!,
+      id: 'unverified-current',
+      timestamp_source: 'device' as const,
+      fix_time_unverified: true,
+    }
+    const verifiedHistory = { ...SNAPSHOT.breadcrumbs[0]!, id: 'verified-history' }
+    const unverifiedHistory = {
+      ...SNAPSHOT.breadcrumbs[1]!,
+      id: 'unverified-history',
+      timestamp_source: 'server' as const,
+      fix_time_unverified: true,
+    }
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPositionsBulk,
+      }),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      missionModelEnabled: false,
+      writeCache: false,
+    })
+
+    const operationalSnapshot: TrackingSnapshot = {
+      devices: SNAPSHOT.devices,
+      positions: [verifiedCurrent, unverifiedCurrent],
+      breadcrumbs: [verifiedHistory, unverifiedHistory],
+      rawBreadcrumbsForPersistence: [verifiedHistory, unverifiedHistory],
+    }
+    await pollerHooks?.onSnapshot(operationalSnapshot)
+
+    expect(applySnapshot).toHaveBeenCalledWith(operationalSnapshot)
+    const persistedIds = addPositionsBulk.mock.calls[0]?.[0].positions.map(
+      (position: { readonly source_position_id: string }) => position.source_position_id,
+    )
+    expect(persistedIds).toEqual(['verified-history', 'verified-current'])
+  })
+
   it('batches all device upserts into a single upsertDevicesBulk call when available [DON-240]', async () => {
     // Regression guard for the beta.9 field freeze: at synchronous=FULL, one fsync per commit,
     // a per-device upsert loop meant N fsync'd writes on the main process every poll. With many

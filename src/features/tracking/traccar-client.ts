@@ -1,4 +1,5 @@
 import {
+  normalizeTraccarBreadcrumbPosition,
   normalizeTraccarDevice,
   normalizeTraccarGroup,
   normalizeTraccarPosition,
@@ -356,7 +357,10 @@ export function createTraccarClient(
         emptyMessage: `No valid Traccar breadcrumb rows were returned for device ${deviceId}.`,
         warningMessage: 'Dropped malformed Traccar breadcrumb row.',
         logger,
-        normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
+        normalize: (position) => normalizeTraccarBreadcrumbPosition(
+          position as RawPositionInput,
+          'live',
+        ),
       }).accepted
     },
   }

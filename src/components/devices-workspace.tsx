@@ -332,7 +332,11 @@ function DevicesWorkspaceContent(props: {
                 <dl className="space-y-3 text-sm text-stone-300">
                   <Detail label="Status" value={selectedRow.status} />
                   <Detail label="Last Seen" value={selectedRow.lastSeenDisplay} />
-                  <Detail label="Fix Time" value={selectedRow.fixTimeDisplay} />
+                  <Detail
+                    label="Fix Time"
+                    value={selectedRow.fixTimeDisplay}
+                    testId={`device-fix-time-${selectedRow.deviceId}`}
+                  />
                   <Detail label="Source" value={selectedRow.sourceDisplay} />
                   {selectedRow.ingestWarning === null ? null : (
                     <Detail label="Position Data" value={selectedRow.ingestWarning} />
@@ -607,11 +611,20 @@ function DeviceRow(props: {
   )
 }
 
-function Detail(props: { readonly label: string; readonly value: string }) {
+function Detail(props: {
+  readonly label: string
+  readonly value: string
+  readonly testId?: string
+}) {
   return (
     <div className="flex items-center justify-between gap-4">
       <dt className="sar-meta-label">{props.label}</dt>
-      <dd className="font-mono text-right text-stone-100">{props.value}</dd>
+      <dd
+        className="font-mono text-right text-stone-100"
+        data-testid={props.testId}
+      >
+        {props.value}
+      </dd>
     </div>
   )
 }

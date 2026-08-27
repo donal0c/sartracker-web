@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 test.describe('BCP-01 current-position ingest health', () => {
+  test.use({ timezoneId: 'Europe/Dublin' })
+
   test.beforeEach(async ({ page }) => {
     await page.goto('/?missionHarness=1')
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
@@ -38,7 +40,7 @@ test.describe('BCP-01 current-position ingest health', () => {
           speed: 1,
           battery: 85,
           accuracy: 8,
-          timestamp: new Date().toISOString(),
+          timestamp: '2026-08-22T15:10:17.000Z',
           timestamp_source: 'server',
           fix_time_unverified: true,
           source: 'osmand',
@@ -74,6 +76,9 @@ test.describe('BCP-01 current-position ingest health', () => {
       'Position row rejected',
     )
     await expect(page.getByTestId('device-source-alpha')).toContainText('Fix time unverified')
+    await expect(page.getByTestId('device-fix-time-alpha')).toHaveText(
+      '22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin)',
+    )
   })
 
   test('clears rejection and unverified-time warnings after a clean verified poll [DON-267]', async ({

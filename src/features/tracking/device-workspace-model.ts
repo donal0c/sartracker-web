@@ -5,6 +5,7 @@ import {
   type CurrentPositionIngestHealthSummary,
 } from './ingest-health'
 import type { DeviceStationaryAttention } from './stationary-attention-store'
+import { formatOperatorLocalTimestamp } from './operator-time'
 
 export type DeviceWorkspaceRow = {
   readonly deviceId: string
@@ -79,7 +80,7 @@ export function buildDeviceWorkspaceRows(
         dataOrigin: position?.data_origin ?? null,
         lastSeen: device.last_seen,
         lastSeenDisplay: formatTimestamp(device.last_seen),
-        fixTimeDisplay: formatTimestamp(position?.timestamp ?? null),
+        fixTimeDisplay: formatOperatorLocalTimestamp(position?.timestamp ?? null),
         sourceDisplay:
           position === null
             ? 'No fix'

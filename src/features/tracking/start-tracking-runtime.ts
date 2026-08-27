@@ -38,6 +38,10 @@ import type {
 import { runParticipantBackfillPass } from '../participants/participant-backfill-runtime'
 import { createOperationalPositionRetention } from '../participants/operational-position-retention'
 import type { IngestEvidenceLossReason } from '../../domain/tracking-ingest-evidence'
+import {
+  filterCanonicalFixTimeEvidencePositions,
+  filterCanonicalFixTimeEvidenceSnapshot,
+} from './canonical-fix-time-evidence'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -1252,10 +1256,11 @@ export async function startTrackingRuntime(
 
   /** Applies evidence windows independently from immediate current-position visibility. */
   function filterMissionEvidenceSnapshot(snapshot: TrackingSnapshot): TrackingSnapshot {
-    if (dependencies.missionModelEnabled !== true) return snapshot
+    const canonicalSnapshot = filterCanonicalFixTimeEvidenceSnapshot(snapshot)
+    if (dependencies.missionModelEnabled !== true) return canonicalSnapshot
     const scope = dependencies.readParticipationScope?.()
-    return scope?.filterEvidenceSnapshot(snapshot, now().toISOString()) ?? {
-      ...snapshot,
+    return scope?.filterEvidenceSnapshot(canonicalSnapshot, now().toISOString()) ?? {
+      ...canonicalSnapshot,
       devices: [],
       positions: [],
       breadcrumbs: [],
@@ -1269,8 +1274,9 @@ export async function startTrackingRuntime(
     readonly positions: readonly NormalizedTrackingPosition[]
     readonly historyFrom: string | null
   } {
+    const canonicalPositions = filterCanonicalFixTimeEvidencePositions(input.positions)
     if (dependencies.missionModelEnabled !== true) {
-      return { input, positions: input.positions, historyFrom: input.historyFrom }
+      return { input, positions: canonicalPositions, historyFrom: input.historyFrom }
     }
     if (readParticipationScopeStatus() !== 'ready') {
       throw new Error(
@@ -1285,7 +1291,7 @@ export async function startTrackingRuntime(
     }
     return {
       input,
-      positions: input.positions.filter((position) =>
+      positions: canonicalPositions.filter((position) =>
         scope.includesAt(position.device_id, position.timestamp)),
       historyFrom: scope.firstEvidenceTimestampAtOrAfter(
         input.deviceId,

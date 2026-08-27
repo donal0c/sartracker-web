@@ -436,6 +436,41 @@ describe('traccar client', () => {
     )
   })
 
+  it('rejects device/server-time substitution from exact breadcrumb history [DON-267] [SAR-QA-021]', async () => {
+    const logger = { warn: vi.fn() }
+    const fetchFn: TraccarFetch = vi.fn(async () =>
+      createJsonResponse([
+        breadcrumbsFixture[0],
+        {
+          ...breadcrumbsFixture[1],
+          fixTime: undefined,
+          deviceTime: '2026-04-06T10:15:00.000Z',
+          serverTime: '2026-04-06T10:15:01.000Z',
+        },
+      ]),
+    )
+    const client = createTraccarClient(
+      { baseUrl: 'http://test:8082', logger },
+      fetchFn,
+    )
+
+    await expect(client.getBreadcrumbs(
+      '1',
+      new Date('2026-04-06T10:00:00.000Z'),
+      new Date('2026-04-06T10:30:00.000Z'),
+    )).resolves.toEqual([
+      expect.objectContaining({ id: '200', timestamp_source: 'fix' }),
+    ])
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Dropped malformed Traccar breadcrumb row.',
+      expect.objectContaining({
+        deviceId: '1',
+        rowIndex: 1,
+        reason: expect.stringMatching(/fixTime.*required/i),
+      }),
+    )
+  })
+
   it('fails a device breadcrumb window when every returned row is malformed [DON-260]', async () => {
     const logger = { warn: vi.fn() }
     const fetchFn: TraccarFetch = vi.fn(async () =>

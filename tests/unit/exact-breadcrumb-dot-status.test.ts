@@ -23,6 +23,7 @@ type ExactDotStatusProps = {
     | { readonly status: 'unavailable'; readonly message: string }
   readonly onEarlier: () => void
   readonly onLater: () => void
+  readonly timeZone?: string
 }
 
 let root: Root | null = null
@@ -38,7 +39,7 @@ afterEach(() => {
 })
 
 describe('ExactBreadcrumbDotStatus', () => {
-  it('shows an explicit exact-page count/range with Earlier and Later controls', async () => {
+  it('shows canonical fix times as explicit local operator time with offset [DON-267] [SAR-QA-021]', async () => {
     const ExactBreadcrumbDotStatus = await loadStatusComponent()
     const onEarlier = vi.fn()
     const onLater = vi.fn()
@@ -47,17 +48,18 @@ describe('ExactBreadcrumbDotStatus', () => {
         status: 'ready',
         totalPositionCount: 10_001,
         pagePositionCount: 10_000,
-        fromTimestamp: '2026-08-08T00:00:00.000Z',
-        toTimestamp: '2026-08-09T12:00:00.000Z',
+        fromTimestamp: '2026-08-22T15:10:17.000Z',
+        toTimestamp: '2026-08-22T15:10:17.000Z',
         hasEarlier: true,
         hasLater: false,
       },
       onEarlier,
       onLater,
+      timeZone: 'Europe/Dublin',
     }))
 
     expect(getText('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBe(
-      'Exact fix inspection — showing 10,000 of 10,001 — 2026-08-08T00:00:00.000Z to 2026-08-09T12:00:00.000Z',
+      'Exact fix inspection — showing 10,000 of 10,001 — 22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin)',
     )
     const earlier = getButton('[data-testid="exact-breadcrumb-dots-earlier"]')
     const later = getButton('[data-testid="exact-breadcrumb-dots-later"]')
@@ -159,7 +161,7 @@ describe('ExactBreadcrumbDotStatus', () => {
     ))
     await vi.waitFor(() => expect(getText(
       '[data-testid="exact-breadcrumb-dot-page-summary"]',
-    )).toContain(earlier.fromTimestamp))
+    )).toContain('GMT'))
     expect(queryPage).toHaveBeenCalledTimes(2)
   })
 })

@@ -28,6 +28,8 @@ const POSITION: NormalizedTrackingPosition = {
   battery: null,
   accuracy: null,
   timestamp: '2026-04-06T10:59:00.000Z',
+  timestamp_source: 'fix',
+  fix_time_unverified: false,
   source: 'traccar',
   data_origin: 'live',
   cache_age_seconds: null,

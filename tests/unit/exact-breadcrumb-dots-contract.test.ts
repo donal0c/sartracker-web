@@ -88,6 +88,13 @@ describe('[DOTS-CONTRACT] exact Breadcrumb Dots inspection and evidence contract
       const expected = seedContractMission(database)
       const pages = readChronologicalPages(database)
 
+      expect(expected).toHaveLength(37_479)
+      expect([...pages].reverse().map((page) => page.pagePositionCount)).toEqual([
+        10_000,
+        10_000,
+        10_000,
+        7_479,
+      ])
       assertExactContract(pages, expected)
       await assertControllerAndGeoJsonContract(database, pages.at(-1)!)
     } finally {
@@ -181,7 +188,8 @@ function seedContractMission(database: ReturnType<typeof createContractDatabase>
       new Date(missionStartMs - 1).toISOString(),
     )
     for (const [deviceIndex, deviceId] of ACTIVE_DEVICE_IDS.entries()) {
-      for (let ordinal = 0; ordinal < 10_003; ordinal += 1) {
+      const deviceFixCount = deviceIndex === 0 ? 18_740 : 18_739
+      for (let ordinal = 0; ordinal < deviceFixCount; ordinal += 1) {
         const sourcePositionId = `${deviceId}-source-${String(ordinal).padStart(5, '0')}`
         const position: StoredExactDot = {
           id: `${deviceId}-local-${ordinal}`,

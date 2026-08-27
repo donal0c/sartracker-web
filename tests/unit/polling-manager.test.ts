@@ -958,6 +958,68 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('publishes a second current poll on cadence while incremental history stays unresolved [DON-267] [SAR-QA-002]', async () => {
+    const unresolvedHistory = createDeferred<readonly NormalizedTrackingPosition[]>()
+    const client = createClient({
+      getBreadcrumbs: vi.fn().mockReturnValue(unresolvedHistory.promise),
+    })
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-08-27T07:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
+    expect(client.getBreadcrumbs).toHaveBeenCalledTimes(NORMALIZED_DEVICES.length)
+
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    expect(client.getBreadcrumbs).toHaveBeenCalledTimes(NORMALIZED_DEVICES.length)
+    expect(onSnapshot.mock.calls.filter((call) =>
+      call[0].positions.length === NORMALIZED_POSITIONS.length,
+    )).toHaveLength(2)
+    poller.stop()
+  })
+
+  it('does not let older history completion overwrite a newer current-position failure [DON-267]', async () => {
+    const unresolvedHistory = createDeferred<readonly NormalizedTrackingPosition[]>()
+    const client = createClient({
+      getCurrentPositions: vi.fn()
+        .mockResolvedValueOnce(NORMALIZED_POSITIONS)
+        .mockRejectedValueOnce(new Error('current positions unavailable')),
+      getBreadcrumbs: vi.fn().mockReturnValue(unresolvedHistory.promise),
+    })
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      now: () => new Date('2026-08-27T07:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(onStatusChange.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ mode: 'offline' }),
+    )
+
+    unresolvedHistory.resolve(NORMALIZED_BREADCRUMBS)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onStatusChange.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ mode: 'offline' }),
+    )
+    poller.stop()
+  })
+
   it('does not flash the initial history warning on every successful empty-history poll [DON-261]', async () => {
     const client = createClient({
       getBreadcrumbs: vi.fn().mockResolvedValue([]),

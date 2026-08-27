@@ -1105,7 +1105,8 @@
             <strong>Close</strong> or <strong>Esc</strong> to remove it immediately and return to the
             operational map. Each row still shows device health, last seen time, source, current-location
             visibility, speed in <strong>km/h</strong> when Traccar reports speed, and a <strong>Zoom</strong> action for devices with a valid fix. The selected-device inspector separately shows the
-            authoritative <strong>Fix Time</strong>, timestamp source, position-data rejection detail, and
+            authoritative <strong>Fix Time</strong> as local operator time with an explicit timezone and
+            UTC offset, timestamp source, position-data rejection detail, and
             <strong>GPS Accuracy</strong> in metres when
             Traccar supplies it; accuracy is the source measurement, not a claim that the hardware has
             zero physical error. A device needing stationary attention shows the elapsed time and an
@@ -1117,6 +1118,11 @@
             <strong>Hidden</strong>, <strong>Online</strong>, <strong>Stale</strong>, or
             <strong>NoFix</strong> selects the first visible device in that list, and searching only looks
             inside the currently selected list.
+            Traccar position <strong>fixTime</strong> is the only breadcrumb evidence clock. If a current
+            location arrives without a valid fixTime, SAR Tracker may keep it visible for immediate
+            searcher safety but labels it <strong>Fix time unverified</strong>; device time, server time,
+            and the computer receipt time are never substituted into exact history. Current-position
+            refresh also continues on its configured cadence while older history is loading.
             <strong>Breadcrumb Display</strong> is a global control: use <strong>Solid line</strong> for
             a continuous whole-route trail. To keep long routes responsive, line mode may choose up to
             5,000 stable representatives per device across the full route, always retaining the first and
@@ -1306,7 +1312,11 @@
             inspection surface. Coverage trails are the operational whole-mission overview; Dots remain
             the source-exact per-fix evidence view with the existing Earlier and Later paging controls.
             Mission-history coverage does not change the exact-dot query, page size, saved evidence, or
-            existing export workflows.
+            existing export workflows. The status states both the current exact page and the complete
+            result count. For example, <strong>37,479 exact fixes</strong> are inspected across four
+            pages of 10,000, 10,000, 10,000, and 7,479; a 10,000-fix page does not mean older fixes were
+            lost. The displayed range uses local operator time and always includes the timezone and UTC
+            offset. Stored evidence remains canonical UTC.
           </p>
           <div class="note">
             <strong>Current scope:</strong> mission-history coverage includes accepted Traccar breadcrumb

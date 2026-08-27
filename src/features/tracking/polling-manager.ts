@@ -177,6 +177,16 @@ type PollingManager = {
   readonly requestPollNow: () => void
 }
 
+type HistoryRefreshRequest = {
+  readonly generation: number
+  readonly currentPollSequence: number
+  readonly historyResetKey: string | null
+  readonly pollStartedAt: string
+  readonly recovered: boolean
+  readonly outageStartedAt: string | null
+  readonly currentPositionCount: number
+}
+
 /**
  * Creates the tracking polling manager with retry and last-good snapshot support.
  */
@@ -197,7 +207,10 @@ export function createPollingManager(
   let authenticated = false
   let running = false
   let pollInFlight = false
+  let currentPollSequence = 0
   let immediatePollRequested = false
+  let historyRefreshInFlight = false
+  let pendingHistoryRefresh: HistoryRefreshRequest | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let consecutiveFailures = 0
   let lastGoodSnapshot: TrackingSnapshot | null = null
@@ -214,6 +227,7 @@ export function createPollingManager(
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
   let latestDevices: readonly NormalizedTrackingDevice[] = []
   let latestParticipantRosterAuthoritative = false
+  let latestRosterWarning: string | null = null
   let latestCurrentPositions: readonly NormalizedTrackingPosition[] = []
   const pendingHistoryRenderPositions: NormalizedTrackingPosition[] = []
   const pendingHistoryMissionPersistencePositions: NormalizedTrackingPosition[] = []
@@ -685,6 +699,7 @@ export function createPollingManager(
   }
 
   const poll = async (generation: number) => {
+    const pollSequence = ++currentPollSequence
     const pollStartedAt = now().toISOString()
     let pollPhase: TrackingPollPhase = 'authentication'
     const pollHistoryResetKey = options.getHistoryResetKey?.() ?? null
@@ -721,6 +736,7 @@ export function createPollingManager(
         }
         breadcrumbFetchCompleted = false
         breadcrumbStatusWarning = null
+        latestRosterWarning = null
         latestBreadcrumbTimestampByDevice.clear()
         historyReconciler.reset()
         lastGoodSnapshot = retainedCurrentSnapshot
@@ -929,6 +945,7 @@ export function createPollingManager(
       latestDevices = devices
       latestCurrentPositions = positions
       latestParticipantRosterAuthoritative = currentPositionResult.rosterComplete
+      latestRosterWarning = currentPositionResult.rosterWarning
 
       const currentSnapshot = {
         devices,
@@ -973,189 +990,17 @@ export function createPollingManager(
               (recovered ? 'CONNECTION RESTORED' : null),
         ),
       })
-
-      const breadcrumbPositionsBeforeSeed = breadcrumbPositions
-      const seedState = await seedInitialBreadcrumbs()
-      if (discardSupersededPoll(generation, pollHistoryResetKey)) {
-        return
-      }
-      const pollingModeAfterSeed = options.getPollingMode?.() ?? 'active'
-      if (pollingModeAfterSeed !== 'active') {
-        publishInactiveMissionSnapshot(pollingModeAfterSeed)
-        scheduleNextPoll(pollIntervalMs)
-        return
-      }
-      if (
-        seedState === 'loaded' &&
-        breadcrumbPositions !== breadcrumbPositionsBeforeSeed &&
-        breadcrumbPositions.length > 0
-      ) {
-        const seededSnapshot = {
-          devices,
-          positions,
-          breadcrumbs: breadcrumbPositions,
-          rawBreadcrumbsForPersistence: [],
-          breadcrumbMetadata,
-        }
-        lastGoodSnapshot = seededSnapshot
-        options.onSnapshot(
-          annotateTrackingSnapshotHealth(seededSnapshot, {
-            now: now(),
-            deviceStaleThresholdMs: options.staleThresholdMs,
-          }),
-          {
-            historyResetKey: pollHistoryResetKey,
-            ...(currentPositionResult.rosterComplete
-              ? {}
-              : { participantRosterAuthoritative: false }),
-          },
-        )
-      }
-
-      pollPhase = 'breadcrumbs'
-      const breadcrumbDevices = selectBreadcrumbDevices(devices)
-      const breadcrumbFetchPromise = fetchIncrementalBreadcrumbs(devices, seedState)
-      if (seedState === 'loaded') {
-        const initialBreadcrumbFrom = options.getInitialBreadcrumbFrom?.() ?? null
-        const selectionKey = JSON.stringify([
-          initialBreadcrumbFrom?.toISOString() ?? null,
-          breadcrumbDevices.map((device) => device.device_id).sort(),
-        ])
-        if (selectionKey !== initialReconciliationSelectionKey) {
-          initialReconciliationSelectionKey = selectionKey
-          initialReconciliationComplete = false
-        }
-        const reconciliationUntil = now()
-        historyReconciler.reconcile({
-          devices: breadcrumbDevices,
-          from: initialBreadcrumbFrom,
-          until: reconciliationUntil,
-          checkpointsByDevice: resolveCurrentHistoryCheckpoints(
-            breadcrumbDevices,
-            initialBreadcrumbFrom,
-            reconciliationUntil,
-          ),
-        })
-      }
-      const breadcrumbFetch = await breadcrumbFetchPromise
-      if (discardSupersededPoll(generation, pollHistoryResetKey)) {
-        return
-      }
-      const previousBreadcrumbPositions = breadcrumbPositions
-      const previousObservedCount = breadcrumbMetadata?.totalObserved ?? 0
-      canonicalizationInFlight?.trailingPositions.push(
-        ...breadcrumbFetch.recentPositions,
-      )
-      let breadcrumbResult = breadcrumbAccumulator.append(
-        breadcrumbFetch.recentPositions,
-      )
-      if (boundedSourceRetention) {
-        breadcrumbResult = breadcrumbAccumulator.compact()
-      }
-      breadcrumbPositions = breadcrumbResult.positions
-      breadcrumbMetadata = breadcrumbResult.metadata
-      const acceptedBreadcrumbCount = Math.max(
-        0,
-        breadcrumbResult.metadata.totalObserved - previousObservedCount,
-      )
-
-      const rawSnapshot = {
-        devices,
-        positions,
-        breadcrumbs: breadcrumbPositions,
-        rawBreadcrumbsForPersistence: breadcrumbFetch.positions,
-        breadcrumbMetadata,
-      }
-      const latestPollingMode = options.getPollingMode?.() ?? 'active'
-      if (latestPollingMode !== 'active') {
-        flushHistorySnapshot(false)
-        historyReconciler.suspend()
-        publishInactiveMissionSnapshot(latestPollingMode)
-        scheduleNextPoll(pollIntervalMs)
-        return
-      }
-
-      lastGoodSnapshot = {
-        ...rawSnapshot,
-        rawBreadcrumbsForPersistence: [],
-      }
-
-      if (breadcrumbPositions !== previousBreadcrumbPositions) {
-        const historyObservation = options.beginMissionEvidenceObservation?.(
-          pollHistoryResetKey,
-        ) ?? {
-          missionId: pollHistoryResetKey,
-          complete: () => undefined,
-        }
-        try {
-          await options.onSnapshot(
-            annotateTrackingSnapshotHealth(rawSnapshot, {
-              now: now(),
-              deviceStaleThresholdMs: options.staleThresholdMs,
-            }),
-            {
-              historyResetKey: pollHistoryResetKey,
-              missionEvidenceId: historyObservation.missionId,
-              ...(currentPositionResult.rosterComplete
-                ? {}
-                : { participantRosterAuthoritative: false }),
-            },
-          )
-        } finally {
-          historyObservation.complete()
-        }
-      }
-      breadcrumbFetchCompleted = true
-      // Retain only durable history health; CONNECTION RESTORED is transient.
-      breadcrumbStatusWarning = createBreadcrumbCompletionWarning(
-        breadcrumbFetch,
-        false,
-        seedState,
-        historyReconciler.getProgress(),
-      )
-      publishStatus({
-        mode: 'online',
+      scheduleNextPoll(pollIntervalMs)
+      requestHistoryRefresh({
+        generation,
+        currentPollSequence: pollSequence,
+        historyResetKey: pollHistoryResetKey,
+        pollStartedAt,
         recovered,
-        warning: combineTrackingWarnings(
-          currentPositionResult.rosterWarning,
-          createBreadcrumbCompletionWarning(
-            breadcrumbFetch,
-            recovered,
-            seedState,
-            historyReconciler.getProgress(),
-          ),
-        ),
-      })
-
-      const completedAt = now().toISOString()
-      options.onPollDiagnostic?.({
-        ts: completedAt,
-        kind: 'poll_cycle',
-        outcome: recovered ? 'recovered' : 'success',
-        phase: 'breadcrumbs',
-        durationMs: calculateDurationMs(pollStartedAt, completedAt),
-        consecutiveFailures: 0,
-        retryDelayMs: pollIntervalMs,
-        ...(recovered && firstFailureAt !== null
-          ? { outageDurationMs: calculateDurationMs(firstFailureAt, completedAt) }
-          : {}),
-        deviceCount: devices.length,
+        outageStartedAt: firstFailureAt,
         currentPositionCount: acceptedPositions.length,
-        breadcrumbRequestedDeviceCount: breadcrumbFetch.requestedDeviceCount,
-        breadcrumbReturnedCount: breadcrumbFetch.positions.length,
-        breadcrumbAcceptedCount: acceptedBreadcrumbCount,
-        breadcrumbDuplicateCount: Math.max(
-          0,
-          breadcrumbFetch.positions.length - acceptedBreadcrumbCount,
-        ),
-        breadcrumbFailedDeviceCount: breadcrumbFetch.failedDeviceCount,
-        ...(breadcrumbFetch.window === null
-          ? {}
-          : { breadcrumbWindow: breadcrumbFetch.window }),
       })
       firstFailureAt = null
-
-      scheduleNextPoll(pollIntervalMs)
     } catch (error) {
       completeCurrentPositionObservation()
       if (discardSupersededPoll(generation, pollHistoryResetKey)) {
@@ -1207,6 +1052,265 @@ export function createPollingManager(
       })
       scheduleNextPoll(backoffDelay)
     }
+  }
+
+  /** Coalesces history refresh demand behind one non-overlapping history lane. */
+  function requestHistoryRefresh(request: HistoryRefreshRequest): void {
+    pendingHistoryRefresh = request
+    if (!historyRefreshInFlight) {
+      void drainHistoryRefreshQueue()
+    }
+  }
+
+  /** Drains at most the latest queued refresh after the active history work settles. */
+  async function drainHistoryRefreshQueue(): Promise<void> {
+    if (historyRefreshInFlight) return
+    historyRefreshInFlight = true
+    try {
+      while (pendingHistoryRefresh !== null && running && !stopping) {
+        const request = pendingHistoryRefresh
+        pendingHistoryRefresh = null
+        try {
+          await refreshHistory(request)
+        } catch (error) {
+          if (!isHistoryRefreshCurrent(request)) continue
+          breadcrumbStatusWarning =
+            'BREADCRUMB HISTORY REFRESH FAILED — current fixes remain live; exact history will retry.'
+          logger.warn('Tracking breadcrumb refresh failed.', {
+            failureKind: classifyTrackingFailure(error),
+          })
+          if (canPublishHistoryStatus(request)) {
+            publishStatus({
+              mode: 'online',
+              warning: combineTrackingWarnings(
+                latestRosterWarning,
+                breadcrumbStatusWarning,
+              ),
+            })
+          }
+          const completedAt = now().toISOString()
+          options.onPollDiagnostic?.({
+            ts: completedAt,
+            kind: 'poll_cycle',
+            outcome: 'failure',
+            phase: 'breadcrumbs',
+            durationMs: calculateDurationMs(request.pollStartedAt, completedAt),
+            consecutiveFailures: 0,
+            retryDelayMs: pollIntervalMs,
+            failureKind: classifyTrackingFailure(error),
+          })
+        }
+      }
+    } finally {
+      historyRefreshInFlight = false
+      if (pendingHistoryRefresh !== null && running && !stopping) {
+        void drainHistoryRefreshQueue()
+      }
+    }
+  }
+
+  /** Refreshes breadcrumb evidence without owning the live-current poll cadence. */
+  async function refreshHistory(request: HistoryRefreshRequest): Promise<void> {
+    if (!isHistoryRefreshCurrent(request)) return
+    const historyDevices = latestDevices
+    const breadcrumbPositionsBeforeSeed = breadcrumbPositions
+    const seedState = await seedInitialBreadcrumbs()
+    if (!isHistoryRefreshCurrent(request)) return
+
+    const pollingModeAfterSeed = options.getPollingMode?.() ?? 'active'
+    if (pollingModeAfterSeed !== 'active') {
+      publishInactiveMissionSnapshot(pollingModeAfterSeed)
+      return
+    }
+    if (
+      seedState === 'loaded' &&
+      breadcrumbPositions !== breadcrumbPositionsBeforeSeed &&
+      breadcrumbPositions.length > 0
+    ) {
+      const seededSnapshot = {
+        devices: latestDevices,
+        positions: latestCurrentPositions,
+        breadcrumbs: breadcrumbPositions,
+        rawBreadcrumbsForPersistence: [],
+        breadcrumbMetadata,
+      }
+      lastGoodSnapshot = seededSnapshot
+      options.onSnapshot(
+        annotateTrackingSnapshotHealth(seededSnapshot, {
+          now: now(),
+          deviceStaleThresholdMs: options.staleThresholdMs,
+        }),
+        {
+          historyResetKey: request.historyResetKey,
+          ...(latestParticipantRosterAuthoritative
+            ? {}
+            : { participantRosterAuthoritative: false }),
+        },
+      )
+    }
+
+    const breadcrumbDevices = selectBreadcrumbDevices(historyDevices)
+    const breadcrumbFetchPromise = fetchIncrementalBreadcrumbs(historyDevices, seedState)
+    if (seedState === 'loaded') {
+      const initialBreadcrumbFrom = options.getInitialBreadcrumbFrom?.() ?? null
+      const selectionKey = JSON.stringify([
+        initialBreadcrumbFrom?.toISOString() ?? null,
+        breadcrumbDevices.map((device) => device.device_id).sort(),
+      ])
+      if (selectionKey !== initialReconciliationSelectionKey) {
+        initialReconciliationSelectionKey = selectionKey
+        initialReconciliationComplete = false
+      }
+      const reconciliationUntil = now()
+      historyReconciler.reconcile({
+        devices: breadcrumbDevices,
+        from: initialBreadcrumbFrom,
+        until: reconciliationUntil,
+        checkpointsByDevice: resolveCurrentHistoryCheckpoints(
+          breadcrumbDevices,
+          initialBreadcrumbFrom,
+          reconciliationUntil,
+        ),
+      })
+    }
+    const breadcrumbFetch = await breadcrumbFetchPromise
+    if (!isHistoryRefreshCurrent(request)) return
+
+    const previousBreadcrumbPositions = breadcrumbPositions
+    const previousObservedCount = breadcrumbMetadata?.totalObserved ?? 0
+    canonicalizationInFlight?.trailingPositions.push(
+      ...breadcrumbFetch.recentPositions,
+    )
+    let breadcrumbResult = breadcrumbAccumulator.append(
+      breadcrumbFetch.recentPositions,
+    )
+    if (boundedSourceRetention) {
+      breadcrumbResult = breadcrumbAccumulator.compact()
+    }
+    breadcrumbPositions = breadcrumbResult.positions
+    breadcrumbMetadata = breadcrumbResult.metadata
+    const acceptedBreadcrumbCount = Math.max(
+      0,
+      breadcrumbResult.metadata.totalObserved - previousObservedCount,
+    )
+
+    const rawSnapshot = {
+      devices: latestDevices,
+      positions: latestCurrentPositions,
+      breadcrumbs: breadcrumbPositions,
+      rawBreadcrumbsForPersistence: breadcrumbFetch.positions,
+      breadcrumbMetadata,
+    }
+    const latestPollingMode = options.getPollingMode?.() ?? 'active'
+    if (latestPollingMode !== 'active') {
+      flushHistorySnapshot(false)
+      historyReconciler.suspend()
+      publishInactiveMissionSnapshot(latestPollingMode)
+      return
+    }
+
+    lastGoodSnapshot = {
+      ...rawSnapshot,
+      rawBreadcrumbsForPersistence: [],
+    }
+    if (breadcrumbPositions !== previousBreadcrumbPositions) {
+      const historyObservation = options.beginMissionEvidenceObservation?.(
+        request.historyResetKey,
+      ) ?? {
+        missionId: request.historyResetKey,
+        complete: () => undefined,
+      }
+      try {
+        await options.onSnapshot(
+          annotateTrackingSnapshotHealth(rawSnapshot, {
+            now: now(),
+            deviceStaleThresholdMs: options.staleThresholdMs,
+          }),
+          {
+            historyResetKey: request.historyResetKey,
+            missionEvidenceId: historyObservation.missionId,
+            ...(latestParticipantRosterAuthoritative
+              ? {}
+              : { participantRosterAuthoritative: false }),
+          },
+        )
+      } finally {
+        historyObservation.complete()
+      }
+    }
+    breadcrumbFetchCompleted = true
+    breadcrumbStatusWarning = createBreadcrumbCompletionWarning(
+      breadcrumbFetch,
+      false,
+      seedState,
+      historyReconciler.getProgress(),
+    )
+    if (canPublishHistoryStatus(request)) {
+      publishStatus({
+        mode: 'online',
+        recovered: request.recovered,
+        warning: combineTrackingWarnings(
+          latestRosterWarning,
+          createBreadcrumbCompletionWarning(
+            breadcrumbFetch,
+            request.recovered,
+            seedState,
+            historyReconciler.getProgress(),
+          ),
+        ),
+      })
+    }
+
+    const completedAt = now().toISOString()
+    options.onPollDiagnostic?.({
+      ts: completedAt,
+      kind: 'poll_cycle',
+      outcome: request.recovered ? 'recovered' : 'success',
+      phase: 'breadcrumbs',
+      durationMs: calculateDurationMs(request.pollStartedAt, completedAt),
+      consecutiveFailures: 0,
+      retryDelayMs: pollIntervalMs,
+      ...(request.recovered && request.outageStartedAt !== null
+        ? {
+            outageDurationMs: calculateDurationMs(
+              request.outageStartedAt,
+              completedAt,
+            ),
+          }
+        : {}),
+      deviceCount: historyDevices.length,
+      currentPositionCount: request.currentPositionCount,
+      breadcrumbRequestedDeviceCount: breadcrumbFetch.requestedDeviceCount,
+      breadcrumbReturnedCount: breadcrumbFetch.positions.length,
+      breadcrumbAcceptedCount: acceptedBreadcrumbCount,
+      breadcrumbDuplicateCount: Math.max(
+        0,
+        breadcrumbFetch.positions.length - acceptedBreadcrumbCount,
+      ),
+      breadcrumbFailedDeviceCount: breadcrumbFetch.failedDeviceCount,
+      ...(breadcrumbFetch.window === null
+        ? {}
+        : { breadcrumbWindow: breadcrumbFetch.window }),
+    })
+  }
+
+  function isHistoryRefreshCurrent(request: HistoryRefreshRequest): boolean {
+    return (
+      running &&
+      !stopping &&
+      request.generation === lifecycleGeneration &&
+      request.historyResetKey === activeHistoryResetKey &&
+      (options.getHistoryResetKey?.() ?? null) === request.historyResetKey &&
+      (options.getPollingMode?.() ?? 'active') === 'active'
+    )
+  }
+
+  /** Prevents older history completion from restoring online after a newer current poll. */
+  function canPublishHistoryStatus(request: HistoryRefreshRequest): boolean {
+    return (
+      request.currentPollSequence === currentPollSequence &&
+      consecutiveFailures === 0
+    )
   }
 
   async function runPoll(generation: number): Promise<void> {
@@ -1308,6 +1412,7 @@ export function createPollingManager(
     flushHistorySnapshot(false)
     stopping = true
     immediatePollRequested = false
+    pendingHistoryRefresh = null
     if (timer !== null) {
       clearScheduledTimeout(timer)
       timer = null

@@ -518,6 +518,51 @@ answer.
 
 **Programme trace:** BCP-12, BCP-14, BCP-15, BCP-16, BCP-17.
 
+### SAR-FIELD-002 — Exact-fix display, paging, and current-fix cadence
+
+**Field reports:**
+
+> SAR Tracker showed raw 2026-08-22T15:10:17.000Z while Traccar Replay showed 22/08/2026 16:10:17 during Irish summer time.
+
+> “Showing 10,000 exact fixes of 37,479.”
+
+> “current fixes were slow to come in.”
+
+**Derived meaning:** The first report is one UTC instant presented differently,
+so it is a local-time presentation-contract defect rather than conflicting
+stored evidence. The second report is an exact-page scope statement, not
+evidence of loss: 37,479 fixes require four pages of 10,000, 10,000, 10,000,
+and 7,479 while progressive coverage remains the default whole-history view.
+The third report requires the live-current poll cadence to remain independent
+of slow or unresolved incremental history work.
+
+**Cross-references:** `SAR-QA-002`, `SAR-QA-008`, `SAR-QA-021`.
+
+**Implementation trace:** `DON-267`; field-feedback bridge after PR-3. This
+does not add replay, timeline, export, or archive behaviour.
+
+### SAR-QA-021 — Authoritative breadcrumb fixed time
+
+**Team statement:**
+
+> Following discussion with Sean we believe the breadcrumb fixed time should be taken from Traccar server and not from any other time.
+
+**Derived meaning:** The authoritative breadcrumb evidence instant is the
+Traccar API position `fixTime`. SAR Tracker receipt/PC time and Traccar
+`deviceTime`/`serverTime` must never silently substitute for it in exact
+history, persistence, ordering, coverage, export, or future replay. A current
+location without valid `fixTime` may remain visible for immediate searcher
+safety only when explicitly marked time-unverified; it is excluded from exact
+breadcrumb/timeline evidence. Stored evidence remains canonical UTC, while the
+operator sees that same instant in local time with an explicit timezone and UTC
+offset. No timestamp is invented.
+
+**Cross-references:** `SAR-QA-002`, `SAR-QA-006`, `SAR-QA-007`, `SAR-QA-008`,
+`SAR-QA-013`, `SAR-QA-019`, `SAR-FIELD-002`.
+
+**Programme trace:** `DON-267` bridge; constrains BCP-01/BCP-02 and the future
+BCP-08/BCP-10/BCP-12 evidence consumers.
+
 ---
 
 ## Closed Duplicate — Do Not Send

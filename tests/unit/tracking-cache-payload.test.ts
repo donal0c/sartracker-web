@@ -35,7 +35,7 @@ describe('tracking cache payload', () => {
     expect(parsed.positions[0]?.timestamp_source).toBe('fix')
   })
 
-  it('continues to decode legacy cache positions without timestamp provenance [DON-267]', () => {
+  it('keeps legacy cache locations visible but explicitly time-unverified [DON-267] [SAR-QA-021]', () => {
     const legacyPosition = normalizeTraccarPosition(positionsFixture[0], 'live')
     const withoutProvenance = Object.fromEntries(
       Object.entries(legacyPosition).filter(([key]) => (
@@ -52,6 +52,7 @@ describe('tracking cache payload', () => {
 
     expect(parsed.positions).toHaveLength(1)
     expect(parsed.positions[0]?.timestamp_source).toBeUndefined()
+    expect(parsed.positions[0]?.fix_time_unverified).toBe(true)
   })
 
   it('drops malformed entries rather than rejecting the full cache', () => {

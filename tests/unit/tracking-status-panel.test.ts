@@ -12,6 +12,7 @@ import { useStationaryAttentionStore } from '../../src/features/tracking/station
 import { useCoverageStore } from '../../src/features/tracking/coverage-store'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import type { Mission } from '../../src/infrastructure/mission-store/tauri-mission-store'
+import { formatOperatorLocalTimestamp } from '../../src/features/tracking/operator-time'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -389,7 +390,7 @@ describe('TrackingStatusPanel', () => {
 
     expect(document.querySelector('[data-testid="breadcrumb-display-summary"]')).toBeNull()
     expect(getText('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBe(
-      'Exact fix inspection — showing 10,000 of 10,001 — 2026-08-08T00:00:00.000Z to 2026-08-09T12:00:00.000Z',
+      `Exact fix inspection — showing 10,000 of 10,001 — ${formatOperatorLocalTimestamp('2026-08-08T00:00:00.000Z')} to ${formatOperatorLocalTimestamp('2026-08-09T12:00:00.000Z')}`,
     )
   })
 
