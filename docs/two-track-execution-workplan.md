@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-3 are merged. Before PR-4 starts, complete the bounded `DON-267` field-feedback bridge for canonical `fixTime`, explicit local-time presentation, and current-poll cadence independent of history.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-4 was the bounded `DON-267` field-feedback bridge for canonical `fixTime`, explicit local-time presentation, and current-poll cadence independent of history. PR-5 mission evidence/replay is prepared on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`; do not start its implementation task until Donal gives the explicit go.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -138,37 +138,28 @@ The locked domain model is in
 complexity, model, review, branch, checkpoint, and qualification policy is in
 `docs/breadcrumb-programme-execution-policy.md`.
 
-Execution order is five substantial PRs: trustworthy ingest/live safety;
-mission model; complete coverage; mission evidence/replay; archive lifecycle.
+Execution order is now six substantial PRs because the field-feedback bridge
+was inserted as PR-4: trustworthy ingest/live safety; mission model; complete
+coverage; field-feedback bridge; mission evidence/replay; archive lifecycle.
 BCP-17 then qualifies one final team-facing release. BCP work units are the
 JIT-design and TDD boundaries inside those PRs, not separate release trains.
 
-Before PR-4 implementation begins, its accepted plan and execution packet must
-record the review amendment approved on 2026-08-26: two broad
-safety reviews plus focused persistence/completeness,
-concurrency/finalization, and renderer/input-containment reviews, all five in
-parallel on one final code-and-documentation head. Confirmed findings are
-source-retraced centrally; remediation requires one fresh broad exact-head
-review plus only the affected focused rechecks. Documentation-only binding
-descendants require exact-tree/diff attestation but preserve code reviews when
-executable-code and test trees are byte-identical. Strict TDD, deterministic,
-packaged/Linux, browser, and visual gates remain mandatory. False Complete or
-100%, lost mission evidence, unbounded Electron-main work, and unresolved
-safety failures remain absolute merge blockers. Donal separately applied the
-bounded remediation topology to PR-3 on 2026-08-26: pause the review loop,
-perform one end-to-end architecture and attack-test pass over the complete
-evidence-lifecycle seam, land one coherent red-first seam fix, complete the
-required deterministic/browser/visual/macOS/Linux gates, then run one fresh
-broad exact-head review plus targeted persistence/completeness,
-concurrency/finalization, and renderer/input-containment exact-head rechecks.
-Do not restart five complete PR-3 reviews after every fix. Re-review scope for
-later PRs follows affected contracts: one fresh
-broad review plus every affected focused reviewer, with all five restarted only
-when a shared state machine/cross-boundary contract changes or impact cannot be
-confidently bounded. Repeated confirmed P1/P2 findings at one seam trigger an
-architecture and attack-test pause before more remediation. Record a PR-4
-process retrospective before approving PR-5 so the topology is retained or
-amended from evidence.
+The PR-4-to-PR-5 reconciliation is complete. PR-5 must retain PR-4's canonical
+Traccar `fixTime` provenance, independent current-position cadence, bounded
+history budget, cancellation, and lifecycle settlement while adding mission
+evidence and replay. Its initial review topology is one broad exact-head review
+plus focused persistence/completeness, concurrency/finalization, and
+renderer/input-containment reviews on the same final code-and-documentation
+head. Confirmed findings are source-retraced centrally; remediation requires
+one fresh broad exact-head review plus only the affected focused rechecks,
+unless a shared state machine or cross-boundary contract changed or impact
+cannot be confidently bounded. Documentation-only binding descendants require
+exact-tree/diff attestation but preserve code reviews when executable-code and
+test trees are byte-identical. Strict TDD, deterministic, packaged/Linux,
+browser, and visual gates remain mandatory. False Complete or 100%, lost
+mission evidence, unbounded Electron-main work, and unresolved safety failures
+remain absolute merge blockers. Repeated confirmed P1/P2 findings at one seam
+trigger an architecture and attack-test pause before more remediation.
 
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
