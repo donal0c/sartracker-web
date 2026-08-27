@@ -411,7 +411,10 @@ function createElectronMissionStore(options) {
   const outingStore = createOutingStore({
     db,
     faultInjection: options.outingFaultInjection ?? {},
-    recordEvidenceVersion: (input) => evidenceVersionStore.recordVersion(input),
+    recordEvidenceVersion: (input) => {
+      evidenceVersionStore.recordVersion(input)
+      bumpMissionReplayGeneration(db, input.missionId)
+    },
     recordCoverageInvalidation: (input) => appendCoverageInvalidation(db, {
       id: randomUUID(),
       ...input,
@@ -423,6 +426,7 @@ function createElectronMissionStore(options) {
     faultInjection: options.participantFaultInjection ?? {},
     recordCoverageChange: (missionId, updatedAt) => {
       const changeSeq = bumpCoverageChangeSequence(db, missionId, updatedAt)
+      bumpMissionReplayGeneration(db, missionId)
       if (coverageLedgerFaultInjection.afterWrite === true) {
         throw new Error('Injected coverage ledger failure.')
       }
@@ -465,6 +469,26 @@ function createElectronMissionStore(options) {
         ),
         acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
       ))
+    finalizeTail = run.catch(() => {})
+    return run
+  }
+  const enqueueArchive = (missionId) => {
+    const run = finalizeTail.then(() => {
+      const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
+      return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
+        missionId,
+        'archive',
+        () => createMissionArchive(
+          db,
+          missionId,
+          backupCoordinator,
+          archiveDirectory,
+          true,
+          archiveFaultInjection,
+        ),
+        acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
+      )
+    })
     finalizeTail = run.catch(() => {})
     return run
   }
@@ -516,22 +540,7 @@ function createElectronMissionStore(options) {
       backup_path: backupPath,
     }),
     syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
-    createMissionArchive: async (missionId) => {
-      const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
-      return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
-        missionId,
-        'archive',
-        () => createMissionArchive(
-          db,
-          missionId,
-          backupCoordinator,
-          archiveDirectory,
-          true,
-          archiveFaultInjection,
-        ),
-        acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
-      )
-    },
+    createMissionArchive: async (missionId) => enqueueArchive(missionId),
     createMission: async (input) => {
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
@@ -1624,6 +1633,11 @@ function migrate(db) {
     'ingest_anomaly_mission_health',
   )
   const participantsRequireGrandfathering = !tableExists(db, 'mission_participants')
+  const positionsRequireProvenanceBackfill = !columnExists(
+    db,
+    'positions',
+    'timestamp_provenance_recorded_at',
+  )
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS missions (
@@ -1693,6 +1707,16 @@ function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_mission_participants_mission
       ON mission_participants(mission_id);
+    CREATE TABLE IF NOT EXISTS mission_replay_generations (
+      mission_id TEXT PRIMARY KEY,
+      generation INTEGER NOT NULL CHECK(generation >= 0),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS mission_finalization_fences (
+      mission_id TEXT PRIMARY KEY,
+      requested_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_mission_participants_active_device
       ON mission_participants(mission_id, traccar_device_id)
       WHERE kind = 'device' AND removed_at IS NULL;
@@ -1744,6 +1768,7 @@ function migrate(db) {
       content_hash TEXT,
       source_kind TEXT,
       timestamp_source TEXT CHECK(timestamp_source IS NULL OR timestamp_source = 'fix'),
+      timestamp_provenance_recorded_at TEXT,
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
@@ -2198,6 +2223,7 @@ function migrate(db) {
       "timestamp_source",
       "TEXT CHECK(timestamp_source IS NULL OR timestamp_source = 'fix')",
     )
+    ensureColumnExists(db, 'positions', 'timestamp_provenance_recorded_at', 'TEXT')
     ensureColumnExists(db, 'devices', 'group_id', 'TEXT')
     ensureColumnExists(db, 'devices', 'unique_id', 'TEXT')
     // Candidate-v9 stores may contain the rejected global positions index.
@@ -2248,10 +2274,19 @@ function migrate(db) {
     backfillLegacyGpxRevisions(db, migrationTime)
     recoverUnsettledGpxImportReceipts(db, migrationTime)
     recoverStagingGpxImports(db, migrationTime)
+    if (positionsRequireProvenanceBackfill && existingSchemaVersion !== 0
+      && tableExists(db, 'mission_replay_position_day_counts')) {
+      db.exec(`
+        DROP TRIGGER IF EXISTS positions_replay_day_count_insert;
+        DROP TRIGGER IF EXISTS positions_replay_day_count_update;
+        DROP TRIGGER IF EXISTS positions_replay_day_count_delete;
+        DROP TABLE mission_replay_position_day_counts;
+      `)
+    }
     if (existingSchemaVersion === 0) {
       db.exec(`
         CREATE INDEX IF NOT EXISTS idx_positions_replay_known_fix
-          ON positions(mission_id, received_at, timestamp, id)
+          ON positions(mission_id, received_at, timestamp_provenance_recorded_at, timestamp, id)
           WHERE timestamp_source = 'fix';
         CREATE INDEX IF NOT EXISTS idx_positions_replay_unknown_time
           ON positions(mission_id)
@@ -2259,14 +2294,14 @@ function migrate(db) {
         CREATE INDEX IF NOT EXISTS idx_positions_replay_known_at
           ON positions(
             mission_id,
-            CASE WHEN received_at > timestamp THEN received_at ELSE timestamp END
+            MAX(timestamp, received_at, COALESCE(timestamp_provenance_recorded_at, received_at))
           )
           WHERE timestamp_source = 'fix' AND received_at IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_positions_replay_device_known_at
           ON positions(
             mission_id,
             device_id,
-            CASE WHEN received_at > timestamp THEN received_at ELSE timestamp END
+            MAX(timestamp, received_at, COALESCE(timestamp_provenance_recorded_at, received_at))
           )
           WHERE timestamp_source = 'fix' AND received_at IS NOT NULL;
         CREATE TABLE IF NOT EXISTS mission_replay_position_day_counts (
@@ -2286,28 +2321,29 @@ function migrate(db) {
           ) VALUES (
             NEW.mission_id,
             NEW.device_id,
-            substr(CASE WHEN NEW.received_at > NEW.timestamp
-              THEN NEW.received_at ELSE NEW.timestamp END, 1, 10),
+            substr(MAX(NEW.timestamp, NEW.received_at,
+              COALESCE(NEW.timestamp_provenance_recorded_at, NEW.received_at)), 1, 10),
             1
           ) ON CONFLICT(mission_id, device_id, known_day)
           DO UPDATE SET position_count = position_count + 1;
         END;
         CREATE TRIGGER IF NOT EXISTS positions_replay_day_count_update
-        AFTER UPDATE OF mission_id, device_id, timestamp, received_at, timestamp_source ON positions
+        AFTER UPDATE OF mission_id, device_id, timestamp, received_at,
+          timestamp_source, timestamp_provenance_recorded_at ON positions
         BEGIN
           UPDATE mission_replay_position_day_counts
           SET position_count = position_count - 1
           WHERE OLD.timestamp_source = 'fix' AND OLD.received_at IS NOT NULL
             AND mission_id = OLD.mission_id AND device_id = OLD.device_id
-            AND known_day = substr(CASE WHEN OLD.received_at > OLD.timestamp
-              THEN OLD.received_at ELSE OLD.timestamp END, 1, 10);
+            AND known_day = substr(MAX(OLD.timestamp, OLD.received_at,
+              COALESCE(OLD.timestamp_provenance_recorded_at, OLD.received_at)), 1, 10);
           INSERT INTO mission_replay_position_day_counts (
             mission_id, device_id, known_day, position_count
           ) SELECT
             NEW.mission_id,
             NEW.device_id,
-            substr(CASE WHEN NEW.received_at > NEW.timestamp
-              THEN NEW.received_at ELSE NEW.timestamp END, 1, 10),
+            substr(MAX(NEW.timestamp, NEW.received_at,
+              COALESCE(NEW.timestamp_provenance_recorded_at, NEW.received_at)), 1, 10),
             1
           WHERE NEW.timestamp_source = 'fix' AND NEW.received_at IS NOT NULL
           ON CONFLICT(mission_id, device_id, known_day)
@@ -2320,8 +2356,8 @@ function migrate(db) {
           UPDATE mission_replay_position_day_counts
           SET position_count = position_count - 1
           WHERE mission_id = OLD.mission_id AND device_id = OLD.device_id
-            AND known_day = substr(CASE WHEN OLD.received_at > OLD.timestamp
-              THEN OLD.received_at ELSE OLD.timestamp END, 1, 10);
+            AND known_day = substr(MAX(OLD.timestamp, OLD.received_at,
+              COALESCE(OLD.timestamp_provenance_recorded_at, OLD.received_at)), 1, 10);
         END;
       `)
     }
@@ -2340,6 +2376,12 @@ function tableExists(db, tableName) {
   return db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
   ).get(tableName) !== undefined
+}
+
+/** Returns whether one named table column is already present. */
+function columnExists(db, tableName, columnName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all()
+    .some((column) => column.name === columnName)
 }
 
 /** Retains interrupted staged GPX bytes as explicit failures before removing partial rows. */
@@ -2737,18 +2779,24 @@ async function acknowledgeIngestEvidenceLoss(db, outbox, input, readAdminRoster)
   if (mission.status !== 'finished') {
     throw new Error('Evidence loss can be acknowledged only after the mission is finished.')
   }
+  assertFinishedMissionBookkeepingAllowed(db, missionId)
   const adminRoster = typeof readAdminRoster === 'function' ? await readAdminRoster() : []
+  assertFinishedMissionBookkeepingAllowed(db, missionId)
   if (!adminRoster.map((value) => value.trim()).includes(adminName)) {
-    appendEvent(db, missionId, 'mission_evidence_loss_acknowledgement_denied', {
-      admin_name: adminName,
-      reason,
-      resulting_status: mission.status,
-    })
+    db.transaction(() => {
+      assertFinishedMissionBookkeepingAllowed(db, missionId)
+      insertEvent(db, missionId, 'mission_evidence_loss_acknowledgement_denied', now(), {
+        admin_name: adminName,
+        reason,
+        resulting_status: 'finished',
+      })
+    })()
     throw new Error('Selected admin is not authorized to acknowledge mission evidence loss.')
   }
   const candidate = await outbox.readEvidenceLossAcknowledgementCandidate(missionId)
   const timestamp = now()
   const transaction = db.transaction(() => {
+    assertFinishedMissionBookkeepingAllowed(db, missionId)
     insertEvent(db, missionId, 'mission_evidence_loss_acknowledged', timestamp, {
       admin_name: adminName,
       reason,
@@ -3094,6 +3142,7 @@ async function createMissionArchive(
   if (mission.status !== 'finished' && mission.status !== 'finalized') {
     throw new Error('Only finished or finalized missions can be archived.')
   }
+  if (recordArchiveEvent) assertMissionFinalizationNotInProgress(db, missionId)
 
   const createdAt = now()
   const backupPath = await backupCoordinator.syncBackup()
@@ -3162,7 +3211,19 @@ async function createMissionArchive(
   await fs.rename(temporaryPath, finalPath)
 
   if (recordArchiveEvent) {
-    appendEvent(db, missionId, 'mission_archived', { archive_path: finalPath }, createdAt)
+    try {
+      db.transaction(() => {
+        const currentMission = getMission(db, missionId)
+        if (currentMission.status !== mission.status) {
+          throw new Error('Mission state changed while the archive was being created; retry archive creation.')
+        }
+        assertMissionFinalizationNotInProgress(db, missionId)
+        appendEvent(db, missionId, 'mission_archived', { archive_path: finalPath }, createdAt)
+      })()
+    } catch (error) {
+      await fs.rm(finalPath, { force: true })
+      throw error
+    }
   }
 
   return { mission_id: missionId, archive_path: finalPath, created_at: createdAt }
@@ -3237,11 +3298,23 @@ async function finalizeMission(
   if (mission.status !== 'finished') {
     throw new Error('Only finished missions can be finalized.')
   }
-  assertNoUnsettledGpxImportState(db, missionId)
+  const resumedProtectedFinalization = db.transaction(() => {
+    assertNoUnsettledGpxImportState(db, missionId)
+    const existingFence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
+      WHERE mission_id = ?`).get(missionId)
+    if (existingFence !== undefined) return true
+    const requestedAt = now()
+    db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
+      VALUES (?, ?)`).run(missionId, requestedAt)
+    insertEvent(db, missionId, 'mission_finalize_requested', requestedAt, {
+      resulting_status: 'finished',
+    })
+    return false
+  })()
 
-  appendEvent(db, missionId, 'mission_finalize_requested', { resulting_status: 'finished' })
-
-  let archive = await readRecoverableFinalizeArchive(db, missionId)
+  let archive = resumedProtectedFinalization
+    ? await readRecoverableFinalizeArchive(db, missionId)
+    : null
   if (archive === null) {
     try {
       archive = await createMissionArchive(
@@ -3253,10 +3326,14 @@ async function finalizeMission(
         archiveFaultInjection,
       )
     } catch (error) {
-      appendEvent(db, missionId, 'mission_archive_failed', {
-        resulting_status: 'finished',
-        error: error instanceof Error ? error.message : String(error),
-      })
+      db.transaction(() => {
+        appendEvent(db, missionId, 'mission_archive_failed', {
+          resulting_status: 'finished',
+          error: error instanceof Error ? error.message : String(error),
+        })
+        db.prepare('DELETE FROM mission_finalization_fences WHERE mission_id = ?')
+          .run(missionId)
+      })()
       throw error
     }
 
@@ -3272,11 +3349,20 @@ async function finalizeMission(
 
   const transaction = db.transaction(() => {
     assertNoUnsettledGpxImportState(db, missionId)
+    const currentMission = getMission(db, missionId)
+    if (currentMission.status !== 'finished') {
+      throw new Error('Mission finalization state changed before the archive could be sealed.')
+    }
+    if (db.prepare(`SELECT 1 FROM mission_finalization_fences
+      WHERE mission_id = ?`).get(missionId) === undefined) {
+      throw new Error('Mission finalization evidence fence is missing; retry finalization.')
+    }
     db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finalized', missionId)
     insertEvent(db, missionId, 'mission_finalized', now(), {
       resulting_status: 'finalized',
       archive_path: archive.archive_path,
     })
+    db.prepare('DELETE FROM mission_finalization_fences WHERE mission_id = ?').run(missionId)
   })
   transaction()
   return { mission: getMission(db, missionId), archive }
@@ -3563,6 +3649,13 @@ function addPosition(db, input, coverageFaultInjection = {}) {
           })
         }
         if (existing.device_id === input.device_id) {
+          if (decision.decision === 'duplicate' && timestampSource === 'fix'
+            && existing.timestamp_source === null) {
+            db.prepare(`UPDATE positions SET timestamp_source = 'fix',
+              timestamp_provenance_recorded_at = ? WHERE id = ?`)
+              .run(receivedAt, existing.id)
+            bumpMissionReplayGeneration(db, input.mission_id)
+          }
           refreshDeviceContact(db, input.mission_id, input.device_id, timestamp)
         }
       })()
@@ -3572,7 +3665,7 @@ function addPosition(db, input, coverageFaultInjection = {}) {
           `the conflicting observation from ${input.device_id} was retained without changing position truth.`,
         )
       }
-      return existing
+      return getById(db, 'positions', existing.id, 'Position')
     }
     const adopt = db.transaction(() => {
       const result = adoptSourceIdentityForLegacyPosition(
@@ -3604,9 +3697,9 @@ function addPosition(db, input, coverageFaultInjection = {}) {
 
   const id = randomUUID()
   const transaction = db.transaction(() => {
-    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind, timestamp_source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin, receivedAt, canonical.contentHash, sourcePositionId === null ? null : 'traccar', timestampSource)
+    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind, timestamp_source, timestamp_provenance_recorded_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin, receivedAt, canonical.contentHash, sourcePositionId === null ? null : 'traccar', timestampSource, timestampSource === 'fix' ? receivedAt : null)
     db.prepare(
       `UPDATE devices
        SET last_seen = CASE
@@ -3652,10 +3745,12 @@ function addPositionsBulk(
   const existingPositionBySourceIdentity = db.prepare(
     'SELECT * FROM positions WHERE mission_id = ? AND source_position_id = ? LIMIT 1',
   )
-  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind, timestamp_source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind, timestamp_source, timestamp_provenance_recorded_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
   const retainFixTimeProvenance = db.prepare(
-    "UPDATE positions SET timestamp_source = 'fix' WHERE id = ? AND timestamp_source IS NULL",
+    `UPDATE positions SET timestamp_source = 'fix',
+      timestamp_provenance_recorded_at = ?
+      WHERE id = ? AND timestamp_source IS NULL`,
   )
   const updateDevice = db.prepare(
     `UPDATE devices
@@ -3671,6 +3766,7 @@ function addPositionsBulk(
   let changedPositionCount = 0
   let insertedPositionCount = 0
   let skippedAmbiguousLegacyAdoptionCount = 0
+  let replayEligibilityChanged = false
   const acceptedCoveragePositions = []
 
   const transaction = db.transaction(() => {
@@ -3718,7 +3814,8 @@ function addPositionsBulk(
           }
           if (existing.device_id === position.device_id) {
             if (decision.decision === 'duplicate' && timestampSource === 'fix') {
-              retainFixTimeProvenance.run(existing.id)
+              const promotion = retainFixTimeProvenance.run(receivedAt, existing.id)
+              replayEligibilityChanged = replayEligibilityChanged || promotion.changes > 0
             }
             updateDevice.run(
               timestamp,
@@ -3787,6 +3884,7 @@ function addPositionsBulk(
         canonical.contentHash,
         sourcePositionId === null ? null : 'traccar',
         timestampSource,
+        timestampSource === 'fix' ? receivedAt : null,
       )
       updateDevice.run(timestamp, timestamp, input.mission_id, position.device_id)
       changedPositionCount += 1
@@ -3800,6 +3898,7 @@ function addPositionsBulk(
       updatedAt: receivedAt,
       failAfterWrite: coverageFaultInjection.afterWrite === true,
     })
+    if (replayEligibilityChanged) bumpMissionReplayGeneration(db, input.mission_id)
   })
 
   transaction()
@@ -5738,6 +5837,26 @@ function ensureWritableMission(db, missionId) {
   }
 }
 
+/** Rejects finished-mission bookkeeping while its immutable archive is being sealed. */
+function assertMissionFinalizationNotInProgress(db, missionId) {
+  const pending = db.prepare(`SELECT 1 FROM mission_finalization_fences
+    WHERE mission_id = ?`).get(missionId)
+  if (pending !== undefined) {
+    throw new Error(
+      'Mission finalization is in progress; retry this change after finalization completes.',
+    )
+  }
+}
+
+/** Revalidates a finished-only write after any asynchronous prerequisite settles. */
+function assertFinishedMissionBookkeepingAllowed(db, missionId) {
+  const mission = getMission(db, missionId)
+  if (mission.status !== 'finished') {
+    throw new Error('Finished-mission bookkeeping is unavailable after finalization.')
+  }
+  assertMissionFinalizationNotInProgress(db, missionId)
+}
+
 function validateLatLon(lat, lon, label) {
   if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
     throw new Error(`${label} latitude must be a finite value between -90 and 90.`)
@@ -5764,11 +5883,20 @@ function insertEvent(db, missionId, eventType, timestamp, detailsJson, recordedA
       detailsJson === undefined || detailsJson === null ? null : JSON.stringify(detailsJson),
       recordedAt,
     )
+  bumpMissionReplayGeneration(db, missionId)
   return eventId
 }
 
 function now() {
   return new Date().toISOString()
+}
+
+/** Invalidates open replay track cursors after evidence becomes newly queryable. */
+function bumpMissionReplayGeneration(db, missionId) {
+  db.prepare(`INSERT INTO mission_replay_generations (mission_id, generation)
+    VALUES (?, 1)
+    ON CONFLICT(mission_id) DO UPDATE SET generation = generation + 1`)
+    .run(missionId)
 }
 
 /** Creates the stable cancellation error surfaced by renderer-owned coverage reads. */

@@ -529,6 +529,7 @@ export type MissionReplayReadInput = {
   readonly cursor?: string | null
   readonly objectLimit?: number
   readonly objectCursor?: string | null
+  readonly replayGeneration?: number
   /** Display-only Traccar-device filter; never changes reconstructed mission state. */
   readonly deviceIds?: readonly string[]
   /** Display-only GPX-outing filter; never changes reconstructed mission state. */
@@ -538,6 +539,7 @@ export type MissionReplayReadInput = {
 export type MissionReplayReadResult = {
   readonly missionId: string
   readonly selectedTime: string
+  readonly replayGeneration?: number
   readonly timezone: string
   readonly objects: readonly {
     readonly object_type: string

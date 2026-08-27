@@ -7,6 +7,7 @@ export function parseGpxDecimal(source) {
   const normalized = source.trim()
   if (normalized === '' || !STRICT_DECIMAL.test(normalized)) return null
   const value = Number(normalized)
+  if (value === 0 && /[1-9]/u.test(normalized)) return null
   return Number.isFinite(value) ? value : null
 }
 

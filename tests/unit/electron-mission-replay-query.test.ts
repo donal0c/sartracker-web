@@ -1,11 +1,17 @@
 import { createRequire } from 'node:module'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as new (path: string) => {
+  close(): void
   exec(sql: string): void
+  pragma(sql: string): unknown
   prepare(sql: string): { run(...params: readonly unknown[]): unknown }
+  transaction<T>(operation: () => T): () => T
 }
 const { readMissionReplayState, readMissionReplayTrackChunk, readMissionReplayObjectChunk } = require(
   '../../electron/mission-replay-query.cjs',
@@ -20,8 +26,9 @@ const { readMissionReplayState, readMissionReplayTrackChunk, readMissionReplayOb
   }
 }
 
-type ReplayInput = { readonly missionId: string; readonly selectedTime: string; readonly trackLimit: number; readonly objectLimit?: number }
+type ReplayInput = { readonly missionId: string; readonly selectedTime: string; readonly trackLimit: number; readonly objectLimit?: number; readonly replayGeneration?: number }
 type ReplayState = {
+  readonly replayGeneration: number
   readonly objects: readonly { readonly object_type: string; readonly object_id: string; readonly state: Record<string, unknown> }[]
   readonly tracks: readonly { readonly evidence_id: string; readonly effective_at: string; readonly recorded_at: string; readonly source_type: string }[]
   readonly staticGpxPointCount: number
@@ -52,6 +59,9 @@ describe('mission replay query [DON-278]', () => {
       prepare(sql: string) {
         preparedSql.push(sql.replace(/\s+/gu, ' ').trim())
         return db.prepare(sql)
+      },
+      transaction<T>(operation: () => T) {
+        return db.transaction(operation)
       },
     } as unknown as InstanceType<typeof Database>
 
@@ -225,8 +235,8 @@ describe('mission replay query [DON-278]', () => {
   it('surfaces every retained unproved or missing-recorded-time position as an explicit limitation', () => {
     const db = createReplayDatabase()
     db.prepare(`INSERT INTO positions VALUES
-      ('legacy', 'mission-1', 'device-1', 52, -9.7, NULL, 5, '2026-08-27T08:00:00Z', NULL, NULL),
-      ('missing-receipt', 'mission-1', 'device-1', 52, -9.7, NULL, 5, '2026-08-27T08:01:00Z', NULL, 'fix')`).run()
+      ('legacy', 'mission-1', 'device-1', 52, -9.7, NULL, 5, '2026-08-27T08:00:00Z', NULL, NULL, NULL),
+      ('missing-receipt', 'mission-1', 'device-1', 52, -9.7, NULL, 5, '2026-08-27T08:01:00Z', NULL, 'fix', NULL)`).run()
     const replay = readMissionReplayState(db, {
       missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 100,
     })
@@ -236,6 +246,238 @@ describe('mission replay query [DON-278]', () => {
       expect.objectContaining({ code: 'position_time_authority_unproved', count: 1 }),
       expect.objectContaining({ code: 'position_recorded_time_missing', count: 1 }),
     ]))
+  })
+
+  it('reads a replay track page and its navigation from one WAL snapshot during a concurrent commit', () => {
+    const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'mission-replay-snapshot-'))
+    const databasePath = path.join(fixtureDirectory, 'fixture.sqlite')
+    const setup = createReplayDatabase(databasePath)
+    setup.pragma('journal_mode = WAL')
+    insertPosition(setup, ['fix-existing', '2026-08-27T08:02:00Z', '2026-08-27T08:03:00Z'])
+    setup.close()
+
+    const reader = new Database(databasePath)
+    const writer = new Database(databasePath)
+    reader.pragma('journal_mode = WAL')
+    writer.pragma('journal_mode = WAL')
+    let concurrentCommitInjected = false
+    const instrumentedReader = {
+      transaction<T>(operation: () => T) {
+        return reader.transaction(operation)
+      },
+      prepare(sql: string) {
+        const statement = reader.prepare(sql) as unknown as {
+          all(...params: readonly unknown[]): readonly unknown[]
+          get(...params: readonly unknown[]): unknown
+          run(...params: readonly unknown[]): unknown
+        }
+        return {
+          all: (...params: readonly unknown[]) => statement.all(...params),
+          get: (...params: readonly unknown[]) => {
+            if (!concurrentCommitInjected && sql.includes('SUM(CASE WHEN timestamp_source')) {
+              concurrentCommitInjected = true
+              writer.prepare(`INSERT INTO positions VALUES (
+                'fix-concurrent', 'mission-1', 'device-1', 52, -9.7, NULL, 5,
+                '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z', 'fix',
+                '2026-08-27T08:01:01Z'
+              )`).run()
+            }
+            return statement.get(...params)
+          },
+          run: (...params: readonly unknown[]) => statement.run(...params),
+        }
+      },
+    } as unknown as InstanceType<typeof Database>
+
+    const page = readMissionReplayTrackChunk(instrumentedReader, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+    })
+
+    expect(concurrentCommitInjected).toBe(true)
+    expect(page.tracks.map((track) => track.evidence_id)).toEqual(['fix-existing'])
+    expect(page.totalTrackCount).toBe(1)
+    expect(page.nextCursor).toBeNull()
+    expect(writer.prepare('SELECT COUNT(*) AS count FROM positions').get()).toMatchObject({ count: 2 })
+    reader.close()
+    writer.close()
+    rmSync(fixtureDirectory, { recursive: true, force: true })
+  })
+
+  it('rejects a stale page chain when a staged GPX revision becomes queryable', () => {
+    const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'mission-replay-chain-'))
+    const databasePath = path.join(fixtureDirectory, 'fixture.sqlite')
+    const setup = createReplayDatabase(databasePath)
+    setup.pragma('journal_mode = WAL')
+    insertPosition(setup, ['fix-first', '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z'])
+    insertPosition(setup, ['fix-second', '2026-08-27T08:03:00Z', '2026-08-27T08:03:01Z'])
+    setup.prepare("INSERT INTO gpx_track_imports VALUES ('gpx-staged', 'mission-1', NULL)").run()
+    setup.prepare(`INSERT INTO gpx_import_revisions (
+      import_id, mission_id, revision_sequence, recorded_at, source_path, file_name,
+      display_name, content_sha256, timing_class, outing_id, completeness, import_state
+    ) VALUES (
+      'gpx-staged', 'mission-1', 1, '2026-08-27T08:00:00Z', '/staged.gpx',
+      'staged.gpx', 'Staged', 'def', 'fully_dated', NULL, 'complete', 'staging'
+    )`).run()
+    setup.prepare(`INSERT INTO gpx_evidence_points VALUES
+      ('gpx-staged', 1, 0, 0, 52, -9.7, NULL, '2026-08-27T08:02:00Z')`).run()
+    setup.close()
+
+    const reader = new Database(databasePath)
+    const writer = new Database(databasePath)
+    const first = readMissionReplayState(reader, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+    })
+    expect(first.tracks.map((track) => track.evidence_id)).toEqual(['fix-first'])
+    expect(first.totalTrackCount).toBe(2)
+    expect(first.nextCursor).not.toBeNull()
+
+    writer.transaction(() => {
+      writer.prepare(`UPDATE gpx_import_revisions SET import_state = 'complete'
+        WHERE import_id = 'gpx-staged'`).run()
+      writer.prepare(`INSERT INTO mission_replay_generations VALUES ('mission-1', 1)`).run()
+    })()
+    expect(() => readMissionReplayTrackChunk(reader, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+      cursor: first.nextCursor ?? undefined,
+    })).toThrow('Mission replay evidence changed while paging. Re-seek the selected time.')
+
+    const refreshed = readMissionReplayState(reader, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 10,
+    })
+    expect(refreshed.tracks.map((track) => track.evidence_id)).toEqual([
+      'fix-first', 'gpx-staged:1:0:0', 'fix-second',
+    ])
+    reader.close()
+    writer.close()
+    rmSync(fixtureDirectory, { recursive: true, force: true })
+  })
+
+  it('rejects a stale page chain when retained fixTime provenance is promoted', () => {
+    const db = createReplayDatabase()
+    insertPosition(db, ['fix-first', '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z'])
+    insertPosition(db, ['fix-second', '2026-08-27T08:03:00Z', '2026-08-27T08:03:01Z'])
+    db.prepare(`INSERT INTO positions VALUES (
+      'fix-unproved', 'mission-1', 'device-1', 52, -9.7, NULL, 5,
+      '2026-08-27T08:02:00Z', '2026-08-27T08:02:01Z', NULL, NULL
+    )`).run()
+    const first = readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+    })
+
+    db.transaction(() => {
+      db.prepare(`UPDATE positions SET timestamp_source = 'fix',
+        timestamp_provenance_recorded_at = '2026-08-27T10:00:00Z'
+        WHERE id = 'fix-unproved'`).run()
+      db.prepare(`INSERT INTO mission_replay_generations VALUES ('mission-1', 1)`).run()
+    })()
+
+    expect(() => readMissionReplayTrackChunk(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+      cursor: first.nextCursor ?? undefined,
+    })).toThrow('Mission replay evidence changed while paging. Re-seek the selected time.')
+  })
+
+  it('rejects a stale object page after a versioned outing mutation', () => {
+    const db = createReplayDatabase()
+    insertOracleVersion(db, {
+      id: 'outing-1-v1', objectType: 'outing', objectId: 'outing-1', sequence: 1,
+      effectiveAt: '2026-08-27T08:00:00Z', recordedAt: '2026-08-27T08:00:01Z',
+      state: { label: 'Outing 1' },
+    })
+    insertOracleVersion(db, {
+      id: 'outing-2-v1', objectType: 'outing', objectId: 'outing-2', sequence: 1,
+      effectiveAt: '2026-08-27T08:00:00Z', recordedAt: '2026-08-27T08:00:01Z',
+      state: { label: 'Outing 2' },
+    })
+    const first = readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z',
+      trackLimit: 100, objectLimit: 1,
+    })
+    db.transaction(() => {
+      insertOracleVersion(db, {
+        id: 'outing-0-v1', objectType: 'outing', objectId: 'outing-0', sequence: 1,
+        effectiveAt: '2026-08-27T08:00:00Z', recordedAt: '2026-08-27T08:00:01Z',
+        state: { label: 'Outing 0' },
+      })
+      db.prepare(`INSERT INTO mission_replay_generations VALUES ('mission-1', 1)`).run()
+    })()
+
+    expect(() => readMissionReplayObjectChunk(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z',
+      trackLimit: 100, objectLimit: 1, objectCursor: first.nextObjectCursor ?? undefined,
+      replayGeneration: first.replayGeneration,
+    })).toThrow('Mission replay evidence changed while paging. Re-seek the selected time.')
+  })
+
+  it('rejects a future replay time so incoming evidence cannot enter an open page chain', () => {
+    const db = createReplayDatabase()
+    expect(() => readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2999-01-01T00:00:00Z', trackLimit: 100,
+    })).toThrow('Mission replay selected time cannot be in the future.')
+  })
+
+  it('invalidates an equal-now chain when a same-millisecond fix becomes queryable', () => {
+    const db = createReplayDatabase()
+    insertPosition(db, ['fix-first', '2026-08-27T08:00:00Z', '2026-08-27T08:00:01Z'])
+    insertPosition(db, ['fix-second', '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z'])
+    vi.useFakeTimers()
+    vi.setSystemTime('2026-08-27T09:00:00.000Z')
+    try {
+      const first = readMissionReplayState(db, {
+        missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00.000Z', trackLimit: 1,
+      })
+      db.transaction(() => {
+        db.prepare(`INSERT INTO positions VALUES (
+          'fix-same-ms', 'mission-1', 'device-1', 52, -9.7, NULL, 5,
+          '2026-08-27T08:30:00Z', '2026-08-27T09:00:00.000Z', 'fix',
+          '2026-08-27T09:00:00.000Z'
+        )`).run()
+      })()
+      expect(() => readMissionReplayTrackChunk(db, {
+        missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00.000Z', trackLimit: 1,
+        cursor: first.nextCursor ?? undefined,
+      })).toThrow('Mission replay evidence changed while paging. Re-seek the selected time.')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not invalidate a replay chain when another mission receives positions', () => {
+    const db = createReplayDatabase()
+    insertPosition(db, ['fix-first', '2026-08-27T08:00:00Z', '2026-08-27T08:00:01Z'])
+    insertPosition(db, ['fix-second', '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z'])
+    const first = readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+    })
+
+    db.prepare(`INSERT INTO positions VALUES (
+      'other-mission-fix', 'mission-2', 'device-2', 52, -9.7, NULL, 5,
+      '2026-08-27T08:30:00Z', '2026-08-27T08:30:01Z', 'fix',
+      '2026-08-27T08:30:01Z'
+    )`).run()
+
+    const continuation = readMissionReplayTrackChunk(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+      cursor: first.nextCursor ?? undefined,
+    })
+    expect(continuation.tracks.map((track) => track.evidence_id)).toEqual(['fix-second'])
+  })
+
+  it('does not invalidate a track chain for derived coverage-only work', () => {
+    const db = createReplayDatabase()
+    insertPosition(db, ['fix-first', '2026-08-27T08:00:00Z', '2026-08-27T08:00:01Z'])
+    insertPosition(db, ['fix-second', '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z'])
+    const first = readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+    })
+
+    db.prepare(`INSERT INTO coverage_missions VALUES ('mission-1', 1)`).run()
+
+    const continuation = readMissionReplayTrackChunk(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+      cursor: first.nextCursor ?? undefined,
+    })
+    expect(continuation.tracks.map((track) => track.evidence_id)).toEqual(['fix-second'])
   })
 
   it('uses recorded time as the eligibility fence for lifecycle and group membership', () => {
@@ -358,7 +600,7 @@ describe('mission replay query [DON-278]', () => {
 
     const final = readMissionReplayObjectChunk(db, {
       missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z',
-      trackLimit: 100, objectLimit: 100, objectCursor: '200',
+      trackLimit: 100, objectLimit: 100, objectCursor: '200', replayGeneration: 0,
     })
     expect(final.objects).toHaveLength(5)
     expect(final.objectCursor).toBe('200')
@@ -366,8 +608,8 @@ describe('mission replay query [DON-278]', () => {
   })
 })
 
-function createReplayDatabase(): InstanceType<typeof Database> {
-  const db = new Database(':memory:')
+function createReplayDatabase(databasePath = ':memory:'): InstanceType<typeof Database> {
+  const db = new Database(databasePath)
   db.exec(`
     CREATE TABLE mission_object_versions (
       id TEXT, mission_id TEXT, object_type TEXT, object_id TEXT, version_sequence INTEGER,
@@ -376,7 +618,8 @@ function createReplayDatabase(): InstanceType<typeof Database> {
     );
     CREATE TABLE positions (
       id TEXT, mission_id TEXT, device_id TEXT, lat REAL, lon REAL, altitude REAL,
-      accuracy REAL, timestamp TEXT, received_at TEXT, timestamp_source TEXT
+      accuracy REAL, timestamp TEXT, received_at TEXT, timestamp_source TEXT,
+      timestamp_provenance_recorded_at TEXT
     );
     CREATE INDEX idx_positions_mission_device_timestamp
       ON positions(mission_id, device_id, timestamp);
@@ -407,6 +650,12 @@ function createReplayDatabase(): InstanceType<typeof Database> {
       id TEXT, sequence INTEGER, mission_id TEXT, mission_team_id TEXT,
       traccar_device_id TEXT, change TEXT, observed_at TEXT, recorded_at TEXT,
       recording_completeness TEXT
+    );
+    CREATE TABLE mission_replay_generations (
+      mission_id TEXT PRIMARY KEY, generation INTEGER NOT NULL
+    );
+    CREATE TABLE coverage_missions (
+      mission_id TEXT PRIMARY KEY, change_seq INTEGER NOT NULL
     );
   `)
   return db
@@ -451,8 +700,8 @@ function insertPositionForDevice(
       SELECT 1 FROM devices WHERE mission_id = 'mission-1' AND device_id = ?
     )`).run(deviceId, deviceId)
   db.prepare(`INSERT INTO positions VALUES (
-    ?, 'mission-1', ?, 52, -9.7, NULL, 5, ?, ?, 'fix'
-  )`).run(values[0], deviceId, ...values.slice(1))
+    ?, 'mission-1', ?, 52, -9.7, NULL, 5, ?, ?, 'fix', ?
+  )`).run(values[0], deviceId, ...values.slice(1), values[2])
 }
 
 function insertOracleVersion(

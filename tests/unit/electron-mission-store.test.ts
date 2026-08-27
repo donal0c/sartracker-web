@@ -1,4 +1,4 @@
-import { access, mkdtemp, readdir, rm } from 'node:fs/promises'
+import { access, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -122,6 +122,19 @@ type ElectronMissionStore = {
   readonly pauseMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly resumeMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
+  readonly createOuting: (input: {
+    readonly mission_id: string
+    readonly label: string
+  }) => Promise<{ readonly id: string; readonly label: string }>
+  readonly renameOuting: (input: {
+    readonly mission_id: string
+    readonly outing_id: string
+    readonly label: string
+  }) => Promise<{ readonly id: string; readonly label: string }>
+  readonly listOutings: (missionId: string) => Promise<readonly {
+    readonly id: string
+    readonly label: string
+  }[]>
   readonly listMissionEvents: (missionId: string) => Promise<readonly {
     readonly event_type: string
     readonly timestamp: string
@@ -3406,6 +3419,62 @@ describe('electron mission store', () => {
     expect(entries.get('mission-store.sqlite')!.length).toBeGreaterThan(0)
   })
 
+  it('fences finished-mission bookkeeping while the final archive snapshot is being sealed [DON-278]', async () => {
+    const { readZipArchive } = require('../../electron/zip-archive.cjs') as {
+      readonly readZipArchive: (buffer: Buffer) => ReadonlyMap<string, Buffer>
+    }
+    let releaseCopied = () => undefined
+    let signalCopied = () => undefined
+    const copied = new Promise<void>((resolve) => { signalCopied = resolve })
+    const holdCopied = new Promise<void>((resolve) => { releaseCopied = resolve })
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(() => ({
+        id: 'finalization-fence-backup', type: 'backup', requestedAtMs: Date.now(),
+      })),
+      requested: vi.fn().mockResolvedValue(undefined),
+      started: vi.fn().mockResolvedValue(undefined),
+      phase: vi.fn(async (_operation, stage) => {
+        if (stage === 'copied') {
+          signalCopied()
+          await holdCopied
+        }
+      }),
+      completed: vi.fn().mockResolvedValue(undefined),
+      failed: vi.fn().mockResolvedValue(undefined),
+      startMission: vi.fn().mockResolvedValue(undefined),
+      recordTrackingBatch: vi.fn().mockResolvedValue(undefined),
+      recordInsertedPositions: vi.fn().mockResolvedValue(undefined),
+    }
+    store = await createStore({ storageDiagnostics })
+    const mission = await store.createMission({ name: 'Finalization Fence Mission' })
+    const outing = await store.createOuting({ mission_id: mission.id, label: 'Before' })
+    await store.finishMission(mission.id)
+
+    const finalization = store.finalizeMission(mission.id)
+    await copied
+    await expect(store.renameOuting({
+      mission_id: mission.id,
+      outing_id: outing.id,
+      label: 'After',
+    })).rejects.toThrow(/finalization is in progress/iu)
+    releaseCopied()
+    const result = await finalization
+
+    expect(await store.listOutings(mission.id)).toEqual([
+      expect.objectContaining({ id: outing.id, label: 'Before' }),
+    ])
+    const archiveEntries = readZipArchive(await (await import('node:fs/promises')).readFile(
+      result.archive.archive_path,
+    ))
+    const archivedDatabasePath = path.join(userDataPath!, 'archived-finalization-fence.sqlite')
+    await writeFile(archivedDatabasePath, archiveEntries.get('mission-store.sqlite')!)
+    const archivedDatabase = new Database(archivedDatabasePath, { readonly: true })
+    expect(archivedDatabase.prepare('SELECT label FROM outings WHERE id = ?').get(outing.id))
+      .toMatchObject({ label: 'Before' })
+    archivedDatabase.close()
+    await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
+  })
+
   it('does not overwrite an earlier mission archive when a later mission finalizes (DON-162)', async () => {
     const { readFile } = await import('node:fs/promises')
     store = await createStore()
@@ -3454,6 +3523,7 @@ describe('electron mission store', () => {
       },
     })
     const mission = await store.createMission({ name: 'Interrupted Finalize Mission' })
+    const outing = await store.createOuting({ mission_id: mission.id, label: 'Before retry' })
     await store.finishMission(mission.id)
 
     await expect(store.finalizeMission(mission.id)).rejects.toThrow(
@@ -3465,6 +3535,11 @@ describe('electron mission store', () => {
     let eventTypes = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
     expect(eventTypes.filter((eventType) => eventType === 'mission_archive_succeeded')).toHaveLength(1)
     expect(eventTypes).not.toContain('mission_finalized')
+    await expect(store.renameOuting({
+      mission_id: mission.id,
+      outing_id: outing.id,
+      label: 'Stale after archive',
+    })).rejects.toThrow(/finalization is in progress/iu)
 
     store.close()
     store = createElectronMissionStore({ userDataPath: userDataPath! })
@@ -3475,6 +3550,56 @@ describe('electron mission store', () => {
     eventTypes = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
     expect(eventTypes.filter((eventType) => eventType === 'mission_archive_succeeded')).toHaveLength(1)
     expect(eventTypes.filter((eventType) => eventType === 'mission_finalized')).toHaveLength(1)
+  })
+
+  it('releases the bookkeeping fence when archive creation fails before success [DON-278]', async () => {
+    store = await createStore({
+      archiveFaultInjection: { corruptSnapshotBeforeZip: true },
+    })
+    const mission = await store.createMission({ name: 'Failed Finalize Fence Mission' })
+    const outing = await store.createOuting({ mission_id: mission.id, label: 'Before failure' })
+    await store.finishMission(mission.id)
+
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/SQLite snapshot/iu)
+    await expect(store.renameOuting({
+      mission_id: mission.id,
+      outing_id: outing.id,
+      label: 'Correction after failure',
+    })).resolves.toMatchObject({ label: 'Correction after failure' })
+    await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
+  })
+
+  it('rejects a stale evidence-loss acknowledgement after finalization wins the async race [DON-278]', async () => {
+    let releaseRoster = () => undefined
+    let signalRosterRead = () => undefined
+    const rosterRead = new Promise<void>((resolve) => { signalRosterRead = resolve })
+    const roster = new Promise<readonly string[]>((resolve) => {
+      releaseRoster = () => resolve([])
+    })
+    store = await createStore({
+      readAdminRoster: async () => {
+        signalRosterRead()
+        return roster
+      },
+    })
+    const mission = await store.createMission({ name: 'Acknowledgement Finalize Race' })
+    await store.finishMission(mission.id)
+
+    const acknowledgement = store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Stale Admin',
+      reason: 'Must not write after the archive snapshot.',
+    })
+    await rosterRead
+    await expect(store.finalizeMission(mission.id)).resolves.toMatchObject({
+      mission: { status: 'finalized' },
+    })
+    releaseRoster()
+
+    await expect(acknowledgement).rejects.toThrow(/unavailable after finalization/iu)
+    const eventTypes = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
+    expect(eventTypes).not.toContain('mission_evidence_loss_acknowledgement_denied')
+    expect(eventTypes).not.toContain('mission_evidence_loss_acknowledged')
   })
 
   it('serializes concurrent finalize requests so a mission finalizes once with one archive [DON-232]', async () => {

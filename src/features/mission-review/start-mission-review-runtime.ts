@@ -503,6 +503,7 @@ export async function startMissionReviewRuntime(
         trackLimit: 500,
         objectLimit: 100,
         objectCursor,
+        replayGeneration: replay.result.replayGeneration ?? 0,
       }, requestId)
       if (currentToken !== replayToken || activeReplayRequestId !== requestId) return
       activeReplayRequestId = null

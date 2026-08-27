@@ -128,27 +128,30 @@ describe('gpx parser', () => {
   })
 
   it('rejects empty numeric scalars and non-explicit source times instead of coercing evidence [DON-274]', () => {
+    const underflowDecimal = `0.${'0'.repeat(323)}1`
     const parsed = parseGpxFile({
       fileName: 'strict-scalars.gpx',
       sourcePath: '/tracks/strict-scalars.gpx',
       contents: `<gpx version="1.1" creator="vitest"><trk><trkseg>
         <trkpt lat="" lon=""><ele> </ele><time>2026</time></trkpt>
         <trkpt lat="1e-9999" lon="-1e-9999" />
+        <trkpt lat="${underflowDecimal}" lon="-${underflowDecimal}" />
         <trkpt lat="52" lon="-9.7"><ele> </ele><time>2026-08-27T08:00:00</time></trkpt>
         <trkpt lat="52.01" lon="-9.71"><time>2026-02-30T08:00:00Z</time></trkpt>
       </trkseg></trk></gpx>`,
     })
 
     expect(parsed.points).toEqual([
-      expect.objectContaining({ pointIndex: 2, elevation: null, timestamp: null }),
       expect.objectContaining({ pointIndex: 3, elevation: null, timestamp: null }),
+      expect.objectContaining({ pointIndex: 4, elevation: null, timestamp: null }),
     ])
     expect(parsed.rejections).toEqual(expect.arrayContaining([
       expect.objectContaining({ pointIndex: 0, reason: 'invalid_coordinates' }),
       expect.objectContaining({ pointIndex: 1, reason: 'invalid_coordinates' }),
-      expect.objectContaining({ pointIndex: 2, reason: 'invalid_elevation' }),
-      expect.objectContaining({ pointIndex: 2, reason: 'invalid_timestamp' }),
+      expect.objectContaining({ pointIndex: 2, reason: 'invalid_coordinates' }),
+      expect.objectContaining({ pointIndex: 3, reason: 'invalid_elevation' }),
       expect.objectContaining({ pointIndex: 3, reason: 'invalid_timestamp' }),
+      expect.objectContaining({ pointIndex: 4, reason: 'invalid_timestamp' }),
     ]))
     expect(JSON.stringify(parsed)).not.toContain('2026-01-01T00:00:00.000Z')
   })

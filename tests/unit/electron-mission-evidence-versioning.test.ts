@@ -24,6 +24,7 @@ type MissionEvidenceStore = {
   createMission(input: { readonly name: string; readonly start_time?: string }): Promise<{ readonly id: string }>
   getMission(missionId: string): Promise<{ readonly status: string }>
   addPosition(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
+  addPositionsBulk(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   upsertDevice(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   addMissionParticipant(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   finishMission(missionId: string): Promise<{ readonly status: string }>
@@ -69,6 +70,7 @@ type MissionEvidenceStore = {
     readonly dispatchDurationMs: number
   }>
   readMissionReplay(input: Readonly<Record<string, unknown>>, requestId?: string): Promise<Readonly<Record<string, unknown>>>
+  readMissionReplayTrackChunk(input: Readonly<Record<string, unknown>>, requestId?: string): Promise<Readonly<Record<string, unknown>>>
   cancelMissionReplay(requestId: string): Promise<boolean>
   listMissionObjectVersions(input: {
     readonly missionId: string
@@ -160,7 +162,7 @@ describe('mission evidence versioning [DON-277]', () => {
       .toMatch(/WHERE timestamp_source IS NULL/u)
     expect(db.prepare(`SELECT sql FROM sqlite_master
       WHERE type = 'index' AND name = 'idx_positions_replay_known_at'`).get()?.sql)
-      .toMatch(/CASE WHEN received_at > timestamp THEN received_at ELSE timestamp END/u)
+      .toMatch(/timestamp_provenance_recorded_at/u)
     expect(db.prepare(`SELECT sql FROM sqlite_master
       WHERE type = 'table' AND name = 'mission_replay_position_day_counts'`).get()?.sql)
       .toMatch(/known_day TEXT NOT NULL/u)
@@ -201,6 +203,132 @@ describe('mission evidence versioning [DON-277]', () => {
         { known_day: '2026-08-27', position_count: 1 },
       ])
     db.close()
+  })
+
+  it('records late fixTime provenance and invalidates an already-open replay chain [DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Replay Provenance Promotion Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id, device_id: 'device-1', name: 'Device 1',
+      color: '#38bdf8', status: 'online',
+    })
+    const db = openDatabase(await databasePath())
+    const insert = db.prepare(`INSERT INTO positions (
+      id, mission_id, device_id, source_position_id, lat, lon, accuracy,
+      timestamp, received_at, data_origin, timestamp_source
+    ) VALUES (?, ?, 'device-1', ?, 52, -9.7, 5, ?, ?, 'live', ?)`)
+    insert.run('fix-first', mission.id, 'source-first', '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z', 'fix')
+    insert.run('fix-unproved', mission.id, 'source-unproved', '2026-08-27T08:02:00Z', '2026-08-27T08:02:01Z', null)
+    insert.run('fix-second', mission.id, 'source-second', '2026-08-27T08:03:00Z', '2026-08-27T08:03:01Z', 'fix')
+    const initialGeneration = Number(db.prepare(`SELECT generation FROM mission_replay_generations
+      WHERE mission_id = ?`).get(mission.id)?.generation ?? 0)
+    db.close()
+    const selectedTime = new Date().toISOString()
+    const first = await store.readMissionReplay({
+      missionId: mission.id, selectedTime, trackLimit: 1,
+    }) as { readonly nextCursor: string }
+
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [{
+        device_id: 'device-1', source_position_id: 'source-unproved',
+        lat: 52, lon: -9.7, accuracy: 5,
+        timestamp: '2026-08-27T08:02:00Z', timestamp_source: 'fix',
+      }],
+    })
+
+    await expect(store.readMissionReplayTrackChunk({
+      missionId: mission.id, selectedTime, trackLimit: 1, cursor: first.nextCursor,
+    })).rejects.toThrow('Mission replay evidence changed while paging. Re-seek the selected time.')
+    const verified = openDatabase(await databasePath())
+    expect(verified.prepare(`SELECT timestamp_source, timestamp_provenance_recorded_at
+      FROM positions WHERE id = 'fix-unproved'`).get()).toMatchObject({
+      timestamp_source: 'fix', timestamp_provenance_recorded_at: expect.any(String),
+    })
+    expect(verified.prepare(`SELECT generation FROM mission_replay_generations
+      WHERE mission_id = ?`).get(mission.id)).toMatchObject({ generation: initialGeneration + 1 })
+    verified.close()
+  })
+
+  it('invalidates an equal-now replay chain when an accepted fix enters that mission [DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Equal-now Replay Fence Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id, device_id: 'device-1', name: 'Device 1',
+      color: '#38bdf8', status: 'online',
+    })
+    vi.useFakeTimers()
+    vi.setSystemTime('2026-08-27T09:00:00.000Z')
+    try {
+      await store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [
+          {
+            device_id: 'device-1', source_position_id: 'source-first',
+            lat: 52, lon: -9.7, timestamp: '2026-08-27T08:01:00Z', timestamp_source: 'fix',
+          },
+          {
+            device_id: 'device-1', source_position_id: 'source-second',
+            lat: 52.01, lon: -9.71, timestamp: '2026-08-27T08:02:00Z', timestamp_source: 'fix',
+          },
+        ],
+      })
+      const selectedTime = '2026-08-27T09:00:00.000Z'
+      const first = await store.readMissionReplay({
+        missionId: mission.id, selectedTime, trackLimit: 1,
+      }) as { readonly nextCursor: string }
+
+      await store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [{
+          device_id: 'device-1', source_position_id: 'source-same-ms',
+          lat: 52.02, lon: -9.72, timestamp: '2026-08-27T08:03:00Z', timestamp_source: 'fix',
+        }],
+      })
+
+      await expect(store.readMissionReplayTrackChunk({
+        missionId: mission.id, selectedTime, trackLimit: 1, cursor: first.nextCursor,
+      })).rejects.toThrow('Mission replay evidence changed while paging. Re-seek the selected time.')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('invalidates an open replay chain when participant evidence changes [DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Participant Replay Fence Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id, device_id: 'device-1', name: 'Device 1',
+      color: '#38bdf8', status: 'online',
+    })
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [
+        {
+          device_id: 'device-1', source_position_id: 'source-first',
+          lat: 52, lon: -9.7, timestamp: '2026-08-27T08:01:00Z', timestamp_source: 'fix',
+        },
+        {
+          device_id: 'device-1', source_position_id: 'source-second',
+          lat: 52.01, lon: -9.71, timestamp: '2026-08-27T08:02:00Z', timestamp_source: 'fix',
+        },
+      ],
+    })
+    const selectedTime = new Date().toISOString()
+    const first = await store.readMissionReplay({
+      missionId: mission.id, selectedTime, trackLimit: 1,
+    }) as { readonly nextCursor: string }
+
+    await store.addMissionParticipant({
+      mission_id: mission.id,
+      kind: 'device',
+      ref: 'device-1',
+      confirmed_by: 'Coordinator One',
+    })
+
+    await expect(store.readMissionReplayTrackChunk({
+      missionId: mission.id, selectedTime, trackLimit: 1, cursor: first.nextCursor,
+    })).rejects.toThrow('Mission replay evidence changed while paging. Re-seek the selected time.')
   })
 
   it('writes projection, immutable version, and audit identity in one transaction', async () => {
@@ -994,9 +1122,11 @@ describe('mission evidence versioning [DON-277]', () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Strict GPX Scalar Mission' })
     const sourcePath = path.join(userDataPath!, 'strict-scalars.gpx')
+    const underflowDecimal = `0.${'0'.repeat(323)}1`
     await writeFile(sourcePath, `<gpx version="1.1"><trk><trkseg>
       <trkpt lat="" lon=""><ele></ele><time>2026</time></trkpt>
       <trkpt lat="1e-9999" lon="-1e-9999" />
+      <trkpt lat="${underflowDecimal}" lon="-${underflowDecimal}" />
       <trkpt lat="52" lon="-9.7"><ele> </ele><time>2026-08-27T08:00:00</time></trkpt>
       <trkpt lat="52.01" lon="-9.71"><time>2026-02-30T08:00:00Z</time></trkpt>
     </trkseg></trk></gpx>`)
@@ -1007,16 +1137,17 @@ describe('mission evidence versioning [DON-277]', () => {
     const db = openDatabase(await databasePath())
     expect(db.prepare(`SELECT point_index, elevation, source_time FROM gpx_evidence_points
       ORDER BY point_index`).all()).toEqual([
-      { point_index: 2, elevation: null, source_time: null },
       { point_index: 3, elevation: null, source_time: null },
+      { point_index: 4, elevation: null, source_time: null },
     ])
     expect(db.prepare(`SELECT point_index, reason FROM gpx_evidence_rejections
       ORDER BY point_index, reason`).all()).toEqual(expect.arrayContaining([
       { point_index: 0, reason: 'invalid_coordinates' },
       { point_index: 1, reason: 'invalid_coordinates' },
-      { point_index: 2, reason: 'invalid_elevation' },
-      { point_index: 2, reason: 'invalid_timestamp' },
+      { point_index: 2, reason: 'invalid_coordinates' },
+      { point_index: 3, reason: 'invalid_elevation' },
       { point_index: 3, reason: 'invalid_timestamp' },
+      { point_index: 4, reason: 'invalid_timestamp' },
     ]))
     db.close()
   })
@@ -1073,6 +1204,8 @@ describe('mission evidence versioning [DON-277]', () => {
       WHERE mission_id = ?`).get(mission.id)).toMatchObject({ count: 1 })
     expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_aliases
       WHERE mission_id = ?`).get(mission.id)).toMatchObject({ count: 2 })
+    expect(Number(db.prepare(`SELECT generation FROM mission_replay_generations
+      WHERE mission_id = ?`).get(mission.id)?.generation ?? 0)).toBeGreaterThan(1)
     db.close()
   }, 30_000)
 

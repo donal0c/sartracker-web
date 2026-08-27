@@ -33,7 +33,12 @@ source-retraced. A later complete four-review wave on
 the source of the next seven dispositions below. Broad, persistence and
 renderer rechecks on `afc4880ab104ea0cbe75a3f139575c6f3b8c52f2` then found
 the remaining scalar, workplan and finalized-UI findings; the concurrency slot
-was not spent on an already-invalid head. Accepted findings and dispositions are:
+was not spent on an already-invalid head. Broad review on
+`7325e4736b954b9a622f0344d1aee9ed43d38723` then found the last fixed-form
+nonzero decimal underflow path; persistence returned clean on that head, but
+its affected scalar recheck is required again. Concurrency review on the same
+head found that independent replay SELECTs and later page workers could observe
+different WAL states. Accepted findings and dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -116,9 +121,38 @@ was not spent on an already-invalid head. Accepted findings and dispositions are
   the initiating mission identity and generation token are captured before the
   asynchronous directory read and stale results are discarded;
 - exact whole-state replay totals still performed a cold full-position scan:
-  new stores maintain a transactional two-clock daily read model keyed by
-  `max(fixTime, recorded_at)`, with compact partial-day/device indexes and
+  new stores maintain a transactional three-clock daily read model keyed by
+  `max(fixTime, received_at, provenance-known-at)`, with compact partial-day/device indexes and
   explicit legacy fallback limitations.
+- replay could tear a page from its total inside one worker and could admit a
+  newly queryable staged GPX, same-millisecond fix, promoted fixTime provenance
+  or versioned object between later workers: every replay response now pins one
+  WAL read transaction. Exact track cursors bind both the mission replay
+  generation and the exact eligible-position count captured in that snapshot;
+  object continuations must return the captured generation. GPX publication,
+  retained fixTime-provenance promotion, versioned objects, lifecycle changes
+  and participant/group evidence advance the generation in their owning
+  transaction. Append-only accepted fixes are fenced by the snapshot count,
+  without coupling replay to derived coverage work or unrelated missions. Stale
+  chains fail closed with an explicit re-seek while a fresh historical seek
+  still includes GPX by its original recorded knowledge time. A nullable
+  `timestamp_provenance_recorded_at` distinguishes when retained fixTime
+  authority was learned without overwriting the original receipt clock. The
+  authentic-v11 path adds metadata only and explicitly retains its full-mission
+  legacy scan fallback rather than rebuilding 960k/2m indexes during open;
+- the first mission-scoped cursor fence scanned `MAX(rowid)` across every
+  mission position and the replacement coverage sequence also changed for
+  derived coverage work: track cursors now bind the exact eligible-position
+  count already computed in their WAL snapshot. A reordered new-store partial
+  provenance index makes missing-recorded evidence checks selective without
+  adding any index build to authentic-v11 startup;
+- finalization could snapshot a finished mission, admit an outing correction,
+  and then seal the stale archive: a durable per-mission finalization fence is
+  created with the request event before backup. Finished-mission bookkeeping,
+  manual archives and evidence-loss acknowledgements recheck that fence and
+  mission status at their owning transaction. The fence survives an archive-
+  succeeded interruption for safe retry, clears after a pre-success archive
+  failure, and is removed atomically only when finalization commits;
 - a valid 67 MB GPX could retain one size-proportional Base64 value in an
   immediate transaction and stall a current write for 281.04 ms: exact source
   reads now use a fixed 8 MiB ceiling, fail the next byte durably before
@@ -142,7 +176,8 @@ was not spent on an already-invalid head. Accepted findings and dispositions are
 - canonical programme policy and baton text still described five PRs and PR1:
   policy, branch exception, grouping, workplan and current baton now agree on
   six PRs with PR5 evidence/replay and PR6 archive lifecycle.
-- exponent-form GPX decimals could underflow nonzero values into exact zero,
+- exponent-form and fixed-form subnormal GPX decimals could underflow nonzero
+  values into exact zero,
   while timezone offsets beyond XML Schema's `±14:00` boundary and year zero
   could become precise UTC evidence: shared parsing now accepts only the GPX
   decimal lexical form and calendar-valid explicit timestamps within the
@@ -164,7 +199,9 @@ substitutes for that wave.
 
 The latest local remediation tree passed:
 
-- full unit: 288 files / 2,374 tests;
+- full unit: 288 files / 2,388 tests with eight workers; all timing-gate tests
+  that exceeded thresholds in oversubscribed default-worker runs passed again
+  in their focused 178-test set;
 - backend: 51 passed / 1 ignored;
 - Chromium: 162/162;
 - visual Playwright: 58/58;
@@ -181,17 +218,25 @@ arm64/Node v22.22.3 with timezone `Europe/Dublin`:
 
 | Preset | Fixture SHA-256 | Seek / restart | Import dispatch | Current read during import / replay | Event-loop max | Equality |
 | --- | --- | --- | --- | --- | --- | --- |
-| 960k normal envelope | `a3237ce4ca959a188fbfd3ffe80e9037d3c2b4230f70bee600ca65e08bf85099` | 61.34 / 55.48 ms | 3.42 ms | 1.21 / 0.93 ms | 38.24 ms | exact first page |
-| 2m headroom | `46a6f9980c184a856832c0c596cbae18c13e963e13707d10ceedbfee0e527afe` | 73.25 / 67.91 ms | 6.07 ms | 13.60 / 1.00 ms | 47.44 ms | exact first page |
+| 960k normal envelope | `5b6529728a8c9d0c0ced4aa11cd5a7f366b98a0540d935f08cb005397e47abd6` | 60.34 / 53.85 ms | 2.41 ms | 0.53 / 0.80 ms | 48.33 ms | exact first page |
+| 2m headroom | `4be522adf9742e12e558bcdd0c243e6afb99c660ffd8e666a8100575c224860c` | 72.59 / 79.01 ms | 1.83 ms | 2.16 / 7.00 ms | 47.31 ms | exact first page |
 
 Both presets imported 50,000 GPX points while continuously writing current
-positions. The 960k run recorded 1,025 current writes (38.18 ms maximum,
-2.41 ms p95) and an exact 914,001 near-tail page in 65.61 ms. The 2m headroom
-run recorded 1,122 writes (42.01 ms maximum, 2.08 ms p95) and exact 1,850,001
-near-tail paging in 75.89 ms. Both passed restart equality. The ordinary seek
+positions. The latest 960k run recorded 1,020 current writes (39.83 ms maximum,
+2.56 ms p95) and an exact 914,001 near-tail page in 55.76 ms. The 2m headroom
+run recorded 982 writes (42.81 ms maximum, 4.26 ms p95) and exact 1,850,001
+near-tail paging in 86.60 ms. Both passed restart equality. The ordinary seek
 stayed below one second and every measured main dispatch/current-read/open/event-
 loop path stayed below the 200 ms hard block. The 2m row remains deliberate
 headroom/renderer-rejection evidence, not a normal mission-size claim.
+
+A derived 960,000-position authentic-v11 migration profile removed the PR5
+provenance/generation/read-model structures before candidate open. Exact v12
+open completed in 13.02 ms with a 13.32 ms maximum heartbeat gap, retained all
+960,000 positions, added the nullable provenance column and generation table,
+added the durable finalization-fence table, and deliberately left both large
+replay indexes and the daily count table absent so the documented full-mission
+legacy fallback remains explicit.
 
 An earlier pushed remediation candidate was correctly rejected by Linux run
 `33096222238`: its 50,000-point GPX/current-write contention regression measured

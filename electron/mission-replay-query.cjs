@@ -8,7 +8,16 @@ const MAX_REPLAY_FILTER_IDS = 200
 
 /** Builds the deterministic metadata snapshot and first bounded exact-track page for data known at T. */
 function readMissionReplayState(database, input) {
-  const normalized = normalizeReplayInput(input)
+  return database.transaction(() => readMissionReplayStateWithinSnapshot(database, input))()
+}
+
+/** Builds replay state while the caller-owned SQLite read transaction pins one WAL snapshot. */
+function readMissionReplayStateWithinSnapshot(database, input) {
+  const baseInput = normalizeReplayInput(input)
+  const normalized = {
+    ...baseInput,
+    replayGeneration: readMissionReplayGeneration(database, baseInput.missionId),
+  }
   const objectResult = readObjectRows(database, normalized, 0)
   const trackResult = readTrackRows(database, normalized, null)
   const staticGpxEvidence = readStaticGpxEvidence(database, normalized)
@@ -22,6 +31,7 @@ function readMissionReplayState(database, input) {
   return {
     missionId: normalized.missionId,
     selectedTime: normalized.selectedTime,
+    replayGeneration: normalized.replayGeneration,
     timezone: normalized.timezone,
     objects: objectResult.objects,
     totalObjectCount: objectResult.totalObjectCount,
@@ -94,12 +104,26 @@ function readMissionGroupMembership(database, input) {
 
 /** Reads one bounded reconstructed-object page without sending unbounded state to main. */
 function readMissionReplayObjectChunk(database, input) {
-  const normalized = normalizeReplayInput(input)
+  return database.transaction(() => readMissionReplayObjectChunkWithinSnapshot(database, input))()
+}
+
+/** Reads an object page while the caller-owned SQLite read transaction pins one WAL snapshot. */
+function readMissionReplayObjectChunkWithinSnapshot(database, input) {
+  const baseInput = normalizeReplayInput(input)
+  const currentGeneration = readMissionReplayGeneration(database, baseInput.missionId)
+  if (!Number.isSafeInteger(input.replayGeneration) || input.replayGeneration < 0) {
+    throw new Error('Mission replay object snapshot generation is invalid.')
+  }
+  if (input.replayGeneration !== currentGeneration) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
+  const normalized = { ...baseInput, replayGeneration: currentGeneration }
   const offset = normalizeReplayCursor(input.objectCursor)
   const result = readObjectRows(database, normalized, offset)
   return {
     missionId: normalized.missionId,
     selectedTime: normalized.selectedTime,
+    replayGeneration: normalized.replayGeneration,
     objects: result.objects,
     totalObjectCount: result.totalObjectCount,
     objectCursor: String(offset),
@@ -113,8 +137,21 @@ function readMissionReplayObjectChunk(database, input) {
 
 /** Reads one bounded continuation page from exact Traccar/GPX source evidence. */
 function readMissionReplayTrackChunk(database, input) {
-  const normalized = normalizeReplayInput(input)
+  return database.transaction(() => readMissionReplayTrackChunkWithinSnapshot(database, input))()
+}
+
+/** Reads a track page while the caller-owned SQLite read transaction pins one WAL snapshot. */
+function readMissionReplayTrackChunkWithinSnapshot(database, input) {
   const cursor = normalizeReplayTrackCursor(input.cursor)
+  const baseInput = normalizeReplayInput(input)
+  const currentGeneration = readMissionReplayGeneration(database, baseInput.missionId)
+  if (cursor !== null && cursor.replayGeneration !== currentGeneration) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
+  const normalized = {
+    ...baseInput,
+    replayGeneration: currentGeneration,
+  }
   const result = readTrackRows(database, normalized, cursor)
   return {
     missionId: normalized.missionId,
@@ -183,8 +220,11 @@ function readObjectRows(database, input, offset) {
 }
 
 function readTrackRows(database, input, cursor) {
-  const page = readTrackRowsBySourceIndex(database, input, cursor)
   const positionStats = readPositionReplayStats(database, input)
+  if (cursor !== null && cursor.eligiblePositionCount !== positionStats.eligibleCount) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
+  const page = readTrackRowsBySourceIndex(database, input, cursor)
   const totalTrackCount = countReplayTrackRows(database, input, positionStats.eligibleCount)
   const staticGpxPointCount = countStaticGpxPoints(database, input)
   return {
@@ -195,9 +235,15 @@ function readTrackRows(database, input, cursor) {
     positionStats,
     previousCursor: page.offset === 0 || page.rows.length === 0
       ? null
-      : encodeReplayTrackCursor('before', page.offset, page.rows[0]),
+      : encodeReplayTrackCursor(
+          'before', page.offset, page.rows[0], input.replayGeneration,
+          positionStats.eligibleCount,
+        ),
     nextCursor: page.offset + page.rows.length < totalTrackCount && page.rows.length > 0
-      ? encodeReplayTrackCursor('after', page.offset + page.rows.length, page.rows.at(-1))
+      ? encodeReplayTrackCursor(
+          'after', page.offset + page.rows.length, page.rows.at(-1), input.replayGeneration,
+          positionStats.eligibleCount,
+        )
       : null,
   }
 }
@@ -218,7 +264,8 @@ function readTrackRowsBySourceIndex(database, input, cursor) {
       'complete' AS completeness, 0 AS source_order, id AS stable_order
     FROM positions INDEXED BY idx_positions_mission_device_timestamp
     WHERE mission_id = ? AND device_id = ? AND timestamp_source = 'fix'
-      AND received_at IS NOT NULL AND received_at <= ? AND timestamp <= ?`
+      AND received_at IS NOT NULL AND received_at <= ? AND timestamp <= ?
+      AND COALESCE(timestamp_provenance_recorded_at, received_at) <= ?`
   const keyPredicate = direction === 'after'
     ? ` AND timestamp >= ? AND (timestamp > ? OR (timestamp = ? AND received_at > ?)
         OR (timestamp = ? AND received_at = ? AND 0 > ?)
@@ -233,10 +280,12 @@ function readTrackRowsBySourceIndex(database, input, cursor) {
     ORDER BY timestamp ${order}, received_at ${order}, id ${order} LIMIT ?`)
   const readDevicePage = (deviceId, boundary) => boundary === null
     ? readDeviceFirst.all(
-        input.missionId, deviceId, input.selectedTime, input.selectedTime, batchSize,
+        input.missionId, deviceId, input.selectedTime, input.selectedTime,
+        input.selectedTime, batchSize,
       )
     : readDeviceRows.all(
         input.missionId, deviceId, input.selectedTime, input.selectedTime,
+        input.selectedTime,
         boundary.effectiveAt, ...replayKeyParameters(boundary), batchSize,
       )
   const sources = deviceIds.flatMap((deviceId) => {
@@ -423,12 +472,17 @@ function readPositionReplayStats(database, input) {
   }
   const row = database.prepare(`SELECT
       SUM(CASE WHEN timestamp_source = 'fix' AND received_at IS NOT NULL
-        AND received_at <= ? AND timestamp <= ? THEN 1 ELSE 0 END) AS eligible_count,
+        AND received_at <= ? AND timestamp <= ?
+        AND COALESCE(timestamp_provenance_recorded_at, received_at) <= ?
+        THEN 1 ELSE 0 END) AS eligible_count,
       SUM(CASE WHEN timestamp_source = 'fix' AND received_at IS NULL THEN 1 ELSE 0 END) AS missing_recorded_count,
       SUM(CASE WHEN timestamp_source IS NULL THEN 1 ELSE 0 END) AS unproved_time_count
     FROM positions INDEXED BY idx_positions_mission_device_timestamp
     WHERE mission_id = ?${deviceFilter.sql}`)
-    .get(input.selectedTime, input.selectedTime, input.missionId, ...deviceFilter.params)
+    .get(
+      input.selectedTime, input.selectedTime, input.selectedTime,
+      input.missionId, ...deviceFilter.params,
+    )
   return {
     eligibleCount: Number(row?.eligible_count ?? 0),
     missingRecordedCount: Number(row?.missing_recorded_count ?? 0),
@@ -440,7 +494,9 @@ function readPositionReplayStats(database, input) {
 function countKnownReplayPositions(database, input) {
   const knownDay = input.selectedTime.slice(0, 10)
   const dayStart = `${knownDay}T00:00:00.000Z`
-  const knownAtExpression = 'CASE WHEN received_at > timestamp THEN received_at ELSE timestamp END'
+  const knownAtExpression = `MAX(
+    timestamp, received_at, COALESCE(timestamp_provenance_recorded_at, received_at)
+  )`
   if (input.deviceIds === null) {
     const completeDays = Number(database.prepare(`SELECT COALESCE(SUM(position_count), 0) AS count
       FROM mission_replay_position_day_counts
@@ -655,6 +711,9 @@ function normalizeReplayInput(input) {
   if (typeof input.selectedTime !== 'string' || !Number.isFinite(Date.parse(input.selectedTime))) {
     throw new Error('Mission replay selected time is invalid.')
   }
+  if (Date.parse(input.selectedTime) > Date.now()) {
+    throw new Error('Mission replay selected time cannot be in the future.')
+  }
   if (!Number.isInteger(input.trackLimit) || input.trackLimit < 1 || input.trackLimit > MAX_REPLAY_TRACK_LIMIT) {
     throw new Error(`Mission replay track limit must be between 1 and ${MAX_REPLAY_TRACK_LIMIT}.`)
   }
@@ -737,17 +796,22 @@ function normalizeReplayTrackCursor(value) {
   }
   try {
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
-    if (parsed?.v !== 1 || !['after', 'before'].includes(parsed.direction)
+    if (parsed?.v !== 3 || !['after', 'before'].includes(parsed.direction)
       || !Number.isSafeInteger(parsed.offset) || parsed.offset < 0
       || parsed.offset > MAX_REPLAY_CURSOR_OFFSET || !Array.isArray(parsed.key)
       || parsed.key.length !== 4 || typeof parsed.key[0] !== 'string'
       || typeof parsed.key[1] !== 'string' || ![0, 1].includes(parsed.key[2])
-      || typeof parsed.key[3] !== 'string') {
+      || typeof parsed.key[3] !== 'string'
+      || !Number.isSafeInteger(parsed.replayGeneration) || parsed.replayGeneration < 0
+      || !Number.isSafeInteger(parsed.eligiblePositionCount)
+      || parsed.eligiblePositionCount < 0) {
       throw new Error('invalid shape')
     }
     return {
       direction: parsed.direction,
       offset: parsed.offset,
+      replayGeneration: parsed.replayGeneration,
+      eligiblePositionCount: parsed.eligiblePositionCount,
       key: {
         effectiveAt: parsed.key[0],
         recordedAt: parsed.key[1],
@@ -761,13 +825,30 @@ function normalizeReplayTrackCursor(value) {
 }
 
 /** Encodes a deterministic track row boundary without exposing it as an SQL offset. */
-function encodeReplayTrackCursor(direction, offset, row) {
+function encodeReplayTrackCursor(
+  direction,
+  offset,
+  row,
+  replayGeneration = 0,
+  eligiblePositionCount = 0,
+) {
   return Buffer.from(JSON.stringify({
-    v: 1,
+    v: 3,
     direction,
     offset,
+    replayGeneration,
+    eligiblePositionCount,
     key: [row.effective_at, row.recorded_at, Number(row.source_order), row.stable_order],
   }), 'utf8').toString('base64url')
+}
+
+/** Reads the bounded mission generation used to invalidate newly queryable evidence chains. */
+function readMissionReplayGeneration(database, missionId) {
+  const hasGenerationTable = database.prepare(`SELECT 1 FROM sqlite_master
+    WHERE type = 'table' AND name = 'mission_replay_generations'`).get() !== undefined
+  if (!hasGenerationTable) return 0
+  return Number(database.prepare(`SELECT generation FROM mission_replay_generations
+    WHERE mission_id = ?`).get(missionId)?.generation ?? 0)
 }
 
 /** Expands a replay order key for the explicit SQLite lexicographic predicate. */

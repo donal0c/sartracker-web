@@ -242,13 +242,34 @@ without changing any locked team answer:
   both recorded and effective time, and streams exact `fixTime`/dated-GPX rows
   from a read-only cancellable worker; undated GPX remains explicit static
   evidence and unproved legacy/missing-time history remains a machine-readable
-  limitation. New stores create compact replay indexes plus transactional daily
-  totals keyed by `max(fixTime, recorded_at)`, which is exactly the data-known-
-  at-T fence; a selected-day slice remains indexed and bounded. The v11
-  migration never performs an unbounded synchronous index/read-model build and
-  remains explicit about legacy completeness. Track pages use opaque
-  bidirectional keyset cursors, bounded worker messages and the existing mission
-  device/fix-time index for deterministic merging;
+  limitation. Traccar `fixTime` remains the sole effective breadcrumb clock;
+  receipt time and nullable `timestamp_provenance_recorded_at` separately record
+  when the row and any later-confirmed fixTime authority became known, without
+  rewriting the original receipt. New stores create compact replay indexes plus
+  transactional daily totals keyed by the maximum of fixTime, receipt time and
+  provenance-known-at time, which is the exact data-known-at-T fence; a selected-
+  day slice remains indexed and bounded. The v11 migration adds only bounded
+  metadata and never performs an unbounded synchronous index/read-model build,
+  retaining the explicit legacy fallback. Every replay response reads from one
+  SQLite WAL snapshot. Opaque track cursors bind a mission replay generation
+  plus the exact eligible-position count from that snapshot; object
+  continuations bind the generation. GPX publication, retained fixTime-
+  provenance promotion, versioned objects, lifecycle and participant/group
+  evidence advance the generation in their owning transaction, while append-
+  only fixes are detected by the cursor-bound count without coupling replay to
+  derived coverage work. A stale page chain fails closed and requires re-seek,
+  while a fresh historical seek still reconstructs evidence by its original
+  recorded/effective clocks. Worker messages remain
+  bounded and the existing mission device/fix-time index drives deterministic
+  merging;
+- finalization creates a durable mission-scoped write fence in the same
+  transaction as its request event before taking the archive snapshot.
+  Finished-mission bookkeeping and asynchronous acknowledgement/archive paths
+  revalidate mission status and the fence in their committing transaction. The
+  fence survives an archive-succeeded interruption so only that protected
+  archive may be reused, clears after a pre-success archive failure, and is
+  removed atomically with the finalized status/event. No stale unprotected
+  success archive is reused by a new finalization attempt;
 - stable search-area identity is separate from repeatable assignments and
   passes; full/partial/aborted remains solely the coordinator's declaration and
   advisory geometry cannot write that outcome;

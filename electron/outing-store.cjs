@@ -64,7 +64,7 @@ function createOutingStore(options) {
 
     endOuting(input) {
       const mission = requireMission(db, input?.mission_id)
-      assertMissionAllowsBookkeeping(mission)
+      assertMissionAllowsBookkeeping(db, mission)
       const existing = requireOuting(db, mission.id, input?.outing_id)
       if (existing.ended_at !== null) {
         throw new Error(`Outing "${existing.label}" has already ended.`)
@@ -109,7 +109,7 @@ function createOutingStore(options) {
 
     renameOuting(input) {
       const mission = requireMission(db, input?.mission_id)
-      assertMissionAllowsBookkeeping(mission)
+      assertMissionAllowsBookkeeping(db, mission)
       const existing = requireOuting(db, mission.id, input?.outing_id)
       const label = normalizeLabel(input?.label)
       if (label === existing.label) return existing
@@ -140,7 +140,7 @@ function createOutingStore(options) {
 
     editOutingBoundaries(input) {
       const mission = requireMission(db, input?.mission_id)
-      assertMissionAllowsBookkeeping(mission)
+      assertMissionAllowsBookkeeping(db, mission)
       const existing = requireOuting(db, mission.id, input?.outing_id)
       const timestamp = readNow()
       const startedAt = input?.started_at === undefined
@@ -223,9 +223,16 @@ function assertMissionCanCreateOuting(mission) {
 }
 
 /** Allows closing/correcting known outings until finalization locks the record. */
-function assertMissionAllowsBookkeeping(mission) {
+function assertMissionAllowsBookkeeping(db, mission) {
   if (mission.status === 'finalized') {
     throw new Error('Cannot change an outing on a finalized mission; it is read-only.')
+  }
+  const finalizationPending = db.prepare(`SELECT 1 FROM mission_finalization_fences
+    WHERE mission_id = ?`).get(mission.id)
+  if (finalizationPending !== undefined) {
+    throw new Error(
+      'Mission finalization is in progress; outing changes are temporarily read-only.',
+    )
   }
 }
 

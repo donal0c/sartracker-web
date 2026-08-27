@@ -99,7 +99,8 @@ async function main() {
       )
       heartbeat = startEventLoopHeartbeat()
       const latePageCursor = encodeReplayTrackCursor(
-        'after', latePageAnchor.offset, latePageAnchor,
+        'after', latePageAnchor.offset, latePageAnchor, latePageAnchor.replayGeneration,
+        latePageAnchor.eligiblePositionCount,
       )
       const latePageReplay = await measure(() => store.readMissionReplayTrackChunk({
         missionId: FIXTURE_MISSION_ID,
@@ -232,12 +233,14 @@ function readLatePageAnchor(databasePath, positionCount, selectedTime) {
     const positionOffset = Number(database.prepare(`SELECT COUNT(*) AS count
       FROM positions
       WHERE mission_id = ? AND timestamp_source = 'fix' AND received_at IS NOT NULL
-        AND received_at <= ? AND timestamp <= ? AND (
+        AND received_at <= ? AND timestamp <= ?
+        AND COALESCE(timestamp_provenance_recorded_at, received_at) <= ? AND (
           timestamp < ? OR
           (timestamp = ? AND received_at < ?) OR
           (timestamp = ? AND received_at = ? AND id <= ?)
         )`).get(
       FIXTURE_MISSION_ID,
+      selectedTime,
       selectedTime,
       selectedTime,
       row.effective_at,
@@ -246,6 +249,16 @@ function readLatePageAnchor(databasePath, positionCount, selectedTime) {
       row.effective_at,
       row.recorded_at,
       row.evidence_id,
+    )?.count ?? 0)
+    const eligiblePositionCount = Number(database.prepare(`SELECT COUNT(*) AS count
+      FROM positions
+      WHERE mission_id = ? AND timestamp_source = 'fix' AND received_at IS NOT NULL
+        AND received_at <= ? AND timestamp <= ?
+        AND COALESCE(timestamp_provenance_recorded_at, received_at) <= ?`).get(
+      FIXTURE_MISSION_ID,
+      selectedTime,
+      selectedTime,
+      selectedTime,
     )?.count ?? 0)
     const gpxOffset = Number(database.prepare(`WITH eligible_gpx AS (
         SELECT revisions.*,
@@ -273,7 +286,15 @@ function readLatePageAnchor(databasePath, positionCount, selectedTime) {
       row.effective_at,
       row.recorded_at,
     )?.count ?? 0)
-    return { ...row, offset: positionOffset + gpxOffset }
+    const replayGeneration = Number(database.prepare(`SELECT generation
+      FROM mission_replay_generations WHERE mission_id = ?`)
+      .get(FIXTURE_MISSION_ID)?.generation ?? 0)
+    return {
+      ...row,
+      offset: positionOffset + gpxOffset,
+      replayGeneration,
+      eligiblePositionCount,
+    }
   } finally {
     database.close()
   }
