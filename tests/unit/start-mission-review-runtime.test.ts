@@ -36,6 +36,40 @@ describe('startMissionReviewRuntime', () => {
     )
   })
 
+  it('cancels superseded replay seeks and publishes only the newest data-known-at-T result [DON-278]', async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined
+    const readMissionReplay = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      .mockResolvedValueOnce(replayResult('2026-04-10T08:20:00.000Z', 'newest-fix'))
+    const cancelMissionReplay = vi.fn().mockResolvedValue(true)
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ readMissionReplay, cancelMissionReplay }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+
+    const first = runtime.seekReplay('2026-04-10T08:10:00.000Z')
+    await vi.waitFor(() => expect(readMissionReplay).toHaveBeenCalledOnce())
+    const firstRequestId = readMissionReplay.mock.calls[0]?.[1] as string
+    const second = runtime.seekReplay('2026-04-10T08:20:00.000Z')
+    await second
+    resolveFirst?.(replayResult('2026-04-10T08:10:00.000Z', 'obsolete-fix'))
+    await first
+
+    expect(cancelMissionReplay).toHaveBeenCalledWith(firstRequestId)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        mode: 'replay',
+        selectedTime: '2026-04-10T08:20:00.000Z',
+        result: expect.objectContaining({
+          tracks: [expect.objectContaining({ evidence_id: 'newest-fix' })],
+        }),
+      }),
+    }))
+  })
+
   it('loads audit and exact breadcrumb count through one bounded Review query [DON-251]', async () => {
     const readMissionReview = vi.fn().mockResolvedValue({
       auditEvents: [],
@@ -531,6 +565,34 @@ function createMissionReviewStoreStub(overrides: Record<string, unknown> = {}) {
     countPositions: vi.fn().mockResolvedValue(1),
     listDrawings: vi.fn().mockResolvedValue([drawing]),
     listGpxImports: vi.fn().mockResolvedValue([]),
+    listOutings: vi.fn().mockResolvedValue([]),
     ...overrides,
+  }
+}
+
+function replayResult(selectedTime: string, evidenceId: string) {
+  return {
+    missionId: FIRST_MISSION.id,
+    selectedTime,
+    timezone: 'Europe/Dublin',
+    objects: [],
+    tracks: [{
+      evidence_id: evidenceId,
+      source_type: 'traccar_fix',
+      track_id: 'alpha',
+      effective_at: selectedTime,
+      recorded_at: selectedTime,
+      lat: 52,
+      lon: -9.7,
+      elevation: null,
+      accuracy: 5,
+      time_authority: 'fixTime',
+      completeness: 'complete',
+    }],
+    totalTrackCount: 1,
+    staticGpxPointCount: 0,
+    nextCursor: null,
+    progress: 1,
+    limitations: [],
   }
 }

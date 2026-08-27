@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 
 import { openExternalPath } from '../infrastructure/file-launcher/tauri-file-launcher'
 import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
@@ -15,9 +15,15 @@ import { useMissionReviewStore } from '../features/mission-review/mission-review
 import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
 import { useMissionStore } from '../features/mission/mission-store'
 
-type ReviewTab = 'mission-details' | 'marker-log' | 'layer-console'
+type ReviewTab = 'mission-details' | 'replay' | 'search-operations' | 'marker-log' | 'layer-console'
 
 const MISSION_REVIEW_WORKSPACE_TITLE_ID = 'mission-review-workspace-title'
+const MissionReplayTab = lazy(async () => ({
+  default: (await import('./mission-evidence-replay-tabs')).MissionReplayTab,
+}))
+const SearchOperationsTab = lazy(async () => ({
+  default: (await import('./mission-evidence-replay-tabs')).SearchOperationsTab,
+}))
 
 /**
  * Renders the mission review workspace for audit, marker review, and mission details.
@@ -40,6 +46,8 @@ export function MissionReviewWorkspace() {
   const error = useMissionReviewStore((state) => state.error)
   const includeTelemetry = useMissionReviewStore((state) => state.includeTelemetry)
   const auditLogTruncated = useMissionReviewStore((state) => state.auditLogTruncated)
+  const replay = useMissionReviewStore((state) => state.replay)
+  const searchOperations = useMissionReviewStore((state) => state.searchOperations)
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
   const [activeTab, setActiveTab] = useState<ReviewTab>('mission-details')
   const [missionQuery, setMissionQuery] = useState('')
@@ -187,6 +195,16 @@ export function MissionReviewWorkspace() {
                 onClick={() => setActiveTab('mission-details')}
               />
               <TabButton
+                active={activeTab === 'replay'}
+                label="Replay"
+                onClick={() => setActiveTab('replay')}
+              />
+              <TabButton
+                active={activeTab === 'search-operations'}
+                label="Search Passes"
+                onClick={() => setActiveTab('search-operations')}
+              />
+              <TabButton
                 active={activeTab === 'marker-log'}
                 label="Marker Log"
                 onClick={() => setActiveTab('marker-log')}
@@ -218,6 +236,19 @@ export function MissionReviewWorkspace() {
                     pathFeedback={pathFeedback}
                     summary={snapshot.summary}
                   />
+                ) : activeTab === 'replay' ? (
+                  <Suspense fallback={<EmptyState message="Loading Replay workspace…" />}>
+                    <MissionReplayTab
+                      controller={controller}
+                      key={snapshot.mission.id}
+                      missionEndTime={snapshot.mission.finish_time ?? new Date().toISOString()}
+                      replay={replay}
+                    />
+                  </Suspense>
+                ) : activeTab === 'search-operations' ? (
+                  <Suspense fallback={<EmptyState message="Loading search operations…" />}>
+                    <SearchOperationsTab controller={controller} operations={searchOperations} />
+                  </Suspense>
                 ) : activeTab === 'marker-log' ? (
                   <MarkerLogTab
                     compact={docked}

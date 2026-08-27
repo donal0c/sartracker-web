@@ -1,0 +1,91 @@
+import { expect, test } from '@playwright/test'
+
+import { navigateToHarness, startMission } from './helpers/test-setup'
+import { captureElementAndRegister } from './helpers/verification-manifest'
+
+test.describe('Visual: mission evidence and replay', () => {
+  test('replay keeps Live context explicit and surfaces incomplete/static evidence', async ({ page }) => {
+    await navigateToHarness(page)
+    await startMission(page, 'Replay Evidence Mission')
+    await page.evaluate(async () => {
+      await window.__SARTRACKER_BROWSER_HARNESS__?.importGpxFiles([{
+        sourcePath: '/tracks/mixed-evidence.gpx',
+        fileName: 'mixed-evidence.gpx',
+        contents: `<gpx version="1.1"><trk><trkseg>
+          <trkpt lat="52" lon="-9.7"><time>2026-04-10T12:00:00Z</time></trkpt>
+          <trkpt lat="52.01" lon="-9.71"></trkpt>
+        </trkseg></trk></gpx>`,
+      }])
+    })
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await page.getByTestId('mission-replay-seek').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('data known at selected time')
+    await expect(page.getByTestId('mission-replay-limitation-undated_gpx_static')).toBeVisible()
+
+    await captureElementAndRegister(page, 'mission-replay-workspace', {
+      testId: 'mission-replay-data-known-at-time',
+      testName: 'Truthful mission evidence replay state',
+      area: 'mission-review',
+      severity: 'critical',
+      verificationPrompt: `Verify the SAR Tracker Replay workspace:
+1. It must explicitly say Replay is data known at the selected time, not a historical screen.
+2. It must state that the operational live map/current safety positions remain live.
+3. A selected local time and Europe/Dublin timezone must be visible.
+4. Exact-evidence progress/counts must be visible.
+5. An evidence limitation must explicitly explain that undated GPX remains static and is excluded from precise replay.
+6. A clear Return to Live / now action must be visible.
+Report PASS or FAIL for each item and overall.`,
+      playwrightAssertions: [
+        'Replay data-known-at-time label is visible',
+        'undated GPX static limitation is visible',
+        'Return to Live action is visible',
+      ],
+    })
+  })
+
+  test('repeated passes remain visibly coordinator-declared', async ({ page }) => {
+    await navigateToHarness(page, { missionModel: true })
+    await startMission(page, 'Repeated Pass Mission')
+    await page.getByTestId('outing-label-input').fill('Operational period 1')
+    await page.getByTestId('outing-start-btn').click()
+    await page.getByTestId('drawing-toolbar-expand').click()
+    await page.getByTestId('drawing-tool-search_area').click({ force: true })
+    await clickMap(page, 500, 180); await clickMap(page, 650, 220); await clickMap(page, 540, 340)
+    await page.locator('.maplibregl-canvas').first().click({ position: { x: 540, y: 340 }, button: 'right', force: true })
+    await page.getByTestId('drawing-name-input').fill('Area Alpha')
+    await page.getByTestId('drawing-save-btn').click()
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
+    await page.getByTestId('search-operation-coordinator').fill('Coordinator One')
+    await page.getByTestId('search-assignment-team').fill('Team 1')
+    await page.getByTestId('search-assignment-record').click()
+    await page.getByTestId('search-pass-record').click()
+    await page.getByTestId('search-pass-outcome').selectOption('full')
+    await page.getByTestId('search-pass-record').click()
+    await expect(page.locator('p[data-testid^="search-pass-"]')).toHaveCount(2)
+
+    await captureElementAndRegister(page, 'search-operations-workspace', {
+      testId: 'search-area-repeated-declared-passes',
+      testName: 'Repeated coordinator-declared search passes',
+      area: 'mission-review',
+      severity: 'critical',
+      verificationPrompt: `Verify the stable Search Operations surface:
+1. Area Alpha must have a visible stable identity and geometry revision.
+2. Both partial and full repeated passes must remain visible; one must not overwrite the other.
+3. Each outcome must be explicitly labelled coordinator-declared.
+4. The explanatory copy must say coverage is advisory only.
+5. The controls must not suggest geometry can automatically declare full completion.
+Report PASS or FAIL for each item and overall.`,
+      playwrightAssertions: [
+        'two distinct pass records are rendered',
+        'stable Area Alpha is visible',
+        'coordinator-declared labels are visible',
+      ],
+    })
+  })
+})
+
+async function clickMap(page: import('@playwright/test').Page, x: number, y: number) {
+  await page.locator('.maplibregl-canvas').first().click({ position: { x, y }, force: true })
+}

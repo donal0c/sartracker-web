@@ -14,6 +14,8 @@ import type {
   MissionArchiveInfo,
   MissionReviewReadQuery,
   MissionReviewReadResult,
+  MissionReplayReadInput,
+  MissionReplayReadResult,
   MissionStoreInfo,
   MissionParticipant,
   GroupMembershipEvent,
@@ -35,6 +37,9 @@ import type {
   UpsertGpxTrackImportInput,
   UpsertHelicopterInput,
   UpsertMarkerInput,
+  SearchArea,
+  SearchAssignment,
+  SearchPass,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type {
   AcknowledgeIngestEvidenceLossInput,
@@ -78,11 +83,27 @@ type BrowserHarnessState = {
   readonly drawings: readonly Drawing[]
   readonly helicopters: readonly Helicopter[]
   readonly gpxImports: readonly GpxTrackImport[]
+  readonly gpxEvidencePoints: readonly BrowserGpxEvidencePoint[]
+  readonly searchAreas: readonly SearchArea[]
+  readonly searchAssignments: readonly SearchAssignment[]
+  readonly searchPasses: readonly SearchPass[]
   readonly missionEvents: readonly MissionEvent[]
   readonly openedPaths: readonly string[]
   readonly currentMissionId: string | null
   readonly recoverableMissionId: string | null
   readonly evidenceLossByMission: BrowserEvidenceLossByMission
+}
+
+type BrowserGpxEvidencePoint = {
+  readonly importId: string
+  readonly revisionSequence: number
+  readonly segmentIndex: number
+  readonly pointIndex: number
+  readonly lat: number
+  readonly lon: number
+  readonly elevation: number | null
+  readonly timestamp: string | null
+  readonly recordedAt: string
 }
 
 type BrowserMissionTeam = {
@@ -229,6 +250,14 @@ type BrowserHarnessStore = {
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
+  readonly readMissionReplay: (input: MissionReplayReadInput, requestId?: string) => Promise<MissionReplayReadResult>
+  readonly readMissionReplayTrackChunk: (input: MissionReplayReadInput, requestId?: string) => Promise<Omit<MissionReplayReadResult, 'timezone' | 'objects' | 'staticGpxPointCount' | 'limitations'>>
+  readonly cancelMissionReplay: (requestId: string) => Promise<boolean>
+  readonly listSearchAreas: (missionId: string) => Promise<readonly SearchArea[]>
+  readonly listSearchAssignments: (missionId: string) => Promise<readonly SearchAssignment[]>
+  readonly listSearchPasses: (missionId: string) => Promise<readonly SearchPass[]>
+  readonly upsertSearchAssignment: (input: Readonly<Record<string, unknown>>) => Promise<SearchAssignment>
+  readonly upsertSearchPass: (input: Readonly<Record<string, unknown>>) => Promise<SearchPass>
 }
 
 let browserHarnessStore: BrowserHarnessStore | null = null
@@ -1440,10 +1469,28 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         created_at: existingDrawing?.created_at ?? now,
         updated_at: now,
       } satisfies Drawing
+      const stableArea = drawing.type === 'search_area'
+        ? {
+            id: drawing.id,
+            mission_id: drawing.mission_id,
+            name: drawing.name,
+            status: 'active' as const,
+            geometry_json: drawing.geometry_json,
+            legacy_drawing_id: drawing.id,
+            version_sequence: (state.searchAreas.find((area) => area.id === drawing.id)?.version_sequence ?? 0) + 1,
+            updated_by: null,
+            created_at: existingDrawing?.created_at ?? now,
+            updated_at: now,
+            retired_at: null,
+          } satisfies SearchArea
+        : null
 
       state = {
         ...state,
         drawings: upsertDrawing(state.drawings, drawing),
+        searchAreas: stableArea === null
+          ? state.searchAreas
+          : upsertByStableId(state.searchAreas, stableArea),
         missionEvents: appendEvent(
           state.missionEvents,
           input.mission_id,
@@ -1559,16 +1606,25 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     },
     listGpxImports: async (missionId) =>
       state.gpxImports
-        .filter((entry) => entry.mission_id === missionId)
+        .filter((entry) => entry.mission_id === missionId && entry.retired_at == null)
         .sort((left, right) => left.display_name.localeCompare(right.display_name)),
     upsertGpxImport: async (input) => {
       ensureMissionMutable(input.mission_id, state.missions)
       const existingImport =
-        state.gpxImports.find(
+        state.gpxImports.find((entry) =>
+          input.content_sha256 != null && entry.content_sha256 === input.content_sha256,
+        ) ?? state.gpxImports.find(
           (entry) =>
-            entry.mission_id === input.mission_id && entry.source_path === input.source_path,
+            entry.mission_id === input.mission_id
+            && (entry.id === input.id || entry.source_path === input.source_path),
         ) ?? null
+      if (existingImport !== null && existingImport.content_sha256 === input.content_sha256) {
+        return existingImport
+      }
       const now = new Date().toISOString()
+      const revisionSequence = existingImport === null
+        ? 1
+        : (existingImport.revision_sequence ?? 1) + 1
       const gpxImport = {
         id: existingImport?.id ?? input.id ?? createId('gpx'),
         mission_id: input.mission_id,
@@ -1577,6 +1633,12 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         display_name: input.display_name,
         geometry_json: input.geometry_json,
         metadata_json: input.metadata_json ?? null,
+        content_sha256: input.content_sha256 ?? existingImport?.content_sha256 ?? null,
+        source_bytes_base64: input.source_bytes_base64 ?? existingImport?.source_bytes_base64 ?? null,
+        timing_class: input.timing_class ?? existingImport?.timing_class ?? 'undated',
+        revision_sequence: revisionSequence,
+        retired_at: null,
+        retired_by: null,
         imported_at: existingImport?.imported_at ?? now,
         updated_at: now,
       } satisfies GpxTrackImport
@@ -1584,6 +1646,20 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         gpxImports: upsertGpxImport(state.gpxImports, gpxImport),
+        gpxEvidencePoints: [
+          ...state.gpxEvidencePoints,
+          ...(input.points ?? []).map((point) => ({
+            importId: gpxImport.id,
+            revisionSequence,
+            segmentIndex: point.segment_index,
+            pointIndex: point.point_index,
+            lat: point.lat,
+            lon: point.lon,
+            elevation: point.elevation,
+            timestamp: point.timestamp,
+            recordedAt: now,
+          })),
+        ],
         missionEvents: appendEvent(
           state.missionEvents,
           input.mission_id,
@@ -1609,7 +1685,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       ensureMissionMutable(gpxImport.mission_id, state.missions)
       state = {
         ...state,
-        gpxImports: state.gpxImports.filter((entry) => entry.id !== importId),
+        gpxImports: state.gpxImports.map((entry) => entry.id === importId
+          ? { ...entry, retired_at: new Date().toISOString() }
+          : entry),
         missionEvents: appendEvent(
           state.missionEvents,
           gpxImport.mission_id,
@@ -1626,9 +1704,82 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return true
     },
+    readMissionReplay: async (input) => buildBrowserReplay(state, input),
+    readMissionReplayTrackChunk: async (input) => {
+      const replay = buildBrowserReplay(state, input)
+      return {
+        missionId: replay.missionId,
+        selectedTime: replay.selectedTime,
+        tracks: replay.tracks,
+        totalTrackCount: replay.totalTrackCount,
+        nextCursor: replay.nextCursor,
+        progress: replay.progress,
+      }
+    },
+    cancelMissionReplay: async () => true,
+    listSearchAreas: async (missionId) => state.searchAreas.filter(
+      (area) => area.mission_id === missionId && area.retired_at === null,
+    ),
+    listSearchAssignments: async (missionId) => state.searchAssignments.filter(
+      (assignment) => assignment.mission_id === missionId && assignment.retired_at === null,
+    ),
+    listSearchPasses: async (missionId) => state.searchPasses.filter(
+      (pass) => pass.mission_id === missionId,
+    ),
+    upsertSearchAssignment: async (input) => {
+      const missionId = String(input.mission_id)
+      ensureMissionMutable(missionId, state.missions)
+      const existing = state.searchAssignments.find((entry) => entry.id === input.id) ?? null
+      const timestamp = new Date().toISOString()
+      const assignment: SearchAssignment = {
+        id: existing?.id ?? createId('search-assignment'),
+        mission_id: missionId,
+        search_area_id: String(input.search_area_id),
+        outing_id: String(input.outing_id),
+        team_id: String(input.team_id),
+        participant_ids_json: JSON.stringify(input.participant_ids ?? []),
+        notes: typeof input.notes === 'string' && input.notes.trim() !== '' ? input.notes : null,
+        version_sequence: (existing?.version_sequence ?? 0) + 1,
+        updated_by: typeof input.updated_by === 'string' ? input.updated_by : null,
+        created_at: existing?.created_at ?? timestamp,
+        updated_at: timestamp,
+        retired_at: null,
+      }
+      state = { ...state, searchAssignments: upsertByStableId(state.searchAssignments, assignment) }
+      save()
+      return assignment
+    },
+    upsertSearchPass: async (input) => {
+      const missionId = String(input.mission_id)
+      ensureMissionMutable(missionId, state.missions)
+      const existing = state.searchPasses.find((entry) => entry.id === input.id) ?? null
+      const outcome = input.outcome
+      if (outcome !== 'full' && outcome !== 'partial' && outcome !== 'aborted') {
+        throw new Error('Search pass coordinator outcome is invalid.')
+      }
+      const timestamp = new Date().toISOString()
+      const pass: SearchPass = {
+        id: existing?.id ?? createId('search-pass'),
+        mission_id: missionId,
+        search_area_id: String(input.search_area_id),
+        assignment_id: String(input.assignment_id),
+        started_at: new Date(String(input.started_at)).toISOString(),
+        ended_at: input.ended_at == null ? null : new Date(String(input.ended_at)).toISOString(),
+        outcome,
+        notes: typeof input.notes === 'string' && input.notes.trim() !== '' ? input.notes : null,
+        coordinator_name: String(input.coordinator_name),
+        advisory_coverage_json: null,
+        version_sequence: (existing?.version_sequence ?? 0) + 1,
+        created_at: existing?.created_at ?? timestamp,
+        updated_at: timestamp,
+      }
+      state = { ...state, searchPasses: upsertByStableId(state.searchPasses, pass) }
+      save()
+      return pass
+    },
   }
 
-  return browserHarnessStore
+  return browserHarnessStore as BrowserHarnessStore
 }
 
 export function readBrowserHarnessState(): BrowserHarnessState {
@@ -1660,6 +1811,8 @@ function createBrowserHarnessPosition(input: AddPositionInput): Position {
     source: input.source ?? null,
     timestamp: input.timestamp ?? new Date().toISOString(),
     data_origin: input.data_origin ?? 'live',
+    received_at: new Date().toISOString(),
+    timestamp_source: input.timestamp_source ?? null,
   }
 }
 
@@ -1672,6 +1825,94 @@ function compareBrowserHarnessPositions(left: Position, right: Position): number
     ) ||
     left.id.localeCompare(right.id)
   )
+}
+
+/** Uses the production replay port with explicit harness completeness limits. */
+function buildBrowserReplay(
+  state: BrowserHarnessState,
+  input: MissionReplayReadInput,
+): MissionReplayReadResult {
+  const selectedTime = new Date(input.selectedTime).toISOString()
+  const offset = input.cursor === undefined || input.cursor === null ? 0 : Number(input.cursor)
+  const positionTracks = state.positions
+    .filter((position) =>
+      position.mission_id === input.missionId
+      && position.timestamp_source === 'fix'
+      && position.received_at != null
+      && position.received_at <= selectedTime
+      && position.timestamp <= selectedTime,
+    )
+    .map((position) => ({
+      evidence_id: position.source_position_id ?? position.id,
+      source_type: 'traccar_fix' as const,
+      track_id: position.device_id,
+      effective_at: position.timestamp,
+      recorded_at: position.received_at!,
+      lat: position.lat,
+      lon: position.lon,
+      elevation: position.altitude,
+      accuracy: position.accuracy,
+      time_authority: 'fixTime' as const,
+      completeness: 'complete' as const,
+    }))
+  const eligibleRevisionByImport = new Map<string, number>()
+  for (const point of state.gpxEvidencePoints) {
+    if (point.recordedAt <= selectedTime) {
+      eligibleRevisionByImport.set(
+        point.importId,
+        Math.max(eligibleRevisionByImport.get(point.importId) ?? 0, point.revisionSequence),
+      )
+    }
+  }
+  const eligibleGpxPoints = state.gpxEvidencePoints.filter((point) =>
+    point.revisionSequence === eligibleRevisionByImport.get(point.importId)
+    && point.recordedAt <= selectedTime,
+  )
+  const gpxTracks = eligibleGpxPoints
+    .filter((point) => point.timestamp !== null && point.timestamp <= selectedTime)
+    .map((point) => ({
+      evidence_id: `${point.importId}:${point.revisionSequence}:${point.segmentIndex}:${point.pointIndex}`,
+      source_type: 'gpx_point' as const,
+      track_id: point.importId,
+      effective_at: point.timestamp!,
+      recorded_at: point.recordedAt,
+      lat: point.lat,
+      lon: point.lon,
+      elevation: point.elevation,
+      accuracy: null,
+      time_authority: 'gpx_source_time' as const,
+      completeness: 'complete' as const,
+    }))
+  const allTracks = [...positionTracks, ...gpxTracks].sort((left, right) =>
+    left.effective_at.localeCompare(right.effective_at)
+    || left.recorded_at.localeCompare(right.recorded_at)
+    || left.evidence_id.localeCompare(right.evidence_id),
+  )
+  const tracks = allTracks.slice(offset, offset + input.trackLimit)
+  const nextOffset = offset + tracks.length
+  const staticGpxPointCount = eligibleGpxPoints.filter((point) => point.timestamp === null).length
+  return {
+    missionId: input.missionId,
+    selectedTime,
+    timezone: input.timezone ?? 'Europe/Dublin',
+    objects: [],
+    tracks,
+    totalTrackCount: allTracks.length,
+    staticGpxPointCount,
+    nextCursor: nextOffset < allTracks.length ? String(nextOffset) : null,
+    progress: allTracks.length === 0 ? 1 : nextOffset / allTracks.length,
+    limitations: [
+      {
+        code: 'browser_harness_version_history_unavailable',
+        message: 'Browser validation cannot claim historical mutable-object versions from operational SQLite.',
+      },
+      ...(staticGpxPointCount === 0 ? [] : [{
+        code: 'undated_gpx_static',
+        message: 'Undated GPX points remain static and are excluded from precise replay placement.',
+        count: staticGpxPointCount,
+      }]),
+    ],
+  }
 }
 
 function readHarnessState(): BrowserHarnessState {
@@ -1689,6 +1930,10 @@ function readHarnessState(): BrowserHarnessState {
       drawings: [],
       helicopters: [],
       gpxImports: [],
+      gpxEvidencePoints: [],
+      searchAreas: [],
+      searchAssignments: [],
+      searchPasses: [],
       missionEvents: [],
       openedPaths: [],
       currentMissionId: null,
@@ -1712,6 +1957,10 @@ function readHarnessState(): BrowserHarnessState {
       drawings: [],
       helicopters: [],
       gpxImports: [],
+      gpxEvidencePoints: [],
+      searchAreas: [],
+      searchAssignments: [],
+      searchPasses: [],
       missionEvents: [],
       openedPaths: [],
       currentMissionId: null,
@@ -1746,6 +1995,10 @@ function readHarnessState(): BrowserHarnessState {
       drawings: Array.isArray(parsed.drawings) ? parsed.drawings : [],
       helicopters: Array.isArray(parsed.helicopters) ? parsed.helicopters : [],
       gpxImports: Array.isArray(parsed.gpxImports) ? parsed.gpxImports : [],
+      gpxEvidencePoints: Array.isArray(parsed.gpxEvidencePoints) ? parsed.gpxEvidencePoints : [],
+      searchAreas: Array.isArray(parsed.searchAreas) ? parsed.searchAreas : [],
+      searchAssignments: Array.isArray(parsed.searchAssignments) ? parsed.searchAssignments : [],
+      searchPasses: Array.isArray(parsed.searchPasses) ? parsed.searchPasses : [],
       missionEvents: Array.isArray(parsed.missionEvents) ? parsed.missionEvents : [],
       openedPaths: Array.isArray(parsed.openedPaths) ? parsed.openedPaths : [],
       currentMissionId:
@@ -1768,6 +2021,10 @@ function readHarnessState(): BrowserHarnessState {
       drawings: [],
       helicopters: [],
       gpxImports: [],
+      gpxEvidencePoints: [],
+      searchAreas: [],
+      searchAssignments: [],
+      searchPasses: [],
       missionEvents: [],
       openedPaths: [],
       currentMissionId: null,
@@ -2512,6 +2769,15 @@ function upsertGpxImport(
   return gpxImports.map((candidate) =>
     candidate.id === gpxImport.id ? gpxImport : candidate,
   )
+}
+
+function upsertByStableId<T extends { readonly id: string }>(
+  entries: readonly T[],
+  next: T,
+): readonly T[] {
+  return entries.some((entry) => entry.id === next.id)
+    ? entries.map((entry) => entry.id === next.id ? next : entry)
+    : [...entries, next]
 }
 
 function appendEvent(

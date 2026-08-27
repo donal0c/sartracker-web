@@ -120,6 +120,19 @@ function createElectronFileSystem(options) {
     readGpxFiles: async (paths) => {
       return Promise.all(paths.map((filePath) => readGpxFile(filePath, assertAllowedPath)))
     },
+    validateGpxEvidencePaths: async (paths) => {
+      if (!Array.isArray(paths) || paths.length < 1 || paths.length > 100) {
+        throw new Error('GPX evidence path count must be between 1 and 100.')
+      }
+      return Promise.all(paths.map(async (inputPath) => {
+        const filePath = normalizeRequiredPath(inputPath, 'GPX file')
+        assertAllowedPath(filePath, 'GPX file')
+        if (!isGpxPath(filePath)) throw new Error(`Only .gpx files can be imported: ${filePath}`)
+        const stat = await fs.stat(filePath).catch(() => null)
+        if (stat === null || !stat.isFile()) throw new Error(`GPX file was not found: ${filePath}`)
+        return filePath
+      }))
+    },
     listGpxDirectoryFiles: async (directoryPath) => {
       const normalizedDirectoryPath = normalizeRequiredPath(directoryPath, 'GPX directory')
       assertAllowedPath(normalizedDirectoryPath, 'GPX directory')
@@ -136,6 +149,15 @@ function createElectronFileSystem(options) {
         .sort((left, right) => path.basename(left).localeCompare(path.basename(right)))
 
       return Promise.all(gpxPaths.map((filePath) => readGpxFile(filePath, assertAllowedPath)))
+    },
+    listGpxDirectoryPaths: async (directoryPath) => {
+      const normalizedDirectoryPath = normalizeRequiredPath(directoryPath, 'GPX directory')
+      assertAllowedPath(normalizedDirectoryPath, 'GPX directory')
+      const entries = await fs.readdir(normalizedDirectoryPath, { withFileTypes: true })
+      return entries.filter((entry) => entry.isFile())
+        .map((entry) => path.join(normalizedDirectoryPath, entry.name))
+        .filter(isGpxPath)
+        .sort((left, right) => path.basename(left).localeCompare(path.basename(right)))
     },
     ingestMarkerAttachment: async (input, missionStore) => {
       const missionId = normalizeMissionId(input.missionId)
@@ -213,10 +235,12 @@ async function readGpxFile(inputPath, assertAllowedPath) {
     throw new Error(`Only .gpx files can be imported: ${filePath}`)
   }
 
+  const sourceBytes = await fs.readFile(filePath)
   return {
     sourcePath: filePath,
     fileName: path.basename(filePath),
-    contents: await fs.readFile(filePath, 'utf8'),
+    contents: sourceBytes.toString('utf8'),
+    bytesBase64: sourceBytes.toString('base64'),
   }
 }
 

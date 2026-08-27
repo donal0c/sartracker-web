@@ -18,6 +18,7 @@ const CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL = 'sartracker:choose-official-map
 const IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL = 'sartracker:import-official-map-package'
 const READ_GPX_FILES_CHANNEL = 'sartracker:read-gpx-files'
 const LIST_GPX_DIRECTORY_FILES_CHANNEL = 'sartracker:list-gpx-directory-files'
+const LIST_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-gpx-directory-paths'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
@@ -78,6 +79,9 @@ const MISSION_STORE_CHANNELS = {
   listAuditEvents: 'sartracker:mission-store:list-audit-events',
   readMissionReview: 'sartracker:mission-store:read-mission-review',
   cancelMissionReviewRead: 'sartracker:mission-store:cancel-mission-review-read',
+  readMissionReplay: 'sartracker:mission-store:read-mission-replay',
+  readMissionReplayTrackChunk: 'sartracker:mission-store:read-mission-replay-track-chunk',
+  cancelMissionReplay: 'sartracker:mission-store:cancel-mission-replay',
   listIngestAnomalies: 'sartracker:mission-store:list-ingest-anomalies',
   recordIngestRejections: 'sartracker:mission-store:record-ingest-rejections',
   recordIngestEvidenceLoss: 'sartracker:mission-store:record-ingest-evidence-loss',
@@ -97,6 +101,15 @@ const MISSION_STORE_CHANNELS = {
   upsertGpxImport: 'sartracker:mission-store:upsert-gpx-import',
   listGpxImports: 'sartracker:mission-store:list-gpx-imports',
   deleteGpxImport: 'sartracker:mission-store:delete-gpx-import',
+  listGpxImportRevisions: 'sartracker:mission-store:list-gpx-import-revisions',
+  importGpxEvidencePaths: 'sartracker:mission-store:import-gpx-evidence-paths',
+  upsertSearchArea: 'sartracker:mission-store:upsert-search-area',
+  listSearchAreas: 'sartracker:mission-store:list-search-areas',
+  retireSearchArea: 'sartracker:mission-store:retire-search-area',
+  upsertSearchAssignment: 'sartracker:mission-store:upsert-search-assignment',
+  listSearchAssignments: 'sartracker:mission-store:list-search-assignments',
+  upsertSearchPass: 'sartracker:mission-store:upsert-search-pass',
+  listSearchPasses: 'sartracker:mission-store:list-search-passes',
   getMission: 'sartracker:mission-store:get-mission',
   listMissions: 'sartracker:mission-store:list-missions',
   getActiveMission: 'sartracker:mission-store:get-active-mission',
@@ -173,6 +186,9 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   },
   listGpxDirectoryFiles(directoryPath) {
     return ipcRenderer.invoke(LIST_GPX_DIRECTORY_FILES_CHANNEL, directoryPath)
+  },
+  listGpxDirectoryPaths(directoryPath) {
+    return ipcRenderer.invoke(LIST_GPX_DIRECTORY_PATHS_CHANNEL, directoryPath)
   },
   ingestMarkerAttachment(input) {
     return ipcRenderer.invoke(INGEST_MARKER_ATTACHMENT_CHANNEL, input)

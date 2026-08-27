@@ -10,6 +10,8 @@ export function createElectronGpxImportSource(): GpxImportSource {
     readFiles: (paths) => getBridge().readGpxFiles(paths),
     listDirectoryFiles: (directoryPath) =>
       getBridge().listGpxDirectoryFiles(directoryPath),
+    listDirectoryPaths: (directoryPath) =>
+      getBridge().listGpxDirectoryPaths(directoryPath),
   }
 }
 

@@ -65,7 +65,7 @@ describe('generateMissionStoreFixture [DON-242]', () => {
     expect(generated.manifest.bytes.byTable.positions).toBeGreaterThan(0)
     expect(generated.manifest.bytes.byTable.mission_events).toBeGreaterThan(0)
     expect(generated.manifest.database.sha256).toBe(
-      'e117e8b2c96b485e511adc95d1bda5d00638d223361ded966951606bd8df66d3',
+      '838b602202b2e84c813eb0d23b05fae11314134ad2765bbd702c64d891dc7594',
     )
     await expect(sha256File(outputPath)).resolves.toBe(generated.manifest.database.sha256)
     await expect(sha256File(copyToPath)).resolves.toBe(generated.manifest.database.sha256)

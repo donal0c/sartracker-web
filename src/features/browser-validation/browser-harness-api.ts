@@ -145,6 +145,7 @@ export function installBrowserHarnessApi(): void {
             accuracy: position.accuracy,
             source: position.source,
             timestamp: position.timestamp,
+            timestamp_source: 'fix',
             data_origin: position.data_origin,
           })),
         })

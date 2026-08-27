@@ -3,6 +3,11 @@ import type {
   MissionEvent,
   MissionStore,
   MissionStoreInfo,
+  MissionReplayReadResult,
+  SearchArea,
+  SearchAssignment,
+  SearchPass,
+  Outing,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { LayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
 import { buildMissionReviewSnapshot, type MissionReviewSnapshot } from './mission-review-model'
@@ -14,11 +19,20 @@ type MissionReviewStoreBoundary = Pick<
   | 'listMissions'
   | 'readMissionReview'
   | 'cancelMissionReviewRead'
+  | 'readMissionReplay'
+  | 'readMissionReplayTrackChunk'
+  | 'cancelMissionReplay'
   | 'listMarkers'
   | 'listDevices'
   | 'listDrawings'
   | 'listHelicopters'
   | 'listGpxImports'
+  | 'listSearchAreas'
+  | 'listSearchAssignments'
+  | 'listSearchPasses'
+  | 'listOutings'
+  | 'upsertSearchAssignment'
+  | 'upsertSearchPass'
 >
 
 export type MissionReviewRuntimeState = {
@@ -32,6 +46,22 @@ export type MissionReviewRuntimeState = {
   readonly includeTelemetry: boolean
   /** True when the audit log was capped and older events are not shown. */
   readonly auditLogTruncated: boolean
+  readonly replay: MissionReplayRuntimeState
+  readonly searchOperations: {
+    readonly areas: readonly SearchArea[]
+    readonly assignments: readonly SearchAssignment[]
+    readonly passes: readonly SearchPass[]
+    readonly outings: readonly Outing[]
+  }
+}
+
+export type MissionReplayRuntimeState = {
+  readonly mode: 'live' | 'replay'
+  readonly selectedTime: string | null
+  readonly result: MissionReplayReadResult | null
+  readonly loading: boolean
+  readonly loadingMore: boolean
+  readonly error: string | null
 }
 
 export type MissionReviewController = {
@@ -40,6 +70,26 @@ export type MissionReviewController = {
   readonly refreshSelectedMission: () => Promise<void>
   /** Reloads the selected mission with telemetry events shown or hidden. */
   readonly setIncludeTelemetry: (includeTelemetry: boolean) => Promise<void>
+  readonly seekReplay: (selectedTime: string) => Promise<void>
+  readonly loadNextReplayChunk: () => Promise<void>
+  readonly returnToLive: () => void
+  readonly recordSearchAssignment: (input: {
+    readonly searchAreaId: string
+    readonly outingId: string
+    readonly teamId: string
+    readonly participantIds: readonly string[]
+    readonly notes: string | null
+    readonly coordinatorName: string
+  }) => Promise<void>
+  readonly recordSearchPass: (input: {
+    readonly searchAreaId: string
+    readonly assignmentId: string
+    readonly startedAt: string
+    readonly endedAt: string | null
+    readonly outcome: 'full' | 'partial' | 'aborted'
+    readonly notes: string | null
+    readonly coordinatorName: string
+  }) => Promise<void>
 }
 
 type StartMissionReviewRuntimeDependencies = {
@@ -57,6 +107,15 @@ const EMPTY_RUNTIME: MissionReviewRuntimeState = {
   error: null,
   includeTelemetry: false,
   auditLogTruncated: false,
+  replay: {
+    mode: 'live',
+    selectedTime: null,
+    result: null,
+    loading: false,
+    loadingMore: false,
+    error: null,
+  },
+  searchOperations: { areas: [], assignments: [], passes: [], outings: [] },
 }
 
 export async function startMissionReviewRuntime(
@@ -67,6 +126,8 @@ export async function startMissionReviewRuntime(
   let requestSequence = 0
   const requestNamespace = globalThis.crypto.randomUUID()
   let activeReviewRequestId: string | null = null
+  let replayToken = 0
+  let activeReplayRequestId: string | null = null
 
   publishRuntime()
 
@@ -82,6 +143,52 @@ export async function startMissionReviewRuntime(
     },
     setIncludeTelemetry: async (includeTelemetry) => {
       state = { ...state, includeTelemetry }
+      await loadMission(state.selectedMissionId, true)
+    },
+    seekReplay: async (selectedTime) => {
+      await seekReplay(selectedTime)
+    },
+    loadNextReplayChunk: async () => {
+      await loadNextReplayChunk()
+    },
+    returnToLive: () => {
+      replayToken += 1
+      cancelActiveReplayRead()
+      state = { ...state, replay: { ...EMPTY_RUNTIME.replay } }
+      publishRuntime()
+    },
+    recordSearchAssignment: async (input) => {
+      if (state.selectedMissionId === null || dependencies.missionStore.upsertSearchAssignment === undefined) {
+        throw new Error('Search assignment recording is unavailable in this runtime.')
+      }
+      await dependencies.missionStore.upsertSearchAssignment({
+        mission_id: state.selectedMissionId,
+        search_area_id: input.searchAreaId,
+        outing_id: input.outingId,
+        team_id: input.teamId,
+        participant_ids: input.participantIds,
+        notes: input.notes,
+        updated_by: input.coordinatorName,
+      })
+      await loadMission(state.selectedMissionId, true)
+    },
+    recordSearchPass: async (input) => {
+      if (state.selectedMissionId === null || dependencies.missionStore.upsertSearchPass === undefined) {
+        throw new Error('Search pass recording is unavailable in this runtime.')
+      }
+      await dependencies.missionStore.upsertSearchPass({
+        mission_id: state.selectedMissionId,
+        search_area_id: input.searchAreaId,
+        assignment_id: input.assignmentId,
+        started_at: input.startedAt,
+        ended_at: input.endedAt,
+        outcome: input.outcome,
+        notes: input.notes,
+        coordinator_name: input.coordinatorName,
+        participant_ids: [],
+        clue_ids: [],
+        track_evidence_ids: [],
+      })
       await loadMission(state.selectedMissionId, true)
     },
   }
@@ -118,6 +225,8 @@ export async function startMissionReviewRuntime(
           refreshing: false,
           error: null,
           auditLogTruncated: false,
+          replay: { ...EMPTY_RUNTIME.replay },
+          searchOperations: { ...EMPTY_RUNTIME.searchOperations },
         }
         publishRuntime()
         return
@@ -128,7 +237,10 @@ export async function startMissionReviewRuntime(
       const reviewRequestId = `mission-review-${requestNamespace}-${++requestSequence}`
       startedReviewRequestId = reviewRequestId
       activeReviewRequestId = reviewRequestId
-      const [reviewRead, info, markers, devices, drawings, helicopters, gpxImports, layerMetadata] =
+      const [
+        reviewRead, info, markers, devices, drawings, helicopters, gpxImports, layerMetadata,
+        searchAreas, searchAssignments, searchPasses, outings,
+      ] =
         await Promise.all([
           dependencies.missionStore.readMissionReview({
             missionId: selectedMission.id,
@@ -144,6 +256,10 @@ export async function startMissionReviewRuntime(
             : Promise.resolve([]),
           dependencies.missionStore.listGpxImports(selectedMission.id),
           dependencies.layerCatalogStore.listMetadata(selectedMission.id),
+          dependencies.missionStore.listSearchAreas?.(selectedMission.id) ?? Promise.resolve([]),
+          dependencies.missionStore.listSearchAssignments?.(selectedMission.id) ?? Promise.resolve([]),
+          dependencies.missionStore.listSearchPasses?.(selectedMission.id) ?? Promise.resolve([]),
+          dependencies.missionStore.listOutings?.(selectedMission.id) ?? Promise.resolve([]),
         ])
       if (activeReviewRequestId === reviewRequestId) {
         activeReviewRequestId = null
@@ -175,6 +291,15 @@ export async function startMissionReviewRuntime(
         refreshing: false,
         error: null,
         auditLogTruncated,
+        replay: selectedMission.id === state.selectedMissionId
+          ? state.replay
+          : { ...EMPTY_RUNTIME.replay },
+        searchOperations: {
+          areas: searchAreas,
+          assignments: searchAssignments,
+          passes: searchPasses,
+          outings,
+        },
       }
       publishRuntime()
     } catch (error) {
@@ -192,6 +317,116 @@ export async function startMissionReviewRuntime(
 
   function cancelActiveReviewRead(): void {
     cancelReviewReadIfActive(activeReviewRequestId)
+  }
+
+  async function seekReplay(selectedTime: string): Promise<void> {
+    const selectedMissionId = state.selectedMissionId
+    if (selectedMissionId === null) return
+    if (dependencies.missionStore.readMissionReplay === undefined) {
+      state = {
+        ...state,
+        replay: {
+          mode: 'replay', selectedTime, result: null, loading: false,
+          loadingMore: false, error: 'Replay is unavailable in this runtime.',
+        },
+      }
+      publishRuntime()
+      return
+    }
+    const normalizedTime = new Date(selectedTime).toISOString()
+    const currentToken = ++replayToken
+    cancelActiveReplayRead()
+    const requestId = `mission-replay-${requestNamespace}-${++requestSequence}`
+    activeReplayRequestId = requestId
+    state = {
+      ...state,
+      replay: {
+        mode: 'replay', selectedTime: normalizedTime, result: null,
+        loading: true, loadingMore: false, error: null,
+      },
+    }
+    publishRuntime()
+    try {
+      const result = await dependencies.missionStore.readMissionReplay({
+        missionId: selectedMissionId,
+        selectedTime: normalizedTime,
+        timezone: 'Europe/Dublin',
+        trackLimit: 500,
+      }, requestId)
+      if (currentToken !== replayToken || activeReplayRequestId !== requestId) return
+      activeReplayRequestId = null
+      state = {
+        ...state,
+        replay: {
+          mode: 'replay', selectedTime: normalizedTime, result,
+          loading: false, loadingMore: false, error: null,
+        },
+      }
+      publishRuntime()
+    } catch (error) {
+      if (currentToken !== replayToken) return
+      if (activeReplayRequestId === requestId) activeReplayRequestId = null
+      state = {
+        ...state,
+        replay: {
+          mode: 'replay', selectedTime: normalizedTime, result: null,
+          loading: false, loadingMore: false, error: toErrorMessage(error),
+        },
+      }
+      publishRuntime()
+    }
+  }
+
+  async function loadNextReplayChunk(): Promise<void> {
+    const replay = state.replay
+    const missionId = state.selectedMissionId
+    if (
+      replay.result === null || replay.result.nextCursor === null || missionId === null
+      || dependencies.missionStore.readMissionReplayTrackChunk === undefined
+    ) return
+    const currentToken = replayToken
+    const requestId = `mission-replay-${requestNamespace}-${++requestSequence}`
+    activeReplayRequestId = requestId
+    state = { ...state, replay: { ...replay, loadingMore: true, error: null } }
+    publishRuntime()
+    try {
+      const chunk = await dependencies.missionStore.readMissionReplayTrackChunk({
+        missionId,
+        selectedTime: replay.result.selectedTime,
+        timezone: replay.result.timezone,
+        trackLimit: 500,
+        cursor: replay.result.nextCursor,
+      }, requestId)
+      if (currentToken !== replayToken || activeReplayRequestId !== requestId) return
+      activeReplayRequestId = null
+      state = {
+        ...state,
+        replay: {
+          ...state.replay,
+          result: {
+            ...replay.result,
+            tracks: [...replay.result.tracks, ...chunk.tracks],
+            totalTrackCount: chunk.totalTrackCount,
+            nextCursor: chunk.nextCursor,
+            progress: chunk.progress,
+          },
+          loadingMore: false,
+        },
+      }
+      publishRuntime()
+    } catch (error) {
+      if (currentToken !== replayToken) return
+      if (activeReplayRequestId === requestId) activeReplayRequestId = null
+      state = { ...state, replay: { ...state.replay, loadingMore: false, error: toErrorMessage(error) } }
+      publishRuntime()
+    }
+  }
+
+  function cancelActiveReplayRead(): void {
+    const requestId = activeReplayRequestId
+    if (requestId === null) return
+    activeReplayRequestId = null
+    void dependencies.missionStore.cancelMissionReplay?.(requestId).catch(() => undefined)
   }
 
   function cancelReviewReadIfActive(requestId: string | null): void {

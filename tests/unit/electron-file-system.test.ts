@@ -73,6 +73,7 @@ describe('Electron filesystem service', () => {
         sourcePath: firstPath,
         fileName: 'b.gpx',
         contents: '<gpx>b</gpx>',
+        bytesBase64: 'PGdweD5iPC9ncHg+',
       },
     ])
     await expect(service.listGpxDirectoryFiles(userDataPath!)).resolves.toMatchObject([

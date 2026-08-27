@@ -92,6 +92,7 @@ export type SarTrackerElectronBridge = {
   readonly listGpxDirectoryFiles: (
     directoryPath: string,
   ) => Promise<readonly GpxImportFileInput[]>
+  readonly listGpxDirectoryPaths: (directoryPath: string) => Promise<readonly string[]>
   readonly ingestMarkerAttachment: (input: {
     readonly missionId: string
     readonly fileName: string

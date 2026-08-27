@@ -90,12 +90,14 @@ export type CoreFeatureRuntimeMissionStore = Pick<
   | 'listGpxImports'
   | 'upsertGpxImport'
   | 'deleteGpxImport'
+  | 'importGpxEvidencePaths'
 >
 
 export type GpxWatchSource = {
   readonly listDirectoryFiles: (
     directoryPath: string,
   ) => Promise<readonly GpxImportFileInput[]>
+  readonly listDirectoryPaths?: (directoryPath: string) => Promise<readonly string[]>
 }
 
 export type CoreFeatureRuntimeOptions = {

@@ -166,6 +166,38 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-review-marker-detail')).toContainText('Loose Scree')
   })
 
+  test('DON-278: replay is explicitly data-known-at-T while live controls remain operable', async ({ page }) => {
+    await injectTrackingSnapshot(page)
+    await page.evaluate(async () => {
+      await window.__SARTRACKER_BROWSER_HARNESS__?.importGpxFiles([{
+        sourcePath: '/tracks/replay-dated.gpx',
+        fileName: 'replay-dated.gpx',
+        contents: `<gpx version="1.1"><trk><trkseg>
+          <trkpt lat="52" lon="-9.7"><time>2026-04-10T16:50:00Z</time></trkpt>
+          <trkpt lat="52.01" lon="-9.71"><time>2026-04-10T16:55:00Z</time></trkpt>
+        </trkseg></trk></gpx>`,
+      }])
+    })
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('Live map context')
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeEnabled()
+    await page.getByTestId('mission-replay-seek').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText(
+      'Replay — data known at selected time',
+    )
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('4 / 4 dated points')
+    await expect(page.getByTestId('mission-replay-reconstructed-state')).toContainText('Known by')
+    await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('Traccar fixTime')
+    await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('GPX source time')
+    await expect(page.getByTestId('mission-replay-limitation-browser_harness_version_history_unavailable')).toBeVisible()
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeEnabled()
+
+    await page.getByTestId('mission-replay-return-live').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('Live map context')
+  })
+
   test('shows marker evidence and audit metadata in review flows', async ({ page }) => {
     await createMarker(page, {
       name: 'Evidence Cache',

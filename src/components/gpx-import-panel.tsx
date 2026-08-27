@@ -135,8 +135,9 @@ export function GpxImportPanel() {
       return
     }
 
-    const files = await gpxImportSource.readFiles(paths)
-    const imported = await controller.importFiles(files)
+    const imported = isElectronRuntimeAvailable()
+      ? await controller.importPaths(paths)
+      : await controller.importFiles(await gpxImportSource.readFiles(paths))
     setStatusMessage(
       imported.length === 0
         ? 'No new GPX files were imported.'
@@ -154,8 +155,9 @@ export function GpxImportPanel() {
       return
     }
 
-    const files = await gpxImportSource.listDirectoryFiles(directoryPath)
-    const imported = await controller.importFiles(files)
+    const imported = isElectronRuntimeAvailable() && gpxImportSource.listDirectoryPaths !== undefined
+      ? await controller.importPaths(await gpxImportSource.listDirectoryPaths(directoryPath))
+      : await controller.importFiles(await gpxImportSource.listDirectoryFiles(directoryPath))
     setStatusMessage(
       imported.length === 0
         ? `No new GPX files were found in ${directoryPath}.`

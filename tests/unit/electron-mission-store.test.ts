@@ -710,7 +710,7 @@ describe('electron mission store', () => {
   })
 
   it('migrates a schema-6 store to the durable tracking-history checkpoint schema', async () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(11)
+    expect(CURRENT_SCHEMA_VERSION).toBe(12)
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-checkpoint-migration-'))
     const databasePath = path.join(userDataPath, 'mission-store.sqlite')
     const legacyDb = new Database(databasePath)
@@ -724,7 +724,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 11 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -739,7 +739,7 @@ describe('electron mission store', () => {
         migratedDb
           .prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
           .get(),
-      ).toEqual({ value: '11' })
+      ).toEqual({ value: '12' })
     } finally {
       migratedDb.close()
     }
@@ -781,7 +781,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 11 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -841,7 +841,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 11 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -981,7 +981,7 @@ describe('electron mission store', () => {
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM outings').get()).toEqual({ count: 0 })
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM devices').get()).toEqual({ count: 2 })
       expect(migratedDb.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
-        .toEqual({ value: '11' })
+        .toEqual({ value: '12' })
       expect(migratedDb.prepare(`SELECT name FROM sqlite_master
           WHERE type = 'index' AND name IN (
             'idx_mission_participants_active_device',

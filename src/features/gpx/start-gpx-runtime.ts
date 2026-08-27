@@ -1,29 +1,30 @@
-import type { GpxTrackImport } from '../../infrastructure/mission-store/tauri-mission-store'
+import type {
+  GpxTrackImport,
+  UpsertGpxTrackImportInput,
+} from '../../infrastructure/mission-store/tauri-mission-store'
 import { writeGpxImportColorMetadata } from './gpx-style'
-import { parseGpxFile } from './gpx-parser'
+import { digestGpxSource, parseGpxFile } from './gpx-parser'
 
 type GpxStoreBoundary = {
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
-  readonly upsertGpxImport: (input: {
-    readonly id?: string | null
-    readonly mission_id: string
-    readonly source_path: string
-    readonly file_name: string
-    readonly display_name: string
-    readonly geometry_json: string
-    readonly metadata_json?: string | null
-  }) => Promise<GpxTrackImport>
+  readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
+  readonly importGpxEvidencePaths?: (input: {
+    readonly missionId: string
+    readonly paths: readonly string[]
+  }) => Promise<{ readonly imports: readonly { readonly id: string }[]; readonly dispatchDurationMs: number }>
 }
 
 type GpxWatchSourceBoundary = {
   readonly listDirectoryFiles: (directoryPath: string) => Promise<readonly GpxImportFileInput[]>
+  readonly listDirectoryPaths?: (directoryPath: string) => Promise<readonly string[]>
 }
 
 export type GpxImportFileInput = {
   readonly sourcePath: string
   readonly fileName: string
   readonly contents: string
+  readonly bytesBase64?: string
 }
 
 export type GpxRuntimeState = {
@@ -44,6 +45,7 @@ type StartGpxRuntimeDependencies = {
 export type GpxRuntimeController = {
   readonly refreshMission: (missionId: string | null) => Promise<void>
   readonly importFiles: (files: readonly GpxImportFileInput[]) => Promise<readonly GpxTrackImport[]>
+  readonly importPaths: (paths: readonly string[]) => Promise<readonly GpxTrackImport[]>
   readonly updateImportColor: (importId: string, color: string) => Promise<GpxTrackImport | null>
   readonly addWatchedDirectory: (directoryPath: string) => Promise<readonly GpxTrackImport[]>
   readonly removeWatchedDirectory: (directoryPath: string) => void
@@ -124,6 +126,7 @@ export async function startGpxRuntime(
     importFiles: async (files: readonly GpxImportFileInput[]) => {
       return await importFilesIntoRuntime(files)
     },
+    importPaths: async (paths) => await importPathsIntoRuntime(paths),
     updateImportColor: async (importId: string, color: string) => {
       const existingImport = state.imports.find((entry) => entry.id === importId)
       if (existingImport === undefined) {
@@ -166,8 +169,17 @@ export async function startGpxRuntime(
       }
       publishRuntime()
 
-      const files = await dependencies.watchSource.listDirectoryFiles(normalizedPath)
-      return await importFilesIntoRuntime(files)
+      if (
+        dependencies.gpxStore.importGpxEvidencePaths !== undefined
+        && dependencies.watchSource.listDirectoryPaths !== undefined
+      ) {
+        return await importPathsIntoRuntime(
+          await dependencies.watchSource.listDirectoryPaths(normalizedPath),
+        )
+      }
+      return await importFilesIntoRuntime(
+        await dependencies.watchSource.listDirectoryFiles(normalizedPath),
+      )
     },
     removeWatchedDirectory: (directoryPath: string) => {
       const normalizedPath = directoryPath.trim()
@@ -188,8 +200,18 @@ export async function startGpxRuntime(
 
       const imported: GpxTrackImport[] = []
       for (const directoryPath of state.watchedDirectories) {
-        const files = await dependencies.watchSource.listDirectoryFiles(directoryPath)
-        imported.push(...(await importFilesIntoRuntime(files)))
+        if (
+          dependencies.gpxStore.importGpxEvidencePaths !== undefined
+          && dependencies.watchSource.listDirectoryPaths !== undefined
+        ) {
+          imported.push(...(await importPathsIntoRuntime(
+            await dependencies.watchSource.listDirectoryPaths(directoryPath),
+          )))
+        } else {
+          imported.push(...(await importFilesIntoRuntime(
+            await dependencies.watchSource.listDirectoryFiles(directoryPath),
+          )))
+        }
       }
 
       return imported
@@ -233,24 +255,61 @@ export async function startGpxRuntime(
         publishRuntime()
         return []
       }
-      const existingPaths = new Set(state.imports.map((entry) => entry.source_path))
+      const existingByPath = new Map(state.imports.map((entry) => [entry.source_path, entry]))
+      const existingByHash = new Map(
+        state.imports.flatMap((entry) => entry.content_sha256 == null
+          ? []
+          : [[entry.content_sha256, entry] as const]),
+      )
+      const importedHashByPath = new Map(
+        state.imports.flatMap((entry) => entry.content_sha256 == null
+          ? []
+          : [[entry.source_path, entry.content_sha256] as const]),
+      )
       const imported: GpxTrackImport[] = []
 
       for (const file of files) {
-        if (existingPaths.has(file.sourcePath)) {
-          continue
-        }
-
+        const existingAtPath = existingByPath.get(file.sourcePath)
+        if (existingAtPath !== undefined && existingAtPath.content_sha256 == null) continue
         const parsed = parseGpxFile(file)
+        const contentSha256 = await digestGpxSource({
+          contents: file.contents,
+          ...(file.bytesBase64 === undefined ? {} : { bytesBase64: file.bytesBase64 }),
+        })
+        if (importedHashByPath.get(file.sourcePath) === contentSha256) continue
+        if (existingByHash.has(contentSha256)) continue
+        const samePath = existingAtPath
         const nextImport = await dependencies.gpxStore.upsertGpxImport({
+          ...(samePath === undefined ? {} : { id: samePath.id }),
           mission_id: missionId,
           source_path: parsed.sourcePath,
           file_name: parsed.fileName,
           display_name: parsed.displayName,
           geometry_json: parsed.geometryJson,
           metadata_json: parsed.metadataJson,
+          content_sha256: contentSha256,
+          source_bytes_base64: file.bytesBase64 ?? encodeUtf8Base64(file.contents),
+          timing_class: parsed.timingClass,
+          points: parsed.points.map((point) => ({
+            segment_index: point.segmentIndex,
+            point_index: point.pointIndex,
+            track_name: point.trackName,
+            lat: point.lat,
+            lon: point.lon,
+            elevation: point.elevation,
+            timestamp: point.timestamp,
+          })),
+          rejections: parsed.rejections.map((rejection) => ({
+            kind: rejection.kind,
+            segment_index: rejection.segmentIndex,
+            point_index: rejection.pointIndex,
+            reason: rejection.reason,
+            source_value: rejection.sourceValue,
+          })),
         })
-        existingPaths.add(nextImport.source_path)
+        existingByPath.set(nextImport.source_path, nextImport)
+        if (nextImport.content_sha256 != null) existingByHash.set(nextImport.content_sha256, nextImport)
+        importedHashByPath.set(file.sourcePath, contentSha256)
         imported.push(nextImport)
       }
 
@@ -275,9 +334,37 @@ export async function startGpxRuntime(
     }
   }
 
+  async function importPathsIntoRuntime(paths: readonly string[]): Promise<readonly GpxTrackImport[]> {
+    const missionId = state.activeMissionId
+    if (missionId === null || paths.length === 0 || dependencies.gpxStore.importGpxEvidencePaths === undefined) {
+      return []
+    }
+    state = { ...state, importing: true, error: null }
+    publishRuntime()
+    try {
+      const result = await dependencies.gpxStore.importGpxEvidencePaths({ missionId, paths })
+      const imports = await dependencies.gpxStore.listGpxImports(missionId)
+      const importedIds = new Set(result.imports.map((entry) => entry.id))
+      state = { ...state, importing: false, imports, error: null }
+      publishRuntime()
+      return imports.filter((entry) => importedIds.has(entry.id))
+    } catch (error) {
+      state = { ...state, importing: false, error: toErrorMessage(error) }
+      publishRuntime()
+      throw error
+    }
+  }
+
   function publishRuntime(): void {
     dependencies.applyRuntime(state)
   }
+}
+
+function encodeUtf8Base64(contents: string): string {
+  const bytes = new TextEncoder().encode(contents)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
 }
 
 function toErrorMessage(error: unknown): string {

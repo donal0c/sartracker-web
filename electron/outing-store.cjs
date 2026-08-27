@@ -8,6 +8,7 @@ function createOutingStore(options) {
   const readNow = options.now ?? (() => new Date().toISOString())
   const faultInjection = options.faultInjection ?? {}
   const recordCoverageInvalidation = options.recordCoverageInvalidation ?? (() => undefined)
+  const recordEvidenceVersion = options.recordEvidenceVersion ?? (() => undefined)
 
   return {
     createOuting(input) {
@@ -41,10 +42,20 @@ function createOutingStore(options) {
           createdAt: timestamp,
         })
         failAfterMutation(faultInjection)
-        insertAudit(db, mission.id, 'outing_started', timestamp, {
+        const auditEventId = insertAudit(db, mission.id, 'outing_started', timestamp, {
           outing_id: outing.id,
           label: outing.label,
           started_at: outing.started_at,
+        })
+        recordEvidenceVersion({
+          missionId: mission.id,
+          objectType: 'outing',
+          objectId: outing.id,
+          operation: 'created',
+          effectiveAt: outing.started_at,
+          recordedAt: timestamp,
+          state: requireOuting(db, mission.id, outing.id),
+          auditEventId,
         })
       })
       transaction()
@@ -75,11 +86,21 @@ function createOutingStore(options) {
           createdAt: timestamp,
         })
         failAfterMutation(faultInjection)
-        insertAudit(db, mission.id, 'outing_ended', timestamp, {
+        const auditEventId = insertAudit(db, mission.id, 'outing_ended', timestamp, {
           outing_id: existing.id,
           label: existing.label,
           started_at: existing.started_at,
           ended_at: endedAt,
+        })
+        recordEvidenceVersion({
+          missionId: mission.id,
+          objectType: 'outing',
+          objectId: existing.id,
+          operation: 'updated',
+          effectiveAt: timestamp,
+          recordedAt: timestamp,
+          state: requireOuting(db, mission.id, existing.id),
+          auditEventId,
         })
       })
       transaction()
@@ -97,10 +118,20 @@ function createOutingStore(options) {
         db.prepare('UPDATE outings SET label = ?, updated_at = ? WHERE id = ?')
           .run(label, timestamp, existing.id)
         failAfterMutation(faultInjection)
-        insertAudit(db, mission.id, 'outing_renamed', timestamp, {
+        const auditEventId = insertAudit(db, mission.id, 'outing_renamed', timestamp, {
           outing_id: existing.id,
           before: { label: existing.label },
           after: { label },
+        })
+        recordEvidenceVersion({
+          missionId: mission.id,
+          objectType: 'outing',
+          objectId: existing.id,
+          operation: 'updated',
+          effectiveAt: timestamp,
+          recordedAt: timestamp,
+          state: requireOuting(db, mission.id, existing.id),
+          auditEventId,
         })
       })
       transaction()
@@ -137,10 +168,20 @@ function createOutingStore(options) {
           createdAt: timestamp,
         })
         failAfterMutation(faultInjection)
-        insertAudit(db, mission.id, 'outing_boundaries_edited', timestamp, {
+        const auditEventId = insertAudit(db, mission.id, 'outing_boundaries_edited', timestamp, {
           outing_id: existing.id,
           before: { started_at: existing.started_at, ended_at: existing.ended_at },
           after: { started_at: startedAt, ended_at: endedAt },
+        })
+        recordEvidenceVersion({
+          missionId: mission.id,
+          objectType: 'outing',
+          objectId: existing.id,
+          operation: 'updated',
+          effectiveAt: timestamp,
+          recordedAt: timestamp,
+          state: requireOuting(db, mission.id, existing.id),
+          auditEventId,
         })
       })
       transaction()
@@ -245,9 +286,11 @@ function assertNoOverlap(db, candidate) {
 
 /** Inserts the mutation audit record inside the owning transaction. */
 function insertAudit(db, missionId, eventType, timestamp, details) {
+  const eventId = randomUUID()
   db.prepare(
     'INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json) VALUES (?, ?, ?, ?, ?)',
-  ).run(randomUUID(), missionId, eventType, timestamp, JSON.stringify(details))
+  ).run(eventId, missionId, eventType, timestamp, JSON.stringify(details))
+  return eventId
 }
 
 /** Provides a deterministic forced rollback seam for the atomicity regression. */
