@@ -62,6 +62,17 @@ describe('MarkerDialog two-stage delete confirmation', () => {
     expect(confirmation?.textContent).toContain('casualty')
   })
 
+  it('states that removal retires the marker while preserving mission history', () => {
+    renderEditMarker('clue')
+
+    click('[data-testid="marker-delete-btn"]')
+
+    const confirmation = query('[data-testid="marker-delete-confirmation"]')
+    expect(confirmation?.textContent).toContain('Retire this clue marker?')
+    expect(confirmation?.textContent).toMatch(/retained in mission history/i)
+    expect(confirmation?.textContent).not.toMatch(/permanently removes/i)
+  })
+
   function renderEditMarker(type: 'ipp_lkp' | 'clue' | 'hazard' | 'casualty' = 'hazard'): MarkerRuntimeController {
     const controller = createController()
     useMarkerStore.setState({

@@ -1,4 +1,3 @@
-const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
 const { parentPort, threadId, workerData } = require('node:worker_threads')
@@ -14,12 +13,14 @@ const {
   startGpxImportBatch,
   upsertGpxEvidenceChunked,
 } = require('./mission-store.cjs')
+const { readBoundedGpxSource } = require('./gpx-source-reader.cjs')
 
 if (parentPort === null) throw new Error('GPX evidence worker requires a parent message port.')
 
 async function run() {
   let database
   try {
+    const scalarParsers = await import('../shared/gpx-source-scalars.mjs')
     database = new Database(workerData.databasePath)
     database.pragma('foreign_keys = ON')
     database.pragma('journal_mode = WAL')
@@ -46,7 +47,7 @@ async function run() {
           })
         }
         pauseForForcedKill('pending')
-        sourceBytes = await fs.readFile(normalizedPath)
+        sourceBytes = await readBoundedGpxSource(normalizedPath)
         const contentSha256 = createHash('sha256').update(sourceBytes).digest('hex')
         const sourceBytesBase64 = sourceBytes.toString('base64')
         retainGpxImportSourceBytes(database, {
@@ -58,7 +59,7 @@ async function run() {
         })
         pauseForForcedKill('retained')
         const decoded = new TextDecoder('utf-8', { fatal: true }).decode(sourceBytes)
-        const parsed = parseGpxEvidence(decoded, path.basename(normalizedPath))
+        const parsed = parseGpxEvidence(decoded, path.basename(normalizedPath), scalarParsers)
         const stored = await upsertGpxEvidenceChunked(database, {
           mission_id: workerData.missionId,
           source_path: normalizedPath,
@@ -128,7 +129,7 @@ async function run() {
 }
 
 /** Parses ordered GPX evidence with explicit point/segment rejection provenance. */
-function parseGpxEvidence(contents, fileName) {
+function parseGpxEvidence(contents, fileName, scalarParsers) {
   const parser = new SaxesParser()
   const segments = []
   const points = []
@@ -173,7 +174,14 @@ function parseGpxEvidence(contents, fileName) {
       endCapture()
     }
     if (name === 'trkpt' && point !== null && segmentPoints !== null) {
-      const parsedPoint = normalizePoint(point, trackName, segmentIndex, pointIndex, rejections)
+      const parsedPoint = normalizePoint(
+        point,
+        trackName,
+        segmentIndex,
+        pointIndex,
+        rejections,
+        scalarParsers,
+      )
       if (parsedPoint !== null) {
         points.push(parsedPoint)
         segmentPoints.push([parsedPoint.lon, parsedPoint.lat])
@@ -201,18 +209,16 @@ function parseGpxEvidence(contents, fileName) {
   function endCapture() { capture = null; capturedText = '' }
 }
 
-function normalizePoint(source, trackName, segmentIndex, pointIndex, rejections) {
-  const lat = Number(source.latSource)
-  const lon = Number(source.lonSource)
-  if (source.latSource === null || source.lonSource === null || !Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+function normalizePoint(source, trackName, segmentIndex, pointIndex, rejections, scalarParsers) {
+  const lat = scalarParsers.parseGpxDecimal(source.latSource)
+  const lon = scalarParsers.parseGpxDecimal(source.lonSource)
+  if (lat === null || lon === null || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
     rejections.push({ kind: 'point', segment_index: segmentIndex, point_index: pointIndex, reason: 'invalid_coordinates', source_value: `lat=${source.latSource ?? ''};lon=${source.lonSource ?? ''}` })
     return null
   }
-  const elevationValue = source.elevationSource === null ? null : Number(source.elevationSource)
-  const elevation = elevationValue !== null && Number.isFinite(elevationValue) ? elevationValue : null
+  const elevation = scalarParsers.parseGpxDecimal(source.elevationSource)
   if (source.elevationSource !== null && elevation === null) rejections.push({ kind: 'point', segment_index: segmentIndex, point_index: pointIndex, reason: 'invalid_elevation', source_value: source.elevationSource })
-  const timestampValue = source.timestampSource === null ? null : new Date(source.timestampSource)
-  const timestamp = timestampValue !== null && Number.isFinite(timestampValue.getTime()) ? timestampValue.toISOString() : null
+  const timestamp = scalarParsers.parseExplicitGpxTimestamp(source.timestampSource)
   if (source.timestampSource !== null && timestamp === null) rejections.push({ kind: 'point', segment_index: segmentIndex, point_index: pointIndex, reason: 'invalid_timestamp', source_value: source.timestampSource })
   return { segment_index: segmentIndex, point_index: pointIndex, track_name: trackName, lat, lon, elevation, timestamp }
 }

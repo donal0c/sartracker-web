@@ -156,6 +156,7 @@ describe('GPX renderer containment boundary [DON-274]', () => {
 
   it('exposes only paged GPX reads and small presentation writes through preload', () => {
     const preload = readFileSync('electron/preload.cjs', 'utf8')
+    const main = readFileSync('electron/main.cjs', 'utf8')
 
     expect(preload).toContain("listGpxImportPage: 'sartracker:mission-store:list-gpx-import-page'")
     expect(preload).toContain("listGpxImportRevisionPage: 'sartracker:mission-store:list-gpx-import-revision-page'")
@@ -163,5 +164,9 @@ describe('GPX renderer containment boundary [DON-274]', () => {
     expect(preload).not.toContain('upsertGpxImport:')
     expect(preload).not.toContain('listGpxImports:')
     expect(preload).not.toContain('listGpxImportRevisions:')
+    expect(preload).not.toContain('readGpxFiles(')
+    expect(preload).not.toContain('listGpxDirectoryFiles(')
+    expect(main).not.toContain("'sartracker:read-gpx-files'")
+    expect(main).not.toContain("'sartracker:list-gpx-directory-files'")
   })
 })

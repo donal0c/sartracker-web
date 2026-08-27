@@ -375,14 +375,14 @@ function describeMissionEvent(
         .filter((value): value is string => value !== null)
         .join(' ')
     case 'marker_deleted':
-      return name === null ? 'Marker deleted.' : `${markerType ?? 'marker'} ${name} deleted.`
+      return name === null ? 'Marker retired; history retained.' : `${markerType ?? 'marker'} ${name} retired; history retained.`
     case 'drawing_created':
     case 'drawing_updated':
       return name === null
         ? 'Drawing saved.'
         : `${drawingType ?? 'drawing'} saved as ${name}.`
     case 'drawing_deleted':
-      return name === null ? 'Drawing deleted.' : `${drawingType ?? 'drawing'} ${name} deleted.`
+      return name === null ? 'Drawing retired; history retained.' : `${drawingType ?? 'drawing'} ${name} retired; history retained.`
     case 'gpx_import_created':
     case 'gpx_import_updated':
       return [
@@ -393,7 +393,7 @@ function describeMissionEvent(
         .filter((value): value is string => value !== null)
         .join(' ')
     case 'gpx_import_deleted':
-      return displayName === null ? 'GPX import deleted.' : `GPX import ${displayName} deleted.`
+      return displayName === null ? 'GPX import retired; evidence retained.' : `GPX import ${displayName} retired; evidence retained.`
     case 'mission_archived':
     case 'mission_archive_succeeded':
       return archivePath === null ? 'Mission archive created.' : `Archive created at ${archivePath}.`
@@ -490,5 +490,5 @@ const EVENT_TITLES: Record<
   mission_unlocked: { title: 'Mission Unlocked', description: 'Mission unlocked for correction.' },
   gpx_import_created: { title: 'GPX Import Created', description: null },
   gpx_import_updated: { title: 'GPX Import Updated', description: null },
-  gpx_import_deleted: { title: 'GPX Import Deleted', description: null },
+  gpx_import_deleted: { title: 'GPX Import Retired', description: null },
 }

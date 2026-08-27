@@ -108,6 +108,12 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - GPX source bytes receive a content hash; changed content creates a new immutable revision.
 - Point timestamps and elevation are retained when present; rejected points/segments are recorded.
 - SAR Tracker never invents GPX timestamps.
+- GPX numeric source scalars are non-empty strict decimals. Source time is
+  precise only when it is a full calendar-valid ISO date-time carrying `Z` or
+  an explicit offset; permissive platform coercion is never evidence authority.
+- One source file is limited to 8 MiB for bounded exact-byte retention. Larger
+  files fail explicitly and must be split; concurrent imports serialize so
+  identical content retains one canonical identity plus path aliases.
 - An undated GPX track may be assigned to an outing and displayed as static evidence, but is excluded from precise timeline replay.
 
 ### Finalization, retention, and archive evidence (`SAR-QA-007`, `SAR-QA-020`)
@@ -225,9 +231,11 @@ without changing any locked team answer:
   failed evidence after interruption. Parsing and bulk persistence run outside
   the Electron main isolate in 25-point writer slices with an explicit inter-
   slice writer turn for current positions. Bounded persisted issue pages expose
-  failure reasons after restart without sending retained bytes or absolute paths
-  to the renderer, and shutdown cancels and joins the import worker before the
-  database closes;
+  failure reasons after restart, explicitly disclose further pages, and refresh
+  after a current import without sending retained bytes or absolute paths to the
+  renderer. Raw GPX byte-reading IPC is absent. Exact-byte reads use an 8 MiB
+  ceiling, strict shared scalar parsing and serialized worker admission, while
+  shutdown cancels and joins active or queued imports before the database closes;
 - replay folds lifecycle, participant/group state and mutable evidence using
   both recorded and effective time, and streams exact `fixTime`/dated-GPX rows
   from a read-only cancellable worker; undated GPX remains explicit static

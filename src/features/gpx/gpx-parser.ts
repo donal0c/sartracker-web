@@ -64,10 +64,10 @@ export function parseGpxFile(input: ParseGpxFileInput): ParsedGpxFile {
     for (const [pointIndex, point] of [...segment.querySelectorAll('trkpt')].entries()) {
       const latSource = point.getAttribute('lat')
       const lonSource = point.getAttribute('lon')
-      const lat = Number(latSource)
-      const lon = Number(lonSource)
+      const lat = parseGpxDecimal(latSource)
+      const lon = parseGpxDecimal(lonSource)
       if (
-        latSource === null || lonSource === null || !Number.isFinite(lat) || !Number.isFinite(lon)
+        lat === null || lon === null
         || lat < -90 || lat > 90 || lon < -180 || lon > 180
       ) {
         rejections.push({
@@ -78,17 +78,13 @@ export function parseGpxFile(input: ParseGpxFileInput): ParsedGpxFile {
       }
 
       const elevationSource = point.querySelector('ele')?.textContent?.trim() ?? null
-      const elevationValue = elevationSource === null ? null : Number(elevationSource)
-      const elevation = elevationValue !== null && Number.isFinite(elevationValue) ? elevationValue : null
+      const elevation = parseGpxDecimal(elevationSource)
       if (elevationSource !== null && elevation === null) {
         rejections.push({ kind: 'point', segmentIndex, pointIndex, reason: 'invalid_elevation', sourceValue: elevationSource })
       }
 
       const timestampSource = point.querySelector('time')?.textContent?.trim() ?? null
-      const timestampValue = timestampSource === null ? null : new Date(timestampSource)
-      const timestamp = timestampValue !== null && Number.isFinite(timestampValue.getTime())
-        ? timestampValue.toISOString()
-        : null
+      const timestamp = parseExplicitGpxTimestamp(timestampSource)
       if (timestampSource !== null && timestamp === null) {
         rejections.push({ kind: 'point', segmentIndex, pointIndex, reason: 'invalid_timestamp', sourceValue: timestampSource })
       }
@@ -154,3 +150,7 @@ function readTrackName(segment: Element): string | null {
 function stripFileExtension(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, '')
 }
+import {
+  parseExplicitGpxTimestamp,
+  parseGpxDecimal,
+} from '../../../shared/gpx-source-scalars.mjs'

@@ -18,6 +18,7 @@ export function GpxImportPanel() {
   const outings = useGpxStore((state) => state.outings)
   const watchedDirectories = useGpxStore((state) => state.watchedDirectories)
   const importIssues = useGpxStore((state) => state.importIssues)
+  const hasMoreImportIssues = useGpxStore((state) => state.hasMoreImportIssues)
   const loading = useGpxStore((state) => state.loading)
   const importing = useGpxStore((state) => state.importing)
   const error = useGpxStore((state) => state.error)
@@ -103,6 +104,11 @@ export function GpxImportPanel() {
               </li>
             ))}
           </ul>
+          {hasMoreImportIssues ? (
+            <p className="mt-2 text-xs font-semibold text-rose-100" data-testid="gpx-import-issues-more">
+              Additional retained issues exist beyond this bounded page. Review the persisted mission evidence record before closeout.
+            </p>
+          ) : null}
         </section>
       ) : null}
       {statusMessage !== null ? (
@@ -147,7 +153,7 @@ export function GpxImportPanel() {
             outings,
             outingAssignmentDisabled: assignmentActor.trim() === '',
             onOutingChange: (outingId: string) => void handleAssignOuting(entry.id, outingId),
-            actionLabel: 'Delete',
+            actionLabel: 'Retire',
             onAction: () => void handleDeleteImport(entry.id, entry.display_name),
           }))}
           testId="gpx-import-list"
@@ -236,8 +242,8 @@ export function GpxImportPanel() {
     const didDelete = await controller.deleteImport(importId)
     setStatusMessage(
       didDelete
-        ? `Deleted GPX import ${displayName}.`
-        : `GPX import ${displayName} was already removed.`,
+        ? `Retired GPX import ${displayName}. Its evidence remains in mission history.`
+        : `GPX import ${displayName} was already retired.`,
     )
   }
 

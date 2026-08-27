@@ -1,15 +1,18 @@
 import type { GpxImportSource } from './tauri-gpx-import-source'
 
 /**
- * Wraps Electron-native GPX file/folder selection and file loading.
+ * Wraps Electron-native GPX path selection without exposing exact bytes to the renderer.
  */
 export function createElectronGpxImportSource(): GpxImportSource {
   return {
     chooseFilePaths: () => getBridge().chooseGpxFilePaths(),
     chooseDirectoryPath: () => getBridge().chooseGpxDirectoryPath(),
-    readFiles: (paths) => getBridge().readGpxFiles(paths),
-    listDirectoryFiles: (directoryPath) =>
-      getBridge().listGpxDirectoryFiles(directoryPath),
+    readFiles: async () => {
+      throw new Error('Raw GPX file reads are not available to the Electron renderer.')
+    },
+    listDirectoryFiles: async () => {
+      throw new Error('Raw GPX directory reads are not available to the Electron renderer.')
+    },
     listDirectoryPaths: (directoryPath) =>
       getBridge().listGpxDirectoryPaths(directoryPath),
   }

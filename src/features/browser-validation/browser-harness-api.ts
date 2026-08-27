@@ -189,6 +189,7 @@ export function installBrowserHarnessApi(): void {
     injectGpxImportIssues: (issues) => {
       useGpxStore.setState({
         importIssues: issues,
+        hasMoreImportIssues: false,
         error: issues.length === 0
           ? null
           : `${issues.length} persisted GPX import issue${issues.length === 1 ? '' : 's'} require operator review. Exact failure provenance was retained.`,

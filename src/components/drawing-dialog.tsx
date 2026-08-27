@@ -143,9 +143,9 @@ export function DrawingDialog() {
                     className="rounded-xl border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"
                     data-testid="drawing-delete-confirmation"
                   >
-                    <p className="font-semibold">Delete this drawing?</p>
+                    <p className="font-semibold">Retire this drawing?</p>
                     <p className="mt-1 text-xs text-rose-100/80">
-                      This removes it from the mission layer set.
+                      This removes it from the active mission layer set. Its revisions and audit evidence remain retained in mission history.
                     </p>
                     <div className="mt-3 flex gap-2">
                       <button
@@ -155,7 +155,7 @@ export function DrawingDialog() {
                         onClick={() => void controller.deleteSelectedDrawing()}
                         type="button"
                       >
-                        Delete Drawing
+                        Retire Drawing
                       </button>
                       <button
                         className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-1.5 text-xs font-semibold text-stone-200"
@@ -174,7 +174,7 @@ export function DrawingDialog() {
                     onClick={() => setDeleteConfirmationVisible(true)}
                     type="button"
                   >
-                    Delete
+                    Retire
                   </button>
                 )
               ) : null}

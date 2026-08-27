@@ -28,7 +28,10 @@ The initial review work inspected the accumulated PR range from exact base
 wave on `044a73887eef791b18c30df0838b7f1bd021fc56` used the accepted broad,
 persistence/completeness, concurrency/finalization and renderer/input-
 containment charters. None returned clean. Every report was centrally
-source-retraced; accepted findings and dispositions are:
+source-retraced. A later complete four-review wave on
+`aaeaeb769b181f9fd9da1d07b2fa6ae9d4e81e19` also returned not clean and is
+the source of the final seven dispositions below. Accepted findings and
+dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -114,6 +117,29 @@ source-retraced; accepted findings and dispositions are:
   new stores maintain a transactional two-clock daily read model keyed by
   `max(fixTime, recorded_at)`, with compact partial-day/device indexes and
   explicit legacy fallback limitations.
+- a valid 67 MB GPX could retain one size-proportional Base64 value in an
+  immediate transaction and stall a current write for 281.04 ms: exact source
+  reads now use a fixed 8 MiB ceiling, fail the next byte durably before
+  retention, and retain five-repeat exact-limit current-write regressions;
+- concurrent identical imports could race the complete-only digest lookup and
+  create two canonical identities: one owned queue now serializes GPX workers
+  through exit, yielding one canonical import plus both path aliases;
+- empty coordinates/elevation and permissive partial/calendar-invalid dates
+  could become exact `0` values or invented times: both worker and browser
+  parsers use one strict shared decimal/calendar validator and retain explicit
+  rejections instead;
+- raw GPX file and directory byte reads remained callable through preload:
+  those channels and bridge methods are removed; Electron renderer imports are
+  path-only and exact bytes remain behind the worker/store boundary;
+- the first 100 persisted issues hid a continuation and current failures did
+  not refresh the sanitized issue page: runtime state and operator UI now make
+  truncation explicit and refresh that bounded page after each import;
+- marker, drawing, GPX and mission-review copy described retirement as physical
+  deletion: operator surfaces now say Retire and state that revisions/evidence
+  remain in mission history;
+- canonical programme policy and baton text still described five PRs and PR1:
+  policy, branch exception, grouping, workplan and current baton now agree on
+  six PRs with PR5 evidence/replay and PR6 archive lifecycle.
 
 The corresponding focused regression tests were observed red before the
 production corrections and are retained in the unit, integration, forced-kill,
@@ -123,22 +149,16 @@ substitutes for that wave.
 
 ## Local deterministic, browser and packaged evidence
 
-The final local remediation tree passed:
+The latest local remediation tree passed:
 
-- full unit: 286 files / 2,361 tests;
+- full unit: 287 files / 2,371 tests;
 - backend: 51 passed / 1 ignored;
 - Chromium: 162/162;
 - visual Playwright: 58/58;
-- independent visual gate: the full 68-entry pass correctly rejected one
-  missing visible undated-GPX explanation and one cropped tracking evidence
-  frame; both accepted dispositions passed fresh no-cache focused review at
-  their original critical/high severities;
+- independent visual gate: fresh uncached full review passed 68/68 with zero
+  failures or reviewer errors at the original critical/high severities;
 - TypeScript/Vite production build and bundle budgets, ESLint, changed CommonJS
   syntax checks and `git diff --check`;
-- unsigned packaged macOS arm64 build;
-- packaged macOS tracking/restart soak: 8,664/8,664 exact positions over two
-  launches, integrity `ok`, zero redundant slope, four healthy operator samples,
-  4.0 ms main-process maximum and zero renderer crashes;
 - actual child-process `SIGKILL` at both the pending source-receipt boundary and
   retained-source/pre-publish boundary, followed by restart recovery to explicit
   failed receipts with bytes/hash present only where they had become durable.
@@ -148,14 +168,14 @@ arm64/Node v22.22.3 with timezone `Europe/Dublin`:
 
 | Preset | Fixture SHA-256 | Seek / restart | Import dispatch | Current read during import / replay | Event-loop max | Equality |
 | --- | --- | --- | --- | --- | --- | --- |
-| 960k normal envelope | `a3237ce4ca959a188fbfd3ffe80e9037d3c2b4230f70bee600ca65e08bf85099` | 59.46 / 53.26 ms | 2.17 ms | 0.60 / 0.94 ms | 47.21 ms | exact first page |
-| 2m headroom | `46a6f9980c184a856832c0c596cbae18c13e963e13707d10ceedbfee0e527afe` | 86.78 / 50.42 ms | 1.51 ms | 24.80 / 0.98 ms | 54.95 ms | exact first page |
+| 960k normal envelope | `a3237ce4ca959a188fbfd3ffe80e9037d3c2b4230f70bee600ca65e08bf85099` | 61.42 / 51.94 ms | 2.22 ms | 0.52 / 1.00 ms | 60.13 ms | exact first page |
+| 2m headroom | `46a6f9980c184a856832c0c596cbae18c13e963e13707d10ceedbfee0e527afe` | 73.25 / 67.91 ms | 6.07 ms | 13.60 / 1.00 ms | 47.44 ms | exact first page |
 
 Both presets imported 50,000 GPX points while continuously writing current
-positions. The 960k run recorded 1,037 current writes (41.92 ms maximum,
-2.52 ms p95) and an exact 914,001 near-tail page in 55.91 ms. The 2m headroom
-run recorded 1,079 writes (47.84 ms maximum, 2.31 ms p95) and exact 1,850,001
-near-tail paging in 69.16 ms. Both passed restart equality. The ordinary seek
+positions. The 960k run recorded 1,102 current writes (57.53 ms maximum,
+1.97 ms p95) and an exact 914,001 near-tail page in 47.76 ms. The 2m headroom
+run recorded 1,122 writes (42.01 ms maximum, 2.08 ms p95) and exact 1,850,001
+near-tail paging in 75.89 ms. Both passed restart equality. The ordinary seek
 stayed below one second and every measured main dispatch/current-read/open/event-
 loop path stayed below the 200 ms hard block. The 2m row remains deliberate
 headroom/renderer-rejection evidence, not a normal mission-size claim.
@@ -173,8 +193,8 @@ head and is reported in the PR/final handoff.
 
 ## Proof limits
 
-Exact pushed-head Linux package/soak/960k evidence and the clean four-review
-wave are completion gates reported externally against the immutable final head.
+Exact pushed-head macOS/Linux package/soak/960k evidence and the clean four-
+review wave are completion gates reported externally against the immutable final head.
 PR6 and BCP-17 retain archive encryption/custody, restore-and-replay qualification,
 broad multi-machine/live-server/archive qualification, release and field
 acceptance. No merge or release is authorized here.

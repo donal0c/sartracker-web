@@ -990,6 +990,84 @@ describe('mission evidence versioning [DON-277]', () => {
     db.close()
   })
 
+  it('rejects permissive scalar coercions in the production worker without inventing exact evidence [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Strict GPX Scalar Mission' })
+    const sourcePath = path.join(userDataPath!, 'strict-scalars.gpx')
+    await writeFile(sourcePath, `<gpx version="1.1"><trk><trkseg>
+      <trkpt lat="" lon=""><ele></ele><time>2026</time></trkpt>
+      <trkpt lat="52" lon="-9.7"><ele> </ele><time>2026-08-27T08:00:00</time></trkpt>
+      <trkpt lat="52.01" lon="-9.71"><time>2026-02-30T08:00:00Z</time></trkpt>
+    </trkseg></trk></gpx>`)
+
+    await expect(store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] }))
+      .resolves.toMatchObject({ imports: [expect.objectContaining({ timing_class: 'undated' })] })
+
+    const db = openDatabase(await databasePath())
+    expect(db.prepare(`SELECT point_index, elevation, source_time FROM gpx_evidence_points
+      ORDER BY point_index`).all()).toEqual([
+      { point_index: 1, elevation: null, source_time: null },
+      { point_index: 2, elevation: null, source_time: null },
+    ])
+    expect(db.prepare(`SELECT point_index, reason FROM gpx_evidence_rejections
+      ORDER BY point_index, reason`).all()).toEqual(expect.arrayContaining([
+      { point_index: 0, reason: 'invalid_coordinates' },
+      { point_index: 1, reason: 'invalid_elevation' },
+      { point_index: 1, reason: 'invalid_timestamp' },
+      { point_index: 2, reason: 'invalid_timestamp' },
+    ]))
+    db.close()
+  })
+
+  it('serializes concurrent identical GPX batches into one canonical import with two aliases [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Concurrent GPX Dedupe Mission' })
+    const firstPath = path.join(userDataPath!, 'same-a.gpx')
+    const secondPath = path.join(userDataPath!, 'same-b.gpx')
+    const points = Array.from({ length: 5_000 }, (_unused, index) =>
+      `<trkpt lat="${52 + (index % 100) / 10_000}" lon="${-9.7 - (index % 100) / 10_000}"/>`).join('')
+    const source = `<gpx version="1.1"><trk><trkseg>${points}</trkseg></trk></gpx>`
+    await Promise.all([writeFile(firstPath, source), writeFile(secondPath, source)])
+
+    const [first, second] = await Promise.all([
+      store.importGpxEvidencePaths({ missionId: mission.id, paths: [firstPath] }),
+      store.importGpxEvidencePaths({ missionId: mission.id, paths: [secondPath] }),
+    ])
+
+    expect(first.imports[0]?.id).toBe(second.imports[0]?.id)
+    const db = openDatabase(await databasePath())
+    expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_track_imports
+      WHERE mission_id = ?`).get(mission.id)).toMatchObject({ count: 1 })
+    expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_aliases
+      WHERE mission_id = ?`).get(mission.id)).toMatchObject({ count: 2 })
+    db.close()
+  }, 30_000)
+
+  it('records an oversized GPX as an explicit per-file failure before exact-byte retention [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Oversized GPX Mission' })
+    const sourcePath = path.join(userDataPath!, 'oversized.gpx')
+    const prefix = '<gpx version="1.1"><metadata><desc>'
+    const suffix = '</desc></metadata><trk><trkseg><trkpt lat="52" lon="-9.7"/><trkpt lat="52.01" lon="-9.71"/></trkseg></trk></gpx>'
+    await writeFile(sourcePath, `${prefix}${'x'.repeat((8 * 1024 * 1024) + 1)}${suffix}`)
+
+    const result = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+
+    expect(result.imports).toEqual([])
+    expect(result.failures).toEqual([
+      expect.objectContaining({ sourcePath, reason: expect.stringMatching(/8 MiB.*safety limit/i) }),
+    ])
+    const db = openDatabase(await databasePath())
+    expect(db.prepare(`SELECT status, content_sha256, source_bytes_base64
+      FROM gpx_import_source_receipts WHERE mission_id = ? AND source_path = ?`)
+      .get(mission.id, sourcePath)).toEqual({
+      status: 'failed',
+      content_sha256: null,
+      source_bytes_base64: null,
+    })
+    db.close()
+  }, 30_000)
+
   it('imports readable siblings while durably recording a missing selected GPX file [DON-274]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'GPX Missing Sibling Mission' })
@@ -1205,6 +1283,49 @@ describe('mission evidence versioning [DON-277]', () => {
       await new Promise((resolve) => setTimeout(resolve, 1))
     }
     await importing
+    expect(sequence).toBeGreaterThan(0)
+    expect(maximumWriteMs).toBeLessThan(200)
+  }, 30_000)
+
+  it('keeps current writes below 200 ms while retaining an exact-limit 8 MiB GPX source [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Exact-Limit GPX Current Priority Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'limit-current-device',
+      name: 'Limit Current Device',
+      color: '#38bdf8',
+      status: 'online',
+    })
+    const sourcePath = path.join(userDataPath!, 'exact-limit.gpx')
+    const prefix = '<gpx version="1.1"><metadata><desc>'
+    const suffix = '</desc></metadata><trk><trkseg><trkpt lat="52" lon="-9.7"/><trkpt lat="52.01" lon="-9.71"/></trkseg></trk></gpx>'
+    const maximumBytes = 8 * 1024 * 1024
+    const fillerBytes = maximumBytes - Buffer.byteLength(prefix) - Buffer.byteLength(suffix)
+    await writeFile(sourcePath, `${prefix}${'x'.repeat(fillerBytes)}${suffix}`)
+
+    let importSettled = false
+    const importing = store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+      .finally(() => { importSettled = true })
+    let maximumWriteMs = 0
+    let sequence = 0
+    while (!importSettled && sequence < 500) {
+      const startedAt = performance.now()
+      await store.addPosition({
+        mission_id: mission.id,
+        device_id: 'limit-current-device',
+        source_position_id: `limit-current-${sequence}`,
+        lat: 52,
+        lon: -9.7,
+        timestamp: new Date().toISOString(),
+        timestamp_source: 'fix',
+      })
+      maximumWriteMs = Math.max(maximumWriteMs, performance.now() - startedAt)
+      sequence += 1
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+
+    await expect(importing).resolves.toMatchObject({ imports: [expect.objectContaining({ id: expect.any(String) })] })
     expect(sequence).toBeGreaterThan(0)
     expect(maximumWriteMs).toBeLessThan(200)
   }, 30_000)

@@ -1368,7 +1368,7 @@
               <tr><td>Search</td><td>Filter the tree to matching layers and features.</td></tr>
               <tr><td>Show Hidden</td><td>Include hidden nodes so they can be inspected or restored.</td></tr>
               <tr><td>Alias</td><td>Rename a layer or feature without changing its underlying record.</td></tr>
-              <tr><td>Edit Drawing</td><td>For drawing feature rows, open the normal drawing form so misplaced drawings can be corrected or deleted with confirmation.</td></tr>
+              <tr><td>Edit Drawing</td><td>For drawing feature rows, open the normal drawing form so misplaced drawings can be corrected or retired with confirmation. Retirement removes the active layer while retaining mission history.</td></tr>
               <tr><td>Move Up / Move Down</td><td>Select a layer or feature, then reorder it among its siblings in the tree. The new order is saved with the mission.</td></tr>
             </tbody>
           </table>
@@ -1433,10 +1433,11 @@
             notes.
           </p>
           <p>
-            <strong>Deletion protection:</strong> deleting any marker requires two-stage confirmation.
-            Clicking <strong>Delete</strong> shows a confirmation panel naming the marker type and the
-            consequence; a second click on <strong>Delete Marker</strong> executes the deletion.
-            Choosing <strong>Keep</strong> cancels the deletion and preserves the marker unchanged.
+            <strong>Retirement protection:</strong> retiring any marker requires two-stage confirmation.
+            Clicking <strong>Retire</strong> shows a confirmation panel naming the marker type and the
+            consequence; a second click on <strong>Retire Marker</strong> removes it from the active map
+            while its revisions and audit evidence remain in mission history.
+            Choosing <strong>Keep</strong> cancels retirement and preserves the marker unchanged.
             The same two-stage pattern applies to measurements (<strong>Clear Measurements</strong>)
             and drawings.
           </p>
@@ -1493,9 +1494,10 @@
             terrain, and their name can be hidden on the map when label clutter would reduce readability.
             Range ring, sector, and search-area outlines use higher-contrast default colours;
             LPB percentile rings keep their statistical colour coding. Use the Layers workspace to hide
-            drawing types or individual drawings when the map needs less visual load. To delete a misplaced
+            drawing types or individual drawings when the map needs less visual load. To retire a misplaced
             drawing, click it to open its form (or use the Layers inspection panel), press
-            <strong>Delete</strong>, and confirm the destructive action.
+            <strong>Retire</strong>, and confirm. The active layer is removed while its revisions and
+            audit evidence remain in mission history.
           </div>
           <div class="note">
             <strong>Contrast:</strong> selected rows in high-use workspaces use a brighter selected-state
@@ -1520,11 +1522,18 @@
             same bytes through another path is idempotent; changed bytes at the same path create a retained
             revision. Track, segment and point order, names, elevation and source timestamps are kept. Invalid
             points or segments are retained as explicit rejections instead of disappearing silently.
+            Source files are limited to 8 MiB each so exact-byte retention cannot monopolize the
+            database writer or exhaust the import worker; larger files fail explicitly and should be
+            split into smaller GPX files. Concurrent imports are serialized so identical bytes still
+            resolve to one canonical source with path aliases.
           </p>
           <div class="note">
             <strong>GPX time evidence:</strong> fully dated tracks can participate in precise Replay. Partially
             dated imports separate dated points from static points. Undated points remain visible as static
             mission evidence but are not placed at an invented time.
+            Source timestamps must be full calendar-valid ISO date-times with <code>Z</code> or an
+            explicit offset. Partial or local-offset-free values are retained as invalid-timestamp
+            rejections rather than converted by permissive platform date parsing.
           </div>
           <p>
             To link static GPX evidence to an outing, enter the coordinator name and choose the outing on the
@@ -1539,6 +1548,8 @@
             it does not silently treat the selection as imported. Mission Finish and Finalize remain blocked
             while a GPX batch, selected-file receipt, or staged revision is unsettled. File names are shown to
             the operator, but retained source bytes and full local paths stay behind the desktop boundary.
+            The panel shows a bounded issue page and explicitly warns when additional retained issues
+            exist beyond that page; a current import refreshes the sanitized issue list immediately.
           </p>
           <h3>Helicopters</h3>
           <p>

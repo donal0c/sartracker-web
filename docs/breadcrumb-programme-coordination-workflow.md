@@ -218,7 +218,7 @@ Once the exact head is accepted and merged, Codex synchronizes Linear, the
 workplan, handoff, and any operator documentation. It then prepares the next
 slice but again waits at Donal's implementation approval gate.
 
-After PR-4, record a short process retrospective before PR-5 implementation is
+After PR-5, record a short process retrospective before PR-6 implementation is
 approved: defects found, false or duplicate findings removed by central
 retrace, re-review rounds avoided, any seam that required escalation, and any
 missed risk. Keep or amend this topology from that evidence; do not drift back
@@ -235,8 +235,10 @@ to unbounded full-wave restarts or weaken it by assumption.
 
 ## Current Baton
 
-PR-1 is owned by one authorized Sol-high implementation task. Its BCP-10,
-BCP-01, BCP-02, and BCP-05 checkpoints remain open in Linear until the complete
-PR merges. A pushed PR at an exact review-ready head remains intermediate; the
-same implementation task owns its allocated reviews and clean rechecks. No
-separate BCP implementation task is created.
+PR-5 mission evidence and replay is owned by one authorized Sol-high
+implementation task on `codex/breadcrumb-pr5-evidence-replay`. BCP-11, BCP-12a,
+BCP-12b and BCP-13 remain one review unit. A pushed PR at an exact review-ready
+head remains intermediate; the same implementation task owns its broad,
+persistence/completeness, concurrency/finalization and renderer/input-
+containment reviews plus clean required rechecks. No separate BCP implementation
+task is created. Donal retains the final approval and merge gate.

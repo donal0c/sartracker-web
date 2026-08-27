@@ -354,9 +354,9 @@ export function MarkerDialog() {
                     className="rounded-xl border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"
                     data-testid="marker-delete-confirmation"
                   >
-                    <p className="font-semibold">Delete this {draft.type === 'ipp_lkp' ? 'IPP/LKP' : draft.type} marker?</p>
+                    <p className="font-semibold">Retire this {draft.type === 'ipp_lkp' ? 'IPP/LKP' : draft.type} marker?</p>
                     <p className="mt-1 text-xs text-rose-100/80">
-                      This permanently removes the marker and all associated data from the mission.
+                      This removes the marker from the active map. Its revisions and audit evidence remain retained in mission history.
                     </p>
                     <div className="mt-3 flex gap-2">
                       <button
@@ -366,7 +366,7 @@ export function MarkerDialog() {
                         onClick={() => void controller.deleteEditingMarker()}
                         type="button"
                       >
-                        Delete Marker
+                        Retire Marker
                       </button>
                       <button
                         className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-1.5 text-xs font-semibold text-stone-200"
@@ -386,7 +386,7 @@ export function MarkerDialog() {
                     onClick={() => showDeleteConfirmation()}
                     type="button"
                   >
-                    Delete
+                    Retire
                   </button>
                 )
               ) : null}

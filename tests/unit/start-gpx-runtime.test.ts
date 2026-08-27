@@ -191,6 +191,45 @@ describe('startGpxRuntime', () => {
     expect(JSON.stringify(applyRuntime.mock.calls)).not.toContain('/private/')
   })
 
+  it('makes bounded issue truncation explicit and refreshes sanitized issues after an import [DON-274]', async () => {
+    const issue = {
+      batch_id: 'batch-101',
+      file_name: 'failed-track.gpx',
+      reason: 'GPX source exceeds the evidence import safety limit.',
+      recorded_at: '2026-08-27T10:00:00.000Z',
+    }
+    const listGpxImportIssues = vi.fn().mockResolvedValue({
+      entries: [issue],
+      nextCursor: 'more-retained-issues',
+    })
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockResolvedValue([]),
+        listGpxImportIssues,
+        importGpxEvidencePaths: vi.fn().mockResolvedValue({
+          imports: [],
+          failures: [{ sourcePath: '/private/oversized.gpx', reason: 'oversized' }],
+          dispatchDurationMs: 1,
+        }),
+        upsertGpxImport: vi.fn(),
+        deleteGpxImport: vi.fn(),
+      },
+      applyRuntime,
+    })
+
+    await controller.refreshMission('mission-1')
+    await controller.importPaths(['/private/oversized.gpx'])
+
+    expect(listGpxImportIssues).toHaveBeenCalledTimes(2)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      importIssues: [issue],
+      hasMoreImportIssues: true,
+      error: expect.stringMatching(/additional retained GPX import issues/i),
+    }))
+    expect(JSON.stringify(applyRuntime.mock.calls.at(-1))).not.toContain('/private/oversized.gpx')
+  })
+
   it('updates one imported GPX colour while preserving the track geometry and metadata', async () => {
     const imports: readonly GpxTrackImport[] = [
       {

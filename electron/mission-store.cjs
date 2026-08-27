@@ -397,6 +397,8 @@ function createElectronMissionStore(options) {
   let missionReplayWorkerTail = Promise.resolve()
   let outingFixSummaryWorkerTail = Promise.resolve()
   let coverageChunkWorkerTail = Promise.resolve()
+  const queuedGpxEvidenceImports = []
+  let gpxImportWorkerActive = false
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
@@ -1221,7 +1223,7 @@ function createElectronMissionStore(options) {
         paths: input.paths,
       })
       const controller = new AbortController()
-      const result = gpxEvidenceImportRunner({
+      const result = enqueueGpxEvidenceImport({
         databasePath,
         missionId: input.missionId,
         paths: input.paths,
@@ -1511,6 +1513,53 @@ function createElectronMissionStore(options) {
         ...performanceMetrics,
       },
     }
+  }
+
+  /** Serializes GPX evidence publications so identical concurrent sources share one identity. */
+  function enqueueGpxEvidenceImport(input) {
+    let resolveResult = () => undefined
+    let rejectResult = () => undefined
+    let resolveWorkerExit = () => undefined
+    const result = new Promise((resolve, reject) => {
+      resolveResult = resolve
+      rejectResult = reject
+    })
+    const workerExited = new Promise((resolve) => { resolveWorkerExit = resolve })
+    queuedGpxEvidenceImports.push({
+      input,
+      rejectResult,
+      resolveResult,
+      resolveWorkerExit,
+    })
+    Object.defineProperty(result, 'workerExited', { value: workerExited })
+    startNextGpxEvidenceImport()
+    return result
+  }
+
+  /** Starts the next queued GPX import only after the prior worker has exited. */
+  function startNextGpxEvidenceImport() {
+    if (gpxImportWorkerActive) return
+    const queued = queuedGpxEvidenceImports.shift()
+    if (queued === undefined) return
+    gpxImportWorkerActive = true
+    let operation
+    try {
+      operation = gpxEvidenceImportRunner(queued.input)
+    } catch (error) {
+      queued.rejectResult(error)
+      queued.resolveWorkerExit()
+      gpxImportWorkerActive = false
+      startNextGpxEvidenceImport()
+      return
+    }
+    void Promise.resolve(operation).then(queued.resolveResult, queued.rejectResult)
+    void Promise.resolve(operation.workerExited ?? operation)
+      .catch(() => undefined)
+      .finally(() => {
+        queued.resolveWorkerExit()
+        gpxImportWorkerActive = false
+        startNextGpxEvidenceImport()
+      })
   }
 
   /** Serializes chunk payload reads while allowing small manifest/claim reads alongside. */

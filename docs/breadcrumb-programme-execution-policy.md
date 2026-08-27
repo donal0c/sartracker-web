@@ -11,7 +11,8 @@ exact words and question history governed by
 
 ## Delivery Decision
 
-- Deliver the programme through five substantial, coherent PRs.
+- Deliver the programme through six substantial, coherent PRs. The fourth is
+  the bounded field-feedback bridge inserted after the original allocation.
 - Use feature branches for every programme PR. No programme implementation is
   committed directly to `master`.
 - Keep `master` green and internally coherent after every merge, without
@@ -89,12 +90,14 @@ No team question is sent until it passes the ledger's duplicate-question gate.
 |  | BCP-07 renderer decision | 8/10 |
 |  | BCP-08 coverage read model and watermark | 10/10 |
 |  | BCP-09 coverage UI and filters | 9/10 |
-| PR-4: mission evidence and replay | Overall | **10/10** |
+| PR-4: field-feedback bridge | Overall | **7/10** |
+|  | `fixTime` authority and history-independent current polling | 7/10 |
+| PR-5: mission evidence and replay | Overall | **10/10** |
 |  | BCP-11 GPX evidence | 8/10 |
 |  | BCP-12a versioned mission data | 9/10 |
 |  | BCP-12b timeline replay | 10/10 |
 |  | BCP-13 search areas and repeated passes | 9/10 |
-| PR-5: archive lifecycle | Overall | **10/10** |
+| PR-6: archive lifecycle | Overall | **10/10** |
 |  | BCP-14 archive security decision | 9/10 |
 |  | BCP-15 encrypted streamed archives | 10/10 |
 |  | BCP-16 archive review and retention | 10/10 |
@@ -106,11 +109,13 @@ No team question is sent until it passes the ledger's duplicate-question gate.
    BCP-05. Branch: `codex/breadcrumb-pr1-ingest-safety`.
 2. **PR-2 — Mission model:** BCP-03, BCP-04, BCP-06.
 3. **PR-3 — Complete coverage:** BCP-07, BCP-08, BCP-09.
-4. **PR-4 — Mission evidence and replay:** BCP-11, BCP-12a, BCP-12b,
+4. **PR-4 — Field-feedback bridge:** canonical Traccar `fixTime`, explicit
+   local-time display and history-independent current polling.
+5. **PR-5 — Mission evidence and replay:** BCP-11, BCP-12a, BCP-12b,
    BCP-13.
-5. **PR-5 — Archive lifecycle:** BCP-14, BCP-15, BCP-16.
-6. **BCP-17 — Qualification:** final-candidate evidence and the one
-   team-facing release after PR-1 through PR-5 merge.
+6. **PR-6 — Archive lifecycle:** BCP-14, BCP-15, BCP-16.
+7. **BCP-17 — Qualification:** final-candidate evidence and the one
+   team-facing release after PR-1 through PR-6 merge.
 
 Merges serialize in this order. A later branch may be prepared from the prior
 PR head, but it cannot merge ahead of its prerequisite.

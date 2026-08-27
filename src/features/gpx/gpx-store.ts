@@ -15,6 +15,7 @@ const EMPTY_GPX_RUNTIME: GpxRuntimeState = {
   outings: [],
   watchedDirectories: [],
   importIssues: [],
+  hasMoreImportIssues: false,
   loading: false,
   importing: false,
   error: null,

@@ -62,6 +62,7 @@ export type GpxRuntimeState = {
   readonly outings: readonly Outing[]
   readonly watchedDirectories: readonly string[]
   readonly importIssues: readonly GpxImportIssue[]
+  readonly hasMoreImportIssues: boolean
   readonly loading: boolean
   readonly importing: boolean
   readonly error: string | null
@@ -91,6 +92,7 @@ const EMPTY_RUNTIME: GpxRuntimeState = {
   outings: [],
   watchedDirectories: [],
   importIssues: [],
+  hasMoreImportIssues: false,
   loading: false,
   importing: false,
   error: null,
@@ -115,6 +117,7 @@ export async function startGpxRuntime(
         outings: missionId === previousMissionId ? state.outings : [],
         watchedDirectories: missionId === previousMissionId ? state.watchedDirectories : [],
         importIssues: missionId === previousMissionId ? state.importIssues : [],
+        hasMoreImportIssues: missionId === previousMissionId ? state.hasMoreImportIssues : false,
         loading: missionId !== null,
         importing: missionId === previousMissionId ? state.importing : false,
         error: null,
@@ -128,6 +131,7 @@ export async function startGpxRuntime(
           outings: [],
           watchedDirectories: [],
           importIssues: [],
+          hasMoreImportIssues: false,
           loading: false,
         }
         publishRuntime()
@@ -154,10 +158,9 @@ export async function startGpxRuntime(
           imports,
           outings,
           importIssues: issuePage.entries,
+          hasMoreImportIssues: issuePage.nextCursor !== null,
           loading: false,
-          error: issuePage.entries.length === 0
-            ? null
-            : `${issuePage.entries.length} persisted GPX import issue${issuePage.entries.length === 1 ? '' : 's'} require operator review. Exact failure provenance was retained.`,
+          error: describeImportIssues(issuePage.entries.length, issuePage.nextCursor),
         }
         publishRuntime()
       } catch (error) {
@@ -170,6 +173,7 @@ export async function startGpxRuntime(
           imports: [],
           outings: [],
           importIssues: [],
+          hasMoreImportIssues: false,
           loading: false,
           error: toErrorMessage(error),
         }
@@ -463,10 +467,14 @@ export async function startGpxRuntime(
     try {
       const result = await dependencies.gpxStore.importGpxEvidencePaths({ missionId, paths })
       if (missionToken !== refreshToken || state.activeMissionId !== missionId) return []
-      const imports = await readGpxImportProjections(
-        missionId,
-        () => missionToken === refreshToken && state.activeMissionId === missionId,
-      )
+      const [imports, issuePage] = await Promise.all([
+        readGpxImportProjections(
+          missionId,
+          () => missionToken === refreshToken && state.activeMissionId === missionId,
+        ),
+        dependencies.gpxStore.listGpxImportIssues?.({ missionId, limit: 100 })
+          ?? Promise.resolve({ entries: [], nextCursor: null }),
+      ])
       if (missionToken !== refreshToken || state.activeMissionId !== missionId) return []
       const importedIds = new Set(result.imports.map((entry) => entry.id))
       const failures = 'failures' in result && Array.isArray(result.failures) ? result.failures : []
@@ -474,9 +482,12 @@ export async function startGpxRuntime(
         ...state,
         importing: false,
         imports,
-        error: failures.length === 0
-          ? null
-          : `${failures.length} GPX file${failures.length === 1 ? '' : 's'} could not be imported. Exact failure provenance was retained.`,
+        importIssues: issuePage.entries,
+        hasMoreImportIssues: issuePage.nextCursor !== null,
+        error: describeImportIssues(issuePage.entries.length, issuePage.nextCursor)
+          ?? (failures.length === 0
+            ? null
+            : `${failures.length} GPX file${failures.length === 1 ? '' : 's'} could not be imported. Exact failure provenance was retained.`),
       }
       publishRuntime()
       return imports.filter((entry) => importedIds.has(entry.id))
@@ -490,6 +501,16 @@ export async function startGpxRuntime(
 
   function publishRuntime(): void {
     dependencies.applyRuntime(state)
+  }
+
+  /** Describes one bounded issue page without implying it is the whole retained set. */
+  function describeImportIssues(count: number, nextCursor: string | null): string | null {
+    if (count === 0) return null
+    const prefix = nextCursor === null ? String(count) : `At least ${count}`
+    const suffix = nextCursor === null
+      ? ''
+      : ' Additional retained GPX import issues are available beyond this bounded page.'
+    return `${prefix} persisted GPX import issue${count === 1 ? '' : 's'} require operator review. Exact failure provenance was retained.${suffix}`
   }
 
   /** Defers page-reader code until a mission actually needs GPX projections. */
