@@ -1526,6 +1526,13 @@
             dated imports separate dated points from static points. Undated points remain visible as static
             mission evidence but are not placed at an invented time.
           </div>
+          <p>
+            To link static GPX evidence to an outing, enter the coordinator name and choose the outing on the
+            imported-track row. The assignment creates another retained evidence revision; it does not rewrite
+            the original import. A failed, malformed, empty, non-UTF-8, interrupted, or partially successful
+            batch is reported explicitly. Successfully accepted files remain visible, while failed source bytes,
+            digest and reason remain retained for investigation.
+          </p>
           <h3>Helicopters</h3>
           <p>
             The Helicopters panel reserves up to four aviation slots: Rescue 118, Rescue 115, Air Corps 1, and
@@ -1579,6 +1586,13 @@
             selected time is not backdated into the view. Warnings identify undated static GPX, missing recorded
             provenance, and legacy objects whose earlier revision history is unknown.
           </p>
+          <p>
+            Use the earlier/later controls to page through reconstructed objects and exact track evidence; later
+            retained records are not hidden by the first page. Static or undated GPX has its own provenance list,
+            including outing assignment, revision, digest and rejection count. Local selections use the real
+            Europe/Dublin clock: nonexistent spring-forward times and ambiguous autumn clock-change times are
+            rejected instead of being silently interpreted.
+          </p>
           <figure class="screenshot">
             <img src="assets/mission-evidence-replay.png" alt="Mission Review Replay showing data known at the selected time and an undated GPX evidence limitation" />
             <figcaption>Replay is visibly distinct from Live and states incomplete or static evidence instead of inventing history.</figcaption>
@@ -1590,6 +1604,12 @@
             pass is explicitly declared <strong>fully searched</strong>, <strong>partially searched</strong>, or
             <strong>aborted</strong> by the coordinator. Any breadcrumb-derived coverage comparison is advisory;
             it never changes or supplies the declared outcome.
+          </p>
+          <p>
+            Select the search area, outing and assignment explicitly. Enter the pass start and optional end as
+            Europe/Dublin local times, and add participant, clue and track-evidence identities where available.
+            The recorded pass displays its declared outcome, exact time window, revision and evidence-link counts;
+            SAR Tracker never substitutes the first area or outing and never invents a zero-duration pass.
           </p>
           <p>
             The Audit Log shows operator-meaningful events by default — mission lifecycle changes, marker

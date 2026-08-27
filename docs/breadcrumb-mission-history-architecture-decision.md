@@ -219,13 +219,19 @@ without changing any locked team answer:
   baseline and operator removal becomes retirement rather than physical loss;
 - GPX imports retain exact bytes and SHA-256 identity, path aliases, ordered
   segments/points, source timestamps and elevation, rejected source elements,
-  timing completeness and immutable revisions; parsing and bulk persistence run
-  outside the Electron main isolate;
+  timing completeness, outing assignment and immutable revisions; parsing and
+  bulk persistence run outside the Electron main isolate in short writer
+  slices. Batch failures retain source bytes and reason, interrupted staging is
+  recovered as explicit failure provenance, and shutdown cancels and joins the
+  import worker before the database closes;
 - replay folds lifecycle, participant/group state and mutable evidence using
   both recorded and effective time, and streams exact `fixTime`/dated-GPX rows
   from a read-only cancellable worker; undated GPX remains explicit static
   evidence and unproved legacy/missing-time history remains a machine-readable
-  limitation;
+  limitation. New stores create the replay-supporting partial index while the
+  positions table is empty; the v11 migration never performs an unbounded
+  synchronous index build and instead uses the existing per-device fix-time
+  index for deterministic bounded page merging;
 - stable search-area identity is separate from repeatable assignments and
   passes; full/partial/aborted remains solely the coordinator's declaration and
   advisory geometry cannot write that outcome;

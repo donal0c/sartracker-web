@@ -570,15 +570,22 @@ BCP-08/BCP-10/BCP-12 evidence consumers.
 These links add implementation traceability only; they do not amend or
 reinterpret any team answer.
 
+The consolidated requirement, finding-disposition and qualification record is
+`docs/breadcrumb-pr5-evidence.md`.
+
 - `SAR-QA-004`, `SAR-QA-019`: `DON-274`,
   `tests/unit/gpx-parser.test.ts`, and
-  `tests/unit/electron-mission-evidence-versioning.test.ts` cover exact-byte
+  `tests/unit/electron-mission-evidence-versioning.test.ts`,
+  `tests/unit/electron-gpx-evidence-import-runner.test.ts`, and
+  `tests/e2e/gpx-import.spec.ts` cover exact-byte
   GPX identity/revisions, retained ordering/elevation/rejections, and explicit
-  fully dated/partially dated/undated evidence without timestamp invention.
+  fully dated/partially dated/undated evidence without timestamp invention,
+  outing assignment, interrupted staging, and shutdown ownership.
 - `SAR-QA-006`, `SAR-QA-007`, `SAR-QA-013`, `SAR-QA-017`, `SAR-QA-021`:
   `DON-277`, `DON-278`, `tests/unit/electron-mission-replay-query.test.ts`,
   `tests/unit/electron-mission-replay-runner.test.ts`, and
-  `tests/e2e/mission-review.spec.ts` cover atomic immutable versions,
+  `tests/unit/dublin-local-time.test.ts`, and `tests/e2e/mission-review.spec.ts`
+  cover atomic immutable versions,
   finalized-write fences, deterministic data-known-at-T folding, sole
   `fixTime` track authority, cancellation/stale-reply containment, explicit
   limitations and live-map independence.

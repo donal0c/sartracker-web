@@ -172,6 +172,14 @@ progressive data-known-at-T replay without changing the live map. Deterministic
 forced-kill recovery are green locally. The Linux workflow now runs the 960k
 qualification beside its packaged build/soak; exact pushed-head CI remains the
 review-entry gate. No release or merge is authorized by this record.
+Opening PR #5 and reaching review-ready proof are intermediate states. The
+implementation task owns the accepted four-review baseline on one exact head:
+broad life-safety/end-to-end, persistence/completeness,
+concurrency/finalization, and renderer/input containment. It must source-retrace
+and remediate accepted findings, then obtain a fresh broad review plus every
+affected focused recheck clean on the current head before reporting task
+completion. Donal retains final approval and merge authority and may request
+additional review.
 
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base

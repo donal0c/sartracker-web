@@ -148,15 +148,19 @@ the bounded remediation topology to PR-3 as well:
 
 For PR-4 onward:
 
-- retain five independent reviewers for a 10/10 PR, run in parallel on one
+- retain four independent reviewers for a 10/10 PR, run in parallel on one
   final code-and-documentation head;
-- use two broad safety charters plus three complementary focused charters:
-  persistence/completeness, concurrency/finalization, and renderer/input
-  containment;
+- use one broad life-safety/end-to-end charter plus three complementary focused
+  charters: persistence/completeness, concurrency/finalization, and
+  renderer/input containment;
 - complete strict TDD, deterministic gates, required packaged/Linux evidence,
   browser and visual verification, evidence documents, manual, and handoff
   before that wave wherever practical;
 - centrally source-retrace every finding before changing code;
+- treat PR opened/review-ready as an intermediate state; the implementation
+  task owns this baseline review wave and its accepted-finding remediation,
+  while Donal retains final approval and merge authority and may request
+  additional review;
 - after a confirmed fix, run one fresh broad exact-head review plus targeted
   exact-head rechecks only from focused reviewers whose risk areas changed;
 - retain unaffected focused reviews when their reviewed executable-code and
@@ -169,7 +173,7 @@ Recheck scope is contract-based. A narrow persistence fix receives the fresh
 broad review plus persistence/completeness; a renderer input-containment fix
 receives the fresh broad review plus renderer/input containment; a Finish
 evidence fix normally receives the fresh broad review plus both
-persistence/completeness and concurrency/finalization. Restart all five only
+persistence/completeness and concurrency/finalization. Restart all four only
 when a remediation changes a shared state machine or cross-boundary contract,
 touches enough critical areas that its impact cannot be confidently bounded,
 or invalidates the original charters' assumptions. Schema-plus-renderer,
