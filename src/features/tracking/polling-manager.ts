@@ -51,11 +51,13 @@ export type TrackingPollerClient = {
     deviceId: string,
     from: Date,
     to: Date,
+    signal?: AbortSignal,
   ) => Promise<readonly NormalizedTrackingPosition[]>
   readonly getBreadcrumbsWithReport?: (
     deviceId: string,
     from: Date,
     to: Date,
+    signal?: AbortSignal,
   ) => Promise<BreadcrumbNormalizationResult>
 }
 
@@ -126,7 +128,7 @@ type PollingManagerOptions = {
       readonly missionId: string | null
       readonly observedAt: string
     },
-  ) => void
+  ) => void | Promise<void>
   readonly onPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly logger?: PollingManagerLogger
   readonly now?: () => Date
@@ -177,6 +179,7 @@ const BREADCRUMB_CURSOR_OVERLAP_MS = 5 * 60 * 1000
 const BREADCRUMB_RECENT_WINDOW_MAX_MS = 2 * 60 * 60 * 1000
 const HISTORY_PUBLISH_DELAY_MS = 100
 const HISTORY_PERSISTENCE_BATCH_LIMIT = 5_000
+const HISTORY_TRANSPORT_MAX_CONCURRENCY = 8
 
 const DEFAULT_LOGGER: PollingManagerLogger = {
   warn: (message, context) => {
@@ -194,6 +197,11 @@ type HistoryRefreshRequest = {
   readonly generation: number
   readonly currentPollSequence: number
   readonly historyResetKey: string | null
+}
+
+type HistoryRefreshTask = {
+  readonly request: HistoryRefreshRequest
+  readonly promise: Promise<void>
 }
 
 /**
@@ -218,8 +226,9 @@ export function createPollingManager(
   let pollInFlight = false
   let currentPollSequence = 0
   let immediatePollRequested = false
-  let historyRefreshInFlight = false
-  let pendingHistoryRefresh: HistoryRefreshRequest | null = null
+  const activeHistoryTasksByMission = new Map<string | null, HistoryRefreshTask>()
+  const pendingHistoryRefreshByMission = new Map<string | null, HistoryRefreshRequest>()
+  const historyTaskPromises = new Set<Promise<void>>()
   let timer: ReturnType<typeof setTimeout> | null = null
   let consecutiveFailures = 0
   let lastGoodSnapshot: TrackingSnapshot | null = null
@@ -238,6 +247,7 @@ export function createPollingManager(
   let latestDevices: readonly NormalizedTrackingDevice[] = []
   let latestParticipantRosterAuthoritative = false
   let latestRosterWarning: string | null = null
+  let rosterRefreshInFlight: Promise<DeviceRosterNormalizationResult> | null = null
   let latestCurrentPositions: readonly NormalizedTrackingPosition[] = []
   const pendingHistoryRenderPositions: NormalizedTrackingPosition[] = []
   const pendingHistoryMissionPersistencePositions: NormalizedTrackingPosition[] = []
@@ -262,6 +272,10 @@ export function createPollingManager(
   let stopPromise: Promise<void> | null = null
   let currentPositionObservationInFlight: Promise<void> | null = null
   let settleCurrentPositionForStop: (() => void) | null = null
+  let historyTransportAbortController = new AbortController()
+  let activeHistoryTransportCount = 0
+  const historyTransportWaiters: (() => void)[] = []
+  const historyEvidenceOperations = new Set<Promise<BreadcrumbNormalizationResult>>()
 
   const createHistoryPersistenceInput = (
     chunk: BreadcrumbHistoryChunk,
@@ -699,14 +713,14 @@ export function createPollingManager(
   }
 
   /** Reports rejected history rows without exposing source payloads or blocking valid fixes. */
-  function publishBreadcrumbRejections(
+  async function publishBreadcrumbRejections(
     rejections: readonly CurrentPositionRejection[],
     missionId: string | null,
-  ): void {
+  ): Promise<void> {
     if (rejections.length === 0) return
     breadcrumbIngestWarning = createBreadcrumbIngestWarning(rejections.length)
     try {
-      options.onBreadcrumbRejections?.(rejections, {
+      await options.onBreadcrumbRejections?.(rejections, {
         missionId,
         observedAt: now().toISOString(),
       })
@@ -714,33 +728,80 @@ export function createPollingManager(
       logger.warn('Breadcrumb rejection evidence delivery failed.', {
         failureKind: classifyTrackingFailure(error),
       })
+      throw error
+    }
+  }
+
+  /** Shares one bounded transport budget across incremental and reconciler history. */
+  async function acquireHistoryTransport(signal: AbortSignal): Promise<() => void> {
+    signal.throwIfAborted()
+    if (activeHistoryTransportCount >= HISTORY_TRANSPORT_MAX_CONCURRENCY) {
+      await new Promise<void>((resolve, reject) => {
+        const admit = () => {
+          signal.removeEventListener('abort', abort)
+          resolve()
+        }
+        const abort = () => {
+          const waiterIndex = historyTransportWaiters.indexOf(admit)
+          if (waiterIndex >= 0) historyTransportWaiters.splice(waiterIndex, 1)
+          reject(signal.reason ?? new DOMException('History request aborted.', 'AbortError'))
+        }
+        historyTransportWaiters.push(admit)
+        signal.addEventListener('abort', abort, { once: true })
+        if (signal.aborted) abort()
+      })
+    }
+    signal.throwIfAborted()
+    activeHistoryTransportCount += 1
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      activeHistoryTransportCount -= 1
+      historyTransportWaiters.shift()?.()
     }
   }
 
   /** Fetches exact history plus structured rejection evidence for one source response. */
-  async function fetchBreadcrumbsWithEvidence(
+  function fetchBreadcrumbsWithEvidence(
     deviceId: string,
     from: Date,
     to: Date,
     expectedHistoryResetKey: string | null,
   ): Promise<BreadcrumbNormalizationResult> {
-    const result = await (
-      client.getBreadcrumbsWithReport?.(deviceId, from, to) ??
-      client.getBreadcrumbs(deviceId, from, to).then((accepted) => ({
-        accepted,
-        rejected: [],
-      }))
-    )
-    if (
-      running &&
-      !stopping &&
-      activeHistoryResetKey === expectedHistoryResetKey &&
-      (options.getHistoryResetKey?.() ?? null) === expectedHistoryResetKey &&
-      (options.getPollingMode?.() ?? 'active') === 'active'
-    ) {
-      publishBreadcrumbRejections(result.rejected, expectedHistoryResetKey)
-    }
-    return result
+    const signal = historyTransportAbortController.signal
+    const operation = (async (): Promise<BreadcrumbNormalizationResult> => {
+      const observation = options.beginMissionEvidenceObservation?.(
+        expectedHistoryResetKey,
+      ) ?? {
+        missionId: expectedHistoryResetKey,
+        complete: () => undefined,
+      }
+      let releaseTransport: (() => void) | null = null
+      try {
+        if (expectedHistoryResetKey !== null && observation.missionId === null) {
+          throw new Error('Mission history evidence scope closed before transport admission.')
+        }
+        releaseTransport = await acquireHistoryTransport(signal)
+        const result = await (
+          client.getBreadcrumbsWithReport?.(deviceId, from, to, signal) ??
+          client.getBreadcrumbs(deviceId, from, to, signal).then((accepted) => ({
+            accepted,
+            rejected: [],
+          }))
+        )
+        await publishBreadcrumbRejections(result.rejected, observation.missionId)
+        return result
+      } finally {
+        releaseTransport?.()
+        observation.complete()
+      }
+    })()
+    const trackedOperation = operation.finally(() => {
+      historyEvidenceOperations.delete(trackedOperation)
+    })
+    historyEvidenceOperations.add(trackedOperation)
+    return trackedOperation
   }
 
   const scheduleNextPoll = (delayMs: number) => {
@@ -763,6 +824,28 @@ export function createPollingManager(
     authenticated = true
   }
 
+  /** Reuses one detached roster request so slow metadata cannot accumulate. */
+  function getRosterRefresh(): Promise<DeviceRosterNormalizationResult> {
+    if (rosterRefreshInFlight !== null) return rosterRefreshInFlight
+    const request = client.getDevicesWithReport?.() ?? client.getDevices().then(
+      (accepted) => ({ accepted, complete: true }),
+    )
+    rosterRefreshInFlight = request
+    void request.then((result) => {
+      if (!running || stopping) return
+      latestDevices = resolveCurrentPositionDevices(
+        result.accepted,
+        latestCurrentPositions,
+        latestDevices,
+      )
+      latestParticipantRosterAuthoritative = result.complete
+      latestRosterWarning = null
+    }, () => undefined).finally(() => {
+      if (rosterRefreshInFlight === request) rosterRefreshInFlight = null
+    })
+    return request
+  }
+
   const poll = async (generation: number) => {
     const pollSequence = ++currentPollSequence
     const pollStartedAt = now().toISOString()
@@ -781,6 +864,10 @@ export function createPollingManager(
             } satisfies TrackingSnapshot
         initialSeedAbortController?.abort()
         initialSeedAbortController = null
+        historyTransportAbortController.abort(
+          new DOMException('Mission history request superseded.', 'AbortError'),
+        )
+        historyTransportAbortController = new AbortController()
         discardPendingHistorySnapshot()
         activeHistoryResetKey = pollHistoryResetKey
         breadcrumbAccumulator.reset()
@@ -848,10 +935,8 @@ export function createPollingManager(
         return
       }
 
-      pollPhase = 'devices'
+      pollPhase = 'current_positions'
       const recoveredBeforeCurrentPositions = consecutiveFailures > 0
-      let rejectionEvidencePublishedEarly = false
-      let earlyCurrentPositionTimer: ReturnType<typeof setTimeout> | null = null
       const missionObservation = options.beginMissionEvidenceObservation?.(
         pollHistoryResetKey,
       ) ?? {
@@ -863,6 +948,11 @@ export function createPollingManager(
       const currentPositionObservation = new Promise<void>((resolve) => {
         resolveCurrentPositionObservation = resolve
       })
+      let settleRosterGrace = (): void => undefined
+      const rosterGraceSettlement = new Promise<void>((resolve) => {
+        settleRosterGrace = resolve
+      })
+      settleCurrentPositionForStop = settleRosterGrace
       currentPositionObservationInFlight = currentPositionObservation
       completeCurrentPositionObservation = () => {
         if (currentPositionObservationCompleted) return
@@ -874,106 +964,22 @@ export function createPollingManager(
         }
         settleCurrentPositionForStop = null
       }
-      const currentPositionResult = await fetchRosterAndCurrentPositions(
-        {
-          getDevices: () => withPollPhase('devices', client.getDevices()),
-          ...(client.getDevicesWithReport === undefined
-            ? {}
-            : {
-                getDevicesWithReport: () => withPollPhase(
-                  'devices',
-                  client.getDevicesWithReport!(),
-                ),
-              }),
-          getCurrentPositions: async () => {
-            const result = await withPollPhase(
-              'current_positions',
-              client.getCurrentPositionsWithReport?.() ??
-              client.getCurrentPositions().then((accepted) => ({
-                accepted,
-                rejected: [],
-              })),
-            )
-            const publishBeforeRoster = async (): Promise<void> => {
-              if (currentPositionObservationCompleted) return
-              earlyCurrentPositionTimer = null
-              if (
-                discardSupersededPoll(generation, pollHistoryResetKey) ||
-                (options.getPollingMode?.() ?? 'active') !== 'active'
-              ) {
-                completeCurrentPositionObservation()
-                return
-              }
-              const positions = retainLastAcceptedCurrentPositions(
-                result.accepted,
-                result.rejected,
-                latestCurrentPositions,
-              )
-              const devices = resolveCurrentPositionDevices([], positions, latestDevices)
-              consecutiveFailures = 0
-              lastSuccessAt = now().toISOString()
-              latestDevices = devices
-              latestCurrentPositions = positions
-              const snapshot = {
-                devices,
-                positions,
-                breadcrumbs: breadcrumbPositions,
-                rawBreadcrumbsForPersistence: [],
-                breadcrumbMetadata,
-              }
-              lastGoodSnapshot = snapshot
-              try {
-                await options.onSnapshot(
-                  annotateTrackingSnapshotHealth(snapshot, {
-                    now: now(),
-                    deviceStaleThresholdMs: options.staleThresholdMs,
-                  }),
-                  {
-                    historyResetKey: pollHistoryResetKey,
-                    missionEvidenceId: missionObservation.missionId,
-                    participantRosterAuthoritative: false,
-                  },
-                )
-              } finally {
-                rejectionEvidencePublishedEarly = publishCurrentPositionRejections(
-                  result.rejected,
-                  missionObservation.missionId,
-                )
-                completeCurrentPositionObservation()
-              }
-              publishStatus({
-                mode: 'online',
-                recovered: recoveredBeforeCurrentPositions,
-                warning: combineTrackingWarnings(
-                  'Current fixes loaded; refreshing device roster.',
-                  createRejectedCurrentPositionWarning(result.rejected),
-                  breadcrumbIngestWarning,
-                ),
-              })
-            }
-            settleCurrentPositionForStop = () => {
-              if (earlyCurrentPositionTimer !== null) {
-                clearScheduledTimeout(earlyCurrentPositionTimer)
-                earlyCurrentPositionTimer = null
-              }
-              void publishBeforeRoster()
-            }
-            if (stopping) {
-              settleCurrentPositionForStop()
-            } else {
-              earlyCurrentPositionTimer = scheduleTimeout(() => {
-                void publishBeforeRoster()
-              }, CURRENT_POSITION_ROSTER_GRACE_MS)
-            }
-            return result
-          },
-        },
-        latestDevices,
-      )
-      if (earlyCurrentPositionTimer !== null) {
-        clearScheduledTimeout(earlyCurrentPositionTimer)
-        earlyCurrentPositionTimer = null
-      }
+      const currentPositionResult = await fetchRosterAndCurrentPositions({
+        getDevices: () => getRosterRefresh().then((result) => result.accepted),
+        getDevicesWithReport: getRosterRefresh,
+        getCurrentPositions: () => withPollPhase(
+          'current_positions',
+          client.getCurrentPositionsWithReport?.() ??
+          client.getCurrentPositions().then((accepted) => ({
+            accepted,
+            rejected: [],
+          })),
+        ),
+      }, latestDevices, {
+        rosterGraceMs: CURRENT_POSITION_ROSTER_GRACE_MS,
+        setTimeout: scheduleTimeout,
+        settleRosterGrace: rosterGraceSettlement,
+      })
       if (discardSupersededPoll(generation, pollHistoryResetKey)) {
         completeCurrentPositionObservation()
         return
@@ -1037,12 +1043,10 @@ export function createPollingManager(
           },
         )
       } finally {
-        if (!rejectionEvidencePublishedEarly) {
-          publishCurrentPositionRejections(
-            currentPositionResult.rejected,
-            missionObservation.missionId,
-          )
-        }
+        publishCurrentPositionRejections(
+          currentPositionResult.rejected,
+          missionObservation.missionId,
+        )
         completeCurrentPositionObservation()
       }
       publishStatus({
@@ -1134,57 +1138,63 @@ export function createPollingManager(
     }
   }
 
-  /** Coalesces history refresh demand behind one non-overlapping history lane. */
+  /** Coalesces one mission without letting superseded transport block a new mission. */
   function requestHistoryRefresh(request: HistoryRefreshRequest): void {
-    pendingHistoryRefresh = request
-    if (!historyRefreshInFlight) {
-      void drainHistoryRefreshQueue()
+    if (activeHistoryTasksByMission.has(request.historyResetKey)) {
+      pendingHistoryRefreshByMission.set(request.historyResetKey, request)
+      return
     }
+    startHistoryRefreshTask(request)
   }
 
-  /** Drains at most the latest queued refresh after the active history work settles. */
-  async function drainHistoryRefreshQueue(): Promise<void> {
-    if (historyRefreshInFlight) return
-    historyRefreshInFlight = true
-    try {
-      while (pendingHistoryRefresh !== null && running && !stopping) {
-        const request = pendingHistoryRefresh
-        pendingHistoryRefresh = null
-        const historyStartedAt = now().toISOString()
-        try {
-          await refreshHistory(request, historyStartedAt)
-        } catch (error) {
-          if (!isHistoryRefreshCurrent(request)) continue
-          breadcrumbStatusWarning =
-            'BREADCRUMB HISTORY REFRESH FAILED — current fixes remain live; exact history will retry.'
-          logger.warn('Tracking breadcrumb refresh failed.', {
-            failureKind: classifyTrackingFailure(error),
-          })
-          if (canPublishHistoryStatus(request)) {
-            publishStatus({
-              mode: 'online',
-              warning: combineTrackingWarnings(
-                latestRosterWarning,
-                breadcrumbStatusWarning,
-                breadcrumbIngestWarning,
-              ),
-            })
-          }
-          const completedAt = now().toISOString()
-          options.onPollDiagnostic?.({
-            ts: completedAt,
-            kind: 'poll_cycle',
-            outcome: 'failure',
-            phase: 'breadcrumbs',
-            durationMs: calculateDurationMs(historyStartedAt, completedAt),
-            consecutiveFailures: 0,
-            retryDelayMs: pollIntervalMs,
-            failureKind: classifyTrackingFailure(error),
-          })
-        }
+  /** Owns one admitted mission-history refresh through evidence settlement. */
+  function startHistoryRefreshTask(request: HistoryRefreshRequest): void {
+    const historyStartedAt = now().toISOString()
+    const promise = refreshHistory(request, historyStartedAt).catch((error) => {
+      if (!isHistoryRefreshCurrent(request)) return
+      breadcrumbStatusWarning =
+        'BREADCRUMB HISTORY REFRESH FAILED — current fixes remain live; exact history will retry.'
+      logger.warn('Tracking breadcrumb refresh failed.', {
+        failureKind: classifyTrackingFailure(error),
+      })
+      if (canPublishHistoryStatus(request)) {
+        publishStatus({
+          mode: 'online',
+          warning: combineTrackingWarnings(
+            latestRosterWarning,
+            breadcrumbStatusWarning,
+            breadcrumbIngestWarning,
+          ),
+        })
       }
-    } finally {
-      historyRefreshInFlight = false
+      const completedAt = now().toISOString()
+      options.onPollDiagnostic?.({
+        ts: completedAt,
+        kind: 'poll_cycle',
+        outcome: 'failure',
+        phase: 'breadcrumbs',
+        durationMs: calculateDurationMs(historyStartedAt, completedAt),
+        consecutiveFailures: 0,
+        retryDelayMs: pollIntervalMs,
+        failureKind: classifyTrackingFailure(error),
+      })
+    }).finally(() => {
+      historyTaskPromises.delete(promise)
+      const active = activeHistoryTasksByMission.get(request.historyResetKey)
+      if (active?.promise === promise) {
+        activeHistoryTasksByMission.delete(request.historyResetKey)
+      }
+      const pending = pendingHistoryRefreshByMission.get(request.historyResetKey)
+      pendingHistoryRefreshByMission.delete(request.historyResetKey)
+      if (pending !== undefined && running && !stopping) {
+        startHistoryRefreshTask(pending)
+      }
+    })
+    const task = { request, promise }
+    activeHistoryTasksByMission.set(request.historyResetKey, task)
+    historyTaskPromises.add(promise)
+    if (!isHistoryRefreshCurrent(request)) {
+      pendingHistoryRefreshByMission.delete(request.historyResetKey)
     }
   }
 
@@ -1350,10 +1360,12 @@ export function createPollingManager(
     }
 
     const completedAt = now().toISOString()
+    const historySucceeded =
+      seedState !== 'failed' && breadcrumbFetch.failedDeviceCount === 0
     options.onPollDiagnostic?.({
       ts: completedAt,
       kind: 'poll_cycle',
-      outcome: 'success',
+      outcome: historySucceeded ? 'success' : 'failure',
       phase: 'breadcrumbs',
       durationMs: calculateDurationMs(historyStartedAt, completedAt),
       consecutiveFailures: 0,
@@ -1368,6 +1380,7 @@ export function createPollingManager(
       ),
       breadcrumbRejectedCount: breadcrumbFetch.rejectedCount,
       breadcrumbFailedDeviceCount: breadcrumbFetch.failedDeviceCount,
+      ...(!historySucceeded ? { failureKind: 'unknown' as const } : {}),
       ...(breadcrumbFetch.window === null
         ? {}
         : { breadcrumbWindow: breadcrumbFetch.window }),
@@ -1492,14 +1505,22 @@ export function createPollingManager(
     flushHistorySnapshot(false)
     stopping = true
     immediatePollRequested = false
-    pendingHistoryRefresh = null
+    pendingHistoryRefreshByMission.clear()
     if (timer !== null) {
       clearScheduledTimeout(timer)
       timer = null
     }
+    initialSeedAbortController?.abort()
+    canonicalizationInFlight?.abortController.abort()
     settleCurrentPositionForStop?.()
     if (currentPositionObservationInFlight !== null) {
       await currentPositionObservationInFlight
+    }
+    if (historyTaskPromises.size > 0) {
+      await Promise.allSettled([...historyTaskPromises])
+    }
+    if (historyEvidenceOperations.size > 0) {
+      await Promise.allSettled([...historyEvidenceOperations])
     }
     running = false
     lifecycleGeneration += 1
@@ -1508,9 +1529,7 @@ export function createPollingManager(
     canonicalizationRefreshPending = false
     initialReconciliationComplete = false
     initialReconciliationSelectionKey = null
-    initialSeedAbortController?.abort()
     initialSeedAbortController = null
-    canonicalizationInFlight?.abortController.abort()
     canonicalizationInFlight = null
     if (canonicalizationRetryTimer !== null) {
       clearScheduledTimeout(canonicalizationRetryTimer)

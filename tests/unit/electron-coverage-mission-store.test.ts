@@ -79,6 +79,7 @@ type CoverageMissionStore = {
       readonly lat: number
       readonly lon: number
       readonly timestamp: string
+      readonly timestamp_source: 'fix'
     }[]
   }) => Promise<unknown>
   readonly createOuting: (input: {
@@ -252,6 +253,7 @@ describe('Electron coverage mission-store orchestration', () => {
         lat: 52.02,
         lon: -9.72,
         timestamp: '2026-08-24T09:06:00.000Z',
+        timestamp_source: 'fix',
       }],
     })
     const secondManifest = await store.readCoverageManifest(mission.id, 'real-worker-manifest-2')
@@ -288,6 +290,7 @@ describe('Electron coverage mission-store orchestration', () => {
         lat: 52.03,
         lon: -9.73,
         timestamp: '2026-08-24T09:07:00.000Z',
+        timestamp_source: 'fix',
       }],
     })
     await expect(store.syncCoverageTileCatalog({
@@ -577,6 +580,7 @@ describe('Electron coverage mission-store orchestration', () => {
         lat: 52.02,
         lon: -9.72,
         timestamp: '2026-08-24T09:10:00.000Z',
+        timestamp_source: 'fix',
       }],
     })
     omitManifest = true
@@ -913,7 +917,7 @@ describe('Electron coverage mission-store orchestration', () => {
       mission_id: mission.id,
       positions: [{
         source_position_id: 'source-3', device_id: 'device-1', lat: 52.02, lon: -9.72,
-        timestamp: '2026-08-24T09:10:00.000Z',
+        timestamp: '2026-08-24T09:10:00.000Z', timestamp_source: 'fix',
       }],
     })
     const stale = await store.readCoverageManifest(mission.id, 'forged-build-stale')
@@ -1126,6 +1130,7 @@ describe('Electron coverage mission-store orchestration', () => {
         positions: [{
           source_position_id: 'source-live-race', device_id: 'device-1',
           lat: 52.02, lon: -9.72, timestamp: '2026-08-24T09:06:00.000Z',
+          timestamp_source: 'fix',
         }],
       })
       return {
@@ -1322,8 +1327,8 @@ async function seedMission(coverageStore: CoverageMissionStore): Promise<{ reado
   await coverageStore.addPositionsBulk({
     mission_id: mission.id,
     positions: [
-      { source_position_id: 'source-1', device_id: 'device-1', lat: 52, lon: -9.7, timestamp: '2026-08-24T09:00:00.000Z' },
-      { source_position_id: 'source-2', device_id: 'device-1', lat: 52.01, lon: -9.71, timestamp: '2026-08-24T09:05:00.000Z' },
+      { source_position_id: 'source-1', device_id: 'device-1', lat: 52, lon: -9.7, timestamp: '2026-08-24T09:00:00.000Z', timestamp_source: 'fix' },
+      { source_position_id: 'source-2', device_id: 'device-1', lat: 52.01, lon: -9.71, timestamp: '2026-08-24T09:05:00.000Z', timestamp_source: 'fix' },
     ],
   })
   return mission

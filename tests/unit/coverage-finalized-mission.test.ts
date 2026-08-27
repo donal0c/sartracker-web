@@ -79,6 +79,7 @@ describe('finalized mission coverage classification [DON-276]', () => {
       await store.addPosition({
         mission_id: mission.id, device_id: 'device-1', source_position_id: 'pre-cutoff-fix',
         lat: 52, lon: -9.7, timestamp: '2026-08-26T14:00:00.000Z',
+        timestamp_source: 'fix',
       })
     } finally {
       observation.complete()
@@ -105,6 +106,7 @@ describe('finalized mission coverage classification [DON-276]', () => {
     const position = {
       mission_id: mission.id, device_id: 'device-1', source_position_id: 'source-1',
       lat: 52, lon: -9.7, timestamp: '2026-08-24T09:00:00.000Z',
+      timestamp_source: 'fix' as const,
     }
     await store.addPosition(position)
     const before = await store.readCoverageManifest(mission.id, 'before')

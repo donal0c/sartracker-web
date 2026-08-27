@@ -31,7 +31,8 @@ describe('Electron coverage query plans', () => {
     database.exec(`
       CREATE TABLE positions (
         id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, device_id TEXT NOT NULL,
-        source_position_id TEXT, timestamp TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL
+        source_position_id TEXT, timestamp TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL,
+        timestamp_source TEXT DEFAULT 'fix'
       );
       CREATE INDEX idx_positions_mission_device_timestamp
         ON positions(mission_id, device_id, timestamp);

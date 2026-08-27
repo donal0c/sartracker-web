@@ -12,6 +12,7 @@ import { CoverageStatusPanel } from './coverage-status-panel'
 import { useMissionStore } from '../features/mission/mission-store'
 import { selectCoverageStateForMission } from '../features/tracking/mission-coverage-scope'
 import type { NormalizedTrackingPosition } from '../features/tracking/tracking-types'
+import { formatOperatorLocalTimestamp } from '../features/tracking/operator-time'
 
 type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
@@ -275,10 +276,10 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
       </div>
 
       <div className="mt-4 space-y-3 border-t border-[var(--sar-line)] pt-4">
-        <div className="sar-readout flex items-center justify-between px-3 py-2 text-[11px] font-medium text-stone-300">
-          <span>Last success</span>
-          <span className="font-mono font-bold text-stone-300">
-            {status.lastSuccessAt ? new Date(status.lastSuccessAt).toLocaleTimeString() : 'N/A'}
+        <div className="sar-readout px-3 py-2 text-[11px] font-medium text-stone-300">
+          <span className="block">Last success</span>
+          <span className="mt-1 block text-right font-mono font-bold text-stone-300">
+            {formatOperatorLocalTimestamp(status.lastSuccessAt)}
           </span>
         </div>
         {status.warning === null ? (

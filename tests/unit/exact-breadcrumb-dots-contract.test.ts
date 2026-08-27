@@ -148,6 +148,7 @@ function createContractDatabase() {
       lon REAL NOT NULL,
       timestamp TEXT NOT NULL,
       data_origin TEXT NOT NULL,
+      timestamp_source TEXT NOT NULL DEFAULT 'fix',
       UNIQUE (mission_id, device_id, source_position_id)
     );
     CREATE INDEX idx_positions_mission_device_timestamp

@@ -58,6 +58,24 @@ describe('TrackingStatusPanel', () => {
     ).toBe('tracking-status-message')
   })
 
+  it('shows Last success as a complete local operator timestamp [DON-267]', () => {
+    useTrackingStore.setState({
+      status: {
+        mode: 'online',
+        consecutiveFailures: 0,
+        recovered: false,
+        lastSuccessAt: '2026-08-22T15:10:17.000Z',
+        warning: null,
+      },
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(document.body.textContent).toMatch(
+      /Last success22\/08\/2026, \d{2}:10:17 GMT[+-]\d{2}:\d{2} \(.+\)/u,
+    )
+  })
+
   it('renders paused live-refresh suspension as a flashing red alert even while mode is idle', () => {
     useTrackingStore.setState({
       status: {

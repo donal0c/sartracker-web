@@ -952,6 +952,9 @@
             location visible for immediate safety, and confirms that it is excluded from exact breadcrumb
             evidence. These amber warnings require investigation, but they are distinct from the red offline
             state: valid current fixes remain available while the provider connection is otherwise online.
+            The Tracking panel <strong>Last success</strong>, Devices timestamps, and the Layers inspector
+            <strong>Last Seen</strong> all show the complete local operator date and time with an explicit
+            timezone and UTC offset; the evidence stored underneath remains canonical UTC.
           </div>
           <figure class="screenshot">
             <img src="assets/tracking-current-position-ingest-warning.png" alt="Online tracking panel showing separate amber roster, rejected-position, and unverified-fix-time warnings" />
@@ -965,6 +968,10 @@
             as the displayed truth, retains the conflicting canonical observation in the mission
             evidence ledger, and shows a separate conflict warning. A malformed provider row is not a
             breadcrumb; its bounded identity, rejection class, and explanation are retained once.
+            Exact stored fixes retain the fact that their timestamp came from Traccar
+            <strong>fixTime</strong>, including after restart. Older database rows whose source-clock
+            provenance cannot be proved remain unverified and are not silently admitted into exact dots,
+            coverage, ordering, or history inspection under their stored timestamp.
           </div>
           <div class="warning">
             <strong>Evidence health:</strong> if unique rejection evidence cannot reach the mission
@@ -1218,8 +1225,14 @@
             names the incomplete device history and continues showing current fixes. If a history response
             contains rejected rows, a separate <strong>BREADCRUMB EVIDENCE WARNING</strong> reports the row
             count; valid canonical fixTime evidence continues, rejected rows stay excluded, and desktop
-            mission evidence retains their bounded anomaly records. An all-rejected response reports that
+            mission evidence retains their bounded anomaly records. A participant-history checkpoint advances
+            only after both accepted fixes and any rejection records from that source window are durable, and
+            every accepted row must match the device that was requested. An all-rejected response reports that
             source-row count and reason rather than presenting a generic device failure.
+            Incremental and reconciliation history share one eight-request transport budget. Obsolete
+            mission-history requests are cancelled when mission scope changes, while an admitted Finish or
+            shutdown drain waits for its accepted fixes and rejection evidence to settle. Slow history and a
+            slow device-roster refresh do not delay the next current-position request.
             The separate <strong>Current fixes loaded; loading breadcrumb history</strong> message is
             expected only while the first history request for a mission is unresolved. It must not flash
             again on every normal tracking update; if it does, note the time and export an incident bundle.

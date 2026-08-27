@@ -517,7 +517,7 @@ describe('rejection evidence delivery [DON-268]', () => {
     expect(applyEvidenceHealth).toHaveBeenLastCalledWith(healthy())
   })
 
-  it('uses one stable delivery identity for repeated retrieval of the same rejection', async () => {
+  it('does not restage an acknowledged anomaly when the source row is retrieved again', async () => {
     const calls: string[] = []
     const delivery = createRejectionEvidenceDelivery({
       missionStore: {
@@ -533,9 +533,9 @@ describe('rejection evidence delivery [DON-268]', () => {
     delivery.record([createRejection('source:123')], observation('mission-1'))
     await vi.waitFor(() => expect(calls).toHaveLength(1))
     delivery.record([createRejection('source:123')], observation('mission-1'))
-    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
 
-    expect(calls[0]).toBe(calls[1])
+    expect(calls).toEqual([expect.any(String)])
   })
 
   it('delivers a unique-evidence storm in bounded batches without dropping records', async () => {

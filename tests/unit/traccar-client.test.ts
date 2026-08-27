@@ -404,6 +404,30 @@ describe('traccar client', () => {
     expect(breadcrumbs).toHaveLength(3)
   })
 
+  it('cancels an obsolete breadcrumb transport without retrying it [DON-267]', async () => {
+    const fetchFn: TraccarFetch = vi.fn((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        reject(init.signal?.reason ?? new DOMException('Aborted.', 'AbortError'))
+      }, { once: true })
+    }))
+    const client = createTraccarClient({
+      baseUrl: 'http://test:8082',
+      maxRetries: 3,
+    }, fetchFn)
+    const controller = new AbortController()
+
+    const request = client.getBreadcrumbs(
+      '1',
+      new Date('2026-08-27T08:00:00.000Z'),
+      new Date('2026-08-27T09:00:00.000Z'),
+      controller.signal,
+    )
+    controller.abort(new DOMException('Mission superseded.', 'AbortError'))
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetchFn).toHaveBeenCalledOnce()
+  })
+
   it('preserves valid breadcrumbs while warning about malformed breadcrumb rows [DON-206]', async () => {
     const logger = { warn: vi.fn() }
     const fetchFn: TraccarFetch = vi.fn(async () =>
@@ -475,6 +499,28 @@ describe('traccar client', () => {
         reason: expect.stringMatching(/fixTime.*required/i),
       }),
     )
+  })
+
+  it('rejects a row returned for a different device than the scoped history request [DON-267]', async () => {
+    const requestedDeviceRow = { ...breadcrumbsFixture[0], deviceId: 1 }
+    const wrongDeviceRow = { ...breadcrumbsFixture[1], deviceId: 2 }
+    const client = createTraccarClient(
+      { baseUrl: 'http://test:8082', logger: { warn: vi.fn() } },
+      vi.fn(async () => createJsonResponse([requestedDeviceRow, wrongDeviceRow])),
+    )
+
+    await expect(client.getBreadcrumbsWithReport(
+      '1',
+      new Date('2026-04-06T10:00:00.000Z'),
+      new Date('2026-04-06T10:30:00.000Z'),
+    )).resolves.toEqual({
+      accepted: [expect.objectContaining({ id: String(requestedDeviceRow.id), device_id: '1' })],
+      rejected: [expect.objectContaining({
+        deviceId: '2',
+        reason: 'invalid_identity',
+        rowIndex: 1,
+      })],
+    })
   })
 
   it('fails a device breadcrumb window when every returned row is malformed [DON-260]', async () => {

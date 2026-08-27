@@ -2377,11 +2377,15 @@ function createBrowserCoverageTileCatalog(
       chunk.key,
       outings,
     )
-    const segmentablePositions = positions.map((position) => ({
-      ...position,
-      cache_age_seconds: null,
-      device_cache_stale: false,
-    }))
+    const segmentablePositions = positions.map((position) => {
+      const { timestamp_source: timestampSource, ...positionWithoutTimestampSource } = position
+      return {
+        ...positionWithoutTimestampSource,
+        ...(timestampSource === 'fix' ? { timestamp_source: 'fix' as const } : {}),
+        cache_age_seconds: null,
+        device_cache_stale: false,
+      }
+    })
     return createTrailSegments(segmentablePositions, 30 * 60 * 1000).map((segment, index) => ({
       type: 'Feature' as const,
       id: `cov:${missionId}:${chunk.key.device_id}:${coveragePeriodKey(chunk.key)}:${index}`,

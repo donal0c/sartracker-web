@@ -393,6 +393,12 @@ export async function startAppRuntime(
       ...(rejectionEvidenceDelivery === null
         ? {}
         : {
+            recordBreadcrumbRejections:
+              rejectionEvidenceDelivery.recordEvidenceAndFlush,
+          }),
+      ...(rejectionEvidenceDelivery === null
+        ? {}
+        : {
             beginMissionEvidenceObservation:
               rejectionEvidenceDelivery.beginMissionObservation,
             registerMissionEvidenceSettler:

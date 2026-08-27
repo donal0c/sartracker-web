@@ -29,7 +29,7 @@ import { useStationaryAttentionStore } from '../features/tracking/stationary-att
 
 const DEVICES_WORKSPACE_TITLE_ID = 'devices-workspace-title'
 const DEVICE_ROW_GRID_COLUMNS =
-  'grid-cols-[minmax(7.5rem,1fr)_minmax(9rem,1.2fr)_4rem_6rem_7rem_5.5rem_6rem_8rem]'
+  'grid-cols-[minmax(7.5rem,1fr)_minmax(9rem,1.2fr)_4rem_6rem_11.5rem_5.5rem_6rem_8rem]'
 
 /**
  * Renders the dedicated tracking devices workspace used for roster-scale operations.
@@ -559,10 +559,10 @@ function DeviceRow(props: {
         {props.row.status}
       </span>
       <span
-        className="font-mono text-xs text-stone-300"
+        className="font-mono text-[10px] leading-4 text-stone-300"
         data-testid={`device-last-seen-${props.row.deviceId}`}
       >
-        {props.row.lastSeenDisplay}
+        <CompactOperatorTimestamp value={props.row.lastSeenDisplay} />
       </span>
       <span
         className={`text-xs font-semibold ${
@@ -612,6 +612,18 @@ function DeviceRow(props: {
         </button>
       </div>
     </div>
+  )
+}
+
+/** Keeps the full explicit timestamp scannable in two stable roster lines. */
+function CompactOperatorTimestamp(props: { readonly value: string }) {
+  const zoneStart = props.value.indexOf(' GMT')
+  if (zoneStart < 0) return props.value
+  return (
+    <>
+      <span className="block whitespace-nowrap">{props.value.slice(0, zoneStart)}</span>
+      <span className="block whitespace-nowrap">{props.value.slice(zoneStart + 1)}</span>
+    </>
   )
 }
 

@@ -1349,7 +1349,10 @@ describe('startTrackingRuntime', () => {
   })
 
   it('publishes selected current positions without waiting for participant backfill [DON-271]', async () => {
-    const backfill = createDeferred<readonly TrackingSnapshot['positions'][number][]>()
+    const backfill = createDeferred<{
+      readonly accepted: readonly TrackingSnapshot['positions'][number][]
+      readonly rejected: readonly never[]
+    }>()
     const applySnapshot = vi.fn()
     let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
     const client = {
@@ -1357,7 +1360,7 @@ describe('startTrackingRuntime', () => {
       getDevices: vi.fn().mockResolvedValue(SNAPSHOT.devices),
       getGroups: vi.fn().mockResolvedValue([]),
       getCurrentPositions: vi.fn().mockResolvedValue(SNAPSHOT.positions),
-      getBreadcrumbs: vi.fn().mockReturnValue(backfill.promise),
+      getBreadcrumbsWithReport: vi.fn().mockReturnValue(backfill.promise),
     }
     const checkpoint = {
       mission_id: 'mission-1',
@@ -1369,7 +1372,7 @@ describe('startTrackingRuntime', () => {
       updated_at: '2026-04-06T10:00:00.000Z',
     }
 
-    await startTrackingRuntime({
+    const stop = await startTrackingRuntime({
       config: { baseUrl: 'http://test:8082' },
       createClient: vi.fn().mockReturnValue(client),
       createPoller: vi.fn().mockImplementation((_client, hooks) => {
@@ -1400,9 +1403,17 @@ describe('startTrackingRuntime', () => {
     await pollerHooks?.onSnapshot(SNAPSHOT)
 
     expect(applySnapshot).toHaveBeenCalledWith(SNAPSHOT)
-    expect(client.getBreadcrumbs).toHaveBeenCalled()
-    backfill.resolve([])
-    await Promise.resolve()
+    expect(client.getBreadcrumbsWithReport).toHaveBeenCalled()
+    let stopped = false
+    const stopping = stop().then(() => { stopped = true })
+    for (let turn = 0; turn < 10; turn += 1) await Promise.resolve()
+    expect(stopped).toBe(false)
+    expect(client.getBreadcrumbsWithReport.mock.calls[0]?.[3]).toMatchObject({
+      aborted: false,
+    })
+    backfill.resolve({ accepted: [], rejected: [] })
+    await stopping
+    expect(stopped).toBe(true)
   })
 
   it('grandfathers legacy tracking persistence when the mission model flag is off [DON-271]', async () => {
@@ -2040,6 +2051,7 @@ describe('startTrackingRuntime', () => {
             accuracy: null,
             source: 'traccar',
             timestamp: '2026-04-06T10:05:00.000Z',
+            timestamp_source: 'fix',
             data_origin: 'live',
           },
           {
@@ -2053,6 +2065,7 @@ describe('startTrackingRuntime', () => {
             accuracy: null,
             source: 'traccar',
             timestamp: '2026-04-06T10:03:00.000Z',
+            timestamp_source: 'fix',
             data_origin: 'cache',
           },
         ]),
@@ -2143,6 +2156,7 @@ describe('startTrackingRuntime', () => {
         lat: 52.01,
         lon: -9.01,
         timestamp: '2026-04-06T02:00:00.000Z',
+        timestamp_source: 'fix',
         data_origin: 'live',
       }],
       deviceTotals: [{ device_id: '1', total: 7_200 }],
@@ -2888,6 +2902,7 @@ describe('startTrackingRuntime', () => {
         lat: SNAPSHOT.positions[0]!.lat,
         lon: SNAPSHOT.positions[0]!.lon,
         timestamp: SNAPSHOT.positions[0]!.timestamp,
+        timestamp_source: 'fix',
         data_origin: 'live',
       },
     ])
@@ -2936,6 +2951,7 @@ describe('startTrackingRuntime', () => {
           lat: 52.01,
           lon: -9.01,
           timestamp: '2026-04-06T10:05:00.000Z',
+          timestamp_source: 'fix',
           data_origin: 'live',
         },
       ],
@@ -3003,6 +3019,7 @@ describe('startTrackingRuntime', () => {
               lat: 52.01,
               lon: -9.01,
               timestamp: '2026-02-28T10:05:00.000Z',
+              timestamp_source: 'fix',
               data_origin: 'live',
             },
           ],
@@ -3055,6 +3072,7 @@ describe('startTrackingRuntime', () => {
           lat: 52.01,
           lon: -9.01,
           timestamp: '2026-02-28T10:05:00.000Z',
+          timestamp_source: 'fix',
           data_origin: 'live',
         },
         {
@@ -3126,6 +3144,7 @@ describe('startTrackingRuntime', () => {
             lat: 52.01,
             lon: -9.01,
             timestamp: '2026-07-28T10:00:00.000Z',
+            timestamp_source: 'fix',
             data_origin: 'live',
           },
         ],
@@ -3181,6 +3200,7 @@ describe('startTrackingRuntime', () => {
             lat: 52.01,
             lon: -9.01,
             timestamp: '2026-07-28T10:00:00.000Z',
+            timestamp_source: 'fix',
             data_origin: 'live',
           },
         ],

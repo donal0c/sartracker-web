@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 test.describe('M17 layer tree workflows', () => {
+  test.use({ timezoneId: 'Europe/Dublin' })
+
   test.beforeEach(async ({ page }) => {
     await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
@@ -24,6 +26,9 @@ test.describe('M17 layer tree workflows', () => {
     await page.getByTestId('layer-select-feature-device-alpha').click()
     await expect(page.getByTestId('layer-inspector-title')).toContainText('Alpha Team')
     await expect(page.getByTestId('layer-inspector-details')).toContainText('Device ID')
+    await expect(page.getByTestId('layer-inspector-details')).toContainText(
+      'Last Seen09/04/2026, 17:00:00 GMT+01:00 (Europe/Dublin)',
+    )
   })
 
   test('supports search, selection, aliasing, and item visibility', async ({

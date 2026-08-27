@@ -31,14 +31,14 @@ function listBreadcrumbPositionsFromReadSnapshot(db, missionId, perDeviceLimit) 
     .prepare(
       `SELECT device_id, COUNT(*) AS total
        FROM positions
-       WHERE mission_id = ?
+       WHERE mission_id = ? AND timestamp_source = 'fix'
        GROUP BY device_id
        ORDER BY device_id ASC`,
     )
     .all(missionId)
   const selectDevicePositions = db.prepare(
     `SELECT rowid, source_position_id, timestamp, lat, lon FROM positions
-     WHERE mission_id = ? AND device_id = ?
+     WHERE mission_id = ? AND device_id = ? AND timestamp_source = 'fix'
      ORDER BY timestamp ASC, rowid ASC`,
   )
   const positions = []

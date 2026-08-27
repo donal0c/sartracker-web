@@ -174,7 +174,7 @@ async function createCoverageDatabase(): Promise<string> {
     CREATE TABLE outings (id TEXT PRIMARY KEY, mission_id TEXT, started_at TEXT, ended_at TEXT);
     CREATE TABLE positions (
       id TEXT PRIMARY KEY, mission_id TEXT, device_id TEXT, source_position_id TEXT,
-      timestamp TEXT, lat REAL, lon REAL
+      timestamp TEXT, lat REAL, lon REAL, timestamp_source TEXT DEFAULT 'fix'
     );
     CREATE INDEX idx_positions_mission_device_timestamp
       ON positions(mission_id, device_id, timestamp);
@@ -185,7 +185,9 @@ async function createCoverageDatabase(): Promise<string> {
     );
     INSERT INTO outings VALUES
       ('outing-1', 'mission-1', '2026-08-24T10:00:00.000Z', '2026-08-24T11:00:00.000Z');
-    INSERT INTO positions VALUES
+    INSERT INTO positions (
+      id, mission_id, device_id, source_position_id, timestamp, lat, lon
+    ) VALUES
       ('position-1', 'mission-1', 'device-1', 'source-1', '2026-08-24T12:00:00.000Z', 52, -9.7);
     INSERT INTO coverage_chunks VALUES
       ('mission-1', 'device-1', 'unassigned', '', 1, 1),

@@ -909,7 +909,8 @@ async function createDatabase(): Promise<string> {
     );
     CREATE TABLE positions (
       id TEXT PRIMARY KEY, mission_id TEXT, device_id TEXT,
-      source_position_id TEXT, timestamp TEXT, lat REAL, lon REAL
+      source_position_id TEXT, timestamp TEXT, lat REAL, lon REAL,
+      timestamp_source TEXT NOT NULL DEFAULT 'fix'
     );
     CREATE INDEX idx_positions_mission_device_timestamp
       ON positions(mission_id, device_id, timestamp);
@@ -922,10 +923,10 @@ async function createDatabase(): Promise<string> {
       ('outing-a', 'mission-1', '2026-08-24T09:00:00.000Z', '2026-08-24T10:00:00.000Z'),
       ('outing-b', 'mission-1', '2026-08-24T10:00:00.000Z', '2026-08-24T11:00:00.000Z');
     INSERT INTO positions VALUES
-      ('a-1', 'mission-1', 'device-a', 'source-a-1', '2026-08-24T09:01:00.000Z', 52, -9.7),
-      ('a-2', 'mission-1', 'device-a', 'source-a-2', '2026-08-24T09:02:00.000Z', 52.01, -9.71),
-      ('b-1', 'mission-1', 'device-b', 'source-b-1', '2026-08-24T10:01:00.000Z', 52, -9.7),
-      ('b-2', 'mission-1', 'device-b', 'source-b-2', '2026-08-24T10:02:00.000Z', 52.01, -9.71);
+      ('a-1', 'mission-1', 'device-a', 'source-a-1', '2026-08-24T09:01:00.000Z', 52, -9.7, 'fix'),
+      ('a-2', 'mission-1', 'device-a', 'source-a-2', '2026-08-24T09:02:00.000Z', 52.01, -9.71, 'fix'),
+      ('b-1', 'mission-1', 'device-b', 'source-b-1', '2026-08-24T10:01:00.000Z', 52, -9.7, 'fix'),
+      ('b-2', 'mission-1', 'device-b', 'source-b-2', '2026-08-24T10:02:00.000Z', 52.01, -9.71, 'fix');
     INSERT INTO coverage_chunks VALUES
       ('mission-1', 'device-a', 'outing', 'outing-a', 1, NULL),
       ('mission-1', 'device-b', 'outing', 'outing-b', 1, NULL);

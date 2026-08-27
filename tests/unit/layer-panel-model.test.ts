@@ -75,6 +75,18 @@ describe('layer panel model', () => {
   it('normalizes layer node ids into stable test ids', () => {
     expect(toLayerTreeTestId('layer:map-tools:measurements')).toBe('layer-map-tools-measurements')
   })
+
+  it('formats device Last Seen as explicit operator local time [DON-267]', () => {
+    const root = createRoot()
+    expect(buildLayerInspectionRows(findCatalogNode(root, getDeviceFeatureNodeId('alpha'))!, {
+      trackingDeviceCount: 2,
+      trackingBreadcrumbCount: 8,
+      measurementCount: 3,
+    })).toContainEqual({
+      label: 'Last Seen',
+      value: expect.stringMatching(/^10\/04\/2026, \d{2}:00:00 GMT[+-]\d{2}:\d{2} \(.+\)$/u),
+    })
+  })
 })
 
 function createRoot() {

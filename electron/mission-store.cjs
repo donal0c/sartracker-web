@@ -70,7 +70,7 @@ const {
   recordAcceptedCoveragePositions,
 } = require('./coverage-ledger.cjs')
 
-const CURRENT_SCHEMA_VERSION = 10
+const CURRENT_SCHEMA_VERSION = 11
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -868,7 +868,7 @@ function createElectronMissionStore(options) {
         input.mission_id,
         () => hasCheckpoints
           ? persistTrackingHistoryBatch(db, input, false, coverageLedgerFaultInjection)
-          : addPositionsBulk(db, input, false, coverageLedgerFaultInjection),
+          : addPositionsBulk(db, input, false, coverageLedgerFaultInjection, true),
       )
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
@@ -1497,6 +1497,7 @@ function migrate(db) {
       received_at TEXT,
       content_hash TEXT,
       source_kind TEXT,
+      timestamp_source TEXT CHECK(timestamp_source IS NULL OR timestamp_source = 'fix'),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
@@ -1720,6 +1721,12 @@ function migrate(db) {
     ensureColumnExists(db, 'positions', 'received_at', 'TEXT')
     ensureColumnExists(db, 'positions', 'content_hash', 'TEXT')
     ensureColumnExists(db, 'positions', 'source_kind', 'TEXT')
+    ensureColumnExists(
+      db,
+      'positions',
+      "timestamp_source",
+      "TEXT CHECK(timestamp_source IS NULL OR timestamp_source = 'fix')",
+    )
     ensureColumnExists(db, 'devices', 'group_id', 'TEXT')
     ensureColumnExists(db, 'devices', 'unique_id', 'TEXT')
     // Candidate-v9 stores may contain the rejected global positions index.
@@ -2854,6 +2861,7 @@ function addPosition(db, input, coverageFaultInjection = {}) {
   const timestamp = normalizePositionTimestamp(input.timestamp)
   const dataOrigin = input.data_origin ?? 'live'
   const sourcePositionId = normalizeSourcePositionId(input.source_position_id)
+  const timestampSource = normalizePositionTimestampSource(input.timestamp_source)
   const receivedAt = now()
   const normalizedInput = {
     ...input,
@@ -2923,9 +2931,9 @@ function addPosition(db, input, coverageFaultInjection = {}) {
 
   const id = randomUUID()
   const transaction = db.transaction(() => {
-    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin, receivedAt, canonical.contentHash, sourcePositionId === null ? null : 'traccar')
+    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind, timestamp_source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin, receivedAt, canonical.contentHash, sourcePositionId === null ? null : 'traccar', timestampSource)
     db.prepare(
       `UPDATE devices
        SET last_seen = CASE
@@ -2946,7 +2954,13 @@ function addPosition(db, input, coverageFaultInjection = {}) {
   return getById(db, 'positions', id, 'Position')
 }
 
-function addPositionsBulk(db, input, includePositions = true, coverageFaultInjection = {}) {
+function addPositionsBulk(
+  db,
+  input,
+  includePositions = true,
+  coverageFaultInjection = {},
+  requireFixTimeProvenance = false,
+) {
   ensureWritableMission(db, input.mission_id)
   const positions = Array.isArray(input.positions) ? input.positions : []
   if (positions.length === 0) {
@@ -2965,8 +2979,11 @@ function addPositionsBulk(db, input, includePositions = true, coverageFaultInjec
   const existingPositionBySourceIdentity = db.prepare(
     'SELECT * FROM positions WHERE mission_id = ? AND source_position_id = ? LIMIT 1',
   )
-  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind, timestamp_source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const retainFixTimeProvenance = db.prepare(
+    "UPDATE positions SET timestamp_source = 'fix' WHERE id = ? AND timestamp_source IS NULL",
+  )
   const updateDevice = db.prepare(
     `UPDATE devices
      SET last_seen = CASE
@@ -2996,6 +3013,12 @@ function addPositionsBulk(db, input, includePositions = true, coverageFaultInjec
       const sourcePositionId = normalizeSourcePositionId(
         position.source_position_id,
       )
+      const timestampSource = normalizePositionTimestampSource(position.timestamp_source)
+      if (requireFixTimeProvenance && timestampSource !== 'fix') {
+        throw new Error(
+          'Tracking evidence persistence requires authoritative Traccar fixTime provenance.',
+        )
+      }
       const normalizedPosition = {
         ...position,
         source_position_id: sourcePositionId,
@@ -3021,6 +3044,9 @@ function addPositionsBulk(db, input, includePositions = true, coverageFaultInjec
             })
           }
           if (existing.device_id === position.device_id) {
+            if (decision.decision === 'duplicate' && timestampSource === 'fix') {
+              retainFixTimeProvenance.run(existing.id)
+            }
             updateDevice.run(
               timestamp,
               timestamp,
@@ -3087,6 +3113,7 @@ function addPositionsBulk(db, input, includePositions = true, coverageFaultInjec
         receivedAt,
         canonical.contentHash,
         sourcePositionId === null ? null : 'traccar',
+        timestampSource,
       )
       updateDevice.run(timestamp, timestamp, input.mission_id, position.device_id)
       changedPositionCount += 1
@@ -3147,7 +3174,7 @@ function persistTrackingHistoryBatch(
     const added = addPositionsBulk(db, {
       mission_id: input.mission_id,
       positions: Array.isArray(input.positions) ? input.positions : [],
-    }, includePositions, coverageFaultInjection)
+    }, includePositions, coverageFaultInjection, true)
     positionResult = {
       ...added,
       skippedAmbiguousLegacyAdoptionCount:
@@ -3252,6 +3279,15 @@ function normalizePositionTimestamp(value) {
     throw new Error('Position timestamp must be a valid ISO8601 date-time.')
   }
   return new Date(Date.parse(value.trim())).toISOString()
+}
+
+/** Retains only the provenance that can authorize exact breadcrumb evidence. */
+function normalizePositionTimestampSource(value) {
+  if (value == null) return null
+  if (value !== 'fix') {
+    throw new Error('Position timestamp provenance must be authoritative Traccar fixTime.')
+  }
+  return 'fix'
 }
 
 /** Refreshes contact liveness without changing immutable position truth. */

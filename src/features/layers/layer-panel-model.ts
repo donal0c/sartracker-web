@@ -4,6 +4,7 @@ import {
   TRACKING_DEVICES_LAYER_NODE_ID,
 } from './layer-catalog-ids'
 import type { LayerCatalogNode } from './layer-catalog-tree'
+import { formatOperatorLocalTimestamp } from '../tracking/operator-time'
 
 export type LayerInspectionCounts = {
   readonly trackingDeviceCount: number
@@ -70,7 +71,12 @@ export function buildLayerInspectionRows(
       return [
         { label: 'Device ID', value: node.entity.device.device_id },
         { label: 'Status', value: node.entity.device.status },
-        { label: 'Last Seen', value: node.entity.device.last_seen ?? 'No fix' },
+        {
+          label: 'Last Seen',
+          value: node.entity.device.last_seen === null
+            ? 'No fix'
+            : formatOperatorLocalTimestamp(node.entity.device.last_seen),
+        },
       ]
     }
     if (node.entity?.type === 'coverage_device') {

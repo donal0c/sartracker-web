@@ -66,11 +66,13 @@ type TraccarClient = {
     deviceId: string,
     from: Date,
     to: Date,
+    signal?: AbortSignal,
   ) => Promise<readonly NormalizedTrackingPosition[]>
   readonly getBreadcrumbsWithReport: (
     deviceId: string,
     from: Date,
     to: Date,
+    signal?: AbortSignal,
   ) => Promise<BreadcrumbNormalizationResult>
 }
 
@@ -137,6 +139,7 @@ export function createTraccarClient(
   const fetchJson = async (
     path: string,
     params?: Record<string, string>,
+    signal?: AbortSignal,
   ): Promise<unknown> => {
     const url = new URL(path, `${baseUrl}/`)
     if (params !== undefined) {
@@ -150,18 +153,19 @@ export function createTraccarClient(
     const maxAttempts = maxRetries + 1
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      signal?.throwIfAborted()
       if (attempt > 0) {
-        await sleep(retryBaseMs * 2 ** (attempt - 1))
+        await sleep(retryBaseMs * 2 ** (attempt - 1), signal)
       }
 
       const attemptStartedAt = Date.now()
       try {
         const response = await fetchWithTimeout(url.toString(), {
           headers: buildHeaders(),
-        })
+        }, signal)
 
         if (isAuthenticationResponse(response)) {
-          return await retryAfterAuthenticationFailure(url.toString())
+          return await retryAfterAuthenticationFailure(url.toString(), signal)
         }
 
         if (!response.ok) {
@@ -203,8 +207,15 @@ export function createTraccarClient(
     throw lastError ?? new Error('Traccar request failed unexpectedly.')
   }
 
-  const fetchWithTimeout = async (url: string, init: RequestInit): Promise<Response> => {
+  const fetchWithTimeout = async (
+    url: string,
+    init: RequestInit,
+    signal?: AbortSignal,
+  ): Promise<Response> => {
     const controller = new AbortController()
+    const abortFromCaller = () => controller.abort(signal?.reason)
+    signal?.addEventListener('abort', abortFromCaller, { once: true })
+    if (signal?.aborted === true) abortFromCaller()
     const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
     try {
       return await fetchFn(url, {
@@ -213,10 +224,14 @@ export function createTraccarClient(
       })
     } finally {
       window.clearTimeout(timeout)
+      signal?.removeEventListener('abort', abortFromCaller)
     }
   }
 
-  const retryAfterAuthenticationFailure = async (url: string): Promise<unknown> => {
+  const retryAfterAuthenticationFailure = async (
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> => {
     sessionCookie = null
 
     if (config.token) {
@@ -230,7 +245,7 @@ export function createTraccarClient(
     await authenticateWithCredentials()
     const response = await fetchWithTimeout(url, {
       headers: buildHeaders(),
-    })
+    }, signal)
 
     if (isAuthenticationResponse(response)) {
       sessionCookie = null
@@ -316,12 +331,13 @@ export function createTraccarClient(
     deviceId: string,
     from: Date,
     to: Date,
+    signal?: AbortSignal,
   ): Promise<BreadcrumbNormalizationResult> => {
     const data = await fetchJson('/api/positions', {
       deviceId,
       from: from.toISOString(),
       to: to.toISOString(),
-    })
+    }, signal)
     if (!Array.isArray(data)) {
       throw new Error('Expected an array from breadcrumb positions.')
     }
@@ -335,10 +351,18 @@ export function createTraccarClient(
       logger,
       includeStructuredRejections: true,
       allowAllRejected: true,
-      normalize: (position) => normalizeTraccarBreadcrumbPosition(
-        position as RawPositionInput,
-        'live',
-      ),
+      normalize: (position) => {
+        const normalized = normalizeTraccarBreadcrumbPosition(
+          position as RawPositionInput,
+          'live',
+        )
+        if (normalized.device_id !== deviceId) {
+          throw new Error(
+            `Breadcrumb deviceId ${normalized.device_id} did not match requested deviceId ${deviceId}.`,
+          )
+        }
+        return normalized
+      },
     })
     return { accepted: result.accepted, rejected: result.rejected }
   }
@@ -380,8 +404,8 @@ export function createTraccarClient(
       return result.accepted
     },
     getCurrentPositionsWithReport,
-    getBreadcrumbs: async (deviceId, from, to) => {
-      const result = await getBreadcrumbsWithReport(deviceId, from, to)
+    getBreadcrumbs: async (deviceId, from, to, signal) => {
+      const result = await getBreadcrumbsWithReport(deviceId, from, to, signal)
       if (result.accepted.length === 0 && result.rejected.length > 0) {
         throw new Error(createAllRejectedBreadcrumbMessage(deviceId, result.rejected))
       }
@@ -563,8 +587,17 @@ function createHttpError(response: Response): Error {
   return new Error(`HTTP ${response.status}: ${response.statusText}`)
 }
 
-function sleep(delayMs: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, delayMs)
+function sleep(delayMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, delayMs)
+    const abort = () => {
+      window.clearTimeout(timeout)
+      reject(signal?.reason ?? new DOMException('History request aborted.', 'AbortError'))
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted === true) abort()
   })
 }
