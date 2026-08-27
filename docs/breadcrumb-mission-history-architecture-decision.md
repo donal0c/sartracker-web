@@ -220,8 +220,9 @@ without changing any locked team answer:
 - GPX imports retain exact bytes and SHA-256 identity, path aliases, ordered
   segments/points, source timestamps and elevation, rejected source elements,
   timing completeness, outing assignment and immutable revisions; parsing and
-  bulk persistence run outside the Electron main isolate in short writer
-  slices. Batch failures retain source bytes and reason, interrupted staging is
+  bulk persistence run outside the Electron main isolate in 25-point writer
+  slices with an explicit inter-slice writer turn for current positions. Batch
+  failures retain source bytes and reason, interrupted staging is
   recovered as explicit failure provenance, and shutdown cancels and joins the
   import worker before the database closes;
 - replay folds lifecycle, participant/group state and mutable evidence using

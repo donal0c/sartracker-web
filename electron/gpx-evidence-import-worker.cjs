@@ -36,7 +36,7 @@ async function run() {
         const decoded = new TextDecoder('utf-8', { fatal: true }).decode(sourceBytes)
         const parsed = parseGpxEvidence(decoded, path.basename(normalizedPath))
         const contentSha256 = createHash('sha256').update(sourceBytes).digest('hex')
-        const stored = upsertGpxEvidenceChunked(database, {
+        const stored = await upsertGpxEvidenceChunked(database, {
           mission_id: workerData.missionId,
           source_path: normalizedPath,
           file_name: path.basename(normalizedPath),

@@ -45,8 +45,9 @@ the accepted findings and their dispositions are:
   inside the same immediate transaction as every projection/version/audit write,
   with a controlled race regression;
 - a large GPX transaction could block live-current writes: imports use durable
-  per-file batches, staging state and 100-point short transactions; the 50,000
-  point contention regression keeps current writes below the 200 ms hard gate;
+  per-file batches, staging state and 25-point short transactions with an
+  explicit inter-slice writer turn; the 50,000-point contention regression
+  keeps current writes below the 200 ms hard gate;
 - import workers were not owned by shutdown and interrupted batches could be
   silent: the store aborts and joins workers before database close, and startup
   converts interrupted staging into retained failure provenance;
@@ -93,7 +94,7 @@ The remediation candidate passed:
 - unsigned packaged macOS arm64 build;
 - packaged macOS tracking/restart soak: 8,664/8,664 exact positions over two
   launches, integrity `ok`, zero redundant slope, four healthy operator samples,
-  15.52 ms main-process maximum and zero renderer crashes;
+  30.70 ms main-process maximum and zero renderer crashes;
 - packaged macOS forced kill/restart against the 607,412,224-byte 960k fixture:
   kill occurred only after the backup-start marker was durable, restart retained
   the interrupted-operation marker, support-bundle privacy checks passed and the
@@ -110,6 +111,16 @@ arm64/Node v22.22.3 with timezone `Europe/Dublin`:
 Both presets passed their fail-closed gates. The 960k ordinary seek stayed
 below one second and every measured main-isolate dispatch/current-read/open/event-
 loop path stayed below the 200 ms hard block. The 2m row is headroom evidence.
+
+The first pushed remediation candidate was correctly rejected by Linux run
+`33096222238`: its 50,000-point GPX/current-write contention regression measured
+330.65 ms against the 200 ms hard block. The source retrace found that short
+transactions alone did not prevent the GPX worker immediately reacquiring WAL
+writer ownership. The worker now yields an explicit writer turn after staging
+and every 25-point slice. The same focused regression was red locally at
+355.27 ms before that yield, then passed five serial repetitions; the focused
+GPX/current/shutdown set passed 24/24 and the full unit suite passed 2,331/2,331.
+Replacement exact-head Linux qualification remains required.
 
 ## Proof limits
 

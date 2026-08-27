@@ -4776,8 +4776,13 @@ function upsertGpxEvidence(db, input) {
   return getById(db, 'gpx_track_imports', id, 'GPX import')
 }
 
+/** Yields after each GPX writer slice so current-position writers can acquire WAL ownership. */
+function yieldGpxWriterTurn() {
+  return new Promise((resolve) => setTimeout(resolve, 1))
+}
+
 /** Persists large GPX point sets in short writer slices, publishing only after a final fence. */
-function upsertGpxEvidenceChunked(db, input, chunkSize = 100) {
+async function upsertGpxEvidenceChunked(db, input, chunkSize = 25) {
   if ((input.points?.length ?? 0) <= chunkSize && (input.rejections?.length ?? 0) <= chunkSize) {
     return upsertGpxEvidence(db, input)
   }
@@ -4859,6 +4864,7 @@ function upsertGpxEvidenceChunked(db, input, chunkSize = 100) {
       )
   })
   stage.immediate()
+  await yieldGpxWriterTurn()
 
   const pointStatement = db.prepare(`INSERT INTO gpx_evidence_points (
     import_id, revision_sequence, segment_index, point_index, track_name,
@@ -4879,6 +4885,7 @@ function upsertGpxEvidenceChunked(db, input, chunkSize = 100) {
       }
     })
     writeChunk.immediate()
+    await yieldGpxWriterTurn()
   }
   const rejectionStatement = db.prepare(`INSERT INTO gpx_evidence_rejections (
     id, import_id, revision_sequence, kind, segment_index, point_index, reason, source_value
@@ -4895,7 +4902,10 @@ function upsertGpxEvidenceChunked(db, input, chunkSize = 100) {
       }
     })
     writeChunk.immediate()
+    await yieldGpxWriterTurn()
   }
+
+  await yieldGpxWriterTurn()
 
   const publish = db.transaction(() => {
     ensureWritableMission(db, missionId)
