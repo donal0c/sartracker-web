@@ -42,7 +42,11 @@ different WAL states. Fresh broad, persistence and concurrency reviews on
 `f87d75873f11d12d249e3afbc482703b25f99ff4` then found a chunked-GPX
 knowledge-time leak, a published-evidence receipt crash gap, a stale admin
 unlock authorization race and an impossible Search Operations correction
-instruction. That head was rejected. Accepted findings and dispositions are:
+instruction. That head was rejected. Persistence recheck on
+`1b35786c5de35355724928354789d779a52d186c` then proved that restart
+reconciliation could mistake a matching legacy baseline without exact bytes
+for a completed re-import and clear the receipt's only retained source. That
+head was also rejected. Accepted findings and dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -204,7 +208,10 @@ instruction. That head was rejected. Accepted findings and dispositions are:
   batch count in the same transaction. Startup closes fully accounted running
   batches and reconciles older unsettled receipts only against the active
   canonical import's current complete revision, exact hash and canonical or
-  active alias path; retired and superseded revisions remain explicit failures;
+  active alias path. Reconciliation additionally requires `complete`
+  provenance, retained source bytes, and a fresh backend SHA-256 verification;
+  legacy baselines, retired imports and superseded revisions remain explicit
+  failures with the receipt bytes retained in failure provenance;
 - admin unlock authorization could outlive another unlock and re-finalization,
   reopening a newer finalized snapshot: authorized and denied paths now bind
   the roster decision to the exact `mission_finalized` audit epoch and recheck
@@ -220,7 +227,7 @@ substitutes for that wave.
 
 The latest local remediation tree passed:
 
-- full unit: 288 files / 2,393 tests with eight workers; all timing-gate tests
+- full unit: 288 files / 2,394 tests with eight workers; all timing-gate tests
   that exceeded thresholds in oversubscribed default-worker runs passed again
   in their focused 178-test set;
 - backend: 51 passed / 1 ignored;

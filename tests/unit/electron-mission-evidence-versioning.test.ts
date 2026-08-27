@@ -749,6 +749,50 @@ describe('mission evidence versioning [DON-277]', () => {
     recovered.close()
   })
 
+  it('does not erase retained exact bytes for a matching legacy GPX baseline [DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Legacy Baseline Receipt Mission' })
+    await store.upsertGpxImport(gpxInput(mission.id, { source_bytes_base64: undefined }))
+    const db = openDatabase(await databasePath())
+    expect(db.prepare(`SELECT completeness, source_bytes_base64 FROM gpx_import_revisions
+      WHERE mission_id = ?`).get(mission.id))
+      .toMatchObject({ completeness: 'legacy_baseline', source_bytes_base64: null })
+    startGpxImportBatch(db, {
+      batchId: 'legacy-baseline-reimport-batch',
+      missionId: mission.id,
+      totalFiles: 1,
+    })
+    recordGpxImportSourceReceipt(db, {
+      batchId: 'legacy-baseline-reimport-batch',
+      missionId: mission.id,
+      sourcePath: '/field/route.gpx',
+      fileName: 'route.gpx',
+    })
+    retainGpxImportSourceBytes(db, {
+      batchId: 'legacy-baseline-reimport-batch',
+      missionId: mission.id,
+      sourcePath: '/field/route.gpx',
+      contentSha256: digestBase64('PGdweD5maXJzdDwvZ3B4Pg=='),
+      sourceBytesBase64: 'PGdweD5maXJzdDwvZ3B4Pg==',
+    })
+    db.close()
+    store.close()
+
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    const recovered = openDatabase(await databasePath())
+    expect(recovered.prepare(`SELECT status, source_bytes_base64
+      FROM gpx_import_source_receipts WHERE batch_id = ?`)
+      .get('legacy-baseline-reimport-batch'))
+      .toMatchObject({ status: 'failed', source_bytes_base64: expect.any(String) })
+    expect(recovered.prepare(`SELECT completeness, source_bytes_base64
+      FROM gpx_import_revisions WHERE mission_id = ?`).get(mission.id))
+      .toMatchObject({ completeness: 'legacy_baseline', source_bytes_base64: null })
+    expect(recovered.prepare(`SELECT source_bytes_base64 FROM gpx_import_failures
+      WHERE batch_id = ?`).get('legacy-baseline-reimport-batch'))
+      .toMatchObject({ source_bytes_base64: 'PGdweD5maXJzdDwvZ3B4Pg==' })
+    recovered.close()
+  })
+
   it('recovers pre-read and retained-source receipts as explicit durable failures [DON-274]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'GPX Receipt Recovery Mission' })

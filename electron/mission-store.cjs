@@ -2444,8 +2444,9 @@ function recoverUnsettledGpxImportReceipts(db, migrationTime) {
   const interruptedBatchIds = new Set()
   for (const receipt of receipts) {
     batchIds.add(receipt.batch_id)
-    const publishedRevision = receipt.status === 'retained'
-      ? db.prepare(`SELECT 1 FROM gpx_import_revisions AS revisions
+    const publicationCandidate = receipt.status === 'retained'
+      ? db.prepare(`SELECT revisions.content_sha256, revisions.source_bytes_base64
+          FROM gpx_import_revisions AS revisions
           JOIN gpx_track_imports AS imports
             ON imports.id = revisions.import_id
             AND imports.revision_sequence = revisions.revision_sequence
@@ -2455,6 +2456,8 @@ function recoverUnsettledGpxImportReceipts(db, migrationTime) {
             AND aliases.source_path = ?
           WHERE revisions.mission_id = ? AND revisions.content_sha256 = ?
             AND revisions.import_state = 'complete'
+            AND revisions.completeness = 'complete'
+            AND revisions.source_bytes_base64 IS NOT NULL
             AND imports.import_state = 'complete' AND imports.retired_at IS NULL
             AND (revisions.source_path = ? OR aliases.source_path IS NOT NULL)
           LIMIT 1`)
@@ -2465,7 +2468,7 @@ function recoverUnsettledGpxImportReceipts(db, migrationTime) {
           receipt.source_path,
         )
       : undefined
-    if (publishedRevision !== undefined) {
+    if (isExactGpxPublicationCandidate(publicationCandidate, receipt.content_sha256)) {
       settleGpxImportSourceReceiptWithinTransaction(db, {
         batchId: receipt.batch_id,
         missionId: receipt.mission_id,
@@ -2511,6 +2514,25 @@ function recoverUnsettledGpxImportReceipts(db, migrationTime) {
       SET status = ?, completed_files = ?, failed_files = ?,
           updated_at = ?, finished_at = ?
       WHERE id = ?`).run(status, completed, failed, migrationTime, migrationTime, batchId)
+  }
+}
+
+/** Verifies that restart reconciliation points to exact retained bytes, not metadata alone. */
+function isExactGpxPublicationCandidate(candidate, expectedHash) {
+  if (
+    candidate === undefined ||
+    typeof candidate.content_sha256 !== 'string' ||
+    typeof candidate.source_bytes_base64 !== 'string'
+  ) {
+    return false
+  }
+  try {
+    return normalizeGpxContentHash(
+      candidate.content_sha256,
+      candidate.source_bytes_base64,
+    ) === expectedHash
+  } catch {
+    return false
   }
 }
 
