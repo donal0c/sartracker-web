@@ -96,6 +96,7 @@ const CURRENT_SCHEMA_VERSION = 12
 const LEGACY_GPX_BACKFILL_DELAY_MS = 4
 const MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN = 100
 const MAX_GPX_RECEIPT_RECOVERY_BYTES_PER_TURN = 1024 * 1024
+const MAX_INLINE_GPX_SOURCE_BASE64_LENGTH = 256 * 1024
 const MAX_ADMITTED_GPX_IMPORT_BATCHES = 4
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
@@ -7006,12 +7007,14 @@ function assertSameHashGpxEvidenceMatches(db, current, input, displayGeometryJso
 
 /** Yields after each GPX writer slice so current-position writers can acquire WAL ownership. */
 function yieldGpxWriterTurn() {
-  return new Promise((resolve) => setTimeout(resolve, 1))
+  return new Promise((resolve) => setTimeout(resolve, 5))
 }
 
 /** Persists large GPX point sets in short writer slices, publishing only after a final fence. */
 async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationReceipt = null) {
-  if ((input.points?.length ?? 0) <= chunkSize && (input.rejections?.length ?? 0) <= chunkSize) {
+  if ((input.points?.length ?? 0) <= chunkSize
+    && (input.rejections?.length ?? 0) <= chunkSize
+    && (input.source_bytes_base64?.length ?? 0) <= MAX_INLINE_GPX_SOURCE_BASE64_LENGTH) {
     return upsertGpxEvidence(db, input, publicationReceipt)
   }
   const missionId = input.mission_id
@@ -7077,7 +7080,10 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
     geometry_json: displayGeometryJson,
     metadata_json: input.metadata_json ?? null,
     content_sha256: normalizedHash ?? existing?.content_sha256 ?? null,
-    source_bytes_base64: input.source_bytes_base64 ?? existing?.source_bytes_base64 ?? null,
+    // Exact bytes are authoritative in the immutable revision. Keeping a
+    // second multi-megabyte copy in the active projection doubles one writer
+    // turn and can delay current-position commits on slower field storage.
+    source_bytes_base64: null,
     timing_class: normalizeGpxTimingClass(input.timing_class ?? existing?.timing_class ?? 'undated'),
     outing_id: input.outing_id ?? existing?.outing_id ?? null,
     import_state: 'complete',
@@ -7105,7 +7111,7 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'staging', ?, ?, NULL)`)
       .run(
         randomUUID(), missionId, id, revisionSequence, revisionSequence, row.content_sha256,
-        row.source_bytes_base64, input.source_path, row.file_name, row.display_name,
+        input.source_bytes_base64 ?? null, input.source_path, row.file_name, row.display_name,
         row.geometry_json, row.metadata_json, row.timing_class, row.outing_id,
         completeness, timestamp,
       )
@@ -7190,7 +7196,7 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
           sourcePath: publicationReceipt.sourcePath,
           fileName: row.file_name,
           contentSha256: row.content_sha256,
-          sourceBytesBase64: row.source_bytes_base64,
+          sourceBytesBase64: input.source_bytes_base64 ?? null,
           reason,
         }, publicationTimestamp)
       }

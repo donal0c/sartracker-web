@@ -1,4 +1,4 @@
-const MAX_LEGACY_EVENT_ROWS_PER_TURN = 1_000
+const MAX_LEGACY_EVENT_ROWS_PER_TURN = 250
 
 const LEGACY_EVENT_TABLES = Object.freeze([
   Object.freeze({ table: 'mission_events', stateKey: 'mission_events', includesSequence: false }),

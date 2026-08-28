@@ -687,7 +687,7 @@ describe('mission evidence versioning [DON-277]', () => {
     let baselineCount = 0
     // Smaller production turns retain current-position priority on slower Linux
     // runners, so allow the same complete 50k settlement more bounded turns.
-    for (let attempt = 0; attempt < 3_000 && baselineCount < 50_000; attempt += 1) {
+    for (let attempt = 0; attempt < 4_500 && baselineCount < 50_000; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 10))
       baselineCount = Number(inspection.prepare(
         'SELECT COUNT(*) AS count FROM mission_object_versions',
@@ -699,7 +699,7 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(maximumHeartbeatGapMs).toBeLessThan(200)
     await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER }))
       .resolves.toMatchObject({ mission_id: mission.id })
-  }, 45_000)
+  }, 60_000)
 
   it('prepares large legacy event provenance in bounded turns and fails Replay closed meanwhile [DON-278]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-event-provenance-'))
@@ -792,7 +792,7 @@ describe('mission evidence versioning [DON-277]', () => {
     }, 10)
     const inspection = openDatabase(databaseFile)
     let pending = 1
-    for (let attempt = 0; attempt < 2_000 && pending > 0; attempt += 1) {
+    for (let attempt = 0; attempt < 8_000 && pending > 0; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 5))
       pending = Number(inspection.prepare(`SELECT COUNT(*) AS count
         FROM legacy_event_provenance_backfill_state
@@ -814,7 +814,7 @@ describe('mission evidence versioning [DON-277]', () => {
       trackLimit: 100,
       objectLimit: 100,
     })).resolves.toMatchObject({ missionId: mission.id })
-  }, 30_000)
+  }, 60_000)
 
   it('migrates an authentic v11 GPX table before creating v12 indexes and retains a static baseline [DON-274]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-real-v11-'))
@@ -1102,10 +1102,15 @@ describe('mission evidence versioning [DON-277]', () => {
       maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, current - lastHeartbeat)
       lastHeartbeat = current
     }, 10)
-    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    const inspection = openDatabase(databaseFile)
+    let scannedThroughRowid = 0
+    for (let attempt = 0; attempt < 500 && scannedThroughRowid < 500_000; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      scannedThroughRowid = Number(inspection.prepare(`SELECT scanned_through_rowid
+        FROM legacy_gpx_backfill_state WHERE singleton = 1`).get()?.scanned_through_rowid ?? 0)
+    }
     clearInterval(heartbeat)
     expect(maximumHeartbeatGapMs).toBeLessThan(200)
-    const inspection = openDatabase(databaseFile)
     expect(inspection.prepare(`SELECT scanned_through_rowid, scan_target_rowid
       FROM legacy_gpx_backfill_state WHERE singleton = 1`).get())
       .toMatchObject({ scanned_through_rowid: 500_000, scan_target_rowid: 500_000 })
@@ -3514,6 +3519,19 @@ describe('mission evidence versioning [DON-277]', () => {
     await expect(importing).resolves.toMatchObject({ imports: [expect.objectContaining({ id: expect.any(String) })] })
     expect(sequence).toBeGreaterThan(0)
     expect(maximumWriteMs).toBeLessThan(200)
+    const inspection = openDatabase(await databasePath())
+    expect(inspection.prepare(`SELECT
+        length(COALESCE(imports.source_bytes_base64, '')) AS projection_bytes,
+        length(COALESCE(revisions.source_bytes_base64, '')) AS revision_bytes
+      FROM gpx_track_imports AS imports
+      JOIN gpx_import_revisions AS revisions
+        ON revisions.import_id = imports.id
+        AND revisions.revision_sequence = imports.revision_sequence
+      WHERE imports.mission_id = ?`).get(mission.id)).toMatchObject({
+      projection_bytes: 0,
+      revision_bytes: Math.ceil(maximumBytes / 3) * 4,
+    })
+    inspection.close()
   }, 30_000)
 
   async function createStore(
