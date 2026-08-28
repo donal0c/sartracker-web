@@ -1397,6 +1397,76 @@ broad, persistence/completeness, concurrency/finalization and
 renderer/input-containment reviews on the same head. PR opened/review-ready is
 intermediate; no merge or release is authorized.
 
+## `782167e8` four-review rejection and `d98d7907` remediation
+
+Documentation-bound head
+`782167e8d4817944a367ec1e0644a10d7ef651e2`, tree
+`f3396836b04f6a00f51a3e3d8a525ec0d9271cb6`, passed isolated exact-head Linux
+workflow [`33218426707`](https://github.com/donal0c/sartracker-web/actions/runs/33218426707),
+including 295 files / 2,488 tests, indexed 960k replay, Linux x64 package
+construction and the packaged soak. All four allocated independent reviews
+nevertheless rejected that head:
+
+| Reviewer task | Charter | Centrally accepted finding |
+| --- | --- | --- |
+| `/root/pr5_broad_a584` | Broad life-safety/end-to-end | Direct archive, archive construction and both Finalize phases omitted legacy-event provenance readiness, allowing an already-finished upgraded mission to seal explicitly incomplete events. |
+| `/root/pr5_persistence_a584` | Persistence/completeness | Authentic-v11 upgrade still built `idx_mission_events_replay` synchronously over 500,000 populated rows; worker event turns bounded rows but not retained bytes and could hold SQLite's writer beyond 200 ms. It independently confirmed the archive/finalize omission. |
+| `/root/pr5_concurrency_7821` | Concurrency/finalization | Independently reproduced the archive/finalize custody failure while confirming the earlier Tauri GPX delete-versus-Finish race was fixed. |
+| `/root/pr5_renderer_a584` | Renderer/input containment | Marker retirement crossed preload unbounded and reached a main SQLite lookup before validation; browser marker/non-search-drawing mutations and operator input limits diverged from packaged Electron. |
+
+Central source retrace accepted four unique P2 defects. No new team/domain
+question was needed: remediation follows the locked current-position-priority,
+explicit missing-evidence, finalized-write-fence and renderer-containment
+requirements. Because the fixes span migration, worker/WAL, custody and
+renderer boundaries, all four reviews restart on the final exact head.
+
+Executable remediation
+`d98d79078633e4eba58973b401ae4a1ff3969c37` closes them:
+
+- new stores retain the replay event index, while populated legacy upgrades do
+  not build it synchronously. Replay exposes
+  `legacy_event_replay_scan_fallback` rather than claiming indexed legacy
+  performance;
+- legacy event reconstruction remains capped at 1,000 rows but is additionally
+  capped at 512 KiB of retained row data per immediate transaction. A source
+  row above 256 KiB remains byte-for-byte in `mission_events`, receives a
+  bounded explicit quarantine record, and leaves Replay/archive/finalization
+  fail-closed until bounded repair;
+- direct archive request/build, initial/resumed/idempotent Finalize and final
+  sealing all apply the same event-provenance readiness fence used by Replay
+  and Finish, covering pending, failed and quarantined reconstruction; and
+- marker/drawing upsert and retirement identities are UTF-8 bounded before
+  renderer cloning and before main lookup. Browser validation mirrors marker
+  and non-search drawing scalar/JSON/coordinate bounds; visible operator text
+  inputs expose the same limits.
+
+The focused regressions were red against `782167e8`: authentic-v11 open was
+346.77 ms, pending-event direct archive succeeded, marker retirement crossed
+preload with a 64 MiB identity, and the harness accepted oversized marker and
+drawing evidence. On the corrected executable tree:
+
+- full serial unit passed 295 files / 2,492 tests; the complete evidence and
+  versioning file passed 67/67;
+- the 1,000 x 64 KiB event workload settled with every continuously attempted
+  current-position write below the unchanged 200 ms hard gate; a 256 KiB-plus
+  event remained retained and produced explicit quarantine/custody refusal;
+- CommonJS syntax, ESLint, TypeScript/Vite build and bundle budgets, Rust
+  formatting and Rust backend 57 passed / one intentional keychain ignore;
+- Chromium passed 167/167, including visible marker/drawing input limits and
+  the production-aligned browser harness; and
+- fresh indexed 960k qualification generated digest
+  `d4e48eb48d962781475f6864f6190a23f8da163f4d698b03c8365e51b96840db`
+  (765,747,200 bytes): import dispatch 2.08 ms / total 13,021.33 ms;
+  4,201 concurrent current writes at 25.23 ms maximum / 1.97 ms p95;
+  event-loop maximum 26.56 ms; Replay seek 61.35 ms; late page 47.34 ms;
+  restart open 2.78 ms and restart seek 50.13 ms with exact equality.
+
+The documentation-bound descendant still requires a rebuilt unsigned macOS
+package, isolated exact-head Linux qualification and four clean restarted
+reviews. Existing visual screenshots remain standing because the only visible
+UI change is non-rendered input-length enforcement. PR opened/review-ready is
+intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
