@@ -125,7 +125,7 @@ describe('startGpxRuntime', () => {
     )
   })
 
-  it('loads GPX renderer projections through bounded pages instead of the unbounded evidence API [DON-274]', async () => {
+  it('keeps one GPX projection page in renderer state and replaces it on explicit pagination [DON-274]', async () => {
     const imports = [
       createStoredImport('gpx-a', 'mission-1'),
       createStoredImport('gpx-b', 'mission-1'),
@@ -136,6 +136,7 @@ describe('startGpxRuntime', () => {
       .fn()
       .mockResolvedValueOnce({ entries: imports.slice(0, 2), nextCursor: 'page-2' })
       .mockResolvedValueOnce({ entries: imports.slice(2), nextCursor: null })
+      .mockResolvedValueOnce({ entries: imports.slice(0, 2), nextCursor: 'page-2' })
     const applyRuntime = vi.fn()
     const controller = await startGpxRuntime({
       gpxStore: {
@@ -150,13 +151,39 @@ describe('startGpxRuntime', () => {
     await controller.refreshMission('mission-1')
 
     expect(listGpxImports).not.toHaveBeenCalled()
-    expect(listGpxImportPage).toHaveBeenNthCalledWith(1, {
+    expect(listGpxImportPage).toHaveBeenCalledTimes(1)
+    expect(listGpxImportPage).toHaveBeenCalledWith({
       missionId: 'mission-1', limit: 25,
     })
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      imports: imports.slice(0, 2),
+      importPageNumber: 1,
+      hasMoreImports: true,
+      loadingMoreImports: false,
+    }))
+
+    await controller.loadNextImports()
+
     expect(listGpxImportPage).toHaveBeenNthCalledWith(2, {
       missionId: 'mission-1', cursor: 'page-2', limit: 25,
     })
-    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ imports }))
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      imports: imports.slice(2),
+      importPageNumber: 2,
+      hasMoreImports: false,
+      loadingMoreImports: false,
+    }))
+
+    await controller.returnToFirstImports()
+
+    expect(listGpxImportPage).toHaveBeenNthCalledWith(3, {
+      missionId: 'mission-1', limit: 25,
+    })
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      imports: imports.slice(0, 2),
+      importPageNumber: 1,
+      hasMoreImports: true,
+    }))
   })
 
   it('publishes persisted GPX import failures after restart without exposing retained bytes or paths [DON-274]', async () => {
@@ -228,6 +255,33 @@ describe('startGpxRuntime', () => {
       error: expect.stringMatching(/additional retained GPX import issues/i),
     }))
     expect(JSON.stringify(applyRuntime.mock.calls.at(-1))).not.toContain('/private/oversized.gpx')
+  })
+
+  it('reports a successful native import even when its projection is beyond the visible page [DON-274]', async () => {
+    const visible = createStoredImport('gpx-visible', 'mission-1')
+    const listGpxImportPage = vi.fn().mockResolvedValue({
+      entries: [visible],
+      nextCursor: 'more-imports',
+    })
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockRejectedValue(new Error('unbounded API must not be called')),
+        listGpxImportPage,
+        importGpxEvidencePaths: vi.fn().mockResolvedValue({
+          imports: [{ id: 'gpx-new-beyond-page' }],
+          failures: [],
+          dispatchDurationMs: 1,
+        }),
+        upsertGpxImport: vi.fn(),
+        deleteGpxImport: vi.fn(),
+      },
+      applyRuntime: vi.fn(),
+    })
+    await controller.refreshMission('mission-1')
+
+    await expect(controller.importPaths(['/field/zulu.gpx'])).resolves.toEqual([
+      { id: 'gpx-new-beyond-page' },
+    ])
   })
 
   it('updates one imported GPX colour while preserving the track geometry and metadata', async () => {

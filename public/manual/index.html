@@ -1520,6 +1520,13 @@
             layer tree.
           </p>
           <p>
+            The panel keeps one bounded page of at most 25 imported-track projections in the renderer.
+            A <strong>+</strong> count and an amber notice state when more retained imports exist. Use
+            <strong>Show Next Page</strong> to replace the current page, or
+            <strong>Return to First Page</strong>; pages are never silently combined into an unbounded list.
+            Mission Review uses the same bounded-page disclosure for its GPX totals and Layer Console.
+          </p>
+          <p>
             Desktop imports preserve the exact GPX source bytes and a SHA-256 content identity. Importing the
             same bytes through another path is idempotent; changed bytes at the same path create a retained
             revision. A retry claiming the same exact bytes cannot replace geometry, timing, parsed points or
@@ -1621,7 +1628,9 @@
             Open the <strong>Replay</strong> tab and choose a local Europe/Dublin time to reconstruct the mission
             evidence that was known at that time. Replay is read-only: it does not reproduce the coordinator's
             historic pan, zoom, filters or open panels, and it never replaces or pauses the operational live
-            map. Use <strong>Return to Live / now</strong> to leave Replay.
+            map. The lifecycle label shows the reconstructed mission state at that time — active, paused,
+            finished or finalized — while the underlying transition remains retained as audit provenance.
+            Use <strong>Return to Live / now</strong> to leave Replay.
           </p>
           <p>
             Replay loads exact dated Traccar fixes and GPX points progressively and shows real page progress.
@@ -1658,6 +1667,10 @@
             explicit quarantine, are excluded from rendered
             evidence, and block archive custody as well as mission completion. A migrated import with zero safe
             points still appears in the static evidence list with its rejection count instead of disappearing.
+            Legacy markers, drawings, outings, search areas, assignments and passes are also given immutable
+            baselines in bounded background slices. Replay and evidence mutation fail closed until those
+            baselines settle, while live current-position writes remain available. An over-envelope legacy
+            object remains retained in the mission store and Replay shows an explicit bounded-summary warning.
           </p>
           <figure class="screenshot">
             <img src="assets/mission-evidence-replay.png" alt="Mission Review Replay showing data known at the selected time and an undated GPX evidence limitation" />
@@ -1672,7 +1685,7 @@
             it never changes or supplies the declared outcome.
           </p>
           <p>
-            Select the search area, outing and assignment explicitly. Enter the pass start and optional end as
+            Select the search area, outing and assignment explicitly. Enter both the pass start and pass end as
             Europe/Dublin local times, and add participant, clue and track-evidence identities where available.
             SAR Tracker converts those local controls to an explicit-offset, calendar-valid instant before the
             evidence write; ambiguous, offset-free or impossible timestamps are refused rather than guessed.
@@ -1682,8 +1695,9 @@
             refused before lookup or evidence persistence so it cannot delay current-position processing.
             Search-area geometry, metadata and advisory coverage are also bounded and must be valid JSON;
             malformed optional values are refused rather than silently treated as missing evidence.
-            A pass must stay inside its assignment's outing and cannot be dated in the future. A completed outing
-            requires an explicit pass end; an open pass must be ended before its outing can be ended, and later
+            A pass must stay inside its assignment's outing and cannot be dated in the future. Every
+            coordinator-declared outcome requires an explicit pass end; an open outing does not turn a declared
+            outcome into an active pass. Later
             outing or assignment edits cannot silently move recorded pass evidence outside its original scope.
             The recorded pass displays its declared outcome, exact time window, revision and evidence-link counts;
             SAR Tracker never substitutes the first area or outing and never invents a zero-duration pass.

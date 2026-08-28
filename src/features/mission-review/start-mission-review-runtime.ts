@@ -48,6 +48,13 @@ export type MissionReviewRuntimeState = {
   readonly includeTelemetry: boolean
   /** True when the audit log was capped and older events are not shown. */
   readonly auditLogTruncated: boolean
+  readonly gpxImports: {
+    readonly pageNumber: number
+    readonly visibleCount: number
+    readonly hasMore: boolean
+    readonly loading: boolean
+    readonly nextCursor: string | null
+  }
   readonly replay: MissionReplayRuntimeState
   readonly searchOperations: {
     readonly areas: readonly SearchArea[]
@@ -70,6 +77,8 @@ export type MissionReviewController = {
   readonly load: (preferredMissionId?: string | null) => Promise<void>
   readonly selectMission: (missionId: string) => Promise<void>
   readonly refreshSelectedMission: () => Promise<void>
+  readonly loadNextGpxImports: () => Promise<void>
+  readonly returnToFirstGpxImports: () => Promise<void>
   /** Reloads the selected mission with telemetry events shown or hidden. */
   readonly setIncludeTelemetry: (includeTelemetry: boolean) => Promise<void>
   readonly seekReplay: (selectedTime: string, filters?: {
@@ -118,6 +127,7 @@ const EMPTY_RUNTIME: MissionReviewRuntimeState = {
   error: null,
   includeTelemetry: false,
   auditLogTruncated: false,
+  gpxImports: { pageNumber: 1, visibleCount: 0, hasMore: false, loading: false, nextCursor: null },
   replay: {
     mode: 'live',
     selectedTime: null,
@@ -151,6 +161,15 @@ export async function startMissionReviewRuntime(
     },
     refreshSelectedMission: async () => {
       await loadMission(state.selectedMissionId, true)
+    },
+    loadNextGpxImports: async () => {
+      const cursor = state.gpxImports.nextCursor
+      if (cursor === null || state.selectedMissionId === null || state.gpxImports.loading) return
+      await loadMission(state.selectedMissionId, true, cursor, state.gpxImports.pageNumber + 1)
+    },
+    returnToFirstGpxImports: async () => {
+      if (state.selectedMissionId === null || state.gpxImports.pageNumber === 1 || state.gpxImports.loading) return
+      await loadMission(state.selectedMissionId, true, undefined, 1)
     },
     setIncludeTelemetry: async (includeTelemetry) => {
       state = { ...state, includeTelemetry }
@@ -219,6 +238,8 @@ export async function startMissionReviewRuntime(
   async function loadMission(
     preferredMissionId: string | null,
     preserveSnapshot: boolean,
+    gpxCursor?: string,
+    gpxPageNumber: number = 1,
   ): Promise<void> {
     const currentToken = ++refreshToken
     let startedReviewRequestId: string | null = null
@@ -232,6 +253,10 @@ export async function startMissionReviewRuntime(
       loading: !preserveSnapshot || state.snapshot === null,
       refreshing: preserveSnapshot && state.snapshot !== null,
       error: null,
+      gpxImports: {
+        ...state.gpxImports,
+        loading: gpxCursor !== undefined || gpxPageNumber !== state.gpxImports.pageNumber,
+      },
     }
     publishRuntime()
 
@@ -257,6 +282,7 @@ export async function startMissionReviewRuntime(
           refreshing: false,
           error: null,
           auditLogTruncated: false,
+          gpxImports: { ...EMPTY_RUNTIME.gpxImports },
           replay: { ...EMPTY_RUNTIME.replay },
           searchOperations: { ...EMPTY_RUNTIME.searchOperations },
         }
@@ -270,7 +296,7 @@ export async function startMissionReviewRuntime(
       startedReviewRequestId = reviewRequestId
       activeReviewRequestId = reviewRequestId
       const [
-        reviewRead, info, markers, devices, drawings, helicopters, gpxImports, layerMetadata,
+        reviewRead, info, markers, devices, drawings, helicopters, gpxPage, layerMetadata,
         searchAreas, searchAssignments, searchPasses, outings,
       ] =
         await Promise.all([
@@ -286,7 +312,7 @@ export async function startMissionReviewRuntime(
           'listHelicopters' in dependencies.missionStore
             ? dependencies.missionStore.listHelicopters(selectedMission.id)
             : Promise.resolve([]),
-          readGpxImportProjections(selectedMission.id, currentToken),
+          readGpxImportProjectionPage(selectedMission.id, currentToken, gpxCursor),
           dependencies.layerCatalogStore.listMetadata(selectedMission.id),
           dependencies.missionStore.listSearchAreas?.(selectedMission.id) ?? Promise.resolve([]),
           dependencies.missionStore.listSearchAssignments?.(selectedMission.id) ?? Promise.resolve([]),
@@ -316,13 +342,20 @@ export async function startMissionReviewRuntime(
           breadcrumbCount: reviewRead.breadcrumbCount,
           drawings,
           helicopters,
-          gpxImports,
+          gpxImports: gpxPage.entries,
           layerMetadata,
         }),
         loading: false,
         refreshing: false,
         error: null,
         auditLogTruncated,
+        gpxImports: {
+          pageNumber: gpxPageNumber,
+          visibleCount: gpxPage.entries.length,
+          hasMore: gpxPage.nextCursor !== null,
+          loading: false,
+          nextCursor: gpxPage.nextCursor,
+        },
         replay: selectedMission.id === state.selectedMissionId
           ? state.replay
           : { ...EMPTY_RUNTIME.replay },
@@ -342,20 +375,23 @@ export async function startMissionReviewRuntime(
         loading: false,
         refreshing: false,
         error: toErrorMessage(error),
+        gpxImports: { ...state.gpxImports, loading: false },
       }
       publishRuntime()
     }
   }
 
   /** Defers the paged GPX projection reader until review data is requested. */
-  async function readGpxImportProjections(
+  async function readGpxImportProjectionPage(
     missionId: string,
     requestToken: number,
+    cursor?: string,
   ) {
-    const { readAllGpxImportProjections } = await import('../gpx/read-gpx-import-pages')
-    return await readAllGpxImportProjections(
+    const { readGpxImportProjectionPage: readPage } = await import('../gpx/read-gpx-import-pages')
+    return await readPage(
       dependencies.missionStore,
       missionId,
+      cursor,
       () => requestToken === refreshToken,
     )
   }
@@ -519,6 +555,10 @@ export async function startMissionReviewRuntime(
             totalObjectCount: chunk.totalObjectCount,
             objectCursor: chunk.objectCursor,
             nextObjectCursor: chunk.nextObjectCursor,
+            limitations: reconcileObjectPageLimitations(
+              replay.result.limitations,
+              chunk.summarizedObjectCount,
+            ),
           },
           loadingMore: false,
         },
@@ -550,6 +590,23 @@ export async function startMissionReviewRuntime(
   function publishRuntime(): void {
     dependencies.applyRuntime(state)
   }
+}
+
+/** Replaces page-local large-object disclosure without disturbing mission-wide limitations. */
+function reconcileObjectPageLimitations(
+  limitations: MissionReplayReadResult['limitations'],
+  summarizedObjectCount: number,
+): MissionReplayReadResult['limitations'] {
+  const missionWideLimitations = limitations.filter(
+    (limitation) => limitation.code !== 'large_object_details_summarized',
+  )
+  return summarizedObjectCount > 0
+    ? [...missionWideLimitations, {
+        code: 'large_object_details_summarized',
+        message: 'Large evidence states are represented by bounded summaries and retained-state hashes in this page.',
+        count: summarizedObjectCount,
+      }]
+    : missionWideLimitations
 }
 
 function selectMissionFromList(

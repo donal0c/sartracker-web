@@ -69,7 +69,7 @@ function readMissionReplayStateWithinSnapshot(database, input) {
 }
 
 function readMissionLifecycle(database, input) {
-  return database.prepare(`SELECT id, event_type, timestamp, details_json, recorded_at,
+  const event = database.prepare(`SELECT id, event_type, timestamp, details_json, recorded_at,
       recording_completeness
     FROM mission_events
     WHERE mission_id = ?
@@ -82,6 +82,27 @@ function readMissionLifecycle(database, input) {
       AND recorded_at <= ?
     ORDER BY timestamp DESC, recorded_at DESC, rowid DESC LIMIT 1`)
     .get(input.missionId, input.selectedTime, input.selectedTime) ?? null
+  return event === null
+    ? null
+    : { ...event, state: missionLifecycleStateFromEventType(event.event_type) }
+}
+
+/** Converts lifecycle transition provenance into the mission state established by that event. */
+function missionLifecycleStateFromEventType(eventType) {
+  switch (eventType) {
+    case 'mission_created':
+    case 'mission_resumed':
+      return 'active'
+    case 'mission_paused':
+      return 'paused'
+    case 'mission_finished':
+    case 'mission_unlocked':
+      return 'finished'
+    case 'mission_finalized':
+      return 'finalized'
+    default:
+      return 'unknown'
+  }
 }
 
 function readMissionParticipants(database, input) {
@@ -630,6 +651,18 @@ function readReplayLimitations(
       message: 'Earlier revisions are unknown for one or more legacy evidence objects.',
     })
   }
+  const omittedLegacyState = database.prepare(`SELECT COUNT(*) AS count
+    FROM mission_object_versions
+    WHERE mission_id = ? AND completeness = 'legacy_baseline' AND recorded_at <= ?
+      AND json_extract(state_json, '$.legacy_state_omitted') = 1`)
+    .get(input.missionId, input.selectedTime)
+  if (Number(omittedLegacyState?.count ?? 0) > 0) {
+    limitations.push({
+      code: 'legacy_object_state_retained_outside_replay',
+      message: 'One or more over-envelope legacy evidence states remain retained in the mission store but Replay exposes only an explicit bounded baseline summary.',
+      count: Number(omittedLegacyState.count),
+    })
+  }
   if (staticGpxPointCount > 0) {
     limitations.push({
       code: 'undated_gpx_static',
@@ -1001,6 +1034,7 @@ function parseState(value, objectType, objectId) {
 module.exports = {
   MAX_REPLAY_TRACK_LIMIT,
   MAX_REPLAY_OBJECT_LIMIT,
+  missionLifecycleStateFromEventType,
   normalizeReplayInput,
   encodeReplayTrackCursor,
   readMissionReplayObjectChunk,

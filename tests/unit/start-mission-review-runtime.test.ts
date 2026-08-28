@@ -6,6 +6,7 @@ import type {
   Marker,
   Mission,
   MissionEvent,
+  MissionReplayObjectChunkResult,
   MissionStoreInfo,
   Position,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
@@ -36,7 +37,7 @@ describe('startMissionReviewRuntime', () => {
     )
   })
 
-  it('loads review GPX projections through bounded renderer pages [DON-274]', async () => {
+  it('keeps one review GPX projection page in renderer state and replaces it on demand [DON-274]', async () => {
     const listGpxImports = vi.fn().mockRejectedValue(new Error('unbounded API must not be called'))
     const listGpxImportPage = vi
       .fn()
@@ -65,9 +66,54 @@ describe('startMissionReviewRuntime', () => {
       missionId: FIRST_MISSION.id, limit: 25,
     })
     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      gpxImports: expect.objectContaining({
+        pageNumber: 1,
+        visibleCount: 1,
+        hasMore: false,
+        loading: false,
+      }),
       snapshot: expect.objectContaining({
         summary: expect.objectContaining({ gpxImportCount: 1 }),
       }),
+    }))
+  })
+
+  it('makes additional review GPX evidence explicit without accumulating renderer pages [DON-274]', async () => {
+    const firstPage = [{
+      id: 'gpx-1', mission_id: FIRST_MISSION.id, source_path: '/field/gpx-1.gpx',
+      file_name: 'gpx-1.gpx', display_name: 'Alpha track',
+      geometry_json: '{"type":"MultiLineString","coordinates":[]}', metadata_json: null,
+      imported_at: '2026-04-10T08:00:00.000Z', updated_at: '2026-04-10T08:00:00.000Z',
+    }]
+    const secondPage = [{ ...firstPage[0], id: 'gpx-2', display_name: 'Bravo track' }]
+    const listGpxImportPage = vi.fn()
+      .mockResolvedValueOnce({ entries: firstPage, nextCursor: 'page-2' })
+      .mockResolvedValueOnce({ entries: secondPage, nextCursor: null })
+      .mockResolvedValueOnce({ entries: firstPage, nextCursor: 'page-2' })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listGpxImportPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+    expect(listGpxImportPage).toHaveBeenCalledTimes(1)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      gpxImports: expect.objectContaining({ pageNumber: 1, visibleCount: 1, hasMore: true }),
+    }))
+
+    await runtime.loadNextGpxImports()
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      gpxImports: expect.objectContaining({ pageNumber: 2, visibleCount: 1, hasMore: false }),
+      snapshot: expect.objectContaining({
+        summary: expect.objectContaining({ gpxImportCount: 1 }),
+      }),
+    }))
+
+    await runtime.returnToFirstGpxImports()
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      gpxImports: expect.objectContaining({ pageNumber: 1, visibleCount: 1, hasMore: true }),
     }))
   })
 
@@ -188,6 +234,78 @@ describe('startMissionReviewRuntime', () => {
         loadingMore: false,
         result: expect.objectContaining({
           tracks: [expect.objectContaining({ evidence_id: 'newest-page' })],
+        }),
+      }),
+    }))
+  })
+
+  it('replaces the large-state limitation when the displayed object page changes [DON-278]', async () => {
+    const firstResult = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      nextObjectCursor: '100',
+      totalObjectCount: 300,
+      limitations: [{
+        code: 'large_object_details_summarized',
+        message: 'Large evidence states are represented by bounded summaries and retained-state hashes in this page.',
+        count: 1,
+      }],
+    }
+    const laterPage = {
+      missionId: FIRST_MISSION.id,
+      selectedTime: firstResult.selectedTime,
+      objects: [],
+      totalObjectCount: 300,
+      objectCursor: '100',
+      nextObjectCursor: '200',
+      progress: 2 / 3,
+      summarizedObjectCount: 0,
+    } satisfies MissionReplayObjectChunkResult
+    const finalPage = {
+      ...laterPage,
+      objectCursor: '200',
+      nextObjectCursor: null,
+      progress: 1,
+      summarizedObjectCount: 2,
+    } satisfies MissionReplayObjectChunkResult
+    const readMissionReplay = vi.fn().mockResolvedValue(firstResult)
+    const readMissionReplayObjectChunk = vi.fn()
+      .mockResolvedValueOnce(laterPage)
+      .mockResolvedValueOnce(finalPage)
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReplay,
+        readMissionReplayObjectChunk,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.seekReplay(firstResult.selectedTime)
+
+    await runtime.loadNextReplayObjects()
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        result: expect.objectContaining({
+          objectCursor: '100',
+          limitations: expect.not.arrayContaining([
+            expect.objectContaining({ code: 'large_object_details_summarized' }),
+          ]),
+        }),
+      }),
+    }))
+
+    await runtime.loadNextReplayObjects()
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        result: expect.objectContaining({
+          objectCursor: '200',
+          limitations: expect.arrayContaining([expect.objectContaining({
+            code: 'large_object_details_summarized',
+            count: 2,
+          })]),
         }),
       }),
     }))

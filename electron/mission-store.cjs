@@ -42,8 +42,10 @@ const {
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 const { createOutingStore } = require('./outing-store.cjs')
 const {
+  assertLegacyMissionObjectBackfillSettled,
   backfillLegacyMissionObjectVersions,
   createMissionEvidenceVersionStore,
+  initializeLegacyMissionObjectVersionBackfill,
 } = require('./mission-evidence-version-store.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
@@ -84,7 +86,7 @@ const {
 } = require('./coverage-ledger.cjs')
 
 const CURRENT_SCHEMA_VERSION = 12
-const LEGACY_GPX_BACKFILL_DELAY_MS = 5
+const LEGACY_GPX_BACKFILL_DELAY_MS = 4
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -425,29 +427,51 @@ function createElectronMissionStore(options) {
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   const migrationState = migrate(db)
-  let legacyGpxBackfillTimer = null
-  let legacyGpxBackfillFailure = null
+  let legacyEvidenceBackfillTimer = null
+  let legacyEvidenceBackfillFailure = null
+  let nextLegacyEvidenceBackfillKind = 'object'
   let storeClosed = false
-  const scheduleLegacyGpxBackfill = () => {
-    if (storeClosed || migrationState.legacyGpxBackfillRemaining === 0
-      || legacyGpxBackfillTimer !== null || legacyGpxBackfillFailure !== null) return
-    legacyGpxBackfillTimer = setTimeout(() => {
-      legacyGpxBackfillTimer = null
+  const scheduleLegacyEvidenceBackfill = () => {
+    const pending = migrationState.legacyGpxBackfillRemaining > 0
+      || migrationState.legacyMissionObjectBackfillRemaining > 0
+    if (storeClosed || !pending || legacyEvidenceBackfillTimer !== null
+      || legacyEvidenceBackfillFailure !== null) return
+    legacyEvidenceBackfillTimer = setTimeout(() => {
+      legacyEvidenceBackfillTimer = null
       if (storeClosed) return
       try {
-        const result = backfillLegacyGpxRevisions(db, now(), 1)
-        migrationState.legacyGpxBackfillRemaining = result.remaining
-        scheduleLegacyGpxBackfill()
+        const objectPending = migrationState.legacyMissionObjectBackfillRemaining > 0
+        const gpxPending = migrationState.legacyGpxBackfillRemaining > 0
+        if (objectPending && (nextLegacyEvidenceBackfillKind === 'object' || !gpxPending)) {
+          const result = backfillLegacyMissionObjectVersions(db, now())
+          migrationState.legacyMissionObjectBackfillRemaining = result.remaining
+          nextLegacyEvidenceBackfillKind = 'gpx'
+        } else if (gpxPending) {
+          const result = backfillLegacyGpxRevisions(db, now(), 1)
+          migrationState.legacyGpxBackfillRemaining = result.remaining
+          nextLegacyEvidenceBackfillKind = 'object'
+        }
+        if (migrationState.legacyGpxBackfillRemaining === 0
+          && migrationState.legacyMissionObjectBackfillRemaining === 0) {
+          db.prepare(`DELETE FROM metadata
+            WHERE key = 'legacy_evidence_backfill_failure'`).run()
+        }
+        scheduleLegacyEvidenceBackfill()
       } catch (error) {
-        legacyGpxBackfillFailure = safeEvidenceFailureReason(error?.message ?? error)
-        console.error(`Legacy GPX evidence migration stopped safely: ${legacyGpxBackfillFailure}`)
+        legacyEvidenceBackfillFailure = safeEvidenceFailureReason(error?.message ?? error)
+        db.prepare(`INSERT INTO metadata (key, value) VALUES (
+          'legacy_evidence_backfill_failure', ?
+        ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+          .run(legacyEvidenceBackfillFailure)
+        console.error(`Legacy evidence migration stopped safely: ${legacyEvidenceBackfillFailure}`)
       }
     }, LEGACY_GPX_BACKFILL_DELAY_MS)
   }
-  scheduleLegacyGpxBackfill()
+  scheduleLegacyEvidenceBackfill()
   const evidenceVersionStore = createMissionEvidenceVersionStore({
     db,
     faultInjection: options.evidenceVersionFaultInjection ?? {},
+    assertReady: () => assertLegacyMissionObjectBackfillSettled(db),
   })
   const outingStore = createOutingStore({
     db,
@@ -558,9 +582,9 @@ function createElectronMissionStore(options) {
         throw new Error('Cannot close the mission store while GPX evidence imports are active; call prepareClose first.')
       }
       storeClosed = true
-      if (legacyGpxBackfillTimer !== null) {
-        clearTimeout(legacyGpxBackfillTimer)
-        legacyGpxBackfillTimer = null
+      if (legacyEvidenceBackfillTimer !== null) {
+        clearTimeout(legacyEvidenceBackfillTimer)
+        legacyEvidenceBackfillTimer = null
       }
       ingestAnomalyOutbox.dispose()
       for (const controller of activeBreadcrumbQueryControllers) {
@@ -1165,21 +1189,18 @@ function createElectronMissionStore(options) {
       await activeQuery.completion.catch(() => undefined)
       return true
     },
-    readMissionReplay: async (input, requestId) => executeMissionReplayRead(
-      input,
-      requestId,
-      'state',
-    ),
-    readMissionReplayTrackChunk: async (input, requestId) => executeMissionReplayRead(
-      input,
-      requestId,
-      'chunk',
-    ),
-    readMissionReplayObjectChunk: async (input, requestId) => executeMissionReplayRead(
-      input,
-      requestId,
-      'objects',
-    ),
+    readMissionReplay: async (input, requestId) => {
+      assertLegacyMissionObjectBackfillSettled(db)
+      return executeMissionReplayRead(input, requestId, 'state')
+    },
+    readMissionReplayTrackChunk: async (input, requestId) => {
+      assertLegacyMissionObjectBackfillSettled(db)
+      return executeMissionReplayRead(input, requestId, 'chunk')
+    },
+    readMissionReplayObjectChunk: async (input, requestId) => {
+      assertLegacyMissionObjectBackfillSettled(db)
+      return executeMissionReplayRead(input, requestId, 'objects')
+    },
     cancelMissionReplay: async (requestId) => {
       const normalizedRequestId = normalizeMissionReviewRequestId(requestId, true)
       const activeQuery = missionReplayQueryControllersByRequestId.get(normalizedRequestId)
@@ -1363,7 +1384,10 @@ function createElectronMissionStore(options) {
         missionId, 'Search pass mission', MAX_SEARCH_OPERATION_ID_LENGTH,
       ),
     ),
-    listMissionObjectVersions: async (input) => evidenceVersionStore.listVersions(input),
+    listMissionObjectVersions: async (input) => {
+      assertLegacyMissionObjectBackfillSettled(db)
+      return evidenceVersionStore.listVersions(input)
+    },
     listLayerCatalogMetadata: async (missionId) => listLayerCatalogMetadata(db, missionId),
     upsertLayerCatalogMetadata: async (input) => upsertLayerCatalogMetadata(db, input),
     clearLayerCatalogMetadata: async (missionId) => clearLayerCatalogMetadata(db, missionId),
@@ -2295,6 +2319,14 @@ function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_mission_object_versions_replay
       ON mission_object_versions(mission_id, recorded_at, effective_at, object_type, object_id, version_sequence);
+    CREATE TABLE IF NOT EXISTS legacy_mission_object_backfill_state (
+      object_type TEXT PRIMARY KEY CHECK(object_type IN (
+        'marker', 'drawing', 'outing', 'search_area', 'search_assignment', 'search_pass'
+      )),
+      scanned_through_id TEXT,
+      scan_target_id TEXT,
+      updated_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS layer_catalog_entries (
       mission_id TEXT NOT NULL,
       node_id TEXT NOT NULL,
@@ -2387,7 +2419,12 @@ function migrate(db) {
     `)
 
     backfillLegacySearchAreas(db, migrationTime)
-    backfillLegacyMissionObjectVersions(db, migrationTime)
+    recoverInterruptedDirectArchiveFences(db, migrationTime)
+    initializeLegacyMissionObjectVersionBackfill(
+      db,
+      migrationTime,
+      existingSchemaVersion < CURRENT_SCHEMA_VERSION,
+    )
     recoverUnsettledGpxImportReceipts(db, migrationTime)
     recoverStagingGpxImports(db, migrationTime)
     if (positionsRequireProvenanceBackfill && existingSchemaVersion !== 0
@@ -2532,7 +2569,10 @@ function migrate(db) {
   })
   applyMigrations()
   const legacyGpxBackfill = backfillLegacyGpxRevisions(db, migrationTime, 3, false)
-  return { legacyGpxBackfillRemaining: legacyGpxBackfill.remaining }
+  return {
+    legacyGpxBackfillRemaining: legacyGpxBackfill.remaining,
+    legacyMissionObjectBackfillRemaining: 1,
+  }
 }
 
 /** Returns whether one named schema table already exists. */
@@ -3326,6 +3366,7 @@ function finishMission(db, missionId) {
   const additionalPausedSeconds =
     mission.status === 'paused' ? calculatePausedSeconds(mission.pause_time, timestamp) : 0
   const transaction = db.transaction(() => {
+    assertLegacyMissionObjectBackfillSettled(db)
     assertNoUnsettledGpxImportState(db, missionId)
     db.prepare(`UPDATE missions
       SET status = ?,
@@ -3368,14 +3409,84 @@ async function createMissionArchive(
   recordArchiveEvent = true,
   archiveFaultInjection = {},
 ) {
+  if (!recordArchiveEvent) {
+    return buildMissionArchive(
+      db,
+      missionId,
+      backupCoordinator,
+      archiveDirectory,
+      false,
+      archiveFaultInjection,
+      null,
+    )
+  }
+  const requestedAt = now()
+  db.transaction(() => {
+    const mission = getMission(db, missionId)
+    if (mission.status !== 'finished' && mission.status !== 'finalized') {
+      throw new Error('Only finished or finalized missions can be archived.')
+    }
+    assertMissionFinalizationNotInProgress(db, missionId)
+    assertLegacyMissionObjectBackfillSettled(db)
+    assertNoUnsettledGpxImportState(db, missionId)
+    db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
+      VALUES (?, ?)`).run(missionId, requestedAt)
+    insertEvent(db, missionId, 'mission_archive_requested', requestedAt, {
+      resulting_status: mission.status,
+      archive_kind: 'direct',
+    })
+  })()
+  try {
+    return await buildMissionArchive(
+      db,
+      missionId,
+      backupCoordinator,
+      archiveDirectory,
+      true,
+      archiveFaultInjection,
+      requestedAt,
+    )
+  } catch (error) {
+    db.transaction(() => {
+      const deleted = db.prepare(`DELETE FROM mission_finalization_fences
+        WHERE mission_id = ? AND requested_at = ?`).run(missionId, requestedAt)
+      if (deleted.changes > 0) {
+        appendEvent(db, missionId, 'mission_archive_failed', {
+          resulting_status: getMission(db, missionId).status,
+          archive_kind: 'direct',
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    })()
+    throw error
+  }
+}
+
+/** Builds and commits one immutable mission archive under its caller-owned evidence fence. */
+async function buildMissionArchive(
+  db,
+  missionId,
+  backupCoordinator,
+  archiveDirectory,
+  recordArchiveEvent,
+  archiveFaultInjection,
+  directArchiveFenceToken,
+) {
   const mission = getMission(db, missionId)
   if (mission.status !== 'finished' && mission.status !== 'finalized') {
     throw new Error('Only finished or finalized missions can be archived.')
   }
-  if (recordArchiveEvent) assertMissionFinalizationNotInProgress(db, missionId)
+  if (recordArchiveEvent) {
+    const fence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
+      WHERE mission_id = ?`).get(missionId)
+    if (fence?.requested_at !== directArchiveFenceToken) {
+      throw new Error('Mission archive evidence fence is missing; retry archive creation.')
+    }
+  }
+  assertLegacyMissionObjectBackfillSettled(db)
   assertNoUnsettledGpxImportState(db, missionId)
 
-  const createdAt = now()
+  const createdAt = directArchiveFenceToken ?? now()
   const backupPath = await backupCoordinator.syncBackup()
   const snapshotBytes = await fs.readFile(backupPath)
   if (snapshotBytes.length === 0) {
@@ -3448,8 +3559,14 @@ async function createMissionArchive(
         if (currentMission.status !== mission.status) {
           throw new Error('Mission state changed while the archive was being created; retry archive creation.')
         }
-        assertMissionFinalizationNotInProgress(db, missionId)
+        const fence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
+          WHERE mission_id = ?`).get(missionId)
+        if (fence?.requested_at !== directArchiveFenceToken) {
+          throw new Error('Mission archive evidence fence changed; retry archive creation.')
+        }
         appendEvent(db, missionId, 'mission_archived', { archive_path: finalPath }, createdAt)
+        db.prepare(`DELETE FROM mission_finalization_fences
+          WHERE mission_id = ? AND requested_at = ?`).run(missionId, directArchiveFenceToken)
       })()
     } catch (error) {
       await fs.rm(finalPath, { force: true })
@@ -3530,6 +3647,7 @@ async function finalizeMission(
     throw new Error('Only finished missions can be finalized.')
   }
   const resumedProtectedFinalization = db.transaction(() => {
+    assertLegacyMissionObjectBackfillSettled(db)
     assertNoUnsettledGpxImportState(db, missionId)
     const existingFence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
       WHERE mission_id = ?`).get(missionId)
@@ -3579,6 +3697,7 @@ async function finalizeMission(
   }
 
   const transaction = db.transaction(() => {
+    assertLegacyMissionObjectBackfillSettled(db)
     assertNoUnsettledGpxImportState(db, missionId)
     const currentMission = getMission(db, missionId)
     if (currentMission.status !== 'finished') {
@@ -5138,6 +5257,9 @@ function upsertSearchPass(db, versionStore, input) {
     endedAt,
     currentTime: timestamp,
   })
+  if (endedAt === null) {
+    throw new Error('A coordinator-declared search pass outcome requires an explicit pass end time.')
+  }
   const previousLinks = existing === undefined ? null : readSearchPassLinks(
     db,
     id,
@@ -5325,6 +5447,7 @@ function readSearchPassLinks(db, passId, versionSequence) {
 }
 
 const MAX_LEGACY_GPX_METADATA_CANDIDATES_PER_TURN = 10_000
+const MAX_LEGACY_GPX_UNSETTLED_METADATA_CANDIDATES_PER_TURN = 100
 const MAX_LEGACY_GPX_UNSAFE_ROWID_CANDIDATES_PER_TURN = 100
 
 /** Quarantines a bounded signed-int64 rowid page entirely inside SQLite's exact integer domain. */
@@ -5463,7 +5586,7 @@ function backfillLegacyGpxRevisions(
   const legacyCandidates = readLegacyPage.all(
     state.scanned_through_rowid,
     pageEnd,
-    maximumCandidates,
+    Math.min(maximumCandidates, MAX_LEGACY_GPX_UNSETTLED_METADATA_CANDIDATES_PER_TURN),
   )
   let processed = 0
   let cursor = Number(state.scanned_through_rowid)
@@ -7088,6 +7211,27 @@ function assertMissionFinalizationNotInProgress(db, missionId) {
     throw new Error(
       'Mission finalization is in progress; retry this change after finalization completes.',
     )
+  }
+}
+
+/** Recovers a direct-archive crash without weakening a true finalization fence. */
+function recoverInterruptedDirectArchiveFences(db, migrationTime) {
+  const interrupted = db.prepare(`SELECT fence.mission_id, fence.requested_at
+    FROM mission_finalization_fences AS fence
+    WHERE EXISTS (
+      SELECT 1 FROM mission_events AS event
+      WHERE event.mission_id = fence.mission_id
+        AND event.event_type = 'mission_archive_requested'
+        AND event.timestamp = fence.requested_at
+    )`).all()
+  for (const fence of interrupted) {
+    insertEvent(db, fence.mission_id, 'mission_archive_failed', migrationTime, {
+      resulting_status: getMission(db, fence.mission_id).status,
+      archive_kind: 'direct',
+      error: 'SAR Tracker restarted before the direct mission archive could be sealed; retry archive creation.',
+    })
+    db.prepare(`DELETE FROM mission_finalization_fences
+      WHERE mission_id = ? AND requested_at = ?`).run(fence.mission_id, fence.requested_at)
   }
 }
 

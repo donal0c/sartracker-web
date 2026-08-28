@@ -537,6 +537,13 @@ export type MissionReplayReadInput = {
   readonly outingIds?: readonly string[]
 }
 
+export type MissionReplayLifecycleState =
+  | 'active'
+  | 'paused'
+  | 'finished'
+  | 'finalized'
+  | 'unknown'
+
 export type MissionReplayReadResult = {
   readonly missionId: string
   readonly selectedTime: string
@@ -557,6 +564,9 @@ export type MissionReplayReadResult = {
   readonly objectCursor: string
   readonly nextObjectCursor: string | null
   readonly missionLifecycle?: {
+    /** Reconstructed mission state at the selected replay time. */
+    readonly state: MissionReplayLifecycleState
+    /** Transition evidence that established the reconstructed state. */
     readonly id: string
     readonly event_type: string
     readonly timestamp: string
@@ -618,7 +628,10 @@ export type MissionReplayObjectChunkResult = Pick<
   | 'objectCursor'
   | 'nextObjectCursor'
   | 'progress'
->
+> & {
+  /** Number of objects whose state was bounded to a summary on this page. */
+  readonly summarizedObjectCount: number
+}
 
 export type MissionStoreInfo = {
   readonly schema_version: number

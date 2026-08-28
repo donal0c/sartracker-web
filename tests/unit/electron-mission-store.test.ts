@@ -3476,6 +3476,66 @@ describe('electron mission store', () => {
     await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
   })
 
+  it('fences finished-mission corrections while a direct archive snapshot is being sealed [DON-274]', async () => {
+    const { readZipArchive } = require('../../electron/zip-archive.cjs') as {
+      readonly readZipArchive: (buffer: Buffer) => ReadonlyMap<string, Buffer>
+    }
+    let releaseCopied = () => undefined
+    let signalCopied = () => undefined
+    const copied = new Promise<void>((resolve) => { signalCopied = resolve })
+    const holdCopied = new Promise<void>((resolve) => { releaseCopied = resolve })
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(() => ({
+        id: 'direct-archive-fence-backup', type: 'backup', requestedAtMs: Date.now(),
+      })),
+      requested: vi.fn().mockResolvedValue(undefined),
+      started: vi.fn().mockResolvedValue(undefined),
+      phase: vi.fn(async (_operation, stage) => {
+        if (stage === 'copied') {
+          signalCopied()
+          await holdCopied
+        }
+      }),
+      completed: vi.fn().mockResolvedValue(undefined),
+      failed: vi.fn().mockResolvedValue(undefined),
+      startMission: vi.fn().mockResolvedValue(undefined),
+      recordTrackingBatch: vi.fn().mockResolvedValue(undefined),
+      recordInsertedPositions: vi.fn().mockResolvedValue(undefined),
+    }
+    store = await createStore({ storageDiagnostics })
+    const mission = await store.createMission({ name: 'Direct Archive Fence Mission' })
+    const outing = await store.createOuting({ mission_id: mission.id, label: 'Before' })
+    await store.finishMission(mission.id)
+
+    const archivePromise = store.createMissionArchive(mission.id)
+    await copied
+    await expect(store.renameOuting({
+      mission_id: mission.id,
+      outing_id: outing.id,
+      label: 'After',
+    })).rejects.toThrow(/finalization is in progress/iu)
+    releaseCopied()
+    const archive = await archivePromise
+
+    expect(await store.listOutings(mission.id)).toEqual([
+      expect.objectContaining({ id: outing.id, label: 'Before' }),
+    ])
+    const archiveEntries = readZipArchive(await (await import('node:fs/promises')).readFile(
+      archive.archive_path,
+    ))
+    const archivedDatabasePath = path.join(userDataPath!, 'archived-direct-fence.sqlite')
+    await writeFile(archivedDatabasePath, archiveEntries.get('mission-store.sqlite')!)
+    const archivedDatabase = new Database(archivedDatabasePath, { readonly: true })
+    expect(archivedDatabase.prepare('SELECT label FROM outings WHERE id = ?').get(outing.id))
+      .toMatchObject({ label: 'Before' })
+    archivedDatabase.close()
+    await expect(store.renameOuting({
+      mission_id: mission.id,
+      outing_id: outing.id,
+      label: 'After archive',
+    })).resolves.toMatchObject({ label: 'After archive' })
+  })
+
   it('does not overwrite an earlier mission archive when a later mission finalizes (DON-162)', async () => {
     const { readFile } = await import('node:fs/promises')
     store = await createStore()

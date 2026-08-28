@@ -708,6 +708,60 @@ describe('browser harness store', () => {
     })).rejects.toThrow('Mission replay selected time cannot be in the future.')
   })
 
+  it('reconstructs browser replay lifecycle state from transition provenance [DON-278]', async () => {
+    vi.useFakeTimers()
+    window.localStorage.setItem(
+      'sartracker:browser-settings',
+      JSON.stringify({ missionDefaults: { adminRoster: ['Ops Lead'] } }),
+    )
+    const store = getBrowserHarnessStore()
+
+    vi.setSystemTime(new Date('2026-08-20T08:00:00.000Z'))
+    const mission = await store.createMission({
+      name: 'Lifecycle Replay Mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const readLifecycle = async () => (await store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: new Date().toISOString(),
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+    })).missionLifecycle
+
+    await expect(readLifecycle()).resolves.toMatchObject({
+      state: 'active', event_type: 'mission_created',
+    })
+    vi.setSystemTime(new Date('2026-08-20T09:00:00.000Z'))
+    await store.pauseMission(mission.id)
+    await expect(readLifecycle()).resolves.toMatchObject({
+      state: 'paused', event_type: 'mission_paused',
+    })
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    await store.resumeMission(mission.id)
+    await expect(readLifecycle()).resolves.toMatchObject({
+      state: 'active', event_type: 'mission_resumed',
+    })
+    vi.setSystemTime(new Date('2026-08-20T11:00:00.000Z'))
+    await store.finishMission(mission.id)
+    await expect(readLifecycle()).resolves.toMatchObject({
+      state: 'finished', event_type: 'mission_finished',
+    })
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    await store.finalizeMission(mission.id)
+    await expect(readLifecycle()).resolves.toMatchObject({
+      state: 'finalized', event_type: 'mission_finalized',
+    })
+    vi.setSystemTime(new Date('2026-08-20T13:00:00.000Z'))
+    await store.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Ops Lead',
+      reason: 'Correct retained mission evidence.',
+    })
+    await expect(readLifecycle()).resolves.toMatchObject({
+      state: 'finished', event_type: 'mission_unlocked',
+    })
+  })
+
   it('rejects malformed production replay cursors instead of returning NaN progress [DON-278]', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
@@ -921,6 +975,38 @@ describe('browser harness store', () => {
     await expect(store.listGpxImports(firstMission.id)).resolves.toEqual([
       expect.objectContaining({ id: 'shared-gpx-id', mission_id: firstMission.id }),
     ])
+  })
+
+  it('pages browser GPX projections by stable identity without exposing retained bytes [DON-274]', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Paged GPX Mission' })
+    for (let index = 0; index < 26; index += 1) {
+      const suffix = String(index).padStart(2, '0')
+      await store.upsertGpxImport({
+        id: `gpx-${suffix}`,
+        mission_id: mission.id,
+        source_path: `/tracks/${suffix}.gpx`,
+        file_name: `${suffix}.gpx`,
+        display_name: `Track ${suffix}`,
+        geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+        source_bytes_base64: 'PGdweCAvPg==',
+      })
+    }
+
+    const first = await store.listGpxImportPage({ missionId: mission.id, limit: 25 })
+    expect(first.entries).toHaveLength(25)
+    expect(first.nextCursor).not.toBeNull()
+    expect(first.entries.every((entry) => entry.source_bytes_base64 === undefined)).toBe(true)
+
+    const second = await store.listGpxImportPage({
+      missionId: mission.id,
+      cursor: first.nextCursor!,
+      limit: 25,
+    })
+    expect(second).toMatchObject({
+      entries: [expect.objectContaining({ id: 'gpx-25' })],
+      nextCursor: null,
+    })
   })
 
   it('filters historical GPX evidence by the outing assigned to its eligible revision [DON-278]', async () => {

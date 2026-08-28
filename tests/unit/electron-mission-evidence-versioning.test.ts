@@ -501,6 +501,15 @@ describe('mission evidence versioning [DON-277]', () => {
     store = createElectronMissionStore({ userDataPath })
     expect(CURRENT_SCHEMA_VERSION).toBe(12)
     await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const inspection = openDatabase(path.join(userDataPath, 'mission-store.sqlite'))
+      const count = Number(inspection.prepare(
+        'SELECT COUNT(*) AS count FROM mission_object_versions',
+      ).get()?.count ?? 0)
+      inspection.close()
+      if (count === 4) break
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
     const versions = await store.listMissionObjectVersions({ missionId: mission.id })
     expect(versions).toHaveLength(4)
     expect(new Set(versions.map((version) => version.object_type))).toEqual(
@@ -511,6 +520,84 @@ describe('mission evidence versioning [DON-277]', () => {
     await expect(store.retireSearchArea(String(legacyArea.id), 'Coordinator')).resolves.toBe(true)
     expect(await store.listSearchAreas(mission.id)).toEqual([])
   })
+
+  it('reconstructs large legacy mutable-object inventories in bounded background turns [DON-277]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-object-backfill-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Large Legacy Object Inventory' })
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    legacyDb.exec(`
+      WITH RECURSIVE numbers(n) AS (
+        VALUES (0) UNION ALL SELECT n + 1 FROM numbers WHERE n < 49999
+      )
+      INSERT INTO markers (
+        id, mission_id, type, name, description, lat, lon, irish_grid_e,
+        irish_grid_n, created_at, updated_at, display_order, updated_by
+      ) SELECT printf('legacy-marker-%05d', n), '${mission.id}', 'clue',
+        printf('Legacy marker %05d', n), 'Retained legacy evidence',
+        52.1, -9.5, 480000, 580000,
+        '2026-08-20T10:00:00.000Z', '2026-08-20T10:00:00.000Z', n,
+        'Legacy coordinator'
+      FROM numbers;
+      UPDATE metadata SET value = '11' WHERE key = 'schema_version';
+      DROP TABLE mission_object_versions;
+      DROP TABLE legacy_mission_object_backfill_state;
+    `)
+    legacyDb.close()
+
+    const openedAt = performance.now()
+    store = createElectronMissionStore({ userDataPath })
+    const openMs = performance.now() - openedAt
+    expect(openMs).toBeLessThan(200)
+    await expect(store.listMissionObjectVersions({ missionId: mission.id }))
+      .rejects.toThrow(/legacy mutable evidence baselines.*background/iu)
+    await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER }))
+      .rejects.toThrow(/legacy mutable evidence baselines.*background/iu)
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'current-priority-device',
+      name: 'Current priority device',
+      color: '#3b82f6',
+      status: 'online',
+    })
+    const currentWriteStarted = performance.now()
+    const currentFixTime = new Date().toISOString()
+    await store.addPosition({
+      mission_id: mission.id,
+      device_id: 'current-priority-device',
+      source_position_id: 'current-during-object-backfill',
+      lat: 52.1,
+      lon: -9.5,
+      timestamp: currentFixTime,
+      received_at: currentFixTime,
+      timestamp_source: 'fix',
+    })
+    expect(performance.now() - currentWriteStarted).toBeLessThan(200)
+
+    let lastHeartbeat = performance.now()
+    let maximumHeartbeatGapMs = 0
+    const heartbeat = setInterval(() => {
+      const current = performance.now()
+      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, current - lastHeartbeat)
+      lastHeartbeat = current
+    }, 10)
+    const inspection = openDatabase(databaseFile)
+    let baselineCount = 0
+    for (let attempt = 0; attempt < 1_500 && baselineCount < 50_000; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      baselineCount = Number(inspection.prepare(
+        'SELECT COUNT(*) AS count FROM mission_object_versions',
+      ).get()?.count ?? 0)
+    }
+    clearInterval(heartbeat)
+    inspection.close()
+    expect(baselineCount).toBe(50_000)
+    expect(maximumHeartbeatGapMs).toBeLessThan(200)
+    await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER }))
+      .resolves.toMatchObject({ mission_id: mission.id })
+  }, 30_000)
 
   it('migrates an authentic v11 GPX table before creating v12 indexes and retains a static baseline [DON-274]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-real-v11-'))
@@ -1876,13 +1963,12 @@ describe('mission evidence versioning [DON-277]', () => {
       ...openPass,
       ended_at: new Date(referenceTime + 60 * 60_000).toISOString(),
     })).rejects.toThrow(/pass end.*future/i)
-    const activePass = await store.upsertSearchPass({ ...openPass, ended_at: null })
-    await expect(store.endOuting({
-      mission_id: mission.id,
-      outing_id: openOuting.id,
-    })).rejects.toThrow(/active search pass/i)
+    await expect(store.upsertSearchPass({
+      ...openPass,
+      ended_at: null,
+    })).rejects.toThrow(/declared search pass outcome.*explicit pass end/i)
     await store.upsertSearchPass({
-      ...activePass,
+      ...openPass,
       ended_at: new Date(referenceTime - 10 * 60_000).toISOString(),
     })
     await expect(store.endOuting({
@@ -2214,6 +2300,7 @@ describe('mission evidence versioning [DON-277]', () => {
       search_area_id: area.id,
       assignment_id: assignment.id,
       started_at: outing.started_at,
+      ended_at: outing.started_at,
       outcome: 'partial',
       coordinator_name: 'Coordinator',
     }

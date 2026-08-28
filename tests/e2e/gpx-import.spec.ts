@@ -43,7 +43,7 @@ test.describe('M22 GPX import parity', () => {
     })
 
     await expect(page.getByTestId('gpx-import-list')).toContainText('alpha')
-    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 imported')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 shown')
     const importId = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__
       ?.readState().gpxImports.find((entry) => entry.display_name === 'alpha')?.id ?? null)
     expect(importId).not.toBeNull()
@@ -105,6 +105,38 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('gpx-import-issues')).toContainText(
       'Some retained issue fields were shortened for safe display',
     )
+  })
+
+  test('pages imported GPX projections without accumulating renderer evidence [DON-274]', async ({
+    page,
+  }) => {
+    await page.evaluate(async () => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) throw new Error('Browser harness API unavailable.')
+      await harness.importGpxFiles(Array.from({ length: 26 }, (_, index) => {
+        const suffix = String(index).padStart(2, '0')
+        return {
+          sourcePath: `/tracks/paged-${suffix}.gpx`,
+          fileName: `paged-${suffix}.gpx`,
+          contents: `<gpx version="1.1"><trk><trkseg><trkpt lat="52.${suffix}" lon="-9.70" /><trkpt lat="52.${suffix}" lon="-9.71" /></trkseg></trk></gpx>`,
+        }
+      }))
+    })
+
+    await expect(page.getByTestId('gpx-import-pagination')).toContainText(
+      'More imported evidence is available',
+    )
+    await expect(page.getByTestId('gpx-import-list')).toContainText('paged-00')
+    await expect(page.getByTestId('gpx-import-list')).not.toContainText('paged-25')
+
+    await page.getByTestId('gpx-import-next-page').click()
+
+    await expect(page.getByTestId('gpx-import-pagination')).toContainText('This is the final page')
+    await expect(page.getByTestId('gpx-import-list')).toContainText('paged-25')
+    await expect(page.getByTestId('gpx-import-list')).not.toContainText('paged-00')
+
+    await page.getByTestId('gpx-import-first-page').click()
+    await expect(page.getByTestId('gpx-import-list')).toContainText('paged-00')
   })
 
   test('DON-194: changes individual GPX colours and keeps the layer tree readable on smaller displays', async ({

@@ -200,6 +200,9 @@ test.describe('M15 mission review workspace', () => {
     )
     await expect(page.getByTestId('mission-replay-workspace')).toContainText('4 / 4 dated points')
     await expect(page.getByTestId('mission-replay-reconstructed-state')).toContainText('Known by')
+    await expect(page.getByTestId('mission-replay-reconstructed-state')).toContainText(
+      'lifecycle active',
+    )
     await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('Traccar fixTime')
     await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('GPX source time')
     await expect(page.getByTestId('mission-replay-display-filters')).toContainText(

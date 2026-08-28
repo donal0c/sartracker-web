@@ -110,7 +110,7 @@ export function MissionReplayTab(props: {
       <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="mission-replay-reconstructed-state">
         <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Reconstructed mission evidence</p>
         <p className="mt-2 text-sm text-stone-200">
-          Known by {formatReplayTime(result.selectedTime, result.timezone)} · {result.participants?.length ?? 0} active participants · lifecycle {formatLifecycle(result.missionLifecycle?.event_type)}
+          Known by {formatReplayTime(result.selectedTime, result.timezone)} · {result.participants?.length ?? 0} active participants · lifecycle {formatLifecycle(result.missionLifecycle?.state)}
         </p>
         {result.objects.length === 0 ? <p className="mt-3 text-sm text-stone-400">{result.limitations.some((item) => item.code === 'browser_harness_version_history_unavailable')
           ? 'Versioned mission-object history is unavailable in browser validation; no absence claim is made.'
@@ -242,13 +242,13 @@ export function SearchOperationsTab(props: {
         <label className="text-xs text-stone-300">Assignment<select className="mt-1 w-full bg-stone-950 p-2" data-testid="search-pass-assignment" onChange={(event) => setSelectedAssignmentId(event.target.value)} value={assignment?.id ?? ''}><option value="">Select assignment</option>{eligibleAssignments.map((entry) => <option key={entry.id} value={entry.id}>{entry.team_id} · {entry.id}</option>)}</select></label>
         <label className="text-xs text-stone-300">Coordinator-declared outcome<select className="mt-1 w-full bg-stone-950 p-2" data-testid="search-pass-outcome" onChange={(event) => setOutcome(event.target.value as typeof outcome)} value={outcome}><option value="full">Fully searched</option><option value="partial">Partially searched</option><option value="aborted">Aborted</option></select></label>
         <label className="text-xs text-stone-300">Pass start — Europe/Dublin<input className="mt-1 w-full bg-stone-950 p-2" data-testid="search-pass-start" onChange={(event) => setPassStartedLocal(event.target.value)} step="0.001" type="datetime-local" value={passStartedLocal} /></label>
-        <label className="text-xs text-stone-300">Pass end — Europe/Dublin (optional while active)<input className="mt-1 w-full bg-stone-950 p-2" data-testid="search-pass-end" onChange={(event) => setPassEndedLocal(event.target.value)} step="0.001" type="datetime-local" value={passEndedLocal} /></label>
+        <label className="text-xs text-stone-300">Pass end — Europe/Dublin (required for a declared outcome)<input className="mt-1 w-full bg-stone-950 p-2" data-testid="search-pass-end" onChange={(event) => setPassEndedLocal(event.target.value)} required step="0.001" type="datetime-local" value={passEndedLocal} /></label>
         <input className="bg-stone-950 p-2" data-testid="search-pass-participants" maxLength={40_200} onChange={(event) => setPassParticipantIds(event.target.value)} placeholder="Participant IDs, comma separated" value={passParticipantIds} />
         <input className="bg-stone-950 p-2" data-testid="search-pass-clues" maxLength={40_200} onChange={(event) => setClueIds(event.target.value)} placeholder="Clue IDs, comma separated" value={clueIds} />
         <input className="bg-stone-950 p-2" data-testid="search-pass-tracks" maxLength={40_200} onChange={(event) => setTrackEvidenceIds(event.target.value)} placeholder="Track evidence IDs, comma separated" value={trackEvidenceIds} />
         <input className="bg-stone-950 p-2" data-testid="search-pass-notes" maxLength={2_000} onChange={(event) => setPassNotes(event.target.value)} placeholder="Pass notes" value={passNotes} />
       </div>
-      <button className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-stone-950 disabled:opacity-40" data-testid="search-pass-record" disabled={props.readOnly || assignment === null || coordinatorName.trim() === '' || passStartedLocal.trim() === ''} onClick={() => void recordPass()} type="button">Record coordinator-declared pass</button>
+      <button className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-stone-950 disabled:opacity-40" data-testid="search-pass-record" disabled={props.readOnly || assignment === null || coordinatorName.trim() === '' || passStartedLocal.trim() === '' || passEndedLocal.trim() === ''} onClick={() => void recordPass()} type="button">Record coordinator-declared completed pass</button>
       </fieldset>
       {message !== null ? <p className="mt-3 text-sm text-emerald-200" data-testid="search-operation-feedback">{message}</p> : null}
       {error !== null ? <p className="mt-3 text-sm text-rose-200" data-testid="search-operation-error" role="alert">{error}</p> : null}
@@ -325,7 +325,7 @@ function formatReplayTime(value: string, timezone: string): string {
 }
 
 function formatLifecycle(value: string | undefined): string {
-  return value === undefined ? 'unknown' : humanize(value.replace(/^mission_/u, ''))
+  return value === undefined ? 'unknown' : humanize(value)
 }
 
 function humanize(value: string): string {

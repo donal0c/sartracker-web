@@ -18,6 +18,9 @@ export function GpxImportPanel() {
   const outings = useGpxStore((state) => state.outings)
   const watchedDirectories = useGpxStore((state) => state.watchedDirectories)
   const importIssues = useGpxStore((state) => state.importIssues)
+  const importPageNumber = useGpxStore((state) => state.importPageNumber)
+  const hasMoreImports = useGpxStore((state) => state.hasMoreImports)
+  const loadingMoreImports = useGpxStore((state) => state.loadingMoreImports)
   const hasMoreImportIssues = useGpxStore((state) => state.hasMoreImportIssues)
   const loading = useGpxStore((state) => state.loading)
   const importing = useGpxStore((state) => state.importing)
@@ -28,8 +31,8 @@ export function GpxImportPanel() {
   const desktopAvailable = isTauriRuntimeAvailable() || isElectronRuntimeAvailable()
   const canImport = controller !== null && desktopAvailable && !loading && !importing
   const importSummary = useMemo(
-    () => `${imports.length} imported · ${watchedDirectories.length} watched`,
-    [imports.length, watchedDirectories.length],
+    () => `${imports.length}${hasMoreImports ? '+' : ''} shown · page ${importPageNumber} · ${watchedDirectories.length} watched`,
+    [hasMoreImports, importPageNumber, imports.length, watchedDirectories.length],
   )
 
   return (
@@ -165,6 +168,35 @@ export function GpxImportPanel() {
           testId="gpx-import-list"
           title="Imported Tracks"
         />
+        {hasMoreImports || importPageNumber > 1 ? (
+          <div
+            className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3"
+            data-testid="gpx-import-pagination"
+          >
+            <p className="text-xs font-semibold text-amber-100">
+              Showing bounded GPX page {importPageNumber} ({imports.length} track{imports.length === 1 ? '' : 's'}).
+              {hasMoreImports ? ' More imported evidence is available.' : ' This is the final page.'}
+            </p>
+            <div className="mt-2 flex gap-2">
+              {importPageNumber > 1 ? (
+                <ActionButton
+                  disabled={controller === null || loadingMoreImports}
+                  label="Return to First Page"
+                  onClick={() => void controller?.returnToFirstImports()}
+                  testId="gpx-import-first-page"
+                />
+              ) : null}
+              {hasMoreImports ? (
+                <ActionButton
+                  disabled={controller === null || loadingMoreImports}
+                  label={loadingMoreImports ? 'Loading…' : 'Show Next Page'}
+                  onClick={() => void controller?.loadNextImports()}
+                  testId="gpx-import-next-page"
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   )

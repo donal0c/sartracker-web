@@ -68,6 +68,7 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     await page.getByTestId('search-pass-start').fill(
       formatDublinDateTimeLocal(passWindow.invalidStart),
     )
+    await page.getByTestId('search-pass-end').fill(formatDublinDateTimeLocal(passWindow.validEnd))
     await page.getByTestId('search-pass-record').click()
     await expect(page.getByTestId('search-operation-error')).toContainText(
       'Search pass start cannot be before its assignment outing start',
@@ -77,7 +78,6 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     await page.getByTestId('search-pass-start').fill(
       formatDublinDateTimeLocal(passWindow.outingStart),
     )
-    await page.getByTestId('search-pass-end').fill(formatDublinDateTimeLocal(passWindow.validEnd))
     await page.getByTestId('search-pass-outcome').selectOption('partial')
     await page.getByTestId('search-pass-record').click()
     await expect(page.getByTestId('search-operation-feedback')).toContainText(

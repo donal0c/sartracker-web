@@ -14,6 +14,7 @@ const Database = require('better-sqlite3') as new (path: string) => {
   transaction<T>(operation: () => T): () => T
 }
 const {
+  missionLifecycleStateFromEventType,
   normalizeReplayInput,
   readMissionReplayState,
   readMissionReplayTrackChunk,
@@ -21,6 +22,7 @@ const {
 } = require(
   '../../electron/mission-replay-query.cjs',
 ) as {
+  missionLifecycleStateFromEventType(eventType: string | null | undefined): ReplayLifecycleState
   normalizeReplayInput(input: unknown): ReplayInput & { readonly timezone: string }
   readMissionReplayState(database: InstanceType<typeof Database>, input: ReplayInput): ReplayState
   readMissionReplayTrackChunk(database: InstanceType<typeof Database>, input: ReplayInput & { cursor?: string }): ReplayChunk
@@ -33,6 +35,7 @@ const {
 }
 
 type ReplayInput = { readonly missionId: string; readonly selectedTime: string; readonly trackLimit: number; readonly objectLimit?: number; readonly replayGeneration?: number; readonly timezone?: string }
+type ReplayLifecycleState = 'active' | 'paused' | 'finished' | 'finalized' | 'unknown'
 type ReplayState = {
   readonly replayGeneration: number
   readonly objects: readonly { readonly object_type: string; readonly object_id: string; readonly state: Record<string, unknown> }[]
@@ -40,7 +43,10 @@ type ReplayState = {
   readonly staticGpxPointCount: number
   readonly limitations: readonly { readonly code: string }[]
   readonly nextCursor: string | null
-  readonly missionLifecycle: { readonly event_type: string } | null
+  readonly missionLifecycle: {
+    readonly state: ReplayLifecycleState
+    readonly event_type: string
+  } | null
   readonly participants: readonly { readonly id: string }[]
   readonly groupMembership: readonly { readonly id: string }[]
   readonly totalObjectCount: number
@@ -58,6 +64,46 @@ type ReplayChunk = {
 }
 
 describe('mission replay query [DON-278]', () => {
+  it('reconstructs lifecycle state at T while retaining the source transition event', () => {
+    const db = createReplayDatabase()
+    const scenarios = [
+      ['mission_created', 'active'],
+      ['mission_paused', 'paused'],
+      ['mission_resumed', 'active'],
+      ['mission_finished', 'finished'],
+      ['mission_finalized', 'finalized'],
+      ['mission_unlocked', 'finished'],
+    ] as const
+
+    scenarios.forEach(([eventType, expectedState], index) => {
+      const timestamp = `2026-08-27T0${index + 1}:00:00.000Z`
+      db.prepare('INSERT INTO mission_events VALUES (?, ?, ?, ?, NULL, ?, ?)').run(
+        `lifecycle-${index}`,
+        'mission-1',
+        eventType,
+        timestamp,
+        timestamp,
+        'complete',
+      )
+
+      expect(readMissionReplayState(db, {
+        missionId: 'mission-1', selectedTime: timestamp, trackLimit: 100,
+      }).missionLifecycle).toMatchObject({
+        state: expectedState,
+        event_type: eventType,
+      })
+    })
+  })
+
+  it('keeps absent and unrecognized lifecycle evidence explicit', () => {
+    const db = createReplayDatabase()
+    expect(readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T08:00:00Z', trackLimit: 100,
+    }).missionLifecycle).toBeNull()
+    expect(missionLifecycleStateFromEventType('mission_future_transition')).toBe('unknown')
+    expect(missionLifecycleStateFromEventType(null)).toBe('unknown')
+  })
+
   it('rejects malformed envelopes and oversized selected times before date parsing', () => {
     expect(() => normalizeReplayInput(null)).toThrow('Mission replay input is invalid.')
     expect(() => normalizeReplayInput([])).toThrow('Mission replay input is invalid.')

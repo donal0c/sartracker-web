@@ -23,6 +23,9 @@ const {
   registerMissionReviewReadQueryIpcHandlers,
 } = require('./mission-review-read-query-ipc.cjs')
 const {
+  registerMissionReplayQueryIpcHandlers,
+} = require('./mission-replay-query-ipc.cjs')
+const {
   registerOutingFixSummaryIpcHandlers,
 } = require('./outing-fix-summary-ipc.cjs')
 const { registerCoverageIpcHandlers } = require('./coverage-ipc.cjs')
@@ -785,6 +788,17 @@ function registerMissionStoreHandlers(missionStore, fileSystem) {
     missionStore,
     validateIpcSender,
   })
+  registerMissionReplayQueryIpcHandlers({
+    ipcMain,
+    readChannels: {
+      state: MISSION_STORE_CHANNELS.readMissionReplay,
+      trackChunk: MISSION_STORE_CHANNELS.readMissionReplayTrackChunk,
+      objectChunk: MISSION_STORE_CHANNELS.readMissionReplayObjectChunk,
+    },
+    cancelChannel: MISSION_STORE_CHANNELS.cancelMissionReplay,
+    missionStore,
+    validateIpcSender,
+  })
   registerOutingFixSummaryIpcHandlers({
     ipcMain,
     readChannel: MISSION_STORE_CHANNELS.readOutingFixSummary,
@@ -826,6 +840,10 @@ function registerMissionStoreHandlers(missionStore, fileSystem) {
     'cancelExactBreadcrumbDotQuery',
     'readMissionReview',
     'cancelMissionReviewRead',
+    'readMissionReplay',
+    'readMissionReplayTrackChunk',
+    'readMissionReplayObjectChunk',
+    'cancelMissionReplay',
     'readOutingFixSummary',
     'cancelOutingFixSummary',
     'readCoverageManifest',

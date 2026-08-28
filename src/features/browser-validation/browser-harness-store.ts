@@ -76,6 +76,7 @@ const MAX_REPLAY_TRACK_LIMIT = 1_000
 const MAX_REPLAY_OBJECT_LIMIT = 100
 const MAX_REPLAY_FILTER_IDS = 200
 const MAX_REPLAY_CURSOR_OFFSET = 10_000_000
+const MAX_GPX_PROJECTION_PAGE_LIMIT = 25
 
 /**
  * Browser validation store for hosted/team-testing mode only.
@@ -266,6 +267,14 @@ type BrowserHarnessStore = {
   readonly upsertHelicopter: (input: UpsertHelicopterInput) => Promise<Helicopter>
   readonly deleteHelicopter: (helicopterId: string) => Promise<boolean>
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
+  readonly listGpxImportPage: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<{
+    readonly entries: readonly GpxTrackImport[]
+    readonly nextCursor: string | null
+  }>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
   readonly updateGpxImportPresentation: (input: {
     readonly id: string
@@ -1650,6 +1659,26 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state.gpxImports
         .filter((entry) => entry.mission_id === missionId && entry.retired_at == null)
         .sort((left, right) => left.display_name.localeCompare(right.display_name)),
+    listGpxImportPage: async (input) => {
+      const limit = input.limit ?? MAX_GPX_PROJECTION_PAGE_LIMIT
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_GPX_PROJECTION_PAGE_LIMIT) {
+        throw new Error('Browser GPX projection page limit is invalid.')
+      }
+      const cursor = decodeBrowserGpxProjectionCursor(input.cursor)
+      const candidates = state.gpxImports
+        .filter((entry) => entry.mission_id === input.missionId && entry.retired_at == null)
+        .sort(compareBrowserGpxProjectionOrder)
+        .filter((entry) => cursor === null || compareBrowserGpxProjectionOrder(entry, cursor) > 0)
+      const page = candidates.slice(0, limit + 1)
+      const entries = page.slice(0, limit).map(stripBrowserGpxRetainedBytes)
+      const finalEntry = entries.at(-1)
+      return {
+        entries,
+        nextCursor: page.length > limit && finalEntry !== undefined
+          ? encodeURIComponent(JSON.stringify([finalEntry.display_name, finalEntry.id]))
+          : null,
+      }
+    },
     upsertGpxImport: async (input) => {
       ensureMissionMutable(input.mission_id, state.missions)
       const existingWithId = input.id === undefined
@@ -1875,6 +1904,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         objectCursor: replay.objectCursor,
         nextObjectCursor: replay.nextObjectCursor,
         progress: 1,
+        summarizedObjectCount: 0,
       }
     },
     cancelMissionReplay: async () => true,
@@ -2051,6 +2081,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         throw new Error('Search pass end time cannot precede its start time.')
       }
       assertHarnessSearchPassWindow({ mission, outing, startedAt, endedAt, currentTime: timestamp })
+      if (endedAt === null) {
+        throw new Error('A coordinator-declared search pass outcome requires an explicit pass end time.')
+      }
       const pass: SearchPass = {
         id: existing?.id ?? passId ?? createId('search-pass'),
         mission_id: missionId,
@@ -2123,6 +2156,42 @@ function compareBrowserHarnessPositions(left: Position, right: Position): number
     ) ||
     left.id.localeCompare(right.id)
   )
+}
+
+type BrowserGpxProjectionCursor = Pick<GpxTrackImport, 'display_name' | 'id'>
+
+/** Removes retained GPX source bytes from the renderer projection boundary. */
+function stripBrowserGpxRetainedBytes(entry: GpxTrackImport): GpxTrackImport {
+  const { source_bytes_base64: retainedBytes, ...projection } = entry
+  void retainedBytes
+  return projection
+}
+
+/** Orders browser-validation GPX projections by the same stable fields encoded in its cursor. */
+function compareBrowserGpxProjectionOrder(
+  left: BrowserGpxProjectionCursor,
+  right: BrowserGpxProjectionCursor,
+): number {
+  return left.display_name.localeCompare(right.display_name) || left.id.localeCompare(right.id)
+}
+
+/** Decodes one bounded browser-validation GPX keyset cursor. */
+function decodeBrowserGpxProjectionCursor(value: string | undefined): BrowserGpxProjectionCursor | null {
+  if (value === undefined) return null
+  if (value.length < 1 || value.length > 4_000) {
+    throw new Error('Browser GPX projection cursor is invalid.')
+  }
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value)) as unknown
+    if (!Array.isArray(parsed) || parsed.length !== 2
+      || typeof parsed[0] !== 'string' || parsed[0].length > 1_000
+      || typeof parsed[1] !== 'string' || parsed[1].length < 1 || parsed[1].length > 1_000) {
+      throw new Error('invalid shape')
+    }
+    return { display_name: parsed[0], id: parsed[1] }
+  } catch {
+    throw new Error('Browser GPX projection cursor is invalid.')
+  }
 }
 
 /** Uses the production replay port with explicit harness completeness limits. */
@@ -2280,6 +2349,7 @@ function buildBrowserReplay(
     objectTypeCounts: {},
     objectCursor: String(objectOffset),
     nextObjectCursor: null,
+    missionLifecycle: readBrowserReplayLifecycle(state.missionEvents, input.missionId, selectedTime),
     tracks,
     trackCursor: String(offset),
     previousCursor: offset === 0 || pageTracks.length === 0 ? null : encodeBrowserReplayTrackCursor(
@@ -2317,6 +2387,53 @@ function buildBrowserReplay(
         count: staticGpxPointCount,
       }]),
     ],
+  }
+}
+
+/** Reconstructs the browser-validation lifecycle state while retaining its transition evidence. */
+function readBrowserReplayLifecycle(
+  events: readonly MissionEvent[],
+  missionId: string,
+  selectedTime: string,
+): Exclude<MissionReplayReadResult['missionLifecycle'], undefined> {
+  const lifecycleEvents = new Set([
+    'mission_created',
+    'mission_paused',
+    'mission_resumed',
+    'mission_finished',
+    'mission_finalized',
+    'mission_unlocked',
+  ])
+  const latest = events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => event.mission_id === missionId
+      && lifecycleEvents.has(event.event_type)
+      && event.timestamp <= selectedTime)
+    .sort((left, right) => right.event.timestamp.localeCompare(left.event.timestamp)
+      || right.index - left.index)[0]?.event
+
+  return latest === undefined
+    ? null
+    : { ...latest, state: browserReplayLifecycleStateFromEventType(latest.event_type) }
+}
+
+/** Mirrors the packaged replay transition-to-state contract for browser UI conformance. */
+function browserReplayLifecycleStateFromEventType(
+  eventType: string,
+): NonNullable<MissionReplayReadResult['missionLifecycle']>['state'] {
+  switch (eventType) {
+    case 'mission_created':
+    case 'mission_resumed':
+      return 'active'
+    case 'mission_paused':
+      return 'paused'
+    case 'mission_finished':
+    case 'mission_unlocked':
+      return 'finished'
+    case 'mission_finalized':
+      return 'finalized'
+    default:
+      return 'unknown'
   }
 }
 
