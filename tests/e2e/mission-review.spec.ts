@@ -216,6 +216,49 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-replay-workspace')).toContainText('Live map context')
   })
 
+  test('DON-278: browser replay later then earlier restores the exact 500-point page', async ({ page }) => {
+    await page.evaluate(async () => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) throw new Error('Browser harness API unavailable.')
+      const start = Date.parse('2026-04-10T16:00:00.000Z')
+      await harness.injectTrackingSnapshot({
+        devices: [{
+          device_id: 'paging-team', name: 'Paging Team', status: 'online',
+          last_seen: '2026-04-10T17:00:00.000Z', unique_id: null, category: null,
+        }],
+        positions: [],
+        breadcrumbs: Array.from({ length: 502 }, (_, index) => ({
+          id: `paging-fix-${index}`,
+          device_id: 'paging-team',
+          lat: 52 + index / 1_000_000,
+          lon: -9.7,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: new Date(start + index * 1_000).toISOString(),
+          source: null,
+          data_origin: 'live' as const,
+          cache_age_seconds: null,
+          device_cache_stale: false,
+        })),
+      })
+    })
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await page.getByTestId('mission-replay-seek').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('500 / 502 dated points')
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('Showing dated points 1–500 of 502')
+
+    await page.getByTestId('mission-replay-load-more').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('2 / 502 dated points')
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('Showing dated points 501–502 of 502')
+
+    await page.getByTestId('mission-replay-load-previous').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('500 / 502 dated points')
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('Showing dated points 1–500 of 502')
+  })
+
   test('DON-278: browser replay rejects a future selected time like packaged Electron', async ({ page }) => {
     await page.getByTestId('open-mission-review-workspace').click()
     await page.getByRole('button', { name: 'Replay', exact: true }).click()

@@ -1638,6 +1638,13 @@
             claim; operational mission-object reconstruction requires the supported Electron desktop runtime.
             Upgraded legacy stores also show an explicit legacy-scan limitation when replay accelerators are
             deliberately absent so current-position writes can keep priority.
+            Legacy GPX upgrades reconstruct only a small bounded slice during launch, then continue one
+            retained import at a time in the background. Until that resumable work settles, Replay shows
+            the remaining count and Finish/Finalize fail closed. Invalid coordinates, elevations, segments,
+            malformed geometry and geometry over the bounded reconstruction budget remain explicit rejection
+            evidence; the immutable original artifact is retained, while only safe coordinates enter the map
+            projection. An import with zero safe points still appears in the static evidence list with its
+            rejection count instead of disappearing.
           </p>
           <figure class="screenshot">
             <img src="assets/mission-evidence-replay.png" alt="Mission Review Replay showing data known at the selected time and an undated GPX evidence limitation" />

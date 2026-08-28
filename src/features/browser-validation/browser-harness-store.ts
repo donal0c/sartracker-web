@@ -72,10 +72,10 @@ const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
 const MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH = 64
 const MAX_SEARCH_AREA_GEOMETRY_LENGTH = 512 * 1_024
 const MAX_SEARCH_ADVISORY_COVERAGE_LENGTH = 512 * 1_024
-const MAX_REPLAY_TRACK_LIMIT = 500
+const MAX_REPLAY_TRACK_LIMIT = 1_000
 const MAX_REPLAY_OBJECT_LIMIT = 100
 const MAX_REPLAY_FILTER_IDS = 200
-const MAX_REPLAY_CURSOR_OFFSET = 10_000_000_000
+const MAX_REPLAY_CURSOR_OFFSET = 10_000_000
 
 /**
  * Browser validation store for hosted/team-testing mode only.
@@ -2149,7 +2149,9 @@ function buildBrowserReplay(
   const deviceFilterIds = normalizeBrowserReplayFilterIds(input.deviceIds, 'device')
   const outingFilterIds = normalizeBrowserReplayFilterIds(input.outingIds, 'outing')
   const cursor = decodeBrowserReplayTrackCursor(input.cursor)
-  const offset = cursor?.offset ?? 0
+  const offset = cursor?.direction === 'before'
+    ? Math.max(0, cursor.offset - input.trackLimit)
+    : cursor?.offset ?? 0
   const objectOffset = normalizeBrowserReplayObjectCursor(input.objectCursor)
   const positionTracks = state.positions
     .filter((position) =>
@@ -2363,9 +2365,11 @@ function encodeBrowserReplayTrackCursor(
 
 /** Decodes and validates one production-compatible browser replay cursor. */
 function decodeBrowserReplayTrackCursor(value: string | null | undefined): {
+  readonly direction: 'after' | 'before'
   readonly offset: number
   readonly replayGeneration: number
   readonly eligiblePositionCount: number
+  readonly key: readonly [string, string, 0 | 1, string]
 } | null {
   if (value === undefined || value === null || value === '') return null
   if (typeof value !== 'string' || value.length > 2_000 || !/^[A-Za-z0-9_-]+$/u.test(value)) {
@@ -2385,9 +2389,11 @@ function decodeBrowserReplayTrackCursor(value: string | null | undefined): {
       throw new Error('invalid shape')
     }
     return {
+      direction: parsed.direction,
       offset: Number(parsed.offset),
       replayGeneration: Number(parsed.replayGeneration),
       eligiblePositionCount: Number(parsed.eligiblePositionCount),
+      key: [String(key[0]), String(key[1]), key[2], String(key[3])],
     }
   } catch {
     throw new Error('Mission replay cursor is invalid.')

@@ -577,12 +577,16 @@ function readStaticGpxEvidence(database, input) {
             AND rejections.revision_sequence = eligible.revision_sequence) AS rejection_count
       FROM eligible
       WHERE eligible.replay_rank = 1${outingFilter.sql}
-        AND EXISTS (
-          SELECT 1 FROM gpx_evidence_points AS points
-          WHERE points.import_id = eligible.import_id
-            AND points.revision_sequence = eligible.revision_sequence
-            AND points.source_time IS NULL
-        )
+        AND (EXISTS (
+            SELECT 1 FROM gpx_evidence_points AS points
+            WHERE points.import_id = eligible.import_id
+              AND points.revision_sequence = eligible.revision_sequence
+              AND points.source_time IS NULL
+          ) OR EXISTS (
+            SELECT 1 FROM gpx_evidence_rejections AS rejections
+            WHERE rejections.import_id = eligible.import_id
+              AND rejections.revision_sequence = eligible.revision_sequence
+          ))
     )`
   const parameters = [input.missionId, input.selectedTime, input.selectedTime, ...outingFilter.params]
   const count = database.prepare(`${baseSql} SELECT COUNT(*) AS count FROM static_imports`)
@@ -637,8 +641,20 @@ function readReplayLimitations(
   if (Number(legacyGpx?.count ?? 0) > 0) {
     limitations.push({
       code: 'legacy_gpx_baseline_only',
-      message: 'One or more migrated GPX imports retain static geometry, but earlier revisions, exact source bytes, and source times are unknown.',
+      message: 'One or more migrated GPX imports retain an immutable original artifact and explicit reconstruction rejections; earlier revisions, exact source bytes, and source times are unknown.',
       count: Number(legacyGpx.count),
+    })
+  }
+  const pendingLegacyGpx = database.prepare(`SELECT COUNT(*) AS count
+    FROM gpx_track_imports AS imports
+    WHERE imports.mission_id = ? AND NOT EXISTS (
+      SELECT 1 FROM gpx_import_revisions AS revisions WHERE revisions.import_id = imports.id
+    )`).get(input.missionId)
+  if (Number(pendingLegacyGpx?.count ?? 0) > 0) {
+    limitations.push({
+      code: 'legacy_gpx_backfill_pending',
+      message: 'Legacy GPX evidence reconstruction is still pending in bounded background slices; the original projection remains retained and mission lifecycle changes are blocked until it settles.',
+      count: Number(pendingLegacyGpx.count),
     })
   }
   if (positionStats.missingRecordedCount > 0) {

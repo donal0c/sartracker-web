@@ -520,7 +520,12 @@ describe('mission evidence versioning [DON-277]', () => {
     const db = openDatabase(databaseFile)
     const legacyGeometry = JSON.stringify({
       type: 'MultiLineString',
-      coordinates: [Array.from({ length: 5_000 }, (_, index) => [-9.7 - index / 100_000, 52 + index / 100_000])],
+      coordinates: [
+        Array.from({ length: 5_000 }, (_, index) => [-9.7 - index / 100_000, 52 + index / 100_000]),
+        [[-9.8, 52], [-9.8, 95], [-9.9, 52.2, 'unknown']],
+        'not-a-segment',
+        [[-9.8, 52.3]],
+      ],
     })
     const malformedGeometry = '{"type":"MultiLineString","coordinates":['
     const oversizedGeometry = JSON.stringify({
@@ -597,6 +602,21 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(retainedDb.prepare(`SELECT reason FROM gpx_evidence_rejections
       WHERE import_id = 'legacy-oversized'`).get())
       .toMatchObject({ reason: expect.stringMatching(/bounded startup migration budget.*retained/i) })
+    expect(retainedDb.prepare(`SELECT kind, segment_index, point_index, reason FROM gpx_evidence_rejections
+      WHERE import_id = 'legacy-gpx' ORDER BY segment_index, point_index, reason`).all())
+      .toEqual([
+        { kind: 'point', segment_index: 1, point_index: 1, reason: 'invalid_coordinates' },
+        { kind: 'point', segment_index: 1, point_index: 2, reason: 'invalid_elevation' },
+        { kind: 'segment', segment_index: 2, point_index: null, reason: 'invalid_segment' },
+        { kind: 'segment', segment_index: 3, point_index: null, reason: 'insufficient_segment_points' },
+      ])
+    expect(JSON.parse(String(retainedDb.prepare(`SELECT geometry_json FROM gpx_track_imports
+      WHERE id = 'legacy-gpx'`).get()?.geometry_json))).toMatchObject({
+      type: 'MultiLineString',
+      coordinates: expect.arrayContaining([
+        [[-9.8, 52], [-9.9, 52.2]],
+      ]),
+    })
     expect(retainedDb.prepare(`SELECT COUNT(*) AS count FROM gpx_evidence_points
       WHERE import_id = 'legacy-oversized'`).get()).toMatchObject({ count: 0 })
     retainedDb.close()
@@ -607,12 +627,102 @@ describe('mission evidence versioning [DON-277]', () => {
       trackLimit: 100,
     })
     expect(replay).toMatchObject({
-      staticGpxPointCount: 5_000,
+      staticGpxPointCount: 5_003,
+      staticGpxEvidence: expect.arrayContaining([
+        expect.objectContaining({ import_id: 'legacy-malformed', static_point_count: 0, rejection_count: 1 }),
+        expect.objectContaining({ import_id: 'legacy-oversized', static_point_count: 0, rejection_count: 1 }),
+        expect.objectContaining({ import_id: 'legacy-gpx', static_point_count: 5_003, rejection_count: 4 }),
+      ]),
       limitations: expect.arrayContaining([
         expect.objectContaining({ code: 'legacy_gpx_baseline_only' }),
         expect.objectContaining({ code: 'legacy_replay_scan_fallback' }),
       ]),
     })
+  })
+
+  it('bounds legacy GPX startup work and resumes every retained import without silent loss [DON-274]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-bounded-gpx-migration-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Bounded Legacy GPX Migration' })
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    legacyDb.exec(`
+      PRAGMA foreign_keys = OFF;
+      DROP TABLE gpx_evidence_rejections;
+      DROP TABLE gpx_evidence_points;
+      DROP TABLE gpx_import_revisions;
+      DROP TABLE gpx_import_aliases;
+      DROP INDEX IF EXISTS idx_gpx_import_content;
+      DROP TABLE gpx_track_imports;
+      CREATE TABLE gpx_track_imports (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        geometry_json TEXT NOT NULL,
+        metadata_json TEXT,
+        imported_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (mission_id, source_path)
+      );
+      UPDATE metadata SET value = '11' WHERE key = 'schema_version';
+      PRAGMA foreign_keys = ON;
+    `)
+    const geometry = JSON.stringify({
+      type: 'MultiLineString',
+      coordinates: [Array.from({ length: 200 }, (_, index) => [-9.7, 52 + index / 100_000])],
+    })
+    const insert = legacyDb.prepare(`INSERT INTO gpx_track_imports VALUES (
+      ?, ?, ?, ?, ?, ?, '{}', ?, ?
+    )`)
+    for (let index = 0; index < 12; index += 1) {
+      const timestamp = `2026-08-20T10:00:${String(index).padStart(2, '0')}Z`
+      insert.run(
+        `legacy-${String(index).padStart(2, '0')}`, mission.id, `/legacy/${index}.gpx`,
+        `${index}.gpx`, `Legacy ${index}`, geometry, timestamp, timestamp,
+      )
+    }
+    legacyDb.close()
+
+    store = createElectronMissionStore({ userDataPath })
+    let inspection = openDatabase(databaseFile)
+    const firstStartupCount = Number(inspection.prepare(
+      'SELECT COUNT(*) AS count FROM gpx_import_revisions',
+    ).get()?.count ?? 0)
+    inspection.close()
+    expect(firstStartupCount).toBeGreaterThan(0)
+    expect(firstStartupCount).toBeLessThan(12)
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: new Date().toISOString(),
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+    })).resolves.toMatchObject({
+      limitations: expect.arrayContaining([
+        expect.objectContaining({ code: 'legacy_gpx_backfill_pending', count: expect.any(Number) }),
+      ]),
+    })
+    await expect(store.finishMission(mission.id)).rejects.toThrow(/legacy GPX.*pending|unsettled/iu)
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath })
+    let migratedCount = 0
+    for (let attempt = 0; attempt < 100 && migratedCount < 12; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      inspection = openDatabase(databaseFile)
+      migratedCount = Number(inspection.prepare(
+        'SELECT COUNT(*) AS count FROM gpx_import_revisions',
+      ).get()?.count ?? 0)
+      inspection.close()
+    }
+    expect(migratedCount).toBe(12)
+    inspection = openDatabase(databaseFile)
+    expect(inspection.prepare('SELECT COUNT(*) AS count FROM gpx_evidence_points').get())
+      .toMatchObject({ count: 2_400 })
+    inspection.close()
+    await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   })
 
   it('recovers interrupted GPX staging into retained failure provenance before allowing retry [DON-274]', async () => {
@@ -1139,6 +1249,49 @@ describe('mission evidence versioning [DON-277]', () => {
       revision_sequence FROM gpx_import_revisions WHERE import_id = ?`).get(first.id)
     expect(projection).toMatchObject(revision ?? {})
     expect(projection).toMatchObject({ display_name: 'Route', timing_class: 'fully_dated', revision_sequence: 1 })
+    db.close()
+  })
+
+  it('compares every parsed row before accepting a chunked same-hash retry or alias [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Chunked Same Hash Mission' })
+    const db = openDatabase(await databasePath())
+    const points = Array.from({ length: 30 }, (_, pointIndex) => ({
+      segment_index: 0,
+      point_index: pointIndex,
+      track_name: 'Route',
+      lat: 52 + pointIndex / 100_000,
+      lon: -9.7,
+      elevation: 100,
+      timestamp: '2026-08-27T08:00:00Z',
+    }))
+    const rejections = [{
+      kind: 'point', segment_index: 0, point_index: 31,
+      reason: 'invalid_elevation', source_value: 'unknown',
+    }]
+    const retained = await upsertGpxEvidenceChunked(
+      db,
+      gpxInput(mission.id, { points, rejections }),
+      5,
+    )
+
+    await expect(upsertGpxEvidenceChunked(db, gpxInput(mission.id, {
+      id: retained.id,
+      points: points.map((point, index) => index === 29 ? { ...point, elevation: 999 } : point),
+      rejections,
+    }), 5)).rejects.toThrow(/parsed points differ/u)
+    await expect(upsertGpxEvidenceChunked(db, gpxInput(mission.id, {
+      id: retained.id,
+      source_path: '/field/route-alias.gpx',
+      file_name: 'route-alias.gpx',
+      points,
+      rejections: [{ ...rejections[0], source_value: 'changed' }],
+    }), 5)).rejects.toThrow(/rejection evidence differs/u)
+    await expect(upsertGpxEvidenceChunked(db, gpxInput(mission.id, {
+      id: retained.id, points, rejections,
+    }), 5)).resolves.toMatchObject({ id: retained.id, revision_sequence: 1 })
+    expect(db.prepare(`SELECT elevation FROM gpx_evidence_points
+      WHERE import_id = ? AND point_index = 29`).get(retained.id)).toMatchObject({ elevation: 100 })
     db.close()
   })
 

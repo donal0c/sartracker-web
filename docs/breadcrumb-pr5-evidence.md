@@ -548,6 +548,61 @@ and zero redundant telemetry slope. The AppImage opened a non-black
 `c09f71dffdc903813530f0738724d4253b9c6b8b846c53b658f875b0750e04d5`
 (`.deb`). This is packaged runner qualification, not release or field proof.
 
+## Exact-head review invalidation after Linux qualification
+
+Exact head `96c2047b18f0dd44a659fb5086e81911d341838b`, tree
+`1e389b995624a7decd3d1694d477078b7dbd4219`, was reviewed independently and
+rejected despite the preceding local, visual and Linux proof. Banach's broad
+life-safety review found three accepted findings: legacy migration omitted
+invalid/out-of-range/structural coordinates without per-item rejections and
+hid zero-point rejected artifacts; chunked same-hash retries compared empty
+arrays and could mutate a late parsed point or rejection silently; and the
+25-row page loop still drained every legacy import synchronously at startup.
+Maxwell's concurrency/finalization review reproduced Tauri GPX identity and
+finished-mission checks outside the owning write transaction. Hypatia's
+renderer/input-containment review reproduced browser Replay returning the
+current page again for `Earlier exact page` and found its limits had drifted
+from Electron. The persistence/completeness slot was deliberately not spent on
+an already-invalid head.
+
+The replacement uses one bounded legacy validation pass. It retains the
+original artifact in the immutable revision, writes every safe exact point,
+builds the display projection only from safe segments, and records bounded
+point/segment rejections for invalid coordinates, elevation, structure,
+insufficient geometry, malformed input and over-budget input. Zero-point
+rejected artifacts remain visible in static evidence. Launch migrates at most
+three bounded imports, then resumes one atomic import per background turn;
+pending count remains explicit and mission lifecycle changes fail closed.
+Close/reopen resumes from the durable missing-revision predicate without
+rewriting a completed baseline.
+
+Same-hash and same-content-alias paths now compare the complete canonical
+point and rejection sets even when the input arrays are empty or exceed the
+chunk size. Tauri acquires `BEGIN IMMEDIATE` before checking mission status,
+explicit identity or source-path ownership, and keeps the projection plus
+audit event inside that transaction. Browser validation now shares Electron's
+1,000-row limit and 10,000,000 cursor bound, preserves cursor direction/key,
+and computes the page before a `before` cursor rather than replaying its current
+offset. Red-green coverage includes a changed 30th chunked point/rejection,
+invalid legacy geometry and zero-point visibility, bounded crash-resumable
+multi-import migration, deterministic two-connection identity and finish-wins
+races, Electron after/before cursor envelopes, boundary vectors, and a 502-fix
+operator flow that proves Later then Earlier restores rows 1-500.
+
+Fresh replacement-tree proof is green: 289 unit files / 2,420 tests; backend
+54 passed / 1 intentional real-keychain ignore; lint; TypeScript/Vite build and
+bundle budgets; Chromium 165/165; visual Playwright 58/58; and a fresh uncached
+independent visual review 69/69 with report
+`visual-review-2026-08-28T07-48-03Z.json`. The indexed 960k qualification passed
+with 65.32 ms seek, 52.58 ms late page, 60.38 ms maximum current write, 65.49
+ms event-loop maximum and 58.44 ms restart seek with exact equality. The
+authentic-v11 960k fallback passed with 12.86 ms open, 616.49 ms seek, 3.50 ms
+current write and 594.03 ms restart seek, retaining the explicit fallback
+limitation and no large startup indexes. These results still invalidate the
+prior package/Linux and clean-review claims for completion: fresh committed-
+head packaged/Linux proof and the accepted four independent exact-head reviews
+remain mandatory on the replacement code-and-documentation head.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
