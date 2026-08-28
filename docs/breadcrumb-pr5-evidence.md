@@ -795,8 +795,14 @@ Fresh replacement-tree verification is green:
   concurrent current write and 577.44 ms restart seek, with
   `legacy_replay_scan_fallback` explicit.
 
-This is replacement-tree proof, not yet committed package/Linux or clean
-exact-head review proof. Those gates remain mandatory before task completion.
+The replacement is committed as executable code `4c2d9d405338` with bound
+candidate `428ded12424a`. Unsigned macOS arm64 packaging passed. The packaged
+CI-profile soak passed 6/6 batches, 8,664/8,664 exact positions, one restart,
+four healthy operator interactions, SQLite integrity `ok`, 10.53 ms maximum
+main-process round trip, zero crashes and zero redundant-event slope. This is
+local packaged proof, not Linux, release or field proof. Push/Linux proof and
+all four clean independent exact-head reviews remain mandatory before task
+completion.
 
 ## Proof limits
 
