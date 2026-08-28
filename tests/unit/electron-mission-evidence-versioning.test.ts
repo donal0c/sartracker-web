@@ -4,7 +4,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as new (path: string) => {
@@ -144,6 +144,10 @@ const {
     readonly evidenceVersionFaultInjection?: { readonly afterProjection?: boolean }
     readonly gpxRetirementFaultInjection?: { readonly beforeTransaction?: () => void }
     readonly gpxShutdownJoinTimeoutMs?: number
+    readonly startLegacyEvidenceBackfillWorker?: (input: Readonly<Record<string, unknown>>) => {
+      readonly completion: Promise<Readonly<Record<string, unknown>>>
+      terminate(): Promise<void>
+    }
     readonly runGpxEvidenceImportInWorker?: (input: {
       readonly databasePath: string
       readonly missionId: string
@@ -169,6 +173,8 @@ describe('mission evidence versioning [DON-277]', () => {
   let store: MissionEvidenceStore | null = null
 
   afterEach(async () => {
+    vi.restoreAllMocks()
+    await store?.prepareClose()
     store?.close()
     store = null
     if (userDataPath !== null) {
@@ -701,6 +707,76 @@ describe('mission evidence versioning [DON-277]', () => {
       .resolves.toMatchObject({ mission_id: mission.id })
   }, 60_000)
 
+  it('keeps current positions available and records a fail-closed reason when legacy worker startup fails [DON-277]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-worker-start-failure-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Legacy Worker Start Failure' })
+    await first.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'current-priority-device',
+      name: 'Current priority device',
+      color: '#3b82f6',
+      status: 'online',
+    })
+    await first.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER })
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    legacyDb.exec(`
+      UPDATE metadata SET value = '11' WHERE key = 'schema_version';
+      DROP TABLE mission_object_versions;
+      DROP TABLE legacy_mission_object_backfill_state;
+    `)
+    legacyDb.close()
+    const loggedFailure = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    store = createElectronMissionStore({
+      userDataPath,
+      startLegacyEvidenceBackfillWorker: () => {
+        throw new Error('worker constructor unavailable\nunsafe detail')
+      },
+    })
+
+    await expect(store.listMissionObjectVersions({ missionId: mission.id }))
+      .rejects.toThrow(/reconstruction stopped safely.*worker constructor unavailable/iu)
+    const currentFixTime = new Date().toISOString()
+    const currentWriteStarted = performance.now()
+    await expect(store.addPosition({
+      mission_id: mission.id,
+      device_id: 'current-priority-device',
+      source_position_id: 'current-after-worker-start-failure',
+      lat: 52.1,
+      lon: -9.5,
+      timestamp: currentFixTime,
+      received_at: currentFixTime,
+      timestamp_source: 'fix',
+    })).resolves.toMatchObject({ source_position_id: 'current-after-worker-start-failure' })
+    expect(performance.now() - currentWriteStarted).toBeLessThan(200)
+    const inspection = openDatabase(databaseFile)
+    expect(inspection.prepare(`SELECT value FROM metadata
+      WHERE key = 'legacy_evidence_backfill_failure'`).get()?.value)
+      .toBe('worker constructor unavailable unsafe detail')
+    inspection.close()
+    expect(loggedFailure).toHaveBeenCalledWith(expect.stringMatching(
+      /migration could not start safely.*worker constructor unavailable unsafe detail/iu,
+    ))
+    loggedFailure.mockRestore()
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath })
+    let reconstructed = false
+    for (let attempt = 0; attempt < 100 && !reconstructed; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      reconstructed = await store.listMissionObjectVersions({ missionId: mission.id })
+        .then(() => true, () => false)
+    }
+    expect(reconstructed).toBe(true)
+    const recovered = openDatabase(databaseFile)
+    expect(recovered.prepare(`SELECT value FROM metadata
+      WHERE key = 'legacy_evidence_backfill_failure'`).get()).toBeUndefined()
+    recovered.close()
+  })
+
   it('prepares large legacy event provenance in bounded turns and fails Replay closed meanwhile [DON-278]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-event-provenance-'))
     const first = createElectronMissionStore({ userDataPath })
@@ -766,6 +842,7 @@ describe('mission evidence versioning [DON-277]', () => {
     }
     expect(durableCursor).toMatch(/^legacy-event-/u)
     checkpointDb.close()
+    await store.prepareClose()
     store.close()
     store = createElectronMissionStore({ userDataPath })
     const restartedDb = openDatabase(databaseFile)
@@ -1036,6 +1113,7 @@ describe('mission evidence versioning [DON-277]', () => {
     })
     await expect(store.finishMission(mission.id)).rejects.toThrow(/legacy GPX.*pending|unsettled/iu)
 
+    await store.prepareClose()
     store.close()
     store = createElectronMissionStore({ userDataPath })
     let migratedCount = 0

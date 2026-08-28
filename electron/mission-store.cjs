@@ -14,6 +14,9 @@ const { runMissionReplayInWorker } = require('./mission-replay-runner.cjs')
 const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
 const { runGpxEvidenceImportInWorker } = require('./gpx-evidence-import-runner.cjs')
 const {
+  startLegacyEvidenceBackfillWorker,
+} = require('./legacy-evidence-backfill-runner.cjs')
+const {
   DEFAULT_PAGE_BYTE_LIMIT,
   compactGpxDisplayGeometry,
   listGpxImportProjectionPage,
@@ -44,13 +47,12 @@ const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 const { createOutingStore } = require('./outing-store.cjs')
 const {
   assertLegacyMissionObjectBackfillSettled,
-  backfillLegacyMissionObjectVersions,
   createMissionEvidenceVersionStore,
   initializeLegacyMissionObjectVersionBackfill,
+  readLegacyMissionObjectBackfillPending,
 } = require('./mission-evidence-version-store.cjs')
 const {
   assertLegacyEventProvenanceReady,
-  backfillLegacyEventProvenance,
   initializeLegacyEventProvenanceBackfill,
   readLegacyEventProvenanceBackfillPending,
 } = require('./mission-event-provenance-backfill.cjs')
@@ -445,61 +447,59 @@ function createElectronMissionStore(options) {
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   const migrationState = migrate(db)
-  let legacyEvidenceBackfillTimer = null
-  let legacyEvidenceBackfillFailure = null
   let gpxReceiptRecoveryTimer = null
   let gpxReceiptRecoveryFailure = null
-  let nextLegacyEvidenceBackfillKind = 'event'
   let storeClosed = false
-  const scheduleLegacyEvidenceBackfill = () => {
-    const pending = migrationState.legacyGpxBackfillRemaining > 0
-      || migrationState.legacyMissionObjectBackfillRemaining > 0
-      || migrationState.legacyEventProvenanceBackfillRemaining > 0
-    if (storeClosed || !pending || legacyEvidenceBackfillTimer !== null
-      || legacyEvidenceBackfillFailure !== null) return
-    legacyEvidenceBackfillTimer = setTimeout(() => {
-      legacyEvidenceBackfillTimer = null
-      if (storeClosed) return
-      try {
-        const objectPending = migrationState.legacyMissionObjectBackfillRemaining > 0
-        const gpxPending = migrationState.legacyGpxBackfillRemaining > 0
-        const eventPending = migrationState.legacyEventProvenanceBackfillRemaining > 0
-        if (eventPending && (nextLegacyEvidenceBackfillKind === 'event'
-          || (!objectPending && !gpxPending))) {
-          const result = backfillLegacyEventProvenance(db, now())
-          migrationState.legacyEventProvenanceBackfillRemaining = result.remaining
-          nextLegacyEvidenceBackfillKind = 'object'
-        } else if (objectPending && (nextLegacyEvidenceBackfillKind === 'object' || !gpxPending)) {
-          const result = backfillLegacyMissionObjectVersions(db, now())
-          migrationState.legacyMissionObjectBackfillRemaining = result.remaining
-          nextLegacyEvidenceBackfillKind = 'gpx'
-        } else if (gpxPending) {
-          const result = backfillLegacyGpxRevisions(db, now(), 1)
-          migrationState.legacyGpxBackfillRemaining = result.remaining
-          nextLegacyEvidenceBackfillKind = 'event'
-        } else if (eventPending) {
-          const result = backfillLegacyEventProvenance(db, now())
-          migrationState.legacyEventProvenanceBackfillRemaining = result.remaining
-          nextLegacyEvidenceBackfillKind = 'object'
-        }
-        if (migrationState.legacyGpxBackfillRemaining === 0
-          && migrationState.legacyMissionObjectBackfillRemaining === 0
-          && migrationState.legacyEventProvenanceBackfillRemaining === 0) {
-          db.prepare(`DELETE FROM metadata
-            WHERE key = 'legacy_evidence_backfill_failure'`).run()
-        }
-        scheduleLegacyEvidenceBackfill()
-      } catch (error) {
-        legacyEvidenceBackfillFailure = safeEvidenceFailureReason(error?.message ?? error)
-        db.prepare(`INSERT INTO metadata (key, value) VALUES (
-          'legacy_evidence_backfill_failure', ?
-        ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-          .run(legacyEvidenceBackfillFailure)
-        console.error(`Legacy evidence migration stopped safely: ${legacyEvidenceBackfillFailure}`)
-      }
-    }, LEGACY_GPX_BACKFILL_DELAY_MS)
+  const legacyEvidenceBackfillPending = migrationState.legacyGpxBackfillRemaining > 0
+    || migrationState.legacyMissionObjectBackfillRemaining > 0
+    || migrationState.legacyEventProvenanceBackfillRemaining > 0
+  let legacyEvidenceBackfillWorker = null
+  let legacyEvidenceBackfillWorkerStopped = !legacyEvidenceBackfillPending
+  if (!legacyEvidenceBackfillPending) {
+    db.prepare(`DELETE FROM metadata
+      WHERE key = 'legacy_evidence_backfill_failure'`).run()
+  } else {
+    try {
+      legacyEvidenceBackfillWorker = (
+        options.startLegacyEvidenceBackfillWorker ?? startLegacyEvidenceBackfillWorker
+      )({
+        databasePath,
+        eventPending: migrationState.legacyEventProvenanceBackfillRemaining > 0,
+        objectPending: migrationState.legacyMissionObjectBackfillRemaining > 0,
+        gpxPending: migrationState.legacyGpxBackfillRemaining > 0,
+      })
+      void legacyEvidenceBackfillWorker.completion.then(
+        (result) => {
+          legacyEvidenceBackfillWorkerStopped = true
+          if (result?.stopped !== true && !storeClosed) {
+            db.prepare(`DELETE FROM metadata
+              WHERE key = 'legacy_evidence_backfill_failure'`).run()
+          }
+        },
+        (error) => {
+          legacyEvidenceBackfillWorkerStopped = true
+          if (!storeClosed) {
+            const failure = safeEvidenceFailureReason(error?.message ?? error)
+            try {
+              db.prepare(`INSERT INTO metadata (key, value) VALUES (
+                'legacy_evidence_backfill_failure', ?
+              ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(failure)
+            } catch (metadataError) {
+              console.error(`Legacy evidence migration failure could not be persisted: ${safeEvidenceFailureReason(metadataError?.message ?? metadataError)}`)
+            }
+            console.error(`Legacy evidence migration stopped safely: ${failure}`)
+          }
+        },
+      )
+    } catch (error) {
+      legacyEvidenceBackfillWorkerStopped = true
+      const failure = safeEvidenceFailureReason(error?.message ?? error)
+      db.prepare(`INSERT INTO metadata (key, value) VALUES (
+        'legacy_evidence_backfill_failure', ?
+      ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(failure)
+      console.error(`Legacy evidence migration could not start safely: ${failure}`)
+    }
   }
-  scheduleLegacyEvidenceBackfill()
   const scheduleGpxReceiptRecovery = () => {
     if (storeClosed || migrationState.gpxReceiptRecoveryRemaining === 0
       || gpxReceiptRecoveryTimer !== null || gpxReceiptRecoveryFailure !== null) return
@@ -625,14 +625,20 @@ function createElectronMissionStore(options) {
     prepareClose: async () => {
       const active = [...activeGpxEvidenceImports]
       for (const entry of active) entry.controller.abort()
-      if (active.length === 0) return
+      const shutdownTasks = active.map((entry) => entry.quiesced)
+      if (!legacyEvidenceBackfillWorkerStopped && legacyEvidenceBackfillWorker !== null) {
+        shutdownTasks.push(legacyEvidenceBackfillWorker.terminate().then(() => {
+          legacyEvidenceBackfillWorkerStopped = true
+        }))
+      }
+      if (shutdownTasks.length === 0) return
       let timeout
       try {
         await Promise.race([
-          Promise.all(active.map((entry) => entry.quiesced)),
+          Promise.all(shutdownTasks),
           new Promise((_, reject) => {
             timeout = setTimeout(() => reject(new Error(
-              'A GPX evidence import worker did not exit within the safe shutdown deadline. The mission store remains open and the exit is not marked clean.',
+              'A mission evidence worker did not exit within the safe shutdown deadline. The mission store remains open and the exit is not marked clean.',
             )), gpxShutdownJoinTimeoutMs)
           }),
         ])
@@ -644,11 +650,10 @@ function createElectronMissionStore(options) {
       if (activeGpxEvidenceImports.size > 0) {
         throw new Error('Cannot close the mission store while GPX evidence imports are active; call prepareClose first.')
       }
-      storeClosed = true
-      if (legacyEvidenceBackfillTimer !== null) {
-        clearTimeout(legacyEvidenceBackfillTimer)
-        legacyEvidenceBackfillTimer = null
+      if (!legacyEvidenceBackfillWorkerStopped) {
+        throw new Error('Cannot close the mission store while legacy evidence reconstruction is active; call prepareClose first.')
       }
+      storeClosed = true
       if (gpxReceiptRecoveryTimer !== null) {
         clearTimeout(gpxReceiptRecoveryTimer)
         gpxReceiptRecoveryTimer = null
@@ -2691,7 +2696,7 @@ function migrate(db) {
   const legacyGpxBackfill = backfillLegacyGpxRevisions(db, migrationTime, 3, false)
   return {
     legacyGpxBackfillRemaining: legacyGpxBackfill.remaining,
-    legacyMissionObjectBackfillRemaining: 1,
+    legacyMissionObjectBackfillRemaining: readLegacyMissionObjectBackfillPending(db),
     legacyEventProvenanceBackfillRemaining: readLegacyEventProvenanceBackfillPending(db),
     gpxReceiptRecoveryRemaining: readUnsettledGpxImportReceiptPending(db),
   }
@@ -7736,6 +7741,7 @@ module.exports = {
   retainGpxImportSourceBytes,
   settleGpxImportSourceReceipt,
   startGpxImportBatch,
+  backfillLegacyGpxRevisions,
   upsertGpxEvidence,
   upsertGpxEvidenceChunked,
 }
