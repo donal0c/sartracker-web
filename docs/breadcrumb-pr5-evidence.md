@@ -21,7 +21,7 @@ final coordinator handoff without changing the reviewed tree.
 | `SAR-QA-020` | Finalized missions are read-only; history and revisions remain visible | finalized-fence transaction/race tests, retired-parent tests and replay revision tests; archive/custody remains PR6 |
 | `SAR-QA-021` | Traccar `fixTime` is the sole breadcrumb evidence clock | replay query eligibility/limitation tests and 960k/2m qualification fixtures |
 
-## Exact-head independent review and accepted-finding disposition
+## Earlier exact-head review history and accepted-finding disposition
 
 The initial review work inspected the accumulated PR range from exact base
 `80309c995a18eeb190cce4310c9a46b0f46d5263`. A second four-review exact-head
@@ -95,10 +95,12 @@ retains advisory coverage consistently, and mirrors operator `maxLength`
 guards. The 64 MiB geometry and 32 MiB timestamp/legacy-ID reproductions are
 durable sub-200 ms rejection gates. This head was rejected too.
 
-The accepted final four-review wave inspected exact head
+An earlier four-review wave inspected exact head
 `72b095089ee028a1a6e9ca7571d967adf46e44d4`, tree
 `c549fb0092f6501ebe2791b2fd4dd84e9381f213`, from the exact PR4 base. All four
-reviewers returned **CLEAN** with no actionable P1/P2 finding:
+reviewers returned **CLEAN** with no actionable P1/P2 finding on that head. The
+later pasted-review invalidation documented below superseded this as completion
+evidence:
 
 | Independent reviewer | Risk charter | Exact recheck evidence |
 | --- | --- | --- |
@@ -107,7 +109,7 @@ reviewers returned **CLEAN** with no actionable P1/P2 finding:
 | Maxwell, `/root/pr5_final_concurrency_exact` | Concurrency/finalization | 209/209 core plus 157/157 adjacent tests, 27/27 time/harness tests, six focused race/priority selections, 22/22 drawing/layer Chromium and isolated 5/5 Search Operations; both GPX race directions independently reproduced clean |
 | Hypatia, `/root/pr5_final_renderer` | Renderer/input containment | 232/232 focused tests, 1/1 Search Operations, 1/1 drawing, 1/1 layer, 3/3 replay/as-of Chromium, 2/2 targeted visual; all four earlier large/malformed bypasses rejected before mutation |
 
-The reviewers independently reconfirmed the accepted-finding dispositions:
+Those reviewers independently reconfirmed the then-known finding dispositions:
 raw-length-first preflight covers every Search Operations entry point before
 lookup or state/database work; malformed optional values fail rather than
 silently clearing evidence; Electron and browser advisory data agree; current
@@ -520,6 +522,31 @@ healthy operator interactions, 9.74 ms maximum main-process responsiveness,
 zero renderer crashes and zero redundant telemetry slope. The report is
 `tmp/beta-artifacts/tracking-soak-ci/electron-tracking-soak-report.json`. This is
 local unsigned packaged proof, not Linux, signed, release or field evidence.
+
+Exact-head Linux workflow
+[`33149715590`](https://github.com/donal0c/sartracker-web/actions/runs/33149715590)
+passed in 12m29s. GitHub checked out merge commit
+`aaa29a68382c4c048f39a3e05be7815785b12a1b`, whose parents are exact base
+`80309c995a18eeb190cce4310c9a46b0f46d5263` and pushed replacement head
+`03a6ece3660599e3bc089c875245ca50a0ddfa0c`; its tree
+`b2154e62c36b3c5656d4aee88612f34bfcf748ac` is byte-identical to the pushed
+head tree. Ubuntu x64 passed lint, the complete serial 2,416-test unit gate,
+production build and bundle budgets, AppImage/`.deb` packaging, x86-64 native
+SQLite inspection and Mesa llvmpipe attestation.
+
+The 765,710,336-byte / 960,000-position fixture passed with 50,000-point GPX
+import dispatch 4.48 ms, 1,177 concurrent current writes with 80.27 ms maximum
+and 2.51 ms p95, replay dispatch 0.30 ms, seek 234.30 ms, exact 914,001-offset
+late page 164.64 ms, live reads 1.64/1.87 ms, event-loop maximum 81.45 ms and
+restart seek 229.37 ms with exact first-page equality. The packaged soak passed
+6/6 batches, 8,664/8,664 exact positions, one restart, four healthy operator
+samples, 21.80 ms main-process maximum, zero renderer crashes, integrity `ok`
+and zero redundant telemetry slope. The AppImage opened a non-black
+0.484819-mean content frame and closed gracefully. SHA-256 values are
+`3d973adf782ff9ddab805656f13a0666ff4597e00056a03ae7a260c57155c4d9`
+(AppImage) and
+`c09f71dffdc903813530f0738724d4253b9c6b8b846c53b658f875b0750e04d5`
+(`.deb`). This is packaged runner qualification, not release or field proof.
 
 ## Proof limits
 
