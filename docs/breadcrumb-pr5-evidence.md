@@ -1277,6 +1277,54 @@ Linux run and clean broad, persistence/completeness, concurrency/finalization
 and renderer/input-containment reviews on that same head. PR opened/review-ready
 remains intermediate; no merge or release is authorized.
 
+## `d051e4c9` conflicting Linux evidence and `7f14d518` margin correction
+
+Documentation-bound head
+`d051e4c9ad47ab687018078c74ee98eab207889b` produced conflicting exact-head
+Linux evidence and was therefore rejected before review. The automatic
+pull-request workflow
+[`33213448567`](https://github.com/donal0c/sartracker-web/actions/runs/33213448567)
+passed every gate, but a redundant manual workflow dispatched at the same time,
+[`33213464281`](https://github.com/donal0c/sartracker-web/actions/runs/33213464281),
+failed on a slower runner. The second run measured a 201.49 ms current write
+during event-provenance reconstruction, 463.46 ms and 234.69 ms current writes
+during GPX import, a 50,000-object settlement timeout, and incomplete 500,000-row
+GPX cursor settlement within the former fixed wait. One green runner does not
+override those slower-runner results.
+
+Executable correction
+`7f14d518b458aa617cb26f3f604df59c9c6e6c45` restores margin without relaxing
+the 200 ms gate or weakening exact-evidence completion:
+
+- legacy event provenance turns are reduced from 1,000 to 250 rows;
+- GPX writer slices yield five milliseconds between durable transactions so
+  current-position writers can acquire WAL ownership;
+- a large GPX source remains exact in its immutable revision but is no longer
+  synchronously duplicated into the active projection. The projection keeps
+  identity, digest and presentation state; small sources retain the compatible
+  inline path; and
+- slow-runner harnesses poll durable 50,000/500,000 completion for longer while
+  preserving the same exact counts and less-than-200 ms heartbeat/write gates.
+
+The 8 MiB regression failed red because both projection and revision retained
+11,184,812 base64 bytes, then passed with zero projection bytes and the exact
+11,184,812-byte immutable revision. The five affected scale/liveness tests
+passed three consecutive focused runs, the complete evidence file passed 63/63,
+and the full serial gate passed 294 files / 2,484 tests. ESLint, CommonJS syntax,
+production build and bundle budgets are green. Fresh indexed 960k qualification
+retained digest
+`b7f89681afb111108341a080fb248c93cb1d3765cdd98c2f7eb9e4c2fd9fdcfc`:
+4,188 concurrent current writes had 24.68 ms maximum / 1.95 ms p95, the
+event-loop maximum was 25.27 ms, Replay seek 62.48 ms, late page 49.82 ms,
+restart seek 53.93 ms with exact equality, and the deliberately more cooperative
+50,000-point import completed in 12,930.32 ms. The rebuilt unsigned macOS
+package passed two launches, 6/6 batches, 8,664/8,664 exact positions, a
+19.2 ms maximum main round trip and zero redundant-event slope.
+
+The documentation-bound descendant still requires isolated exact-head Linux
+qualification and all four independent exact-head reviews. No merge or release
+is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
