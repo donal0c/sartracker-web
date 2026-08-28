@@ -10,7 +10,21 @@ import {
 } from '../../src/features/browser-validation/browser-harness-store'
 
 const require = createRequire(import.meta.url)
-const { encodeReplayTrackCursor } = require('../../electron/mission-replay-query.cjs') as {
+const { encodeReplayObjectCursor, encodeReplayTrackCursor } = require('../../electron/mission-replay-query.cjs') as {
+  readonly encodeReplayObjectCursor: (
+    offset: number,
+    input: {
+      readonly missionId: string
+      readonly selectedTime: string
+      readonly trackLimit: number
+      readonly objectLimit?: number
+      readonly replayGeneration: number
+      readonly timezone?: string
+      readonly deviceIds?: readonly string[]
+      readonly outingIds?: readonly string[]
+    },
+    eligibleObjectCount: number,
+  ) => string
   readonly encodeReplayTrackCursor: (
     direction: 'after' | 'before',
     offset: number,
@@ -22,6 +36,16 @@ const { encodeReplayTrackCursor } = require('../../electron/mission-replay-query
     },
     replayGeneration: number,
     eligiblePositionCount: number,
+    context: {
+      readonly missionId: string
+      readonly selectedTime: string
+      readonly trackLimit: number
+      readonly replayGeneration?: number
+      readonly timezone?: string
+      readonly deviceIds?: readonly string[]
+      readonly outingIds?: readonly string[]
+    },
+    eligibleTrackCount: number,
   ) => string
 }
 
@@ -777,6 +801,93 @@ describe('browser harness store', () => {
     })).rejects.toThrow('Mission replay cursor is invalid.')
   })
 
+  it('preflights browser Replay inputs with the packaged bounds and timezone contract [DON-278]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Replay Input Contract Mission' })
+    const valid = {
+      missionId: mission.id,
+      selectedTime: '2026-08-20T09:00:00.000Z',
+      trackLimit: 100,
+    }
+
+    await expect(store.readMissionReplay({
+      ...valid,
+      missionId: 'm'.repeat(201),
+    })).rejects.toThrow('Mission replay mission ID is invalid.')
+    for (const selectedTime of [
+      `2026-08-20T09:00:00.000Z${'x'.repeat(40)}`,
+      ' 2026-08-20T09:00:00.000Z',
+      '2026-02-30T09:00:00.000Z',
+    ]) {
+      await expect(store.readMissionReplay({
+        ...valid,
+        selectedTime,
+      })).rejects.toThrow('Mission replay selected time is invalid.')
+    }
+    await expect(store.readMissionReplay({
+      ...valid,
+      timezone: 'UTC',
+    })).rejects.toThrow('Mission replay timezone is invalid.')
+    await expect(store.readMissionReplay(valid)).resolves.toMatchObject({
+      timezone: 'Europe/Dublin',
+    })
+  })
+
+  it('rejects cross-mission, cross-time, and equal-count cross-filter Replay cursor reuse [DON-278]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T08:30:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const firstMission = await store.createMission({ name: 'First cursor mission' })
+    const secondMission = await store.createMission({ name: 'Second cursor mission' })
+    for (const missionId of [firstMission.id, secondMission.id]) {
+      for (const deviceId of ['device-1', 'device-2']) {
+        await store.upsertDevice({
+          mission_id: missionId, device_id: deviceId, name: deviceId, color: '#fff', status: 'online',
+        })
+        for (let index = 0; index < 2; index += 1) {
+          await store.addPosition({
+            id: `${missionId}-${deviceId}-${index}`, mission_id: missionId, device_id: deviceId,
+            lat: 52 + index / 100, lon: -9.7,
+            timestamp: `2026-08-20T08:0${index}:00.000Z`, timestamp_source: 'fix',
+          })
+        }
+      }
+    }
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const first = await store.readMissionReplay({
+      missionId: firstMission.id, selectedTime: '2026-08-20T09:00:00.000Z',
+      timezone: 'Europe/Dublin', trackLimit: 1, deviceIds: ['device-1'], outingIds: [],
+    })
+
+    for (const context of [
+      { missionId: secondMission.id, selectedTime: '2026-08-20T09:00:00.000Z', deviceIds: ['device-1'] },
+      { missionId: firstMission.id, selectedTime: '2026-08-20T09:30:00.000Z', deviceIds: ['device-1'] },
+      { missionId: firstMission.id, selectedTime: '2026-08-20T09:00:00.000Z', deviceIds: ['device-2'] },
+    ]) {
+      await expect(store.readMissionReplayTrackChunk?.({
+        ...context, timezone: 'Europe/Dublin', trackLimit: 1, outingIds: [], cursor: first.nextCursor,
+      })).rejects.toThrow('Mission replay cursor context does not match this request.')
+    }
+
+    const objectCursor = encodeReplayObjectCursor(1, {
+      missionId: firstMission.id, selectedTime: '2026-08-20T09:00:00.000Z',
+      timezone: 'Europe/Dublin', trackLimit: 1, objectLimit: 1, replayGeneration: 0,
+      deviceIds: ['device-1'], outingIds: [],
+    }, 0)
+    await expect(store.readMissionReplayObjectChunk({
+      missionId: firstMission.id, selectedTime: '2026-08-20T09:00:00.000Z',
+      timezone: 'Europe/Dublin', trackLimit: 1, objectLimit: 1, replayGeneration: 0,
+      deviceIds: ['device-1'], outingIds: [], objectCursor,
+    })).resolves.toMatchObject({ objectCursor: '1', totalObjectCount: 0 })
+    await expect(store.readMissionReplayObjectChunk({
+      missionId: secondMission.id, selectedTime: '2026-08-20T09:00:00.000Z',
+      timezone: 'Europe/Dublin', trackLimit: 1, objectLimit: 1, replayGeneration: 0,
+      deviceIds: ['device-1'], outingIds: [], objectCursor,
+    })).rejects.toThrow('Mission replay object cursor context does not match this request.')
+  })
+
   it('does not expose a browser replay device until its exact fix is known by T [DON-278]', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-20T08:00:00.000Z'))
@@ -853,7 +964,10 @@ describe('browser harness store', () => {
       recorded_at: '2026-08-20T08:00:00.000Z',
       source_order: 0,
       stable_order: 'position-1',
-    }, browserEnvelope.replayGeneration, 2)
+    }, browserEnvelope.replayGeneration, 2, {
+      missionId: mission.id, selectedTime: '2026-08-20T09:00:00.000Z', trackLimit: 1,
+      timezone: 'Europe/Dublin',
+    }, 2)
 
     await expect(store.readMissionReplayTrackChunk?.({
       missionId: mission.id,
@@ -909,7 +1023,10 @@ describe('browser harness store', () => {
       recorded_at: '2026-08-20T08:30:00.000Z',
       source_order: 0,
       stable_order: 'position-1',
-    }, 0, 3)
+    }, 0, 3, {
+      missionId: mission.id, selectedTime: '2026-08-20T09:00:00.000Z', trackLimit: 1,
+      timezone: 'Europe/Dublin',
+    }, 3)
     await expect(store.readMissionReplayTrackChunk?.({
       missionId: mission.id, selectedTime: '2026-08-20T09:00:00.000Z',
       timezone: 'Europe/Dublin', trackLimit: 1, cursor: electronBeforeCursor,
@@ -944,8 +1061,12 @@ describe('browser harness store', () => {
       source_order: 0,
       stable_order: 'position-1',
     }
-    const accepted = encodeReplayTrackCursor('after', 10_000_000, boundaryRow, 0, 0)
-    const rejected = encodeReplayTrackCursor('after', 10_000_001, boundaryRow, 0, 0)
+    const cursorContext = {
+      missionId: mission.id, selectedTime: '2026-08-20T09:00:00.000Z', trackLimit: 1,
+      timezone: 'Europe/Dublin',
+    }
+    const accepted = encodeReplayTrackCursor('after', 10_000_000, boundaryRow, 0, 0, cursorContext, 0)
+    const rejected = encodeReplayTrackCursor('after', 10_000_001, boundaryRow, 0, 0, cursorContext, 0)
     await expect(store.readMissionReplayTrackChunk?.({
       missionId: mission.id, selectedTime: '2026-08-20T09:00:00.000Z',
       timezone: 'Europe/Dublin', trackLimit: 1, cursor: accepted,
@@ -1007,6 +1128,42 @@ describe('browser harness store', () => {
       entries: [expect.objectContaining({ id: 'gpx-25' })],
       nextCursor: null,
     })
+  })
+
+  it('rejects a browser GPX projection cursor issued for another mission [DON-274]', async () => {
+    const store = getBrowserHarnessStore()
+    const firstMission = await store.createMission({ name: 'First paged GPX mission' })
+    for (let index = 0; index < 2; index += 1) {
+      await store.upsertGpxImport({
+        id: `first-mission-gpx-${index}`,
+        mission_id: firstMission.id,
+        source_path: `/tracks/first-${index}.gpx`,
+        file_name: `first-${index}.gpx`,
+        display_name: `First track ${index}`,
+        geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+      })
+    }
+    await store.finishMission(firstMission.id)
+    const secondMission = await store.createMission({ name: 'Second paged GPX mission' })
+    await store.upsertGpxImport({
+      id: 'second-mission-gpx',
+      mission_id: secondMission.id,
+      source_path: '/tracks/second.gpx',
+      file_name: 'second.gpx',
+      display_name: 'Second track',
+      geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+    })
+
+    const cursor = (await store.listGpxImportPage({
+      missionId: firstMission.id,
+      limit: 1,
+    })).nextCursor
+    expect(cursor).toEqual(expect.any(String))
+    await expect(store.listGpxImportPage({
+      missionId: secondMission.id,
+      cursor: cursor ?? undefined,
+      limit: 1,
+    })).rejects.toThrow('Browser GPX projection cursor is invalid.')
   })
 
   it('filters historical GPX evidence by the outing assigned to its eligible revision [DON-278]', async () => {

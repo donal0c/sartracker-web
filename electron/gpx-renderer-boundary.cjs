@@ -95,7 +95,7 @@ function packGpxRendererPage(rows, options = {}) {
 function listGpxImportProjectionPage(db, input) {
   const missionId = normalizePageText(input?.missionId, 'GPX mission')
   const limit = normalizePageLimit(input?.limit)
-  const cursor = decodePageCursor(input?.cursor, 'imports')
+  const cursor = decodePageCursor(input?.cursor, 'imports', missionId)
   const cursorClause = cursor === null
     ? ''
     : `AND (
@@ -136,9 +136,10 @@ function listGpxImportProjectionPage(db, input) {
   return {
     entries: packed.entries,
     nextCursor: !packed.hasMore || last === undefined
-      ? null
-      : encodePageCursor({
+        ? null
+        : encodePageCursor({
           kind: 'imports',
+          contextId: missionId,
           displayName: last.display_name,
           importedAt: last.imported_at,
           id: last.id,
@@ -150,7 +151,7 @@ function listGpxImportProjectionPage(db, input) {
 function listGpxImportRevisionProjectionPage(db, input) {
   const importId = normalizePageText(input?.importId, 'GPX import')
   const limit = normalizePageLimit(input?.limit)
-  const cursor = decodePageCursor(input?.cursor, 'revisions')
+  const cursor = decodePageCursor(input?.cursor, 'revisions', importId)
   const cursorClause = cursor === null
     ? ''
     : 'AND (revision_sequence > ? OR (revision_sequence = ? AND id > ?))'
@@ -173,9 +174,10 @@ function listGpxImportRevisionProjectionPage(db, input) {
   return {
     entries: packed.entries,
     nextCursor: !packed.hasMore || last === undefined
-      ? null
-      : encodePageCursor({
+        ? null
+        : encodePageCursor({
           kind: 'revisions',
+          contextId: importId,
           revisionSequence: last.revision_sequence,
           id: last.id,
         }),
@@ -201,11 +203,11 @@ function normalizePageText(value, label) {
 
 /** Encodes an opaque renderer cursor. */
 function encodePageCursor(value) {
-  return Buffer.from(JSON.stringify({ v: 1, ...value }), 'utf8').toString('base64url')
+  return Buffer.from(JSON.stringify({ v: 2, ...value }), 'utf8').toString('base64url')
 }
 
 /** Decodes and strictly validates an opaque renderer cursor. */
-function decodePageCursor(value, expectedKind) {
+function decodePageCursor(value, expectedKind, expectedContextId) {
   if (value === undefined || value === null || value === '') return null
   if (typeof value !== 'string' || value.length > 2048) {
     throw new Error('GPX renderer page cursor is invalid.')
@@ -216,17 +218,32 @@ function decodePageCursor(value, expectedKind) {
   } catch {
     throw new Error('GPX renderer page cursor is invalid.')
   }
-  if (parsed?.v !== 1 || parsed.kind !== expectedKind || typeof parsed.id !== 'string') {
+  if (
+    parsed?.v !== 2
+    || parsed.kind !== expectedKind
+    || parsed.contextId !== expectedContextId
+    || !isBoundedCursorText(parsed.id, false)
+  ) {
     throw new Error('GPX renderer page cursor is invalid.')
   }
   if (expectedKind === 'imports') {
-    if (typeof parsed.displayName !== 'string' || typeof parsed.importedAt !== 'string') {
+    if (
+      !isBoundedCursorText(parsed.displayName, true)
+      || !isBoundedCursorText(parsed.importedAt, false, 100)
+    ) {
       throw new Error('GPX renderer page cursor is invalid.')
     }
   } else if (!Number.isSafeInteger(parsed.revisionSequence) || parsed.revisionSequence < 1) {
     throw new Error('GPX renderer page cursor is invalid.')
   }
   return parsed
+}
+
+/** Checks decoded cursor text before it can reach a SQLite keyset predicate. */
+function isBoundedCursorText(value, allowEmpty, maximumLength = 1000) {
+  return typeof value === 'string'
+    && value.length <= maximumLength
+    && (allowEmpty || value.length > 0)
 }
 
 module.exports = {

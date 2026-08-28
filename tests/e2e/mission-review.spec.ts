@@ -96,6 +96,29 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-review-workspace')).toBeHidden()
   })
 
+  test('finishing a mission while Review is open fences Search Pass entry [DON-279]', async ({
+    page,
+  }) => {
+    await createSearchArea(page, 'Finish Fence Area')
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
+
+    await expect(page.getByTestId('search-operation-area')).toBeEnabled()
+    await expect(page.getByTestId('search-operations-read-only')).toHaveCount(0)
+
+    await page.getByTestId('mission-finish-btn').click()
+    await page
+      .getByTestId('mission-finish-dialog')
+      .getByRole('button', { name: 'Confirm Finish' })
+      .click()
+
+    await expect(page.getByTestId('search-operations-read-only')).toContainText(
+      'finished or finalized mission is permanently read-only',
+    )
+    await expect(page.getByTestId('search-operation-area')).toBeDisabled()
+    await expect(page.getByTestId('search-pass-record')).toBeDisabled()
+  })
+
   test('DON-203: Escape closes only the top dialog over docked Review', async ({ page }) => {
     await page.getByTestId('open-mission-review-workspace').click()
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()

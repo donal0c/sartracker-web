@@ -521,6 +521,65 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(await store.listSearchAreas(mission.id)).toEqual([])
   })
 
+  it('rejects edits that would overwrite the sole exact copy of oversized legacy mutable evidence [DON-277]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-oversized-object-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Oversized Legacy Object Mission' })
+    const marker = await first.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER })
+    first.close()
+
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const exactLegacyDescription = `Exact retained legacy evidence ${'x'.repeat(1024 * 1024)}`
+    const legacyDb = openDatabase(databaseFile)
+    legacyDb.prepare('UPDATE markers SET description = ? WHERE id = ?')
+      .run(exactLegacyDescription, marker.id)
+    legacyDb.prepare("UPDATE metadata SET value = '11' WHERE key = 'schema_version'").run()
+    legacyDb.exec('DROP TABLE mission_object_versions')
+    legacyDb.close()
+
+    store = createElectronMissionStore({ userDataPath })
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const inspection = openDatabase(databaseFile)
+      const count = Number(inspection.prepare(
+        'SELECT COUNT(*) AS count FROM mission_object_versions',
+      ).get()?.count ?? 0)
+      inspection.close()
+      if (count === 1) break
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+
+    const baseline = await store.listMissionObjectVersions({
+      missionId: mission.id,
+      objectType: 'marker',
+      objectId: String(marker.id),
+    })
+    expect(baseline).toHaveLength(1)
+    expect(JSON.parse(baseline[0].state_json)).toMatchObject({
+      id: marker.id,
+      mission_id: mission.id,
+      legacy_history_known: false,
+      legacy_state_omitted: true,
+    })
+
+    await expect(store.upsertMarker({
+      id: marker.id,
+      mission_id: mission.id,
+      ...SAMPLE_MARKER,
+      description: 'Replacement that must not overwrite retained evidence',
+    })).rejects.toThrow(/sole exact.*legacy.*retained.*cannot be changed or retired/iu)
+    await expect(store.deleteMarker(String(marker.id)))
+      .rejects.toThrow(/sole exact.*legacy.*retained.*cannot be changed or retired/iu)
+
+    expect(await store.listMarkers(mission.id)).toEqual([
+      expect.objectContaining({ id: marker.id, description: exactLegacyDescription }),
+    ])
+    expect(await store.listMissionObjectVersions({
+      missionId: mission.id,
+      objectType: 'marker',
+      objectId: String(marker.id),
+    })).toEqual(baseline)
+  })
+
   it('reconstructs large legacy mutable-object inventories in bounded background turns [DON-277]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-object-backfill-'))
     const first = createElectronMissionStore({ userDataPath })
@@ -1467,6 +1526,7 @@ describe('mission evidence versioning [DON-277]', () => {
 
     store = createElectronMissionStore({ userDataPath: userDataPath! })
     const recovered = openDatabase(await databasePath())
+    await waitForGpxReceiptRecovery(recovered, 'retired-evidence-batch')
     expect(recovered.prepare(`SELECT status FROM gpx_import_source_receipts
       WHERE batch_id = ?`).get('retired-evidence-batch')).toMatchObject({ status: 'failed' })
     expect(recovered.prepare(`SELECT status, failed_files FROM gpx_import_batches
@@ -1511,6 +1571,7 @@ describe('mission evidence versioning [DON-277]', () => {
 
     store = createElectronMissionStore({ userDataPath: userDataPath! })
     const recovered = openDatabase(await databasePath())
+    await waitForGpxReceiptRecovery(recovered, 'superseded-evidence-batch')
     expect(recovered.prepare(`SELECT status FROM gpx_import_source_receipts
       WHERE batch_id = ?`).get('superseded-evidence-batch')).toMatchObject({ status: 'failed' })
     expect(recovered.prepare(`SELECT status, failed_files FROM gpx_import_batches
@@ -1550,6 +1611,7 @@ describe('mission evidence versioning [DON-277]', () => {
 
     store = createElectronMissionStore({ userDataPath: userDataPath! })
     const recovered = openDatabase(await databasePath())
+    await waitForGpxReceiptRecovery(recovered, 'legacy-baseline-reimport-batch')
     expect(recovered.prepare(`SELECT status, source_bytes_base64
       FROM gpx_import_source_receipts WHERE batch_id = ?`)
       .get('legacy-baseline-reimport-batch'))
@@ -1598,6 +1660,7 @@ describe('mission evidence versioning [DON-277]', () => {
 
     store = createElectronMissionStore({ userDataPath: userDataPath! })
     const recoveredDb = openDatabase(databaseFile)
+    await waitForGpxReceiptRecovery(recoveredDb, 'receipt-batch')
     expect(recoveredDb.prepare(`SELECT source_path, content_sha256, source_bytes_base64, reason
       FROM gpx_import_failures WHERE batch_id = ? ORDER BY source_path`).all('receipt-batch'))
       .toEqual([
@@ -1618,6 +1681,88 @@ describe('mission evidence versioning [DON-277]', () => {
       WHERE id = ?`).get('receipt-batch')).toMatchObject({ status: 'interrupted', failed_files: 2 })
     recoveredDb.close()
   })
+
+  it('recovers a large interrupted receipt queue in bounded background turns [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Bounded GPX Receipt Recovery Mission' })
+    const newImportPath = path.join(userDataPath!, 'blocked-during-recovery.gpx')
+    await writeFile(
+      newImportPath,
+      '<gpx version="1.1"><trk><trkseg><trkpt lat="52" lon="-9.7"/></trkseg></trk></gpx>',
+    )
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'receipt-recovery-current',
+      name: 'Receipt recovery current device',
+      color: '#38bdf8',
+      status: 'online',
+    })
+    const databaseFile = await databasePath()
+    const receiptDb = openDatabase(databaseFile)
+    startGpxImportBatch(receiptDb, {
+      batchId: 'large-receipt-recovery-batch',
+      missionId: mission.id,
+      totalFiles: 5_000,
+    })
+    receiptDb.exec(`
+      WITH RECURSIVE receipts(n) AS (
+        VALUES (0) UNION ALL SELECT n + 1 FROM receipts WHERE n < 4999
+      )
+      INSERT INTO gpx_import_source_receipts (
+        batch_id, mission_id, source_path, file_name, status,
+        content_sha256, source_bytes_base64, created_at, updated_at
+      ) SELECT 'large-receipt-recovery-batch', '${mission.id}',
+        printf('/field/interrupted-%05d.gpx', n),
+        printf('interrupted-%05d.gpx', n), 'pending', NULL, NULL,
+        '2026-08-28T12:00:00.000Z', '2026-08-28T12:00:00.000Z'
+      FROM receipts;
+    `)
+    receiptDb.close()
+    store.close()
+    store = null
+
+    const openedAt = performance.now()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    expect(performance.now() - openedAt).toBeLessThan(200)
+    const replayWhileRecovering = store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-28T12:05:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+      objectLimit: 100,
+    })
+    const importWhileRecovering = store.importGpxEvidencePaths({
+      missionId: mission.id,
+      paths: [newImportPath],
+    })
+    await expect(importWhileRecovering).rejects.toThrow(/still being recovered/iu)
+    await expect(replayWhileRecovering).rejects.toThrow(/unsettled/iu)
+    const currentWriteStarted = performance.now()
+    await store.addPosition({
+      mission_id: mission.id,
+      device_id: 'receipt-recovery-current',
+      source_position_id: 'current-during-receipt-recovery',
+      lat: 52,
+      lon: -9.7,
+      timestamp: new Date().toISOString(),
+      timestamp_source: 'fix',
+    })
+    expect(performance.now() - currentWriteStarted).toBeLessThan(200)
+
+    const inspection = openDatabase(databaseFile)
+    let failureCount = 0
+    for (let attempt = 0; attempt < 1_000 && failureCount < 5_000; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      failureCount = Number(inspection.prepare(`SELECT COUNT(*) AS count
+        FROM gpx_import_failures WHERE batch_id = ?`)
+        .get('large-receipt-recovery-batch')?.count ?? 0)
+    }
+    expect(failureCount).toBe(5_000)
+    expect(inspection.prepare(`SELECT status, failed_files FROM gpx_import_batches
+      WHERE id = ?`).get('large-receipt-recovery-batch'))
+      .toMatchObject({ status: 'interrupted', failed_files: 5_000 })
+    inspection.close()
+  }, 15_000)
 
   it('deduplicates GPX by exact content and preserves changed files as revisions [DON-274]', async () => {
     store = await createStore()
@@ -2575,6 +2720,40 @@ describe('mission evidence versioning [DON-277]', () => {
     db.close()
   }, 30_000)
 
+  it('caps admitted GPX import batches before creating unbounded durable receipts [DON-274]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-gpx-admission-'))
+    let releaseWorker = () => undefined
+    const heldWorker = new Promise<void>((resolve) => { releaseWorker = resolve })
+    const runner = (() => Object.assign(
+      heldWorker.then(() => ({ imports: [], failures: [], dispatchDurationMs: 0 })),
+      { workerExited: heldWorker },
+    )) as unknown as NonNullable<Parameters<typeof createElectronMissionStore>[0]['runGpxEvidenceImportInWorker']>
+    store = createElectronMissionStore({
+      userDataPath,
+      runGpxEvidenceImportInWorker: runner,
+    })
+    const mission = await store.createMission({ name: 'Bounded GPX Admission Mission' })
+    const paths = Array.from({ length: 5 }, (_unused, index) =>
+      path.join(userDataPath!, `queued-${index}.gpx`))
+    await Promise.all(paths.map((sourcePath) => writeFile(
+      sourcePath,
+      '<gpx version="1.1"><trk><trkseg><trkpt lat="52" lon="-9.7"/></trkseg></trk></gpx>',
+    )))
+
+    const admitted = paths.slice(0, 4).map((sourcePath) =>
+      store!.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] }))
+    await expect(store.importGpxEvidencePaths({ missionId: mission.id, paths: [paths[4]!] }))
+      .rejects.toThrow(/queue is full/iu)
+    const db = openDatabase(await databasePath())
+    expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_batches
+      WHERE mission_id = ?`).get(mission.id)).toMatchObject({ count: 4 })
+    expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_source_receipts
+      WHERE mission_id = ?`).get(mission.id)).toMatchObject({ count: 4 })
+    db.close()
+    releaseWorker()
+    await Promise.all(admitted)
+  })
+
   it('records an oversized GPX as an explicit per-file failure before exact-byte retention [DON-274]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Oversized GPX Mission' })
@@ -3008,6 +3187,19 @@ describe('mission evidence versioning [DON-277]', () => {
 
   function openDatabase(databasePath: string): InstanceType<typeof Database> {
     return new Database(databasePath)
+  }
+
+  async function waitForGpxReceiptRecovery(
+    database: InstanceType<typeof Database>,
+    batchId: string,
+  ): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const pending = database.prepare(`SELECT 1 FROM gpx_import_source_receipts
+        WHERE batch_id = ? AND status IN ('pending', 'retained') LIMIT 1`).get(batchId)
+      if (pending === undefined) return
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    throw new Error(`Timed out waiting for GPX receipt recovery for ${batchId}.`)
   }
 
   function gpxInput(missionId: string, overrides: Readonly<Record<string, unknown>>) {

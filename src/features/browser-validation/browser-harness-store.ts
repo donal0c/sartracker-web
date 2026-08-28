@@ -76,6 +76,8 @@ const MAX_REPLAY_TRACK_LIMIT = 1_000
 const MAX_REPLAY_OBJECT_LIMIT = 100
 const MAX_REPLAY_FILTER_IDS = 200
 const MAX_REPLAY_CURSOR_OFFSET = 10_000_000
+const MAX_REPLAY_SELECTED_TIME_LENGTH = 64
+const REPLAY_TIMEZONE = 'Europe/Dublin'
 const MAX_GPX_PROJECTION_PAGE_LIMIT = 25
 
 /**
@@ -1664,9 +1666,10 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_GPX_PROJECTION_PAGE_LIMIT) {
         throw new Error('Browser GPX projection page limit is invalid.')
       }
-      const cursor = decodeBrowserGpxProjectionCursor(input.cursor)
+      const missionId = normalizeBrowserGpxProjectionContext(input.missionId)
+      const cursor = decodeBrowserGpxProjectionCursor(input.cursor, missionId)
       const candidates = state.gpxImports
-        .filter((entry) => entry.mission_id === input.missionId && entry.retired_at == null)
+        .filter((entry) => entry.mission_id === missionId && entry.retired_at == null)
         .sort(compareBrowserGpxProjectionOrder)
         .filter((entry) => cursor === null || compareBrowserGpxProjectionOrder(entry, cursor) > 0)
       const page = candidates.slice(0, limit + 1)
@@ -1675,7 +1678,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return {
         entries,
         nextCursor: page.length > limit && finalEntry !== undefined
-          ? encodeURIComponent(JSON.stringify([finalEntry.display_name, finalEntry.id]))
+          ? encodeBrowserGpxProjectionCursor(missionId, finalEntry)
           : null,
       }
     },
@@ -1882,7 +1885,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     },
     readMissionReplay: async (input) => buildBrowserReplay(state, input),
     readMissionReplayTrackChunk: async (input) => {
-      const replay = buildBrowserReplay(state, input)
+      const replay = await buildBrowserReplay(state, input)
       return {
         missionId: replay.missionId,
         selectedTime: replay.selectedTime,
@@ -1895,7 +1898,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       }
     },
     readMissionReplayObjectChunk: async (input) => {
-      const replay = buildBrowserReplay(state, input)
+      const replay = await buildBrowserReplay(state, input)
       return {
         missionId: replay.missionId,
         selectedTime: replay.selectedTime,
@@ -2158,7 +2161,7 @@ function compareBrowserHarnessPositions(left: Position, right: Position): number
   )
 }
 
-type BrowserGpxProjectionCursor = Pick<GpxTrackImport, 'display_name' | 'id'>
+type BrowserGpxProjectionCursor = Pick<GpxTrackImport, 'display_name' | 'imported_at' | 'id'>
 
 /** Removes retained GPX source bytes from the renderer projection boundary. */
 function stripBrowserGpxRetainedBytes(entry: GpxTrackImport): GpxTrackImport {
@@ -2172,41 +2175,116 @@ function compareBrowserGpxProjectionOrder(
   left: BrowserGpxProjectionCursor,
   right: BrowserGpxProjectionCursor,
 ): number {
-  return left.display_name.localeCompare(right.display_name) || left.id.localeCompare(right.id)
+  return left.display_name.localeCompare(right.display_name)
+    || left.imported_at.localeCompare(right.imported_at)
+    || left.id.localeCompare(right.id)
+}
+
+/** Encodes one opaque browser-validation GPX keyset cursor with its mission context. */
+function encodeBrowserGpxProjectionCursor(
+  missionId: string,
+  entry: BrowserGpxProjectionCursor,
+): string {
+  return encodeURIComponent(JSON.stringify({
+    v: 2,
+    kind: 'imports',
+    contextId: missionId,
+    displayName: entry.display_name,
+    importedAt: entry.imported_at,
+    id: entry.id,
+  }))
 }
 
 /** Decodes one bounded browser-validation GPX keyset cursor. */
-function decodeBrowserGpxProjectionCursor(value: string | undefined): BrowserGpxProjectionCursor | null {
+function decodeBrowserGpxProjectionCursor(
+  value: string | undefined,
+  expectedMissionId: string,
+): BrowserGpxProjectionCursor | null {
   if (value === undefined) return null
   if (value.length < 1 || value.length > 4_000) {
     throw new Error('Browser GPX projection cursor is invalid.')
   }
   try {
-    const parsed = JSON.parse(decodeURIComponent(value)) as unknown
-    if (!Array.isArray(parsed) || parsed.length !== 2
-      || typeof parsed[0] !== 'string' || parsed[0].length > 1_000
-      || typeof parsed[1] !== 'string' || parsed[1].length < 1 || parsed[1].length > 1_000) {
+    const parsed = JSON.parse(decodeURIComponent(value)) as Readonly<Record<string, unknown>>
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)
+      || parsed.v !== 2 || parsed.kind !== 'imports'
+      || parsed.contextId !== expectedMissionId
+      || !isBoundedBrowserGpxCursorText(parsed.displayName, true)
+      || !isBoundedBrowserGpxCursorText(parsed.importedAt, false, 100)
+      || !isBoundedBrowserGpxCursorText(parsed.id, false)) {
       throw new Error('invalid shape')
     }
-    return { display_name: parsed[0], id: parsed[1] }
+    return {
+      display_name: parsed.displayName,
+      imported_at: parsed.importedAt,
+      id: parsed.id,
+    }
   } catch {
     throw new Error('Browser GPX projection cursor is invalid.')
   }
 }
 
-/** Uses the production replay port with explicit harness completeness limits. */
-function buildBrowserReplay(
-  state: BrowserHarnessState,
-  input: MissionReplayReadInput,
-): MissionReplayReadResult {
-  const selectedTimeMs = Date.parse(input.selectedTime)
-  if (!Number.isFinite(selectedTimeMs)) {
+/** Normalizes the mission identity bound into a browser GPX cursor. */
+function normalizeBrowserGpxProjectionContext(value: string): string {
+  if (typeof value !== 'string' || value.trim() === '' || value.length > 1_000) {
+    throw new Error('Browser GPX projection mission identifier is invalid.')
+  }
+  return value.trim()
+}
+
+/** Checks decoded browser cursor text before using it as a keyset boundary. */
+function isBoundedBrowserGpxCursorText(
+  value: unknown,
+  allowEmpty: boolean,
+  maximumLength = 1_000,
+): value is string {
+  return typeof value === 'string'
+    && value.length <= maximumLength
+    && (allowEmpty || value.length > 0)
+}
+
+/** Preflights the browser harness with the packaged Replay envelope contract. */
+function normalizeBrowserReplayInput(input: MissionReplayReadInput): {
+  readonly missionId: string
+  readonly selectedTime: string
+  readonly timezone: typeof REPLAY_TIMEZONE
+} {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new Error('Mission replay input is invalid.')
+  }
+  if (typeof input.missionId !== 'string'
+    || input.missionId.length < 1 || input.missionId.length > 200) {
+    throw new Error('Mission replay mission ID is invalid.')
+  }
+  if (typeof input.selectedTime !== 'string'
+    || input.selectedTime.length < 1
+    || input.selectedTime.length > MAX_REPLAY_SELECTED_TIME_LENGTH
+    || input.selectedTime !== input.selectedTime.trim()) {
     throw new Error('Mission replay selected time is invalid.')
   }
-  if (selectedTimeMs > Date.now()) {
+  let selectedTime: string
+  try {
+    selectedTime = normalizeTrackingIsoTimestamp(input.selectedTime, 'Mission replay selected time')
+  } catch {
+    throw new Error('Mission replay selected time is invalid.')
+  }
+  const timezone = input.timezone ?? REPLAY_TIMEZONE
+  if (timezone !== REPLAY_TIMEZONE) {
+    throw new Error('Mission replay timezone is invalid.')
+  }
+  return { missionId: input.missionId, selectedTime, timezone }
+}
+
+/** Uses the production replay port with explicit harness completeness limits. */
+async function buildBrowserReplay(
+  state: BrowserHarnessState,
+  input: MissionReplayReadInput,
+): Promise<MissionReplayReadResult> {
+  const envelope = normalizeBrowserReplayInput(input)
+  if (Date.parse(envelope.selectedTime) > Date.now()) {
     throw new Error('Mission replay selected time cannot be in the future.')
   }
-  const selectedTime = new Date(selectedTimeMs).toISOString()
+  const { missionId, selectedTime, timezone } = envelope
   if (!Number.isInteger(input.trackLimit) || input.trackLimit < 1
     || input.trackLimit > MAX_REPLAY_TRACK_LIMIT) {
     throw new Error(`Mission replay track limit must be between 1 and ${MAX_REPLAY_TRACK_LIMIT}.`)
@@ -2221,10 +2299,11 @@ function buildBrowserReplay(
   const offset = cursor?.direction === 'before'
     ? Math.max(0, cursor.offset - input.trackLimit)
     : cursor?.offset ?? 0
-  const objectOffset = normalizeBrowserReplayObjectCursor(input.objectCursor)
+  const objectCursor = decodeBrowserReplayObjectCursor(input.objectCursor)
+  const objectOffset = objectCursor?.offset ?? 0
   const positionTracks = state.positions
     .filter((position) =>
-      position.mission_id === input.missionId
+      position.mission_id === missionId
       && position.timestamp_source === 'fix'
       && position.received_at != null
       && position.received_at <= selectedTime
@@ -2251,7 +2330,7 @@ function buildBrowserReplay(
     throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
   }
   const missionImportIds = new Set(state.gpxImports
-    .filter((entry) => entry.mission_id === input.missionId
+    .filter((entry) => entry.mission_id === missionId
       && (entry.retired_at === null
         || entry.retired_at === undefined
         || entry.retired_at > selectedTime))
@@ -2306,6 +2385,33 @@ function buildBrowserReplay(
     || left.stableOrder.localeCompare(right.stableOrder)
     || left.evidence_id.localeCompare(right.evidence_id),
   )
+  const normalizedReplayContext = {
+    missionId,
+    selectedTime,
+    deviceIds: deviceFilterIds,
+    outingIds: outingFilterIds,
+    timezone,
+    replayGeneration: input.replayGeneration ?? 0,
+  }
+  if (cursor !== null && cursor.eligibleTrackCount !== allTracks.length) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
+  const trackContextHash = await browserReplayCursorContextHash(
+    'track', normalizedReplayContext, allTracks.length,
+  )
+  if (cursor !== null && cursor.contextHash !== trackContextHash) {
+    throw new Error('Mission replay cursor context does not match this request.')
+  }
+  if (objectCursor !== null && (objectCursor.replayGeneration
+    !== normalizedReplayContext.replayGeneration || objectCursor.eligibleObjectCount !== 0)) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
+  const objectContextHash = objectCursor === null ? null : await browserReplayCursorContextHash(
+    'object', normalizedReplayContext, 0,
+  )
+  if (objectCursor !== null && objectCursor.contextHash !== objectContextHash) {
+    throw new Error('Mission replay object cursor context does not match this request.')
+  }
   const pageTracks = allTracks.slice(offset, offset + input.trackLimit)
   const tracks = pageTracks.map(projectBrowserReplayTrack)
   const nextOffset = offset + pageTracks.length
@@ -2341,24 +2447,25 @@ function buildBrowserReplay(
       }]
     })
   return {
-    missionId: input.missionId,
+    missionId,
     selectedTime,
-    timezone: input.timezone ?? 'Europe/Dublin',
+    timezone,
     objects: [],
     totalObjectCount: 0,
     objectTypeCounts: {},
     objectCursor: String(objectOffset),
     nextObjectCursor: null,
-    missionLifecycle: readBrowserReplayLifecycle(state.missionEvents, input.missionId, selectedTime),
+    missionLifecycle: readBrowserReplayLifecycle(state.missionEvents, missionId, selectedTime),
     tracks,
     trackCursor: String(offset),
     previousCursor: offset === 0 || pageTracks.length === 0 ? null : encodeBrowserReplayTrackCursor(
-      'before', offset, pageTracks[0]!, input.replayGeneration ?? 0, eligiblePositionCount,
+      'before', offset, pageTracks[0]!, normalizedReplayContext,
+      eligiblePositionCount, allTracks.length, trackContextHash,
     ),
     totalTrackCount: allTracks.length,
     staticGpxPointCount,
     availableDeviceIds: [...new Set(state.positions
-      .filter((position) => position.mission_id === input.missionId
+      .filter((position) => position.mission_id === missionId
         && position.timestamp_source === 'fix'
         && position.received_at != null
         && position.timestamp <= selectedTime
@@ -2371,8 +2478,8 @@ function buildBrowserReplay(
     staticGpxEvidence,
     nextCursor: nextOffset < allTracks.length && pageTracks.length > 0
       ? encodeBrowserReplayTrackCursor(
-          'after', nextOffset, pageTracks.at(-1)!, input.replayGeneration ?? 0,
-          eligiblePositionCount,
+          'after', nextOffset, pageTracks.at(-1)!, normalizedReplayContext,
+          eligiblePositionCount, allTracks.length, trackContextHash,
         )
       : null,
     progress: allTracks.length === 0 ? 1 : nextOffset / allTracks.length,
@@ -2462,20 +2569,34 @@ function projectBrowserReplayTrack(
   }
 }
 
-/** Encodes the same opaque v3 replay-cursor envelope used by packaged Electron. */
+type BrowserReplayCursorContext = {
+  readonly missionId: string
+  readonly selectedTime: string
+  readonly deviceIds: readonly string[] | null
+  readonly outingIds: readonly string[] | null
+  readonly timezone: string
+  readonly replayGeneration: number
+}
+
+/** Encodes the same opaque v4 replay-cursor envelope used by packaged Electron. */
 function encodeBrowserReplayTrackCursor(
   direction: 'after' | 'before',
   offset: number,
   row: BrowserReplayOrderRow,
-  replayGeneration: number,
+  context: BrowserReplayCursorContext,
   eligiblePositionCount: number,
+  eligibleTrackCount: number,
+  contextHash: string,
 ): string {
   return encodeBrowserBase64Url(JSON.stringify({
-    v: 3,
+    v: 4,
+    kind: 'track',
     direction,
     offset,
-    replayGeneration,
+    replayGeneration: context.replayGeneration,
     eligiblePositionCount,
+    eligibleTrackCount,
+    contextHash,
     key: [row.effective_at, row.recorded_at, row.sourceOrder, row.stableOrder],
   }))
 }
@@ -2486,6 +2607,8 @@ function decodeBrowserReplayTrackCursor(value: string | null | undefined): {
   readonly offset: number
   readonly replayGeneration: number
   readonly eligiblePositionCount: number
+  readonly eligibleTrackCount: number
+  readonly contextHash: string
   readonly key: readonly [string, string, 0 | 1, string]
 } | null {
   if (value === undefined || value === null || value === '') return null
@@ -2495,14 +2618,18 @@ function decodeBrowserReplayTrackCursor(value: string | null | undefined): {
   try {
     const parsed = JSON.parse(decodeBrowserBase64Url(value)) as Record<string, unknown>
     const key = parsed.key
-    if (parsed.v !== 3 || (parsed.direction !== 'after' && parsed.direction !== 'before')
+    if (parsed.v !== 4 || parsed.kind !== 'track'
+      || (parsed.direction !== 'after' && parsed.direction !== 'before')
       || !Number.isSafeInteger(parsed.offset) || Number(parsed.offset) < 0
       || Number(parsed.offset) > MAX_REPLAY_CURSOR_OFFSET || !Array.isArray(key)
       || key.length !== 4 || typeof key[0] !== 'string' || typeof key[1] !== 'string'
       || (key[2] !== 0 && key[2] !== 1) || typeof key[3] !== 'string'
       || !Number.isSafeInteger(parsed.replayGeneration) || Number(parsed.replayGeneration) < 0
       || !Number.isSafeInteger(parsed.eligiblePositionCount)
-      || Number(parsed.eligiblePositionCount) < 0) {
+      || Number(parsed.eligiblePositionCount) < 0
+      || !Number.isSafeInteger(parsed.eligibleTrackCount)
+      || Number(parsed.eligibleTrackCount) < 0
+      || typeof parsed.contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(parsed.contextHash)) {
       throw new Error('invalid shape')
     }
     return {
@@ -2510,6 +2637,8 @@ function decodeBrowserReplayTrackCursor(value: string | null | undefined): {
       offset: Number(parsed.offset),
       replayGeneration: Number(parsed.replayGeneration),
       eligiblePositionCount: Number(parsed.eligiblePositionCount),
+      eligibleTrackCount: Number(parsed.eligibleTrackCount),
+      contextHash: parsed.contextHash,
       key: [String(key[0]), String(key[1]), key[2], String(key[3])],
     }
   } catch {
@@ -2517,14 +2646,58 @@ function decodeBrowserReplayTrackCursor(value: string | null | undefined): {
   }
 }
 
-function normalizeBrowserReplayObjectCursor(value: string | null | undefined): number {
-  if (value === undefined || value === null || value === '') return 0
-  if (!/^\d{1,12}$/u.test(value)) throw new Error('Mission replay object cursor is invalid.')
-  const offset = Number(value)
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset > MAX_REPLAY_CURSOR_OFFSET) {
+function decodeBrowserReplayObjectCursor(value: string | null | undefined): {
+  readonly offset: number
+  readonly replayGeneration: number
+  readonly eligibleObjectCount: number
+  readonly contextHash: string
+} | null {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string' || value.length > 2_000 || !/^[A-Za-z0-9_-]+$/u.test(value)) {
     throw new Error('Mission replay object cursor is invalid.')
   }
-  return offset
+  try {
+    const parsed = JSON.parse(decodeBrowserBase64Url(value)) as Record<string, unknown>
+    if (parsed.v !== 4 || parsed.kind !== 'object'
+      || !Number.isSafeInteger(parsed.offset) || Number(parsed.offset) < 0
+      || Number(parsed.offset) > MAX_REPLAY_CURSOR_OFFSET
+      || !Number.isSafeInteger(parsed.replayGeneration) || Number(parsed.replayGeneration) < 0
+      || !Number.isSafeInteger(parsed.eligibleObjectCount)
+      || Number(parsed.eligibleObjectCount) < 0
+      || typeof parsed.contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(parsed.contextHash)) {
+      throw new Error('invalid shape')
+    }
+    return {
+      offset: Number(parsed.offset),
+      replayGeneration: Number(parsed.replayGeneration),
+      eligibleObjectCount: Number(parsed.eligibleObjectCount),
+      contextHash: parsed.contextHash,
+    }
+  } catch {
+    throw new Error('Mission replay object cursor is invalid.')
+  }
+}
+
+/** Hashes normalized Replay context into the fixed-size token used by both adapters. */
+async function browserReplayCursorContextHash(
+  kind: 'track' | 'object',
+  context: BrowserReplayCursorContext,
+  eligibleSnapshotCount: number,
+): Promise<string> {
+  const payload = new TextEncoder().encode(JSON.stringify({
+    kind,
+    missionId: context.missionId,
+    selectedTime: context.selectedTime,
+    deviceIds: context.deviceIds,
+    outingIds: context.outingIds,
+    timezone: context.timezone,
+    replayGeneration: context.replayGeneration,
+    eligibleSnapshotCount,
+  }))
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', payload)
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 function normalizeBrowserReplayFilterIds(

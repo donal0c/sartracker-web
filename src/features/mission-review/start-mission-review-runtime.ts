@@ -149,6 +149,8 @@ export async function startMissionReviewRuntime(
   let activeReviewRequestId: string | null = null
   let replayToken = 0
   let activeReplayRequestId: string | null = null
+  let replayObjectPageCursors: readonly (string | null)[] = [null]
+  let replayObjectPageIndex = 0
 
   publishRuntime()
 
@@ -185,17 +187,19 @@ export async function startMissionReviewRuntime(
       await loadReplayTrackChunk(state.replay.result?.previousCursor ?? null)
     },
     loadNextReplayObjects: async () => {
-      await loadReplayObjectChunk(state.replay.result?.nextObjectCursor ?? null)
+      const nextCursor = state.replay.result?.nextObjectCursor ?? null
+      if (nextCursor === null) return
+      await loadReplayObjectChunk(nextCursor, replayObjectPageIndex + 1)
     },
     loadPreviousReplayObjects: async () => {
-      const result = state.replay.result
-      if (result === null) return
-      const currentOffset = Number(result.objectCursor)
-      await loadReplayObjectChunk(String(Math.max(0, currentOffset - 100)))
+      if (replayObjectPageIndex === 0) return
+      const targetPageIndex = replayObjectPageIndex - 1
+      await loadReplayObjectChunk(replayObjectPageCursors[targetPageIndex] ?? null, targetPageIndex)
     },
     returnToLive: () => {
       replayToken += 1
       cancelActiveReplayRead()
+      resetReplayObjectPagination()
       state = { ...state, replay: { ...EMPTY_RUNTIME.replay } }
       publishRuntime()
     },
@@ -269,6 +273,7 @@ export async function startMissionReviewRuntime(
       if (selectedMission?.id !== state.selectedMissionId) {
         replayToken += 1
         cancelActiveReplayRead()
+        resetReplayObjectPagination()
       }
 
       if (selectedMission === null) {
@@ -420,6 +425,7 @@ export async function startMissionReviewRuntime(
     const normalizedTime = new Date(selectedTime).toISOString()
     const currentToken = ++replayToken
     cancelActiveReplayRead()
+    resetReplayObjectPagination()
     const requestId = `mission-replay-${requestNamespace}-${++requestSequence}`
     activeReplayRequestId = requestId
     state = {
@@ -522,10 +528,13 @@ export async function startMissionReviewRuntime(
     }
   }
 
-  async function loadReplayObjectChunk(objectCursor: string | null): Promise<void> {
+  async function loadReplayObjectChunk(
+    objectCursor: string | null,
+    targetPageIndex: number,
+  ): Promise<void> {
     const replay = state.replay
     const missionId = state.selectedMissionId
-    if (replay.result === null || objectCursor === null || missionId === null
+    if (replay.result === null || missionId === null
       || dependencies.missionStore.readMissionReplayObjectChunk === undefined) return
     cancelActiveReplayRead()
     const currentToken = replayToken
@@ -540,11 +549,16 @@ export async function startMissionReviewRuntime(
         timezone: replay.result.timezone,
         trackLimit: 500,
         objectLimit: 100,
-        objectCursor,
         replayGeneration: replay.result.replayGeneration ?? 0,
+        ...(objectCursor === null ? {} : { objectCursor }),
       }, requestId)
       if (currentToken !== replayToken || activeReplayRequestId !== requestId) return
       activeReplayRequestId = null
+      replayObjectPageCursors = [
+        ...replayObjectPageCursors.slice(0, targetPageIndex),
+        objectCursor,
+      ]
+      replayObjectPageIndex = targetPageIndex
       state = {
         ...state,
         replay: {
@@ -570,6 +584,11 @@ export async function startMissionReviewRuntime(
       state = { ...state, replay: { ...state.replay, loadingMore: false, error: toErrorMessage(error) } }
       publishRuntime()
     }
+  }
+
+  function resetReplayObjectPagination(): void {
+    replayObjectPageCursors = [null]
+    replayObjectPageIndex = 0
   }
 
   function cancelActiveReplayRead(): void {

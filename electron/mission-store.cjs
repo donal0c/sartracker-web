@@ -38,6 +38,7 @@ const {
 const {
   createIngestAnomalyOutbox,
 } = require('./ingest-anomaly-outbox.cjs')
+const { writeFileDurably } = require('./durable-file.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 const { createOutingStore } = require('./outing-store.cjs')
@@ -87,6 +88,9 @@ const {
 
 const CURRENT_SCHEMA_VERSION = 12
 const LEGACY_GPX_BACKFILL_DELAY_MS = 4
+const MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN = 100
+const MAX_GPX_RECEIPT_RECOVERY_BYTES_PER_TURN = 1024 * 1024
+const MAX_ADMITTED_GPX_IMPORT_BATCHES = 4
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -429,6 +433,8 @@ function createElectronMissionStore(options) {
   const migrationState = migrate(db)
   let legacyEvidenceBackfillTimer = null
   let legacyEvidenceBackfillFailure = null
+  let gpxReceiptRecoveryTimer = null
+  let gpxReceiptRecoveryFailure = null
   let nextLegacyEvidenceBackfillKind = 'object'
   let storeClosed = false
   const scheduleLegacyEvidenceBackfill = () => {
@@ -468,6 +474,35 @@ function createElectronMissionStore(options) {
     }, LEGACY_GPX_BACKFILL_DELAY_MS)
   }
   scheduleLegacyEvidenceBackfill()
+  const scheduleGpxReceiptRecovery = () => {
+    if (storeClosed || migrationState.gpxReceiptRecoveryRemaining === 0
+      || gpxReceiptRecoveryTimer !== null || gpxReceiptRecoveryFailure !== null) return
+    gpxReceiptRecoveryTimer = setTimeout(() => {
+      gpxReceiptRecoveryTimer = null
+      if (storeClosed) return
+      try {
+        const result = recoverUnsettledGpxImportReceipts(
+          db,
+          now(),
+          MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN,
+        )
+        migrationState.gpxReceiptRecoveryRemaining = result.remaining
+        if (result.remaining === 0) {
+          db.prepare(`DELETE FROM metadata
+            WHERE key = 'gpx_receipt_recovery_failure'`).run()
+        }
+        scheduleGpxReceiptRecovery()
+      } catch (error) {
+        gpxReceiptRecoveryFailure = safeEvidenceFailureReason(error?.message ?? error)
+        db.prepare(`INSERT INTO metadata (key, value) VALUES (
+          'gpx_receipt_recovery_failure', ?
+        ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+          .run(gpxReceiptRecoveryFailure)
+        console.error(`Interrupted GPX receipt recovery stopped safely: ${gpxReceiptRecoveryFailure}`)
+      }
+    }, LEGACY_GPX_BACKFILL_DELAY_MS)
+  }
+  scheduleGpxReceiptRecovery()
   const evidenceVersionStore = createMissionEvidenceVersionStore({
     db,
     faultInjection: options.evidenceVersionFaultInjection ?? {},
@@ -585,6 +620,10 @@ function createElectronMissionStore(options) {
       if (legacyEvidenceBackfillTimer !== null) {
         clearTimeout(legacyEvidenceBackfillTimer)
         legacyEvidenceBackfillTimer = null
+      }
+      if (gpxReceiptRecoveryTimer !== null) {
+        clearTimeout(gpxReceiptRecoveryTimer)
+        gpxReceiptRecoveryTimer = null
       }
       ingestAnomalyOutbox.dispose()
       for (const controller of activeBreadcrumbQueryControllers) {
@@ -1191,14 +1230,17 @@ function createElectronMissionStore(options) {
     },
     readMissionReplay: async (input, requestId) => {
       assertLegacyMissionObjectBackfillSettled(db)
+      assertMissionReplayGpxStateSettled(db, input)
       return executeMissionReplayRead(input, requestId, 'state')
     },
     readMissionReplayTrackChunk: async (input, requestId) => {
       assertLegacyMissionObjectBackfillSettled(db)
+      assertMissionReplayGpxStateSettled(db, input)
       return executeMissionReplayRead(input, requestId, 'chunk')
     },
     readMissionReplayObjectChunk: async (input, requestId) => {
       assertLegacyMissionObjectBackfillSettled(db)
+      assertMissionReplayGpxStateSettled(db, input)
       return executeMissionReplayRead(input, requestId, 'objects')
     },
     cancelMissionReplay: async (requestId) => {
@@ -1316,6 +1358,18 @@ function createElectronMissionStore(options) {
       }
       const paths = candidate.paths.map((entry) => entry.trim())
       ensureWritableMission(db, missionId)
+      if (migrationState.gpxReceiptRecoveryRemaining > 0
+        || gpxReceiptRecoveryFailure !== null) {
+        throw new Error(
+          'Interrupted GPX evidence receipts are still being recovered in bounded background slices. Current positions remain available; retry the import after recovery completes.',
+        )
+      }
+      const admittedBatchCount = queuedGpxEvidenceImports.length + (gpxImportWorkerActive ? 1 : 0)
+      if (admittedBatchCount >= MAX_ADMITTED_GPX_IMPORT_BATCHES) {
+        throw new Error(
+          'The GPX evidence import queue is full. Wait for an admitted import to settle before adding more files.',
+        )
+      }
       const batchId = randomUUID()
       startGpxImportBatch(db, {
         batchId,
@@ -2425,7 +2479,6 @@ function migrate(db) {
       migrationTime,
       existingSchemaVersion < CURRENT_SCHEMA_VERSION,
     )
-    recoverUnsettledGpxImportReceipts(db, migrationTime)
     recoverStagingGpxImports(db, migrationTime)
     if (positionsRequireProvenanceBackfill && existingSchemaVersion !== 0
       && tableExists(db, 'mission_replay_position_day_counts')) {
@@ -2515,8 +2568,18 @@ function migrate(db) {
       `)
     }
     db.prepare(`UPDATE gpx_import_batches
-      SET status = 'interrupted', updated_at = ?, finished_at = ? WHERE status = 'running'`)
-      .run(migrationTime, migrationTime)
+      SET status = CASE WHEN failed_files > 0 THEN 'completed_with_failures' ELSE 'completed' END,
+        updated_at = ?, finished_at = ?
+      WHERE status = 'running'
+        AND completed_files + failed_files = total_files
+        AND NOT EXISTS (
+          SELECT 1 FROM gpx_import_source_receipts AS receipts
+          WHERE receipts.batch_id = gpx_import_batches.id
+            AND receipts.status IN ('pending', 'retained')
+        )`).run(migrationTime, migrationTime)
+    db.prepare(`UPDATE gpx_import_batches
+      SET status = 'interrupted', updated_at = ?, finished_at = ?
+      WHERE status = 'running'`).run(migrationTime, migrationTime)
 
     db.prepare(`INSERT OR IGNORE INTO legacy_gpx_backfill_state (
       singleton, scanned_through_rowid, scan_target_rowid, updated_at
@@ -2572,6 +2635,7 @@ function migrate(db) {
   return {
     legacyGpxBackfillRemaining: legacyGpxBackfill.remaining,
     legacyMissionObjectBackfillRemaining: 1,
+    gpxReceiptRecoveryRemaining: readUnsettledGpxImportReceiptPending(db),
   }
 }
 
@@ -2638,13 +2702,31 @@ function recoverStagingGpxImports(db, migrationTime) {
   }
 }
 
-/** Converts every pre-read or retained-but-unpublished receipt into explicit failure evidence. */
-function recoverUnsettledGpxImportReceipts(db, migrationTime) {
-  const receipts = db.prepare(`SELECT * FROM gpx_import_source_receipts
+/** Converts one bounded receipt page into explicit failure or exact-settlement evidence. */
+function recoverUnsettledGpxImportReceipts(
+  db,
+  migrationTime,
+  maximumRows = MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN,
+) {
+  const rowLimit = Math.max(1, Math.min(MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN, maximumRows))
+  const candidates = db.prepare(`SELECT batch_id, mission_id, source_path, file_name,
+      status, content_sha256, created_at, updated_at,
+      COALESCE(length(CAST(source_bytes_base64 AS BLOB)), 0) AS retained_base64_bytes
+    FROM gpx_import_source_receipts
     WHERE status IN ('pending', 'retained')
-    ORDER BY mission_id, batch_id, source_path`).all()
-  const batchIds = new Set(db.prepare(`SELECT id FROM gpx_import_batches
-    WHERE status = 'running'`).all().map((batch) => batch.id))
+    ORDER BY mission_id, batch_id, source_path
+    LIMIT ?`).all(rowLimit)
+  const receipts = []
+  let remainingBytes = MAX_GPX_RECEIPT_RECOVERY_BYTES_PER_TURN
+  for (const candidate of candidates) {
+    const candidateBytes = Number(candidate.retained_base64_bytes)
+    if (receipts.length > 0 && candidateBytes > remainingBytes) break
+    receipts.push(db.prepare(`SELECT * FROM gpx_import_source_receipts
+      WHERE batch_id = ? AND source_path = ?`).get(candidate.batch_id, candidate.source_path))
+    remainingBytes = Math.max(0, remainingBytes - Math.min(candidateBytes, remainingBytes))
+    if (remainingBytes === 0) break
+  }
+  const batchIds = new Set()
   const interruptedBatchIds = new Set()
   for (const receipt of receipts) {
     batchIds.add(receipt.batch_id)
@@ -2711,14 +2793,21 @@ function recoverUnsettledGpxImportReceipts(db, migrationTime) {
     const failed = Number(counts?.failed_files ?? 0)
     const total = Number(counts?.total_files ?? 0)
     const fullyAccounted = completed + failed === total
-    const status = interruptedBatchIds.has(batchId) || !fullyAccounted
+    const status = interruptedBatchIds.has(batchId) || !fullyAccounted || failed > 0
       ? 'interrupted'
-      : failed === 0 ? 'completed' : 'completed_with_failures'
+      : 'completed'
     db.prepare(`UPDATE gpx_import_batches
       SET status = ?, completed_files = ?, failed_files = ?,
           updated_at = ?, finished_at = ?
       WHERE id = ?`).run(status, completed, failed, migrationTime, migrationTime, batchId)
   }
+  return { remaining: readUnsettledGpxImportReceiptPending(db) }
+}
+
+/** Returns one when startup still owns interrupted GPX receipts. */
+function readUnsettledGpxImportReceiptPending(db) {
+  return db.prepare(`SELECT 1 FROM gpx_import_source_receipts
+    WHERE status IN ('pending', 'retained') LIMIT 1`).get() === undefined ? 0 : 1
 }
 
 /** Verifies that restart reconciliation points to exact retained bytes, not metadata alone. */
@@ -3540,17 +3629,14 @@ async function buildMissionArchive(
   const archiveBuffer = createZipArchive(entries)
 
   const archiveName = `${missionId}-${createdAt.replace(/:/g, '-')}.zip`
-  const temporaryPath = path.join(archiveDirectory, `${archiveName}.tmp`)
   const finalPath = path.join(archiveDirectory, archiveName)
 
-  await fs.writeFile(temporaryPath, archiveBuffer)
   try {
     validateArchiveFile(archiveBuffer, missionId)
   } catch (error) {
-    await fs.rm(temporaryPath, { force: true })
     throw error
   }
-  await fs.rename(temporaryPath, finalPath)
+  await writeFileDurably(finalPath, archiveBuffer)
 
   if (recordArchiveEvent) {
     try {
@@ -3625,6 +3711,7 @@ function validateArchiveFile(archiveBuffer, missionId) {
   if (snapshotEntry === undefined || snapshotEntry.length === 0) {
     throw new Error('Mission archive contains an empty mission-store.sqlite snapshot.')
   }
+  return entries
 }
 
 async function finalizeMission(
@@ -3743,7 +3830,13 @@ async function readRecoverableFinalizeArchive(db, missionId) {
     }
 
     try {
-      await fs.access(archivePath)
+      const archiveBytes = await fs.readFile(archivePath)
+      const entries = validateArchiveFile(archiveBytes, missionId)
+      await validateSqliteSnapshotBuffer(
+        entries.get('mission-store.sqlite'),
+        'Recovered mission archive embedded SQLite snapshot',
+        path.dirname(archivePath),
+      )
     } catch {
       continue
     }
@@ -3824,6 +3917,7 @@ function readLatestMissionFinalizedEpoch(db, missionId) {
 
 /** Prevents an authorization decision from being applied to a newer finalization epoch. */
 function assertMissionUnlockEpoch(db, missionId, expectedEpoch) {
+  assertMissionFinalizationNotInProgress(db, missionId)
   if (
     getMission(db, missionId).status !== 'finalized' ||
     readLatestMissionFinalizedEpoch(db, missionId) !== expectedEpoch
@@ -6155,6 +6249,19 @@ function assertNoUnsettledGpxImportState(db, missionId) {
       : ` ${state.quarantined_legacy_backfills} legacy GPX artifact(s) are quarantined outside the safe reconstruction envelope (size, identity, or storage key); the retained originals require a bounded repair path before custody can be declared complete.`
     throw new Error(
       `Mission cannot change lifecycle state while GPX evidence import state is unsettled (${count} durable item(s), including any legacy GPX backfill still pending).${quarantineNotice} Wait for the import to settle or restart SAR Tracker to recover it explicitly.`,
+    )
+  }
+}
+
+/** Preflights Replay against startup-owned GPX receipts without blocking unrelated missions. */
+function assertMissionReplayGpxStateSettled(db, input) {
+  const candidate = normalizeGpxRendererRecord(input, 'Mission Replay')
+  const missionId = normalizeGpxRendererId(candidate.missionId, 'Mission Replay mission')
+  const pendingReceipt = db.prepare(`SELECT 1 FROM gpx_import_source_receipts
+    WHERE mission_id = ? AND status IN ('pending', 'retained') LIMIT 1`).get(missionId)
+  if (pendingReceipt !== undefined) {
+    throw new Error(
+      'Replay cannot reconstruct GPX evidence while interrupted durable source receipts are unsettled. Current positions remain available; retry after bounded background recovery completes.',
     )
   }
 }

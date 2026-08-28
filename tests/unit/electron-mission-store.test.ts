@@ -3613,6 +3613,94 @@ describe('electron mission store', () => {
     expect(eventTypes.filter((eventType) => eventType === 'mission_finalized')).toHaveLength(1)
   })
 
+  it('revalidates a recoverable finalization archive before sealing the mission [DON-278]', async () => {
+    const { readZipArchive } = require('../../electron/zip-archive.cjs') as {
+      readonly readZipArchive: (buffer: Buffer) => ReadonlyMap<string, Buffer>
+    }
+    const { readFile } = await import('node:fs/promises')
+    store = await createStore({
+      finalizeMissionFaultInjection: {
+        afterArchiveSucceededEvent: true,
+      },
+    })
+    const mission = await store.createMission({ name: 'Corrupted Recoverable Archive Mission' })
+    await store.finishMission(mission.id)
+
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(
+      /Injected finalize interruption after archive success/,
+    )
+    const succeededEvent = (await store.listMissionEvents(mission.id)).find(
+      (event) => event.event_type === 'mission_archive_succeeded',
+    )
+    const corruptedArchivePath = JSON.parse(succeededEvent?.details_json ?? '{}').archive_path as string
+    await writeFile(corruptedArchivePath, 'truncated archive')
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+
+    const retry = await store.finalizeMission(mission.id)
+
+    expect(retry.mission.status).toBe('finalized')
+    const recoveredEntries = readZipArchive(await readFile(retry.archive.archive_path))
+    expect(recoveredEntries.get('mission-store.sqlite')?.length).toBeGreaterThan(0)
+  })
+
+  it('fences authorized and denied unlock writes while a direct archive is being sealed [DON-278]', async () => {
+    let releaseCopied = () => undefined
+    let signalCopied = () => undefined
+    const copied = new Promise<void>((resolve) => { signalCopied = resolve })
+    const holdCopied = new Promise<void>((resolve) => { releaseCopied = resolve })
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(() => ({
+        id: 'direct-archive-unlock-fence', type: 'backup', requestedAtMs: Date.now(),
+      })),
+      requested: vi.fn().mockResolvedValue(undefined),
+      started: vi.fn().mockResolvedValue(undefined),
+      phase: vi.fn(async (_operation, stage) => {
+        if (stage === 'copied') {
+          signalCopied()
+          await holdCopied
+        }
+      }),
+      completed: vi.fn().mockResolvedValue(undefined),
+      failed: vi.fn().mockResolvedValue(undefined),
+      startMission: vi.fn().mockResolvedValue(undefined),
+      recordTrackingBatch: vi.fn().mockResolvedValue(undefined),
+      recordInsertedPositions: vi.fn().mockResolvedValue(undefined),
+    }
+    store = await createStore({ readAdminRoster: async () => ['Duty Admin'] })
+    const mission = await store.createMission({ name: 'Direct Archive Unlock Fence Mission' })
+    await store.finishMission(mission.id)
+    await store.finalizeMission(mission.id)
+    store.close()
+    store = createElectronMissionStore({
+      userDataPath: userDataPath!,
+      storageDiagnostics,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const beforeDenied = (await store.listMissionEvents(mission.id)).filter(
+      (event) => event.event_type === 'mission_unlock_denied',
+    ).length
+
+    const archivePromise = store.createMissionArchive(mission.id)
+    await copied
+    await expect(store.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Not An Admin',
+      reason: 'Must not append outside the archive snapshot.',
+    })).rejects.toThrow(/finalization is in progress/iu)
+    await expect(store.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Must not change status outside the archive snapshot.',
+    })).rejects.toThrow(/finalization is in progress/iu)
+    expect((await store.listMissionEvents(mission.id)).filter(
+      (event) => event.event_type === 'mission_unlock_denied',
+    )).toHaveLength(beforeDenied)
+    await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
+    releaseCopied()
+    await expect(archivePromise).resolves.toMatchObject({ mission_id: mission.id })
+  })
+
   it('releases the bookkeeping fence when archive creation fails before success [DON-278]', async () => {
     store = await createStore({
       archiveFaultInjection: { corruptSnapshotBeforeZip: true },

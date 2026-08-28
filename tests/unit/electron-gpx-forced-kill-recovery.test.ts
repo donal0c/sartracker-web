@@ -59,6 +59,7 @@ describe('GPX import forced-kill recovery [DON-274]', () => {
         userDataPath: root,
         readAdminRoster: async () => [],
       })
+      await waitForRecoveredReceipt(path.join(root, 'mission-store.sqlite'), mission.id)
       await recoveredStore.prepareClose()
       recoveredStore.close()
       const database = new Database(path.join(root, 'mission-store.sqlite'), { readonly: true })
@@ -82,6 +83,20 @@ describe('GPX import forced-kill recovery [DON-274]', () => {
     }, 15_000)
   }
 })
+
+/** Waits for the bounded startup recovery turns to publish explicit failure evidence. */
+async function waitForRecoveredReceipt(databasePath: string, missionId: string): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    const database = new Database(databasePath, { readonly: true, fileMustExist: true })
+    const receipt = database.prepare(`SELECT status FROM gpx_import_source_receipts
+      WHERE mission_id = ?`).get(missionId)
+    database.close()
+    if (receipt?.status === 'failed') return
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error('Timed out waiting for bounded GPX receipt recovery.')
+}
 
 /** Waits until the child has durably reached the requested receipt lifecycle state. */
 async function waitForReceiptStatus(

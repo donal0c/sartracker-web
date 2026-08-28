@@ -101,6 +101,13 @@ async function main() {
       const latePageCursor = encodeReplayTrackCursor(
         'after', latePageAnchor.offset, latePageAnchor, latePageAnchor.replayGeneration,
         latePageAnchor.eligiblePositionCount,
+        {
+          missionId: FIXTURE_MISSION_ID,
+          selectedTime,
+          timezone: 'Europe/Dublin',
+          trackLimit: 1_000,
+        },
+        replay.totalTrackCount,
       )
       const latePageReplay = await measure(() => store.readMissionReplayTrackChunk({
         missionId: FIXTURE_MISSION_ID,

@@ -16,6 +16,7 @@ const Database = require('better-sqlite3') as new (path: string) => {
 const {
   missionLifecycleStateFromEventType,
   normalizeReplayInput,
+  encodeReplayObjectCursor,
   readMissionReplayState,
   readMissionReplayTrackChunk,
   readMissionReplayObjectChunk,
@@ -24,6 +25,7 @@ const {
 ) as {
   missionLifecycleStateFromEventType(eventType: string | null | undefined): ReplayLifecycleState
   normalizeReplayInput(input: unknown): ReplayInput & { readonly timezone: string }
+  encodeReplayObjectCursor(offset: number, input: ReplayInput & { readonly replayGeneration: number }, eligibleObjectCount: number): string
   readMissionReplayState(database: InstanceType<typeof Database>, input: ReplayInput): ReplayState
   readMissionReplayTrackChunk(database: InstanceType<typeof Database>, input: ReplayInput & { cursor?: string }): ReplayChunk
   readMissionReplayObjectChunk(database: InstanceType<typeof Database>, input: ReplayInput & { objectCursor?: string }): {
@@ -34,7 +36,7 @@ const {
   }
 }
 
-type ReplayInput = { readonly missionId: string; readonly selectedTime: string; readonly trackLimit: number; readonly objectLimit?: number; readonly replayGeneration?: number; readonly timezone?: string }
+type ReplayInput = { readonly missionId: string; readonly selectedTime: string; readonly trackLimit: number; readonly objectLimit?: number; readonly replayGeneration?: number; readonly timezone?: string; readonly deviceIds?: readonly string[]; readonly outingIds?: readonly string[] }
 type ReplayLifecycleState = 'active' | 'paused' | 'finished' | 'finalized' | 'unknown'
 type ReplayState = {
   readonly replayGeneration: number
@@ -678,6 +680,89 @@ describe('mission replay query [DON-278]', () => {
     expect(previous.tracks.map((track) => track.evidence_id)).toEqual(['device-1-first'])
   })
 
+  it('binds track continuation cursors to the normalized replay context even when counts match', () => {
+    const db = createReplayDatabase()
+    insertPosition(db, ['device-1-first', '2026-08-27T08:00:00Z', '2026-08-27T08:00:01Z'])
+    insertPositionForDevice(db, 'device-2', ['device-2-first', '2026-08-27T08:00:00Z', '2026-08-27T08:00:01Z'])
+    insertPositionForDevice(db, 'device-2', ['device-2-second', '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z'])
+    insertPosition(db, ['device-1-second', '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z'])
+    insertPositionForMission(db, 'mission-2', 'device-1', [
+      'mission-2-first', '2026-08-27T08:00:00Z', '2026-08-27T08:00:01Z',
+    ])
+    insertPositionForMission(db, 'mission-2', 'device-1', [
+      'mission-2-second', '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z',
+    ])
+    const first = readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+      deviceIds: ['device-1'], outingIds: [], timezone: 'Europe/Dublin',
+    })
+    expect(first.nextCursor).toEqual(expect.any(String))
+    expect(first.nextCursor!.length).toBeLessThan(2_000)
+
+    for (const context of [
+      { missionId: 'mission-2', selectedTime: '2026-08-27T09:00:00Z', deviceIds: ['device-1'], outingIds: [] },
+      { missionId: 'mission-1', selectedTime: '2026-08-27T09:30:00Z', deviceIds: ['device-1'], outingIds: [] },
+      { missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', deviceIds: ['device-2'], outingIds: [] },
+    ]) {
+      expect(() => readMissionReplayTrackChunk(db, {
+        ...context, trackLimit: 1, timezone: 'Europe/Dublin', cursor: first.nextCursor!,
+      })).toThrow('Mission replay cursor context does not match this request.')
+    }
+
+    insertGpx(db, 'outing-1', 'outing-1-gpx', '2026-08-27T08:02:00Z')
+    insertGpx(db, 'outing-1', 'outing-1-gpx-2', '2026-08-27T08:03:00Z')
+    insertGpx(db, 'outing-2', 'outing-2-gpx', '2026-08-27T08:02:00Z')
+    insertGpx(db, 'outing-2', 'outing-2-gpx-2', '2026-08-27T08:03:00Z')
+    const outingFirst = readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+      deviceIds: [], outingIds: ['outing-1'], timezone: 'Europe/Dublin',
+    })
+    expect(() => readMissionReplayTrackChunk(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+      deviceIds: [], outingIds: ['outing-2'], timezone: 'Europe/Dublin',
+      cursor: outingFirst.nextCursor!,
+    })).toThrow('Mission replay cursor context does not match this request.')
+  })
+
+  it('uses opaque object continuations bound to mission, time, filters, generation, and snapshot count', () => {
+    const db = createReplayDatabase()
+    for (const missionId of ['mission-1', 'mission-2']) {
+      insertVersionForMission(db, missionId, [`${missionId}-v1`, 'marker-1', 1,
+        '2026-08-27T08:00:00Z', '2026-08-27T08:00:01Z', 'Marker 1'])
+      insertVersionForMission(db, missionId, [`${missionId}-v2`, 'marker-2', 1,
+        '2026-08-27T08:00:00Z', '2026-08-27T08:00:01Z', 'Marker 2'])
+    }
+    const first = readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+      objectLimit: 1, deviceIds: ['device-1'], outingIds: ['outing-1'],
+    })
+    expect(first.nextObjectCursor).toEqual(expect.any(String))
+    expect(first.nextObjectCursor).not.toMatch(/^\d+$/u)
+    expect(first.nextObjectCursor!.length).toBeLessThan(2_000)
+
+    for (const context of [
+      { missionId: 'mission-2', selectedTime: '2026-08-27T09:00:00Z', deviceIds: ['device-1'], outingIds: ['outing-1'] },
+      { missionId: 'mission-1', selectedTime: '2026-08-27T09:30:00Z', deviceIds: ['device-1'], outingIds: ['outing-1'] },
+      { missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', deviceIds: ['device-2'], outingIds: ['outing-1'] },
+      { missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', deviceIds: ['device-1'], outingIds: ['outing-2'] },
+    ]) {
+      expect(() => readMissionReplayObjectChunk(db, {
+        ...context, trackLimit: 1, objectLimit: 1, replayGeneration: 0,
+        objectCursor: first.nextObjectCursor!,
+      })).toThrow('Mission replay object cursor context does not match this request.')
+    }
+
+    const countMismatch = encodeReplayObjectCursor(1, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+      objectLimit: 1, replayGeneration: 0, deviceIds: ['device-1'], outingIds: ['outing-1'],
+    }, 3)
+    expect(() => readMissionReplayObjectChunk(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1,
+      objectLimit: 1, replayGeneration: 0, deviceIds: ['device-1'], outingIds: ['outing-1'],
+      objectCursor: countMismatch,
+    })).toThrow('Mission replay evidence changed while paging. Re-seek the selected time.')
+  })
+
   it('reports whole-state object-type totals independently of the current object page', () => {
     const db = createReplayDatabase()
     for (let index = 0; index < 3; index += 1) {
@@ -715,12 +800,18 @@ describe('mission replay query [DON-278]', () => {
     })
     expect(first.objects).toHaveLength(100)
     expect(first.totalObjectCount).toBe(205)
-    expect(first.nextObjectCursor).toBe('100')
+    expect(first.nextObjectCursor).toEqual(expect.any(String))
+    expect(first.nextObjectCursor).not.toMatch(/^\d+$/u)
     expect(Buffer.byteLength(JSON.stringify(first.objects))).toBeLessThan(600_000)
 
+    const middle = readMissionReplayObjectChunk(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z',
+      trackLimit: 100, objectLimit: 100, objectCursor: first.nextObjectCursor!, replayGeneration: 0,
+    })
+    expect(middle.objectCursor).toBe('100')
     const final = readMissionReplayObjectChunk(db, {
       missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z',
-      trackLimit: 100, objectLimit: 100, objectCursor: '200', replayGeneration: 0,
+      trackLimit: 100, objectLimit: 100, objectCursor: middle.nextObjectCursor!, replayGeneration: 0,
     })
     expect(final.objects).toHaveLength(5)
     expect(final.objectCursor).toBe('200')
@@ -806,6 +897,16 @@ function insertVersion(db: InstanceType<typeof Database>, values: readonly unkno
   )`).run(...values.slice(0, 5), JSON.stringify({ name: values[5] }))
 }
 
+function insertVersionForMission(
+  db: InstanceType<typeof Database>,
+  missionId: string,
+  values: readonly unknown[],
+): void {
+  db.prepare(`INSERT INTO mission_object_versions VALUES (
+    ?, ?, 'marker', ?, ?, 'updated', ?, ?, 'complete', ?, NULL, NULL, NULL
+  )`).run(values[0], missionId, ...values.slice(1, 5), JSON.stringify({ name: values[5] }))
+}
+
 function insertPosition(db: InstanceType<typeof Database>, values: readonly unknown[]): void {
   insertPositionForDevice(db, 'device-1', values)
 }
@@ -841,6 +942,21 @@ function insertPositionForDevice(
   db.prepare(`INSERT INTO positions VALUES (
     ?, 'mission-1', ?, 52, -9.7, NULL, 5, ?, ?, 'fix', ?
   )`).run(values[0], deviceId, ...values.slice(1), values[2])
+}
+
+function insertPositionForMission(
+  db: InstanceType<typeof Database>,
+  missionId: string,
+  deviceId: string,
+  values: readonly unknown[],
+): void {
+  db.prepare(`INSERT INTO devices (mission_id, device_id)
+    SELECT ?, ? WHERE NOT EXISTS (
+      SELECT 1 FROM devices WHERE mission_id = ? AND device_id = ?
+    )`).run(missionId, deviceId, missionId, deviceId)
+  db.prepare(`INSERT INTO positions VALUES (
+    ?, ?, ?, 52, -9.7, NULL, 5, ?, ?, 'fix', ?
+  )`).run(values[0], missionId, deviceId, ...values.slice(1), values[2])
 }
 
 function insertOracleVersion(

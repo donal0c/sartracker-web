@@ -40,7 +40,11 @@ function readMissionReplayStateWithinSnapshot(database, input) {
     totalObjectCount: objectResult.totalObjectCount,
     objectTypeCounts: objectResult.objectTypeCounts,
     objectCursor: '0',
-    nextObjectCursor: objectResult.nextObjectCursor,
+    nextObjectCursor: objectResult.nextObjectOffset === null
+      ? null
+      : encodeReplayObjectCursor(
+          objectResult.nextObjectOffset, normalized, objectResult.totalObjectCount,
+        ),
     missionLifecycle: readMissionLifecycle(database, normalized),
     participants: readMissionParticipants(database, normalized),
     groupMembership: readMissionGroupMembership(database, normalized),
@@ -142,8 +146,18 @@ function readMissionReplayObjectChunkWithinSnapshot(database, input) {
     throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
   }
   const normalized = { ...baseInput, replayGeneration: currentGeneration }
-  const offset = normalizeReplayCursor(input.objectCursor)
+  const cursor = normalizeReplayObjectCursor(input.objectCursor)
+  const offset = cursor?.offset ?? 0
   const result = readObjectRows(database, normalized, offset)
+  if (cursor !== null && (cursor.replayGeneration !== currentGeneration
+    || cursor.eligibleObjectCount !== result.totalObjectCount)) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
+  if (cursor !== null && cursor.contextHash !== replayCursorContextHash(
+    'object', normalized, result.totalObjectCount,
+  )) {
+    throw new Error('Mission replay object cursor context does not match this request.')
+  }
   return {
     missionId: normalized.missionId,
     selectedTime: normalized.selectedTime,
@@ -151,7 +165,11 @@ function readMissionReplayObjectChunkWithinSnapshot(database, input) {
     objects: result.objects,
     totalObjectCount: result.totalObjectCount,
     objectCursor: String(offset),
-    nextObjectCursor: result.nextObjectCursor,
+    nextObjectCursor: result.nextObjectOffset === null
+      ? null
+      : encodeReplayObjectCursor(
+          result.nextObjectOffset, normalized, result.totalObjectCount,
+        ),
     progress: result.totalObjectCount === 0
       ? 1
       : Math.min(1, (offset + result.objects.length) / result.totalObjectCount),
@@ -239,7 +257,7 @@ function readObjectRows(database, input, offset) {
     totalObjectCount,
     objectTypeCounts,
     summarizedObjectCount,
-    nextObjectCursor: nextOffset < totalObjectCount ? String(nextOffset) : null,
+    nextObjectOffset: nextOffset < totalObjectCount ? nextOffset : null,
   }
 }
 
@@ -248,8 +266,16 @@ function readTrackRows(database, input, cursor) {
   if (cursor !== null && cursor.eligiblePositionCount !== positionStats.eligibleCount) {
     throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
   }
-  const page = readTrackRowsBySourceIndex(database, input, cursor)
   const totalTrackCount = countReplayTrackRows(database, input, positionStats.eligibleCount)
+  if (cursor !== null && cursor.eligibleTrackCount !== totalTrackCount) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
+  if (cursor !== null && cursor.contextHash !== replayCursorContextHash(
+    'track', input, totalTrackCount,
+  )) {
+    throw new Error('Mission replay cursor context does not match this request.')
+  }
+  const page = readTrackRowsBySourceIndex(database, input, cursor)
   const staticGpxPointCount = countStaticGpxPoints(database, input)
   return {
     tracks: page.rows.map(stripReplayOrderFields),
@@ -261,12 +287,12 @@ function readTrackRows(database, input, cursor) {
       ? null
       : encodeReplayTrackCursor(
           'before', page.offset, page.rows[0], input.replayGeneration,
-          positionStats.eligibleCount,
+          positionStats.eligibleCount, input, totalTrackCount,
         ),
     nextCursor: page.offset + page.rows.length < totalTrackCount && page.rows.length > 0
       ? encodeReplayTrackCursor(
           'after', page.offset + page.rows.length, page.rows.at(-1), input.replayGeneration,
-          positionStats.eligibleCount,
+          positionStats.eligibleCount, input, totalTrackCount,
         )
       : null,
   }
@@ -867,16 +893,26 @@ function summarizeReplayState(state, serializedState) {
   }
 }
 
-function normalizeReplayCursor(value) {
-  if (value === undefined || value === null || value === '') return 0
-  if (typeof value !== 'string' || !/^\d{1,12}$/u.test(value)) {
-    throw new Error('Mission replay cursor is invalid.')
+/** Decodes one opaque, versioned reconstructed-object continuation cursor. */
+function normalizeReplayObjectCursor(value) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string' || value.length > 2_000 || !/^[A-Za-z0-9_-]+$/u.test(value)) {
+    throw new Error('Mission replay object cursor is invalid.')
   }
-  const offset = Number(value)
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset > MAX_REPLAY_CURSOR_OFFSET) {
-    throw new Error('Mission replay cursor is invalid.')
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
+    if (parsed?.v !== 4 || parsed.kind !== 'object'
+      || !Number.isSafeInteger(parsed.offset) || parsed.offset < 0
+      || parsed.offset > MAX_REPLAY_CURSOR_OFFSET
+      || !Number.isSafeInteger(parsed.replayGeneration) || parsed.replayGeneration < 0
+      || !Number.isSafeInteger(parsed.eligibleObjectCount) || parsed.eligibleObjectCount < 0
+      || typeof parsed.contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(parsed.contextHash)) {
+      throw new Error('invalid shape')
+    }
+    return parsed
+  } catch {
+    throw new Error('Mission replay object cursor is invalid.')
   }
-  return offset
 }
 
 /** Decodes one opaque, versioned, bidirectional exact-track cursor. */
@@ -887,7 +923,8 @@ function normalizeReplayTrackCursor(value) {
   }
   try {
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
-    if (parsed?.v !== 3 || !['after', 'before'].includes(parsed.direction)
+    if (parsed?.v !== 4 || parsed.kind !== 'track'
+      || !['after', 'before'].includes(parsed.direction)
       || !Number.isSafeInteger(parsed.offset) || parsed.offset < 0
       || parsed.offset > MAX_REPLAY_CURSOR_OFFSET || !Array.isArray(parsed.key)
       || parsed.key.length !== 4 || typeof parsed.key[0] !== 'string'
@@ -895,7 +932,9 @@ function normalizeReplayTrackCursor(value) {
       || typeof parsed.key[3] !== 'string'
       || !Number.isSafeInteger(parsed.replayGeneration) || parsed.replayGeneration < 0
       || !Number.isSafeInteger(parsed.eligiblePositionCount)
-      || parsed.eligiblePositionCount < 0) {
+      || parsed.eligiblePositionCount < 0
+      || !Number.isSafeInteger(parsed.eligibleTrackCount) || parsed.eligibleTrackCount < 0
+      || typeof parsed.contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(parsed.contextHash)) {
       throw new Error('invalid shape')
     }
     return {
@@ -903,6 +942,8 @@ function normalizeReplayTrackCursor(value) {
       offset: parsed.offset,
       replayGeneration: parsed.replayGeneration,
       eligiblePositionCount: parsed.eligiblePositionCount,
+      eligibleTrackCount: parsed.eligibleTrackCount,
+      contextHash: parsed.contextHash,
       key: {
         effectiveAt: parsed.key[0],
         recordedAt: parsed.key[1],
@@ -922,15 +963,60 @@ function encodeReplayTrackCursor(
   row,
   replayGeneration = 0,
   eligiblePositionCount = 0,
+  input,
+  eligibleTrackCount = eligiblePositionCount,
 ) {
+  const normalized = normalizeReplayCursorContextInput(input, replayGeneration)
   return Buffer.from(JSON.stringify({
-    v: 3,
+    v: 4,
+    kind: 'track',
     direction,
     offset,
     replayGeneration,
     eligiblePositionCount,
+    eligibleTrackCount,
+    contextHash: replayCursorContextHash('track', normalized, eligibleTrackCount),
     key: [row.effective_at, row.recorded_at, Number(row.source_order), row.stable_order],
   }), 'utf8').toString('base64url')
+}
+
+/** Encodes a bounded reconstructed-object continuation without exposing query context. */
+function encodeReplayObjectCursor(offset, input, eligibleObjectCount) {
+  const replayGeneration = input?.replayGeneration
+  if (!Number.isSafeInteger(replayGeneration) || replayGeneration < 0
+    || !Number.isSafeInteger(offset) || offset < 0 || offset > MAX_REPLAY_CURSOR_OFFSET
+    || !Number.isSafeInteger(eligibleObjectCount) || eligibleObjectCount < 0) {
+    throw new Error('Mission replay object cursor is invalid.')
+  }
+  const normalized = normalizeReplayCursorContextInput(input, replayGeneration)
+  return Buffer.from(JSON.stringify({
+    v: 4,
+    kind: 'object',
+    offset,
+    replayGeneration,
+    eligibleObjectCount,
+    contextHash: replayCursorContextHash('object', normalized, eligibleObjectCount),
+  }), 'utf8').toString('base64url')
+}
+
+/** Normalizes the request fields that bind a continuation to one replay query. */
+function normalizeReplayCursorContextInput(input, replayGeneration) {
+  const normalized = normalizeReplayInput(input)
+  return { ...normalized, replayGeneration }
+}
+
+/** Returns a fixed-size fingerprint for all fields that define one replay page chain. */
+function replayCursorContextHash(kind, input, eligibleSnapshotCount) {
+  return createHash('sha256').update(JSON.stringify({
+    kind,
+    missionId: input.missionId,
+    selectedTime: input.selectedTime,
+    deviceIds: input.deviceIds,
+    outingIds: input.outingIds,
+    timezone: input.timezone,
+    replayGeneration: input.replayGeneration,
+    eligibleSnapshotCount,
+  })).digest('hex')
 }
 
 /** Reads the bounded mission generation used to invalidate newly queryable evidence chains. */
@@ -1036,6 +1122,7 @@ module.exports = {
   MAX_REPLAY_OBJECT_LIMIT,
   missionLifecycleStateFromEventType,
   normalizeReplayInput,
+  encodeReplayObjectCursor,
   encodeReplayTrackCursor,
   readMissionReplayObjectChunk,
   readMissionReplayState,

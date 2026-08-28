@@ -311,6 +311,78 @@ describe('startMissionReviewRuntime', () => {
     }))
   })
 
+  it('uses bound object cursor history when navigating to an earlier replay page [DON-278]', async () => {
+    const firstPageCursor = 'eyJ2Ijo0LCJvZmZzZXQiOjEwMCwiY29udGV4dCI6ImZpcnN0In0'
+    const secondPageCursor = 'eyJ2Ijo0LCJvZmZzZXQiOjIwMCwiY29udGV4dCI6InNlY29uZCJ9'
+    const firstResult = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      nextObjectCursor: firstPageCursor,
+      totalObjectCount: 300,
+    }
+    const readMissionReplay = vi.fn().mockResolvedValue(firstResult)
+    const readMissionReplayObjectChunk = vi.fn()
+      .mockResolvedValueOnce({
+        ...firstResult,
+        objects: [],
+        objectCursor: '100',
+        nextObjectCursor: secondPageCursor,
+        progress: 2 / 3,
+        summarizedObjectCount: 0,
+      } satisfies MissionReplayObjectChunkResult)
+      .mockResolvedValueOnce({
+        ...firstResult,
+        objects: [],
+        objectCursor: '200',
+        nextObjectCursor: null,
+        progress: 1,
+        summarizedObjectCount: 0,
+      } satisfies MissionReplayObjectChunkResult)
+      .mockResolvedValueOnce({
+        ...firstResult,
+        objects: [],
+        objectCursor: '100',
+        nextObjectCursor: secondPageCursor,
+        progress: 2 / 3,
+        summarizedObjectCount: 0,
+      } satisfies MissionReplayObjectChunkResult)
+      .mockResolvedValueOnce({
+        ...firstResult,
+        objects: [],
+        objectCursor: '0',
+        nextObjectCursor: firstPageCursor,
+        progress: 1 / 3,
+        summarizedObjectCount: 0,
+      } satisfies MissionReplayObjectChunkResult)
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReplay,
+        readMissionReplayObjectChunk,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.seekReplay(firstResult.selectedTime)
+
+    await runtime.loadNextReplayObjects()
+    await runtime.loadNextReplayObjects()
+    await runtime.loadPreviousReplayObjects()
+    await runtime.loadPreviousReplayObjects()
+
+    expect(readMissionReplayObjectChunk).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      objectCursor: firstPageCursor,
+    }), expect.any(String))
+    expect(readMissionReplayObjectChunk).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      objectCursor: secondPageCursor,
+    }), expect.any(String))
+    expect(readMissionReplayObjectChunk).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      objectCursor: firstPageCursor,
+    }), expect.any(String))
+    expect(readMissionReplayObjectChunk).toHaveBeenNthCalledWith(4, expect.not.objectContaining({
+      objectCursor: expect.anything(),
+    }), expect.any(String))
+  })
+
   it('cancels and fences replay when the selected mission changes [DON-278]', async () => {
     let resolveReplay: ((value: ReturnType<typeof replayResult>) => void) | undefined
     const readMissionReplay = vi.fn().mockImplementation(

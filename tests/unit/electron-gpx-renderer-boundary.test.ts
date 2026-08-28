@@ -154,6 +154,78 @@ describe('GPX renderer containment boundary [DON-274]', () => {
     db.close()
   })
 
+  it('rejects import and revision cursors outside the context that issued them', () => {
+    const db = new Database(':memory:')
+    db.exec(`
+      CREATE TABLE gpx_track_imports (
+        id TEXT PRIMARY KEY, mission_id TEXT, source_path TEXT, file_name TEXT,
+        display_name TEXT, geometry_json TEXT, metadata_json TEXT,
+        content_sha256 TEXT, source_bytes_base64 TEXT, timing_class TEXT,
+        outing_id TEXT, revision_sequence INTEGER, retired_at TEXT,
+        retired_by TEXT, import_state TEXT, imported_at TEXT, updated_at TEXT
+      );
+      CREATE TABLE gpx_import_revisions (
+        id TEXT PRIMARY KEY, mission_id TEXT, import_id TEXT,
+        revision_sequence INTEGER, content_sha256 TEXT,
+        source_bytes_base64 TEXT, source_path TEXT, file_name TEXT,
+        display_name TEXT, geometry_json TEXT, metadata_json TEXT,
+        timing_class TEXT, outing_id TEXT, import_state TEXT,
+        completeness TEXT, recorded_at TEXT, audit_event_id TEXT
+      );
+      INSERT INTO gpx_track_imports VALUES
+        ('mission-1-a', 'mission-1', '/field/a.gpx', 'a.gpx', 'Track A',
+          '{"type":"MultiLineString","coordinates":[]}', NULL, 'sha-a', NULL,
+          'fully_dated', NULL, 2, NULL, NULL, 'complete',
+          '2026-08-27T10:00:00.000Z', '2026-08-27T10:00:00.000Z'),
+        ('mission-1-b', 'mission-1', '/field/b.gpx', 'b.gpx', 'Track B',
+          '{"type":"MultiLineString","coordinates":[]}', NULL, 'sha-b', NULL,
+          'fully_dated', NULL, 1, NULL, NULL, 'complete',
+          '2026-08-27T10:01:00.000Z', '2026-08-27T10:01:00.000Z'),
+        ('mission-2-a', 'mission-2', '/field/c.gpx', 'c.gpx', 'Track C',
+          '{"type":"MultiLineString","coordinates":[]}', NULL, 'sha-c', NULL,
+          'fully_dated', NULL, 1, NULL, NULL, 'complete',
+          '2026-08-27T10:02:00.000Z', '2026-08-27T10:02:00.000Z');
+      INSERT INTO gpx_import_revisions VALUES
+        ('revision-a-1', 'mission-1', 'mission-1-a', 1, 'sha-a1', NULL,
+          '/field/a.gpx', 'a.gpx', 'Track A',
+          '{"type":"MultiLineString","coordinates":[]}', NULL, 'fully_dated',
+          NULL, 'complete', 'complete', '2026-08-27T10:00:00.000Z', 'event-a-1'),
+        ('revision-a-2', 'mission-1', 'mission-1-a', 2, 'sha-a2', NULL,
+          '/field/a.gpx', 'a.gpx', 'Track A',
+          '{"type":"MultiLineString","coordinates":[]}', NULL, 'fully_dated',
+          NULL, 'complete', 'complete', '2026-08-27T10:01:00.000Z', 'event-a-2'),
+        ('revision-b-1', 'mission-1', 'mission-1-b', 1, 'sha-b1', NULL,
+          '/field/b.gpx', 'b.gpx', 'Track B',
+          '{"type":"MultiLineString","coordinates":[]}', NULL, 'fully_dated',
+          NULL, 'complete', 'complete', '2026-08-27T10:00:00.000Z', 'event-b-1'),
+        ('revision-b-2', 'mission-1', 'mission-1-b', 2, 'sha-b2', NULL,
+          '/field/b.gpx', 'b.gpx', 'Track B',
+          '{"type":"MultiLineString","coordinates":[]}', NULL, 'fully_dated',
+          NULL, 'complete', 'complete', '2026-08-27T10:01:00.000Z', 'event-b-2'),
+        ('revision-c-1', 'mission-2', 'mission-2-a', 1, 'sha-c1', NULL,
+          '/field/c.gpx', 'c.gpx', 'Track C',
+          '{"type":"MultiLineString","coordinates":[]}', NULL, 'fully_dated',
+          NULL, 'complete', 'complete', '2026-08-27T10:02:00.000Z', 'event-c-1');
+    `)
+
+    const importCursor = listGpxImportProjectionPage(db, {
+      missionId: 'mission-1', limit: 1,
+    }).nextCursor
+    const revisionCursor = listGpxImportRevisionProjectionPage(db, {
+      importId: 'mission-1-a', limit: 1,
+    }).nextCursor
+
+    expect(importCursor).toEqual(expect.any(String))
+    expect(revisionCursor).toEqual(expect.any(String))
+    expect(() => listGpxImportProjectionPage(db, {
+      missionId: 'mission-2', cursor: importCursor ?? undefined, limit: 1,
+    })).toThrow('GPX renderer page cursor is invalid.')
+    expect(() => listGpxImportRevisionProjectionPage(db, {
+      importId: 'mission-1-b', cursor: revisionCursor ?? undefined, limit: 1,
+    })).toThrow('GPX renderer page cursor is invalid.')
+    db.close()
+  })
+
   it('exposes only paged GPX reads and small presentation writes through preload', () => {
     const preload = readFileSync('electron/preload.cjs', 'utf8')
     const main = readFileSync('electron/main.cjs', 'utf8')

@@ -86,7 +86,7 @@ export function MissionReviewWorkspace() {
     }
 
     void controller.load(selectedMissionId)
-  }, [controller, open, selectedMissionId])
+  }, [controller, missionPhase, open, selectedMissionId])
 
   useEffect(() => {
     setSelectedMarkerId((current) =>

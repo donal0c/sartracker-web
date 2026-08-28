@@ -28,6 +28,9 @@ function createMissionEvidenceVersionStore(options) {
       if (operation !== 'legacy_baseline') assertReady()
       const missionId = normalizeId(input.missionId, 'mission id')
       const objectId = normalizeId(input.objectId, 'evidence object id')
+      if (operation !== 'legacy_baseline') {
+        assertOversizedLegacyObjectMayChange(db, missionId, objectType, objectId)
+      }
       const recordedAt = normalizeTimestamp(input.recordedAt ?? readNow(), 'recorded time')
       const effectiveAt = normalizeTimestamp(input.effectiveAt ?? recordedAt, 'effective time')
       const previous = db.prepare(`SELECT MAX(version_sequence) AS version_sequence
@@ -98,6 +101,30 @@ function createMissionEvidenceVersionStore(options) {
         .all(...parameters)
     },
   }
+}
+
+/**
+ * Protects the current projection when it is the sole exact copy of a legacy
+ * object whose immutable baseline could only be recorded as an explicit summary.
+ */
+function assertOversizedLegacyObjectMayChange(db, missionId, objectType, objectId) {
+  const baseline = db.prepare(`SELECT state_json FROM mission_object_versions
+    WHERE mission_id = ? AND object_type = ? AND object_id = ?
+      AND operation = 'legacy_baseline'
+    ORDER BY version_sequence ASC LIMIT 1`).get(missionId, objectType, objectId)
+  if (baseline === undefined) return
+  let state
+  try {
+    state = JSON.parse(baseline.state_json)
+  } catch {
+    throw new Error(
+      `Legacy ${objectType} evidence ${objectId} has an unreadable immutable baseline. Preserve the mission database and use the bounded legacy evidence repair path before retrying the change.`,
+    )
+  }
+  if (state?.legacy_state_omitted !== true) return
+  throw new Error(
+    `The sole exact copy of oversized legacy ${objectType} evidence ${objectId} is retained in the current mission record and cannot be changed or retired. Preserve the mission database and use the bounded legacy evidence repair path before retrying.`,
+  )
 }
 
 /** Captures bounded, durable targets for legacy mutable-object reconstruction. */
