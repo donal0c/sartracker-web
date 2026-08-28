@@ -1190,6 +1190,93 @@ event-loop assertion, but permits up to 30 seconds for the deliberately smaller
 durable turns to finish on slower runners. The focused regression passed three
 consecutive runs and the complete evidence-versioning file remained 60/60.
 
+## `a584b2aa` exact-head review rejection and `12532025` remediation
+
+Exact pushed code-and-documentation head
+`a584b2aaa5b9f29055c0dca1d7e43e50dace7f4d`, tree
+`dceca0969155937a5cf7efce5931026964327002`, passed exact-head Linux
+workflow [`33207406645`](https://github.com/donal0c/sartracker-web/actions/runs/33207406645).
+Ubuntu x64 passed lint, 294 files / 2,480 tests, production build/budgets,
+AppImage and `.deb` construction, x86-64 native SQLite, Mesa llvmpipe, the
+indexed 960k qualification and the packaged tracking soak. The fixture digest
+was `e6afc8d7252385f3bd2cc9612af0d8c519983c75aab7bfd711e00169978a7038`;
+initial open was 49.89 ms, Replay seek 242.54 ms, late page 169.19 ms,
+restart seek 236 ms with exact equality, and the event-loop maximum was
+85.35 ms. The packaged soak passed 6/6 batches and 8,664/8,664 exact
+positions across two launches. Green package evidence did not override the
+code verdict.
+
+All four allocated independent reviews rejected that exact head:
+
+| Reviewer task | Charter | Centrally accepted finding |
+| --- | --- | --- |
+| `/root/pr5_broad_a584` | Broad life-safety/end-to-end | A 64 MiB marker description or non-search drawing geometry reached synchronous projection, audit and version writes, breaching the current-position-priority budget. |
+| `/root/pr5_persistence_a584` | Persistence/completeness | Schema-v12 startup synchronously rewrote 500,000 legacy event rows and prepared a global index; restart GPX receipt settlement was not atomic with batch accounting. |
+| `/root/pr5_concurrency_356a` | Concurrency/finalization | The retained Tauri fallback checked mission status before its deferred GPX delete transaction, so a concurrent committed Finish could still lose the GPX row. |
+| `/root/pr5_renderer_a584` | Renderer/input containment | Default all-mission Replay object paging changed omitted filters to empty arrays, invalidating the bound continuation context. |
+
+Central source retrace accepted five P2 defects. No team/domain question was
+needed: the fixes follow the locked current-position-priority, explicit
+evidence, data-known-at-T and finalized-write-fence rules. Because remediation
+crosses migration, receipt accounting, finalization, renderer and IPC
+boundaries, all four reviews must restart on the final exact head.
+
+Executable remediation
+`12532025f20ee558b910eb3831f063e5c1a27265` closes the five findings:
+
+- preload and main now enforce closed marker/drawing projections with bounded
+  UTF-8 text, JSON, coordinate-count and nesting envelopes before lookup,
+  audit or version serialization. Rejection produces no projection, version or
+  audit row;
+- legacy event and membership provenance is reconstructed in durable
+  1,000-row background turns with restartable cursors. Current-position writes
+  remain admitted while Replay and Finish fail closed until the captured
+  legacy target is complete;
+- restart GPX receipt settlement, failure publication and batch accounting now
+  share one immediate transaction, with an injected post-settlement failure
+  proving complete rollback and clean restart recovery;
+- the Tauri fallback performs GPX lookup and transaction-current mission-status
+  validation inside `BEGIN IMMEDIATE`, so a committed Finish wins and leaves
+  the evidence plus audit state intact; and
+- unfiltered Replay object continuation requests preserve omitted filters,
+  while filtered requests retain their exact sorted context.
+
+Red-green coverage includes 64 MiB marker and drawing payloads under the
+unchanged 200 ms gate, a 50,001-coordinate drawing below the byte cap, no-row
+rejection, 500,000 legacy events with bounded open/write/heartbeat and durable
+restart progress, receipt rollback after settlement, Finish-versus-delete, and
+default all-mission object page continuation. The deterministic small fixture
+digest changed to
+`22a5e80b51767770098cc6fdab505b9b88c177829f5c4a08e34afdf10465df24`
+because the durable event-provenance state table was added.
+
+Fresh executable-tree proof is green:
+
+- serial unit: 294 files / 2,484 tests;
+- CommonJS syntax, ESLint, production TypeScript/Vite build, bundle budgets,
+  Rust formatting, and Rust backend 57 passed / one intentional real-keychain
+  ignore;
+- Chromium: 167/167;
+- visual Playwright: 58/58 with 69 registered screenshots; fresh uncached
+  independent review 69/69, report
+  `visual-review-2026-08-28T21-34-18Z.json`;
+- indexed 960k fixture digest
+  `b7f89681afb111108341a080fb248c93cb1d3765cdd98c2f7eb9e4c2fd9fdcfc`
+  (765,739,008 bytes): initial open 1.75 ms, 50,000-point GPX dispatch
+  2.34 ms / total 3,505.21 ms, 1,108 concurrent current writes with 44.02 ms
+  maximum / 1.91 ms p95, Replay seek 61.27 ms, late page 49.42 ms,
+  event-loop maximum 44.16 ms, restart open 3.31 ms and restart seek 52.78 ms
+  with exact first-page equality; and
+- unsigned macOS arm64 package plus packaged CI-profile soak across two
+  launches: 6/6 batches, 8,664/8,664 positions, 6.3 ms maximum main round
+  trip and zero redundant-event slope.
+
+This is deterministic browser/local/package proof, not release or field proof.
+The documentation-bound descendant still requires push, a fresh exact-head
+Linux run and clean broad, persistence/completeness, concurrency/finalization
+and renderer/input-containment reviews on that same head. PR opened/review-ready
+remains intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
