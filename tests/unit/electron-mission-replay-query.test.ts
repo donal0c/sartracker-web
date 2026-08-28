@@ -656,6 +656,12 @@ function createReplayDatabase(databasePath = ':memory:'): InstanceType<typeof Da
       geometry_bytes INTEGER, source_bytes_base64_bytes INTEGER,
       metadata_bytes INTEGER, detected_at TEXT
     );
+    CREATE TABLE legacy_gpx_backfill_state (
+      singleton INTEGER PRIMARY KEY, scanned_through_rowid INTEGER,
+      scan_target_rowid INTEGER, updated_at TEXT
+    );
+    INSERT INTO legacy_gpx_backfill_state
+      VALUES (1, 0, 0, '2026-08-27T00:00:00.000Z');
     CREATE TABLE gpx_import_revisions (
       import_id TEXT, mission_id TEXT, revision_sequence INTEGER, recorded_at TEXT,
       source_path TEXT, file_name TEXT, display_name TEXT, content_sha256 TEXT,

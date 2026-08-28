@@ -740,6 +740,53 @@ describe('mission evidence versioning [DON-277]', () => {
     await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   })
 
+  it('seeks legacy GPX reconstruction from a durable cursor instead of rescanning settled rows [DON-274]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-gpx-cursor-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Settled Legacy GPX Cursor' })
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const settledDb = openDatabase(databaseFile)
+    settledDb.exec(`
+      PRAGMA synchronous = OFF;
+      WITH digits(d) AS (
+        VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9)
+      ), numbers(n) AS (
+        SELECT a.d + b.d * 10 + c.d * 100 + d.d * 1000 + e.d * 10000 + f.d * 100000
+        FROM digits AS a, digits AS b, digits AS c, digits AS d, digits AS e, digits AS f
+      )
+      INSERT INTO gpx_track_imports (
+        id, mission_id, source_path, file_name, display_name, geometry_json,
+        metadata_json, imported_at, updated_at
+      )
+      SELECT printf('settled-%06d', n), '${mission.id}', printf('/legacy/%06d.gpx', n),
+        printf('%06d.gpx', n), printf('Settled %06d', n),
+        '{"type":"MultiLineString","coordinates":[]}', '{}',
+        '2026-08-20T10:00:00.000Z', '2026-08-20T10:00:00.000Z'
+      FROM numbers WHERE n < 500000;
+      INSERT INTO gpx_import_revisions (
+        id, mission_id, import_id, revision_sequence, content_sha256,
+        source_bytes_base64, source_path, file_name, display_name, geometry_json,
+        metadata_json, timing_class, import_state, completeness, recorded_at, audit_event_id
+      )
+      SELECT 'revision-' || id, mission_id, id, 1, NULL, NULL, source_path,
+        file_name, display_name, geometry_json, metadata_json, 'undated', 'complete',
+        'legacy_baseline', updated_at, NULL
+      FROM gpx_track_imports WHERE mission_id = '${mission.id}';
+    `)
+    settledDb.close()
+
+    const openedAt = performance.now()
+    store = createElectronMissionStore({ userDataPath })
+    const openMs = performance.now() - openedAt
+    expect(openMs).toBeLessThan(200)
+    const inspection = openDatabase(databaseFile)
+    expect(inspection.prepare(`SELECT scanned_through_rowid
+      FROM legacy_gpx_backfill_state WHERE singleton = 1`).get())
+      .toMatchObject({ scanned_through_rowid: expect.any(Number) })
+    inspection.close()
+  }, 30_000)
+
   it('quarantines over-envelope legacy GPX without materializing it into renderer evidence [DON-274]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-gpx-quarantine-'))
     const first = createElectronMissionStore({ userDataPath })
@@ -812,7 +859,7 @@ describe('mission evidence versioning [DON-277]', () => {
       file_name: 'replacement.gpx',
       display_name: 'Unsafe replacement',
       geometry_json: '{"type":"MultiLineString","coordinates":[]}',
-    })).rejects.toThrow(/quarantined.*bounded repair/iu)
+    })).rejects.toThrow(/revisionless legacy.*quarantine repair/iu)
     await expect(store.finishMission(mission.id)).rejects.toThrow(/legacy GPX.*quarantin|unsettled/iu)
 
     store.close()
@@ -826,6 +873,88 @@ describe('mission evidence versioning [DON-277]', () => {
       geometry_bytes: Buffer.byteLength(originalGeometry, 'utf8'),
       geometry_prefix: originalGeometry.slice(0, 54),
     })
+    inspection.close()
+  })
+
+  it('fences revisionless legacy GPX before background classification can overwrite it [DON-274]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-gpx-pending-fence-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Pending Legacy GPX Fence' })
+    const outing = await first.createOuting({ mission_id: mission.id, label: 'Legacy outing' })
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    const insert = legacyDb.prepare(`INSERT INTO gpx_track_imports (
+      id, mission_id, source_path, file_name, display_name, geometry_json,
+      metadata_json, content_sha256, imported_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`)
+    for (let index = 0; index < 3; index += 1) {
+      insert.run(
+        `legacy-prefix-${index}`, mission.id, `/legacy/prefix-${index}.gpx`,
+        `prefix-${index}.gpx`, `Legacy prefix ${index}`,
+        '{"type":"MultiLineString","coordinates":[]}', null,
+        '2026-08-20T10:00:00.000Z', '2026-08-20T10:00:00.000Z',
+      )
+    }
+    const originalGeometry = JSON.stringify({
+      type: 'MultiLineString',
+      coordinates: [],
+      retainedLegacyPayload: 'x'.repeat(256 * 1024),
+    })
+    const retainedBytes = 'PGdweD5wZW5kaW5nLWxlZ2FjeTwvZ3B4Pg=='
+    const retainedHash = digestBase64(retainedBytes)
+    insert.run(
+      'legacy-pending-target', mission.id, '/legacy/pending-target.gpx',
+      'pending-target.gpx', 'Pending legacy target', originalGeometry, retainedHash,
+      '2026-08-20T10:00:00.000Z', '2026-08-20T10:00:00.000Z',
+    )
+    legacyDb.close()
+
+    store = createElectronMissionStore({ userDataPath })
+    const replacementBytes = 'PGdweD5yZXBsYWNlbWVudC1wZW5kaW5nLWxlZ2FjeTwvZ3B4Pg=='
+    await expect(store.upsertGpxImport(gpxInput(mission.id, {
+      id: 'legacy-pending-target',
+      source_path: '/legacy/pending-target.gpx',
+      source_bytes_base64: replacementBytes,
+      content_sha256: digestBase64(replacementBytes),
+    }))).rejects.toThrow(/legacy GPX.*reconstruction|revisionless.*legacy/iu)
+    await expect(store.upsertGpxImport(gpxInput(mission.id, {
+      source_path: '/legacy/pending-target.gpx',
+      source_bytes_base64: replacementBytes,
+      content_sha256: digestBase64(replacementBytes),
+    }))).rejects.toThrow(/revisionless legacy/iu)
+    await expect(store.updateGpxImportPresentation({
+      id: 'legacy-pending-target',
+      mission_id: mission.id,
+      metadata_json: '{"color":"#F032E6"}',
+    })).rejects.toThrow(/revisionless legacy/iu)
+    await expect(store.assignGpxImportToOuting({
+      import_id: 'legacy-pending-target',
+      outing_id: outing.id,
+      assigned_by: 'Coordinator One',
+    })).rejects.toThrow(/revisionless legacy/iu)
+    await expect(store.deleteGpxImport('legacy-pending-target'))
+      .rejects.toThrow(/revisionless legacy/iu)
+
+    const separate = await store.upsertGpxImport(gpxInput(mission.id, {
+      source_path: '/field/same-hash-new-path.gpx',
+      file_name: 'same-hash-new-path.gpx',
+      source_bytes_base64: retainedBytes,
+      content_sha256: retainedHash,
+    }))
+    expect(separate.id).not.toBe('legacy-pending-target')
+    const inspection = openDatabase(databaseFile)
+    expect(inspection.prepare(`SELECT length(CAST(geometry_json AS BLOB)) AS geometry_bytes,
+      substr(geometry_json, 1, 54) AS geometry_prefix
+      FROM gpx_track_imports WHERE id = ?`).get('legacy-pending-target')).toMatchObject({
+      geometry_bytes: Buffer.byteLength(originalGeometry, 'utf8'),
+      geometry_prefix: originalGeometry.slice(0, 54),
+    })
+    expect(inspection.prepare('SELECT COUNT(*) AS count FROM gpx_import_revisions WHERE import_id = ?')
+      .get('legacy-pending-target')).toMatchObject({ count: 0 })
+    expect(inspection.prepare(`SELECT COUNT(*) AS count FROM gpx_import_aliases
+      WHERE import_id = 'legacy-pending-target' AND source_path = '/field/same-hash-new-path.gpx'`)
+      .get()).toMatchObject({ count: 0 })
     inspection.close()
   })
 

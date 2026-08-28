@@ -1561,11 +1561,12 @@
             the operator, but retained source bytes and full local paths stay behind the desktop boundary.
             The panel shows a bounded issue page and explicitly warns when additional retained issues
             exist beyond that page; a current import refreshes the sanitized issue list immediately.
-            An upgraded legacy GPX artifact that exceeds the bounded migration envelope remains byte-for-byte
-            in the mission store but is quarantined from map and Replay projection. The panel shows the
-            quarantine explicitly, and Finish, Finalize, and direct archive creation remain blocked until a
-            bounded repair path has reconstructed that artifact. Do not replace or retire the quarantined row;
-            preserve it for a maintainer-led repair.
+            An upgraded legacy GPX artifact remains read-only while bounded background reconstruction is
+            pending. If it exceeds the migration envelope, it remains byte-for-byte in the mission store but is
+            quarantined from map and Replay projection. The panel shows the quarantine explicitly, and Finish,
+            Finalize, and direct archive creation remain blocked until a bounded repair path has reconstructed
+            that artifact. Do not replace, relabel, reassign, or retire a pending or quarantined row; preserve it
+            for the background migration or a maintainer-led repair.
             On Quit, active and queued imports are cancelled and physically joined before the database can close.
             If a worker does not exit within the safe deadline, shutdown fails visibly and is not marked clean;
             retry Quit after the worker exits rather than force-closing the mission store beneath it.

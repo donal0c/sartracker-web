@@ -669,6 +669,46 @@ indexes: 5.73 ms open, 672.89 ms seek, 3.73 ms concurrent current write and
 uncommitted-tree results; committed package/Linux proof and clean exact-head
 reviews remain mandatory.
 
+Exact pushed head `6642e383b15e41ef3182a4d3fbac7e7345c9a8ad`, tree
+`cad281c96d74b3d7a3fdfd1c44ef02e5189c5c53`, was rejected by its allocated
+persistence/completeness and concurrency/finalization reviews despite a clean
+broad review and green package proof. Persistence reproduced a residual full-
+table settled-row scan: reopen grew from 1.79 ms at 1,000 imports to 53.09 ms at
+100,000 and 291.82 ms at 500,000, while each background turn rescanned an
+increasing settled prefix. Concurrency then reproduced a pre-classification
+overwrite: after three bounded legacy rows, an oversized fourth row could be
+reimported by the same ID/path before its timer turn, replacing 262,201 original
+bytes with a 43-byte projection and retaining only the replacement revision.
+
+The replacement is red-green. `legacy_gpx_backfill_state` durably records a
+rowid scan target and cursor. Launch examines at most three bounded metadata
+rows; background turns use an indexed rowid seek to skip at most 1,000 already-
+settled rows while reconstructing or quarantining at most one artifact. Replay
+and lifecycle fences read the checkpoint rather than a correlated full-table
+absence scan. The 500,000-settled-row regression failed red at 361.78 ms and now
+opens below the 200 ms hard gate. A separate pre-timer regression failed red by
+successfully overwriting the target as revision sequence 2; it now rejects
+same-ID and same-path replacement, presentation edits, outing assignment and
+retirement while preserving exact byte length/prefix and zero invented
+revisions. Content-hash alias lookup requires an immutable revision, so an
+unresolved legacy row cannot become an alias target. Focused persistence,
+Replay, renderer and deterministic-fixture verification is 84/84.
+
+Fresh replacement-tree proof is green: 289 unit files / 2,424 tests in the
+serial gate, backend 55 executable tests with one intentional real-keychain
+ignore, lint, build and bundle budgets, Chromium 165/165, visual Playwright
+58/58, and uncached independent visual review 69/69 with report
+`visual-review-2026-08-28T09-06-57Z.json`. Indexed 960k qualification used the
+765,718,528-byte fixture digest
+`d13f452517e83af3a76f7d44284fbdbab795e2e07aab4bc3d5af291a41e750b0`:
+69.32 ms seek, 52.81 ms late page, 39.49 ms maximum concurrent current write,
+39.60 ms event-loop maximum and 53.98 ms restart seek with exact equality. The
+authentic-v11 960k fallback retained all 960,001 positions without replay
+indexes: 6.27 ms open, 755.43 ms seek, 4.61 ms concurrent current write and
+651.55 ms restart seek, with the fallback limitation explicit. Committed
+package/Linux proof and all four clean independent exact-head reviews remain
+mandatory.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

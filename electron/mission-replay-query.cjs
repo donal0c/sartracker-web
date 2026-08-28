@@ -645,18 +645,13 @@ function readReplayLimitations(
       count: Number(legacyGpx.count),
     })
   }
-  const pendingLegacyGpx = database.prepare(`SELECT COUNT(*) AS count
-    FROM gpx_track_imports AS imports
-    WHERE imports.mission_id = ? AND NOT EXISTS (
-      SELECT 1 FROM gpx_import_revisions AS revisions WHERE revisions.import_id = imports.id
-    ) AND NOT EXISTS (
-      SELECT 1 FROM legacy_gpx_backfill_quarantine AS quarantine
-      WHERE quarantine.source_rowid = imports.rowid
-    )`).get(input.missionId)
+  const pendingLegacyGpx = database.prepare(`SELECT
+    CASE WHEN scanned_through_rowid < scan_target_rowid THEN 1 ELSE 0 END AS count
+    FROM legacy_gpx_backfill_state WHERE singleton = 1`).get()
   if (Number(pendingLegacyGpx?.count ?? 0) > 0) {
     limitations.push({
       code: 'legacy_gpx_backfill_pending',
-      message: 'Legacy GPX evidence reconstruction is still pending in bounded background slices; the original projection remains retained and mission lifecycle changes are blocked until it settles.',
+      message: 'Legacy GPX evidence reconstruction inventory is still being verified in bounded background slices; original projections remain retained and mission lifecycle changes are blocked until it settles.',
       count: Number(pendingLegacyGpx.count),
     })
   }
