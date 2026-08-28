@@ -845,6 +845,94 @@ and zero redundant-event slope. This remains local packaged evidence, not
 Linux, release or field proof. A fresh exact-head Linux run and all four clean
 independent exact-head reviews remain mandatory before task completion.
 
+## `60bf8907` four-review rejection and cross-boundary replacement
+
+Pushed code-and-documentation head
+`60bf8907cbf128a5ddb98e9a8ef76ab428cecfec`, tree
+`9c62d8aedd706f743404c88b38d19694f580958a`, passed exact-head Linux run
+`33187744020` through the serial unit, build/budget, x64 AppImage/`.deb`,
+indexed-960k, llvmpipe and packaged-soak jobs. That green workflow did not
+override the code verdict. All four independent reviewers rejected the exact
+head:
+
+| Reviewer/task | Charter | Exact-head verdict and accepted findings |
+|---|---|---|
+| `/root/pr5_broad_60bf` | Broad life-safety/end-to-end | REJECTED: synchronous unbounded legacy mutable-object baseline creation; Replay displayed lifecycle transition verbs rather than reconstructed state; terminal coordinator outcomes could retain no end time. |
+| `/root/pr5_persistence_60bf` | Persistence/completeness | REJECTED: duplicate object-baseline finding; direct archive could copy one mission state and report success after a concurrent write changed the live mission. |
+| `/root/pr5_concurrency_60bf` | Concurrency/finalization | REJECTED: each GPX migration turn read size metadata for up to 10,000 unsettled over-envelope geometries before migrating one, producing a 355.71 ms callback and 496.43 ms heartbeat gap. |
+| `/root/pr5_renderer_60bf` | Renderer/input containment | REJECTED: GPX pages were drained into one renderer array; later Replay object pages lost their summarized-state count; Replay worker request IDs were cross-renderer and abandoned workers survived renderer teardown. |
+
+Central source retrace accepted every finding. The lifecycle-state and explicit
+pass-end rules follow the locked ADR and Q&A contract; they did not require a
+new team decision. Because remediation changes persistence, finalization, IPC,
+renderer ownership and operator state together, it is a cross-boundary change:
+all four exact-head reviews restart on the final code-and-documentation head.
+
+Executable replacement `1f69c7907e79739914b49955b1d391bb02c315e0`
+addresses the findings as follows:
+
+- legacy markers, drawings, outings, search areas, assignments and passes use
+  durable captured targets and bounded 100-row/1 MiB background pages. One
+  over-envelope object becomes an explicit bounded summary while the original
+  row remains retained. Replay, mutable evidence writes, Finish, Finalize and
+  archive fail closed until baseline custody settles; current positions remain
+  available. The deterministic 50,000-object regression keeps open/current/
+  heartbeat below 200 ms and settles every baseline before evidence writes;
+- legacy GPX metadata inspection is capped at 100 unsettled candidates per
+  turn. The unchanged 10,000 settled-key cap and sub-200 ms gates are retained;
+  a 4 ms cooperative inter-turn yield meets the unchanged 500,000-row/1.2 s
+  liveness gate even under the complete serial unit workload;
+- direct archive now owns a durable mission fence from request through snapshot
+  validation, archive-event commit and fence release. Concurrent writes fail
+  closed; restart records an interrupted direct archive explicitly without
+  weakening a true finalization fence;
+- Replay returns lifecycle state (`active`, `paused`, `finished`, `finalized`
+  or explicit `unknown`) while retaining the transition event as provenance.
+  Every coordinator-declared `full`, `partial` or `aborted` pass requires an
+  explicit end and remains bounded by its mission, assignment outing and the
+  current evidence time;
+- Replay IPC scopes request ownership to the sending `webContents`, prevents
+  cross-renderer cancellation and cancels workers on both renderer destruction
+  signals. Object continuation pages carry and reconcile their own summarized-
+  state count;
+- GPX operational and Mission Review surfaces retain one 25-entry projection
+  page, replace rather than accumulate pages, strip retained source bytes, and
+  state `more available`, final-page and return-to-first status explicitly. The
+  browser harness mirrors the bounded stable-keyset projection contract.
+
+Replacement verification before documentation binding:
+
+- serial unit: 294 files / 2,460 tests;
+- Rust backend: 55 executable tests passed / one intentional real-keychain
+  ignore;
+- CommonJS syntax, ESLint, TypeScript production build and bundle budgets;
+- Chromium: 166/166, including an actual 26-import first/next/return bounded
+  GPX flow and the required-end repeated-pass flow;
+- visual Playwright: 58/58 with 69 registered screenshots. The uncached review
+  initially passed 68/69 and rejected one breadcrumb screenshot because a
+  raster tile was blurred; that exact visual test was recaptured and its fresh
+  uncached review passed, giving 69/69 effective clean visual verdicts. Reports:
+  `visual-review-2026-08-28T16-49-16Z.json` and the replacement-frame
+  `visual-review-2026-08-28T16-49-38Z.json`;
+- indexed 960k digest
+  `58314b12de1f43f51c513e929f51d9f254ad7ea919286057118a5b3389276b36`
+  (765,734,912 bytes): 64.70 ms first seek, 55.06 ms late page,
+  98.07 ms maximum across 1,017 concurrent current writes, 101.48 ms maximum
+  event-loop gap, 53.15 ms exact restart seek and exact equality;
+- authentic-v11 960k: 12.13 ms open, 11.92 ms bounded legacy-object baseline
+  settlement, 1.75 ms current write while preparation was pending, 610.31 ms
+  replay, 1.77 ms restart open and 521.08 ms restart replay, with
+  `legacy_replay_scan_fallback` explicit;
+- unsigned macOS arm64 packaging and packaged CI-profile soak: 6/6 batches,
+  8,664/8,664 positions, one restart, four healthy interactions, SQLite
+  integrity `ok`, 5.1 ms maximum main round trip and zero redundant-event
+  slope.
+
+This is local candidate proof. The version/evidence binding descendant, push,
+fresh exact-head Linux run, four restarted exact-head reviews, centrally
+source-retraced finding dispositions and clean current-head verdicts remain mandatory.
+PR opened/review-ready remains intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

@@ -183,6 +183,19 @@ affected focused recheck clean on the current head before reporting task
 completion. Donal retains final approval and merge authority and may request
 additional review.
 
+PR-5 review correction (2026-08-28): exact head `60bf8907` passed Linux run
+`33187744020` but was rejected by each accepted reviewer charter. Central
+source retrace accepted eight cross-boundary findings covering bounded legacy
+object/GPX preparation, direct-archive fencing, reconstructed lifecycle state,
+explicit completed-pass ends, Replay worker ownership, GPX renderer paging and
+Replay page limitation disclosure. Executable replacement `1f69c790` is green
+locally through 294 files / 2,460 unit tests, backend 55/1, Chromium 166/166,
+visual 58/58 plus effective independent review 69/69, indexed/authentic-v11
+960k, macOS package and packaged soak. Because the replacement spans schema,
+finalization, IPC and renderer contracts, all four reviewers restart on the
+same final code-and-documentation head after exact-head Linux passes. PR open
+or review-ready remains intermediate; do not merge or release.
+
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is
