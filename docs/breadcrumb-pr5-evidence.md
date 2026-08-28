@@ -513,6 +513,14 @@ evidence and all four clean independent
 exact-head reviews remain required before this remediation can be called task
 complete. PR opened/review-ready remains an intermediate state.
 
+The unsigned macOS arm64 Electron package built from committed head
+`e888e6ee02fc57673d0cedb1aa536d408160a717`. Its packaged CI tracking soak
+passed 6/6 batches, 8,664/8,664 exact positions, one restart checkpoint, four
+healthy operator interactions, 9.74 ms maximum main-process responsiveness,
+zero renderer crashes and zero redundant telemetry slope. The report is
+`tmp/beta-artifacts/tracking-soak-ci/electron-tracking-soak-report.json`. This is
+local unsigned packaged proof, not Linux, signed, release or field evidence.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
