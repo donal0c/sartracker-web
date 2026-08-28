@@ -1113,6 +1113,50 @@ receive clean broad, persistence/completeness, concurrency/finalization and
 renderer/input-containment verdicts on that same head before task completion.
 PR opened/review-ready remains intermediate; no merge or release is authorized.
 
+## `52465dfc` packaged-startup rejection and sandbox-safe correction
+
+Documentation-bound candidate
+`52465dfc2edd7e0a24f359ec4136b0bccdb08e4f` was invalidated by exact-head
+Linux workflow [`33203567089`](https://github.com/donal0c/sartracker-web/actions/runs/33203567089).
+Lint, 294 files / 2,478 tests, build/budgets, Linux artifacts, the indexed 960k
+qualification, native SQLite inspection and llvmpipe attestation passed. The
+packaged soak then timed out waiting for the operational app shell and correctly
+blocked AppImage smoke and review dispatch.
+
+Central source retrace found that the Replay containment change had added a
+local CommonJS import to `electron/preload.cjs`. Electron runs this preload with
+`sandbox: true`, where its restricted `require` surface cannot load local
+modules. The preload therefore failed before exposing the desktop bridge and
+the renderer remained in the fail-closed startup shell. The same exact package
+failure was reproduced locally before changing code; the second obsolete Linux
+attempt was cancelled rather than spending another qualification cycle on the
+known-invalid head.
+
+Executable correction `09845b8bb8ebe400a0edc40d375a503c5cd3a0f8` removes the local preload import. The
+sandboxed preload now projects only the closed, bounded Replay fields into IPC;
+the main process still performs the authoritative timestamp, filter, cursor,
+generation and request validation before starting a worker. The regression
+test executes the real preload in a VM whose `require` accepts only `electron`,
+then proves a 64 MiB unknown renderer field is not cloned into main. It failed
+red with `Sandboxed preload cannot require ./mission-replay-query.cjs` and
+passes with the correction.
+
+Affected proof is green:
+
+- Replay/preload/query focused suite: 40/40;
+- full serial unit gate: 294 files / 2,480 tests;
+- Electron preload/Replay CommonJS syntax, ESLint, production build and bundle
+  budgets;
+- rebuilt unsigned macOS arm64 package; and
+- the same packaged CI-profile soak now launches twice and passes 6/6 batches,
+  8,664/8,664 exact positions, 5.7 ms maximum main-process stall and zero
+  redundant telemetry slope.
+
+This correction is inside the renderer/input-containment boundary, so the final
+documentation-bound descendant must pass a fresh exact-head Linux run and all
+four independent review charters. PR opened/review-ready remains intermediate;
+no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
