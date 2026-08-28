@@ -506,7 +506,10 @@ write and 584.00 ms restart seek, with the fallback limitation visible. It
 passed the retained contract but does not establish indexed replay performance
 for upgraded stores.
 
-Commit, committed-tree package/Linux evidence and all four clean independent
+Replacement code and documentation were committed as
+`9850af14bf8d612e1791be6b0642906247a921e1` (tree
+`25cb059a4d78e29735ba2d34ba4717fbeb095feb`). Committed-tree package/Linux
+evidence and all four clean independent
 exact-head reviews remain required before this remediation can be called task
 complete. PR opened/review-ready remains an intermediate state.
 
