@@ -133,7 +133,12 @@ const REPLAY_STORE_METHODS = new Set([
   'readMissionReplayTrackChunk',
   'readMissionReplayObjectChunk',
 ])
-const BOUNDED_MUTABLE_EVIDENCE_STORE_METHODS = new Set(['upsertMarker', 'upsertDrawing'])
+const BOUNDED_MUTABLE_EVIDENCE_STORE_METHODS = new Set([
+  'upsertMarker',
+  'upsertDrawing',
+  'deleteMarker',
+  'deleteDrawing',
+])
 
 const REPLAY_IPC_STRING_LIMITS = Object.freeze({
   missionId: 200,
@@ -274,6 +279,16 @@ function projectMutableEvidenceForIpc(input, kind) {
   return output
 }
 
+/** Bounds one renderer-owned mutable-evidence identity before structured cloning. */
+function projectMutableEvidenceIdentityForIpc(value, kind) {
+  if (typeof value !== 'string' || value.trim() === ''
+    || value.length > MUTABLE_EVIDENCE_IPC_STRING_LIMITS.id
+    || mutableEvidenceUtf8Length(value.trim()) > MUTABLE_EVIDENCE_IPC_STRING_LIMITS.id) {
+    throw new Error(`${kind === 'marker' ? 'Marker' : 'Drawing'} identity is invalid.`)
+  }
+  return value.trim()
+}
+
 /** Copies one allowlisted evidence string under its renderer-to-main size cap. */
 function copyMutableEvidenceString(input, output, key, kind) {
   const value = input[key]
@@ -283,10 +298,16 @@ function copyMutableEvidenceString(input, output, key, kind) {
     return
   }
   const maximumLength = MUTABLE_EVIDENCE_IPC_STRING_LIMITS[key]
-  if (typeof value !== 'string' || value.length > maximumLength) {
+  if (typeof value !== 'string' || value.length > maximumLength
+    || mutableEvidenceUtf8Length(value.trim()) > maximumLength) {
     throw new Error(`${kind === 'marker' ? 'Marker' : 'Drawing'} ${evidenceFieldLabel(key)} is invalid.`)
   }
   output[key] = value
+}
+
+/** Measures renderer evidence bytes without importing Node APIs into the sandboxed preload. */
+function mutableEvidenceUtf8Length(value) {
+  return new TextEncoder().encode(value).byteLength
 }
 
 /** Copies one allowlisted evidence number without renderer coercion. */
@@ -422,6 +443,14 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
       ['upsertDrawing', async (input) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.upsertDrawing,
         projectMutableEvidenceForIpc(input, 'drawing'),
+      )],
+      ['deleteMarker', async (markerId) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.deleteMarker,
+        projectMutableEvidenceIdentityForIpc(markerId, 'marker'),
+      )],
+      ['deleteDrawing', async (drawingId) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.deleteDrawing,
+        projectMutableEvidenceIdentityForIpc(drawingId, 'drawing'),
       )],
     ],
   ),

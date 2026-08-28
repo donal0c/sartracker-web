@@ -451,6 +451,10 @@ describe('mission evidence versioning [DON-277]', () => {
       geometry_json: tooManyCoordinates,
     })).rejects.toThrow(/drawing geometry.*invalid/i)
 
+    const retirementStarted = performance.now()
+    await expect(store.deleteMarker(oversized)).rejects.toThrow(/marker identity.*200/i)
+    expect(performance.now() - retirementStarted).toBeLessThan(200)
+
     await expect(store.listMarkers(mission.id)).resolves.toEqual([])
     await expect(store.listDrawings(mission.id)).resolves.toEqual([])
     await expect(store.listMissionObjectVersions({ missionId: mission.id })).resolves.toEqual([])
@@ -803,6 +807,7 @@ describe('mission evidence versioning [DON-277]', () => {
         '2026-08-20T10:00:00.000Z', NULL, NULL, NULL
       FROM numbers;
       DROP TABLE legacy_event_provenance_backfill_state;
+      DROP INDEX idx_mission_events_replay;
       UPDATE metadata SET value = '11' WHERE key = 'schema_version';
     `)
     legacyDb.close()
@@ -810,6 +815,10 @@ describe('mission evidence versioning [DON-277]', () => {
     const openedAt = performance.now()
     store = createElectronMissionStore({ userDataPath })
     expect(performance.now() - openedAt).toBeLessThan(200)
+    const postMigrationDb = openDatabase(databaseFile)
+    expect(postMigrationDb.prepare(`SELECT 1 FROM sqlite_master
+      WHERE type = 'index' AND name = 'idx_mission_events_replay'`).get()).toBeUndefined()
+    postMigrationDb.close()
     await expect(store.readMissionReplay({
       missionId: mission.id,
       selectedTime: '2026-08-20T10:05:00.000Z',
@@ -890,8 +899,184 @@ describe('mission evidence versioning [DON-277]', () => {
       timezone: 'Europe/Dublin',
       trackLimit: 100,
       objectLimit: 100,
-    })).resolves.toMatchObject({ missionId: mission.id })
+    })).resolves.toMatchObject({
+      missionId: mission.id,
+      limitations: expect.arrayContaining([
+        expect.objectContaining({ code: 'legacy_event_replay_scan_fallback' }),
+      ]),
+    })
   }, 60_000)
+
+  it('keeps current fixes below the hard gate while byte-bounding legacy event writer turns [DON-278]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-event-bytes-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Large Legacy Event Payload Mission' })
+    await first.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'event-byte-priority',
+      name: 'Current priority device',
+      color: '#3b82f6',
+      status: 'online',
+    })
+    await first.prepareClose()
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    const insert = legacyDb.prepare(`INSERT INTO mission_events (
+      id, mission_id, event_type, timestamp, details_json, recorded_at,
+      recording_completeness
+    ) VALUES (?, ?, 'legacy_event', '2026-08-20T10:00:00.000Z', ?, NULL, NULL)`)
+    const largeDetails = JSON.stringify({ note: 'x'.repeat(64 * 1024) })
+    legacyDb.exec('BEGIN')
+    try {
+      for (let index = 0; index < 1_000; index += 1) {
+        insert.run(`legacy-large-event-${String(index).padStart(4, '0')}`, mission.id, largeDetails)
+      }
+      legacyDb.exec(`
+        DROP TABLE legacy_event_provenance_backfill_state;
+        DROP INDEX idx_mission_events_replay;
+        UPDATE metadata SET value = '11' WHERE key = 'schema_version';
+        COMMIT;
+      `)
+    } catch (error) {
+      legacyDb.exec('ROLLBACK')
+      throw error
+    }
+    legacyDb.close()
+
+    store = createElectronMissionStore({ userDataPath })
+    let maximumCurrentWriteMs = 0
+    let completed = false
+    for (let index = 0; index < 1_000 && !completed; index += 1) {
+      const fixTime = new Date(Date.now() + index).toISOString()
+      const startedAt = performance.now()
+      await store.addPosition({
+        mission_id: mission.id,
+        device_id: 'event-byte-priority',
+        source_position_id: `event-byte-current-${index}`,
+        lat: 52.1,
+        lon: -9.5,
+        timestamp: fixTime,
+        received_at: fixTime,
+        timestamp_source: 'fix',
+      })
+      maximumCurrentWriteMs = Math.max(maximumCurrentWriteMs, performance.now() - startedAt)
+      const inspection = openDatabase(databaseFile)
+      completed = inspection.prepare(`SELECT 1 FROM legacy_event_provenance_backfill_state
+        WHERE scan_target_id IS NOT NULL
+          AND (scanned_through_id IS NULL OR scanned_through_id < scan_target_id)
+        LIMIT 1`).get() === undefined
+      inspection.close()
+      if (!completed) await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    expect(completed).toBe(true)
+    expect(maximumCurrentWriteMs).toBeLessThan(200)
+  }, 60_000)
+
+  it('retains an oversized legacy event and fails evidence custody closed with explicit quarantine [DON-278]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-event-quarantine-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Oversized Legacy Event Mission' })
+    await first.finishMission(mission.id)
+    await first.prepareClose()
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    legacyDb.prepare(`INSERT INTO mission_events (
+      id, mission_id, event_type, timestamp, details_json, recorded_at,
+      recording_completeness
+    ) VALUES ('oversized-legacy-event', ?, 'legacy_event',
+      '2026-08-20T10:00:00.000Z', ?, NULL, NULL)`).run(
+      mission.id,
+      JSON.stringify({ note: 'x'.repeat(256 * 1024) }),
+    )
+    legacyDb.exec(`
+      DROP TABLE legacy_event_provenance_backfill_state;
+      DROP INDEX idx_mission_events_replay;
+      UPDATE metadata SET value = '11' WHERE key = 'schema_version';
+    `)
+    legacyDb.close()
+
+    store = createElectronMissionStore({ userDataPath })
+    let quarantined = 0
+    for (let attempt = 0; attempt < 1_000 && quarantined === 0; attempt += 1) {
+      const inspection = openDatabase(databaseFile)
+      quarantined = Number(inspection.prepare(`SELECT COUNT(*) AS count
+        FROM legacy_event_provenance_quarantine`).get()?.count ?? 0)
+      inspection.close()
+      if (quarantined === 0) await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    expect(quarantined).toBe(1)
+    const inspection = openDatabase(databaseFile)
+    expect(inspection.prepare(`SELECT length(details_json) AS details_length,
+      recorded_at, recording_completeness FROM mission_events
+      WHERE id = 'oversized-legacy-event'`).get()).toMatchObject({
+      details_length: expect.any(Number),
+      recorded_at: null,
+      recording_completeness: null,
+    })
+    inspection.close()
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T10:05:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+      objectLimit: 100,
+    })).rejects.toThrow(/exceed.*bounded reconstruction.*Replay.*unavailable/iu)
+    await expect(store.createMissionArchive(mission.id))
+      .rejects.toThrow(/exceed.*bounded reconstruction.*archive.*unavailable/iu)
+  })
+
+  it('fails archive and finalization closed while legacy event provenance is pending [DON-278]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-event-finalize-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Finished Legacy Event Mission' })
+    await first.finishMission(mission.id)
+    await first.prepareClose()
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    legacyDb.exec(`
+      UPDATE mission_events
+      SET recorded_at = NULL, recording_completeness = NULL
+      WHERE mission_id = '${mission.id}';
+      DROP TABLE legacy_event_provenance_backfill_state;
+      DROP INDEX idx_mission_events_replay;
+      UPDATE metadata SET value = '11' WHERE key = 'schema_version';
+    `)
+    legacyDb.close()
+    store = createElectronMissionStore({
+      userDataPath,
+      startLegacyEvidenceBackfillWorker: () => ({
+        completion: new Promise(() => undefined),
+        terminate: async () => undefined,
+      }),
+    })
+
+    await expect(store.createMissionArchive(mission.id))
+      .rejects.toThrow(/event provenance.*background|reconstructed/iu)
+    await expect(store.finalizeMission(mission.id))
+      .rejects.toThrow(/event provenance.*background|reconstructed/iu)
+    await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
+
+    await store.prepareClose()
+    store.close()
+    store = null
+    const loggedFailure = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    store = createElectronMissionStore({
+      userDataPath,
+      startLegacyEvidenceBackfillWorker: () => ({
+        completion: Promise.reject(new Error('injected event worker failure')),
+        terminate: async () => undefined,
+      }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await expect(store.createMissionArchive(mission.id))
+      .rejects.toThrow(/reconstruction stopped safely.*injected event worker failure/iu)
+    await expect(store.finalizeMission(mission.id))
+      .rejects.toThrow(/reconstruction stopped safely.*injected event worker failure/iu)
+    loggedFailure.mockRestore()
+  })
 
   it('migrates an authentic v11 GPX table before creating v12 indexes and retains a static baseline [DON-274]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-real-v11-'))

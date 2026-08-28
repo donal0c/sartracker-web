@@ -665,6 +665,16 @@ function readReplayLimitations(
   positionStats = readPositionReplayStats(database, input),
 ) {
   const limitations = []
+  const hasEventReplayIndex = database.prepare(`SELECT 1 FROM sqlite_master
+    WHERE type = 'index' AND name = 'idx_mission_events_replay'`).get() !== undefined
+  const hasLegacyEventEnvelope = database.prepare(`SELECT 1 FROM sqlite_master
+    WHERE type = 'table' AND name = 'legacy_event_provenance_quarantine'`).get() !== undefined
+  if (!hasEventReplayIndex && hasLegacyEventEnvelope) {
+    limitations.push({
+      code: 'legacy_event_replay_scan_fallback',
+      message: 'This upgraded mission store retains the legacy event replay scan path; large historical seeks may be slower while current-position work remains prioritized.',
+    })
+  }
   const futureBaseline = database.prepare(`SELECT recorded_at FROM mission_object_versions
     WHERE mission_id = ? AND completeness = 'legacy_baseline' AND recorded_at > ?
     ORDER BY recorded_at ASC LIMIT 1`).get(input.missionId, input.selectedTime)

@@ -1344,7 +1344,11 @@ function createElectronMissionStore(options) {
       evidenceVersionStore,
       'markers',
       'marker',
-      markerId,
+      normalizeBoundedRequiredText(
+        markerId,
+        'Marker identity',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      ),
     ),
     upsertDrawing: async (input) => upsertDrawingEvidence(db, evidenceVersionStore, input),
     getDrawing: async (drawingId) => getById(db, 'drawings', drawingId, 'Drawing'),
@@ -2397,8 +2401,6 @@ function migrate(db) {
       recording_completeness TEXT CHECK(recording_completeness IN ('complete', 'legacy_baseline')),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
-    CREATE INDEX IF NOT EXISTS idx_mission_events_replay
-      ON mission_events(mission_id, timestamp, event_type, id);
     CREATE TABLE IF NOT EXISTS mission_object_versions (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -2438,6 +2440,17 @@ function migrate(db) {
       scanned_through_id TEXT,
       scan_target_id TEXT,
       updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS legacy_event_provenance_quarantine (
+      table_name TEXT NOT NULL CHECK(table_name IN (
+        'mission_events', 'mission_group_membership_events'
+      )),
+      source_rowid INTEGER NOT NULL,
+      event_id_preview TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      payload_bytes INTEGER NOT NULL CHECK(payload_bytes >= 0),
+      detected_at TEXT NOT NULL,
+      PRIMARY KEY (table_name, source_rowid)
     );
     CREATE TABLE IF NOT EXISTS layer_catalog_entries (
       mission_id TEXT NOT NULL,
@@ -2481,6 +2494,10 @@ function migrate(db) {
     if (gpxSourceRevisionRequiresBackfill) {
       db.exec(`UPDATE gpx_import_revisions
         SET source_revision_sequence = revision_sequence;`)
+    }
+    if (existingSchemaVersion === 0) {
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_mission_events_replay
+        ON mission_events(mission_id, timestamp, event_type, id);`)
     }
     ensureColumnExists(db, 'gpx_import_failures', 'rejection_count', 'INTEGER NOT NULL DEFAULT 0')
     ensureColumnExists(db, 'gpx_import_failures', 'rejections_json', "TEXT NOT NULL DEFAULT '[]'")
@@ -3588,6 +3605,7 @@ async function createMissionArchive(
     }
     assertMissionFinalizationNotInProgress(db, missionId)
     assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db)
     assertNoUnsettledGpxImportState(db, missionId)
     db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
       VALUES (?, ?)`).run(missionId, requestedAt)
@@ -3644,6 +3662,7 @@ async function buildMissionArchive(
     }
   }
   assertLegacyMissionObjectBackfillSettled(db)
+  assertLegacyEventProvenanceReady(db)
   assertNoUnsettledGpxImportState(db, missionId)
 
   const createdAt = directArchiveFenceToken ?? now()
@@ -3796,6 +3815,9 @@ async function finalizeMission(
 ) {
   const mission = getMission(db, missionId)
   if (mission.status === 'finalized') {
+    assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db)
+    assertNoUnsettledGpxImportState(db, missionId)
     const finalizedEpoch = readLatestMissionFinalizedEpoch(db, missionId)
     const existingArchive = await readRecoverableFinalizeArchive(db, missionId, readArchiveFile)
     if (existingArchive !== null) {
@@ -3811,6 +3833,7 @@ async function finalizeMission(
   }
   const resumedProtectedFinalization = db.transaction(() => {
     assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db)
     assertNoUnsettledGpxImportState(db, missionId)
     const existingFence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
       WHERE mission_id = ?`).get(missionId)
@@ -3861,6 +3884,7 @@ async function finalizeMission(
 
   const transaction = db.transaction(() => {
     assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db)
     assertNoUnsettledGpxImportState(db, missionId)
     const currentMission = getMission(db, missionId)
     if (currentMission.status !== 'finished') {

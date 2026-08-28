@@ -1407,6 +1407,53 @@ describe('browser harness store', () => {
     })).resolves.toMatchObject({ advisory_coverage_json: '{"source":"advisory"}' })
   })
 
+  it('mirrors packaged marker and ordinary-drawing mutation bounds [DON-277]', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Bounded Mutable Harness Mission' })
+
+    await expect(store.upsertMarker({
+      mission_id: mission.id,
+      type: 'clue',
+      name: 'Oversized marker',
+      description: 'x'.repeat(2_001),
+      lat: 52,
+      lon: -9.7,
+      irish_grid_e: 480000,
+      irish_grid_n: 580000,
+      display_order: 0,
+    })).rejects.toThrow(/marker description.*2000/i)
+    await expect(store.upsertDrawing({
+      mission_id: mission.id,
+      type: 'line',
+      name: 'Oversized line',
+      description: 'x'.repeat(2_001),
+      display_order: 0,
+      geometry_json: '{"type":"LineString","coordinates":[]}',
+    })).rejects.toThrow(/drawing description.*2000/i)
+    await expect(store.upsertDrawing({
+      mission_id: mission.id,
+      type: 'line',
+      name: 'Oversized geometry',
+      display_order: 0,
+      geometry_json: 'g'.repeat(512 * 1_024 + 1),
+    })).rejects.toThrow(/drawing geometry.*524288/i)
+    await expect(store.upsertMarker({
+      mission_id: mission.id,
+      type: 'clue',
+      name: 'UTF-8 bounded marker',
+      description: '🛡️'.repeat(1_000),
+      lat: 52,
+      lon: -9.7,
+      irish_grid_e: 480000,
+      irish_grid_n: 580000,
+      display_order: 0,
+    })).rejects.toThrow(/marker description.*2000 UTF-8 bytes/i)
+    await expect(store.deleteMarker('m'.repeat(201)))
+      .rejects.toThrow(/marker identity.*200/i)
+    await expect(store.listMarkers(mission.id)).resolves.toEqual([])
+    await expect(store.listDrawings(mission.id)).resolves.toEqual([])
+  })
+
   it('persists helicopters per slot and records audit events', async () => {
     const store = getBrowserHarnessStore()
     const mission = await store.createMission({ name: 'Helicopter Mission' })

@@ -1,4 +1,7 @@
 const MAX_LEGACY_EVENT_ROWS_PER_TURN = 1_000
+const MAX_LEGACY_EVENT_BYTES_PER_TURN = 512 * 1_024
+const MAX_LEGACY_EVENT_ROW_BYTES = 256 * 1_024
+const MAX_LEGACY_EVENT_ID_BYTES = 200
 
 const LEGACY_EVENT_TABLES = Object.freeze([
   Object.freeze({ table: 'mission_events', stateKey: 'mission_events', includesSequence: false }),
@@ -56,7 +59,18 @@ function backfillLegacyEventProvenance(
   if (definition === undefined) {
     throw new Error(`Legacy event provenance table ${pendingState.table_name} is invalid.`)
   }
-  const candidates = db.prepare(`SELECT id FROM ${definition.table}
+  const payloadBytesSql = definition.table === 'mission_events'
+    ? `length(CAST(id AS BLOB)) + length(CAST(mission_id AS BLOB))
+      + length(CAST(event_type AS BLOB)) + length(CAST(timestamp AS BLOB))
+      + length(CAST(COALESCE(details_json, '') AS BLOB))`
+    : `length(CAST(id AS BLOB)) + length(CAST(mission_id AS BLOB))
+      + length(CAST(mission_team_id AS BLOB))
+      + length(CAST(traccar_device_id AS BLOB)) + length(CAST(change AS BLOB))
+      + length(CAST(observed_at AS BLOB))`
+  const candidatePage = db.prepare(`SELECT rowid, id,
+      length(CAST(id AS BLOB)) AS id_bytes,
+      ${payloadBytesSql} AS payload_bytes
+    FROM ${definition.table}
     WHERE (? IS NULL OR id > ?) AND id <= ?
     ORDER BY id ASC LIMIT ?`).all(
     pendingState.scanned_through_id,
@@ -64,9 +78,17 @@ function backfillLegacyEventProvenance(
     pendingState.scan_target_id,
     rowLimit,
   )
-  const nextCursor = candidates.at(-1)?.id ?? pendingState.scan_target_id
+  const batch = selectLegacyEventTurn(candidatePage)
+  if (batch.oversized?.id_bytes > MAX_LEGACY_EVENT_ID_BYTES) {
+    throw new Error(
+      `Legacy event provenance identity exceeds the ${MAX_LEGACY_EVENT_ID_BYTES}-byte safe reconstruction limit.`,
+    )
+  }
+  const nextCursor = batch.oversized?.id
+    ?? batch.candidates.at(-1)?.id
+    ?? pendingState.scan_target_id
   const transaction = db.transaction(() => {
-    if (candidates.length > 0) {
+    if (batch.candidates.length > 0) {
       const sequenceAssignment = definition.includesSequence
         ? 'sequence = COALESCE(sequence, rowid),'
         : ''
@@ -81,6 +103,18 @@ function backfillLegacyEventProvenance(
         nextCursor,
       )
     }
+    if (batch.oversized !== null) {
+      db.prepare(`INSERT OR REPLACE INTO legacy_event_provenance_quarantine (
+        table_name, source_rowid, event_id_preview, reason, payload_bytes, detected_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`).run(
+        definition.stateKey,
+        batch.oversized.rowid,
+        String(batch.oversized.id).slice(0, MAX_LEGACY_EVENT_ID_BYTES),
+        `Legacy event payload exceeds the ${MAX_LEGACY_EVENT_ROW_BYTES}-byte safe reconstruction limit.`,
+        batch.oversized.payload_bytes,
+        migrationTime,
+      )
+    }
     db.prepare(`UPDATE legacy_event_provenance_backfill_state
       SET scanned_through_id = ?, updated_at = ? WHERE table_name = ?`).run(
       nextCursor,
@@ -90,6 +124,30 @@ function backfillLegacyEventProvenance(
   })
   transaction.immediate()
   return { remaining: readLegacyEventProvenanceBackfillPending(db) }
+}
+
+/** Selects one writer turn by retained bytes and isolates an oversized source row. */
+function selectLegacyEventTurn(candidatePage) {
+  const candidates = []
+  let selectedBytes = 0
+  for (const candidate of candidatePage) {
+    const payloadBytes = Number(candidate.payload_bytes)
+    if (!Number.isSafeInteger(payloadBytes) || payloadBytes < 0) {
+      throw new Error('Legacy event provenance payload size is invalid.')
+    }
+    if (payloadBytes > MAX_LEGACY_EVENT_ROW_BYTES) {
+      return candidates.length === 0
+        ? { candidates, oversized: candidate }
+        : { candidates, oversized: null }
+    }
+    if (candidates.length > 0
+      && selectedBytes + payloadBytes > MAX_LEGACY_EVENT_BYTES_PER_TURN) {
+      break
+    }
+    candidates.push(candidate)
+    selectedBytes += payloadBytes
+  }
+  return { candidates, oversized: null }
 }
 
 /** Returns one while any captured legacy event target lacks explicit provenance. */
@@ -124,6 +182,17 @@ function assertLegacyEventProvenanceReady(db) {
   if (readLegacyEventProvenanceBackfillPending(db) > 0) {
     throw new Error(
       'Legacy event provenance is still being reconstructed in bounded background slices. Current positions remain available; retry Replay after preparation completes.',
+    )
+  }
+  const hasQuarantine = db.prepare(`SELECT 1 FROM sqlite_master
+    WHERE type = 'table' AND name = 'legacy_event_provenance_quarantine'`).get() !== undefined
+  const quarantined = hasQuarantine
+    ? db.prepare(`SELECT COUNT(*) AS count
+        FROM legacy_event_provenance_quarantine`).get()?.count ?? 0
+    : 0
+  if (Number(quarantined) > 0) {
+    throw new Error(
+      `${quarantined} legacy event provenance row(s) exceed the bounded reconstruction envelope. Current positions remain available; Replay, archive and finalization remain unavailable until bounded repair.`,
     )
   }
 }

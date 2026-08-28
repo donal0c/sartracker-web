@@ -74,7 +74,7 @@ export function DrawingDialog() {
           <section className="grid gap-4 md:grid-cols-2">
             <Field
               label="Name"
-              maxLength={draft.type === 'search_area' ? 120 : undefined}
+              maxLength={120}
               onChange={(value) =>
                 controller.updateDraft((current) =>
                   current.type === 'text_label' ? current : { ...current, name: value },
@@ -87,7 +87,7 @@ export function DrawingDialog() {
             />
             <Field
               label="Description"
-              maxLength={draft.type === 'search_area' ? 2_000 : undefined}
+              maxLength={2_000}
               onChange={(value) =>
                 controller.updateDraft((current) =>
                   current.type === 'text_label'

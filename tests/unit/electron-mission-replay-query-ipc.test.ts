@@ -45,6 +45,7 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
     let exposedBridge: Record<string, unknown> | undefined
 
     expect(() => runInNewContext(preload, {
+      TextEncoder,
       require: (specifier: string) => {
         if (specifier !== 'electron') {
           throw new Error(`Sandboxed preload cannot require ${specifier}.`)
@@ -70,6 +71,8 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
       readonly readMissionReplay: (query: unknown, requestId: string) => Promise<unknown>
       readonly upsertMarker: (input: unknown) => Promise<unknown>
       readonly upsertDrawing: (input: unknown) => Promise<unknown>
+      readonly deleteMarker: (markerId: unknown) => Promise<unknown>
+      readonly deleteDrawing: (drawingId: unknown) => Promise<unknown>
     }
     await missionStore.readMissionReplay({
       missionId: 'mission-1',
@@ -125,6 +128,19 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
       display_order: 0,
       geometry_json: 'x'.repeat(512 * 1024 + 1),
     })).rejects.toThrow(/drawing geometry.*invalid/i)
+
+    await expect(missionStore.deleteMarker('m'.repeat(64 * 1024 * 1024)))
+      .rejects.toThrow(/marker identity.*invalid/i)
+    await expect(missionStore.deleteDrawing('d'.repeat(64 * 1024 * 1024)))
+      .rejects.toThrow(/drawing identity.*invalid/i)
+    expect(invoke).not.toHaveBeenCalledWith(
+      'sartracker:mission-store:delete-marker',
+      expect.anything(),
+    )
+    expect(invoke).not.toHaveBeenCalledWith(
+      'sartracker:mission-store:delete-drawing',
+      expect.anything(),
+    )
   })
 
   it('projects renderer queries before main dispatch and preload worker cloning', async () => {

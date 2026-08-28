@@ -116,6 +116,7 @@ export function MarkerDialog() {
           <section className="grid gap-4 md:grid-cols-2">
             <Field
               label="Name"
+              maxLength={120}
               disabled={saving}
               error={isMissingField('name') ? 'Required' : undefined}
               onChange={(value) => controller.updateDraft({ name: value })}
@@ -124,6 +125,7 @@ export function MarkerDialog() {
             />
             <Field
               label="Description"
+              maxLength={2_000}
               disabled={saving}
               onChange={(value) => controller.updateDraft({ description: value })}
               testId="marker-description-input"
@@ -145,6 +147,7 @@ export function MarkerDialog() {
           <section className="grid gap-4 md:grid-cols-2">
             <Field
               label="Updated By"
+              maxLength={120}
               disabled={saving}
               onChange={(value) => controller.updateDraft({ updatedBy: value })}
               testId="marker-updated-by-input"
@@ -152,6 +155,7 @@ export function MarkerDialog() {
             />
             <Field
               label="Coordinator IDs"
+              maxLength={2_000}
               disabled={saving}
               onChange={(value) => controller.updateDraft({ coordinatorIds: value })}
               testId="marker-coordinator-ids-input"
@@ -190,6 +194,7 @@ export function MarkerDialog() {
               />
               <Field
                 label="Found By"
+                maxLength={120}
                 disabled={saving}
                 onChange={(value) => controller.updateDraft({ foundBy: value })}
                 testId="marker-found-by-input"
@@ -241,6 +246,7 @@ export function MarkerDialog() {
               />
               <Field
                 label="Found By"
+                maxLength={120}
                 disabled={saving}
                 onChange={(value) => controller.updateDraft({ foundBy: value })}
                 testId="marker-found-by-input"
@@ -260,6 +266,7 @@ export function MarkerDialog() {
                   className="min-h-44 font-mono"
                   disabled={saving}
                   label="Existing Treatment Notes"
+                  maxLength={2_000}
                   onChange={(value) => controller.updateDraft({ treatment: value })}
                   testId="marker-treatment-log-input"
                   value={draft.treatment}
@@ -269,6 +276,7 @@ export function MarkerDialog() {
                     className="min-h-28"
                     disabled={saving}
                     label="New Treatment Update"
+                    maxLength={2_000}
                     onChange={setTreatmentUpdate}
                     testId="marker-treatment-update-input"
                     value={treatmentUpdate}
@@ -423,6 +431,7 @@ function TextAreaField(props: {
   readonly onChange: (value: string) => void
   readonly testId: string
   readonly className?: string
+  readonly maxLength?: number
 }) {
   return (
     <label className="mt-3 block text-sm text-stone-200">
@@ -431,6 +440,7 @@ function TextAreaField(props: {
         className={`mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 ${props.className ?? ''}`}
         data-testid={props.testId}
         disabled={props.disabled}
+        maxLength={props.maxLength}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
       />
@@ -445,6 +455,7 @@ function Field(props: {
   readonly error?: string | undefined
   readonly inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
   readonly max?: number
+  readonly maxLength?: number
   readonly min?: number
   readonly onChange: (value: string) => void
   readonly testId: string
@@ -463,6 +474,7 @@ function Field(props: {
         disabled={props.disabled}
         inputMode={props.inputMode}
         max={props.max}
+        maxLength={props.maxLength}
         min={props.min}
         onChange={(event) => props.onChange(event.target.value)}
         type={props.type ?? 'text'}

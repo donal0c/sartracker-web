@@ -15,11 +15,16 @@ test.describe('M6 marker workflows', () => {
 
     const dialog = page.getByTestId('marker-dialog')
     await expect(dialog).toBeVisible()
+    await expect(page.getByTestId('marker-name-input')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('marker-description-input')).toHaveAttribute('maxlength', '2000')
+    await expect(page.getByTestId('marker-updated-by-input')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('marker-coordinator-ids-input')).toHaveAttribute('maxlength', '2000')
     await page.getByTestId('marker-name-input').fill('Boot print')
     await dialog.getByText('Clue', { exact: true }).click()
     await page.getByTestId('marker-clue-type-input').selectOption('Footprint')
     await page.getByTestId('marker-confidence-input').selectOption('Probable')
     await page.getByTestId('marker-found-by-input').fill('Team 2')
+    await expect(page.getByTestId('marker-found-by-input')).toHaveAttribute('maxlength', '120')
     await page.getByTestId('marker-save-btn').click()
 
     await expect(page.getByTestId('marker-dialog')).toBeHidden()

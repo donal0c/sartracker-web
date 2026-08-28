@@ -72,6 +72,10 @@ const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
 const MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH = 64
 const MAX_SEARCH_AREA_GEOMETRY_LENGTH = 512 * 1_024
 const MAX_SEARCH_ADVISORY_COVERAGE_LENGTH = 512 * 1_024
+const MAX_MUTABLE_EVIDENCE_GEOMETRY_LENGTH = 512 * 1_024
+const MAX_MUTABLE_EVIDENCE_COORDINATES = 50_000
+const MAX_MUTABLE_EVIDENCE_NESTING_DEPTH = 16
+const MAX_MUTABLE_EVIDENCE_PATH_LENGTH = 4_096
 const MAX_REPLAY_TRACK_LIMIT = 1_000
 const MAX_REPLAY_OBJECT_LIMIT = 100
 const MAX_REPLAY_FILTER_IDS = 200
@@ -1408,37 +1412,38 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         .filter((marker) => marker.mission_id === missionId)
         .sort((left, right) => left.display_order - right.display_order),
     upsertMarker: async (input) => {
-      ensureMissionMutable(input.mission_id, state.missions)
-      const existingMarker = input.id === undefined || input.id === null
+      const normalizedInput = normalizeBrowserMarkerMutation(input)
+      ensureMissionMutable(normalizedInput.mission_id, state.missions)
+      const existingMarker = normalizedInput.id === undefined || normalizedInput.id === null
         ? null
-        : state.markers.find((marker) => marker.id === input.id) ?? null
+        : state.markers.find((marker) => marker.id === normalizedInput.id) ?? null
       const now = new Date().toISOString()
       const marker = {
-        id: existingMarker?.id ?? input.id ?? createId('marker'),
-        mission_id: input.mission_id,
-        type: input.type,
-        name: input.name,
-        description: input.description ?? null,
-        lat: input.lat,
-        lon: input.lon,
-        irish_grid_e: input.irish_grid_e,
-        irish_grid_n: input.irish_grid_n,
+        id: existingMarker?.id ?? normalizedInput.id ?? createId('marker'),
+        mission_id: normalizedInput.mission_id,
+        type: normalizedInput.type,
+        name: normalizedInput.name,
+        description: normalizedInput.description ?? null,
+        lat: normalizedInput.lat,
+        lon: normalizedInput.lon,
+        irish_grid_e: normalizedInput.irish_grid_e,
+        irish_grid_n: normalizedInput.irish_grid_n,
         created_at: existingMarker?.created_at ?? now,
         updated_at: now,
-        display_order: input.display_order,
-        subject_category: input.subject_category ?? null,
-        clue_type: input.clue_type ?? null,
-        confidence: input.confidence ?? null,
-        found_by: input.found_by ?? null,
-        hazard_type: input.hazard_type ?? null,
-        severity: input.severity ?? null,
-        condition: input.condition ?? null,
-        treatment: input.treatment ?? null,
-        evacuation_priority: input.evacuation_priority ?? null,
-        label_size: input.label_size ?? null,
-        updated_by: input.updated_by ?? null,
-        coordinator_ids: input.coordinator_ids ?? null,
-        attachment_path: input.attachment_path ?? null,
+        display_order: normalizedInput.display_order,
+        subject_category: normalizedInput.subject_category ?? null,
+        clue_type: normalizedInput.clue_type ?? null,
+        confidence: normalizedInput.confidence ?? null,
+        found_by: normalizedInput.found_by ?? null,
+        hazard_type: normalizedInput.hazard_type ?? null,
+        severity: normalizedInput.severity ?? null,
+        condition: normalizedInput.condition ?? null,
+        treatment: normalizedInput.treatment ?? null,
+        evacuation_priority: normalizedInput.evacuation_priority ?? null,
+        label_size: normalizedInput.label_size ?? null,
+        updated_by: normalizedInput.updated_by ?? null,
+        coordinator_ids: normalizedInput.coordinator_ids ?? null,
+        attachment_path: normalizedInput.attachment_path ?? null,
       } satisfies Marker
 
       state = {
@@ -1464,18 +1469,21 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return marker
     },
     deleteMarker: async (markerId) => {
-      const didDelete = state.markers.some((marker) => marker.id === markerId)
+      const normalizedMarkerId = normalizeBrowserEvidenceRequiredText(
+        markerId, 'Marker identity', MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const didDelete = state.markers.some((marker) => marker.id === normalizedMarkerId)
       if (!didDelete) {
         return false
       }
-      const marker = state.markers.find((candidate) => candidate.id === markerId)
+      const marker = state.markers.find((candidate) => candidate.id === normalizedMarkerId)
       if (marker !== undefined) {
         ensureMissionMutable(marker.mission_id, state.missions)
       }
 
       state = {
         ...state,
-        markers: state.markers.filter((marker) => marker.id !== markerId),
+        markers: state.markers.filter((marker) => marker.id !== normalizedMarkerId),
         missionEvents:
           marker === undefined
             ? state.missionEvents
@@ -1495,7 +1503,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     upsertDrawing: async (input) => {
       const normalizedInput = input.type === 'search_area'
         ? normalizeBrowserSearchAreaDrawing(input)
-        : input
+        : normalizeBrowserDrawingMutation(input)
       ensureMissionMutable(normalizedInput.mission_id, state.missions)
       const existingDrawing =
         normalizedInput.id === undefined || normalizedInput.id === null
@@ -2731,6 +2739,157 @@ function decodeBrowserBase64Url(value: string): string {
   return new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)))
 }
 
+/** Mirrors the packaged marker mutation envelope before browser state work. */
+function normalizeBrowserMarkerMutation(input: UpsertMarkerInput): UpsertMarkerInput {
+  const markerType = normalizeBrowserEvidenceRequiredText(
+    input.type, 'Marker type', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+  if (!['ipp_lkp', 'clue', 'hazard', 'casualty'].includes(markerType)) {
+    throw new Error('Marker type is invalid.')
+  }
+  const lat = normalizeBrowserRequiredFiniteNumber(input.lat, 'Marker latitude')
+  const lon = normalizeBrowserRequiredFiniteNumber(input.lon, 'Marker longitude')
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    throw new Error('Marker coordinates are invalid.')
+  }
+  return {
+    id: normalizeBrowserOptionalEvidenceIdentity(input.id, 'Marker identity'),
+    mission_id: normalizeBrowserEvidenceRequiredText(
+      input.mission_id, 'Marker mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: markerType as UpsertMarkerInput['type'],
+    name: normalizeBrowserEvidenceRequiredText(
+      input.name, 'Marker name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBrowserEvidenceOptionalText(
+      input.description, 'Marker description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    lat,
+    lon,
+    irish_grid_e: normalizeBrowserRequiredSafeInteger(input.irish_grid_e, 'Marker ITM easting'),
+    irish_grid_n: normalizeBrowserRequiredSafeInteger(input.irish_grid_n, 'Marker ITM northing'),
+    display_order: normalizeBrowserRequiredSafeInteger(
+      input.display_order, 'Marker display order',
+    ),
+    subject_category: normalizeBrowserMarkerShortText(input.subject_category, 'subject category'),
+    clue_type: normalizeBrowserMarkerShortText(input.clue_type, 'clue type'),
+    confidence: normalizeBrowserOptionalFiniteNumber(input.confidence, 'Marker confidence'),
+    found_by: normalizeBrowserMarkerShortText(input.found_by, 'found by'),
+    hazard_type: normalizeBrowserMarkerShortText(input.hazard_type, 'hazard type'),
+    severity: normalizeBrowserMarkerShortText(input.severity, 'severity'),
+    condition: normalizeBrowserMarkerShortText(input.condition, 'condition'),
+    treatment: normalizeBrowserEvidenceOptionalText(
+      input.treatment, 'Marker treatment', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    evacuation_priority: normalizeBrowserMarkerShortText(
+      input.evacuation_priority, 'evacuation priority',
+    ),
+    label_size: normalizeBrowserOptionalSafeInteger(input.label_size, 'Marker label size'),
+    updated_by: normalizeBrowserMarkerShortText(input.updated_by, 'coordinator'),
+    coordinator_ids: normalizeBrowserEvidenceOptionalText(
+      input.coordinator_ids, 'Marker coordinator ids', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    attachment_path: normalizeBrowserEvidenceOptionalText(
+      input.attachment_path, 'Marker attachment path', MAX_MUTABLE_EVIDENCE_PATH_LENGTH,
+    ),
+  }
+}
+
+/** Mirrors one optional packaged marker short-text field. */
+function normalizeBrowserMarkerShortText(value: unknown, label: string): string | null {
+  return normalizeBrowserEvidenceOptionalText(
+    value, `Marker ${label}`, MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+}
+
+/** Mirrors the packaged non-search drawing mutation envelope before browser state work. */
+function normalizeBrowserDrawingMutation(input: UpsertDrawingInput): UpsertDrawingInput {
+  const drawingType = normalizeBrowserEvidenceRequiredText(
+    input.type, 'Drawing type', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+  if (!['line', 'range_ring', 'bearing_line', 'search_sector', 'text_label'].includes(drawingType)) {
+    throw new Error('Drawing type is invalid.')
+  }
+  return {
+    id: normalizeBrowserOptionalEvidenceIdentity(input.id, 'Drawing identity'),
+    mission_id: normalizeBrowserEvidenceRequiredText(
+      input.mission_id, 'Drawing mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: drawingType as UpsertDrawingInput['type'],
+    name: normalizeBrowserEvidenceRequiredText(
+      input.name, 'Drawing name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBrowserEvidenceOptionalText(
+      input.description, 'Drawing description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    color: normalizeBrowserEvidenceOptionalText(
+      input.color, 'Drawing colour', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    width: normalizeBrowserOptionalFiniteNumber(input.width, 'Drawing width'),
+    distance_m: normalizeBrowserOptionalFiniteNumber(input.distance_m, 'Drawing distance'),
+    temporary_measure: normalizeBrowserOptionalBoolean(
+      input.temporary_measure, 'Drawing temporary measure',
+    ),
+    label: normalizeBrowserEvidenceOptionalText(
+      input.label, 'Drawing label', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    display_order: normalizeBrowserRequiredSafeInteger(
+      input.display_order, 'Drawing display order',
+    ),
+    geometry_json: normalizeBrowserMutableEvidenceGeometry(input.geometry_json),
+    metadata_json: normalizeBrowserOptionalEvidenceJsonText(
+      input.metadata_json, 'Drawing metadata', MAX_MUTABLE_EVIDENCE_GEOMETRY_LENGTH,
+    ),
+  }
+}
+
+/** Parses and bounds a non-search drawing coordinate tree without recursive stack growth. */
+function normalizeBrowserMutableEvidenceGeometry(value: unknown): string {
+  const normalized = normalizeBrowserEvidenceRequiredText(
+    value, 'Drawing geometry', MAX_MUTABLE_EVIDENCE_GEOMETRY_LENGTH,
+  )
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(normalized)
+  } catch {
+    throw new Error('Drawing geometry is invalid.')
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)
+    || !('type' in parsed) || typeof parsed.type !== 'string'
+    || !('coordinates' in parsed) || !Array.isArray(parsed.coordinates)) {
+    throw new Error('Drawing geometry is invalid.')
+  }
+  const pending: { readonly value: unknown; readonly depth: number }[] = [
+    { value: parsed.coordinates, depth: 0 },
+  ]
+  let coordinateCount = 0
+  while (pending.length > 0) {
+    const candidate = pending.pop()!
+    if (candidate.depth > MAX_MUTABLE_EVIDENCE_NESTING_DEPTH
+      || !Array.isArray(candidate.value)) {
+      throw new Error('Drawing geometry is invalid.')
+    }
+    if (candidate.value.length === 0) continue
+    if (candidate.value.length >= 2
+      && candidate.value.every((item) => typeof item === 'number' && Number.isFinite(item))) {
+      const [longitude, latitude] = candidate.value as readonly number[]
+      if (latitude! < -90 || latitude! > 90 || longitude! < -180 || longitude! > 180) {
+        throw new Error('Drawing geometry is invalid.')
+      }
+      coordinateCount += 1
+      if (coordinateCount > MAX_MUTABLE_EVIDENCE_COORDINATES) {
+        throw new Error('Drawing geometry is invalid.')
+      }
+      continue
+    }
+    for (const child of candidate.value) {
+      if (!Array.isArray(child)) throw new Error('Drawing geometry is invalid.')
+      pending.push({ value: child, depth: candidate.depth + 1 })
+    }
+  }
+  return normalized
+}
+
 /** Normalizes the complete UI-owned search-area envelope before harness state work. */
 function normalizeBrowserSearchAreaDrawing(input: UpsertDrawingInput): UpsertDrawingInput {
   return {
@@ -2829,6 +2988,57 @@ function normalizeBrowserOptionalSearchIdentity(value: unknown, label: string): 
   return normalizeBrowserSearchText(value, label, MAX_SEARCH_OPERATION_ID_LENGTH)
 }
 
+/** Requires one browser evidence string inside the packaged UTF-8 byte envelope. */
+function normalizeBrowserEvidenceRequiredText(
+  value: unknown,
+  label: string,
+  maximumBytes: number,
+): string {
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  const normalized = value.trim()
+  if (normalized === '') throw new Error(`${label} is required.`)
+  if (new TextEncoder().encode(normalized).byteLength > maximumBytes) {
+    throw new Error(`${label} must be ${maximumBytes} UTF-8 bytes or fewer.`)
+  }
+  return normalized
+}
+
+/** Normalizes one optional browser evidence string inside the packaged UTF-8 byte envelope. */
+function normalizeBrowserEvidenceOptionalText(
+  value: unknown,
+  label: string,
+  maximumBytes: number,
+): string | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  const normalized = value.trim()
+  if (normalized === '') return null
+  if (new TextEncoder().encode(normalized).byteLength > maximumBytes) {
+    throw new Error(`${label} must be ${maximumBytes} UTF-8 bytes or fewer.`)
+  }
+  return normalized
+}
+
+function normalizeBrowserOptionalEvidenceIdentity(value: unknown, label: string): string | null {
+  if (value === undefined || value === null) return null
+  return normalizeBrowserEvidenceRequiredText(value, label, MAX_SEARCH_OPERATION_ID_LENGTH)
+}
+
+function normalizeBrowserOptionalEvidenceJsonText(
+  value: unknown,
+  label: string,
+  maximumBytes: number,
+): string | null {
+  const normalized = normalizeBrowserEvidenceOptionalText(value, label, maximumBytes)
+  if (normalized === null) return null
+  try {
+    JSON.parse(normalized)
+  } catch {
+    throw new Error(`${label} must be valid JSON text.`)
+  }
+  return normalized
+}
+
 function normalizeBrowserOptionalJsonText(
   value: unknown,
   label: string,
@@ -2874,6 +3084,24 @@ function normalizeBrowserOptionalFiniteNumber(value: unknown, label: string): nu
     throw new Error(`${label} must be a finite number.`)
   }
   return value
+}
+
+function normalizeBrowserRequiredFiniteNumber(value: unknown, label: string): number {
+  const normalized = normalizeBrowserOptionalFiniteNumber(value, label)
+  if (normalized === null) throw new Error(`${label} is required.`)
+  return normalized
+}
+
+function normalizeBrowserRequiredSafeInteger(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new Error(`${label} must be a finite integer.`)
+  }
+  return value
+}
+
+function normalizeBrowserOptionalSafeInteger(value: unknown, label: string): number | null {
+  if (value === undefined || value === null) return null
+  return normalizeBrowserRequiredSafeInteger(value, label)
 }
 
 function normalizeBrowserOptionalBoolean(value: unknown, label: string): boolean | null {

@@ -18,6 +18,8 @@ test.describe('M8 drawing workflows', () => {
     await rightClickMap(page, { x: 560, y: 300 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await expect(page.getByTestId('drawing-name-input')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('drawing-description-input')).toHaveAttribute('maxlength', '2000')
     await expect(page.getByTestId('drawing-line-distance-readout')).toContainText('Distance')
     await expect(page.getByTestId('drawing-line-bearing-readout')).toContainText('True')
     await expect(page.getByTestId('drawing-line-bearing-readout')).toContainText('Magnetic')
