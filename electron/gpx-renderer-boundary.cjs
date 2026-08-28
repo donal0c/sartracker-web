@@ -121,6 +121,10 @@ function listGpxImportProjectionPage(db, input) {
       revision_sequence, retired_at, retired_by, imported_at, updated_at
     FROM gpx_track_imports
     WHERE mission_id = ? AND retired_at IS NULL AND import_state = 'complete'
+      AND EXISTS (
+        SELECT 1 FROM gpx_import_revisions AS revisions
+        WHERE revisions.import_id = gpx_track_imports.id
+      )
       ${cursorClause}
     ORDER BY display_name ASC, imported_at ASC, id ASC
     LIMIT ?`).all(...parameters)

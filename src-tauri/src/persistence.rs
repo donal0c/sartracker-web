@@ -34,6 +34,15 @@ pub struct MissionStore {
     backup_path: PathBuf,
     #[cfg(test)]
     gpx_upsert_start_barrier: Option<Arc<tokio::sync::Barrier>>,
+    #[cfg(test)]
+    gpx_upsert_before_commit_pause: Option<GpxUpsertBeforeCommitPause>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct GpxUpsertBeforeCommitPause {
+    reached: Arc<tokio::sync::Barrier>,
+    release: Arc<tokio::sync::Barrier>,
 }
 
 #[derive(Clone)]
@@ -467,6 +476,8 @@ impl MissionStore {
             backup_path,
             #[cfg(test)]
             gpx_upsert_start_barrier: None,
+            #[cfg(test)]
+            gpx_upsert_before_commit_pause: None,
         };
 
         store.initialize().await?;
@@ -476,6 +487,16 @@ impl MissionStore {
     #[cfg(test)]
     fn with_gpx_upsert_start_barrier(mut self, barrier: Arc<tokio::sync::Barrier>) -> Self {
         self.gpx_upsert_start_barrier = Some(barrier);
+        self
+    }
+
+    #[cfg(test)]
+    fn with_gpx_upsert_before_commit_pause(
+        mut self,
+        reached: Arc<tokio::sync::Barrier>,
+        release: Arc<tokio::sync::Barrier>,
+    ) -> Self {
+        self.gpx_upsert_before_commit_pause = Some(GpxUpsertBeforeCommitPause { reached, release });
         self
     }
 
@@ -2217,17 +2238,13 @@ impl MissionStore {
             barrier.wait().await;
         }
 
-        let mut connection = self
+        let mut tx = self
             .pool
-            .acquire()
-            .await
-            .map_err(|error| format!("Failed to acquire GPX import connection: {error}"))?;
-        sqlx::query("BEGIN IMMEDIATE")
-            .execute(&mut *connection)
+            .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(|error| format!("Failed to start GPX import transaction: {error}"))?;
 
-        let result: Result<GpxTrackImport, String> = async {
+        let import: GpxTrackImport = async {
             let mission = sqlx::query_as::<_, Mission>(
                 r#"
                 SELECT id, name, status, start_time, pause_time, finish_time,
@@ -2236,7 +2253,7 @@ impl MissionStore {
                 "#,
             )
             .bind(&input.mission_id)
-            .fetch_optional(&mut *connection)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(|error| format!("Failed to load mission {}: {error}", input.mission_id))?
             .ok_or_else(|| format!("Mission not found: {}", input.mission_id))?;
@@ -2256,7 +2273,7 @@ impl MissionStore {
                     "#,
                 )
                 .bind(import_id)
-                .fetch_optional(&mut *connection)
+                .fetch_optional(&mut *tx)
                 .await
                 .map_err(|error| format!("Failed to inspect GPX identity {import_id}: {error}"))?,
                 None => None,
@@ -2279,7 +2296,7 @@ impl MissionStore {
             )
             .bind(&input.mission_id)
             .bind(&input.source_path)
-            .fetch_optional(&mut *connection)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(|error| format!("Failed to inspect GPX import {}: {error}", input.source_path))?;
             if let (Some(by_id), Some(by_path)) = (existing_by_id.as_ref(), existing_by_path.as_ref()) {
@@ -2328,7 +2345,7 @@ impl MissionStore {
             .bind(&input.metadata_json)
             .bind(&imported_at)
             .bind(&now)
-            .execute(&mut *connection)
+            .execute(&mut *tx)
             .await
             .map_err(|error| format!("Failed to upsert GPX import {import_id}: {error}"))?;
             let event_details = serde_json::json!({
@@ -2338,7 +2355,7 @@ impl MissionStore {
                 "display_name": input.display_name,
             });
             Self::insert_event(
-                &mut *connection,
+                &mut *tx,
                 &input.mission_id,
                 event_type,
                 &now,
@@ -2353,25 +2370,22 @@ impl MissionStore {
                 "#,
             )
             .bind(&import_id)
-            .fetch_one(&mut *connection)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|error| format!("Failed to read committed GPX import {import_id}: {error}"))
         }
-        .await;
+        .await?;
 
-        match result {
-            Ok(import) => {
-                sqlx::query("COMMIT")
-                    .execute(&mut *connection)
-                    .await
-                    .map_err(|error| format!("Failed to commit GPX import upsert: {error}"))?;
-                Ok(import)
-            }
-            Err(error) => {
-                let _ = sqlx::query("ROLLBACK").execute(&mut *connection).await;
-                Err(error)
-            }
+        #[cfg(test)]
+        if let Some(pause) = self.gpx_upsert_before_commit_pause.as_ref() {
+            pause.reached.wait().await;
+            pause.release.wait().await;
         }
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit GPX import upsert: {error}"))?;
+        Ok(import)
     }
 
     pub async fn get_gpx_import(&self, import_id: String) -> Result<GpxTrackImport, String> {
@@ -5451,6 +5465,76 @@ mod tests {
             .get_gpx_import("finish-fenced-gpx".to_string())
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn cancelled_gpx_write_rolls_back_projection_and_audit_before_reusing_connection() {
+        let (database_path, backup_path) = temp_paths("gpx-cancel-before-commit");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Cancelled GPX write".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        let reached = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let writer = store
+            .clone()
+            .with_gpx_upsert_before_commit_pause(reached.clone(), release);
+        let mission_id = mission.id.clone();
+        let task = tokio::spawn(async move {
+            writer
+                .upsert_gpx_import(UpsertGpxTrackImportInput {
+                    id: Some("cancelled-gpx".to_string()),
+                    mission_id,
+                    source_path: "/tracks/cancelled.gpx".to_string(),
+                    file_name: "cancelled.gpx".to_string(),
+                    display_name: "Cancelled".to_string(),
+                    geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+                    metadata_json: None,
+                })
+                .await
+        });
+
+        reached.wait().await;
+        task.abort();
+        let join_error = task
+            .await
+            .expect_err("cancelled GPX task should not complete");
+        assert!(join_error.is_cancelled());
+
+        let projected_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM gpx_track_imports WHERE id = 'cancelled-gpx'")
+                .fetch_one(&store.pool)
+                .await
+                .expect("the pooled connection should remain readable after cancellation");
+        let audit_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mission_events WHERE mission_id = ? AND event_type = 'gpx_import_created'",
+        )
+        .bind(&mission.id)
+        .fetch_one(&store.pool)
+        .await
+        .expect("the audit ledger should remain readable after cancellation");
+        assert_eq!(
+            projected_count, 0,
+            "cancelled projection must be rolled back"
+        );
+        assert_eq!(audit_count, 0, "cancelled audit must be rolled back");
+
+        let transaction = store
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .expect("the pooled connection must not retain an open transaction");
+        transaction
+            .rollback()
+            .await
+            .expect("the fresh transaction should roll back cleanly");
     }
 
     #[tokio::test]

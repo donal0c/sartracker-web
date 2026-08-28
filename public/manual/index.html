@@ -1561,6 +1561,11 @@
             the operator, but retained source bytes and full local paths stay behind the desktop boundary.
             The panel shows a bounded issue page and explicitly warns when additional retained issues
             exist beyond that page; a current import refreshes the sanitized issue list immediately.
+            An upgraded legacy GPX artifact that exceeds the bounded migration envelope remains byte-for-byte
+            in the mission store but is quarantined from map and Replay projection. The panel shows the
+            quarantine explicitly, and Finish, Finalize, and direct archive creation remain blocked until a
+            bounded repair path has reconstructed that artifact. Do not replace or retire the quarantined row;
+            preserve it for a maintainer-led repair.
             On Quit, active and queued imports are cancelled and physically joined before the database can close.
             If a worker does not exit within the safe deadline, shutdown fails visibly and is not marked clean;
             retry Quit after the worker exits rather than force-closing the mission store beneath it.
@@ -1641,10 +1646,11 @@
             Legacy GPX upgrades reconstruct only a small bounded slice during launch, then continue one
             retained import at a time in the background. Until that resumable work settles, Replay shows
             the remaining count and Finish/Finalize fail closed. Invalid coordinates, elevations, segments,
-            malformed geometry and geometry over the bounded reconstruction budget remain explicit rejection
-            evidence; the immutable original artifact is retained, while only safe coordinates enter the map
-            projection. An import with zero safe points still appears in the static evidence list with its
-            rejection count instead of disappearing.
+            and malformed geometry inside the bounded envelope remain explicit rejection evidence; the
+            immutable original artifact is retained, while only safe coordinates enter the map projection.
+            Over-envelope legacy artifacts remain untouched in explicit quarantine, are excluded from rendered
+            evidence, and block archive custody as well as mission completion. A migrated import with zero safe
+            points still appears in the static evidence list with its rejection count instead of disappearing.
           </p>
           <figure class="screenshot">
             <img src="assets/mission-evidence-replay.png" alt="Mission Review Replay showing data known at the selected time and an undated GPX evidence limitation" />

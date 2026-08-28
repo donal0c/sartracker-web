@@ -1250,6 +1250,10 @@ function createElectronMissionStore(options) {
     listGpxImports: async (missionId) =>
       all(db, `SELECT * FROM gpx_track_imports
         WHERE mission_id = ? AND retired_at IS NULL AND import_state = 'complete'
+          AND EXISTS (
+            SELECT 1 FROM gpx_import_revisions AS revisions
+            WHERE revisions.import_id = gpx_track_imports.id
+          )
         ORDER BY display_name ASC, imported_at ASC`, missionId),
     deleteGpxImport: async (importId) => retireGpxEvidence(
       db,
@@ -2083,6 +2087,15 @@ function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_gpx_revisions_replay
       ON gpx_import_revisions(mission_id, recorded_at, import_id, revision_sequence);
+    CREATE TABLE IF NOT EXISTS legacy_gpx_backfill_quarantine (
+      source_rowid INTEGER PRIMARY KEY,
+      import_id_preview TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      geometry_bytes INTEGER NOT NULL,
+      source_bytes_base64_bytes INTEGER NOT NULL,
+      metadata_bytes INTEGER NOT NULL,
+      detected_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS gpx_evidence_points (
       import_id TEXT NOT NULL,
       revision_sequence INTEGER NOT NULL,
@@ -2444,7 +2457,7 @@ function migrate(db) {
       .run(String(CURRENT_SCHEMA_VERSION))
   })
   applyMigrations()
-  const legacyGpxBackfill = backfillLegacyGpxRevisions(db, migrationTime, 3)
+  const legacyGpxBackfill = backfillLegacyGpxRevisions(db, migrationTime, 3, false)
   return { legacyGpxBackfillRemaining: legacyGpxBackfill.remaining }
 }
 
@@ -3286,6 +3299,7 @@ async function createMissionArchive(
     throw new Error('Only finished or finalized missions can be archived.')
   }
   if (recordArchiveEvent) assertMissionFinalizationNotInProgress(db, missionId)
+  assertNoUnsettledGpxImportState(db, missionId)
 
   const createdAt = now()
   const backupPath = await backupCoordinator.syncBackup()
@@ -5237,16 +5251,42 @@ function readSearchPassLinks(db, passId, versionSequence) {
 }
 
 /** Baselines a hard-bounded pre-v12 GPX slice without inventing source time or byte provenance. */
-function backfillLegacyGpxRevisions(db, migrationTime, maximumImports) {
+function backfillLegacyGpxRevisions(
+  db,
+  migrationTime,
+  maximumImports,
+  migrateBoundedRows = true,
+) {
   const readLegacyPage = db.prepare(`SELECT
-      source.id, source.mission_id, source.content_sha256, source.source_bytes_base64,
-      source.source_path, source.file_name, source.display_name, source.geometry_json,
-      source.metadata_json
+      source.rowid AS source_rowid,
+      substr(source.id, 1, 100) AS import_id_preview,
+      length(CAST(source.id AS BLOB)) AS id_bytes,
+      length(CAST(source.mission_id AS BLOB)) AS mission_id_bytes,
+      length(CAST(source.source_path AS BLOB)) AS source_path_bytes,
+      length(CAST(source.file_name AS BLOB)) AS file_name_bytes,
+      length(CAST(source.display_name AS BLOB)) AS display_name_bytes,
+      length(CAST(source.geometry_json AS BLOB)) AS geometry_bytes,
+      length(CAST(COALESCE(source.metadata_json, '') AS BLOB)) AS metadata_bytes,
+      length(CAST(COALESCE(source.source_bytes_base64, '') AS BLOB))
+        AS source_bytes_base64_bytes
     FROM gpx_track_imports AS source
     WHERE NOT EXISTS (
       SELECT 1 FROM gpx_import_revisions AS revision WHERE revision.import_id = source.id
     )
-    ORDER BY source.mission_id ASC, source.id ASC LIMIT ?`)
+      AND NOT EXISTS (
+        SELECT 1 FROM legacy_gpx_backfill_quarantine AS quarantine
+        WHERE quarantine.source_rowid = source.rowid
+      )
+    ORDER BY source.rowid ASC LIMIT ?`)
+  const readBoundedLegacy = db.prepare(`SELECT
+      source.id, source.mission_id, source.content_sha256, source.source_bytes_base64,
+      source.source_path, source.file_name, source.display_name, source.geometry_json,
+      source.metadata_json
+    FROM gpx_track_imports AS source WHERE source.rowid = ?`)
+  const quarantineLegacy = db.prepare(`INSERT INTO legacy_gpx_backfill_quarantine (
+      source_rowid, import_id_preview, reason, geometry_bytes,
+      source_bytes_base64_bytes, metadata_bytes, detected_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`)
   const insertRevision = db.prepare(`INSERT INTO gpx_import_revisions (
     id, mission_id, import_id, revision_sequence, content_sha256,
     source_bytes_base64, source_path, file_name, display_name, geometry_json,
@@ -5261,8 +5301,24 @@ function backfillLegacyGpxRevisions(db, migrationTime, maximumImports) {
   const insertRejection = db.prepare(`INSERT INTO gpx_evidence_rejections (
     id, import_id, revision_sequence, kind, segment_index, point_index, reason, source_value
   ) VALUES (?, ?, 1, ?, ?, ?, ?, ?)`)
-  const legacyImports = readLegacyPage.all(maximumImports)
-  for (const entry of legacyImports) {
+  const legacyCandidates = readLegacyPage.all(maximumImports)
+  for (const candidate of legacyCandidates) {
+    const quarantineReason = legacyGpxBackfillQuarantineReason(candidate)
+    if (quarantineReason !== null) {
+      quarantineLegacy.run(
+        candidate.source_rowid,
+        candidate.import_id_preview,
+        quarantineReason,
+        candidate.geometry_bytes,
+        candidate.source_bytes_base64_bytes,
+        candidate.metadata_bytes,
+        migrationTime,
+      )
+      continue
+    }
+    if (!migrateBoundedRows) continue
+    const entry = readBoundedLegacy.get(candidate.source_rowid)
+    if (entry === undefined) continue
     const migrateOne = db.transaction(() => {
       const migration = readLegacyGpxMigrationProjection(entry.geometry_json)
       insertRevision.run(
@@ -5292,14 +5348,38 @@ function backfillLegacyGpxRevisions(db, migrationTime, maximumImports) {
     })
     migrateOne.immediate()
   }
-  const remaining = Number(db.prepare(`SELECT COUNT(*) AS count
+  const remaining = db.prepare(`SELECT 1
     FROM gpx_track_imports AS source WHERE NOT EXISTS (
       SELECT 1 FROM gpx_import_revisions AS revision WHERE revision.import_id = source.id
-    )`).get().count)
-  return { processed: legacyImports.length, remaining }
+    ) AND NOT EXISTS (
+      SELECT 1 FROM legacy_gpx_backfill_quarantine AS quarantine
+      WHERE quarantine.source_rowid = source.rowid
+    ) LIMIT 1`).get() === undefined ? 0 : 1
+  return { processed: legacyCandidates.length, remaining }
 }
 
 const MAX_INLINE_LEGACY_GPX_GEOMETRY_BYTES = 128 * 1024
+const MAX_INLINE_LEGACY_GPX_SOURCE_BYTES = 128 * 1024
+const MAX_INLINE_LEGACY_GPX_METADATA_BYTES = 100 * 1024
+
+/** Classifies one legacy row using only SQLite-side byte lengths before selecting its text. */
+function legacyGpxBackfillQuarantineReason(candidate) {
+  if (Number(candidate.geometry_bytes) > MAX_INLINE_LEGACY_GPX_GEOMETRY_BYTES) {
+    return 'legacy_geometry_over_byte_envelope'
+  }
+  if (Number(candidate.source_bytes_base64_bytes) > MAX_INLINE_LEGACY_GPX_SOURCE_BYTES) {
+    return 'legacy_source_bytes_over_byte_envelope'
+  }
+  if (Number(candidate.metadata_bytes) > MAX_INLINE_LEGACY_GPX_METADATA_BYTES) {
+    return 'legacy_metadata_over_byte_envelope'
+  }
+  if (Number(candidate.id_bytes) > 1_000 || Number(candidate.mission_id_bytes) > 1_000
+    || Number(candidate.file_name_bytes) > 1_000 || Number(candidate.display_name_bytes) > 1_000
+    || Number(candidate.source_path_bytes) > 10_000) {
+    return 'legacy_identity_over_byte_envelope'
+  }
+  return null
+}
 
 /** Produces a bounded legacy projection without scanning arbitrarily large coordinate arrays. */
 function readLegacyGpxMigrationProjection(geometryJson) {
@@ -5734,14 +5814,24 @@ function assertNoUnsettledGpxImportState(db, missionId) {
     (SELECT COUNT(*) FROM gpx_track_imports AS imports
       WHERE imports.mission_id = ? AND NOT EXISTS (
         SELECT 1 FROM gpx_import_revisions AS revisions WHERE revisions.import_id = imports.id
-      )) AS pending_legacy_backfills`)
-    .get(missionId, missionId, missionId, missionId, missionId)
+      ) AND NOT EXISTS (
+        SELECT 1 FROM legacy_gpx_backfill_quarantine AS quarantine
+        WHERE quarantine.source_rowid = imports.rowid
+      )) AS pending_legacy_backfills,
+    (SELECT COUNT(*) FROM gpx_track_imports AS imports
+      JOIN legacy_gpx_backfill_quarantine AS quarantine
+        ON quarantine.source_rowid = imports.rowid
+      WHERE imports.mission_id = ?) AS quarantined_legacy_backfills`)
+    .get(missionId, missionId, missionId, missionId, missionId, missionId)
   const count = Number(state.running_batches) + Number(state.unsettled_receipts)
     + Number(state.staging_revisions) + Number(state.staging_imports)
-    + Number(state.pending_legacy_backfills)
+    + Number(state.pending_legacy_backfills) + Number(state.quarantined_legacy_backfills)
   if (count > 0) {
+    const quarantineNotice = Number(state.quarantined_legacy_backfills) === 0
+      ? ''
+      : ` ${state.quarantined_legacy_backfills} legacy GPX artifact(s) are quarantined because they exceed the bounded migration envelope; the retained originals require a bounded repair path before custody can be declared complete.`
     throw new Error(
-      `Mission cannot change lifecycle state while GPX evidence import state is unsettled (${count} durable item(s), including any legacy GPX backfill still pending). Wait for the import to settle or restart SAR Tracker to recover it explicitly.`,
+      `Mission cannot change lifecycle state while GPX evidence import state is unsettled (${count} durable item(s), including any legacy GPX backfill still pending).${quarantineNotice} Wait for the import to settle or restart SAR Tracker to recover it explicitly.`,
     )
   }
 }
@@ -5773,11 +5863,22 @@ function listGpxImportIssues(db, input) {
       FROM gpx_import_batches AS batches
       WHERE batches.mission_id = ? AND batches.status = 'interrupted'
         AND NOT EXISTS (SELECT 1 FROM gpx_import_failures WHERE batch_id = batches.id)
+      UNION ALL
+      SELECT 'quarantine:' || quarantine.source_rowid AS entry_id,
+        NULL AS batch_id, 'interrupted' AS batch_status,
+        NULL AS source_path, quarantine.import_id_preview AS file_name,
+        NULL AS content_sha256, 1 AS source_retained,
+        'Legacy GPX evidence is quarantined because it exceeds the bounded migration envelope. The original remains retained; map projection, mission completion, and archive custody stay blocked until bounded repair.' AS reason,
+        quarantine.detected_at AS recorded_at
+      FROM legacy_gpx_backfill_quarantine AS quarantine
+      JOIN gpx_track_imports AS imports ON imports.rowid = quarantine.source_rowid
+      WHERE imports.mission_id = ?
     )
     SELECT * FROM issues
     WHERE (? IS NULL OR recorded_at < ? OR (recorded_at = ? AND entry_id < ?))
     ORDER BY recorded_at DESC, entry_id DESC
     LIMIT ?`).all(
+      missionId,
       missionId,
       missionId,
       cursor?.recordedAt ?? null,
@@ -5827,7 +5928,7 @@ function decodeGpxImportIssueCursor(value) {
       typeof decoded?.recordedAt !== 'string' ||
       !Number.isFinite(Date.parse(decoded.recordedAt)) ||
       typeof decoded?.entryId !== 'string' ||
-      !/^(failure|batch):[A-Za-z0-9-]+$/u.test(decoded.entryId)
+      !/^(failure|batch|quarantine):[A-Za-z0-9-]+$/u.test(decoded.entryId)
     ) {
       throw new Error('invalid')
     }
@@ -5840,6 +5941,7 @@ function decodeGpxImportIssueCursor(value) {
 /** Stores an exact GPX source as append-only evidence, deduplicated by byte digest. */
 function upsertGpxEvidence(db, input, publicationReceipt = null) {
   const missionId = input.mission_id
+  assertNoQuarantinedLegacyGpxTarget(db, input.id, missionId, input.source_path)
   const timestamp = now()
   const normalizedHash = normalizeGpxContentHash(
     input.content_sha256,
@@ -6082,6 +6184,7 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
     return upsertGpxEvidence(db, input, publicationReceipt)
   }
   const missionId = input.mission_id
+  assertNoQuarantinedLegacyGpxTarget(db, input.id, missionId, input.source_path)
   const timestamp = now()
   const normalizedHash = normalizeGpxContentHash(input.content_sha256, input.source_bytes_base64)
   const existingById = input.id === undefined || input.id === null
@@ -6331,6 +6434,7 @@ function updateGpxImportPresentation(db, input) {
   }
   const timestamp = now()
   const transaction = db.transaction(() => {
+    assertNoQuarantinedLegacyGpxTarget(db, importId, missionId, null)
     ensureWritableMission(db, missionId)
     const existing = db.prepare(`SELECT id, mission_id, import_state, retired_at,
       display_name, metadata_json
@@ -6373,6 +6477,7 @@ function projectGpxImportForRenderer(row) {
 function assignGpxEvidenceToOuting(db, input) {
   const importId = normalizeRequiredText(input.import_id, 'GPX import')
   const outingId = normalizeRequiredText(input.outing_id, 'GPX outing')
+  assertNoQuarantinedLegacyGpxTarget(db, importId, null, null)
   const existing = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(importId)
   if (existing === undefined || existing.retired_at !== null) {
     throw new Error(`Active GPX evidence ${importId} was not found.`)
@@ -6427,6 +6532,7 @@ function assignGpxEvidenceToOuting(db, input) {
 function retireGpxEvidence(db, importId, faultInjection = {}) {
   let retired = false
   const transaction = db.transaction(() => {
+    assertNoQuarantinedLegacyGpxTarget(db, importId, null, null)
     const existing = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(importId)
     if (existing === undefined || existing.retired_at !== null) return
     ensureWritableMission(db, existing.mission_id)
@@ -6462,6 +6568,29 @@ function assertGpxIdentityPathAgreement(...candidates) {
   if (identities.length > 1) {
     throw new Error(
       `GPX identity ${identities[0]} cannot use a path that belongs to different GPX evidence ${identities[1]}.`,
+    )
+  }
+}
+
+/** Prevents an unresolved legacy artifact from being overwritten or retired before bounded repair. */
+function assertNoQuarantinedLegacyGpxTarget(db, importId, missionId, sourcePath) {
+  const byId = importId === undefined || importId === null
+    ? undefined
+    : db.prepare(`SELECT 1 FROM gpx_track_imports AS imports
+        JOIN legacy_gpx_backfill_quarantine AS quarantine
+          ON quarantine.source_rowid = imports.rowid
+        WHERE imports.id = ? LIMIT 1`).get(importId)
+  const byPath = missionId === undefined || missionId === null
+    || sourcePath === undefined || sourcePath === null
+    ? undefined
+    : db.prepare(`SELECT 1 FROM gpx_track_imports AS imports
+        JOIN legacy_gpx_backfill_quarantine AS quarantine
+          ON quarantine.source_rowid = imports.rowid
+        WHERE imports.mission_id = ? AND imports.source_path = ? LIMIT 1`)
+      .get(missionId, sourcePath)
+  if (byId !== undefined || byPath !== undefined) {
+    throw new Error(
+      'Quarantined legacy GPX evidence cannot be changed or retired until its retained original completes a bounded repair path.',
     )
   }
 }

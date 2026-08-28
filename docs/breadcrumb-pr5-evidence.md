@@ -610,6 +610,65 @@ interactions, 29.66 ms maximum main-process responsiveness, zero renderer
 crashes, SQLite integrity and zero redundant telemetry slope. This is local
 unsigned package evidence only; exact pushed-head Linux proof remains required.
 
+Exact head `299c0b722ff3925f160133bfcb31cab8af0f0048`, tree
+`2021ebf3584db8035ba3bed44a1b7f772581a47e`, was also rejected during the
+allocated concurrency/finalization review. The completed-call Tauri races were
+fixed, but the raw `BEGIN IMMEDIATE` transaction was not owned by SQLx. Task
+cancellation after the projection and audit writes could return the only pooled
+connection with the transaction still open: later reads on that connection saw
+the uncommitted evidence even though the caller received failure, and a later
+restart rolled it back. The candidate Linux workflow was cancelled because the
+head was already invalid.
+
+The regression test pauses deterministically after both writes and before
+commit, aborts the upsert task, then requires zero GPX projection rows, zero GPX
+audit rows and a fresh immediate transaction on the reused pool connection. It
+failed red with the projection count equal to one. The implementation now uses
+SQLx 0.8 `begin_with("BEGIN IMMEDIATE")` and executes mission, identity, path,
+projection, audit and readback operations through the owned transaction, whose
+drop path rolls back cancellation and commit-error exits. The regression is
+green; the full backend passed 55/55 executable tests with one intentional
+real-keychain ignore, and the six focused GPX tests passed 30/30 across five
+repetitions. Fresh exact-head reviews, package/Linux proof and documentation
+binding remain required.
+
+The same rejected head also received its allocated persistence/completeness
+review. It found two accepted P2s. First, the launch slice still selected and
+copied complete legacy GPX text on the Electron main thread: a 64 MiB artifact
+took 427.61 ms to open, an isolated SQL copy took 183.66 ms, and a deferred
+32 MiB fourth artifact caused a 161.49 ms event-loop gap. Revisionless rows
+also remained renderer-visible. Second, direct archive creation omitted the
+unsettled-GPX fence and accepted a finished store with 197 pending legacy
+backfills; the validated archive still contained 196 imports without immutable
+revisions.
+
+Both persistence findings are red-green. Launch now selects only SQLite-side
+byte lengths and a bounded identity preview, performs zero normal legacy
+parsing or copying, and uses an `EXISTS` probe rather than a full pending count.
+Background work remains one bounded row per event-loop turn. A row whose
+geometry, source bytes, metadata or identity exceeds the declared envelope is
+left byte-for-byte in its original table and receives a durable quarantine
+record; it is excluded from map and Replay projections, appears in the
+sanitized GPX issue surface, exposes the explicit
+`legacy_gpx_backfill_quarantined` limitation, cannot be replaced, reassigned or
+retired, and blocks Finish, Finalize and direct archive custody until a bounded
+repair exists. Direct archive creation now applies the same complete unsettled-
+GPX fence as lifecycle transitions.
+
+Fresh replacement-tree proof is 289 unit files / 2,422 tests in the serial
+gate, backend 55 executable tests with one intentional real-keychain ignore,
+lint, build and bundle budgets, Chromium 165/165, visual Playwright 58/58, and
+uncached independent visual review 69/69 with report
+`visual-review-2026-08-28T08-35-11Z.json`. The indexed 960k qualification used
+fixture digest `e96f822b1e48adbf85b9428def57f2ce547e1490ae7f123899ad57e24aaf45f1`:
+64.69 ms seek, 60.41 ms late page, 91.79 ms maximum concurrent current write,
+92.02 ms event-loop maximum and 79.60 ms restart seek with exact equality. The
+authentic-v11 960k fallback retained all 960,001 positions without replay
+indexes: 5.73 ms open, 672.89 ms seek, 3.73 ms concurrent current write and
+642.67 ms restart seek, with the fallback limitation explicit. These are local
+uncommitted-tree results; committed package/Linux proof and clean exact-head
+reviews remain mandatory.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

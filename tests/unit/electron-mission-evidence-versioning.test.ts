@@ -29,6 +29,7 @@ type MissionEvidenceStore = {
   addMissionParticipant(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   finishMission(missionId: string): Promise<{ readonly status: string }>
   finalizeMission(missionId: string): Promise<Readonly<Record<string, unknown>>>
+  createMissionArchive(missionId: string): Promise<Readonly<Record<string, unknown>>>
   upsertMarker(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   deleteMarker(markerId: string): Promise<boolean>
   listMarkers(missionId: string): Promise<readonly Readonly<Record<string, unknown>>[]>
@@ -582,6 +583,16 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(migratedDb.prepare(`SELECT name FROM sqlite_master
       WHERE type = 'index' AND name = 'idx_positions_replay_known_fix'`).get()).toBeUndefined()
     migratedDb.close()
+    let migratedRevisionCount = 0
+    for (let attempt = 0; attempt < 100 && migratedRevisionCount < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      const inspection = openDatabase(databaseFile)
+      migratedRevisionCount = Number(inspection.prepare(
+        'SELECT COUNT(*) AS count FROM gpx_import_revisions',
+      ).get()?.count ?? 0)
+      inspection.close()
+    }
+    expect(migratedRevisionCount).toBe(2)
     const revisions = await store.listGpxImportRevisions('legacy-gpx')
     expect(revisions).toEqual([
       expect.objectContaining({ completeness: 'legacy_baseline', revision_sequence: 1 }),
@@ -596,12 +607,15 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(retainedDb.prepare(`SELECT reason FROM gpx_evidence_rejections
       WHERE import_id = 'legacy-malformed'`).get())
       .toMatchObject({ reason: expect.stringMatching(/legacy geometry.*retained/i) })
-    expect(retainedDb.prepare(`SELECT geometry_json FROM gpx_import_revisions
-      WHERE import_id = 'legacy-oversized' AND revision_sequence = 1`).get())
-      .toMatchObject({ geometry_json: oversizedGeometry })
-    expect(retainedDb.prepare(`SELECT reason FROM gpx_evidence_rejections
-      WHERE import_id = 'legacy-oversized'`).get())
-      .toMatchObject({ reason: expect.stringMatching(/bounded startup migration budget.*retained/i) })
+    expect(retainedDb.prepare(`SELECT COUNT(*) AS count FROM gpx_import_revisions
+      WHERE import_id = 'legacy-oversized'`).get()).toMatchObject({ count: 0 })
+    expect(retainedDb.prepare(`SELECT quarantine.reason
+      FROM legacy_gpx_backfill_quarantine AS quarantine
+      JOIN gpx_track_imports AS imports ON imports.rowid = quarantine.source_rowid
+      WHERE imports.id = 'legacy-oversized'`).get())
+      .toMatchObject({ reason: 'legacy_geometry_over_byte_envelope' })
+    expect(retainedDb.prepare(`SELECT geometry_json FROM gpx_track_imports
+      WHERE id = 'legacy-oversized'`).get()).toMatchObject({ geometry_json: oversizedGeometry })
     expect(retainedDb.prepare(`SELECT kind, segment_index, point_index, reason FROM gpx_evidence_rejections
       WHERE import_id = 'legacy-gpx' ORDER BY segment_index, point_index, reason`).all())
       .toEqual([
@@ -630,14 +644,16 @@ describe('mission evidence versioning [DON-277]', () => {
       staticGpxPointCount: 5_003,
       staticGpxEvidence: expect.arrayContaining([
         expect.objectContaining({ import_id: 'legacy-malformed', static_point_count: 0, rejection_count: 1 }),
-        expect.objectContaining({ import_id: 'legacy-oversized', static_point_count: 0, rejection_count: 1 }),
         expect.objectContaining({ import_id: 'legacy-gpx', static_point_count: 5_003, rejection_count: 4 }),
       ]),
       limitations: expect.arrayContaining([
         expect.objectContaining({ code: 'legacy_gpx_baseline_only' }),
+        expect.objectContaining({ code: 'legacy_gpx_backfill_quarantined', count: 1 }),
         expect.objectContaining({ code: 'legacy_replay_scan_fallback' }),
       ]),
     })
+    expect((replay as { staticGpxEvidence: readonly { import_id: string }[] }).staticGpxEvidence
+      .some((entry) => entry.import_id === 'legacy-oversized')).toBe(false)
   })
 
   it('bounds legacy GPX startup work and resumes every retained import without silent loss [DON-274]', async () => {
@@ -692,8 +708,7 @@ describe('mission evidence versioning [DON-277]', () => {
       'SELECT COUNT(*) AS count FROM gpx_import_revisions',
     ).get()?.count ?? 0)
     inspection.close()
-    expect(firstStartupCount).toBeGreaterThan(0)
-    expect(firstStartupCount).toBeLessThan(12)
+    expect(firstStartupCount).toBe(0)
     await expect(store.readMissionReplay({
       missionId: mission.id,
       selectedTime: new Date().toISOString(),
@@ -723,6 +738,130 @@ describe('mission evidence versioning [DON-277]', () => {
       .toMatchObject({ count: 2_400 })
     inspection.close()
     await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
+  })
+
+  it('quarantines over-envelope legacy GPX without materializing it into renderer evidence [DON-274]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-gpx-quarantine-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Oversized Legacy GPX Quarantine' })
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    const originalGeometry = JSON.stringify({
+      type: 'MultiLineString',
+      coordinates: [],
+      retainedLegacyPayload: 'x'.repeat(256 * 1024),
+    })
+    legacyDb.prepare(`INSERT INTO gpx_track_imports (
+      id, mission_id, source_path, file_name, display_name, geometry_json,
+      metadata_json, imported_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)`).run(
+      'legacy-over-envelope', mission.id, '/legacy/oversized.gpx', 'oversized.gpx',
+      'Oversized legacy evidence', originalGeometry,
+      '2026-08-20T10:00:00.000Z', '2026-08-20T10:00:00.000Z',
+    )
+    legacyDb.close()
+
+    const openedAt = performance.now()
+    store = createElectronMissionStore({ userDataPath })
+    expect(performance.now() - openedAt).toBeLessThan(200)
+    await expect(store.listGpxImports(mission.id)).resolves.toEqual([])
+    await expect(store.listGpxImportPage({ missionId: mission.id, limit: 10 }))
+      .resolves.toEqual({ entries: [], nextCursor: null })
+    await expect(store.listGpxImportIssues({ missionId: mission.id, limit: 10 }))
+      .resolves.toMatchObject({
+        entries: [expect.objectContaining({
+          file_name: 'legacy-over-envelope',
+          source_retained: true,
+          reason: expect.stringMatching(/quarantined.*bounded migration envelope/iu),
+        })],
+      })
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: new Date().toISOString(),
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+    })).resolves.toMatchObject({
+      limitations: expect.arrayContaining([
+        expect.objectContaining({ code: 'legacy_gpx_backfill_quarantined', count: 1 }),
+      ]),
+    })
+
+    let inspection = openDatabase(databaseFile)
+    expect(inspection.prepare(`SELECT quarantine.reason, quarantine.geometry_bytes
+      FROM legacy_gpx_backfill_quarantine AS quarantine
+      JOIN gpx_track_imports AS imports ON imports.rowid = quarantine.source_rowid
+      WHERE imports.id = ?`)
+      .get('legacy-over-envelope')).toMatchObject({
+      reason: 'legacy_geometry_over_byte_envelope',
+      geometry_bytes: Buffer.byteLength(originalGeometry, 'utf8'),
+    })
+    expect(inspection.prepare(`SELECT length(CAST(geometry_json AS BLOB)) AS geometry_bytes,
+      substr(geometry_json, 1, 54) AS geometry_prefix
+      FROM gpx_track_imports WHERE id = ?`).get('legacy-over-envelope')).toMatchObject({
+      geometry_bytes: Buffer.byteLength(originalGeometry, 'utf8'),
+      geometry_prefix: originalGeometry.slice(0, 54),
+    })
+    expect(inspection.prepare('SELECT COUNT(*) AS count FROM gpx_import_revisions WHERE import_id = ?')
+      .get('legacy-over-envelope')).toMatchObject({ count: 0 })
+    inspection.close()
+    await expect(store.upsertGpxImport({
+      id: 'legacy-over-envelope',
+      mission_id: mission.id,
+      source_path: '/legacy/oversized.gpx',
+      file_name: 'replacement.gpx',
+      display_name: 'Unsafe replacement',
+      geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+    })).rejects.toThrow(/quarantined.*bounded repair/iu)
+    await expect(store.finishMission(mission.id)).rejects.toThrow(/legacy GPX.*quarantin|unsettled/iu)
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath })
+    inspection = openDatabase(databaseFile)
+    expect(inspection.prepare('SELECT COUNT(*) AS count FROM legacy_gpx_backfill_quarantine')
+      .get()).toMatchObject({ count: 1 })
+    expect(inspection.prepare(`SELECT length(CAST(geometry_json AS BLOB)) AS geometry_bytes,
+      substr(geometry_json, 1, 54) AS geometry_prefix
+      FROM gpx_track_imports WHERE id = ?`).get('legacy-over-envelope')).toMatchObject({
+      geometry_bytes: Buffer.byteLength(originalGeometry, 'utf8'),
+      geometry_prefix: originalGeometry.slice(0, 54),
+    })
+    inspection.close()
+  })
+
+  it('blocks direct archive custody while legacy GPX quarantine is unsettled [DON-274]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-gpx-archive-fence-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Legacy GPX Archive Fence' })
+    await first.finishMission(mission.id)
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    legacyDb.prepare(`INSERT INTO gpx_track_imports (
+      id, mission_id, source_path, file_name, display_name, geometry_json,
+      metadata_json, imported_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)`).run(
+      'legacy-archive-quarantine', mission.id, '/legacy/archive-oversized.gpx',
+      'archive-oversized.gpx', 'Archive oversized legacy evidence',
+      JSON.stringify({
+        type: 'MultiLineString',
+        coordinates: [],
+        retainedLegacyPayload: 'x'.repeat(256 * 1024),
+      }),
+      '2026-08-20T10:00:00.000Z', '2026-08-20T10:00:00.000Z',
+    )
+    legacyDb.close()
+
+    store = createElectronMissionStore({ userDataPath })
+    await expect(store.createMissionArchive(mission.id)).rejects.toThrow(
+      /legacy GPX.*quarantin|unsettled/iu,
+    )
+    const inspection = openDatabase(databaseFile)
+    expect(inspection.prepare('SELECT COUNT(*) AS count FROM legacy_gpx_backfill_quarantine')
+      .get()).toMatchObject({ count: 1 })
+    expect(inspection.prepare('SELECT COUNT(*) AS count FROM gpx_import_revisions WHERE import_id = ?')
+      .get('legacy-archive-quarantine')).toMatchObject({ count: 0 })
+    inspection.close()
   })
 
   it('recovers interrupted GPX staging into retained failure provenance before allowing retry [DON-274]', async () => {

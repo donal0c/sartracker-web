@@ -649,12 +649,27 @@ function readReplayLimitations(
     FROM gpx_track_imports AS imports
     WHERE imports.mission_id = ? AND NOT EXISTS (
       SELECT 1 FROM gpx_import_revisions AS revisions WHERE revisions.import_id = imports.id
+    ) AND NOT EXISTS (
+      SELECT 1 FROM legacy_gpx_backfill_quarantine AS quarantine
+      WHERE quarantine.source_rowid = imports.rowid
     )`).get(input.missionId)
   if (Number(pendingLegacyGpx?.count ?? 0) > 0) {
     limitations.push({
       code: 'legacy_gpx_backfill_pending',
       message: 'Legacy GPX evidence reconstruction is still pending in bounded background slices; the original projection remains retained and mission lifecycle changes are blocked until it settles.',
       count: Number(pendingLegacyGpx.count),
+    })
+  }
+  const quarantinedLegacyGpx = database.prepare(`SELECT COUNT(*) AS count
+    FROM gpx_track_imports AS imports
+    JOIN legacy_gpx_backfill_quarantine AS quarantine
+      ON quarantine.source_rowid = imports.rowid
+    WHERE imports.mission_id = ?`).get(input.missionId)
+  if (Number(quarantinedLegacyGpx?.count ?? 0) > 0) {
+    limitations.push({
+      code: 'legacy_gpx_backfill_quarantined',
+      message: 'One or more oversized legacy GPX artifacts remain retained but are quarantined from map and replay projection. Mission completion and archive custody are blocked until a bounded repair path reconstructs them.',
+      count: Number(quarantinedLegacyGpx.count),
     })
   }
   if (positionStats.missingRecordedCount > 0) {

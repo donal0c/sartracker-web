@@ -651,6 +651,11 @@ function createReplayDatabase(databasePath = ':memory:'): InstanceType<typeof Da
       ON positions(mission_id, device_id, timestamp);
     CREATE TABLE devices (mission_id TEXT, device_id TEXT);
     CREATE TABLE gpx_track_imports (id TEXT, mission_id TEXT, retired_at TEXT);
+    CREATE TABLE legacy_gpx_backfill_quarantine (
+      source_rowid INTEGER PRIMARY KEY, import_id_preview TEXT, reason TEXT,
+      geometry_bytes INTEGER, source_bytes_base64_bytes INTEGER,
+      metadata_bytes INTEGER, detected_at TEXT
+    );
     CREATE TABLE gpx_import_revisions (
       import_id TEXT, mission_id TEXT, revision_sequence INTEGER, recorded_at TEXT,
       source_path TEXT, file_name TEXT, display_name TEXT, content_sha256 TEXT,
