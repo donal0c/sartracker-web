@@ -1157,6 +1157,27 @@ documentation-bound descendant must pass a fresh exact-head Linux run and all
 four independent review charters. PR opened/review-ready remains intermediate;
 no merge or release is authorized.
 
+## `b59c54e1` Linux liveness rejection and margin correction
+
+Documentation-bound sandbox correction
+`b59c54e1aadb8b5b8d4e66c6670e93fcef5370e9` was correctly rejected by
+exact-head Linux workflow
+[`33205517532`](https://github.com/donal0c/sartracker-web/actions/runs/33205517532)
+before packaging. Lint passed and 2,479 other tests were green, but the
+50,000-object legacy baseline test measured a 239.90 ms maximum event-loop gap
+against the unchanged hard limit of less than 200 ms.
+
+The earlier reduction from 100 to 50 objects per durable turn had passed the
+previous exact-head runner, but it did not retain enough margin on this slower
+run. Executable correction
+`fcf55f88d6105045bb4d19bca017a4e795344396` reduces the maximum turn to 25
+objects without changing evidence semantics, the one-MiB page/object caps, or
+the fail-closed preparation fence. The exact 50,000-object regression then
+passed five consecutive focused runs, the complete evidence-versioning file
+passed 60/60, and the full serial suite passed 294 files / 2,480 tests. The
+fresh documentation-bound descendant still requires exact-head Linux and all
+four independent reviews; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
