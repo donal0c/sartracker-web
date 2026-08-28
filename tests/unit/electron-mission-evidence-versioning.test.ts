@@ -911,11 +911,11 @@ describe('mission evidence versioning [DON-277]', () => {
         '2026-08-20T10:00:00.000Z', '2026-08-20T10:00:00.000Z'
       FROM numbers WHERE n < 500000;
       INSERT INTO gpx_import_revisions (
-        id, mission_id, import_id, revision_sequence, content_sha256,
+        id, mission_id, import_id, revision_sequence, source_revision_sequence, content_sha256,
         source_bytes_base64, source_path, file_name, display_name, geometry_json,
         metadata_json, timing_class, import_state, completeness, recorded_at, audit_event_id
       )
-      SELECT 'revision-' || id, mission_id, id, 1, NULL, NULL, source_path,
+      SELECT 'revision-' || id, mission_id, id, 1, 1, NULL, NULL, source_path,
         file_name, display_name, geometry_json, metadata_json, 'undated', 'complete',
         'legacy_baseline', updated_at, NULL
       FROM gpx_track_imports WHERE mission_id = '${mission.id}';
@@ -1964,14 +1964,15 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(await store.listGpxImportRevisions(String(route.id))).toHaveLength(2)
   })
 
-  it('assigns undated GPX to an outing as a new immutable static-evidence revision [DON-274]', async () => {
+  it('assigns GPX to an outing as a new immutable static-evidence revision [DON-274]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Static GPX Outing Mission' })
     const outing = await store.createOuting({ mission_id: mission.id, label: 'Operational period 1' })
     const imported = await store.upsertGpxImport(gpxInput(mission.id, {
-      timing_class: 'undated',
+      timing_class: 'partially_dated',
       points: [
-        { segment_index: 0, point_index: 0, track_name: 'Route', lat: 52, lon: -9.7, elevation: 100, timestamp: null },
+        { segment_index: 0, point_index: 0, track_name: 'Route', lat: 52, lon: -9.7, elevation: 100, timestamp: '2026-08-27T08:00:00Z' },
+        { segment_index: 0, point_index: 1, track_name: 'Route', lat: 52.01, lon: -9.71, elevation: null, timestamp: null },
       ],
     }))
 
@@ -1992,9 +1993,83 @@ describe('mission evidence versioning [DON-277]', () => {
       trackLimit: 100,
     })
     expect(replay).toMatchObject({
+      totalTrackCount: 1,
+      tracks: [expect.objectContaining({ track_id: imported.id, source_type: 'gpx_point' })],
       staticGpxEvidence: [expect.objectContaining({ import_id: imported.id, outing_id: outing.id })],
     })
   })
+
+  it('assigns 200k-point retained GPX by immutable source reference without blocking current work [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Large GPX Assignment Mission' })
+    const outing = await store.createOuting({ mission_id: mission.id, label: 'Operational period 2' })
+    const sourceBytesBase64 = Buffer.alloc(3_900_000, 0x67).toString('base64')
+    const imported = await store.upsertGpxImport(gpxInput(mission.id, {
+      content_sha256: digestBase64(sourceBytesBase64),
+      source_bytes_base64: sourceBytesBase64,
+      timing_class: 'undated',
+      points: [],
+    }))
+    const seed = openDatabase(await databasePath())
+    seed.exec(`WITH RECURSIVE point(value) AS (
+        SELECT 0 UNION ALL SELECT value + 1 FROM point WHERE value < 199999
+      )
+      INSERT INTO gpx_evidence_points (
+        import_id, revision_sequence, segment_index, point_index, track_name,
+        lat, lon, elevation, source_time
+      )
+      SELECT '${String(imported.id)}', 1, CAST(value / 1000 AS INTEGER), value % 1000,
+        'Retained route', 52 + (value % 1000) / 100000, -9.7, NULL, NULL
+      FROM point;`)
+    seed.close()
+
+    let lastHeartbeat = performance.now()
+    let maximumHeartbeatGapMs = 0
+    const heartbeat = setInterval(() => {
+      const current = performance.now()
+      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, current - lastHeartbeat)
+      lastHeartbeat = current
+    }, 5)
+    const startedAt = performance.now()
+    await store.assignGpxImportToOuting({
+      import_id: imported.id,
+      outing_id: outing.id,
+      assigned_by: 'Coordinator One',
+    })
+    const assignmentDurationMs = performance.now() - startedAt
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    clearInterval(heartbeat)
+
+    const db = openDatabase(await databasePath())
+    expect(db.prepare(`SELECT revision_sequence, source_revision_sequence,
+        length(source_bytes_base64) AS source_bytes_base64_length
+      FROM gpx_import_revisions WHERE import_id = ? ORDER BY revision_sequence`).all(imported.id))
+      .toEqual([
+        { revision_sequence: 1, source_revision_sequence: 1, source_bytes_base64_length: sourceBytesBase64.length },
+        { revision_sequence: 2, source_revision_sequence: 1, source_bytes_base64_length: null },
+      ])
+    expect(db.prepare(`SELECT revision_sequence, COUNT(*) AS count FROM gpx_evidence_points
+      WHERE import_id = ? GROUP BY revision_sequence ORDER BY revision_sequence`).all(imported.id))
+      .toEqual([{ revision_sequence: 1, count: 200_000 }])
+    db.close()
+    expect(assignmentDurationMs).toBeLessThan(200)
+    expect(maximumHeartbeatGapMs).toBeLessThan(200)
+
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: new Date().toISOString(),
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+    })).resolves.toMatchObject({
+      staticGpxPointCount: 200_000,
+      staticGpxEvidence: [expect.objectContaining({
+        import_id: imported.id,
+        revision_sequence: 2,
+        outing_id: outing.id,
+        static_point_count: 200_000,
+      })],
+    })
+  }, 30_000)
 
   it('keeps every declared search pass inside its assignment outing [DON-279]', async () => {
     store = await createStore()
@@ -2627,6 +2702,41 @@ describe('mission evidence versioning [DON-277]', () => {
       expect.objectContaining({ source_path: invalidUtf8Path, content_sha256: expect.any(String), source_bytes_base64: expect.any(String) }),
     ])
     db.close()
+  })
+
+  it('retains structured point and segment rejections when every GPX point is invalid [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'All-invalid GPX Provenance Mission' })
+    const sourcePath = path.join(userDataPath!, 'all-invalid.gpx')
+    const source = `<gpx version="1.1"><trk><trkseg>
+      <trkpt lat="91" lon="-9.7"/>
+      <trkpt lat="52" lon="181"/>
+    </trkseg></trk></gpx>`
+    await writeFile(sourcePath, source)
+
+    await expect(store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] }))
+      .resolves.toMatchObject({
+        imports: [],
+        failures: [expect.objectContaining({ sourcePath })],
+      })
+
+    const db = openDatabase(await databasePath())
+    const failure = db.prepare(`SELECT source_bytes_base64, rejection_count, rejections_json
+      FROM gpx_import_failures WHERE source_path = ?`).get(sourcePath)
+    expect(failure).toMatchObject({
+      source_bytes_base64: Buffer.from(source).toString('base64'),
+      rejection_count: 3,
+    })
+    expect(JSON.parse(String(failure?.rejections_json))).toEqual([
+      expect.objectContaining({ kind: 'point', point_index: 0, reason: 'invalid_coordinates' }),
+      expect.objectContaining({ kind: 'point', point_index: 1, reason: 'invalid_coordinates' }),
+      expect.objectContaining({ kind: 'segment', point_index: null, reason: 'insufficient_segment_points' }),
+    ])
+    db.close()
+    await expect(store.listGpxImportIssues({ missionId: mission.id, limit: 10 }))
+      .resolves.toMatchObject({
+        entries: [expect.objectContaining({ rejection_count: 3 })],
+      })
   })
 
   it('rejects permissive scalar coercions in the production worker without inventing exact evidence [DON-274]', async () => {

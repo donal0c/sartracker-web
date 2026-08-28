@@ -244,6 +244,8 @@ describe('startMissionReviewRuntime', () => {
       ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
       nextObjectCursor: '100',
       totalObjectCount: 300,
+      deviceFilterIds: ['device-7'],
+      outingFilterIds: ['outing-3'],
       limitations: [{
         code: 'large_object_details_summarized',
         message: 'Large evidence states are represented by bounded summaries and retained-state hashes in this page.',
@@ -285,6 +287,11 @@ describe('startMissionReviewRuntime', () => {
 
     await runtime.loadNextReplayObjects()
 
+    expect(readMissionReplayObjectChunk).toHaveBeenLastCalledWith(expect.objectContaining({
+      deviceIds: ['device-7'],
+      outingIds: ['outing-3'],
+    }), expect.any(String))
+
     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
       replay: expect.objectContaining({
         result: expect.objectContaining({
@@ -297,6 +304,11 @@ describe('startMissionReviewRuntime', () => {
     }))
 
     await runtime.loadNextReplayObjects()
+
+    expect(readMissionReplayObjectChunk).toHaveBeenLastCalledWith(expect.objectContaining({
+      deviceIds: ['device-7'],
+      outingIds: ['outing-3'],
+    }), expect.any(String))
 
     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
       replay: expect.objectContaining({

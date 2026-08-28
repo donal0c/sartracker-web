@@ -11,6 +11,44 @@ const { runMissionReplayInWorker } = require('../../electron/mission-replay-runn
 }
 
 describe('mission replay worker runner [DON-278]', () => {
+  it('sends only the closed bounded query envelope to the worker', async () => {
+    const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
+    worker.terminate = vi.fn(async () => 0)
+    const createWorker = vi.fn(() => worker)
+    const query = runMissionReplayInWorker({
+      databasePath: '/tmp/unused.sqlite',
+      kind: 'state',
+      query: {
+        missionId: 'mission-1',
+        selectedTime: '2026-08-27T08:00:00Z',
+        trackLimit: 100,
+        unusedRendererPayload: 'x'.repeat(64 * 1024 * 1024),
+      },
+      createWorker,
+    })
+
+    expect(createWorker).toHaveBeenCalledWith(expect.objectContaining({
+      workerData: {
+        databasePath: '/tmp/unused.sqlite',
+        kind: 'state',
+        query: {
+          missionId: 'mission-1',
+          selectedTime: '2026-08-27T08:00:00.000Z',
+          trackLimit: 100,
+          objectLimit: 100,
+          deviceIds: null,
+          outingIds: null,
+          timezone: 'Europe/Dublin',
+        },
+      },
+    }))
+    expect(createWorker.mock.calls[0]?.[0]).not.toHaveProperty(
+      'workerData.query.unusedRendererPayload',
+    )
+    worker.emit('exit', 1)
+    await expect(query).rejects.toThrow(/exited with code 1/u)
+  })
+
   it('rejects an oversized selected time and unsupported timezone before creating a worker', async () => {
     const createWorker = vi.fn()
     for (const query of [

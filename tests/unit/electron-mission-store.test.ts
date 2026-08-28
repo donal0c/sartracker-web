@@ -1,4 +1,4 @@
-import { access, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -50,6 +50,7 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
     readonly finalizeMissionFaultInjection?: {
       readonly afterArchiveSucceededEvent?: boolean
     }
+    readonly readArchiveFile?: (archivePath: string) => Promise<Buffer>
     readonly ingestEvidenceFaultInjection?: {
       readonly failStage?: boolean
       readonly failProjection?: boolean
@@ -3767,6 +3768,43 @@ describe('electron mission store', () => {
     await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
   })
 
+  it('rejects an idempotent finalize result when an authorized unlock wins archive validation [DON-278]', async () => {
+    store = await createStore({ readAdminRoster: async () => ['Duty Admin'] })
+    const mission = await store.createMission({ name: 'Idempotent Finalize Unlock Race' })
+    await store.finishMission(mission.id)
+    await store.finalizeMission(mission.id)
+    store.close()
+
+    let releaseArchiveRead = () => undefined
+    let signalArchiveRead = () => undefined
+    const archiveRead = new Promise<void>((resolve) => { signalArchiveRead = resolve })
+    const holdArchiveRead = new Promise<void>((resolve) => { releaseArchiveRead = resolve })
+    store = createElectronMissionStore({
+      userDataPath: userDataPath!,
+      readAdminRoster: async () => ['Duty Admin'],
+      readArchiveFile: async (archivePath: string) => {
+        signalArchiveRead()
+        await holdArchiveRead
+        return readFile(archivePath)
+      },
+    })
+
+    const idempotentFinalize = store.finalizeMission(mission.id)
+    await expect(Promise.race([
+      archiveRead.then(() => 'reading'),
+      new Promise((resolve) => setTimeout(() => resolve('timed-out'), 100)),
+    ])).resolves.toBe('reading')
+    await expect(store.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Correction while stale archive validation is pending.',
+    })).resolves.toMatchObject({ status: 'finished' })
+    releaseArchiveRead()
+
+    await expect(idempotentFinalize).rejects.toThrow(/finalization changed/iu)
+    await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
+  })
+
   it('creates a fresh archive when a mission is unlocked and finalized again [DON-232]', async () => {
     store = await createStore({
       readAdminRoster: async () => ['Duty Admin'],
@@ -3883,6 +3921,7 @@ describe('electron mission store', () => {
     readonly finalizeMissionFaultInjection?: {
       readonly afterArchiveSucceededEvent?: boolean
     }
+    readonly readArchiveFile?: (archivePath: string) => Promise<Buffer>
     readonly ingestEvidenceFaultInjection?: {
       readonly failStage?: boolean
       readonly failProjection?: boolean

@@ -1533,6 +1533,8 @@
             outing evidence; presentation metadata and outing assignment use their dedicated controls. Track,
             segment and point order, names, elevation and source timestamps are kept. Invalid
             points or segments are retained as explicit rejections instead of disappearing silently.
+            If every point is invalid, the source still appears as a retained import issue and the
+            panel states how many rejected point or segment records remain with the exact source.
             Source files are limited to 8 MiB each so exact-byte retention cannot monopolize the
             database writer or exhaust the import worker; larger files fail explicitly and should be
             split into smaller GPX files. Select at most 100 GPX files at a time. A folder containing more
@@ -1553,7 +1555,8 @@
           <p>
             To link static GPX evidence to an outing, enter the coordinator name (up to 120 characters) and choose the outing on the
             imported-track row. The assignment creates another retained evidence revision; it does not rewrite
-            the original import. A failed, malformed, empty, non-UTF-8, interrupted, or partially successful
+            the original import or duplicate its retained point rows; the assignment revision refers immutably
+            to the original source evidence. A failed, malformed, empty, non-UTF-8, interrupted, or partially successful
             batch is reported explicitly. Successfully accepted files remain visible, while failed source bytes,
             digest and reason remain retained for investigation.
           </p>

@@ -1,22 +1,24 @@
 const path = require('node:path')
 const { Worker } = require('node:worker_threads')
-const { normalizeReplayInput } = require('./mission-replay-query.cjs')
+const { normalizeReplayWorkerQuery } = require('./mission-replay-query.cjs')
 const { assertReplayResultBounded } = require('./mission-replay-message-policy.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'mission-replay-worker.cjs')
 
 /** Runs one cancellable replay read and terminates obsolete work promptly. */
 function runMissionReplayInWorker(input) {
-  normalizeReplayInput(input.query)
+  const normalizedQuery = normalizeReplayWorkerQuery(input.query, input.kind)
   if (input.signal?.aborted === true) return Promise.reject(createAbortError())
   let resolveWorkerExit
   const workerExited = new Promise((resolve) => { resolveWorkerExit = resolve })
   const result = new Promise((resolve, reject) => {
     let worker
     try {
-      worker = input.createWorker?.() ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
-        workerData: { databasePath: input.databasePath, query: input.query, kind: input.kind },
-      })
+      const workerOptions = {
+        workerData: { databasePath: input.databasePath, query: normalizedQuery, kind: input.kind },
+      }
+      worker = input.createWorker?.(workerOptions)
+        ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, workerOptions)
     } catch (error) {
       resolveWorkerExit()
       reject(error)
@@ -40,7 +42,7 @@ function runMissionReplayInWorker(input) {
     input.signal?.addEventListener('abort', handleAbort, { once: true })
     worker.once('message', (message) => {
       if (settled) return
-      const validationError = validateBoundedReplayMessage(message, input.query.trackLimit)
+      const validationError = validateBoundedReplayMessage(message, normalizedQuery.trackLimit)
       if (validationError === null) {
         completed = message.result
       } else {

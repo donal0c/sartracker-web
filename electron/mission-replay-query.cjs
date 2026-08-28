@@ -436,7 +436,7 @@ function readInitialGpxTrackRows(database, input, key, direction, candidateLimit
     FROM eligible_gpx
     JOIN gpx_evidence_points AS points
       ON points.import_id = eligible_gpx.import_id
-      AND points.revision_sequence = eligible_gpx.revision_sequence
+      AND points.revision_sequence = eligible_gpx.source_revision_sequence
     WHERE eligible_gpx.replay_rank = 1 AND points.source_time IS NOT NULL
       AND points.source_time <= ?${outingFilter.sql}${keyPredicate}
     ORDER BY points.source_time ${order}, eligible_gpx.recorded_at ${order},
@@ -465,7 +465,8 @@ function stripReplayOrderFields(row) {
 function countReplayTrackRows(database, input, eligiblePositionCount) {
   const outingFilter = sqlIdFilter('eligible_gpx.outing_id', input.outingIds)
   const row = database.prepare(`WITH eligible_gpx AS (
-      SELECT revisions.import_id, revisions.revision_sequence, revisions.outing_id,
+      SELECT revisions.import_id, revisions.revision_sequence,
+        revisions.source_revision_sequence, revisions.outing_id,
         ROW_NUMBER() OVER (
           PARTITION BY revisions.import_id
           ORDER BY revisions.recorded_at DESC, revisions.revision_sequence DESC
@@ -481,7 +482,7 @@ function countReplayTrackRows(database, input, eligiblePositionCount) {
         FROM eligible_gpx
         JOIN gpx_evidence_points AS points
           ON points.import_id = eligible_gpx.import_id
-          AND points.revision_sequence = eligible_gpx.revision_sequence
+          AND points.revision_sequence = eligible_gpx.source_revision_sequence
         WHERE eligible_gpx.replay_rank = 1
           AND points.source_time IS NOT NULL
           AND points.source_time <= ?${outingFilter.sql}`)
@@ -596,7 +597,7 @@ function countStaticGpxPoints(database, input) {
     FROM eligible
     JOIN gpx_evidence_points AS points
       ON points.import_id = eligible.import_id
-      AND points.revision_sequence = eligible.revision_sequence
+      AND points.revision_sequence = eligible.source_revision_sequence
     WHERE eligible.replay_rank = 1 AND points.source_time IS NULL${outingFilter.sql}`)
     .get(input.missionId, input.selectedTime, input.selectedTime, ...outingFilter.params)
   return Number(row?.count ?? 0)
@@ -620,22 +621,22 @@ function readStaticGpxEvidence(database, input) {
       SELECT eligible.*,
         (SELECT COUNT(*) FROM gpx_evidence_points AS points
           WHERE points.import_id = eligible.import_id
-            AND points.revision_sequence = eligible.revision_sequence
+            AND points.revision_sequence = eligible.source_revision_sequence
             AND points.source_time IS NULL) AS static_point_count,
         (SELECT COUNT(*) FROM gpx_evidence_rejections AS rejections
           WHERE rejections.import_id = eligible.import_id
-            AND rejections.revision_sequence = eligible.revision_sequence) AS rejection_count
+            AND rejections.revision_sequence = eligible.source_revision_sequence) AS rejection_count
       FROM eligible
       WHERE eligible.replay_rank = 1${outingFilter.sql}
         AND (EXISTS (
             SELECT 1 FROM gpx_evidence_points AS points
             WHERE points.import_id = eligible.import_id
-              AND points.revision_sequence = eligible.revision_sequence
+              AND points.revision_sequence = eligible.source_revision_sequence
               AND points.source_time IS NULL
           ) OR EXISTS (
             SELECT 1 FROM gpx_evidence_rejections AS rejections
             WHERE rejections.import_id = eligible.import_id
-              AND rejections.revision_sequence = eligible.revision_sequence
+              AND rejections.revision_sequence = eligible.source_revision_sequence
           ))
     )`
   const parameters = [input.missionId, input.selectedTime, input.selectedTime, ...outingFilter.params]
@@ -849,6 +850,35 @@ function normalizeReplayInput(input) {
     outingIds: normalizeReplayFilterIds(input.outingIds, 'outing'),
     timezone,
   }
+}
+
+/** Projects a renderer-originated request into the only fields a Replay worker accepts. */
+function normalizeReplayWorkerQuery(input, kind) {
+  const normalized = normalizeReplayInput(input)
+  if (kind === 'state') return normalized
+  if (kind === 'chunk') {
+    normalizeReplayTrackCursor(input.cursor)
+    return {
+      ...normalized,
+      ...(input.cursor === undefined || input.cursor === null || input.cursor === ''
+        ? {}
+        : { cursor: input.cursor }),
+    }
+  }
+  if (kind === 'objects') {
+    normalizeReplayObjectCursor(input.objectCursor)
+    if (!Number.isSafeInteger(input.replayGeneration) || input.replayGeneration < 0) {
+      throw new Error('Mission replay object snapshot generation is invalid.')
+    }
+    return {
+      ...normalized,
+      replayGeneration: input.replayGeneration,
+      ...(input.objectCursor === undefined || input.objectCursor === null || input.objectCursor === ''
+        ? {}
+        : { objectCursor: input.objectCursor }),
+    }
+  }
+  throw new Error('Mission replay worker query kind is invalid.')
 }
 
 /** Validates one bounded display-only evidence-source filter. */
@@ -1122,6 +1152,7 @@ module.exports = {
   MAX_REPLAY_OBJECT_LIMIT,
   missionLifecycleStateFromEventType,
   normalizeReplayInput,
+  normalizeReplayWorkerQuery,
   encodeReplayObjectCursor,
   encodeReplayTrackCursor,
   readMissionReplayObjectChunk,

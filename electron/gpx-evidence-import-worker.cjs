@@ -113,6 +113,7 @@ async function run() {
           contentSha256: sourceBytes === null ? null : createHash('sha256').update(sourceBytes).digest('hex'),
           sourceBytesBase64: sourceBytes === null ? null : sourceBytes.toString('base64'),
           reason,
+          rejections: Array.isArray(error?.gpxRejections) ? error.gpxRejections : [],
         })
         failures.push({ sourcePath: normalizedPath, reason })
       }
@@ -198,8 +199,17 @@ function parseGpxEvidence(contents, fileName, scalarParsers) {
       segmentPoints = null
     }
   })
-  parser.write(contents).close()
-  if (segments.length === 0) throw new Error(`GPX file does not contain any usable track segments: ${fileName}`)
+  try {
+    parser.write(contents).close()
+  } catch (error) {
+    throw withGpxRejections(error, rejections)
+  }
+  if (segments.length === 0) {
+    throw withGpxRejections(
+      new Error(`GPX file does not contain any usable track segments: ${fileName}`),
+      rejections,
+    )
+  }
   const dated = points.filter((entry) => entry.timestamp !== null).length
   return {
     geometryJson: JSON.stringify({ type: 'MultiLineString', coordinates: segments }),
@@ -211,6 +221,13 @@ function parseGpxEvidence(contents, fileName, scalarParsers) {
 
   function beginCapture(nextCapture) { capture = nextCapture; capturedText = '' }
   function endCapture() { capture = null; capturedText = '' }
+}
+
+/** Adds already-observed parser rejections to a source-level failure without changing its reason. */
+function withGpxRejections(error, rejections) {
+  const failure = error instanceof Error ? error : new Error(String(error))
+  failure.gpxRejections = rejections.map((entry) => ({ ...entry }))
+  return failure
 }
 
 function normalizePoint(source, trackName, segmentIndex, pointIndex, rejections, scalarParsers) {

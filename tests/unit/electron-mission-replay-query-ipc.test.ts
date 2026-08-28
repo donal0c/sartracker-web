@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 
 import { describe, expect, it, vi } from 'vitest'
@@ -37,6 +38,45 @@ const { registerMissionReplayQueryIpcHandlers } = require(
 }
 
 describe('Mission Replay query IPC ownership [DON-278]', () => {
+  it('projects renderer queries before main dispatch and preload worker cloning', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    const missionStore = {
+      readMissionReplay: vi.fn().mockResolvedValue({ tracks: [] }),
+      readMissionReplayTrackChunk: vi.fn().mockResolvedValue({ tracks: [] }),
+      readMissionReplayObjectChunk: vi.fn().mockResolvedValue({ objects: [] }),
+      cancelMissionReplay: vi.fn().mockResolvedValue(false),
+    }
+    registerMissionReplayQueryIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      readChannels: { state: 'state', trackChunk: 'trackChunk', objectChunk: 'objectChunk' },
+      cancelChannel: 'cancel',
+      missionStore,
+      validateIpcSender: vi.fn(),
+    })
+    const sender = Object.assign(new EventEmitter(), { id: 12 })
+
+    await handlers.get('state')?.({ sender }, {
+      missionId: 'mission-1',
+      selectedTime: '2026-08-28T12:00:00Z',
+      trackLimit: 100,
+      rendererControlledBlob: 'x'.repeat(1024 * 1024),
+    }, 'bounded-query')
+
+    expect(missionStore.readMissionReplay).toHaveBeenCalledWith({
+      missionId: 'mission-1',
+      selectedTime: '2026-08-28T12:00:00.000Z',
+      trackLimit: 100,
+      objectLimit: 100,
+      deviceIds: null,
+      outingIds: null,
+      timezone: 'Europe/Dublin',
+    }, '12:mission-replay:bounded-query')
+    const preload = readFileSync('electron/preload.cjs', 'utf8')
+    expect(preload).toContain("normalizeReplayWorkerQuery(query, 'state')")
+    expect(preload).toContain("normalizeReplayWorkerQuery(query, 'chunk')")
+    expect(preload).toContain("normalizeReplayWorkerQuery(query, 'objects')")
+  })
+
   it.each([
     ['state', 'readMissionReplay', 'destroyed'],
     ['state', 'readMissionReplay', 'render-process-gone'],
@@ -86,14 +126,24 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
       })
       const senderA = Object.assign(new EventEmitter(), { id: 41 })
       const senderB = Object.assign(new EventEmitter(), { id: 42 })
-      const input = { missionId: 'mission-1', selectedTime: '2026-08-28T12:00:00Z' }
+      const input = {
+        missionId: 'mission-1',
+        selectedTime: '2026-08-28T12:00:00Z',
+        trackLimit: 100,
+        ...(channel === 'objectChunk' ? { replayGeneration: 0 } : {}),
+      }
+      const expectedInput = expect.objectContaining({
+        missionId: 'mission-1',
+        selectedTime: '2026-08-28T12:00:00.000Z',
+        trackLimit: 100,
+      })
 
       const readResult = Promise.resolve(
         handlers.get(channel)?.({ sender: senderA }, input, 'request-1'),
       )
       const readRejection = expect(readResult).rejects.toThrow(/terminated/u)
       expect(missionStore[methodName]).toHaveBeenCalledWith(
-        input,
+        expectedInput,
         '41:mission-replay:request-1',
       )
       expect(senderA.listenerCount('destroyed')).toBe(1)
@@ -143,7 +193,12 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
     for (const channel of ['state', 'trackChunk', 'objectChunk']) {
       await handlers.get(channel)?.(
         { sender },
-        { missionId: 'mission-1' },
+        {
+          missionId: 'mission-1',
+          selectedTime: '2026-08-28T12:00:00Z',
+          trackLimit: 100,
+          ...(channel === 'objectChunk' ? { replayGeneration: 0 } : {}),
+        },
         `request-${channel}`,
       )
       expect(sender.listenerCount('destroyed')).toBe(0)

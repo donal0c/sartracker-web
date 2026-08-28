@@ -48,4 +48,22 @@ describe('GPX import pagination', () => {
     })
     expect(loadNextImports).toHaveBeenCalledOnce()
   })
+
+  it('makes retained all-invalid GPX rejection provenance explicit [DON-274]', () => {
+    useGpxStore.setState({
+      importIssues: [{
+        batch_id: 'batch-1',
+        file_name: 'all-invalid.gpx',
+        reason: 'GPX file does not contain any usable track segments.',
+        rejection_count: 3,
+        recorded_at: '2026-08-28T10:00:00.000Z',
+      }],
+      hasMoreImportIssues: false,
+    })
+
+    act(() => root.render(createElement(GpxImportPanel)))
+
+    expect(host.querySelector('[data-testid="gpx-import-issues"]')?.textContent)
+      .toContain('3 rejected point/segment records retained with the exact source')
+  })
 })

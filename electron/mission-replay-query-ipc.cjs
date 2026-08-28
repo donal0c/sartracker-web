@@ -1,3 +1,5 @@
+const { normalizeReplayWorkerQuery } = require('./mission-replay-query.cjs')
+
 /**
  * Registers sender-owned Mission Replay worker-query IPC handlers.
  *
@@ -19,6 +21,8 @@ function registerMissionReplayQueryIpcHandlers(input) {
     input.ipcMain.handle(channel, async (event, query, requestId) => {
       input.validateIpcSender(event)
       const scopedRequestId = scopeMissionReplayRequestId(event, requestId)
+      const workerKind = kind === 'trackChunk' ? 'chunk' : kind === 'objectChunk' ? 'objects' : 'state'
+      const normalizedQuery = normalizeReplayWorkerQuery(query, workerKind)
       let cleanupRequested = false
       const cancelDestroyedSenderQuery = () => {
         if (cleanupRequested) return
@@ -28,7 +32,7 @@ function registerMissionReplayQueryIpcHandlers(input) {
       event.sender.once('destroyed', cancelDestroyedSenderQuery)
       event.sender.once('render-process-gone', cancelDestroyedSenderQuery)
       try {
-        return await input.missionStore[methodName](query, scopedRequestId)
+        return await input.missionStore[methodName](normalizedQuery, scopedRequestId)
       } finally {
         event.sender.removeListener('destroyed', cancelDestroyedSenderQuery)
         event.sender.removeListener('render-process-gone', cancelDestroyedSenderQuery)

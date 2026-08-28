@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron')
+const { normalizeReplayWorkerQuery } = require('./mission-replay-query.cjs')
 
 const TRACCAR_REQUEST_CHANNEL = 'sartracker:traccar-http-request'
 const LOAD_SETTINGS_CHANNEL = 'sartracker:load-app-settings'
@@ -128,6 +129,12 @@ const LAYER_CATALOG_STORE_CHANNELS = {
   clearMetadata: 'sartracker:layer-catalog-store:clear-metadata',
 }
 
+const REPLAY_STORE_METHODS = new Set([
+  'readMissionReplay',
+  'readMissionReplayTrackChunk',
+  'readMissionReplayObjectChunk',
+])
+
 // Electron main owns every unload. This synchronous fence converts direct
 // reload/menu/close attempts into `will-prevent-unload`, where main can wait for
 // rejected-position evidence to drain before explicitly allowing the unload.
@@ -216,10 +223,29 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
     ipcRenderer.send(RENDERER_TEARDOWN_READY_CHANNEL, input)
   },
   missionStore: Object.fromEntries(
-    Object.entries(MISSION_STORE_CHANNELS).map(([methodName, channel]) => [
-      methodName,
-      (...args) => ipcRenderer.invoke(channel, ...args),
-    ]),
+    [
+      ...Object.entries(MISSION_STORE_CHANNELS)
+        .filter(([methodName]) => !REPLAY_STORE_METHODS.has(methodName))
+        .map(([methodName, channel]) => [
+          methodName,
+          (...args) => ipcRenderer.invoke(channel, ...args),
+        ]),
+      ['readMissionReplay', (query, requestId) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.readMissionReplay,
+        normalizeReplayWorkerQuery(query, 'state'),
+        requestId,
+      )],
+      ['readMissionReplayTrackChunk', (query, requestId) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.readMissionReplayTrackChunk,
+        normalizeReplayWorkerQuery(query, 'chunk'),
+        requestId,
+      )],
+      ['readMissionReplayObjectChunk', (query, requestId) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.readMissionReplayObjectChunk,
+        normalizeReplayWorkerQuery(query, 'objects'),
+        requestId,
+      )],
+    ],
   ),
   layerCatalogStore: Object.fromEntries(
     Object.entries(LAYER_CATALOG_STORE_CHANNELS).map(([methodName, channel]) => [

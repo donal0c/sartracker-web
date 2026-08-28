@@ -90,6 +90,7 @@ test.describe('M22 GPX import parity', () => {
         batch_id: 'interrupted-batch',
         file_name: 'team-alpha.gpx',
         reason: 'Import was interrupted after source bytes were retained.',
+        rejection_count: 3,
         recorded_at: '2026-08-27T10:00:00.000Z',
         projection_warnings: ['file_name_truncated'],
       }])
@@ -101,6 +102,9 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('gpx-import-issues')).toContainText('team-alpha.gpx')
     await expect(page.getByTestId('gpx-import-issues')).toContainText(
       'interrupted after source bytes were retained',
+    )
+    await expect(page.getByTestId('gpx-import-issues')).toContainText(
+      '3 rejected point/segment records retained with the exact source',
     )
     await expect(page.getByTestId('gpx-import-issues')).toContainText(
       'Some retained issue fields were shortened for safe display',

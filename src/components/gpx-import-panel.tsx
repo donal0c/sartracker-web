@@ -104,6 +104,11 @@ export function GpxImportPanel() {
             {importIssues.map((issue) => (
               <li className="text-xs text-rose-100" key={`${issue.batch_id}:${issue.file_name}:${issue.recorded_at}`}>
                 <strong>{issue.file_name}</strong>: {issue.reason}
+                {(issue.rejection_count ?? 0) > 0 ? (
+                  <span className="mt-1 block font-semibold">
+                    {issue.rejection_count} rejected point/segment record{issue.rejection_count === 1 ? '' : 's'} retained with the exact source.
+                  </span>
+                ) : null}
                 {issue.projection_warnings !== undefined && issue.projection_warnings.length > 0 ? (
                   <span className="mt-1 block font-semibold">
                     Some retained issue fields were shortened for safe display. The persisted record remains authoritative.

@@ -434,10 +434,11 @@ describe('mission replay query [DON-278]', () => {
     insertPosition(setup, ['fix-second', '2026-08-27T08:03:00Z', '2026-08-27T08:03:01Z'])
     setup.prepare("INSERT INTO gpx_track_imports VALUES ('gpx-staged', 'mission-1', NULL)").run()
     setup.prepare(`INSERT INTO gpx_import_revisions (
-      import_id, mission_id, revision_sequence, recorded_at, source_path, file_name,
+      import_id, mission_id, revision_sequence, source_revision_sequence,
+      recorded_at, source_path, file_name,
       display_name, content_sha256, timing_class, outing_id, completeness, import_state
     ) VALUES (
-      'gpx-staged', 'mission-1', 1, '2026-08-27T08:00:00Z', '/staged.gpx',
+      'gpx-staged', 'mission-1', 1, 1, '2026-08-27T08:00:00Z', '/staged.gpx',
       'staged.gpx', 'Staged', 'def', 'fully_dated', NULL, 'complete', 'staging'
     )`).run()
     setup.prepare(`INSERT INTO gpx_evidence_points VALUES
@@ -856,7 +857,8 @@ function createReplayDatabase(databasePath = ':memory:'): InstanceType<typeof Da
       VALUES (1, 1, 1, 9007199254740991, 9007199254740991,
         '2026-08-27T00:00:00.000Z');
     CREATE TABLE gpx_import_revisions (
-      import_id TEXT, mission_id TEXT, revision_sequence INTEGER, recorded_at TEXT,
+      import_id TEXT, mission_id TEXT, revision_sequence INTEGER,
+      source_revision_sequence INTEGER, recorded_at TEXT,
       source_path TEXT, file_name TEXT, display_name TEXT, content_sha256 TEXT,
       timing_class TEXT, outing_id TEXT, completeness TEXT, import_state TEXT
     );
@@ -919,10 +921,11 @@ function insertGpx(
 ): void {
   db.prepare('INSERT INTO gpx_track_imports VALUES (?, \'mission-1\', NULL)').run(importId)
   db.prepare(`INSERT INTO gpx_import_revisions (
-    import_id, mission_id, revision_sequence, recorded_at, source_path, file_name,
+    import_id, mission_id, revision_sequence, source_revision_sequence,
+    recorded_at, source_path, file_name,
     display_name, content_sha256, timing_class, outing_id, completeness, import_state
   ) VALUES (
-    ?, 'mission-1', 1, '2026-08-27T08:04:00Z', ?,
+    ?, 'mission-1', 1, 1, '2026-08-27T08:04:00Z', ?,
     ?, ?, 'abc', 'partially_dated', ?, 'complete', 'complete'
   )`).run(importId, `/${importId}.gpx`, `${importId}.gpx`, importId, outingId)
   db.prepare(`INSERT INTO gpx_evidence_points VALUES
