@@ -1,5 +1,8 @@
 const { createHash } = require('node:crypto')
 const { isStrictTrackingTimestamp } = require('./tracking-timestamp.cjs')
+const {
+  assertLegacyEventProvenanceReady,
+} = require('./mission-event-provenance-backfill.cjs')
 
 const MAX_REPLAY_TRACK_LIMIT = 1_000
 const MAX_REPLAY_OBJECT_LIMIT = 100
@@ -11,6 +14,7 @@ const REPLAY_TIMEZONE = 'Europe/Dublin'
 
 /** Builds the deterministic metadata snapshot and first bounded exact-track page for data known at T. */
 function readMissionReplayState(database, input) {
+  assertLegacyEventProvenanceReady(database)
   return database.transaction(() => readMissionReplayStateWithinSnapshot(database, input))()
 }
 
@@ -132,6 +136,7 @@ function readMissionGroupMembership(database, input) {
 
 /** Reads one bounded reconstructed-object page without sending unbounded state to main. */
 function readMissionReplayObjectChunk(database, input) {
+  assertLegacyEventProvenanceReady(database)
   return database.transaction(() => readMissionReplayObjectChunkWithinSnapshot(database, input))()
 }
 
@@ -179,6 +184,7 @@ function readMissionReplayObjectChunkWithinSnapshot(database, input) {
 
 /** Reads one bounded continuation page from exact Traccar/GPX source evidence. */
 function readMissionReplayTrackChunk(database, input) {
+  assertLegacyEventProvenanceReady(database)
   return database.transaction(() => readMissionReplayTrackChunkWithinSnapshot(database, input))()
 }
 

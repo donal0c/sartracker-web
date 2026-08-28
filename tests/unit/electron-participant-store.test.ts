@@ -749,7 +749,7 @@ describe('Electron participant store [DON-271]', () => {
     const databasePath = path.join(directories.at(-1)!, 'mission-store.sqlite')
     const database = new Database(databasePath)
     database.exec(`
-      DROP INDEX idx_group_membership_sequence;
+      DROP INDEX IF EXISTS idx_group_membership_sequence;
       DROP INDEX idx_group_membership_mission_team;
       ALTER TABLE mission_group_membership_events DROP COLUMN sequence;
       CREATE INDEX idx_group_membership_mission_team

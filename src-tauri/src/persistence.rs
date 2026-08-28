@@ -36,6 +36,8 @@ pub struct MissionStore {
     gpx_upsert_start_barrier: Option<Arc<tokio::sync::Barrier>>,
     #[cfg(test)]
     gpx_upsert_before_commit_pause: Option<GpxUpsertBeforeCommitPause>,
+    #[cfg(test)]
+    gpx_delete_start_barrier: Option<Arc<tokio::sync::Barrier>>,
 }
 
 #[cfg(test)]
@@ -478,6 +480,8 @@ impl MissionStore {
             gpx_upsert_start_barrier: None,
             #[cfg(test)]
             gpx_upsert_before_commit_pause: None,
+            #[cfg(test)]
+            gpx_delete_start_barrier: None,
         };
 
         store.initialize().await?;
@@ -497,6 +501,12 @@ impl MissionStore {
         release: Arc<tokio::sync::Barrier>,
     ) -> Self {
         self.gpx_upsert_before_commit_pause = Some(GpxUpsertBeforeCommitPause { reached, release });
+        self
+    }
+
+    #[cfg(test)]
+    fn with_gpx_delete_start_barrier(mut self, barrier: Arc<tokio::sync::Barrier>) -> Self {
+        self.gpx_delete_start_barrier = Some(barrier);
         self
     }
 
@@ -2388,6 +2398,7 @@ impl MissionStore {
         Ok(import)
     }
 
+    #[cfg(test)]
     pub async fn get_gpx_import(&self, import_id: String) -> Result<GpxTrackImport, String> {
         sqlx::query_as::<_, GpxTrackImport>(
             r#"
@@ -2424,18 +2435,52 @@ impl MissionStore {
     }
 
     pub async fn delete_gpx_import(&self, import_id: String) -> Result<bool, String> {
-        let existing_import = self.get_gpx_import(import_id.clone()).await.ok();
-        let Some(gpx_import) = existing_import else {
-            return Ok(false);
-        };
-        self.ensure_mission_writable_for_data(&gpx_import.mission_id)
-            .await?;
+        #[cfg(test)]
+        if let Some(barrier) = self.gpx_delete_start_barrier.as_ref() {
+            barrier.wait().await;
+        }
 
         let mut tx = self
             .pool
-            .begin()
+            .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(|error| format!("Failed to start GPX delete transaction: {error}"))?;
+
+        let existing_import = sqlx::query_as::<_, GpxTrackImport>(
+            r#"
+            SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
+                   metadata_json, imported_at, updated_at
+            FROM gpx_track_imports WHERE id = ?
+            "#,
+        )
+        .bind(&import_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|error| format!("Failed to load GPX import {import_id}: {error}"))?;
+        let Some(gpx_import) = existing_import else {
+            tx.rollback()
+                .await
+                .map_err(|error| format!("Failed to roll back missing GPX delete: {error}"))?;
+            return Ok(false);
+        };
+        let mission_status: MissionStatus =
+            sqlx::query_scalar("SELECT status FROM missions WHERE id = ?")
+                .bind(&gpx_import.mission_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "Failed to load mission {} for GPX delete: {error}",
+                        gpx_import.mission_id
+                    )
+                })?
+                .ok_or_else(|| format!("Mission not found: {}", gpx_import.mission_id))?;
+        if mission_status == MissionStatus::Finished || mission_status == MissionStatus::Finalized {
+            return Err(format!(
+                "Cannot write data to finished mission {}; resume the mission or unlock it first.",
+                gpx_import.mission_id
+            ));
+        }
 
         let result = sqlx::query("DELETE FROM gpx_track_imports WHERE id = ?")
             .bind(&import_id)
@@ -4694,6 +4739,111 @@ mod tests {
             .await
             .expect("imports after delete")
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn committed_finish_wins_before_concurrent_gpx_delete() {
+        let (database_path, backup_path) = temp_paths("gpx-finish-wins-before-delete");
+        let coordinator = MissionStore::connect(database_path.clone(), backup_path.clone())
+            .await
+            .expect("coordinator store should initialize");
+        let mission = coordinator
+            .create_mission(CreateMissionInput {
+                name: "GPX delete finish fence".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        let gpx_import = coordinator
+            .upsert_gpx_import(UpsertGpxTrackImportInput {
+                id: Some("finish-fenced-delete-gpx".to_string()),
+                mission_id: mission.id.clone(),
+                source_path: "/tracks/finish-fenced-delete.gpx".to_string(),
+                file_name: "finish-fenced-delete.gpx".to_string(),
+                display_name: "Finish fenced delete".to_string(),
+                geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+                metadata_json: None,
+            })
+            .await
+            .expect("GPX import should be created");
+        let peer = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("peer store should initialize");
+        let mut finishing_connection = coordinator
+            .pool
+            .acquire()
+            .await
+            .expect("finish connection should be acquired");
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut *finishing_connection)
+            .await
+            .expect("finish transaction should begin");
+        sqlx::query("UPDATE missions SET status = 'finished', finish_time = ? WHERE id = ?")
+            .bind(Utc::now().to_rfc3339())
+            .bind(&mission.id)
+            .execute(&mut *finishing_connection)
+            .await
+            .expect("finish should be staged");
+
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let deleter = peer.with_gpx_delete_start_barrier(barrier.clone());
+        let import_id = gpx_import.id.clone();
+        let deletion = tokio::spawn(async move { deleter.delete_gpx_import(import_id).await });
+        barrier.wait().await;
+        sqlx::query("COMMIT")
+            .execute(&mut *finishing_connection)
+            .await
+            .expect("finish should commit");
+        drop(finishing_connection);
+
+        let error = deletion
+            .await
+            .expect("delete task should join")
+            .expect_err("transaction-current finish must reject GPX deletion");
+        assert_finished_mission_data_error(&error, &mission.id);
+        assert!(coordinator
+            .get_gpx_import(gpx_import.id.clone())
+            .await
+            .is_ok());
+        let delete_audit_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mission_events WHERE mission_id = ? AND event_type = 'gpx_import_deleted'",
+        )
+        .bind(&mission.id)
+        .fetch_one(&coordinator.pool)
+        .await
+        .expect("delete audit count should remain readable");
+        assert_eq!(delete_audit_count, 0);
+    }
+
+    #[tokio::test]
+    async fn finished_mission_blocks_delete_gpx_import() {
+        let (store, mission) = finished_mission_for("finished-gpx-delete").await;
+        let import_id = "finished-delete-gpx".to_string();
+        sqlx::query(
+            r#"INSERT INTO gpx_track_imports (
+                id, mission_id, source_path, file_name, display_name,
+                geometry_json, metadata_json, imported_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)"#,
+        )
+        .bind(&import_id)
+        .bind(&mission.id)
+        .bind("/tracks/finished-delete.gpx")
+        .bind("finished-delete.gpx")
+        .bind("Finished delete")
+        .bind("{\"type\":\"MultiLineString\",\"coordinates\":[]}")
+        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().to_rfc3339())
+        .execute(&store.pool)
+        .await
+        .expect("legacy GPX row should be seeded");
+
+        let error = store
+            .delete_gpx_import(import_id.clone())
+            .await
+            .expect_err("finished mission should reject GPX deletion");
+        assert_finished_mission_data_error(&error, &mission.id);
+        assert!(store.get_gpx_import(import_id).await.is_ok());
     }
 
     #[tokio::test]

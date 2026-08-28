@@ -323,6 +323,47 @@ describe('startMissionReviewRuntime', () => {
     }))
   })
 
+  it('preserves omitted filters while paging the default all-mission object view [DON-278]', async () => {
+    const firstResult = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      nextObjectCursor: 'opaque-object-cursor',
+      totalObjectCount: 101,
+    }
+    const readMissionReplay = vi.fn().mockResolvedValue(firstResult)
+    const readMissionReplayObjectChunk = vi.fn().mockResolvedValue({
+      missionId: FIRST_MISSION.id,
+      selectedTime: firstResult.selectedTime,
+      objects: [],
+      totalObjectCount: 101,
+      objectCursor: 'opaque-object-cursor',
+      nextObjectCursor: null,
+      progress: 1,
+      summarizedObjectCount: 0,
+    } satisfies MissionReplayObjectChunkResult)
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReplay,
+        readMissionReplayObjectChunk,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.seekReplay(firstResult.selectedTime)
+
+    await runtime.loadNextReplayObjects()
+
+    expect(readMissionReplayObjectChunk).toHaveBeenCalledWith({
+      missionId: FIRST_MISSION.id,
+      selectedTime: firstResult.selectedTime,
+      timezone: 'Europe/Dublin',
+      trackLimit: 500,
+      objectLimit: 100,
+      replayGeneration: 0,
+      objectCursor: 'opaque-object-cursor',
+    }, expect.any(String))
+  })
+
   it('uses bound object cursor history when navigating to an earlier replay page [DON-278]', async () => {
     const firstPageCursor = 'eyJ2Ijo0LCJvZmZzZXQiOjEwMCwiY29udGV4dCI6ImZpcnN0In0'
     const secondPageCursor = 'eyJ2Ijo0LCJvZmZzZXQiOjIwMCwiY29udGV4dCI6InNlY29uZCJ9'

@@ -550,8 +550,12 @@ export async function startMissionReviewRuntime(
         trackLimit: 500,
         objectLimit: 100,
         replayGeneration: replay.result.replayGeneration ?? 0,
-        deviceIds: replay.result.deviceFilterIds,
-        outingIds: replay.result.outingFilterIds,
+        ...(replay.result.deviceFilterIds.length === 0
+          ? {}
+          : { deviceIds: replay.result.deviceFilterIds }),
+        ...(replay.result.outingFilterIds.length === 0
+          ? {}
+          : { outingIds: replay.result.outingFilterIds }),
         ...(objectCursor === null ? {} : { objectCursor }),
       }, requestId)
       if (currentToken !== replayToken || activeReplayRequestId !== requestId) return

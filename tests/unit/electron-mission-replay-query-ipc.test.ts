@@ -68,6 +68,8 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
 
     const missionStore = exposedBridge?.missionStore as {
       readonly readMissionReplay: (query: unknown, requestId: string) => Promise<unknown>
+      readonly upsertMarker: (input: unknown) => Promise<unknown>
+      readonly upsertDrawing: (input: unknown) => Promise<unknown>
     }
     await missionStore.readMissionReplay({
       missionId: 'mission-1',
@@ -85,6 +87,44 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
       },
       'bounded-query',
     )
+
+    await missionStore.upsertMarker({
+      mission_id: 'mission-1',
+      type: 'clue',
+      name: 'Bounded clue',
+      description: 'Visible evidence',
+      lat: 52,
+      lon: -9.7,
+      irish_grid_e: 480000,
+      irish_grid_n: 580000,
+      display_order: 0,
+      rendererControlledBlob: 'x'.repeat(64 * 1024 * 1024),
+    })
+    const markerPayload = invoke.mock.calls.at(-1)?.[1] as Record<string, unknown>
+    expect(markerPayload).toMatchObject({
+      mission_id: 'mission-1', type: 'clue', name: 'Bounded clue', description: 'Visible evidence',
+    })
+    expect(markerPayload).not.toHaveProperty('rendererControlledBlob')
+
+    await expect(missionStore.upsertMarker({
+      mission_id: 'mission-1',
+      type: 'clue',
+      name: 'Oversized clue',
+      description: 'x'.repeat(512 * 1024 + 1),
+      lat: 52,
+      lon: -9.7,
+      irish_grid_e: 480000,
+      irish_grid_n: 580000,
+      display_order: 0,
+    })).rejects.toThrow(/marker description.*invalid/i)
+
+    await expect(missionStore.upsertDrawing({
+      mission_id: 'mission-1',
+      type: 'line',
+      name: 'Oversized line',
+      display_order: 0,
+      geometry_json: 'x'.repeat(512 * 1024 + 1),
+    })).rejects.toThrow(/drawing geometry.*invalid/i)
   })
 
   it('projects renderer queries before main dispatch and preload worker cloning', async () => {

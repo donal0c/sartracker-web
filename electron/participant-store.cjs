@@ -212,7 +212,7 @@ function createParticipantStore(options) {
           const observedAt = normalizeTimestamp(event?.observed_at, 'Membership observation')
           const latest = db.prepare(`SELECT change FROM mission_group_membership_events
             WHERE mission_id = ? AND mission_team_id = ? AND traccar_device_id = ?
-            ORDER BY observed_at DESC, sequence DESC LIMIT 1`)
+            ORDER BY observed_at DESC, COALESCE(sequence, rowid) DESC LIMIT 1`)
             .get(mission.id, teamId, deviceId)
           if (latest?.change === change) continue
           inserted.push(insertMembershipEvent(db, {
@@ -240,12 +240,14 @@ function createParticipantStore(options) {
     listGroupMembershipEvents(missionId, teamId) {
       requireMission(db, missionId)
       if (teamId === undefined) {
-        return db.prepare(`SELECT * FROM mission_group_membership_events
-          WHERE mission_id = ? ORDER BY observed_at ASC, sequence ASC`).all(missionId)
+        return db.prepare(`SELECT *, COALESCE(sequence, rowid) AS sequence
+          FROM mission_group_membership_events
+          WHERE mission_id = ? ORDER BY observed_at ASC, COALESCE(sequence, rowid) ASC`).all(missionId)
       }
-      return db.prepare(`SELECT * FROM mission_group_membership_events
+      return db.prepare(`SELECT *, COALESCE(sequence, rowid) AS sequence
+        FROM mission_group_membership_events
         WHERE mission_id = ? AND mission_team_id = ?
-        ORDER BY observed_at ASC, sequence ASC`).all(missionId, teamId)
+        ORDER BY observed_at ASC, COALESCE(sequence, rowid) ASC`).all(missionId, teamId)
     },
 
     upsertParticipantBackfillCheckpoint(input) {
@@ -360,7 +362,7 @@ function createOrGetTeam(db, missionId, input, frozenAt) {
 }
 
 function insertMembershipEvent(db, input) {
-  const sequence = Number(db.prepare(`SELECT COALESCE(MAX(sequence), 0) + 1
+  const sequence = Number(db.prepare(`SELECT COALESCE(MAX(COALESCE(sequence, rowid)), 0) + 1
     FROM mission_group_membership_events`).pluck().get())
   const event = {
     id: randomUUID(),

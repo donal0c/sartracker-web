@@ -409,6 +409,47 @@ describe('mission evidence versioning [DON-277]', () => {
     ).resolves.toEqual([])
   })
 
+  it('rejects oversized marker and non-search drawing evidence before synchronous version writes [DON-277]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Bounded Mutable Evidence Mission' })
+    const oversized = 'x'.repeat(64 * 1024 * 1024)
+
+    const markerStarted = performance.now()
+    await expect(store.upsertMarker({
+      mission_id: mission.id,
+      ...SAMPLE_MARKER,
+      description: oversized,
+    })).rejects.toThrow(/marker description.*invalid/i)
+    expect(performance.now() - markerStarted).toBeLessThan(200)
+
+    const drawingStarted = performance.now()
+    await expect(store.upsertDrawing({
+      mission_id: mission.id,
+      type: 'line',
+      name: 'Oversized line',
+      display_order: 0,
+      geometry_json: oversized,
+    })).rejects.toThrow(/drawing geometry.*invalid/i)
+    expect(performance.now() - drawingStarted).toBeLessThan(200)
+
+    const tooManyCoordinates = JSON.stringify({
+      type: 'LineString',
+      coordinates: Array.from({ length: 50_001 }, () => [0, 0]),
+    })
+    expect(Buffer.byteLength(tooManyCoordinates, 'utf8')).toBeLessThan(512 * 1024)
+    await expect(store.upsertDrawing({
+      mission_id: mission.id,
+      type: 'line',
+      name: 'Too many coordinates',
+      display_order: 0,
+      geometry_json: tooManyCoordinates,
+    })).rejects.toThrow(/drawing geometry.*invalid/i)
+
+    await expect(store.listMarkers(mission.id)).resolves.toEqual([])
+    await expect(store.listDrawings(mission.id)).resolves.toEqual([])
+    await expect(store.listMissionObjectVersions({ missionId: mission.id })).resolves.toEqual([])
+  })
+
   it('versions outing lifecycle changes without rewriting the earlier outing state', async () => {
     store = await createStore()
     const mission = await store.createMission({
@@ -660,6 +701,121 @@ describe('mission evidence versioning [DON-277]', () => {
       .resolves.toMatchObject({ mission_id: mission.id })
   }, 45_000)
 
+  it('prepares large legacy event provenance in bounded turns and fails Replay closed meanwhile [DON-278]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-event-provenance-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Legacy Event Provenance Mission' })
+    await first.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'event-provenance-current',
+      name: 'Current priority device',
+      color: '#3b82f6',
+      status: 'online',
+    })
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    legacyDb.prepare('DELETE FROM mission_events WHERE mission_id = ?').run(mission.id)
+    legacyDb.exec(`
+      WITH RECURSIVE numbers(n) AS (
+        VALUES (0) UNION ALL SELECT n + 1 FROM numbers WHERE n < 499999
+      )
+      INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json, recorded_at,
+        recording_completeness
+      ) SELECT printf('legacy-event-%06d', n), '${mission.id}', 'legacy_event',
+        '2026-08-20T10:00:00.000Z', NULL, NULL, NULL
+      FROM numbers;
+      DROP TABLE legacy_event_provenance_backfill_state;
+      UPDATE metadata SET value = '11' WHERE key = 'schema_version';
+    `)
+    legacyDb.close()
+
+    const openedAt = performance.now()
+    store = createElectronMissionStore({ userDataPath })
+    expect(performance.now() - openedAt).toBeLessThan(200)
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T10:05:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+      objectLimit: 100,
+    })).rejects.toThrow(/event provenance.*background|replay.*preparation/iu)
+
+    const currentWriteStarted = performance.now()
+    const currentFixTime = new Date().toISOString()
+    await store.addPosition({
+      mission_id: mission.id,
+      device_id: 'event-provenance-current',
+      source_position_id: 'current-during-event-provenance',
+      lat: 52.1,
+      lon: -9.5,
+      timestamp: currentFixTime,
+      received_at: currentFixTime,
+      timestamp_source: 'fix',
+    })
+    expect(performance.now() - currentWriteStarted).toBeLessThan(200)
+
+    const checkpointDb = openDatabase(databaseFile)
+    let durableCursor: string | null = null
+    for (let attempt = 0; attempt < 100 && durableCursor === null; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      durableCursor = checkpointDb.prepare(`SELECT scanned_through_id
+        FROM legacy_event_provenance_backfill_state
+        WHERE table_name = 'mission_events'`).get()?.scanned_through_id as string | null
+    }
+    expect(durableCursor).toMatch(/^legacy-event-/u)
+    checkpointDb.close()
+    store.close()
+    store = createElectronMissionStore({ userDataPath })
+    const restartedDb = openDatabase(databaseFile)
+    const restartedCursor = String(restartedDb.prepare(`SELECT scanned_through_id
+      FROM legacy_event_provenance_backfill_state
+      WHERE table_name = 'mission_events'`).get()?.scanned_through_id)
+    expect(Number(restartedCursor.replace('legacy-event-', '')))
+      .toBeGreaterThanOrEqual(Number(durableCursor?.replace('legacy-event-', '')))
+    restartedDb.close()
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T10:05:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+      objectLimit: 100,
+    })).rejects.toThrow(/event provenance.*background|replay.*preparation/iu)
+
+    let lastHeartbeat = performance.now()
+    let maximumHeartbeatGapMs = 0
+    const heartbeat = setInterval(() => {
+      const current = performance.now()
+      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, current - lastHeartbeat)
+      lastHeartbeat = current
+    }, 10)
+    const inspection = openDatabase(databaseFile)
+    let pending = 1
+    for (let attempt = 0; attempt < 2_000 && pending > 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      pending = Number(inspection.prepare(`SELECT COUNT(*) AS count
+        FROM legacy_event_provenance_backfill_state
+        WHERE scan_target_id IS NOT NULL
+          AND (scanned_through_id IS NULL OR scanned_through_id < scan_target_id)`)
+        .get()?.count ?? 0)
+    }
+    clearInterval(heartbeat)
+    expect(pending).toBe(0)
+    expect(inspection.prepare(`SELECT COUNT(*) AS count FROM mission_events
+      WHERE mission_id = ? AND (recorded_at IS NULL OR recording_completeness IS NULL)`)
+      .get(mission.id)).toMatchObject({ count: 0 })
+    inspection.close()
+    expect(maximumHeartbeatGapMs).toBeLessThan(200)
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T10:05:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+      objectLimit: 100,
+    })).resolves.toMatchObject({ missionId: mission.id })
+  }, 30_000)
+
   it('migrates an authentic v11 GPX table before creating v12 indexes and retains a static baseline [DON-274]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-real-v11-'))
     const first = createElectronMissionStore({ userDataPath })
@@ -857,6 +1013,17 @@ describe('mission evidence versioning [DON-277]', () => {
     ).get()?.count ?? 0)
     inspection.close()
     expect(firstStartupCount).toBe(0)
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      inspection = openDatabase(databaseFile)
+      const eventPending = inspection.prepare(`SELECT 1
+        FROM legacy_event_provenance_backfill_state
+        WHERE scan_target_id IS NOT NULL
+          AND (scanned_through_id IS NULL OR scanned_through_id < scan_target_id)
+        LIMIT 1`).get()
+      inspection.close()
+      if (eventPending === undefined) break
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
     await expect(store.readMissionReplay({
       missionId: mission.id,
       selectedTime: new Date().toISOString(),
@@ -1496,6 +1663,73 @@ describe('mission evidence versioning [DON-277]', () => {
       .get('atomic-publication-batch')).toMatchObject({ status: 'completed' })
     expect(recovered.prepare(`SELECT COUNT(*) AS count FROM gpx_import_failures WHERE batch_id = ?`)
       .get('atomic-publication-batch')).toMatchObject({ count: 0 })
+    recovered.close()
+  })
+
+  it('rolls restart receipt settlement back if batch accounting cannot commit [DON-278]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Atomic Restart Receipt Mission' })
+    const sourceBytesBase64 = 'PGdweD5yZXN0YXJ0LWF0b21pYzwvZ3B4Pg=='
+    const contentSha256 = digestBase64(sourceBytesBase64)
+    await store.upsertGpxImport(gpxInput(mission.id, {
+      source_path: '/field/restart-atomic.gpx',
+      file_name: 'restart-atomic.gpx',
+      content_sha256: contentSha256,
+      source_bytes_base64: sourceBytesBase64,
+    }))
+    const databaseFile = await databasePath()
+    const seeded = openDatabase(databaseFile)
+    startGpxImportBatch(seeded, {
+      batchId: 'restart-atomic-batch', missionId: mission.id, totalFiles: 1,
+    })
+    recordGpxImportSourceReceipt(seeded, {
+      batchId: 'restart-atomic-batch',
+      missionId: mission.id,
+      sourcePath: '/field/restart-atomic.gpx',
+      fileName: 'restart-atomic.gpx',
+    })
+    retainGpxImportSourceBytes(seeded, {
+      batchId: 'restart-atomic-batch',
+      missionId: mission.id,
+      sourcePath: '/field/restart-atomic.gpx',
+      contentSha256,
+      sourceBytesBase64,
+    })
+    seeded.close()
+    store.close()
+    store = createElectronMissionStore({
+      userDataPath: userDataPath!,
+      gpxReceiptRecoveryFaultInjection: { afterReceiptSettlement: true },
+    })
+
+    const inspection = openDatabase(databaseFile)
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const failure = inspection.prepare(`SELECT value FROM metadata
+        WHERE key = 'gpx_receipt_recovery_failure'`).get()
+      if (failure !== undefined) break
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(inspection.prepare(`SELECT status, source_bytes_base64
+      FROM gpx_import_source_receipts WHERE batch_id = ?`)
+      .get('restart-atomic-batch')).toMatchObject({
+      status: 'retained', source_bytes_base64: sourceBytesBase64,
+    })
+    expect(inspection.prepare(`SELECT status, completed_files, failed_files
+      FROM gpx_import_batches WHERE id = ?`).get('restart-atomic-batch')).toMatchObject({
+      status: 'interrupted', completed_files: 0, failed_files: 0,
+    })
+    inspection.close()
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    const recovered = openDatabase(databaseFile)
+    await waitForGpxReceiptRecovery(recovered, 'restart-atomic-batch')
+    expect(recovered.prepare(`SELECT status FROM gpx_import_source_receipts
+      WHERE batch_id = ?`).get('restart-atomic-batch')).toMatchObject({ status: 'settled' })
+    expect(recovered.prepare(`SELECT status, completed_files, failed_files
+      FROM gpx_import_batches WHERE id = ?`).get('restart-atomic-batch')).toMatchObject({
+      status: 'completed', completed_files: 1, failed_files: 0,
+    })
     recovered.close()
   })
 

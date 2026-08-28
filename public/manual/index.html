@@ -1427,6 +1427,13 @@
             nearby map content or several markers make the label too small or too dominant.
           </p>
           <p>
+            <strong>Bounded evidence save:</strong> SAR Tracker refuses an unusually large or malformed
+            marker record instead of allowing it to stall live position handling or create a partial
+            history entry. If a marker save is refused, keep the form open, shorten pasted notes or remove
+            malformed imported content, and save again. No marker or audit revision is created by the
+            refused attempt.
+          </p>
+          <p>
             Casualty markers keep treatment notes as a log. Enter each new treatment in
             <strong>New Treatment Update</strong> and choose <strong>Add Update</strong>; the app appends
             a timestamped entry to <strong>Existing Treatment Notes</strong> without overwriting earlier
@@ -1461,7 +1468,8 @@
             Drawing forms keep <strong>Save</strong> disabled until the required name or label text is
             entered. Required-field badges are intentionally high-contrast, and the
             <strong>Cancel</strong> and <strong>Save</strong> actions remain visible at the bottom of long
-            drawing forms.
+            drawing forms. An unusually large or malformed drawing payload is refused visibly before it
+            can block current-position handling; the refused attempt creates no drawing or audit revision.
           </p>
           <figure class="screenshot">
             <img src="assets/tools-and-map.png" alt="Map Tools expanded with measurement controls and the Tools tab showing GPX import" />

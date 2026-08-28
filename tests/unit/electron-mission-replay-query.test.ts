@@ -823,6 +823,13 @@ describe('mission replay query [DON-278]', () => {
 function createReplayDatabase(databasePath = ':memory:'): InstanceType<typeof Database> {
   const db = new Database(databasePath)
   db.exec(`
+    CREATE TABLE legacy_event_provenance_backfill_state (
+      table_name TEXT PRIMARY KEY, scanned_through_id TEXT,
+      scan_target_id TEXT, updated_at TEXT NOT NULL
+    );
+    INSERT INTO legacy_event_provenance_backfill_state VALUES
+      ('mission_events', NULL, NULL, '2026-08-27T00:00:00.000Z'),
+      ('mission_group_membership_events', NULL, NULL, '2026-08-27T00:00:00.000Z');
     CREATE TABLE mission_object_versions (
       id TEXT, mission_id TEXT, object_type TEXT, object_id TEXT, version_sequence INTEGER,
       operation TEXT, effective_at TEXT, recorded_at TEXT, completeness TEXT,

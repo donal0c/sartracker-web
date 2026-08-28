@@ -133,6 +133,7 @@ const REPLAY_STORE_METHODS = new Set([
   'readMissionReplayTrackChunk',
   'readMissionReplayObjectChunk',
 ])
+const BOUNDED_MUTABLE_EVIDENCE_STORE_METHODS = new Set(['upsertMarker', 'upsertDrawing'])
 
 const REPLAY_IPC_STRING_LIMITS = Object.freeze({
   missionId: 200,
@@ -143,6 +144,41 @@ const REPLAY_IPC_STRING_LIMITS = Object.freeze({
 })
 const REPLAY_IPC_FILTER_LIMIT = 200
 const REPLAY_IPC_FILTER_ID_LENGTH = 200
+const MUTABLE_EVIDENCE_IPC_STRING_LIMITS = Object.freeze({
+  id: 200,
+  mission_id: 200,
+  type: 120,
+  name: 120,
+  description: 2_000,
+  subject_category: 120,
+  clue_type: 120,
+  found_by: 120,
+  hazard_type: 120,
+  severity: 120,
+  condition: 120,
+  treatment: 2_000,
+  evacuation_priority: 120,
+  updated_by: 120,
+  coordinator_ids: 2_000,
+  attachment_path: 4_096,
+  color: 120,
+  label: 120,
+  geometry_json: 512 * 1_024,
+  metadata_json: 512 * 1_024,
+})
+const MARKER_IPC_STRING_KEYS = Object.freeze([
+  'id', 'mission_id', 'type', 'name', 'description', 'subject_category',
+  'clue_type', 'found_by', 'hazard_type', 'severity', 'condition', 'treatment',
+  'evacuation_priority', 'updated_by', 'coordinator_ids', 'attachment_path',
+])
+const MARKER_IPC_NUMBER_KEYS = Object.freeze([
+  'lat', 'lon', 'irish_grid_e', 'irish_grid_n', 'display_order', 'confidence', 'label_size',
+])
+const DRAWING_IPC_STRING_KEYS = Object.freeze([
+  'id', 'mission_id', 'type', 'name', 'description', 'color', 'label',
+  'geometry_json', 'metadata_json',
+])
+const DRAWING_IPC_NUMBER_KEYS = Object.freeze(['width', 'distance_m', 'display_order'])
 
 /**
  * Copies only the closed, bounded Replay request surface into main-process IPC.
@@ -214,6 +250,58 @@ function copyReplayFilter(input, output, key) {
     }
     return item
   })
+}
+
+/** Copies only bounded marker or drawing fields before Electron structured cloning. */
+function projectMutableEvidenceForIpc(input, kind) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error(`${kind === 'marker' ? 'Marker' : 'Drawing'} evidence input is invalid.`)
+  }
+  const output = {}
+  const stringKeys = kind === 'marker' ? MARKER_IPC_STRING_KEYS : DRAWING_IPC_STRING_KEYS
+  const numberKeys = kind === 'marker' ? MARKER_IPC_NUMBER_KEYS : DRAWING_IPC_NUMBER_KEYS
+  for (const key of stringKeys) copyMutableEvidenceString(input, output, key, kind)
+  for (const key of numberKeys) copyMutableEvidenceNumber(input, output, key, kind)
+  if (kind === 'drawing') {
+    const temporaryMeasure = input.temporary_measure
+    if (temporaryMeasure !== undefined) {
+      if (temporaryMeasure !== null && typeof temporaryMeasure !== 'boolean') {
+        throw new Error('Drawing temporary_measure is invalid.')
+      }
+      output.temporary_measure = temporaryMeasure
+    }
+  }
+  return output
+}
+
+/** Copies one allowlisted evidence string under its renderer-to-main size cap. */
+function copyMutableEvidenceString(input, output, key, kind) {
+  const value = input[key]
+  if (value === undefined) return
+  if (value === null) {
+    output[key] = null
+    return
+  }
+  const maximumLength = MUTABLE_EVIDENCE_IPC_STRING_LIMITS[key]
+  if (typeof value !== 'string' || value.length > maximumLength) {
+    throw new Error(`${kind === 'marker' ? 'Marker' : 'Drawing'} ${evidenceFieldLabel(key)} is invalid.`)
+  }
+  output[key] = value
+}
+
+/** Copies one allowlisted evidence number without renderer coercion. */
+function copyMutableEvidenceNumber(input, output, key, kind) {
+  const value = input[key]
+  if (value === undefined) return
+  if (value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
+    throw new Error(`${kind === 'marker' ? 'Marker' : 'Drawing'} ${evidenceFieldLabel(key)} is invalid.`)
+  }
+  output[key] = value
+}
+
+/** Produces an operator-readable field label without widening the IPC contract. */
+function evidenceFieldLabel(key) {
+  return key.replaceAll('_', ' ')
 }
 
 // Electron main owns every unload. This synchronous fence converts direct
@@ -306,7 +394,8 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   missionStore: Object.fromEntries(
     [
       ...Object.entries(MISSION_STORE_CHANNELS)
-        .filter(([methodName]) => !REPLAY_STORE_METHODS.has(methodName))
+        .filter(([methodName]) => !REPLAY_STORE_METHODS.has(methodName)
+          && !BOUNDED_MUTABLE_EVIDENCE_STORE_METHODS.has(methodName))
         .map(([methodName, channel]) => [
           methodName,
           (...args) => ipcRenderer.invoke(channel, ...args),
@@ -325,6 +414,14 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
         MISSION_STORE_CHANNELS.readMissionReplayObjectChunk,
         projectReplayQueryForIpc(query, 'objects'),
         requestId,
+      )],
+      ['upsertMarker', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.upsertMarker,
+        projectMutableEvidenceForIpc(input, 'marker'),
+      )],
+      ['upsertDrawing', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.upsertDrawing,
+        projectMutableEvidenceForIpc(input, 'drawing'),
       )],
     ],
   ),

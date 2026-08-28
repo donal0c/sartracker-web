@@ -48,6 +48,12 @@ const {
   createMissionEvidenceVersionStore,
   initializeLegacyMissionObjectVersionBackfill,
 } = require('./mission-evidence-version-store.cjs')
+const {
+  assertLegacyEventProvenanceReady,
+  backfillLegacyEventProvenance,
+  initializeLegacyEventProvenanceBackfill,
+  readLegacyEventProvenanceBackfillPending,
+} = require('./mission-event-provenance-backfill.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
@@ -104,6 +110,11 @@ const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
 const MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH = 64
 const MAX_SEARCH_AREA_GEOMETRY_LENGTH = 512 * 1_024
 const MAX_SEARCH_ADVISORY_COVERAGE_LENGTH = 512 * 1_024
+const MAX_MUTABLE_EVIDENCE_GEOMETRY_BYTES = 512 * 1_024
+const MAX_MUTABLE_EVIDENCE_METADATA_BYTES = 512 * 1_024
+const MAX_MUTABLE_EVIDENCE_COORDINATES = 50_000
+const MAX_MUTABLE_EVIDENCE_NESTING_DEPTH = 16
+const MAX_MUTABLE_EVIDENCE_PATH_LENGTH = 4_096
 const MAX_GPX_RENDERER_ID_LENGTH = 1_000
 const MAX_GPX_RENDERER_OUTING_ID_LENGTH = 200
 const MAX_GPX_RENDERER_ACTOR_LENGTH = 120
@@ -387,6 +398,7 @@ function createElectronMissionStore(options) {
   const storageDiagnostics = options.storageDiagnostics ?? null
   const coverageLedgerFaultInjection = options.coverageLedgerFaultInjection ?? {}
   const gpxRetirementFaultInjection = options.gpxRetirementFaultInjection ?? {}
+  const gpxReceiptRecoveryFaultInjection = options.gpxReceiptRecoveryFaultInjection ?? {}
   const breadcrumbQueryRunner =
     options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
   const breadcrumbDotQueryRunner =
@@ -436,11 +448,12 @@ function createElectronMissionStore(options) {
   let legacyEvidenceBackfillFailure = null
   let gpxReceiptRecoveryTimer = null
   let gpxReceiptRecoveryFailure = null
-  let nextLegacyEvidenceBackfillKind = 'object'
+  let nextLegacyEvidenceBackfillKind = 'event'
   let storeClosed = false
   const scheduleLegacyEvidenceBackfill = () => {
     const pending = migrationState.legacyGpxBackfillRemaining > 0
       || migrationState.legacyMissionObjectBackfillRemaining > 0
+      || migrationState.legacyEventProvenanceBackfillRemaining > 0
     if (storeClosed || !pending || legacyEvidenceBackfillTimer !== null
       || legacyEvidenceBackfillFailure !== null) return
     legacyEvidenceBackfillTimer = setTimeout(() => {
@@ -449,17 +462,28 @@ function createElectronMissionStore(options) {
       try {
         const objectPending = migrationState.legacyMissionObjectBackfillRemaining > 0
         const gpxPending = migrationState.legacyGpxBackfillRemaining > 0
-        if (objectPending && (nextLegacyEvidenceBackfillKind === 'object' || !gpxPending)) {
+        const eventPending = migrationState.legacyEventProvenanceBackfillRemaining > 0
+        if (eventPending && (nextLegacyEvidenceBackfillKind === 'event'
+          || (!objectPending && !gpxPending))) {
+          const result = backfillLegacyEventProvenance(db, now())
+          migrationState.legacyEventProvenanceBackfillRemaining = result.remaining
+          nextLegacyEvidenceBackfillKind = 'object'
+        } else if (objectPending && (nextLegacyEvidenceBackfillKind === 'object' || !gpxPending)) {
           const result = backfillLegacyMissionObjectVersions(db, now())
           migrationState.legacyMissionObjectBackfillRemaining = result.remaining
           nextLegacyEvidenceBackfillKind = 'gpx'
         } else if (gpxPending) {
           const result = backfillLegacyGpxRevisions(db, now(), 1)
           migrationState.legacyGpxBackfillRemaining = result.remaining
+          nextLegacyEvidenceBackfillKind = 'event'
+        } else if (eventPending) {
+          const result = backfillLegacyEventProvenance(db, now())
+          migrationState.legacyEventProvenanceBackfillRemaining = result.remaining
           nextLegacyEvidenceBackfillKind = 'object'
         }
         if (migrationState.legacyGpxBackfillRemaining === 0
-          && migrationState.legacyMissionObjectBackfillRemaining === 0) {
+          && migrationState.legacyMissionObjectBackfillRemaining === 0
+          && migrationState.legacyEventProvenanceBackfillRemaining === 0) {
           db.prepare(`DELETE FROM metadata
             WHERE key = 'legacy_evidence_backfill_failure'`).run()
         }
@@ -486,6 +510,7 @@ function createElectronMissionStore(options) {
           db,
           now(),
           MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN,
+          gpxReceiptRecoveryFaultInjection,
         )
         migrationState.gpxReceiptRecoveryRemaining = result.remaining
         if (result.remaining === 0) {
@@ -1232,16 +1257,19 @@ function createElectronMissionStore(options) {
     },
     readMissionReplay: async (input, requestId) => {
       assertLegacyMissionObjectBackfillSettled(db)
+      assertLegacyEventProvenanceReady(db)
       assertMissionReplayGpxStateSettled(db, input)
       return executeMissionReplayRead(input, requestId, 'state')
     },
     readMissionReplayTrackChunk: async (input, requestId) => {
       assertLegacyMissionObjectBackfillSettled(db)
+      assertLegacyEventProvenanceReady(db)
       assertMissionReplayGpxStateSettled(db, input)
       return executeMissionReplayRead(input, requestId, 'chunk')
     },
     readMissionReplayObjectChunk: async (input, requestId) => {
       assertLegacyMissionObjectBackfillSettled(db)
+      assertLegacyEventProvenanceReady(db)
       assertMissionReplayGpxStateSettled(db, input)
       return executeMissionReplayRead(input, requestId, 'objects')
     },
@@ -1299,7 +1327,7 @@ function createElectronMissionStore(options) {
       evidenceVersionStore,
       'markers',
       'marker',
-      input,
+      normalizeMarkerMutation(input),
       markerDefaults,
     ),
     getMarker: async (markerId) => getById(db, 'markers', markerId, 'Marker'),
@@ -1812,6 +1840,12 @@ function migrate(db) {
     'positions',
     'timestamp_provenance_recorded_at',
   )
+  const eventProvenanceRequiresBackfill = existingSchemaVersion < CURRENT_SCHEMA_VERSION
+    || !columnExists(db, 'mission_events', 'recorded_at')
+    || !columnExists(db, 'mission_events', 'recording_completeness')
+    || !columnExists(db, 'mission_group_membership_events', 'sequence')
+    || !columnExists(db, 'mission_group_membership_events', 'recorded_at')
+    || !columnExists(db, 'mission_group_membership_events', 'recording_completeness')
   const gpxSourceRevisionRequiresBackfill = !columnExists(
     db,
     'gpx_import_revisions',
@@ -2391,6 +2425,14 @@ function migrate(db) {
       scan_target_id TEXT,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS legacy_event_provenance_backfill_state (
+      table_name TEXT PRIMARY KEY CHECK(table_name IN (
+        'mission_events', 'mission_group_membership_events'
+      )),
+      scanned_through_id TEXT,
+      scan_target_id TEXT,
+      updated_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS layer_catalog_entries (
       mission_id TEXT NOT NULL,
       node_id TEXT NOT NULL,
@@ -2459,19 +2501,11 @@ function migrate(db) {
     ensureColumnExists(db, 'mission_group_membership_events', 'recording_completeness', 'TEXT')
     ensureColumnExists(db, 'mission_events', 'recorded_at', 'TEXT')
     ensureColumnExists(db, 'mission_events', 'recording_completeness', 'TEXT')
-    db.exec(`
-      UPDATE mission_group_membership_events
-      SET sequence = COALESCE(sequence, rowid),
-          recorded_at = COALESCE(recorded_at, '${migrationTime}'),
-          recording_completeness = COALESCE(recording_completeness, 'legacy_baseline')
-      WHERE sequence IS NULL OR recorded_at IS NULL OR recording_completeness IS NULL;
-      UPDATE mission_events
-      SET recorded_at = COALESCE(recorded_at, '${migrationTime}'),
-          recording_completeness = COALESCE(recording_completeness, 'legacy_baseline')
-      WHERE recorded_at IS NULL OR recording_completeness IS NULL;
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_group_membership_sequence
-      ON mission_group_membership_events(sequence);
-    `)
+    initializeLegacyEventProvenanceBackfill(
+      db,
+      migrationTime,
+      eventProvenanceRequiresBackfill,
+    )
     ensureColumnExists(db, 'ingest_anomalies', 'first_seen_at', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'last_seen_at', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'occurrence_count', 'INTEGER NOT NULL DEFAULT 1')
@@ -2657,6 +2691,7 @@ function migrate(db) {
   return {
     legacyGpxBackfillRemaining: legacyGpxBackfill.remaining,
     legacyMissionObjectBackfillRemaining: 1,
+    legacyEventProvenanceBackfillRemaining: readLegacyEventProvenanceBackfillPending(db),
     gpxReceiptRecoveryRemaining: readUnsettledGpxImportReceiptPending(db),
   }
 }
@@ -2729,31 +2764,33 @@ function recoverUnsettledGpxImportReceipts(
   db,
   migrationTime,
   maximumRows = MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN,
+  faultInjection = {},
 ) {
   const rowLimit = Math.max(1, Math.min(MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN, maximumRows))
-  const candidates = db.prepare(`SELECT batch_id, mission_id, source_path, file_name,
+  const transaction = db.transaction(() => {
+    const candidates = db.prepare(`SELECT batch_id, mission_id, source_path, file_name,
       status, content_sha256, created_at, updated_at,
       COALESCE(length(CAST(source_bytes_base64 AS BLOB)), 0) AS retained_base64_bytes
     FROM gpx_import_source_receipts
     WHERE status IN ('pending', 'retained')
     ORDER BY mission_id, batch_id, source_path
     LIMIT ?`).all(rowLimit)
-  const receipts = []
-  let remainingBytes = MAX_GPX_RECEIPT_RECOVERY_BYTES_PER_TURN
-  for (const candidate of candidates) {
-    const candidateBytes = Number(candidate.retained_base64_bytes)
-    if (receipts.length > 0 && candidateBytes > remainingBytes) break
-    receipts.push(db.prepare(`SELECT * FROM gpx_import_source_receipts
-      WHERE batch_id = ? AND source_path = ?`).get(candidate.batch_id, candidate.source_path))
-    remainingBytes = Math.max(0, remainingBytes - Math.min(candidateBytes, remainingBytes))
-    if (remainingBytes === 0) break
-  }
-  const batchIds = new Set()
-  const interruptedBatchIds = new Set()
-  for (const receipt of receipts) {
-    batchIds.add(receipt.batch_id)
-    const publicationCandidate = receipt.status === 'retained'
-      ? db.prepare(`SELECT revisions.content_sha256, revisions.source_bytes_base64
+    const receipts = []
+    let remainingBytes = MAX_GPX_RECEIPT_RECOVERY_BYTES_PER_TURN
+    for (const candidate of candidates) {
+      const candidateBytes = Number(candidate.retained_base64_bytes)
+      if (receipts.length > 0 && candidateBytes > remainingBytes) break
+      receipts.push(db.prepare(`SELECT * FROM gpx_import_source_receipts
+        WHERE batch_id = ? AND source_path = ?`).get(candidate.batch_id, candidate.source_path))
+      remainingBytes = Math.max(0, remainingBytes - Math.min(candidateBytes, remainingBytes))
+      if (remainingBytes === 0) break
+    }
+    const batchIds = new Set()
+    const interruptedBatchIds = new Set()
+    for (const receipt of receipts) {
+      batchIds.add(receipt.batch_id)
+      const publicationCandidate = receipt.status === 'retained'
+        ? db.prepare(`SELECT revisions.content_sha256, revisions.source_bytes_base64
           FROM gpx_import_revisions AS revisions
           JOIN gpx_track_imports AS imports
             ON imports.id = revisions.import_id
@@ -2769,61 +2806,66 @@ function recoverUnsettledGpxImportReceipts(
             AND imports.import_state = 'complete' AND imports.retired_at IS NULL
             AND (revisions.source_path = ? OR aliases.source_path IS NOT NULL)
           LIMIT 1`)
-        .get(
-          receipt.source_path,
-          receipt.mission_id,
-          receipt.content_sha256,
-          receipt.source_path,
+          .get(
+            receipt.source_path,
+            receipt.mission_id,
+            receipt.content_sha256,
+            receipt.source_path,
+          )
+        : undefined
+      if (isExactGpxPublicationCandidate(publicationCandidate, receipt.content_sha256)) {
+        settleGpxImportSourceReceiptWithinTransaction(db, {
+          batchId: receipt.batch_id,
+          missionId: receipt.mission_id,
+          sourcePath: receipt.source_path,
+        }, migrationTime)
+        if (faultInjection.afterReceiptSettlement === true) {
+          throw new Error('Injected failure after GPX receipt settlement.')
+        }
+        continue
+      }
+      interruptedBatchIds.add(receipt.batch_id)
+      const existing = db.prepare(`SELECT 1 FROM gpx_import_failures
+        WHERE batch_id = ? AND source_path = ? LIMIT 1`).get(receipt.batch_id, receipt.source_path)
+      if (existing === undefined) {
+        const reason = receipt.status === 'retained'
+          ? 'GPX import was interrupted after source bytes were retained but before evidence was published.'
+          : 'GPX import was interrupted before source bytes were retained.'
+        db.prepare(`INSERT INTO gpx_import_failures (
+          id, batch_id, mission_id, source_path, file_name, content_sha256,
+          source_bytes_base64, reason, recorded_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          randomUUID(), receipt.batch_id, receipt.mission_id, receipt.source_path,
+          receipt.file_name, receipt.content_sha256, receipt.source_bytes_base64,
+          reason, migrationTime,
         )
-      : undefined
-    if (isExactGpxPublicationCandidate(publicationCandidate, receipt.content_sha256)) {
-      settleGpxImportSourceReceiptWithinTransaction(db, {
-        batchId: receipt.batch_id,
-        missionId: receipt.mission_id,
-        sourcePath: receipt.source_path,
-      }, migrationTime)
-      continue
+      }
+      db.prepare(`UPDATE gpx_import_source_receipts
+        SET status = 'failed', updated_at = ? WHERE batch_id = ? AND source_path = ?`)
+        .run(migrationTime, receipt.batch_id, receipt.source_path)
     }
-    interruptedBatchIds.add(receipt.batch_id)
-    const existing = db.prepare(`SELECT 1 FROM gpx_import_failures
-      WHERE batch_id = ? AND source_path = ? LIMIT 1`).get(receipt.batch_id, receipt.source_path)
-    if (existing === undefined) {
-      const reason = receipt.status === 'retained'
-        ? 'GPX import was interrupted after source bytes were retained but before evidence was published.'
-        : 'GPX import was interrupted before source bytes were retained.'
-      db.prepare(`INSERT INTO gpx_import_failures (
-        id, batch_id, mission_id, source_path, file_name, content_sha256,
-        source_bytes_base64, reason, recorded_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        randomUUID(), receipt.batch_id, receipt.mission_id, receipt.source_path,
-        receipt.file_name, receipt.content_sha256, receipt.source_bytes_base64,
-        reason, migrationTime,
-      )
-    }
-    db.prepare(`UPDATE gpx_import_source_receipts
-      SET status = 'failed', updated_at = ? WHERE batch_id = ? AND source_path = ?`)
-      .run(migrationTime, receipt.batch_id, receipt.source_path)
-  }
-  for (const batchId of batchIds) {
-    const counts = db.prepare(`SELECT
+    for (const batchId of batchIds) {
+      const counts = db.prepare(`SELECT
         (SELECT COUNT(*) FROM gpx_import_source_receipts
           WHERE batch_id = ? AND status = 'settled') AS completed_files,
         (SELECT COUNT(*) FROM gpx_import_failures WHERE batch_id = ?) AS failed_files,
         (SELECT total_files FROM gpx_import_batches WHERE id = ?) AS total_files`)
-      .get(batchId, batchId, batchId)
-    const completed = Number(counts?.completed_files ?? 0)
-    const failed = Number(counts?.failed_files ?? 0)
-    const total = Number(counts?.total_files ?? 0)
-    const fullyAccounted = completed + failed === total
-    const status = interruptedBatchIds.has(batchId) || !fullyAccounted || failed > 0
-      ? 'interrupted'
-      : 'completed'
-    db.prepare(`UPDATE gpx_import_batches
-      SET status = ?, completed_files = ?, failed_files = ?,
-          updated_at = ?, finished_at = ?
-      WHERE id = ?`).run(status, completed, failed, migrationTime, migrationTime, batchId)
-  }
-  return { remaining: readUnsettledGpxImportReceiptPending(db) }
+        .get(batchId, batchId, batchId)
+      const completed = Number(counts?.completed_files ?? 0)
+      const failed = Number(counts?.failed_files ?? 0)
+      const total = Number(counts?.total_files ?? 0)
+      const fullyAccounted = completed + failed === total
+      const status = interruptedBatchIds.has(batchId) || !fullyAccounted || failed > 0
+        ? 'interrupted'
+        : 'completed'
+      db.prepare(`UPDATE gpx_import_batches
+        SET status = ?, completed_files = ?, failed_files = ?,
+            updated_at = ?, finished_at = ?
+        WHERE id = ?`).run(status, completed, failed, migrationTime, migrationTime, batchId)
+    }
+    return { remaining: readUnsettledGpxImportReceiptPending(db) }
+  })
+  return transaction.immediate()
 }
 
 /** Returns one when startup still owns interrupted GPX receipts. */
@@ -3478,6 +3520,7 @@ function finishMission(db, missionId) {
     mission.status === 'paused' ? calculatePausedSeconds(mission.pause_time, timestamp) : 0
   const transaction = db.transaction(() => {
     assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db)
     assertNoUnsettledGpxImportState(db, missionId)
     db.prepare(`UPDATE missions
       SET status = ?,
@@ -4973,6 +5016,65 @@ function retireVersionedById(db, evidenceVersionStore, table, objectType, id) {
   return true
 }
 
+/** Normalizes one renderer-owned marker before any lookup or JSON version serialization. */
+function normalizeMarkerMutation(input) {
+  const candidate = normalizeMutableEvidenceRecord(input, 'Marker')
+  const markerType = normalizeBoundedEvidenceRequiredText(
+    candidate.type, 'Marker type', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+  if (!['ipp_lkp', 'clue', 'hazard', 'casualty'].includes(markerType)) {
+    throw new Error('Marker type is invalid.')
+  }
+  return {
+    id: normalizeBoundedEvidenceOptionalText(
+      candidate.id, 'Marker identity', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    mission_id: normalizeBoundedEvidenceRequiredText(
+      candidate.mission_id, 'Marker mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: markerType,
+    name: normalizeBoundedEvidenceRequiredText(
+      candidate.name, 'Marker name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBoundedEvidenceOptionalText(
+      candidate.description, 'Marker description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    lat: normalizeRequiredFiniteEvidenceNumber(candidate.lat, 'Marker latitude'),
+    lon: normalizeRequiredFiniteEvidenceNumber(candidate.lon, 'Marker longitude'),
+    irish_grid_e: normalizeRequiredSafeInteger(candidate.irish_grid_e, 'Marker ITM easting'),
+    irish_grid_n: normalizeRequiredSafeInteger(candidate.irish_grid_n, 'Marker ITM northing'),
+    display_order: normalizeRequiredSafeInteger(candidate.display_order, 'Marker display order'),
+    subject_category: normalizeMarkerShortText(candidate.subject_category, 'subject category'),
+    clue_type: normalizeMarkerShortText(candidate.clue_type, 'clue type'),
+    confidence: normalizeOptionalFiniteEvidenceNumber(candidate.confidence, 'Marker confidence'),
+    found_by: normalizeMarkerShortText(candidate.found_by, 'found by'),
+    hazard_type: normalizeMarkerShortText(candidate.hazard_type, 'hazard type'),
+    severity: normalizeMarkerShortText(candidate.severity, 'severity'),
+    condition: normalizeMarkerShortText(candidate.condition, 'condition'),
+    treatment: normalizeBoundedEvidenceOptionalText(
+      candidate.treatment, 'Marker treatment', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    evacuation_priority: normalizeMarkerShortText(
+      candidate.evacuation_priority, 'evacuation priority',
+    ),
+    label_size: normalizeOptionalSafeInteger(candidate.label_size, 'Marker label size'),
+    updated_by: normalizeMarkerShortText(candidate.updated_by, 'coordinator'),
+    coordinator_ids: normalizeBoundedEvidenceOptionalText(
+      candidate.coordinator_ids, 'Marker coordinator ids', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    attachment_path: normalizeBoundedEvidenceOptionalText(
+      candidate.attachment_path, 'Marker attachment path', MAX_MUTABLE_EVIDENCE_PATH_LENGTH,
+    ),
+  }
+}
+
+/** Normalizes one optional marker short-text field. */
+function normalizeMarkerShortText(value, label) {
+  return normalizeBoundedEvidenceOptionalText(
+    value, `Marker ${label}`, MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+}
+
 function markerDefaults(input) {
   validateLatLon(input.lat, input.lon, 'Marker')
   const timestamp = now()
@@ -5023,6 +5125,52 @@ function drawingDefaults(input) {
     metadata_json: input.metadata_json ?? null,
     created_at: timestamp,
     updated_at: timestamp,
+  }
+}
+
+/** Normalizes any non-search drawing before persistence and immutable versioning. */
+function normalizeDrawingMutation(input) {
+  const candidate = normalizeMutableEvidenceRecord(input, 'Drawing')
+  const drawingType = normalizeBoundedEvidenceRequiredText(
+    candidate.type, 'Drawing type', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+  if (!['line', 'range_ring', 'bearing_line', 'search_sector', 'text_label'].includes(drawingType)) {
+    throw new Error('Drawing type is invalid.')
+  }
+  return {
+    id: normalizeBoundedEvidenceOptionalText(
+      candidate.id, 'Drawing identity', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    mission_id: normalizeBoundedEvidenceRequiredText(
+      candidate.mission_id, 'Drawing mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: drawingType,
+    name: normalizeBoundedEvidenceRequiredText(
+      candidate.name, 'Drawing name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBoundedEvidenceOptionalText(
+      candidate.description, 'Drawing description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    color: normalizeBoundedEvidenceOptionalText(
+      candidate.color, 'Drawing colour', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    width: normalizeOptionalFiniteEvidenceNumber(candidate.width, 'Drawing width'),
+    distance_m: normalizeOptionalFiniteEvidenceNumber(candidate.distance_m, 'Drawing distance'),
+    temporary_measure: normalizeOptionalEvidenceBoolean(
+      candidate.temporary_measure, 'Drawing temporary measure',
+    ),
+    label: normalizeBoundedEvidenceOptionalText(
+      candidate.label, 'Drawing label', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    display_order: normalizeRequiredSafeInteger(
+      candidate.display_order, 'Drawing display order',
+    ),
+    geometry_json: normalizeMutableEvidenceGeometryJson(
+      candidate.geometry_json, 'Drawing geometry',
+    ),
+    metadata_json: normalizeBoundedEvidenceOptionalJson(
+      candidate.metadata_json, 'Drawing metadata', MAX_MUTABLE_EVIDENCE_METADATA_BYTES,
+    ),
   }
 }
 
@@ -5176,7 +5324,7 @@ function normalizeSearchPassMutation(input) {
 function upsertDrawingEvidence(db, versionStore, input) {
   const normalizedInput = input?.type === 'search_area'
     ? normalizeSearchAreaDrawingMutation(input)
-    : input
+    : normalizeDrawingMutation(input)
   const transaction = db.transaction(() => {
     const drawing = upsertVersionedById(
       db, versionStore, 'drawings', 'drawing', normalizedInput, drawingDefaults,
@@ -6013,26 +6161,141 @@ function normalizeBoundedOptionalJsonText(value, label, maximumLength) {
   return normalized
 }
 
-function normalizeSearchAreaGeometryJson(value) {
-  const normalized = normalizeBoundedRequiredText(
-    value, 'Search area geometry', MAX_SEARCH_AREA_GEOMETRY_LENGTH,
+/** Requires a plain evidence mutation envelope before field reads. */
+function normalizeMutableEvidenceRecord(value, label) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} evidence input is invalid.`)
+  }
+  return value
+}
+
+/** Normalizes one required evidence string using its UTF-8 persistence envelope. */
+function normalizeBoundedEvidenceRequiredText(value, label, maximumBytes) {
+  if (typeof value !== 'string') throw new Error(`${label} is invalid.`)
+  const normalized = value.trim()
+  if (normalized === '' || Buffer.byteLength(normalized, 'utf8') > maximumBytes) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return normalized
+}
+
+/** Normalizes one optional evidence string using its UTF-8 persistence envelope. */
+function normalizeBoundedEvidenceOptionalText(value, label, maximumBytes) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new Error(`${label} is invalid.`)
+  const normalized = value.trim()
+  if (normalized === '') return null
+  if (Buffer.byteLength(normalized, 'utf8') > maximumBytes) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return normalized
+}
+
+/** Normalizes one optional bounded JSON string without retaining parsed renderer objects. */
+function normalizeBoundedEvidenceOptionalJson(value, label, maximumBytes) {
+  const normalized = normalizeBoundedEvidenceOptionalText(value, label, maximumBytes)
+  if (normalized === null) return null
+  try {
+    JSON.parse(normalized)
+  } catch {
+    throw new Error(`${label} is invalid.`)
+  }
+  return normalized
+}
+
+/** Requires one finite renderer number without coercion. */
+function normalizeRequiredFiniteEvidenceNumber(value, label) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return value
+}
+
+/** Normalizes one optional finite renderer number without coercion. */
+function normalizeOptionalFiniteEvidenceNumber(value, label) {
+  if (value === undefined || value === null) return null
+  return normalizeRequiredFiniteEvidenceNumber(value, label)
+}
+
+/** Requires one safe integer used by the persisted evidence projection. */
+function normalizeRequiredSafeInteger(value, label) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return value
+}
+
+/** Normalizes one optional safe integer without renderer coercion. */
+function normalizeOptionalSafeInteger(value, label) {
+  if (value === undefined || value === null) return null
+  return normalizeRequiredSafeInteger(value, label)
+}
+
+/** Normalizes one optional boolean used by a drawing projection. */
+function normalizeOptionalEvidenceBoolean(value, label) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'boolean') throw new Error(`${label} is invalid.`)
+  return value
+}
+
+/** Parses and validates a bounded GeoJSON coordinate tree without recursive stack growth. */
+function normalizeMutableEvidenceGeometryJson(value, label, expectedType = null) {
+  const normalized = normalizeBoundedEvidenceRequiredText(
+    value, label, MAX_MUTABLE_EVIDENCE_GEOMETRY_BYTES,
   )
   let parsed
   try {
     parsed = JSON.parse(normalized)
   } catch {
-    throw new Error('Search area geometry must be valid Polygon JSON text.')
+    throw new Error(`${label} is invalid.`)
   }
-  if (
-    typeof parsed !== 'object'
-    || parsed === null
-    || Array.isArray(parsed)
-    || parsed.type !== 'Polygon'
-    || !Array.isArray(parsed.coordinates)
-  ) {
-    throw new Error('Search area geometry must be valid Polygon JSON text.')
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)
+    || typeof parsed.type !== 'string' || !Array.isArray(parsed.coordinates)
+    || (expectedType !== null && parsed.type !== expectedType)) {
+    throw new Error(`${label} is invalid.`)
+  }
+  const pending = [{ value: parsed.coordinates, depth: 0 }]
+  let coordinateCount = 0
+  while (pending.length > 0) {
+    const candidate = pending.pop()
+    if (candidate.depth > MAX_MUTABLE_EVIDENCE_NESTING_DEPTH
+      || !Array.isArray(candidate.value)) {
+      throw new Error(`${label} is invalid.`)
+    }
+    if (candidate.value.length === 0) continue
+    if (candidate.value.length >= 2
+      && candidate.value.every((item) => typeof item === 'number' && Number.isFinite(item))) {
+      const [longitude, latitude] = candidate.value
+      validateLatLon(latitude, longitude, label)
+      coordinateCount += 1
+      if (coordinateCount > MAX_MUTABLE_EVIDENCE_COORDINATES) {
+        throw new Error(`${label} is invalid.`)
+      }
+      continue
+    }
+    for (const child of candidate.value) {
+      if (!Array.isArray(child)) throw new Error(`${label} is invalid.`)
+      pending.push({ value: child, depth: candidate.depth + 1 })
+    }
   }
   return normalized
+}
+
+function normalizeSearchAreaGeometryJson(value) {
+  if (typeof value === 'string' && value.length > MAX_SEARCH_AREA_GEOMETRY_LENGTH) {
+    throw new Error(
+      `Search area geometry must be no more than ${MAX_SEARCH_AREA_GEOMETRY_LENGTH} characters.`,
+    )
+  }
+  try {
+    return normalizeMutableEvidenceGeometryJson(
+      value, 'Search area geometry', 'Polygon',
+    )
+  } catch {
+    throw new Error(
+      'Search area geometry must be valid Polygon JSON text within the bounded evidence envelope.',
+    )
+  }
 }
 
 function normalizeOptionalStrictSearchTimestamp(value, label) {
