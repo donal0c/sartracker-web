@@ -1325,6 +1325,78 @@ The documentation-bound descendant still requires isolated exact-head Linux
 qualification and all four independent exact-head reviews. No merge or release
 is authorized.
 
+## `84702866` isolated-Linux rejection and `e9466e54` worker isolation
+
+Documentation-bound head
+`847028665206f8769e937355aab35f4015b27f04`, tree
+`789540cc34fae9d27e5a62626d27230793229579`, was correctly rejected before
+review by isolated exact-head Linux workflow
+[`33215754562`](https://github.com/donal0c/sartracker-web/actions/runs/33215754562).
+The 50,000-object regression measured a 346.538 ms event-loop gap against the
+unchanged less-than-200 ms hard gate, and the 500,000-event provenance case did
+not settle inside its 60-second test. Smaller synchronous turns could not
+provide reliable slow-storage margin because the transformation and SQLite
+commit still ran on Electron main.
+
+Executable correction
+`e9466e54e341bbb255249552d821ec04bd0d42b8` moves all pending legacy event,
+mutable-object and GPX reconstruction to one round-robin worker isolate:
+
+- Electron main retains `synchronous=FULL`; current-position operations no
+  longer share the JavaScript isolate with legacy selection, transformation or
+  serialization;
+- the worker uses `synchronous=NORMAL` only for reconstructible migration
+  turns. Each turn derives from retained immutable legacy rows and advances its
+  durable cursor in the same transaction, so loss of the final transaction
+  replays that turn rather than losing or falsely completing evidence;
+- event turns return to 1,000 rows now that they are off-main, while object and
+  GPX byte/row caps remain unchanged. Replay, mutable evidence writes, Finish,
+  Finalize and archive continue to fail closed until every captured target is
+  explicit;
+- startup and runtime worker failures are bounded, recorded through the main
+  FULL-synchronous connection, and leave current positions available. A clean
+  retry clears the failure only after durable reconstruction is complete; and
+- clean application shutdown joins the worker before closing SQLite. The store
+  refuses an unprepared close while reconstruction is active, preventing an
+  overlapping replacement worker during orderly restart.
+
+Red-green worker-runner tests prove the closed worker envelope, completion only
+after physical exit, malformed/error containment and joined cancellation. A
+store-level regression proves construction failure is persisted without
+blocking a current fix, then a clean restart reconstructs the retained baseline
+and removes the stale failure. Existing exact 50,000-object, 500,000-event and
+500,000-GPX cursor cases exercise the real worker while retaining the same
+less-than-200 ms open, write and heartbeat gates.
+
+Fresh committed-code proof is green:
+
+- the five affected scale/liveness tests passed three consecutive runs at
+  43.66, 43.95 and 43.50 seconds; the complete serial unit gate passed 295
+  files / 2,488 tests;
+- CommonJS syntax, ESLint, production build/bundle budgets and Rust formatting
+  are green; the retained Tauri backend passed 57 tests with one intentional
+  real-keychain ignore;
+- indexed 960k retained fixture digest
+  `b7f89681afb111108341a080fb248c93cb1d3765cdd98c2f7eb9e4c2fd9fdcfc`
+  and 765,739,008 bytes. The 50,000-point import dispatched in 2.49 ms and
+  completed in 13,033.20 ms; 4,069 concurrent current writes had 24.27 ms
+  maximum / 2.07 ms p95; the event-loop maximum was 42.49 ms; Replay seek was
+  62.75 ms, late-page seek 47.12 ms, restart open 2.95 ms and restart seek
+  49.12 ms with exact first-page equality; and
+- the rebuilt unsigned macOS arm64 package passed the packaged CI tracking
+  soak across two launches: 6/6 batches, 8,664/8,664 exact positions, SQLite
+  integrity, one restart checkpoint, zero redundant-event slope, zero renderer
+  crashes and a 3.87 ms maximum main-process round trip. Report SHA-256 is
+  `857faf5c8ad0f644bf684039227eddab6d4d6b01749c57ac99e01ed81f0e4801`.
+
+The prior 167/167 Chromium, 58/58 visual Playwright and fresh uncached 69/69
+screenshot review remain standing evidence because this correction changes
+only the Electron migration execution boundary. The documentation-bound
+descendant still requires push, one isolated exact-head Linux run and clean
+broad, persistence/completeness, concurrency/finalization and
+renderer/input-containment reviews on the same head. PR opened/review-ready is
+intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
