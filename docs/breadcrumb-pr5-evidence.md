@@ -804,6 +804,47 @@ local packaged proof, not Linux, release or field proof. Push/Linux proof and
 all four clean independent exact-head reviews remain mandatory before task
 completion.
 
+## `011a8051` Linux liveness rejection and replacement
+
+Pushed proof-document head `011a80517e20a656665909e1f4c1bd1b705d9ba9` is
+rejected. Exact-head Linux run `33185543280` confirmed that indexed migration
+startup was below 200 ms, but the deterministic 500,000-settled-row check
+advanced the durable cursor only to `450003` rather than `500000` within the
+unchanged 1.2-second liveness deadline. This was a background progression
+failure, not permission to weaken the startup, heartbeat or current-position
+priority gates.
+
+Executable fix `123116e49d70` with bound candidate `2a2c5ba4bd6b` retains the
+10,000-candidate work cap for every migration turn and the sub-200 ms startup
+and heartbeat requirements. It changes only the cooperative inter-turn yield
+from 10 ms to 5 ms. The red Linux regression and the complete 54-test evidence-
+versioning file are green locally.
+
+Fresh candidate-tree verification is green:
+
+- serialized unit: 289 files / 2,438 tests;
+- Rust backend: 55 passed / one intentional real-keychain ignore;
+- ESLint, TypeScript production build and bundle budgets;
+- Chromium operator flows: 165/165;
+- visual Playwright: 58/58 with 69 registered screenshots;
+- uncached independent visual review: 69/69, report
+  `visual-review-2026-08-28T15-55-22Z.json`;
+- indexed 960k fixture digest
+  `bb4d23fbf3d63ab60e64b547cd5f0567bb612be8ff055fbdb6326be00f899166`:
+  65.54 ms seek, 50.10 ms late page, 51.44 ms maximum current write,
+  61.09 ms event-loop maximum and 53.93 ms restart seek with exact equality;
+- authentic-v11 960k fallback: 5.53 ms open, 604.17 ms seek, 3.35 ms
+  concurrent current write and 589.61 ms restart seek, with
+  `legacy_replay_scan_fallback` explicit.
+
+Unsigned macOS arm64 packaging passed. The bound packaged CI-profile soak at
+`tmp/breadcrumb-pr5-evidence/tracking-soak-123116e4` passed 6/6 batches,
+8,664/8,664 exact positions, one restart, four healthy operator interactions,
+SQLite integrity `ok`, 9.04 ms maximum main-process round trip, zero crashes
+and zero redundant-event slope. This remains local packaged evidence, not
+Linux, release or field proof. A fresh exact-head Linux run and all four clean
+independent exact-head reviews remain mandatory before task completion.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
