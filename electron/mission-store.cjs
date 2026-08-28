@@ -84,6 +84,7 @@ const {
 } = require('./coverage-ledger.cjs')
 
 const CURRENT_SCHEMA_VERSION = 12
+const LEGACY_GPX_BACKFILL_DELAY_MS = 5
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -441,7 +442,7 @@ function createElectronMissionStore(options) {
         legacyGpxBackfillFailure = safeEvidenceFailureReason(error?.message ?? error)
         console.error(`Legacy GPX evidence migration stopped safely: ${legacyGpxBackfillFailure}`)
       }
-    }, 10)
+    }, LEGACY_GPX_BACKFILL_DELAY_MS)
   }
   scheduleLegacyGpxBackfill()
   const evidenceVersionStore = createMissionEvidenceVersionStore({
