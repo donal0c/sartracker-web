@@ -1007,6 +1007,23 @@ push, fresh exact-head Linux run and four fresh exact-head reviews remain
 mandatory. PR opened/review-ready remains intermediate; no merge or release is
 authorized.
 
+### Exact-head Linux liveness rejection and bounded-turn correction
+
+The documentation-bound candidate `3e166b555566052d7f564068a1e75bd9ae64e729`
+was correctly rejected by exact-head Linux run `33197229099`. Its deterministic
+gate passed 2,472 tests and failed the 50,000-object legacy-reconstruction
+heartbeat gate: the measured maximum event-loop gap was 217.40 ms against the
+unchanged hard limit of less than 200 ms. Later build, package and qualification
+steps were therefore skipped, and no independent code review began on that
+invalid head.
+
+Executable correction `4eaaeb01a5f8` halves each durable mutable-object
+reconstruction turn from 100 rows to 50. It does not relax the 200 ms gate or
+change evidence semantics. The exact failing 50,000-object test then passed five
+consecutive focused runs, the complete evidence-versioning file passed 58/58,
+and the full local unit gate passed 294 files / 2,473 tests. A fresh exact-head
+Linux run and all four independent exact-head reviews remain mandatory.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

@@ -194,7 +194,12 @@ replacement `c3d25973` fixes them red-first while current positions retain
 priority and finalized/archive writes remain fail-closed. Local proof is green
 through 294 files / 2,473 unit tests, backend 55/1, Chromium 167/167, visual
 58/58 plus fresh uncached review 69/69, indexed 960k, unsigned macOS package
-and packaged soak. Because the replacement spans persistence, finalization,
+and packaged soak. Its binding head `3e166b55` was then rejected by Linux run
+`33197229099` when the 50,000-object migration heartbeat reached 217.40 ms
+against the unchanged less-than-200 ms gate. Correction `4eaaeb01` halves the
+durable object slice to 50 rows; the failing test passed five consecutive runs,
+the versioning file passed 58/58 and full unit passed 294/2,473. Because the
+replacement spans persistence, finalization,
 renderer and input contracts, all four reviewers restart on the same final
 code-and-documentation head after exact-head Linux passes. PR open or
 review-ready remains intermediate; do not merge or release.
