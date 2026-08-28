@@ -29,7 +29,22 @@ describe('Dublin replay and evidence time boundary [DON-278, DON-279]', () => {
 
   it('formats UTC instants into an explicit Dublin datetime-local value', () => {
     expect(formatDublinDateTimeLocal('2026-08-27T11:30:15.250Z')).toBe(
-      '2026-08-27T12:30:15.250',
+      '2026-08-27T12:30:15.25',
+    )
+  })
+
+  it('emits Chromium-canonical fractional seconds for datetime-local controls', () => {
+    expect(formatDublinDateTimeLocal('2026-01-27T12:30:15.040Z')).toBe(
+      '2026-01-27T12:30:15.04',
+    )
+    expect(formatDublinDateTimeLocal('2026-01-27T12:30:15.400Z')).toBe(
+      '2026-01-27T12:30:15.4',
+    )
+    expect(formatDublinDateTimeLocal('2026-01-27T12:30:15.000Z')).toBe(
+      '2026-01-27T12:30:15',
+    )
+    expect(formatDublinDateTimeLocal('2026-01-27T12:30:15.401Z')).toBe(
+      '2026-01-27T12:30:15.401',
     )
   })
 })

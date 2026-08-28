@@ -63,6 +63,12 @@ import {
   DEFAULT_AUDIT_EVENT_LIMIT,
   isTelemetryEventType,
 } from '../mission-review/audit-events'
+import { normalizeTrackingIsoTimestamp } from '../tracking/tracking-timestamp'
+
+const MAX_SEARCH_OPERATION_ID_LENGTH = 200
+const MAX_SEARCH_OPERATION_LINK_COUNT = 200
+const MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH = 120
+const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
 
 /**
  * Browser validation store for hosted/team-testing mode only.
@@ -1793,13 +1799,27 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       (pass) => pass.mission_id === missionId,
     ),
     upsertSearchAssignment: async (input) => {
-      const missionId = String(input.mission_id)
+      const missionId = normalizeBrowserSearchText(
+        input.mission_id,
+        'Search assignment mission',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
       ensureMissionMutable(missionId, state.missions)
-      const area = state.searchAreas.find((entry) => entry.id === input.search_area_id)
+      const areaId = normalizeBrowserSearchText(
+        input.search_area_id,
+        'Search assignment area',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const outingId = normalizeBrowserSearchText(
+        input.outing_id,
+        'Search assignment outing',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const area = state.searchAreas.find((entry) => entry.id === areaId)
       if (area?.mission_id !== missionId || area.retired_at !== null || area.status === 'retired') {
         throw new Error('Search assignment requires an active search area in this mission.')
       }
-      const outing = state.outings.find((entry) => entry.id === input.outing_id)
+      const outing = state.outings.find((entry) => entry.id === outingId)
       if (outing?.mission_id !== missionId) {
         throw new Error('Search assignment requires an outing in this mission.')
       }
@@ -1814,16 +1834,32 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         )
       }
       const timestamp = new Date().toISOString()
+      const participantIds = normalizeBrowserIds(
+        input.participant_ids,
+        'Search assignment participant links',
+      )
       const assignment: SearchAssignment = {
         id: existing?.id ?? createId('search-assignment'),
         mission_id: missionId,
-        search_area_id: String(input.search_area_id),
-        outing_id: String(input.outing_id),
-        team_id: String(input.team_id),
-        participant_ids_json: JSON.stringify(input.participant_ids ?? []),
-        notes: typeof input.notes === 'string' && input.notes.trim() !== '' ? input.notes : null,
+        search_area_id: areaId,
+        outing_id: outingId,
+        team_id: normalizeBrowserSearchText(
+          input.team_id,
+          'Search assignment team',
+          MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+        ),
+        participant_ids_json: JSON.stringify(participantIds),
+        notes: normalizeBrowserOptionalSearchText(
+          input.notes,
+          'Search assignment notes',
+          MAX_SEARCH_OPERATION_NOTES_LENGTH,
+        ),
         version_sequence: (existing?.version_sequence ?? 0) + 1,
-        updated_by: typeof input.updated_by === 'string' ? input.updated_by : null,
+        updated_by: normalizeBrowserOptionalSearchText(
+          input.updated_by,
+          'Search assignment coordinator',
+          MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+        ),
         created_at: existing?.created_at ?? timestamp,
         updated_at: timestamp,
         retired_at: null,
@@ -1833,11 +1869,25 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return assignment
     },
     upsertSearchPass: async (input) => {
-      const missionId = String(input.mission_id)
+      const missionId = normalizeBrowserSearchText(
+        input.mission_id,
+        'Search pass mission',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
       ensureMissionMutable(missionId, state.missions)
       const mission = requireMission(missionId, state.missions)
-      const area = state.searchAreas.find((entry) => entry.id === input.search_area_id)
-      const assignment = state.searchAssignments.find((entry) => entry.id === input.assignment_id)
+      const areaId = normalizeBrowserSearchText(
+        input.search_area_id,
+        'Search pass area',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const assignmentId = normalizeBrowserSearchText(
+        input.assignment_id,
+        'Search pass assignment',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const area = state.searchAreas.find((entry) => entry.id === areaId)
+      const assignment = state.searchAssignments.find((entry) => entry.id === assignmentId)
       if (area?.mission_id !== missionId || area.retired_at !== null || area.status === 'retired') {
         throw new Error('Search pass requires an active search area in this mission.')
       }
@@ -1866,20 +1916,28 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const pass: SearchPass = {
         id: existing?.id ?? createId('search-pass'),
         mission_id: missionId,
-        search_area_id: String(input.search_area_id),
-        assignment_id: String(input.assignment_id),
+        search_area_id: areaId,
+        assignment_id: assignmentId,
         started_at: startedAt,
         ended_at: endedAt,
         outcome,
-        notes: typeof input.notes === 'string' && input.notes.trim() !== '' ? input.notes : null,
-        coordinator_name: String(input.coordinator_name),
+        notes: normalizeBrowserOptionalSearchText(
+          input.notes,
+          'Search pass notes',
+          MAX_SEARCH_OPERATION_NOTES_LENGTH,
+        ),
+        coordinator_name: normalizeBrowserSearchText(
+          input.coordinator_name,
+          'Search pass coordinator',
+          MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+        ),
         advisory_coverage_json: null,
         version_sequence: (existing?.version_sequence ?? 0) + 1,
         created_at: existing?.created_at ?? timestamp,
         updated_at: timestamp,
-        participant_ids: normalizeBrowserIds(input.participant_ids),
-        clue_ids: normalizeBrowserIds(input.clue_ids),
-        track_evidence_ids: normalizeBrowserIds(input.track_evidence_ids),
+        participant_ids: normalizeBrowserIds(input.participant_ids, 'Search pass participant links'),
+        clue_ids: normalizeBrowserIds(input.clue_ids, 'Search pass clue links'),
+        track_evidence_ids: normalizeBrowserIds(input.track_evidence_ids, 'Search pass track links'),
       }
       state = { ...state, searchPasses: upsertByStableId(state.searchPasses, pass) }
       save()
@@ -2094,12 +2152,43 @@ function buildBrowserReplay(
 }
 
 /** Retains a unique bounded list of explicit harness evidence identities. */
-function normalizeBrowserIds(value: unknown): readonly string[] {
-  if (!Array.isArray(value)) return []
-  return [...new Set(value
-    .filter((entry): entry is string => typeof entry === 'string')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== ''))]
+function normalizeBrowserIds(value: unknown, label: string): readonly string[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new Error(`${label} must be a list.`)
+  if (value.length > MAX_SEARCH_OPERATION_LINK_COUNT) {
+    throw new Error(`${label} may contain at most ${MAX_SEARCH_OPERATION_LINK_COUNT} identities.`)
+  }
+  return [...new Set(value.map((entry) => normalizeBrowserSearchText(
+    entry,
+    label,
+    MAX_SEARCH_OPERATION_ID_LENGTH,
+  )))].sort()
+}
+
+/** Normalizes one required bounded Search Operations string. */
+function normalizeBrowserSearchText(value: unknown, label: string, maximumLength: number): string {
+  if (typeof value !== 'string' || value.trim() === '') throw new Error(`${label} is required.`)
+  const normalized = value.trim()
+  if (normalized.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
+  }
+  return normalized
+}
+
+/** Normalizes one optional bounded Search Operations string. */
+function normalizeBrowserOptionalSearchText(
+  value: unknown,
+  label: string,
+  maximumLength: number,
+): string | null {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  const normalized = value.trim()
+  if (normalized === '') return null
+  if (normalized.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
+  }
+  return normalized
 }
 
 function readHarnessState(): BrowserHarnessState {
@@ -2772,14 +2861,7 @@ function assertHarnessSearchPassWindow(input: {
 
 /** Normalizes one browser validation pass boundary to canonical UTC. */
 function normalizeHarnessSearchPassBoundary(value: unknown, label: 'start' | 'end'): string {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`Search pass ${label} must be a valid ISO8601 date-time.`)
-  }
-  const milliseconds = Date.parse(value)
-  if (!Number.isFinite(milliseconds)) {
-    throw new Error(`Search pass ${label} must be a valid ISO8601 date-time.`)
-  }
-  return new Date(milliseconds).toISOString()
+  return normalizeTrackingIsoTimestamp(value, `Search pass ${label}`)
 }
 
 /** Normalizes a browser-harness date-time boundary. */

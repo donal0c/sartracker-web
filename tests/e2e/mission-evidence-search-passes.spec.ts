@@ -41,6 +41,11 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     await expect(page.getByTestId('search-operations-workspace')).toContainText(
       'coverage is advisory only',
     )
+    await expect(page.getByTestId('search-operation-coordinator')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('search-assignment-team')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('search-assignment-participants')).toHaveAttribute('maxlength', '40200')
+    await expect(page.getByTestId('search-assignment-notes')).toHaveAttribute('maxlength', '2000')
+    await expect(page.getByTestId('search-pass-notes')).toHaveAttribute('maxlength', '2000')
 
     await page.getByTestId('search-operation-coordinator').fill('Coordinator One')
     await page.getByTestId('search-operation-area').selectOption({ label: 'Area Beta' })

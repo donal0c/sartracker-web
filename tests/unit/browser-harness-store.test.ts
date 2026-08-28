@@ -816,6 +816,71 @@ describe('browser harness store', () => {
     })
   })
 
+  it('mirrors strict timestamp and bounded Search Operations input [DON-279]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-03T12:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Bounded Search Harness Mission',
+      start_time: '2026-02-01T00:00:00Z',
+    })
+    const outing = await store.createOuting({
+      mission_id: mission.id,
+      label: 'Completed outing',
+      started_at: '2026-02-02T00:00:00Z',
+    })
+    await store.endOuting({
+      mission_id: mission.id,
+      outing_id: outing.id,
+      ended_at: '2026-03-03T10:00:00Z',
+    })
+    await store.upsertDrawing({
+      mission_id: mission.id,
+      type: 'search_area',
+      name: 'Area Alpha',
+      display_order: 0,
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+    })
+    const [area] = await store.listSearchAreas(mission.id)
+    const assignment = await store.upsertSearchAssignment({
+      mission_id: mission.id,
+      search_area_id: area!.id,
+      outing_id: outing.id,
+      team_id: 'team-1',
+      participant_ids: [],
+      updated_by: 'Coordinator One',
+    })
+    const validPass = {
+      mission_id: mission.id,
+      search_area_id: area!.id,
+      assignment_id: assignment.id,
+      started_at: '2026-03-02T08:00:00Z',
+      ended_at: '2026-03-02T09:00:00Z',
+      outcome: 'partial',
+      coordinator_name: 'Coordinator One',
+      participant_ids: [],
+      clue_ids: [],
+      track_evidence_ids: [],
+    }
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      started_at: '2026-02-30T08:00:00Z',
+    })).rejects.toThrow(/pass start.*valid ISO8601/i)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      started_at: '2026-03-02T08:00:00',
+    })).rejects.toThrow(/pass start.*valid ISO8601/i)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      notes: 'n'.repeat(2_001),
+    })).rejects.toThrow(/notes.*2000 characters/i)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      participant_ids: Array.from({ length: 201 }, (_, index) => `participant-${index}`),
+    })).rejects.toThrow(/participant links.*at most 200/i)
+    await expect(store.listSearchPasses(mission.id)).resolves.toEqual([])
+  })
+
   it('persists helicopters per slot and records audit events', async () => {
     const store = getBrowserHarnessStore()
     const mission = await store.createMission({ name: 'Helicopter Mission' })

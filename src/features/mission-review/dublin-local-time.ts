@@ -41,7 +41,9 @@ export function formatDublinDateTimeLocal(value: string): string {
   const instant = new Date(value)
   if (!Number.isFinite(instant.getTime())) return ''
   const parts = readDublinParts(instant)
-  return `${pad(parts.year, 4)}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}.${pad(parts.millisecond, 3)}`
+  const fraction = pad(parts.millisecond, 3).replace(/0+$/u, '')
+  const local = `${pad(parts.year, 4)}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}`
+  return fraction === '' ? local : `${local}.${fraction}`
 }
 
 /** Parses and validates the numeric fields of a datetime-local value. */

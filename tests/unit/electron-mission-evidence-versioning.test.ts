@@ -1298,6 +1298,91 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(recorded).toMatchObject({ started_at: validPassStart, ended_at: validPassEnd })
   })
 
+  it('rejects ambiguous or oversized Search Operations input before persistence work [DON-279]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Bounded Search Operations Mission',
+      start_time: '2026-02-01T00:00:00Z',
+    })
+    const outing = await store.createOuting({
+      mission_id: mission.id,
+      label: 'Long completed outing',
+      started_at: '2026-02-02T00:00:00Z',
+    })
+    await store.endOuting({
+      mission_id: mission.id,
+      outing_id: outing.id,
+      ended_at: '2026-03-03T00:00:00Z',
+    })
+    const area = await store.upsertSearchArea({
+      mission_id: mission.id,
+      name: 'Area Alpha',
+      status: 'active',
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+      updated_by: 'Coordinator One',
+    })
+    await expect(store.upsertSearchAssignment({
+      mission_id: mission.id,
+      search_area_id: area.id,
+      outing_id: outing.id,
+      team_id: 't'.repeat(121),
+      participant_ids: [],
+      updated_by: 'Coordinator One',
+    })).rejects.toThrow(/team.*120 characters/i)
+    const assignment = await store.upsertSearchAssignment({
+      mission_id: mission.id,
+      search_area_id: area.id,
+      outing_id: outing.id,
+      team_id: 'team-1',
+      participant_ids: [],
+      updated_by: 'Coordinator One',
+    })
+    const validPass = {
+      mission_id: mission.id,
+      search_area_id: area.id,
+      assignment_id: assignment.id,
+      started_at: '2026-03-02T08:00:00Z',
+      ended_at: '2026-03-02T09:00:00Z',
+      outcome: 'partial',
+      coordinator_name: 'Coordinator One',
+      participant_ids: [],
+      clue_ids: [],
+      track_evidence_ids: [],
+    }
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      started_at: '2026-02-30T08:00:00Z',
+    })).rejects.toThrow(/pass start.*valid ISO8601.*explicit offset/i)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      started_at: '2026-03-02T08:00:00',
+    })).rejects.toThrow(/pass start.*valid ISO8601.*explicit offset/i)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      coordinator_name: 'c'.repeat(121),
+    })).rejects.toThrow(/coordinator.*120 characters/i)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      notes: 'n'.repeat(2_001),
+    })).rejects.toThrow(/notes.*2000 characters/i)
+    const oversizedNotes = 'n'.repeat(32 * 1_024 * 1_024)
+    const oversizedStartedAt = performance.now()
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      notes: oversizedNotes,
+    })).rejects.toThrow(/notes.*2000 characters/i)
+    expect(performance.now() - oversizedStartedAt).toBeLessThan(200)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      participant_ids: Array.from({ length: 201 }, (_, index) => `participant-${index}`),
+    })).rejects.toThrow(/participant links.*at most 200/i)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      track_evidence_ids: ['t'.repeat(201)],
+    })).rejects.toThrow(/track links.*200 characters/i)
+    await expect(store.listSearchPasses(mission.id)).resolves.toEqual([])
+  })
+
   it('keeps stable areas, repeated assignments, and coordinator-declared pass revisions [DON-279]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Repeated Search Mission' })

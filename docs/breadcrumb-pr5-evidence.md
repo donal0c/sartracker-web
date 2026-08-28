@@ -64,7 +64,20 @@ returned clean on `dace08e2c2da5867cf463a0e262bcbf7ad6ee764`, but broad and
 concurrency/finalization reviews rejected it: retirement could audit a stale
 revision when publication won immediately before the retirement transaction,
 and a declared search pass could sit outside its assignment outing. That head
-was rejected too. Accepted findings and dispositions are:
+was rejected too. Broad life-safety and persistence/completeness review then
+returned clean on `355c495cb65e26a85e1adbf6d850fa500a9b286b`, while
+concurrency/finalization and renderer/input-containment rejected that head.
+Chromium rejected noncanonical `datetime-local` fractions ending in zero;
+Search Operations accepted calendar-invalid or offset-free pass timestamps;
+and its renderer-to-main write envelope was unbounded. Those findings were
+reproduced against the real control/store path. The formatter now emits
+Chromium-canonical fractions, pass instants require calendar-valid ISO 8601
+date-times with explicit offsets in both Electron and the browser harness, and
+IDs, link counts, short text, notes and large geometry/coverage fields are
+bounded before sorting, SQLite work or version serialization. A 32 MiB note is
+rejected inside the 200 ms current-position priority gate. That head was
+rejected too; the replacement descendant requires the fresh broad review and
+all three affected focused rechecks. Accepted findings and dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -77,6 +90,13 @@ was rejected too. Accepted findings and dispositions are:
   same-path revision lineage;
 - retired search parents stayed writable: reject assignment/pass writes against
   retired areas or assignments at the backend fence;
+- Search Operations accepted ambiguous timestamps and unbounded renderer
+  payloads: require explicit-offset calendar-valid instants and validate the
+  complete bounded envelope before persistence work, with Electron/browser/UI
+  parity and a 32 MiB fast-rejection regression;
+- fixed-width millisecond formatting produced values Chromium rejects when the
+  fraction ended in zero: emit the canonical shortest fractional component and
+  repeat the operator workflow across timing variations;
 - replay lacked the required recorded/effective two-clock semantics for
   lifecycle and participant/group membership: persist and fold both clocks;
 - replay and GPX results could publish after a mission switch: mission-scoped
@@ -273,15 +293,19 @@ substitutes for that wave.
 
 The latest local remediation tree passed:
 
-- full unit: 288 files / 2,400 tests with eight workers; all timing-gate tests
+- full unit: 288 files / 2,403 tests with eight workers; all timing-gate tests
   that exceeded thresholds in oversubscribed default-worker runs passed again
   in their focused 178-test set;
+- Search Operations remediation: focused Electron/browser/time tests 70/70,
+  including strict calendar/offset rejection and a 32 MiB note refused before
+  persistence inside 200 ms; the full operator flow passed 10/10 sequential
+  Chromium repetitions across fractional-second variations;
 - backend: 51 passed / 1 ignored;
 - Chromium: 164/164;
 - visual Playwright: 58/58;
 - independent visual gate: fresh uncached full review passed 69/69 with zero
   failures or reviewer errors at the original critical/high severities; report
-  `visual-review-2026-08-28T00-36-12Z.json`;
+  `visual-review-2026-08-28T01-05-16Z.json`;
 - TypeScript/Vite production build and bundle budgets, ESLint, changed CommonJS
   syntax checks and `git diff --check`;
 - actual child-process `SIGKILL` at both the pending source-receipt boundary and
