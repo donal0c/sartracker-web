@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { runInNewContext } from 'node:vm'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -38,6 +39,54 @@ const { registerMissionReplayQueryIpcHandlers } = require(
 }
 
 describe('Mission Replay query IPC ownership [DON-278]', () => {
+  it('loads in Electron sandboxed preload and projects Replay without local require access', async () => {
+    const preload = readFileSync('electron/preload.cjs', 'utf8')
+    const invoke = vi.fn().mockResolvedValue({ tracks: [] })
+    let exposedBridge: Record<string, unknown> | undefined
+
+    expect(() => runInNewContext(preload, {
+      require: (specifier: string) => {
+        if (specifier !== 'electron') {
+          throw new Error(`Sandboxed preload cannot require ${specifier}.`)
+        }
+        return {
+          contextBridge: {
+            exposeInMainWorld: (_name: string, bridge: Record<string, unknown>) => {
+              exposedBridge = bridge
+            },
+          },
+          ipcRenderer: {
+            invoke,
+            on: vi.fn(),
+            removeListener: vi.fn(),
+            send: vi.fn(),
+          },
+        }
+      },
+      window: { addEventListener: vi.fn() },
+    })).not.toThrow()
+
+    const missionStore = exposedBridge?.missionStore as {
+      readonly readMissionReplay: (query: unknown, requestId: string) => Promise<unknown>
+    }
+    await missionStore.readMissionReplay({
+      missionId: 'mission-1',
+      selectedTime: '2026-08-28T12:00:00Z',
+      trackLimit: 100,
+      rendererControlledBlob: 'x'.repeat(64 * 1024 * 1024),
+    }, 'bounded-query')
+
+    expect(invoke).toHaveBeenCalledWith(
+      'sartracker:mission-store:read-mission-replay',
+      {
+        missionId: 'mission-1',
+        selectedTime: '2026-08-28T12:00:00Z',
+        trackLimit: 100,
+      },
+      'bounded-query',
+    )
+  })
+
   it('projects renderer queries before main dispatch and preload worker cloning', async () => {
     const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
     const missionStore = {
@@ -72,9 +121,9 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
       timezone: 'Europe/Dublin',
     }, '12:mission-replay:bounded-query')
     const preload = readFileSync('electron/preload.cjs', 'utf8')
-    expect(preload).toContain("normalizeReplayWorkerQuery(query, 'state')")
-    expect(preload).toContain("normalizeReplayWorkerQuery(query, 'chunk')")
-    expect(preload).toContain("normalizeReplayWorkerQuery(query, 'objects')")
+    expect(preload).toContain("projectReplayQueryForIpc(query, 'state')")
+    expect(preload).toContain("projectReplayQueryForIpc(query, 'chunk')")
+    expect(preload).toContain("projectReplayQueryForIpc(query, 'objects')")
   })
 
   it.each([

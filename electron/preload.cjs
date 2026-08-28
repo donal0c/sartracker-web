@@ -1,5 +1,4 @@
 const { contextBridge, ipcRenderer } = require('electron')
-const { normalizeReplayWorkerQuery } = require('./mission-replay-query.cjs')
 
 const TRACCAR_REQUEST_CHANNEL = 'sartracker:traccar-http-request'
 const LOAD_SETTINGS_CHANNEL = 'sartracker:load-app-settings'
@@ -135,6 +134,88 @@ const REPLAY_STORE_METHODS = new Set([
   'readMissionReplayObjectChunk',
 ])
 
+const REPLAY_IPC_STRING_LIMITS = Object.freeze({
+  missionId: 200,
+  selectedTime: 64,
+  timezone: 64,
+  cursor: 2_000,
+  objectCursor: 2_000,
+})
+const REPLAY_IPC_FILTER_LIMIT = 200
+const REPLAY_IPC_FILTER_ID_LENGTH = 200
+
+/**
+ * Copies only the closed, bounded Replay request surface into main-process IPC.
+ * Electron sandboxed preloads cannot import local CommonJS modules, so the main
+ * process remains the authoritative semantic validator while this boundary
+ * prevents unknown or oversized renderer fields from being cloned into main.
+ */
+function projectReplayQueryForIpc(input, kind) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Mission replay request is invalid.')
+  }
+  if (!['state', 'chunk', 'objects'].includes(kind)) {
+    throw new Error('Mission replay request kind is invalid.')
+  }
+
+  const projected = {}
+  copyReplayString(input, projected, 'missionId')
+  copyReplayString(input, projected, 'selectedTime')
+  copyReplayString(input, projected, 'timezone')
+  copyReplayInteger(input, projected, 'trackLimit')
+  copyReplayInteger(input, projected, 'objectLimit')
+  copyReplayFilter(input, projected, 'deviceIds')
+  copyReplayFilter(input, projected, 'outingIds')
+
+  if (kind === 'chunk') {
+    copyReplayString(input, projected, 'cursor')
+  } else if (kind === 'objects') {
+    copyReplayString(input, projected, 'objectCursor')
+    copyReplayInteger(input, projected, 'replayGeneration')
+  }
+  return projected
+}
+
+/** Copies one optional Replay string after enforcing its IPC byte-amplification bound. */
+function copyReplayString(input, output, key) {
+  const value = input[key]
+  if (value === undefined) return
+  const maximumLength = REPLAY_IPC_STRING_LIMITS[key]
+  if (typeof value !== 'string' || value.length > maximumLength) {
+    throw new Error(`Mission replay ${key} is invalid.`)
+  }
+  output[key] = value
+}
+
+/** Copies one optional Replay integer without accepting coercible renderer values. */
+function copyReplayInteger(input, output, key) {
+  const value = input[key]
+  if (value === undefined) return
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`Mission replay ${key} is invalid.`)
+  }
+  output[key] = value
+}
+
+/** Copies one bounded Replay filter as a fresh small array for IPC ownership. */
+function copyReplayFilter(input, output, key) {
+  const value = input[key]
+  if (value === undefined) return
+  if (value === null) {
+    output[key] = null
+    return
+  }
+  if (!Array.isArray(value) || value.length > REPLAY_IPC_FILTER_LIMIT) {
+    throw new Error(`Mission replay ${key} is invalid.`)
+  }
+  output[key] = value.map((item) => {
+    if (typeof item !== 'string' || item.length > REPLAY_IPC_FILTER_ID_LENGTH) {
+      throw new Error(`Mission replay ${key} is invalid.`)
+    }
+    return item
+  })
+}
+
 // Electron main owns every unload. This synchronous fence converts direct
 // reload/menu/close attempts into `will-prevent-unload`, where main can wait for
 // rejected-position evidence to drain before explicitly allowing the unload.
@@ -232,17 +313,17 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
         ]),
       ['readMissionReplay', (query, requestId) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.readMissionReplay,
-        normalizeReplayWorkerQuery(query, 'state'),
+        projectReplayQueryForIpc(query, 'state'),
         requestId,
       )],
       ['readMissionReplayTrackChunk', (query, requestId) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.readMissionReplayTrackChunk,
-        normalizeReplayWorkerQuery(query, 'chunk'),
+        projectReplayQueryForIpc(query, 'chunk'),
         requestId,
       )],
       ['readMissionReplayObjectChunk', (query, requestId) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.readMissionReplayObjectChunk,
-        normalizeReplayWorkerQuery(query, 'objects'),
+        projectReplayQueryForIpc(query, 'objects'),
         requestId,
       )],
     ],
