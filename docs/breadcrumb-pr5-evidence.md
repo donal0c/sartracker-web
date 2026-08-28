@@ -603,6 +603,13 @@ prior package/Linux and clean-review claims for completion: fresh committed-
 head packaged/Linux proof and the accepted four independent exact-head reviews
 remain mandatory on the replacement code-and-documentation head.
 
+The unsigned macOS arm64 package was rebuilt with build identity
+`sha.2f55813fc61a`. Its packaged CI tracking soak passed 6/6 batches and exact
+8,664/8,664 retained positions, one restart checkpoint, four healthy operator
+interactions, 29.66 ms maximum main-process responsiveness, zero renderer
+crashes, SQLite integrity and zero redundant telemetry slope. This is local
+unsigned package evidence only; exact pushed-head Linux proof remains required.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
