@@ -93,8 +93,30 @@ sort, state copy, transaction, projection or version serialization. It rejects
 oversized raw text before trimming or `Date.parse`, validates bounded JSON,
 retains advisory coverage consistently, and mirrors operator `maxLength`
 guards. The 64 MiB geometry and 32 MiB timestamp/legacy-ID reproductions are
-durable sub-200 ms rejection gates. This head was rejected too; a fresh broad
-review and all three focused rechecks remain required on its descendant.
+durable sub-200 ms rejection gates. This head was rejected too.
+
+The accepted final four-review wave inspected exact head
+`72b095089ee028a1a6e9ca7571d967adf46e44d4`, tree
+`c549fb0092f6501ebe2791b2fd4dd84e9381f213`, from the exact PR4 base. All four
+reviewers returned **CLEAN** with no actionable P1/P2 finding:
+
+| Independent reviewer | Risk charter | Exact recheck evidence |
+| --- | --- | --- |
+| Banach, `/root/pr5_final_broad_dace` | Broad life-safety/end-to-end | 115/115 focused unit, 23/23 browser, direct 64 MiB geometry and 32 MiB legacy-ID attacks, malformed optional-text attack, syntax and diff checks |
+| Anscombe, `/root/pr5_final_persistence` | Persistence/completeness | 154/154 focused tests; zero projection/link/audit/version writes for rejected envelopes; GPX lineage, receipts, restart, migration, replay and finalization invariants retained |
+| Maxwell, `/root/pr5_final_concurrency_exact` | Concurrency/finalization | 209/209 core plus 157/157 adjacent tests, 27/27 time/harness tests, six focused race/priority selections, 22/22 drawing/layer Chromium and isolated 5/5 Search Operations; both GPX race directions independently reproduced clean |
+| Hypatia, `/root/pr5_final_renderer` | Renderer/input containment | 232/232 focused tests, 1/1 Search Operations, 1/1 drawing, 1/1 layer, 3/3 replay/as-of Chromium, 2/2 targeted visual; all four earlier large/malformed bypasses rejected before mutation |
+
+The reviewers independently reconfirmed the accepted-finding dispositions:
+raw-length-first preflight covers every Search Operations entry point before
+lookup or state/database work; malformed optional values fail rather than
+silently clearing evidence; Electron and browser advisory data agree; current
+positions stay responsive after rejected 32/64 MiB inputs; both GPX
+publication/retirement interleavings retain the transaction-current revision
+and explicit failure evidence; pass/assignment/outing and finalized-mission
+fences remain fail-closed. Two larger browser invocations experienced discarded
+local web-server contention while overlapping other Playwright processes; the
+affected flows were rerun alone and passed. No code or product finding remained.
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
@@ -307,9 +329,8 @@ review and all three focused rechecks remain required on its descendant.
 
 The corresponding focused regression tests were observed red before the
 production corrections and are retained in the unit, integration, forced-kill,
-Chromium and critical-visual suites. The current exact-head independent verdicts
-are recorded externally after the final four-review wave; opening the PR never
-substitutes for that wave.
+Chromium and critical-visual suites. The clean exact-head independent verdicts
+are bound above; opening the PR did not substitute for that wave.
 
 ## Local deterministic, browser and packaged evidence
 
@@ -386,9 +407,33 @@ control. Artifact SHA-256 values are
 (`.deb`).
 
 That Linux run remains valid evidence for the earlier byte tree but does not
-qualify the replacement GPX publication fence. A fresh exact-head Linux run is
-required before the independent review wave and will be bound below without
-claiming release or field proof.
+qualify the replacement GPX publication fence.
+
+Fresh exact-head Linux workflow
+[`33133524836`](https://github.com/donal0c/sartracker-web/actions/runs/33133524836)
+then passed in 12m56s. GitHub checked out PR merge commit
+`f474221ee06b8a39699417c5cd6c11f0215e5a5b`, whose parents are exact base
+`80309c995a18eeb190cce4310c9a46b0f46d5263` and reviewed code head
+`72b095089ee028a1a6e9ca7571d967adf46e44d4`; its tree is byte-identical to the
+reviewed tree `c549fb0092f6501ebe2791b2fd4dd84e9381f213`. Ubuntu x64 passed lint,
+288 files / 2,403 tests, production build and bundle budgets, AppImage/`.deb`
+packaging, x86-64 native SQLite inspection and Mesa llvmpipe attestation.
+
+The 765,710,336-byte / 960,000-position normal fixture
+`5b6529728a8c9d0c0ced4aa11cd5a7f366b98a0540d935f08cb005397e47abd6`
+passed with 50,000-point GPX import dispatch 4.70 ms, 1,165 concurrent current
+writes with 80.18 ms maximum and 2.38 ms p95, replay dispatch 0.23 ms, seek
+227.03 ms, 914,001-offset late page 156.78 ms, live reads 1.67/1.94 ms,
+event-loop maximum 90.12 ms and restart seek 213.32 ms with exact first-page
+equality. The packaged soak passed 6/6 batches, 8,664/8,664 exact positions,
+one restart, four healthy operator samples, 30.98 ms main-process maximum,
+zero renderer crashes, integrity `ok` and zero redundant telemetry slope. The
+AppImage opened a non-black 0.484819-mean content frame and closed gracefully.
+Artifact SHA-256 values are
+`d2b0bc3e1e3269247716f42ef3144e4362f0ec3fddf550c984cbc42014bb1b80`
+(AppImage) and
+`70422504a7ee5dd9c709f6f1aef5ae6bd7a4e6afc8fc2200238186b46067d51e`
+(`.deb`). This is packaged runner qualification, not release or field proof.
 
 A derived 960,000-position authentic-v11 migration profile removed the PR5
 provenance/generation/read-model structures before candidate open. Exact v12
@@ -406,8 +451,7 @@ writer ownership. The worker now yields an explicit writer turn after staging
 and every 25-point slice. The same focused regression was red locally at
 355.27 ms before that yield, then passed five serial repetitions; the focused
 GPX/current/shutdown set passed 24/24 and the full unit suite passed 2,331/2,331.
-Replacement exact-head Linux qualification is required on the final pushed
-head and is reported in the PR/final handoff.
+The replacement exact-tree Linux qualification is the successful run above.
 
 ## Proof limits
 
