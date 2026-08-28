@@ -780,12 +780,91 @@ describe('mission evidence versioning [DON-277]', () => {
     store = createElectronMissionStore({ userDataPath })
     const openMs = performance.now() - openedAt
     expect(openMs).toBeLessThan(200)
+    let lastHeartbeat = performance.now()
+    let maximumHeartbeatGapMs = 0
+    const heartbeat = setInterval(() => {
+      const current = performance.now()
+      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, current - lastHeartbeat)
+      lastHeartbeat = current
+    }, 10)
+    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    clearInterval(heartbeat)
+    expect(maximumHeartbeatGapMs).toBeLessThan(200)
     const inspection = openDatabase(databaseFile)
-    expect(inspection.prepare(`SELECT scanned_through_rowid
+    expect(inspection.prepare(`SELECT scanned_through_rowid, scan_target_rowid
       FROM legacy_gpx_backfill_state WHERE singleton = 1`).get())
-      .toMatchObject({ scanned_through_rowid: expect.any(Number) })
+      .toMatchObject({ scanned_through_rowid: 500_000, scan_target_rowid: 500_000 })
     inspection.close()
+    await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   }, 30_000)
+
+  it('settles every signed rowid boundary as an immutable revision or explicit quarantine [DON-274]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-gpx-rowid-envelope-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const finishedMission = await first.createMission({ name: 'Rowid Envelope Finished Mission' })
+    await first.finishMission(finishedMission.id)
+    const runningMission = await first.createMission({ name: 'Rowid Envelope Running Mission' })
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    const geometry = '{"type":"MultiLineString","coordinates":[]}'
+    const timestamp = '2026-08-20T10:00:00.000Z'
+    legacyDb.exec(`
+      INSERT INTO gpx_track_imports (
+        rowid, id, mission_id, source_path, file_name, display_name, geometry_json,
+        metadata_json, imported_at, updated_at
+      ) VALUES
+        (-1, 'rowid-negative', '${runningMission.id}', '/legacy/negative.gpx',
+          'negative.gpx', 'Negative rowid', '${geometry}', '{}', '${timestamp}', '${timestamp}'),
+        (0, 'rowid-zero', '${runningMission.id}', '/legacy/zero.gpx',
+          'zero.gpx', 'Zero rowid', '${geometry}', '{}', '${timestamp}', '${timestamp}'),
+        (9007199254740991, 'rowid-max-safe', '${runningMission.id}', '/legacy/max-safe.gpx',
+          'max-safe.gpx', 'Maximum safe rowid', '${geometry}', '{}', '${timestamp}', '${timestamp}'),
+        (9007199254740992, 'rowid-first-unsafe', '${finishedMission.id}', '/legacy/first-unsafe.gpx',
+          'first-unsafe.gpx', 'First unsafe rowid', '${geometry}', '{}', '${timestamp}', '${timestamp}'),
+        (9007199254740993, 'rowid-next-unsafe', '${finishedMission.id}', '/legacy/next-unsafe.gpx',
+          'next-unsafe.gpx', 'Next unsafe rowid', '${geometry}', '{}', '${timestamp}', '${timestamp}');
+    `)
+    legacyDb.close()
+
+    store = createElectronMissionStore({ userDataPath })
+    let settled = false
+    for (let attempt = 0; attempt < 100 && !settled; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      const inspection = openDatabase(databaseFile)
+      const counts = inspection.prepare(`SELECT
+        (SELECT COUNT(*) FROM gpx_import_revisions WHERE import_id = 'rowid-max-safe')
+          AS revisions,
+        (SELECT COUNT(*) FROM legacy_gpx_backfill_quarantine) AS quarantines`).get()
+      inspection.close()
+      settled = Number(counts?.revisions) === 1 && Number(counts?.quarantines) === 4
+    }
+    expect(settled).toBe(true)
+    const inspection = openDatabase(databaseFile)
+    expect(inspection.prepare(`SELECT imports.id, quarantine.reason
+      FROM legacy_gpx_backfill_quarantine AS quarantine
+      JOIN gpx_track_imports AS imports ON imports.rowid = quarantine.source_rowid
+      ORDER BY imports.id`).all()).toEqual([
+      { id: 'rowid-first-unsafe', reason: 'legacy_rowid_outside_safe_envelope' },
+      { id: 'rowid-negative', reason: 'legacy_rowid_outside_safe_envelope' },
+      { id: 'rowid-next-unsafe', reason: 'legacy_rowid_outside_safe_envelope' },
+      { id: 'rowid-zero', reason: 'legacy_rowid_outside_safe_envelope' },
+    ])
+    expect(inspection.prepare(`SELECT
+        safe.scanned_through_rowid = safe.scan_target_rowid AS safe_complete,
+        unsafe.low_scanned_through_rowid = unsafe.low_target_rowid AS low_complete,
+        unsafe.high_scanned_through_rowid = unsafe.high_target_rowid AS high_complete
+      FROM legacy_gpx_backfill_state AS safe
+      JOIN legacy_gpx_rowid_scan_state AS unsafe ON unsafe.singleton = safe.singleton`).get())
+      .toMatchObject({ safe_complete: 1, low_complete: 1, high_complete: 1 })
+    inspection.close()
+    await expect(store.finishMission(runningMission.id)).rejects.toThrow(
+      /legacy GPX.*quarantin|unsettled/iu,
+    )
+    await expect(store.createMissionArchive(finishedMission.id)).rejects.toThrow(
+      /legacy GPX.*quarantin|unsettled/iu,
+    )
+  })
 
   it('quarantines over-envelope legacy GPX without materializing it into renderer evidence [DON-274]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-gpx-quarantine-'))
@@ -820,7 +899,7 @@ describe('mission evidence versioning [DON-277]', () => {
         entries: [expect.objectContaining({
           file_name: 'legacy-over-envelope',
           source_retained: true,
-          reason: expect.stringMatching(/quarantined.*bounded migration envelope/iu),
+          reason: expect.stringMatching(/quarantined.*safe reconstruction envelope/iu),
         })],
       })
     await expect(store.readMissionReplay({

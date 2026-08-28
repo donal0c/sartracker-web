@@ -1562,8 +1562,9 @@
             The panel shows a bounded issue page and explicitly warns when additional retained issues
             exist beyond that page; a current import refreshes the sanitized issue list immediately.
             An upgraded legacy GPX artifact remains read-only while bounded background reconstruction is
-            pending. If it exceeds the migration envelope, it remains byte-for-byte in the mission store but is
-            quarantined from map and Replay projection. The panel shows the quarantine explicitly, and Finish,
+            pending. If its size, identity, or storage key falls outside the safe reconstruction envelope, it
+            remains byte-for-byte in the mission store but is quarantined from map and Replay projection. The
+            panel shows the quarantine explicitly, and Finish,
             Finalize, and direct archive creation remain blocked until a bounded repair path has reconstructed
             that artifact. Do not replace, relabel, reassign, or retire a pending or quarantined row; preserve it
             for the background migration or a maintainer-led repair.
@@ -1649,7 +1650,8 @@
             the remaining count and Finish/Finalize fail closed. Invalid coordinates, elevations, segments,
             and malformed geometry inside the bounded envelope remain explicit rejection evidence; the
             immutable original artifact is retained, while only safe coordinates enter the map projection.
-            Over-envelope legacy artifacts remain untouched in explicit quarantine, are excluded from rendered
+            Legacy artifacts outside the safe size, identity, or storage-key envelope remain untouched in
+            explicit quarantine, are excluded from rendered
             evidence, and block archive custody as well as mission completion. A migrated import with zero safe
             points still appears in the static evidence list with its rejection count instead of disappearing.
           </p>

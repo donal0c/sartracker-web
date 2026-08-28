@@ -645,9 +645,14 @@ function readReplayLimitations(
       count: Number(legacyGpx.count),
     })
   }
-  const pendingLegacyGpx = database.prepare(`SELECT
-    CASE WHEN scanned_through_rowid < scan_target_rowid THEN 1 ELSE 0 END AS count
-    FROM legacy_gpx_backfill_state WHERE singleton = 1`).get()
+  const pendingLegacyGpx = database.prepare(`SELECT CASE WHEN
+      safe.scanned_through_rowid < safe.scan_target_rowid
+      OR unsafe.low_scanned_through_rowid > unsafe.low_target_rowid
+      OR unsafe.high_scanned_through_rowid < unsafe.high_target_rowid
+    THEN 1 ELSE 0 END AS count
+    FROM legacy_gpx_backfill_state AS safe
+    JOIN legacy_gpx_rowid_scan_state AS unsafe ON unsafe.singleton = safe.singleton
+    WHERE safe.singleton = 1`).get()
   if (Number(pendingLegacyGpx?.count ?? 0) > 0) {
     limitations.push({
       code: 'legacy_gpx_backfill_pending',
@@ -663,7 +668,7 @@ function readReplayLimitations(
   if (Number(quarantinedLegacyGpx?.count ?? 0) > 0) {
     limitations.push({
       code: 'legacy_gpx_backfill_quarantined',
-      message: 'One or more oversized legacy GPX artifacts remain retained but are quarantined from map and replay projection. Mission completion and archive custody are blocked until a bounded repair path reconstructs them.',
+      message: 'One or more legacy GPX artifacts remain retained but are quarantined outside the safe reconstruction envelope (size, identity, or storage key). Mission completion and archive custody are blocked until a bounded repair path reconstructs them.',
       count: Number(quarantinedLegacyGpx.count),
     })
   }

@@ -709,6 +709,45 @@ indexes: 6.27 ms open, 755.43 ms seek, 4.61 ms concurrent current write and
 package/Linux proof and all four clean independent exact-head reviews remain
 mandatory.
 
+Exact pushed binding head `74d0335e1d8549eb4ed7c4fdad5c7247513e3ff3`,
+tree `700518d6d43f3921c523246c402f6ecc7b9b4b0c`, was rejected by its
+persistence/completeness, broad life-safety and concurrency/finalization
+reviews. Persistence measured a 1,052.48 ms main-thread heartbeat gap because
+one background turn autocommitted a cursor write for each of up to 1,000
+settled rows; the new deterministic 500,000-row regression failed red at
+1,049.55 ms. Broad proved a revisionless row at rowid -1 could be skipped into
+false-complete Finish/archive custody and rowid 9007199254740993 rounded through
+JavaScript `Number` into permanent generic pending. Concurrency independently
+measured a fully revisioned 20,000-row inventory falsely fencing Finish for
+1,728.743 ms.
+
+The replacement keeps signed-int64 inventory boundaries entirely in SQLite. A
+separate durable low/high cursor scans rowids outside the declared safe
+JavaScript range 1..2^53-1 and records explicit retained quarantine evidence;
+those values never cross the JavaScript integer boundary. Safe-key background
+turns examine one cheap 10,000-row page, locate only unresolved entries inside
+that page, reconstruct at most one artifact and persist one contiguous cursor
+advance. Exact SQL-literal regressions cover -1, 0, 2^53-1, 2^53 and 2^53+1;
+every row gains an immutable revision or explicit quarantine, Finish/archive
+remain fail-closed, and no value becomes false-complete or permanently generic
+pending. The 500,000-settled-row regression now requires cursor equality and a
+successful Finish within 1.2 seconds while retaining the 200 ms heartbeat gate.
+
+Fresh replacement-tree proof is green: 289 unit files / 2,425 tests in the
+serial gate, backend 55 executable tests with one intentional real-keychain
+ignore, syntax, lint, production build and bundle budgets, Chromium 165/165,
+visual Playwright 58/58, and uncached independent visual review 69/69 with
+report `visual-review-2026-08-28T09-39-22Z.json`. Indexed 960k qualification
+used the 765,726,720-byte fixture digest
+`bb4d23fbf3d63ab60e64b547cd5f0567bb612be8ff055fbdb6326be00f899166`:
+84.15 ms seek, 69.60 ms late page, 64.68 ms maximum concurrent current write,
+68.82 ms event-loop maximum and 57.69 ms restart seek with exact equality. The
+authentic-v11 960k fallback retained all 960,001 positions without replay
+indexes: 6.29 ms open, 738.03 ms seek, 3.78 ms concurrent current write and
+624.51 ms restart seek, with the fallback limitation explicit. Committed
+package/Linux proof and all four clean independent exact-head reviews remain
+mandatory.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

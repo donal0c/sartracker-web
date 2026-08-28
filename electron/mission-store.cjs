@@ -2102,6 +2102,14 @@ function migrate(db) {
       scan_target_rowid INTEGER NOT NULL CHECK(scan_target_rowid >= scanned_through_rowid),
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS legacy_gpx_rowid_scan_state (
+      singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+      low_scanned_through_rowid INTEGER NOT NULL CHECK(low_scanned_through_rowid <= 1),
+      low_target_rowid INTEGER NOT NULL CHECK(low_target_rowid <= low_scanned_through_rowid),
+      high_scanned_through_rowid INTEGER NOT NULL CHECK(high_scanned_through_rowid >= 9007199254740991),
+      high_target_rowid INTEGER NOT NULL CHECK(high_target_rowid >= high_scanned_through_rowid),
+      updated_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS gpx_evidence_points (
       import_id TEXT NOT NULL,
       revision_sequence INTEGER NOT NULL,
@@ -2461,13 +2469,43 @@ function migrate(db) {
 
     db.prepare(`INSERT OR IGNORE INTO legacy_gpx_backfill_state (
       singleton, scanned_through_rowid, scan_target_rowid, updated_at
-    ) SELECT 1, 0, COALESCE(MAX(rowid), 0), '1970-01-01T00:00:00.000Z'
+    ) SELECT 1, 0, COALESCE(MAX(CASE WHEN rowid BETWEEN 1 AND 9007199254740991
+      THEN rowid END), 0), '1970-01-01T00:00:00.000Z'
       FROM gpx_track_imports`).run()
     db.prepare(`UPDATE legacy_gpx_backfill_state
-      SET scan_target_rowid = (SELECT COALESCE(MAX(rowid), 0) FROM gpx_track_imports),
+      SET scan_target_rowid = (SELECT COALESCE(MAX(CASE
+          WHEN rowid BETWEEN 1 AND 9007199254740991 THEN rowid END), 0)
+        FROM gpx_track_imports),
+        scanned_through_rowid = MIN(scanned_through_rowid, (SELECT COALESCE(MAX(CASE
+          WHEN rowid BETWEEN 1 AND 9007199254740991 THEN rowid END), 0)
+        FROM gpx_track_imports)),
         updated_at = ?
-      WHERE singleton = 1 AND scan_target_rowid < (
-        SELECT COALESCE(MAX(rowid), 0) FROM gpx_track_imports
+      WHERE singleton = 1 AND (
+        scan_target_rowid != (SELECT COALESCE(MAX(CASE
+          WHEN rowid BETWEEN 1 AND 9007199254740991 THEN rowid END), 0)
+          FROM gpx_track_imports)
+        OR scanned_through_rowid > (SELECT COALESCE(MAX(CASE
+          WHEN rowid BETWEEN 1 AND 9007199254740991 THEN rowid END), 0)
+          FROM gpx_track_imports)
+      )`).run(migrationTime)
+    db.prepare(`INSERT OR IGNORE INTO legacy_gpx_rowid_scan_state (
+      singleton, low_scanned_through_rowid, low_target_rowid,
+      high_scanned_through_rowid, high_target_rowid, updated_at
+    ) SELECT 1, 1,
+      CASE WHEN MIN(rowid) < 1 THEN MIN(rowid) ELSE 1 END,
+      9007199254740991,
+      CASE WHEN MAX(rowid) > 9007199254740991 THEN MAX(rowid) ELSE 9007199254740991 END,
+      '1970-01-01T00:00:00.000Z'
+      FROM gpx_track_imports`).run()
+    db.prepare(`UPDATE legacy_gpx_rowid_scan_state SET
+      low_target_rowid = MIN(low_target_rowid,
+        COALESCE((SELECT MIN(rowid) FROM gpx_track_imports), 1)),
+      high_target_rowid = MAX(high_target_rowid,
+        COALESCE((SELECT MAX(rowid) FROM gpx_track_imports), 9007199254740991)),
+      updated_at = ? WHERE singleton = 1 AND (
+        low_target_rowid > COALESCE((SELECT MIN(rowid) FROM gpx_track_imports), 1)
+        OR high_target_rowid < COALESCE(
+          (SELECT MAX(rowid) FROM gpx_track_imports), 9007199254740991)
       )`).run(migrationTime)
 
     db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
@@ -5267,16 +5305,90 @@ function readSearchPassLinks(db, passId, versionSequence) {
   return result
 }
 
+const MAX_LEGACY_GPX_METADATA_CANDIDATES_PER_TURN = 10_000
+const MAX_LEGACY_GPX_UNSAFE_ROWID_CANDIDATES_PER_TURN = 100
+
+/** Quarantines a bounded signed-int64 rowid page entirely inside SQLite's exact integer domain. */
+function scanUnsafeLegacyGpxRowids(db, migrationTime, maximumCandidates) {
+  const state = db.prepare(`SELECT
+      low_scanned_through_rowid > low_target_rowid AS low_pending,
+      high_scanned_through_rowid < high_target_rowid AS high_pending
+    FROM legacy_gpx_rowid_scan_state WHERE singleton = 1`).get()
+  const direction = Number(state.low_pending) === 1
+    ? 'low'
+    : Number(state.high_pending) === 1 ? 'high' : null
+  if (direction === null) return { remaining: 0 }
+  const isLow = direction === 'low'
+  const pagePredicate = isLow
+    ? `source.rowid < scan.low_scanned_through_rowid
+       AND source.rowid >= scan.low_target_rowid`
+    : `source.rowid > scan.high_scanned_through_rowid
+       AND source.rowid <= scan.high_target_rowid`
+  const pageOrder = isLow ? 'DESC' : 'ASC'
+  const pageBoundary = isLow ? 'MIN(source_rowid)' : 'MAX(source_rowid)'
+  const cursorColumn = isLow ? 'low_scanned_through_rowid' : 'high_scanned_through_rowid'
+  const targetColumn = isLow ? 'low_target_rowid' : 'high_target_rowid'
+  const transaction = db.transaction(() => {
+    db.prepare(`WITH page(source_rowid) AS (
+        SELECT source.rowid FROM gpx_track_imports AS source
+        JOIN legacy_gpx_rowid_scan_state AS scan ON scan.singleton = 1
+        WHERE ${pagePredicate}
+        ORDER BY source.rowid ${pageOrder} LIMIT ?
+      )
+      INSERT OR IGNORE INTO legacy_gpx_backfill_quarantine (
+        source_rowid, import_id_preview, reason, geometry_bytes,
+        source_bytes_base64_bytes, metadata_bytes, detected_at
+      ) SELECT source.rowid, substr(source.id, 1, 100),
+        'legacy_rowid_outside_safe_envelope',
+        length(CAST(source.geometry_json AS BLOB)),
+        length(CAST(COALESCE(source.source_bytes_base64, '') AS BLOB)),
+        length(CAST(COALESCE(source.metadata_json, '') AS BLOB)), ?
+      FROM gpx_track_imports AS source
+      JOIN page ON page.source_rowid = source.rowid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM gpx_import_revisions AS revision WHERE revision.import_id = source.id
+      )`).run(maximumCandidates, migrationTime)
+    db.prepare(`WITH page(source_rowid) AS (
+        SELECT source.rowid FROM gpx_track_imports AS source
+        JOIN legacy_gpx_rowid_scan_state AS scan ON scan.singleton = 1
+        WHERE ${pagePredicate}
+        ORDER BY source.rowid ${pageOrder} LIMIT ?
+      )
+      UPDATE legacy_gpx_rowid_scan_state
+      SET ${cursorColumn} = COALESCE((SELECT ${pageBoundary} FROM page), ${targetColumn}),
+        updated_at = ? WHERE singleton = 1`).run(maximumCandidates, migrationTime)
+  })
+  transaction.immediate()
+  const remaining = db.prepare(`SELECT CASE WHEN
+      low_scanned_through_rowid > low_target_rowid
+      OR high_scanned_through_rowid < high_target_rowid THEN 1 ELSE 0 END AS count
+    FROM legacy_gpx_rowid_scan_state WHERE singleton = 1`).get()
+  return { remaining: Number(remaining.count) }
+}
+
 /** Baselines a hard-bounded pre-v12 GPX slice without inventing source time or byte provenance. */
 function backfillLegacyGpxRevisions(
   db,
   migrationTime,
   maximumImports,
   migrateBoundedRows = true,
-  maximumCandidates = migrateBoundedRows ? 1_000 : maximumImports,
+  maximumCandidates = migrateBoundedRows
+    ? MAX_LEGACY_GPX_METADATA_CANDIDATES_PER_TURN
+    : maximumImports,
 ) {
+  const unsafeScan = scanUnsafeLegacyGpxRowids(
+    db,
+    migrationTime,
+    Math.min(maximumCandidates, MAX_LEGACY_GPX_UNSAFE_ROWID_CANDIDATES_PER_TURN),
+  )
+  if (unsafeScan.remaining > 0) return { processed: 0, remaining: 1 }
   const state = db.prepare(`SELECT scanned_through_rowid, scan_target_rowid
     FROM legacy_gpx_backfill_state WHERE singleton = 1`).get()
+  const readPageEnd = db.prepare(`SELECT MAX(source_rowid) AS page_end FROM (
+      SELECT source.rowid AS source_rowid FROM gpx_track_imports AS source
+      WHERE source.rowid > ? AND source.rowid <= ?
+      ORDER BY source.rowid ASC LIMIT ?
+    )`)
   const readLegacyPage = db.prepare(`SELECT
       source.rowid AS source_rowid,
       substr(source.id, 1, 100) AS import_id_preview,
@@ -5288,16 +5400,16 @@ function backfillLegacyGpxRevisions(
       length(CAST(source.geometry_json AS BLOB)) AS geometry_bytes,
       length(CAST(COALESCE(source.metadata_json, '') AS BLOB)) AS metadata_bytes,
       length(CAST(COALESCE(source.source_bytes_base64, '') AS BLOB))
-        AS source_bytes_base64_bytes,
-      EXISTS (
-        SELECT 1 FROM gpx_import_revisions AS revision WHERE revision.import_id = source.id
-      ) AS has_revision,
-      EXISTS (
-        SELECT 1 FROM legacy_gpx_backfill_quarantine AS quarantine
-        WHERE quarantine.source_rowid = source.rowid
-      ) AS has_quarantine
+        AS source_bytes_base64_bytes
     FROM gpx_track_imports AS source
     WHERE source.rowid > ? AND source.rowid <= ?
+      AND NOT EXISTS (
+        SELECT 1 FROM gpx_import_revisions AS revision WHERE revision.import_id = source.id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM legacy_gpx_backfill_quarantine AS quarantine
+        WHERE quarantine.source_rowid = source.rowid
+      )
     ORDER BY source.rowid ASC LIMIT ?`)
   const readBoundedLegacy = db.prepare(`SELECT
       source.id, source.mission_id, source.content_sha256, source.source_bytes_base64,
@@ -5324,22 +5436,21 @@ function backfillLegacyGpxRevisions(
   const insertRejection = db.prepare(`INSERT INTO gpx_evidence_rejections (
     id, import_id, revision_sequence, kind, segment_index, point_index, reason, source_value
   ) VALUES (?, ?, 1, ?, ?, ?, ?, ?)`)
-  const legacyCandidates = readLegacyPage.all(
+  const pageEnd = Number(readPageEnd.get(
     state.scanned_through_rowid,
     state.scan_target_rowid,
+    maximumCandidates,
+  )?.page_end ?? state.scan_target_rowid)
+  const legacyCandidates = readLegacyPage.all(
+    state.scanned_through_rowid,
+    pageEnd,
     maximumCandidates,
   )
   let processed = 0
   let cursor = Number(state.scanned_through_rowid)
+  let persistedCursor = cursor
   let cursorBlocked = false
   for (const candidate of legacyCandidates) {
-    if (Number(candidate.has_revision) === 1 || Number(candidate.has_quarantine) === 1) {
-      if (!cursorBlocked) {
-        cursor = Number(candidate.source_rowid)
-        advanceCursor.run(cursor, migrationTime)
-      }
-      continue
-    }
     if (processed >= maximumImports) break
     const quarantineReason = legacyGpxBackfillQuarantineReason(candidate)
     if (quarantineReason !== null) {
@@ -5356,8 +5467,12 @@ function backfillLegacyGpxRevisions(
         if (!cursorBlocked) advanceCursor.run(candidate.source_rowid, migrationTime)
       })
       quarantineOne.immediate()
-      if (!cursorBlocked) cursor = Number(candidate.source_rowid)
+      if (!cursorBlocked) {
+        cursor = Number(candidate.source_rowid)
+        persistedCursor = cursor
+      }
       processed += 1
+      if (processed >= maximumImports) break
       continue
     }
     if (!migrateBoundedRows) {
@@ -5368,7 +5483,6 @@ function backfillLegacyGpxRevisions(
     const entry = readBoundedLegacy.get(candidate.source_rowid)
     if (entry === undefined) {
       cursor = Number(candidate.source_rowid)
-      advanceCursor.run(cursor, migrationTime)
       continue
     }
     const migrateOne = db.transaction(() => {
@@ -5401,13 +5515,12 @@ function backfillLegacyGpxRevisions(
     })
     migrateOne.immediate()
     cursor = Number(candidate.source_rowid)
+    persistedCursor = cursor
     processed += 1
     if (processed >= maximumImports) break
   }
-  if (legacyCandidates.length === 0 && cursor < Number(state.scan_target_rowid)) {
-    cursor = Number(state.scan_target_rowid)
-    advanceCursor.run(cursor, migrationTime)
-  }
+  if (legacyCandidates.length === 0 && cursor < pageEnd) cursor = pageEnd
+  if (cursor > persistedCursor) advanceCursor.run(cursor, migrationTime)
   const remaining = cursor < Number(state.scan_target_rowid) ? 1 : 0
   return { processed, remaining }
 }
@@ -5865,8 +5978,14 @@ function assertNoUnsettledGpxImportState(db, missionId) {
       WHERE mission_id = ? AND import_state = 'staging') AS staging_revisions,
     (SELECT COUNT(*) FROM gpx_track_imports
       WHERE mission_id = ? AND import_state = 'staging') AS staging_imports,
-    (SELECT CASE WHEN scanned_through_rowid < scan_target_rowid THEN 1 ELSE 0 END
-      FROM legacy_gpx_backfill_state WHERE singleton = 1) AS pending_legacy_backfills,
+    (SELECT CASE WHEN
+        safe.scanned_through_rowid < safe.scan_target_rowid
+        OR unsafe.low_scanned_through_rowid > unsafe.low_target_rowid
+        OR unsafe.high_scanned_through_rowid < unsafe.high_target_rowid
+      THEN 1 ELSE 0 END
+      FROM legacy_gpx_backfill_state AS safe
+      JOIN legacy_gpx_rowid_scan_state AS unsafe ON unsafe.singleton = safe.singleton
+      WHERE safe.singleton = 1) AS pending_legacy_backfills,
     (SELECT COUNT(*) FROM gpx_track_imports AS imports
       JOIN legacy_gpx_backfill_quarantine AS quarantine
         ON quarantine.source_rowid = imports.rowid
@@ -5878,7 +5997,7 @@ function assertNoUnsettledGpxImportState(db, missionId) {
   if (count > 0) {
     const quarantineNotice = Number(state.quarantined_legacy_backfills) === 0
       ? ''
-      : ` ${state.quarantined_legacy_backfills} legacy GPX artifact(s) are quarantined because they exceed the bounded migration envelope; the retained originals require a bounded repair path before custody can be declared complete.`
+      : ` ${state.quarantined_legacy_backfills} legacy GPX artifact(s) are quarantined outside the safe reconstruction envelope (size, identity, or storage key); the retained originals require a bounded repair path before custody can be declared complete.`
     throw new Error(
       `Mission cannot change lifecycle state while GPX evidence import state is unsettled (${count} durable item(s), including any legacy GPX backfill still pending).${quarantineNotice} Wait for the import to settle or restart SAR Tracker to recover it explicitly.`,
     )
@@ -5917,7 +6036,7 @@ function listGpxImportIssues(db, input) {
         NULL AS batch_id, 'interrupted' AS batch_status,
         NULL AS source_path, quarantine.import_id_preview AS file_name,
         NULL AS content_sha256, 1 AS source_retained,
-        'Legacy GPX evidence is quarantined because it exceeds the bounded migration envelope. The original remains retained; map projection, mission completion, and archive custody stay blocked until bounded repair.' AS reason,
+        'Legacy GPX evidence is quarantined outside the safe reconstruction envelope (size, identity, or storage key). The original remains retained; map projection, mission completion, and archive custody stay blocked until bounded repair.' AS reason,
         quarantine.detected_at AS recorded_at
       FROM legacy_gpx_backfill_quarantine AS quarantine
       JOIN gpx_track_imports AS imports ON imports.rowid = quarantine.source_rowid
