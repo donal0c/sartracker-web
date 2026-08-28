@@ -260,7 +260,15 @@ async function seedLayerPanelData(page: import('@playwright/test').Page, retries
         type: 'search_area',
         name: 'Sector Alpha',
         display_order: 1,
-        geometry_json: '{}',
+        geometry_json: JSON.stringify({
+          type: 'Polygon',
+          coordinates: [[
+            [-9.7, 52],
+            [-9.69, 52],
+            [-9.69, 52.01],
+            [-9.7, 52],
+          ]],
+        }),
       })
       applyMarkerRuntime({
         activeMissionId: missionId,

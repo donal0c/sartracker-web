@@ -93,6 +93,7 @@ const MAX_SEARCH_OPERATION_ID_LENGTH = 200
 const MAX_SEARCH_OPERATION_LINK_COUNT = 200
 const MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH = 120
 const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
+const MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH = 64
 const MAX_SEARCH_AREA_GEOMETRY_LENGTH = 512 * 1_024
 const MAX_SEARCH_ADVISORY_COVERAGE_LENGTH = 512 * 1_024
 
@@ -1263,12 +1264,17 @@ function createElectronMissionStore(options) {
       return result
     },
     upsertSearchArea: async (input) => upsertSearchArea(db, evidenceVersionStore, input),
-    listSearchAreas: async (missionId) => all(
-      db,
-      `SELECT * FROM search_areas WHERE mission_id = ? AND retired_at IS NULL
-        ORDER BY name ASC, id ASC`,
-      missionId,
-    ),
+    listSearchAreas: async (missionId) => {
+      const normalizedMissionId = normalizeBoundedRequiredText(
+        missionId, 'Search area mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      return all(
+        db,
+        `SELECT * FROM search_areas WHERE mission_id = ? AND retired_at IS NULL
+          ORDER BY name ASC, id ASC`,
+        normalizedMissionId,
+      )
+    },
     retireSearchArea: async (areaId, actor) => retireSearchArea(
       db,
       evidenceVersionStore,
@@ -1280,14 +1286,24 @@ function createElectronMissionStore(options) {
       evidenceVersionStore,
       input,
     ),
-    listSearchAssignments: async (missionId) => all(
-      db,
-      `SELECT * FROM search_assignments WHERE mission_id = ? AND retired_at IS NULL
-        ORDER BY created_at ASC, id ASC`,
-      missionId,
-    ),
+    listSearchAssignments: async (missionId) => {
+      const normalizedMissionId = normalizeBoundedRequiredText(
+        missionId, 'Search assignment mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      return all(
+        db,
+        `SELECT * FROM search_assignments WHERE mission_id = ? AND retired_at IS NULL
+          ORDER BY created_at ASC, id ASC`,
+        normalizedMissionId,
+      )
+    },
     upsertSearchPass: async (input) => upsertSearchPass(db, evidenceVersionStore, input),
-    listSearchPasses: async (missionId) => listSearchPassRecords(db, missionId),
+    listSearchPasses: async (missionId) => listSearchPassRecords(
+      db,
+      normalizeBoundedRequiredText(
+        missionId, 'Search pass mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+      ),
+    ),
     listMissionObjectVersions: async (input) => evidenceVersionStore.listVersions(input),
     listLayerCatalogMetadata: async (missionId) => listLayerCatalogMetadata(db, missionId),
     upsertLayerCatalogMetadata: async (input) => upsertLayerCatalogMetadata(db, input),
@@ -4632,10 +4648,160 @@ function drawingDefaults(input) {
   }
 }
 
+/** Normalizes the complete UI-owned search-area drawing envelope before persistence. */
+function normalizeSearchAreaDrawingMutation(input) {
+  const candidate = normalizeSearchOperationRecord(input, 'Search area drawing')
+  return {
+    id: normalizeOptionalSearchOperationIdentity(candidate.id, 'Search area identity'),
+    mission_id: normalizeBoundedRequiredText(
+      candidate.mission_id, 'Search area mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: 'search_area',
+    name: normalizeBoundedRequiredText(
+      candidate.name, 'Search area name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBoundedOptionalTextValue(
+      candidate.description, 'Search area description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    color: normalizeBoundedOptionalTextValue(
+      candidate.color, 'Search area colour', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    width: normalizeOptionalFiniteSearchNumber(candidate.width, 'Search area width'),
+    distance_m: normalizeOptionalFiniteSearchNumber(
+      candidate.distance_m, 'Search area distance',
+    ),
+    temporary_measure: normalizeOptionalSearchBoolean(
+      candidate.temporary_measure, 'Search area temporary-measure flag',
+    ),
+    label: normalizeBoundedOptionalTextValue(
+      candidate.label, 'Search area label', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    display_order: normalizeSearchDisplayOrder(candidate.display_order),
+    geometry_json: normalizeSearchAreaGeometryJson(candidate.geometry_json),
+    metadata_json: normalizeBoundedOptionalJsonText(
+      candidate.metadata_json,
+      'Search area metadata',
+      MAX_SEARCH_AREA_GEOMETRY_LENGTH,
+    ),
+  }
+}
+
+/** Normalizes a stable search-area mutation before any database lookup. */
+function normalizeSearchAreaMutation(input) {
+  const candidate = normalizeSearchOperationRecord(input, 'Search area')
+  const status = candidate.status === undefined
+    ? undefined
+    : normalizeSearchAreaStatus(candidate.status)
+  return {
+    id: normalizeOptionalSearchOperationIdentity(candidate.id, 'Search area identity'),
+    mission_id: normalizeBoundedRequiredText(
+      candidate.mission_id, 'Search area mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    name: normalizeBoundedRequiredText(
+      candidate.name, 'Search area name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    status,
+    geometry_json: normalizeSearchAreaGeometryJson(candidate.geometry_json),
+    legacy_drawing_id: normalizeOptionalSearchOperationIdentity(
+      candidate.legacy_drawing_id, 'Search area legacy drawing identity',
+    ),
+    updated_by: normalizeBoundedOptionalTextValue(
+      candidate.updated_by, 'Search area coordinator', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    effective_at: normalizeOptionalStrictSearchTimestamp(
+      candidate.effective_at, 'Search area effective time',
+    ),
+  }
+}
+
+/** Normalizes an assignment mutation before any database lookup or list processing. */
+function normalizeSearchAssignmentMutation(input) {
+  const candidate = normalizeSearchOperationRecord(input, 'Search assignment')
+  return {
+    id: normalizeOptionalSearchOperationIdentity(candidate.id, 'Search assignment identity'),
+    mission_id: normalizeBoundedRequiredText(
+      candidate.mission_id, 'Search assignment mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    search_area_id: normalizeBoundedRequiredText(
+      candidate.search_area_id, 'Search assignment area', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    outing_id: normalizeBoundedRequiredText(
+      candidate.outing_id, 'Search assignment outing', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    team_id: normalizeBoundedRequiredText(
+      candidate.team_id, 'Search assignment team', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    participant_ids: normalizeIdList(
+      candidate.participant_ids, 'Search assignment participant links',
+    ),
+    notes: normalizeBoundedOptionalTextValue(
+      candidate.notes, 'Search assignment notes', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    updated_by: normalizeBoundedOptionalTextValue(
+      candidate.updated_by,
+      'Search assignment coordinator',
+      MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    effective_at: normalizeOptionalStrictSearchTimestamp(
+      candidate.effective_at, 'Search assignment effective time',
+    ),
+  }
+}
+
+/** Normalizes a coordinator-declared pass before any database lookup or list processing. */
+function normalizeSearchPassMutation(input) {
+  const candidate = normalizeSearchOperationRecord(input, 'Search pass')
+  const endedAt = candidate.ended_at === null || candidate.ended_at === undefined
+    ? null
+    : normalizeStrictSearchTimestamp(candidate.ended_at, 'Search pass end time')
+  return {
+    id: normalizeOptionalSearchOperationIdentity(candidate.id, 'Search pass identity'),
+    mission_id: normalizeBoundedRequiredText(
+      candidate.mission_id, 'Search pass mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    search_area_id: normalizeBoundedRequiredText(
+      candidate.search_area_id, 'Search pass area', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    assignment_id: normalizeBoundedRequiredText(
+      candidate.assignment_id, 'Search pass assignment', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    started_at: normalizeStrictSearchTimestamp(candidate.started_at, 'Search pass start time'),
+    ended_at: endedAt,
+    outcome: normalizeSearchPassOutcome(candidate.outcome),
+    notes: normalizeBoundedOptionalTextValue(
+      candidate.notes, 'Search pass notes', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    coordinator_name: normalizeBoundedRequiredText(
+      candidate.coordinator_name,
+      'Search pass coordinator',
+      MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    advisory_coverage_json:
+      candidate.advisory_coverage_json === null
+      || candidate.advisory_coverage_json === undefined
+        ? undefined
+        : normalizeBoundedOptionalJsonText(
+          candidate.advisory_coverage_json,
+          'Search pass advisory coverage',
+          MAX_SEARCH_ADVISORY_COVERAGE_LENGTH,
+        ),
+    participant_ids: normalizeOptionalSearchIdList(
+      candidate.participant_ids, 'Search pass participant links',
+    ),
+    clue_ids: normalizeOptionalSearchIdList(candidate.clue_ids, 'Search pass clue links'),
+    track_evidence_ids: normalizeOptionalSearchIdList(
+      candidate.track_evidence_ids, 'Search pass track links',
+    ),
+  }
+}
+
 function upsertDrawingEvidence(db, versionStore, input) {
+  const normalizedInput = input?.type === 'search_area'
+    ? normalizeSearchAreaDrawingMutation(input)
+    : input
   const transaction = db.transaction(() => {
     const drawing = upsertVersionedById(
-      db, versionStore, 'drawings', 'drawing', input, drawingDefaults,
+      db, versionStore, 'drawings', 'drawing', normalizedInput, drawingDefaults,
     )
     if (drawing.type === 'search_area') {
       upsertSearchArea(db, versionStore, {
@@ -4654,62 +4820,51 @@ function upsertDrawingEvidence(db, versionStore, input) {
 }
 
 function retireDrawingEvidence(db, versionStore, drawingId) {
+  const normalizedDrawingId = normalizeBoundedRequiredText(
+    drawingId,
+    'Drawing identity',
+    MAX_SEARCH_OPERATION_ID_LENGTH,
+  )
   const transaction = db.transaction(() => {
-    const drawing = db.prepare('SELECT * FROM drawings WHERE id = ?').get(drawingId)
+    const drawing = db.prepare('SELECT * FROM drawings WHERE id = ?').get(normalizedDrawingId)
     if (drawing === undefined || drawing.retired_at !== null) return false
-    if (drawing.type === 'search_area') retireSearchArea(db, versionStore, drawingId, null)
-    return retireVersionedById(db, versionStore, 'drawings', 'drawing', drawingId)
+    if (drawing.type === 'search_area') retireSearchArea(db, versionStore, normalizedDrawingId, null)
+    return retireVersionedById(
+      db, versionStore, 'drawings', 'drawing', normalizedDrawingId,
+    )
   })
   return transaction()
 }
 
 /** Creates or revises one stable search area and its immutable complete state. */
 function upsertSearchArea(db, versionStore, input) {
-  const missionId = normalizeBoundedRequiredText(
-    input.mission_id,
-    'Search area mission',
-    MAX_SEARCH_OPERATION_ID_LENGTH,
-  )
+  const normalizedInput = normalizeSearchAreaMutation(input)
+  const missionId = normalizedInput.mission_id
   ensureWritableMission(db, missionId)
-  const id = input.id === undefined
-    ? randomUUID()
-    : normalizeBoundedRequiredText(input.id, 'Search area identity', MAX_SEARCH_OPERATION_ID_LENGTH)
+  const id = normalizedInput.id ?? randomUUID()
   const existing = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(id)
   assertSameMission(existing, missionId, 'search area', id)
   if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
     throw new Error(`Cannot update retired search area ${id}.`)
   }
   const timestamp = now()
-  const status = input.status ?? existing?.status ?? 'active'
-  if (!['active', 'retired'].includes(status)) throw new Error('Search area status is invalid.')
+  const status = normalizedInput.status ?? existing?.status ?? 'active'
   const row = {
     id,
     mission_id: missionId,
-    name: normalizeBoundedRequiredText(
-      input.name,
-      'Search area name',
-      MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
-    ),
+    name: normalizedInput.name,
     status,
-    geometry_json: normalizeBoundedRequiredText(
-      input.geometry_json,
-      'Search area geometry',
-      MAX_SEARCH_AREA_GEOMETRY_LENGTH,
-    ),
-    legacy_drawing_id: existing?.legacy_drawing_id ?? input.legacy_drawing_id ?? null,
+    geometry_json: normalizedInput.geometry_json,
+    legacy_drawing_id: existing?.legacy_drawing_id ?? normalizedInput.legacy_drawing_id ?? null,
     version_sequence: Number(existing?.version_sequence ?? 0) + 1,
-    updated_by: normalizeBoundedOptionalTextValue(
-      input.updated_by,
-      'Search area coordinator',
-      MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
-    ),
+    updated_by: normalizedInput.updated_by,
     created_at: existing?.created_at ?? timestamp,
     updated_at: timestamp,
     retired_at: status === 'retired' ? timestamp : null,
   }
   writeSearchOperationVersion(db, versionStore, {
     table: 'search_areas', objectType: 'search_area', row, existing,
-    effectiveAt: input.effective_at ?? timestamp,
+    effectiveAt: normalizedInput.effective_at ?? timestamp,
     actor: row.updated_by,
     operation: status === 'retired' ? 'retired' : undefined,
   })
@@ -4718,34 +4873,29 @@ function upsertSearchArea(db, versionStore, input) {
 
 /** Retires a stable search area while retaining all assignments, passes, and earlier geometry. */
 function retireSearchArea(db, versionStore, areaId, actor) {
-  const existing = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(areaId)
+  const normalizedAreaId = normalizeBoundedRequiredText(
+    areaId, 'Search area identity', MAX_SEARCH_OPERATION_ID_LENGTH,
+  )
+  const normalizedActor = normalizeBoundedOptionalTextValue(
+    actor, 'Search area coordinator', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+  const existing = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(normalizedAreaId)
   if (existing === undefined || existing.retired_at !== null) return false
   upsertSearchArea(db, versionStore, {
     ...existing,
     status: 'retired',
-    updated_by: actor ?? existing.updated_by,
+    updated_by: normalizedActor ?? existing.updated_by,
   })
   return true
 }
 
 /** Creates or revises one outing-scoped area assignment; repeated assignments stay distinct. */
 function upsertSearchAssignment(db, versionStore, input) {
-  const missionId = normalizeBoundedRequiredText(
-    input.mission_id,
-    'Search assignment mission',
-    MAX_SEARCH_OPERATION_ID_LENGTH,
-  )
+  const normalizedInput = normalizeSearchAssignmentMutation(input)
+  const missionId = normalizedInput.mission_id
   ensureWritableMission(db, missionId)
-  const areaId = normalizeBoundedRequiredText(
-    input.search_area_id,
-    'Search assignment area',
-    MAX_SEARCH_OPERATION_ID_LENGTH,
-  )
-  const outingId = normalizeBoundedRequiredText(
-    input.outing_id,
-    'Search assignment outing',
-    MAX_SEARCH_OPERATION_ID_LENGTH,
-  )
+  const areaId = normalizedInput.search_area_id
+  const outingId = normalizedInput.outing_id
   const area = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(areaId)
   const outing = db.prepare('SELECT * FROM outings WHERE id = ?').get(outingId)
   if (area?.mission_id !== missionId) throw new Error('Search assignment area is not in this mission.')
@@ -4753,13 +4903,7 @@ function upsertSearchAssignment(db, versionStore, input) {
     throw new Error(`Cannot assign a retired search area ${area.id}.`)
   }
   if (outing?.mission_id !== missionId) throw new Error('Search assignment outing is not in this mission.')
-  const id = input.id === undefined
-    ? randomUUID()
-    : normalizeBoundedRequiredText(
-      input.id,
-      'Search assignment identity',
-      MAX_SEARCH_OPERATION_ID_LENGTH,
-    )
+  const id = normalizedInput.id ?? randomUUID()
   const existing = db.prepare('SELECT * FROM search_assignments WHERE id = ?').get(id)
   assertSameMission(existing, missionId, 'search assignment', id)
   if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
@@ -4774,37 +4918,25 @@ function upsertSearchAssignment(db, versionStore, input) {
       `Cannot change search assignment scope ${id} after a recorded search pass; create a new assignment.`,
     )
   }
-  const participantIds = normalizeIdList(input.participant_ids, 'Search assignment participant links')
+  const participantIds = normalizedInput.participant_ids
   const timestamp = now()
   const row = {
     id,
     mission_id: missionId,
     search_area_id: area.id,
     outing_id: outing.id,
-    team_id: normalizeBoundedRequiredText(
-      input.team_id,
-      'Search assignment team',
-      MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
-    ),
+    team_id: normalizedInput.team_id,
     participant_ids_json: JSON.stringify(participantIds),
-    notes: normalizeBoundedOptionalTextValue(
-      input.notes,
-      'Search assignment notes',
-      MAX_SEARCH_OPERATION_NOTES_LENGTH,
-    ),
+    notes: normalizedInput.notes,
     version_sequence: Number(existing?.version_sequence ?? 0) + 1,
-    updated_by: normalizeBoundedOptionalTextValue(
-      input.updated_by,
-      'Search assignment coordinator',
-      MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
-    ),
+    updated_by: normalizedInput.updated_by,
     created_at: existing?.created_at ?? timestamp,
     updated_at: timestamp,
     retired_at: null,
   }
   writeSearchOperationVersion(db, versionStore, {
     table: 'search_assignments', objectType: 'search_assignment', row, existing,
-    effectiveAt: input.effective_at ?? timestamp,
+    effectiveAt: normalizedInput.effective_at ?? timestamp,
     actor: row.updated_by,
     beforeProjection: () => assertParticipantIdsBelongToMission(db, missionId, participantIds),
   })
@@ -4813,23 +4945,12 @@ function upsertSearchAssignment(db, versionStore, input) {
 
 /** Records only a coordinator-declared pass outcome; advisory coverage cannot set this field. */
 function upsertSearchPass(db, versionStore, input) {
-  const missionId = normalizeBoundedRequiredText(
-    input.mission_id,
-    'Search pass mission',
-    MAX_SEARCH_OPERATION_ID_LENGTH,
-  )
+  const normalizedInput = normalizeSearchPassMutation(input)
+  const missionId = normalizedInput.mission_id
   ensureWritableMission(db, missionId)
   const mission = getMission(db, missionId)
-  const areaId = normalizeBoundedRequiredText(
-    input.search_area_id,
-    'Search pass area',
-    MAX_SEARCH_OPERATION_ID_LENGTH,
-  )
-  const assignmentId = normalizeBoundedRequiredText(
-    input.assignment_id,
-    'Search pass assignment',
-    MAX_SEARCH_OPERATION_ID_LENGTH,
-  )
+  const areaId = normalizedInput.search_area_id
+  const assignmentId = normalizedInput.assignment_id
   const area = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(areaId)
   const assignment = db.prepare('SELECT * FROM search_assignments WHERE id = ?').get(assignmentId)
   if (area?.mission_id !== missionId) throw new Error('Search pass area is not in this mission.')
@@ -4846,19 +4967,12 @@ function upsertSearchPass(db, versionStore, input) {
   if (outing?.mission_id !== missionId) {
     throw new Error('Search pass assignment outing is not in this mission.')
   }
-  if (!['full', 'partial', 'aborted'].includes(input.outcome)) {
-    throw new Error('Search pass coordinator outcome is invalid.')
-  }
-  const id = input.id === undefined
-    ? randomUUID()
-    : normalizeBoundedRequiredText(input.id, 'Search pass identity', MAX_SEARCH_OPERATION_ID_LENGTH)
+  const id = normalizedInput.id ?? randomUUID()
   const existing = db.prepare('SELECT * FROM search_passes WHERE id = ?').get(id)
   assertSameMission(existing, missionId, 'search pass', id)
   const timestamp = now()
-  const startedAt = normalizeStrictSearchTimestamp(input.started_at, 'Search pass start time')
-  const endedAt = input.ended_at === null || input.ended_at === undefined
-    ? null
-    : normalizeStrictSearchTimestamp(input.ended_at, 'Search pass end time')
+  const startedAt = normalizedInput.started_at
+  const endedAt = normalizedInput.ended_at
   if (endedAt !== null && endedAt < startedAt) {
     throw new Error('Search pass end time cannot precede its start time.')
   }
@@ -4876,15 +4990,15 @@ function upsertSearchPass(db, versionStore, input) {
   )
   const links = {
     participant_ids: normalizeIdList(
-      input.participant_ids ?? previousLinks?.participant_ids,
+      normalizedInput.participant_ids ?? previousLinks?.participant_ids,
       'Search pass participant links',
     ),
     clue_ids: normalizeIdList(
-      input.clue_ids ?? previousLinks?.clue_ids,
+      normalizedInput.clue_ids ?? previousLinks?.clue_ids,
       'Search pass clue links',
     ),
     track_evidence_ids: normalizeIdList(
-      input.track_evidence_ids ?? previousLinks?.track_evidence_ids,
+      normalizedInput.track_evidence_ids ?? previousLinks?.track_evidence_ids,
       'Search pass track links',
     ),
   }
@@ -4895,22 +5009,12 @@ function upsertSearchPass(db, versionStore, input) {
     assignment_id: assignment.id,
     started_at: startedAt,
     ended_at: endedAt,
-    outcome: input.outcome,
-    notes: normalizeBoundedOptionalTextValue(
-      input.notes,
-      'Search pass notes',
-      MAX_SEARCH_OPERATION_NOTES_LENGTH,
-    ),
-    coordinator_name: normalizeBoundedRequiredText(
-      input.coordinator_name,
-      'Search pass coordinator',
-      MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
-    ),
-    advisory_coverage_json: normalizeBoundedOptionalTextValue(
-      input.advisory_coverage_json ?? existing?.advisory_coverage_json,
-      'Search pass advisory coverage',
-      MAX_SEARCH_ADVISORY_COVERAGE_LENGTH,
-    ),
+    outcome: normalizedInput.outcome,
+    notes: normalizedInput.notes,
+    coordinator_name: normalizedInput.coordinator_name,
+    advisory_coverage_json: normalizedInput.advisory_coverage_json === undefined
+      ? existing?.advisory_coverage_json ?? null
+      : normalizedInput.advisory_coverage_json,
     version_sequence: Number(existing?.version_sequence ?? 0) + 1,
     created_at: existing?.created_at ?? timestamp,
     updated_at: timestamp,
@@ -5167,7 +5271,13 @@ function normalizeIdList(value, label) {
 }
 
 function normalizeBoundedRequiredText(value, label, maximumLength) {
-  const normalized = normalizeRequiredText(value, label)
+  if (value === undefined || value === null) throw new Error(`${label} is required.`)
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  if (value.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
+  }
+  const normalized = value.trim()
+  if (normalized === '') throw new Error(`${label} is required.`)
   if (normalized.length > maximumLength) {
     throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
   }
@@ -5175,11 +5285,104 @@ function normalizeBoundedRequiredText(value, label, maximumLength) {
 }
 
 function normalizeBoundedOptionalTextValue(value, label, maximumLength) {
-  const normalized = normalizeOptionalTextValue(value)
-  if (normalized !== null && normalized.length > maximumLength) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  if (value.length > maximumLength) {
     throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
   }
+  const normalized = value.trim()
+  if (normalized === '') return null
   return normalized
+}
+
+function normalizeSearchOperationRecord(value, label) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} input must be an object.`)
+  }
+  return value
+}
+
+function normalizeOptionalSearchOperationIdentity(value, label) {
+  if (value === undefined || value === null) return null
+  return normalizeBoundedRequiredText(value, label, MAX_SEARCH_OPERATION_ID_LENGTH)
+}
+
+function normalizeOptionalSearchIdList(value, label) {
+  if (value === undefined || value === null) return undefined
+  return normalizeIdList(value, label)
+}
+
+function normalizeSearchAreaStatus(value) {
+  if (value !== 'active' && value !== 'retired') {
+    throw new Error('Search area status is invalid.')
+  }
+  return value
+}
+
+function normalizeSearchPassOutcome(value) {
+  if (value !== 'full' && value !== 'partial' && value !== 'aborted') {
+    throw new Error('Search pass coordinator outcome is invalid.')
+  }
+  return value
+}
+
+function normalizeSearchDisplayOrder(value) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new Error('Search area display order must be a finite integer.')
+  }
+  return value
+}
+
+function normalizeOptionalFiniteSearchNumber(value, label) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number.`)
+  }
+  return value
+}
+
+function normalizeOptionalSearchBoolean(value, label) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'boolean') throw new Error(`${label} must be true or false.`)
+  return value
+}
+
+function normalizeBoundedOptionalJsonText(value, label, maximumLength) {
+  const normalized = normalizeBoundedOptionalTextValue(value, label, maximumLength)
+  if (normalized === null) return null
+  try {
+    JSON.parse(normalized)
+  } catch {
+    throw new Error(`${label} must be valid JSON text.`)
+  }
+  return normalized
+}
+
+function normalizeSearchAreaGeometryJson(value) {
+  const normalized = normalizeBoundedRequiredText(
+    value, 'Search area geometry', MAX_SEARCH_AREA_GEOMETRY_LENGTH,
+  )
+  let parsed
+  try {
+    parsed = JSON.parse(normalized)
+  } catch {
+    throw new Error('Search area geometry must be valid Polygon JSON text.')
+  }
+  if (
+    typeof parsed !== 'object'
+    || parsed === null
+    || Array.isArray(parsed)
+    || parsed.type !== 'Polygon'
+    || !Array.isArray(parsed.coordinates)
+  ) {
+    throw new Error('Search area geometry must be valid Polygon JSON text.')
+  }
+  return normalized
+}
+
+function normalizeOptionalStrictSearchTimestamp(value, label) {
+  if (value === undefined || value === null) return undefined
+  return normalizeStrictSearchTimestamp(value, label)
 }
 
 function normalizeRequiredText(value, label) {
@@ -6059,10 +6262,15 @@ function normalizeIsoTimestamp(value, label) {
 
 /** Requires an explicit-offset, calendar-valid instant for coordinator pass evidence. */
 function normalizeStrictSearchTimestamp(value, label) {
-  if (!isStrictTrackingTimestamp(value)) {
+  const normalized = normalizeBoundedRequiredText(
+    value,
+    label,
+    MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH,
+  )
+  if (!isStrictTrackingTimestamp(normalized)) {
     throw new Error(`${label} must be a valid ISO8601 date-time with an explicit offset.`)
   }
-  return new Date(Date.parse(value.trim())).toISOString()
+  return new Date(Date.parse(normalized)).toISOString()
 }
 
 function gpxDefaults(input) {

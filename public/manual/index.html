@@ -1643,9 +1643,12 @@
             Europe/Dublin local times, and add participant, clue and track-evidence identities where available.
             SAR Tracker converts those local controls to an explicit-offset, calendar-valid instant before the
             evidence write; ambiguous, offset-free or impossible timestamps are refused rather than guessed.
-            Coordinator and team names are limited to 120 characters, notes to 2,000 characters, and each
+            Search-area names, team/coordinator fields and labels are limited to 120 characters; descriptions
+            and notes are limited to 2,000 characters; and each
             participant, clue or track list to 200 identities of at most 200 characters. Oversized input is
-            refused before evidence persistence so it cannot delay current-position processing.
+            refused before lookup or evidence persistence so it cannot delay current-position processing.
+            Search-area geometry, metadata and advisory coverage are also bounded and must be valid JSON;
+            malformed optional values are refused rather than silently treated as missing evidence.
             A pass must stay inside its assignment's outing and cannot be dated in the future. A completed outing
             requires an explicit pass end; an open pass must be ended before its outing can be ended, and later
             outing or assignment edits cannot silently move recorded pass evidence outside its original scope.

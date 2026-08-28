@@ -74,6 +74,7 @@ export function DrawingDialog() {
           <section className="grid gap-4 md:grid-cols-2">
             <Field
               label="Name"
+              maxLength={draft.type === 'search_area' ? 120 : undefined}
               onChange={(value) =>
                 controller.updateDraft((current) =>
                   current.type === 'text_label' ? current : { ...current, name: value },
@@ -86,6 +87,7 @@ export function DrawingDialog() {
             />
             <Field
               label="Description"
+              maxLength={draft.type === 'search_area' ? 2_000 : undefined}
               onChange={(value) =>
                 controller.updateDraft((current) =>
                   current.type === 'text_label'
@@ -254,6 +256,7 @@ function SearchAreaSection(props: {
       <section className="grid gap-4 md:grid-cols-2">
         <Field
           label="Team"
+          maxLength={120}
           onChange={(value) => props.onChange({ ...props.draft, team: value })}
           testId="drawing-search-area-team-input"
           value={props.draft.team}
@@ -267,12 +270,14 @@ function SearchAreaSection(props: {
         />
         <Field
           label="POA %"
+          maxLength={8}
           onChange={(value) => props.onChange({ ...props.draft, poaPercent: value })}
           testId="drawing-search-area-poa-input"
           value={props.draft.poaPercent}
         />
         <Field
           label="Label Size"
+          maxLength={8}
           onChange={(value) => props.onChange({ ...props.draft, labelFontSize: value })}
           testId="drawing-search-area-label-font-size-input"
           value={props.draft.labelFontSize}
@@ -304,6 +309,7 @@ function SearchAreaSection(props: {
         </label>
         <Field
           label="Terrain"
+          maxLength={120}
           onChange={(value) => props.onChange({ ...props.draft, terrain: value })}
           testId="drawing-search-area-terrain-input"
           value={props.draft.terrain}
@@ -311,6 +317,7 @@ function SearchAreaSection(props: {
       </section>
       <TextAreaField
         label="Notes"
+        maxLength={2_000}
         onChange={(value) => props.onChange({ ...props.draft, notes: value })}
         testId="drawing-search-area-notes-input"
         value={props.draft.notes}
@@ -548,6 +555,7 @@ function Field(props: {
   readonly value: string
   readonly onChange: (value: string) => void
   readonly testId: string
+  readonly maxLength?: number | undefined
   readonly required?: boolean
   readonly requiredTestId?: string
 }) {
@@ -571,6 +579,7 @@ function Field(props: {
           required ? 'border-rose-400 shadow-[0_0_0_1px_rgba(251,113,133,0.35)]' : 'border-stone-700'
         }`}
         data-testid={props.testId}
+        maxLength={props.maxLength}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
       />
@@ -583,6 +592,7 @@ function TextAreaField(props: {
   readonly value: string
   readonly onChange: (value: string) => void
   readonly testId: string
+  readonly maxLength?: number | undefined
 }) {
   return (
     <label className="block text-sm text-stone-200">
@@ -590,6 +600,7 @@ function TextAreaField(props: {
       <textarea
         className="mt-2 min-h-28 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
         data-testid={props.testId}
+        maxLength={props.maxLength}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
       />

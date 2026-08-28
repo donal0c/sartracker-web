@@ -33,6 +33,7 @@ type MissionEvidenceStore = {
   deleteMarker(markerId: string): Promise<boolean>
   listMarkers(missionId: string): Promise<readonly Readonly<Record<string, unknown>>[]>
   upsertDrawing(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
+  listDrawings(missionId: string): Promise<readonly Readonly<Record<string, unknown>>[]>
   createOuting(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   endOuting(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   editOutingBoundaries(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
@@ -1314,6 +1315,50 @@ describe('mission evidence versioning [DON-277]', () => {
       outing_id: outing.id,
       ended_at: '2026-03-03T00:00:00Z',
     })
+    const oversizedAreaStartedAt = performance.now()
+    await expect(store.upsertDrawing({
+      mission_id: mission.id,
+      type: 'search_area',
+      name: 'Oversized drawing area',
+      display_order: 0,
+      geometry_json: 'g'.repeat(64 * 1_024 * 1_024),
+    })).rejects.toThrow(/search area geometry.*524288 characters/i)
+    expect(performance.now() - oversizedAreaStartedAt).toBeLessThan(200)
+    await expect(store.listDrawings(mission.id)).resolves.toEqual([])
+    await expect(store.listSearchAreas(mission.id)).resolves.toEqual([])
+    await expect(store.upsertDrawing({
+      mission_id: mission.id,
+      type: 'search_area',
+      name: 'Malformed metadata area',
+      display_order: 0,
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+      metadata_json: { malformed: true },
+    })).rejects.toThrow(/search area metadata.*must be text/i)
+    await expect(store.upsertSearchArea({
+      mission_id: mission.id,
+      name: 'Malformed geometry area',
+      status: 'active',
+      geometry_json: '{not-json}',
+      updated_by: 'Coordinator One',
+    })).rejects.toThrow(/search area geometry.*valid Polygon JSON/i)
+    const oversizedLegacyStartedAt = performance.now()
+    await expect(store.upsertSearchArea({
+      mission_id: mission.id,
+      name: 'Oversized legacy link area',
+      status: 'active',
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+      legacy_drawing_id: 'l'.repeat(32 * 1_024 * 1_024),
+      updated_by: 'Coordinator One',
+    })).rejects.toThrow(/legacy drawing.*200 characters/i)
+    expect(performance.now() - oversizedLegacyStartedAt).toBeLessThan(200)
+    await expect(store.upsertSearchArea({
+      mission_id: mission.id,
+      name: 'Invalid effective time area',
+      status: 'active',
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+      effective_at: `2026-03-02T08:00:00.${'1'.repeat(1_024 * 1_024)}Z`,
+      updated_by: 'Coordinator One',
+    })).rejects.toThrow(/effective time.*64 characters/i)
     const area = await store.upsertSearchArea({
       mission_id: mission.id,
       name: 'Area Alpha',
@@ -1321,6 +1366,10 @@ describe('mission evidence versioning [DON-277]', () => {
       geometry_json: '{"type":"Polygon","coordinates":[]}',
       updated_by: 'Coordinator One',
     })
+    await expect(store.retireSearchArea(area.id, { malformed: true } as never))
+      .rejects.toThrow(/search area coordinator.*must be text/i)
+    await expect(store.listSearchAreas('m'.repeat(201)))
+      .rejects.toThrow(/search area mission.*200 characters/i)
     await expect(store.upsertSearchAssignment({
       mission_id: mission.id,
       search_area_id: area.id,
@@ -1329,6 +1378,24 @@ describe('mission evidence versioning [DON-277]', () => {
       participant_ids: [],
       updated_by: 'Coordinator One',
     })).rejects.toThrow(/team.*120 characters/i)
+    await expect(store.upsertSearchAssignment({
+      mission_id: mission.id,
+      search_area_id: area.id,
+      outing_id: outing.id,
+      team_id: 'team-1',
+      participant_ids: [],
+      notes: { malformed: true },
+      updated_by: 'Coordinator One',
+    })).rejects.toThrow(/assignment notes.*must be text/i)
+    await expect(store.upsertSearchAssignment({
+      mission_id: mission.id,
+      search_area_id: area.id,
+      outing_id: outing.id,
+      team_id: 'team-1',
+      participant_ids: [],
+      effective_at: `2026-03-02T08:00:00.${'1'.repeat(1_024 * 1_024)}Z`,
+      updated_by: 'Coordinator One',
+    })).rejects.toThrow(/assignment effective time.*64 characters/i)
     const assignment = await store.upsertSearchAssignment({
       mission_id: mission.id,
       search_area_id: area.id,
@@ -1365,6 +1432,16 @@ describe('mission evidence versioning [DON-277]', () => {
       ...validPass,
       notes: 'n'.repeat(2_001),
     })).rejects.toThrow(/notes.*2000 characters/i)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      notes: { malformed: true },
+    })).rejects.toThrow(/pass notes.*must be text/i)
+    const oversizedTimestampStartedAt = performance.now()
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      started_at: `2026-03-02T08:00:00.${'1'.repeat(32 * 1_024 * 1_024)}Z`,
+    })).rejects.toThrow(/pass start.*64 characters/i)
+    expect(performance.now() - oversizedTimestampStartedAt).toBeLessThan(200)
     const oversizedNotes = 'n'.repeat(32 * 1_024 * 1_024)
     const oversizedStartedAt = performance.now()
     await expect(store.upsertSearchPass({
@@ -1380,7 +1457,23 @@ describe('mission evidence versioning [DON-277]', () => {
       ...validPass,
       track_evidence_ids: ['t'.repeat(201)],
     })).rejects.toThrow(/track links.*200 characters/i)
-    await expect(store.listSearchPasses(mission.id)).resolves.toEqual([])
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      advisory_coverage_json: { malformed: true },
+    })).rejects.toThrow(/advisory coverage.*must be text/i)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      advisory_coverage_json: '{not-json}',
+    })).rejects.toThrow(/advisory coverage.*valid JSON/i)
+    await expect(store.upsertSearchPass({
+      ...validPass,
+      advisory_coverage_json: 'c'.repeat(512 * 1_024 + 1),
+    })).rejects.toThrow(/advisory coverage.*524288 characters/i)
+    const recordedPass = await store.upsertSearchPass({
+      ...validPass,
+      advisory_coverage_json: '{"source":"advisory"}',
+    })
+    expect(recordedPass).toMatchObject({ advisory_coverage_json: '{"source":"advisory"}' })
   })
 
   it('keeps stable areas, repeated assignments, and coordinator-declared pass revisions [DON-279]', async () => {

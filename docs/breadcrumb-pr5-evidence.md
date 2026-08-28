@@ -79,6 +79,23 @@ rejected inside the 200 ms current-position priority gate. That head was
 rejected too; the replacement descendant requires the fresh broad review and
 all three affected focused rechecks. Accepted findings and dispositions are:
 
+Broad and concurrency/finalization rechecks on
+`4761405b340eece7bebea9eb8ae37147962bc188` confirmed the formatter and race
+corrections, with concurrency returning clean. Broad and renderer/input-
+containment nevertheless rejected that head because the first bounds were not
+a complete preflight contract: a huge fractional timestamp, legacy drawing
+identity and UI-owned search-area geometry could still consume main-isolate
+time; wrong-typed optional text could silently become absence; and advisory
+coverage diverged in the browser harness. The repeated seam was source-retraced
+as a boundary-design problem. One complete Electron/browser preflight now
+normalizes every area, assignment, pass and retirement field before any lookup,
+sort, state copy, transaction, projection or version serialization. It rejects
+oversized raw text before trimming or `Date.parse`, validates bounded JSON,
+retains advisory coverage consistently, and mirrors operator `maxLength`
+guards. The 64 MiB geometry and 32 MiB timestamp/legacy-ID reproductions are
+durable sub-200 ms rejection gates. This head was rejected too; a fresh broad
+review and all three focused rechecks remain required on its descendant.
+
 - authentic v11 migration failed because a v12 index preceded the added GPX
   columns: reordered migration, added a true v11 fixture, and kept large index
   construction off synchronous migration/open;
@@ -97,6 +114,11 @@ all three affected focused rechecks. Accepted findings and dispositions are:
 - fixed-width millisecond formatting produced values Chromium rejects when the
   fraction ended in zero: emit the canonical shortest fractional component and
   repeat the operator workflow across timing variations;
+- field-by-field bounds left alternate Search Operations paths permissive:
+  replace them with one complete preflight contract for area drawings, stable
+  areas, assignments, passes, retirement and list scope in Electron and the
+  browser harness, including strict optional types, bounded timestamps/IDs,
+  validated geometry/metadata/advisory JSON and UI limits;
 - replay lacked the required recorded/effective two-clock semantics for
   lifecycle and participant/group membership: persist and fold both clocks;
 - replay and GPX results could publish after a mission switch: mission-scoped
@@ -305,12 +327,17 @@ The latest local remediation tree passed:
 - visual Playwright: 58/58;
 - independent visual gate: fresh uncached full review passed 69/69 with zero
   failures or reviewer errors at the original critical/high severities; report
-  `visual-review-2026-08-28T01-05-16Z.json`;
+  `visual-review-2026-08-28T01-38-13Z.json`;
 - TypeScript/Vite production build and bundle budgets, ESLint, changed CommonJS
   syntax checks and `git diff --check`;
 - actual child-process `SIGKILL` at both the pending source-receipt boundary and
   retained-source/pre-publish boundary, followed by restart recovery to explicit
   failed receipts with bytes/hash present only where they had become durable.
+
+The first post-preflight full Chromium run correctly rejected one historical
+layer-panel fixture that represented a search-area polygon as `{}`. The fixture
+was corrected to valid Polygon JSON, its full layer suite passed 8/8, and the
+complete Chromium suite was then rerun from the start and passed 164/164.
 
 Fresh local synthetic scale qualification used fixture generator v5 on Darwin
 arm64/Node v22.22.3 with timezone `Europe/Dublin`:
