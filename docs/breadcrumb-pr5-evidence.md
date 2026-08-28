@@ -1024,6 +1024,95 @@ consecutive focused runs, the complete evidence-versioning file passed 58/58,
 and the full local unit gate passed 294 files / 2,473 tests. A fresh exact-head
 Linux run and all four independent exact-head reviews remain mandatory.
 
+## `356a9e03` exact-head review rejection and `9a1a54f8` remediation
+
+Exact pushed code-and-documentation head
+`356a9e031cda0d76c860c17390dc79c95afcdcf8`, tree
+`407d83417147454d10ee0d5d77d6ad16da1bcd67`, passed exact-head Linux
+workflow [`33198210110`](https://github.com/donal0c/sartracker-web/actions/runs/33198210110).
+Ubuntu x64 passed lint, 294 files / 2,473 tests, production build/budgets,
+AppImage and `.deb`, x86-64 native SQLite, Mesa llvmpipe, the indexed 960k
+qualification and packaged tracking soak. The fixture digest was
+`58314b12de1f43f51c513e929f51d9f254ad7ea919286057118a5b3389276b36`;
+Replay seek was 230.40 ms, late page 164.47 ms, event-loop maximum 84.16 ms,
+restart seek 227.93 ms with exact equality, and 1,182 concurrent current writes
+had 79.75 ms maximum / 2.51 ms p95. The packaged soak passed 6/6 batches and
+8,664/8,664 exact positions with a 41.5 ms main maximum and zero redundant
+telemetry slope. Green package evidence did not override the code verdict.
+
+All four allocated exact-head reviewers rejected that head:
+
+| Reviewer task | Charter | Centrally accepted finding |
+|---|---|---|
+| `/root/pr5_broad_356a` | Broad life-safety/end-to-end | Filtered Replay object pages omitted device/outing filters and failed their bound continuation context; an all-invalid GPX source retained exact bytes but lost its already-observed point/segment rejection records. |
+| `/root/pr5_persistence_356a` | Persistence/completeness | Renderer-exposed GPX outing assignment copied a 5.2 MB source plus 200,000 point rows and blocked Electron main beyond the 200 ms current-position-priority gate. |
+| `/root/pr5_concurrency_356a` | Concurrency/finalization | Idempotent Finalize validated an archive asynchronously, then could return stale finalized success after an authorized Unlock had changed the live mission to finished. |
+| `/root/pr5_renderer_356a` | Renderer/input containment | The filtered object-page defect was independently confirmed; Replay accepted and worker-cloned unknown renderer fields, including a reproduced 64 MiB field, after discarding the normalized projection. |
+
+Central source retrace accepted five distinct defects; the object-page finding
+was one defect reported by two reviewers. No team/domain question was needed:
+the corrections follow the locked current-position-priority, explicit-missing-
+evidence, data-known-at-T and fail-closed finalization rules. Remediation spans
+schema/persistence, finalization, IPC/worker ownership and renderer behavior, so
+the accepted topology requires all four reviews to restart on the final bound
+head.
+
+Executable remediation
+`9a1a54f8f8dc816c04a7c873afad75a485d8647d` closes the findings:
+
+- object continuation reads retain the exact sorted device and outing filter
+  context from the selected Replay state;
+- all-invalid GPX failures retain exact bytes plus structured point/segment
+  rejection JSON and count. The bounded issue projection and operator panel
+  state that count explicitly instead of implying the evidence disappeared;
+- GPX outing assignment records a lightweight immutable
+  `source_revision_sequence`. Assignment no longer duplicates retained bytes,
+  points or rejections and does not materialize retained source bytes in main;
+  Replay resolves both dated and static evidence through that immutable source
+  revision while presenting the assignment revision known at T;
+- the already-finalized Finalize path captures the finalized epoch and rechecks
+  it inside an immediate transaction after archive validation, so an Unlock
+  winner makes the stale Finalize fail visibly; and
+- preload, main IPC and the worker runner each project Replay input through the
+  same closed bounded query contract. Unknown renderer fields never enter the
+  worker structured clone, while opaque cursor/generation fields remain
+  validated and preserved.
+
+Red-green coverage includes filtered object page 2/3 continuation, a 64 MiB
+unknown Replay field, the deterministic Finalize/archive-read versus authorized
+Unlock race, exact all-invalid GPX point/segment provenance, and a retained
+5.2 MB / 200,000-point GPX assignment that leaves only the source revision's
+point rows and stays below the unchanged 200 ms gate. The deterministic
+fixture digest changed to
+`3d5075babff4ff6b04da66048c0bb753ad6a08572dc3753a02fae5115fa5a10a`
+solely because the mission-store schema gained the source-reference and failure-
+rejection columns.
+
+Fresh local executable-tree proof is green:
+
+- serial unit: 294 files / 2,478 tests;
+- focused changed-boundary set: 214/214;
+- CommonJS/TypeScript, ESLint, production build and bundle budgets;
+- Chromium: 167/167, including explicit retained GPX rejection count and
+  Replay Live/data-known-at-T behavior;
+- visual Playwright: 58/58 with 69 registered screenshots; fresh uncached
+  independent review 69/69, report
+  `visual-review-2026-08-28T19-18-29Z.json`;
+- Rust backend: 55 passed / one intentional real-keychain ignore;
+- indexed 960k fixture digest
+  `e6afc8d7252385f3bd2cc9612af0d8c519983c75aab7bfd711e00169978a7038`
+  (765,734,912 bytes): 50,000-point GPX dispatch 2.49 ms, 1,003 concurrent
+  current writes with 37.85 ms maximum / 4.17 ms p95, 64.50 ms Replay seek,
+  51.55 ms exact late page, 43.23 ms event-loop maximum, 3.87 ms restart open
+  and 55.93 ms restart seek with exact first-page equality; and
+- unsigned macOS arm64 packaging completed with no signing identity available.
+
+This remains pre-merge local/package evidence, not release or field proof. The
+documentation-bound descendant must be pushed, pass exact-head Linux and then
+receive clean broad, persistence/completeness, concurrency/finalization and
+renderer/input-containment verdicts on that same head before task completion.
+PR opened/review-ready remains intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
