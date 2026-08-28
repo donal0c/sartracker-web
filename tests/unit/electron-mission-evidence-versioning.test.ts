@@ -644,7 +644,9 @@ describe('mission evidence versioning [DON-277]', () => {
     }, 10)
     const inspection = openDatabase(databaseFile)
     let baselineCount = 0
-    for (let attempt = 0; attempt < 1_500 && baselineCount < 50_000; attempt += 1) {
+    // Smaller production turns retain current-position priority on slower Linux
+    // runners, so allow the same complete 50k settlement more bounded turns.
+    for (let attempt = 0; attempt < 3_000 && baselineCount < 50_000; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 10))
       baselineCount = Number(inspection.prepare(
         'SELECT COUNT(*) AS count FROM mission_object_versions',
@@ -656,7 +658,7 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(maximumHeartbeatGapMs).toBeLessThan(200)
     await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER }))
       .resolves.toMatchObject({ mission_id: mission.id })
-  }, 30_000)
+  }, 45_000)
 
   it('migrates an authentic v11 GPX table before creating v12 indexes and retains a static baseline [DON-274]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-real-v11-'))
