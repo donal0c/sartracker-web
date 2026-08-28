@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { installBrowserHarnessApi } from '../../src/features/browser-validation/browser-harness-api'
@@ -6,6 +8,22 @@ import {
   readBrowserHarnessState,
   resetBrowserHarnessStore,
 } from '../../src/features/browser-validation/browser-harness-store'
+
+const require = createRequire(import.meta.url)
+const { encodeReplayTrackCursor } = require('../../electron/mission-replay-query.cjs') as {
+  readonly encodeReplayTrackCursor: (
+    direction: 'after' | 'before',
+    offset: number,
+    row: {
+      readonly effective_at: string
+      readonly recorded_at: string
+      readonly source_order: number
+      readonly stable_order: string
+    },
+    replayGeneration: number,
+    eligiblePositionCount: number,
+  ) => string
+}
 
 describe('browser harness position persistence', () => {
   beforeEach(() => {
@@ -688,6 +706,136 @@ describe('browser harness store', () => {
       timezone: 'Europe/Dublin',
       trackLimit: 100,
     })).rejects.toThrow('Mission replay selected time cannot be in the future.')
+  })
+
+  it('rejects malformed production replay cursors instead of returning NaN progress [DON-278]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Replay Cursor Mission' })
+
+    await expect(store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T09:00:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 100,
+      cursor: 'not-a-production-cursor',
+    })).rejects.toThrow('Mission replay cursor is invalid.')
+  })
+
+  it('does not expose a browser replay device until its exact fix is known by T [DON-278]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T08:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Replay Device Knowledge Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id, device_id: 'known-device', name: 'Known',
+      color: '#fff', status: 'online',
+    })
+    await store.addPosition({
+      mission_id: mission.id, device_id: 'known-device', lat: 52, lon: -9.7,
+      timestamp: '2026-08-20T07:30:00.000Z', timestamp_source: 'fix',
+    })
+    await store.addPosition({
+      mission_id: mission.id, device_id: 'known-device', lat: 52.01, lon: -9.71,
+      timestamp: '2026-08-20T07:45:00.000Z', timestamp_source: 'fix',
+    })
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    await store.upsertDevice({
+      mission_id: mission.id, device_id: 'future-device', name: 'Future',
+      color: '#fff', status: 'online',
+    })
+    await store.addPosition({
+      mission_id: mission.id, device_id: 'future-device', lat: 52, lon: -9.7,
+      timestamp: '2026-08-20T09:30:00.000Z', timestamp_source: 'fix',
+    })
+
+    const firstPage = await store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T09:00:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 1,
+    })
+    expect(firstPage).toMatchObject({ availableDeviceIds: ['known-device'] })
+    expect(firstPage.nextCursor).toEqual(expect.any(String))
+    expect(firstPage.nextCursor).not.toMatch(/^\d+$/u)
+    await expect(store.readMissionReplayTrackChunk?.({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T09:00:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 1,
+      cursor: firstPage.nextCursor,
+    })).resolves.toMatchObject({ trackCursor: '1', totalTrackCount: 2 })
+  })
+
+  it('accepts an opaque replay cursor produced by the Electron query contract [DON-278]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T08:45:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Cross-adapter Cursor Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id, device_id: 'device-1', name: 'Device 1', color: '#fff', status: 'online',
+    })
+    await store.addPosition({
+      id: 'position-1', mission_id: mission.id, device_id: 'device-1', lat: 52, lon: -9.7,
+      timestamp: '2026-08-20T08:00:00.000Z', timestamp_source: 'fix',
+    })
+    await store.addPosition({
+      id: 'position-2', mission_id: mission.id, device_id: 'device-1', lat: 52.01, lon: -9.71,
+      timestamp: '2026-08-20T08:30:00.000Z', timestamp_source: 'fix',
+    })
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const firstPage = await store.readMissionReplay({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T09:00:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 1,
+    })
+    const browserEnvelope = JSON.parse(
+      Buffer.from(firstPage.nextCursor!, 'base64url').toString('utf8'),
+    ) as { readonly replayGeneration: number }
+    const electronCursor = encodeReplayTrackCursor('after', 1, {
+      effective_at: '2026-08-20T08:00:00.000Z',
+      recorded_at: '2026-08-20T08:00:00.000Z',
+      source_order: 0,
+      stable_order: 'position-1',
+    }, browserEnvelope.replayGeneration, 2)
+
+    await expect(store.readMissionReplayTrackChunk?.({
+      missionId: mission.id,
+      selectedTime: '2026-08-20T09:00:00.000Z',
+      timezone: 'Europe/Dublin',
+      trackLimit: 1,
+      cursor: electronCursor,
+    })).resolves.toMatchObject({
+      trackCursor: '1',
+      totalTrackCount: 2,
+      tracks: [{
+        track_id: 'device-1',
+        effective_at: '2026-08-20T08:30:00.000Z',
+      }],
+    })
+  })
+
+  it('rejects a GPX identity already owned by another mission [DON-274]', async () => {
+    const store = getBrowserHarnessStore()
+    const firstMission = await store.createMission({ name: 'First GPX Mission' })
+    await store.upsertGpxImport({
+      id: 'shared-gpx-id', mission_id: firstMission.id,
+      source_path: '/tracks/first.gpx', file_name: 'first.gpx', display_name: 'First',
+      geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+    })
+    await store.finishMission(firstMission.id)
+    const secondMission = await store.createMission({ name: 'Second GPX Mission' })
+
+    await expect(store.upsertGpxImport({
+      id: 'shared-gpx-id', mission_id: secondMission.id,
+      source_path: '/tracks/second.gpx', file_name: 'second.gpx', display_name: 'Second',
+      geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+    })).rejects.toThrow(/Cannot move GPX evidence.*different mission/u)
+    await expect(store.listGpxImports(firstMission.id)).resolves.toEqual([
+      expect.objectContaining({ id: 'shared-gpx-id', mission_id: firstMission.id }),
+    ])
   })
 
   it('filters historical GPX evidence by the outing assigned to its eligible revision [DON-278]', async () => {

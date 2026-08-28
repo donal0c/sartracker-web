@@ -378,6 +378,9 @@ function createElectronMissionStore(options) {
     options.runMissionReviewReadQueryInWorker ?? runMissionReviewReadQueryInWorker
   const missionReplayRunner = options.runMissionReplayInWorker ?? runMissionReplayInWorker
   const gpxEvidenceImportRunner = options.runGpxEvidenceImportInWorker ?? runGpxEvidenceImportInWorker
+  const gpxShutdownJoinTimeoutMs = Number.isFinite(options.gpxShutdownJoinTimeoutMs)
+    ? Math.max(1, Math.min(30_000, Number(options.gpxShutdownJoinTimeoutMs)))
+    : 5_000
   const outingFixSummaryRunner =
     options.runOutingFixSummaryInWorker ?? runOutingFixSummaryInWorker
   const coverageQueryRunner =
@@ -505,7 +508,20 @@ function createElectronMissionStore(options) {
     prepareClose: async () => {
       const active = [...activeGpxEvidenceImports]
       for (const entry of active) entry.controller.abort()
-      await Promise.allSettled(active.map((entry) => entry.quiesced))
+      if (active.length === 0) return
+      let timeout
+      try {
+        await Promise.race([
+          Promise.all(active.map((entry) => entry.quiesced)),
+          new Promise((_, reject) => {
+            timeout = setTimeout(() => reject(new Error(
+              'A GPX evidence import worker did not exit within the safe shutdown deadline. The mission store remains open and the exit is not marked clean.',
+            )), gpxShutdownJoinTimeoutMs)
+          }),
+        ])
+      } finally {
+        clearTimeout(timeout)
+      }
     },
     close: () => {
       if (activeGpxEvidenceImports.size > 0) {
@@ -1577,6 +1593,14 @@ function createElectronMissionStore(options) {
     if (gpxImportWorkerActive) return
     const queued = queuedGpxEvidenceImports.shift()
     if (queued === undefined) return
+    if (queued.input.signal?.aborted === true) {
+      const error = new Error('GPX evidence import worker was cancelled before it started.')
+      error.name = 'AbortError'
+      queued.rejectResult(error)
+      queued.resolveWorkerExit()
+      startNextGpxEvidenceImport()
+      return
+    }
     gpxImportWorkerActive = true
     let operation
     try {
@@ -4879,14 +4903,31 @@ function retireSearchArea(db, versionStore, areaId, actor) {
   const normalizedActor = normalizeBoundedOptionalTextValue(
     actor, 'Search area coordinator', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
   )
-  const existing = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(normalizedAreaId)
-  if (existing === undefined || existing.retired_at !== null) return false
-  upsertSearchArea(db, versionStore, {
-    ...existing,
-    status: 'retired',
-    updated_by: normalizedActor ?? existing.updated_by,
+  const transaction = db.transaction(() => {
+    const existing = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(normalizedAreaId)
+    if (existing === undefined || existing.retired_at !== null) return false
+    ensureWritableMission(db, existing.mission_id)
+    const timestamp = now()
+    const row = {
+      ...existing,
+      status: 'retired',
+      version_sequence: Number(existing.version_sequence) + 1,
+      updated_by: normalizedActor ?? existing.updated_by,
+      updated_at: timestamp,
+      retired_at: timestamp,
+    }
+    writeSearchOperationVersion(db, versionStore, {
+      table: 'search_areas',
+      objectType: 'search_area',
+      row,
+      existing,
+      effectiveAt: timestamp,
+      actor: row.updated_by,
+      operation: 'retired',
+    })
+    return true
   })
-  return true
+  return transaction.immediate()
 }
 
 /** Creates or revises one outing-scoped area assignment; repeated assignments stay distinct. */
@@ -5171,11 +5212,15 @@ function readSearchPassLinks(db, passId, versionSequence) {
 
 /** Baselines pre-v12 GPX projections without inventing source time or byte provenance. */
 function backfillLegacyGpxRevisions(db, migrationTime) {
-  const legacyImports = db.prepare(`SELECT * FROM gpx_track_imports AS source
+  const readLegacyPage = db.prepare(`SELECT
+      source.id, source.mission_id, source.content_sha256, source.source_bytes_base64,
+      source.source_path, source.file_name, source.display_name, source.geometry_json,
+      source.metadata_json
+    FROM gpx_track_imports AS source
     WHERE NOT EXISTS (
       SELECT 1 FROM gpx_import_revisions AS revision WHERE revision.import_id = source.id
-    )
-    ORDER BY source.mission_id ASC, source.id ASC`).all()
+    ) AND (source.mission_id > ? OR (source.mission_id = ? AND source.id > ?))
+    ORDER BY source.mission_id ASC, source.id ASC LIMIT 25`)
   const insertRevision = db.prepare(`INSERT INTO gpx_import_revisions (
     id, mission_id, import_id, revision_sequence, content_sha256,
     source_bytes_base64, source_path, file_name, display_name, geometry_json,
@@ -5187,39 +5232,70 @@ function backfillLegacyGpxRevisions(db, migrationTime) {
     import_id, revision_sequence, segment_index, point_index, track_name,
     lat, lon, elevation, source_time
   ) VALUES (?, 1, ?, ?, ?, ?, ?, ?, NULL)`)
-  for (const entry of legacyImports) {
-    const legacyPoints = readLegacyGpxGeometryPoints(entry.geometry_json)
-    const displayGeometryJson = compactLegacyGpxDisplayGeometry(entry.geometry_json)
-    insertRevision.run(
-      randomUUID(), entry.mission_id, entry.id, entry.content_sha256 ?? null,
-      entry.source_bytes_base64 ?? null, entry.source_path, entry.file_name,
-      entry.display_name, displayGeometryJson, entry.metadata_json ?? null,
-      migrationTime,
-    )
-    updateProjectionGeometry.run(displayGeometryJson, entry.id)
-    for (const point of legacyPoints) {
-      insertPoint.run(
-        entry.id,
-        point.segmentIndex,
-        point.pointIndex,
-        entry.display_name,
-        point.lat,
-        point.lon,
-        point.elevation,
+  const insertRejection = db.prepare(`INSERT INTO gpx_evidence_rejections (
+    id, import_id, revision_sequence, kind, segment_index, point_index, reason, source_value
+  ) VALUES (?, ?, 1, 'segment', -1, NULL, ?, NULL)`)
+  let cursorMissionId = ''
+  let cursorImportId = ''
+  while (true) {
+    const legacyImports = readLegacyPage.all(cursorMissionId, cursorMissionId, cursorImportId)
+    if (legacyImports.length === 0) break
+    for (const entry of legacyImports) {
+      const migration = readLegacyGpxMigrationProjection(entry.geometry_json)
+      insertRevision.run(
+        randomUUID(), entry.mission_id, entry.id, entry.content_sha256 ?? null,
+        entry.source_bytes_base64 ?? null, entry.source_path, entry.file_name,
+        entry.display_name, entry.geometry_json, entry.metadata_json ?? null,
+        migrationTime,
       )
+      updateProjectionGeometry.run(migration.geometryJson, entry.id)
+      if (migration.limitation !== null) {
+        insertRejection.run(randomUUID(), entry.id, migration.limitation)
+      }
+      for (const point of migration.points) {
+        insertPoint.run(
+          entry.id,
+          point.segmentIndex,
+          point.pointIndex,
+          entry.display_name,
+          point.lat,
+          point.lon,
+          point.elevation,
+        )
+      }
+      cursorMissionId = entry.mission_id
+      cursorImportId = entry.id
     }
   }
 }
 
-function compactLegacyGpxDisplayGeometry(geometryJson) {
+const MAX_INLINE_LEGACY_GPX_GEOMETRY_BYTES = 128 * 1024
+
+/** Produces a bounded legacy projection without scanning arbitrarily large coordinate arrays. */
+function readLegacyGpxMigrationProjection(geometryJson) {
+  if (Buffer.byteLength(geometryJson, 'utf8') > MAX_INLINE_LEGACY_GPX_GEOMETRY_BYTES) {
+    return {
+      geometryJson: '{"type":"MultiLineString","coordinates":[]}',
+      points: [],
+      limitation: 'Legacy geometry exceeds the bounded startup migration budget; the original artifact is retained in the immutable baseline revision but is not reconstructed as exact point evidence.',
+    }
+  }
   try {
     const parsed = JSON.parse(geometryJson)
     const normalized = parsed?.type === 'LineString'
       ? JSON.stringify({ type: 'MultiLineString', coordinates: [parsed.coordinates] })
       : geometryJson
-    return compactGpxDisplayGeometry(normalized)
+    return {
+      geometryJson: compactGpxDisplayGeometry(normalized),
+      points: readLegacyGpxGeometryPoints(geometryJson),
+      limitation: null,
+    }
   } catch {
-    return '{"type":"MultiLineString","coordinates":[]}'
+    return {
+      geometryJson: '{"type":"MultiLineString","coordinates":[]}',
+      points: [],
+      limitation: 'Legacy geometry could not be rendered safely; the original artifact is retained in the immutable baseline revision.',
+    }
   }
 }
 
@@ -5742,7 +5818,8 @@ function upsertGpxEvidence(db, input, publicationReceipt = null) {
   }
 
   const id = existing?.id ?? input.id ?? randomUUID()
-  const changedSource = normalizedHash !== null && normalizedHash !== existing?.content_sha256
+  const changedSource = existing !== undefined
+    && (normalizedHash === null || normalizedHash !== existing.content_sha256)
   const revisionSequence = existing === undefined
     ? 1
     : changedSource ? Number(existing.revision_sequence) + 1 : Number(existing.revision_sequence)
@@ -5773,6 +5850,20 @@ function upsertGpxEvidence(db, input, publicationReceipt = null) {
 
   const transaction = db.transaction(() => {
     ensureWritableMission(db, missionId)
+    if (existing !== undefined && !changedSource) {
+      const current = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(existing.id)
+      if (current === undefined || current.mission_id !== missionId
+        || current.retired_at !== null || current.import_state !== 'complete'
+        || current.content_sha256 !== normalizedHash) {
+        throw new Error('GPX evidence changed while an idempotent retry was being checked; retry the import.')
+      }
+      assertSameHashGpxEvidenceMatches(db, current, input, displayGeometryJson)
+      upsertGpxAlias(db, missionId, current.id, input.source_path, input.file_name, timestamp)
+      if (publicationReceipt !== null) {
+        settleGpxImportSourceReceiptWithinTransaction(db, publicationReceipt, timestamp)
+      }
+      return
+    }
     const columns = Object.keys(row)
     const assignments = columns
       .filter((column) => !IMMUTABLE_UPSERT_COLUMNS.gpx_track_imports.has(column))
@@ -5841,6 +5932,57 @@ function upsertGpxEvidence(db, input, publicationReceipt = null) {
   })
   transaction.immediate()
   return getById(db, 'gpx_track_imports', id, 'GPX import')
+}
+
+/** Refuses same-byte retries whose evidence projection or parsed rows disagree. */
+function assertSameHashGpxEvidenceMatches(db, current, input, displayGeometryJson) {
+  const revision = db.prepare(`SELECT geometry_json, timing_class, outing_id
+    FROM gpx_import_revisions
+    WHERE import_id = ? AND revision_sequence = ? AND import_state = 'complete'`)
+    .get(current.id, current.revision_sequence)
+  const requestedTimingClass = normalizeGpxTimingClass(input.timing_class ?? current.timing_class)
+  const requestedOutingId = input.outing_id ?? current.outing_id ?? null
+  if (revision === undefined
+    || revision.geometry_json !== displayGeometryJson
+    || revision.timing_class !== requestedTimingClass
+    || (revision.outing_id ?? null) !== requestedOutingId) {
+    throw new Error('The same retained GPX bytes cannot change evidence fields; use the presentation or outing-assignment operation instead.')
+  }
+  if ((input.points?.length ?? 0) > 0) {
+    const retainedPoints = db.prepare(`SELECT segment_index, point_index, track_name,
+      lat, lon, elevation, source_time AS timestamp
+      FROM gpx_evidence_points WHERE import_id = ? AND revision_sequence = ?
+      ORDER BY segment_index, point_index`).all(current.id, current.revision_sequence)
+    const requestedPoints = input.points.map((point) => ({
+      segment_index: point.segment_index,
+      point_index: point.point_index,
+      track_name: point.track_name ?? null,
+      lat: point.lat,
+      lon: point.lon,
+      elevation: point.elevation ?? null,
+      timestamp: point.timestamp === null || point.timestamp === undefined
+        ? null
+        : normalizeIsoTimestamp(point.timestamp, 'GPX source time'),
+    }))
+    if (JSON.stringify(retainedPoints) !== JSON.stringify(requestedPoints)) {
+      throw new Error('The same retained GPX bytes cannot change evidence fields; parsed points differ from the retained revision.')
+    }
+  }
+  if ((input.rejections?.length ?? 0) > 0) {
+    const retainedRejections = db.prepare(`SELECT kind, segment_index, point_index, reason, source_value
+      FROM gpx_evidence_rejections WHERE import_id = ? AND revision_sequence = ?
+      ORDER BY segment_index, point_index, id`).all(current.id, current.revision_sequence)
+    const requestedRejections = input.rejections.map((rejection) => ({
+      kind: rejection.kind,
+      segment_index: rejection.segment_index,
+      point_index: rejection.point_index ?? null,
+      reason: rejection.reason,
+      source_value: rejection.source_value ?? null,
+    }))
+    if (JSON.stringify(retainedRejections) !== JSON.stringify(requestedRejections)) {
+      throw new Error('The same retained GPX bytes cannot change evidence fields; retained rejection evidence differs.')
+    }
+  }
 }
 
 /** Yields after each GPX writer slice so current-position writers can acquire WAL ownership. */
@@ -6085,13 +6227,16 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
 function updateGpxImportPresentation(db, input) {
   const importId = normalizeRequiredText(input?.id, 'GPX import')
   const missionId = normalizeRequiredText(input?.mission_id, 'GPX import mission')
+  const displayName = input?.display_name === undefined
+    ? undefined
+    : normalizeBoundedRequiredText(input.display_name, 'GPX display name', 500)
   if (
-    input?.metadata_json !== null &&
+    input?.metadata_json !== undefined && input.metadata_json !== null &&
     (typeof input?.metadata_json !== 'string' || input.metadata_json.length > 100_000)
   ) {
     throw new Error('GPX import presentation metadata must be bounded JSON text.')
   }
-  if (input.metadata_json !== null) {
+  if (input.metadata_json !== undefined && input.metadata_json !== null) {
     try {
       JSON.parse(input.metadata_json)
     } catch {
@@ -6101,7 +6246,8 @@ function updateGpxImportPresentation(db, input) {
   const timestamp = now()
   const transaction = db.transaction(() => {
     ensureWritableMission(db, missionId)
-    const existing = db.prepare(`SELECT id, mission_id, import_state, retired_at
+    const existing = db.prepare(`SELECT id, mission_id, import_state, retired_at,
+      display_name, metadata_json
       FROM gpx_track_imports WHERE id = ?`).get(importId)
     if (existing === undefined || existing.mission_id !== missionId) {
       throw new Error('Active GPX evidence was not found in the requested mission.')
@@ -6109,10 +6255,20 @@ function updateGpxImportPresentation(db, input) {
     if (existing.import_state !== 'complete' || existing.retired_at !== null) {
       throw new Error('Only active, complete GPX evidence presentation can be updated.')
     }
-    db.prepare(`UPDATE gpx_track_imports SET metadata_json = ?, updated_at = ? WHERE id = ?`)
-      .run(input.metadata_json, timestamp, importId)
+    db.prepare(`UPDATE gpx_track_imports
+      SET display_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?`)
+      .run(
+        displayName ?? existing.display_name,
+        input.metadata_json === undefined ? existing.metadata_json : input.metadata_json,
+        timestamp,
+        importId,
+      )
     insertEvent(db, missionId, 'gpx_import_presentation_updated', timestamp, {
       gpx_import_id: importId,
+      fields: [
+        ...(displayName === undefined ? [] : ['display_name']),
+        ...(input.metadata_json === undefined ? [] : ['metadata_json']),
+      ],
     })
   })
   transaction.immediate()

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   formatDublinDateTimeLocal,
+  getDublinLocalTimeChoices,
   parseDublinDateTimeLocal,
 } from '../../src/features/mission-review/dublin-local-time'
 
@@ -19,6 +20,20 @@ describe('Dublin replay and evidence time boundary [DON-278, DON-279]', () => {
     expect(() => parseDublinDateTimeLocal('2026-10-25T01:30')).toThrow(
       /occurs twice/u,
     )
+  })
+
+  it('round-trips both autumn overlap instants with an explicit offset choice', () => {
+    const first = formatDublinDateTimeLocal('2026-10-25T00:30:00.000Z')
+    const second = formatDublinDateTimeLocal('2026-10-25T01:30:00.000Z')
+
+    expect(first).toBe('2026-10-25T01:30:00')
+    expect(second).toBe(first)
+    expect(getDublinLocalTimeChoices(first)).toEqual([
+      { offsetMinutes: 60, iso: '2026-10-25T00:30:00.000Z' },
+      { offsetMinutes: 0, iso: '2026-10-25T01:30:00.000Z' },
+    ])
+    expect(parseDublinDateTimeLocal(first, 60)).toBe('2026-10-25T00:30:00.000Z')
+    expect(parseDublinDateTimeLocal(second, 0)).toBe('2026-10-25T01:30:00.000Z')
   })
 
   it('fails closed for a nonexistent spring wall time', () => {

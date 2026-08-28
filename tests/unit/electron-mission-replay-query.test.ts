@@ -41,6 +41,7 @@ type ReplayState = {
   readonly objectCursor: string
   readonly nextObjectCursor: string | null
   readonly objectTypeCounts: Readonly<Record<string, number>>
+  readonly availableDeviceIds: readonly string[]
 }
 type ReplayChunk = {
   readonly tracks: ReplayState['tracks']
@@ -51,6 +52,31 @@ type ReplayChunk = {
 }
 
 describe('mission replay query [DON-278]', () => {
+  it('offers only device identities backed by exact fixes known by the selected time', () => {
+    const db = createReplayDatabase()
+    insertPositionForDevice(db, 'known-device', [
+      'known-fix', '2026-08-27T08:00:00Z', '2026-08-27T08:00:01Z',
+    ])
+    insertPositionForDevice(db, 'future-device', [
+      'future-fix', '2026-08-27T09:00:00Z', '2026-08-27T09:00:01Z',
+    ])
+    db.prepare(`INSERT INTO positions VALUES (
+      'late-receipt', 'mission-1', 'late-receipt-device', 52, -9.7, NULL, 5,
+      '2026-08-27T07:00:00Z', '2026-08-27T09:00:00Z', 'fix', '2026-08-27T09:00:00Z'
+    )`).run()
+    db.prepare(`INSERT INTO positions VALUES (
+      'late-provenance', 'mission-1', 'late-provenance-device', 52, -9.7, NULL, 5,
+      '2026-08-27T07:00:00Z', '2026-08-27T07:00:01Z', 'fix', '2026-08-27T09:00:00Z'
+    )`).run()
+    db.prepare("INSERT INTO devices VALUES ('mission-1', 'device-without-known-fix')").run()
+
+    const replay = readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T08:30:00Z', trackLimit: 100,
+    })
+
+    expect(replay.availableDeviceIds).toEqual(['known-device'])
+  })
+
   it('enumerates replay sources from bounded mission devices instead of scanning positions', () => {
     const db = createReplayDatabase()
     insertPosition(db, ['fix-1', '2026-08-27T08:02:00Z', '2026-08-27T08:03:00Z'])

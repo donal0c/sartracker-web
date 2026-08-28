@@ -13,7 +13,9 @@ import type {
 import { formatOperatorLocalTimestamp } from '../features/tracking/operator-time'
 import {
   formatDublinDateTimeLocal,
+  getDublinLocalTimeChoices,
   parseDublinDateTimeLocal,
+  type DublinLocalTimeChoice,
 } from '../features/mission-review/dublin-local-time'
 
 /** Read-only data-known-at-T surface that never mutates the operational live map. */
@@ -23,9 +25,13 @@ export function MissionReplayTab(props: {
   readonly replay: MissionReplayRuntimeState
 }) {
   const [selectedLocalTime, setSelectedLocalTime] = useState(() => formatDublinDateTimeLocal(props.missionEndTime))
+  const [selectedOffsetMinutes, setSelectedOffsetMinutes] = useState<DublinLocalTimeChoice['offsetMinutes'] | null>(
+    () => initialDublinOffsetChoice(props.missionEndTime),
+  )
   const [deviceFilterIds, setDeviceFilterIds] = useState<readonly string[]>([])
   const [outingFilterIds, setOutingFilterIds] = useState<readonly string[]>([])
-  const selectedTime = readDublinSelection(selectedLocalTime)
+  const selectedTime = readDublinSelection(selectedLocalTime, selectedOffsetMinutes)
+  const localTimeChoices = readDublinChoices(selectedLocalTime)
   const result = props.replay.result
 
   return <div className="space-y-4" data-testid="mission-replay-workspace">
@@ -43,7 +49,14 @@ export function MissionReplayTab(props: {
     <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5">
       <label className="text-[11px] font-bold uppercase tracking-wider text-stone-400" htmlFor="mission-replay-time">Selected local time — Europe/Dublin</label>
       <div className="mt-3 flex flex-wrap gap-3">
-        <input className="rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 font-mono text-sm text-stone-100" data-testid="mission-replay-time" id="mission-replay-time" onChange={(event) => setSelectedLocalTime(event.target.value)} step="0.001" type="datetime-local" value={selectedLocalTime} />
+        <input className="rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 font-mono text-sm text-stone-100" data-testid="mission-replay-time" id="mission-replay-time" onChange={(event) => { setSelectedLocalTime(event.target.value); setSelectedOffsetMinutes(null) }} step="0.001" type="datetime-local" value={selectedLocalTime} />
+        {localTimeChoices.length > 1 ? <label className="text-xs text-stone-300">Repeated clock time
+          <select className="ml-2 rounded-lg border border-stone-700 bg-stone-950 px-3 py-2" data-testid="mission-replay-time-offset" onChange={(event) => setSelectedOffsetMinutes(event.target.value === '' ? null : Number(event.target.value) as DublinLocalTimeChoice['offsetMinutes'])} value={selectedOffsetMinutes ?? ''}>
+            <option value="">Choose exact occurrence</option>
+            <option value="60">First occurrence · Irish Summer Time (UTC+01)</option>
+            <option value="0">Second occurrence · Greenwich Mean Time (UTC+00)</option>
+          </select>
+        </label> : null}
         <button className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 disabled:opacity-40" data-testid="mission-replay-seek" disabled={selectedTime.iso === null || props.controller === null || props.replay.loading} onClick={() => selectedTime.iso === null ? undefined : void props.controller?.seekReplay(selectedTime.iso, {
           ...(deviceFilterIds.length === 0 ? {} : { deviceIds: deviceFilterIds }),
           ...(outingFilterIds.length === 0 ? {} : { outingIds: outingFilterIds }),
@@ -99,7 +112,9 @@ export function MissionReplayTab(props: {
         <p className="mt-2 text-sm text-stone-200">
           Known by {formatReplayTime(result.selectedTime, result.timezone)} · {result.participants?.length ?? 0} active participants · lifecycle {formatLifecycle(result.missionLifecycle?.event_type)}
         </p>
-        {result.objects.length === 0 ? <p className="mt-3 text-sm text-stone-400">No versioned mission objects were known at this time.</p> : <div className="mt-3 space-y-2">
+        {result.objects.length === 0 ? <p className="mt-3 text-sm text-stone-400">{result.limitations.some((item) => item.code === 'browser_harness_version_history_unavailable')
+          ? 'Versioned mission-object history is unavailable in browser validation; no absence claim is made.'
+          : 'No versioned mission objects were known at this time.'}</p> : <div className="mt-3 space-y-2">
           {result.objects.map((item) => <div className="rounded-xl border border-stone-800 bg-stone-950/40 p-3" data-testid={`mission-replay-object-${item.object_type}-${item.object_id}`} key={`${item.object_type}:${item.object_id}`}>
             <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm text-stone-100">{humanize(item.object_type)} · {readObjectName(item.state, item.object_id)}</strong><span className="font-mono text-[11px] text-stone-400">revision {item.version_sequence} · {item.operation}</span></div>
             <p className="mt-2 text-xs text-stone-400">Effective {formatReplayTime(item.effective_at, result.timezone)} · recorded {formatReplayTime(item.recorded_at, result.timezone)} · {item.completeness.replace('_', ' ')}</p>
@@ -113,7 +128,9 @@ export function MissionReplayTab(props: {
       </section>
       <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="mission-replay-exact-track-evidence">
         <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Exact dated track evidence loaded</p>
-        {result.tracks.length === 0 ? <p className="mt-3 text-sm text-stone-400">No precisely dated track evidence was eligible at this time.</p> : <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
+        {result.tracks.length === 0 ? <p className="mt-3 text-sm text-stone-400">{result.deviceFilterIds.length > 0 || result.outingFilterIds.length > 0
+          ? 'No precisely dated track evidence matched the active display filters at this time.'
+          : 'No precisely dated track evidence was known and eligible at this time.'}</p> : <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
           {result.tracks.map((track) => <div className="grid gap-1 rounded-xl border border-stone-800 bg-stone-950/40 p-3 text-xs text-stone-300 md:grid-cols-[minmax(9rem,1fr)_minmax(12rem,1.5fr)]" data-testid={`mission-replay-track-${track.evidence_id}`} key={track.evidence_id}>
             <strong className="text-stone-100">{track.source_type === 'traccar_fix' ? 'Traccar fixTime' : 'GPX source time'}</strong>
             <span>{formatReplayTime(track.effective_at, result.timezone)}</span>
@@ -270,12 +287,29 @@ function Metric(props: { readonly label: string; readonly value: number }) {
   return <div className="rounded-xl border border-stone-800 bg-stone-950/40 p-4"><p className="text-[10px] uppercase text-stone-400">{props.label}</p><p className="mt-2 font-mono text-xl text-stone-100">{props.value.toLocaleString()}</p></div>
 }
 
-function readDublinSelection(value: string): { readonly iso: string | null; readonly error: string | null } {
+function readDublinSelection(
+  value: string,
+  offsetMinutes: DublinLocalTimeChoice['offsetMinutes'] | null = null,
+): { readonly iso: string | null; readonly error: string | null } {
   try {
-    return { iso: parseDublinDateTimeLocal(value), error: null }
+    return { iso: parseDublinDateTimeLocal(value, offsetMinutes ?? undefined), error: null }
   } catch (error) {
     return { iso: null, error: error instanceof Error ? error.message : 'Enter a valid Europe/Dublin time.' }
   }
+}
+
+function readDublinChoices(value: string): readonly DublinLocalTimeChoice[] {
+  try {
+    return getDublinLocalTimeChoices(value)
+  } catch {
+    return []
+  }
+}
+
+function initialDublinOffsetChoice(value: string): DublinLocalTimeChoice['offsetMinutes'] | null {
+  const canonical = new Date(value).toISOString()
+  const local = formatDublinDateTimeLocal(canonical)
+  return readDublinChoices(local).find((choice) => choice.iso === canonical)?.offsetMinutes ?? null
 }
 
 function parseIdList(value: string): readonly string[] {

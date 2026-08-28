@@ -253,7 +253,7 @@ test.describe('M15 mission review workspace', () => {
     await page.getByTestId('mission-replay-seek').click()
 
     await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText(
-      'No precisely dated track evidence was eligible at this time.',
+      'No precisely dated track evidence was known and eligible at this time.',
     )
     await expect(page.getByTestId('mission-replay-static-gpx-evidence')).toContainText(
       'No static GPX evidence was eligible at this time.',

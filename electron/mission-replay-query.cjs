@@ -454,6 +454,9 @@ function readPositionReplayStats(database, input) {
       WHERE type = 'index' AND name = ?`).get(name) !== undefined)
   const hasKnownDayCounts = database.prepare(`SELECT 1 FROM sqlite_master
     WHERE type = 'table' AND name = 'mission_replay_position_day_counts'`).get() !== undefined
+  const usesLegacyScanFallback = database.prepare(`SELECT 1 FROM sqlite_master
+    WHERE type = 'table' AND name = 'metadata'`).get() !== undefined
+    && !(hasReplayIndex && hasUnknownTimeIndex && hasKnownAtIndexes && hasKnownDayCounts)
   if (hasReplayIndex && hasUnknownTimeIndex && hasKnownAtIndexes && hasKnownDayCounts) {
     const eligibleCount = countKnownReplayPositions(database, input)
     const missingRecorded = database.prepare(`SELECT COUNT(*) AS count
@@ -468,6 +471,7 @@ function readPositionReplayStats(database, input) {
       eligibleCount,
       missingRecordedCount: Number(missingRecorded?.count ?? 0),
       unprovedTimeCount: Number(unproved?.count ?? 0),
+      usesLegacyScanFallback: false,
     }
   }
   const row = database.prepare(`SELECT
@@ -487,6 +491,7 @@ function readPositionReplayStats(database, input) {
     eligibleCount: Number(row?.eligible_count ?? 0),
     missingRecordedCount: Number(row?.missing_recorded_count ?? 0),
     unprovedTimeCount: Number(row?.unproved_time_count ?? 0),
+    usesLegacyScanFallback,
   }
 }
 
@@ -648,6 +653,12 @@ function readReplayLimitations(
       code: 'position_time_authority_unproved',
       message: 'Some retained legacy positions have no proved Traccar fixTime authority and are excluded from exact replay.',
       count: positionStats.unprovedTimeCount,
+    })
+  }
+  if (positionStats.usesLegacyScanFallback === true) {
+    limitations.push({
+      code: 'legacy_replay_scan_fallback',
+      message: 'This upgraded mission store retains the bounded legacy replay scan path; large historical seeks may be slower while current-position work remains prioritized.',
     })
   }
   const legacyLifecycle = database.prepare(`SELECT COUNT(*) AS count FROM mission_events
@@ -873,12 +884,41 @@ function readAvailableDeviceIds(database, input) {
   const hasDevicesTable = database.prepare(`SELECT 1 FROM sqlite_master
     WHERE type = 'table' AND name = 'devices'`).get() !== undefined
   const rows = hasDevicesTable
-    ? database.prepare(`SELECT device_id FROM devices
-        WHERE mission_id = ? ORDER BY device_id ASC LIMIT ?`)
-      .all(input.missionId, MAX_REPLAY_FILTER_IDS)
+    ? database.prepare(`SELECT devices.device_id FROM devices
+        WHERE devices.mission_id = ?
+          AND EXISTS (
+            SELECT 1 FROM positions
+            WHERE positions.mission_id = devices.mission_id
+              AND positions.device_id = devices.device_id
+              AND positions.timestamp_source = 'fix'
+              AND positions.timestamp <= ?
+              AND positions.received_at <= ?
+              AND COALESCE(
+                positions.timestamp_provenance_recorded_at,
+                positions.received_at
+              ) <= ?
+            LIMIT 1
+          )
+        ORDER BY devices.device_id ASC LIMIT ?`)
+      .all(
+        input.missionId,
+        input.selectedTime,
+        input.selectedTime,
+        input.selectedTime,
+        MAX_REPLAY_FILTER_IDS,
+      )
     : database.prepare(`SELECT DISTINCT device_id FROM positions
-        WHERE mission_id = ? ORDER BY device_id ASC LIMIT ?`)
-      .all(input.missionId, MAX_REPLAY_FILTER_IDS)
+        WHERE mission_id = ? AND timestamp_source = 'fix'
+          AND timestamp <= ? AND received_at <= ?
+          AND COALESCE(timestamp_provenance_recorded_at, received_at) <= ?
+        ORDER BY device_id ASC LIMIT ?`)
+      .all(
+        input.missionId,
+        input.selectedTime,
+        input.selectedTime,
+        input.selectedTime,
+        MAX_REPLAY_FILTER_IDS,
+      )
   return rows
     .map((row) => row.device_id)
 }

@@ -1017,7 +1017,8 @@ export type MissionStore = {
   readonly updateGpxImportPresentation?: (input: {
     readonly id: string
     readonly mission_id: string
-    readonly metadata_json: string | null
+    readonly display_name?: string
+    readonly metadata_json?: string | null
   }) => Promise<GpxTrackImport>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
   readonly listGpxImportRevisions?: (importId: string) => Promise<readonly Readonly<Record<string, unknown>>[]>

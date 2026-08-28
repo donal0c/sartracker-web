@@ -145,6 +145,54 @@ describe('startMissionReviewRuntime', () => {
     }), expect.any(String))
   })
 
+  it('cancels and failure-fences superseded replay pages [DON-278]', async () => {
+    let rejectFirst: ((error: Error) => void) | undefined
+    const firstResult = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      nextCursor: 'page-one',
+    }
+    const readMissionReplay = vi.fn().mockResolvedValue(firstResult)
+    const readMissionReplayTrackChunk = vi.fn()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirst = reject }))
+      .mockResolvedValueOnce({
+        missionId: FIRST_MISSION.id,
+        selectedTime: firstResult.selectedTime,
+        tracks: [{ ...firstResult.tracks[0], evidence_id: 'newest-page' }],
+        trackCursor: '1', previousCursor: 'page-zero', totalTrackCount: 2,
+        nextCursor: null, progress: 1,
+      })
+    const cancelMissionReplay = vi.fn().mockResolvedValue(true)
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReplay, readMissionReplayTrackChunk, cancelMissionReplay,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.seekReplay(firstResult.selectedTime)
+
+    const obsolete = runtime.loadNextReplayChunk()
+    await vi.waitFor(() => expect(readMissionReplayTrackChunk).toHaveBeenCalledOnce())
+    const obsoleteRequestId = readMissionReplayTrackChunk.mock.calls[0]?.[1] as string
+    const newest = runtime.loadNextReplayChunk()
+    await newest
+    rejectFirst?.(new Error('superseded page bound failure'))
+    await obsolete
+
+    expect(cancelMissionReplay).toHaveBeenCalledWith(obsoleteRequestId)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        error: null,
+        loadingMore: false,
+        result: expect.objectContaining({
+          tracks: [expect.objectContaining({ evidence_id: 'newest-page' })],
+        }),
+      }),
+    }))
+  })
+
   it('cancels and fences replay when the selected mission changes [DON-278]', async () => {
     let resolveReplay: ((value: ReturnType<typeof replayResult>) => void) | undefined
     const readMissionReplay = vi.fn().mockImplementation(

@@ -72,6 +72,10 @@ const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
 const MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH = 64
 const MAX_SEARCH_AREA_GEOMETRY_LENGTH = 512 * 1_024
 const MAX_SEARCH_ADVISORY_COVERAGE_LENGTH = 512 * 1_024
+const MAX_REPLAY_TRACK_LIMIT = 500
+const MAX_REPLAY_OBJECT_LIMIT = 100
+const MAX_REPLAY_FILTER_IDS = 200
+const MAX_REPLAY_CURSOR_OFFSET = 10_000_000_000
 
 /**
  * Browser validation store for hosted/team-testing mode only.
@@ -112,6 +116,7 @@ type BrowserGpxEvidencePoint = {
   readonly outingId?: string | null
   readonly segmentIndex: number
   readonly pointIndex: number
+  readonly trackName?: string | null
   readonly lat: number
   readonly lon: number
   readonly elevation: number | null
@@ -262,6 +267,12 @@ type BrowserHarnessStore = {
   readonly deleteHelicopter: (helicopterId: string) => Promise<boolean>
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
+  readonly updateGpxImportPresentation: (input: {
+    readonly id: string
+    readonly mission_id: string
+    readonly display_name?: string
+    readonly metadata_json?: string | null
+  }) => Promise<GpxTrackImport>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
   readonly assignGpxImportToOuting: (input: { readonly import_id: string; readonly outing_id: string; readonly assigned_by?: string | null }) => Promise<GpxTrackImport>
   readonly readMissionReplay: (input: MissionReplayReadInput, requestId?: string) => Promise<MissionReplayReadResult>
@@ -1641,6 +1652,12 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         .sort((left, right) => left.display_name.localeCompare(right.display_name)),
     upsertGpxImport: async (input) => {
       ensureMissionMutable(input.mission_id, state.missions)
+      const existingWithId = input.id === undefined
+        ? undefined
+        : state.gpxImports.find((entry) => entry.id === input.id)
+      if (existingWithId !== undefined && existingWithId.mission_id !== input.mission_id) {
+        throw new Error(`Cannot move GPX evidence ${existingWithId.id} to a different mission.`)
+      }
       const existingImport =
         state.gpxImports.find((entry) =>
           entry.mission_id === input.mission_id
@@ -1652,6 +1669,38 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
             && (entry.id === input.id || entry.source_path === input.source_path),
         ) ?? null
       if (existingImport !== null && existingImport.content_sha256 === input.content_sha256) {
+        if (existingImport.geometry_json !== input.geometry_json
+          || existingImport.timing_class !== (input.timing_class ?? existingImport.timing_class)
+          || (existingImport.outing_id ?? null) !== (input.outing_id ?? existingImport.outing_id ?? null)) {
+          throw new Error('The same retained GPX bytes cannot change evidence fields; use the presentation or outing-assignment operation instead.')
+        }
+        const requestedEvidencePoints = input.points ?? []
+        if (requestedEvidencePoints.length > 0) {
+          const retainedPoints = state.gpxEvidencePoints
+            .filter((point) => point.importId === existingImport.id
+              && point.revisionSequence === existingImport.revision_sequence)
+            .map((point) => ({
+              segment_index: point.segmentIndex,
+              point_index: point.pointIndex,
+              track_name: point.trackName ?? null,
+              lat: point.lat,
+              lon: point.lon,
+              elevation: point.elevation,
+              timestamp: point.timestamp,
+            }))
+          const requestedPoints = requestedEvidencePoints.map((point) => ({
+            segment_index: point.segment_index,
+            point_index: point.point_index,
+            track_name: point.track_name ?? null,
+            lat: point.lat,
+            lon: point.lon,
+            elevation: point.elevation ?? null,
+            timestamp: point.timestamp ?? null,
+          }))
+          if (JSON.stringify(retainedPoints) !== JSON.stringify(requestedPoints)) {
+            throw new Error('The same retained GPX bytes cannot change evidence fields; parsed points differ from the retained revision.')
+          }
+        }
         return existingImport
       }
       const now = new Date().toISOString()
@@ -1688,6 +1737,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
             outingId: gpxImport.outing_id ?? null,
             segmentIndex: point.segment_index,
             pointIndex: point.point_index,
+            trackName: point.track_name ?? null,
             lat: point.lat,
             lon: point.lon,
             elevation: point.elevation,
@@ -1710,6 +1760,36 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       }
       save()
       return gpxImport
+    },
+    updateGpxImportPresentation: async (input) => {
+      ensureMissionMutable(input.mission_id, state.missions)
+      const existing = state.gpxImports.find((entry) => entry.id === input.id)
+      if (existing === undefined || existing.mission_id !== input.mission_id
+        || existing.retired_at != null) {
+        throw new Error('Active GPX evidence was not found in the requested mission.')
+      }
+      const timestamp = new Date().toISOString()
+      const updated = {
+        ...existing,
+        display_name: input.display_name ?? existing.display_name,
+        metadata_json: input.metadata_json === undefined
+          ? existing.metadata_json
+          : input.metadata_json,
+        updated_at: timestamp,
+      }
+      state = {
+        ...state,
+        gpxImports: upsertGpxImport(state.gpxImports, updated),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          'gpx_import_presentation_updated',
+          timestamp,
+          { gpx_import_id: input.id },
+        ),
+      }
+      save()
+      return updated
     },
     deleteGpxImport: async (importId) => {
       const gpxImport = state.gpxImports.find((candidate) => candidate.id === importId)
@@ -2058,7 +2138,19 @@ function buildBrowserReplay(
     throw new Error('Mission replay selected time cannot be in the future.')
   }
   const selectedTime = new Date(selectedTimeMs).toISOString()
-  const offset = input.cursor === undefined || input.cursor === null ? 0 : Number(input.cursor)
+  if (!Number.isInteger(input.trackLimit) || input.trackLimit < 1
+    || input.trackLimit > MAX_REPLAY_TRACK_LIMIT) {
+    throw new Error(`Mission replay track limit must be between 1 and ${MAX_REPLAY_TRACK_LIMIT}.`)
+  }
+  const objectLimit = input.objectLimit ?? MAX_REPLAY_OBJECT_LIMIT
+  if (!Number.isInteger(objectLimit) || objectLimit < 1 || objectLimit > MAX_REPLAY_OBJECT_LIMIT) {
+    throw new Error(`Mission replay object limit must be between 1 and ${MAX_REPLAY_OBJECT_LIMIT}.`)
+  }
+  const deviceFilterIds = normalizeBrowserReplayFilterIds(input.deviceIds, 'device')
+  const outingFilterIds = normalizeBrowserReplayFilterIds(input.outingIds, 'outing')
+  const cursor = decodeBrowserReplayTrackCursor(input.cursor)
+  const offset = cursor?.offset ?? 0
+  const objectOffset = normalizeBrowserReplayObjectCursor(input.objectCursor)
   const positionTracks = state.positions
     .filter((position) =>
       position.mission_id === input.missionId
@@ -2066,7 +2158,7 @@ function buildBrowserReplay(
       && position.received_at != null
       && position.received_at <= selectedTime
       && position.timestamp <= selectedTime
-      && (input.deviceIds === undefined || input.deviceIds.includes(position.device_id)),
+      && (deviceFilterIds === null || deviceFilterIds.includes(position.device_id)),
     )
     .map((position) => ({
       evidence_id: position.source_position_id ?? position.id,
@@ -2080,7 +2172,13 @@ function buildBrowserReplay(
       accuracy: position.accuracy,
       time_authority: 'fixTime' as const,
       completeness: 'complete' as const,
+      sourceOrder: 0 as const,
+      stableOrder: position.id,
     }))
+  if (cursor !== null && (cursor.replayGeneration !== (input.replayGeneration ?? 0)
+    || cursor.eligiblePositionCount !== positionTracks.length)) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
   const missionImportIds = new Set(state.gpxImports
     .filter((entry) => entry.mission_id === input.missionId
       && (entry.retired_at === null
@@ -2108,7 +2206,7 @@ function buildBrowserReplay(
   /** Mirrors the production display-only outing filter inside browser validation. */
   const isSelectedGpxImport = (importId: string) => {
     const outingId = eligibleOutingByImport.get(importId) ?? null
-    return input.outingIds === undefined || (outingId !== null && input.outingIds.includes(outingId))
+    return outingFilterIds === null || (outingId !== null && outingFilterIds.includes(outingId))
   }
   const gpxTracks = eligibleGpxPoints
     .filter((point) => {
@@ -2127,19 +2225,25 @@ function buildBrowserReplay(
       accuracy: null,
       time_authority: 'gpx_source_time' as const,
       completeness: 'complete' as const,
+      sourceOrder: 1 as const,
+      stableOrder: `${point.importId}:${String(point.segmentIndex).padStart(8, '0')}:${String(point.pointIndex).padStart(8, '0')}`,
     }))
   const allTracks = [...positionTracks, ...gpxTracks].sort((left, right) =>
     left.effective_at.localeCompare(right.effective_at)
     || left.recorded_at.localeCompare(right.recorded_at)
+    || left.sourceOrder - right.sourceOrder
+    || left.stableOrder.localeCompare(right.stableOrder)
     || left.evidence_id.localeCompare(right.evidence_id),
   )
-  const tracks = allTracks.slice(offset, offset + input.trackLimit)
-  const nextOffset = offset + tracks.length
+  const pageTracks = allTracks.slice(offset, offset + input.trackLimit)
+  const tracks = pageTracks.map(projectBrowserReplayTrack)
+  const nextOffset = offset + pageTracks.length
+  const eligiblePositionCount = positionTracks.length
   const staticGpxPointCount = eligibleGpxPoints.filter((point) =>
     point.timestamp === null && isSelectedGpxImport(point.importId)).length
   const staticGpxEvidence = state.gpxImports
     .filter((entry) => missionImportIds.has(entry.id)
-      && (input.outingIds === undefined
+      && (outingFilterIds === null
         || isSelectedGpxImport(entry.id)))
     .flatMap((entry) => {
       const revisionSequence = eligibleRevisionByImport.get(entry.id)
@@ -2172,22 +2276,33 @@ function buildBrowserReplay(
     objects: [],
     totalObjectCount: 0,
     objectTypeCounts: {},
-    objectCursor: '0',
+    objectCursor: String(objectOffset),
     nextObjectCursor: null,
     tracks,
     trackCursor: String(offset),
-    previousCursor: offset === 0 ? null : String(Math.max(0, offset - input.trackLimit)),
+    previousCursor: offset === 0 || pageTracks.length === 0 ? null : encodeBrowserReplayTrackCursor(
+      'before', offset, pageTracks[0]!, input.replayGeneration ?? 0, eligiblePositionCount,
+    ),
     totalTrackCount: allTracks.length,
     staticGpxPointCount,
     availableDeviceIds: [...new Set(state.positions
-      .filter((position) => position.mission_id === input.missionId)
+      .filter((position) => position.mission_id === input.missionId
+        && position.timestamp_source === 'fix'
+        && position.received_at != null
+        && position.timestamp <= selectedTime
+        && position.received_at <= selectedTime)
       .map((position) => position.device_id))].sort(),
     availableOutingIds: [...new Set([...eligibleOutingByImport.values()]
       .filter((outingId): outingId is string => outingId !== null))].sort(),
-    deviceFilterIds: input.deviceIds ?? [],
-    outingFilterIds: input.outingIds ?? [],
+    deviceFilterIds: deviceFilterIds ?? [],
+    outingFilterIds: outingFilterIds ?? [],
     staticGpxEvidence,
-    nextCursor: nextOffset < allTracks.length ? String(nextOffset) : null,
+    nextCursor: nextOffset < allTracks.length && pageTracks.length > 0
+      ? encodeBrowserReplayTrackCursor(
+          'after', nextOffset, pageTracks.at(-1)!, input.replayGeneration ?? 0,
+          eligiblePositionCount,
+        )
+      : null,
     progress: allTracks.length === 0 ? 1 : nextOffset / allTracks.length,
     limitations: [
       {
@@ -2201,6 +2316,123 @@ function buildBrowserReplay(
       }]),
     ],
   }
+}
+
+type BrowserReplayOrderRow = {
+  readonly effective_at: string
+  readonly recorded_at: string
+  readonly sourceOrder: 0 | 1
+  readonly stableOrder: string
+}
+
+function projectBrowserReplayTrack(
+  row: MissionReplayReadResult['tracks'][number] & BrowserReplayOrderRow,
+): MissionReplayReadResult['tracks'][number] {
+  return {
+    evidence_id: row.evidence_id,
+    source_type: row.source_type,
+    track_id: row.track_id,
+    effective_at: row.effective_at,
+    recorded_at: row.recorded_at,
+    lat: row.lat,
+    lon: row.lon,
+    elevation: row.elevation,
+    accuracy: row.accuracy,
+    time_authority: row.time_authority,
+    completeness: row.completeness,
+  }
+}
+
+/** Encodes the same opaque v3 replay-cursor envelope used by packaged Electron. */
+function encodeBrowserReplayTrackCursor(
+  direction: 'after' | 'before',
+  offset: number,
+  row: BrowserReplayOrderRow,
+  replayGeneration: number,
+  eligiblePositionCount: number,
+): string {
+  return encodeBrowserBase64Url(JSON.stringify({
+    v: 3,
+    direction,
+    offset,
+    replayGeneration,
+    eligiblePositionCount,
+    key: [row.effective_at, row.recorded_at, row.sourceOrder, row.stableOrder],
+  }))
+}
+
+/** Decodes and validates one production-compatible browser replay cursor. */
+function decodeBrowserReplayTrackCursor(value: string | null | undefined): {
+  readonly offset: number
+  readonly replayGeneration: number
+  readonly eligiblePositionCount: number
+} | null {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string' || value.length > 2_000 || !/^[A-Za-z0-9_-]+$/u.test(value)) {
+    throw new Error('Mission replay cursor is invalid.')
+  }
+  try {
+    const parsed = JSON.parse(decodeBrowserBase64Url(value)) as Record<string, unknown>
+    const key = parsed.key
+    if (parsed.v !== 3 || (parsed.direction !== 'after' && parsed.direction !== 'before')
+      || !Number.isSafeInteger(parsed.offset) || Number(parsed.offset) < 0
+      || Number(parsed.offset) > MAX_REPLAY_CURSOR_OFFSET || !Array.isArray(key)
+      || key.length !== 4 || typeof key[0] !== 'string' || typeof key[1] !== 'string'
+      || (key[2] !== 0 && key[2] !== 1) || typeof key[3] !== 'string'
+      || !Number.isSafeInteger(parsed.replayGeneration) || Number(parsed.replayGeneration) < 0
+      || !Number.isSafeInteger(parsed.eligiblePositionCount)
+      || Number(parsed.eligiblePositionCount) < 0) {
+      throw new Error('invalid shape')
+    }
+    return {
+      offset: Number(parsed.offset),
+      replayGeneration: Number(parsed.replayGeneration),
+      eligiblePositionCount: Number(parsed.eligiblePositionCount),
+    }
+  } catch {
+    throw new Error('Mission replay cursor is invalid.')
+  }
+}
+
+function normalizeBrowserReplayObjectCursor(value: string | null | undefined): number {
+  if (value === undefined || value === null || value === '') return 0
+  if (!/^\d{1,12}$/u.test(value)) throw new Error('Mission replay object cursor is invalid.')
+  const offset = Number(value)
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > MAX_REPLAY_CURSOR_OFFSET) {
+    throw new Error('Mission replay object cursor is invalid.')
+  }
+  return offset
+}
+
+function normalizeBrowserReplayFilterIds(
+  value: readonly string[] | undefined,
+  label: string,
+): readonly string[] | null {
+  if (value === undefined) return null
+  if (!Array.isArray(value) || value.length > MAX_REPLAY_FILTER_IDS) {
+    throw new Error(`Mission replay ${label} filter is invalid.`)
+  }
+  const normalized = value.map((item) => {
+    if (typeof item !== 'string' || item.trim() === '' || item.length > 200) {
+      throw new Error(`Mission replay ${label} filter is invalid.`)
+    }
+    return item.trim()
+  })
+  return [...new Set(normalized)].sort((left, right) => left.localeCompare(right))
+}
+
+function encodeBrowserBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
+}
+
+function decodeBrowserBase64Url(value: string): string {
+  const normalized = value.replaceAll('-', '+').replaceAll('_', '/')
+    .padEnd(Math.ceil(value.length / 4) * 4, '=')
+  const binary = atob(normalized)
+  return new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)))
 }
 
 /** Normalizes the complete UI-owned search-area envelope before harness state work. */

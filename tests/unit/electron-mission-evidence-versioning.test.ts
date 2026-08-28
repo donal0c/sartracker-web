@@ -142,6 +142,7 @@ const {
     readonly userDataPath: string
     readonly evidenceVersionFaultInjection?: { readonly afterProjection?: boolean }
     readonly gpxRetirementFaultInjection?: { readonly beforeTransaction?: () => void }
+    readonly gpxShutdownJoinTimeoutMs?: number
     readonly runGpxEvidenceImportInWorker?: (input: {
       readonly databasePath: string
       readonly missionId: string
@@ -473,7 +474,7 @@ describe('mission evidence versioning [DON-277]', () => {
     const first = createElectronMissionStore({ userDataPath })
     const mission = await first.createMission({ name: 'Legacy Baseline Mission' })
     await first.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER })
-    await first.upsertDrawing({
+    const legacyArea = await first.upsertDrawing({
       mission_id: mission.id,
       type: 'search_area',
       name: 'Legacy Area',
@@ -484,6 +485,14 @@ describe('mission evidence versioning [DON-277]', () => {
     first.close()
 
     const db = openDatabase(path.join(userDataPath, 'mission-store.sqlite'))
+    db.prepare(`UPDATE drawings SET geometry_json = ? WHERE id = ?`).run(
+      '{"type":"MultiPolygon","coordinates":[]}',
+      legacyArea.id,
+    )
+    db.prepare(`UPDATE search_areas SET geometry_json = ? WHERE id = ?`).run(
+      '{"type":"MultiPolygon","coordinates":[]}',
+      legacyArea.id,
+    )
     db.prepare("UPDATE metadata SET value = '11' WHERE key = 'schema_version'").run()
     db.exec('DROP TABLE mission_object_versions')
     db.close()
@@ -498,6 +507,8 @@ describe('mission evidence versioning [DON-277]', () => {
     )
     expect(versions.every((version) => version.operation === 'legacy_baseline')).toBe(true)
     expect(versions.every((version) => version.completeness === 'legacy_baseline')).toBe(true)
+    await expect(store.retireSearchArea(String(legacyArea.id), 'Coordinator')).resolves.toBe(true)
+    expect(await store.listSearchAreas(mission.id)).toEqual([])
   })
 
   it('migrates an authentic v11 GPX table before creating v12 indexes and retains a static baseline [DON-274]', async () => {
@@ -507,6 +518,15 @@ describe('mission evidence versioning [DON-277]', () => {
     first.close()
     const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
     const db = openDatabase(databaseFile)
+    const legacyGeometry = JSON.stringify({
+      type: 'MultiLineString',
+      coordinates: [Array.from({ length: 5_000 }, (_, index) => [-9.7 - index / 100_000, 52 + index / 100_000])],
+    })
+    const malformedGeometry = '{"type":"MultiLineString","coordinates":['
+    const oversizedGeometry = JSON.stringify({
+      type: 'MultiLineString',
+      coordinates: [Array.from({ length: 20_000 }, (_, index) => [-9.7, 52 + index / 1_000_000])],
+    })
     db.exec(`
       PRAGMA foreign_keys = OFF;
       DROP TABLE gpx_evidence_rejections;
@@ -528,14 +548,27 @@ describe('mission evidence versioning [DON-277]', () => {
         updated_at TEXT NOT NULL,
         UNIQUE (mission_id, source_path)
       );
-      INSERT INTO gpx_track_imports VALUES (
-        'legacy-gpx', '${mission.id}', '/legacy/route.gpx', 'route.gpx', 'Legacy route',
-        '{"type":"MultiLineString","coordinates":[[[-9.7,52],[-9.71,52.01]]]}',
-        '{}', '2026-08-20T10:00:00Z', '2026-08-20T10:00:00Z'
-      );
       UPDATE metadata SET value = '11' WHERE key = 'schema_version';
       PRAGMA foreign_keys = ON;
     `)
+    db.prepare(`INSERT INTO gpx_track_imports VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?
+    )`).run(
+      'legacy-gpx', mission.id, '/legacy/route.gpx', 'route.gpx', 'Legacy route',
+      legacyGeometry, '{}', '2026-08-20T10:00:00Z', '2026-08-20T10:00:00Z',
+    )
+    db.prepare(`INSERT INTO gpx_track_imports VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?
+    )`).run(
+      'legacy-malformed', mission.id, '/legacy/malformed.gpx', 'malformed.gpx', 'Malformed route',
+      malformedGeometry, '{}', '2026-08-20T10:00:01Z', '2026-08-20T10:00:01Z',
+    )
+    db.prepare(`INSERT INTO gpx_track_imports VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?
+    )`).run(
+      'legacy-oversized', mission.id, '/legacy/oversized.gpx', 'oversized.gpx', 'Oversized route',
+      oversizedGeometry, '{}', '2026-08-20T10:00:02Z', '2026-08-20T10:00:02Z',
+    )
     db.close()
 
     store = createElectronMissionStore({ userDataPath })
@@ -548,6 +581,25 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(revisions).toEqual([
       expect.objectContaining({ completeness: 'legacy_baseline', revision_sequence: 1 }),
     ])
+    const retainedDb = openDatabase(databaseFile)
+    expect(retainedDb.prepare(`SELECT geometry_json FROM gpx_import_revisions
+      WHERE import_id = 'legacy-gpx' AND revision_sequence = 1`).get())
+      .toMatchObject({ geometry_json: legacyGeometry })
+    expect(retainedDb.prepare(`SELECT geometry_json FROM gpx_import_revisions
+      WHERE import_id = 'legacy-malformed' AND revision_sequence = 1`).get())
+      .toMatchObject({ geometry_json: malformedGeometry })
+    expect(retainedDb.prepare(`SELECT reason FROM gpx_evidence_rejections
+      WHERE import_id = 'legacy-malformed'`).get())
+      .toMatchObject({ reason: expect.stringMatching(/legacy geometry.*retained/i) })
+    expect(retainedDb.prepare(`SELECT geometry_json FROM gpx_import_revisions
+      WHERE import_id = 'legacy-oversized' AND revision_sequence = 1`).get())
+      .toMatchObject({ geometry_json: oversizedGeometry })
+    expect(retainedDb.prepare(`SELECT reason FROM gpx_evidence_rejections
+      WHERE import_id = 'legacy-oversized'`).get())
+      .toMatchObject({ reason: expect.stringMatching(/bounded startup migration budget.*retained/i) })
+    expect(retainedDb.prepare(`SELECT COUNT(*) AS count FROM gpx_evidence_points
+      WHERE import_id = 'legacy-oversized'`).get()).toMatchObject({ count: 0 })
+    retainedDb.close()
     const replay = await store.readMissionReplay({
       missionId: mission.id,
       selectedTime: new Date().toISOString(),
@@ -555,9 +607,10 @@ describe('mission evidence versioning [DON-277]', () => {
       trackLimit: 100,
     })
     expect(replay).toMatchObject({
-      staticGpxPointCount: 2,
+      staticGpxPointCount: 5_000,
       limitations: expect.arrayContaining([
         expect.objectContaining({ code: 'legacy_gpx_baseline_only' }),
+        expect.objectContaining({ code: 'legacy_replay_scan_fallback' }),
       ]),
     })
   })
@@ -1060,6 +1113,32 @@ describe('mission evidence versioning [DON-277]', () => {
       .toMatchObject({ retired_at: expect.any(String) })
     expect(db.prepare('SELECT COUNT(*) AS count FROM gpx_import_aliases WHERE import_id = ?').get(first.id))
       .toMatchObject({ count: 2 })
+    db.close()
+  })
+
+  it('rejects same-hash evidence mutations instead of splitting projection from its revision [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX Same Hash Mission' })
+    const first = await store.upsertGpxImport(gpxInput(mission.id, {}))
+
+    await expect(store.upsertGpxImport(gpxInput(mission.id, {
+      id: first.id,
+      display_name: 'Different derived route',
+      geometry_json: '{"type":"MultiLineString","coordinates":[[[-8,53]]]}',
+      timing_class: 'undated',
+      points: [{
+        segment_index: 0, point_index: 0, track_name: 'Different',
+        lat: 53, lon: -8, elevation: null, timestamp: null,
+      }],
+    }))).rejects.toThrow(/same retained GPX bytes.*evidence fields/i)
+
+    const db = openDatabase(await databasePath())
+    const projection = db.prepare(`SELECT display_name, geometry_json, timing_class,
+      revision_sequence FROM gpx_track_imports WHERE id = ?`).get(first.id)
+    const revision = db.prepare(`SELECT display_name, geometry_json, timing_class,
+      revision_sequence FROM gpx_import_revisions WHERE import_id = ?`).get(first.id)
+    expect(projection).toMatchObject(revision ?? {})
+    expect(projection).toMatchObject({ display_name: 'Route', timing_class: 'fully_dated', revision_sequence: 1 })
     db.close()
   })
 
@@ -2035,6 +2114,39 @@ describe('mission evidence versioning [DON-277]', () => {
     await store.prepareClose()
     expect(importSignal?.aborted).toBe(true)
     await rejection
+    expect(() => store?.close()).not.toThrow()
+    store = null
+  })
+
+  it('fails shutdown closed on a bounded deadline until the GPX worker physically exits [DON-274]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-shutdown-deadline-'))
+    let resolveWorkerExit: (() => void) | undefined
+    const workerExited = new Promise<void>((resolve) => { resolveWorkerExit = resolve })
+    const runner = ((input: { readonly signal?: AbortSignal }) => {
+      const result = new Promise((_resolve, reject) => {
+        input.signal?.addEventListener('abort', () => {
+          const error = new Error('cancelled')
+          error.name = 'AbortError'
+          reject(error)
+        }, { once: true })
+      })
+      Object.defineProperty(result, 'workerExited', { value: workerExited })
+      return result
+    }) as (input: { readonly signal?: AbortSignal }) => Promise<unknown> & { readonly workerExited: Promise<void> }
+    store = createElectronMissionStore({
+      userDataPath,
+      runGpxEvidenceImportInWorker: runner,
+      gpxShutdownJoinTimeoutMs: 20,
+    })
+    const mission = await store.createMission({ name: 'Bounded GPX Shutdown Mission' })
+    const importing = store.importGpxEvidencePaths({ missionId: mission.id, paths: ['/field/stuck.gpx'] })
+    void importing.catch(() => undefined)
+
+    await expect(store.prepareClose()).rejects.toThrow(/worker.*did not exit.*shutdown/i)
+    expect(() => store?.close()).toThrow(/GPX evidence imports are active/i)
+
+    resolveWorkerExit?.()
+    await expect(store.prepareClose()).resolves.toBeUndefined()
     expect(() => store?.close()).not.toThrow()
     store = null
   })

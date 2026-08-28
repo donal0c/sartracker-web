@@ -438,6 +438,7 @@ export async function startMissionReviewRuntime(
     const missionId = state.selectedMissionId
     if (replay.result === null || cursor === null || missionId === null
       || dependencies.missionStore.readMissionReplayTrackChunk === undefined) return
+    cancelActiveReplayRead()
     const currentToken = replayToken
     const requestId = `mission-replay-${requestNamespace}-${++requestSequence}`
     activeReplayRequestId = requestId
@@ -478,8 +479,8 @@ export async function startMissionReviewRuntime(
       }
       publishRuntime()
     } catch (error) {
-      if (currentToken !== replayToken) return
-      if (activeReplayRequestId === requestId) activeReplayRequestId = null
+      if (currentToken !== replayToken || activeReplayRequestId !== requestId) return
+      activeReplayRequestId = null
       state = { ...state, replay: { ...state.replay, loadingMore: false, error: toErrorMessage(error) } }
       publishRuntime()
     }
@@ -490,6 +491,7 @@ export async function startMissionReviewRuntime(
     const missionId = state.selectedMissionId
     if (replay.result === null || objectCursor === null || missionId === null
       || dependencies.missionStore.readMissionReplayObjectChunk === undefined) return
+    cancelActiveReplayRead()
     const currentToken = replayToken
     const requestId = `mission-replay-${requestNamespace}-${++requestSequence}`
     activeReplayRequestId = requestId
@@ -523,8 +525,8 @@ export async function startMissionReviewRuntime(
       }
       publishRuntime()
     } catch (error) {
-      if (currentToken !== replayToken) return
-      if (activeReplayRequestId === requestId) activeReplayRequestId = null
+      if (currentToken !== replayToken || activeReplayRequestId !== requestId) return
+      activeReplayRequestId = null
       state = { ...state, replay: { ...state.replay, loadingMore: false, error: toErrorMessage(error) } }
       publishRuntime()
     }

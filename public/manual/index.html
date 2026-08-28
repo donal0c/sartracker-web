@@ -1522,7 +1522,9 @@
           <p>
             Desktop imports preserve the exact GPX source bytes and a SHA-256 content identity. Importing the
             same bytes through another path is idempotent; changed bytes at the same path create a retained
-            revision. Track, segment and point order, names, elevation and source timestamps are kept. Invalid
+            revision. A retry claiming the same exact bytes cannot replace geometry, timing, parsed points or
+            outing evidence; presentation metadata and outing assignment use their dedicated controls. Track,
+            segment and point order, names, elevation and source timestamps are kept. Invalid
             points or segments are retained as explicit rejections instead of disappearing silently.
             Source files are limited to 8 MiB each so exact-byte retention cannot monopolize the
             database writer or exhaust the import worker; larger files fail explicitly and should be
@@ -1559,6 +1561,9 @@
             the operator, but retained source bytes and full local paths stay behind the desktop boundary.
             The panel shows a bounded issue page and explicitly warns when additional retained issues
             exist beyond that page; a current import refreshes the sanitized issue list immediately.
+            On Quit, active and queued imports are cancelled and physically joined before the database can close.
+            If a worker does not exit within the safe deadline, shutdown fails visibly and is not marked clean;
+            retry Quit after the worker exits rather than force-closing the mission store beneath it.
           </p>
           <h3>Helicopters</h3>
           <p>
@@ -1622,9 +1627,17 @@
             Use the earlier/later controls to page through reconstructed objects and exact track evidence; later
             retained records are not hidden by the first page. Static or undated GPX has its own provenance list,
             including outing assignment, revision, digest and rejection count. Local selections use the real
-            Europe/Dublin clock: nonexistent spring-forward times and ambiguous autumn clock-change times are
-            rejected instead of being silently interpreted, and future times are rejected without changing the
-            live map.
+            Europe/Dublin clock. Nonexistent spring-forward times are rejected. During the repeated autumn hour,
+            Replay shows an explicit choice between the first Irish Summer Time occurrence (UTC+01) and the
+            second Greenwich Mean Time occurrence (UTC+00); a mission ending in either occurrence remains
+            seekable without guessing. Future times are rejected without changing the live map.
+          </p>
+          <p>
+            Replay distinguishes an honestly empty result from evidence removed by display filters. Browser
+            validation explicitly says when mutable-object version history is unavailable and makes no absence
+            claim; operational mission-object reconstruction requires the supported Electron desktop runtime.
+            Upgraded legacy stores also show an explicit legacy-scan limitation when replay accelerators are
+            deliberately absent so current-position writes can keep priority.
           </p>
           <figure class="screenshot">
             <img src="assets/mission-evidence-replay.png" alt="Mission Review Replay showing data known at the selected time and an undated GPX evidence limitation" />

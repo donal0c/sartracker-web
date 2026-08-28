@@ -55,4 +55,30 @@ describe('mission replay worker runner [DON-278]', () => {
       new Promise((resolve) => setTimeout(() => resolve('timed-out'), 50)),
     ])).resolves.toBe('exited')
   })
+
+  it('surfaces a safe bounded-result violation instead of an unknown worker error [DON-278]', async () => {
+    const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
+    worker.terminate = vi.fn(async () => {
+      queueMicrotask(() => worker.emit('exit', 1))
+      return 1
+    })
+    const query = runMissionReplayInWorker({
+      databasePath: '/tmp/unused.sqlite',
+      kind: 'state',
+      query: {
+        missionId: 'mission-1',
+        selectedTime: '2026-08-27T08:00:00Z',
+        trackLimit: 1,
+      },
+      createWorker: () => worker,
+    })
+
+    worker.emit('message', {
+      type: 'complete',
+      workerThreadId: 7,
+      result: { tracks: [{}, {}] },
+    })
+
+    await expect(query).rejects.toThrow(/tracks exceed the bounded message limit/u)
+  })
 })

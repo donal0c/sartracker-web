@@ -437,6 +437,32 @@ describe('startGpxRuntime', () => {
       importing: false,
     }))
   })
+
+  it('replaces a same-path GPX revision in renderer state instead of duplicating its identity [DON-274]', async () => {
+    const existing = { ...createStoredImport('gpx-a', 'mission-a'), content_sha256: 'old-hash' }
+    const revised = {
+      ...existing,
+      display_name: 'Revised track',
+      content_sha256: 'new-hash',
+      revision_sequence: 2,
+    }
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockResolvedValue([existing]),
+        upsertGpxImport: vi.fn().mockResolvedValue(revised),
+        deleteGpxImport: vi.fn(),
+      },
+      applyRuntime,
+    })
+    await controller.refreshMission('mission-a')
+
+    await controller.importFiles([createImportFile(existing.source_path, existing.file_name)])
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      imports: [revised],
+    }))
+  })
 })
 
 function createStoredImport(id: string, missionId: string): GpxTrackImport {

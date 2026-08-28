@@ -3232,7 +3232,9 @@ describe('electron mission store', () => {
     await store.deleteHelicopter(helicopter.id)
 
     const gpx = await store.upsertGpxImport({ mission_id: mission.id, ...SAMPLE_GPX })
-    await store.upsertGpxImport({ id: gpx.id, mission_id: mission.id, ...SAMPLE_GPX, display_name: 'Ridge Track edited' })
+    await store.updateGpxImportPresentation({
+      id: gpx.id, mission_id: mission.id, display_name: 'Ridge Track edited',
+    })
     await store.deleteGpxImport(gpx.id)
 
     const types = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
@@ -3248,7 +3250,7 @@ describe('electron mission store', () => {
         'helicopter_updated',
         'helicopter_deleted',
         'gpx_import_created',
-        'gpx_import_updated',
+        'gpx_import_presentation_updated',
         'gpx_import_deleted',
       ]),
     )
@@ -3291,10 +3293,9 @@ describe('electron mission store', () => {
       ...SAMPLE_DRAWING,
       name: 'Sector A edited',
     })
-    await store.upsertGpxImport({
+    await store.updateGpxImportPresentation({
       id: gpx.id,
       mission_id: mission.id,
-      ...SAMPLE_GPX,
       display_name: 'Ridge Track edited',
     })
 

@@ -21,7 +21,8 @@ type GpxStoreBoundary = {
   readonly updateGpxImportPresentation?: (input: {
     readonly id: string
     readonly mission_id: string
-    readonly metadata_json: string | null
+    readonly display_name?: string
+    readonly metadata_json?: string | null
   }) => Promise<GpxTrackImport>
   readonly listGpxImportIssues?: (input: {
     readonly missionId: string
@@ -427,9 +428,7 @@ export async function startGpxRuntime(
       state = {
         ...state,
         importing: false,
-        imports: [...state.imports, ...imported].sort((left, right) =>
-          left.display_name.localeCompare(right.display_name),
-        ),
+        imports: mergeGpxImportsByIdentity(state.imports, imported),
         error: null,
       }
       publishRuntime()
@@ -444,6 +443,17 @@ export async function startGpxRuntime(
       publishRuntime()
       throw error
     }
+  }
+
+  /** Replaces revised projections and appends only genuinely new GPX identities. */
+  function mergeGpxImportsByIdentity(
+    existing: readonly GpxTrackImport[],
+    imported: readonly GpxTrackImport[],
+  ): readonly GpxTrackImport[] {
+    const byId = new Map(existing.map((entry) => [entry.id, entry]))
+    for (const entry of imported) byId.set(entry.id, entry)
+    return [...byId.values()].sort((left, right) =>
+      left.display_name.localeCompare(right.display_name))
   }
 
   async function importPathsIntoRuntime(

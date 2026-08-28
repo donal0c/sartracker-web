@@ -453,6 +453,63 @@ and every 25-point slice. The same focused regression was red locally at
 GPX/current/shutdown set passed 24/24 and the full unit suite passed 2,331/2,331.
 The replacement exact-tree Linux qualification is the successful run above.
 
+## 2026-08-28 pasted-review invalidation and remediation
+
+A later five-review deep-review packet invalidated the preceding completion
+candidate. Central source retrace accepted the concrete mechanisms rather than
+the packet's verdicts wholesale: destructive legacy-GPX baseline compaction,
+same-hash projection/revision divergence, post-T device-filter leakage,
+unbounded GPX-worker shutdown join, migrated `MultiPolygon` retirement failure,
+superseded page errors replacing newer results, Dublin overlap ambiguity,
+cross-mission GPX identity movement, unsanitized replay-bound errors, browser
+cursor/capability divergence and operator-state wording that conflated
+unavailable, filtered-empty and truly empty evidence. The proposed bitemporal
+object re-ranking was rejected because it contradicted the locked
+data-known-at-T contract and existing oracle. The authentic-v11 replay scan is
+retained by the ADR, now identified explicitly as
+`legacy_replay_scan_fallback`; it is a qualification boundary, not an indexed
+performance claim.
+
+The replacement preserves original legacy geometry unchanged in the immutable
+revision, keeps the bounded display projection separate, retains explicit
+rejection evidence for malformed or over-budget legacy geometry, and avoids
+unbounded point expansion during startup. Exact-hash retries are strict:
+evidence-bearing divergence is rejected and presentation changes use the
+dedicated presentation operation. Device filters are time-fenced, Dublin's
+repeated hour exposes its exact IST/GMT occurrence, page ownership is
+latest-wins with cancellation and stale-error fencing, and the browser harness
+uses the production opaque v3 cursor envelope and request bounds. GPX identity
+is mission-fenced in Electron, the harness and the historical Tauri adapter;
+Mission Replay itself refuses non-Electron operational execution. Search-area
+retirement has a dedicated mutation that preserves retained legacy geometry.
+Shutdown now has a distinct physical-worker join deadline and fails visibly
+without closing the database or recording a clean exit while the worker remains
+live.
+
+Red-green regressions cover each accepted seam, including >128 KiB and malformed
+legacy geometry, exact-hash mutation, post-T filters, Dublin overlap selection,
+stale page failure/cancellation, cross-mission GPX IDs, explicit query bounds,
+migrated `MultiPolygon` retirement, bounded shutdown failure/retry and renderer
+same-path revision replacement. Full local proof on the uncommitted replacement
+tree is 289 files / 2,416 unit tests, backend 52 passed / 1 intentional real-
+keychain ignore, lint/build/bundle budgets, Chromium 164/164, visual Playwright
+58/58, and uncached independent visual review 69/69
+(`visual-review-2026-08-28T06-40-08Z.json`).
+
+Fresh indexed 960k qualification generated
+`tmp/breadcrumb-pr5-evidence/bcp-960k.json`: seek 62.28 ms, late page 49.96 ms,
+maximum concurrent current write 39.74 ms (p95 4.18 ms), event-loop maximum
+47.84 ms and restart seek 55.91 ms with exact equality. A separate authentic-
+v11 960k fallback retained all 960,001 positions without replay indexes or
+daily counts: 13.43 ms open, 601.72 ms first seek, 3.59 ms concurrent current
+write and 584.00 ms restart seek, with the fallback limitation visible. It
+passed the retained contract but does not establish indexed replay performance
+for upgraded stores.
+
+Commit, committed-tree package/Linux evidence and all four clean independent
+exact-head reviews remain required before this remediation can be called task
+complete. PR opened/review-ready remains an intermediate state.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

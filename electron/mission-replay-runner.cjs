@@ -40,10 +40,11 @@ function runMissionReplayInWorker(input) {
     input.signal?.addEventListener('abort', handleAbort, { once: true })
     worker.once('message', (message) => {
       if (settled) return
-      if (isBoundedReplayMessage(message, input.query.trackLimit)) {
+      const validationError = validateBoundedReplayMessage(message, input.query.trackLimit)
+      if (validationError === null) {
         completed = message.result
       } else {
-        rejectAndTerminate(new Error(`Mission replay worker failed: ${safeMessage(message?.message)}`))
+        rejectAndTerminate(new Error(`Mission replay worker failed: ${safeMessage(validationError)}`))
       }
     })
     worker.once('error', (error) => rejectAndTerminate(
@@ -62,13 +63,15 @@ function runMissionReplayInWorker(input) {
   return result
 }
 
-function isBoundedReplayMessage(message, trackLimit) {
-  if (message?.type !== 'complete' || !Number.isInteger(message.workerThreadId)) return false
+function validateBoundedReplayMessage(message, trackLimit) {
+  if (message?.type !== 'complete' || !Number.isInteger(message.workerThreadId)) {
+    return message?.message ?? 'invalid worker response'
+  }
   try {
     assertReplayResultBounded(message.result, trackLimit)
-    return true
-  } catch {
-    return false
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : 'invalid bounded worker result'
   }
 }
 

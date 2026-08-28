@@ -2205,7 +2205,30 @@ impl MissionStore {
         self.ensure_mission_writable_for_data(&input.mission_id)
             .await?;
 
-        let existing_import = sqlx::query_as::<_, GpxTrackImport>(
+        let existing_by_id = match input.id.as_ref() {
+            Some(import_id) => sqlx::query_as::<_, GpxTrackImport>(
+                r#"
+                SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
+                       metadata_json, imported_at, updated_at
+                FROM gpx_track_imports WHERE id = ?
+                "#,
+            )
+            .bind(import_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|error| format!("Failed to inspect GPX identity {import_id}: {error}"))?,
+            None => None,
+        };
+        if let Some(existing) = existing_by_id.as_ref() {
+            if existing.mission_id != input.mission_id {
+                return Err(format!(
+                    "Cannot move GPX evidence {} to a different mission.",
+                    existing.id
+                ));
+            }
+        }
+
+        let existing_by_path = sqlx::query_as::<_, GpxTrackImport>(
             r#"
             SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
                    metadata_json, imported_at, updated_at
@@ -2224,6 +2247,12 @@ impl MissionStore {
             )
         })?;
 
+        if let (Some(by_id), Some(by_path)) = (existing_by_id.as_ref(), existing_by_path.as_ref()) {
+            if by_id.id != by_path.id {
+                return Err("GPX identity and source path belong to different evidence.".to_string());
+            }
+        }
+        let existing_import = existing_by_id.or(existing_by_path);
         let import_id = input
             .id
             .or_else(|| existing_import.as_ref().map(|entry| entry.id.clone()))
@@ -2252,7 +2281,6 @@ impl MissionStore {
               metadata_json, imported_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-              mission_id = excluded.mission_id,
               source_path = excluded.source_path,
               file_name = excluded.file_name,
               display_name = excluded.display_name,
@@ -5153,6 +5181,63 @@ mod tests {
             .await
             .expect_err("finished mission should reject helicopter writes");
         assert_finished_mission_data_error(&error, &mission.id);
+    }
+
+    #[tokio::test]
+    async fn gpx_identity_cannot_move_between_missions() {
+        let (database_path, backup_path) = temp_paths("gpx-cross-mission-identity");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+        let first = store
+            .create_mission(CreateMissionInput {
+                name: "First GPX Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("first mission should be created");
+        let retained = store
+            .upsert_gpx_import(UpsertGpxTrackImportInput {
+                id: Some("shared-gpx-id".to_string()),
+                mission_id: first.id.clone(),
+                source_path: "/tracks/first.gpx".to_string(),
+                file_name: "first.gpx".to_string(),
+                display_name: "First".to_string(),
+                geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+                metadata_json: None,
+            })
+            .await
+            .expect("first GPX should be retained");
+        store.finish_mission(first.id.clone()).await.expect("first mission should finish");
+        let second = store
+            .create_mission(CreateMissionInput {
+                name: "Second GPX Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("second mission should be created");
+
+        let error = store
+            .upsert_gpx_import(UpsertGpxTrackImportInput {
+                id: Some(retained.id.clone()),
+                mission_id: second.id,
+                source_path: "/tracks/second.gpx".to_string(),
+                file_name: "second.gpx".to_string(),
+                display_name: "Second".to_string(),
+                geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+                metadata_json: None,
+            })
+            .await
+            .expect_err("GPX identity must remain owned by its original mission");
+        assert!(error.contains("different mission"), "unexpected error: {error}");
+        let first_imports = store
+            .list_gpx_imports(first.id)
+            .await
+            .expect("first mission GPX should remain readable");
+        assert_eq!(first_imports.len(), 1);
+        assert_eq!(first_imports[0].id, retained.id);
     }
 
     #[tokio::test]

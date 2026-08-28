@@ -11,8 +11,13 @@ type LocalTimeParts = {
   readonly millisecond: number
 }
 
-/** Parses an explicit Europe/Dublin wall time and rejects DST gaps or overlaps. */
-export function parseDublinDateTimeLocal(value: string): string {
+export type DublinLocalTimeChoice = {
+  readonly offsetMinutes: 0 | 60
+  readonly iso: string
+}
+
+/** Lists the exact instants represented by one Europe/Dublin wall time. */
+export function getDublinLocalTimeChoices(value: string): readonly DublinLocalTimeChoice[] {
   const parts = parseLocalParts(value)
   const wallClockEpoch = Date.UTC(
     parts.year,
@@ -23,17 +28,34 @@ export function parseDublinDateTimeLocal(value: string): string {
     parts.second,
     parts.millisecond,
   )
-  const matches = [0, 60]
-    .map((offsetMinutes) => new Date(wallClockEpoch - offsetMinutes * 60_000))
-    .filter((candidate) => localPartsEqual(readDublinParts(candidate), parts))
+  return ([60, 0] as const)
+    .map((offsetMinutes) => ({
+      offsetMinutes,
+      instant: new Date(wallClockEpoch - offsetMinutes * 60_000),
+    }))
+    .filter((candidate) => localPartsEqual(readDublinParts(candidate.instant), parts))
+    .map((candidate) => ({
+      offsetMinutes: candidate.offsetMinutes,
+      iso: candidate.instant.toISOString(),
+    }))
+}
+
+/** Parses an explicit Europe/Dublin wall time, requiring a choice during DST overlap. */
+export function parseDublinDateTimeLocal(
+  value: string,
+  offsetMinutes?: DublinLocalTimeChoice['offsetMinutes'],
+): string {
+  const matches = getDublinLocalTimeChoices(value)
 
   if (matches.length === 0) {
     throw new Error('That Europe/Dublin local time does not exist because the clock moves forward.')
   }
   if (matches.length > 1) {
+    const selected = matches.find((candidate) => candidate.offsetMinutes === offsetMinutes)
+    if (selected !== undefined) return selected.iso
     throw new Error('That Europe/Dublin local time occurs twice because the clock moves back; choose an unambiguous time.')
   }
-  return matches[0]!.toISOString()
+  return matches[0]!.iso
 }
 
 /** Formats one UTC instant for a Europe/Dublin datetime-local control. */
