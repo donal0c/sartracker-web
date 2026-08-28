@@ -2,7 +2,7 @@ const { randomUUID } = require('node:crypto')
 
 const OBJECT_TYPES = new Set(['marker', 'drawing', 'outing', 'search_area', 'search_assignment', 'search_pass'])
 const OPERATIONS = new Set(['created', 'updated', 'retired', 'legacy_baseline'])
-const MAX_LEGACY_BASELINE_ROWS_PER_TURN = 100
+const MAX_LEGACY_BASELINE_ROWS_PER_TURN = 50
 const MAX_LEGACY_BASELINE_PAGE_BYTES = 1024 * 1024
 const MAX_LEGACY_BASELINE_OBJECT_BYTES = 1024 * 1024
 const LEGACY_BASELINES = [
