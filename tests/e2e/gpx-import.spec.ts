@@ -47,6 +47,7 @@ test.describe('M22 GPX import parity', () => {
     const importId = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__
       ?.readState().gpxImports.find((entry) => entry.display_name === 'alpha')?.id ?? null)
     expect(importId).not.toBeNull()
+    await expect(page.getByTestId('gpx-outing-assigned-by')).toHaveAttribute('maxlength', '120')
     await page.getByTestId('gpx-outing-assigned-by').fill('Coordinator One')
     await page.getByTestId(`gpx-import-outing-${importId}`).selectOption({ label: 'Team Alpha outing' })
     await expect(page.getByTestId('gpx-import-status')).toContainText('new evidence revision')
@@ -90,6 +91,7 @@ test.describe('M22 GPX import parity', () => {
         file_name: 'team-alpha.gpx',
         reason: 'Import was interrupted after source bytes were retained.',
         recorded_at: '2026-08-27T10:00:00.000Z',
+        projection_warnings: ['file_name_truncated'],
       }])
     })
 
@@ -99,6 +101,9 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('gpx-import-issues')).toContainText('team-alpha.gpx')
     await expect(page.getByTestId('gpx-import-issues')).toContainText(
       'interrupted after source bytes were retained',
+    )
+    await expect(page.getByTestId('gpx-import-issues')).toContainText(
+      'Some retained issue fields were shortened for safe display',
     )
   })
 

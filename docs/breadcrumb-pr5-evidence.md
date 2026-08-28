@@ -748,6 +748,56 @@ indexes: 6.29 ms open, 738.03 ms seek, 3.78 ms concurrent current write and
 package/Linux proof and all four clean independent exact-head reviews remain
 mandatory.
 
+## `1e9b6acc` rejection and replacement containment proof
+
+Pushed binding head `1e9b6accf8c8c4aef48a9cd3be0eb3209bd4d067` is rejected.
+Linux run `33160578384` failed the deterministic 500,000-settled-row gate at
+300.63 ms startup. Source retrace found repeated full-table extrema aggregates
+in schema-v12 migration initialization. The replacement uses indexed signed
+rowid seeks for the safe maximum and both unsafe envelopes; the 500,000-row
+startup/cursor/heartbeat regression and exact -1, 0, 2^53-1, 2^53 and 2^53+1
+quarantine vectors are green.
+
+The renderer/input-containment review also rejected `1e9b6acc`. Replay accepted
+arbitrary timezones and parsed or cloned oversized time fields. GPX store and
+filesystem IPC allowed oversized identities, actors, paths or selection
+results to reach database/filesystem work, while the retained-issue page had a
+row limit but no complete scalar/byte boundary. Red-first replacement coverage
+now requires a plain request envelope, a raw selected-time maximum of 64
+characters before strict calendar validation, the sole `Europe/Dublin`
+timezone contract, GPX mission/import identities of at most 1,000 characters,
+outing identities of at most 200, assignment actors of at most 120, and at most
+100 paths of at most 4,096 raw characters. File-dialog admission is atomic and
+folder enumeration stops explicitly on the 101st GPX file. Main IPC, runner and
+worker validate independently.
+
+Persisted GPX issue queries now preflight their mission/cursor inputs, select
+only bounded scalars, carry signed rowids as exact decimal strings, pack the
+response below the renderer byte budget and expose every shortened field in
+`projection_warnings`. The operator panel states that safe-display shortening
+occurred and that the persisted record remains authoritative; no exact retained
+source bytes or absolute paths cross the renderer boundary.
+
+Fresh replacement-tree verification is green:
+
+- serialized unit: 289 files / 2,438 tests;
+- Rust backend: 55 passed / one intentional real-keychain ignore;
+- Node syntax, ESLint, TypeScript production build and bundle budgets;
+- Chromium operator flows: 165/165;
+- visual Playwright: 58/58 with 69 registered screenshots;
+- uncached independent visual review: 69/69, report
+  `visual-review-2026-08-28T15-24-05Z.json`;
+- indexed 960k fixture digest
+  `bb4d23fbf3d63ab60e64b547cd5f0567bb612be8ff055fbdb6326be00f899166`:
+  60.77 ms seek, 46.33 ms late page, 45.58 ms maximum current write,
+  48.15 ms event-loop maximum and 51.34 ms exact restart seek;
+- authentic-v11 960k fallback: 5.59 ms open, 610.87 ms seek, 3.86 ms
+  concurrent current write and 577.44 ms restart seek, with
+  `legacy_replay_scan_fallback` explicit.
+
+This is replacement-tree proof, not yet committed package/Linux or clean
+exact-head review proof. Those gates remain mandatory before task completion.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

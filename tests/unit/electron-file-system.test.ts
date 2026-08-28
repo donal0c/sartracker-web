@@ -42,6 +42,7 @@ type ElectronFileSystem = {
   readonly listGpxDirectoryFiles: (directoryPath: string) => Promise<readonly {
     readonly fileName: string
   }[]>
+  readonly listGpxDirectoryPaths: (directoryPath: string) => Promise<readonly string[]>
   readonly ingestMarkerAttachment: (
     input: { readonly missionId: string; readonly fileName: string; readonly bytesBase64: string },
     missionStore: { readonly getMission: (missionId: string) => Promise<{ readonly status: string }> },
@@ -118,6 +119,44 @@ describe('Electron filesystem service', () => {
     ])
 
     await rm(externalDirectory, { recursive: true, force: true })
+  })
+
+  it('rejects oversized GPX file selections atomically without allowing a partial selection', async () => {
+    const selectedPaths = Array.from(
+      { length: 101 },
+      (_, index) => `/Volumes/team/${String(index).padStart(3, '0')}.gpx`,
+    )
+    const dialog = {
+      showOpenDialog: vi.fn().mockResolvedValue({ canceled: false, filePaths: selectedPaths }),
+    }
+    const service = await createService({ dialog })
+
+    await expect(service.chooseGpxFilePaths()).rejects.toThrow(/more than 100/iu)
+    await expect(service.readGpxFiles([selectedPaths[0]])).rejects.toThrow(/not under an allowed/iu)
+  })
+
+  it('rejects overlong GPX dialog paths before allowing or resolving them', async () => {
+    const oversizedPath = `/${'x'.repeat(4_096)}`
+    const dialog = {
+      showOpenDialog: vi.fn()
+        .mockResolvedValueOnce({ canceled: false, filePaths: [oversizedPath] })
+        .mockResolvedValueOnce({ canceled: false, filePaths: [oversizedPath] }),
+    }
+    const service = await createService({ dialog })
+
+    await expect(service.chooseGpxFilePaths()).rejects.toThrow(/GPX file.*4096/iu)
+    await expect(service.chooseGpxDirectoryPath()).rejects.toThrow(/GPX directory.*4096/iu)
+  })
+
+  it('refuses to return or materialize more than 100 GPX directory results', async () => {
+    const service = await createService()
+    await Promise.all(Array.from({ length: 101 }, (_, index) =>
+      writeFile(path.join(userDataPath!, `${String(index).padStart(3, '0')}.gpx`), '<gpx/>')))
+
+    await expect(service.listGpxDirectoryPaths(userDataPath!))
+      .rejects.toThrow(/more than 100/iu)
+    await expect(service.listGpxDirectoryFiles(userDataPath!))
+      .rejects.toThrow(/more than 100/iu)
   })
 
   it('stores marker attachments under Electron userData with a sanitized file name', async () => {

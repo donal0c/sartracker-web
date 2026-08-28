@@ -11,6 +11,31 @@ const { runMissionReplayInWorker } = require('../../electron/mission-replay-runn
 }
 
 describe('mission replay worker runner [DON-278]', () => {
+  it('rejects an oversized selected time and unsupported timezone before creating a worker', async () => {
+    const createWorker = vi.fn()
+    for (const query of [
+      {
+        missionId: 'mission-1',
+        selectedTime: '2'.repeat(65),
+        trackLimit: 100,
+      },
+      {
+        missionId: 'mission-1',
+        selectedTime: '2026-08-27T08:00:00Z',
+        trackLimit: 100,
+        timezone: 'UTC',
+      },
+    ]) {
+      expect(() => runMissionReplayInWorker({
+        databasePath: '/tmp/unused.sqlite',
+        kind: 'state',
+        query,
+        createWorker,
+      })).toThrow(/selected time|timezone/i)
+    }
+    expect(createWorker).not.toHaveBeenCalled()
+  })
+
   it('terminates a superseded seek and rejects with a stable cancellation error', async () => {
     const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
     const terminate = vi.fn(async () => {

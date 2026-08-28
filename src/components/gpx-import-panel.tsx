@@ -101,6 +101,11 @@ export function GpxImportPanel() {
             {importIssues.map((issue) => (
               <li className="text-xs text-rose-100" key={`${issue.batch_id}:${issue.file_name}:${issue.recorded_at}`}>
                 <strong>{issue.file_name}</strong>: {issue.reason}
+                {issue.projection_warnings !== undefined && issue.projection_warnings.length > 0 ? (
+                  <span className="mt-1 block font-semibold">
+                    Some retained issue fields were shortened for safe display. The persisted record remains authoritative.
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -119,6 +124,7 @@ export function GpxImportPanel() {
       <input
         className="mt-3 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-xs text-stone-100"
         data-testid="gpx-outing-assigned-by"
+        maxLength={120}
         onChange={(event) => setAssignmentActor(event.target.value)}
         placeholder="Coordinator name for outing assignments"
         value={assignmentActor}

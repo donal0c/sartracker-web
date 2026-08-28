@@ -13,9 +13,15 @@ const Database = require('better-sqlite3') as new (path: string) => {
   prepare(sql: string): { run(...params: readonly unknown[]): unknown }
   transaction<T>(operation: () => T): () => T
 }
-const { readMissionReplayState, readMissionReplayTrackChunk, readMissionReplayObjectChunk } = require(
+const {
+  normalizeReplayInput,
+  readMissionReplayState,
+  readMissionReplayTrackChunk,
+  readMissionReplayObjectChunk,
+} = require(
   '../../electron/mission-replay-query.cjs',
 ) as {
+  normalizeReplayInput(input: unknown): ReplayInput & { readonly timezone: string }
   readMissionReplayState(database: InstanceType<typeof Database>, input: ReplayInput): ReplayState
   readMissionReplayTrackChunk(database: InstanceType<typeof Database>, input: ReplayInput & { cursor?: string }): ReplayChunk
   readMissionReplayObjectChunk(database: InstanceType<typeof Database>, input: ReplayInput & { objectCursor?: string }): {
@@ -26,7 +32,7 @@ const { readMissionReplayState, readMissionReplayTrackChunk, readMissionReplayOb
   }
 }
 
-type ReplayInput = { readonly missionId: string; readonly selectedTime: string; readonly trackLimit: number; readonly objectLimit?: number; readonly replayGeneration?: number }
+type ReplayInput = { readonly missionId: string; readonly selectedTime: string; readonly trackLimit: number; readonly objectLimit?: number; readonly replayGeneration?: number; readonly timezone?: string }
 type ReplayState = {
   readonly replayGeneration: number
   readonly objects: readonly { readonly object_type: string; readonly object_id: string; readonly state: Record<string, unknown> }[]
@@ -52,6 +58,48 @@ type ReplayChunk = {
 }
 
 describe('mission replay query [DON-278]', () => {
+  it('rejects malformed envelopes and oversized selected times before date parsing', () => {
+    expect(() => normalizeReplayInput(null)).toThrow('Mission replay input is invalid.')
+    expect(() => normalizeReplayInput([])).toThrow('Mission replay input is invalid.')
+
+    const parse = vi.spyOn(Date, 'parse')
+    expect(() => normalizeReplayInput({
+      missionId: 'mission-1', selectedTime: '2'.repeat(65), trackLimit: 100,
+    })).toThrow('Mission replay selected time is invalid.')
+    expect(parse).not.toHaveBeenCalled()
+    parse.mockRestore()
+  })
+
+  it('canonicalizes a valid selected instant and accepts only the Dublin timezone contract', () => {
+    expect(normalizeReplayInput({
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00+01:00', trackLimit: 100,
+    })).toMatchObject({
+      selectedTime: '2026-08-27T08:00:00.000Z',
+      timezone: 'Europe/Dublin',
+    })
+    expect(normalizeReplayInput({
+      missionId: 'mission-1', selectedTime: '2026-08-27T08:00:00Z', trackLimit: 100,
+      timezone: 'Europe/Dublin',
+    }).timezone).toBe('Europe/Dublin')
+
+    for (const timezone of [null, '', 'UTC', ' Europe/Dublin ', 'Not/AZone']) {
+      expect(() => normalizeReplayInput({
+        missionId: 'mission-1', selectedTime: '2026-08-27T08:00:00Z', trackLimit: 100,
+        timezone,
+      })).toThrow('Mission replay timezone is invalid.')
+    }
+    for (const selectedTime of [
+      '2026-02-30T08:00:00Z',
+      ' 2026-08-27T08:00:00Z',
+      '2026-08-27 08:00:00Z',
+      '2026-08-27T08:00:00',
+    ]) {
+      expect(() => normalizeReplayInput({
+        missionId: 'mission-1', selectedTime, trackLimit: 100,
+      })).toThrow('Mission replay selected time is invalid.')
+    }
+  })
+
   it('offers only device identities backed by exact fixes known by the selected time', () => {
     const db = createReplayDatabase()
     insertPositionForDevice(db, 'known-device', [

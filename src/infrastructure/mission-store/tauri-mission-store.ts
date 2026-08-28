@@ -379,10 +379,11 @@ export type GpxTrackImport = {
 }
 
 export type GpxImportIssue = {
-  readonly batch_id: string
+  readonly batch_id: string | null
   readonly file_name: string
   readonly reason: string
   readonly recorded_at: string
+  readonly projection_warnings?: readonly string[]
 }
 
 export type GpxImportIssuePage = {

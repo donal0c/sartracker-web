@@ -13,14 +13,20 @@ const {
   upsertGpxEvidenceChunked,
 } = require('./mission-store.cjs')
 const { readBoundedGpxSource } = require('./gpx-source-reader.cjs')
+const {
+  normalizeRawGpxPath,
+  validateGpxImportEnvelope,
+} = require('./gpx-import-envelope.cjs')
 
 if (parentPort === null) throw new Error('GPX evidence worker requires a parent message port.')
 
 async function run() {
   let database
   try {
+    const envelope = validateGpxImportEnvelope(workerData)
+    const databasePath = normalizeRawGpxPath(workerData.databasePath, 'GPX database path')
     const scalarParsers = await import('../shared/gpx-source-scalars.mjs')
-    database = new Database(workerData.databasePath)
+    database = new Database(databasePath)
     database.pragma('foreign_keys = ON')
     database.pragma('journal_mode = WAL')
     const imports = []
@@ -28,11 +34,11 @@ async function run() {
     if (workerData.receiptsStarted !== true) {
       startGpxImportBatch(database, {
         batchId: workerData.batchId,
-        missionId: workerData.missionId,
-        totalFiles: workerData.paths.length,
+        missionId: envelope.missionId,
+        totalFiles: envelope.paths.length,
       })
     }
-    for (const [index, sourcePath] of workerData.paths.entries()) {
+    for (const [index, sourcePath] of envelope.paths.entries()) {
       let normalizedPath = sourcePath
       let sourceBytes = null
       try {
@@ -40,7 +46,7 @@ async function run() {
         if (workerData.receiptsStarted !== true) {
           recordGpxImportSourceReceipt(database, {
             batchId: workerData.batchId,
-            missionId: workerData.missionId,
+            missionId: envelope.missionId,
             sourcePath: normalizedPath,
             fileName: path.basename(normalizedPath),
           })
@@ -51,7 +57,7 @@ async function run() {
         const sourceBytesBase64 = sourceBytes.toString('base64')
         retainGpxImportSourceBytes(database, {
           batchId: workerData.batchId,
-          missionId: workerData.missionId,
+          missionId: envelope.missionId,
           sourcePath: normalizedPath,
           contentSha256,
           sourceBytesBase64,
@@ -60,7 +66,7 @@ async function run() {
         const decoded = new TextDecoder('utf-8', { fatal: true }).decode(sourceBytes)
         const parsed = parseGpxEvidence(decoded, path.basename(normalizedPath), scalarParsers)
         const stored = await upsertGpxEvidenceChunked(database, {
-          mission_id: workerData.missionId,
+          mission_id: envelope.missionId,
           source_path: normalizedPath,
           file_name: path.basename(normalizedPath),
           display_name: path.basename(normalizedPath).replace(/\.[^.]+$/u, ''),
@@ -79,7 +85,7 @@ async function run() {
           rejections: parsed.rejections,
         }, 25, {
           batchId: workerData.batchId,
-          missionId: workerData.missionId,
+          missionId: envelope.missionId,
           sourcePath: normalizedPath,
         })
         imports.push({
@@ -101,7 +107,7 @@ async function run() {
           : error instanceof Error ? error.message : String(error)
         recordGpxImportFailure(database, {
           batchId: workerData.batchId,
-          missionId: workerData.missionId,
+          missionId: envelope.missionId,
           sourcePath: normalizedPath,
           fileName: path.basename(normalizedPath),
           contentSha256: sourceBytes === null ? null : createHash('sha256').update(sourceBytes).digest('hex'),
@@ -110,9 +116,9 @@ async function run() {
         })
         failures.push({ sourcePath: normalizedPath, reason })
       }
-      parentPort.postMessage({ type: 'progress', completed: index + 1, total: workerData.paths.length })
+      parentPort.postMessage({ type: 'progress', completed: index + 1, total: envelope.paths.length })
     }
-    finishGpxImportBatch(database, workerData.batchId, workerData.missionId)
+    finishGpxImportBatch(database, workerData.batchId, envelope.missionId)
     parentPort.postMessage({ type: 'complete', workerThreadId: threadId, imports, failures })
   } catch (error) {
     parentPort.postMessage({
@@ -229,10 +235,11 @@ function attributeValue(value) {
 function localName(name) { return String(name).split(':').pop() }
 
 function validatePath(value) {
-  if (typeof value !== 'string' || !path.isAbsolute(value) || path.extname(value).toLowerCase() !== '.gpx') {
+  const normalized = normalizeRawGpxPath(value, 'GPX evidence worker path')
+  if (!path.isAbsolute(normalized) || path.extname(normalized).toLowerCase() !== '.gpx') {
     throw new Error('GPX evidence worker path is invalid.')
   }
-  return path.normalize(value)
+  return path.normalize(normalized)
 }
 
 /** Holds the worker at one durable boundary until the forced-kill harness terminates the process. */

@@ -14,6 +14,7 @@ const { runMissionReplayInWorker } = require('./mission-replay-runner.cjs')
 const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
 const { runGpxEvidenceImportInWorker } = require('./gpx-evidence-import-runner.cjs')
 const {
+  DEFAULT_PAGE_BYTE_LIMIT,
   compactGpxDisplayGeometry,
   listGpxImportProjectionPage,
   listGpxImportRevisionProjectionPage,
@@ -96,6 +97,14 @@ const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
 const MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH = 64
 const MAX_SEARCH_AREA_GEOMETRY_LENGTH = 512 * 1_024
 const MAX_SEARCH_ADVISORY_COVERAGE_LENGTH = 512 * 1_024
+const MAX_GPX_RENDERER_ID_LENGTH = 1_000
+const MAX_GPX_RENDERER_OUTING_ID_LENGTH = 200
+const MAX_GPX_RENDERER_ACTOR_LENGTH = 120
+const MAX_GPX_ISSUE_FILE_NAME_LENGTH = 500
+const MAX_GPX_ISSUE_HASH_LENGTH = 128
+const MAX_GPX_ISSUE_REASON_LENGTH = 1_000
+const MAX_GPX_ISSUE_TIMESTAMP_LENGTH = 64
+const GPX_ISSUE_TRUNCATION_SUFFIX = '… [truncated for renderer]'
 
 /** Validates the opaque renderer correlation key used only for worker cancellation. */
 function normalizeBreadcrumbQueryRequestId(value, required) {
@@ -1257,7 +1266,7 @@ function createElectronMissionStore(options) {
         ORDER BY display_name ASC, imported_at ASC`, missionId),
     deleteGpxImport: async (importId) => retireGpxEvidence(
       db,
-      importId,
+      normalizeGpxRendererId(importId, 'GPX import'),
       gpxRetirementFaultInjection,
     ),
     listGpxImportRevisions: async (importId) => all(
@@ -1274,25 +1283,29 @@ function createElectronMissionStore(options) {
     assignGpxImportToOuting: async (input) =>
       projectGpxImportForRenderer(assignGpxEvidenceToOuting(db, input)),
     importGpxEvidencePaths: async (input) => {
-      ensureWritableMission(db, input.missionId)
+      const candidate = normalizeGpxRendererRecord(input, 'GPX path import')
+      const missionId = normalizeGpxRendererId(candidate.missionId, 'GPX import mission')
       if (
-        !Array.isArray(input.paths) || input.paths.length < 1 || input.paths.length > 100 ||
-        input.paths.some((entry) => typeof entry !== 'string' || entry.length < 1 || entry.length > 4_096)
+        !Array.isArray(candidate.paths) || candidate.paths.length < 1 || candidate.paths.length > 100 ||
+        candidate.paths.some((entry) => typeof entry !== 'string'
+          || entry.length < 1 || entry.length > 4_096 || entry.trim() === '')
       ) {
         throw new Error('GPX import paths are invalid.')
       }
+      const paths = candidate.paths.map((entry) => entry.trim())
+      ensureWritableMission(db, missionId)
       const batchId = randomUUID()
       startGpxImportBatch(db, {
         batchId,
-        missionId: input.missionId,
-        totalFiles: input.paths.length,
-        paths: input.paths,
+        missionId,
+        totalFiles: paths.length,
+        paths,
       })
       const controller = new AbortController()
       const result = enqueueGpxEvidenceImport({
         databasePath,
-        missionId: input.missionId,
-        paths: input.paths,
+        missionId,
+        paths,
         batchId,
         receiptsStarted: true,
         faultInjection: options.gpxEvidenceImportFaultInjection,
@@ -2469,43 +2482,48 @@ function migrate(db) {
 
     db.prepare(`INSERT OR IGNORE INTO legacy_gpx_backfill_state (
       singleton, scanned_through_rowid, scan_target_rowid, updated_at
-    ) SELECT 1, 0, COALESCE(MAX(CASE WHEN rowid BETWEEN 1 AND 9007199254740991
-      THEN rowid END), 0), '1970-01-01T00:00:00.000Z'
-      FROM gpx_track_imports`).run()
+    ) VALUES (1, 0, COALESCE((SELECT rowid FROM gpx_track_imports
+      WHERE rowid BETWEEN 1 AND 9007199254740991
+      ORDER BY rowid DESC LIMIT 1), 0), '1970-01-01T00:00:00.000Z')`).run()
     db.prepare(`UPDATE legacy_gpx_backfill_state
-      SET scan_target_rowid = (SELECT COALESCE(MAX(CASE
-          WHEN rowid BETWEEN 1 AND 9007199254740991 THEN rowid END), 0)
-        FROM gpx_track_imports),
-        scanned_through_rowid = MIN(scanned_through_rowid, (SELECT COALESCE(MAX(CASE
-          WHEN rowid BETWEEN 1 AND 9007199254740991 THEN rowid END), 0)
-        FROM gpx_track_imports)),
+      SET scan_target_rowid = COALESCE((SELECT rowid FROM gpx_track_imports
+          WHERE rowid BETWEEN 1 AND 9007199254740991
+          ORDER BY rowid DESC LIMIT 1), 0),
+        scanned_through_rowid = MIN(scanned_through_rowid,
+          COALESCE((SELECT rowid FROM gpx_track_imports
+            WHERE rowid BETWEEN 1 AND 9007199254740991
+            ORDER BY rowid DESC LIMIT 1), 0)),
         updated_at = ?
       WHERE singleton = 1 AND (
-        scan_target_rowid != (SELECT COALESCE(MAX(CASE
-          WHEN rowid BETWEEN 1 AND 9007199254740991 THEN rowid END), 0)
-          FROM gpx_track_imports)
-        OR scanned_through_rowid > (SELECT COALESCE(MAX(CASE
-          WHEN rowid BETWEEN 1 AND 9007199254740991 THEN rowid END), 0)
-          FROM gpx_track_imports)
+        scan_target_rowid != COALESCE((SELECT rowid FROM gpx_track_imports
+          WHERE rowid BETWEEN 1 AND 9007199254740991
+          ORDER BY rowid DESC LIMIT 1), 0)
+        OR scanned_through_rowid > COALESCE((SELECT rowid FROM gpx_track_imports
+          WHERE rowid BETWEEN 1 AND 9007199254740991
+          ORDER BY rowid DESC LIMIT 1), 0)
       )`).run(migrationTime)
     db.prepare(`INSERT OR IGNORE INTO legacy_gpx_rowid_scan_state (
       singleton, low_scanned_through_rowid, low_target_rowid,
       high_scanned_through_rowid, high_target_rowid, updated_at
-    ) SELECT 1, 1,
-      CASE WHEN MIN(rowid) < 1 THEN MIN(rowid) ELSE 1 END,
+    ) VALUES (1, 1,
+      COALESCE((SELECT rowid FROM gpx_track_imports WHERE rowid < 1
+        ORDER BY rowid ASC LIMIT 1), 1),
       9007199254740991,
-      CASE WHEN MAX(rowid) > 9007199254740991 THEN MAX(rowid) ELSE 9007199254740991 END,
-      '1970-01-01T00:00:00.000Z'
-      FROM gpx_track_imports`).run()
+      COALESCE((SELECT rowid FROM gpx_track_imports WHERE rowid > 9007199254740991
+        ORDER BY rowid DESC LIMIT 1), 9007199254740991),
+      '1970-01-01T00:00:00.000Z')`).run()
     db.prepare(`UPDATE legacy_gpx_rowid_scan_state SET
-      low_target_rowid = MIN(low_target_rowid,
-        COALESCE((SELECT MIN(rowid) FROM gpx_track_imports), 1)),
-      high_target_rowid = MAX(high_target_rowid,
-        COALESCE((SELECT MAX(rowid) FROM gpx_track_imports), 9007199254740991)),
+      low_target_rowid = MIN(low_target_rowid, COALESCE((SELECT rowid
+        FROM gpx_track_imports WHERE rowid < 1 ORDER BY rowid ASC LIMIT 1), 1)),
+      high_target_rowid = MAX(high_target_rowid, COALESCE((SELECT rowid
+        FROM gpx_track_imports WHERE rowid > 9007199254740991
+        ORDER BY rowid DESC LIMIT 1), 9007199254740991)),
       updated_at = ? WHERE singleton = 1 AND (
-        low_target_rowid > COALESCE((SELECT MIN(rowid) FROM gpx_track_imports), 1)
-        OR high_target_rowid < COALESCE(
-          (SELECT MAX(rowid) FROM gpx_track_imports), 9007199254740991)
+        low_target_rowid > COALESCE((SELECT rowid FROM gpx_track_imports
+          WHERE rowid < 1 ORDER BY rowid ASC LIMIT 1), 1)
+        OR high_target_rowid < COALESCE((SELECT rowid FROM gpx_track_imports
+          WHERE rowid > 9007199254740991 ORDER BY rowid DESC LIMIT 1),
+          9007199254740991)
       )`).run(migrationTime)
 
     db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
@@ -5782,6 +5800,19 @@ function normalizeRequiredText(value, label) {
   return value.trim()
 }
 
+/** Requires a plain renderer-supplied GPX request envelope. */
+function normalizeGpxRendererRecord(value, label) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} input must be an object.`)
+  }
+  return value
+}
+
+/** Preflights a GPX renderer identity before any database lookup. */
+function normalizeGpxRendererId(value, label, maximumLength = MAX_GPX_RENDERER_ID_LENGTH) {
+  return normalizeBoundedRequiredText(value, label, maximumLength)
+}
+
 function normalizeOptionalTextValue(value) {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
 }
@@ -6006,45 +6037,79 @@ function assertNoUnsettledGpxImportState(db, missionId) {
 
 /** Returns one byte-bounded issue page without absolute paths or retained source bytes. */
 function listGpxImportIssues(db, input) {
-  const missionId = normalizeRequiredText(input?.missionId, 'GPX issue mission')
+  const candidate = normalizeGpxRendererRecord(input, 'GPX issue query')
+  const missionId = normalizeGpxRendererId(candidate.missionId, 'GPX issue mission')
   getMission(db, missionId)
-  const limit = input?.limit ?? 50
+  const limit = candidate.limit ?? 50
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
     throw new Error('GPX import issue page limit must be between 1 and 100.')
   }
-  const cursor = decodeGpxImportIssueCursor(input?.cursor)
+  const cursor = decodeGpxImportIssueCursor(candidate.cursor)
   const rows = db.prepare(`WITH issues AS (
-      SELECT 'failure:' || failures.id AS entry_id,
-        failures.batch_id, batches.status AS batch_status,
-        failures.source_path, failures.file_name, failures.content_sha256,
+      SELECT 'failure' AS issue_kind, failures.rowid AS issue_order_rowid,
+        substr(failures.batch_id, 1, 1000) AS batch_id,
+        length(CAST(failures.batch_id AS BLOB)) > 1000 AS batch_id_truncated,
+        substr(batches.status, 1, 100) AS batch_status,
+        length(CAST(batches.status AS BLOB)) > 100 AS batch_status_truncated,
+        substr(failures.source_path, 1, 4096) AS source_path,
+        length(CAST(failures.source_path AS BLOB)) > 4096 AS source_path_truncated,
+        substr(failures.file_name, 1, 500) AS file_name,
+        length(CAST(failures.file_name AS BLOB)) > 500 AS file_name_truncated,
+        substr(failures.content_sha256, 1, 128) AS content_sha256,
+        length(CAST(COALESCE(failures.content_sha256, '') AS BLOB)) > 128
+          AS content_sha256_truncated,
         CASE WHEN failures.source_bytes_base64 IS NULL THEN 0 ELSE 1 END AS source_retained,
-        failures.reason, failures.recorded_at
+        substr(failures.reason, 1, 1000) AS reason,
+        length(CAST(failures.reason AS BLOB)) > 1000 AS reason_truncated,
+        substr(failures.recorded_at, 1, 64) AS recorded_at,
+        length(CAST(failures.recorded_at AS BLOB)) > 64 AS recorded_at_truncated
       FROM gpx_import_failures AS failures
       JOIN gpx_import_batches AS batches ON batches.id = failures.batch_id
       WHERE failures.mission_id = ?
       UNION ALL
-      SELECT 'batch:' || batches.id AS entry_id,
-        batches.id AS batch_id, batches.status AS batch_status,
-        NULL AS source_path, 'Selected GPX batch' AS file_name, NULL AS content_sha256, 0 AS source_retained,
+      SELECT 'batch' AS issue_kind, batches.rowid AS issue_order_rowid,
+        substr(batches.id, 1, 1000) AS batch_id,
+        length(CAST(batches.id AS BLOB)) > 1000 AS batch_id_truncated,
+        substr(batches.status, 1, 100) AS batch_status,
+        length(CAST(batches.status AS BLOB)) > 100 AS batch_status_truncated,
+        NULL AS source_path, 0 AS source_path_truncated,
+        'Selected GPX batch' AS file_name, 0 AS file_name_truncated,
+        NULL AS content_sha256, 0 AS content_sha256_truncated, 0 AS source_retained,
         'GPX import batch was interrupted before batch completion was durably confirmed; review retained imports and per-file evidence.' AS reason,
-        batches.updated_at AS recorded_at
+        0 AS reason_truncated,
+        substr(batches.updated_at, 1, 64) AS recorded_at,
+        length(CAST(batches.updated_at AS BLOB)) > 64 AS recorded_at_truncated
       FROM gpx_import_batches AS batches
       WHERE batches.mission_id = ? AND batches.status = 'interrupted'
         AND NOT EXISTS (SELECT 1 FROM gpx_import_failures WHERE batch_id = batches.id)
       UNION ALL
-      SELECT 'quarantine:' || quarantine.source_rowid AS entry_id,
-        NULL AS batch_id, 'interrupted' AS batch_status,
-        NULL AS source_path, quarantine.import_id_preview AS file_name,
-        NULL AS content_sha256, 1 AS source_retained,
+      SELECT 'quarantine' AS issue_kind, quarantine.source_rowid AS issue_order_rowid,
+        NULL AS batch_id, 0 AS batch_id_truncated,
+        'interrupted' AS batch_status, 0 AS batch_status_truncated,
+        NULL AS source_path, 0 AS source_path_truncated,
+        substr(quarantine.import_id_preview, 1, 500) AS file_name,
+        length(CAST(COALESCE(quarantine.import_id_preview, '') AS BLOB)) > 500
+          AS file_name_truncated,
+        NULL AS content_sha256, 0 AS content_sha256_truncated, 1 AS source_retained,
         'Legacy GPX evidence is quarantined outside the safe reconstruction envelope (size, identity, or storage key). The original remains retained; map projection, mission completion, and archive custody stay blocked until bounded repair.' AS reason,
-        quarantine.detected_at AS recorded_at
+        0 AS reason_truncated,
+        substr(quarantine.detected_at, 1, 64) AS recorded_at,
+        length(CAST(quarantine.detected_at AS BLOB)) > 64 AS recorded_at_truncated
       FROM legacy_gpx_backfill_quarantine AS quarantine
       JOIN gpx_track_imports AS imports ON imports.rowid = quarantine.source_rowid
       WHERE imports.mission_id = ?
     )
-    SELECT * FROM issues
-    WHERE (? IS NULL OR recorded_at < ? OR (recorded_at = ? AND entry_id < ?))
-    ORDER BY recorded_at DESC, entry_id DESC
+    SELECT issue_kind, CAST(issue_order_rowid AS TEXT) AS issue_rowid,
+      batch_id, batch_id_truncated, batch_status, batch_status_truncated,
+      source_path, source_path_truncated, file_name, file_name_truncated,
+      content_sha256, content_sha256_truncated, source_retained,
+      reason, reason_truncated, recorded_at, recorded_at_truncated
+    FROM issues
+    WHERE (? IS NULL OR recorded_at < ?
+      OR (recorded_at = ? AND issue_kind < ?)
+      OR (recorded_at = ? AND issue_kind = ?
+        AND issue_order_rowid < CAST(? AS INTEGER)))
+    ORDER BY recorded_at DESC, issue_kind DESC, issue_order_rowid DESC
     LIMIT ?`).all(
       missionId,
       missionId,
@@ -6052,27 +6117,65 @@ function listGpxImportIssues(db, input) {
       cursor?.recordedAt ?? null,
       cursor?.recordedAt ?? null,
       cursor?.recordedAt ?? null,
-      cursor?.entryId ?? null,
+      cursor?.issueKind ?? null,
+      cursor?.recordedAt ?? null,
+      cursor?.issueKind ?? null,
+      cursor?.issueRowid ?? null,
       limit + 1,
     )
-  const entries = rows.slice(0, limit).map((row) => ({
-    id: row.entry_id,
-    batch_id: row.batch_id,
-    batch_status: row.batch_status,
-    file_name: row.file_name,
-    content_sha256: row.content_sha256,
-    source_retained: Boolean(row.source_retained),
-    reason: redactGpxImportIssueReason(row.reason, row.source_path, row.file_name),
-    recorded_at: row.recorded_at,
-  }))
-  const last = entries.at(-1)
+  const projected = rows.map(projectGpxImportIssueForRenderer)
+  const packed = packGpxRendererPage(projected, {
+    limit,
+    byteLimit: DEFAULT_PAGE_BYTE_LIMIT - 2_048,
+  })
+  const entries = packed.entries
+  const lastRow = rows[entries.length - 1]
   return {
     entries,
-    nextCursor: rows.length > limit && last !== undefined
-      ? Buffer.from(JSON.stringify({ recordedAt: last.recorded_at, entryId: last.id }), 'utf8')
+    nextCursor: packed.hasMore && lastRow !== undefined
+      ? Buffer.from(JSON.stringify({
+          recordedAt: lastRow.recorded_at,
+          issueKind: lastRow.issue_kind,
+          issueRowid: lastRow.issue_rowid,
+        }), 'utf8')
         .toString('base64url')
       : null,
   }
+}
+
+/** Projects one persisted issue through bounded, explicit renderer scalars. */
+function projectGpxImportIssueForRenderer(row) {
+  const warnings = [
+    ...(row.batch_id_truncated ? ['batch_id_truncated'] : []),
+    ...(row.batch_status_truncated ? ['batch_status_truncated'] : []),
+    ...(row.source_path_truncated ? ['source_path_truncated'] : []),
+    ...(row.file_name_truncated ? ['file_name_truncated'] : []),
+    ...(row.content_sha256_truncated ? ['content_sha256_truncated'] : []),
+    ...(row.reason_truncated ? ['reason_truncated'] : []),
+    ...(row.recorded_at_truncated ? ['recorded_at_truncated'] : []),
+  ]
+  const reason = row.source_path_truncated
+    ? 'Persisted GPX issue reason is retained but its oversized source path prevents safe renderer display.'
+    : redactGpxImportIssueReason(row.reason, row.source_path, row.file_name)
+  return {
+    id: `${row.issue_kind}:${row.issue_rowid}`,
+    batch_id: boundGpxIssueProjectionText(row.batch_id, MAX_GPX_RENDERER_ID_LENGTH, row.batch_id_truncated),
+    batch_status: boundGpxIssueProjectionText(row.batch_status, 100, row.batch_status_truncated),
+    file_name: boundGpxIssueProjectionText(row.file_name, MAX_GPX_ISSUE_FILE_NAME_LENGTH, row.file_name_truncated),
+    content_sha256: boundGpxIssueProjectionText(row.content_sha256, MAX_GPX_ISSUE_HASH_LENGTH, row.content_sha256_truncated),
+    source_retained: Boolean(row.source_retained),
+    reason: boundGpxIssueProjectionText(reason, MAX_GPX_ISSUE_REASON_LENGTH, row.reason_truncated),
+    recorded_at: boundGpxIssueProjectionText(row.recorded_at, MAX_GPX_ISSUE_TIMESTAMP_LENGTH, row.recorded_at_truncated),
+    ...(warnings.length === 0 ? {} : { projection_warnings: warnings }),
+  }
+}
+
+/** Marks renderer truncation explicitly while enforcing one scalar limit. */
+function boundGpxIssueProjectionText(value, maximumLength, truncated) {
+  if (value === null || value === undefined) return null
+  const text = String(value)
+  if (!truncated && text.length <= maximumLength) return text
+  return `${text.slice(0, Math.max(0, maximumLength - GPX_ISSUE_TRUNCATION_SUFFIX.length))}${GPX_ISSUE_TRUNCATION_SUFFIX}`
 }
 
 function redactGpxImportIssueReason(reason, sourcePath, fileName) {
@@ -6094,9 +6197,12 @@ function decodeGpxImportIssueCursor(value) {
     const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
     if (
       typeof decoded?.recordedAt !== 'string' ||
-      !Number.isFinite(Date.parse(decoded.recordedAt)) ||
-      typeof decoded?.entryId !== 'string' ||
-      !/^(failure|batch|quarantine):[A-Za-z0-9-]+$/u.test(decoded.entryId)
+      decoded.recordedAt.length < 1 ||
+      decoded.recordedAt.length > MAX_GPX_ISSUE_TIMESTAMP_LENGTH ||
+      typeof decoded?.issueKind !== 'string' ||
+      !/^(failure|batch|quarantine)$/u.test(decoded.issueKind) ||
+      typeof decoded?.issueRowid !== 'string' ||
+      !/^-?(?:0|[1-9][0-9]{0,18})$/u.test(decoded.issueRowid)
     ) {
       throw new Error('invalid')
     }
@@ -6590,20 +6696,21 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
 
 /** Updates renderer presentation metadata without resending or rewriting retained GPX evidence. */
 function updateGpxImportPresentation(db, input) {
-  const importId = normalizeRequiredText(input?.id, 'GPX import')
-  const missionId = normalizeRequiredText(input?.mission_id, 'GPX import mission')
-  const displayName = input?.display_name === undefined
+  const candidate = normalizeGpxRendererRecord(input, 'GPX presentation')
+  const importId = normalizeGpxRendererId(candidate.id, 'GPX import')
+  const missionId = normalizeGpxRendererId(candidate.mission_id, 'GPX import mission')
+  const displayName = candidate.display_name === undefined
     ? undefined
-    : normalizeBoundedRequiredText(input.display_name, 'GPX display name', 500)
+    : normalizeBoundedRequiredText(candidate.display_name, 'GPX display name', 500)
   if (
-    input?.metadata_json !== undefined && input.metadata_json !== null &&
-    (typeof input?.metadata_json !== 'string' || input.metadata_json.length > 100_000)
+    candidate.metadata_json !== undefined && candidate.metadata_json !== null &&
+    (typeof candidate.metadata_json !== 'string' || candidate.metadata_json.length > 100_000)
   ) {
     throw new Error('GPX import presentation metadata must be bounded JSON text.')
   }
-  if (input.metadata_json !== undefined && input.metadata_json !== null) {
+  if (candidate.metadata_json !== undefined && candidate.metadata_json !== null) {
     try {
-      JSON.parse(input.metadata_json)
+      JSON.parse(candidate.metadata_json)
     } catch {
       throw new Error('GPX import presentation metadata must be valid JSON text.')
     }
@@ -6625,7 +6732,7 @@ function updateGpxImportPresentation(db, input) {
       SET display_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?`)
       .run(
         displayName ?? existing.display_name,
-        input.metadata_json === undefined ? existing.metadata_json : input.metadata_json,
+        candidate.metadata_json === undefined ? existing.metadata_json : candidate.metadata_json,
         timestamp,
         importId,
       )
@@ -6633,7 +6740,7 @@ function updateGpxImportPresentation(db, input) {
       gpx_import_id: importId,
       fields: [
         ...(displayName === undefined ? [] : ['display_name']),
-        ...(input.metadata_json === undefined ? [] : ['metadata_json']),
+        ...(candidate.metadata_json === undefined ? [] : ['metadata_json']),
       ],
     })
   })
@@ -6651,8 +6758,18 @@ function projectGpxImportForRenderer(row) {
 
 /** Assigns retained GPX evidence to an outing as a new immutable revision. */
 function assignGpxEvidenceToOuting(db, input) {
-  const importId = normalizeRequiredText(input.import_id, 'GPX import')
-  const outingId = normalizeRequiredText(input.outing_id, 'GPX outing')
+  const candidate = normalizeGpxRendererRecord(input, 'GPX outing assignment')
+  const importId = normalizeGpxRendererId(candidate.import_id, 'GPX import')
+  const outingId = normalizeGpxRendererId(
+    candidate.outing_id,
+    'GPX outing',
+    MAX_GPX_RENDERER_OUTING_ID_LENGTH,
+  )
+  const assignedBy = normalizeBoundedOptionalTextValue(
+    candidate.assigned_by,
+    'GPX outing assignment coordinator',
+    MAX_GPX_RENDERER_ACTOR_LENGTH,
+  )
   assertNoUnsettledLegacyGpxTarget(db, importId, null, null)
   const existing = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(importId)
   if (existing === undefined || existing.retired_at !== null) {
@@ -6671,7 +6788,7 @@ function assignGpxEvidenceToOuting(db, input) {
     const auditEventId = insertEvent(db, existing.mission_id, 'gpx_import_outing_assigned', timestamp, {
       gpx_import_id: importId,
       outing_id: outingId,
-      assigned_by: normalizeOptionalTextValue(input.assigned_by),
+      assigned_by: assignedBy,
       revision_sequence: nextSequence,
     })
     db.prepare(`UPDATE gpx_track_imports

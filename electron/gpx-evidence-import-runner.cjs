@@ -1,12 +1,17 @@
 const path = require('node:path')
 const { Worker } = require('node:worker_threads')
 const { randomUUID } = require('node:crypto')
+const {
+  normalizeRawGpxPath,
+  validateGpxImportEnvelope,
+} = require('./gpx-import-envelope.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'gpx-evidence-import-worker.cjs')
 
 /** Imports GPX source bytes and bulk points without Electron main-isolate transformation. */
 function runGpxEvidenceImportInWorker(input) {
-  validateInput(input)
+  const envelope = validateGpxImportEnvelope(input)
+  const databasePath = normalizeRawGpxPath(input.databasePath, 'GPX database path')
   if (input.signal?.aborted === true) return Promise.reject(createAbortError())
   const startedAt = performance.now()
   let resolveWorkerExit
@@ -16,9 +21,9 @@ function runGpxEvidenceImportInWorker(input) {
     try {
       worker = input.createWorker?.() ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
         workerData: {
-          databasePath: input.databasePath,
-          missionId: input.missionId,
-          paths: input.paths,
+          databasePath,
+          missionId: envelope.missionId,
+          paths: envelope.paths,
           batchId: input.batchId ?? randomUUID(),
           receiptsStarted: input.receiptsStarted === true,
           pauseAfter: normalizePauseAfter(input.faultInjection?.pauseAfter),
@@ -55,8 +60,8 @@ function runGpxEvidenceImportInWorker(input) {
       if (message?.type === 'progress') {
         input.onProgress?.({ completed: message.completed, total: message.total })
       } else if (message?.type === 'complete' && Array.isArray(message.imports)
-        && message.imports.length <= input.paths.length && Array.isArray(message.failures)
-        && message.failures.length <= input.paths.length) {
+        && message.imports.length <= envelope.paths.length && Array.isArray(message.failures)
+        && message.failures.length <= envelope.paths.length) {
         completed = { imports: message.imports, failures: message.failures }
       } else if (message?.type === 'error') {
         terminateAndReject(new Error(`GPX evidence import failed: ${String(message.message).slice(0, 500)}`))
@@ -77,11 +82,6 @@ function runGpxEvidenceImportInWorker(input) {
   })
   Object.defineProperty(result, 'workerExited', { value: workerExited })
   return result
-}
-
-function validateInput(input) {
-  if (typeof input?.missionId !== 'string' || input.missionId.length < 1 || input.missionId.length > 200) throw new Error('GPX import mission ID is invalid.')
-  if (!Array.isArray(input.paths) || input.paths.length < 1 || input.paths.length > 100 || input.paths.some((entry) => typeof entry !== 'string' || entry.length > 4096)) throw new Error('GPX import paths are invalid.')
 }
 
 /** Limits forced-kill fault injection to the two durable receipt boundaries under test. */

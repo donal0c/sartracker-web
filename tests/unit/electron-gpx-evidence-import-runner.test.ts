@@ -9,8 +9,59 @@ const { runGpxEvidenceImportInWorker } = require('../../electron/gpx-evidence-im
     workerExited: Promise<void>
   }
 }
+const { validateGpxImportEnvelope } = require('../../electron/gpx-import-envelope.cjs') as {
+  validateGpxImportEnvelope(input: Readonly<Record<string, unknown>>): {
+    readonly missionId: string
+    readonly paths: readonly string[]
+  }
+}
 
 describe('GPX evidence import worker runner [DON-277]', () => {
+  it('trims bounded mission and path scalars only after raw envelope admission', () => {
+    expect(validateGpxImportEnvelope({
+      missionId: '  mission-1  ',
+      paths: ['  /tmp/evidence.gpx  '],
+    })).toEqual({ missionId: 'mission-1', paths: ['/tmp/evidence.gpx'] })
+
+    const maximumMissionId = 'm'.repeat(1_000)
+    const maximumPath = `/${'x'.repeat(4_095)}`
+    expect(validateGpxImportEnvelope({
+      missionId: maximumMissionId,
+      paths: [maximumPath],
+    })).toEqual({ missionId: maximumMissionId, paths: [maximumPath] })
+  })
+
+  it('rejects non-object import envelopes and oversized mission or path scalars before worker creation', () => {
+    const createWorker = vi.fn()
+
+    expect(() => runGpxEvidenceImportInWorker([])).toThrow(/payload.*object/iu)
+    expect(() => runGpxEvidenceImportInWorker({
+      databasePath: '/tmp/unused.sqlite',
+      missionId: 'm'.repeat(1_001),
+      paths: ['/tmp/evidence.gpx'],
+      createWorker,
+    })).toThrow(/mission ID.*1000/iu)
+    expect(() => runGpxEvidenceImportInWorker({
+      databasePath: '/tmp/unused.sqlite',
+      missionId: 'mission-1',
+      paths: [`/${'x'.repeat(4_096)}`],
+      createWorker,
+    })).toThrow(/path.*4096/iu)
+    expect(createWorker).not.toHaveBeenCalled()
+  })
+
+  it('rejects more than 100 paths without constructing an import worker', () => {
+    const createWorker = vi.fn()
+
+    expect(() => runGpxEvidenceImportInWorker({
+      databasePath: '/tmp/unused.sqlite',
+      missionId: 'mission-1',
+      paths: Array.from({ length: 101 }, (_, index) => `/tmp/${index}.gpx`),
+      createWorker,
+    })).toThrow(/path count.*between 1 and 100/iu)
+    expect(createWorker).not.toHaveBeenCalled()
+  })
+
   it('settles the worker-exit join when worker construction fails synchronously', async () => {
     const constructionFailure = new Error('worker construction failed')
     const importResult = runGpxEvidenceImportInWorker({

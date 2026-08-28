@@ -858,6 +858,20 @@ describe('mission evidence versioning [DON-277]', () => {
       JOIN legacy_gpx_rowid_scan_state AS unsafe ON unsafe.singleton = safe.singleton`).get())
       .toMatchObject({ safe_complete: 1, low_complete: 1, high_complete: 1 })
     inspection.close()
+    await expect(store.listGpxImportIssues({ missionId: finishedMission.id, limit: 10 }))
+      .resolves.toMatchObject({
+        entries: [
+          expect.objectContaining({ id: 'quarantine:9007199254740993' }),
+          expect.objectContaining({ id: 'quarantine:9007199254740992' }),
+        ],
+      })
+    await expect(store.listGpxImportIssues({ missionId: runningMission.id, limit: 10 }))
+      .resolves.toMatchObject({
+        entries: [
+          expect.objectContaining({ id: 'quarantine:0' }),
+          expect.objectContaining({ id: 'quarantine:-1' }),
+        ],
+      })
     await expect(store.finishMission(runningMission.id)).rejects.toThrow(
       /legacy GPX.*quarantin|unsettled/iu,
     )
@@ -2586,6 +2600,102 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(secondPage.entries).toHaveLength(1)
     await expect(store.listGpxImportIssues({ missionId: mission.id, limit: 101 }))
       .rejects.toThrow(/limit/i)
+  })
+
+  it('preflights renderer GPX identities and assignment actors before database work [DON-274]', async () => {
+    store = await createStore()
+    const oversizedImportId = 'i'.repeat(1_001)
+    const oversizedMissionId = 'm'.repeat(1_001)
+    const oversizedOutingId = 'o'.repeat(201)
+
+    await expect(store.listGpxImportIssues({ missionId: oversizedMissionId }))
+      .rejects.toThrow(/1000 characters/i)
+    await expect(store.updateGpxImportPresentation({
+      id: oversizedImportId,
+      mission_id: 'mission-id',
+    })).rejects.toThrow(/1000 characters/i)
+    await expect(store.updateGpxImportPresentation({
+      id: 'import-id',
+      mission_id: oversizedMissionId,
+    })).rejects.toThrow(/1000 characters/i)
+    await expect(store.assignGpxImportToOuting({
+      import_id: oversizedImportId,
+      outing_id: 'outing-id',
+    })).rejects.toThrow(/1000 characters/i)
+    await expect(store.assignGpxImportToOuting({
+      import_id: 'import-id',
+      outing_id: oversizedOutingId,
+    })).rejects.toThrow(/200 characters/i)
+    await expect(store.assignGpxImportToOuting({
+      import_id: 'import-id',
+      outing_id: 'outing-id',
+      assigned_by: 'c'.repeat(121),
+    })).rejects.toThrow(/120 characters/i)
+    await expect(store.assignGpxImportToOuting({
+      import_id: 'import-id',
+      outing_id: 'outing-id',
+      assigned_by: 42,
+    })).rejects.toThrow(/must be text/i)
+    await expect(store.deleteGpxImport(oversizedImportId))
+      .rejects.toThrow(/1000 characters/i)
+    await expect(store.importGpxEvidencePaths({
+      missionId: oversizedMissionId,
+      paths: ['/field/track.gpx'],
+    })).rejects.toThrow(/1000 characters/i)
+    await expect(store.importGpxEvidencePaths({
+      missionId: 'mission-id',
+      paths: [' '.repeat(4_096)],
+    })).rejects.toThrow(/paths are invalid/i)
+  })
+
+  it('bounds every persisted GPX issue scalar and exposes projection loss explicitly [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX Issue Projection Mission' })
+    const databaseFile = await databasePath()
+    const db = openDatabase(databaseFile)
+    startGpxImportBatch(db, {
+      batchId: 'projection-batch',
+      missionId: mission.id,
+      totalFiles: 1,
+    })
+    recordGpxImportSourceReceipt(db, {
+      batchId: 'projection-batch',
+      missionId: mission.id,
+      sourcePath: '/field/projection.gpx',
+      fileName: 'projection.gpx',
+    })
+    recordGpxImportFailure(db, {
+      batchId: 'projection-batch',
+      missionId: mission.id,
+      sourcePath: '/field/projection.gpx',
+      fileName: 'projection.gpx',
+      reason: 'projection failure',
+    })
+    db.prepare(`UPDATE gpx_import_failures SET
+      file_name = ?, content_sha256 = ?, reason = ?, recorded_at = ?
+      WHERE batch_id = ?`).run(
+      `unsafe-${'f'.repeat(20_000)}`,
+      'h'.repeat(20_000),
+      'r'.repeat(20_000),
+      '2026-08-27T10:00:00.000Z'.padEnd(20_000, 't'),
+      'projection-batch',
+    )
+    db.close()
+
+    const page = await store.listGpxImportIssues({ missionId: mission.id, limit: 100 })
+    expect(Buffer.byteLength(JSON.stringify(page), 'utf8')).toBeLessThanOrEqual(1024 * 1024)
+    expect(page.entries).toHaveLength(1)
+    expect(page.entries[0]).toEqual(expect.objectContaining({
+      id: expect.stringMatching(/^failure:-?\d+$/),
+      projection_warnings: expect.arrayContaining([
+        'file_name_truncated',
+        'content_sha256_truncated',
+        'reason_truncated',
+        'recorded_at_truncated',
+      ]),
+    }))
+    expect(String(page.entries[0]?.file_name)).toMatch(/truncated for renderer/u)
+    expect(page.nextCursor).toBeNull()
   })
 
   it('cancels and joins active GPX workers before allowing mission-store shutdown [DON-274]', async () => {

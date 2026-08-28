@@ -1,10 +1,13 @@
 const { createHash } = require('node:crypto')
+const { isStrictTrackingTimestamp } = require('./tracking-timestamp.cjs')
 
 const MAX_REPLAY_TRACK_LIMIT = 1_000
 const MAX_REPLAY_OBJECT_LIMIT = 100
 const MAX_REPLAY_OBJECT_STATE_BYTES = 4_096
 const MAX_REPLAY_CURSOR_OFFSET = 10_000_000
 const MAX_REPLAY_FILTER_IDS = 200
+const MAX_REPLAY_SELECTED_TIME_LENGTH = 64
+const REPLAY_TIMEZONE = 'Europe/Dublin'
 
 /** Builds the deterministic metadata snapshot and first bounded exact-track page for data known at T. */
 function readMissionReplayState(database, input) {
@@ -747,14 +750,29 @@ function readReplayLimitations(
 }
 
 function normalizeReplayInput(input) {
-  if (typeof input?.missionId !== 'string' || input.missionId.length < 1 || input.missionId.length > 200) {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new Error('Mission replay input is invalid.')
+  }
+  if (typeof input.missionId !== 'string' || input.missionId.length < 1 || input.missionId.length > 200) {
     throw new Error('Mission replay mission ID is invalid.')
   }
-  if (typeof input.selectedTime !== 'string' || !Number.isFinite(Date.parse(input.selectedTime))) {
+  if (typeof input.selectedTime !== 'string'
+    || input.selectedTime.length < 1
+    || input.selectedTime.length > MAX_REPLAY_SELECTED_TIME_LENGTH
+    || input.selectedTime !== input.selectedTime.trim()
+    || !isStrictTrackingTimestamp(input.selectedTime)) {
     throw new Error('Mission replay selected time is invalid.')
   }
-  if (Date.parse(input.selectedTime) > Date.now()) {
+  const selectedTimeMs = Date.parse(input.selectedTime)
+  if (!Number.isFinite(selectedTimeMs)) {
+    throw new Error('Mission replay selected time is invalid.')
+  }
+  if (selectedTimeMs > Date.now()) {
     throw new Error('Mission replay selected time cannot be in the future.')
+  }
+  const timezone = input.timezone === undefined ? REPLAY_TIMEZONE : input.timezone
+  if (timezone !== REPLAY_TIMEZONE) {
+    throw new Error('Mission replay timezone is invalid.')
   }
   if (!Number.isInteger(input.trackLimit) || input.trackLimit < 1 || input.trackLimit > MAX_REPLAY_TRACK_LIMIT) {
     throw new Error(`Mission replay track limit must be between 1 and ${MAX_REPLAY_TRACK_LIMIT}.`)
@@ -765,14 +783,12 @@ function normalizeReplayInput(input) {
   }
   return {
     missionId: input.missionId,
-    selectedTime: new Date(input.selectedTime).toISOString(),
+    selectedTime: new Date(selectedTimeMs).toISOString(),
     trackLimit: input.trackLimit,
     objectLimit,
     deviceIds: normalizeReplayFilterIds(input.deviceIds, 'device'),
     outingIds: normalizeReplayFilterIds(input.outingIds, 'outing'),
-    timezone: typeof input.timezone === 'string' && input.timezone.trim() !== ''
-      ? input.timezone.trim()
-      : 'Europe/Dublin',
+    timezone,
   }
 }
 

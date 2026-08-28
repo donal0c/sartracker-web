@@ -1528,7 +1528,9 @@
             points or segments are retained as explicit rejections instead of disappearing silently.
             Source files are limited to 8 MiB each so exact-byte retention cannot monopolize the
             database writer or exhaust the import worker; larger files fail explicitly and should be
-            split into smaller GPX files. Concurrent imports are serialized so identical bytes still
+            split into smaller GPX files. Select at most 100 GPX files at a time. A folder containing more
+            than 100 GPX files is rejected explicitly rather than returning or importing a partial list;
+            divide it into smaller operator-selected batches. Concurrent imports are serialized so identical bytes still
             resolve to one canonical source with path aliases.
           </p>
           <div class="note">
@@ -1542,7 +1544,7 @@
             by permissive platform parsing.
           </div>
           <p>
-            To link static GPX evidence to an outing, enter the coordinator name and choose the outing on the
+            To link static GPX evidence to an outing, enter the coordinator name (up to 120 characters) and choose the outing on the
             imported-track row. The assignment creates another retained evidence revision; it does not rewrite
             the original import. A failed, malformed, empty, non-UTF-8, interrupted, or partially successful
             batch is reported explicitly. Successfully accepted files remain visible, while failed source bytes,
@@ -1560,7 +1562,9 @@
             than the superseded source. File names are shown to
             the operator, but retained source bytes and full local paths stay behind the desktop boundary.
             The panel shows a bounded issue page and explicitly warns when additional retained issues
-            exist beyond that page; a current import refreshes the sanitized issue list immediately.
+            exist beyond that page; a current import refreshes the sanitized issue list immediately. If a
+            damaged or legacy record contains an oversized display field, the panel marks that the displayed
+            value was shortened while the complete persisted record remains authoritative.
             An upgraded legacy GPX artifact remains read-only while bounded background reconstruction is
             pending. If its size, identity, or storage key falls outside the safe reconstruction envelope, it
             remains byte-for-byte in the mission store but is quarantined from map and Replay projection. The

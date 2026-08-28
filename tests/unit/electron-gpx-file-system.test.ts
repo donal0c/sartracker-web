@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url)
 const { createElectronFileSystem } = require('../../electron/file-system.cjs') as {
   readonly createElectronFileSystem: (options: Readonly<Record<string, unknown>>) => {
     readonly validateGpxEvidencePaths: (paths: readonly string[]) => Promise<readonly string[]>
+    readonly listGpxDirectoryPaths: (directoryPath: string) => Promise<readonly string[]>
   }
 }
 
@@ -28,5 +29,26 @@ describe('Electron GPX filesystem admission [DON-274]', () => {
 
     await expect(fileSystem.validateGpxEvidencePaths([missingPath, readablePath]))
       .resolves.toEqual([missingPath, readablePath])
+  })
+
+  it('rejects raw GPX file and directory paths over 4096 characters before path normalization', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-gpx-path-envelope-'))
+    const fileSystem = createElectronFileSystem({ userDataPath })
+    const oversizedRawPath = `${' '.repeat(4_096)}x`
+
+    await expect(fileSystem.validateGpxEvidencePaths([oversizedRawPath]))
+      .rejects.toThrow(/GPX file.*4096/iu)
+    await expect(fileSystem.listGpxDirectoryPaths(oversizedRawPath))
+      .rejects.toThrow(/GPX directory.*4096/iu)
+  })
+
+  it('fails explicitly when a directory contains more than 100 GPX paths', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-gpx-directory-envelope-'))
+    await Promise.all(Array.from({ length: 101 }, (_, index) =>
+      writeFile(path.join(userDataPath!, `${String(index).padStart(3, '0')}.gpx`), '<gpx/>')))
+    const fileSystem = createElectronFileSystem({ userDataPath })
+
+    await expect(fileSystem.listGpxDirectoryPaths(userDataPath))
+      .rejects.toThrow(/GPX directory.*more than 100/iu)
   })
 })

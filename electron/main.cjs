@@ -27,6 +27,7 @@ const {
 } = require('./outing-fix-summary-ipc.cjs')
 const { registerCoverageIpcHandlers } = require('./coverage-ipc.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
+const { validateGpxImportEnvelope } = require('./gpx-import-envelope.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
@@ -814,11 +815,9 @@ function registerMissionStoreHandlers(missionStore, fileSystem) {
   })
   ipcMain.handle(MISSION_STORE_CHANNELS.importGpxEvidencePaths, async (event, input) => {
     validateIpcSender(event)
-    if (typeof input !== 'object' || input === null || !Array.isArray(input.paths)) {
-      throw new Error('GPX evidence import payload is invalid.')
-    }
-    const paths = await fileSystem.validateGpxEvidencePaths(input.paths)
-    return missionStore.importGpxEvidencePaths({ missionId: input.missionId, paths })
+    const envelope = validateGpxImportEnvelope(input)
+    const paths = await fileSystem.validateGpxEvidencePaths(envelope.paths)
+    return missionStore.importGpxEvidencePaths({ missionId: envelope.missionId, paths })
   })
   const ownedQueryMethods = new Set([
     'listBreadcrumbPositions',
