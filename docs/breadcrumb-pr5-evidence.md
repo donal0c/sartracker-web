@@ -933,6 +933,80 @@ fresh exact-head Linux run, four restarted exact-head reviews, centrally
 source-retraced finding dispositions and clean current-head verdicts remain mandatory.
 PR opened/review-ready remains intermediate; no merge or release is authorized.
 
+## `582fd79e` four-review rejection and final replacement
+
+Code-and-documentation head
+`582fd79edf91cf3f3821cb2ad1da46eb919c8745`, tree
+`772df8da979d345c4571470ad5325eda1c8f9ced`, passed exact-head Linux run
+`33192661456`. Green CI did not override the code verdict. The accepted review
+baseline rejected that exact head:
+
+| Reviewer/task | Charter | Verdict and centrally accepted finding |
+|---|---|---|
+| `/root/pr5_broad_582fd` | Broad life-safety/end-to-end | REJECTED: an over-1 MiB legacy mutable object could advance its summarized baseline cursor and then overwrite the only retained exact state. |
+| `/root/pr5_persistence_582fd` | Persistence/completeness | REJECTED: the same sole-copy loss; direct archive did not fence authorized or denied unlock writes; Replay continuation cursors were not bound to mission/time/filter context. |
+| `/root/pr5_concurrency_582fd` | Concurrency/finalization | REJECTED: recoverable finalization trusted file existence instead of archive/SQLite validity; startup synchronously reconciled every interrupted GPX receipt. |
+| `/root/pr5_renderer_582fd` | Renderer/input containment | REJECTED: browser Replay bypassed packaged input bounds; Replay cursor context was reusable; GPX page cursors crossed missions/imports; an open Review workspace remained editable after Finish. |
+
+Central source retrace accepted every finding. The duplicate Replay-cursor and
+oversized-object reports were one defect each, leaving eight distinct defects.
+They are engineering consequences of the locked no-silent-loss, data-known-at-T,
+current-position-priority and finalized-write-fence rules; no new team question
+or product answer was required.
+
+Executable replacement `c3d25973ae48af56a4e058219a4949456e352f25`
+addresses them together:
+
+- any mutable object whose immutable legacy baseline explicitly omitted an
+  oversized state is write- and retirement-fenced across all six object types;
+  its exact current projection remains retained for the bounded repair path;
+- recoverable archives are fully read, CRC/manifest/mission checked and their
+  embedded SQLite snapshot validated before finalization resumes. Archive files
+  use durable atomic file-and-directory synchronization, and direct archive
+  holds the finalization fence across both authorized and denied unlock paths;
+- interrupted GPX receipts recover in 100-row, 1 MiB cooperative turns instead
+  of launch-time bulk work. Current-position writes remain admitted; Replay and
+  further GPX imports for the affected mission fail closed until exact receipt
+  settlement. Admission is capped at four active/queued batches before durable
+  receipts are created;
+- Replay track and object cursors are bounded version-4 envelopes bound to
+  mission, canonical selected time, timezone, sorted filters, generation and
+  eligible snapshot counts. The Review runtime keeps the opaque object-token
+  history needed for safe Earlier navigation;
+- GPX import page cursors are bound to their mission and revision cursors to
+  their import. Browser validation mirrors the production keyset and context
+  rules for its available import-page surface;
+- browser Replay now applies the packaged mission-ID, 64-character strict
+  timestamp and sole `Europe/Dublin` timezone preflight before data work; and
+- an open Review reloads when mission phase changes, so successful Finish makes
+  Search Operations visibly read-only without closing the workspace.
+
+Replacement verification before documentation binding is green:
+
+- serialized unit: 294 files / 2,473 tests, including exact `SIGKILL` receipt
+  recovery updated for bounded background settlement;
+- Rust backend: 55 executable tests passed / one intentional real-keychain
+  ignore;
+- CommonJS syntax, ESLint, TypeScript production build and bundle budgets;
+- Chromium: 167/167, including live Finish-with-Review-open read-only proof;
+- visual Playwright: 58/58 with 69 registered screenshots; fresh uncached
+  independent review: 69/69, report
+  `visual-review-2026-08-28T17-53-15Z.json`;
+- indexed 960k digest
+  `58314b12de1f43f51c513e929f51d9f254ad7ea919286057118a5b3389276b36`
+  (765,734,912 bytes): 67.41 ms first seek, 49.88 ms late page,
+  44.89 ms maximum across 1,055 concurrent current writes, 54.37 ms maximum
+  event-loop gap, 52.09 ms exact restart seek and exact equality; and
+- unsigned macOS arm64 package plus packaged CI-profile soak: 6/6 batches,
+  8,664/8,664 positions, one restart, four healthy interactions, SQLite
+  integrity `ok`, 4.3 ms maximum main round trip and zero redundant-event
+  slope.
+
+This is local candidate proof. The version/documentation binding descendant,
+push, fresh exact-head Linux run and four fresh exact-head reviews remain
+mandatory. PR opened/review-ready remains intermediate; no merge or release is
+authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

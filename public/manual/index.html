@@ -1560,7 +1560,9 @@
           <p>
             Every selected desktop file receives a durable receipt before it is read. If the app or computer
             stops during import, the next start shows the interrupted file and failure reason in the GPX panel;
-            it does not silently treat the selection as imported. Mission Finish and Finalize remain blocked
+            it does not silently treat the selection as imported. Startup reconciles interrupted receipts in
+            bounded background slices: current positions remain available, while further GPX imports and Replay
+            fail closed until those receipts settle. Mission Finish and Finalize remain blocked
             while a GPX batch, selected-file receipt, or staged revision is unsettled. If an operator retires a
             track while a replacement revision is still importing, retirement wins: the replacement is not
             published, its retained source is shown as an explicit failed import, and the retired evidence is
@@ -1616,6 +1618,8 @@
             operating the incident. A note at the top of the panel confirms it is read-only. Close Review or
             press <strong>Esc</strong> to return the map to full width. When there is no active mission,
             Review opens full-screen with the mission selector for cross-mission audit.
+            If Finish completes while Review remains open, Review refreshes the persisted mission state and
+            disables Search Operations entry immediately; it never leaves a finished mission editable.
           </p>
           <p>
             Mission Review reads the selected mission only after the workspace is opened. While a large

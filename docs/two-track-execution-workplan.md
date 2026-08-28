@@ -183,18 +183,21 @@ affected focused recheck clean on the current head before reporting task
 completion. Donal retains final approval and merge authority and may request
 additional review.
 
-PR-5 review correction (2026-08-28): exact head `60bf8907` passed Linux run
-`33187744020` but was rejected by each accepted reviewer charter. Central
-source retrace accepted eight cross-boundary findings covering bounded legacy
-object/GPX preparation, direct-archive fencing, reconstructed lifecycle state,
-explicit completed-pass ends, Replay worker ownership, GPX renderer paging and
-Replay page limitation disclosure. Executable replacement `1f69c790` is green
-locally through 294 files / 2,460 unit tests, backend 55/1, Chromium 166/166,
-visual 58/58 plus effective independent review 69/69, indexed/authentic-v11
-960k, macOS package and packaged soak. Because the replacement spans schema,
-finalization, IPC and renderer contracts, all four reviewers restart on the
-same final code-and-documentation head after exact-head Linux passes. PR open
-or review-ready remains intermediate; do not merge or release.
+PR-5 review correction (2026-08-28): the replacement head `582fd79e` passed
+exact-head Linux run `33192661456`, but the accepted broad, persistence,
+concurrency and renderer reviewers rejected it. Central source retrace accepted
+eight distinct defects: sole-copy oversized legacy-object loss; corrupt
+recoverable-archive trust; direct-archive unlock writes; synchronous startup
+receipt recovery; Replay and GPX cursor context reuse; browser Replay input
+drift; and an open Review remaining editable after Finish. Executable
+replacement `c3d25973` fixes them red-first while current positions retain
+priority and finalized/archive writes remain fail-closed. Local proof is green
+through 294 files / 2,473 unit tests, backend 55/1, Chromium 167/167, visual
+58/58 plus fresh uncached review 69/69, indexed 960k, unsigned macOS package
+and packaged soak. Because the replacement spans persistence, finalization,
+renderer and input contracts, all four reviewers restart on the same final
+code-and-documentation head after exact-head Linux passes. PR open or
+review-ready remains intermediate; do not merge or release.
 
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
