@@ -1553,7 +1553,9 @@
             while a GPX batch, selected-file receipt, or staged revision is unsettled. If an operator retires a
             track while a replacement revision is still importing, retirement wins: the replacement is not
             published, its retained source is shown as an explicit failed import, and the retired evidence is
-            never silently returned to the active map. File names are shown to
+            never silently returned to the active map. If replacement publication completes first, retirement
+            applies to that transaction-current revision and the audit names its exact revision and digest rather
+            than the superseded source. File names are shown to
             the operator, but retained source bytes and full local paths stay behind the desktop boundary.
             The panel shows a bounded issue page and explicitly warns when additional retained issues
             exist beyond that page; a current import refreshes the sanitized issue list immediately.
@@ -1639,6 +1641,9 @@
           <p>
             Select the search area, outing and assignment explicitly. Enter the pass start and optional end as
             Europe/Dublin local times, and add participant, clue and track-evidence identities where available.
+            A pass must stay inside its assignment's outing and cannot be dated in the future. A completed outing
+            requires an explicit pass end; an open pass must be ended before its outing can be ended, and later
+            outing or assignment edits cannot silently move recorded pass evidence outside its original scope.
             The recorded pass displays its declared outcome, exact time window, revision and evidence-link counts;
             SAR Tracker never substitutes the first area or outing and never invents a zero-duration pass.
             Finished and finalized missions keep these retained records visible but disable the Search Operations

@@ -59,6 +59,11 @@ persistence/completeness and renderer/input-containment reviews were clean on
 `dfde1d8f17eff3fdd9205634494255f3ce43395c`, but the concurrency/finalization
 review reproduced a chunked replacement revision overwriting an operator
 retirement that committed while the writer yielded between slices. That head
+was rejected too. Persistence/completeness and renderer/input-containment then
+returned clean on `dace08e2c2da5867cf463a0e262bcbf7ad6ee764`, but broad and
+concurrency/finalization reviews rejected it: retirement could audit a stale
+revision when publication won immediately before the retirement transaction,
+and a declared search pass could sit outside its assignment outing. That head
 was rejected too. Accepted findings and dispositions are:
 
 - authentic v11 migration failed because a v12 index preceded the added GPX
@@ -246,6 +251,17 @@ was rejected too. Accepted findings and dispositions are:
   worker catch is idempotent, and the retirement plus earlier complete revision
   remain authoritative. The controlled exact-head race was observed red, then
   green, including zero `gpx_import_updated` audit events after retirement.
+- GPX retirement read the current revision before acquiring its immediate
+  transaction, so a publication that won that gap could leave revision 2
+  retired while the deletion audit named revision 1: retirement now reads,
+  decides, mutates and audits the transaction-current revision together. The
+  complementary publication-wins interleaving was observed red, then green.
+- Search-pass entry accepted times before the mission/outing and after the
+  outing or wall clock: backend and browser validation now require the declared
+  interval to fit its assignment outing, require an explicit end for a completed
+  outing, prevent ending or shrinking an outing around retained passes, and
+  prevent moving an assignment scope after a pass exists. The broad review's
+  direct reproduction and the controlled interval matrix were red, then green.
 
 The corresponding focused regression tests were observed red before the
 production corrections and are retained in the unit, integration, forced-kill,
@@ -257,7 +273,7 @@ substitutes for that wave.
 
 The latest local remediation tree passed:
 
-- full unit: 288 files / 2,398 tests with eight workers; all timing-gate tests
+- full unit: 288 files / 2,400 tests with eight workers; all timing-gate tests
   that exceeded thresholds in oversubscribed default-worker runs passed again
   in their focused 178-test set;
 - backend: 51 passed / 1 ignored;
@@ -265,7 +281,7 @@ The latest local remediation tree passed:
 - visual Playwright: 58/58;
 - independent visual gate: fresh uncached full review passed 69/69 with zero
   failures or reviewer errors at the original critical/high severities; report
-  `visual-review-2026-08-27T23-47-24Z.json`;
+  `visual-review-2026-08-28T00-36-12Z.json`;
 - TypeScript/Vite production build and bundle budgets, ESLint, changed CommonJS
   syntax checks and `git diff --check`;
 - actual child-process `SIGKILL` at both the pending source-receipt boundary and

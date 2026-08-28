@@ -74,6 +74,7 @@ function createOutingStore(options) {
       validateWindow(existing.started_at, endedAt, timestamp)
       const candidate = { ...existing, ended_at: endedAt }
       assertNoOverlap(db, candidate)
+      assertRecordedSearchPassesFitOuting(db, candidate)
       const transaction = db.transaction(() => {
         db.prepare('UPDATE outings SET ended_at = ?, updated_at = ? WHERE id = ?')
           .run(endedAt, timestamp, existing.id)
@@ -155,6 +156,7 @@ function createOutingStore(options) {
       if (endedAt !== null) validateWindow(startedAt, endedAt, timestamp)
       const candidate = { ...existing, started_at: startedAt, ended_at: endedAt }
       assertNoOverlap(db, candidate)
+      assertRecordedSearchPassesFitOuting(db, candidate)
       if (startedAt === existing.started_at && endedAt === existing.ended_at) return existing
       const transaction = db.transaction(() => {
         db.prepare('UPDATE outings SET started_at = ?, ended_at = ?, updated_at = ? WHERE id = ?')
@@ -265,6 +267,35 @@ function validateWindow(startedAt, endedAt, currentTime) {
   }
   if (Date.parse(endedAt) > Date.parse(currentTime)) {
     throw new Error('Outing end cannot be in the future.')
+  }
+}
+
+/** Prevents later outing edits from invalidating already-declared pass evidence. */
+function assertRecordedSearchPassesFitOuting(db, outing) {
+  const outingStartMs = Date.parse(outing.started_at)
+  const outingEndMs = outing.ended_at === null ? null : Date.parse(outing.ended_at)
+  const passes = db.prepare(`SELECT pass.id, pass.started_at, pass.ended_at
+    FROM search_passes pass
+    INNER JOIN search_assignments assignment ON assignment.id = pass.assignment_id
+    WHERE assignment.outing_id = ?
+    ORDER BY pass.started_at ASC, pass.id ASC`).all(outing.id)
+  for (const pass of passes) {
+    const passStartMs = Date.parse(pass.started_at)
+    const passEndMs = pass.ended_at === null ? null : Date.parse(pass.ended_at)
+    if (outingEndMs !== null && passEndMs === null) {
+      throw new Error(
+        `Cannot end outing while active search pass ${pass.id} remains; record its pass end first.`,
+      )
+    }
+    if (
+      passStartMs < outingStartMs
+      || (outingEndMs !== null && passStartMs >= outingEndMs)
+      || (outingEndMs !== null && passEndMs !== null && passEndMs > outingEndMs)
+    ) {
+      throw new Error(
+        `Outing boundary change would place recorded search pass ${pass.id} outside its outing.`,
+      )
+    }
   }
 }
 

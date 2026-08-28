@@ -34,6 +34,8 @@ type MissionEvidenceStore = {
   listMarkers(missionId: string): Promise<readonly Readonly<Record<string, unknown>>[]>
   upsertDrawing(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   createOuting(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
+  endOuting(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
+  editOutingBoundaries(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   renameOuting(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   upsertGpxImport(input: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   deleteGpxImport(importId: string): Promise<boolean>
@@ -138,6 +140,7 @@ const {
   readonly createElectronMissionStore: (options: {
     readonly userDataPath: string
     readonly evidenceVersionFaultInjection?: { readonly afterProjection?: boolean }
+    readonly gpxRetirementFaultInjection?: { readonly beforeTransaction?: () => void }
     readonly runGpxEvidenceImportInWorker?: (input: {
       readonly databasePath: string
       readonly missionId: string
@@ -730,6 +733,48 @@ describe('mission evidence versioning [DON-277]', () => {
     db.close()
   })
 
+  it('audits the transaction-current GPX revision when publication wins retirement [DON-274 DON-278]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-retirement-race-'))
+    let publishReplacement = () => undefined
+    store = createElectronMissionStore({
+      userDataPath,
+      gpxRetirementFaultInjection: {
+        beforeTransaction: () => publishReplacement(),
+      },
+    })
+    const mission = await store.createMission({ name: 'GPX Publication Wins Retirement' })
+    const imported = await store.upsertGpxImport(gpxInput(mission.id, {}))
+    const db = openDatabase(await databasePath())
+    const replacementBytes = 'PGdweD5wdWJsaWNhdGlvbi13aW5zPC9ncHg+'
+    const replacementHash = digestBase64(replacementBytes)
+    publishReplacement = () => {
+      upsertGpxEvidence(db, gpxInput(mission.id, {
+        id: imported.id,
+        content_sha256: replacementHash,
+        source_bytes_base64: replacementBytes,
+      }))
+    }
+
+    await expect(store.deleteGpxImport(String(imported.id))).resolves.toBe(true)
+
+    expect(db.prepare(`SELECT retired_at, revision_sequence, content_sha256
+      FROM gpx_track_imports WHERE id = ?`).get(imported.id)).toMatchObject({
+      retired_at: expect.any(String),
+      revision_sequence: 2,
+      content_sha256: replacementHash,
+    })
+    const deletionEvent = db.prepare(`SELECT details_json FROM mission_events
+      WHERE mission_id = ? AND event_type = 'gpx_import_deleted'
+      ORDER BY timestamp DESC, id DESC LIMIT 1`).get(mission.id)
+    expect(JSON.parse(String(deletionEvent?.details_json))).toMatchObject({
+      gpx_import_id: imported.id,
+      content_sha256: replacementHash,
+      revision_sequence: 2,
+      retired: true,
+    })
+    db.close()
+  })
+
   it('atomically settles the retained source receipt with GPX publication [DON-278]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Atomic GPX Receipt Mission' })
@@ -1125,6 +1170,134 @@ describe('mission evidence versioning [DON-277]', () => {
     })
   })
 
+  it('keeps every declared search pass inside its assignment outing [DON-279]', async () => {
+    store = await createStore()
+    const referenceTime = Date.now()
+    const missionStart = new Date(referenceTime - 4 * 60 * 60_000).toISOString()
+    const firstOutingStart = new Date(referenceTime - 3 * 60 * 60_000).toISOString()
+    const firstOutingEnd = new Date(referenceTime - 60 * 60_000).toISOString()
+    const validPassStart = new Date(referenceTime - 150 * 60_000).toISOString()
+    const validPassEnd = new Date(referenceTime - 90 * 60_000).toISOString()
+    const mission = await store.createMission({
+      name: 'Search Pass Window Mission',
+      start_time: missionStart,
+    })
+    const firstOuting = await store.createOuting({
+      mission_id: mission.id,
+      label: 'Completed outing',
+      started_at: firstOutingStart,
+    })
+    await store.endOuting({
+      mission_id: mission.id,
+      outing_id: firstOuting.id,
+      ended_at: firstOutingEnd,
+    })
+    const area = await store.upsertSearchArea({
+      mission_id: mission.id,
+      name: 'Area Alpha',
+      status: 'active',
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+      updated_by: 'Coordinator One',
+    })
+    const firstAssignment = await store.upsertSearchAssignment({
+      mission_id: mission.id,
+      search_area_id: area.id,
+      outing_id: firstOuting.id,
+      team_id: 'team-1',
+      participant_ids: [],
+      updated_by: 'Coordinator One',
+    })
+    const completedPass = {
+      mission_id: mission.id,
+      search_area_id: area.id,
+      assignment_id: firstAssignment.id,
+      outcome: 'partial',
+      coordinator_name: 'Coordinator One',
+      participant_ids: [],
+      clue_ids: [],
+      track_evidence_ids: [],
+    }
+
+    await expect(store.upsertSearchPass({
+      ...completedPass,
+      started_at: new Date(referenceTime - 210 * 60_000).toISOString(),
+      ended_at: validPassEnd,
+    })).rejects.toThrow(/pass start.*outing start/i)
+    await expect(store.upsertSearchPass({
+      ...completedPass,
+      started_at: validPassStart,
+      ended_at: new Date(referenceTime - 30 * 60_000).toISOString(),
+    })).rejects.toThrow(/pass end.*outing end/i)
+    await expect(store.upsertSearchPass({
+      ...completedPass,
+      started_at: validPassStart,
+      ended_at: null,
+    })).rejects.toThrow(/ended outing.*pass end/i)
+
+    const recorded = await store.upsertSearchPass({
+      ...completedPass,
+      started_at: validPassStart,
+      ended_at: validPassEnd,
+    })
+    await expect(store.editOutingBoundaries({
+      mission_id: mission.id,
+      outing_id: firstOuting.id,
+      started_at: new Date(referenceTime - 2 * 60 * 60_000).toISOString(),
+    })).rejects.toThrow(/recorded search pass.*outside/i)
+    await expect(store.editOutingBoundaries({
+      mission_id: mission.id,
+      outing_id: firstOuting.id,
+      ended_at: new Date(referenceTime - 2 * 60 * 60_000).toISOString(),
+    })).rejects.toThrow(/recorded search pass.*outside/i)
+
+    const openOuting = await store.createOuting({
+      mission_id: mission.id,
+      label: 'Open outing',
+      started_at: new Date(referenceTime - 30 * 60_000).toISOString(),
+    })
+    await expect(store.upsertSearchAssignment({
+      ...firstAssignment,
+      outing_id: openOuting.id,
+      participant_ids: [],
+    })).rejects.toThrow(/assignment scope.*recorded search pass/i)
+    const openAssignment = await store.upsertSearchAssignment({
+      mission_id: mission.id,
+      search_area_id: area.id,
+      outing_id: openOuting.id,
+      team_id: 'team-2',
+      participant_ids: [],
+      updated_by: 'Coordinator One',
+    })
+    const openPass = {
+      ...completedPass,
+      assignment_id: openAssignment.id,
+      started_at: new Date(referenceTime - 20 * 60_000).toISOString(),
+    }
+    await expect(store.upsertSearchPass({
+      ...openPass,
+      started_at: new Date(referenceTime + 60 * 60_000).toISOString(),
+      ended_at: null,
+    })).rejects.toThrow(/pass start.*future/i)
+    await expect(store.upsertSearchPass({
+      ...openPass,
+      ended_at: new Date(referenceTime + 60 * 60_000).toISOString(),
+    })).rejects.toThrow(/pass end.*future/i)
+    const activePass = await store.upsertSearchPass({ ...openPass, ended_at: null })
+    await expect(store.endOuting({
+      mission_id: mission.id,
+      outing_id: openOuting.id,
+    })).rejects.toThrow(/active search pass/i)
+    await store.upsertSearchPass({
+      ...activePass,
+      ended_at: new Date(referenceTime - 10 * 60_000).toISOString(),
+    })
+    await expect(store.endOuting({
+      mission_id: mission.id,
+      outing_id: openOuting.id,
+    })).resolves.toMatchObject({ ended_at: expect.any(String) })
+    expect(recorded).toMatchObject({ started_at: validPassStart, ended_at: validPassEnd })
+  })
+
   it('keeps stable areas, repeated assignments, and coordinator-declared pass revisions [DON-279]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Repeated Search Mission' })
@@ -1182,8 +1355,8 @@ describe('mission evidence versioning [DON-277]', () => {
       mission_id: mission.id,
       search_area_id: area.id,
       assignment_id: firstAssignment.id,
-      started_at: '2026-08-27T08:00:00Z',
-      ended_at: '2026-08-27T09:00:00Z',
+      started_at: outing.started_at,
+      ended_at: new Date().toISOString(),
       outcome: 'full',
       notes: 'Coordinator declaration',
       coordinator_name: 'Coordinator One',
@@ -1269,7 +1442,7 @@ describe('mission evidence versioning [DON-277]', () => {
       mission_id: mission.id,
       search_area_id: area.id,
       assignment_id: assignment.id,
-      started_at: '2026-08-27T08:00:00Z',
+      started_at: outing.started_at,
       outcome: 'partial',
       coordinator_name: 'Coordinator',
     }

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import { navigateToHarness, startMission } from './helpers/test-setup'
 import { captureElementAndRegister } from './helpers/verification-manifest'
+import { formatDublinDateTimeLocal } from '../../../src/features/mission-review/dublin-local-time'
 
 test.describe('Visual: mission evidence and replay', () => {
   test('replay keeps Live context explicit and surfaces incomplete/static evidence', async ({ page }) => {
@@ -68,8 +69,18 @@ Report PASS or FAIL for each item and overall.`,
     await page.getByTestId('search-assignment-team').fill('Team 1')
     await page.getByTestId('search-assignment-record').click()
     await page.getByTestId('search-pass-assignment').selectOption({ index: 1 })
-    await page.getByTestId('search-pass-start').fill('2026-08-27T14:00')
-    await page.getByTestId('search-pass-end').fill('2026-08-27T15:00')
+    const passWindow = await page.evaluate(() => {
+      const outing = window.__SARTRACKER_BROWSER_HARNESS__?.readState().outings
+        .find((entry) => entry.label === 'Operational period 1')
+      if (outing === undefined) throw new Error('Operational period 1 was not found.')
+      return { startedAt: outing.started_at, endedAt: new Date().toISOString() }
+    })
+    await page.getByTestId('search-pass-start').fill(
+      formatDublinDateTimeLocal(passWindow.startedAt),
+    )
+    await page.getByTestId('search-pass-end').fill(
+      formatDublinDateTimeLocal(passWindow.endedAt),
+    )
     await page.getByTestId('search-pass-record').click()
     await page.getByTestId('search-pass-outcome').selectOption('full')
     await page.getByTestId('search-pass-record').click()

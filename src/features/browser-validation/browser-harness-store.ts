@@ -374,6 +374,11 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const endedAt = normalizeHarnessOutingBoundary(input.ended_at ?? timestamp)
       const outing = { ...existing, ended_at: endedAt, updated_at: timestamp }
       assertHarnessOutingWindow(mission, outing, state.outings)
+      assertHarnessRecordedSearchPassesFitOuting(
+        outing,
+        state.searchAssignments,
+        state.searchPasses,
+      )
       state = {
         ...state,
         outings: state.outings.map((candidate) => candidate.id === outing.id ? outing : candidate),
@@ -421,6 +426,11 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         updated_at: timestamp,
       }
       assertHarnessOutingWindow(mission, outing, state.outings)
+      assertHarnessRecordedSearchPassesFitOuting(
+        outing,
+        state.searchAssignments,
+        state.searchPasses,
+      )
       state = {
         ...state,
         outings: state.outings.map((candidate) => candidate.id === outing.id ? outing : candidate),
@@ -1794,6 +1804,15 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         throw new Error('Search assignment requires an outing in this mission.')
       }
       const existing = state.searchAssignments.find((entry) => entry.id === input.id) ?? null
+      if (
+        existing !== null
+        && (existing.search_area_id !== area.id || existing.outing_id !== outing.id)
+        && state.searchPasses.some((pass) => pass.assignment_id === existing.id)
+      ) {
+        throw new Error(
+          `Cannot change search assignment scope ${existing.id} after a recorded search pass; create a new assignment.`,
+        )
+      }
       const timestamp = new Date().toISOString()
       const assignment: SearchAssignment = {
         id: existing?.id ?? createId('search-assignment'),
@@ -1816,6 +1835,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     upsertSearchPass: async (input) => {
       const missionId = String(input.mission_id)
       ensureMissionMutable(missionId, state.missions)
+      const mission = requireMission(missionId, state.missions)
       const area = state.searchAreas.find((entry) => entry.id === input.search_area_id)
       const assignment = state.searchAssignments.find((entry) => entry.id === input.assignment_id)
       if (area?.mission_id !== missionId || area.retired_at !== null || area.status === 'retired') {
@@ -1825,19 +1845,31 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         || assignment.retired_at !== null) {
         throw new Error('Search pass requires an active matching assignment.')
       }
+      const outing = state.outings.find((entry) => entry.id === assignment.outing_id)
+      if (outing?.mission_id !== missionId) {
+        throw new Error('Search pass assignment outing is not in this mission.')
+      }
       const existing = state.searchPasses.find((entry) => entry.id === input.id) ?? null
       const outcome = input.outcome
       if (outcome !== 'full' && outcome !== 'partial' && outcome !== 'aborted') {
         throw new Error('Search pass coordinator outcome is invalid.')
       }
       const timestamp = new Date().toISOString()
+      const startedAt = normalizeHarnessSearchPassBoundary(input.started_at, 'start')
+      const endedAt = input.ended_at == null
+        ? null
+        : normalizeHarnessSearchPassBoundary(input.ended_at, 'end')
+      if (endedAt !== null && endedAt < startedAt) {
+        throw new Error('Search pass end time cannot precede its start time.')
+      }
+      assertHarnessSearchPassWindow({ mission, outing, startedAt, endedAt, currentTime: timestamp })
       const pass: SearchPass = {
         id: existing?.id ?? createId('search-pass'),
         mission_id: missionId,
         search_area_id: String(input.search_area_id),
         assignment_id: String(input.assignment_id),
-        started_at: new Date(String(input.started_at)).toISOString(),
-        ended_at: input.ended_at == null ? null : new Date(String(input.ended_at)).toISOString(),
+        started_at: startedAt,
+        ended_at: endedAt,
         outcome,
         notes: typeof input.notes === 'string' && input.notes.trim() !== '' ? input.notes : null,
         coordinator_name: String(input.coordinator_name),
@@ -2669,6 +2701,85 @@ function assertHarnessOutingWindow(
   if (conflict !== undefined) {
     throw new Error(`Outing window overlaps "${conflict.label}".`)
   }
+}
+
+/** Prevents browser validation from moving recorded passes outside their outing. */
+function assertHarnessRecordedSearchPassesFitOuting(
+  outing: Outing,
+  assignments: readonly SearchAssignment[],
+  passes: readonly SearchPass[],
+): void {
+  const assignmentIds = new Set(assignments
+    .filter((assignment) => assignment.outing_id === outing.id)
+    .map((assignment) => assignment.id))
+  const outingStartMs = Date.parse(outing.started_at)
+  const outingEndMs = outing.ended_at === null ? null : Date.parse(outing.ended_at)
+  for (const pass of passes.filter((candidate) => assignmentIds.has(candidate.assignment_id))) {
+    const passStartMs = Date.parse(pass.started_at)
+    const passEndMs = pass.ended_at === null ? null : Date.parse(pass.ended_at)
+    if (outingEndMs !== null && passEndMs === null) {
+      throw new Error(
+        `Cannot end outing while active search pass ${pass.id} remains; record its pass end first.`,
+      )
+    }
+    if (
+      passStartMs < outingStartMs
+      || (outingEndMs !== null && passStartMs >= outingEndMs)
+      || (outingEndMs !== null && passEndMs !== null && passEndMs > outingEndMs)
+    ) {
+      throw new Error(
+        `Outing boundary change would place recorded search pass ${pass.id} outside its outing.`,
+      )
+    }
+  }
+}
+
+/** Mirrors the production assignment-outing pass interval policy. */
+function assertHarnessSearchPassWindow(input: {
+  readonly mission: Mission
+  readonly outing: Outing
+  readonly startedAt: string
+  readonly endedAt: string | null
+  readonly currentTime: string
+}): void {
+  const startedAtMs = Date.parse(input.startedAt)
+  const endedAtMs = input.endedAt === null ? null : Date.parse(input.endedAt)
+  const outingStartMs = Date.parse(input.outing.started_at)
+  const outingEndMs = input.outing.ended_at === null ? null : Date.parse(input.outing.ended_at)
+  const currentTimeMs = Date.parse(input.currentTime)
+  if (startedAtMs < Date.parse(input.mission.start_time)) {
+    throw new Error('Search pass start cannot be before the mission start.')
+  }
+  if (startedAtMs < outingStartMs) {
+    throw new Error('Search pass start cannot be before its assignment outing start.')
+  }
+  if (startedAtMs > currentTimeMs) throw new Error('Search pass start cannot be in the future.')
+  if (endedAtMs !== null && endedAtMs > currentTimeMs) {
+    throw new Error('Search pass end cannot be in the future.')
+  }
+  if (outingEndMs !== null) {
+    if (startedAtMs >= outingEndMs) {
+      throw new Error('Search pass start must be before its assignment outing end.')
+    }
+    if (endedAtMs === null) {
+      throw new Error('A pass in an ended outing must have an explicit pass end.')
+    }
+    if (endedAtMs > outingEndMs) {
+      throw new Error('Search pass end cannot be after its assignment outing end.')
+    }
+  }
+}
+
+/** Normalizes one browser validation pass boundary to canonical UTC. */
+function normalizeHarnessSearchPassBoundary(value: unknown, label: 'start' | 'end'): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Search pass ${label} must be a valid ISO8601 date-time.`)
+  }
+  const milliseconds = Date.parse(value)
+  if (!Number.isFinite(milliseconds)) {
+    throw new Error(`Search pass ${label} must be a valid ISO8601 date-time.`)
+  }
+  return new Date(milliseconds).toISOString()
 }
 
 /** Normalizes a browser-harness date-time boundary. */

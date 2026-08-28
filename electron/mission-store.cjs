@@ -362,6 +362,7 @@ function createElectronMissionStore(options) {
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
   const storageDiagnostics = options.storageDiagnostics ?? null
   const coverageLedgerFaultInjection = options.coverageLedgerFaultInjection ?? {}
+  const gpxRetirementFaultInjection = options.gpxRetirementFaultInjection ?? {}
   const breadcrumbQueryRunner =
     options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
   const breadcrumbDotQueryRunner =
@@ -1202,7 +1203,11 @@ function createElectronMissionStore(options) {
       all(db, `SELECT * FROM gpx_track_imports
         WHERE mission_id = ? AND retired_at IS NULL AND import_state = 'complete'
         ORDER BY display_name ASC, imported_at ASC`, missionId),
-    deleteGpxImport: async (importId) => retireGpxEvidence(db, importId),
+    deleteGpxImport: async (importId) => retireGpxEvidence(
+      db,
+      importId,
+      gpxRetirementFaultInjection,
+    ),
     listGpxImportRevisions: async (importId) => all(
       db,
       `SELECT * FROM gpx_import_revisions
@@ -4716,6 +4721,15 @@ function upsertSearchAssignment(db, versionStore, input) {
   if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
     throw new Error(`Cannot update retired search assignment ${id}.`)
   }
+  if (
+    existing !== undefined
+    && (existing.search_area_id !== area.id || existing.outing_id !== outing.id)
+    && db.prepare('SELECT 1 FROM search_passes WHERE assignment_id = ? LIMIT 1').get(id) !== undefined
+  ) {
+    throw new Error(
+      `Cannot change search assignment scope ${id} after a recorded search pass; create a new assignment.`,
+    )
+  }
   const participantIds = normalizeIdList(input.participant_ids)
   const timestamp = now()
   const row = {
@@ -4745,6 +4759,7 @@ function upsertSearchAssignment(db, versionStore, input) {
 function upsertSearchPass(db, versionStore, input) {
   const missionId = normalizeRequiredText(input.mission_id, 'Search pass mission')
   ensureWritableMission(db, missionId)
+  const mission = getMission(db, missionId)
   const area = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(input.search_area_id)
   const assignment = db.prepare('SELECT * FROM search_assignments WHERE id = ?').get(input.assignment_id)
   if (area?.mission_id !== missionId) throw new Error('Search pass area is not in this mission.')
@@ -4756,6 +4771,10 @@ function upsertSearchPass(db, versionStore, input) {
   }
   if (assignment.retired_at !== null) {
     throw new Error(`Cannot record a pass against retired search assignment ${assignment.id}.`)
+  }
+  const outing = db.prepare('SELECT * FROM outings WHERE id = ?').get(assignment.outing_id)
+  if (outing?.mission_id !== missionId) {
+    throw new Error('Search pass assignment outing is not in this mission.')
   }
   if (!['full', 'partial', 'aborted'].includes(input.outcome)) {
     throw new Error('Search pass coordinator outcome is invalid.')
@@ -4771,6 +4790,13 @@ function upsertSearchPass(db, versionStore, input) {
   if (endedAt !== null && endedAt < startedAt) {
     throw new Error('Search pass end time cannot precede its start time.')
   }
+  assertSearchPassWindowWithinOuting({
+    mission,
+    outing,
+    startedAt,
+    endedAt,
+    currentTime: timestamp,
+  })
   const previousLinks = existing === undefined ? null : readSearchPassLinks(
     db,
     id,
@@ -4805,6 +4831,39 @@ function upsertSearchPass(db, versionStore, input) {
     afterProjection: () => writeSearchPassLinks(db, id, row.version_sequence, links),
   })
   return { ...db.prepare('SELECT * FROM search_passes WHERE id = ?').get(id), ...links }
+}
+
+/** Fails closed when a declared pass is outside its coordinator-owned outing. */
+function assertSearchPassWindowWithinOuting(input) {
+  const startedAtMs = Date.parse(input.startedAt)
+  const endedAtMs = input.endedAt === null ? null : Date.parse(input.endedAt)
+  const missionStartMs = Date.parse(input.mission.start_time)
+  const outingStartMs = Date.parse(input.outing.started_at)
+  const outingEndMs = input.outing.ended_at === null ? null : Date.parse(input.outing.ended_at)
+  const currentTimeMs = Date.parse(input.currentTime)
+  if (startedAtMs < missionStartMs) {
+    throw new Error('Search pass start cannot be before the mission start.')
+  }
+  if (startedAtMs < outingStartMs) {
+    throw new Error('Search pass start cannot be before its assignment outing start.')
+  }
+  if (startedAtMs > currentTimeMs) {
+    throw new Error('Search pass start cannot be in the future.')
+  }
+  if (endedAtMs !== null && endedAtMs > currentTimeMs) {
+    throw new Error('Search pass end cannot be in the future.')
+  }
+  if (outingEndMs !== null) {
+    if (startedAtMs >= outingEndMs) {
+      throw new Error('Search pass start must be before its assignment outing end.')
+    }
+    if (endedAtMs === null) {
+      throw new Error('A pass in an ended outing must have an explicit pass end.')
+    }
+    if (endedAtMs > outingEndMs) {
+      throw new Error('Search pass end cannot be after its assignment outing end.')
+    }
+  }
 }
 
 function writeSearchOperationVersion(db, versionStore, input) {
@@ -5803,13 +5862,14 @@ function assignGpxEvidenceToOuting(db, input) {
   return getById(db, 'gpx_track_imports', importId, 'GPX import')
 }
 
-/** Retires GPX evidence without deleting any source, revision, point, or rejection. */
-function retireGpxEvidence(db, importId) {
-  const existing = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(importId)
-  if (existing === undefined || existing.retired_at !== null) return false
-  const timestamp = now()
+/** Retires the transaction-current GPX revision without deleting retained evidence. */
+function retireGpxEvidence(db, importId, faultInjection = {}) {
+  let retired = false
   const transaction = db.transaction(() => {
+    const existing = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(importId)
+    if (existing === undefined || existing.retired_at !== null) return
     ensureWritableMission(db, existing.mission_id)
+    const timestamp = now()
     db.prepare('UPDATE gpx_track_imports SET retired_at = ?, updated_at = ? WHERE id = ?')
       .run(timestamp, timestamp, importId)
     insertEvent(db, existing.mission_id, 'gpx_import_deleted', timestamp, {
@@ -5818,9 +5878,11 @@ function retireGpxEvidence(db, importId) {
       revision_sequence: existing.revision_sequence,
       retired: true,
     })
+    retired = true
   })
+  faultInjection.beforeTransaction?.()
   transaction.immediate()
-  return true
+  return retired
 }
 
 function upsertGpxAlias(db, missionId, importId, sourcePath, fileName, timestamp) {

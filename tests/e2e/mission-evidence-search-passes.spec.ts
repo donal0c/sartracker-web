@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { formatDublinDateTimeLocal } from '../../src/features/mission-review/dublin-local-time'
+
 test.describe('PR5 mission evidence and repeated search passes [DON-279]', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/?missionHarness=1&missionModel=1')
@@ -48,8 +50,29 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     await expect(page.getByTestId('search-operation-feedback')).toContainText('Assignment recorded')
 
     await page.getByTestId('search-pass-assignment').selectOption({ index: 1 })
-    await page.getByTestId('search-pass-start').fill('2026-08-27T14:00')
-    await page.getByTestId('search-pass-end').fill('2026-08-27T15:30')
+    const passWindow = await page.evaluate(() => {
+      const outing = window.__SARTRACKER_BROWSER_HARNESS__?.readState().outings
+        .find((entry) => entry.label === 'Operational period 2')
+      if (outing === undefined) throw new Error('Operational period 2 was not found.')
+      return {
+        outingStart: outing.started_at,
+        invalidStart: new Date(Date.parse(outing.started_at) - 1).toISOString(),
+        validEnd: new Date().toISOString(),
+      }
+    })
+    await page.getByTestId('search-pass-start').fill(
+      formatDublinDateTimeLocal(passWindow.invalidStart),
+    )
+    await page.getByTestId('search-pass-record').click()
+    await expect(page.getByTestId('search-operation-error')).toContainText(
+      'Search pass start cannot be before its assignment outing start',
+    )
+    await expect(page.locator('[data-testid^="search-pass-search-pass-"]')).toHaveCount(0)
+
+    await page.getByTestId('search-pass-start').fill(
+      formatDublinDateTimeLocal(passWindow.outingStart),
+    )
+    await page.getByTestId('search-pass-end').fill(formatDublinDateTimeLocal(passWindow.validEnd))
     await page.getByTestId('search-pass-outcome').selectOption('partial')
     await page.getByTestId('search-pass-record').click()
     await expect(page.getByTestId('search-operation-feedback')).toContainText(
@@ -78,8 +101,8 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     expect(recorded.pass).toMatchObject({
       search_area_id: recorded.area?.id,
       assignment_id: recorded.assignment?.id,
-      started_at: '2026-08-27T13:00:00.000Z',
-      ended_at: '2026-08-27T14:30:00.000Z',
+      started_at: passWindow.outingStart,
+      ended_at: passWindow.validEnd,
       participant_ids: [],
       clue_ids: [],
       track_evidence_ids: [],
