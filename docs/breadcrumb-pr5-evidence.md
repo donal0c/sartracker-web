@@ -1178,6 +1178,18 @@ passed 60/60, and the full serial suite passed 294 files / 2,480 tests. The
 fresh documentation-bound descendant still requires exact-head Linux and all
 four independent reviews; no merge or release is authorized.
 
+The first documentation-bound descendant,
+`394facdb97acf6d1dac455b11a7e6af803695ddc`, retained the corrected hard
+liveness gate but Linux workflow
+[`33206596556`](https://github.com/donal0c/sartracker-web/actions/runs/33206596556)
+exposed a test-harness consequence of the smaller turns: the former 15-second
+settlement loop ended with 42,500 of 50,000 rows complete. The cursor was still
+advancing and there was no missing or skipped evidence. Test correction
+`84eb2245` keeps the full 50,000-row equality and unchanged less-than-200 ms
+event-loop assertion, but permits up to 30 seconds for the deliberately smaller
+durable turns to finish on slower runners. The focused regression passed three
+consecutive runs and the complete evidence-versioning file remained 60/60.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
