@@ -20,12 +20,19 @@ long-soak, or field evidence.
 
 ### In-flight boundary
 
-PR5 is not merged into the audited base. Every PR5-owned GPX, versioned mission
-evidence, replay, and search-area/pass seam is therefore marked
-`rewrite-pending`; this charter neither audits nor freezes its unmerged
-implementation. PR6 is not implemented, so archive security, streaming,
-archive-backed review, and restore-and-replay remain `rewrite-pending` under
-`DON-248`, `DON-252`, `DON-253`, and their existing programme owners.
+The unmerged target is the `DON-274`/`DON-277`/`DON-278`/`DON-279` issue set on
+GitHub PR #5. The canonical execution policy calls that scope programme PR-4,
+while current issue/PR metadata calls it PR-5 of six. This charter therefore
+targets the issue set and eventual merge SHA, not a bare programme number.
+Every boundary it owns is marked `rewrite-pending`; this charter neither audits
+nor freezes its unmerged implementation.
+
+The `DON-248`/`DON-252`/`DON-253` archive-lifecycle successor is also not
+implemented. The canonical programme policy names that successor programme
+PR-5; the WAR-01 task packet called it “PR6.” Neither shorthand is an authority
+for scope, and “PR6” must not be confused with GitHub PR #6, which is this
+docs-only assurance PR. Archive security, streaming, archive-backed review,
+and restore-and-replay remain `rewrite-pending` under those issue owners.
 
 ## Assurance objective
 
@@ -68,7 +75,7 @@ The following conditions are blockers, not accepted degradation:
 | Blocker | Required behavior |
 | --- | --- |
 | Delayed or hidden current position | Valid current fixes publish before roster, history, replay, coverage, persistence side effects, or slow provider work. Degraded history must remain visibly separate. |
-| Silent evidence loss | Failed or uncertain accepted-evidence persistence creates a durable, mission-scoped critical state. Completion stays blocked; acknowledgement documents loss but never repairs or erases it. |
+| Silent evidence loss | Failed or uncertain accepted-evidence persistence creates a durable, mission-scoped critical state before the observation settles. `Complete`/`100%` stays blocked; an authorized acknowledgement may permit an audited lifecycle close but never repairs, clears, or erases the permanent evidence gap. |
 | False `Complete` or `100%` | A claim requires the exact selected revision set, renderer attachment, delivery ledger, and fresh database claim, with no omission, evidence-health, transition, or worker blocker. Equal counts alone are insufficient. |
 | Corrupted evidence | Invalid coordinates, timestamps, schemas, archives, and worker envelopes fail closed. Corruption must not be silently normalized into authoritative mission evidence. |
 | Unbounded mission-size work on Electron main | Operational main-process work must have a fixed bound or execute in a cancellable worker/process boundary. Archive creation, integrity checks, review, replay, and coverage may not block current tracking or operator input as mission size grows. |
@@ -133,25 +140,27 @@ slice is recorded separately from that source inspection.
 - The coordinator centrally retraces future confirmed findings before deciding
   remediation. WAR-01 creates no speculative Linear work.
 
-## Required post-PR5 reconciliation
+## Required post-issue-set reconciliation
 
-After PR5 merges, perform one short, docs-only reconciliation before treating
-this baseline as current:
+After the `DON-274`/`DON-277`/`DON-278`/`DON-279` issue set on GitHub PR #5
+merges, perform one short, docs-only reconciliation before treating this
+baseline as current:
 
-1. record PR5's merge SHA and diff it against the base used by this charter;
+1. record GitHub PR #5's merge SHA and diff it against the base used by this
+   charter;
 2. re-open every changed production and test boundary owned by `DON-274`,
    `DON-277`, `DON-278`, and `DON-279`, including GPX, versioned/source-exact
-   evidence, replay, revision, search-area/pass, and coverage-presentation
-   seams;
-3. retrace `RPL-001`, `RPL-002`, `RPL-003`, and any changed `EVD-*`, `MIS-*`,
-   `TRK-*`, or `IPC-*` call path; do not carry current-base conclusions across
-   a changed boundary by ancestry alone;
+   evidence, replay, revision, search-area/pass, marker-attachment custody,
+   archive inclusion, and coverage-presentation seams;
+3. retrace `RPL-001` through `RPL-005`, `EVD-005`, and any other changed
+   `EVD-*`, `MIS-*`, `TRK-*`, or `IPC-*` call path; do not carry current-base
+   conclusions across a changed boundary by ancestry alone;
 4. replace or reaffirm each `rewrite-pending` classification, cite only tests
    actually re-opened, and state the new evidence tier and proof limit;
-5. keep the PR6 streamed archive/restore boundary `rewrite-pending` until its
-   own implementation and qualification land; and
+5. keep the `DON-248`/`DON-252`/`DON-253` streamed archive/restore boundary
+   `rewrite-pending` until its own implementation and qualification land; and
 6. obtain a fresh exact-head broad life-safety review and a focused
    traceability review of the reconciled rows.
 
 The reconciliation is not a retrospective audit of an unmerged branch. It is
-the point at which merged PR5 code becomes repository authority.
+the point at which the merged issue-set code becomes repository authority.
