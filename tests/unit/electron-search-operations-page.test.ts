@@ -21,6 +21,7 @@ const {
     },
   ) => {
     readonly kind: string
+    readonly generation: number
     readonly entries: readonly Readonly<Record<string, unknown>>[]
     readonly totalCount: number
     readonly nextCursor: string | null
@@ -37,6 +38,7 @@ const { runSearchOperationPageInWorker } = require(
       readonly limit: number
     }
   }) => Promise<{
+    readonly generation: number
     readonly entries: readonly Readonly<Record<string, unknown>>[]
     readonly totalCount: number
     readonly nextCursor: string | null
@@ -47,6 +49,8 @@ type TestDatabase = {
   readonly exec: (sql: string) => void
   readonly prepare: (sql: string) => {
     readonly run: (...params: readonly unknown[]) => unknown
+    readonly get: (...params: readonly unknown[]) => Readonly<Record<string, unknown>>
+    readonly all: (...params: readonly unknown[]) => readonly Readonly<Record<string, unknown>>[]
   }
   readonly close: () => void
   readonly transaction: <T>(operation: () => T) => () => T
@@ -147,6 +151,88 @@ describe('Search Operations renderer pages [DON-279]', () => {
     database.close()
   })
 
+  it('rejects a continuation after retained Search Operations evidence changes [DON-279]', () => {
+    const database = createSearchDatabase()
+    database.exec(`
+      INSERT INTO mission_replay_generations VALUES ('mission-1', 1);
+      INSERT INTO search_areas VALUES
+        ('area-a', 'mission-1', 'Alpha', 'active', '{}', NULL, 1,
+          'Coordinator', '2026-08-28T09:00:00.000Z', '2026-08-28T09:00:00.000Z', NULL),
+        ('area-b', 'mission-1', 'Bravo', 'active', '{}', NULL, 1,
+          'Coordinator', '2026-08-28T09:01:00.000Z', '2026-08-28T09:01:00.000Z', NULL),
+        ('area-c', 'mission-1', 'Charlie', 'active', '{}', NULL, 1,
+          'Coordinator', '2026-08-28T09:02:00.000Z', '2026-08-28T09:02:00.000Z', NULL);
+    `)
+    const first = readSearchOperationPage(database, {
+      missionId: 'mission-1', kind: 'areas', limit: 1,
+    })
+    expect(first).toMatchObject({ generation: 1, totalCount: 3 })
+    database.exec(`
+      UPDATE search_areas SET name = 'Aardvark', version_sequence = 2 WHERE id = 'area-c';
+      UPDATE mission_replay_generations SET generation = 2 WHERE mission_id = 'mission-1';
+    `)
+
+    expect(() => readSearchOperationPage(database, {
+      missionId: 'mission-1', kind: 'areas', limit: 1,
+      cursor: first.nextCursor ?? undefined,
+    })).toThrow(/Search Operations page changed; return to the first page/i)
+    database.close()
+  })
+
+  it('pins generation, exact count, and entries to one SQLite read snapshot [DON-279]', () => {
+    const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'search-operation-snapshot-'))
+    const databasePath = path.join(fixtureDirectory, 'mission.sqlite')
+    const reader = createSearchDatabase(databasePath)
+    reader.exec(`
+      PRAGMA journal_mode = WAL;
+      INSERT INTO mission_replay_generations VALUES ('mission-1', 1);
+      INSERT INTO search_areas VALUES
+        ('area-a', 'mission-1', 'Alpha', 'active', '{}', NULL, 1,
+          'Coordinator', '2026-08-28T09:00:00.000Z', '2026-08-28T09:00:00.000Z', NULL),
+        ('area-b', 'mission-1', 'Bravo', 'active', '{}', NULL, 1,
+          'Coordinator', '2026-08-28T09:01:00.000Z', '2026-08-28T09:01:00.000Z', NULL);
+    `)
+    const writer = new Database(databasePath)
+    let wroteAfterCount = false
+    const database = {
+      exec: reader.exec.bind(reader),
+      close: reader.close.bind(reader),
+      transaction: reader.transaction.bind(reader),
+      prepare: (sql: string) => {
+        const statement = reader.prepare(sql)
+        if (!sql.includes('SELECT COUNT(*) AS count')) return statement
+        return new Proxy(statement, {
+          get: (target, property) => {
+            if (property !== 'get') return Reflect.get(target, property)
+            return (...params: readonly unknown[]) => {
+              const count = statement.get(...params)
+              writer.exec(`
+                INSERT INTO search_areas VALUES
+                  ('area-new', 'mission-1', 'Aardvark', 'active', '{}', NULL, 1,
+                    'Coordinator', '2026-08-28T09:02:00.000Z', '2026-08-28T09:02:00.000Z', NULL);
+                UPDATE mission_replay_generations SET generation = 2
+                  WHERE mission_id = 'mission-1';
+              `)
+              wroteAfterCount = true
+              return count
+            }
+          },
+        })
+      },
+    } satisfies TestDatabase
+
+    const page = readSearchOperationPage(database, {
+      missionId: 'mission-1', kind: 'areas', limit: 1,
+    })
+    expect(wroteAfterCount).toBe(true)
+    expect(page).toMatchObject({ generation: 1, totalCount: 2 })
+    expect(page.entries[0]).toMatchObject({ id: 'area-a', name: 'Alpha' })
+
+    writer.close()
+    reader.close()
+    rmSync(fixtureDirectory, { recursive: true, force: true })
+  })
+
   it('keeps a 50,000-pass read off the main isolate and returns only one bounded page', async () => {
     const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'search-operation-page-'))
     const databasePath = path.join(fixtureDirectory, 'mission.sqlite')
@@ -209,6 +295,9 @@ function createSearchDatabase(databasePath = ':memory:'): TestDatabase {
     );
     CREATE TABLE search_pass_evidence_links (
       pass_id TEXT, version_sequence INTEGER, link_kind TEXT, target_id TEXT
+    );
+    CREATE TABLE mission_replay_generations (
+      mission_id TEXT PRIMARY KEY, generation INTEGER NOT NULL
     );
     CREATE UNIQUE INDEX idx_search_pass_links
       ON search_pass_evidence_links(pass_id, version_sequence, link_kind, target_id);

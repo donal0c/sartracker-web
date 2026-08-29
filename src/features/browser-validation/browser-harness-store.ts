@@ -2328,8 +2328,9 @@ function buildBrowserSearchOperationPage(
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
     throw new Error('Search Operations page limit must be between 1 and 50.')
   }
+  const generation = browserSearchOperationGeneration(state, missionId)
   const cursor = decodeBrowserSearchOperationCursor(input.cursor, {
-    missionId, kind: input.kind, search,
+    missionId, kind: input.kind, search, generation,
   })
   const loweredSearch = search.toLocaleLowerCase('en-IE')
   const rows = browserSearchOperationRows(state, missionId, input.kind)
@@ -2344,12 +2345,13 @@ function buildBrowserSearchOperationPage(
   return {
     kind: input.kind,
     search,
+    generation,
     entries: visible.map((row) => row.projection),
     totalCount: rows.length,
     nextCursor: eligible.length <= limit || last === undefined
       ? null
       : encodeBrowserBase64Url(JSON.stringify({
-          v: 1, missionId, kind: input.kind, search,
+          v: 2, missionId, kind: input.kind, search, generation,
           orderValue: last.orderValue, id: last.id,
         })),
   }
@@ -2415,7 +2417,12 @@ function browserSearchOperationRows(
 /** Decodes one browser Search Operations keyset cursor with context binding. */
 function decodeBrowserSearchOperationCursor(
   value: string | undefined,
-  context: { readonly missionId: string; readonly kind: string; readonly search: string },
+  context: {
+    readonly missionId: string
+    readonly kind: string
+    readonly search: string
+    readonly generation: number
+  },
 ): { readonly orderValue: string; readonly id: string } | null {
   if (value === undefined || value === '') return null
   if (typeof value !== 'string' || value.length > 2_000) {
@@ -2423,16 +2430,32 @@ function decodeBrowserSearchOperationCursor(
   }
   try {
     const parsed = JSON.parse(decodeBrowserBase64Url(value)) as Record<string, unknown>
-    if (parsed.v !== 1 || parsed.missionId !== context.missionId
+    if (parsed.v !== 2 || parsed.missionId !== context.missionId
       || parsed.kind !== context.kind || parsed.search !== context.search
+      || !Number.isSafeInteger(parsed.generation) || Number(parsed.generation) < 0
       || typeof parsed.orderValue !== 'string' || parsed.orderValue.length > 200
       || typeof parsed.id !== 'string' || parsed.id.length < 1 || parsed.id.length > 200) {
       throw new Error('invalid')
     }
+    if (parsed.generation !== context.generation) {
+      throw new Error('changed')
+    }
     return { orderValue: parsed.orderValue, id: parsed.id }
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message === 'changed') {
+      throw new Error('Search Operations page changed; return to the first page.')
+    }
     throw new Error('Search Operations page cursor is invalid.')
   }
+}
+
+/** Derives a monotonic browser-validation generation for retained Search Operations state. */
+function browserSearchOperationGeneration(state: BrowserHarnessState, missionId: string): number {
+  const eventCount = state.missionEvents.filter((event) => event.mission_id === missionId).length
+  const versionTotal = [...state.searchAreas, ...state.searchAssignments, ...state.searchPasses]
+    .filter((entry) => entry.mission_id === missionId)
+    .reduce((total, entry) => total + entry.version_sequence, 0)
+  return eventCount + versionTotal
 }
 
 /** Reads every eligible browser-harness outing identity known at the selected time. */

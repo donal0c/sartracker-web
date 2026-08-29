@@ -7,8 +7,14 @@ const SEARCH_OPERATION_KINDS = new Set(['areas', 'assignments', 'outings', 'pass
 /** Reads one bounded, searchable Search Operations projection page. */
 function readSearchOperationPage(database, input) {
   const query = normalizeSearchOperationPageQuery(input)
+  return database.transaction(() => readSearchOperationPageWithinSnapshot(database, query))()
+}
+
+/** Reads count and entries from one pinned mission-evidence snapshot. */
+function readSearchOperationPageWithinSnapshot(database, query) {
+  const generation = readMissionReplayGeneration(database, query.missionId)
   const specification = pageSpecification(query.kind)
-  const cursor = decodeSearchOperationCursor(query.cursor, query)
+  const cursor = decodeSearchOperationCursor(query.cursor, { ...query, generation })
   const searchPattern = `%${escapeLike(query.search)}%`
   const searchParameters = Array.from(
     { length: specification.searchColumnCount },
@@ -38,6 +44,7 @@ function readSearchOperationPage(database, input) {
   const result = {
     kind: query.kind,
     search: query.search,
+    generation,
     entries,
     totalCount,
     nextCursor: rows.length <= query.limit || last === undefined
@@ -46,6 +53,7 @@ function readSearchOperationPage(database, input) {
           kind: query.kind,
           missionId: query.missionId,
           search: query.search,
+          generation,
           orderValue: String(last.__order_value),
           id: String(last.id),
         }),
@@ -168,7 +176,7 @@ function escapeLike(value) {
 
 /** Encodes one mission/kind/search-bound keyset continuation. */
 function encodeSearchOperationCursor(value) {
-  return Buffer.from(JSON.stringify({ v: 1, ...value }), 'utf8').toString('base64url')
+  return Buffer.from(JSON.stringify({ v: 2, ...value }), 'utf8').toString('base64url')
 }
 
 /** Decodes and verifies a Search Operations continuation before SQL use. */
@@ -180,10 +188,14 @@ function decodeSearchOperationCursor(value, query) {
   } catch {
     throw new Error('Search Operations page cursor is invalid.')
   }
-  if (parsed?.v !== 1 || parsed.missionId !== query.missionId
+  if (parsed?.v !== 2 || parsed.missionId !== query.missionId
     || parsed.kind !== query.kind || parsed.search !== query.search
+    || !Number.isSafeInteger(parsed.generation) || parsed.generation < 0
     || !isBoundedCursorText(parsed.orderValue) || !isBoundedCursorText(parsed.id)) {
     throw new Error('Search Operations page cursor is invalid.')
+  }
+  if (parsed.generation !== query.generation) {
+    throw new Error('Search Operations page changed; return to the first page.')
   }
   return parsed
 }
@@ -192,6 +204,7 @@ function decodeSearchOperationCursor(value, query) {
 function assertSearchOperationPageResult(result, requestedLimit = MAX_SEARCH_OPERATION_PAGE_LIMIT) {
   if (typeof result !== 'object' || result === null || !SEARCH_OPERATION_KINDS.has(result.kind)
     || !Array.isArray(result.entries) || result.entries.length > requestedLimit
+    || !Number.isSafeInteger(result.generation) || result.generation < 0
     || !Number.isSafeInteger(result.totalCount) || result.totalCount < result.entries.length
     || (result.nextCursor !== null
       && (typeof result.nextCursor !== 'string' || result.nextCursor.length > 2_000))) {
@@ -200,6 +213,19 @@ function assertSearchOperationPageResult(result, requestedLimit = MAX_SEARCH_OPE
   if (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_SEARCH_OPERATION_PAGE_BYTES) {
     throw new Error('Search Operations worker page exceeds the renderer byte budget.')
   }
+}
+
+/** Reads the bounded generation that owns a Search Operations page chain. */
+function readMissionReplayGeneration(database, missionId) {
+  const hasGenerationTable = database.prepare(`SELECT 1 FROM sqlite_master
+    WHERE type = 'table' AND name = 'mission_replay_generations'`).get() !== undefined
+  if (!hasGenerationTable) return 0
+  const generation = Number(database.prepare(`SELECT generation
+    FROM mission_replay_generations WHERE mission_id = ?`).get(missionId)?.generation ?? 0)
+  if (!Number.isSafeInteger(generation) || generation < 0) {
+    throw new Error('Search Operations mission generation is invalid.')
+  }
+  return generation
 }
 
 /** Normalizes one small text field before it can reach SQLite or a cursor. */

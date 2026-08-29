@@ -1474,6 +1474,44 @@ describe('browser harness store', () => {
     })).resolves.toMatchObject({ advisory_coverage_json: '{"source":"advisory"}' })
   })
 
+  it('invalidates browser Search Operations continuations when retained evidence changes [DON-279]', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Search generation harness mission' })
+    await store.upsertDrawing({
+      mission_id: mission.id,
+      type: 'search_area',
+      name: 'Alpha',
+      display_order: 0,
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+    })
+    await store.upsertDrawing({
+      mission_id: mission.id,
+      type: 'search_area',
+      name: 'Bravo',
+      display_order: 1,
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+    })
+    const first = await store.listSearchOperationPage({
+      missionId: mission.id, kind: 'areas', limit: 1,
+    })
+    expect(first.nextCursor).toEqual(expect.any(String))
+
+    await store.upsertDrawing({
+      mission_id: mission.id,
+      type: 'search_area',
+      name: 'Aardvark',
+      display_order: 2,
+      geometry_json: '{"type":"Polygon","coordinates":[]}',
+    })
+
+    await expect(store.listSearchOperationPage({
+      missionId: mission.id,
+      kind: 'areas',
+      limit: 1,
+      cursor: first.nextCursor ?? undefined,
+    })).rejects.toThrow(/Search Operations page changed; return to the first page/i)
+  })
+
   it('mirrors packaged marker and ordinary-drawing mutation bounds [DON-277]', async () => {
     const store = getBrowserHarnessStore()
     const mission = await store.createMission({ name: 'Bounded Mutable Harness Mission' })

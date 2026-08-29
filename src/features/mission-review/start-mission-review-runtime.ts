@@ -259,6 +259,9 @@ export async function startMissionReviewRuntime(
   const searchOperationTokens: Record<SearchOperationPageKind, number> = {
     areas: 0, assignments: 0, outings: 0, passes: 0,
   }
+  const searchOperationGenerations: Record<SearchOperationPageKind, number> = {
+    areas: 0, assignments: 0, outings: 0, passes: 0,
+  }
 
   publishRuntime()
 
@@ -380,6 +383,7 @@ export async function startMissionReviewRuntime(
     gpxPageNumber: number = 1,
   ): Promise<void> {
     const currentToken = ++refreshToken
+    invalidateSearchOperationReads()
     let startedReviewRequestId: string | null = null
     cancelActiveReviewRead()
     if (preferredMissionId !== null && preferredMissionId !== state.selectedMissionId) {
@@ -463,6 +467,12 @@ export async function startMissionReviewRuntime(
       }
       if (currentToken !== refreshToken) return
 
+      const searchOperationGeneration = searchAreasPage.generation
+      if ([searchAssignmentsPage, searchPassesPage, searchOutingsPage]
+        .some((page) => page.generation !== searchOperationGeneration)) {
+        throw new Error('Search Operations changed while Review refreshed; refresh again.')
+      }
+
       const auditLogTruncated = reviewRead.auditEvents.length > auditEventLimit
       // Stores return audit events newest-first and capped; the snapshot model expects
       // chronological order, so trim to the page size and reverse to ascending.
@@ -511,6 +521,10 @@ export async function startMissionReviewRuntime(
           },
         },
       }
+      searchOperationGenerations.areas = searchAreasPage.generation
+      searchOperationGenerations.assignments = searchAssignmentsPage.generation
+      searchOperationGenerations.passes = searchPassesPage.generation
+      searchOperationGenerations.outings = searchOutingsPage.generation
       publishRuntime()
     } catch (error) {
       cancelReviewReadIfActive(startedReviewRequestId)
@@ -547,7 +561,7 @@ export async function startMissionReviewRuntime(
     kind: SearchOperationPageKind,
   ): Promise<SearchOperationPage> {
     if (dependencies.missionStore.listSearchOperationPage === undefined) {
-      return { kind, search: '', entries: [], totalCount: 0, nextCursor: null }
+      return { kind, search: '', generation: 0, entries: [], totalCount: 0, nextCursor: null }
     }
     return await dependencies.missionStore.listSearchOperationPage({
       missionId, kind, limit: 25,
@@ -565,6 +579,7 @@ export async function startMissionReviewRuntime(
     const readPage = dependencies.missionStore.listSearchOperationPage
     if (missionId === null || readPage === undefined) return
     const token = ++searchOperationTokens[kind]
+    const expectedGeneration = searchOperationGenerations[kind]
     state = {
       ...state,
       searchOperations: {
@@ -581,7 +596,11 @@ export async function startMissionReviewRuntime(
         missionId, kind, search, limit: 25, ...(cursor === undefined ? {} : { cursor }),
       })
       if (token !== searchOperationTokens[kind] || missionId !== state.selectedMissionId) return
+      if (cursor !== undefined && result.generation !== expectedGeneration) {
+        throw new Error('Search Operations page changed; return to the first page.')
+      }
       state = replaceSearchOperationPage(state, kind, result, pageNumber)
+      searchOperationGenerations[kind] = result.generation
       publishRuntime()
     } catch (error) {
       if (token !== searchOperationTokens[kind] || missionId !== state.selectedMissionId) return
@@ -598,6 +617,14 @@ export async function startMissionReviewRuntime(
       }
       publishRuntime()
     }
+  }
+
+  /** Prevents any page read started before a mission refresh from publishing afterward. */
+  function invalidateSearchOperationReads(): void {
+    searchOperationTokens.areas += 1
+    searchOperationTokens.assignments += 1
+    searchOperationTokens.outings += 1
+    searchOperationTokens.passes += 1
   }
 
   function cancelActiveReviewRead(): void {

@@ -537,6 +537,7 @@ export type SearchPassProjection = Pick<
 export type SearchOperationPage = {
   readonly kind: SearchOperationPageKind
   readonly search: string
+  readonly generation: number
   readonly entries: readonly (
     SearchAreaProjection | SearchAssignmentProjection | Outing | SearchPassProjection
   )[]

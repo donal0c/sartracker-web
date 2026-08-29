@@ -130,11 +130,11 @@ describe('startMissionReviewRuntime', () => {
       readonly kind: string; readonly cursor?: string; readonly search?: string
     }) => {
       if (input.kind !== 'passes') {
-        return { kind: input.kind, search: input.search ?? '', entries: [], totalCount: 0, nextCursor: null }
+        return { kind: input.kind, search: input.search ?? '', generation: 0, entries: [], totalCount: 0, nextCursor: null }
       }
       return input.cursor === undefined
-        ? { kind: 'passes', search: input.search ?? '', entries: [pass('pass-1')], totalCount: 2, nextCursor: 'pass-page-2' }
-        : { kind: 'passes', search: input.search ?? '', entries: [pass('pass-2')], totalCount: 2, nextCursor: null }
+        ? { kind: 'passes', search: input.search ?? '', generation: 0, entries: [pass('pass-1')], totalCount: 2, nextCursor: 'pass-page-2' }
+        : { kind: 'passes', search: input.search ?? '', generation: 0, entries: [pass('pass-2')], totalCount: 2, nextCursor: null }
     })
     const applyRuntime = vi.fn()
     const runtime = await startMissionReviewRuntime({
@@ -169,6 +169,97 @@ describe('startMissionReviewRuntime', () => {
     expect(listSearchOperationPage).toHaveBeenLastCalledWith({
       missionId: FIRST_MISSION.id, kind: 'passes', search: 'Alpha', limit: 25,
     })
+  })
+
+  it('rejects a stale Search Operations result after a same-mission refresh [DON-279]', async () => {
+    let releaseStale: ((value: unknown) => void) | undefined
+    let markStaleStarted: (() => void) | undefined
+    const staleResult = new Promise((resolve) => { releaseStale = resolve })
+    const staleStarted = new Promise<void>((resolve) => { markStaleStarted = resolve })
+    let refreshed = false
+    const pass = (id: string) => ({
+      id, mission_id: FIRST_MISSION.id, search_area_id: 'area-1',
+      assignment_id: 'assignment-1', started_at: '2026-04-10T08:10:00.000Z',
+      ended_at: '2026-04-10T08:20:00.000Z', outcome: 'partial' as const,
+      coordinator_name: 'Coordinator', version_sequence: 1,
+      created_at: '2026-04-10T08:20:00.000Z', updated_at: '2026-04-10T08:20:00.000Z',
+      participant_count: 0, clue_count: 0, track_evidence_count: 0,
+    })
+    const page = (id: string, search = '') => ({
+      kind: 'passes' as const, search, generation: refreshed ? 2 : 1,
+      entries: [pass(id)], totalCount: 1, nextCursor: null,
+    })
+    const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+      readonly kind: string; readonly search?: string
+    }) => {
+      if (input.kind !== 'passes') {
+        return {
+          kind: input.kind, search: input.search ?? '', generation: refreshed ? 2 : 1,
+          entries: [], totalCount: 0, nextCursor: null,
+        }
+      }
+      if (input.search === 'stale') {
+        markStaleStarted?.()
+        return await staleResult
+      }
+      return page(refreshed ? 'pass-fresh' : 'pass-initial')
+    })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listSearchOperationPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+    const pendingStale = runtime.searchSearchOperations('passes', 'stale')
+    await staleStarted
+    refreshed = true
+    await runtime.refreshSelectedMission()
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchOperations: expect.objectContaining({
+        passes: [expect.objectContaining({ id: 'pass-fresh' })],
+      }),
+    }))
+
+    releaseStale?.(page('pass-stale', 'stale'))
+    await pendingStale
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchOperations: expect.objectContaining({
+        passes: [expect.objectContaining({ id: 'pass-fresh' })],
+      }),
+    }))
+  })
+
+  it('fails closed instead of publishing mixed Search Operations generations [DON-279]', async () => {
+    const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+      readonly kind: string
+    }) => ({
+      kind: input.kind,
+      search: '',
+      generation: input.kind === 'passes' ? 2 : 1,
+      entries: [],
+      totalCount: 0,
+      nextCursor: null,
+    }))
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listSearchOperationPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      snapshot: null,
+      loading: false,
+      refreshing: false,
+      error: 'Search Operations changed while Review refreshed; refresh again.',
+      searchOperations: expect.objectContaining({
+        areas: [], assignments: [], outings: [], passes: [],
+      }),
+    }))
   })
 
   it('replaces Replay outing filter pages without accumulating renderer choices [DON-278]', async () => {
