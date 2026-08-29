@@ -342,6 +342,7 @@
           <a href="#start">Start Here</a>
           <a href="#hosted-testing">Hosted Testing</a>
           <a href="#desktop-beta">Desktop Beta</a>
+          <a href="#shadow-use">Controlled Shadow Use</a>
           <a href="#screen">Main Screen</a>
           <a href="#mission">Mission Control</a>
           <a href="#map">Map And Coordinates</a>
@@ -467,9 +468,9 @@
           <h2>Desktop Beta Install Notes</h2>
           <div class="warning">
             <strong>Internal beta only:</strong> desktop betas are for controlled team testing. They are
-            not code-signed and should not be treated as production incident builds until a specific beta
-            has passed the desktop smoke checklist and a maintainer has signed off in
-            <code>handoff/HANDOFF.md</code>.
+            not code-signed and are never production or sole-source incident builds. Passing smoke checks
+            and maintainer sign-off qualifies only the testing scope declared in the release note; it does
+            not make the application operationally safe.
           </div>
           <p>
             Each desktop beta drop has a written release note under <code>docs/releases/</code> in the
@@ -565,6 +566,62 @@
             Do not run this command for app bundles from an untrusted source, and do not bypass managed
             Mac security policy; record that as a beta blocker.
           </p>
+        </section>
+
+        <section id="shadow-use">
+          <h2>Controlled Shadow Use</h2>
+          <div class="warning">
+            <strong>Independent primary system required:</strong> a shadow-use beta runs beside the
+            team's existing operational source/process. That primary process remains authoritative for
+            positions, tasking, incident records, and safety decisions. SAR Tracker is advisory and must
+            never be the sole system during shadow use.
+          </div>
+          <p>
+            Before every field or real-incident shadow session, confirm that the release note names the exact candidate and
+            artifact, the platform/profile, the existing primary operational process, the primary-system
+            operator, and a rehearsed primary-only fallback that completed in no more than 60 seconds. If
+            any of those are missing, do not start the SAR Tracker shadow session. Continue the
+            independent primary operation instead. Field and real-incident comparison may begin only
+            after the <code>DON-248</code>/<code>DON-252</code>/<code>DON-253</code> archive lifecycle,
+            BCP-17 qualification, <code>DON-254</code>, and <code>DON-255</code> gates pass for that exact
+            candidate. Earlier builds are limited to synthetic, replayed, or disposable training and do
+            not count toward the field scorecard.
+          </p>
+          <p>
+            An engineering/training-only beta may use synthetic, replayed, or deliberately disposable
+            data without a live primary system or field fallback drill. Its session still records the exact
+            build, platform, profile, source mode, and evidence-handling owner. It must never be used as an
+            operational source or counted as field evidence.
+          </p>
+          <p>
+            Say <strong>STOP SHADOW</strong> for unexplained current-position uncertainty, evidence
+            loss/corruption, a false <strong>Complete</strong> or <strong>100%</strong> claim,
+            non-interactive controls, map/source disagreement, privacy concerns, or any archive/restore
+            uncertainty. In engineering/training, stop using the build, preserve proportionate evidence,
+            and triage it without inventing a primary handover. In field/real-incident shadow use, the
+            primary-system operator confirms primary-only control and the SAR Tracker operator stops using
+            the beta's output. If the primary process itself fails, end the shadow session and follow the
+            team's named existing contingency. In either case, preserve the app/profile unchanged when
+            safe. Never promote SAR Tracker to primary to bridge that gap.
+          </p>
+          <p>
+            Record successful exercises as well as failures. Ordinary wording, layout, or usability
+            feedback needs a short note and an optional cropped/redacted screenshot &mdash; not an incident
+            bundle. Use incident-time diagnostics or the packaged Linux hang collector only for a real
+            safety, regression, evidence, or non-interactivity investigation. Never share a raw mission
+            database, whole profile, precise location, credential, private map, or unreviewed screenshot
+            as routine feedback. Before copying or sharing any support report, incident bundle/export,
+            screenshot, or video, a person must preview it. Always redact every credential, password,
+            token, authorization/authentication datum, and other secret. Also redact precise locations,
+            casualty details, private-map details, user/profile paths, and host identity unless the detail
+            is essential to the investigation and covered by the scoped privacy/custody decision. If it
+            cannot be safely reviewed, preserve it in place and do not share it.
+          </p>
+          <div class="note">
+            The canonical procedure is <code>docs/assurance/shadow-use-protocol.md</code>. Following it
+            does not itself make SAR Tracker operationally safe, qualify an artifact, retire the existing
+            QGIS workflow, or prove archive/restore. Those remain separate technical and team decisions.
+          </div>
         </section>
 
         <section id="screen">
@@ -1959,6 +2016,7 @@ sh "$COLLECTOR" --screenshot</code></pre>
             <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can import, validate, remove, and serve local official MBTiles packages from app-owned storage, so the original USB or source disk can be unplugged after import. The map reports ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. The Maps menu includes a field-readiness checklist and Settings can export a readiness certificate.</li>
             <li><strong>Settings access:</strong> coordinator and admin rosters are currently local workflow/audit controls, not a strong authentication boundary. Treat Settings access as trusted-machine access until the privileged-settings guard and unlock-authority model are implemented.</li>
             <li><strong>Replay scope:</strong> Mission Review reconstructs evidence known at the selected time; it intentionally does not reproduce historical screen layout, map camera, panel state, or operator cursor. Archive-backed replay and final release qualification remain part of the Breadcrumb Programme's archive/final stage.</li>
+            <li><strong>Shadow-use limit:</strong> the protocol keeps the existing primary operational process authoritative and defines stop/fallback/evidence rules. It is not an operational-safety claim. Archive/restore must not be relied upon until <code>DON-248</code>/<code>DON-252</code>/<code>DON-253</code> and exact-candidate restore qualification are complete.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>
             <li><strong>Desktop beta distribution:</strong> current CI beta artifacts are Linux x86_64 AppImage and <code>.deb</code> packages. macOS artifacts are local/manual when needed, and Windows NSIS artifacts remain gated until the Windows official-map smoke passes. Developer ID signing, notarization, DMG packaging, and signed Windows installer behavior remain open release work.</li>

@@ -1,8 +1,10 @@
 # SAR Tracker Electron Desktop Beta &lt;version&gt; (&lt;build tag&gt;)
 
-> **Internal beta only.** Not a production release. Do not use for live
-> incidents until this beta has passed the desktop smoke checklist below and
-> a team member has signed off in writing.
+> **Internal beta only.** Not a production or sole-source operational release.
+> Passing this note's checks qualifies only the declared testing scope below; it
+> does not make the application operationally safe. Any field/real-incident
+> shadow use follows `docs/assurance/shadow-use-protocol.md` and keeps the
+> independent primary operational process authoritative.
 
 - **Version:** &lt;e.g. 0.1.0-beta.1&gt;
 - **Build tag:** &lt;e.g. sha.f352391035a1 or run.42.sha.abc123def456&gt;
@@ -23,6 +25,38 @@
 Private Discovery map packages are never release artifacts. Distribute those
 through the agreed private team channel and load them through Settings after
 installing the app.
+
+## Shadow-use declaration
+
+Choose exactly one release-use classification and complete its required fields
+before guarded publication. Fields that do not apply must say why. An
+engineering/training beta may be published without field-admission evidence but
+is restricted to non-counted synthetic/replay/disposable data. A field-shadow
+candidate must satisfy every additional field gate below.
+
+The guarded publisher changes the live GitHub release from draft to published
+without changing this body. Before any field or real-incident session, the
+session record—rather than a publisher rewrite of the validated release
+body—must confirm that the live release is published and record its URL, tag,
+and published-at time. Later manual edits are outside the publisher's guarantee.
+
+- **Protocol:** [`docs/assurance/shadow-use-protocol.md`](../assurance/shadow-use-protocol.md)
+- **Release-use classification:** &lt;`ENGINEERING/TRAINING — NON-COUNTED` | `FIELD-SHADOW CANDIDATE`&gt;
+- **Candidate identity:** &lt;version, tag, exact Git SHA, artifact filename and full SHA-256&gt;
+- **Qualified platform/profile:** &lt;platform, architecture, OS/distro/kernel/session, package type, profile class, runtime flags&gt;
+- **Primary operational source/process:** &lt;field-shadow only: exact existing source/process; never "QGIS and/or Traccar"&gt;
+- **Primary-system operator role:** &lt;field-shadow only: name or agreed role&gt;
+- **Primary-only fallback drill:** &lt;field-shadow only: date, measured switch time, maximum 60 seconds&gt;
+- **Pre-publication field eligibility:** &lt;field-shadow only: exact-candidate `DON-248`/`DON-252`/`DON-253`, BCP-17, and `DON-254` evidence&gt;
+- **`DON-255` guarded-publication approval:** &lt;field-shadow only: approval reference&gt;
+- **Residual-risk register:** &lt;field-shadow only: frozen version/path owned by the `DON-254` decision owner; every entry uses the protocol's exact eight-field format&gt;
+- **WAR-13B scorecard declaration:** &lt;field-shadow only: path or explicit not-started; no scorecard auto-promotes this release&gt;
+
+SAR Tracker is advisory during shadow use. Stop triggers include unexplained
+current-position uncertainty, evidence loss/corruption/mis-scoping, false
+`Complete`/`100%`, non-interactivity, privacy concerns, and archive/restore
+uncertainty. Ordinary UI/wording feedback needs only a short feedback record;
+incident bundles and raw mission/profile evidence are not the default.
 
 ## Install — Linux (primary target)
 
@@ -101,6 +135,8 @@ regression correction in this release.` for the Linear issue.
 
 - &lt;short list of operator workflows the tester should exercise&gt;
 - &lt;mark any items as critical so testers know which signal to prioritise&gt;
+- &lt;record successful comparisons as well as failures, bound to the exact
+  candidate/session identity&gt;
 
 ## Loading Discovery Maps
 
@@ -128,6 +164,11 @@ or screenshots showing private paths to GitHub.
   - High-definition mountain map packages are not bundled with this build.
   - Browser hosted-mode persistence is testing-only and not part of this
     desktop beta.
+  - Shadow-use protocol controls testing but does not qualify the application
+    for sole-source or unrestricted operational use.
+  - Archive/restore/custody remains prohibited as a relied-on workflow unless
+    this exact candidate has explicit `DON-248`/`DON-252`/`DON-253`
+    archive/restore qualification evidence.
 
 ## Verification (CI-driven)
 
@@ -150,7 +191,7 @@ Minimum verification for an Electron official-map handoff:
 - diagnostics export checked for private-data leakage
 - `SHA256SUMS` generated for shared artifacts
 
-## Packaged Smoke Matrix
+## Packaged smoke matrix
 
 The draft release must not be published until the CI-built artifact has passed
 every packaged smoke gate below. Only the unchanged private-map-package gate may
@@ -210,4 +251,29 @@ Before promoting this draft to a published release:
       before/after evidence, durable gate, and remaining uncertainty
 - [ ] Release marked **prerelease** and **draft** in GitHub UI
 - [ ] Release title contains "internal beta"
+- [ ] Release-use classification is selected and the fields required for that
+      classification are complete; non-applicable fields include a reason
 - [ ] Maintainer has signed off in `handoff/HANDOFF.md`
+
+### Additional field-shadow admission checklist
+
+Required only when the release-use classification is `FIELD-SHADOW CANDIDATE`.
+It is not a publication gate for an `ENGINEERING/TRAINING — NON-COUNTED` beta,
+which must not enter field/real-incident use or count toward WAR-13B.
+
+- [ ] The independent primary process and named operator remain authoritative
+- [ ] Exact-candidate `DON-248`/`DON-252`/`DON-253`, BCP-17, and `DON-254`
+      eligibility evidence and `DON-255` publication approval are recorded
+- [ ] Primary-only fallback drill passed in no more than 60 seconds
+- [ ] Zero open confirmed release-blocking P1/P2 findings under the protocol's
+      field-admission definition, and zero confirmed persisted-evidence
+      corruption, loss, or silent mis-scoping defects
+- [ ] All five WAR-01 absolute blockers are closed under their recorded exit
+      evidence; none is waived by severity, gap label, or residual acceptance
+- [ ] The `DON-254` decision owner has frozen and linked the candidate-specific
+      residual-risk register; the WAR-13B scorecard is predeclared, and neither
+      is represented as automatic release promotion
+
+Successful guarded publication is still required before field use. The first
+field session verifies the live GitHub release state and records its exact URL,
+tag, and published-at time without mutating the release body.
