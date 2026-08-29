@@ -1657,9 +1657,34 @@ Local green proof on the executable tree is:
 
 The previously green Chromium 167/167, visual Playwright 58/58 and uncached
 screenshot review 69/69 remain standing because this remediation changes only
-Electron persistence/migration/finalization. Exact branch-head Linux and all
-four independent reviews restart on the final code-and-documentation head. PR
-opened/review-ready remains intermediate; no merge or release is authorized.
+Electron persistence/migration/finalization. Exact branch-head Linux workflow
+[run 33226833222](https://github.com/donal0c/sartracker-web/actions/runs/33226833222)
+then passed on pushed binding head
+`c54475009d79327693a41cd8d35274fc725fb002`: lint, all 2,498 deterministic
+unit tests, production build/bundle budgets, native x64 package inspection,
+Mesa llvmpipe attestation, the indexed 960k qualification, packaged tracking
+soak and AppImage launch smoke. The Linux 960k run retained the exact
+765,751,296-byte fixture digest, dispatched the 50,000-point import in 5.21 ms
+(12,518.98 ms total) while 3,705 current writes stayed at 37.93 ms maximum /
+2.28 ms p95, kept the event-loop maximum at 47.22 ms, sought the first/late
+Replay pages in 236.98/166.81 ms, and reopened/replayed in 8.24/230.86 ms with
+exact first-page equality. The 46.624-second packaged soak completed two
+launches, 6/6 batches, exact 8,664/8,664 positions, one restart, SQLite
+integrity `ok`, zero unexplained or redundant event growth and four healthy
+operator interactions; maximum main-process round trip was 42.76 ms. SHA-256
+values are qualification report
+`e299905c44b012c4868f6cac4a70531e0790799cd2c1512966b85fe6d5534611`,
+soak report
+`bf0d6944a305e7ed5730e10ebeb5bbc82dc5e6db2c309386f38363308e1197f3`,
+AppImage
+`d9a8101bf9b7007f8577c2d78949ad085b2e40e729ac8139c76970c62cc84109`
+and `.deb`
+`86cbb7a595ccf7d498a3854aa2110b0050dfc80c8cc5e5591eefa3d90a5a307a`.
+
+Because this remediation crosses worker/persistence and Finalize-recovery
+contracts, all four independent reviews restart on the same final
+code-and-documentation head after this exact Linux proof. PR opened/review-ready
+remains intermediate; no merge or release is authorized.
 
 ## Proof limits
 
