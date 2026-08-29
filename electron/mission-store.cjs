@@ -2452,6 +2452,14 @@ function migrate(db) {
       detected_at TEXT NOT NULL,
       PRIMARY KEY (table_name, source_rowid)
     );
+    CREATE TABLE IF NOT EXISTS legacy_event_provenance_quarantine_missions (
+      mission_id TEXT NOT NULL,
+      table_name TEXT NOT NULL CHECK(table_name IN (
+        'mission_events', 'mission_group_membership_events'
+      )),
+      source_rowid INTEGER NOT NULL,
+      PRIMARY KEY (mission_id, table_name, source_rowid)
+    ) WITHOUT ROWID;
     CREATE TABLE IF NOT EXISTS layer_catalog_entries (
       mission_id TEXT NOT NULL,
       node_id TEXT NOT NULL,
@@ -3585,6 +3593,7 @@ async function createMissionArchive(
   archiveDirectory,
   recordArchiveEvent = true,
   archiveFaultInjection = {},
+  archiveEventContext = {},
 ) {
   if (!recordArchiveEvent) {
     return buildMissionArchive(
@@ -3611,7 +3620,10 @@ async function createMissionArchive(
       VALUES (?, ?)`).run(missionId, requestedAt)
     insertEvent(db, missionId, 'mission_archive_requested', requestedAt, {
       resulting_status: mission.status,
-      archive_kind: 'direct',
+      archive_kind: archiveEventContext.archive_kind ?? 'direct',
+      ...(archiveEventContext.replaces_archive_path === undefined
+        ? {}
+        : { replaces_archive_path: archiveEventContext.replaces_archive_path }),
     })
   })()
   try {
@@ -3623,6 +3635,7 @@ async function createMissionArchive(
       true,
       archiveFaultInjection,
       requestedAt,
+      archiveEventContext,
     )
   } catch (error) {
     db.transaction(() => {
@@ -3631,7 +3644,10 @@ async function createMissionArchive(
       if (deleted.changes > 0) {
         appendEvent(db, missionId, 'mission_archive_failed', {
           resulting_status: getMission(db, missionId).status,
-          archive_kind: 'direct',
+          archive_kind: archiveEventContext.archive_kind ?? 'direct',
+          ...(archiveEventContext.replaces_archive_path === undefined
+            ? {}
+            : { replaces_archive_path: archiveEventContext.replaces_archive_path }),
           error: error instanceof Error ? error.message : String(error),
         })
       }
@@ -3649,6 +3665,7 @@ async function buildMissionArchive(
   recordArchiveEvent,
   archiveFaultInjection,
   directArchiveFenceToken,
+  archiveEventContext = {},
 ) {
   const mission = getMission(db, missionId)
   if (mission.status !== 'finished' && mission.status !== 'finalized') {
@@ -3740,7 +3757,13 @@ async function buildMissionArchive(
         if (fence?.requested_at !== directArchiveFenceToken) {
           throw new Error('Mission archive evidence fence changed; retry archive creation.')
         }
-        appendEvent(db, missionId, 'mission_archived', { archive_path: finalPath }, createdAt)
+        appendEvent(db, missionId, 'mission_archived', {
+          archive_path: finalPath,
+          archive_kind: archiveEventContext.archive_kind ?? 'direct',
+          ...(archiveEventContext.replaces_archive_path === undefined
+            ? {}
+            : { replaces_archive_path: archiveEventContext.replaces_archive_path }),
+        }, createdAt)
         db.prepare(`DELETE FROM mission_finalization_fences
           WHERE mission_id = ? AND requested_at = ?`).run(missionId, directArchiveFenceToken)
       })()
@@ -3833,14 +3856,36 @@ async function finalizeMission(
     assertLegacyEventProvenanceReady(db, missionId)
     assertNoUnsettledGpxImportState(db, missionId)
     const finalizedEpoch = readLatestMissionFinalizedEpoch(db, missionId)
-    const existingArchive = await readRecoverableFinalizeArchive(db, missionId, readArchiveFile)
-    if (existingArchive !== null) {
-      return db.transaction(() => {
-        assertMissionUnlockEpoch(db, missionId, finalizedEpoch)
-        return { mission: getMission(db, missionId), archive: existingArchive }
-      }).immediate()
+    let rejectedArchivePath = null
+    let existingArchive = await readRecoverableFinalizeArchive(
+      db,
+      missionId,
+      readArchiveFile,
+      (archivePath) => {
+        rejectedArchivePath ??= archivePath
+      },
+      true,
+    )
+    if (existingArchive === null) {
+      existingArchive = await createMissionArchive(
+        db,
+        missionId,
+        backupCoordinator,
+        archiveDirectory,
+        true,
+        archiveFaultInjection,
+        {
+          archive_kind: 'finalized_recovery',
+          ...(rejectedArchivePath === null
+            ? {}
+            : { replaces_archive_path: rejectedArchivePath }),
+        },
+      )
     }
-    throw new Error('Finalized mission is missing a recoverable archive record.')
+    return db.transaction(() => {
+      assertMissionUnlockEpoch(db, missionId, finalizedEpoch)
+      return { mission: getMission(db, missionId), archive: existingArchive }
+    }).immediate()
   }
   if (mission.status !== 'finished') {
     throw new Error('Only finished missions can be finalized.')
@@ -3919,7 +3964,13 @@ async function finalizeMission(
   return { mission: getMission(db, missionId), archive }
 }
 
-async function readRecoverableFinalizeArchive(db, missionId, readArchiveFile = fs.readFile) {
+async function readRecoverableFinalizeArchive(
+  db,
+  missionId,
+  readArchiveFile = fs.readFile,
+  onRejectedArchive = () => undefined,
+  includeDirectArchives = false,
+) {
   const latestUnlock = db.prepare(
     `SELECT rowid AS event_rowid, timestamp FROM mission_events
       WHERE mission_id = ? AND event_type = ?
@@ -3927,11 +3978,17 @@ async function readRecoverableFinalizeArchive(db, missionId, readArchiveFile = f
       LIMIT 1`,
   ).get(missionId, 'mission_unlocked')
 
-  const rows = db.prepare(
-    `SELECT rowid AS event_rowid, timestamp, details_json FROM mission_events
-      WHERE mission_id = ? AND event_type = ?
-      ORDER BY timestamp DESC, rowid DESC`,
-  ).all(missionId, 'mission_archive_succeeded')
+  const rows = includeDirectArchives
+    ? db.prepare(
+      `SELECT rowid AS event_rowid, timestamp, details_json FROM mission_events
+        WHERE mission_id = ? AND event_type IN (?, ?)
+        ORDER BY timestamp DESC, rowid DESC`,
+    ).all(missionId, 'mission_archive_succeeded', 'mission_archived')
+    : db.prepare(
+      `SELECT rowid AS event_rowid, timestamp, details_json FROM mission_events
+        WHERE mission_id = ? AND event_type = ?
+        ORDER BY timestamp DESC, rowid DESC`,
+    ).all(missionId, 'mission_archive_succeeded')
 
   for (const row of rows) {
     if (latestUnlock !== undefined && !isEventAfter(row, latestUnlock)) {
@@ -3957,6 +4014,7 @@ async function readRecoverableFinalizeArchive(db, missionId, readArchiveFile = f
         },
       )
     } catch {
+      onRejectedArchive(archivePath)
       continue
     }
 

@@ -1091,6 +1091,54 @@ describe('mission evidence versioning [DON-277]', () => {
     inspection.close()
   })
 
+  it('recaptures rowid targets when a prior candidate left textual event cursors [DON-278]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-event-cursor-upgrade-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Prior Event Cursor Candidate Mission' })
+    await first.finishMission(mission.id)
+    await first.prepareClose()
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const candidateDb = openDatabase(databaseFile)
+    candidateDb.prepare(`INSERT INTO mission_events (
+      id, mission_id, event_type, timestamp, details_json, recorded_at,
+      recording_completeness
+    ) VALUES ('prior-candidate-event', ?, 'legacy_event',
+      '2026-08-20T10:00:00.000Z', '{}', NULL, NULL)`).run(mission.id)
+    candidateDb.prepare(`UPDATE legacy_event_provenance_backfill_state
+      SET scanned_through_id = NULL,
+          scan_target_id = 'zzzz-old-cursor-target',
+          updated_at = '2026-08-20T10:00:00.000Z'
+      WHERE table_name = 'mission_events'`).run()
+    candidateDb.prepare(`DELETE FROM metadata
+      WHERE key = 'legacy_event_provenance_cursor_format'`).run()
+    candidateDb.close()
+
+    store = createElectronMissionStore({ userDataPath })
+    let incomplete = 1
+    for (let attempt = 0; attempt < 1_000 && incomplete > 0; attempt += 1) {
+      const inspection = openDatabase(databaseFile)
+      incomplete = Number(inspection.prepare(`SELECT COUNT(*) AS count FROM mission_events
+        WHERE mission_id = ?
+          AND (recorded_at IS NULL OR recording_completeness IS NULL)`).get(mission.id)?.count ?? 0)
+      inspection.close()
+      if (incomplete > 0) await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    expect(incomplete).toBe(0)
+
+    const inspection = openDatabase(databaseFile)
+    expect(inspection.prepare(`SELECT scanned_through_id, scan_target_id
+      FROM legacy_event_provenance_backfill_state
+      WHERE table_name = 'mission_events'`).get()).toMatchObject({
+      scanned_through_id: expect.stringMatching(/^\d+$/u),
+      scan_target_id: expect.stringMatching(/^\d+$/u),
+    })
+    inspection.close()
+    await expect(store.createMissionArchive(mission.id)).resolves.toMatchObject({
+      mission_id: mission.id,
+    })
+  })
+
   it('scopes legacy event quarantine custody fences to the affected mission [DON-278]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-event-quarantine-scope-'))
     const first = createElectronMissionStore({ userDataPath })
@@ -1159,6 +1207,41 @@ describe('mission evidence versioning [DON-277]', () => {
       id: activeMission.id,
       status: 'finished',
     })
+  })
+
+  it('keeps clean-mission custody bounded with a field-scale quarantine map [DON-278]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-event-quarantine-scale-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const affectedMission = await first.createMission({ name: 'Scaled Quarantine Mission' })
+    await first.finishMission(affectedMission.id)
+    const cleanMission = await first.createMission({ name: 'Scaled Clean Mission' })
+    await first.prepareClose()
+    first.close()
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const seededDb = openDatabase(databaseFile)
+    seededDb.prepare(`WITH RECURSIVE quarantine_rows(source_rowid) AS (
+        SELECT 1
+        UNION ALL
+        SELECT source_rowid + 1 FROM quarantine_rows WHERE source_rowid < 500000
+      )
+      INSERT INTO legacy_event_provenance_quarantine_missions (
+        mission_id, table_name, source_rowid
+      ) SELECT ?, 'mission_events', source_rowid FROM quarantine_rows`).run(affectedMission.id)
+    const plan = seededDb.prepare(`EXPLAIN QUERY PLAN
+      SELECT 1 FROM legacy_event_provenance_quarantine_missions
+      WHERE mission_id = ? LIMIT 1`).all(cleanMission.id)
+    expect(plan.map((row) => String(row.detail)).join('\n')).toMatch(/PRIMARY KEY.*mission_id/iu)
+    seededDb.close()
+
+    store = createElectronMissionStore({ userDataPath })
+    const startedAt = performance.now()
+    await expect(store.finishMission(cleanMission.id)).resolves.toMatchObject({
+      id: cleanMission.id,
+      status: 'finished',
+    })
+    expect(performance.now() - startedAt).toBeLessThan(200)
+    await expect(store.createMissionArchive(affectedMission.id))
+      .rejects.toThrow(/exceed.*bounded reconstruction.*archive.*unavailable/iu)
   })
 
   it('fails archive and finalization closed while legacy event provenance is pending [DON-278]', async () => {

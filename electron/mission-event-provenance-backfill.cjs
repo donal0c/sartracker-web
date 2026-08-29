@@ -2,13 +2,22 @@ const MAX_LEGACY_EVENT_ROWS_PER_TURN = 1_000
 const MAX_LEGACY_EVENT_BYTES_PER_TURN = 512 * 1_024
 const MAX_LEGACY_EVENT_ROW_BYTES = 256 * 1_024
 const MAX_LEGACY_EVENT_ID_BYTES = 200
+const LEGACY_EVENT_CURSOR_FORMAT_KEY = 'legacy_event_provenance_cursor_format'
+const LEGACY_EVENT_CURSOR_FORMAT = 'rowid-mission-quarantine-v1'
 
 const LEGACY_EVENT_TABLES = Object.freeze([
-  Object.freeze({ table: 'mission_events', stateKey: 'mission_events', includesSequence: false }),
+  Object.freeze({
+    table: 'mission_events',
+    stateKey: 'mission_events',
+    includesSequence: false,
+    incompletePredicate: '(recorded_at IS NULL OR recording_completeness IS NULL)',
+  }),
   Object.freeze({
     table: 'mission_group_membership_events',
     stateKey: 'mission_group_membership_events',
     includesSequence: true,
+    incompletePredicate:
+      '(sequence IS NULL OR recorded_at IS NULL OR recording_completeness IS NULL)',
   }),
 ])
 
@@ -18,15 +27,28 @@ function initializeLegacyEventProvenanceBackfill(
   migrationTime,
   captureTargets,
 ) {
+  const storedCursorFormat = db.prepare(`SELECT value FROM metadata
+    WHERE key = ?`).get(LEGACY_EVENT_CURSOR_FORMAT_KEY)?.value
+  const resetPriorCandidateState = storedCursorFormat !== LEGACY_EVENT_CURSOR_FORMAT
   const insertState = db.prepare(`INSERT OR IGNORE INTO legacy_event_provenance_backfill_state (
     table_name, scanned_through_id, scan_target_id, updated_at
   ) VALUES (?, NULL, ?, ?)`)
   for (const definition of LEGACY_EVENT_TABLES) {
-    const target = captureTargets
+    const target = captureTargets || resetPriorCandidateState
       ? db.prepare(`SELECT CAST(MAX(rowid) AS TEXT) AS target
           FROM ${definition.table}`).get()?.target ?? null
       : null
     const stateTime = target === null ? '1970-01-01T00:00:00.000Z' : migrationTime
+    if (resetPriorCandidateState) {
+      db.prepare(`INSERT INTO legacy_event_provenance_backfill_state (
+          table_name, scanned_through_id, scan_target_id, updated_at
+        ) VALUES (?, NULL, ?, ?)
+        ON CONFLICT(table_name) DO UPDATE SET
+          scanned_through_id = NULL,
+          scan_target_id = excluded.scan_target_id,
+          updated_at = excluded.updated_at`).run(definition.stateKey, target, stateTime)
+      continue
+    }
     insertState.run(definition.stateKey, target, stateTime)
     if (captureTargets && target !== null) {
       db.prepare(`UPDATE legacy_event_provenance_backfill_state
@@ -38,6 +60,11 @@ function initializeLegacyEventProvenanceBackfill(
       )
     }
   }
+  db.prepare(`INSERT INTO metadata (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+    LEGACY_EVENT_CURSOR_FORMAT_KEY,
+    LEGACY_EVENT_CURSOR_FORMAT,
+  )
   return { remaining: readLegacyEventProvenanceBackfillPending(db) }
 }
 
@@ -69,13 +96,14 @@ function backfillLegacyEventProvenance(
       + length(CAST(mission_team_id AS BLOB))
       + length(CAST(traccar_device_id AS BLOB)) + length(CAST(change AS BLOB))
       + length(CAST(observed_at AS BLOB))`
-  const candidatePage = db.prepare(`SELECT CAST(rowid AS TEXT) AS source_rowid,
+  const candidatePage = db.prepare(`SELECT CAST(rowid AS TEXT) AS source_rowid, mission_id,
       substr(CAST(id AS TEXT), 1, ${MAX_LEGACY_EVENT_ID_BYTES}) AS id_preview,
       length(CAST(id AS BLOB)) AS id_bytes,
       ${payloadBytesSql} AS payload_bytes
     FROM ${definition.table}
     WHERE (? IS NULL OR rowid > CAST(? AS INTEGER))
       AND rowid <= CAST(? AS INTEGER)
+      AND ${definition.incompletePredicate}
     ORDER BY rowid ASC LIMIT ?`).all(
     pendingState.scanned_through_id,
     pendingState.scanned_through_id,
@@ -113,6 +141,13 @@ function backfillLegacyEventProvenance(
         legacyEventQuarantineReason(batch.oversized),
         batch.oversized.payload_bytes,
         migrationTime,
+      )
+      db.prepare(`INSERT OR IGNORE INTO legacy_event_provenance_quarantine_missions (
+        mission_id, table_name, source_rowid
+      ) VALUES (?, ?, ?)`).run(
+        batch.oversized.mission_id,
+        definition.stateKey,
+        batch.oversized.source_rowid,
       )
     }
     db.prepare(`UPDATE legacy_event_provenance_backfill_state
@@ -208,26 +243,21 @@ function assertLegacyEventProvenanceReady(db, missionId) {
   }
   const hasQuarantine = db.prepare(`SELECT 1 FROM sqlite_master
     WHERE type = 'table' AND name = 'legacy_event_provenance_quarantine'`).get() !== undefined
-  const quarantined = hasQuarantine
-    ? db.prepare(`SELECT COUNT(*) AS count FROM (
-        SELECT quarantine.source_rowid
-        FROM legacy_event_provenance_quarantine AS quarantine
-        JOIN mission_events AS event
-          ON quarantine.table_name = 'mission_events'
-          AND event.rowid = quarantine.source_rowid
-        WHERE event.mission_id = ?
-        UNION ALL
-        SELECT quarantine.source_rowid
-        FROM legacy_event_provenance_quarantine AS quarantine
-        JOIN mission_group_membership_events AS event
-          ON quarantine.table_name = 'mission_group_membership_events'
-          AND event.rowid = quarantine.source_rowid
-        WHERE event.mission_id = ?
-      )`).get(missionId, missionId)?.count ?? 0
-    : 0
-  if (Number(quarantined) > 0) {
+  const hasMissionQuarantine = db.prepare(`SELECT 1 FROM sqlite_master
+    WHERE type = 'table'
+      AND name = 'legacy_event_provenance_quarantine_missions'`).get() !== undefined
+  if (hasQuarantine && !hasMissionQuarantine) {
     throw new Error(
-      `${quarantined} legacy event provenance row(s) for this mission exceed the bounded reconstruction envelope. Current positions remain available; Replay, archive and finalization remain unavailable until bounded repair.`,
+      'Mission event quarantine ownership is unavailable; Replay, archive and finalization remain unavailable until bounded repair.',
+    )
+  }
+  const quarantined = hasQuarantine
+    ? db.prepare(`SELECT 1 FROM legacy_event_provenance_quarantine_missions
+        WHERE mission_id = ? LIMIT 1`).get(missionId)
+    : undefined
+  if (quarantined !== undefined) {
+    throw new Error(
+      'Legacy event provenance row(s) for this mission exceed the bounded reconstruction envelope. Current positions remain available; Replay, archive and finalization remain unavailable until bounded repair.',
     )
   }
 }
