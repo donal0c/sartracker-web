@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) remains one review unit on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`. Exact head `e55292bb` was rejected by broad, persistence and concurrency: a sparse incomplete-event turn rewrote up to 2,000,001 complete rows and blocked current fixes beyond 200 ms; unlock could also create a stale finalized recovery archive later reused by another epoch. Executable fix `9a55b987` raw-pages before filtering, updates only selected incomplete identities and binds every finalized recovery fence/audit/reuse to its exact epoch. Both strict regressions are red-green; focused 167/167 and full unit 2,500/2,500, backend, lint/build/CommonJS and diff checks pass. Exact-head Linux and restarted broad/persistence/concurrency reviews plus mandatory renderer/input containment on one final code-and-documentation head remain the task-owned completion gate. PR-6 archive lifecycle follows only after Donal accepts PR-5.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) remains one review unit on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`. Exact head `bd0f3f22` was clean in broad, persistence and renderer review but rejected by concurrency: delayed same-mission Search Operations results could overwrite a refresh, and a mid-chain sort-key revision could silently omit retained evidence. Executable fix `5cbd93e9` pins generation/count/page to one SQLite snapshot, generation-binds continuations, invalidates page reads on refresh and refuses mixed-generation initial pages. The strict reviewer reproductions are red-green; full unit 2,513/2,513, backend, Chromium, visual review, lint/build/CommonJS/diff, local package and soak are green. Exact-head Linux and all four independent exact-head reviews on one final code-and-documentation head remain the task-owned completion gate. PR-6 archive lifecycle follows only after Donal accepts PR-5.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -221,6 +221,27 @@ trip. The change crosses renderer, IPC and persistence boundaries, so
 exact-head Linux and all four independent reviews restart on one final
 code-and-documentation head. PR opened or review-ready remains intermediate;
 do not merge or release.
+
+PR-5 Search Operations generation correction (2026-08-29): broad,
+persistence/completeness and renderer/input containment were clean on exact
+head `bd0f3f22`, but concurrency/finalization rejected it with one P2. Central
+retrace reproduced both consequences: a delayed same-mission page read replaced
+newly refreshed evidence, and changing a retained area's sort key between pages
+made it unreachable while every page still reported the exact total. Executable
+replacement `5cbd93e9` reads the mission replay generation, exact count and page
+inside one pinned SQLite snapshot; carries that generation in the bounded
+result and opaque cursor; rejects a changed continuation with an explicit
+return-to-first-page instruction; invalidates every outstanding Search
+Operations request when mission refresh begins; and fails closed rather than
+publishing four initial pages from different generations. Browser validation
+uses the same generation contract. The two original reproductions plus a
+concurrent WAL writer snapshot attack are green. Full unit 296/2,513, backend
+57/one intentional ignore, Chromium 167/167, visual 2/2 and fresh uncached
+critical review 4/4, lint/build/CommonJS/diff, unsigned macOS package and the
+two-launch 6/6-batch packaged soak are green. Because the accepted defect and
+fix cross runtime, worker and persistence boundaries, all four reviews restart
+on the same pushed code-and-documentation head after exact-head Linux passes.
+PR opened or review-ready remains intermediate; do not merge or release.
 
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base

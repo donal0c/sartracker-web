@@ -1793,6 +1793,72 @@ contracts, exact-head Linux and all four independent exact-head reviews restart
 on the same final code-and-documentation candidate. PR opened/review-ready is
 intermediate; no merge or release is authorized.
 
+## `bd0f3f22` concurrency rejection and `5cbd93e9` remediation
+
+Broad life-safety/end-to-end reviewer Copernicus (`/root/pr5_broad_a584`),
+persistence/completeness reviewer Raman (`/root/pr5_persistence_bd0f`) and
+renderer/input-containment reviewer Cicero (`/root/pr5_renderer_2108`) were
+clean on exact head `bd0f3f222c28686049311ce95b79f210dae6be38`, tree
+`16dd9cfc53175fc117051bb6421a9625f10104ff`. Concurrency/finalization reviewer
+Confucius (`/root/pr5_concurrency_7821`) rejected that same exact head with one
+P2. Central source retrace independently reproduced both consequences:
+
+- an explicit same-mission Search Pass search started before Review refresh;
+  the refresh published `pass-fresh`, then releasing the older worker result
+  replaced it with `pass-stale`; and
+- a three-area page returned Alpha first, then Charlie was revised to
+  Aardvark. Following the old continuation returned only Bravo and ended,
+  silently making retained area C unreachable even though both pages reported
+  exact total three.
+
+Both reproductions were strict red tests. Executable remediation
+`5cbd93e91d8c67275edc9b02e1db1ea5540c77c9` makes page ownership explicit:
+
+- the read-only worker executes generation, exact count and bounded page reads
+  inside one SQLite transaction and therefore one pinned WAL snapshot;
+- the bounded result and version-2 opaque cursor carry the mission replay
+  generation. A continuation from another generation fails with `Search
+  Operations page changed; return to the first page.` instead of silently
+  skipping or duplicating retained evidence;
+- mission refresh invalidates all outstanding Search Operations request tokens
+  before replacement pages begin. A delayed pre-refresh result cannot publish;
+  and
+- the initial area, assignment, outing and pass pages must share one generation
+  or Review fails closed with an explicit refresh instruction. The browser
+  harness mirrors generation-bound continuations.
+
+The original two reviewer reproductions now pass. A third WAL regression
+commits a new first-sorting area from a second connection between the reader's
+count and entry query; the returned generation, exact total and first entry all
+remain on the original snapshot. Focused browser/worker/runtime tests pass
+67/67 and the wider renderer/replay set passes 176/176. Full serialized unit is
+296 files / 2,513 tests; backend is 57 passed / one intentional real-keychain
+ignore; complete Chromium is 167/167; targeted visual Playwright is 2/2 and
+fresh uncached critical visual review is 4/4 at
+`visual-review-2026-08-29T03-57-29Z.json`; ESLint, production build/bundle
+budgets, changed CommonJS syntax and diff checks pass.
+
+The unsigned macOS arm64 package built with identity `sha.5cbd93e91d8c` passed
+the deterministic packaged soak in 12.964 seconds: two launches, 6/6 batches,
+exact 8,664/8,664 positions with exact digest, one restart, SQLite integrity
+`ok`, zero redundant-event slope, zero renderer crashes and 2.4 ms maximum
+main-process round trip. Packaged executable SHA-256 is
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+soak report SHA-256 is
+`e0de129ca34f7f02d4292196ece6c8737e807fd62e9def290363e0608b5cc25e`.
+
+The first parallel full-unit attempt overlapped the complete Chromium project
+and produced three Electron startup timing/cleanup failures. The startup file
+then passed 26/26 alone and the complete unit suite passed 2,513/2,513 alone;
+the result is retained as resource-contention evidence, not described as a
+product failure or hidden from the record.
+
+Because this remediation crosses renderer runtime, worker and persistence
+contracts, the accepted risk topology requires exact-head Linux and all four
+independent exact-head reviews to restart on the same final
+code-and-documentation candidate. PR opened/review-ready remains intermediate;
+no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
