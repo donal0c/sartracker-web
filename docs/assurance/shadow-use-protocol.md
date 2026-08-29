@@ -366,11 +366,13 @@ needed for an E2 investigation, preserve it unchanged and obtain a scoped
 privacy/custody decision before copying or sharing it.
 
 Before copying or sharing any support report, incident bundle/export,
-screenshot, or video, the evidence custodian must preview it and redact every
-credential, precise coordinate/location, casualty detail, private-map detail,
-user/profile path, and host identifier that is not essential to the
-investigation. If safe human review is unavailable, preserve the evidence in
-place and do not copy or share it.
+screenshot, or video, the evidence custodian must preview it. Every credential,
+password, token, authorization/authentication datum, and other secret must be
+redacted without exception. Precise coordinates/locations, casualty details,
+private-map details, user/profile paths, and host identifiers must also be
+redacted unless essential to the investigation and covered by the scoped
+privacy/custody decision. If safe human review is unavailable, preserve the
+evidence in place and do not copy or share it.
 
 ## 9. Field-intake decision tree
 
