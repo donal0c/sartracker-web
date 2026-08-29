@@ -74,7 +74,7 @@ The following conditions are blockers, not accepted degradation:
 
 | Blocker | Required behavior |
 | --- | --- |
-| Delayed or hidden current position | Valid current fixes publish before roster, history, replay, coverage, persistence side effects, or slow provider work. Degraded history must remain visibly separate. |
+| Delayed or hidden current position | A valid current fix is visible within one normal polling cycle. Current request/publication cadence never waits for history, archive, reconciliation, coverage, replay, evidence bookkeeping, or completion of a slow roster transport. A prompt roster response may join only inside the explicit 50 ms metadata grace; after that, publication uses last-known metadata and a visible warning. |
 | Silent evidence loss | Failed or uncertain accepted-evidence persistence creates a durable, mission-scoped critical state before the observation settles. `Complete`/`100%` stays blocked; an authorized acknowledgement may permit an audited lifecycle close but never repairs, clears, or erases the permanent evidence gap. |
 | False `Complete` or `100%` | A claim requires the exact selected revision set, renderer attachment, delivery ledger, and fresh database claim, with no omission, evidence-health, transition, or worker blocker. Equal counts alone are insufficient. |
 | Corrupted evidence | Invalid coordinates, timestamps, schemas, archives, and worker envelopes fail closed. Corruption must not be silently normalized into authoritative mission evidence. |
