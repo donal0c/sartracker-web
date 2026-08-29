@@ -1918,6 +1918,58 @@ pushed code-and-documentation candidate requires fresh exact-head Linux and all
 four independent reviews. PR opened/review-ready remains intermediate; no
 merge or release is authorized.
 
+## `d314db88` broad rejection and `a0a4cdf4` remediation
+
+Fresh broad reviewer Copernicus (`/root/pr5_broad_a584`) rejected exact head
+`d314db885b1436238e3f54465df3d14b9a763560`, tree
+`0b0c4858189db6c2548b214841c1a5ce1b5496e8`, with one P2. The prior
+during-refresh attack was fixed, but Review's non-preserving `load()` retained
+the old snapshot while publishing `loading=true, refreshing=false`. A
+generation-one page read begun there could wait for generation two to publish
+`pass-fresh`, then replace it with `pass-stale`. Central source retrace accepted
+and reproduced the finding. Concurrency/finalization reviewer Confucius
+(`/root/pr5_concurrency_7821`) and renderer/input reviewer Cicero
+(`/root/pr5_renderer_2108`) were clean on the invalid head; persistence was not
+restarted. Those verdicts and canceled Linux run
+[33233518075](https://github.com/donal0c/sartracker-web/actions/runs/33233518075)
+are not completion evidence.
+
+Executable remediation
+`a0a4cdf47719d82b8b17d1c0dfa9e054c82ca323` treats `loading || refreshing`
+as one Review-read barrier at runtime entry and on both success and error
+publication. Search, page and entry controls use the same explicit busy state.
+The backend/runtime check remains authoritative; disabled controls are defence
+in depth. The retained-load regression was observed red, then both `load()` and
+`refreshSelectedMission()` race variants passed without dispatching the old
+worker read or replacing `pass-fresh`.
+
+Candidate-tree verification is green:
+
+- exact renderer/replay/runtime suite: 8 files / 181 tests;
+- full serialized unit: 296 files / 2,516 tests;
+- backend: 57 passed / one intentional real-keychain ignore;
+- complete Chromium: 167/167;
+- targeted visual Playwright: 2/2 and four registered critical captures;
+- fresh uncached visual review: 4/4, report
+  `visual-review-2026-08-29T04-33-41Z.json`, SHA-256
+  `0e1193d3606b82acd1f83ea3b8926cc2bfbe674513350e5ad38fb98799ceeefd`;
+- ESLint, production TypeScript/Vite build, bundle budgets and diff checks; and
+- unsigned macOS arm64 package with identity `sha.a0a4cdf47719`.
+
+The deterministic packaged soak passed in 12.823 seconds: two launches, 6/6
+batches, exact 8,664/8,664 positions and source digest, one restart, SQLite
+integrity `ok`, zero redundant-event slope, zero renderer crashes, four healthy
+operator interactions, and 2.608 ms maximum main-process round trip. Packaged
+executable SHA-256 is
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+soak report SHA-256 is
+`681b15c7977e922e1d58ee6cf8ba098f1a6ce1ca9def40c6c9cd3a28a2a5faab`.
+
+Because this correction changes the shared renderer/runtime concurrency
+boundary, exact-head Linux and all four independent reviews restart on the same
+bound code-and-documentation candidate. PR opened/review-ready remains
+intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

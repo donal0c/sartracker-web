@@ -262,6 +262,23 @@ completion evidence. Exact-head Linux and all four reviews restart on the same
 new code-and-documentation head. PR opened or review-ready remains
 intermediate; do not merge or release.
 
+PR-5 retained-load correction (2026-08-29): fresh broad review then rejected
+exact head `d314db88` with one P2. Its refresh-only barrier correctly closed the
+original attack, but Review's non-preserving `load()` retains the old snapshot
+while publishing `loading=true, refreshing=false`; an old page read begun in
+that window could still replace newly loaded evidence. Concurrency and renderer
+were clean on the invalid head, persistence was not restarted, and those
+verdicts do not count. Central retrace reproduced `pass-stale`. Executable
+replacement `a0a4cdf4` treats loading and refreshing as one fail-closed
+backend/runtime barrier and mirrors it in the Search Operations controls. The
+new load-path regression failed red; both load modes now retain `pass-fresh`
+without dispatching an old page read. Exact focused renderer/replay is 181/181,
+full unit is 296/2,516, Chromium is 167/167, visual Playwright is 2/2 and fresh
+uncached critical review is 4/4; lint/build/diff, unsigned macOS packaging and
+the exact 8,664-position packaged soak are green. Exact-head Linux and all four
+reviews restart on the same bound candidate. PR opened or review-ready remains
+intermediate; do not merge or release.
+
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is
