@@ -135,6 +135,7 @@ const REPLAY_STORE_METHODS = new Set([
   'readMissionReplayTrackChunk',
   'readMissionReplayObjectChunk',
   'readMissionReplayFilterPage',
+  'cancelMissionReplay',
 ])
 const BOUNDED_EVIDENCE_STORE_METHODS = new Set([
   'upsertMarker',
@@ -350,6 +351,26 @@ function projectPr5ScalarForIpc(value, label, maximumLength) {
   return value
 }
 
+/** Mirrors the main Replay request-ID contract before Electron serializes IPC. */
+function projectReplayRequestIdForIpc(value) {
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 100 ||
+    !/^[A-Za-z0-9._:-]+$/u.test(value)
+  ) {
+    throw new Error('Replay request ID is invalid.')
+  }
+  return value
+}
+
+/** Invokes one Replay read only after projecting every renderer-owned argument. */
+function invokeReplayReadForIpc(channel, query, requestId, kind) {
+  const projectedRequestId = projectReplayRequestIdForIpc(requestId)
+  const projectedQuery = projectReplayQueryForIpc(query, kind)
+  return ipcRenderer.invoke(channel, projectedQuery, projectedRequestId)
+}
+
 /** Copies one optional Replay string after enforcing its IPC byte-amplification bound. */
 function copyReplayString(input, output, key) {
   const value = input[key]
@@ -557,25 +578,33 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
           methodName,
           (...args) => ipcRenderer.invoke(channel, ...args),
         ]),
-      ['readMissionReplay', (query, requestId) => ipcRenderer.invoke(
+      ['readMissionReplay', (query, requestId) => invokeReplayReadForIpc(
         MISSION_STORE_CHANNELS.readMissionReplay,
-        projectReplayQueryForIpc(query, 'state'),
+        query,
         requestId,
+        'state',
       )],
-      ['readMissionReplayTrackChunk', (query, requestId) => ipcRenderer.invoke(
+      ['readMissionReplayTrackChunk', (query, requestId) => invokeReplayReadForIpc(
         MISSION_STORE_CHANNELS.readMissionReplayTrackChunk,
-        projectReplayQueryForIpc(query, 'chunk'),
+        query,
         requestId,
+        'chunk',
       )],
-      ['readMissionReplayObjectChunk', (query, requestId) => ipcRenderer.invoke(
+      ['readMissionReplayObjectChunk', (query, requestId) => invokeReplayReadForIpc(
         MISSION_STORE_CHANNELS.readMissionReplayObjectChunk,
-        projectReplayQueryForIpc(query, 'objects'),
+        query,
         requestId,
+        'objects',
       )],
-      ['readMissionReplayFilterPage', (query, requestId) => ipcRenderer.invoke(
+      ['readMissionReplayFilterPage', (query, requestId) => invokeReplayReadForIpc(
         MISSION_STORE_CHANNELS.readMissionReplayFilterPage,
-        projectReplayQueryForIpc(query, 'filters'),
+        query,
         requestId,
+        'filters',
+      )],
+      ['cancelMissionReplay', (requestId) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.cancelMissionReplay,
+        projectReplayRequestIdForIpc(requestId),
       )],
       ['upsertMarker', async (input) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.upsertMarker,

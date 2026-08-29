@@ -2317,6 +2317,37 @@ renderer-only correction changes persistence, custody, finalization or their
 state machine. PR opened/review-ready remains intermediate; no merge or release
 is authorized.
 
+## Repeated preload-seam architecture reassessment (2026-08-29)
+
+Grace Hopper's fresh broad review rejected exact head
+`7998755dc24231842ead7414394dc14ee818e17c` after executing the real sandbox-
+compatible preload in a recording VM. A 64 MiB renderer-owned request identity
+reached `ipcRenderer.invoke` intact for both Replay read and cancel. Main's
+100-character validation runs only after Electron structured-clone delivery.
+
+Central retrace retains P2 under all five criteria. The packaged context bridge
+is the reachable production path; the 67,108,864-byte crossing reproduced
+deterministically; PR5's accepted contract requires every new preload operation
+to have a closed bounded pre-IPC projection; serialization and allocation can
+delay the operational Electron main boundary that also serves current-position
+work; and the Replay bridge belongs to PR5. This is distinct from the earlier
+unknown-query-field test, which stripped body fields but never attacked the
+separate request-ID argument.
+
+The repeated-seam architecture pause found one shared cause: Replay query bodies
+were given explicit preload projectors, while request identity was left to main
+validation and cancel accidentally remained in the generic variadic mission-
+store map. The approved architecture, scope, proof budget and domain meaning do
+not change, so no new team or Donal product decision is required. Remediation
+must complete the existing boundary: all four Replay reads and cancel receive
+explicit wrappers; one request-ID projector mirrors main's non-empty, maximum
+100-character and `[A-Za-z0-9._:-]` contract; cancel is excluded from the
+generic bridge; and red-first preload attacks prove empty, wrong-typed,
+malformed and 64 MiB identities call no IPC. This renderer/IPC-only correction
+requires one fresh broad exact-head review plus the affected renderer/input-
+containment recheck; persistence/completeness and concurrency/finalization do
+not restart.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

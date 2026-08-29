@@ -372,6 +372,24 @@ critical review 4/4, lint/build/diff, unsigned macOS packaging and exact
 the affected renderer recheck remain mandatory; unaffected clean
 persistence/concurrency verdicts do not restart.
 
+PR-5 repeated preload-seam reassessment (2026-08-29): fresh broad review on
+`7998755d` proved that a 64 MiB Replay request identity reached
+`ipcRenderer.invoke` unchanged for both read and cancel. Central retrace retains
+P2: the sandboxed production bridge is reachable, structured-clone work occurs
+before main validation, PR5 promises closed bounded pre-IPC projection, current
+positions share the operational Electron boundary, and Replay introduced the
+methods. The repeated-seam patch loop is paused and the shared cause is now
+explicit: query bodies were projected, but request identity was treated as a
+main-only concern and cancel remained in the generic variadic bridge. The
+accepted architecture, scope, proof budget and domain behaviour do not change.
+Every Replay bridge argument must instead use an explicit wrapper; one preload
+request-ID projector must mirror the main non-empty/100-character/allowed-ASCII
+contract; cancel must leave the generic map; and red-first attacks must prove
+empty, wrong-typed, malformed and 64 MiB IDs call no IPC for all four reads and
+cancel. Because this completes the existing renderer/IPC containment contract
+rather than changing a shared persistence/finalization state machine, the
+required topology remains fresh broad plus renderer/input-containment recheck.
+
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is

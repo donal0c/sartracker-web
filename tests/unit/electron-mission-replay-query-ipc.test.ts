@@ -75,6 +75,10 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
 
     const missionStore = exposedBridge?.missionStore as {
       readonly readMissionReplay: (query: unknown, requestId: string) => Promise<unknown>
+      readonly readMissionReplayTrackChunk: (query: unknown, requestId: string) => Promise<unknown>
+      readonly readMissionReplayObjectChunk: (query: unknown, requestId: string) => Promise<unknown>
+      readonly readMissionReplayFilterPage: (query: unknown, requestId: string) => Promise<unknown>
+      readonly cancelMissionReplay: (requestId: string) => Promise<unknown>
       readonly upsertMarker: (input: unknown) => Promise<unknown>
       readonly upsertDrawing: (input: unknown) => Promise<unknown>
       readonly deleteMarker: (markerId: unknown) => Promise<unknown>
@@ -122,6 +126,58 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
       },
       'bounded-filter-query',
     )
+    await missionStore.readMissionReplayTrackChunk({
+      missionId: 'mission-1', selectedTime: '2026-08-28T12:00:00Z',
+      trackLimit: 100, cursor: 'bounded-cursor',
+    }, 'bounded-track-query')
+    expect(invoke).toHaveBeenLastCalledWith(
+      'sartracker:mission-store:read-mission-replay-track-chunk',
+      {
+        missionId: 'mission-1', selectedTime: '2026-08-28T12:00:00Z',
+        trackLimit: 100, cursor: 'bounded-cursor',
+      },
+      'bounded-track-query',
+    )
+    await missionStore.readMissionReplayObjectChunk({
+      missionId: 'mission-1', selectedTime: '2026-08-28T12:00:00Z',
+      objectLimit: 100, objectCursor: 'bounded-object-cursor', replayGeneration: 1,
+    }, 'bounded-object-query')
+    expect(invoke).toHaveBeenLastCalledWith(
+      'sartracker:mission-store:read-mission-replay-object-chunk',
+      {
+        missionId: 'mission-1', selectedTime: '2026-08-28T12:00:00Z',
+        objectLimit: 100, objectCursor: 'bounded-object-cursor', replayGeneration: 1,
+      },
+      'bounded-object-query',
+    )
+    await missionStore.cancelMissionReplay('bounded-cancel-query')
+    expect(invoke).toHaveBeenLastCalledWith(
+      'sartracker:mission-store:cancel-mission-replay',
+      'bounded-cancel-query',
+    )
+
+    const replayQuery = {
+      missionId: 'mission-1', selectedTime: '2026-08-28T12:00:00Z', trackLimit: 100,
+    }
+    const requestIdCalls: readonly ((requestId: string) => Promise<unknown>)[] = [
+      (requestId) => missionStore.readMissionReplay(replayQuery, requestId),
+      (requestId) => missionStore.readMissionReplayTrackChunk(replayQuery, requestId),
+      (requestId) => missionStore.readMissionReplayObjectChunk(replayQuery, requestId),
+      (requestId) => missionStore.readMissionReplayFilterPage({
+        ...replayQuery, filterKind: 'outing', filterLimit: 100,
+      }, requestId),
+      (requestId) => missionStore.cancelMissionReplay(requestId),
+    ]
+    const invocationCountBeforeRequestIdAttacks = invoke.mock.calls.length
+    const invalidRequestIds = [
+      '', '../request', 42 as unknown as string, 'x'.repeat(64 * 1024 * 1024),
+    ]
+    for (const invalidRequestId of invalidRequestIds) {
+      for (const call of requestIdCalls) {
+        expect(() => call(invalidRequestId)).toThrow(/Replay request ID is invalid/u)
+      }
+    }
+    expect(invoke).toHaveBeenCalledTimes(invocationCountBeforeRequestIdAttacks)
 
     await missionStore.upsertMarker({
       mission_id: 'mission-1',
@@ -269,10 +325,6 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
       outingIds: null,
       timezone: 'Europe/Dublin',
     }, '12:mission-replay:bounded-query')
-    const preload = readFileSync('electron/preload.cjs', 'utf8')
-    expect(preload).toContain("projectReplayQueryForIpc(query, 'state')")
-    expect(preload).toContain("projectReplayQueryForIpc(query, 'chunk')")
-    expect(preload).toContain("projectReplayQueryForIpc(query, 'objects')")
   })
 
   it('owns bounded Replay filter-choice page IPC on the same cancellable worker lane', async () => {
