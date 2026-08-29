@@ -1859,6 +1859,65 @@ independent exact-head reviews to restart on the same final
 code-and-documentation candidate. PR opened/review-ready remains intermediate;
 no merge or release is authorized.
 
+## `8bc2b764` broad rejection and `2dc3c166` remediation
+
+Fresh broad reviewer Copernicus (`/root/pr5_broad_a584`) rejected exact head
+`8bc2b76408f916e2ab117f35ed98228e382345e9`, tree
+`56a1784dc44ab915c86ce6e17e666bde64cf366b`, with one P2.
+Persistence/completeness reviewer Raman (`/root/pr5_persistence_bd0f`) and
+concurrency/finalization reviewer Confucius (`/root/pr5_concurrency_7821`) were
+clean on that head, but those verdicts do not rescue it. Renderer/input
+containment was not started after the common head was invalidated.
+
+Central source retrace accepted and independently reproduced the broad finding.
+Mission refresh invalidated every page token only at refresh start. Search/page
+controls remained available during the refresh window, so a new request could
+start afterward with the current token and old visible generation. The
+deterministic test held mission refresh, began a `during-refresh` pass search,
+allowed refresh to publish generation-two `pass-fresh`, then released the
+generation-one search; exact head `8bc2b764` called the page worker and ended on
+`pass-stale`.
+
+Executable remediation
+`2dc3c1662e0293e8c1c93ee7542f56bdfebb8e3a` closes both boundaries:
+
+- the runtime refuses Search Operations page reads while mission Review is
+  refreshing;
+- every accepted result is additionally bound to the exact Review refresh
+  token captured when its request began, in success and error paths; and
+- search, first-page, next-page and Search Operations entry controls are
+  disabled while refresh is pending, with an explicit `Refreshing retained
+  Search Operations evidence…` status.
+
+The exact race failed red and now passes without dispatching the during-refresh
+worker read or replacing `pass-fresh`. The UI containment assertion also passes.
+The prior generation-bound continuation, pinned WAL generation/count/page,
+mixed-generation initial refresh, stale-pre-refresh result and browser parity
+tests remain green. Focused renderer/replay/runtime coverage is 8 files / 180
+tests; full serialized unit is 296 files / 2,515 tests; complete Chromium is
+167/167; targeted visual Playwright is 2/2 and fresh uncached critical visual
+review is 4/4 at `visual-review-2026-08-29T04-16-30Z.json`; ESLint, production
+build/bundle budgets and diff checks pass. Backend remains 57 passed / one
+intentional real-keychain ignore; this TypeScript-only correction does not
+change Rust.
+
+The unsigned macOS arm64 package built with identity `sha.2dc3c1662e02` passed
+the deterministic packaged soak in 13.039 seconds: two launches, 6/6 batches,
+exact 8,664/8,664 positions and digest, one restart, SQLite integrity `ok`, zero
+redundant-event slope, zero renderer crashes, four healthy interactions and
+2.668 ms maximum main-process round trip. Packaged executable SHA-256 is
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+soak report SHA-256 is
+`68c1de3f43fc1f13a4cfb2acea916df5d46e69150dffe42cf17055c7e243643c`.
+
+Invalid-head Linux run
+[33232729172](https://github.com/donal0c/sartracker-web/actions/runs/33232729172)
+was canceled after the broad finding was accepted and is not completion
+evidence. Because the correction crosses renderer/runtime concurrency, the new
+pushed code-and-documentation candidate requires fresh exact-head Linux and all
+four independent reviews. PR opened/review-ready remains intermediate; no
+merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
