@@ -142,6 +142,21 @@ function replaceSearchOperationPage(
   }
 }
 
+/** Releases page spinners when a newer whole-Review read invalidates their requests. */
+function releaseSearchOperationLoading(
+  operations: MissionReviewRuntimeState['searchOperations'],
+): MissionReviewRuntimeState['searchOperations'] {
+  return {
+    ...operations,
+    pages: {
+      areas: { ...operations.pages.areas, loading: false },
+      assignments: { ...operations.pages.assignments, loading: false },
+      outings: { ...operations.pages.outings, loading: false },
+      passes: { ...operations.pages.passes, loading: false },
+    },
+  }
+}
+
 export type SearchOperationPageState = {
   readonly search: string
   readonly pageNumber: number
@@ -399,6 +414,7 @@ export async function startMissionReviewRuntime(
         ...state.gpxImports,
         loading: gpxCursor !== undefined || gpxPageNumber !== state.gpxImports.pageNumber,
       },
+      searchOperations: releaseSearchOperationLoading(state.searchOperations),
     }
     publishRuntime()
 

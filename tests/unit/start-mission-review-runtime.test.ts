@@ -248,6 +248,18 @@ describe('startMissionReviewRuntime', () => {
     )
   })
 
+  it.each([
+    ['load', 'success'],
+    ['load', 'error'],
+    ['refresh', 'success'],
+    ['refresh', 'error'],
+  ] as const)(
+    'releases Search Operations loading after failed Review %s and stale %s [DON-279]',
+    async (missionRead, staleOutcome) => {
+      await expectFailedMissionReadToReleaseSearchLoading(missionRead, staleOutcome)
+    },
+  )
+
   it('fails closed instead of publishing mixed Search Operations generations [DON-279]', async () => {
     const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
       readonly kind: string
@@ -1120,6 +1132,78 @@ async function expectMissionReadToBlockSearchOperations(
   expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
     searchOperations: expect.objectContaining({
       passes: [expect.objectContaining({ id: 'pass-fresh' })],
+    }),
+  }))
+}
+
+/** Proves a failed Review read cannot strand an invalidated page in loading state. */
+async function expectFailedMissionReadToReleaseSearchLoading(
+  missionRead: 'load' | 'refresh',
+  staleOutcome: 'success' | 'error',
+): Promise<void> {
+  const listMissions = vi.fn()
+    .mockResolvedValueOnce([FIRST_MISSION])
+    .mockRejectedValueOnce(new Error('Review reload failed'))
+  let settleStalePage: ((value: unknown) => void) | undefined
+  let rejectStalePage: ((reason: Error) => void) | undefined
+  const stalePage = new Promise((resolve, reject) => {
+    settleStalePage = resolve
+    rejectStalePage = reject
+  })
+  const pass = {
+    id: 'pass-initial', mission_id: FIRST_MISSION.id, search_area_id: 'area-1',
+    assignment_id: 'assignment-1', started_at: '2026-04-10T08:10:00.000Z',
+    ended_at: '2026-04-10T08:20:00.000Z', outcome: 'partial' as const,
+    coordinator_name: 'Coordinator', version_sequence: 1,
+    created_at: '2026-04-10T08:20:00.000Z', updated_at: '2026-04-10T08:20:00.000Z',
+    participant_count: 0, clue_count: 0, track_evidence_count: 0,
+  }
+  const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+    readonly kind: string; readonly search?: string
+  }) => input.search === 'held-before-failure'
+    ? await stalePage
+    : {
+        kind: input.kind,
+        search: input.search ?? '',
+        generation: 1,
+        entries: input.kind === 'passes' ? [pass] : [],
+        totalCount: input.kind === 'passes' ? 1 : 0,
+        nextCursor: null,
+      })
+  const applyRuntime = vi.fn()
+  const runtime = await startMissionReviewRuntime({
+    missionStore: createMissionReviewStoreStub({ listMissions, listSearchOperationPage }),
+    layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+    applyRuntime,
+  })
+
+  await runtime.load(FIRST_MISSION.id)
+  const pendingSearch = runtime.searchSearchOperations('passes', 'held-before-failure')
+  await vi.waitFor(() => expect(listSearchOperationPage).toHaveBeenCalledWith(
+    expect.objectContaining({ search: 'held-before-failure' }),
+  ))
+  await (missionRead === 'load'
+    ? runtime.load(FIRST_MISSION.id)
+    : runtime.refreshSelectedMission())
+  if (staleOutcome === 'success') {
+    settleStalePage?.({
+      kind: 'passes', search: 'held-before-failure', generation: 1,
+      entries: [{ ...pass, id: 'pass-stale' }], totalCount: 1, nextCursor: null,
+    })
+  } else {
+    rejectStalePage?.(new Error('obsolete page failed'))
+  }
+  await pendingSearch
+
+  expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+    loading: false,
+    refreshing: false,
+    error: 'Review reload failed',
+    searchOperations: expect.objectContaining({
+      passes: [expect.objectContaining({ id: 'pass-initial' })],
+      pages: expect.objectContaining({
+        passes: expect.objectContaining({ loading: false }),
+      }),
     }),
   }))
 }

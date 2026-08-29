@@ -78,6 +78,34 @@ describe('search operations finalized-mission containment [DON-279]', () => {
     expect((host.querySelector('[data-testid="search-operation-passes-search-apply"]') as HTMLButtonElement).disabled)
       .toBe(true)
   })
+
+  it('restores search, first, and next controls after Review is no longer busy [DON-279]', () => {
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    act(() => root?.render(React.createElement(SearchOperationsTab, {
+      controller: null,
+      readOnly: false,
+      reviewBusy: false,
+      operations: {
+        areas: [], assignments: [], passes: [], outings: [],
+        pages: {
+          areas: pageState(0), assignments: pageState(0), outings: pageState(0),
+          passes: {
+            ...pageState(25), pageNumber: 2, hasMore: true,
+            nextCursor: 'opaque-next', loading: false,
+          },
+        },
+      },
+    })))
+
+    expect((host.querySelector('[data-testid="search-operation-passes-search-apply"]') as HTMLButtonElement).disabled)
+      .toBe(false)
+    expect((host.querySelector('[data-testid="search-operation-passes-first"]') as HTMLButtonElement).disabled)
+      .toBe(false)
+    expect((host.querySelector('[data-testid="search-operation-passes-next"]') as HTMLButtonElement).disabled)
+      .toBe(false)
+  })
 })
 
 function pageState(visibleCount: number) {
