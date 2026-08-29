@@ -179,6 +179,20 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
     }
     expect(invoke).toHaveBeenCalledTimes(invocationCountBeforeRequestIdAttacks)
 
+    const invocationCountBeforeUtf8Attacks = invoke.mock.calls.length
+    expect(() => missionStore.readMissionReplay({
+      missionId: 'é'.repeat(101),
+      selectedTime: '2026-08-28T12:00:00Z',
+      trackLimit: 100,
+    }, 'bounded-utf8-query')).toThrow(/Mission replay missionId is invalid/u)
+    expect(() => missionStore.readMissionReplay({
+      missionId: 'mission-1',
+      selectedTime: '2026-08-28T12:00:00Z',
+      outingIds: ['é'.repeat(101)],
+      trackLimit: 100,
+    }, 'bounded-utf8-filter')).toThrow(/Mission replay outingIds is invalid/u)
+    expect(invoke).toHaveBeenCalledTimes(invocationCountBeforeUtf8Attacks)
+
     await missionStore.upsertMarker({
       mission_id: 'mission-1',
       type: 'clue',
@@ -196,6 +210,33 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
       mission_id: 'mission-1', type: 'clue', name: 'Bounded clue', description: 'Visible evidence',
     })
     expect(markerPayload).not.toHaveProperty('rendererControlledBlob')
+
+    const accumulatedTreatment = 'Treatment evidence.\n\n'.repeat(500)
+    await missionStore.upsertMarker({
+      mission_id: 'mission-1',
+      type: 'casualty',
+      name: 'Casualty Alpha',
+      condition: 'Stable',
+      treatment: accumulatedTreatment,
+      evacuation_priority: 'Priority 2',
+      lat: 52,
+      lon: -9.7,
+      irish_grid_e: 480000,
+      irish_grid_n: 580000,
+      display_order: 0,
+    })
+    expect(invoke.mock.calls.at(-1)?.[1]).toMatchObject({ treatment: accumulatedTreatment })
+    await expect(missionStore.upsertMarker({
+      mission_id: 'mission-1',
+      type: 'casualty',
+      name: 'Oversized treatment',
+      treatment: 'x'.repeat(512 * 1_024 + 1),
+      lat: 52,
+      lon: -9.7,
+      irish_grid_e: 480000,
+      irish_grid_n: 580000,
+      display_order: 0,
+    })).rejects.toThrow(/marker treatment.*invalid/i)
 
     await expect(missionStore.upsertMarker({
       mission_id: 'mission-1',

@@ -1516,6 +1516,26 @@ describe('browser harness store', () => {
     const store = getBrowserHarnessStore()
     const mission = await store.createMission({ name: 'Bounded Mutable Harness Mission' })
 
+    const treatment = 'Accumulated treatment evidence.\n\n'.repeat(500)
+    const casualty = await store.upsertMarker({
+      mission_id: mission.id,
+      type: 'casualty',
+      name: 'Casualty Alpha',
+      condition: 'Stable',
+      treatment,
+      evacuation_priority: 'Priority 2',
+      lat: 52,
+      lon: -9.7,
+      irish_grid_e: 480000,
+      irish_grid_n: 580000,
+      display_order: 0,
+    })
+    expect(casualty.treatment).toBe(treatment.trim())
+    await expect(store.upsertMarker({
+      ...casualty,
+      treatment: 'x'.repeat(512 * 1_024 + 1),
+    })).rejects.toThrow(/marker treatment.*524288 UTF-8 bytes/i)
+
     await expect(store.upsertMarker({
       mission_id: mission.id,
       type: 'clue',
@@ -1555,7 +1575,7 @@ describe('browser harness store', () => {
     })).rejects.toThrow(/marker description.*2000 UTF-8 bytes/i)
     await expect(store.deleteMarker('m'.repeat(201)))
       .rejects.toThrow(/marker identity.*200/i)
-    await expect(store.listMarkers(mission.id)).resolves.toEqual([])
+    await expect(store.listMarkers(mission.id)).resolves.toEqual([casualty])
     await expect(store.listDrawings(mission.id)).resolves.toEqual([])
   })
 

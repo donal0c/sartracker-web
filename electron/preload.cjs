@@ -180,7 +180,7 @@ const MUTABLE_EVIDENCE_IPC_STRING_LIMITS = Object.freeze({
   hazard_type: 120,
   severity: 120,
   condition: 120,
-  treatment: 2_000,
+  treatment: 512 * 1_024,
   evacuation_priority: 120,
   updated_by: 120,
   coordinator_ids: 2_000,
@@ -376,7 +376,8 @@ function copyReplayString(input, output, key) {
   const value = input[key]
   if (value === undefined) return
   const maximumLength = REPLAY_IPC_STRING_LIMITS[key]
-  if (typeof value !== 'string' || value.length > maximumLength) {
+  if (typeof value !== 'string' || value.length > maximumLength
+    || mutableEvidenceUtf8Length(value) > maximumLength) {
     throw new Error(`Mission replay ${key} is invalid.`)
   }
   output[key] = value
@@ -404,7 +405,8 @@ function copyReplayFilter(input, output, key) {
     throw new Error(`Mission replay ${key} is invalid.`)
   }
   output[key] = value.map((item) => {
-    if (typeof item !== 'string' || item.length > REPLAY_IPC_FILTER_ID_LENGTH) {
+    if (typeof item !== 'string' || item.length > REPLAY_IPC_FILTER_ID_LENGTH
+      || mutableEvidenceUtf8Length(item) > REPLAY_IPC_FILTER_ID_LENGTH) {
       throw new Error(`Mission replay ${key} is invalid.`)
     }
     return item

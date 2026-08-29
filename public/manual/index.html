@@ -1446,7 +1446,10 @@
             Casualty markers keep treatment notes as a log. Enter each new treatment in
             <strong>New Treatment Update</strong> and choose <strong>Add Update</strong>; the app appends
             a timestamped entry to <strong>Existing Treatment Notes</strong> without overwriting earlier
-            notes.
+            notes. The byte counter below the log shows the bounded evidence budget before Save. The
+            complete log supports 524,288 UTF-8 bytes, so normal multi-hour casualty care can retain many
+            updates rather than sharing the 2,000-byte single-note limit. If the full budget is reached,
+            preserve all saved entries and shorten only the newest unsaved update.
           </p>
           <p>
             <strong>Retirement protection:</strong> retiring any marker requires two-stage confirmation.

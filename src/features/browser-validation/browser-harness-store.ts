@@ -72,6 +72,7 @@ const MAX_SEARCH_OPERATION_ID_LENGTH = 200
 const MAX_SEARCH_OPERATION_LINK_COUNT = 200
 const MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH = 120
 const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
+const MAX_MARKER_TREATMENT_LOG_BYTES = 512 * 1_024
 const MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH = 64
 const MAX_SEARCH_AREA_GEOMETRY_LENGTH = 512 * 1_024
 const MAX_SEARCH_ADVISORY_COVERAGE_LENGTH = 512 * 1_024
@@ -3062,7 +3063,7 @@ function normalizeBrowserMarkerMutation(input: UpsertMarkerInput): UpsertMarkerI
     severity: normalizeBrowserMarkerShortText(input.severity, 'severity'),
     condition: normalizeBrowserMarkerShortText(input.condition, 'condition'),
     treatment: normalizeBrowserEvidenceOptionalText(
-      input.treatment, 'Marker treatment', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+      input.treatment, 'Marker treatment', MAX_MARKER_TREATMENT_LOG_BYTES,
     ),
     evacuation_priority: normalizeBrowserMarkerShortText(
       input.evacuation_priority, 'evacuation priority',

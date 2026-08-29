@@ -475,6 +475,44 @@ describe('mission evidence versioning [DON-277]', () => {
     await expect(store.listMissionObjectVersions({ missionId: mission.id })).resolves.toEqual([])
   })
 
+  it('preserves an accumulated casualty treatment log beyond a single-note limit [DON-277]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Accumulated Treatment Evidence Mission' })
+    const treatment = Array.from(
+      { length: 80 },
+      (_, index) => `[2026-08-29 10:${String(index % 60).padStart(2, '0')}] Coordinator: Treatment update ${index} ${'x'.repeat(160)}`,
+    ).join('\n\n')
+    expect(Buffer.byteLength(treatment, 'utf8')).toBeGreaterThan(2_000)
+    expect(Buffer.byteLength(treatment, 'utf8')).toBeLessThan(512 * 1_024)
+
+    const created = await store.upsertMarker({
+      mission_id: mission.id,
+      ...SAMPLE_MARKER,
+      type: 'casualty',
+      condition: 'Stable',
+      treatment,
+      evacuation_priority: 'Priority 2',
+    })
+    const updated = await store.upsertMarker({
+      ...created,
+      condition: 'Monitoring',
+    })
+
+    expect(updated.treatment).toBe(treatment)
+    expect(updated.condition).toBe('Monitoring')
+    const versions = await store.listMissionObjectVersions({
+      missionId: mission.id,
+      objectType: 'marker',
+      objectId: String(created.id),
+    })
+    expect(JSON.parse(versions.at(-1)!.state_json)).toMatchObject({ treatment })
+
+    await expect(store.upsertMarker({
+      ...updated,
+      treatment: 'x'.repeat(512 * 1_024 + 1),
+    })).rejects.toThrow(/treatment log.*524288 UTF-8 bytes/i)
+  })
+
   it('versions outing lifecycle changes without rewriting the earlier outing state', async () => {
     store = await createStore()
     const mission = await store.createMission({

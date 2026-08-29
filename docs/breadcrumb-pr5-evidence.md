@@ -2449,6 +2449,59 @@ descendant must receive exact-diff/tree attestation from all four reviewers;
 that step must not be described as a new code review or used to weaken their
 accepted risk-focused verdicts.
 
+## Approval correction after the Opus 5 multi-agent review (2026-08-29)
+
+The Opus 5 review-only wave on exact head `2136ad6b` accepted one P2. The
+casualty treatment field is an append-only clinical log, but PR5 had reused the
+2,000-byte Search Operations notes limit. A realistic sequence of updates could
+therefore block later treatment recording, while a pre-existing longer marker
+from the previously unbounded schema could no longer be edited even to change
+an unrelated field such as evacuation priority.
+
+The correction uses a dedicated cumulative treatment-log envelope of 524,288
+UTF-8 bytes. Renderer append/save validation, preload projection, Electron
+persistence and the browser-validation adapter enforce the same limit. The
+dialog shows the exact byte budget, reports an actionable error, retains all
+earlier saved entries, and asks the operator to shorten only the newest unsaved
+update. Regression coverage proves an accumulated log beyond 2,000 bytes can be
+saved and an unrelated field changed without altering treatment evidence; only
+an input beyond the new envelope fails closed.
+
+Two high-value, low-risk P3s from the same review are included. Replay string
+and filter preload projectors now enforce their documented UTF-8 byte ceilings,
+including multibyte attacks before IPC. The Linux PR workflow now includes
+`shared/**`, so a future change to the GPX scalar/time authority cannot bypass
+the gate. The remaining P3 register is retained as non-blocking; in particular,
+packaged GPX gate expansion, Rust PR-CI expansion, the Dublin fall-back-hour
+Search Pass selector and cosmetic replay controls are not folded into this
+approval correction.
+
+Donal explicitly authorized a focused correction and one sensible verification
+pass instead of restarting the four independent reviews. The earlier review
+wave remains prior-head evidence and is not claimed as an exact-head review of
+this successor. Red proof was six failures across the six focused files before
+implementation. Green proof for the working candidate is:
+
+- focused unit/integration: 148/148;
+- full serialized unit: 296 files / 2,535 tests;
+- Chromium casualty-marker workflow: 7/7, including a treatment log beyond
+  2,000 characters, append, save, reopen, unrelated priority edit and exact log
+  preservation;
+- targeted casualty visual: 1/1, with the rendered screenshot inspected;
+- Rust backend: 58 passed / one intentional real-keychain ignore;
+- CommonJS syntax, ESLint, production TypeScript/Vite build, bundle budgets and
+  diff checks;
+- unsigned macOS arm64 Electron package; and
+- isolated packaged launch over CDP, with the SAR Tracker idle shell rendered
+  and captured at `tmp/pr5-approval-smoke/packaged-launch.png`.
+
+The first focused rerun was mistakenly overlapped with Electron's native-module
+rebuild and three migration tests temporarily could not load `better-sqlite3`.
+The package completed successfully and the same focused set then passed 147/147
+sequentially; the final dialog-state regression brings that focused total to
+148/148. This ordering artefact is not counted as product evidence. Exact-head
+Linux validation remains required before Donal's merge decision.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

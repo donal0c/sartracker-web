@@ -111,6 +111,7 @@ const MAX_SEARCH_OPERATION_ID_LENGTH = 200
 const MAX_SEARCH_OPERATION_LINK_COUNT = 200
 const MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH = 120
 const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
+const MAX_MARKER_TREATMENT_LOG_BYTES = 512 * 1_024
 const MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH = 64
 const MAX_SEARCH_AREA_GEOMETRY_LENGTH = 512 * 1_024
 const MAX_SEARCH_ADVISORY_COVERAGE_LENGTH = 512 * 1_024
@@ -5288,9 +5289,7 @@ function normalizeMarkerMutation(input) {
     hazard_type: normalizeMarkerShortText(candidate.hazard_type, 'hazard type'),
     severity: normalizeMarkerShortText(candidate.severity, 'severity'),
     condition: normalizeMarkerShortText(candidate.condition, 'condition'),
-    treatment: normalizeBoundedEvidenceOptionalText(
-      candidate.treatment, 'Marker treatment', MAX_SEARCH_OPERATION_NOTES_LENGTH,
-    ),
+    treatment: normalizeMarkerTreatment(candidate.treatment),
     evacuation_priority: normalizeMarkerShortText(
       candidate.evacuation_priority, 'evacuation priority',
     ),
@@ -5310,6 +5309,21 @@ function normalizeMarkerShortText(value, label) {
   return normalizeBoundedEvidenceOptionalText(
     value, `Marker ${label}`, MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
   )
+}
+
+/** Normalizes one cumulative casualty treatment log inside its evidence envelope. */
+function normalizeMarkerTreatment(value) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new Error('Marker treatment log must be text.')
+  const normalized = value.trim()
+  if (normalized === '') return null
+  if (Buffer.byteLength(normalized, 'utf8') > MAX_MARKER_TREATMENT_LOG_BYTES) {
+    throw new Error(
+      `Marker treatment log must be ${MAX_MARKER_TREATMENT_LOG_BYTES} UTF-8 bytes or fewer. `
+      + 'Earlier saved entries remain preserved; shorten only the newest unsaved update.',
+    )
+  }
+  return normalized
 }
 
 function markerDefaults(input) {
