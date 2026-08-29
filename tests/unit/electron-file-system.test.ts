@@ -172,10 +172,28 @@ describe('Electron filesystem service', () => {
       },
     )
 
-    expect(storedPath).toBe(
-      path.join(userDataPath!, 'missions', 'mission-1', 'attachments', 'team-photo-.jpg'),
+    expect(path.dirname(storedPath)).toBe(
+      path.join(userDataPath!, 'missions', 'mission-1', 'attachments'),
     )
+    expect(path.basename(storedPath)).toMatch(/^[0-9a-f-]+-team-photo-\.jpg$/u)
     await expect(readFile(storedPath, 'utf8')).resolves.toBe('image bytes')
+  })
+
+  it('never overwrites retained attachment bytes when sanitized names collide [DON-277]', async () => {
+    const service = await createService()
+    const missionStore = { getMission: vi.fn().mockResolvedValue({ status: 'active' }) }
+    const firstPath = await service.ingestMarkerAttachment({
+      missionId: 'mission-1', fileName: 'evidence.jpg',
+      bytesBase64: Buffer.from('old-evidence').toString('base64'),
+    }, missionStore)
+    const secondPath = await service.ingestMarkerAttachment({
+      missionId: 'mission-1', fileName: 'evidence.jpg',
+      bytesBase64: Buffer.from('new-evidence').toString('base64'),
+    }, missionStore)
+
+    expect(secondPath).not.toBe(firstPath)
+    await expect(readFile(firstPath, 'utf8')).resolves.toBe('old-evidence')
+    await expect(readFile(secondPath, 'utf8')).resolves.toBe('new-evidence')
   })
 
   it('blocks attachment writes to finished missions', async () => {

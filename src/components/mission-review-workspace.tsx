@@ -219,13 +219,18 @@ export function MissionReviewWorkspace() {
 
             <div className="min-h-0 flex-1 overflow-y-auto pt-5" data-testid="mission-review-workspace">
               {loading && snapshot === null ? <EmptyState message="Loading mission review…" /> : null}
-              {error !== null ? <EmptyState message={error} testId="mission-review-error" /> : null}
+              {error !== null && snapshot === null ? <EmptyState message={error} testId="mission-review-error" /> : null}
               {!loading && error === null && snapshot === null ? (
                 <EmptyState message="No missions are available for review." />
               ) : null}
 
-              {snapshot !== null && error === null ? (
+              {snapshot !== null ? (
                 <>
+                  {error !== null ? (
+                    <p className="mb-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="mission-review-stale-warning" role="alert">
+                      Review update failed: {error}. Showing retained evidence. Evidence entry is disabled until Refresh succeeds; bounded search and paging remain available.
+                    </p>
+                  ) : null}
                   {gpxImports.hasMore || gpxImports.pageNumber > 1 ? (
                     <section
                       className="mb-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-3"
@@ -289,6 +294,7 @@ export function MissionReviewWorkspace() {
                       operations={searchOperations}
                       readOnly={snapshot.mission.status === 'finished' || snapshot.mission.status === 'finalized'}
                       reviewBusy={loading || refreshing}
+                      writeBlocked={error !== null}
                     />
                   </Suspense>
                 ) : activeTab === 'marker-log' ? (

@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { randomUUID } = require('node:crypto')
 const {
   MAX_GPX_IMPORT_PATH_LENGTH,
   MAX_GPX_IMPORT_PATHS,
@@ -185,7 +186,7 @@ function createElectronFileSystem(options) {
         'attachments',
       )
       await fs.mkdir(attachmentDirectory, { recursive: true })
-      const destinationPath = path.join(attachmentDirectory, fileName)
+      const destinationPath = path.join(attachmentDirectory, `${randomUUID()}-${fileName}`)
       await writeFileAtomically(destinationPath, bytes)
       return destinationPath
     },

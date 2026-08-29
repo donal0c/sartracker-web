@@ -24,6 +24,7 @@ describe('search operations finalized-mission containment [DON-279]', () => {
       controller: null,
       readOnly: true,
       reviewBusy: false,
+      writeBlocked: false,
       operations: {
         areas: [{
           id: 'area-1', mission_id: 'mission-1', name: 'Area Alpha', status: 'active',
@@ -62,6 +63,7 @@ describe('search operations finalized-mission containment [DON-279]', () => {
       controller: null,
       readOnly: false,
       reviewBusy: true,
+      writeBlocked: false,
       operations: {
         areas: [], assignments: [], passes: [], outings: [],
         pages: {
@@ -87,6 +89,7 @@ describe('search operations finalized-mission containment [DON-279]', () => {
       controller: null,
       readOnly: false,
       reviewBusy: false,
+      writeBlocked: false,
       operations: {
         areas: [], assignments: [], passes: [], outings: [],
         pages: {

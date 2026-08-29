@@ -1398,6 +1398,12 @@
             <div class="card"><strong>Coordinates</strong><br />Every marker shows WGS84, ITM, and TM65 readouts in the form.</div>
           </div>
           <p>
+            Desktop attachments are stored under a unique retained file identity. Replacing an
+            attachment or deleting the current marker does not reuse or erase the bytes referenced by an
+            earlier immutable marker revision. Two files with the same visible name remain separate
+            evidence artifacts.
+          </p>
+          <p>
             To place a marker from a TM65 Irish Grid reference instead of a map click, open the
             <strong>Tools</strong> tab, use <strong>Marker At GR</strong>, choose the marker type, enter
             the grid reference, and create the marker. Valid references open the normal marker form with
@@ -1735,6 +1741,13 @@
             evidence changes while moving between pages, SAR Tracker refuses the old continuation and tells the
             operator to return to the first page. Loading or refreshing Review disables Search Operations
             controls and cancels older page reads so stale results cannot replace the newly loaded evidence.
+          </p>
+          <p>
+            If a Review load or refresh fails after evidence was already displayed, an amber warning says
+            that the visible evidence is retained and may be stale. Bounded Search, First and Next controls
+            remain available for inspecting that retained snapshot, but assignment and pass entry stays
+            disabled until Refresh succeeds. SAR Tracker never presents a failed refresh as current evidence
+            and never accepts a write against the uncertain Review state.
           </p>
           <p>
             The Audit Log shows operator-meaningful events by default — mission lifecycle changes, marker
