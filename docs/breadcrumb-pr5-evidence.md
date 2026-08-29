@@ -2165,6 +2165,89 @@ exact-head Linux and all four independent reviews restart on the same bound
 code-and-documentation candidate. PR opened/review-ready remains intermediate;
 no merge or release is authorized.
 
+## `c1ad54b8` exact-head reviews and `aea5db07` renderer remediation
+
+Three focused reviewers completed exact-head review of
+`c1ad54b8e3807bccd108eec364884a293bfbcb08`, tree
+`8ec50677341916981932cb188d9965aa786ff979`, from the exact PR4 base:
+
+| Independent reviewer | Risk charter | Verdict and evidence |
+| --- | --- | --- |
+| Codex persistence/completeness reviewer, `/root/pr5_persistence_final` | Persistence/completeness | **CLEAN.** Independent ZIP repro retained original, replacement and custody-only exact bytes; missing referenced bytes failed closed. 5 files / 213 tests, backend 58/one intentional ignore, and four 50,000-version archive runs stayed below the 200 ms hard gate. |
+| Confucius, `/root/pr5_concurrency_7821` | Concurrency/finalization | **CLEAN.** Both attachment/Finish orderings, shutdown ownership, current-position priority, finalization epochs, recovery and adjacent worker races passed. 12 files / 308 tests plus independent race attacks and Rust attachment/GPX filters. |
+| Cicero, `/root/pr5_renderer_2108` | Renderer/input containment | **Rejected with one P2.** A real browser repro showed retained Replay/Search results remounting beside reset time/filter/search controls. 15 files / 250 existing tests and 17/17 existing browser tests passed but did not cover the remount. |
+
+The broad review was not started after the renderer invalidated the head. Linux
+run [`33237509697`](https://github.com/donal0c/sartracker-web/actions/runs/33237509697)
+was canceled. No Linux result or rejected renderer verdict on that invalid head
+counts toward completion. The unaffected clean persistence and concurrency
+reviews remain valid under the accepted risk-focused recheck topology.
+
+Central retrace applied the stricter finding test rather than accepting the
+renderer severity at face value. It retained P2 because every criterion was
+met: Review tab switching is a reachable production React path; the mechanism
+was deterministic; the controls contradicted repository-backed selected-time,
+selected-outing and exact matching-total contracts; an operator could mistake
+filtered/older evidence for the visibly reset scope; and the component was
+introduced by PR5. This was not merely a blank cosmetic field. Before the fix,
+the browser retained a result known at `07:04:50` while showing time
+`07:04:51` and no checked device, and showed a retained `search='full'`, page
+2/50 beside a blank Search input.
+
+Executable remediation `aea5db0727c84285e4850b42b9efcc54ac441838`
+keeps each editable control draft only while it belongs to the exact accepted
+replay or bounded-page owner. A newly accepted result/page automatically
+rebinds selected time, Dublin repeated-hour choice, device/outing filters and
+Search text; tab remounts initialize from that accepted state, and mission
+identity remounts Search Operations. Unsaved edits remain drafts until applied
+and cannot silently relabel retained evidence.
+
+The first unit run was red exactly at both missing contracts: Replay displayed
+mission end `13:00` instead of accepted `10:00`, and retained Search `full`
+displayed blank. The new tests then passed, including result ownership changing
+from device `alpha` to `bravo`, retained failed-refresh write blocking, actual
+Replay tab switching with selected filters and actual Search tab switching with
+the filtered pass page.
+
+Candidate verification is green:
+
+- renderer/input/replay focused suite: 15 files / 252 tests;
+- full serialized unit: 296 files / 2,528 tests;
+- backend: 58 passed / one intentional real-keychain ignore;
+- complete Chromium operator flows: 167/167;
+- targeted visual Playwright: 2/2, with the replay capture taken after a tab
+  remount and accepted-time equality assertion;
+- fresh uncached visual review: 4/4, report
+  `visual-review-2026-08-29T06-27-19Z.json`, SHA-256
+  `b0c9d246a4192b62e1157c5df7d647cdb10bc05a3c3075408d266cd969b1d239`;
+- ESLint, production TypeScript/Vite build, bundle budgets and diff checks; and
+- unsigned macOS arm64 package identity `sha.aea5db0727c8`.
+
+The deterministic packaged soak passed in 13.817 seconds: two launches, 6/6
+batches, exact 8,664/8,664 positions and source digest, one restart, SQLite
+integrity `ok`, zero redundant-event slope, zero renderer crashes, four healthy
+operator interactions and 10.875 ms maximum main-process round trip. Packaged
+executable SHA-256 is
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+soak report SHA-256 is
+`8dcf2811185bd3e077404e1568b76b03c5724e6dd2c029a74f58c5bea8708637`.
+
+Two reviewer notes were explicitly downgraded rather than allowed to invalidate
+the candidate:
+
+- persistence's 48-bit truncated archive-name hash collision is P3 speculative
+  hardening: there is no realistic production collision mechanism at mission
+  attachment cardinalities and new ingests already use UUID-qualified names;
+- concurrency's process-global Tauri attachment mutex is qualification-only:
+  Electron is operational, the repository permits one active mission, current
+  positions bypass the mutex and the exact race tests pass.
+
+Because this remediation is confined to renderer control ownership, the clean
+persistence and concurrency reviews do not restart. Exact-head Linux, one fresh
+broad exact-head review and the affected renderer/input-containment exact-head
+recheck remain mandatory. PR opened/review-ready remains intermediate; no merge
+or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

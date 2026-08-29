@@ -334,6 +334,24 @@ realistic impact and current-PR ownership block as P1/P2; speculative,
 qualification-only, pre-existing, historical/reference-only or out-of-contract
 items are P3/out of scope with the reason recorded.
 
+PR-5 retained-control-scope correction (2026-08-29): persistence/completeness
+and concurrency/finalization returned CLEAN on exact head `c1ad54b8`.
+Renderer/input-containment rejected it because switching Review tabs remounted
+blank/default control drafts beside retained Replay or Search results from a
+different time/filter/query scope. Central retrace challenged the severity and
+retained P2: the mechanism is deterministic in the production React path,
+owned by PR5, breaches the explicit-scope contract and can make an operator
+misread the evidence shown. Executable replacement `aea5db07` binds editable
+drafts to an authoritative accepted-result/page key and remounts mission-owned
+Search state on mission change. Red-first component and actual browser remount
+regressions are green. Renderer proof is 252/252; full unit 2,528/2,528;
+backend 58/one intentional ignore; Chromium 167/167; visual 2/2 plus fresh
+uncached critical review 4/4; lint/build/diff, unsigned macOS package and the
+exact 8,664-position soak are green. The clean persistence/concurrency verdicts
+remain unaffected; exact-head Linux plus fresh broad and renderer rechecks are
+required. One theoretical 48-bit archive-name collision is P3 because there is
+no realistic mission-cardinality mechanism and new ingests use UUID names.
+
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is
