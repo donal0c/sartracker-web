@@ -390,6 +390,19 @@ cancel. Because this completes the existing renderer/IPC containment contract
 rather than changing a shared persistence/finalization state machine, the
 required topology remains fresh broad plus renderer/input-containment recheck.
 
+The reassessed seam is now implemented in executable commit `1b84639d`.
+`cancelMissionReplay` is excluded from the generic bridge, all four reads share
+one explicit invoke wrapper, and one preload projector mirrors main's request-
+identity contract before query projection or Electron serialization. The test
+was red because the first invalid identity reached the invoke stub, then green
+for all 20 invalid-operation combinations with zero invokes; valid state,
+track, object, filter and cancel calls retain their exact channels. Full unit is
+2,530/2,530, backend 58/one intentional ignore, affected Chromium 18/18,
+lint/build/diff and the unsigned packaged two-launch 8,664-position soak are
+green. The complete 168/168 browser and uncached 4/4 visual evidence remain
+applicable from renderer-identical parent `7998755d`; exact Linux and fresh
+broad plus renderer rechecks are still required.
+
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is

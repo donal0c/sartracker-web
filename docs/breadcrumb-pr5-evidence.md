@@ -2348,6 +2348,46 @@ requires one fresh broad exact-head review plus the affected renderer/input-
 containment recheck; persistence/completeness and concurrency/finalization do
 not restart.
 
+Executable remediation `1b84639d5804aa7c2feff5d559c1425b3e1855b7`
+completes that architecture. `cancelMissionReplay` is now excluded from the
+generic mission-store bridge. All four Replay reads use one explicit invoke
+wrapper that projects the request identity first, and cancel uses the same
+projector. The preload projector exactly mirrors main's non-empty, maximum
+100-character and `[A-Za-z0-9._:-]` contract, while main retains authoritative
+sender scoping and defence in depth.
+
+The first test run was red when the first empty identity reached the invoke
+stub. It then passed empty, numeric, `../request` and 64 MiB identities against
+state, track-page, object-page, filter-page and cancel operations: all 20
+combinations throw before IPC and the invoke count remains unchanged. Valid
+state, track, object, filter and cancel identities still reach their exact
+channels with projected queries. Replacement proof is green:
+
+- focused renderer/replay/search: 18 files / 121 tests;
+- full serialized unit: 296 files / 2,530 tests;
+- Rust backend: 58 passed / one intentional real-keychain ignore;
+- affected Chromium mission-review/Search/GPX flows: 18/18. The complete
+  168/168 browser and fresh uncached 4/4 critical visual proof remain applicable
+  from renderer-identical parent `7998755d`; the correction changes only the
+  packaged preload and tests/docs;
+- CommonJS syntax, ESLint, production build/budgets and diff checks; and
+- unsigned macOS arm64 package `sha.bb71bc0d0eca`, app-asar SHA-256
+  `f6125dd4929068a1a2a7348ecec8c8ad0b5fd459f97a17707cf267e984725a2b`.
+
+The replacement packaged soak passed in 13.773 seconds across two launches:
+6/6 batches, exact 8,664/8,664 positions and digest, one restart, SQLite
+integrity `ok`, zero redundant telemetry slope, zero renderer crashes, four
+healthy operator interactions, 5.929 ms maximum main round trip and 75 ms
+maximum renderer gap. Report SHA-256 is
+`0995e791701f8eee60751b7e2606efbd78de29ccf0ed2f9b9b88b60dc52e5d5a`.
+
+Linux run [`33239678392`](https://github.com/donal0c/sartracker-web/actions/runs/33239678392)
+was canceled after the broad review invalidated its exact head and does not
+count. The replacement needs exact-head Linux, one fresh broad review and the
+affected renderer/input-containment recheck. The clean persistence and
+concurrency reviews remain unaffected. PR opened/review-ready remains
+intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
