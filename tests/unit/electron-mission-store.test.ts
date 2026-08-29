@@ -3645,6 +3645,63 @@ describe('electron mission store', () => {
     expect(recoveredEntries.get('mission-store.sqlite')?.length).toBeGreaterThan(0)
   })
 
+  it('rebuilds a recoverable finalization archive whose embedded event provenance is incomplete [DON-278]', async () => {
+    const { createZipArchive, readZipArchive } = require('../../electron/zip-archive.cjs') as {
+      readonly createZipArchive: (
+        entries: readonly { readonly name: string; readonly data: Buffer }[],
+      ) => Buffer
+      readonly readZipArchive: (buffer: Buffer) => ReadonlyMap<string, Buffer>
+    }
+    store = await createStore({
+      finalizeMissionFaultInjection: {
+        afterArchiveSucceededEvent: true,
+      },
+    })
+    const mission = await store.createMission({ name: 'Incomplete Recoverable Archive Mission' })
+    await store.finishMission(mission.id)
+
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(
+      /Injected finalize interruption after archive success/,
+    )
+    const succeededEvent = (await store.listMissionEvents(mission.id)).find(
+      (event) => event.event_type === 'mission_archive_succeeded',
+    )
+    const archivePath = JSON.parse(succeededEvent?.details_json ?? '{}').archive_path as string
+    const entries = readZipArchive(await readFile(archivePath))
+    const snapshotPath = path.join(userDataPath!, 'incomplete-recoverable.sqlite')
+    await writeFile(snapshotPath, entries.get('mission-store.sqlite')!)
+    const snapshotDb = new Database(snapshotPath)
+    snapshotDb.prepare(`UPDATE mission_events
+      SET recorded_at = NULL, recording_completeness = NULL
+      WHERE mission_id = ?`).run(mission.id)
+    snapshotDb.prepare(`UPDATE legacy_event_provenance_backfill_state
+      SET scanned_through_id = NULL,
+          scan_target_id = (SELECT CAST(MAX(rowid) AS TEXT) FROM mission_events),
+          updated_at = '2026-08-20T10:00:00.000Z'
+      WHERE table_name = 'mission_events'`).run()
+    snapshotDb.close()
+    const incompleteSnapshot = await readFile(snapshotPath)
+    await writeFile(archivePath, createZipArchive(
+      [...entries.entries()].map(([name, data]) => ({
+        name,
+        data: name === 'mission-store.sqlite' ? incompleteSnapshot : data,
+      })),
+    ))
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+
+    const retry = await store.finalizeMission(mission.id)
+    expect(retry.mission.status).toBe('finalized')
+    const recoveredEntries = readZipArchive(await readFile(retry.archive.archive_path))
+    await writeFile(snapshotPath, recoveredEntries.get('mission-store.sqlite')!)
+    const recoveredDb = new Database(snapshotPath, { readonly: true })
+    expect(recoveredDb.prepare(`SELECT COUNT(*) AS count FROM mission_events
+      WHERE mission_id = ?
+        AND (recorded_at IS NULL OR recording_completeness IS NULL)`).get(mission.id))
+      .toMatchObject({ count: 0 })
+    recoveredDb.close()
+  })
+
   it('fences authorized and denied unlock writes while a direct archive is being sealed [DON-278]', async () => {
     let releaseCopied = () => undefined
     let signalCopied = () => undefined

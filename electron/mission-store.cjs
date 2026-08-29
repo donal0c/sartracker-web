@@ -1263,19 +1263,19 @@ function createElectronMissionStore(options) {
     },
     readMissionReplay: async (input, requestId) => {
       assertLegacyMissionObjectBackfillSettled(db)
-      assertLegacyEventProvenanceReady(db)
+      assertLegacyEventProvenanceReady(db, input?.missionId)
       assertMissionReplayGpxStateSettled(db, input)
       return executeMissionReplayRead(input, requestId, 'state')
     },
     readMissionReplayTrackChunk: async (input, requestId) => {
       assertLegacyMissionObjectBackfillSettled(db)
-      assertLegacyEventProvenanceReady(db)
+      assertLegacyEventProvenanceReady(db, input?.missionId)
       assertMissionReplayGpxStateSettled(db, input)
       return executeMissionReplayRead(input, requestId, 'chunk')
     },
     readMissionReplayObjectChunk: async (input, requestId) => {
       assertLegacyMissionObjectBackfillSettled(db)
-      assertLegacyEventProvenanceReady(db)
+      assertLegacyEventProvenanceReady(db, input?.missionId)
       assertMissionReplayGpxStateSettled(db, input)
       return executeMissionReplayRead(input, requestId, 'objects')
     },
@@ -3543,7 +3543,7 @@ function finishMission(db, missionId) {
     mission.status === 'paused' ? calculatePausedSeconds(mission.pause_time, timestamp) : 0
   const transaction = db.transaction(() => {
     assertLegacyMissionObjectBackfillSettled(db)
-    assertLegacyEventProvenanceReady(db)
+    assertLegacyEventProvenanceReady(db, missionId)
     assertNoUnsettledGpxImportState(db, missionId)
     db.prepare(`UPDATE missions
       SET status = ?,
@@ -3605,7 +3605,7 @@ async function createMissionArchive(
     }
     assertMissionFinalizationNotInProgress(db, missionId)
     assertLegacyMissionObjectBackfillSettled(db)
-    assertLegacyEventProvenanceReady(db)
+    assertLegacyEventProvenanceReady(db, missionId)
     assertNoUnsettledGpxImportState(db, missionId)
     db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
       VALUES (?, ?)`).run(missionId, requestedAt)
@@ -3662,7 +3662,7 @@ async function buildMissionArchive(
     }
   }
   assertLegacyMissionObjectBackfillSettled(db)
-  assertLegacyEventProvenanceReady(db)
+  assertLegacyEventProvenanceReady(db, missionId)
   assertNoUnsettledGpxImportState(db, missionId)
 
   const createdAt = directArchiveFenceToken ?? now()
@@ -3753,11 +3753,25 @@ async function buildMissionArchive(
   return { mission_id: missionId, archive_path: finalPath, created_at: createdAt }
 }
 
-async function validateSqliteSnapshotBuffer(snapshotBytes, label, workingDirectory) {
+/** Validates a SQLite snapshot and optional read-only mission-evidence assertions. */
+async function validateSqliteSnapshotBuffer(
+  snapshotBytes,
+  label,
+  workingDirectory,
+  validateSnapshot = null,
+) {
   const temporaryPath = path.join(workingDirectory, `.sqlite-integrity-${randomUUID()}.sqlite`)
   try {
     await fs.writeFile(temporaryPath, snapshotBytes)
     validateSqliteDatabaseFile(temporaryPath, label)
+    if (validateSnapshot !== null) {
+      const snapshotDb = new Database(temporaryPath, { readonly: true, fileMustExist: true })
+      try {
+        validateSnapshot(snapshotDb)
+      } finally {
+        snapshotDb.close()
+      }
+    }
   } finally {
     await removeSqliteFileSet(temporaryPath)
   }
@@ -3816,7 +3830,7 @@ async function finalizeMission(
   const mission = getMission(db, missionId)
   if (mission.status === 'finalized') {
     assertLegacyMissionObjectBackfillSettled(db)
-    assertLegacyEventProvenanceReady(db)
+    assertLegacyEventProvenanceReady(db, missionId)
     assertNoUnsettledGpxImportState(db, missionId)
     const finalizedEpoch = readLatestMissionFinalizedEpoch(db, missionId)
     const existingArchive = await readRecoverableFinalizeArchive(db, missionId, readArchiveFile)
@@ -3833,7 +3847,7 @@ async function finalizeMission(
   }
   const resumedProtectedFinalization = db.transaction(() => {
     assertLegacyMissionObjectBackfillSettled(db)
-    assertLegacyEventProvenanceReady(db)
+    assertLegacyEventProvenanceReady(db, missionId)
     assertNoUnsettledGpxImportState(db, missionId)
     const existingFence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
       WHERE mission_id = ?`).get(missionId)
@@ -3884,7 +3898,7 @@ async function finalizeMission(
 
   const transaction = db.transaction(() => {
     assertLegacyMissionObjectBackfillSettled(db)
-    assertLegacyEventProvenanceReady(db)
+    assertLegacyEventProvenanceReady(db, missionId)
     assertNoUnsettledGpxImportState(db, missionId)
     const currentMission = getMission(db, missionId)
     if (currentMission.status !== 'finished') {
@@ -3936,6 +3950,11 @@ async function readRecoverableFinalizeArchive(db, missionId, readArchiveFile = f
         entries.get('mission-store.sqlite'),
         'Recovered mission archive embedded SQLite snapshot',
         path.dirname(archivePath),
+        (snapshotDb) => {
+          assertLegacyMissionObjectBackfillSettled(snapshotDb)
+          assertLegacyEventProvenanceReady(snapshotDb, missionId)
+          assertNoUnsettledGpxImportState(snapshotDb, missionId)
+        },
       )
     } catch {
       continue
