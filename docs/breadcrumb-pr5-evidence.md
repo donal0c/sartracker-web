@@ -1501,6 +1501,73 @@ now enters the restarted broad, persistence/completeness,
 concurrency/finalization and renderer/input-containment reviews. PR
 opened/review-ready is intermediate; no merge or release is authorized.
 
+## `75a4ee05` review rejection and `f5f0438e` remediation
+
+The first review wave examined exact pushed head
+`75a4ee050dadfa94d87f45923ab570aa2a4ccb7a`, tree
+`0138e6a91b0698eda0058d966cfa717865691820`, against exact base
+`80309c995a18eeb190cce4310c9a46b0f46d5263`:
+
+| Reviewer task | Charter | Verdict and disposition |
+| --- | --- | --- |
+| `/root/pr5_broad_a584` | Broad life-safety/end-to-end | **Rejected.** A resumed Finalize could reuse a ZIP- and SQLite-integrity-valid archive without checking event-provenance readiness inside its embedded snapshot. Accepted P2. |
+| `/root/pr5_persistence_a584` | Persistence/completeness | **Rejected.** A legacy event identity remained an unbounded migration target/main-process read, and a quarantined row in Mission A blocked clean Mission B. Both accepted P2s. |
+| `/root/pr5_concurrency_7821` | Concurrency/finalization | **Clean.** It confirmed the earlier archive/finalize readiness and Tauri race corrections on that head. |
+| renderer task | Renderer/input containment | Not started after the exact head was already invalid; it remains mandatory in the restarted four-review wave. |
+
+Central source retrace accepted all three findings without a new product or
+team question. The broad reproduction reused a structurally valid current
+archive whose embedded snapshot had three incomplete mission-event rows. The
+persistence probes showed a 96 MiB event identity delaying open and failing
+the worker without quarantine, and one affected mission's quarantine blocking
+clean-mission Replay/archive/finalization.
+
+Executable remediation
+`f5f0438eea7509a9c2b4eeb6bf3f551f2d0bf265` is red-green:
+
+- event migration targets and durable cursors use bounded SQLite row IDs rather
+  than source identities; worker pages return only a 200-character identity
+  preview and explicit byte counts, and an oversized identity remains
+  byte-for-byte in the source table behind explicit quarantine;
+- quarantine readiness joins retained source row IDs back to the requested
+  mission, so Mission A remains fail-closed without withholding clean Mission
+  B's Replay, archive, Finalize or a clean active mission's Finish; and
+- recoverable Finalize archives are reused only after their embedded read-only
+  SQLite snapshot passes legacy object readiness, mission-scoped event
+  readiness and GPX import-settlement checks. An incomplete snapshot is
+  rejected and rebuilt before the mission can finalize.
+
+Strict red evidence reproduced missing quarantine/worker failure, clean-mission
+global blocking, and reuse of an archive with three incomplete embedded event
+rows. Green evidence on the executable tree is:
+
+- focused evidence/versioning 69/69 and mission-store 93/93; full serialized
+  unit 295 files / 2,495 tests;
+- ESLint, changed CommonJS syntax, production TypeScript/Vite build and bundle
+  budgets; Rust backend 57 passed / one intentional real-keychain ignore;
+- Chromium 167/167. Existing visual Playwright 58/58 and fresh uncached
+  screenshot review 69/69 remain standing because the remediation changes no
+  rendered UI or operator workflow;
+- indexed 960k digest
+  `d4e48eb48d962781475f6864f6190a23f8da163f4d698b03c8365e51b96840db`
+  (765,747,200 bytes): 50,000-point import 2.50 ms dispatch / 12,705.53 ms
+  total, 4,243 concurrent current writes 27.55 ms maximum / 1.84 ms p95,
+  event-loop maximum 38.88 ms, Replay seek 69.35 ms, late page 47.05 ms,
+  restart open 3.52 ms and restart Replay 50.16 ms with exact equality. Report
+  SHA-256 is
+  `480aef0c03fd80f99a0db5aed68bf9ae2fa9ffe29e14033e3b9cb530594c4587`;
+  and
+- the rebuilt unsigned macOS arm64 package passed two launches, 6/6 batches,
+  exact 8,664/8,664 positions, SQLite integrity `ok`, one restart checkpoint,
+  zero redundant-event slope, zero renderer crashes and four healthy operator
+  interactions; maximum main-process round trip was 3.30 ms. Report SHA-256 is
+  `35d267794e23ef011b673fb747b31fabae31dd2a86b759fcb18ddd77ae7d5e70`.
+
+Because this remediation crosses worker/persistence and Finalize-recovery
+contracts, all four independent reviews restart on the same final
+code-and-documentation head after exact branch-head Linux proof. PR
+opened/review-ready remains intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
