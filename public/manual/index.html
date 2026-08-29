@@ -577,18 +577,24 @@
             never be the sole system during shadow use.
           </div>
           <p>
-            Before the first counted session, the release note must name the exact candidate and artifact,
-            the platform/profile, the existing primary operational process, the primary-system operator,
-            and a rehearsed primary-only fallback that completed in no more than 60 seconds. If any of
-            those are missing, do not start the SAR Tracker shadow session. Continue the independent
-            primary operation instead.
+            Before every shadow session, confirm that the release note names the exact candidate and
+            artifact, the platform/profile, the existing primary operational process, the primary-system
+            operator, and a rehearsed primary-only fallback that completed in no more than 60 seconds. If
+            any of those are missing, do not start the SAR Tracker shadow session. Continue the
+            independent primary operation instead. Field and real-incident comparison may begin only
+            after the <code>DON-248</code>/<code>DON-252</code>/<code>DON-253</code> archive lifecycle,
+            BCP-17 qualification, <code>DON-254</code>, and <code>DON-255</code> gates pass for that exact
+            candidate. Earlier builds are limited to synthetic, replayed, or disposable training and do
+            not count toward the field scorecard.
           </p>
           <p>
             Say <strong>STOP SHADOW</strong> for unexplained current-position uncertainty, evidence
             loss/corruption, a false <strong>Complete</strong> or <strong>100%</strong> claim,
             non-interactive controls, map/source disagreement, privacy concerns, or any archive/restore
             uncertainty. The primary-system operator confirms primary-only control; the SAR Tracker
-            operator stops using the beta's output and preserves the app/profile unchanged when safe.
+            operator stops using the beta's output and preserves the app/profile unchanged when safe. If
+            the primary process itself fails, end the shadow session and follow the team's named existing
+            contingency. Never promote SAR Tracker to primary to bridge that gap.
           </p>
           <p>
             Record successful exercises as well as failures. Ordinary wording, layout, or usability
@@ -1997,7 +2003,7 @@ sh "$COLLECTOR" --screenshot</code></pre>
             <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can import, validate, remove, and serve local official MBTiles packages from app-owned storage, so the original USB or source disk can be unplugged after import. The map reports ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. The Maps menu includes a field-readiness checklist and Settings can export a readiness certificate.</li>
             <li><strong>Settings access:</strong> coordinator and admin rosters are currently local workflow/audit controls, not a strong authentication boundary. Treat Settings access as trusted-machine access until the privileged-settings guard and unlock-authority model are implemented.</li>
             <li><strong>Replay scope:</strong> Mission Review reconstructs evidence known at the selected time; it intentionally does not reproduce historical screen layout, map camera, panel state, or operator cursor. Archive-backed replay and final release qualification remain part of the Breadcrumb Programme's archive/final stage.</li>
-            <li><strong>Shadow-use limit:</strong> the protocol keeps the existing primary operational process authoritative and defines stop/fallback/evidence rules. It is not an operational-safety claim. Archive/restore must not be relied upon until the breadcrumb programme's PR-6 lifecycle and exact-candidate restore qualification are complete.</li>
+            <li><strong>Shadow-use limit:</strong> the protocol keeps the existing primary operational process authoritative and defines stop/fallback/evidence rules. It is not an operational-safety claim. Archive/restore must not be relied upon until <code>DON-248</code>/<code>DON-252</code>/<code>DON-253</code> and exact-candidate restore qualification are complete.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>
             <li><strong>Desktop beta distribution:</strong> current CI beta artifacts are Linux x86_64 AppImage and <code>.deb</code> packages. macOS artifacts are local/manual when needed, and Windows NSIS artifacts remain gated until the Windows official-map smoke passes. Developer ID signing, notarization, DMG packaging, and signed Windows installer behavior remain open release work.</li>

@@ -35,6 +35,7 @@ use; it does not block the team's independent primary operation.
 - **Primary-system operator role:** &lt;name or agreed role&gt;
 - **Primary-only fallback drill:** &lt;date, measured switch time, maximum 60 seconds&gt;
 - **Candidate identity:** &lt;version, tag, exact Git SHA, artifact filename and full SHA-256&gt;
+- **Field admission evidence:** &lt;`DON-248`/`DON-252`/`DON-253`, BCP-17, `DON-254`, and `DON-255`; or “synthetic/replay/disposable training only — does not count toward WAR-13B”&gt;
 - **Qualified platform/profile:** &lt;platform, architecture, OS/distro/kernel/session, package type, profile class, runtime flags&gt;
 - **Residual-risk register:** &lt;version/path; every entry uses the protocol's exact eight-field format&gt;
 - **WAR-13B scorecard declaration:** &lt;path or explicit not-started; no scorecard auto-promotes this release&gt;
@@ -154,8 +155,8 @@ or screenshots showing private paths to GitHub.
   - Shadow-use protocol controls testing but does not qualify the application
     for sole-source or unrestricted operational use.
   - Archive/restore/custody remains prohibited as a relied-on workflow unless
-    this exact candidate has explicit breadcrumb programme PR-6 archive/restore
-    qualification evidence.
+    this exact candidate has explicit `DON-248`/`DON-252`/`DON-253`
+    archive/restore qualification evidence.
 
 ## Verification (CI-driven)
 
@@ -240,7 +241,12 @@ Before promoting this draft to a published release:
 - [ ] Release title contains "internal beta"
 - [ ] Shadow-use declaration is complete; the independent primary process and
       named operator remain authoritative
+- [ ] Field/real-incident shadow use is admitted only after exact-candidate
+      `DON-248`/`DON-252`/`DON-253`, BCP-17, `DON-254`, and `DON-255` evidence;
+      earlier builds are labelled non-counted synthetic/replay/disposable training
 - [ ] Primary-only fallback drill passed in no more than 60 seconds
+- [ ] Zero open confirmed P1/P2 findings and zero confirmed persisted-evidence
+      corruption, loss, or silent mis-scoping defects
 - [ ] Residual-risk register and predeclared WAR-13B scorecard are linked, and
       neither is represented as automatic release promotion
 - [ ] Maintainer has signed off in `handoff/HANDOFF.md`

@@ -7,10 +7,10 @@ operational use. It does not qualify an artifact, close a residual risk, replace
 the final release matrix, or authorize publication. The release note for the
 exact candidate must link this protocol and complete its session-specific fields.
 
-The breadcrumb programme's PR-6 archive lifecycle (`DON-248`, `DON-252`, and
-`DON-253`) is not implemented at the time this protocol is written. Archive,
-restore, custody, and archive-backed review therefore remain unqualified and
-must not be relied upon during shadow use.
+The archive-lifecycle issue set (`DON-248`, `DON-252`, and `DON-253`) is not
+implemented at the time this protocol is written. Archive, restore, custody,
+and archive-backed review therefore remain unqualified and must not be relied
+upon during shadow use.
 
 ## 1. What shadow use means
 
@@ -37,7 +37,8 @@ breadcrumb-domain question.
 ### Permitted
 
 - Training with synthetic, replayed, or deliberately disposable mission data.
-- A planned field exercise where the primary operational process is fully live.
+- A planned field exercise on the exact admitted candidate where the primary
+  operational process is fully live.
 - Passive comparison during a real incident only when the session lead has
   explicitly authorized it, the primary process remains fully staffed, and SAR
   Tracker has no sole operational responsibility.
@@ -55,8 +56,8 @@ breadcrumb-domain question.
 - Treating a calm screen, passing exercise, `Complete`, or `100%` as proof of
   operational safety.
 - Relying on archive creation, restore, archive-backed review, or custody until
-  breadcrumb programme PR-6 and their exact-candidate qualification are
-  complete.
+  `DON-248`, `DON-252`, and `DON-253` and their exact-candidate qualification
+  are complete.
 - Using an unidentified build, an unverified checksum, an unqualified platform,
   or a profile containing unexplained state from another candidate.
 - Updating or changing the candidate, package type, runtime flags, or profile in
@@ -64,6 +65,21 @@ breadcrumb-domain question.
 - Uploading raw mission databases, profile archives, precise locations,
   credentials, private map data, or unreviewed screenshots as ordinary feedback.
 - Treating hosted browser testing as desktop shadow-use evidence.
+
+### Field admission gate
+
+A field exercise or real-incident comparison may use only the exact candidate
+that has:
+
+1. implemented and qualified the `DON-248`, `DON-252`, and `DON-253` archive
+   lifecycle;
+2. passed BCP-17 and final exact-candidate qualification under `DON-254`; and
+3. been deliberately published as the controlled internal beta under `DON-255`.
+
+Before that gate is complete, a build may be used only with synthetic, replayed,
+or deliberately disposable training data. Those sessions do not count toward
+the WAR-13B field scorecard, even if they are otherwise useful engineering
+evidence.
 
 ## 3. Named session roles
 
@@ -73,7 +89,7 @@ independent operator. Record names or agreed team identifiers before the session
 | Role | Responsibility |
 | --- | --- |
 | Session lead | Authorizes the session, confirms the primary process, calls `STOP SHADOW`, and decides whether the session may resume. |
-| Primary-system operator | Keeps the independent primary source live, makes operational decisions from it, and confirms primary-only operation after a stop. |
+| Primary-system operator | Keeps the independent primary source live, makes operational decisions from it, confirms primary-only operation after a stop, and invokes the team's named existing contingency if that source fails. |
 | SAR Tracker operator | Runs only the declared candidate and reports warnings, divergence, uncertainty, or non-interactivity immediately. |
 | Evidence custodian | Records candidate/session identity, preserves proportionate sanitized evidence, and prevents unnecessary sharing of sensitive data. |
 | Triage owner | Routes the record to the existing Linear/regression owner and ensures urgent findings are not downgraded to ordinary feedback. |
@@ -91,6 +107,8 @@ Complete this before the first shadow session for a deployment group:
 ```text
 Primary operational source/process:
 Primary-system owner/operator role:
+Existing team contingency if that source degrades or fails:
+Contingency owner and how an authoritative primary path is declared restored:
 How primary-only operation is declared:
 Fallback drill date and measured switch time:
 Confirmed by:
@@ -168,8 +186,12 @@ Call `STOP SHADOW` immediately for any of these:
 ### Stop and fallback actions
 
 1. The session lead says `STOP SHADOW` and records the local/UTC time.
-2. The primary-system operator confirms that all operational decisions and
-   recording are continuing from the primary process only.
+2. If the primary process is healthy, the primary-system operator confirms that
+   all operational decisions and recording are continuing from it alone. If the
+   stop trigger is loss or degradation of that process, the session lead ends
+   the SAR Tracker shadow session and the named contingency owner invokes the
+   team's predeclared existing contingency. SAR Tracker must not be promoted to
+   primary or used to bridge the gap.
 3. The SAR Tracker operator stops using its output. Leave the app and profile
    unchanged when safe so evidence is not destroyed. For a Linux non-interactive
    process, follow the Mint hang runbook before closing or force-killing it.
@@ -187,6 +209,8 @@ Call `STOP SHADOW` immediately for any of these:
 - Do not resume the stopped candidate merely because a restart appears to fix
   the symptom. Resume only as a new session or a clearly marked second segment
   after the session lead and primary-system operator approve the reduced scope.
+- If the primary process degraded or failed, resumption also requires the named
+  contingency owner to confirm that an authoritative primary path is restored.
 - Preserve the failed artifact, profile, and identity until triage says they are
   no longer needed. Never delete suspected mission evidence to make a rerun pass.
 
@@ -195,8 +219,13 @@ Call `STOP SHADOW` immediately for any of these:
 The session lead reads each item aloud or confirms it with the named owner.
 
 - [ ] The permitted scenario and non-goals are written down.
+- [ ] Any field or real-incident session uses the exact candidate admitted
+      through `DON-248`/`DON-252`/`DON-253`, BCP-17, `DON-254`, and `DON-255`;
+      earlier builds are restricted to non-counted synthetic/replay/disposable
+      training.
 - [ ] The independent primary process is named, live, independently staffed,
-      and able to continue without SAR Tracker.
+      and able to continue without SAR Tracker; its existing contingency and
+      contingency owner are also named.
 - [ ] The primary-only fallback drill passed within 60 seconds and its time is
       recorded.
 - [ ] All five roles are named and every person knows they may call `STOP SHADOW`.
@@ -207,13 +236,16 @@ The session lead reads each item aloud or confirms it with the named owner.
 - [ ] No auto-update or mid-session candidate change can occur.
 - [ ] The current residual-risk register has been read; its detection and
       fallback steps are available to operators.
+- [ ] There are zero open confirmed P1/P2 findings and zero confirmed defects
+      capable of corrupting, losing, or silently mis-scoping persisted mission
+      evidence.
 - [ ] Current positions, time/offset, mission phase, tracking source, layers,
       and map readiness agree with the primary source at the opening checkpoint.
 - [ ] Sufficient local storage is available and the app has no unexplained
       startup, autosave, evidence-health, or diagnostics warning.
 - [ ] Archive/restore is explicitly out of reliance scope unless the release
-      note contains later exact-candidate breadcrumb programme PR-6
-      qualification.
+      note contains later exact-candidate qualification for `DON-248`,
+      `DON-252`, and `DON-253`.
 - [ ] The evidence custodian has a private storage destination and knows what
       must not be shared.
 
@@ -282,21 +314,23 @@ Observation received
 |     |
 |     +-- NO
 |
-+-- Does it change workflow results or reliably reproduce on the exact candidate?
++-- Is it wording, layout, discoverability, or preference feedback that does not
+|   change a workflow result?
+|     |
+|     +-- YES -> E0 short feedback record; no bundle by default; batch with the
+|     |          existing UI/feedback lane.
+|     |
+|     +-- NO
+|
++-- Does it change a workflow result, or is it a non-cosmetic functional issue
+|   that reliably reproduces on the exact candidate?
 |     |
 |     +-- YES -> E1 capture -> route to the existing product/reliability owner;
 |     |          use Regression/Performance closeout only if a distributed build
 |     |          demonstrably regressed.
 |     |
-|     +-- NO
-|
-+-- Is it wording, layout, discoverability, or preference feedback?
-      |
-      +-- YES -> E0 short feedback record; no bundle by default; batch with the
-      |          existing UI/feedback lane.
-      |
-      +-- NO -> record as an observation/hypothesis with the missing evidence.
-                 Do not create a defect claim or new issue from plausibility alone.
+|     +-- NO -> record as an observation/hypothesis with the missing evidence.
+|                Do not create a defect claim or new issue from plausibility alone.
 ```
 
 Routing examples:
@@ -322,7 +356,7 @@ only when the evidence gap and next action are explicit.
 | Mitigation / fallback | Immediate operator action, primary-source fallback, recovery limits, and what must not be inferred. |
 | Evidence tier | `T0` authority/source inspection; `T1` deterministic unit/static; `T2` integration/rendered browser; `T3` local package or independently inspected visual; `T4` exact CI artifact and declared matrix; `T5` controlled field/live-provider/long-duration. State the exact artifact/workload limit. |
 | Owner | Existing Linear issue and named decision owner. |
-| Status | `open-blocking`, `open-shadow-only`, `accepted-residual`, or `closed`. Only Donal may approve `accepted-residual`; it never means operationally safe. |
+| Status | `open-blocking`, `open-shadow-only`, `accepted-residual`, or `closed`. Only Donal may approve `open-shadow-only` or `accepted-residual`; neither means operationally safe. |
 | Exit evidence | Predeclared observation/test/artifact/field evidence required to change status; never merely "more testing". |
 
 Copy this exact template:
@@ -339,10 +373,17 @@ Exit evidence:
 ```
 
 `open-blocking` prevents the candidate entering or continuing shadow use.
-`open-shadow-only` permits only the bounded shadow scenario described in the
-record. `accepted-residual` requires Donal's explicit sign-off and a working
-fallback. `closed` requires the recorded exit evidence on the exact affected
-scope; a passing lower-tier test cannot close a field or platform risk.
+`open-shadow-only` requires Donal's explicit approval before a session and
+permits only the bounded candidate, platform/profile, and scenario described in
+the record. It cannot be assigned ad hoc during a stopped session.
+`accepted-residual` requires Donal's explicit sign-off and a working fallback.
+`closed` requires the recorded exit evidence on the exact affected scope; a
+passing lower-tier test cannot close a field or platform risk.
+
+Every confirmed P1/P2 finding, and every confirmed defect capable of corrupting,
+losing, or silently mis-scoping persisted mission evidence, is
+`open-blocking`. It cannot be changed to `open-shadow-only` or
+`accepted-residual`; the release and pre-session gates require it to be absent.
 
 ## 11. WAR-13B exit scorecard declaration
 
