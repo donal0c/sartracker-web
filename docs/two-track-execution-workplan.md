@@ -279,6 +279,22 @@ the exact 8,664-position packaged soak are green. Exact-head Linux and all four
 reviews restart on the same bound candidate. PR opened or review-ready remains
 intermediate; do not merge or release.
 
+PR-5 failed-load recovery correction (2026-08-29): exact head `c5c7c702`
+was broad- and renderer-clean but concurrency/finalization review rejected it
+with one P2; persistence had not started, and no invalid-head verdict counts.
+When a whole-Review load or refresh invalidated an already-running Search page
+and then failed, stale success/error was correctly fenced but its page remained
+`loading=true`, leaving Search/First/Next disabled. Central retrace reproduced
+all four load/refresh × stale-success/error schedules. Executable replacement
+`139d812d` releases every invalidated page's transient loading flag while
+retaining its evidence and pagination metadata. All four schedules were red and
+are now green; a component assertion proves all three controls recover. Focused
+renderer/replay is 185/185, full unit 296/2,521, Chromium 167/167, visual 2/2
+plus fresh uncached critical review 4/4, lint/build/diff, unsigned macOS package
+and exact 8,664-position packaged soak are green. Exact-head Linux and all four
+reviews restart on the same bound candidate. PR opened or review-ready remains
+intermediate; do not merge or release.
+
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is

@@ -1970,6 +1970,61 @@ boundary, exact-head Linux and all four independent reviews restart on the same
 bound code-and-documentation candidate. PR opened/review-ready remains
 intermediate; no merge or release is authorized.
 
+## `c5c7c702` concurrency rejection and `139d812d` remediation
+
+Broad reviewer Copernicus (`/root/pr5_broad_a584`) and renderer/input reviewer
+Cicero (`/root/pr5_renderer_2108`) were clean on exact head
+`c5c7c7023b242ab788fc5b6961d4e72bd89a7f75`, tree
+`2dfa5b2bb68c9f6a58763f684a5d765bfd0fe9df`, but
+concurrency/finalization reviewer Confucius (`/root/pr5_concurrency_7821`)
+rejected it with one P2. Persistence was not started, and no verdict on this
+invalid head counts toward completion.
+
+Central retrace reproduced the finding in all four schedules. A Search page
+already in flight was invalidated by `load()` or `refreshSelectedMission()`;
+the whole-Review read then failed; and the obsolete page later succeeded or
+failed. Stale results and errors were correctly fenced, but neither path could
+clear the retained page's transient `loading=true`. Review itself returned to
+idle with the right error and retained evidence, while Search, First and Next
+remained disabled until an unrelated successful refresh.
+
+Executable remediation
+`139d812d034eb3bf3e78aae1955bf406e7d1928a` synchronously clears every
+Search page's invalidated loading flag when a whole-Review read takes ownership,
+while retaining its evidence, search and pagination metadata. The four
+load/refresh × stale-success/error schedules were observed red and now pass. A
+component-level regression additionally proves Search, First and Next become
+enabled when Review returns to idle.
+
+Candidate-tree verification is green:
+
+- exact renderer/replay/runtime suite: 8 files / 185 tests;
+- full serialized unit: 296 files / 2,521 tests;
+- backend: 57 passed / one intentional real-keychain ignore;
+- complete Chromium: 167/167;
+- targeted visual Playwright: 2/2 and four registered critical captures;
+- fresh uncached visual review: 4/4, report
+  `visual-review-2026-08-29T04-55-01Z.json`, SHA-256
+  `1ff0ec992505fae99f9245706afa4f6a5b04d5da136e4d5f1bbd8268e958cd4f`;
+- ESLint, production TypeScript/Vite build, bundle budgets and diff checks; and
+- unsigned macOS arm64 package with identity `sha.139d812d034e`.
+
+The deterministic packaged soak passed in 12.948 seconds: two launches, 6/6
+batches, exact 8,664/8,664 positions and source digest, one restart, SQLite
+integrity `ok`, zero redundant-event slope, zero renderer crashes, four healthy
+operator interactions, and 4.365 ms maximum main-process round trip. Packaged
+executable SHA-256 is
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+soak report SHA-256 is
+`aae20c4c525e259f0ae44135154c3ca36b58a0b7909109fff98c7f0aa57b0684`.
+
+Invalid-head Linux run
+[33234378243](https://github.com/donal0c/sartracker-web/actions/runs/33234378243)
+was canceled after the P2 was accepted. Because the correction changes shared
+renderer/runtime concurrency state, exact-head Linux and all four independent
+reviews restart on one bound code-and-documentation candidate. PR
+opened/review-ready remains intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
