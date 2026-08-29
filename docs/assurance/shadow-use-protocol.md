@@ -74,7 +74,9 @@ that has:
 1. implemented and qualified the `DON-248`, `DON-252`, and `DON-253` archive
    lifecycle;
 2. passed BCP-17 and final exact-candidate qualification under `DON-254`; and
-3. been deliberately published as the controlled internal beta under `DON-255`.
+3. received deliberate guarded-publication approval under `DON-255`; and
+4. completed guarded publication, with its exact release identity and published
+   state recorded before the session.
 
 Before that gate is complete, a build may be used only with synthetic, replayed,
 or deliberately disposable training data. Those sessions do not count toward
@@ -128,6 +130,7 @@ Session ID:
 Session purpose and scenario:
 Start/end in UTC and local timezone/offset:
 Release version and tag:
+Guarded publication URL/status and published-at time in UTC:
 Git commit SHA:
 CI workflow/run:
 Artifact filename:
@@ -293,7 +296,7 @@ when it materially helps diagnosis.
 | --- | --- | --- | --- |
 | `E0 — ordinary feedback or clean exercise` | Wording, layout, usability, an expected successful exercise, or a low-value observation | Session ID, exact candidate identity, workflow/checkpoint, expected and observed result, pass/feedback note; optional cropped/redacted screenshot | Support/incident bundle, raw profile, mission database, full-screen operational image |
 | `E1 — reproducible functional issue` | Repeatable behavior with no immediate safety consequence or evidence uncertainty | E0 plus precise steps, local/UTC time, frequency, sanitized screenshot/video if useful, and a support bundle only when its contents are relevant | Whole profile, raw mission store, broad incident bundle unrelated to the failure |
-| `E2 — urgent safety or regression evidence` | Any stop trigger, released-build regression, unexplained divergence, evidence loss/corruption, false completeness, non-interactivity, or archive/restore uncertainty | E1 plus incident-time bundle when it covers the event, relevant sanitized logs, and the packaged Linux hang collector for a live hang; preserve the profile/store in place pending scoped instruction | Public upload, routine transfer of a raw database/profile, unreviewed screenshots, credentials/private maps |
+| `E2 — urgent safety or regression evidence` | Any stop trigger, demonstrable non-cosmetic or safety-relevant released-build regression, unexplained divergence, evidence loss/corruption, false completeness, non-interactivity, or archive/restore uncertainty | E1 plus incident-time bundle when it covers the event, relevant sanitized logs, and the packaged Linux hang collector for a live hang; preserve the profile/store in place pending scoped instruction | Public upload, routine transfer of a raw database/profile, unreviewed screenshots, credentials/private maps |
 
 An incident bundle is not the default answer to wording or layout feedback. A
 raw mission database or profile is never a routine attachment. When it may be
@@ -309,7 +312,9 @@ Observation received
 |   false, the app non-interactive, archive/restore uncertain, the primary source
 |   unavailable, or sensitive data possibly exposed?
 |     |
-|     +-- YES -> STOP SHADOW -> primary-only operation -> E2 capture -> urgent
+|     +-- YES -> STOP SHADOW -> primary-only operation when healthy; if the
+|     |          primary is unavailable, invoke its named existing contingency.
+|     |          SAR Tracker never bridges the gap. Use E2 capture and urgent
 |     |          safety/regression triage under the existing Linear owner.
 |     |
 |     +-- NO
@@ -322,12 +327,19 @@ Observation received
 |     |
 |     +-- NO
 |
++-- Is it a demonstrable non-cosmetic or safety-relevant regression from an
+|   earlier distributed build?
+|     |
+|     +-- YES -> E2 capture -> Regression/Performance closeout under the
+|     |          existing Linear owner.
+|     |
+|     +-- NO
+|
 +-- Does it change a workflow result, or is it a non-cosmetic functional issue
 |   that reliably reproduces on the exact candidate?
 |     |
 |     +-- YES -> E1 capture -> route to the existing product/reliability owner;
-|     |          use Regression/Performance closeout only if a distributed build
-|     |          demonstrably regressed.
+|     |          if later comparison proves a regression, reclassify it as E2.
 |     |
 |     +-- NO -> record as an observation/hypothesis with the missing evidence.
 |                Do not create a defect claim or new issue from plausibility alone.

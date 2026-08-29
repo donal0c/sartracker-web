@@ -27,15 +27,20 @@ installing the app.
 
 ## Shadow-use declaration
 
-Complete this section before sharing the beta. A missing field blocks shadow
-use; it does not block the team's independent primary operation.
+Complete the eligibility fields before guarded publication. While the release
+is a draft, the publication state must say `PRE-PUBLICATION — FIELD USE
+PROHIBITED`. After guarded publication, record the exact published identity and
+state before any field or real-incident shadow session. A missing field blocks
+shadow use; it does not block the team's independent primary operation.
 
 - **Protocol:** [`docs/assurance/shadow-use-protocol.md`](../assurance/shadow-use-protocol.md)
 - **Primary operational source/process:** &lt;exact existing source/process; never "QGIS and/or Traccar"&gt;
 - **Primary-system operator role:** &lt;name or agreed role&gt;
 - **Primary-only fallback drill:** &lt;date, measured switch time, maximum 60 seconds&gt;
 - **Candidate identity:** &lt;version, tag, exact Git SHA, artifact filename and full SHA-256&gt;
-- **Field admission evidence:** &lt;`DON-248`/`DON-252`/`DON-253`, BCP-17, `DON-254`, and `DON-255`; or “synthetic/replay/disposable training only — does not count toward WAR-13B”&gt;
+- **Pre-publication field eligibility:** &lt;exact-candidate `DON-248`/`DON-252`/`DON-253`, BCP-17, and `DON-254` evidence&gt;
+- **`DON-255` guarded-publication approval:** &lt;approval reference&gt;
+- **Guarded publication state:** &lt;`PRE-PUBLICATION — FIELD USE PROHIBITED`, or exact published release URL/tag and published-at UTC time&gt;
 - **Qualified platform/profile:** &lt;platform, architecture, OS/distro/kernel/session, package type, profile class, runtime flags&gt;
 - **Residual-risk register:** &lt;version/path; every entry uses the protocol's exact eight-field format&gt;
 - **WAR-13B scorecard declaration:** &lt;path or explicit not-started; no scorecard auto-promotes this release&gt;
@@ -241,9 +246,11 @@ Before promoting this draft to a published release:
 - [ ] Release title contains "internal beta"
 - [ ] Shadow-use declaration is complete; the independent primary process and
       named operator remain authoritative
-- [ ] Field/real-incident shadow use is admitted only after exact-candidate
-      `DON-248`/`DON-252`/`DON-253`, BCP-17, `DON-254`, and `DON-255` evidence;
-      earlier builds are labelled non-counted synthetic/replay/disposable training
+- [ ] Exact-candidate `DON-248`/`DON-252`/`DON-253`, BCP-17, and `DON-254`
+      eligibility evidence and `DON-255` publication approval are recorded
+- [ ] Field/real-incident use remains prohibited until guarded publication has
+      succeeded and its exact published identity/state is recorded; earlier
+      builds are labelled non-counted synthetic/replay/disposable training
 - [ ] Primary-only fallback drill passed in no more than 60 seconds
 - [ ] Zero open confirmed P1/P2 findings and zero confirmed persisted-evidence
       corruption, loss, or silent mis-scoping defects
