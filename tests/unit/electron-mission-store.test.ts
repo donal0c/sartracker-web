@@ -3752,6 +3752,7 @@ describe('electron mission store', () => {
     })
     expect(JSON.parse(recoveryEvent?.details_json ?? '{}')).toMatchObject({
       archive_kind: 'finalized_recovery',
+      finalization_epoch: expect.any(Number),
       replaces_archive_path: originalArchivePath,
       archive_path: retried.archive.archive_path,
     })
@@ -3918,6 +3919,59 @@ describe('electron mission store', () => {
 
     await expect(idempotentFinalize).rejects.toThrow(/finalization changed/iu)
     await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
+  })
+
+  it('does not publish or reuse a finalized archive repair from a stale finalization epoch [DON-278]', async () => {
+    store = await createStore({ readAdminRoster: async () => ['Duty Admin'] })
+    const mission = await store.createMission({ name: 'Finalized Repair Epoch Race' })
+    await store.finishMission(mission.id)
+    const firstFinalization = await store.finalizeMission(mission.id)
+    await writeFile(firstFinalization.archive.archive_path, 'corrupt first finalization archive')
+    store.close()
+
+    let releaseArchiveRead = () => undefined
+    let signalArchiveRead = () => undefined
+    const archiveRead = new Promise<void>((resolve) => { signalArchiveRead = resolve })
+    const holdArchiveRead = new Promise<void>((resolve) => { releaseArchiveRead = resolve })
+    let firstRead = true
+    store = createElectronMissionStore({
+      userDataPath: userDataPath!,
+      readAdminRoster: async () => ['Duty Admin'],
+      readArchiveFile: async (archivePath: string) => {
+        if (firstRead) {
+          firstRead = false
+          signalArchiveRead()
+          await holdArchiveRead
+        }
+        return readFile(archivePath)
+      },
+    })
+
+    const staleRepair = store.finalizeMission(mission.id)
+    await archiveRead
+    await expect(store.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Correction while invalid archive validation is pending.',
+    })).resolves.toMatchObject({ status: 'finished' })
+    releaseArchiveRead()
+    await expect(staleRepair).rejects.toThrow(/finalization changed/iu)
+
+    const staleRecoveryEvents = (await store.listMissionEvents(mission.id)).filter((event) => {
+      if (event.event_type !== 'mission_archived') return false
+      return JSON.parse(event.details_json ?? '{}').archive_kind === 'finalized_recovery'
+    })
+    const staleRecoveryPath = staleRecoveryEvents.length === 0
+      ? null
+      : JSON.parse(staleRecoveryEvents[0]?.details_json ?? '{}').archive_path as string
+
+    const secondFinalization = await store.finalizeMission(mission.id)
+    await writeFile(secondFinalization.archive.archive_path, 'corrupt second finalization archive')
+    const repairedSecondEpoch = await store.finalizeMission(mission.id)
+
+    expect(repairedSecondEpoch.archive.archive_path).not.toBe(secondFinalization.archive.archive_path)
+    expect(repairedSecondEpoch.archive.archive_path).not.toBe(staleRecoveryPath)
+    expect(staleRecoveryEvents).toHaveLength(0)
   })
 
   it('creates a fresh archive when a mission is unlocked and finalized again [DON-232]', async () => {

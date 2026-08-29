@@ -96,6 +96,17 @@ function backfillLegacyEventProvenance(
       + length(CAST(mission_team_id AS BLOB))
       + length(CAST(traccar_device_id AS BLOB)) + length(CAST(change AS BLOB))
       + length(CAST(observed_at AS BLOB))`
+  const rawPage = db.prepare(`SELECT CAST(rowid AS TEXT) AS source_rowid
+    FROM ${definition.table}
+    WHERE (? IS NULL OR rowid > CAST(? AS INTEGER))
+      AND rowid <= CAST(? AS INTEGER)
+    ORDER BY rowid ASC LIMIT ?`).all(
+    pendingState.scanned_through_id,
+    pendingState.scanned_through_id,
+    pendingState.scan_target_id,
+    rowLimit,
+  )
+  const rawPageEnd = rawPage.at(-1)?.source_rowid ?? pendingState.scan_target_id
   const candidatePage = db.prepare(`SELECT CAST(rowid AS TEXT) AS source_rowid, mission_id,
       substr(CAST(id AS TEXT), 1, ${MAX_LEGACY_EVENT_ID_BYTES}) AS id_preview,
       length(CAST(id AS BLOB)) AS id_bytes,
@@ -104,31 +115,30 @@ function backfillLegacyEventProvenance(
     WHERE (? IS NULL OR rowid > CAST(? AS INTEGER))
       AND rowid <= CAST(? AS INTEGER)
       AND ${definition.incompletePredicate}
-    ORDER BY rowid ASC LIMIT ?`).all(
+    ORDER BY rowid ASC`).all(
     pendingState.scanned_through_id,
     pendingState.scanned_through_id,
-    pendingState.scan_target_id,
-    rowLimit,
+    rawPageEnd,
   )
   const batch = selectLegacyEventTurn(candidatePage)
   const nextCursor = batch.oversized?.source_rowid
     ?? batch.candidates.at(-1)?.source_rowid
-    ?? pendingState.scan_target_id
+    ?? rawPageEnd
   const transaction = db.transaction(() => {
     if (batch.candidates.length > 0) {
       const sequenceAssignment = definition.includesSequence
         ? 'sequence = COALESCE(sequence, rowid),'
         : ''
+      const selectedRowids = batch.candidates.map((candidate) => candidate.source_rowid)
+      const selectedPlaceholders = selectedRowids.map(() => '?').join(', ')
       db.prepare(`UPDATE ${definition.table} SET
           ${sequenceAssignment}
           recorded_at = COALESCE(recorded_at, ?),
           recording_completeness = COALESCE(recording_completeness, 'legacy_baseline')
-        WHERE (? IS NULL OR rowid > CAST(? AS INTEGER))
-          AND rowid <= CAST(? AS INTEGER)`).run(
+        WHERE rowid IN (${selectedPlaceholders})
+          AND ${definition.incompletePredicate}`).run(
         migrationTime,
-        pendingState.scanned_through_id,
-        pendingState.scanned_through_id,
-        nextCursor,
+        ...selectedRowids,
       )
     }
     if (batch.oversized !== null) {

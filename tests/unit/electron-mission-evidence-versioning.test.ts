@@ -156,6 +156,16 @@ const {
   }) => MissionEvidenceStore
 }
 
+const { backfillLegacyEventProvenance } = require(
+  '../../electron/mission-event-provenance-backfill.cjs',
+) as {
+  readonly backfillLegacyEventProvenance: (
+    db: unknown,
+    migrationTime: string,
+    maximumRows?: number,
+  ) => { readonly remaining: number }
+}
+
 const SAMPLE_MARKER = {
   type: 'clue',
   name: 'Boot print',
@@ -1137,6 +1147,76 @@ describe('mission evidence versioning [DON-277]', () => {
     await expect(store.createMissionArchive(mission.id)).resolves.toMatchObject({
       mission_id: mission.id,
     })
+  })
+
+  it('updates only the sparse incomplete event rows selected for one bounded turn [DON-278]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr5-event-sparse-turn-'))
+    const databaseFile = path.join(userDataPath, 'sparse-events.sqlite')
+    const db = openDatabase(databaseFile)
+    db.exec(`
+      CREATE TABLE mission_events (
+        id TEXT NOT NULL,
+        mission_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        details_json TEXT,
+        recorded_at TEXT,
+        recording_completeness TEXT
+      );
+      CREATE TABLE legacy_event_provenance_backfill_state (
+        table_name TEXT PRIMARY KEY,
+        scanned_through_id TEXT,
+        scan_target_id TEXT,
+        updated_at TEXT NOT NULL
+      );
+      WITH RECURSIVE complete_rows(sequence) AS (
+        SELECT 1
+        UNION ALL
+        SELECT sequence + 1 FROM complete_rows WHERE sequence < 10000
+      )
+      INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json, recorded_at,
+        recording_completeness
+      ) SELECT printf('complete-%05d', sequence), 'mission-complete', 'legacy_event',
+        '2026-08-20T10:00:00.000Z', '{}', '2026-08-20T10:00:00.000Z',
+        'legacy_baseline' FROM complete_rows;
+      INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json, recorded_at,
+        recording_completeness
+      ) VALUES ('incomplete-final', 'mission-incomplete', 'legacy_event',
+        '2026-08-20T10:00:00.000Z', '{}', NULL, NULL);
+      INSERT INTO legacy_event_provenance_backfill_state (
+        table_name, scanned_through_id, scan_target_id, updated_at
+      ) VALUES ('mission_events', NULL, '10001', '2026-08-20T10:00:00.000Z');
+    `)
+    const changesBefore = Number(db.prepare(
+      'SELECT total_changes() AS count',
+    ).get()?.count ?? 0)
+
+    expect(backfillLegacyEventProvenance(
+      db,
+      '2026-08-29T02:00:00.000Z',
+    )).toMatchObject({ remaining: 1 })
+
+    const changesAfter = Number(db.prepare(
+      'SELECT total_changes() AS count',
+    ).get()?.count ?? 0)
+    expect(changesAfter - changesBefore).toBe(1)
+    expect(db.prepare(`SELECT scanned_through_id, scan_target_id
+      FROM legacy_event_provenance_backfill_state
+      WHERE table_name = 'mission_events'`).get()).toMatchObject({
+      scanned_through_id: '1000',
+      scan_target_id: '10001',
+    })
+    for (let turn = 0; turn < 10; turn += 1) {
+      backfillLegacyEventProvenance(db, '2026-08-29T02:00:00.000Z')
+    }
+    expect(db.prepare(`SELECT recorded_at, recording_completeness
+      FROM mission_events WHERE id = 'incomplete-final'`).get()).toMatchObject({
+      recorded_at: '2026-08-29T02:00:00.000Z',
+      recording_completeness: 'legacy_baseline',
+    })
+    db.close()
   })
 
   it('scopes legacy event quarantine custody fences to the affected mission [DON-278]', async () => {

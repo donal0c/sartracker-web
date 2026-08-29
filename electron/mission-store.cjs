@@ -3612,6 +3612,12 @@ async function createMissionArchive(
     if (mission.status !== 'finished' && mission.status !== 'finalized') {
       throw new Error('Only finished or finalized missions can be archived.')
     }
+    if (archiveEventContext.archive_kind === 'finalized_recovery') {
+      if (!Number.isSafeInteger(archiveEventContext.finalization_epoch)) {
+        throw new Error('Finalized archive recovery epoch is invalid; retry finalization.')
+      }
+      assertMissionUnlockEpoch(db, missionId, archiveEventContext.finalization_epoch)
+    }
     assertMissionFinalizationNotInProgress(db, missionId)
     assertLegacyMissionObjectBackfillSettled(db)
     assertLegacyEventProvenanceReady(db, missionId)
@@ -3621,6 +3627,9 @@ async function createMissionArchive(
     insertEvent(db, missionId, 'mission_archive_requested', requestedAt, {
       resulting_status: mission.status,
       archive_kind: archiveEventContext.archive_kind ?? 'direct',
+      ...(archiveEventContext.finalization_epoch === undefined
+        ? {}
+        : { finalization_epoch: archiveEventContext.finalization_epoch }),
       ...(archiveEventContext.replaces_archive_path === undefined
         ? {}
         : { replaces_archive_path: archiveEventContext.replaces_archive_path }),
@@ -3645,6 +3654,9 @@ async function createMissionArchive(
         appendEvent(db, missionId, 'mission_archive_failed', {
           resulting_status: getMission(db, missionId).status,
           archive_kind: archiveEventContext.archive_kind ?? 'direct',
+          ...(archiveEventContext.finalization_epoch === undefined
+            ? {}
+            : { finalization_epoch: archiveEventContext.finalization_epoch }),
           ...(archiveEventContext.replaces_archive_path === undefined
             ? {}
             : { replaces_archive_path: archiveEventContext.replaces_archive_path }),
@@ -3760,6 +3772,9 @@ async function buildMissionArchive(
         appendEvent(db, missionId, 'mission_archived', {
           archive_path: finalPath,
           archive_kind: archiveEventContext.archive_kind ?? 'direct',
+          ...(archiveEventContext.finalization_epoch === undefined
+            ? {}
+            : { finalization_epoch: archiveEventContext.finalization_epoch }),
           ...(archiveEventContext.replaces_archive_path === undefined
             ? {}
             : { replaces_archive_path: archiveEventContext.replaces_archive_path }),
@@ -3865,6 +3880,7 @@ async function finalizeMission(
         rejectedArchivePath ??= archivePath
       },
       true,
+      finalizedEpoch,
     )
     if (existingArchive === null) {
       existingArchive = await createMissionArchive(
@@ -3876,6 +3892,7 @@ async function finalizeMission(
         archiveFaultInjection,
         {
           archive_kind: 'finalized_recovery',
+          finalization_epoch: finalizedEpoch,
           ...(rejectedArchivePath === null
             ? {}
             : { replaces_archive_path: rejectedArchivePath }),
@@ -3970,6 +3987,7 @@ async function readRecoverableFinalizeArchive(
   readArchiveFile = fs.readFile,
   onRejectedArchive = () => undefined,
   includeDirectArchives = false,
+  expectedFinalizedEpoch = null,
 ) {
   const latestUnlock = db.prepare(
     `SELECT rowid AS event_rowid, timestamp FROM mission_events
@@ -3980,12 +3998,12 @@ async function readRecoverableFinalizeArchive(
 
   const rows = includeDirectArchives
     ? db.prepare(
-      `SELECT rowid AS event_rowid, timestamp, details_json FROM mission_events
+      `SELECT rowid AS event_rowid, event_type, timestamp, details_json FROM mission_events
         WHERE mission_id = ? AND event_type IN (?, ?)
         ORDER BY timestamp DESC, rowid DESC`,
     ).all(missionId, 'mission_archive_succeeded', 'mission_archived')
     : db.prepare(
-      `SELECT rowid AS event_rowid, timestamp, details_json FROM mission_events
+      `SELECT rowid AS event_rowid, event_type, timestamp, details_json FROM mission_events
         WHERE mission_id = ? AND event_type = ?
         ORDER BY timestamp DESC, rowid DESC`,
     ).all(missionId, 'mission_archive_succeeded')
@@ -3995,6 +4013,12 @@ async function readRecoverableFinalizeArchive(
       continue
     }
     const details = readEventDetails(row.details_json)
+    if (row.event_type === 'mission_archived' && (
+      details.archive_kind !== 'finalized_recovery'
+      || details.finalization_epoch !== expectedFinalizedEpoch
+    )) {
+      continue
+    }
     const archivePath = typeof details.archive_path === 'string' ? details.archive_path : ''
     if (archivePath === '') {
       continue
@@ -7756,18 +7780,24 @@ function assertMissionFinalizationNotInProgress(db, missionId) {
 
 /** Recovers a direct-archive crash without weakening a true finalization fence. */
 function recoverInterruptedDirectArchiveFences(db, migrationTime) {
-  const interrupted = db.prepare(`SELECT fence.mission_id, fence.requested_at
+  const interrupted = db.prepare(`SELECT fence.mission_id, fence.requested_at,
+      event.details_json
     FROM mission_finalization_fences AS fence
-    WHERE EXISTS (
-      SELECT 1 FROM mission_events AS event
-      WHERE event.mission_id = fence.mission_id
-        AND event.event_type = 'mission_archive_requested'
-        AND event.timestamp = fence.requested_at
-    )`).all()
+    INNER JOIN mission_events AS event
+      ON event.mission_id = fence.mission_id
+      AND event.event_type = 'mission_archive_requested'
+      AND event.timestamp = fence.requested_at`).all()
   for (const fence of interrupted) {
+    const requestedDetails = readEventDetails(fence.details_json)
     insertEvent(db, fence.mission_id, 'mission_archive_failed', migrationTime, {
       resulting_status: getMission(db, fence.mission_id).status,
-      archive_kind: 'direct',
+      archive_kind: requestedDetails.archive_kind ?? 'direct',
+      ...(requestedDetails.finalization_epoch === undefined
+        ? {}
+        : { finalization_epoch: requestedDetails.finalization_epoch }),
+      ...(requestedDetails.replaces_archive_path === undefined
+        ? {}
+        : { replaces_archive_path: requestedDetails.replaces_archive_path }),
       error: 'SAR Tracker restarted before the direct mission archive could be sealed; retry archive creation.',
     })
     db.prepare(`DELETE FROM mission_finalization_fences
