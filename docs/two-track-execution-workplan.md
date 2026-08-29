@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) remains one review unit on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`. Exact head `8bc2b764` was clean in persistence and concurrency but rejected by broad review: a page read begun inside the refresh window could overwrite newly refreshed Search Operations evidence. Executable fix `2dc3c166` blocks page reads during Review refresh, binds every result to the Review refresh token, and visibly disables search/page/write controls while refreshing. The strict race is red-green; full unit 2,515/2,515, backend, Chromium, visual review, lint/build/diff, local package and soak are green. Exact-head Linux and all four independent exact-head reviews on one final code-and-documentation head remain the task-owned completion gate. PR-6 archive lifecycle follows only after Donal accepts PR-5.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) remains one review unit on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`. Exact candidate `467e7b39` is locally and Linux green; persistence/completeness and concurrency/finalization are clean on the unchanged `c1ad54b8` source tree, while renderer/input containment and the required fresh broad review are clean on exact `467e7b39`. No P1/P2 remains. Bind the completed review and Linux evidence in one documentation-only descendant, obtain exact-diff/tree attestations, then leave the unmerged PR for Donal's approval gate. PR-6 archive lifecycle follows only after Donal accepts PR-5.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -402,6 +402,21 @@ lint/build/diff and the unsigned packaged two-launch 8,664-position soak are
 green. The complete 168/168 browser and uncached 4/4 visual evidence remain
 applicable from renderer-identical parent `7998755d`; exact Linux and fresh
 broad plus renderer rechecks are still required.
+
+PR-5 accepted review completion candidate (2026-08-29): exact pushed head
+`467e7b3990b3d78256f28c8e8336ec1261dbf425` (tree
+`176db20cb05c8de2972d31d075dbec758a0b8934`) passed Linux run
+`33240558105`, including 296 files / 2,530 tests, the normal 960k Replay
+qualification, Linux AppImage and `.deb`, native x64 SQLite inspection, Mesa
+llvmpipe, packaged soak and AppImage launch/close. Persistence/completeness and
+concurrency/finalization remain clean on byte-identical exact `c1ad54b8` code;
+Cicero's affected renderer/input-containment recheck and Katherine Johnson's
+fresh broad life-safety/end-to-end review are clean on exact `467e7b39`. Both
+independently proved the accepted 64 MiB request-ID finding is fixed before
+IPC, with zero invalid invokes and unchanged valid channels. The only remaining
+closeout action is exact-diff/tree attestation of the final documentation-only
+binding descendant. PR open/review-ready remains intermediate until that
+attestation is clean; Donal retains approval/merge and no release is authorized.
 
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base

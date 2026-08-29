@@ -2388,6 +2388,67 @@ affected renderer/input-containment recheck. The clean persistence and
 concurrency reviews remain unaffected. PR opened/review-ready remains
 intermediate; no merge or release is authorized.
 
+## Accepted four-review wave and Linux candidate (2026-08-29)
+
+Exact pushed candidate `467e7b3990b3d78256f28c8e8336ec1261dbf425`
+(tree `176db20cb05c8de2972d31d075dbec758a0b8934`) passed the accepted
+risk-focused review topology:
+
+- persistence/completeness: Codex reviewer task
+  `/root/pr5_persistence_final`, CLEAN on exact `c1ad54b8`; the later source
+  delta does not touch its persistence, custody, archive or completeness tree;
+- concurrency/finalization: Confucius, task
+  `/root/pr5_concurrency_7821`, CLEAN on exact `c1ad54b8`; the later source
+  delta does not touch its lifecycle/finalization state machine;
+- renderer/input containment: Cicero, task `/root/pr5_renderer_2108`, CLEAN on
+  exact `467e7b39`; the previous live-draft and preload request-ID P2 findings
+  are independently closed; and
+- broad life-safety/end-to-end: Katherine Johnson, task
+  `/root/pr5_concurrency_7821/broad_467e`, CLEAN on exact `467e7b39` with no
+  actionable P1/P2.
+
+The affected reviewers executed the sandbox-compatible production preload.
+Cicero rejected 18 invalid identities across five operations (90/90) before
+IPC; Katherine independently rejected five representative identities across
+all five operations (25/25), plus four hostile-query ordering attacks, with
+zero invokes. Valid punctuation and boundary lengths retained every exact read
+and cancel channel. A 64 MiB identity short-circuited on the 100-character
+bound before regex, query projection or structured-clone work.
+
+Exact-head Linux run
+[`33240558105`](https://github.com/donal0c/sartracker-web/actions/runs/33240558105)
+passed on Ubuntu 22.04 x64:
+
+- lint, 296 unit files / 2,530 tests, production build and bundle budgets;
+- the 960,000-position normal qualification (fixture SHA-256
+  `908220e32dc7bfe2bd85f21f17d149cab482c119a850c26eead6c07f03660287`):
+  50,000-point partially dated GPX import, 38.07 ms maximum current write
+  during retention, 1,012,890 eligible Replay track points, 249.22 ms initial
+  seek, 172.61 ms late-page seek, 1.67/2.01 ms live reads during import/Replay,
+  56.89 ms maximum event-loop gap and exact first-page equality after restart;
+- Linux AppImage SHA-256
+  `134409748fe0be9cc8a7aea048fd99e5ad1b2c1bd1df046f3f3ab947674fe423`
+  and `.deb` SHA-256
+  `e2598f83a39950cbee7718cc4086148a51e21fcb1609249dfc0903ac99cde3d8`;
+  packaged `better_sqlite3.node` is x86-64 ELF;
+- Mesa llvmpipe attestation and a 45.955-second two-launch packaged soak:
+  6/6 batches, exact 8,664/8,664 positions with no missing source identities,
+  digest `76367f463b2a7a07121988ef15c5f545fec45d2ace7973ee79de5c66f26ac18c`,
+  one restart checkpoint, integrity `ok`, zero redundant slope, zero renderer
+  crashes, four healthy interactions and 39.482 ms maximum main round trip; and
+- AppImage window/content proof (grayscale mean `0.484819`) and graceful close.
+
+The workflow checks out GitHub's synthetic PR merge commit; its recorded merge
+commit was `cbaacdc2`, whose second parent was the exact candidate above. The
+green result is therefore exact candidate-versus-base integration proof, not a
+different source head. Artifact and validation-evidence uploads are retained
+under that run.
+
+No P1/P2 remains on this candidate. The final documentation-only binding
+descendant must receive exact-diff/tree attestation from all four reviewers;
+that step must not be described as a new code review or used to weaken their
+accepted risk-focused verdicts.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
