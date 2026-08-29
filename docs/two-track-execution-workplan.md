@@ -295,6 +295,24 @@ and exact 8,664-position packaged soak are green. Exact-head Linux and all four
 reviews restart on the same bound candidate. PR opened or review-ready remains
 intermediate; do not merge or release.
 
+PR-5 retained-snapshot and attachment-history correction (2026-08-29): exact
+head `09475762` was broad- and concurrency-clean, but persistence/completeness
+and renderer/input-containment each rejected it with one P2; no verdict on that
+invalid head counts. Central retrace accepted that Electron same-name ingest
+overwrote bytes still named by immutable marker versions, Tauri deleted
+superseded/deleted managed bytes, and a whole-Review failure hid the retained
+snapshot even after page loading correctly recovered. Executable replacement
+`b2d7cbe9` uses unique retained Electron attachment identities, retains Tauri
+version-linked files, renders retained Review evidence with an explicit stale
+warning, leaves bounded Search/First/Next available and fail-closes evidence
+entry until Refresh succeeds. Red-first regressions are green. Focused proof is
+20 files / 202 tests; full unit 296/2,523; backend 57/one intentional ignore;
+Chromium 167/167; visual Playwright 2/2 and fresh uncached critical review 4/4;
+lint/build/diff, unsigned macOS packaging and the exact 8,664-position packaged
+soak are green. Because the accepted corrections span renderer and persistence,
+exact-head Linux and all four reviews restart on the same bound candidate. PR
+opened or review-ready remains intermediate; do not merge or release.
+
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is

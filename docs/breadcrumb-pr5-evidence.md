@@ -2025,6 +2025,66 @@ renderer/runtime concurrency state, exact-head Linux and all four independent
 reviews restart on one bound code-and-documentation candidate. PR
 opened/review-ready remains intermediate; no merge or release is authorized.
 
+## `09475762` focused rejections and `b2d7cbe9` remediation
+
+Broad reviewer Copernicus (`/root/pr5_broad_a584`) and
+concurrency/finalization reviewer Confucius (`/root/pr5_concurrency_7821`)
+were clean on exact head `09475762fc4c4b72a0b85db95b022735742c97fe`,
+tree `6c4bfdb5584e3fea915f27cbbc4dcd26d933ce9b`. Persistence/completeness
+reviewer `/root/pr5_persistence_final` and renderer/input-containment reviewer
+Cicero (`/root/pr5_renderer_2108`) each rejected that head with one P2. The
+Linux run `33235033620` was canceled after the findings were accepted. No
+review or CI verdict on this invalid head counts toward completion.
+
+Central source retrace reproduced both findings red-first:
+
+- Electron attachment ingest used only the sanitized visible name, so a second
+  same-name file overwrote bytes still referenced by an immutable marker
+  version. Tauri ingest used unique names but marker replacement or deletion
+  removed managed files still referenced by retained versions.
+- A failed whole-Review load or refresh correctly returned the runtime to idle
+  with its snapshot and recovered Search page metadata, but the workspace
+  rendered tabs only when `error === null`, hiding retained evidence and its
+  now-usable Search, First and Next controls.
+
+Executable remediation `b2d7cbe9abeb` gives every Electron attachment a UUID-
+prefixed retained path, keeps managed Tauri attachment bytes when current marker
+state changes, and renders retained Review evidence beneath an explicit amber
+degraded-state warning. Bounded Search, First and Next remain enabled once the
+Review read is idle; assignment and pass entry fail closed until Refresh
+succeeds. The actual integrated workspace test asserts that final state, the
+Electron collision test proves both same-name byte sets survive, and the Rust
+persistence regression proves replacement and deletion retain both version-
+linked artifacts.
+
+Candidate-tree verification is green:
+
+- focused evidence/replay/persistence: 20 files / 202 tests;
+- full serialized unit: 296 files / 2,523 tests;
+- backend: 57 passed / one intentional real-keychain ignore;
+- complete Chromium: 167/167;
+- targeted visual Playwright: 2/2 and four registered critical captures;
+- fresh uncached visual review: 4/4, report
+  `visual-review-2026-08-29T05-23-02Z.json`, SHA-256
+  `ebd91268b2326b126013c48d1adc6c243b18cccee0368a2f3a4254cb4735e913`;
+- ESLint, production TypeScript/Vite build, bundle budgets, Node syntax and
+  diff checks; and
+- unsigned macOS arm64 package with identity `sha.b2d7cbe9abeb`.
+
+The deterministic packaged soak passed in 13.134 seconds: two launches, 6/6
+batches, exact 8,664/8,664 positions and source digest, one restart, SQLite
+integrity `ok`, zero redundant-event slope, zero renderer crashes, four healthy
+operator interactions, and 4.109 ms maximum main-process round trip. Packaged
+executable SHA-256 is
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+soak report SHA-256 is
+`c94e9bd4d38e8a56be4715f65ad38205ec9311e38a178a3bbca00ba3ce8bfc15`.
+
+Because these accepted corrections span renderer and persistence contracts,
+exact-head Linux and all four independent reviews restart on the same bound
+code-and-documentation candidate. PR opened/review-ready remains intermediate;
+no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
