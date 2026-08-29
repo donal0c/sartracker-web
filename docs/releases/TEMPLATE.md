@@ -268,6 +268,8 @@ which must not enter field/real-incident use or count toward WAR-13B.
 - [ ] Zero open confirmed release-blocking P1/P2 findings under the protocol's
       field-admission definition, and zero confirmed persisted-evidence
       corruption, loss, or silent mis-scoping defects
+- [ ] All five WAR-01 absolute blockers are closed under their recorded exit
+      evidence; none is waived by severity, gap label, or residual acceptance
 - [ ] The `DON-254` decision owner has frozen and linked the candidate-specific
       residual-risk register; the WAR-13B scorecard is predeclared, and neither
       is represented as automatic release promotion

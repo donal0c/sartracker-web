@@ -74,10 +74,13 @@ after all of these are true:
 1. The `DON-248`, `DON-252`, and `DON-253` archive lifecycle is implemented and
    qualified.
 2. BCP-17 and final exact-candidate qualification under `DON-254` have passed.
-3. There are no open confirmed release-blocking P1/P2 findings; `DON-247` and
+3. All five WAR-01 absolute blockers are closed: delayed/hidden current
+   position, silent evidence loss, false `Complete`/`100%`, corrupted evidence,
+   and unbounded mission-size work on Electron main.
+4. There are no open confirmed release-blocking P1/P2 findings; `DON-247` and
    every known candidate risk have a recorded disposition.
-4. Deliberate guarded-publication approval under `DON-255` is recorded.
-5. Guarded publication has completed, and the session records the exact release
+5. Deliberate guarded-publication approval under `DON-255` is recorded.
+6. Guarded publication has completed, and the session records the exact release
    identity and published state.
 
 Before that gate is complete, a build may be used only with synthetic, replayed,
@@ -93,6 +96,10 @@ An unscored issue is not silently treated as P1/P2, but it must be assigned an
 owner and disposition before field admission. The `DON-254` decision owner
 records this determination and the review/Linear/hazard sources checked in the
 candidate-specific residual-risk register.
+
+The five WAR-01 absolute blockers are non-waivable regardless of a hazard row's
+severity or gap label. A matching risk is `open-blocking` until its exit evidence
+closes it; neither `open-shadow-only` nor `accepted-residual` is permitted.
 
 ## 3. Named session roles
 
@@ -290,6 +297,8 @@ The session lead reads each item aloud or confirms it with the named owner.
 - [ ] There are zero open confirmed release-blocking P1/P2 findings under the
       field-admission definition above, and zero confirmed defects capable of
       corrupting, losing, or silently mis-scoping persisted mission evidence.
+- [ ] All five WAR-01 absolute blockers are closed under their recorded exit
+      evidence, independent of individual severity or gap labels.
 - [ ] Current positions, time/offset, mission phase, tracking source, layers,
       and map readiness agree with the primary source at the opening checkpoint.
 - [ ] Sufficient local storage is available and the app has no unexplained
@@ -355,6 +364,13 @@ An incident bundle is not the default answer to wording or layout feedback. A
 raw mission database or profile is never a routine attachment. When it may be
 needed for an E2 investigation, preserve it unchanged and obtain a scoped
 privacy/custody decision before copying or sharing it.
+
+Before copying or sharing any support report, incident bundle/export,
+screenshot, or video, the evidence custodian must preview it and redact every
+credential, precise coordinate/location, casualty detail, private-map detail,
+user/profile path, and host identifier that is not essential to the
+investigation. If safe human review is unavailable, preserve the evidence in
+place and do not copy or share it.
 
 ## 9. Field-intake decision tree
 
@@ -464,6 +480,10 @@ definition, and every confirmed defect capable of corrupting, losing, or
 silently mis-scoping persisted mission evidence, is `open-blocking`. It cannot
 be changed to `open-shadow-only` or `accepted-residual`; the release and
 pre-session gates require it to be absent.
+
+The same non-waivable rule applies to each of the five WAR-01 absolute blockers,
+regardless of its hazard-row severity or gap label. It remains `open-blocking`
+until its recorded exit evidence closes it.
 
 ## 11. WAR-13B exit scorecard declaration
 
