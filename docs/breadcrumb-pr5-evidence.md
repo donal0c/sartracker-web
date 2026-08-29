@@ -1461,11 +1461,45 @@ drawing evidence. On the corrected executable tree:
   event-loop maximum 26.56 ms; Replay seek 61.35 ms; late page 47.34 ms;
   restart open 2.78 ms and restart seek 50.13 ms with exact equality.
 
-The documentation-bound descendant still requires a rebuilt unsigned macOS
-package, isolated exact-head Linux qualification and four clean restarted
-reviews. Existing visual screenshots remain standing because the only visible
-UI change is non-rendered input-length enforcement. PR opened/review-ready is
-intermediate; no merge or release is authorized.
+Fresh packaged proof is now complete for this executable tree. The rebuilt
+unsigned macOS arm64 package passed the two-launch CI tracking soak: 6/6
+batches, exact 8,664/8,664 positions, SQLite integrity `ok`, one restart
+checkpoint, zero redundant-event slope, zero renderer crashes and four healthy
+operator interactions; maximum main-process round trip was 4.64 ms. The report
+SHA-256 is
+`1cf087628f34dbe96ff20e21d65a33b759b1128bb20316e8c9ce457321ff6310`.
+
+Branch-dispatch Linux workflow
+[`33222361222`](https://github.com/donal0c/sartracker-web/actions/runs/33222361222)
+then checked exact head
+`1909eac0203f71084aefcc1bdbc84728e3fe8d6a` rather than a synthetic pull-request
+merge ref and passed every step: lint, 295 files / 2,492 deterministic tests,
+production build and bundle budgets, Linux x64 AppImage and `.deb`, native ELF
+x86-64 `better_sqlite3.node`, llvmpipe, packaged soak and a real AppImage
+launch/graceful-close smoke. Its 960,000-position/765,747,200-byte fixture kept
+the deterministic digest
+`d4e48eb48d962781475f6864f6190a23f8da163f4d698b03c8365e51b96840db`:
+50,000-point import dispatched in 4.93 ms and completed in 12,317.49 ms;
+3,894 concurrent current writes had 38.29 ms maximum / 1.99 ms p95; event-loop
+maximum was 44.44 ms; Replay seek was 254.69 ms, late-page seek 193.18 ms,
+restart open 7.23 ms and restart seek 244.04 ms with exact first-page equality.
+The Linux package soak used two launches and retained exact 8,664/8,664
+positions, SQLite integrity `ok`, one restart checkpoint, zero redundant-event
+slope, zero renderer crashes and four healthy interactions; maximum
+main-process round trip was 26.87 ms. AppImage SHA-256 was
+`6a25eb71617625c883cd6d08747be39ac6410a5c06419a18a7d2611aa621690f` and
+`.deb` SHA-256 was
+`f575983292f47fd1d203b7988acdb95361374d3d5fa431969ea4d54fa66226dc`.
+Qualification and soak report SHA-256 values were
+`007add94b9d1365e561877651581eeb54ac3efae6919d2254239e5de2c2b42b6` and
+`761a8889843203e338bff8eba4488f40f302ee62e9ab8ada4149bccc320aa911`.
+
+Existing 58/58 visual Playwright and fresh uncached 69/69 screenshot-review
+evidence remains standing because the only visible UI correction is
+non-rendered input-length enforcement. The final code-and-documentation head
+now enters the restarted broad, persistence/completeness,
+concurrency/finalization and renderer/input-containment reviews. PR
+opened/review-ready is intermediate; no merge or release is authorized.
 
 ## Proof limits
 
