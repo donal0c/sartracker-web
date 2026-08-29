@@ -98,7 +98,12 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
 const Database = require('better-sqlite3')
 
 type ElectronMissionStore = {
+  readonly prepareClose: () => Promise<void>
   readonly close: () => void
+  readonly runMarkerAttachmentIngest: (
+    missionId: string,
+    writeAttachment: () => Promise<string>,
+  ) => Promise<string>
   readonly info: () => Promise<{
     readonly schema_version: number
     readonly synchronous_mode: number
@@ -397,6 +402,7 @@ type ElectronMissionStore = {
     readonly irish_grid_n: number
     readonly display_order: number
     readonly label_size?: number
+    readonly attachment_path?: string
   }) => Promise<{ readonly id: string }>
   readonly deleteMarker: (markerId: string) => Promise<boolean>
   readonly listMarkers: (missionId: string) => Promise<readonly { readonly id: string; readonly label_size?: number | null }[]>
@@ -518,6 +524,35 @@ describe('electron mission store', () => {
     })
     expect(activeMission).toMatchObject({ id: mission.id, status: 'paused' })
     await expect(store.listMissions()).resolves.toHaveLength(1)
+  })
+
+  it('joins active attachment custody before allowing mission-store shutdown [DON-277]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Attachment shutdown fence' })
+    let releaseWrite = () => undefined
+    let signalWriteStarted = () => undefined
+    const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+    const holdWrite = new Promise<void>((resolve) => { releaseWrite = resolve })
+    const attachment = store.runMarkerAttachmentIngest(mission.id, async () => {
+      signalWriteStarted()
+      await holdWrite
+      return path.join(userDataPath!, 'missions', mission.id, 'attachments', 'joined.txt')
+    })
+    await writeStarted
+
+    expect(() => store?.close()).toThrow(/attachment custody is active/iu)
+    const prepareClose = store.prepareClose()
+    let prepared = false
+    void prepareClose.then(() => { prepared = true })
+    await Promise.resolve()
+    expect(prepared).toBe(false)
+
+    releaseWrite()
+    await expect(attachment).resolves.toMatch(/joined\.txt$/u)
+    await expect(prepareClose).resolves.toBeUndefined()
+    const closingStore = store
+    store = null
+    expect(() => closingStore.close()).not.toThrow()
   })
 
   it('uses FULL synchronous mode for the WAL database so committed mission writes are durable [DON-232]', async () => {
@@ -3419,6 +3454,49 @@ describe('electron mission store', () => {
     const archivedMission = JSON.parse(entries.get('mission.json')!.toString('utf8'))
     expect(archivedMission.id).toBe(mission.id)
     expect(entries.get('mission-store.sqlite')!.length).toBeGreaterThan(0)
+  })
+
+  it('archives every attachment referenced by superseded and retired marker versions [DON-277]', async () => {
+    const { readZipArchive } = require('../../electron/zip-archive.cjs') as {
+      readonly readZipArchive: (buffer: Buffer) => ReadonlyMap<string, Buffer>
+    }
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Versioned attachment archive' })
+    const attachmentDirectory = path.join(userDataPath!, 'missions', mission.id, 'attachments')
+    const originalPath = path.join(attachmentDirectory, 'original', 'evidence.txt')
+    const replacementPath = path.join(attachmentDirectory, 'replacement', 'evidence.txt')
+    await (await import('node:fs/promises')).mkdir(path.dirname(originalPath), { recursive: true })
+    await (await import('node:fs/promises')).mkdir(path.dirname(replacementPath), { recursive: true })
+    await (await import('node:fs/promises')).writeFile(originalPath, 'original-bytes')
+    await (await import('node:fs/promises')).writeFile(replacementPath, 'replacement-bytes')
+    const marker = await store.upsertMarker({
+      mission_id: mission.id,
+      ...SAMPLE_MARKER,
+      attachment_path: originalPath,
+    })
+    await store.upsertMarker({
+      id: marker.id,
+      mission_id: mission.id,
+      ...SAMPLE_MARKER,
+      attachment_path: replacementPath,
+    })
+    await store.deleteMarker(marker.id)
+    await store.finishMission(mission.id)
+
+    const archive = await store.createMissionArchive(mission.id)
+    const entries = readZipArchive(
+      await (await import('node:fs/promises')).readFile(archive.archive_path),
+    )
+
+    const archivedAttachments = [...entries.entries()]
+      .filter(([name]) => name.startsWith('attachments/'))
+    expect(archivedAttachments).toHaveLength(2)
+    expect(archivedAttachments.map(([name]) => name)).toEqual([
+      expect.stringMatching(/^attachments\/[0-9a-f]{12}-evidence\.txt$/u),
+      expect.stringMatching(/^attachments\/[0-9a-f]{12}-evidence\.txt$/u),
+    ])
+    expect(new Set(archivedAttachments.map(([, bytes]) => bytes.toString('utf8'))))
+      .toEqual(new Set(['original-bytes', 'replacement-bytes']))
   })
 
   it('fences finished-mission bookkeeping while the final archive snapshot is being sealed [DON-278]', async () => {

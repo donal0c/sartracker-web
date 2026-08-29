@@ -1401,7 +1401,10 @@
             Desktop attachments are stored under a unique retained file identity. Replacing an
             attachment or deleting the current marker does not reuse or erase the bytes referenced by an
             earlier immutable marker revision. Two files with the same visible name remain separate
-            evidence artifacts.
+            evidence artifacts. Finish waits for any attachment custody write already in progress while
+            current-position writes remain independent. Finalized and direct mission archives include
+            every attachment referenced by current, superseded, or retired marker evidence; archive
+            creation fails visibly if any referenced file is missing.
           </p>
           <p>
             To place a marker from a TM65 Irish Grid reference instead of a map click, open the

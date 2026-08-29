@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeSet, HashMap},
     fs,
     fs::File,
     io::Write,
@@ -16,6 +17,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     ConnectOptions, Executor, FromRow, Row, Sqlite, SqlitePool,
 };
+use tauri::async_runtime::Mutex as AsyncMutex;
 use tauri::{AppHandle, Manager, Runtime, State};
 use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
@@ -32,6 +34,7 @@ pub struct MissionStore {
     pool: SqlitePool,
     database_path: PathBuf,
     backup_path: PathBuf,
+    attachment_lifecycle_lock: Arc<AsyncMutex<()>>,
     #[cfg(test)]
     gpx_upsert_start_barrier: Option<Arc<tokio::sync::Barrier>>,
     #[cfg(test)]
@@ -476,6 +479,7 @@ impl MissionStore {
             pool,
             database_path,
             backup_path,
+            attachment_lifecycle_lock: Arc::new(AsyncMutex::new(())),
             #[cfg(test)]
             gpx_upsert_start_barrier: None,
             #[cfg(test)]
@@ -913,7 +917,10 @@ impl MissionStore {
             .write_all(&snapshot_bytes)
             .map_err(|error| format!("Failed to write snapshot entry: {error}"))?;
 
-        for attachment_path in self.list_marker_attachment_paths(mission_id).await? {
+        let attachment_paths = self.list_marker_attachment_paths(mission_id).await?;
+        for (attachment_path, attachment_name) in
+            collision_safe_attachment_archive_names(&attachment_paths)
+        {
             let attachment_file_path = PathBuf::from(&attachment_path);
             if !attachment_file_path.exists() {
                 return Err(format!(
@@ -922,10 +929,6 @@ impl MissionStore {
                 ));
             }
 
-            let attachment_name = attachment_file_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .ok_or_else(|| "Attachment file name is invalid.".to_string())?;
             let attachment_bytes = fs::read(&attachment_file_path).map_err(|error| {
                 format!("Failed to read marker attachment for archive: {error}")
             })?;
@@ -1714,6 +1717,7 @@ impl MissionStore {
         input: IngestMarkerAttachmentInput,
         settings: &SettingsStoreState,
     ) -> Result<String, String> {
+        let _attachment_lifecycle_guard = self.attachment_lifecycle_lock.lock().await;
         self.ensure_mission_writable_for_data(&input.mission_id)
             .await?;
         self.get_mission(input.mission_id.clone()).await?;
@@ -1744,6 +1748,15 @@ impl MissionStore {
             write_bytes_atomically(&backup_path, &bytes)?;
         }
 
+        self.append_event(
+            &input.mission_id,
+            "marker_attachment_ingested",
+            serde_json::json!({
+                "attachment_path": primary_path.to_string_lossy(),
+            }),
+        )
+        .await?;
+
         Ok(primary_path.to_string_lossy().to_string())
     }
 
@@ -1771,6 +1784,7 @@ impl MissionStore {
             "marker_id": marker.id,
             "marker_type": marker.marker_type,
             "name": marker.name,
+            "attachment_path": marker.attachment_path,
         });
         Self::insert_event(
             &mut *tx,
@@ -1789,7 +1803,7 @@ impl MissionStore {
     }
 
     async fn list_marker_attachment_paths(&self, mission_id: &str) -> Result<Vec<String>, String> {
-        sqlx::query_scalar::<_, String>(
+        let mut attachment_paths = sqlx::query_scalar::<_, String>(
             r#"
             SELECT attachment_path
             FROM markers
@@ -1800,7 +1814,39 @@ impl MissionStore {
         .bind(mission_id)
         .fetch_all(&self.pool)
         .await
-        .map_err(|error| format!("Failed to list marker attachment paths: {error}"))
+        .map_err(|error| format!("Failed to list marker attachment paths: {error}"))?;
+
+        let custody_events = sqlx::query_scalar::<_, Option<String>>(
+            r#"
+            SELECT details_json
+            FROM mission_events
+            WHERE mission_id = ? AND event_type IN (
+              'marker_created', 'marker_updated', 'marker_deleted', 'marker_attachment_ingested'
+            )
+            ORDER BY timestamp ASC, rowid ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list attachment custody events: {error}"))?;
+        for details_json in custody_events.into_iter().flatten() {
+            let details: serde_json::Value = serde_json::from_str(&details_json)
+                .map_err(|error| format!("Attachment custody event is corrupt: {error}"))?;
+            if let Some(attachment_path) = details
+                .get("attachment_path")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+            {
+                attachment_paths.push(attachment_path.to_string());
+            }
+        }
+
+        Ok(attachment_paths
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect())
     }
 
     fn resolve_attachment_destination(
@@ -2732,6 +2778,7 @@ impl MissionStore {
     }
 
     pub async fn finish_mission(&self, mission_id: String) -> Result<Mission, String> {
+        let _attachment_lifecycle_guard = self.attachment_lifecycle_lock.lock().await;
         let mission = self.get_mission(mission_id.clone()).await?;
         if mission.status == MissionStatus::Finished || mission.status == MissionStatus::Finalized {
             return Err("Mission is already finished.".to_string());
@@ -3166,6 +3213,36 @@ fn sanitize_attachment_file_name(file_name: &str) -> Result<String, String> {
     }
 
     Ok(sanitized)
+}
+
+fn collision_safe_attachment_archive_names(attachment_paths: &[String]) -> Vec<(String, String)> {
+    let mut basename_counts = HashMap::new();
+    for attachment_path in attachment_paths {
+        let basename = Path::new(attachment_path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("attachment");
+        *basename_counts
+            .entry(basename.to_string())
+            .or_insert(0usize) += 1;
+    }
+
+    attachment_paths
+        .iter()
+        .enumerate()
+        .map(|(index, attachment_path)| {
+            let basename = Path::new(attachment_path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("attachment");
+            let archive_name = if basename_counts.get(basename).copied().unwrap_or(0) > 1 {
+                format!("{:04}-{basename}", index + 1)
+            } else {
+                basename.to_string()
+            };
+            (attachment_path.clone(), archive_name)
+        })
+        .collect()
 }
 
 fn write_bytes_atomically(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
@@ -4386,7 +4463,9 @@ mod tests {
             .join(ATTACHMENTS_DIRECTORY_NAME);
         fs::create_dir_all(&attachments_root).expect("attachments dir");
 
-        let original_attachment = attachments_root.join("old-evidence.txt");
+        let original_attachment = attachments_root.join("original").join("evidence.txt");
+        fs::create_dir_all(original_attachment.parent().expect("original parent"))
+            .expect("original attachment dir");
         fs::write(&original_attachment, b"old").expect("seed old attachment");
 
         let marker = store
@@ -4418,7 +4497,9 @@ mod tests {
             .await
             .expect("marker should create");
 
-        let replacement_attachment = attachments_root.join("new-evidence.txt");
+        let replacement_attachment = attachments_root.join("replacement").join("evidence.txt");
+        fs::create_dir_all(replacement_attachment.parent().expect("replacement parent"))
+            .expect("replacement attachment dir");
         fs::write(&replacement_attachment, b"new").expect("seed replacement attachment");
 
         store
@@ -4459,6 +4540,90 @@ mod tests {
             .expect("marker should delete");
 
         assert!(replacement_attachment.exists());
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+        let archive = store
+            .create_mission_archive(mission.id.clone())
+            .await
+            .expect("versioned attachment archive should succeed");
+        let archive_file = File::open(&archive.archive_path).expect("archive file");
+        let mut zip = ZipArchive::new(archive_file).expect("zip archive should open");
+        let mut original_bytes = Vec::new();
+        zip.by_name("attachments/0001-evidence.txt")
+            .expect("original attachment should be archived")
+            .read_to_end(&mut original_bytes)
+            .expect("original attachment bytes");
+        let mut replacement_bytes = Vec::new();
+        zip.by_name("attachments/0002-evidence.txt")
+            .expect("replacement attachment should be archived")
+            .read_to_end(&mut replacement_bytes)
+            .expect("replacement attachment bytes");
+        assert_eq!(original_bytes, b"old");
+        assert_eq!(replacement_bytes, b"new");
+    }
+
+    #[tokio::test]
+    async fn finish_waits_for_attachment_custody_without_blocking_current_positions() {
+        let (database_path, backup_path) = temp_paths("attachment-finish-fence");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Attachment Finish Fence".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "device-1".to_string(),
+                name: "Device 1".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Online,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert");
+
+        let attachment_guard = store.attachment_lifecycle_lock.lock().await;
+        let finishing_store = store.clone();
+        let finishing_mission_id = mission.id.clone();
+        let finish =
+            tokio::spawn(async move { finishing_store.finish_mission(finishing_mission_id).await });
+        tokio::task::yield_now().await;
+        assert!(!finish.is_finished());
+
+        store
+            .add_position(AddPositionInput {
+                mission_id: mission.id.clone(),
+                device_id: "device-1".to_string(),
+                source_position_id: Some("source-1".to_string()),
+                name: None,
+                lat: 52.1,
+                lon: -9.5,
+                altitude: None,
+                speed: None,
+                battery: None,
+                accuracy: None,
+                source: Some("traccar".to_string()),
+                timestamp: Some("2026-08-29T05:00:00.000Z".to_string()),
+                data_origin: Some("live".to_string()),
+            })
+            .await
+            .expect("current position should retain priority");
+
+        drop(attachment_guard);
+        let finished = finish
+            .await
+            .expect("finish task should join")
+            .expect("finish should succeed after custody settles");
+        assert_eq!(finished.status, MissionStatus::Finished);
     }
 
     #[tokio::test]

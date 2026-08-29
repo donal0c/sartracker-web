@@ -163,13 +163,6 @@ function createElectronFileSystem(options) {
     },
     ingestMarkerAttachment: async (input, missionStore) => {
       const missionId = normalizeMissionId(input.missionId)
-      const mission = await missionStore.getMission(missionId)
-      if (mission.status === 'finished' || mission.status === 'finalized') {
-        throw new Error(
-          `Cannot write data to finished mission ${missionId}; resume the mission or unlock it first.`,
-        )
-      }
-
       const fileName = normalizeAttachmentFileName(input.fileName)
       const bytes = Buffer.from(readString(input, 'bytesBase64'), 'base64')
       if (bytes.length === 0) {
@@ -179,16 +172,18 @@ function createElectronFileSystem(options) {
         throw new Error('Attachment must be 25 MB or smaller.')
       }
 
-      const attachmentDirectory = path.join(
-        options.userDataPath,
-        'missions',
-        missionId,
-        'attachments',
-      )
-      await fs.mkdir(attachmentDirectory, { recursive: true })
-      const destinationPath = path.join(attachmentDirectory, `${randomUUID()}-${fileName}`)
-      await writeFileAtomically(destinationPath, bytes)
-      return destinationPath
+      return missionStore.runMarkerAttachmentIngest(missionId, async () => {
+        const attachmentDirectory = path.join(
+          options.userDataPath,
+          'missions',
+          missionId,
+          'attachments',
+        )
+        await fs.mkdir(attachmentDirectory, { recursive: true })
+        const destinationPath = path.join(attachmentDirectory, `${randomUUID()}-${fileName}`)
+        await writeFileAtomically(destinationPath, bytes)
+        return destinationPath
+      })
     },
     openExternalPath: async (inputPath) => {
       const normalizedPath = normalizeRequiredPath(inputPath, 'Path')

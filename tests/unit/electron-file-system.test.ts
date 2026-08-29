@@ -6,6 +6,17 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
+  readonly createElectronMissionStore: (options: { readonly userDataPath: string }) => {
+    readonly close: () => void
+    readonly createMission: (input: { readonly name: string }) => Promise<{ readonly id: string }>
+    readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
+    readonly getMission: (missionId: string) => Promise<{ readonly status: string }>
+    readonly listMissionEvents: (missionId: string) => Promise<readonly {
+      readonly event_type: string
+    }[]>
+  }
+}
 const { createElectronFileSystem } = require('../../electron/file-system.cjs') as {
   readonly createElectronFileSystem: (options: {
     readonly userDataPath: string
@@ -45,7 +56,12 @@ type ElectronFileSystem = {
   readonly listGpxDirectoryPaths: (directoryPath: string) => Promise<readonly string[]>
   readonly ingestMarkerAttachment: (
     input: { readonly missionId: string; readonly fileName: string; readonly bytesBase64: string },
-    missionStore: { readonly getMission: (missionId: string) => Promise<{ readonly status: string }> },
+    missionStore: {
+      readonly runMarkerAttachmentIngest: (
+        missionId: string,
+        writeAttachment: () => Promise<string>,
+      ) => Promise<string>
+    },
   ) => Promise<string>
   readonly openExternalPath: (path: string) => Promise<void>
 }
@@ -168,7 +184,8 @@ describe('Electron filesystem service', () => {
         bytesBase64: Buffer.from('image bytes').toString('base64'),
       },
       {
-        getMission: vi.fn().mockResolvedValue({ status: 'active' }),
+        runMarkerAttachmentIngest: vi.fn(async (_missionId, writeAttachment) =>
+          writeAttachment()),
       },
     )
 
@@ -181,7 +198,12 @@ describe('Electron filesystem service', () => {
 
   it('never overwrites retained attachment bytes when sanitized names collide [DON-277]', async () => {
     const service = await createService()
-    const missionStore = { getMission: vi.fn().mockResolvedValue({ status: 'active' }) }
+    const missionStore = {
+      runMarkerAttachmentIngest: vi.fn(async (
+        _missionId: string,
+        writeAttachment: () => Promise<string>,
+      ) => writeAttachment()),
+    }
     const firstPath = await service.ingestMarkerAttachment({
       missionId: 'mission-1', fileName: 'evidence.jpg',
       bytesBase64: Buffer.from('old-evidence').toString('base64'),
@@ -196,6 +218,37 @@ describe('Electron filesystem service', () => {
     await expect(readFile(secondPath, 'utf8')).resolves.toBe('new-evidence')
   })
 
+  it('orders attachment custody before a concurrent Finish write fence [DON-277]', async () => {
+    const service = await createService()
+    const missionStore = createElectronMissionStore({ userDataPath: userDataPath! })
+    const mission = await missionStore.createMission({ name: 'Attachment finish race' })
+
+    try {
+      const attachmentPromise = service.ingestMarkerAttachment({
+        missionId: mission.id,
+        fileName: 'finish-race.txt',
+        bytesBase64: Buffer.from('retained-before-finish').toString('base64'),
+      }, missionStore)
+      const finishPromise = missionStore.finishMission(mission.id)
+      const [attachmentPath, finishedMission] = await Promise.all([
+        attachmentPromise,
+        finishPromise,
+      ])
+      const events = await missionStore.listMissionEvents(mission.id)
+      const attachmentEventIndex = events.findIndex(
+        (event) => event.event_type === 'marker_attachment_ingested',
+      )
+      const finishEventIndex = events.findIndex((event) => event.event_type === 'mission_finished')
+
+      expect(finishedMission.status).toBe('finished')
+      await expect(readFile(attachmentPath, 'utf8')).resolves.toBe('retained-before-finish')
+      expect(attachmentEventIndex).toBeGreaterThanOrEqual(0)
+      expect(finishEventIndex).toBeGreaterThan(attachmentEventIndex)
+    } finally {
+      missionStore.close()
+    }
+  })
+
   it('blocks attachment writes to finished missions', async () => {
     const service = await createService()
 
@@ -207,7 +260,11 @@ describe('Electron filesystem service', () => {
           bytesBase64: Buffer.from('image bytes').toString('base64'),
         },
         {
-          getMission: vi.fn().mockResolvedValue({ status: 'finished' }),
+          runMarkerAttachmentIngest: vi.fn(async (missionId) => {
+            throw new Error(
+              `Cannot write data to finished mission ${missionId}; resume the mission or unlock it first.`,
+            )
+          }),
         },
       ),
     ).rejects.toThrow('Cannot write data to finished mission mission-1')

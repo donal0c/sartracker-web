@@ -438,6 +438,7 @@ function createElectronMissionStore(options) {
   const coverageTileControllersByRequestId = new Map()
   const activeGpxEvidenceImports = new Set()
   const activeSearchOperationPageReads = new Set()
+  const attachmentLifecycleTails = new Map()
   const coverageManifestBuildEvidenceByMission = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
@@ -631,6 +632,7 @@ function createElectronMissionStore(options) {
       for (const entry of active) entry.controller.abort()
       const shutdownTasks = active.map((entry) => entry.quiesced)
       shutdownTasks.push(...activeSearchOperationPageReads)
+      shutdownTasks.push(...attachmentLifecycleTails.values())
       if (!legacyEvidenceBackfillWorkerStopped && legacyEvidenceBackfillWorker !== null) {
         shutdownTasks.push(legacyEvidenceBackfillWorker.terminate().then(() => {
           legacyEvidenceBackfillWorkerStopped = true
@@ -657,6 +659,9 @@ function createElectronMissionStore(options) {
       }
       if (activeSearchOperationPageReads.size > 0) {
         throw new Error('Cannot close the mission store while Search Operations page reads are active; call prepareClose first.')
+      }
+      if (attachmentLifecycleTails.size > 0) {
+        throw new Error('Cannot close the mission store while marker attachment custody is active; call prepareClose first.')
       }
       if (!legacyEvidenceBackfillWorkerStopped) {
         throw new Error('Cannot close the mission store while legacy evidence reconstruction is active; call prepareClose first.')
@@ -1524,11 +1529,35 @@ function createElectronMissionStore(options) {
     })),
     getActiveMission: async () => getActiveMission(db),
     getRecoverableMission: async () => getActiveMission(db),
+    runMarkerAttachmentIngest: async (missionId, writeAttachment) =>
+      enqueueAttachmentLifecycleOperation(missionId, async () => {
+        ensureWritableMission(db, missionId)
+        const attachmentPath = await writeAttachment()
+        insertEvent(db, missionId, 'marker_attachment_ingested', now(), {
+          attachment_path: attachmentPath,
+        })
+        return attachmentPath
+      }),
     pauseMission: async (missionId) => transitionMission(db, missionId, 'active', 'paused'),
     resumeMission: async (missionId) => transitionMission(db, missionId, 'paused', 'active'),
-    finishMission: async (missionId) => finishMission(db, missionId),
+    finishMission: async (missionId) =>
+      enqueueAttachmentLifecycleOperation(missionId, () => finishMission(db, missionId)),
     finalizeMission: async (missionId) => enqueueFinalize(missionId),
     unlockFinalizedMission: async (input) => unlockFinalizedMission(db, input, options.readAdminRoster),
+  }
+
+  /** Orders asynchronous attachment custody and Finish for one mission. */
+  function enqueueAttachmentLifecycleOperation(missionId, execute) {
+    const previous = attachmentLifecycleTails.get(missionId) ?? Promise.resolve()
+    const operation = previous.then(execute)
+    const settledTail = operation.catch(() => undefined)
+    attachmentLifecycleTails.set(missionId, settledTail)
+    void settledTail.finally(() => {
+      if (attachmentLifecycleTails.get(missionId) === settledTail) {
+        attachmentLifecycleTails.delete(missionId)
+      }
+    })
+    return operation
   }
 
   /**
@@ -3747,7 +3776,9 @@ async function buildMissionArchive(
     { name: 'mission-store.sqlite', data: archiveSnapshotBytes },
   ]
 
-  for (const attachmentPath of listMarkerAttachmentPaths(db, missionId)) {
+  const archiveAttachmentPaths = listMarkerAttachmentPaths(db, missionId)
+  const archiveNames = collisionSafeAttachmentArchiveNames(archiveAttachmentPaths)
+  for (const attachmentPath of archiveAttachmentPaths) {
     let attachmentBytes
     try {
       attachmentBytes = await fs.readFile(attachmentPath)
@@ -3756,7 +3787,7 @@ async function buildMissionArchive(
         `Mission archive cannot be created because marker attachment is missing: ${attachmentPath}`,
       )
     }
-    entries.push({ name: `attachments/${path.basename(attachmentPath)}`, data: attachmentBytes })
+    entries.push({ name: `attachments/${archiveNames.get(attachmentPath)}`, data: attachmentBytes })
   }
 
   await fs.mkdir(archiveDirectory, { recursive: true })
@@ -3836,13 +3867,68 @@ async function validateSqliteSnapshotBuffer(
 }
 
 function listMarkerAttachmentPaths(db, missionId) {
-  return all(
+  const referencedPaths = all(
     db,
     `SELECT attachment_path FROM markers
       WHERE mission_id = ? AND attachment_path IS NOT NULL AND TRIM(attachment_path) != ''
       ORDER BY display_order ASC, created_at ASC`,
     missionId,
   ).map((row) => row.attachment_path)
+
+  const versionRows = all(
+    db,
+    `SELECT state_json FROM mission_object_versions
+      WHERE mission_id = ? AND object_type = 'marker'
+      ORDER BY object_id ASC, version_sequence ASC`,
+    missionId,
+  )
+  for (const row of versionRows) {
+    let state
+    try {
+      state = JSON.parse(row.state_json)
+    } catch {
+      throw new Error('Mission archive cannot enumerate a corrupt marker version attachment.')
+    }
+    if (typeof state?.attachment_path === 'string' && state.attachment_path.trim() !== '') {
+      referencedPaths.push(state.attachment_path)
+    }
+  }
+
+  const ingestEvents = all(
+    db,
+    `SELECT details_json FROM mission_events
+      WHERE mission_id = ? AND event_type = 'marker_attachment_ingested'
+      ORDER BY timestamp ASC, rowid ASC`,
+    missionId,
+  )
+  for (const event of ingestEvents) {
+    let details
+    try {
+      details = JSON.parse(event.details_json)
+    } catch {
+      throw new Error('Mission archive cannot enumerate a corrupt attachment custody event.')
+    }
+    if (typeof details?.attachment_path === 'string' && details.attachment_path.trim() !== '') {
+      referencedPaths.push(details.attachment_path)
+    }
+  }
+
+  return [...new Set(referencedPaths.map((attachmentPath) => path.resolve(attachmentPath)))]
+}
+
+/** Keeps legacy archive names when unique and disambiguates basename collisions. */
+function collisionSafeAttachmentArchiveNames(attachmentPaths) {
+  const basenameCounts = new Map()
+  for (const attachmentPath of attachmentPaths) {
+    const basename = path.basename(attachmentPath)
+    basenameCounts.set(basename, (basenameCounts.get(basename) ?? 0) + 1)
+  }
+  return new Map(attachmentPaths.map((attachmentPath) => {
+    const basename = path.basename(attachmentPath)
+    if (basenameCounts.get(basename) === 1) return [attachmentPath, basename]
+    const pathIdentity = createHash('sha256').update(attachmentPath).digest('hex').slice(0, 12)
+    return [attachmentPath, `${pathIdentity}-${basename}`]
+  }))
 }
 
 /**
