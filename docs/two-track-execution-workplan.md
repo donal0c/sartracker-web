@@ -352,6 +352,26 @@ remain unaffected; exact-head Linux plus fresh broad and renderer rechecks are
 required. One theoretical 48-bit archive-name collision is P3 because there is
 no realistic mission-cardinality mechanism and new ingests use UUID names.
 
+PR-5 live-draft correction (2026-08-29): renderer exact-head recheck rejected
+`018c0dd3` after reproducing a still-operable live Pause replacing an
+unsubmitted historical Replay time with a fresh `now`. Central retrace retained
+P2 because the production path and mechanism were deterministic, PR5 owns the
+control boundary, the repository requires unsubmitted edits to remain drafts,
+and the next Replay action could silently query the wrong time. The incomplete
+broad review was stopped and Linux run `33238597041` canceled. Executable
+replacement `eb531077` gives the initial live draft a stable per-mission owner,
+uses the exact submitted time during a Replay request, and rebinds on accepted
+scope, explicit Return to Live or mission ownership only. Red-first component
+and docked browser Pause/Resume/submit regressions are green. The renderer's
+separate P3 input-inconvenience note was also removed: an unapplied Search draft
+now survives loading/page changes until a different search is accepted. Local
+proof is focused renderer/replay 121/121, full unit 2,530/2,530, backend 58/one
+intentional ignore, Chromium 168/168, visual Playwright 2/2 plus fresh uncached
+critical review 4/4, lint/build/diff, unsigned macOS packaging and exact
+8,664-position packaged soak. Exact-head Linux plus a fresh broad review and
+the affected renderer recheck remain mandatory; unaffected clean
+persistence/concurrency verdicts do not restart.
+
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is

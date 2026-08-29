@@ -2248,6 +2248,75 @@ broad exact-head review and the affected renderer/input-containment exact-head
 recheck remain mandatory. PR opened/review-ready remains intermediate; no merge
 or release is authorized.
 
+## Live Replay draft recheck and replacement candidate (2026-08-29)
+
+Cicero's renderer/input-containment recheck rejected exact candidate
+`018c0dd31fb2ea4216439ce6f37fead5646bc2f5` (tree
+`d410da3dfa73ff90dd576495cdb8d8e64ecbcf69`). Before the first Replay result,
+the accepted-owner key used the active mission's render-time `now`. A still-live
+Pause or Resume published mission state, changed that key and silently replaced
+an unsubmitted historical time. The real-browser reproduction changed
+`2026-08-28T12:00` to `2026-08-29T07:34:04.383` after Pause.
+
+Central retrace retained P2 under every required criterion: active Review plus
+Pause is a reachable production path; the owner-key mechanism is deterministic;
+repository-backed Replay scope and draft-retention requirements are breached;
+the next action can query a different time from the one the operator entered;
+and the regression belongs to PR5's renderer remediation. This is not a cosmetic
+reset or qualification-only concern. Ada's broad review of that invalid head was
+stopped before verdict with no material partial P1/P2 finding. Linux run
+[`33238597041`](https://github.com/donal0c/sartracker-web/actions/runs/33238597041)
+was canceled and does not count.
+
+Executable replacement `eb53107720198a76ab32dbd1c77322bc45f1beb2`
+stabilizes the initial live draft for the mounted mission, uses
+`replay.selectedTime` as soon as an exact Replay request is submitted, retains
+accepted result/filter ownership across remounts, and resets to current time
+only through the explicit Return to Live action or mission remount. A new
+docked-workspace browser regression enters historical T, pauses, resumes,
+confirms the field remains exact after both publications, submits and verifies
+the reconstructed `Known by` time. The component test first failed with the
+field changed to `2026-08-29T08:30:01.000`, then passed unchanged.
+
+Cicero also reported unapplied Search and Replay outing-search drafts resetting
+when loading/page metadata changed. Central retrace classified this P3: retained
+evidence continued to state its accepted search truthfully, so there was no
+false evidence scope or mission-data loss. The small adjacent mechanism was
+still removed. Search draft ownership now changes only when the backend accepts
+a different search, and a red-first test proves loading then page advancement
+preserve the unapplied text.
+
+Replacement-candidate local verification is green:
+
+- focused renderer/replay/search suite: 18 files / 121 tests;
+- complete serialized unit suite: 296 files / 2,530 tests;
+- Rust backend: 58 passed / one intentional real-keychain ignore;
+- complete Chromium operator suite: 168/168. The first pass had one unrelated
+  DON-267 `Execution context was destroyed` navigation flake before its first
+  store injection; that exact test passed unchanged, then the complete suite
+  passed 168/168;
+- targeted visual Playwright: 2/2;
+- fresh uncached critical visual review: 4/4, report
+  `visual-review-2026-08-29T06-52-27Z.json`, SHA-256
+  `6af21b287c57d30500c67e07189e8c9324b3aedba180996195b4a056a26dce25`;
+- ESLint, production TypeScript/Vite build, bundle budgets and diff checks; and
+- unsigned macOS arm64 package identity `sha.97c3daf1f7b0`, app-asar SHA-256
+  `eed1cc8eac327c4a041294ec718605da0d5f1a0c6f0ffee724053b4f110f3d08`.
+
+The packaged CI-profile soak passed in 15.123 seconds across two launches: 6/6
+batches, exact 8,664/8,664 positions and digest, one restart checkpoint, SQLite
+integrity `ok`, zero redundant telemetry slope, zero renderer crashes, four
+healthy operator interactions, 5.322 ms maximum main round trip and 125.8 ms
+maximum renderer gap. Report SHA-256 is
+`74333af8314d7251cb5de9f17ea1c7eaa409be10d16a8044c17c1955904d0cfe`.
+
+This replacement still requires exact-head Linux, the affected renderer recheck
+and one fresh broad exact-head review. The clean persistence/completeness and
+concurrency/finalization reviews on `c1ad54b8` remain valid because neither
+renderer-only correction changes persistence, custody, finalization or their
+state machine. PR opened/review-ready remains intermediate; no merge or release
+is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
