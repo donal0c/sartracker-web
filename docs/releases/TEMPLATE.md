@@ -36,8 +36,9 @@ candidate must satisfy every additional field gate below.
 
 The guarded publisher changes the live GitHub release from draft to published
 without changing this body. Before any field or real-incident session, the
-session record—not this immutable release body—must confirm that the live release
-is published and record its URL, tag, and published-at time.
+session record—rather than a publisher rewrite of the validated release
+body—must confirm that the live release is published and record its URL, tag,
+and published-at time. Later manual edits are outside the publisher's guarantee.
 
 - **Protocol:** [`docs/assurance/shadow-use-protocol.md`](../assurance/shadow-use-protocol.md)
 - **Release-use classification:** &lt;`ENGINEERING/TRAINING — NON-COUNTED` | `FIELD-SHADOW CANDIDATE`&gt;

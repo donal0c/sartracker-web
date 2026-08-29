@@ -138,7 +138,7 @@ If the team uses more than one existing source, name which one is authoritative
 for each operational workflow. Do not leave "QGIS and/or Traccar" unresolved in
 a live session record.
 
-### Exact candidate and session identity
+### Identity required for every session
 
 Every exercise record must contain:
 
@@ -146,20 +146,27 @@ Every exercise record must contain:
 Session ID:
 Session purpose and scenario:
 Start/end in UTC and local timezone/offset:
-Release version and tag:
-Guarded publication URL/status and published-at time in UTC:
-Git commit SHA:
-CI workflow/run:
-Artifact filename:
-Artifact SHA-256:
-Package/install type:
+Git commit SHA or other exact build identity:
+Launch/package/install type (including local development when applicable):
 Platform, architecture, OS/distro, kernel, and desktop session:
 Non-sensitive machine identifier:
 Profile identifier and whether fresh, copied, or previously used:
 Runtime flags and map-package status:
 Provider/source mode (synthetic, replay, or controlled live):
+Evidence custodian or training operator:
+Triage owner:
+```
+
+### Additional identity for field/real-incident shadow use
+
+```text
+Release version and tag:
+Guarded publication URL/status and published-at time in UTC:
+CI workflow/run:
+Artifact filename:
+Artifact SHA-256:
 Primary operational source/process and version if known:
-Named session roles:
+All five named session roles:
 Relevant residual-risk register version:
 ```
 
@@ -359,10 +366,15 @@ Observation received
 |   corruption, archive/restore uncertainty, primary-source loss, or possible
 |   sensitive-data exposure?
 |     |
-|     +-- YES -> STOP SHADOW -> primary-only operation when healthy; if the
-|     |          primary is unavailable, invoke its named existing contingency.
-|     |          SAR Tracker never bridges the gap. Use E2 capture and urgent
-|     |          safety/regression triage under the existing Linear owner.
+|     +-- YES -> Is this non-counted engineering/training?
+|                |
+|                +-- YES -> stop using the build; preserve proportionate E2
+|                |          evidence; urgent triage. No primary handover.
+|                |
+|                +-- NO, FIELD/REAL -> STOP SHADOW -> primary-only operation
+|                           when healthy; otherwise invoke the named existing
+|                           contingency. SAR Tracker never bridges the gap.
+|                           Use E2 capture and urgent safety/regression triage.
 |     |
 |     +-- NO
 |
