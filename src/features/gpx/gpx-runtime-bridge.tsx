@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 
 import { useMissionStore } from '../mission/mission-store'
+import { useOutingStore } from '../outings/outing-store'
 import { useGpxStore } from './gpx-store'
 
 const WATCH_RESCAN_INTERVAL_MS = 30_000
@@ -14,6 +15,9 @@ export function GpxRuntimeBridge() {
   const missionPhase = useMissionStore((state) => state.phase)
   const controller = useGpxStore((state) => state.controller)
   const watchedDirectories = useGpxStore((state) => state.watchedDirectories)
+  const outingRevision = useOutingStore((state) => state.outings
+    .map((outing) => `${outing.id}:${outing.updated_at}`)
+    .join('|'))
 
   useEffect(() => {
     if (controller === null) {
@@ -21,7 +25,7 @@ export function GpxRuntimeBridge() {
     }
 
     void controller.refreshMission(missionId)
-  }, [controller, missionId])
+  }, [controller, missionId, outingRevision])
 
   useEffect(() => {
     if (

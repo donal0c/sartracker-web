@@ -43,7 +43,11 @@ describe('MarkerDialog casualty treatment log', () => {
     })
 
     render(React.createElement(MarkerDialog))
-    expect(query('[data-testid="marker-treatment-log-input"]')).not.toBeNull()
+    const treatmentLog = query('[data-testid="marker-treatment-log-input"]')
+    expect(treatmentLog).toBeInstanceOf(HTMLTextAreaElement)
+    expect((treatmentLog as HTMLTextAreaElement).maxLength).toBe(512 * 1_024)
+    expect(query('[data-testid="marker-treatment-log-budget"]')?.textContent)
+      .toMatch(/of 524,288 UTF-8 bytes used/i)
 
     setTextAreaValue('[data-testid="marker-treatment-update-input"]', 'Warm drink given')
     click('[data-testid="marker-treatment-append-btn"]')
@@ -52,6 +56,34 @@ describe('MarkerDialog casualty treatment log', () => {
       treatment:
         '[2026-06-02 10:00] Alpha: Blanket applied\n\n[2026-06-02 10:15] Bravo: Warm drink given',
     })
+  })
+
+  it('clears an unsaved treatment-size error when the dialog closes', () => {
+    const controller = createController()
+    const casualtyDraft = createMarkerDraftAtCoordinate(52.179337, -9.464944, 'casualty')
+    useMarkerStore.setState({
+      controller,
+      dialog: {
+        mode: 'create',
+        draft: {
+          ...casualtyDraft,
+          treatment: 'a'.repeat(512 * 1_024 - 10),
+          updatedBy: 'Bravo',
+        },
+      },
+    })
+
+    render(React.createElement(MarkerDialog))
+    setTextAreaValue('[data-testid="marker-treatment-update-input"]', 'Warm drink given')
+    click('[data-testid="marker-treatment-append-btn"]')
+    expect(query('[role="alert"]')?.textContent).toMatch(/524288 UTF-8 bytes or fewer/i)
+
+    click('[data-testid="marker-close-btn"]')
+
+    expect(controller.closeDialog).toHaveBeenCalledOnce()
+    expect(document.body.textContent).not.toMatch(/524288 UTF-8 bytes or fewer/i)
+    expect((query('[data-testid="marker-treatment-update-input"]') as HTMLTextAreaElement).value)
+      .toBe('')
   })
 
   function render(element: React.ReactElement): void {

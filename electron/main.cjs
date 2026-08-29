@@ -23,10 +23,14 @@ const {
   registerMissionReviewReadQueryIpcHandlers,
 } = require('./mission-review-read-query-ipc.cjs')
 const {
+  registerMissionReplayQueryIpcHandlers,
+} = require('./mission-replay-query-ipc.cjs')
+const {
   registerOutingFixSummaryIpcHandlers,
 } = require('./outing-fix-summary-ipc.cjs')
 const { registerCoverageIpcHandlers } = require('./coverage-ipc.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
+const { validateGpxImportEnvelope } = require('./gpx-import-envelope.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
@@ -52,8 +56,7 @@ const CHOOSE_GPX_DIRECTORY_PATH_CHANNEL = 'sartracker:choose-gpx-directory-path'
 const CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL = 'sartracker:choose-official-map-source-file-path'
 const CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL = 'sartracker:choose-official-map-package-path'
 const IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL = 'sartracker:import-official-map-package'
-const READ_GPX_FILES_CHANNEL = 'sartracker:read-gpx-files'
-const LIST_GPX_DIRECTORY_FILES_CHANNEL = 'sartracker:list-gpx-directory-files'
+const LIST_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-gpx-directory-paths'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
@@ -113,6 +116,12 @@ const MISSION_STORE_CHANNELS = {
   listAuditEvents: 'sartracker:mission-store:list-audit-events',
   readMissionReview: 'sartracker:mission-store:read-mission-review',
   cancelMissionReviewRead: 'sartracker:mission-store:cancel-mission-review-read',
+  readMissionReplay: 'sartracker:mission-store:read-mission-replay',
+  readMissionReplayTrackChunk: 'sartracker:mission-store:read-mission-replay-track-chunk',
+  readMissionReplayObjectChunk: 'sartracker:mission-store:read-mission-replay-object-chunk',
+  readMissionReplayFilterPage: 'sartracker:mission-store:read-mission-replay-filter-page',
+  assignGpxImportToOuting: 'sartracker:mission-store:assign-gpx-import-to-outing',
+  cancelMissionReplay: 'sartracker:mission-store:cancel-mission-replay',
   listIngestAnomalies: 'sartracker:mission-store:list-ingest-anomalies',
   recordIngestRejections: 'sartracker:mission-store:record-ingest-rejections',
   recordIngestEvidenceLoss: 'sartracker:mission-store:record-ingest-evidence-loss',
@@ -131,7 +140,21 @@ const MISSION_STORE_CHANNELS = {
   deleteHelicopter: 'sartracker:mission-store:delete-helicopter',
   upsertGpxImport: 'sartracker:mission-store:upsert-gpx-import',
   listGpxImports: 'sartracker:mission-store:list-gpx-imports',
+  listGpxImportPage: 'sartracker:mission-store:list-gpx-import-page',
+  listGpxImportIssues: 'sartracker:mission-store:list-gpx-import-issues',
   deleteGpxImport: 'sartracker:mission-store:delete-gpx-import',
+  listGpxImportRevisions: 'sartracker:mission-store:list-gpx-import-revisions',
+  listGpxImportRevisionPage: 'sartracker:mission-store:list-gpx-import-revision-page',
+  importGpxEvidencePaths: 'sartracker:mission-store:import-gpx-evidence-paths',
+  updateGpxImportPresentation: 'sartracker:mission-store:update-gpx-import-presentation',
+  upsertSearchArea: 'sartracker:mission-store:upsert-search-area',
+  listSearchAreas: 'sartracker:mission-store:list-search-areas',
+  retireSearchArea: 'sartracker:mission-store:retire-search-area',
+  upsertSearchAssignment: 'sartracker:mission-store:upsert-search-assignment',
+  listSearchAssignments: 'sartracker:mission-store:list-search-assignments',
+  upsertSearchPass: 'sartracker:mission-store:upsert-search-pass',
+  listSearchPasses: 'sartracker:mission-store:list-search-passes',
+  listSearchOperationPage: 'sartracker:mission-store:list-search-operation-page',
   getMission: 'sartracker:mission-store:get-mission',
   listMissions: 'sartracker:mission-store:list-missions',
   getActiveMission: 'sartracker:mission-store:get-active-mission',
@@ -705,16 +728,9 @@ function registerIpcHandlers(
     }
     return fileSystem.importOfficialMapPackage(input)
   })
-  ipcMain.handle(READ_GPX_FILES_CHANNEL, (event, paths) => {
+  ipcMain.handle(LIST_GPX_DIRECTORY_PATHS_CHANNEL, (event, directoryPath) => {
     validateIpcSender(event)
-    if (!Array.isArray(paths) || paths.some((filePath) => typeof filePath !== 'string')) {
-      throw new Error('GPX paths payload is invalid.')
-    }
-    return fileSystem.readGpxFiles(paths)
-  })
-  ipcMain.handle(LIST_GPX_DIRECTORY_FILES_CHANNEL, (event, directoryPath) => {
-    validateIpcSender(event)
-    return fileSystem.listGpxDirectoryFiles(directoryPath)
+    return fileSystem.listGpxDirectoryPaths(directoryPath)
   })
   ipcMain.handle(INGEST_MARKER_ATTACHMENT_CHANNEL, (event, input) => {
     validateIpcSender(event)
@@ -745,14 +761,14 @@ function registerIpcHandlers(
     }
     return officialMapProxy.fetchOfficialMapTile(inputUrl)
   })
-  registerMissionStoreHandlers(missionStore)
+  registerMissionStoreHandlers(missionStore, fileSystem)
   registerLayerCatalogStoreHandlers(missionStore)
 }
 
 /**
  * Registers named mission-store methods without exposing raw IPC to the renderer.
  */
-function registerMissionStoreHandlers(missionStore) {
+function registerMissionStoreHandlers(missionStore, fileSystem) {
   registerBreadcrumbQueryIpcHandlers({
     ipcMain,
     listChannel: MISSION_STORE_CHANNELS.listBreadcrumbPositions,
@@ -771,6 +787,18 @@ function registerMissionStoreHandlers(missionStore) {
     ipcMain,
     readChannel: MISSION_STORE_CHANNELS.readMissionReview,
     cancelChannel: MISSION_STORE_CHANNELS.cancelMissionReviewRead,
+    missionStore,
+    validateIpcSender,
+  })
+  registerMissionReplayQueryIpcHandlers({
+    ipcMain,
+    readChannels: {
+      state: MISSION_STORE_CHANNELS.readMissionReplay,
+      trackChunk: MISSION_STORE_CHANNELS.readMissionReplayTrackChunk,
+      objectChunk: MISSION_STORE_CHANNELS.readMissionReplayObjectChunk,
+      filterPage: MISSION_STORE_CHANNELS.readMissionReplayFilterPage,
+    },
+    cancelChannel: MISSION_STORE_CHANNELS.cancelMissionReplay,
     missionStore,
     validateIpcSender,
   })
@@ -802,6 +830,12 @@ function registerMissionStoreHandlers(missionStore) {
     missionStore,
     validateIpcSender,
   })
+  ipcMain.handle(MISSION_STORE_CHANNELS.importGpxEvidencePaths, async (event, input) => {
+    validateIpcSender(event)
+    const envelope = validateGpxImportEnvelope(input)
+    const paths = await fileSystem.validateGpxEvidencePaths(envelope.paths)
+    return missionStore.importGpxEvidencePaths({ missionId: envelope.missionId, paths })
+  })
   const ownedQueryMethods = new Set([
     'listBreadcrumbPositions',
     'cancelBreadcrumbQuery',
@@ -809,6 +843,11 @@ function registerMissionStoreHandlers(missionStore) {
     'cancelExactBreadcrumbDotQuery',
     'readMissionReview',
     'cancelMissionReviewRead',
+    'readMissionReplay',
+    'readMissionReplayTrackChunk',
+    'readMissionReplayObjectChunk',
+    'readMissionReplayFilterPage',
+    'cancelMissionReplay',
     'readOutingFixSummary',
     'cancelOutingFixSummary',
     'readCoverageManifest',
@@ -821,6 +860,7 @@ function registerMissionStoreHandlers(missionStore) {
     'cancelCoverageQuery',
     'readCoverageTile',
     'cancelCoverageTileRead',
+    'importGpxEvidencePaths',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
     if (ownedQueryMethods.has(methodName)) {
@@ -1149,6 +1189,7 @@ async function startElectronApp() {
       officialMapProxy,
       rendererTeardownCoordinator,
       runtimeLog,
+      missionStore,
     )
   })
 }
@@ -1183,6 +1224,7 @@ async function markCleanExitAndQuit(
   officialMapProxy,
   rendererTeardownCoordinator,
   runtimeLog,
+  missionStore,
 ) {
   if (cleanExitInProgress) {
     return
@@ -1193,8 +1235,10 @@ async function markCleanExitAndQuit(
       await rendererTeardownCoordinator.prepare(window, 'app_quit')
     }
     await rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
+    await missionStore.prepareClose()
     await crashLog.markCleanExit()
     officialMapProxy.close?.()
+    missionStore.close()
     app.exit(0)
   } catch (error) {
     cleanExitInProgress = false

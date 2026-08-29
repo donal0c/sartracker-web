@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { FocusModeToggle } from './focus-mode-toggle'
-import { GpxImportPanel } from './gpx-import-panel'
+import { DeferredGpxImportPanel } from './deferred-gpx-import-panel'
 import { HelicopterPanel } from './helicopter-panel'
 import { LayerFilterPanel } from './layer-filter-panel'
 import { MissionControlPanel } from './mission-control-panel'
@@ -99,7 +99,7 @@ export function FocusModeSidebar() {
         )}
         {activeTab === 'tools' && (
           <>
-            <GpxImportPanel />
+            <DeferredGpxImportPanel />
             <HelicopterPanel />
           </>
         )}

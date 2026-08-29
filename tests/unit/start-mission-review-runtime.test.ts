@@ -6,10 +6,14 @@ import type {
   Marker,
   Mission,
   MissionEvent,
+  MissionReplayObjectChunkResult,
   MissionStoreInfo,
   Position,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
-import { startMissionReviewRuntime } from '../../src/features/mission-review/start-mission-review-runtime'
+import {
+  startMissionReviewRuntime,
+  type MissionReviewController,
+} from '../../src/features/mission-review/start-mission-review-runtime'
 
 describe('startMissionReviewRuntime', () => {
   it('loads the preferred mission review snapshot', async () => {
@@ -34,6 +38,648 @@ describe('startMissionReviewRuntime', () => {
         }),
       }),
     )
+  })
+
+  it('keeps one review GPX projection page in renderer state and replaces it on demand [DON-274]', async () => {
+    const listGpxImports = vi.fn().mockRejectedValue(new Error('unbounded API must not be called'))
+    const listGpxImportPage = vi
+      .fn()
+      .mockResolvedValueOnce({ entries: [{
+        id: 'gpx-1',
+        mission_id: FIRST_MISSION.id,
+        source_path: '/field/gpx-1.gpx',
+        file_name: 'gpx-1.gpx',
+        display_name: 'Team track',
+        geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+        metadata_json: null,
+        imported_at: '2026-04-10T08:00:00.000Z',
+        updated_at: '2026-04-10T08:00:00.000Z',
+      }], nextCursor: null })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listGpxImports, listGpxImportPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+
+    expect(listGpxImports).not.toHaveBeenCalled()
+    expect(listGpxImportPage).toHaveBeenCalledWith({
+      missionId: FIRST_MISSION.id, limit: 25,
+    })
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      gpxImports: expect.objectContaining({
+        pageNumber: 1,
+        visibleCount: 1,
+        hasMore: false,
+        loading: false,
+      }),
+      snapshot: expect.objectContaining({
+        summary: expect.objectContaining({ gpxImportCount: 1 }),
+      }),
+    }))
+  })
+
+  it('makes additional review GPX evidence explicit without accumulating renderer pages [DON-274]', async () => {
+    const firstPage = [{
+      id: 'gpx-1', mission_id: FIRST_MISSION.id, source_path: '/field/gpx-1.gpx',
+      file_name: 'gpx-1.gpx', display_name: 'Alpha track',
+      geometry_json: '{"type":"MultiLineString","coordinates":[]}', metadata_json: null,
+      imported_at: '2026-04-10T08:00:00.000Z', updated_at: '2026-04-10T08:00:00.000Z',
+    }]
+    const secondPage = [{ ...firstPage[0], id: 'gpx-2', display_name: 'Bravo track' }]
+    const listGpxImportPage = vi.fn()
+      .mockResolvedValueOnce({ entries: firstPage, nextCursor: 'page-2' })
+      .mockResolvedValueOnce({ entries: secondPage, nextCursor: null })
+      .mockResolvedValueOnce({ entries: firstPage, nextCursor: 'page-2' })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listGpxImportPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+    expect(listGpxImportPage).toHaveBeenCalledTimes(1)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      gpxImports: expect.objectContaining({ pageNumber: 1, visibleCount: 1, hasMore: true }),
+    }))
+
+    await runtime.loadNextGpxImports()
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      gpxImports: expect.objectContaining({ pageNumber: 2, visibleCount: 1, hasMore: false }),
+      snapshot: expect.objectContaining({
+        summary: expect.objectContaining({ gpxImportCount: 1 }),
+      }),
+    }))
+
+    await runtime.returnToFirstGpxImports()
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      gpxImports: expect.objectContaining({ pageNumber: 1, visibleCount: 1, hasMore: true }),
+    }))
+  })
+
+  it('keeps one bounded Search Pass page and replaces it through explicit continuation [DON-279]', async () => {
+    const pass = (id: string) => ({
+      id, mission_id: FIRST_MISSION.id, search_area_id: 'area-1',
+      assignment_id: 'assignment-1', started_at: '2026-04-10T08:10:00.000Z',
+      ended_at: '2026-04-10T08:20:00.000Z', outcome: 'partial' as const,
+      coordinator_name: 'Coordinator', version_sequence: 1,
+      created_at: '2026-04-10T08:20:00.000Z', updated_at: '2026-04-10T08:20:00.000Z',
+      participant_count: 0, clue_count: 0, track_evidence_count: 0,
+    })
+    const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+      readonly kind: string; readonly cursor?: string; readonly search?: string
+    }) => {
+      if (input.kind !== 'passes') {
+        return { kind: input.kind, search: input.search ?? '', generation: 0, entries: [], totalCount: 0, nextCursor: null }
+      }
+      return input.cursor === undefined
+        ? { kind: 'passes', search: input.search ?? '', generation: 0, entries: [pass('pass-1')], totalCount: 2, nextCursor: 'pass-page-2' }
+        : { kind: 'passes', search: input.search ?? '', generation: 0, entries: [pass('pass-2')], totalCount: 2, nextCursor: null }
+    })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listSearchOperationPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+    expect(listSearchOperationPage).toHaveBeenCalledWith({
+      missionId: FIRST_MISSION.id, kind: 'passes', limit: 25,
+    })
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchOperations: expect.objectContaining({
+        passes: [expect.objectContaining({ id: 'pass-1' })],
+        pages: expect.objectContaining({
+          passes: expect.objectContaining({ totalCount: 2, hasMore: true, pageNumber: 1 }),
+        }),
+      }),
+    }))
+
+    await runtime.loadNextSearchOperations('passes')
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchOperations: expect.objectContaining({
+        passes: [expect.objectContaining({ id: 'pass-2' })],
+        pages: expect.objectContaining({
+          passes: expect.objectContaining({ totalCount: 2, hasMore: false, pageNumber: 2 }),
+        }),
+      }),
+    }))
+    await runtime.searchSearchOperations('passes', 'Alpha')
+    expect(listSearchOperationPage).toHaveBeenLastCalledWith({
+      missionId: FIRST_MISSION.id, kind: 'passes', search: 'Alpha', limit: 25,
+    })
+  })
+
+  it('rejects a stale Search Operations result after a same-mission refresh [DON-279]', async () => {
+    let releaseStale: ((value: unknown) => void) | undefined
+    let markStaleStarted: (() => void) | undefined
+    const staleResult = new Promise((resolve) => { releaseStale = resolve })
+    const staleStarted = new Promise<void>((resolve) => { markStaleStarted = resolve })
+    let refreshed = false
+    const pass = (id: string) => ({
+      id, mission_id: FIRST_MISSION.id, search_area_id: 'area-1',
+      assignment_id: 'assignment-1', started_at: '2026-04-10T08:10:00.000Z',
+      ended_at: '2026-04-10T08:20:00.000Z', outcome: 'partial' as const,
+      coordinator_name: 'Coordinator', version_sequence: 1,
+      created_at: '2026-04-10T08:20:00.000Z', updated_at: '2026-04-10T08:20:00.000Z',
+      participant_count: 0, clue_count: 0, track_evidence_count: 0,
+    })
+    const page = (id: string, search = '') => ({
+      kind: 'passes' as const, search, generation: refreshed ? 2 : 1,
+      entries: [pass(id)], totalCount: 1, nextCursor: null,
+    })
+    const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+      readonly kind: string; readonly search?: string
+    }) => {
+      if (input.kind !== 'passes') {
+        return {
+          kind: input.kind, search: input.search ?? '', generation: refreshed ? 2 : 1,
+          entries: [], totalCount: 0, nextCursor: null,
+        }
+      }
+      if (input.search === 'stale') {
+        markStaleStarted?.()
+        return await staleResult
+      }
+      return page(refreshed ? 'pass-fresh' : 'pass-initial')
+    })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listSearchOperationPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+    const pendingStale = runtime.searchSearchOperations('passes', 'stale')
+    await staleStarted
+    refreshed = true
+    await runtime.refreshSelectedMission()
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchOperations: expect.objectContaining({
+        passes: [expect.objectContaining({ id: 'pass-fresh' })],
+      }),
+    }))
+
+    releaseStale?.(page('pass-stale', 'stale'))
+    await pendingStale
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchOperations: expect.objectContaining({
+        passes: [expect.objectContaining({ id: 'pass-fresh' })],
+      }),
+    }))
+  })
+
+  it('rejects a Search Operations read started while a mission refresh is pending [DON-279]', async () => {
+    await expectMissionReadToBlockSearchOperations(
+      (runtime) => runtime.refreshSelectedMission(),
+      'during-refresh',
+    )
+  })
+
+  it('rejects a Search Operations read started while a mission reload is pending [DON-279]', async () => {
+    await expectMissionReadToBlockSearchOperations(
+      (runtime) => runtime.load(FIRST_MISSION.id),
+      'during-load',
+    )
+  })
+
+  it.each([
+    ['load', 'success'],
+    ['load', 'error'],
+    ['refresh', 'success'],
+    ['refresh', 'error'],
+  ] as const)(
+    'releases Search Operations loading after failed Review %s and stale %s [DON-279]',
+    async (missionRead, staleOutcome) => {
+      await expectFailedMissionReadToReleaseSearchLoading(missionRead, staleOutcome)
+    },
+  )
+
+  it('fails closed instead of publishing mixed Search Operations generations [DON-279]', async () => {
+    const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+      readonly kind: string
+    }) => ({
+      kind: input.kind,
+      search: '',
+      generation: input.kind === 'passes' ? 2 : 1,
+      entries: [],
+      totalCount: 0,
+      nextCursor: null,
+    }))
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listSearchOperationPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      snapshot: null,
+      loading: false,
+      refreshing: false,
+      error: 'Search Operations changed while Review refreshed; refresh again.',
+      searchOperations: expect.objectContaining({
+        areas: [], assignments: [], outings: [], passes: [],
+      }),
+    }))
+  })
+
+  it('replaces Replay outing filter pages without accumulating renderer choices [DON-278]', async () => {
+    const firstReplay = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      availableOutingIds: ['outing-1'],
+      availableOutingTotalCount: 2,
+      availableOutingNextCursor: 'outing-page-2',
+    }
+    const readMissionReplayFilterPage = vi.fn().mockResolvedValue({
+      filterKind: 'outing', search: '', entries: ['outing-2'], totalCount: 2, nextCursor: null,
+    })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReplay: vi.fn().mockResolvedValue(firstReplay),
+        readMissionReplayFilterPage,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.seekReplay(firstReplay.selectedTime)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        result: expect.objectContaining({ availableOutingIds: ['outing-1'] }),
+        outingFilters: expect.objectContaining({ totalCount: 2, hasMore: true, pageNumber: 1 }),
+      }),
+    }))
+
+    await runtime.loadNextReplayOutingFilters()
+    expect(readMissionReplayFilterPage).toHaveBeenCalledWith(expect.objectContaining({
+      missionId: FIRST_MISSION.id, filterKind: 'outing', filterCursor: 'outing-page-2',
+    }), expect.any(String))
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        result: expect.objectContaining({ availableOutingIds: ['outing-2'] }),
+        outingFilters: expect.objectContaining({ totalCount: 2, hasMore: false, pageNumber: 2 }),
+      }),
+    }))
+  })
+
+  it('cancels superseded replay seeks and publishes only the newest data-known-at-T result [DON-278]', async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined
+    const readMissionReplay = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      .mockResolvedValueOnce(replayResult('2026-04-10T08:20:00.000Z', 'newest-fix'))
+    const cancelMissionReplay = vi.fn().mockResolvedValue(true)
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ readMissionReplay, cancelMissionReplay }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+
+    const first = runtime.seekReplay('2026-04-10T08:10:00.000Z')
+    await vi.waitFor(() => expect(readMissionReplay).toHaveBeenCalledOnce())
+    const firstRequestId = readMissionReplay.mock.calls[0]?.[1] as string
+    const second = runtime.seekReplay('2026-04-10T08:20:00.000Z')
+    await second
+    resolveFirst?.(replayResult('2026-04-10T08:10:00.000Z', 'obsolete-fix'))
+    await first
+
+    expect(cancelMissionReplay).toHaveBeenCalledWith(firstRequestId)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        mode: 'replay',
+        selectedTime: '2026-04-10T08:20:00.000Z',
+        result: expect.objectContaining({
+          tracks: [expect.objectContaining({ evidence_id: 'newest-fix' })],
+        }),
+      }),
+    }))
+  })
+
+  it('keeps display-only device and outing filters on exact-track continuation reads [DON-278]', async () => {
+    const firstResult = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      nextCursor: 'opaque-keyset-cursor',
+      deviceFilterIds: ['device-7'],
+      outingFilterIds: ['outing-3'],
+    }
+    const readMissionReplay = vi.fn().mockResolvedValue(firstResult)
+    const readMissionReplayTrackChunk = vi.fn().mockResolvedValue({
+      missionId: FIRST_MISSION.id,
+      selectedTime: firstResult.selectedTime,
+      tracks: [],
+      trackCursor: '1',
+      previousCursor: 'opaque-previous',
+      totalTrackCount: 1,
+      nextCursor: null,
+      progress: 1,
+    })
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ readMissionReplay, readMissionReplayTrackChunk }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+    await runtime.load(FIRST_MISSION.id)
+
+    await runtime.seekReplay(firstResult.selectedTime, {
+      deviceIds: ['device-7'], outingIds: ['outing-3'],
+    })
+    await runtime.loadNextReplayChunk()
+
+    expect(readMissionReplay).toHaveBeenCalledWith(expect.objectContaining({
+      deviceIds: ['device-7'], outingIds: ['outing-3'],
+    }), expect.any(String))
+    expect(readMissionReplayTrackChunk).toHaveBeenCalledWith(expect.objectContaining({
+      cursor: 'opaque-keyset-cursor',
+      deviceIds: ['device-7'],
+      outingIds: ['outing-3'],
+    }), expect.any(String))
+  })
+
+  it('cancels and failure-fences superseded replay pages [DON-278]', async () => {
+    let rejectFirst: ((error: Error) => void) | undefined
+    const firstResult = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      nextCursor: 'page-one',
+    }
+    const readMissionReplay = vi.fn().mockResolvedValue(firstResult)
+    const readMissionReplayTrackChunk = vi.fn()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirst = reject }))
+      .mockResolvedValueOnce({
+        missionId: FIRST_MISSION.id,
+        selectedTime: firstResult.selectedTime,
+        tracks: [{ ...firstResult.tracks[0], evidence_id: 'newest-page' }],
+        trackCursor: '1', previousCursor: 'page-zero', totalTrackCount: 2,
+        nextCursor: null, progress: 1,
+      })
+    const cancelMissionReplay = vi.fn().mockResolvedValue(true)
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReplay, readMissionReplayTrackChunk, cancelMissionReplay,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.seekReplay(firstResult.selectedTime)
+
+    const obsolete = runtime.loadNextReplayChunk()
+    await vi.waitFor(() => expect(readMissionReplayTrackChunk).toHaveBeenCalledOnce())
+    const obsoleteRequestId = readMissionReplayTrackChunk.mock.calls[0]?.[1] as string
+    const newest = runtime.loadNextReplayChunk()
+    await newest
+    rejectFirst?.(new Error('superseded page bound failure'))
+    await obsolete
+
+    expect(cancelMissionReplay).toHaveBeenCalledWith(obsoleteRequestId)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        error: null,
+        loadingMore: false,
+        result: expect.objectContaining({
+          tracks: [expect.objectContaining({ evidence_id: 'newest-page' })],
+        }),
+      }),
+    }))
+  })
+
+  it('replaces the large-state limitation when the displayed object page changes [DON-278]', async () => {
+    const firstResult = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      nextObjectCursor: '100',
+      totalObjectCount: 300,
+      deviceFilterIds: ['device-7'],
+      outingFilterIds: ['outing-3'],
+      limitations: [{
+        code: 'large_object_details_summarized',
+        message: 'Large evidence states are represented by bounded summaries and retained-state hashes in this page.',
+        count: 1,
+      }],
+    }
+    const laterPage = {
+      missionId: FIRST_MISSION.id,
+      selectedTime: firstResult.selectedTime,
+      objects: [],
+      totalObjectCount: 300,
+      objectCursor: '100',
+      nextObjectCursor: '200',
+      progress: 2 / 3,
+      summarizedObjectCount: 0,
+    } satisfies MissionReplayObjectChunkResult
+    const finalPage = {
+      ...laterPage,
+      objectCursor: '200',
+      nextObjectCursor: null,
+      progress: 1,
+      summarizedObjectCount: 2,
+    } satisfies MissionReplayObjectChunkResult
+    const readMissionReplay = vi.fn().mockResolvedValue(firstResult)
+    const readMissionReplayObjectChunk = vi.fn()
+      .mockResolvedValueOnce(laterPage)
+      .mockResolvedValueOnce(finalPage)
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReplay,
+        readMissionReplayObjectChunk,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.seekReplay(firstResult.selectedTime)
+
+    await runtime.loadNextReplayObjects()
+
+    expect(readMissionReplayObjectChunk).toHaveBeenLastCalledWith(expect.objectContaining({
+      deviceIds: ['device-7'],
+      outingIds: ['outing-3'],
+    }), expect.any(String))
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        result: expect.objectContaining({
+          objectCursor: '100',
+          limitations: expect.not.arrayContaining([
+            expect.objectContaining({ code: 'large_object_details_summarized' }),
+          ]),
+        }),
+      }),
+    }))
+
+    await runtime.loadNextReplayObjects()
+
+    expect(readMissionReplayObjectChunk).toHaveBeenLastCalledWith(expect.objectContaining({
+      deviceIds: ['device-7'],
+      outingIds: ['outing-3'],
+    }), expect.any(String))
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        result: expect.objectContaining({
+          objectCursor: '200',
+          limitations: expect.arrayContaining([expect.objectContaining({
+            code: 'large_object_details_summarized',
+            count: 2,
+          })]),
+        }),
+      }),
+    }))
+  })
+
+  it('preserves omitted filters while paging the default all-mission object view [DON-278]', async () => {
+    const firstResult = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      nextObjectCursor: 'opaque-object-cursor',
+      totalObjectCount: 101,
+    }
+    const readMissionReplay = vi.fn().mockResolvedValue(firstResult)
+    const readMissionReplayObjectChunk = vi.fn().mockResolvedValue({
+      missionId: FIRST_MISSION.id,
+      selectedTime: firstResult.selectedTime,
+      objects: [],
+      totalObjectCount: 101,
+      objectCursor: 'opaque-object-cursor',
+      nextObjectCursor: null,
+      progress: 1,
+      summarizedObjectCount: 0,
+    } satisfies MissionReplayObjectChunkResult)
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReplay,
+        readMissionReplayObjectChunk,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.seekReplay(firstResult.selectedTime)
+
+    await runtime.loadNextReplayObjects()
+
+    expect(readMissionReplayObjectChunk).toHaveBeenCalledWith({
+      missionId: FIRST_MISSION.id,
+      selectedTime: firstResult.selectedTime,
+      timezone: 'Europe/Dublin',
+      trackLimit: 500,
+      objectLimit: 100,
+      replayGeneration: 0,
+      objectCursor: 'opaque-object-cursor',
+    }, expect.any(String))
+  })
+
+  it('uses bound object cursor history when navigating to an earlier replay page [DON-278]', async () => {
+    const firstPageCursor = 'eyJ2Ijo0LCJvZmZzZXQiOjEwMCwiY29udGV4dCI6ImZpcnN0In0'
+    const secondPageCursor = 'eyJ2Ijo0LCJvZmZzZXQiOjIwMCwiY29udGV4dCI6InNlY29uZCJ9'
+    const firstResult = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      nextObjectCursor: firstPageCursor,
+      totalObjectCount: 300,
+    }
+    const readMissionReplay = vi.fn().mockResolvedValue(firstResult)
+    const readMissionReplayObjectChunk = vi.fn()
+      .mockResolvedValueOnce({
+        ...firstResult,
+        objects: [],
+        objectCursor: '100',
+        nextObjectCursor: secondPageCursor,
+        progress: 2 / 3,
+        summarizedObjectCount: 0,
+      } satisfies MissionReplayObjectChunkResult)
+      .mockResolvedValueOnce({
+        ...firstResult,
+        objects: [],
+        objectCursor: '200',
+        nextObjectCursor: null,
+        progress: 1,
+        summarizedObjectCount: 0,
+      } satisfies MissionReplayObjectChunkResult)
+      .mockResolvedValueOnce({
+        ...firstResult,
+        objects: [],
+        objectCursor: '100',
+        nextObjectCursor: secondPageCursor,
+        progress: 2 / 3,
+        summarizedObjectCount: 0,
+      } satisfies MissionReplayObjectChunkResult)
+      .mockResolvedValueOnce({
+        ...firstResult,
+        objects: [],
+        objectCursor: '0',
+        nextObjectCursor: firstPageCursor,
+        progress: 1 / 3,
+        summarizedObjectCount: 0,
+      } satisfies MissionReplayObjectChunkResult)
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReplay,
+        readMissionReplayObjectChunk,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.seekReplay(firstResult.selectedTime)
+
+    await runtime.loadNextReplayObjects()
+    await runtime.loadNextReplayObjects()
+    await runtime.loadPreviousReplayObjects()
+    await runtime.loadPreviousReplayObjects()
+
+    expect(readMissionReplayObjectChunk).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      objectCursor: firstPageCursor,
+    }), expect.any(String))
+    expect(readMissionReplayObjectChunk).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      objectCursor: secondPageCursor,
+    }), expect.any(String))
+    expect(readMissionReplayObjectChunk).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      objectCursor: firstPageCursor,
+    }), expect.any(String))
+    expect(readMissionReplayObjectChunk).toHaveBeenNthCalledWith(4, expect.not.objectContaining({
+      objectCursor: expect.anything(),
+    }), expect.any(String))
+  })
+
+  it('cancels and fences replay when the selected mission changes [DON-278]', async () => {
+    let resolveReplay: ((value: ReturnType<typeof replayResult>) => void) | undefined
+    const readMissionReplay = vi.fn().mockImplementation(
+      () => new Promise<ReturnType<typeof replayResult>>((resolve) => { resolveReplay = resolve }),
+    )
+    const cancelMissionReplay = vi.fn().mockResolvedValue(true)
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FIRST_MISSION, SECOND_MISSION]),
+        readMissionReplay,
+        cancelMissionReplay,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+
+    const pendingReplay = runtime.seekReplay('2026-04-10T08:20:00.000Z')
+    await vi.waitFor(() => expect(readMissionReplay).toHaveBeenCalledOnce())
+    const replayRequestId = readMissionReplay.mock.calls[0]?.[1] as string
+    await runtime.selectMission(SECOND_MISSION.id)
+    resolveReplay?.(replayResult('2026-04-10T08:20:00.000Z', 'mission-a-fix'))
+    await pendingReplay
+
+    expect(cancelMissionReplay).toHaveBeenCalledWith(replayRequestId)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      selectedMissionId: SECOND_MISSION.id,
+      replay: expect.objectContaining({ mode: 'live', result: null }),
+    }))
   })
 
   it('loads audit and exact breadcrumb count through one bounded Review query [DON-251]', async () => {
@@ -422,6 +1068,146 @@ describe('startMissionReviewRuntime', () => {
   })
 })
 
+/** Proves that neither Review load mode can admit an old page read into new state. */
+async function expectMissionReadToBlockSearchOperations(
+  startMissionRead: (runtime: MissionReviewController) => Promise<void>,
+  staleSearch: string,
+): Promise<void> {
+  let releaseMissionList: ((value: readonly Mission[]) => void) | undefined
+  const missionList = new Promise<readonly Mission[]>((resolve) => {
+    releaseMissionList = resolve
+  })
+  let listCall = 0
+  const listMissions = vi.fn().mockImplementation(async () => {
+    listCall += 1
+    return listCall === 1 ? [FIRST_MISSION] : await missionList
+  })
+  let releaseStalePage: ((value: unknown) => void) | undefined
+  const stalePage = new Promise((resolve) => {
+    releaseStalePage = resolve
+  })
+  let refreshed = false
+  const pass = (id: string) => ({
+    id, mission_id: FIRST_MISSION.id, search_area_id: 'area-1',
+    assignment_id: 'assignment-1', started_at: '2026-04-10T08:10:00.000Z',
+    ended_at: '2026-04-10T08:20:00.000Z', outcome: 'partial' as const,
+    coordinator_name: 'Coordinator', version_sequence: 1,
+    created_at: '2026-04-10T08:20:00.000Z', updated_at: '2026-04-10T08:20:00.000Z',
+    participant_count: 0, clue_count: 0, track_evidence_count: 0,
+  })
+  const page = (kind: string, search = '') => ({
+    kind,
+    search,
+    generation: refreshed ? 2 : 1,
+    entries: kind === 'passes' ? [pass(refreshed ? 'pass-fresh' : 'pass-initial')] : [],
+    totalCount: kind === 'passes' ? 1 : 0,
+    nextCursor: null,
+  })
+  const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+    readonly kind: string; readonly search?: string
+  }) => input.search === staleSearch ? await stalePage : page(input.kind, input.search))
+  const applyRuntime = vi.fn()
+  const runtime = await startMissionReviewRuntime({
+    missionStore: createMissionReviewStoreStub({ listMissions, listSearchOperationPage }),
+    layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+    applyRuntime,
+  })
+
+  await runtime.load(FIRST_MISSION.id)
+  const pendingMissionRead = startMissionRead(runtime)
+  await vi.waitFor(() => expect(listMissions).toHaveBeenCalledTimes(2))
+  const pendingSearch = runtime.searchSearchOperations('passes', staleSearch)
+  await Promise.resolve()
+  refreshed = true
+  releaseMissionList?.([FIRST_MISSION])
+  await pendingMissionRead
+  releaseStalePage?.({
+    ...page('passes', staleSearch), generation: 1, entries: [pass('pass-stale')],
+  })
+  await pendingSearch
+
+  expect(listSearchOperationPage).not.toHaveBeenCalledWith(expect.objectContaining({
+    search: staleSearch,
+  }))
+  expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+    searchOperations: expect.objectContaining({
+      passes: [expect.objectContaining({ id: 'pass-fresh' })],
+    }),
+  }))
+}
+
+/** Proves a failed Review read cannot strand an invalidated page in loading state. */
+async function expectFailedMissionReadToReleaseSearchLoading(
+  missionRead: 'load' | 'refresh',
+  staleOutcome: 'success' | 'error',
+): Promise<void> {
+  const listMissions = vi.fn()
+    .mockResolvedValueOnce([FIRST_MISSION])
+    .mockRejectedValueOnce(new Error('Review reload failed'))
+  let settleStalePage: ((value: unknown) => void) | undefined
+  let rejectStalePage: ((reason: Error) => void) | undefined
+  const stalePage = new Promise((resolve, reject) => {
+    settleStalePage = resolve
+    rejectStalePage = reject
+  })
+  const pass = {
+    id: 'pass-initial', mission_id: FIRST_MISSION.id, search_area_id: 'area-1',
+    assignment_id: 'assignment-1', started_at: '2026-04-10T08:10:00.000Z',
+    ended_at: '2026-04-10T08:20:00.000Z', outcome: 'partial' as const,
+    coordinator_name: 'Coordinator', version_sequence: 1,
+    created_at: '2026-04-10T08:20:00.000Z', updated_at: '2026-04-10T08:20:00.000Z',
+    participant_count: 0, clue_count: 0, track_evidence_count: 0,
+  }
+  const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+    readonly kind: string; readonly search?: string
+  }) => input.search === 'held-before-failure'
+    ? await stalePage
+    : {
+        kind: input.kind,
+        search: input.search ?? '',
+        generation: 1,
+        entries: input.kind === 'passes' ? [pass] : [],
+        totalCount: input.kind === 'passes' ? 1 : 0,
+        nextCursor: null,
+      })
+  const applyRuntime = vi.fn()
+  const runtime = await startMissionReviewRuntime({
+    missionStore: createMissionReviewStoreStub({ listMissions, listSearchOperationPage }),
+    layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+    applyRuntime,
+  })
+
+  await runtime.load(FIRST_MISSION.id)
+  const pendingSearch = runtime.searchSearchOperations('passes', 'held-before-failure')
+  await vi.waitFor(() => expect(listSearchOperationPage).toHaveBeenCalledWith(
+    expect.objectContaining({ search: 'held-before-failure' }),
+  ))
+  await (missionRead === 'load'
+    ? runtime.load(FIRST_MISSION.id)
+    : runtime.refreshSelectedMission())
+  if (staleOutcome === 'success') {
+    settleStalePage?.({
+      kind: 'passes', search: 'held-before-failure', generation: 1,
+      entries: [{ ...pass, id: 'pass-stale' }], totalCount: 1, nextCursor: null,
+    })
+  } else {
+    rejectStalePage?.(new Error('obsolete page failed'))
+  }
+  await pendingSearch
+
+  expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+    loading: false,
+    refreshing: false,
+    error: 'Review reload failed',
+    searchOperations: expect.objectContaining({
+      passes: [expect.objectContaining({ id: 'pass-initial' })],
+      pages: expect.objectContaining({
+        passes: expect.objectContaining({ loading: false }),
+      }),
+    }),
+  }))
+}
+
 const FIRST_MISSION: Mission = {
   id: 'mission-1',
   name: 'First Mission',
@@ -531,6 +1317,45 @@ function createMissionReviewStoreStub(overrides: Record<string, unknown> = {}) {
     countPositions: vi.fn().mockResolvedValue(1),
     listDrawings: vi.fn().mockResolvedValue([drawing]),
     listGpxImports: vi.fn().mockResolvedValue([]),
+    listOutings: vi.fn().mockResolvedValue([]),
     ...overrides,
+  }
+}
+
+function replayResult(selectedTime: string, evidenceId: string) {
+  return {
+    missionId: FIRST_MISSION.id,
+    selectedTime,
+    timezone: 'Europe/Dublin',
+    objects: [],
+    totalObjectCount: 0,
+    objectTypeCounts: {},
+    objectCursor: '0',
+    nextObjectCursor: null,
+    tracks: [{
+      evidence_id: evidenceId,
+      source_type: 'traccar_fix',
+      track_id: 'alpha',
+      effective_at: selectedTime,
+      recorded_at: selectedTime,
+      lat: 52,
+      lon: -9.7,
+      elevation: null,
+      accuracy: 5,
+      time_authority: 'fixTime',
+      completeness: 'complete',
+    }],
+    trackCursor: '0',
+    previousCursor: null,
+    totalTrackCount: 1,
+    staticGpxPointCount: 0,
+    availableDeviceIds: ['alpha'],
+    availableOutingIds: [],
+    deviceFilterIds: [],
+    outingFilterIds: [],
+    staticGpxEvidence: [],
+    nextCursor: null,
+    progress: 1,
+    limitations: [],
   }
 }

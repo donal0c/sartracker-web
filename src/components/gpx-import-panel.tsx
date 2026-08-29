@@ -15,17 +15,24 @@ const gpxImportSource = createDesktopGpxImportSource()
 export function GpxImportPanel() {
   const controller = useGpxStore((state) => state.controller)
   const imports = useGpxStore((state) => state.imports)
+  const outings = useGpxStore((state) => state.outings)
   const watchedDirectories = useGpxStore((state) => state.watchedDirectories)
+  const importIssues = useGpxStore((state) => state.importIssues)
+  const importPageNumber = useGpxStore((state) => state.importPageNumber)
+  const hasMoreImports = useGpxStore((state) => state.hasMoreImports)
+  const loadingMoreImports = useGpxStore((state) => state.loadingMoreImports)
+  const hasMoreImportIssues = useGpxStore((state) => state.hasMoreImportIssues)
   const loading = useGpxStore((state) => state.loading)
   const importing = useGpxStore((state) => state.importing)
   const error = useGpxStore((state) => state.error)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [assignmentActor, setAssignmentActor] = useState('')
 
   const desktopAvailable = isTauriRuntimeAvailable() || isElectronRuntimeAvailable()
   const canImport = controller !== null && desktopAvailable && !loading && !importing
   const importSummary = useMemo(
-    () => `${imports.length} imported · ${watchedDirectories.length} watched`,
-    [imports.length, watchedDirectories.length],
+    () => `${imports.length}${hasMoreImports ? '+' : ''} shown · page ${importPageNumber} · ${watchedDirectories.length} watched`,
+    [hasMoreImports, importPageNumber, imports.length, watchedDirectories.length],
   )
 
   return (
@@ -84,11 +91,52 @@ export function GpxImportPanel() {
           {error}
         </p>
       ) : null}
+      {importIssues.length > 0 ? (
+        <section
+          aria-label="Retained GPX import issues"
+          className="mt-3 rounded-xl border border-rose-500/40 bg-rose-950/20 p-3"
+          data-testid="gpx-import-issues"
+        >
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-rose-200">
+            Retained import issues
+          </h4>
+          <ul className="mt-2 space-y-2">
+            {importIssues.map((issue) => (
+              <li className="text-xs text-rose-100" key={`${issue.batch_id}:${issue.file_name}:${issue.recorded_at}`}>
+                <strong>{issue.file_name}</strong>: {issue.reason}
+                {(issue.rejection_count ?? 0) > 0 ? (
+                  <span className="mt-1 block font-semibold">
+                    {issue.rejection_count} rejected point/segment record{issue.rejection_count === 1 ? '' : 's'} retained with the exact source.
+                  </span>
+                ) : null}
+                {issue.projection_warnings !== undefined && issue.projection_warnings.length > 0 ? (
+                  <span className="mt-1 block font-semibold">
+                    Some retained issue fields were shortened for safe display. The persisted record remains authoritative.
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {hasMoreImportIssues ? (
+            <p className="mt-2 text-xs font-semibold text-rose-100" data-testid="gpx-import-issues-more">
+              Additional retained issues exist beyond this bounded page. Review the persisted mission evidence record before closeout.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
       {statusMessage !== null ? (
         <p className="mt-3 text-sm text-emerald-300" data-testid="gpx-import-status">
           {statusMessage}
         </p>
       ) : null}
+      <input
+        className="mt-3 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-xs text-stone-100"
+        data-testid="gpx-outing-assigned-by"
+        maxLength={120}
+        onChange={(event) => setAssignmentActor(event.target.value)}
+        placeholder="Coordinator name for outing assignments"
+        value={assignmentActor}
+      />
 
       <div className="mt-4 space-y-3">
         <PanelList
@@ -115,12 +163,45 @@ export function GpxImportPanel() {
             secondary: entry.source_path,
             color: getGpxImportColor(entry.metadata_json),
             onColorChange: (color) => void controller?.updateImportColor(entry.id, color),
-            actionLabel: 'Delete',
+            outingId: entry.outing_id ?? '',
+            outings,
+            outingAssignmentDisabled: assignmentActor.trim() === '',
+            onOutingChange: (outingId: string) => void handleAssignOuting(entry.id, outingId),
+            actionLabel: 'Retire',
             onAction: () => void handleDeleteImport(entry.id, entry.display_name),
           }))}
           testId="gpx-import-list"
           title="Imported Tracks"
         />
+        {hasMoreImports || importPageNumber > 1 ? (
+          <div
+            className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3"
+            data-testid="gpx-import-pagination"
+          >
+            <p className="text-xs font-semibold text-amber-100">
+              Showing bounded GPX page {importPageNumber} ({imports.length} track{imports.length === 1 ? '' : 's'}).
+              {hasMoreImports ? ' More imported evidence is available.' : ' This is the final page.'}
+            </p>
+            <div className="mt-2 flex gap-2">
+              {importPageNumber > 1 ? (
+                <ActionButton
+                  disabled={controller === null || loadingMoreImports}
+                  label="Return to First Page"
+                  onClick={() => void controller?.returnToFirstImports()}
+                  testId="gpx-import-first-page"
+                />
+              ) : null}
+              {hasMoreImports ? (
+                <ActionButton
+                  disabled={controller === null || loadingMoreImports}
+                  label={loadingMoreImports ? 'Loading…' : 'Show Next Page'}
+                  onClick={() => void controller?.loadNextImports()}
+                  testId="gpx-import-next-page"
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   )
@@ -135,8 +216,9 @@ export function GpxImportPanel() {
       return
     }
 
-    const files = await gpxImportSource.readFiles(paths)
-    const imported = await controller.importFiles(files)
+    const imported = isElectronRuntimeAvailable()
+      ? await controller.importPaths(paths)
+      : await controller.importFiles(await gpxImportSource.readFiles(paths))
     setStatusMessage(
       imported.length === 0
         ? 'No new GPX files were imported.'
@@ -154,8 +236,9 @@ export function GpxImportPanel() {
       return
     }
 
-    const files = await gpxImportSource.listDirectoryFiles(directoryPath)
-    const imported = await controller.importFiles(files)
+    const imported = isElectronRuntimeAvailable() && gpxImportSource.listDirectoryPaths !== undefined
+      ? await controller.importPaths(await gpxImportSource.listDirectoryPaths(directoryPath))
+      : await controller.importFiles(await gpxImportSource.listDirectoryFiles(directoryPath))
     setStatusMessage(
       imported.length === 0
         ? `No new GPX files were found in ${directoryPath}.`
@@ -202,9 +285,17 @@ export function GpxImportPanel() {
     const didDelete = await controller.deleteImport(importId)
     setStatusMessage(
       didDelete
-        ? `Deleted GPX import ${displayName}.`
-        : `GPX import ${displayName} was already removed.`,
+        ? `Retired GPX import ${displayName}. Its evidence remains in mission history.`
+        : `GPX import ${displayName} was already retired.`,
     )
+  }
+
+  async function handleAssignOuting(importId: string, outingId: string): Promise<void> {
+    if (controller === null || outingId === '' || assignmentActor.trim() === '') return
+    const updated = await controller.assignImportToOuting(importId, outingId, assignmentActor)
+    setStatusMessage(updated === null
+      ? 'GPX outing assignment was unavailable.'
+      : `Assigned ${updated.display_name} to the selected outing as a new evidence revision.`)
   }
 }
 
@@ -237,6 +328,10 @@ function PanelList(props: {
     readonly secondary: string
     readonly color?: string
     readonly onColorChange?: (color: string) => void
+    readonly outingId?: string
+    readonly outings?: readonly { readonly id: string; readonly label: string }[]
+    readonly outingAssignmentDisabled?: boolean
+    readonly onOutingChange?: (outingId: string) => void
     readonly actionLabel: string
     readonly onAction: () => void
   }[]
@@ -276,6 +371,20 @@ function PanelList(props: {
                   testId={`gpx-import-color-${item.id}`}
                   value={item.color}
                 />
+              ) : null}
+              {item.outings !== undefined && item.onOutingChange !== undefined ? (
+                <label className="text-[11px] text-stone-300">Static evidence outing
+                  <select
+                    className="mt-1 w-full rounded border border-stone-700 bg-stone-950 p-2"
+                    data-testid={`gpx-import-outing-${item.id}`}
+                    disabled={item.outingAssignmentDisabled}
+                    onChange={(event) => item.onOutingChange?.(event.target.value)}
+                    value={item.outingId ?? ''}
+                  >
+                    <option value="">Unassigned — static evidence remains explicit</option>
+                    {item.outings.map((outing) => <option key={outing.id} value={outing.id}>{outing.label}</option>)}
+                  </select>
+                </label>
               ) : null}
             </div>
           ))

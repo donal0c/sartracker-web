@@ -3,9 +3,11 @@
 ## Status and scope
 
 This charter is the WAR-01 assurance baseline for the complete existing SAR
-Tracker application at `80309c995a18eeb190cce4310c9a46b0f46d5263`. It covers
-production code outside the Breadcrumb and Mission-History Programme as well
-as the programme boundaries already present on that exact base.
+Tracker application at PR5 merge commit
+`eec92812b783a795c093f37268b295dd2179a3af`. It covers production code outside
+the Breadcrumb and Mission-History Programme as well as the merged
+`DON-274`/`DON-277`/`DON-278`/`DON-279` evidence and replay boundaries from PR5
+head `f5ba8647131950dde457e50ce36fe0b8ded7337d`.
 
 The companion [hazard register](hazard-register.md) records what the repository
 actually controls, what the inspected tests prove, where the proof stops, and
@@ -18,14 +20,28 @@ tests, workflows, dependencies, release configuration, product semantics, or
 Linear ownership. It also does not manufacture new package, live-provider,
 long-soak, or field evidence.
 
-### In-flight boundary
+### Merged PR5 reconciliation
 
-The unmerged target is the `DON-274`/`DON-277`/`DON-278`/`DON-279` issue set on
-GitHub PR #5. The canonical execution policy calls that scope programme PR-4,
-while current issue/PR metadata calls it PR-5 of six. This charter therefore
-targets the issue set and eventual merge SHA, not a bare programme number.
-Every boundary it owns is marked `rewrite-pending`; this charter neither audits
-nor freezes its unmerged implementation.
+GitHub PR #5 merged as
+`eec92812b783a795c093f37268b295dd2179a3af` from final source head
+`f5ba8647131950dde457e50ce36fe0b8ded7337d`. WAR-01 re-opened the landed schema
+v12 migration, GPX source/worker/receipt/revision boundaries, immutable versions
+of mutable mission objects, data-known-at-time Replay queries and IPC, stable search-area /
+assignment / pass records, attachment custody and archive inclusion, renderer
+projections, browser parity, and their relevant tests. The affected register
+rows now describe those merged controls and their remaining proof limits.
+
+The proof boundary is exact. The accepted four-review PR5 wave applies to its
+recorded earlier heads, including `c1ad54b8` for persistence/concurrency and
+`467e7b39` for renderer/broad review. It is prior-head evidence, not an
+exact-head independent review of `f5ba8647`. Donal authorized the final
+casualty-treatment/preload/workflow correction to use a focused correction,
+test, and package pass instead of restarting those four reviews. Exact-head
+Linux run `33260131951` was green for `f5ba8647`; it supplies the declared Linux
+unit/build/package, indexed 960,000-position replay, native SQLite/Mesa,
+packaged tracking-soak, launch, and graceful-close matrix. It does not convert
+the prior-head reviews into final-head reviews or prove release, live-provider,
+long-duration field, archive-security, or restore-and-replay behavior.
 
 The `DON-248`/`DON-252`/`DON-253` archive-lifecycle successor is also not
 implemented. The canonical programme policy names that successor programme
@@ -140,27 +156,18 @@ slice is recorded separately from that source inspection.
 - The coordinator centrally retraces future confirmed findings before deciding
   remediation. WAR-01 creates no speculative Linear work.
 
-## Required post-issue-set reconciliation
+## Reconciliation status and next mandatory boundary
 
-After the `DON-274`/`DON-277`/`DON-278`/`DON-279` issue set on GitHub PR #5
-merges, perform one short, docs-only reconciliation before treating this
-baseline as current:
+The post-PR5 reconciliation is complete on the merge SHA above. `RPL-001`,
+`RPL-002`, `RPL-003`, `RPL-005`, `EVD-005`, `TRK-002`, and the affected
+`MIS-*`, `IPC-*`, archive, evidence, and map-surface rows were retraced against
+the landed code and opened tests. Reclassification records a control only where
+the merged path and inspected test justify it; it does not inherit an assurance
+claim merely because PR5 merged.
 
-1. record GitHub PR #5's merge SHA and diff it against the base used by this
-   charter;
-2. re-open every changed production and test boundary owned by `DON-274`,
-   `DON-277`, `DON-278`, and `DON-279`, including GPX, versioned/source-exact
-   evidence, replay, revision, search-area/pass, marker-attachment custody,
-   archive inclusion, and coverage-presentation seams;
-3. retrace `RPL-001` through `RPL-005`, `EVD-005`, and any other changed
-   `EVD-*`, `MIS-*`, `TRK-*`, or `IPC-*` call path; do not carry current-base
-   conclusions across a changed boundary by ancestry alone;
-4. replace or reaffirm each `rewrite-pending` classification, cite only tests
-   actually re-opened, and state the new evidence tier and proof limit;
-5. keep the `DON-248`/`DON-252`/`DON-253` streamed archive/restore boundary
-   `rewrite-pending` until its own implementation and qualification land; and
-6. obtain a fresh exact-head broad life-safety review and a focused
-   traceability review of the reconciled rows.
-
-The reconciliation is not a retrospective audit of an unmerged branch. It is
-the point at which the merged issue-set code becomes repository authority.
+The next mandatory reconciliation remains the unimplemented
+`DON-248`/`DON-252`/`DON-253` archive-lifecycle successor. Keep `RPL-004`
+`rewrite-pending` until its streamed encrypted/locked archive, key custody,
+restore-and-replay, large-file, and recovery matrices land and are inspected.
+After any such merge, retrace every changed archive/replay/finalization row and
+obtain fresh exact-head broad life-safety and focused traceability reviews.

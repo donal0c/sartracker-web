@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeSet, HashMap},
     fs,
     fs::File,
     io::Write,
@@ -16,6 +17,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
     ConnectOptions, Executor, FromRow, Row, Sqlite, SqlitePool,
 };
+use tauri::async_runtime::Mutex as AsyncMutex;
 use tauri::{AppHandle, Manager, Runtime, State};
 use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
@@ -32,6 +34,20 @@ pub struct MissionStore {
     pool: SqlitePool,
     database_path: PathBuf,
     backup_path: PathBuf,
+    attachment_lifecycle_lock: Arc<AsyncMutex<()>>,
+    #[cfg(test)]
+    gpx_upsert_start_barrier: Option<Arc<tokio::sync::Barrier>>,
+    #[cfg(test)]
+    gpx_upsert_before_commit_pause: Option<GpxUpsertBeforeCommitPause>,
+    #[cfg(test)]
+    gpx_delete_start_barrier: Option<Arc<tokio::sync::Barrier>>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct GpxUpsertBeforeCommitPause {
+    reached: Arc<tokio::sync::Barrier>,
+    release: Arc<tokio::sync::Barrier>,
 }
 
 #[derive(Clone)]
@@ -463,10 +479,39 @@ impl MissionStore {
             pool,
             database_path,
             backup_path,
+            attachment_lifecycle_lock: Arc::new(AsyncMutex::new(())),
+            #[cfg(test)]
+            gpx_upsert_start_barrier: None,
+            #[cfg(test)]
+            gpx_upsert_before_commit_pause: None,
+            #[cfg(test)]
+            gpx_delete_start_barrier: None,
         };
 
         store.initialize().await?;
         Ok(store)
+    }
+
+    #[cfg(test)]
+    fn with_gpx_upsert_start_barrier(mut self, barrier: Arc<tokio::sync::Barrier>) -> Self {
+        self.gpx_upsert_start_barrier = Some(barrier);
+        self
+    }
+
+    #[cfg(test)]
+    fn with_gpx_upsert_before_commit_pause(
+        mut self,
+        reached: Arc<tokio::sync::Barrier>,
+        release: Arc<tokio::sync::Barrier>,
+    ) -> Self {
+        self.gpx_upsert_before_commit_pause = Some(GpxUpsertBeforeCommitPause { reached, release });
+        self
+    }
+
+    #[cfg(test)]
+    fn with_gpx_delete_start_barrier(mut self, barrier: Arc<tokio::sync::Barrier>) -> Self {
+        self.gpx_delete_start_barrier = Some(barrier);
+        self
     }
 
     async fn initialize(&self) -> Result<(), String> {
@@ -872,7 +917,10 @@ impl MissionStore {
             .write_all(&snapshot_bytes)
             .map_err(|error| format!("Failed to write snapshot entry: {error}"))?;
 
-        for attachment_path in self.list_marker_attachment_paths(mission_id).await? {
+        let attachment_paths = self.list_marker_attachment_paths(mission_id).await?;
+        for (attachment_path, attachment_name) in
+            collision_safe_attachment_archive_names(&attachment_paths)
+        {
             let attachment_file_path = PathBuf::from(&attachment_path);
             if !attachment_file_path.exists() {
                 return Err(format!(
@@ -881,10 +929,6 @@ impl MissionStore {
                 ));
             }
 
-            let attachment_name = attachment_file_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .ok_or_else(|| "Attachment file name is invalid.".to_string())?;
             let attachment_bytes = fs::read(&attachment_file_path).map_err(|error| {
                 format!("Failed to read marker attachment for archive: {error}")
             })?;
@@ -1629,15 +1673,6 @@ impl MissionStore {
             .await
             .map_err(|error| format!("Failed to commit marker upsert: {error}"))?;
 
-        if let Some(existing_attachment_path) = existing_marker
-            .as_ref()
-            .and_then(|marker| marker.attachment_path.as_deref())
-        {
-            if Some(existing_attachment_path) != input.attachment_path.as_deref() {
-                self.remove_managed_marker_attachment(&input.mission_id, existing_attachment_path);
-            }
-        }
-
         self.get_marker(marker_id).await
     }
 
@@ -1682,6 +1717,7 @@ impl MissionStore {
         input: IngestMarkerAttachmentInput,
         settings: &SettingsStoreState,
     ) -> Result<String, String> {
+        let _attachment_lifecycle_guard = self.attachment_lifecycle_lock.lock().await;
         self.ensure_mission_writable_for_data(&input.mission_id)
             .await?;
         self.get_mission(input.mission_id.clone()).await?;
@@ -1712,6 +1748,15 @@ impl MissionStore {
             write_bytes_atomically(&backup_path, &bytes)?;
         }
 
+        self.append_event(
+            &input.mission_id,
+            "marker_attachment_ingested",
+            serde_json::json!({
+                "attachment_path": primary_path.to_string_lossy(),
+            }),
+        )
+        .await?;
+
         Ok(primary_path.to_string_lossy().to_string())
     }
 
@@ -1739,6 +1784,7 @@ impl MissionStore {
             "marker_id": marker.id,
             "marker_type": marker.marker_type,
             "name": marker.name,
+            "attachment_path": marker.attachment_path,
         });
         Self::insert_event(
             &mut *tx,
@@ -1753,15 +1799,11 @@ impl MissionStore {
             .await
             .map_err(|error| format!("Failed to commit marker delete: {error}"))?;
 
-        if let Some(attachment_path) = marker.attachment_path.as_deref() {
-            self.remove_managed_marker_attachment(&marker.mission_id, attachment_path);
-        }
-
         Ok(result.rows_affected() > 0)
     }
 
     async fn list_marker_attachment_paths(&self, mission_id: &str) -> Result<Vec<String>, String> {
-        sqlx::query_scalar::<_, String>(
+        let mut attachment_paths = sqlx::query_scalar::<_, String>(
             r#"
             SELECT attachment_path
             FROM markers
@@ -1772,7 +1814,39 @@ impl MissionStore {
         .bind(mission_id)
         .fetch_all(&self.pool)
         .await
-        .map_err(|error| format!("Failed to list marker attachment paths: {error}"))
+        .map_err(|error| format!("Failed to list marker attachment paths: {error}"))?;
+
+        let custody_events = sqlx::query_scalar::<_, Option<String>>(
+            r#"
+            SELECT details_json
+            FROM mission_events
+            WHERE mission_id = ? AND event_type IN (
+              'marker_created', 'marker_updated', 'marker_deleted', 'marker_attachment_ingested'
+            )
+            ORDER BY timestamp ASC, rowid ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list attachment custody events: {error}"))?;
+        for details_json in custody_events.into_iter().flatten() {
+            let details: serde_json::Value = serde_json::from_str(&details_json)
+                .map_err(|error| format!("Attachment custody event is corrupt: {error}"))?;
+            if let Some(attachment_path) = details
+                .get("attachment_path")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+            {
+                attachment_paths.push(attachment_path.to_string());
+            }
+        }
+
+        Ok(attachment_paths
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect())
     }
 
     fn resolve_attachment_destination(
@@ -1818,36 +1892,6 @@ impl MissionStore {
                 .join(ATTACHMENTS_DIRECTORY_NAME)
                 .join(format!("{}-{}", Uuid::new_v4(), file_name)),
         ))
-    }
-
-    fn remove_managed_marker_attachment(&self, mission_id: &str, attachment_path: &str) {
-        let Some(path) = self.managed_marker_attachment_path(mission_id, attachment_path) else {
-            return;
-        };
-
-        if let Err(error) = remove_file_if_exists(&path) {
-            eprintln!(
-                "Failed to remove superseded marker attachment {}: {}",
-                path.to_string_lossy(),
-                error
-            );
-        }
-    }
-
-    fn managed_marker_attachment_path(
-        &self,
-        mission_id: &str,
-        attachment_path: &str,
-    ) -> Option<PathBuf> {
-        let path = PathBuf::from(attachment_path);
-        let normalized_path = path.to_string_lossy().replace('\\', "/");
-        let managed_segment = format!("/{mission_id}/{ATTACHMENTS_DIRECTORY_NAME}/");
-
-        if normalized_path.contains(&managed_segment) {
-            Some(path)
-        } else {
-            None
-        }
     }
 
     pub async fn upsert_drawing(&self, input: UpsertDrawingInput) -> Result<Drawing, String> {
@@ -2202,100 +2246,162 @@ impl MissionStore {
         &self,
         input: UpsertGpxTrackImportInput,
     ) -> Result<GpxTrackImport, String> {
-        self.ensure_mission_writable_for_data(&input.mission_id)
-            .await?;
-
-        let existing_import = sqlx::query_as::<_, GpxTrackImport>(
-            r#"
-            SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
-                   metadata_json, imported_at, updated_at
-            FROM gpx_track_imports
-            WHERE mission_id = ? AND source_path = ?
-            "#,
-        )
-        .bind(&input.mission_id)
-        .bind(&input.source_path)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|error| {
-            format!(
-                "Failed to inspect GPX import {}: {error}",
-                input.source_path
-            )
-        })?;
-
-        let import_id = input
-            .id
-            .or_else(|| existing_import.as_ref().map(|entry| entry.id.clone()))
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
-        let now = Utc::now().to_rfc3339();
-        let imported_at = existing_import
-            .as_ref()
-            .map(|entry| entry.imported_at.clone())
-            .unwrap_or_else(|| now.clone());
-        let event_type = if existing_import.is_some() {
-            "gpx_import_updated"
-        } else {
-            "gpx_import_created"
-        };
+        #[cfg(test)]
+        if let Some(barrier) = self.gpx_upsert_start_barrier.as_ref() {
+            barrier.wait().await;
+        }
 
         let mut tx = self
             .pool
-            .begin()
+            .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(|error| format!("Failed to start GPX import transaction: {error}"))?;
 
-        sqlx::query(
-            r#"
-            INSERT INTO gpx_track_imports (
-              id, mission_id, source_path, file_name, display_name, geometry_json,
-              metadata_json, imported_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-              mission_id = excluded.mission_id,
-              source_path = excluded.source_path,
-              file_name = excluded.file_name,
-              display_name = excluded.display_name,
-              geometry_json = excluded.geometry_json,
-              metadata_json = excluded.metadata_json,
-              updated_at = excluded.updated_at
-            "#,
-        )
-        .bind(&import_id)
-        .bind(&input.mission_id)
-        .bind(&input.source_path)
-        .bind(&input.file_name)
-        .bind(&input.display_name)
-        .bind(&input.geometry_json)
-        .bind(&input.metadata_json)
-        .bind(&imported_at)
-        .bind(&now)
-        .execute(&mut *tx)
-        .await
-        .map_err(|error| format!("Failed to upsert GPX import {import_id}: {error}"))?;
+        let import: GpxTrackImport = async {
+            let mission = sqlx::query_as::<_, Mission>(
+                r#"
+                SELECT id, name, status, start_time, pause_time, finish_time,
+                       paused_seconds, notes, schema_version
+                FROM missions WHERE id = ?
+                "#,
+            )
+            .bind(&input.mission_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|error| format!("Failed to load mission {}: {error}", input.mission_id))?
+            .ok_or_else(|| format!("Mission not found: {}", input.mission_id))?;
+            if mission.status == MissionStatus::Finished || mission.status == MissionStatus::Finalized {
+                return Err(format!(
+                    "Cannot write data to finished mission {}; resume the mission or unlock it first.",
+                    input.mission_id
+                ));
+            }
 
-        let event_details = serde_json::json!({
-            "gpx_import_id": import_id,
-            "source_path": input.source_path,
-            "file_name": input.file_name,
-            "display_name": input.display_name,
-        });
-        Self::insert_event(
-            &mut *tx,
-            &input.mission_id,
-            event_type,
-            &now,
-            Some(&event_details),
-        )
+            let existing_by_id = match input.id.as_ref() {
+                Some(import_id) => sqlx::query_as::<_, GpxTrackImport>(
+                    r#"
+                    SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
+                           metadata_json, imported_at, updated_at
+                    FROM gpx_track_imports WHERE id = ?
+                    "#,
+                )
+                .bind(import_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|error| format!("Failed to inspect GPX identity {import_id}: {error}"))?,
+                None => None,
+            };
+            if let Some(existing) = existing_by_id.as_ref() {
+                if existing.mission_id != input.mission_id {
+                    return Err(format!(
+                        "Cannot move GPX evidence {} to a different mission.",
+                        existing.id
+                    ));
+                }
+            }
+            let existing_by_path = sqlx::query_as::<_, GpxTrackImport>(
+                r#"
+                SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
+                       metadata_json, imported_at, updated_at
+                FROM gpx_track_imports
+                WHERE mission_id = ? AND source_path = ?
+                "#,
+            )
+            .bind(&input.mission_id)
+            .bind(&input.source_path)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|error| format!("Failed to inspect GPX import {}: {error}", input.source_path))?;
+            if let (Some(by_id), Some(by_path)) = (existing_by_id.as_ref(), existing_by_path.as_ref()) {
+                if by_id.id != by_path.id {
+                    return Err("GPX identity and source path belong to different evidence.".to_string());
+                }
+            }
+            let existing_import = existing_by_id.or(existing_by_path);
+            let import_id = input
+                .id
+                .clone()
+                .or_else(|| existing_import.as_ref().map(|entry| entry.id.clone()))
+                .unwrap_or_else(|| Uuid::new_v4().to_string());
+            let now = Utc::now().to_rfc3339();
+            let imported_at = existing_import
+                .as_ref()
+                .map(|entry| entry.imported_at.clone())
+                .unwrap_or_else(|| now.clone());
+            let event_type = if existing_import.is_some() {
+                "gpx_import_updated"
+            } else {
+                "gpx_import_created"
+            };
+
+            sqlx::query(
+                r#"
+                INSERT INTO gpx_track_imports (
+                  id, mission_id, source_path, file_name, display_name, geometry_json,
+                  metadata_json, imported_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  source_path = excluded.source_path,
+                  file_name = excluded.file_name,
+                  display_name = excluded.display_name,
+                  geometry_json = excluded.geometry_json,
+                  metadata_json = excluded.metadata_json,
+                  updated_at = excluded.updated_at
+                "#,
+            )
+            .bind(&import_id)
+            .bind(&input.mission_id)
+            .bind(&input.source_path)
+            .bind(&input.file_name)
+            .bind(&input.display_name)
+            .bind(&input.geometry_json)
+            .bind(&input.metadata_json)
+            .bind(&imported_at)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| format!("Failed to upsert GPX import {import_id}: {error}"))?;
+            let event_details = serde_json::json!({
+                "gpx_import_id": import_id,
+                "source_path": input.source_path,
+                "file_name": input.file_name,
+                "display_name": input.display_name,
+            });
+            Self::insert_event(
+                &mut *tx,
+                &input.mission_id,
+                event_type,
+                &now,
+                Some(&event_details),
+            )
+            .await?;
+            sqlx::query_as::<_, GpxTrackImport>(
+                r#"
+                SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
+                       metadata_json, imported_at, updated_at
+                FROM gpx_track_imports WHERE id = ?
+                "#,
+            )
+            .bind(&import_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|error| format!("Failed to read committed GPX import {import_id}: {error}"))
+        }
         .await?;
+
+        #[cfg(test)]
+        if let Some(pause) = self.gpx_upsert_before_commit_pause.as_ref() {
+            pause.reached.wait().await;
+            pause.release.wait().await;
+        }
 
         tx.commit()
             .await
             .map_err(|error| format!("Failed to commit GPX import upsert: {error}"))?;
-
-        self.get_gpx_import(import_id).await
+        Ok(import)
     }
 
+    #[cfg(test)]
     pub async fn get_gpx_import(&self, import_id: String) -> Result<GpxTrackImport, String> {
         sqlx::query_as::<_, GpxTrackImport>(
             r#"
@@ -2332,18 +2438,52 @@ impl MissionStore {
     }
 
     pub async fn delete_gpx_import(&self, import_id: String) -> Result<bool, String> {
-        let existing_import = self.get_gpx_import(import_id.clone()).await.ok();
-        let Some(gpx_import) = existing_import else {
-            return Ok(false);
-        };
-        self.ensure_mission_writable_for_data(&gpx_import.mission_id)
-            .await?;
+        #[cfg(test)]
+        if let Some(barrier) = self.gpx_delete_start_barrier.as_ref() {
+            barrier.wait().await;
+        }
 
         let mut tx = self
             .pool
-            .begin()
+            .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(|error| format!("Failed to start GPX delete transaction: {error}"))?;
+
+        let existing_import = sqlx::query_as::<_, GpxTrackImport>(
+            r#"
+            SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
+                   metadata_json, imported_at, updated_at
+            FROM gpx_track_imports WHERE id = ?
+            "#,
+        )
+        .bind(&import_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|error| format!("Failed to load GPX import {import_id}: {error}"))?;
+        let Some(gpx_import) = existing_import else {
+            tx.rollback()
+                .await
+                .map_err(|error| format!("Failed to roll back missing GPX delete: {error}"))?;
+            return Ok(false);
+        };
+        let mission_status: MissionStatus =
+            sqlx::query_scalar("SELECT status FROM missions WHERE id = ?")
+                .bind(&gpx_import.mission_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|error| {
+                    format!(
+                        "Failed to load mission {} for GPX delete: {error}",
+                        gpx_import.mission_id
+                    )
+                })?
+                .ok_or_else(|| format!("Mission not found: {}", gpx_import.mission_id))?;
+        if mission_status == MissionStatus::Finished || mission_status == MissionStatus::Finalized {
+            return Err(format!(
+                "Cannot write data to finished mission {}; resume the mission or unlock it first.",
+                gpx_import.mission_id
+            ));
+        }
 
         let result = sqlx::query("DELETE FROM gpx_track_imports WHERE id = ?")
             .bind(&import_id)
@@ -2638,6 +2778,7 @@ impl MissionStore {
     }
 
     pub async fn finish_mission(&self, mission_id: String) -> Result<Mission, String> {
+        let _attachment_lifecycle_guard = self.attachment_lifecycle_lock.lock().await;
         let mission = self.get_mission(mission_id.clone()).await?;
         if mission.status == MissionStatus::Finished || mission.status == MissionStatus::Finalized {
             return Err("Mission is already finished.".to_string());
@@ -3074,6 +3215,36 @@ fn sanitize_attachment_file_name(file_name: &str) -> Result<String, String> {
     Ok(sanitized)
 }
 
+fn collision_safe_attachment_archive_names(attachment_paths: &[String]) -> Vec<(String, String)> {
+    let mut basename_counts = HashMap::new();
+    for attachment_path in attachment_paths {
+        let basename = Path::new(attachment_path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("attachment");
+        *basename_counts
+            .entry(basename.to_string())
+            .or_insert(0usize) += 1;
+    }
+
+    attachment_paths
+        .iter()
+        .enumerate()
+        .map(|(index, attachment_path)| {
+            let basename = Path::new(attachment_path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("attachment");
+            let archive_name = if basename_counts.get(basename).copied().unwrap_or(0) > 1 {
+                format!("{:04}-{basename}", index + 1)
+            } else {
+                basename.to_string()
+            };
+            (attachment_path.clone(), archive_name)
+        })
+        .collect()
+}
+
 fn write_bytes_atomically(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -3092,14 +3263,6 @@ fn write_bytes_atomically(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
         .map_err(|error| format!("Failed to finalize attachment file: {error}"))?;
 
     Ok(())
-}
-
-fn remove_file_if_exists(path: &PathBuf) -> Result<(), String> {
-    if !path.exists() {
-        return Ok(());
-    }
-
-    fs::remove_file(path).map_err(|error| format!("Failed to remove file: {error}"))
 }
 
 pub async fn build_mission_store<R: Runtime>(app: &AppHandle<R>) -> Result<MissionStore, String> {
@@ -4277,7 +4440,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deletes_superseded_managed_marker_attachments() {
+    async fn retains_versioned_managed_marker_attachments() {
         let (database_path, backup_path) = temp_paths("marker-attachment-cleanup");
         let store = MissionStore::connect(database_path.clone(), backup_path)
             .await
@@ -4300,7 +4463,9 @@ mod tests {
             .join(ATTACHMENTS_DIRECTORY_NAME);
         fs::create_dir_all(&attachments_root).expect("attachments dir");
 
-        let original_attachment = attachments_root.join("old-evidence.txt");
+        let original_attachment = attachments_root.join("original").join("evidence.txt");
+        fs::create_dir_all(original_attachment.parent().expect("original parent"))
+            .expect("original attachment dir");
         fs::write(&original_attachment, b"old").expect("seed old attachment");
 
         let marker = store
@@ -4332,7 +4497,9 @@ mod tests {
             .await
             .expect("marker should create");
 
-        let replacement_attachment = attachments_root.join("new-evidence.txt");
+        let replacement_attachment = attachments_root.join("replacement").join("evidence.txt");
+        fs::create_dir_all(replacement_attachment.parent().expect("replacement parent"))
+            .expect("replacement attachment dir");
         fs::write(&replacement_attachment, b"new").expect("seed replacement attachment");
 
         store
@@ -4364,7 +4531,7 @@ mod tests {
             .await
             .expect("marker should update");
 
-        assert!(!original_attachment.exists());
+        assert!(original_attachment.exists());
         assert!(replacement_attachment.exists());
 
         store
@@ -4372,7 +4539,91 @@ mod tests {
             .await
             .expect("marker should delete");
 
-        assert!(!replacement_attachment.exists());
+        assert!(replacement_attachment.exists());
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+        let archive = store
+            .create_mission_archive(mission.id.clone())
+            .await
+            .expect("versioned attachment archive should succeed");
+        let archive_file = File::open(&archive.archive_path).expect("archive file");
+        let mut zip = ZipArchive::new(archive_file).expect("zip archive should open");
+        let mut original_bytes = Vec::new();
+        zip.by_name("attachments/0001-evidence.txt")
+            .expect("original attachment should be archived")
+            .read_to_end(&mut original_bytes)
+            .expect("original attachment bytes");
+        let mut replacement_bytes = Vec::new();
+        zip.by_name("attachments/0002-evidence.txt")
+            .expect("replacement attachment should be archived")
+            .read_to_end(&mut replacement_bytes)
+            .expect("replacement attachment bytes");
+        assert_eq!(original_bytes, b"old");
+        assert_eq!(replacement_bytes, b"new");
+    }
+
+    #[tokio::test]
+    async fn finish_waits_for_attachment_custody_without_blocking_current_positions() {
+        let (database_path, backup_path) = temp_paths("attachment-finish-fence");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Attachment Finish Fence".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "device-1".to_string(),
+                name: "Device 1".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Online,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert");
+
+        let attachment_guard = store.attachment_lifecycle_lock.lock().await;
+        let finishing_store = store.clone();
+        let finishing_mission_id = mission.id.clone();
+        let finish =
+            tokio::spawn(async move { finishing_store.finish_mission(finishing_mission_id).await });
+        tokio::task::yield_now().await;
+        assert!(!finish.is_finished());
+
+        store
+            .add_position(AddPositionInput {
+                mission_id: mission.id.clone(),
+                device_id: "device-1".to_string(),
+                source_position_id: Some("source-1".to_string()),
+                name: None,
+                lat: 52.1,
+                lon: -9.5,
+                altitude: None,
+                speed: None,
+                battery: None,
+                accuracy: None,
+                source: Some("traccar".to_string()),
+                timestamp: Some("2026-08-29T05:00:00.000Z".to_string()),
+                data_origin: Some("live".to_string()),
+            })
+            .await
+            .expect("current position should retain priority");
+
+        drop(attachment_guard);
+        let finished = finish
+            .await
+            .expect("finish task should join")
+            .expect("finish should succeed after custody settles");
+        assert_eq!(finished.status, MissionStatus::Finished);
     }
 
     #[tokio::test]
@@ -4602,6 +4853,111 @@ mod tests {
             .await
             .expect("imports after delete")
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn committed_finish_wins_before_concurrent_gpx_delete() {
+        let (database_path, backup_path) = temp_paths("gpx-finish-wins-before-delete");
+        let coordinator = MissionStore::connect(database_path.clone(), backup_path.clone())
+            .await
+            .expect("coordinator store should initialize");
+        let mission = coordinator
+            .create_mission(CreateMissionInput {
+                name: "GPX delete finish fence".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        let gpx_import = coordinator
+            .upsert_gpx_import(UpsertGpxTrackImportInput {
+                id: Some("finish-fenced-delete-gpx".to_string()),
+                mission_id: mission.id.clone(),
+                source_path: "/tracks/finish-fenced-delete.gpx".to_string(),
+                file_name: "finish-fenced-delete.gpx".to_string(),
+                display_name: "Finish fenced delete".to_string(),
+                geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+                metadata_json: None,
+            })
+            .await
+            .expect("GPX import should be created");
+        let peer = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("peer store should initialize");
+        let mut finishing_connection = coordinator
+            .pool
+            .acquire()
+            .await
+            .expect("finish connection should be acquired");
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut *finishing_connection)
+            .await
+            .expect("finish transaction should begin");
+        sqlx::query("UPDATE missions SET status = 'finished', finish_time = ? WHERE id = ?")
+            .bind(Utc::now().to_rfc3339())
+            .bind(&mission.id)
+            .execute(&mut *finishing_connection)
+            .await
+            .expect("finish should be staged");
+
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let deleter = peer.with_gpx_delete_start_barrier(barrier.clone());
+        let import_id = gpx_import.id.clone();
+        let deletion = tokio::spawn(async move { deleter.delete_gpx_import(import_id).await });
+        barrier.wait().await;
+        sqlx::query("COMMIT")
+            .execute(&mut *finishing_connection)
+            .await
+            .expect("finish should commit");
+        drop(finishing_connection);
+
+        let error = deletion
+            .await
+            .expect("delete task should join")
+            .expect_err("transaction-current finish must reject GPX deletion");
+        assert_finished_mission_data_error(&error, &mission.id);
+        assert!(coordinator
+            .get_gpx_import(gpx_import.id.clone())
+            .await
+            .is_ok());
+        let delete_audit_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mission_events WHERE mission_id = ? AND event_type = 'gpx_import_deleted'",
+        )
+        .bind(&mission.id)
+        .fetch_one(&coordinator.pool)
+        .await
+        .expect("delete audit count should remain readable");
+        assert_eq!(delete_audit_count, 0);
+    }
+
+    #[tokio::test]
+    async fn finished_mission_blocks_delete_gpx_import() {
+        let (store, mission) = finished_mission_for("finished-gpx-delete").await;
+        let import_id = "finished-delete-gpx".to_string();
+        sqlx::query(
+            r#"INSERT INTO gpx_track_imports (
+                id, mission_id, source_path, file_name, display_name,
+                geometry_json, metadata_json, imported_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)"#,
+        )
+        .bind(&import_id)
+        .bind(&mission.id)
+        .bind("/tracks/finished-delete.gpx")
+        .bind("finished-delete.gpx")
+        .bind("Finished delete")
+        .bind("{\"type\":\"MultiLineString\",\"coordinates\":[]}")
+        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().to_rfc3339())
+        .execute(&store.pool)
+        .await
+        .expect("legacy GPX row should be seeded");
+
+        let error = store
+            .delete_gpx_import(import_id.clone())
+            .await
+            .expect_err("finished mission should reject GPX deletion");
+        assert_finished_mission_data_error(&error, &mission.id);
+        assert!(store.get_gpx_import(import_id).await.is_ok());
     }
 
     #[tokio::test]
@@ -5153,6 +5509,296 @@ mod tests {
             .await
             .expect_err("finished mission should reject helicopter writes");
         assert_finished_mission_data_error(&error, &mission.id);
+    }
+
+    #[tokio::test]
+    async fn gpx_identity_cannot_move_between_missions() {
+        let (database_path, backup_path) = temp_paths("gpx-cross-mission-identity");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+        let first = store
+            .create_mission(CreateMissionInput {
+                name: "First GPX Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("first mission should be created");
+        let retained = store
+            .upsert_gpx_import(UpsertGpxTrackImportInput {
+                id: Some("shared-gpx-id".to_string()),
+                mission_id: first.id.clone(),
+                source_path: "/tracks/first.gpx".to_string(),
+                file_name: "first.gpx".to_string(),
+                display_name: "First".to_string(),
+                geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+                metadata_json: None,
+            })
+            .await
+            .expect("first GPX should be retained");
+        store
+            .finish_mission(first.id.clone())
+            .await
+            .expect("first mission should finish");
+        let second = store
+            .create_mission(CreateMissionInput {
+                name: "Second GPX Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("second mission should be created");
+
+        let error = store
+            .upsert_gpx_import(UpsertGpxTrackImportInput {
+                id: Some(retained.id.clone()),
+                mission_id: second.id,
+                source_path: "/tracks/second.gpx".to_string(),
+                file_name: "second.gpx".to_string(),
+                display_name: "Second".to_string(),
+                geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+                metadata_json: None,
+            })
+            .await
+            .expect_err("GPX identity must remain owned by its original mission");
+        assert!(
+            error.contains("different mission"),
+            "unexpected error: {error}"
+        );
+        let first_imports = store
+            .list_gpx_imports(first.id)
+            .await
+            .expect("first mission GPX should remain readable");
+        assert_eq!(first_imports.len(), 1);
+        assert_eq!(first_imports[0].id, retained.id);
+    }
+
+    #[tokio::test]
+    async fn concurrent_gpx_identity_publication_keeps_one_mission_owner() {
+        let (database_path, backup_path) = temp_paths("gpx-concurrent-cross-mission-identity");
+        let coordinator = MissionStore::connect(database_path.clone(), backup_path.clone())
+            .await
+            .expect("coordinator store should initialize");
+        let first = coordinator
+            .create_mission(CreateMissionInput {
+                name: "Concurrent GPX First".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("first mission should be created");
+        sqlx::query("UPDATE missions SET status = 'idle' WHERE id = ?")
+            .bind(&first.id)
+            .execute(&coordinator.pool)
+            .await
+            .expect("first mission should be made concurrently writable for the race fixture");
+        let second = coordinator
+            .create_mission(CreateMissionInput {
+                name: "Concurrent GPX Second".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("second mission should be created");
+        let peer = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("peer store should initialize");
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let first_writer = coordinator
+            .clone()
+            .with_gpx_upsert_start_barrier(barrier.clone());
+        let second_writer = peer.with_gpx_upsert_start_barrier(barrier);
+        let first_input = UpsertGpxTrackImportInput {
+            id: Some("concurrent-shared-gpx-id".to_string()),
+            mission_id: first.id.clone(),
+            source_path: "/tracks/first-concurrent.gpx".to_string(),
+            file_name: "first-concurrent.gpx".to_string(),
+            display_name: "First concurrent".to_string(),
+            geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+            metadata_json: None,
+        };
+        let second_input = UpsertGpxTrackImportInput {
+            id: Some("concurrent-shared-gpx-id".to_string()),
+            mission_id: second.id.clone(),
+            source_path: "/tracks/second-concurrent.gpx".to_string(),
+            file_name: "second-concurrent.gpx".to_string(),
+            display_name: "Second concurrent".to_string(),
+            geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+            metadata_json: None,
+        };
+
+        let (first_result, second_result) = tokio::join!(
+            first_writer.upsert_gpx_import(first_input),
+            second_writer.upsert_gpx_import(second_input),
+        );
+        assert_ne!(
+            first_result.is_ok(),
+            second_result.is_ok(),
+            "exactly one mission may publish the shared identity"
+        );
+        let retained = coordinator
+            .get_gpx_import("concurrent-shared-gpx-id".to_string())
+            .await
+            .expect("one coherent GPX projection should remain");
+        let winning_mission_id = if first_result.is_ok() {
+            &first.id
+        } else {
+            &second.id
+        };
+        assert_eq!(&retained.mission_id, winning_mission_id);
+        let first_events = coordinator
+            .list_mission_events(first.id.clone())
+            .await
+            .expect("first events should remain readable");
+        let second_events = coordinator
+            .list_mission_events(second.id.clone())
+            .await
+            .expect("second events should remain readable");
+        let gpx_events = first_events
+            .iter()
+            .chain(second_events.iter())
+            .filter(|event| event.event_type == "gpx_import_created")
+            .collect::<Vec<_>>();
+        assert_eq!(gpx_events.len(), 1);
+        assert_eq!(&gpx_events[0].mission_id, winning_mission_id);
+    }
+
+    #[tokio::test]
+    async fn committed_finish_wins_before_concurrent_gpx_write() {
+        let (database_path, backup_path) = temp_paths("gpx-finish-wins-before-write");
+        let coordinator = MissionStore::connect(database_path.clone(), backup_path.clone())
+            .await
+            .expect("coordinator store should initialize");
+        let mission = coordinator
+            .create_mission(CreateMissionInput {
+                name: "GPX finish fence".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        let peer = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("peer store should initialize");
+        let mut finishing_connection = coordinator
+            .pool
+            .acquire()
+            .await
+            .expect("finish connection should be acquired");
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut *finishing_connection)
+            .await
+            .expect("finish transaction should begin");
+        sqlx::query("UPDATE missions SET status = 'finished', finish_time = ? WHERE id = ?")
+            .bind(Utc::now().to_rfc3339())
+            .bind(&mission.id)
+            .execute(&mut *finishing_connection)
+            .await
+            .expect("finish should be staged");
+
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let writer = peer.with_gpx_upsert_start_barrier(barrier.clone());
+        let mission_id = mission.id.clone();
+        let upsert = tokio::spawn(async move {
+            writer
+                .upsert_gpx_import(UpsertGpxTrackImportInput {
+                    id: Some("finish-fenced-gpx".to_string()),
+                    mission_id,
+                    source_path: "/tracks/finish-fenced.gpx".to_string(),
+                    file_name: "finish-fenced.gpx".to_string(),
+                    display_name: "Finish fenced".to_string(),
+                    geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+                    metadata_json: None,
+                })
+                .await
+        });
+        barrier.wait().await;
+        sqlx::query("COMMIT")
+            .execute(&mut *finishing_connection)
+            .await
+            .expect("finish should commit");
+        drop(finishing_connection);
+
+        let error = upsert
+            .await
+            .expect("upsert task should join")
+            .expect_err("transaction-current finish must reject the GPX write");
+        assert_finished_mission_data_error(&error, &mission.id);
+        assert!(coordinator
+            .get_gpx_import("finish-fenced-gpx".to_string())
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn cancelled_gpx_write_rolls_back_projection_and_audit_before_reusing_connection() {
+        let (database_path, backup_path) = temp_paths("gpx-cancel-before-commit");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Cancelled GPX write".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        let reached = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let writer = store
+            .clone()
+            .with_gpx_upsert_before_commit_pause(reached.clone(), release);
+        let mission_id = mission.id.clone();
+        let task = tokio::spawn(async move {
+            writer
+                .upsert_gpx_import(UpsertGpxTrackImportInput {
+                    id: Some("cancelled-gpx".to_string()),
+                    mission_id,
+                    source_path: "/tracks/cancelled.gpx".to_string(),
+                    file_name: "cancelled.gpx".to_string(),
+                    display_name: "Cancelled".to_string(),
+                    geometry_json: "{\"type\":\"MultiLineString\",\"coordinates\":[]}".to_string(),
+                    metadata_json: None,
+                })
+                .await
+        });
+
+        reached.wait().await;
+        task.abort();
+        let join_error = task
+            .await
+            .expect_err("cancelled GPX task should not complete");
+        assert!(join_error.is_cancelled());
+
+        let projected_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM gpx_track_imports WHERE id = 'cancelled-gpx'")
+                .fetch_one(&store.pool)
+                .await
+                .expect("the pooled connection should remain readable after cancellation");
+        let audit_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mission_events WHERE mission_id = ? AND event_type = 'gpx_import_created'",
+        )
+        .bind(&mission.id)
+        .fetch_one(&store.pool)
+        .await
+        .expect("the audit ledger should remain readable after cancellation");
+        assert_eq!(
+            projected_count, 0,
+            "cancelled projection must be rolled back"
+        );
+        assert_eq!(audit_count, 0, "cancelled audit must be rolled back");
+
+        let transaction = store
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .expect("the pooled connection must not retain an open transaction");
+        transaction
+            .rollback()
+            .await
+            .expect("the fresh transaction should roll back cleanly");
     }
 
     #[tokio::test]

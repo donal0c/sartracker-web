@@ -336,7 +336,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => expect(electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:record-diagnostic-event',
+    )?.[1]).toEqual(expect.any(Function)))
 
     const recordHandler = electronMock.ipcMain.handle.mock.calls.find(
       ([channel]) => channel === 'sartracker:record-diagnostic-event',
@@ -363,7 +365,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => expect(electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:traccar-http-request',
+    )?.[1]).toEqual(expect.any(Function)))
 
     const traccarHandler = electronMock.ipcMain.handle.mock.calls.find(
       ([channel]) => channel === 'sartracker:traccar-http-request',
@@ -407,7 +411,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => expect(electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:traccar-http-request',
+    )?.[1]).toEqual(expect.any(Function)))
 
     const traccarHandler = electronMock.ipcMain.handle.mock.calls.find(
       ([channel]) => channel === 'sartracker:traccar-http-request',
@@ -450,7 +456,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => expect(electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:save-app-settings',
+    )?.[1]).toEqual(expect.any(Function)))
 
     const saveSettingsHandler = electronMock.ipcMain.handle.mock.calls.find(
       ([channel]) => channel === 'sartracker:save-app-settings',
@@ -476,7 +484,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => expect(electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:record-diagnostic-event',
+    )?.[1]).toEqual(expect.any(Function)))
 
     const recordHandler = electronMock.ipcMain.handle.mock.calls.find(
       ([channel]) => channel === 'sartracker:record-diagnostic-event',
@@ -526,7 +536,11 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => expect(processOn.mock.calls
+      .filter(([eventName]) => eventName === 'uncaughtException')
+      .map(([, listener]) => listener)
+      .find((listener) => String(listener).includes('handleFatalMainProcessError')),
+    ).toEqual(expect.any(Function)))
 
     const uncaughtHandler = processOn.mock.calls
       .filter(([eventName]) => eventName === 'uncaughtException')
@@ -774,7 +788,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
 
     const beforeQuitHandler = electronMock.app.on.mock.calls.find(
       ([eventName]) => eventName === 'before-quit',
@@ -828,7 +844,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
     const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
     const rendererGoneHandler = createdWindow.webContents.on.mock.calls.find(
       ([eventName]) => eventName === 'render-process-gone',
@@ -870,7 +888,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
     const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
     electronMock.BrowserWindow.getAllWindows.mockReturnValue([createdWindow])
     const beforeQuitHandler = electronMock.app.on.mock.calls.find(
@@ -898,7 +918,7 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
 
     const activateHandler = electronMock.app.on.mock.calls.find(
       ([eventName]) => eventName === 'activate',
@@ -935,7 +955,7 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
     const activateHandler = electronMock.app.on.mock.calls.find(
       ([eventName]) => eventName === 'activate',
     )?.[1]

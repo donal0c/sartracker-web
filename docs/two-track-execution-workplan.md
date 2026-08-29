@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-3 are merged. Before PR-4 starts, complete the bounded `DON-267` field-feedback bridge for canonical `fixTime`, explicit local-time presentation, and current-poll cadence independent of history.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-5 are merged. PR5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) landed from final head `f5ba8647131950dde457e50ce36fe0b8ded7337d` as merge `eec92812b783a795c093f37268b295dd2179a3af`; exact-head Linux run `33260131951` is green. The final casualty-treatment/preload/workflow correction deliberately used Donal-authorized focused correction/test/package proof rather than restarting the earlier four-review wave, so those reviews remain prior-head evidence and must not be represented as exact-head review of `f5ba8647`. Complete WAR-01's docs-only reconciliation on GitHub PR #6, then proceed to the unimplemented `DON-248`/`DON-252`/`DON-253` archive-lifecycle successor under its own implementation and qualification gate.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -132,17 +132,18 @@ ship or ask testers for whole Electron profile zips.
 10. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
 
 Whole-application resilience starts with the docs-only WAR-01 assurance charter
-and hazard register. WAR-01 may proceed while the
-`DON-274`/`DON-277`/`DON-278`/`DON-279` issue set is in flight on GitHub PR #5,
-but every owned replay/evidence boundary remains `rewrite-pending`;
-immediately after it merges, re-open those production and test paths and
-reconcile the affected hazard rows on the merge SHA. The canonical policy calls
-that scope programme PR-4 while current issue/PR metadata calls it PR-5 of six,
-so the reconciliation keys on issue set and SHA. The unimplemented
-`DON-248`/`DON-252`/`DON-253` archive successor remains the prerequisite for
-streamed archive/restore resilience. The WAR task packet's “PR6” shorthand
-refers to that successor, not to this docs-only GitHub PR #6. WAR-01 does not
-create speculative Linear issues: each row cites the closest existing owner.
+and hazard register. Its mandatory post-PR5 reconciliation is recorded against
+merge `eec92812b783a795c093f37268b295dd2179a3af` and final PR5 source head
+`f5ba8647131950dde457e50ce36fe0b8ded7337d`. The landed GPX, immutable-evidence,
+Replay, Search Operations, attachment-custody, IPC/worker, coverage-consumer,
+and archive-inclusion seams were re-opened before their rows were reclassified;
+exact-head Linux run `33260131951` and prior-head independent reviews retain
+separate proof limits. The unimplemented `DON-248`/`DON-252`/`DON-253` archive
+successor remains `rewrite-pending` and is the prerequisite for streamed,
+encrypted/locked archive and restore-and-replay resilience. The WAR task
+packet's “PR6” shorthand refers to that successor, not to this docs-only GitHub
+PR #6. WAR-01 does not create speculative Linear issues: each row cites the
+closest existing owner.
 
 ### Breadcrumb And Mission-History Programme
 
@@ -151,37 +152,285 @@ The locked domain model is in
 complexity, model, review, branch, checkpoint, and qualification policy is in
 `docs/breadcrumb-programme-execution-policy.md`.
 
-Execution order is five substantial PRs: trustworthy ingest/live safety;
-mission model; complete coverage; mission evidence/replay; archive lifecycle.
+Execution order is now six substantial PRs because the field-feedback bridge
+was inserted as PR-4: trustworthy ingest/live safety; mission model; complete
+coverage; field-feedback bridge; mission evidence/replay; archive lifecycle.
 BCP-17 then qualifies one final team-facing release. BCP work units are the
 JIT-design and TDD boundaries inside those PRs, not separate release trains.
 
-Before PR-4 implementation begins, its accepted plan and execution packet must
-record the review amendment approved on 2026-08-26: two broad
-safety reviews plus focused persistence/completeness,
-concurrency/finalization, and renderer/input-containment reviews, all five in
-parallel on one final code-and-documentation head. Confirmed findings are
-source-retraced centrally; remediation requires one fresh broad exact-head
-review plus only the affected focused rechecks. Documentation-only binding
-descendants require exact-tree/diff attestation but preserve code reviews when
-executable-code and test trees are byte-identical. Strict TDD, deterministic,
-packaged/Linux, browser, and visual gates remain mandatory. False Complete or
-100%, lost mission evidence, unbounded Electron-main work, and unresolved
-safety failures remain absolute merge blockers. Donal separately applied the
-bounded remediation topology to PR-3 on 2026-08-26: pause the review loop,
-perform one end-to-end architecture and attack-test pass over the complete
-evidence-lifecycle seam, land one coherent red-first seam fix, complete the
-required deterministic/browser/visual/macOS/Linux gates, then run one fresh
-broad exact-head review plus targeted persistence/completeness,
-concurrency/finalization, and renderer/input-containment exact-head rechecks.
-Do not restart five complete PR-3 reviews after every fix. Re-review scope for
-later PRs follows affected contracts: one fresh
-broad review plus every affected focused reviewer, with all five restarted only
-when a shared state machine/cross-boundary contract changes or impact cannot be
-confidently bounded. Repeated confirmed P1/P2 findings at one seam trigger an
-architecture and attack-test pause before more remediation. Record a PR-4
-process retrospective before approving PR-5 so the topology is retained or
-amended from evidence.
+The PR-4-to-PR-5 reconciliation is complete. PR-5 must retain PR-4's canonical
+Traccar `fixTime` provenance, independent current-position cadence, bounded
+history budget, cancellation, and lifecycle settlement while adding mission
+evidence and replay. Its initial review topology is one broad exact-head review
+plus focused persistence/completeness, concurrency/finalization, and
+renderer/input-containment reviews on the same final code-and-documentation
+head. Confirmed findings are source-retraced centrally; remediation requires
+one fresh broad exact-head review plus only the affected focused rechecks,
+unless a shared state machine or cross-boundary contract changed or impact
+cannot be confidently bounded. Documentation-only binding descendants require
+exact-tree/diff attestation but preserve code reviews when executable-code and
+test trees are byte-identical. Strict TDD, deterministic, packaged/Linux,
+browser, and visual gates remain mandatory. False Complete or 100%, lost
+mission evidence, unbounded Electron-main work, and unresolved safety failures
+remain absolute merge blockers. Repeated confirmed P1/P2 findings at one seam
+trigger an architecture and attack-test pause before more remediation.
+
+PR-5 implementation record (2026-08-27): BCP-11/12a/12b/13 are delivered
+together on `codex/breadcrumb-pr5-evidence-replay`. Schema v12 adds immutable
+mission-object versions, explicit legacy baselines, retirement tombstones and
+backend finalization fences. GPX retains exact source bytes/digest, aliases,
+ordered source evidence, rejections and immutable revisions through a worker.
+Mission Review adds stable search assignments/passes and cancellable,
+progressive data-known-at-T replay without changing the live map. Deterministic
+960k and 2m qualification now includes 50,000-point GPX retention with live
+current writes, exact near-tail keyset pages and transactional two-clock daily
+counts; full browser/visual gates, macOS package/soak and actual pending/retained
+GPX `SIGKILL` recovery are green locally. The Linux workflow now runs the 960k
+qualification beside its packaged build/soak; exact pushed-head CI remains the
+review-entry gate. No release or merge is authorized by this record.
+Opening PR #5 and reaching review-ready proof are intermediate states. The
+implementation task owns the accepted four-review baseline on one exact head:
+broad life-safety/end-to-end, persistence/completeness,
+concurrency/finalization, and renderer/input containment. It must source-retrace
+and remediate accepted findings, then obtain a fresh broad review plus every
+affected focused recheck clean on the current head before reporting task
+completion. Donal retains final approval and merge authority and may request
+additional review.
+
+PR-5 review correction (2026-08-28): the replacement head `582fd79e` passed
+exact-head Linux run `33192661456`, but the accepted broad, persistence,
+concurrency and renderer reviewers rejected it. Central source retrace accepted
+eight distinct defects: sole-copy oversized legacy-object loss; corrupt
+recoverable-archive trust; direct-archive unlock writes; synchronous startup
+receipt recovery; Replay and GPX cursor context reuse; browser Replay input
+drift; and an open Review remaining editable after Finish. Executable
+replacement `c3d25973` fixes them red-first while current positions retain
+priority and finalized/archive writes remain fail-closed. Local proof is green
+through 294 files / 2,473 unit tests, backend 55/1, Chromium 167/167, visual
+58/58 plus fresh uncached review 69/69, indexed 960k, unsigned macOS package
+and packaged soak. Its binding head `3e166b55` was then rejected by Linux run
+`33197229099` when the 50,000-object migration heartbeat reached 217.40 ms
+against the unchanged less-than-200 ms gate. Correction `4eaaeb01` halves the
+durable object slice to 50 rows; the failing test passed five consecutive runs,
+the versioning file passed 58/58 and full unit passed 294/2,473. Because the
+replacement spans persistence, finalization,
+renderer and input contracts, all four reviewers restart on the same final
+code-and-documentation head after exact-head Linux passes. PR open or
+review-ready remains intermediate; do not merge or release.
+
+PR-5 renderer correction (2026-08-29): broad, persistence and concurrency were
+clean on `210826cc`, but renderer/input containment rejected that exact head.
+Central retrace accepted three P2s: PR5 preload operations did not strip
+unknown multi-megabyte fields, Search Operations performed an unbounded
+synchronous read with per-pass link queries, and Replay's fixed 200-row outing
+filter silently made the 201st eligible GPX outing unreachable. Executable
+replacement `f3a14d53` closes and bounds preload inputs, moves searchable
+Search Operations pages to a read-only worker with opaque keyset cursors and
+exact totals, and adds replay-generation-bound searchable outing-filter pages.
+Strict 32/64 MiB, 50,000-pass and 201-outing regressions are green, as are full
+unit, backend, browser and critical visual gates. Unsigned macOS arm64 packaging
+and the deterministic 6/6-batch packaged soak also pass with exact 8,664/8,664
+positions, integrity `ok`, zero redundant slope and 1.8 ms maximum main round
+trip. The change crosses renderer, IPC and persistence boundaries, so
+exact-head Linux and all four independent reviews restart on one final
+code-and-documentation head. PR opened or review-ready remains intermediate;
+do not merge or release.
+
+PR-5 Search Operations generation correction (2026-08-29): broad,
+persistence/completeness and renderer/input containment were clean on exact
+head `bd0f3f22`, but concurrency/finalization rejected it with one P2. Central
+retrace reproduced both consequences: a delayed same-mission page read replaced
+newly refreshed evidence, and changing a retained area's sort key between pages
+made it unreachable while every page still reported the exact total. Executable
+replacement `5cbd93e9` reads the mission replay generation, exact count and page
+inside one pinned SQLite snapshot; carries that generation in the bounded
+result and opaque cursor; rejects a changed continuation with an explicit
+return-to-first-page instruction; invalidates every outstanding Search
+Operations request when mission refresh begins; and fails closed rather than
+publishing four initial pages from different generations. Browser validation
+uses the same generation contract. The two original reproductions plus a
+concurrent WAL writer snapshot attack are green. Full unit 296/2,513, backend
+57/one intentional ignore, Chromium 167/167, visual 2/2 and fresh uncached
+critical review 4/4, lint/build/CommonJS/diff, unsigned macOS package and the
+two-launch 6/6-batch packaged soak are green. Because the accepted defect and
+fix cross runtime, worker and persistence boundaries, all four reviews restart
+on the same pushed code-and-documentation head after exact-head Linux passes.
+PR opened or review-ready remains intermediate; do not merge or release.
+
+PR-5 refresh-window correction (2026-08-29): fresh broad review rejected exact
+head `8bc2b764` with one P2; persistence/completeness and
+concurrency/finalization were clean, but their verdicts do not rescue the
+invalid head. Renderer/input containment was not started. A page search begun
+after refresh invalidated earlier request tokens but before refresh completed
+could capture the still-visible old page generation, wait, then overwrite the
+newly published refresh result. Central retrace reproduced final
+`pass-stale` after refresh had published `pass-fresh`. Executable replacement
+`2dc3c166` refuses Search Operations page reads while Review is refreshing,
+binds every result to the exact Review refresh token, and visibly disables all
+search, first, next and entry controls during refresh. The exact red regression
+and UI containment test pass; the wider renderer/replay set is 180/180 and full
+unit is 296/2,515. Chromium 167/167, targeted visual 2/2 plus fresh uncached
+critical review 4/4, lint/build/diff, unsigned macOS package and the two-launch
+6/6-batch packaged soak are green. The canceled invalid-head Linux run is not
+completion evidence. Exact-head Linux and all four reviews restart on the same
+new code-and-documentation head. PR opened or review-ready remains
+intermediate; do not merge or release.
+
+PR-5 retained-load correction (2026-08-29): fresh broad review then rejected
+exact head `d314db88` with one P2. Its refresh-only barrier correctly closed the
+original attack, but Review's non-preserving `load()` retains the old snapshot
+while publishing `loading=true, refreshing=false`; an old page read begun in
+that window could still replace newly loaded evidence. Concurrency and renderer
+were clean on the invalid head, persistence was not restarted, and those
+verdicts do not count. Central retrace reproduced `pass-stale`. Executable
+replacement `a0a4cdf4` treats loading and refreshing as one fail-closed
+backend/runtime barrier and mirrors it in the Search Operations controls. The
+new load-path regression failed red; both load modes now retain `pass-fresh`
+without dispatching an old page read. Exact focused renderer/replay is 181/181,
+full unit is 296/2,516, Chromium is 167/167, visual Playwright is 2/2 and fresh
+uncached critical review is 4/4; lint/build/diff, unsigned macOS packaging and
+the exact 8,664-position packaged soak are green. Exact-head Linux and all four
+reviews restart on the same bound candidate. PR opened or review-ready remains
+intermediate; do not merge or release.
+
+PR-5 failed-load recovery correction (2026-08-29): exact head `c5c7c702`
+was broad- and renderer-clean but concurrency/finalization review rejected it
+with one P2; persistence had not started, and no invalid-head verdict counts.
+When a whole-Review load or refresh invalidated an already-running Search page
+and then failed, stale success/error was correctly fenced but its page remained
+`loading=true`, leaving Search/First/Next disabled. Central retrace reproduced
+all four load/refresh × stale-success/error schedules. Executable replacement
+`139d812d` releases every invalidated page's transient loading flag while
+retaining its evidence and pagination metadata. All four schedules were red and
+are now green; a component assertion proves all three controls recover. Focused
+renderer/replay is 185/185, full unit 296/2,521, Chromium 167/167, visual 2/2
+plus fresh uncached critical review 4/4, lint/build/diff, unsigned macOS package
+and exact 8,664-position packaged soak are green. Exact-head Linux and all four
+reviews restart on the same bound candidate. PR opened or review-ready remains
+intermediate; do not merge or release.
+
+PR-5 retained-snapshot and attachment-history correction (2026-08-29): exact
+head `09475762` was broad- and concurrency-clean, but persistence/completeness
+and renderer/input-containment each rejected it with one P2; no verdict on that
+invalid head counts. Central retrace accepted that Electron same-name ingest
+overwrote bytes still named by immutable marker versions, Tauri deleted
+superseded/deleted managed bytes, and a whole-Review failure hid the retained
+snapshot even after page loading correctly recovered. Executable replacement
+`b2d7cbe9` uses unique retained Electron attachment identities, retains Tauri
+version-linked files, renders retained Review evidence with an explicit stale
+warning, leaves bounded Search/First/Next available and fail-closes evidence
+entry until Refresh succeeds. Red-first regressions are green. Focused proof is
+20 files / 202 tests; full unit 296/2,523; backend 57/one intentional ignore;
+Chromium 167/167; visual Playwright 2/2 and fresh uncached critical review 4/4;
+lint/build/diff, unsigned macOS packaging and the exact 8,664-position packaged
+soak are green. Because the accepted corrections span renderer and persistence,
+exact-head Linux and all four reviews restart on the same bound candidate. PR
+opened or review-ready remains intermediate; do not merge or release.
+
+PR-5 attachment-custody/final-archive correction (2026-08-29): exact head
+`d20339dd` was rejected after concurrency reproduced an Electron attachment
+write committing after Finish and persistence reproduced a final standalone
+archive omitting superseded/retired attachment bytes still referenced by
+immutable marker versions. Stricter central retrace retained both as P2 because
+they are deterministic production-path breaches of PR5's finalized-write and
+no-silent-loss contracts, not speculative hardening. Executable replacement
+`7dd35570` serializes attachment custody with Finish per mission while leaving
+current-position writes independent, records completed custody, joins it before
+close, and archives all current/version/audit-referenced bytes under
+collision-safe names with fail-closed missing-file handling. Focused Electron
+proof is 185/185, full unit 2,526/2,526, backend 58/one intentional ignore,
+Chromium 167/167, visual Playwright 2/2 and fresh uncached critical review 4/4,
+lint/build/diff, unsigned macOS packaging and the exact 8,664-position packaged
+soak are green. Exact-head Linux and all four reviews restart on the same bound
+candidate. Prospectively, every reviewer severity is centrally challenged:
+only a reachable production mechanism, repository-backed requirement breach,
+realistic impact and current-PR ownership block as P1/P2; speculative,
+qualification-only, pre-existing, historical/reference-only or out-of-contract
+items are P3/out of scope with the reason recorded.
+
+PR-5 retained-control-scope correction (2026-08-29): persistence/completeness
+and concurrency/finalization returned CLEAN on exact head `c1ad54b8`.
+Renderer/input-containment rejected it because switching Review tabs remounted
+blank/default control drafts beside retained Replay or Search results from a
+different time/filter/query scope. Central retrace challenged the severity and
+retained P2: the mechanism is deterministic in the production React path,
+owned by PR5, breaches the explicit-scope contract and can make an operator
+misread the evidence shown. Executable replacement `aea5db07` binds editable
+drafts to an authoritative accepted-result/page key and remounts mission-owned
+Search state on mission change. Red-first component and actual browser remount
+regressions are green. Renderer proof is 252/252; full unit 2,528/2,528;
+backend 58/one intentional ignore; Chromium 167/167; visual 2/2 plus fresh
+uncached critical review 4/4; lint/build/diff, unsigned macOS package and the
+exact 8,664-position soak are green. The clean persistence/concurrency verdicts
+remain unaffected; exact-head Linux plus fresh broad and renderer rechecks are
+required. One theoretical 48-bit archive-name collision is P3 because there is
+no realistic mission-cardinality mechanism and new ingests use UUID names.
+
+PR-5 live-draft correction (2026-08-29): renderer exact-head recheck rejected
+`018c0dd3` after reproducing a still-operable live Pause replacing an
+unsubmitted historical Replay time with a fresh `now`. Central retrace retained
+P2 because the production path and mechanism were deterministic, PR5 owns the
+control boundary, the repository requires unsubmitted edits to remain drafts,
+and the next Replay action could silently query the wrong time. The incomplete
+broad review was stopped and Linux run `33238597041` canceled. Executable
+replacement `eb531077` gives the initial live draft a stable per-mission owner,
+uses the exact submitted time during a Replay request, and rebinds on accepted
+scope, explicit Return to Live or mission ownership only. Red-first component
+and docked browser Pause/Resume/submit regressions are green. The renderer's
+separate P3 input-inconvenience note was also removed: an unapplied Search draft
+now survives loading/page changes until a different search is accepted. Local
+proof is focused renderer/replay 121/121, full unit 2,530/2,530, backend 58/one
+intentional ignore, Chromium 168/168, visual Playwright 2/2 plus fresh uncached
+critical review 4/4, lint/build/diff, unsigned macOS packaging and exact
+8,664-position packaged soak. Exact-head Linux plus a fresh broad review and
+the affected renderer recheck remain mandatory; unaffected clean
+persistence/concurrency verdicts do not restart.
+
+PR-5 repeated preload-seam reassessment (2026-08-29): fresh broad review on
+`7998755d` proved that a 64 MiB Replay request identity reached
+`ipcRenderer.invoke` unchanged for both read and cancel. Central retrace retains
+P2: the sandboxed production bridge is reachable, structured-clone work occurs
+before main validation, PR5 promises closed bounded pre-IPC projection, current
+positions share the operational Electron boundary, and Replay introduced the
+methods. The repeated-seam patch loop is paused and the shared cause is now
+explicit: query bodies were projected, but request identity was treated as a
+main-only concern and cancel remained in the generic variadic bridge. The
+accepted architecture, scope, proof budget and domain behaviour do not change.
+Every Replay bridge argument must instead use an explicit wrapper; one preload
+request-ID projector must mirror the main non-empty/100-character/allowed-ASCII
+contract; cancel must leave the generic map; and red-first attacks must prove
+empty, wrong-typed, malformed and 64 MiB IDs call no IPC for all four reads and
+cancel. Because this completes the existing renderer/IPC containment contract
+rather than changing a shared persistence/finalization state machine, the
+required topology remains fresh broad plus renderer/input-containment recheck.
+
+The reassessed seam is now implemented in executable commit `1b84639d`.
+`cancelMissionReplay` is excluded from the generic bridge, all four reads share
+one explicit invoke wrapper, and one preload projector mirrors main's request-
+identity contract before query projection or Electron serialization. The test
+was red because the first invalid identity reached the invoke stub, then green
+for all 20 invalid-operation combinations with zero invokes; valid state,
+track, object, filter and cancel calls retain their exact channels. Full unit is
+2,530/2,530, backend 58/one intentional ignore, affected Chromium 18/18,
+lint/build/diff and the unsigned packaged two-launch 8,664-position soak are
+green. The complete 168/168 browser and uncached 4/4 visual evidence remain
+applicable from renderer-identical parent `7998755d`; exact Linux and fresh
+broad plus renderer rechecks are still required.
+
+PR-5 accepted review completion candidate (2026-08-29): exact pushed head
+`467e7b3990b3d78256f28c8e8336ec1261dbf425` (tree
+`176db20cb05c8de2972d31d075dbec758a0b8934`) passed Linux run
+`33240558105`, including 296 files / 2,530 tests, the normal 960k Replay
+qualification, Linux AppImage and `.deb`, native x64 SQLite inspection, Mesa
+llvmpipe, packaged soak and AppImage launch/close. Persistence/completeness and
+concurrency/finalization remain clean on byte-identical exact `c1ad54b8` code;
+Cicero's affected renderer/input-containment recheck and Katherine Johnson's
+fresh broad life-safety/end-to-end review are clean on exact `467e7b39`. Both
+independently proved the accepted 64 MiB request-ID finding is fixed before
+IPC, with zero invalid invokes and unchanged valid channels. The only remaining
+closeout action is exact-diff/tree attestation of the final documentation-only
+binding descendant. PR open/review-ready remains intermediate until that
+attestation is clean; Donal retains approval/merge and no release is authorized.
 
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
@@ -622,7 +871,7 @@ This is the default order when the user says “work on the next task.”
 | Done | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | Merged to `master` at `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, which is the exact PR-3 base. The preserved review, migration, scale, browser, and package evidence remains attached to PR-2 and the handoff archive. |
 | Done | PR-3: decide and deliver complete mission coverage | Shared Tracking / S2 Electron / Coverage / Verification | `DON-273` / `DON-276` / `DON-275` | Merged as [PR #3](https://github.com/donal0c/sartracker-web/pull/3) at `e3499d81bad68dcbf35dde4ed6ae6bd4d1434db1`; the exact review, migration, scale, browser, visual, macOS, and Ubuntu packaged evidence remains attached to PR #3. |
 | Active bridge | Enforce canonical `fixTime`, explicit local-time display, and history-independent current polling | Shared Tracking / S2 Electron / Evidence / Verification | `DON-267`; `SAR-QA-021`; `SAR-FIELD-002` | Bounded field-feedback correction from merged PR-3. Preserve progressive whole-history coverage and exact paging; prove 37,479 as 10,000 + 10,000 + 10,000 + 7,479. No PR-4 replay, timeline, export, or archive scope. |
-| In review | [PR #6](https://github.com/donal0c/sartracker-web/pull/6): WAR-01 whole-application assurance charter and stable hazard register | Whole application / Assurance / Verification | Existing owners are cited per hazard; no new issue | Pinned-base documentation/investigation only. Covers all 12 hazard domains and the absolute blockers. The unmerged `DON-274`/`DON-277`/`DON-278`/`DON-279` rows stay `rewrite-pending` until the mandatory short exact-merge reconciliation; the `DON-248`/`DON-252`/`DON-253` archive successor remains unimplemented and required before archive/restore resilience work. Donal retains the merge gate. |
+| In review | [PR #6](https://github.com/donal0c/sartracker-web/pull/6): WAR-01 whole-application assurance charter and stable hazard register | Whole application / Assurance / Verification | Existing owners are cited per hazard; no new issue | Documentation/investigation only. Covers all 12 hazard domains and the absolute blockers. Post-PR5 reconciliation is pinned to merge `eec92812b783a795c093f37268b295dd2179a3af`; merged PR5 rows now carry inspected control/evidence limits, while `RPL-004` remains `rewrite-pending` for the unimplemented `DON-248`/`DON-252`/`DON-253` archive successor. Donal retains the merge gate. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
@@ -632,13 +881,13 @@ This is the default order when the user says “work on the next task.”
 | Done locally | Change-gate tracking audit writes and remove position event echoes | S2 Electron / Tracking | `DON-245` | Packaged 2,000-poll proof: 64,000 device row upserts, 16,000 positions, 32 creates, one real update, zero heartbeat/position echoes. |
 | Done locally | Add accelerated packaged tracking soak and growth-budget gate | S2 Electron / Verification | `DON-246` | Packaged CI/5-day/14-day profiles pass after the gate found and fixed unbounded restart hydration; exact position/growth, restart, responsiveness, memory, backup, WAL, log, support, and privacy evidence is machine-readable. |
 | Active | Qualify beta.12 CI artifact on Ubuntu and original field machine | S2 Electron / Release | `DON-247` | Exact artifact `fb6c4922…` passed the full Ubuntu matrix, was published as an internal prerelease, then was downloaded afresh from the release URL and passed the post-publication Ubuntu smoke. The 2026-07-20 field split is explicit: PCLinuxOS AppImage stayed responsive at 218 hours, while a Mint `.deb` stopped accepting application actions around 182 hours even though the in-app clock continued. The packaged soak now classifies the complete Devices interaction boundary: centre hit test/covering element, trusted browser click delivery, React workspace state, timed renderer-to-main IPC, and close path. The refreshed packaged CI profile passed 4/4 `healthy` classifications, 8,664 exact positions, restart, backup, main/renderer responsiveness, and zero redundant telemetry; full `beta:verify --no-smoke` passed lint, build, `165 files / 1159 tests`, backend `47 / 1 ignored`, Chromium `132/132`, package, and packaged soak. Packaged Linux builds include an external report-only hang collector for bounded `/proc`/thread waits, PID-scoped journal, GPU/session facts, sanitized logs/storage diagnostics, optional operator-requested screenshot, and no database/credential/process-environment content. Runbook: `docs/releases/beta12-mint-hang-capture-runbook.md`. Original Mint identical-profile AppImage-vs-`.deb` execution and collector evidence remain before closeout. |
-| Backlog | Decide archive encryption, authenticity, custody, and emergency access | S2 Electron / Archive / Governance | `DON-248` | BCP-14 in PR-5; the earlier bounded-store architecture is now locked in the breadcrumb ADR. |
+| Backlog | Decide archive encryption, authenticity, custody, and emergency access | S2 Electron / Archive / Governance | `DON-248` | BCP-14 in PR-6; the earlier bounded-store architecture is now locked in the breadcrumb ADR. |
 | Backlog | Safe background SQLite integrity assurance | S2 Electron / Persistence | `DON-249` | Must not recreate startup/runtime I/O saturation. |
 | Backlog | Oversized legacy database assessment and recovery | S2 Electron / Recovery | `DON-250` | Mission-state-aware; never abandon operational data or run in-process multi-GB VACUUM. |
 | Backlog | Measured indexes and bounded telemetry retention | S2 Electron / Persistence | `DON-251` | The 3.7 GB PR-1 gate measured the pre-existing Review audit scan at about 7.5 s and exact count at about 1.1–1.3 s on Electron main. PR-1 pulls forward only lazy Review loading plus a cancellable read-only worker snapshot so current positions and main heartbeat stay live. Query-plan-driven indexing and interruption-safe telemetry retention remain here; no O(database-size) v8 migration index is authorized. |
-| Backlog | Create streamed encrypted mission archives with restore-and-replay proof | S2 Electron / Archive | `DON-252` | BCP-15 in PR-5; no whole shared DB in memory or unrelated missions in an archive. |
-| Backlog | Add archive-backed review, visible revisions, and indefinite retention | S2 Electron / Governance | `DON-253` | BCP-16 in PR-5; archive bytes stay immutable and evidence has no permanent deletion path. |
-| Backlog | Qualify the complete breadcrumb and mission-history programme | S2 Electron / Verification | `DON-254` | BCP-17 no-skip qualification of the exact final candidate after all five PRs. |
+| Backlog | Create streamed encrypted mission archives with restore-and-replay proof | S2 Electron / Archive | `DON-252` | BCP-15 in PR-6; no whole shared DB in memory or unrelated missions in an archive. |
+| Backlog | Add archive-backed review, visible revisions, and indefinite retention | S2 Electron / Governance | `DON-253` | BCP-16 in PR-6; archive bytes stay immutable and evidence has no permanent deletion path. |
+| Backlog | Qualify the complete breadcrumb and mission-history programme | S2 Electron / Verification | `DON-254` | BCP-17 no-skip qualification of the exact final candidate after all six PRs. |
 | Backlog | Release the complete breadcrumb and mission-history programme | S2 Electron / Release | `DON-255` | One team-facing release only after BCP-17; no intermediate programme releases. |
 | Done | S1: Runtime Boot/Fault Guard | Shared | `sartracker-web-3rl` | Done 2026-05-16 |
 | Done | A2: Hosted Mode Guardrails | Track A | `sartracker-web-vpz.3` | Done 2026-05-15 |

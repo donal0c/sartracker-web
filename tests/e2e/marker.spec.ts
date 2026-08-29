@@ -15,11 +15,16 @@ test.describe('M6 marker workflows', () => {
 
     const dialog = page.getByTestId('marker-dialog')
     await expect(dialog).toBeVisible()
+    await expect(page.getByTestId('marker-name-input')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('marker-description-input')).toHaveAttribute('maxlength', '2000')
+    await expect(page.getByTestId('marker-updated-by-input')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('marker-coordinator-ids-input')).toHaveAttribute('maxlength', '2000')
     await page.getByTestId('marker-name-input').fill('Boot print')
     await dialog.getByText('Clue', { exact: true }).click()
     await page.getByTestId('marker-clue-type-input').selectOption('Footprint')
     await page.getByTestId('marker-confidence-input').selectOption('Probable')
     await page.getByTestId('marker-found-by-input').fill('Team 2')
+    await expect(page.getByTestId('marker-found-by-input')).toHaveAttribute('maxlength', '120')
     await page.getByTestId('marker-save-btn').click()
 
     await expect(page.getByTestId('marker-dialog')).toBeHidden()
@@ -202,6 +207,38 @@ test.describe('M6 marker workflows', () => {
       evacuation_priority: 'Urgent',
       label_size: 18,
     })
+  })
+
+  test('preserves and edits an accumulated casualty treatment log beyond 2,000 bytes', async ({ page }) => {
+    await clickMapCentre(page)
+    const dialog = page.getByTestId('marker-dialog')
+    await dialog.getByText('Casualty', { exact: true }).click()
+    await page.getByTestId('marker-name-input').fill('Subject Bravo')
+    await page.getByTestId('marker-condition-input').selectOption('Medical Emergency')
+    await page.getByTestId('marker-evacuation-priority-input').selectOption('Urgent')
+
+    const accumulatedTreatment = '[2026-08-29 10:00] Coordinator: Treatment evidence retained.\n\n'.repeat(80)
+    expect(new TextEncoder().encode(accumulatedTreatment).byteLength).toBeGreaterThan(2_000)
+    await page.getByTestId('marker-treatment-log-input').fill(accumulatedTreatment)
+    await expect(page.getByTestId('marker-treatment-log-input')).toHaveAttribute('maxlength', '524288')
+    await expect(page.getByTestId('marker-treatment-log-budget')).toContainText('of 524,288 UTF-8 bytes used')
+    await page.getByTestId('marker-treatment-update-input').fill('Further treatment recorded')
+    await page.getByTestId('marker-treatment-append-btn').click()
+    await page.getByTestId('marker-save-btn').click()
+    await expect(dialog).toBeHidden()
+
+    await clickMapCentre(page)
+    await expect(page.getByTestId('marker-treatment-log-input')).toHaveValue(/Further treatment recorded/u)
+    await page.getByTestId('marker-evacuation-priority-input').selectOption('Walk-Off')
+    await page.getByTestId('marker-save-btn').click()
+
+    const persistedState = await page.evaluate(() => {
+      const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+      return raw === null ? null : JSON.parse(raw)
+    })
+    expect(persistedState?.markers[0]?.treatment).toContain('Treatment evidence retained.')
+    expect(persistedState?.markers[0]?.treatment).toContain('Further treatment recorded')
+    expect(persistedState?.markers[0]?.evacuation_priority).toBe('Walk-Off')
   })
 })
 

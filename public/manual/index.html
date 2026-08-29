@@ -1368,7 +1368,7 @@
               <tr><td>Search</td><td>Filter the tree to matching layers and features.</td></tr>
               <tr><td>Show Hidden</td><td>Include hidden nodes so they can be inspected or restored.</td></tr>
               <tr><td>Alias</td><td>Rename a layer or feature without changing its underlying record.</td></tr>
-              <tr><td>Edit Drawing</td><td>For drawing feature rows, open the normal drawing form so misplaced drawings can be corrected or deleted with confirmation.</td></tr>
+              <tr><td>Edit Drawing</td><td>For drawing feature rows, open the normal drawing form so misplaced drawings can be corrected or retired with confirmation. Retirement removes the active layer while retaining mission history.</td></tr>
               <tr><td>Move Up / Move Down</td><td>Select a layer or feature, then reorder it among its siblings in the tree. The new order is saved with the mission.</td></tr>
             </tbody>
           </table>
@@ -1397,6 +1397,15 @@
             <div class="card"><strong>Evidence attachment</strong><br />Attach a photo or file that should travel with the marker in desktop mode.</div>
             <div class="card"><strong>Coordinates</strong><br />Every marker shows WGS84, ITM, and TM65 readouts in the form.</div>
           </div>
+          <p>
+            Desktop attachments are stored under a unique retained file identity. Replacing an
+            attachment or deleting the current marker does not reuse or erase the bytes referenced by an
+            earlier immutable marker revision. Two files with the same visible name remain separate
+            evidence artifacts. Finish waits for any attachment custody write already in progress while
+            current-position writes remain independent. Finalized and direct mission archives include
+            every attachment referenced by current, superseded, or retired marker evidence; archive
+            creation fails visibly if any referenced file is missing.
+          </p>
           <p>
             To place a marker from a TM65 Irish Grid reference instead of a map click, open the
             <strong>Tools</strong> tab, use <strong>Marker At GR</strong>, choose the marker type, enter
@@ -1427,16 +1436,27 @@
             nearby map content or several markers make the label too small or too dominant.
           </p>
           <p>
+            <strong>Bounded evidence save:</strong> SAR Tracker refuses an unusually large or malformed
+            marker record instead of allowing it to stall live position handling or create a partial
+            history entry. If a marker save is refused, keep the form open, shorten pasted notes or remove
+            malformed imported content, and save again. No marker or audit revision is created by the
+            refused attempt.
+          </p>
+          <p>
             Casualty markers keep treatment notes as a log. Enter each new treatment in
             <strong>New Treatment Update</strong> and choose <strong>Add Update</strong>; the app appends
             a timestamped entry to <strong>Existing Treatment Notes</strong> without overwriting earlier
-            notes.
+            notes. The byte counter below the log shows the bounded evidence budget before Save. The
+            complete log supports 524,288 UTF-8 bytes, so normal multi-hour casualty care can retain many
+            updates rather than sharing the 2,000-byte single-note limit. If the full budget is reached,
+            preserve all saved entries and shorten only the newest unsaved update.
           </p>
           <p>
-            <strong>Deletion protection:</strong> deleting any marker requires two-stage confirmation.
-            Clicking <strong>Delete</strong> shows a confirmation panel naming the marker type and the
-            consequence; a second click on <strong>Delete Marker</strong> executes the deletion.
-            Choosing <strong>Keep</strong> cancels the deletion and preserves the marker unchanged.
+            <strong>Retirement protection:</strong> retiring any marker requires two-stage confirmation.
+            Clicking <strong>Retire</strong> shows a confirmation panel naming the marker type and the
+            consequence; a second click on <strong>Retire Marker</strong> removes it from the active map
+            while its revisions and audit evidence remain in mission history.
+            Choosing <strong>Keep</strong> cancels retirement and preserves the marker unchanged.
             The same two-stage pattern applies to measurements (<strong>Clear Measurements</strong>)
             and drawings.
           </p>
@@ -1460,7 +1480,8 @@
             Drawing forms keep <strong>Save</strong> disabled until the required name or label text is
             entered. Required-field badges are intentionally high-contrast, and the
             <strong>Cancel</strong> and <strong>Save</strong> actions remain visible at the bottom of long
-            drawing forms.
+            drawing forms. An unusually large or malformed drawing payload is refused visibly before it
+            can block current-position handling; the refused attempt creates no drawing or audit revision.
           </p>
           <figure class="screenshot">
             <img src="assets/tools-and-map.png" alt="Map Tools expanded with measurement controls and the Tools tab showing GPX import" />
@@ -1493,9 +1514,10 @@
             terrain, and their name can be hidden on the map when label clutter would reduce readability.
             Range ring, sector, and search-area outlines use higher-contrast default colours;
             LPB percentile rings keep their statistical colour coding. Use the Layers workspace to hide
-            drawing types or individual drawings when the map needs less visual load. To delete a misplaced
+            drawing types or individual drawings when the map needs less visual load. To retire a misplaced
             drawing, click it to open its form (or use the Layers inspection panel), press
-            <strong>Delete</strong>, and confirm the destructive action.
+            <strong>Retire</strong>, and confirm. The active layer is removed while its revisions and
+            audit evidence remain in mission history.
           </div>
           <div class="note">
             <strong>Contrast:</strong> selected rows in high-use workspaces use a brighter selected-state
@@ -1509,10 +1531,82 @@
           <h3>GPX Tracks</h3>
           <p>
             The GPX panel can import files, import a folder, watch a folder, rescan watched folders, and
-            delete imported tracks. These file-system controls are available in the Electron desktop app and
+            remove imported tracks from the active map. Removal retires the import; it does not erase its
+            evidence. Replay before the recorded retirement time can still show it; Replay at or after
+            retirement excludes it from the reconstructed active evidence while its revision and audit history
+            remain retained. These file-system controls are available in the Electron desktop app and
             are disabled in browser-only validation mode. Each imported track also has its own colour
             palette and hex field, so separate GPX files can remain visually distinct on the map and in the
             layer tree.
+          </p>
+          <p>
+            The panel keeps one bounded page of at most 25 imported-track projections in the renderer.
+            A <strong>+</strong> count and an amber notice state when more retained imports exist. Use
+            <strong>Show Next Page</strong> to replace the current page, or
+            <strong>Return to First Page</strong>; pages are never silently combined into an unbounded list.
+            Mission Review uses the same bounded-page disclosure for its GPX totals and Layer Console.
+          </p>
+          <p>
+            Desktop imports preserve the exact GPX source bytes and a SHA-256 content identity. Importing the
+            same bytes through another path is idempotent; changed bytes at the same path create a retained
+            revision. A retry claiming the same exact bytes cannot replace geometry, timing, parsed points or
+            outing evidence; presentation metadata and outing assignment use their dedicated controls. Track,
+            segment and point order, names, elevation and source timestamps are kept. Invalid
+            points or segments are retained as explicit rejections instead of disappearing silently.
+            If every point is invalid, the source still appears as a retained import issue and the
+            panel states how many rejected point or segment records remain with the exact source.
+            Source files are limited to 8 MiB each so exact-byte retention cannot monopolize the
+            database writer or exhaust the import worker; larger files fail explicitly and should be
+            split into smaller GPX files. Select at most 100 GPX files at a time. A folder containing more
+            than 100 GPX files is rejected explicitly rather than returning or importing a partial list;
+            divide it into smaller operator-selected batches. Concurrent imports are serialized so identical bytes still
+            resolve to one canonical source with path aliases.
+          </p>
+          <div class="note">
+            <strong>GPX time evidence:</strong> fully dated tracks can participate in precise Replay. Partially
+            dated imports separate dated points from static points. Undated points remain visible as static
+            mission evidence but are not placed at an invented time.
+            Numeric values use the GPX decimal form; exponent text that could underflow into an invented zero
+            is rejected. Source timestamps must be full calendar-valid XML Schema date-times with
+            <code>Z</code> or an explicit offset within <code>±14:00</code>. Partial, local-offset-free, year-zero,
+            or out-of-range-offset values are retained as invalid-timestamp rejections rather than converted
+            by permissive platform parsing.
+          </div>
+          <p>
+            To link static GPX evidence to an outing, enter the coordinator name (up to 120 characters) and choose the outing on the
+            imported-track row. The assignment creates another retained evidence revision; it does not rewrite
+            the original import or duplicate its retained point rows; the assignment revision refers immutably
+            to the original source evidence. A failed, malformed, empty, non-UTF-8, interrupted, or partially successful
+            batch is reported explicitly. Successfully accepted files remain visible, while failed source bytes,
+            digest and reason remain retained for investigation.
+          </p>
+          <p>
+            Every selected desktop file receives a durable receipt before it is read. If the app or computer
+            stops during import, the next start shows the interrupted file and failure reason in the GPX panel;
+            it does not silently treat the selection as imported. Startup reconciles interrupted receipts in
+            bounded background slices: current positions remain available, while further GPX imports and Replay
+            fail closed until those receipts settle. Mission Finish and Finalize remain blocked
+            while a GPX batch, selected-file receipt, or staged revision is unsettled. If an operator retires a
+            track while a replacement revision is still importing, retirement wins: the replacement is not
+            published, its retained source is shown as an explicit failed import, and the retired evidence is
+            never silently returned to the active map. If replacement publication completes first, retirement
+            applies to that transaction-current revision and the audit names its exact revision and digest rather
+            than the superseded source. File names are shown to
+            the operator, but retained source bytes and full local paths stay behind the desktop boundary.
+            The panel shows a bounded issue page and explicitly warns when additional retained issues
+            exist beyond that page; a current import refreshes the sanitized issue list immediately. If a
+            damaged or legacy record contains an oversized display field, the panel marks that the displayed
+            value was shortened while the complete persisted record remains authoritative.
+            An upgraded legacy GPX artifact remains read-only while bounded background reconstruction is
+            pending. If its size, identity, or storage key falls outside the safe reconstruction envelope, it
+            remains byte-for-byte in the mission store but is quarantined from map and Replay projection. The
+            panel shows the quarantine explicitly, and Finish,
+            Finalize, and direct archive creation remain blocked until a bounded repair path has reconstructed
+            that artifact. Do not replace, relabel, reassign, or retire a pending or quarantined row; preserve it
+            for the background migration or a maintainer-led repair.
+            On Quit, active and queued imports are cancelled and physically joined before the database can close.
+            If a worker does not exit within the safe deadline, shutdown fails visibly and is not marked clean;
+            retry Quit after the worker exits rather than force-closing the mission store beneath it.
           </p>
           <h3>Helicopters</h3>
           <p>
@@ -1547,12 +1641,127 @@
             operating the incident. A note at the top of the panel confirms it is read-only. Close Review or
             press <strong>Esc</strong> to return the map to full width. When there is no active mission,
             Review opens full-screen with the mission selector for cross-mission audit.
+            If Finish completes while Review remains open, Review refreshes the persisted mission state and
+            disables Search Operations entry immediately; it never leaves a finished mission editable.
           </p>
           <p>
             Mission Review reads the selected mission only after the workspace is opened. While a large
             audit history is loading, the map, current positions, and mission controls remain available;
             Review shows its loading state and then displays the exact breadcrumb count and bounded newest
             audit page. Closing Review does not change mission evidence or current-position truth.
+          </p>
+          <h3>Mission Evidence Replay</h3>
+          <p>
+            Open the <strong>Replay</strong> tab and choose a local Europe/Dublin time to reconstruct the mission
+            evidence that was known at that time. Replay is read-only: it does not reproduce the coordinator's
+            historic pan, zoom, filters or open panels, and it never replaces or pauses the operational live
+            map. The lifecycle label shows the reconstructed mission state at that time — active, paused,
+            finished or finalized — while the underlying transition remains retained as audit provenance.
+            Use <strong>Return to Live / now</strong> to leave Replay.
+          </p>
+          <p>
+            Replay loads exact dated Traccar fixes and GPX points progressively and shows real page progress.
+            Traccar <code>fixTime</code> is the only breadcrumb evidence clock. Evidence recorded after the
+            selected time is not backdated into the view. Warnings identify undated static GPX, missing recorded
+            provenance, and legacy objects whose earlier revision history is unknown.
+          </p>
+          <p>
+            Display-only filters can narrow exact Traccar tracks by device and dated/static GPX by outing.
+            They do not alter the reconstructed lifecycle, participants, assignments, passes, markers, drawings,
+            or search areas. When you switch away from Replay and return, the selected time and filters are
+            restored from the accepted replay result, so the visible controls continue to describe the evidence
+            on screen. Before you apply a new time, that unsubmitted time remains unchanged if live Pause,
+            Resume, current-position updates, or another Review publication rerenders the workspace. Undated GPX
+            remains static and is explicitly excluded from precise replay.
+          </p>
+          <p>
+            Use the earlier/later controls to page through reconstructed objects and exact track evidence; later
+            retained records are not hidden by the first page. Static or undated GPX has its own provenance list,
+            including outing assignment, revision, digest and rejection count. Local selections use the real
+            Europe/Dublin clock. Nonexistent spring-forward times are rejected. During the repeated autumn hour,
+            Replay shows an explicit choice between the first Irish Summer Time occurrence (UTC+01) and the
+            second Greenwich Mean Time occurrence (UTC+00); a mission ending in either occurrence remains
+            seekable without guessing. Future times are rejected without changing the live map.
+          </p>
+          <p>
+            Large missions page Replay's outing filter choices in sets of up to 100 and show the exact matching
+            total. Use the search box, <strong>Next matching outings</strong>, or return to the first page to reach
+            later retained outings. An outing already selected for the reconstruction stays selected while you
+            search or page, so loading another choice never silently changes the requested evidence scope.
+          </p>
+          <p>
+            Replay distinguishes an honestly empty result from evidence removed by display filters. Browser
+            validation explicitly says when mutable-object version history is unavailable and makes no absence
+            claim; operational mission-object reconstruction requires the supported Electron desktop runtime.
+            Upgraded legacy stores also show an explicit legacy-scan limitation when replay accelerators are
+            deliberately absent so current-position writes can keep priority.
+            Legacy GPX upgrades reconstruct only a small bounded slice during launch, then continue one
+            retained import at a time in the background. Until that resumable work settles, Replay shows
+            the remaining count and Finish/Finalize fail closed. Invalid coordinates, elevations, segments,
+            and malformed geometry inside the bounded envelope remain explicit rejection evidence; the
+            immutable original artifact is retained, while only safe coordinates enter the map projection.
+            Legacy artifacts outside the safe size, identity, or storage-key envelope remain untouched in
+            explicit quarantine, are excluded from rendered
+            evidence, and block archive custody as well as mission completion. A migrated import with zero safe
+            points still appears in the static evidence list with its rejection count instead of disappearing.
+            Legacy markers, drawings, outings, search areas, assignments and passes are also given immutable
+            baselines in bounded background slices. Replay and evidence mutation fail closed until those
+            baselines settle, while live current-position writes remain available. An over-envelope legacy
+            object remains retained in the mission store and Replay shows an explicit bounded-summary warning.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/mission-evidence-replay.png" alt="Mission Review Replay showing data known at the selected time and an undated GPX evidence limitation" />
+            <figcaption>Replay is visibly distinct from Live and states incomplete or static evidence instead of inventing history.</figcaption>
+          </figure>
+          <h3>Search Areas, Assignments And Passes</h3>
+          <p>
+            The <strong>Search Operations</strong> tab keeps one stable identity for each search area across
+            geometry revisions. Coordinators can record repeated team assignments and repeated passes. Every
+            pass is explicitly declared <strong>fully searched</strong>, <strong>partially searched</strong>, or
+            <strong>aborted</strong> by the coordinator. Any breadcrumb-derived coverage comparison is advisory;
+            it never changes or supplies the declared outcome.
+          </p>
+          <p>
+            Select the search area, outing and assignment explicitly. Enter both the pass start and pass end as
+            Europe/Dublin local times, and add participant, clue and track-evidence identities where available.
+            SAR Tracker converts those local controls to an explicit-offset, calendar-valid instant before the
+            evidence write; ambiguous, offset-free or impossible timestamps are refused rather than guessed.
+            Search-area names, team/coordinator fields and labels are limited to 120 characters; descriptions
+            and notes are limited to 2,000 characters; and each
+            participant, clue or track list to 200 identities of at most 200 characters. Oversized input is
+            refused before lookup or evidence persistence so it cannot delay current-position processing.
+            Search-area geometry, metadata and advisory coverage are also bounded and must be valid JSON;
+            malformed optional values are refused rather than silently treated as missing evidence.
+            A pass must stay inside its assignment's outing and cannot be dated in the future. Every
+            coordinator-declared outcome requires an explicit pass end; an open outing does not turn a declared
+            outcome into an active pass. Later
+            outing or assignment edits cannot silently move recorded pass evidence outside its original scope.
+            The recorded pass displays its declared outcome, exact time window, revision and evidence-link counts;
+            SAR Tracker never substitutes the first area or outing and never invents a zero-duration pass.
+            Finished and finalized missions keep these retained records visible but disable the Search Operations
+            entry form permanently. New assignments and passes require an active mission; unlocking a finalized
+            mission does not make its retained Search Operations records writable.
+          </p>
+          <p>
+            Search Operations reads retained areas, assignments, outings and passes in bounded pages of 25.
+            Each selector shows the exact matching total and provides search, first-page and next-page controls.
+            Pass cards are loaded independently of the currently visible area page, so a retained pass does not
+            disappear merely because its linked area is on another page. Only the fields and evidence-link counts
+            needed for this review surface cross into the application window. If retained Search Operations
+            evidence changes while moving between pages, SAR Tracker refuses the old continuation and tells the
+            operator to return to the first page. Loading or refreshing Review disables Search Operations
+            controls and cancels older page reads so stale results cannot replace the newly loaded evidence.
+            The applied search remains visible when you switch tabs or return to a retained page, so its exact
+            matching total is never shown as though it were unfiltered. Text you have typed but not yet applied
+            remains a draft while that accepted search scope loads or advances; it is replaced only when a
+            different search is accepted.
+          </p>
+          <p>
+            If a Review load or refresh fails after evidence was already displayed, an amber warning says
+            that the visible evidence is retained and may be stale. Bounded Search, First and Next controls
+            remain available for inspecting that retained snapshot, but assignment and pass entry stays
+            disabled until Refresh succeeds. SAR Tracker never presents a failed refresh as current evidence
+            and never accepts a write against the uncertain Review state.
           </p>
           <p>
             The Audit Log shows operator-meaningful events by default — mission lifecycle changes, marker
@@ -1749,7 +1958,7 @@ sh "$COLLECTOR" --screenshot</code></pre>
           <ul>
             <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can import, validate, remove, and serve local official MBTiles packages from app-owned storage, so the original USB or source disk can be unplugged after import. The map reports ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. The Maps menu includes a field-readiness checklist and Settings can export a readiness certificate.</li>
             <li><strong>Settings access:</strong> coordinator and admin rosters are currently local workflow/audit controls, not a strong authentication boundary. Treat Settings access as trusted-machine access until the privileged-settings guard and unlock-authority model are implemented.</li>
-            <li><strong>Replay mode:</strong> settings expose replay defaults, but full replay/training workflow parity is still active work.</li>
+            <li><strong>Replay scope:</strong> Mission Review reconstructs evidence known at the selected time; it intentionally does not reproduce historical screen layout, map camera, panel state, or operator cursor. Archive-backed replay and final release qualification remain part of the Breadcrumb Programme's archive/final stage.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>
             <li><strong>Desktop beta distribution:</strong> current CI beta artifacts are Linux x86_64 AppImage and <code>.deb</code> packages. macOS artifacts are local/manual when needed, and Windows NSIS artifacts remain gated until the Windows official-map smoke passes. Developer ID signing, notarization, DMG packaging, and signed Windows installer behavior remain open release work.</li>

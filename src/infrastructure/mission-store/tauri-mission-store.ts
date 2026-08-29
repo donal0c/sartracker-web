@@ -367,8 +367,34 @@ export type GpxTrackImport = {
   readonly display_name: string
   readonly geometry_json: string
   readonly metadata_json: string | null
+  readonly content_sha256?: string | null
+  readonly source_bytes_base64?: string | null
+  readonly timing_class?: 'fully_dated' | 'partially_dated' | 'undated'
+  readonly outing_id?: string | null
+  readonly revision_sequence?: number
+  readonly retired_at?: string | null
+  readonly retired_by?: string | null
   readonly imported_at: string
   readonly updated_at: string
+}
+
+export type GpxImportIssue = {
+  readonly batch_id: string | null
+  readonly file_name: string
+  readonly reason: string
+  readonly rejection_count?: number
+  readonly recorded_at: string
+  readonly projection_warnings?: readonly string[]
+}
+
+export type GpxImportIssuePage = {
+  readonly entries: readonly GpxImportIssue[]
+  readonly nextCursor: string | null
+}
+
+export type GpxImportPage = {
+  readonly entries: readonly GpxTrackImport[]
+  readonly nextCursor: string | null
 }
 
 export type HelicopterSlotKey = 'slot_1' | 'slot_2' | 'slot_3' | 'slot_4'
@@ -411,6 +437,247 @@ export type UpsertGpxTrackImportInput = {
   readonly display_name: string
   readonly geometry_json: string
   readonly metadata_json?: string | null
+  readonly content_sha256?: string | null
+  readonly source_bytes_base64?: string | null
+  readonly timing_class?: 'fully_dated' | 'partially_dated' | 'undated'
+  readonly outing_id?: string | null
+  readonly points?: readonly {
+    readonly segment_index: number
+    readonly point_index: number
+    readonly track_name: string | null
+    readonly lat: number
+    readonly lon: number
+    readonly elevation: number | null
+    readonly timestamp: string | null
+  }[]
+  readonly rejections?: readonly {
+    readonly kind: 'point' | 'segment'
+    readonly segment_index: number
+    readonly point_index: number | null
+    readonly reason: string
+    readonly source_value: string | null
+  }[]
+}
+
+export type SearchArea = {
+  readonly id: string
+  readonly mission_id: string
+  readonly name: string
+  readonly status: 'active' | 'retired'
+  readonly geometry_json: string
+  readonly legacy_drawing_id: string | null
+  readonly version_sequence: number
+  readonly updated_by: string | null
+  readonly created_at: string
+  readonly updated_at: string
+  readonly retired_at: string | null
+}
+
+export type SearchAssignment = {
+  readonly id: string
+  readonly mission_id: string
+  readonly search_area_id: string
+  readonly outing_id: string
+  readonly team_id: string
+  readonly participant_ids_json: string
+  readonly notes: string | null
+  readonly version_sequence: number
+  readonly updated_by: string | null
+  readonly created_at: string
+  readonly updated_at: string
+  readonly retired_at: string | null
+}
+
+export type SearchPassOutcome = 'full' | 'partial' | 'aborted'
+
+export type SearchPass = {
+  readonly id: string
+  readonly mission_id: string
+  readonly search_area_id: string
+  readonly assignment_id: string
+  readonly started_at: string
+  readonly ended_at: string | null
+  readonly outcome: SearchPassOutcome
+  readonly notes: string | null
+  readonly coordinator_name: string
+  readonly advisory_coverage_json: string | null
+  readonly version_sequence: number
+  readonly created_at: string
+  readonly updated_at: string
+  readonly participant_ids?: readonly string[]
+  readonly clue_ids?: readonly string[]
+  readonly track_evidence_ids?: readonly string[]
+}
+
+export type SearchOperationPageKind = 'areas' | 'assignments' | 'outings' | 'passes'
+
+export type SearchAreaProjection = Pick<
+  SearchArea,
+  'id' | 'mission_id' | 'name' | 'status' | 'version_sequence' | 'updated_by'
+  | 'created_at' | 'updated_at' | 'retired_at'
+> & { readonly geometry_available: true }
+
+export type SearchAssignmentProjection = Pick<
+  SearchAssignment,
+  'id' | 'mission_id' | 'search_area_id' | 'outing_id' | 'team_id'
+  | 'version_sequence' | 'updated_by' | 'created_at' | 'updated_at' | 'retired_at'
+>
+
+export type SearchPassProjection = Pick<
+  SearchPass,
+  'id' | 'mission_id' | 'search_area_id' | 'assignment_id' | 'started_at'
+  | 'ended_at' | 'outcome' | 'coordinator_name' | 'version_sequence'
+  | 'created_at' | 'updated_at'
+> & {
+  readonly participant_count: number
+  readonly clue_count: number
+  readonly track_evidence_count: number
+}
+
+export type SearchOperationPage = {
+  readonly kind: SearchOperationPageKind
+  readonly search: string
+  readonly generation: number
+  readonly entries: readonly (
+    SearchAreaProjection | SearchAssignmentProjection | Outing | SearchPassProjection
+  )[]
+  readonly totalCount: number
+  readonly nextCursor: string | null
+}
+
+export type MissionReplayFilterPage = {
+  readonly filterKind: 'outing'
+  readonly search: string
+  readonly entries: readonly string[]
+  readonly totalCount: number
+  readonly nextCursor: string | null
+}
+
+export type MissionReplayTrackRecord = {
+  readonly evidence_id: string
+  readonly source_type: 'traccar_fix' | 'gpx_point'
+  readonly track_id: string
+  readonly effective_at: string
+  readonly recorded_at: string
+  readonly lat: number
+  readonly lon: number
+  readonly elevation: number | null
+  readonly accuracy: number | null
+  readonly time_authority: 'fixTime' | 'gpx_source_time'
+  readonly completeness: 'complete' | 'legacy_baseline'
+}
+
+export type MissionReplayReadInput = {
+  readonly missionId: string
+  readonly selectedTime: string
+  readonly trackLimit: number
+  readonly timezone?: string
+  readonly cursor?: string | null
+  readonly objectLimit?: number
+  readonly objectCursor?: string | null
+  readonly replayGeneration?: number
+  /** Display-only Traccar-device filter; never changes reconstructed mission state. */
+  readonly deviceIds?: readonly string[]
+  /** Display-only GPX-outing filter; never changes reconstructed mission state. */
+  readonly outingIds?: readonly string[]
+}
+
+export type MissionReplayLifecycleState =
+  | 'active'
+  | 'paused'
+  | 'finished'
+  | 'finalized'
+  | 'unknown'
+
+export type MissionReplayReadResult = {
+  readonly missionId: string
+  readonly selectedTime: string
+  readonly replayGeneration?: number
+  readonly timezone: string
+  readonly objects: readonly {
+    readonly object_type: string
+    readonly object_id: string
+    readonly version_sequence: number
+    readonly operation: string
+    readonly effective_at: string
+    readonly recorded_at: string
+    readonly completeness: 'complete' | 'legacy_baseline'
+    readonly state: Readonly<Record<string, unknown>>
+  }[]
+  readonly totalObjectCount: number
+  readonly objectTypeCounts: Readonly<Record<string, number>>
+  readonly objectCursor: string
+  readonly nextObjectCursor: string | null
+  readonly missionLifecycle?: {
+    /** Reconstructed mission state at the selected replay time. */
+    readonly state: MissionReplayLifecycleState
+    /** Transition evidence that established the reconstructed state. */
+    readonly id: string
+    readonly event_type: string
+    readonly timestamp: string
+    readonly details_json: string | null
+  } | null
+  readonly participants?: readonly MissionParticipant[]
+  readonly groupMembership?: readonly GroupMembershipEvent[]
+  readonly tracks: readonly MissionReplayTrackRecord[]
+  readonly trackCursor: string
+  readonly previousCursor: string | null
+  readonly totalTrackCount: number
+  readonly staticGpxPointCount: number
+  readonly availableDeviceIds: readonly string[]
+  readonly availableOutingIds: readonly string[]
+  readonly availableOutingTotalCount?: number
+  readonly availableOutingNextCursor?: string | null
+  readonly deviceFilterIds: readonly string[]
+  readonly outingFilterIds: readonly string[]
+  readonly staticGpxEvidence: readonly {
+    readonly import_id: string
+    readonly revision_sequence: number
+    readonly source_path: string
+    readonly file_name: string
+    readonly display_name: string
+    readonly content_sha256: string | null
+    readonly timing_class: 'fully_dated' | 'partially_dated' | 'undated'
+    readonly outing_id: string | null
+    readonly completeness: 'complete' | 'legacy_baseline'
+    readonly recorded_at: string
+    readonly static_point_count: number
+    readonly rejection_count: number
+  }[]
+  readonly nextCursor: string | null
+  readonly progress: number
+  readonly limitations: readonly {
+    readonly code: string
+    readonly message: string
+    readonly count?: number
+    readonly boundaryTime?: string
+  }[]
+}
+
+export type MissionReplayTrackChunkResult = Pick<
+  MissionReplayReadResult,
+  | 'missionId'
+  | 'selectedTime'
+  | 'tracks'
+  | 'trackCursor'
+  | 'previousCursor'
+  | 'totalTrackCount'
+  | 'nextCursor'
+  | 'progress'
+>
+
+export type MissionReplayObjectChunkResult = Pick<
+  MissionReplayReadResult,
+  | 'missionId'
+  | 'selectedTime'
+  | 'objects'
+  | 'totalObjectCount'
+  | 'objectCursor'
+  | 'nextObjectCursor'
+  | 'progress'
+> & {
+  /** Number of objects whose state was bounded to a summary on this page. */
+  readonly summarizedObjectCount: number
 }
 
 export type MissionStoreInfo = {
@@ -753,6 +1020,28 @@ export type MissionStore = {
     requestId?: string,
   ) => Promise<MissionReviewReadResult>
   readonly cancelMissionReviewRead?: (requestId: string) => Promise<boolean>
+  readonly readMissionReplay?: (
+    input: MissionReplayReadInput,
+    requestId?: string,
+  ) => Promise<MissionReplayReadResult>
+  readonly readMissionReplayTrackChunk?: (
+    input: MissionReplayReadInput,
+    requestId?: string,
+  ) => Promise<MissionReplayTrackChunkResult>
+  readonly readMissionReplayObjectChunk?: (
+    input: MissionReplayReadInput,
+    requestId?: string,
+  ) => Promise<MissionReplayObjectChunkResult>
+  readonly readMissionReplayFilterPage?: (
+    input: MissionReplayReadInput & {
+      readonly filterKind: 'outing'
+      readonly filterSearch?: string
+      readonly filterCursor?: string
+      readonly filterLimit?: number
+    },
+    requestId?: string,
+  ) => Promise<MissionReplayFilterPage>
+  readonly cancelMissionReplay?: (requestId: string) => Promise<boolean>
   readonly listIngestAnomalies?: (
     missionId: string,
     options?: ListIngestAnomaliesOptions,
@@ -785,7 +1074,59 @@ export type MissionStore = {
   readonly deleteHelicopter: (helicopterId: string) => Promise<boolean>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
+  readonly listGpxImportPage?: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<GpxImportPage>
+  readonly listGpxImportIssues?: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<GpxImportIssuePage>
+  readonly updateGpxImportPresentation?: (input: {
+    readonly id: string
+    readonly mission_id: string
+    readonly display_name?: string
+    readonly metadata_json?: string | null
+  }) => Promise<GpxTrackImport>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
+  readonly listGpxImportRevisions?: (importId: string) => Promise<readonly Readonly<Record<string, unknown>>[]>
+  readonly listGpxImportRevisionPage?: (input: {
+    readonly importId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<{
+    readonly entries: readonly Readonly<Record<string, unknown>>[]
+    readonly nextCursor: string | null
+  }>
+  readonly assignGpxImportToOuting?: (input: {
+    readonly import_id: string
+    readonly outing_id: string
+    readonly assigned_by?: string | null
+  }) => Promise<GpxTrackImport>
+  readonly importGpxEvidencePaths?: (input: {
+    readonly missionId: string
+    readonly paths: readonly string[]
+  }) => Promise<{
+    readonly imports: readonly { readonly id: string }[]
+    readonly failures: readonly { readonly sourcePath: string; readonly reason: string }[]
+    readonly dispatchDurationMs: number
+  }>
+  readonly upsertSearchArea?: (input: Readonly<Record<string, unknown>>) => Promise<SearchArea>
+  readonly listSearchAreas?: (missionId: string) => Promise<readonly SearchArea[]>
+  readonly retireSearchArea?: (areaId: string, actor?: string | null) => Promise<boolean>
+  readonly upsertSearchAssignment?: (input: Readonly<Record<string, unknown>>) => Promise<SearchAssignment>
+  readonly listSearchAssignments?: (missionId: string) => Promise<readonly SearchAssignment[]>
+  readonly upsertSearchPass?: (input: Readonly<Record<string, unknown>>) => Promise<SearchPass>
+  readonly listSearchPasses?: (missionId: string) => Promise<readonly SearchPass[]>
+  readonly listSearchOperationPage?: (input: {
+    readonly missionId: string
+    readonly kind: SearchOperationPageKind
+    readonly search?: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<SearchOperationPage>
   readonly getMission: (missionId: string) => Promise<Mission>
   readonly listMissions: () => Promise<readonly Mission[]>
   readonly getActiveMission: () => Promise<Mission | null>

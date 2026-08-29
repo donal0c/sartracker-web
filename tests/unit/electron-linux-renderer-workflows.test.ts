@@ -110,6 +110,12 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     expect(workflowSource).not.toContain('--enable-unsafe-swiftshader')
   })
 
+  it('runs Linux validation when shared evidence-authority modules change', () => {
+    const workflowSource = readFileSync('.github/workflows/electron-linux-validation.yml', 'utf8')
+
+    expect(workflowSource).toContain("- 'shared/**'")
+  })
+
   it('proves the standalone packaged app completes a graceful window close', () => {
     const workflow = readWorkflow('.github/workflows/electron-linux-validation.yml')
     const launch = selectStep(workflow.jobs.build, 'Launch AppImage smoke').run ?? ''

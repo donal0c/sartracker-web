@@ -223,6 +223,20 @@ describe('DrawingDialog vertices readout', () => {
     expect((saveButton as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('states that drawing retirement preserves revisions and audit evidence', async () => {
+    useDrawingStore.setState({
+      dialog: { mode: 'edit', draft: { ...LINE_DRAFT, id: 'drawing-1' } },
+    })
+    await renderDialog()
+    const retire = document.querySelector('[data-testid="drawing-delete-btn"]')
+    expect(retire?.textContent).toContain('Retire')
+    act(() => (retire as HTMLElement).click())
+
+    const confirmation = document.querySelector('[data-testid="drawing-delete-confirmation"]')
+    expect(confirmation?.textContent).toMatch(/Retire this drawing/i)
+    expect(confirmation?.textContent).toMatch(/revisions and audit evidence.*retained/i)
+  })
+
   async function renderDialog(): Promise<void> {
     const { DrawingDialog } = await import('../../src/components/drawing-dialog')
     host = document.createElement('div')

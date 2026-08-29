@@ -8,7 +8,7 @@ import { CoordinateConverterDialog } from './components/coordinate-converter-dia
 import { DevicesWorkspace } from './components/devices-workspace'
 import { FocusModeSidebar } from './components/focus-mode-sidebar'
 import { FocusModeToggle } from './components/focus-mode-toggle'
-import { GpxImportPanel } from './components/gpx-import-panel'
+import { DeferredGpxImportPanel } from './components/deferred-gpx-import-panel'
 import { HelicopterPanel } from './components/helicopter-panel'
 import { LayerFilterPanel } from './components/layer-filter-panel'
 import { MissionReviewWorkspace } from './components/mission-review-workspace'
@@ -207,7 +207,7 @@ function App() {
               )}
               {sidebarTab === 'tools' && (
                 <>
-                  <GpxImportPanel />
+                  <DeferredGpxImportPanel />
                   <HelicopterPanel />
                 </>
               )}

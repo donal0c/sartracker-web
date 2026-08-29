@@ -12,6 +12,7 @@ import {
 } from '../../src/features/mission-review/start-mission-review-runtime'
 import { useMissionReviewStore } from '../../src/features/mission-review/mission-review-store'
 import { useMissionReviewWorkspaceStore } from '../../src/features/mission-review/mission-review-workspace-store'
+import { useMissionStore } from '../../src/features/mission/mission-store'
 
 const mocks = vi.hoisted(() => ({
   startMissionReviewRuntime: vi.fn(),
@@ -60,6 +61,11 @@ describe('Mission Review lifecycle', () => {
       controller: null,
     })
     useMissionReviewWorkspaceStore.setState({ open: false })
+    useMissionStore.setState({
+      phase: 'idle',
+      currentMission: null,
+      recoverableMission: null,
+    })
   })
 
   afterEach(async () => {
@@ -99,5 +105,33 @@ describe('Mission Review lifecycle', () => {
 
     expect(controller.load).toHaveBeenCalledTimes(1)
     expect(controller.load).toHaveBeenCalledWith('mission-1')
+  })
+
+  it('reloads an open Review when the live mission phase changes [DON-279]', async () => {
+    useMissionStore.setState({ phase: 'active' })
+
+    await act(async () => {
+      root.render(
+        createElement(
+          Fragment,
+          null,
+          createElement(MissionReviewRuntimeBridge),
+          createElement(MissionReviewWorkspace),
+        ),
+      )
+      await Promise.resolve()
+      useMissionReviewWorkspaceStore.getState().openWorkspace()
+      await Promise.resolve()
+    })
+
+    expect(controller.load).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      useMissionStore.setState({ phase: 'idle' })
+      await Promise.resolve()
+    })
+
+    expect(controller.load).toHaveBeenCalledTimes(2)
+    expect(controller.load).toHaveBeenLastCalledWith('mission-1')
   })
 })

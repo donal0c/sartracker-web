@@ -11,7 +11,8 @@ exact words and question history governed by
 
 ## Delivery Decision
 
-- Deliver the programme through five substantial, coherent PRs.
+- Deliver the programme through six substantial, coherent PRs. The fourth is
+  the bounded field-feedback bridge inserted after the original allocation.
 - Use feature branches for every programme PR. No programme implementation is
   committed directly to `master`.
 - Keep `master` green and internally coherent after every merge, without
@@ -89,12 +90,14 @@ No team question is sent until it passes the ledger's duplicate-question gate.
 |  | BCP-07 renderer decision | 8/10 |
 |  | BCP-08 coverage read model and watermark | 10/10 |
 |  | BCP-09 coverage UI and filters | 9/10 |
-| PR-4: mission evidence and replay | Overall | **10/10** |
+| PR-4: field-feedback bridge | Overall | **7/10** |
+|  | `fixTime` authority and history-independent current polling | 7/10 |
+| PR-5: mission evidence and replay | Overall | **10/10** |
 |  | BCP-11 GPX evidence | 8/10 |
 |  | BCP-12a versioned mission data | 9/10 |
 |  | BCP-12b timeline replay | 10/10 |
 |  | BCP-13 search areas and repeated passes | 9/10 |
-| PR-5: archive lifecycle | Overall | **10/10** |
+| PR-6: archive lifecycle | Overall | **10/10** |
 |  | BCP-14 archive security decision | 9/10 |
 |  | BCP-15 encrypted streamed archives | 10/10 |
 |  | BCP-16 archive review and retention | 10/10 |
@@ -106,11 +109,13 @@ No team question is sent until it passes the ledger's duplicate-question gate.
    BCP-05. Branch: `codex/breadcrumb-pr1-ingest-safety`.
 2. **PR-2 — Mission model:** BCP-03, BCP-04, BCP-06.
 3. **PR-3 — Complete coverage:** BCP-07, BCP-08, BCP-09.
-4. **PR-4 — Mission evidence and replay:** BCP-11, BCP-12a, BCP-12b,
+4. **PR-4 — Field-feedback bridge:** canonical Traccar `fixTime`, explicit
+   local-time display and history-independent current polling.
+5. **PR-5 — Mission evidence and replay:** BCP-11, BCP-12a, BCP-12b,
    BCP-13.
-5. **PR-5 — Archive lifecycle:** BCP-14, BCP-15, BCP-16.
-6. **BCP-17 — Qualification:** final-candidate evidence and the one
-   team-facing release after PR-1 through PR-5 merge.
+6. **PR-6 — Archive lifecycle:** BCP-14, BCP-15, BCP-16.
+7. **BCP-17 — Qualification:** final-candidate evidence and the one
+   team-facing release after PR-1 through PR-6 merge.
 
 Merges serialize in this order. A later branch may be prepared from the prior
 PR head, but it cannot merge ahead of its prerequisite.
@@ -118,17 +123,19 @@ PR head, but it cannot merge ahead of its prerequisite.
 ## Review Allocation
 
 Reviews operate on the exact PR head and use independent contexts. They are
-evidence-backed reviews, not votes.
+evidence-backed reviews, not votes. For PR-4 onward, the accepted allocation is
+four complementary reviews on one final code-and-documentation head:
 
-- Review 1: safety-invariant adversary.
-- Review 2: concurrency and failure modes.
-- Review 3: schema, persistence, provenance, and data integrity.
-- Review 4: test adequacy plus architecture and code quality.
-- Review 5, for 10/10 PRs only: independent end-to-end adversarial synthesis.
+- broad life-safety and end-to-end;
+- persistence and completeness;
+- concurrency and finalization; and
+- renderer and input containment.
 
+The former five-independent-review allocation is superseded for these PRs.
 P1 and P2 findings block merge. Any new commit invalidates the affected
-review. Focused delta review closes findings, followed by one final exact-head
-review that checks the cumulative diff and all P1/P2 closures.
+review. Remediation receives one fresh broad exact-head review plus each
+affected focused recheck; all four restart only when a shared state machine,
+cross-boundary contract, or unbounded impact invalidates the original charters.
 
 ### PR-3 Remediation And PR-4-Onward Review Topology
 
@@ -148,15 +155,19 @@ the bounded remediation topology to PR-3 as well:
 
 For PR-4 onward:
 
-- retain five independent reviewers for a 10/10 PR, run in parallel on one
+- retain four independent reviewers for a 10/10 PR, run in parallel on one
   final code-and-documentation head;
-- use two broad safety charters plus three complementary focused charters:
-  persistence/completeness, concurrency/finalization, and renderer/input
-  containment;
+- use one broad life-safety/end-to-end charter plus three complementary focused
+  charters: persistence/completeness, concurrency/finalization, and
+  renderer/input containment;
 - complete strict TDD, deterministic gates, required packaged/Linux evidence,
   browser and visual verification, evidence documents, manual, and handoff
   before that wave wherever practical;
 - centrally source-retrace every finding before changing code;
+- treat PR opened/review-ready as an intermediate state; the implementation
+  task owns this baseline review wave and its accepted-finding remediation,
+  while Donal retains final approval and merge authority and may request
+  additional review;
 - after a confirmed fix, run one fresh broad exact-head review plus targeted
   exact-head rechecks only from focused reviewers whose risk areas changed;
 - retain unaffected focused reviews when their reviewed executable-code and
@@ -169,7 +180,7 @@ Recheck scope is contract-based. A narrow persistence fix receives the fresh
 broad review plus persistence/completeness; a renderer input-containment fix
 receives the fresh broad review plus renderer/input containment; a Finish
 evidence fix normally receives the fresh broad review plus both
-persistence/completeness and concurrency/finalization. Restart all five only
+persistence/completeness and concurrency/finalization. Restart all four only
 when a remediation changes a shared state machine or cross-boundary contract,
 touches enough critical areas that its impact cannot be confidently bounded,
 or invalidates the original charters' assumptions. Schema-plus-renderer,

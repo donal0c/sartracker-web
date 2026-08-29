@@ -200,9 +200,9 @@ function seedDatabase({ databasePath, plan, progress, faultInjection }) {
 
 /** Seeds one mission-model-aware BCP fixture without changing legacy preset emission. */
 function seedBreadcrumbProgrammeDatabase({ databasePath, plan, progress, faultInjection }) {
-  if (CURRENT_SCHEMA_VERSION !== 9) {
+  if (CURRENT_SCHEMA_VERSION !== 12) {
     throw new Error(
-      `Breadcrumb programme fixtures require schema v9; current schema is v${CURRENT_SCHEMA_VERSION}.`,
+      `Breadcrumb programme fixtures require schema v12; current schema is v${CURRENT_SCHEMA_VERSION}.`,
     )
   }
   const db = new Database(databasePath)
@@ -216,8 +216,8 @@ function seedBreadcrumbProgrammeDatabase({ databasePath, plan, progress, faultIn
     const insertPosition = db.prepare(`INSERT INTO positions (
         id, mission_id, device_id, source_position_id, name, lat, lon,
         altitude, speed, battery, accuracy, source, timestamp, data_origin,
-        received_at, content_hash, source_kind
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synthetic-fixture', ?, 'live', ?, ?, 'traccar_id')`)
+        received_at, content_hash, source_kind, timestamp_source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synthetic-fixture', ?, 'live', ?, ?, 'traccar_id', 'fix')`)
     const mainPositionCount = plan.positionCount - 12
     const positionBatch = db.transaction((fromIndex, toIndex) => {
       for (let index = fromIndex; index < toIndex; index += 1) {

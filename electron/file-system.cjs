@@ -1,5 +1,12 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { randomUUID } = require('node:crypto')
+const {
+  MAX_GPX_IMPORT_PATH_LENGTH,
+  MAX_GPX_IMPORT_PATHS,
+  normalizeGpxImportPaths,
+  normalizeRawGpxPath,
+} = require('./gpx-import-envelope.cjs')
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const OFFICIAL_MAP_PACKAGE_DIRECTORY = 'official-map-packages'
@@ -41,16 +48,21 @@ function createElectronFileSystem(options) {
       if (result.canceled) {
         return []
       }
-      for (const filePath of result.filePaths) {
+      const selectedPaths = normalizeGpxImportPaths(result.filePaths, 'GPX file selection')
+      for (const filePath of selectedPaths) {
         allowFile(filePath)
       }
-      return result.filePaths
+      return selectedPaths
     },
     chooseGpxDirectoryPath: async () => {
       const result = await showOpenDialog(options, {
         properties: ['openDirectory'],
       })
-      const selectedPath = result.canceled ? null : result.filePaths[0] ?? null
+      const selectedPath = result.canceled
+        ? null
+        : result.filePaths[0] === undefined
+          ? null
+          : normalizeRawGpxPath(result.filePaths[0], 'GPX directory')
       if (selectedPath !== null) {
         allowDirectory(selectedPath)
       }
@@ -118,34 +130,39 @@ function createElectronFileSystem(options) {
       }
     },
     readGpxFiles: async (paths) => {
-      return Promise.all(paths.map((filePath) => readGpxFile(filePath, assertAllowedPath)))
+      const normalizedPaths = normalizeGpxImportPaths(paths)
+      return Promise.all(normalizedPaths.map(
+        (filePath) => readGpxFile(filePath, assertAllowedPath),
+      ))
+    },
+    validateGpxEvidencePaths: async (paths) => {
+      const normalizedPaths = normalizeGpxImportPaths(paths, 'GPX file')
+      return Promise.all(normalizedPaths.map(async (inputPath) => {
+        const filePath = normalizeRawGpxPath(inputPath, 'GPX file')
+        assertAllowedPath(filePath, 'GPX file')
+        if (!isGpxPath(filePath)) throw new Error(`Only .gpx files can be imported: ${filePath}`)
+        return filePath
+      }))
     },
     listGpxDirectoryFiles: async (directoryPath) => {
-      const normalizedDirectoryPath = normalizeRequiredPath(directoryPath, 'GPX directory')
+      const normalizedDirectoryPath = normalizeRawGpxPath(directoryPath, 'GPX directory')
       assertAllowedPath(normalizedDirectoryPath, 'GPX directory')
       const stat = await fs.stat(normalizedDirectoryPath).catch(() => null)
       if (stat === null || !stat.isDirectory()) {
         throw new Error(`GPX watch directory was not found: ${normalizedDirectoryPath}`)
       }
 
-      const entries = await fs.readdir(normalizedDirectoryPath, { withFileTypes: true })
-      const gpxPaths = entries
-        .filter((entry) => entry.isFile())
-        .map((entry) => path.join(normalizedDirectoryPath, entry.name))
-        .filter(isGpxPath)
-        .sort((left, right) => path.basename(left).localeCompare(path.basename(right)))
+      const gpxPaths = await listBoundedGpxDirectoryPaths(normalizedDirectoryPath)
 
       return Promise.all(gpxPaths.map((filePath) => readGpxFile(filePath, assertAllowedPath)))
     },
+    listGpxDirectoryPaths: async (directoryPath) => {
+      const normalizedDirectoryPath = normalizeRawGpxPath(directoryPath, 'GPX directory')
+      assertAllowedPath(normalizedDirectoryPath, 'GPX directory')
+      return listBoundedGpxDirectoryPaths(normalizedDirectoryPath)
+    },
     ingestMarkerAttachment: async (input, missionStore) => {
       const missionId = normalizeMissionId(input.missionId)
-      const mission = await missionStore.getMission(missionId)
-      if (mission.status === 'finished' || mission.status === 'finalized') {
-        throw new Error(
-          `Cannot write data to finished mission ${missionId}; resume the mission or unlock it first.`,
-        )
-      }
-
       const fileName = normalizeAttachmentFileName(input.fileName)
       const bytes = Buffer.from(readString(input, 'bytesBase64'), 'base64')
       if (bytes.length === 0) {
@@ -155,16 +172,18 @@ function createElectronFileSystem(options) {
         throw new Error('Attachment must be 25 MB or smaller.')
       }
 
-      const attachmentDirectory = path.join(
-        options.userDataPath,
-        'missions',
-        missionId,
-        'attachments',
-      )
-      await fs.mkdir(attachmentDirectory, { recursive: true })
-      const destinationPath = path.join(attachmentDirectory, fileName)
-      await writeFileAtomically(destinationPath, bytes)
-      return destinationPath
+      return missionStore.runMarkerAttachmentIngest(missionId, async () => {
+        const attachmentDirectory = path.join(
+          options.userDataPath,
+          'missions',
+          missionId,
+          'attachments',
+        )
+        await fs.mkdir(attachmentDirectory, { recursive: true })
+        const destinationPath = path.join(attachmentDirectory, `${randomUUID()}-${fileName}`)
+        await writeFileAtomically(destinationPath, bytes)
+        return destinationPath
+      })
     },
     openExternalPath: async (inputPath) => {
       const normalizedPath = normalizeRequiredPath(inputPath, 'Path')
@@ -203,7 +222,7 @@ async function showOpenDialog(options, dialogOptions) {
 }
 
 async function readGpxFile(inputPath, assertAllowedPath) {
-  const filePath = normalizeRequiredPath(inputPath, 'GPX file')
+  const filePath = normalizeRawGpxPath(inputPath, 'GPX file')
   assertAllowedPath(filePath, 'GPX file')
   const stat = await fs.stat(filePath).catch(() => null)
   if (stat === null || !stat.isFile()) {
@@ -213,11 +232,35 @@ async function readGpxFile(inputPath, assertAllowedPath) {
     throw new Error(`Only .gpx files can be imported: ${filePath}`)
   }
 
+  const sourceBytes = await fs.readFile(filePath)
   return {
     sourcePath: filePath,
     fileName: path.basename(filePath),
-    contents: await fs.readFile(filePath, 'utf8'),
+    contents: sourceBytes.toString('utf8'),
+    bytesBase64: sourceBytes.toString('base64'),
   }
+}
+
+/** Enumerates at most one renderer-safe GPX selection page without building an oversized result. */
+async function listBoundedGpxDirectoryPaths(directoryPath) {
+  const directory = await fs.opendir(directoryPath).catch(() => null)
+  if (directory === null) {
+    throw new Error(`GPX watch directory was not found: ${directoryPath}`)
+  }
+  const gpxPaths = []
+  for await (const entry of directory) {
+    if (!entry.isFile() || !isGpxPath(entry.name)) continue
+    if (gpxPaths.length >= MAX_GPX_IMPORT_PATHS) {
+      throw new Error('GPX directory contains more than 100 GPX files; select at most 100 files at a time.')
+    }
+    if (directoryPath.length + 1 + entry.name.length > MAX_GPX_IMPORT_PATH_LENGTH) {
+      throw new Error('GPX directory contains a path longer than 4096 characters.')
+    }
+    gpxPaths.push(path.join(directoryPath, entry.name))
+  }
+  return gpxPaths.sort(
+    (left, right) => path.basename(left).localeCompare(path.basename(right)),
+  )
 }
 
 function normalizeRequiredPath(inputPath, label) {

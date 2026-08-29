@@ -27,12 +27,13 @@ Linear, ADRs, or model output never outrank the team's recorded words there.
   does not implement, mutate Linear/GitHub, or run expensive qualification
   unless Donal explicitly changes that scope.
 - **One fresh Codex task using GPT-5.6 Sol with high reasoning** implements each
-  approved complete PR through review-ready proof. BCP units are internal
+  approved complete PR through proof, the allocated independent exact-head
+  reviews, remediation and clean required rechecks. BCP units are internal
   planning and strict-TDD checkpoints inside that task, not separate
   implementation tasks.
-- **Donal controls PR review.** The coordinator reconciles review findings and
-  routes remediation back to the implementation task until the exact head is
-  acceptable.
+- **Donal owns final approval and merge.** The implementation task owns the
+  programme's allocated baseline reviews and may not defer them to Donal.
+  Donal may request additional review after that clean baseline.
 
 ## Requirements Authority
 
@@ -141,7 +142,8 @@ packet containing:
 - instruction to stop on a core domain contradiction.
 
 The implementation task owns every BCP checkpoint in that PR through final
-integration, review-ready proof, verified commits, push, and the single PR.
+integration, review-ready proof, verified commits, push, the single PR, the
+allocated review wave and clean exact-head rechecks.
 The coordinator monitors it and provides only requirements clarification,
 scope control, or blocker resolution. A BCP boundary does not create a new
 implementation task.
@@ -154,16 +156,15 @@ that handoff against the accepted plan and requirements.
 
 For PR-4 onward, code, tests, required packaged/Linux evidence, evidence
 documents, operator manual, and handoff are sequenced onto one final head before
-review wherever practical. Five independent reviewers then run in parallel on
+review wherever practical. Four independent reviewers then run in parallel on
 that same exact code-and-documentation head:
 
-1. broad safety review A;
-2. broad safety review B;
-3. focused persistence and completeness review;
-4. focused concurrency and finalization review; and
-5. focused renderer and input-containment review.
+1. broad life-safety and end-to-end review;
+2. focused persistence and completeness review;
+3. focused concurrency and finalization review; and
+4. focused renderer and input-containment review.
 
-The five charters are complementary rather than five copies of one broad
+The four charters are complementary rather than copies of one broad
 prompt. Strict TDD, full deterministic gates, required packaged/Linux evidence,
 browser verification, and visual verification must already be green before the
 wave starts. A documentation-only evidence-binding descendant receives an
@@ -171,8 +172,19 @@ exact-tree and exact-diff attestation. It does not invalidate completed code
 reviews when the executable-code and test trees are byte-identical to the
 reviewed head.
 
-Codex centrally source-retraces every reported finding before remediation. A
-confirmed P1/P2 or other safety failure blocks progress and normally returns to
+Codex centrally source-retraces every reported finding before remediation.
+Reviewer severity is a proposal, not the coordinator verdict. A finding blocks
+as P1/P2 only when retrace establishes all of the following: a reachable
+production path, a deterministic or otherwise credible failure mechanism, a
+breach of a repository-backed PR requirement, realistic operator/evidence or
+life-safety impact, and ownership by the current PR. Speculative hardening,
+qualification-only gaps, pre-existing behaviour, historical/reference-adapter
+issues and improvements outside the accepted PR contract are recorded as P3
+or out of scope with the downgrade reason; they do not repeatedly invalidate a
+candidate. Green tests or schedule pressure never downgrade a real
+life-safety, false-Complete, finalized-write or silent-evidence-loss defect.
+
+A confirmed P1/P2 or other safety failure blocks progress and normally returns to
 the same implementation task. After a fix, require one fresh broad independent
 exact-head review plus exact-head rechecks from only the focused reviewers whose
 risk areas changed; unaffected focused reviews do not restart. A fresh task is
@@ -180,14 +192,15 @@ used only when Donal requests it or the original task is genuinely unsuitable.
 Fable is not recalled unless review exposes an architecture or requirements
 problem rather than an ordinary implementation defect.
 
-Re-review scope follows affected contracts and failure modes, not the number or
+Opening the PR or describing it as review-ready is an intermediate state, not
+task completion. Re-review scope follows affected contracts and failure modes, not the number or
 location of changed files. A change confined to one risk area receives the
 fresh broad review plus that focused recheck. A change spanning risk areas
 receives the fresh broad review plus every affected focused recheck. Restart all
-five reviewers only when the remediation changes a shared state machine or
+four reviewers only when the remediation changes a shared state machine or
 cross-boundary contract, spans enough critical areas that its impact cannot be
 confidently bounded, or invalidates the assumptions of the original review
-charters. Examples include schema plus renderer behaviour, IPC plus worker
+charters. Restart all four reviewers in those cases. Examples include schema plus renderer behaviour, IPC plus worker
 ownership, finalization plus persistence, or a change to the logic behind
 Complete/100%.
 
@@ -216,7 +229,7 @@ Once the exact head is accepted and merged, Codex synchronizes Linear, the
 workplan, handoff, and any operator documentation. It then prepares the next
 slice but again waits at Donal's implementation approval gate.
 
-After PR-4, record a short process retrospective before PR-5 implementation is
+After PR-5, record a short process retrospective before PR-6 implementation is
 approved: defects found, false or duplicate findings removed by central
 retrace, re-review rounds avoided, any seam that required escalation, and any
 missed risk. Keep or amend this topology from that evidence; do not drift back
@@ -233,7 +246,10 @@ to unbounded full-wave restarts or weaken it by assumption.
 
 ## Current Baton
 
-PR-1 is owned by one authorized Sol-high implementation task. Its BCP-10,
-BCP-01, BCP-02, and BCP-05 checkpoints remain open in Linear until the complete
-PR merges. Donal coordinates review after the task returns the single PR at an
-exact review-ready head; no separate BCP implementation task is created.
+PR-5 mission evidence and replay is owned by one authorized Sol-high
+implementation task on `codex/breadcrumb-pr5-evidence-replay`. BCP-11, BCP-12a,
+BCP-12b and BCP-13 remain one review unit. A pushed PR at an exact review-ready
+head remains intermediate; the same implementation task owns its broad,
+persistence/completeness, concurrency/finalization and renderer/input-
+containment reviews plus clean required rechecks. No separate BCP implementation
+task is created. Donal retains the final approval and merge gate.
