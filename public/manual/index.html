@@ -342,6 +342,7 @@
           <a href="#start">Start Here</a>
           <a href="#hosted-testing">Hosted Testing</a>
           <a href="#desktop-beta">Desktop Beta</a>
+          <a href="#shadow-use">Controlled Shadow Use</a>
           <a href="#screen">Main Screen</a>
           <a href="#mission">Mission Control</a>
           <a href="#map">Map And Coordinates</a>
@@ -565,6 +566,43 @@
             Do not run this command for app bundles from an untrusted source, and do not bypass managed
             Mac security policy; record that as a beta blocker.
           </p>
+        </section>
+
+        <section id="shadow-use">
+          <h2>Controlled Shadow Use</h2>
+          <div class="warning">
+            <strong>Independent primary system required:</strong> a shadow-use beta runs beside the
+            team's existing operational source/process. That primary process remains authoritative for
+            positions, tasking, incident records, and safety decisions. SAR Tracker is advisory and must
+            never be the sole system during shadow use.
+          </div>
+          <p>
+            Before the first counted session, the release note must name the exact candidate and artifact,
+            the platform/profile, the existing primary operational process, the primary-system operator,
+            and a rehearsed primary-only fallback that completed in no more than 60 seconds. If any of
+            those are missing, do not start the SAR Tracker shadow session. Continue the independent
+            primary operation instead.
+          </p>
+          <p>
+            Say <strong>STOP SHADOW</strong> for unexplained current-position uncertainty, evidence
+            loss/corruption, a false <strong>Complete</strong> or <strong>100%</strong> claim,
+            non-interactive controls, map/source disagreement, privacy concerns, or any archive/restore
+            uncertainty. The primary-system operator confirms primary-only control; the SAR Tracker
+            operator stops using the beta's output and preserves the app/profile unchanged when safe.
+          </p>
+          <p>
+            Record successful exercises as well as failures. Ordinary wording, layout, or usability
+            feedback needs a short note and an optional cropped/redacted screenshot &mdash; not an incident
+            bundle. Use incident-time diagnostics or the packaged Linux hang collector only for a real
+            safety, regression, evidence, or non-interactivity investigation. Never share a raw mission
+            database, whole profile, precise location, credential, private map, or unreviewed screenshot
+            as routine feedback.
+          </p>
+          <div class="note">
+            The canonical procedure is <code>docs/assurance/shadow-use-protocol.md</code>. Following it
+            does not itself make SAR Tracker operationally safe, qualify an artifact, retire the existing
+            QGIS workflow, or prove archive/restore. Those remain separate technical and team decisions.
+          </div>
         </section>
 
         <section id="screen">
@@ -1959,6 +1997,7 @@ sh "$COLLECTOR" --screenshot</code></pre>
             <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can import, validate, remove, and serve local official MBTiles packages from app-owned storage, so the original USB or source disk can be unplugged after import. The map reports ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. The Maps menu includes a field-readiness checklist and Settings can export a readiness certificate.</li>
             <li><strong>Settings access:</strong> coordinator and admin rosters are currently local workflow/audit controls, not a strong authentication boundary. Treat Settings access as trusted-machine access until the privileged-settings guard and unlock-authority model are implemented.</li>
             <li><strong>Replay scope:</strong> Mission Review reconstructs evidence known at the selected time; it intentionally does not reproduce historical screen layout, map camera, panel state, or operator cursor. Archive-backed replay and final release qualification remain part of the Breadcrumb Programme's archive/final stage.</li>
+            <li><strong>Shadow-use limit:</strong> the protocol keeps the existing primary operational process authoritative and defines stop/fallback/evidence rules. It is not an operational-safety claim. Archive/restore must not be relied upon until the breadcrumb programme's PR-6 lifecycle and exact-candidate restore qualification are complete.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>
             <li><strong>Desktop beta distribution:</strong> current CI beta artifacts are Linux x86_64 AppImage and <code>.deb</code> packages. macOS artifacts are local/manual when needed, and Windows NSIS artifacts remain gated until the Windows official-map smoke passes. Developer ID signing, notarization, DMG packaging, and signed Windows installer behavior remain open release work.</li>

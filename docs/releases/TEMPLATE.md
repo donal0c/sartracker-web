@@ -1,8 +1,9 @@
 # SAR Tracker Electron Desktop Beta &lt;version&gt; (&lt;build tag&gt;)
 
-> **Internal beta only.** Not a production release. Do not use for live
-> incidents until this beta has passed the desktop smoke checklist below and
-> a team member has signed off in writing.
+> **Internal controlled/shadow-use beta only.** Not a production or sole-source
+> operational release. Passing this note's checks does not make the application
+> operationally safe. The independent primary operational process remains
+> authoritative under `docs/assurance/shadow-use-protocol.md`.
 
 - **Version:** &lt;e.g. 0.1.0-beta.1&gt;
 - **Build tag:** &lt;e.g. sha.f352391035a1 or run.42.sha.abc123def456&gt;
@@ -23,6 +24,26 @@
 Private Discovery map packages are never release artifacts. Distribute those
 through the agreed private team channel and load them through Settings after
 installing the app.
+
+## Shadow-use declaration
+
+Complete this section before sharing the beta. A missing field blocks shadow
+use; it does not block the team's independent primary operation.
+
+- **Protocol:** [`docs/assurance/shadow-use-protocol.md`](../assurance/shadow-use-protocol.md)
+- **Primary operational source/process:** &lt;exact existing source/process; never "QGIS and/or Traccar"&gt;
+- **Primary-system operator role:** &lt;name or agreed role&gt;
+- **Primary-only fallback drill:** &lt;date, measured switch time, maximum 60 seconds&gt;
+- **Candidate identity:** &lt;version, tag, exact Git SHA, artifact filename and full SHA-256&gt;
+- **Qualified platform/profile:** &lt;platform, architecture, OS/distro/kernel/session, package type, profile class, runtime flags&gt;
+- **Residual-risk register:** &lt;version/path; every entry uses the protocol's exact eight-field format&gt;
+- **WAR-13B scorecard declaration:** &lt;path or explicit not-started; no scorecard auto-promotes this release&gt;
+
+SAR Tracker is advisory during shadow use. Stop triggers include unexplained
+current-position uncertainty, evidence loss/corruption/mis-scoping, false
+`Complete`/`100%`, non-interactivity, privacy concerns, and archive/restore
+uncertainty. Ordinary UI/wording feedback needs only a short feedback record;
+incident bundles and raw mission/profile evidence are not the default.
 
 ## Install — Linux (primary target)
 
@@ -101,6 +122,8 @@ regression correction in this release.` for the Linear issue.
 
 - &lt;short list of operator workflows the tester should exercise&gt;
 - &lt;mark any items as critical so testers know which signal to prioritise&gt;
+- &lt;record successful comparisons as well as failures, bound to the exact
+  candidate/session identity&gt;
 
 ## Loading Discovery Maps
 
@@ -128,6 +151,11 @@ or screenshots showing private paths to GitHub.
   - High-definition mountain map packages are not bundled with this build.
   - Browser hosted-mode persistence is testing-only and not part of this
     desktop beta.
+  - Shadow-use protocol controls testing but does not qualify the application
+    for sole-source or unrestricted operational use.
+  - Archive/restore/custody remains prohibited as a relied-on workflow unless
+    this exact candidate has explicit breadcrumb programme PR-6 archive/restore
+    qualification evidence.
 
 ## Verification (CI-driven)
 
@@ -210,4 +238,9 @@ Before promoting this draft to a published release:
       before/after evidence, durable gate, and remaining uncertainty
 - [ ] Release marked **prerelease** and **draft** in GitHub UI
 - [ ] Release title contains "internal beta"
+- [ ] Shadow-use declaration is complete; the independent primary process and
+      named operator remain authoritative
+- [ ] Primary-only fallback drill passed in no more than 60 seconds
+- [ ] Residual-risk register and predeclared WAR-13B scorecard are linked, and
+      neither is represented as automatic release promotion
 - [ ] Maintainer has signed off in `handoff/HANDOFF.md`

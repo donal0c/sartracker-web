@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) remains one review unit on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`. A later Opus 5 review on `2136ad6b` found one accepted P2 in the cumulative casualty treatment log; the approval correction replaces its 2,000-byte borrowed notes cap with an explicit 524,288 UTF-8-byte envelope and also closes the safe Replay-byte-bound and `shared/**` CI-trigger P3s. Donal explicitly authorized focused correction, tests and smoke without another four-review restart. Treat the earlier independent review wave as prior-head evidence, not exact-head review of the correction. Leave the exact pushed successor for Donal's approval only after its focused/full local proof and Linux validation are green. PR-6 archive lifecycle follows only after Donal accepts PR-5.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-5 are merged; PR-5 landed at exact merge commit `eec92812b783a795c093f37268b295dd2179a3af` from reviewed head `f5ba8647131950dde457e50ce36fe0b8ded7337d`. PR-6 archive lifecycle is next and remains unimplemented. BCP-17 must qualify one exact final candidate before `DON-255` may publish it.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -130,6 +130,17 @@ ship or ask testers for whole Electron profile zips.
 8. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
 9. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
 10. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
+
+### WAR-13A Shadow-use protocol
+
+The canonical internal controlled/shadow-use protocol is
+`docs/assurance/shadow-use-protocol.md`. It must be linked and completed by the
+eventual internal beta release note. It keeps the independent primary
+operational process authoritative, defines stop/fallback/revert actions and
+proportionate field intake, and fixes the residual-risk and WAR-13B scorecard
+formats. It does not qualify a candidate or make SAR Tracker operationally safe.
+WAR-13B field execution starts only after an exact candidate is published under
+`DON-254`/`DON-255`; PR-6 archive/restore remains outside current proof.
 
 ### Breadcrumb And Mission-History Programme
 
