@@ -47,11 +47,12 @@ reviews into final-head reviews or prove release, live-provider, long-duration
 field, archive-security, or restore-and-replay behavior.
 
 The `DON-248`/`DON-252`/`DON-253` archive-lifecycle successor is also not
-implemented. The canonical programme policy names that successor programme
-PR-5; the WAR-01 task packet called it “PR6.” Neither shorthand is an authority
-for scope, and “PR6” must not be confused with GitHub PR #6, which is this
-docs-only assurance PR. Archive security, streaming, archive-backed review,
-and restore-and-replay remain `rewrite-pending` under those issue owners.
+implemented. The canonical programme policy and ADR name that successor
+programme PR-6. Programme PR-5 was the evidence/replay slice merged as
+`eec92812b783a795c093f37268b295dd2179a3af`. The programme PR-6 ordinal
+must not be confused with GitHub PR #6, which is this docs-only assurance PR.
+Archive security, streaming, archive-backed review, and restore-and-replay
+remain `rewrite-pending` under those issue owners.
 
 ## Assurance objective
 
