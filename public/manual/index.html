@@ -1665,7 +1665,9 @@
           <p>
             Display-only filters can narrow exact Traccar tracks by device and dated/static GPX by outing.
             They do not alter the reconstructed lifecycle, participants, assignments, passes, markers, drawings,
-            or search areas. Undated GPX remains static and is explicitly excluded from precise replay.
+            or search areas. When you switch away from Replay and return, the selected time and filters are
+            restored from the accepted replay result, so the visible controls continue to describe the evidence
+            on screen. Undated GPX remains static and is explicitly excluded from precise replay.
           </p>
           <p>
             Use the earlier/later controls to page through reconstructed objects and exact track evidence; later
@@ -1744,6 +1746,8 @@
             evidence changes while moving between pages, SAR Tracker refuses the old continuation and tells the
             operator to return to the first page. Loading or refreshing Review disables Search Operations
             controls and cancels older page reads so stale results cannot replace the newly loaded evidence.
+            The applied search remains visible when you switch tabs or return to a retained page, so its exact
+            matching total is never shown as though it were unfiltered.
           </p>
           <p>
             If a Review load or refresh fails after evidence was already displayed, an amber warning says

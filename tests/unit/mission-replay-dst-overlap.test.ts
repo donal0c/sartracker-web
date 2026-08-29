@@ -31,6 +31,10 @@ describe('mission replay Dublin overlap selection [DON-278]', () => {
       const replay: MissionReplayRuntimeState = {
         mode: 'live', selectedTime: null, result: null,
         loading: false, loadingMore: false, error: null,
+        outingFilters: {
+          search: '', pageNumber: 1, visibleCount: 0, totalCount: 0,
+          hasMore: false, nextCursor: null, loading: false,
+        },
       }
 
       await act(async () => {

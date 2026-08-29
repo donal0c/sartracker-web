@@ -291,6 +291,7 @@ export function MissionReviewWorkspace() {
                   <Suspense fallback={<EmptyState message="Loading search operations…" />}>
                     <SearchOperationsTab
                       controller={controller}
+                      key={snapshot.mission.id}
                       operations={searchOperations}
                       readOnly={snapshot.mission.status === 'finished' || snapshot.mission.status === 'finalized'}
                       reviewBusy={loading || refreshing}

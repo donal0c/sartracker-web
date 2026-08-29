@@ -26,6 +26,10 @@ test.describe('Visual: mission evidence and replay', () => {
     await expect(page.getByTestId('mission-replay-display-filters')).toContainText(
       'Undated GPX remains static and is excluded from precise replay',
     )
+    const acceptedReplayTime = await page.getByTestId('mission-replay-time').inputValue()
+    await page.getByRole('button', { name: 'Mission Details', exact: true }).click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await expect(page.getByTestId('mission-replay-time')).toHaveValue(acceptedReplayTime)
     await page.setViewportSize({ width: 1440, height: 1200 })
 
     await captureElementAndRegister(page, 'mission-replay-workspace', {
@@ -45,6 +49,7 @@ Report PASS or FAIL for each item and overall.`,
         'Replay data-known-at-time label is visible',
         'undated GPX static limitation is visible',
         'undated GPX exclusion is visible beside display filters',
+        'accepted replay time remains visible after switching away and back',
         'Return to Live action is visible',
       ],
     })

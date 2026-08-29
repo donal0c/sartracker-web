@@ -38,6 +38,45 @@ describe('mission replay object-page limitation [DON-278]', () => {
       .toBeNull()
     await act(async () => root.unmount())
   })
+
+  it('binds remounted controls to the accepted replay time and display filters [DON-278]', async () => {
+    host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+
+    await act(async () => root.render(createElement(MissionReplayTab, {
+      controller: null,
+      missionEndTime: '2026-08-27T12:00:00.000Z',
+      replay: replayState([], '0', {
+        selectedTime: REPLAY_TIME,
+        availableDeviceIds: ['alpha', 'bravo'],
+        deviceFilterIds: ['alpha'],
+      }),
+    })))
+
+    expect((host.querySelector('[data-testid="mission-replay-time"]') as HTMLInputElement).value)
+      .toBe('2026-08-27T10:00')
+    expect((host.querySelector('[data-testid="mission-replay-device-filter-alpha"]') as HTMLInputElement).checked)
+      .toBe(true)
+
+    await act(async () => root.render(createElement(MissionReplayTab, {
+      controller: null,
+      missionEndTime: '2026-08-27T12:00:00.000Z',
+      replay: replayState([], '0', {
+        selectedTime: '2026-08-27T10:00:00.000Z',
+        availableDeviceIds: ['alpha', 'bravo'],
+        deviceFilterIds: ['bravo'],
+      }),
+    })))
+
+    expect((host.querySelector('[data-testid="mission-replay-time"]') as HTMLInputElement).value)
+      .toBe('2026-08-27T11:00')
+    expect((host.querySelector('[data-testid="mission-replay-device-filter-alpha"]') as HTMLInputElement).checked)
+      .toBe(false)
+    expect((host.querySelector('[data-testid="mission-replay-device-filter-bravo"]') as HTMLInputElement).checked)
+      .toBe(true)
+    await act(async () => root.unmount())
+  })
 })
 
 const REPLAY_TIME = '2026-08-27T09:00:00.000Z'
@@ -50,10 +89,13 @@ const LARGE_OBJECT_LIMITATION = {
 function replayState(
   limitations: MissionReplayReadResult['limitations'],
   objectCursor: string,
+  overrides: Partial<Pick<MissionReplayReadResult,
+    'availableDeviceIds' | 'deviceFilterIds' | 'selectedTime'>> = {},
 ): MissionReplayRuntimeState {
+  const selectedTime = overrides.selectedTime ?? REPLAY_TIME
   return {
     mode: 'replay',
-    selectedTime: REPLAY_TIME,
+    selectedTime,
     loading: false,
     loadingMore: false,
     error: null,
@@ -63,7 +105,7 @@ function replayState(
     },
     result: {
       missionId: 'mission-1',
-      selectedTime: REPLAY_TIME,
+      selectedTime,
       timezone: 'Europe/Dublin',
       objects: [],
       totalObjectCount: 200,
@@ -75,9 +117,9 @@ function replayState(
       previousCursor: null,
       totalTrackCount: 0,
       staticGpxPointCount: 0,
-      availableDeviceIds: [],
+      availableDeviceIds: overrides.availableDeviceIds ?? [],
       availableOutingIds: [],
-      deviceFilterIds: [],
+      deviceFilterIds: overrides.deviceFilterIds ?? [],
       outingFilterIds: [],
       staticGpxEvidence: [],
       nextCursor: null,

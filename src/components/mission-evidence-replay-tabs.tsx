@@ -19,16 +19,35 @@ export function MissionReplayTab(props: {
   readonly missionEndTime: string
   readonly replay: MissionReplayRuntimeState
 }) {
-  const [selectedLocalTime, setSelectedLocalTime] = useState(() => formatDublinDateTimeLocal(props.missionEndTime))
-  const [selectedOffsetMinutes, setSelectedOffsetMinutes] = useState<DublinLocalTimeChoice['offsetMinutes'] | null>(
-    () => initialDublinOffsetChoice(props.missionEndTime),
+  const result = props.replay.result
+  const acceptedSelectedTime = result?.selectedTime ?? props.missionEndTime
+  const replayScopeKey = JSON.stringify([
+    acceptedSelectedTime,
+    result?.deviceFilterIds ?? [],
+    result?.outingFilterIds ?? [],
+  ])
+  const [selectedLocalTime, setSelectedLocalTime] = useAuthoritativeDraft(
+    formatDublinDateTimeLocal(acceptedSelectedTime),
+    replayScopeKey,
   )
-  const [deviceFilterIds, setDeviceFilterIds] = useState<readonly string[]>([])
-  const [outingFilterIds, setOutingFilterIds] = useState<readonly string[]>([])
-  const [outingFilterSearch, setOutingFilterSearch] = useState('')
+  const [selectedOffsetMinutes, setSelectedOffsetMinutes] = useAuthoritativeDraft<DublinLocalTimeChoice['offsetMinutes'] | null>(
+    initialDublinOffsetChoice(acceptedSelectedTime),
+    replayScopeKey,
+  )
+  const [deviceFilterIds, setDeviceFilterIds] = useAuthoritativeDraft<readonly string[]>(
+    result?.deviceFilterIds ?? [],
+    replayScopeKey,
+  )
+  const [outingFilterIds, setOutingFilterIds] = useAuthoritativeDraft<readonly string[]>(
+    result?.outingFilterIds ?? [],
+    replayScopeKey,
+  )
+  const [outingFilterSearch, setOutingFilterSearch] = useAuthoritativeDraft(
+    props.replay.outingFilters.search,
+    searchPageDraftKey(props.replay.outingFilters),
+  )
   const selectedTime = readDublinSelection(selectedLocalTime, selectedOffsetMinutes)
   const localTimeChoices = readDublinChoices(selectedLocalTime)
-  const result = props.replay.result
 
   return <div className="space-y-4" data-testid="mission-replay-workspace">
     <section className="rounded-2xl border border-sky-400/40 bg-sky-400/10 p-5">
@@ -180,10 +199,22 @@ export function SearchOperationsTab(props: {
   const [passEndedLocal, setPassEndedLocal] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [areaSearch, setAreaSearch] = useState('')
-  const [outingSearch, setOutingSearch] = useState('')
-  const [assignmentSearch, setAssignmentSearch] = useState('')
-  const [passSearch, setPassSearch] = useState('')
+  const [areaSearch, setAreaSearch] = useAuthoritativeDraft(
+    props.operations.pages.areas.search,
+    searchPageDraftKey(props.operations.pages.areas),
+  )
+  const [outingSearch, setOutingSearch] = useAuthoritativeDraft(
+    props.operations.pages.outings.search,
+    searchPageDraftKey(props.operations.pages.outings),
+  )
+  const [assignmentSearch, setAssignmentSearch] = useAuthoritativeDraft(
+    props.operations.pages.assignments.search,
+    searchPageDraftKey(props.operations.pages.assignments),
+  )
+  const [passSearch, setPassSearch] = useAuthoritativeDraft(
+    props.operations.pages.passes.search,
+    searchPageDraftKey(props.operations.pages.passes),
+  )
   const area = props.operations.areas.find((entry) => entry.id === selectedAreaId) ?? null
   const outing = props.operations.outings.find((entry) => entry.id === selectedOutingId) ?? null
   const eligibleAssignments = props.operations.assignments.filter((entry) =>
@@ -328,6 +359,25 @@ function ReplayFilterGroup(props: {
       </label>)}
     </div>}
   </fieldset>
+}
+
+/** Keeps an editable draft only while it still belongs to the authoritative result that created it. */
+function useAuthoritativeDraft<T>(authoritativeValue: T, ownerKey: string): readonly [T, (value: T) => void] {
+  const [draft, setDraft] = useState(() => ({ ownerKey, value: authoritativeValue }))
+  const value = draft.ownerKey === ownerKey ? draft.value : authoritativeValue
+  return [value, (nextValue: T) => setDraft({ ownerKey, value: nextValue })]
+}
+
+/** Identifies the exact accepted page whose search text an editable draft describes. */
+function searchPageDraftKey(page: MissionReviewRuntimeState['searchOperations']['pages']['areas']): string {
+  return JSON.stringify([
+    page.search,
+    page.pageNumber,
+    page.visibleCount,
+    page.totalCount,
+    page.nextCursor,
+    page.loading,
+  ])
 }
 
 function Metric(props: { readonly label: string; readonly value: number }) {

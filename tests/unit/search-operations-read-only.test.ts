@@ -109,6 +109,37 @@ describe('search operations finalized-mission containment [DON-279]', () => {
     expect((host.querySelector('[data-testid="search-operation-passes-next"]') as HTMLButtonElement).disabled)
       .toBe(false)
   })
+
+  it('binds remounted search controls to the retained exact page scope [DON-279]', () => {
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    const renderWithSearch = (search: string) => act(() => root?.render(React.createElement(SearchOperationsTab, {
+      controller: null,
+      readOnly: false,
+      reviewBusy: false,
+      writeBlocked: true,
+      operations: {
+        areas: [], assignments: [], passes: [], outings: [],
+        pages: {
+          areas: pageState(0), assignments: pageState(0), outings: pageState(0),
+          passes: {
+            ...pageState(25), search, pageNumber: 2, totalCount: 50,
+            hasMore: true, nextCursor: 'opaque-next', loading: false,
+          },
+        },
+      },
+    })))
+
+    renderWithSearch('full')
+    expect((host.querySelector('[data-testid="search-operation-passes-search"]') as HTMLInputElement).value)
+      .toBe('full')
+
+    renderWithSearch('partial')
+    expect((host.querySelector('[data-testid="search-operation-passes-search"]') as HTMLInputElement).value)
+      .toBe('partial')
+    expect(host.querySelector('[data-testid="search-operations-write-blocked"]')).not.toBeNull()
+  })
 })
 
 function pageState(visibleCount: number) {

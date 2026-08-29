@@ -108,6 +108,12 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     await expect(page.locator('[data-testid^="search-pass-search-pass-"]')).toHaveCount(1)
     await expect(page.getByTestId('search-pass-page')).toContainText('Coordinator-declared: full')
 
+    await page.getByRole('button', { name: 'Mission Details', exact: true }).click()
+    await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
+    await expect(page.getByTestId('search-operation-passes-search')).toHaveValue('full')
+    await expect(page.locator('[data-testid^="search-pass-search-pass-"]')).toHaveCount(1)
+    await expect(page.getByTestId('search-pass-page')).toContainText('Coordinator-declared: full')
+
     const recorded = await page.evaluate(() => {
       const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
       const area = state?.searchAreas.find((entry) => entry.name === 'Area Beta')

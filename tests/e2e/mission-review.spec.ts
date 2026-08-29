@@ -233,10 +233,16 @@ test.describe('M15 mission review workspace', () => {
     )
     await page.getByTestId('mission-replay-device-filter-alpha').check()
     await page.getByTestId('mission-replay-apply-filters').click()
+    const acceptedReplayTime = await page.getByTestId('mission-replay-time').inputValue()
     await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('Traccar fixTime')
     await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('GPX source time')
     await expect(page.getByTestId('mission-replay-limitation-browser_harness_version_history_unavailable')).toBeVisible()
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeEnabled()
+
+    await page.getByRole('button', { name: 'Mission Details', exact: true }).click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await expect(page.getByTestId('mission-replay-time')).toHaveValue(acceptedReplayTime)
+    await expect(page.getByTestId('mission-replay-device-filter-alpha')).toBeChecked()
 
     await page.getByTestId('mission-replay-return-live').click()
     await expect(page.getByTestId('mission-replay-workspace')).toContainText('Live map context')
