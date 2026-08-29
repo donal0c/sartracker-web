@@ -1,9 +1,10 @@
 # SAR Tracker Electron Desktop Beta &lt;version&gt; (&lt;build tag&gt;)
 
-> **Internal controlled/shadow-use beta only.** Not a production or sole-source
-> operational release. Passing this note's checks does not make the application
-> operationally safe. The independent primary operational process remains
-> authoritative under `docs/assurance/shadow-use-protocol.md`.
+> **Internal beta only.** Not a production or sole-source operational release.
+> Passing this note's checks qualifies only the declared testing scope below; it
+> does not make the application operationally safe. Any field/real-incident
+> shadow use follows `docs/assurance/shadow-use-protocol.md` and keeps the
+> independent primary operational process authoritative.
 
 - **Version:** &lt;e.g. 0.1.0-beta.1&gt;
 - **Build tag:** &lt;e.g. sha.f352391035a1 or run.42.sha.abc123def456&gt;
@@ -27,23 +28,28 @@ installing the app.
 
 ## Shadow-use declaration
 
-Complete the eligibility fields before guarded publication. While the release
-is a draft, the publication state must say `PRE-PUBLICATION — FIELD USE
-PROHIBITED`. After guarded publication, record the exact published identity and
-state before any field or real-incident shadow session. A missing field blocks
-shadow use; it does not block the team's independent primary operation.
+Choose exactly one release-use classification and complete its required fields
+before guarded publication. Fields that do not apply must say why. An
+engineering/training beta may be published without field-admission evidence but
+is restricted to non-counted synthetic/replay/disposable data. A field-shadow
+candidate must satisfy every additional field gate below.
+
+The guarded publisher changes the live GitHub release from draft to published
+without changing this body. Before any field or real-incident session, the
+session record—not this immutable release body—must confirm that the live release
+is published and record its URL, tag, and published-at time.
 
 - **Protocol:** [`docs/assurance/shadow-use-protocol.md`](../assurance/shadow-use-protocol.md)
-- **Primary operational source/process:** &lt;exact existing source/process; never "QGIS and/or Traccar"&gt;
-- **Primary-system operator role:** &lt;name or agreed role&gt;
-- **Primary-only fallback drill:** &lt;date, measured switch time, maximum 60 seconds&gt;
+- **Release-use classification:** &lt;`ENGINEERING/TRAINING — NON-COUNTED` | `FIELD-SHADOW CANDIDATE`&gt;
 - **Candidate identity:** &lt;version, tag, exact Git SHA, artifact filename and full SHA-256&gt;
-- **Pre-publication field eligibility:** &lt;exact-candidate `DON-248`/`DON-252`/`DON-253`, BCP-17, and `DON-254` evidence&gt;
-- **`DON-255` guarded-publication approval:** &lt;approval reference&gt;
-- **Guarded publication state:** &lt;`PRE-PUBLICATION — FIELD USE PROHIBITED`, or exact published release URL/tag and published-at UTC time&gt;
 - **Qualified platform/profile:** &lt;platform, architecture, OS/distro/kernel/session, package type, profile class, runtime flags&gt;
-- **Residual-risk register:** &lt;version/path; every entry uses the protocol's exact eight-field format&gt;
-- **WAR-13B scorecard declaration:** &lt;path or explicit not-started; no scorecard auto-promotes this release&gt;
+- **Primary operational source/process:** &lt;field-shadow only: exact existing source/process; never "QGIS and/or Traccar"&gt;
+- **Primary-system operator role:** &lt;field-shadow only: name or agreed role&gt;
+- **Primary-only fallback drill:** &lt;field-shadow only: date, measured switch time, maximum 60 seconds&gt;
+- **Pre-publication field eligibility:** &lt;field-shadow only: exact-candidate `DON-248`/`DON-252`/`DON-253`, BCP-17, and `DON-254` evidence&gt;
+- **`DON-255` guarded-publication approval:** &lt;field-shadow only: approval reference&gt;
+- **Residual-risk register:** &lt;field-shadow only: frozen version/path owned by the `DON-254` decision owner; every entry uses the protocol's exact eight-field format&gt;
+- **WAR-13B scorecard declaration:** &lt;field-shadow only: path or explicit not-started; no scorecard auto-promotes this release&gt;
 
 SAR Tracker is advisory during shadow use. Stop triggers include unexplained
 current-position uncertainty, evidence loss/corruption/mis-scoping, false
@@ -184,7 +190,7 @@ Minimum verification for an Electron official-map handoff:
 - diagnostics export checked for private-data leakage
 - `SHA256SUMS` generated for shared artifacts
 
-## Packaged Smoke Matrix
+## Packaged smoke matrix
 
 The draft release must not be published until the CI-built artifact has passed
 every packaged smoke gate below. Only the unchanged private-map-package gate may
@@ -244,16 +250,27 @@ Before promoting this draft to a published release:
       before/after evidence, durable gate, and remaining uncertainty
 - [ ] Release marked **prerelease** and **draft** in GitHub UI
 - [ ] Release title contains "internal beta"
-- [ ] Shadow-use declaration is complete; the independent primary process and
-      named operator remain authoritative
+- [ ] Release-use classification is selected and the fields required for that
+      classification are complete; non-applicable fields include a reason
+- [ ] Maintainer has signed off in `handoff/HANDOFF.md`
+
+### Additional field-shadow admission checklist
+
+Required only when the release-use classification is `FIELD-SHADOW CANDIDATE`.
+It is not a publication gate for an `ENGINEERING/TRAINING — NON-COUNTED` beta,
+which must not enter field/real-incident use or count toward WAR-13B.
+
+- [ ] The independent primary process and named operator remain authoritative
 - [ ] Exact-candidate `DON-248`/`DON-252`/`DON-253`, BCP-17, and `DON-254`
       eligibility evidence and `DON-255` publication approval are recorded
-- [ ] Field/real-incident use remains prohibited until guarded publication has
-      succeeded and its exact published identity/state is recorded; earlier
-      builds are labelled non-counted synthetic/replay/disposable training
 - [ ] Primary-only fallback drill passed in no more than 60 seconds
-- [ ] Zero open confirmed P1/P2 findings and zero confirmed persisted-evidence
+- [ ] Zero open confirmed release-blocking P1/P2 findings under the protocol's
+      field-admission definition, and zero confirmed persisted-evidence
       corruption, loss, or silent mis-scoping defects
-- [ ] Residual-risk register and predeclared WAR-13B scorecard are linked, and
-      neither is represented as automatic release promotion
-- [ ] Maintainer has signed off in `handoff/HANDOFF.md`
+- [ ] The `DON-254` decision owner has frozen and linked the candidate-specific
+      residual-risk register; the WAR-13B scorecard is predeclared, and neither
+      is represented as automatic release promotion
+
+Successful guarded publication is still required before field use. The first
+field session verifies the live GitHub release state and records its exact URL,
+tag, and published-at time without mutating the release body.

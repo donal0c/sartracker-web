@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-5 are merged; PR-5 landed at exact merge commit `eec92812b783a795c093f37268b295dd2179a3af` from reviewed head `f5ba8647131950dde457e50ce36fe0b8ded7337d`. The archive-lifecycle issue set (`DON-248`, `DON-252`, and `DON-253`) is next and remains unimplemented. BCP-17 must qualify one exact final candidate before `DON-255` may publish it.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-5 are merged; PR-5 landed at exact merge commit `eec92812b783a795c093f37268b295dd2179a3af` from reviewed head `f5ba8647131950dde457e50ce36fe0b8ded7337d`. Breadcrumb programme implementation PR-6—the archive-lifecycle stage owned by `DON-248`, `DON-252`, and `DON-253`, not GitHub PR #6—is next and remains unimplemented. BCP-17 must qualify one exact final candidate before `DON-255` may publish it.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -132,6 +132,11 @@ ship or ask testers for whole Electron profile zips.
 10. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
 
 ### WAR-13A Shadow-use protocol
+
+These are local resilience-programme labels: **WAR-13A** is the protocol and
+release/manual contract in this section; **WAR-13B** is the later execution of
+predeclared field exercises and the exit scorecard under `DON-254`/`DON-255`.
+Neither label creates a separate Linear owner.
 
 The canonical internal controlled/shadow-use protocol is
 `docs/assurance/shadow-use-protocol.md`. It must be linked and completed by the

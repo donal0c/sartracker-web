@@ -69,24 +69,39 @@ breadcrumb-domain question.
 ### Field admission gate
 
 A field exercise or real-incident comparison may use only the exact candidate
-that has:
+after all of these are true:
 
-1. implemented and qualified the `DON-248`, `DON-252`, and `DON-253` archive
-   lifecycle;
-2. passed BCP-17 and final exact-candidate qualification under `DON-254`; and
-3. received deliberate guarded-publication approval under `DON-255`; and
-4. completed guarded publication, with its exact release identity and published
-   state recorded before the session.
+1. The `DON-248`, `DON-252`, and `DON-253` archive lifecycle is implemented and
+   qualified.
+2. BCP-17 and final exact-candidate qualification under `DON-254` have passed.
+3. There are no open confirmed release-blocking P1/P2 findings; `DON-247` and
+   every known candidate risk have a recorded disposition.
+4. Deliberate guarded-publication approval under `DON-255` is recorded.
+5. Guarded publication has completed, and the session records the exact release
+   identity and published state.
 
 Before that gate is complete, a build may be used only with synthetic, replayed,
 or deliberately disposable training data. Those sessions do not count toward
 the WAR-13B field scorecard, even if they are otherwise useful engineering
 evidence.
 
+For this gate, an "open confirmed release-blocking P1/P2" is a current-candidate
+or programme-wide safety finding explicitly recorded at that severity in an
+active review, Linear issue, hazard record, or residual-risk record and not yet
+fixed, rechecked, and closed. Historical resolved PR findings are not open.
+An unscored issue is not silently treated as P1/P2, but it must be assigned an
+owner and disposition before field admission. The `DON-254` decision owner
+records this determination and the review/Linear/hazard sources checked in the
+candidate-specific residual-risk register.
+
 ## 3. Named session roles
 
-One person may hold more than one role only if the primary process still has an
-independent operator. Record names or agreed team identifiers before the session.
+All five roles below are required for field/real-incident shadow use. One person
+may hold more than one role only if the primary process still has an independent
+operator. Record names or agreed team identifiers before the session.
+Engineering/training may combine the SAR Tracker operator, evidence custodian,
+and triage owner; it does not invent a primary-system operator when no live
+primary process is required.
 
 | Role | Responsibility |
 | --- | --- |
@@ -96,15 +111,17 @@ independent operator. Record names or agreed team identifiers before the session
 | Evidence custodian | Records candidate/session identity, preserves proportionate sanitized evidence, and prevents unnecessary sharing of sensitive data. |
 | Triage owner | Routes the record to the existing Linear/regression owner and ensures urgent findings are not downgraded to ordinary feedback. |
 
-Every role may call `STOP SHADOW`. Resuming requires the session lead and
-primary-system operator to agree that the primary process is healthy and that
-the stop trigger is understood or safely excluded from the resumed scope.
+During field/real-incident use, every role may call `STOP SHADOW`. Resuming
+requires the session lead and primary-system operator to agree that the primary
+process is healthy and that the stop trigger is understood or safely excluded
+from the resumed scope.
 
 ## 4. Required deployment and session identity
 
 ### One-time deployment confirmation
 
-Complete this before the first shadow session for a deployment group:
+Complete this before the first field/real-incident shadow session for a
+deployment group:
 
 ```text
 Primary operational source/process:
@@ -151,6 +168,10 @@ platforms, profiles, flags, or primary-source configurations without preserving
 each identity separately.
 
 ## 5. Rehearsed stop, fallback, and revert path
+
+This section is mandatory for field/real-incident shadow use. In non-counted
+engineering/training, stop using the build when a trigger occurs, preserve
+proportionate evidence, and do not create a fictional primary-system handover.
 
 The fallback is not "restart SAR Tracker." The fallback is to remove SAR
 Tracker from the session and continue on the independent primary process.
@@ -219,13 +240,35 @@ Call `STOP SHADOW` immediately for any of these:
 
 ## 6. Pre-session checks
 
-The session lead reads each item aloud or confirms it with the named owner.
+### Every session, including engineering/training
 
 - [ ] The permitted scenario and non-goals are written down.
+- [ ] The record identifies the session as either
+      `engineering/training — non-counted` or `field/real-incident shadow`.
+- [ ] Session ID, exact Git SHA/build identity, platform, profile, runtime flags,
+      provider/source mode, and map-package status are recorded. A released
+      artifact also records its filename and SHA-256.
+- [ ] No auto-update or mid-session build/profile change can occur.
+- [ ] Archive/restore is explicitly outside reliance scope unless the exact
+      released candidate has qualification for `DON-248`, `DON-252`, and
+      `DON-253`.
+- [ ] The evidence custodian or training operator has a private storage
+      destination and knows what must not be shared.
+
+An unchecked item above blocks any SAR Tracker session. Synthetic, replayed, or
+deliberately disposable engineering/training does not require a live primary
+process, a field fallback drill, five separately named roles, a release note, or
+a frozen residual-risk register. It must remain non-operational and cannot count
+toward WAR-13B.
+
+### Additional checks for field or real-incident shadow use
+
+The session lead reads each item aloud or confirms it with the named owner.
+
 - [ ] Any field or real-incident session uses the exact candidate admitted
       through `DON-248`/`DON-252`/`DON-253`, BCP-17, `DON-254`, and `DON-255`;
-      earlier builds are restricted to non-counted synthetic/replay/disposable
-      training.
+      its live GitHub release is published rather than draft, and the session
+      record contains its URL, tag, and published-at time.
 - [ ] The independent primary process is named, live, independently staffed,
       and able to continue without SAR Tracker; its existing contingency and
       contingency owner are also named.
@@ -234,30 +277,31 @@ The session lead reads each item aloud or confirms it with the named owner.
 - [ ] All five roles are named and every person knows they may call `STOP SHADOW`.
 - [ ] Version, tag, exact SHA, CI run, artifact filename, and SHA-256 match the
       release note and `SHA256SUMS`.
-- [ ] Platform, install type, machine/profile, runtime flags, provider/source,
-      and map-package status match the session declaration.
-- [ ] No auto-update or mid-session candidate change can occur.
-- [ ] The current residual-risk register has been read; its detection and
-      fallback steps are available to operators.
-- [ ] There are zero open confirmed P1/P2 findings and zero confirmed defects
-      capable of corrupting, losing, or silently mis-scoping persisted mission
-      evidence.
+- [ ] The candidate-specific residual-risk register frozen by the `DON-254`
+      decision owner has been read; its detection and fallback steps are
+      available to operators.
+- [ ] There are zero open confirmed release-blocking P1/P2 findings under the
+      field-admission definition above, and zero confirmed defects capable of
+      corrupting, losing, or silently mis-scoping persisted mission evidence.
 - [ ] Current positions, time/offset, mission phase, tracking source, layers,
       and map readiness agree with the primary source at the opening checkpoint.
 - [ ] Sufficient local storage is available and the app has no unexplained
       startup, autosave, evidence-health, or diagnostics warning.
-- [ ] Archive/restore is explicitly out of reliance scope unless the release
-      note contains later exact-candidate qualification for `DON-248`,
-      `DON-252`, and `DON-253`.
-- [ ] The evidence custodian has a private storage destination and knows what
-      must not be shared.
 
-Any unchecked item blocks the shadow session. It does not block the team's
-independent primary operation.
+Any unchecked field-only item blocks field/real-incident shadow use. It does not
+block non-counted engineering/training or the team's independent primary
+operation.
 
 ## 7. During-session and post-session checks
 
-### During the session
+### During every session
+
+- Record every warning, retry, restart, recovery action, and operator workaround.
+- Keep ordinary UI preferences separate from safety or evidence findings.
+- Do not use synthetic/replay/disposable training data for operational decisions
+  or mix it into a real primary record.
+
+### Additional checks during field/real-incident shadow use
 
 - Keep the primary process visible, current, and independently operated.
 - At the opening, each planned scenario transition, after any warning/recovery,
@@ -266,31 +310,33 @@ independent primary operation.
 - Record successful checkpoints as well as divergences. A result of "no
   difference observed" is evidence only for that candidate, machine, profile,
   time, and exercised workflow.
-- Record every warning, retry, restart, recovery action, and operator workaround.
 - Do not dismiss an unexplained discrepancy as display lag. Stop first; classify
   later.
-- Keep ordinary UI preferences separate from safety or evidence findings.
 
-### After the session
+### After every session
 
-- [ ] The primary-system operator confirms the primary record is complete and
-      was never dependent on SAR Tracker.
 - [ ] End time, duration, identities, exercised workflows, and all comparison
       checkpoints are recorded.
 - [ ] The record states whether the exercise passed, stopped, or completed with
       allowed predeclared divergences.
-- [ ] Successful outcomes include observed comparison counts, fallback drill
-      time, recoveries attempted, and any unexercised scope.
-- [ ] Every unexpected result has an intake classification and existing owner.
+- [ ] Successful outcomes include observed comparison counts, any applicable
+      fallback-drill time, recoveries attempted, and any unexercised scope.
+- [ ] Every unexpected result has an intake classification and named triage
+      owner, plus an existing Linear owner when one applies.
 - [ ] Sensitive evidence is retained privately, minimized, and shared only with
       the people needed to investigate it.
+
+For a field/real-incident session, also confirm:
+
+- [ ] The primary-system operator confirms the primary record is complete and
+      was never dependent on SAR Tracker.
 - [ ] The residual-risk register and WAR-13B scorecard are updated without
       changing the candidate's qualification or release state automatically.
 
 ## 8. Proportionate evidence capture
 
-Exact candidate/session identity is required at every level. Capture more only
-when it materially helps diagnosis.
+Exact build/candidate/session identity is required at every level. Capture more
+only when it materially helps diagnosis.
 
 | Level | Use | Minimum evidence | Do not collect by default |
 | --- | --- | --- | --- |
@@ -308,9 +354,10 @@ privacy/custody decision before copying or sharing it.
 ```text
 Observation received
 |
-+-- Is current position uncertain, evidence lost/corrupt/mis-scoped, Complete/100%
-|   false, the app non-interactive, archive/restore uncertain, the primary source
-|   unavailable, or sensitive data possibly exposed?
++-- Did any section 5 stop trigger occur — including a crash, repeated error,
+|   non-interactivity, current-position/evidence/completeness uncertainty,
+|   corruption, archive/restore uncertainty, primary-source loss, or possible
+|   sensitive-data exposure?
 |     |
 |     +-- YES -> STOP SHADOW -> primary-only operation when healthy; if the
 |     |          primary is unavailable, invoke its named existing contingency.
@@ -322,8 +369,8 @@ Observation received
 +-- Is it wording, layout, discoverability, or preference feedback that does not
 |   change a workflow result?
 |     |
-|     +-- YES -> E0 short feedback record; no bundle by default; batch with the
-|     |          existing UI/feedback lane.
+|     +-- YES -> the named triage owner creates an E0 short feedback record; no
+|     |          bundle by default; batch with the existing UI/feedback lane.
 |     |
 |     +-- NO
 |
@@ -338,8 +385,9 @@ Observation received
 +-- Does it change a workflow result, or is it a non-cosmetic functional issue
 |   that reliably reproduces on the exact candidate?
 |     |
-|     +-- YES -> E1 capture -> route to the existing product/reliability owner;
-|     |          if later comparison proves a regression, reclassify it as E2.
+|     +-- YES -> the named triage owner performs E1 capture and routes it to an
+|     |          existing product/reliability owner; if later comparison proves
+|     |          a regression, reclassify it as E2.
 |     |
 |     +-- NO -> record as an observation/hypothesis with the missing evidence.
 |                Do not create a defect claim or new issue from plausibility alone.
@@ -359,6 +407,13 @@ Do not create a separate WAR-13A issue merely to duplicate these owners.
 
 Use one record per risk. All fields are mandatory. `Not known` is acceptable
 only when the evidence gap and next action are explicit.
+
+Before guarded field publication, the `DON-254` decision owner creates and
+freezes the candidate-specific register as a release-note appendix or another
+durable document linked from the release note. If no residual risk is known, the
+register must say so explicitly, name the evidence reviewed and its owner, and
+must not imply that unknown risks are absent. Engineering/training sessions do
+not require this candidate register.
 
 | Field | Required content |
 | --- | --- |
@@ -392,10 +447,11 @@ the record. It cannot be assigned ad hoc during a stopped session.
 `closed` requires the recorded exit evidence on the exact affected scope; a
 passing lower-tier test cannot close a field or platform risk.
 
-Every confirmed P1/P2 finding, and every confirmed defect capable of corrupting,
-losing, or silently mis-scoping persisted mission evidence, is
-`open-blocking`. It cannot be changed to `open-shadow-only` or
-`accepted-residual`; the release and pre-session gates require it to be absent.
+Every confirmed release-blocking P1/P2 finding under the field-admission
+definition, and every confirmed defect capable of corrupting, losing, or
+silently mis-scoping persisted mission evidence, is `open-blocking`. It cannot
+be changed to `open-shadow-only` or `accepted-residual`; the release and
+pre-session gates require it to be absent.
 
 ## 11. WAR-13B exit scorecard declaration
 

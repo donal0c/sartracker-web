@@ -468,9 +468,9 @@
           <h2>Desktop Beta Install Notes</h2>
           <div class="warning">
             <strong>Internal beta only:</strong> desktop betas are for controlled team testing. They are
-            not code-signed and should not be treated as production incident builds until a specific beta
-            has passed the desktop smoke checklist and a maintainer has signed off in
-            <code>handoff/HANDOFF.md</code>.
+            not code-signed and are never production or sole-source incident builds. Passing smoke checks
+            and maintainer sign-off qualifies only the testing scope declared in the release note; it does
+            not make the application operationally safe.
           </div>
           <p>
             Each desktop beta drop has a written release note under <code>docs/releases/</code> in the
@@ -577,7 +577,7 @@
             never be the sole system during shadow use.
           </div>
           <p>
-            Before every shadow session, confirm that the release note names the exact candidate and
+            Before every field or real-incident shadow session, confirm that the release note names the exact candidate and
             artifact, the platform/profile, the existing primary operational process, the primary-system
             operator, and a rehearsed primary-only fallback that completed in no more than 60 seconds. If
             any of those are missing, do not start the SAR Tracker shadow session. Continue the
@@ -586,6 +586,12 @@
             BCP-17 qualification, <code>DON-254</code>, and <code>DON-255</code> gates pass for that exact
             candidate. Earlier builds are limited to synthetic, replayed, or disposable training and do
             not count toward the field scorecard.
+          </p>
+          <p>
+            An engineering/training-only beta may use synthetic, replayed, or deliberately disposable
+            data without a live primary system or field fallback drill. Its session still records the exact
+            build, platform, profile, source mode, and evidence-handling owner. It must never be used as an
+            operational source or counted as field evidence.
           </p>
           <p>
             Say <strong>STOP SHADOW</strong> for unexplained current-position uncertainty, evidence
