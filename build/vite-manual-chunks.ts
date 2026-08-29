@@ -11,6 +11,10 @@ function includesAny(id: string, segments: readonly string[]): boolean {
  * does not collapse into one oversized artifact.
  */
 export function createManualChunk(id: string): string | undefined {
+  if (id.includes('/src/features/browser-validation/')) {
+    return 'browser-validation'
+  }
+
   if (!id.includes('/node_modules/')) {
     return undefined
   }

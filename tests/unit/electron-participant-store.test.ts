@@ -28,6 +28,7 @@ type Participant = {
 }
 
 type ElectronParticipantStore = {
+  readonly prepareClose: () => Promise<void>
   readonly close: () => void
   readonly info: () => Promise<{ readonly database_path: string }>
   readonly createMission: (input: { readonly name: string; readonly start_time: string }) => Promise<{ readonly id: string }>
@@ -74,6 +75,7 @@ let directories: string[] = []
 
 afterEach(async () => {
   vi.useRealTimers()
+  await Promise.all(stores.map((store) => store.prepareClose()))
   for (const store of stores) store.close()
   stores = []
   await Promise.all(directories.map((directory) => rm(directory, { recursive: true, force: true })))
@@ -749,7 +751,7 @@ describe('Electron participant store [DON-271]', () => {
     const databasePath = path.join(directories.at(-1)!, 'mission-store.sqlite')
     const database = new Database(databasePath)
     database.exec(`
-      DROP INDEX idx_group_membership_sequence;
+      DROP INDEX IF EXISTS idx_group_membership_sequence;
       DROP INDEX idx_group_membership_mission_team;
       ALTER TABLE mission_group_membership_events DROP COLUMN sequence;
       CREATE INDEX idx_group_membership_mission_team

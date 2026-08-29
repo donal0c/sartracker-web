@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('M22 GPX import parity', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&missionModel=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
@@ -11,11 +11,14 @@ test.describe('M22 GPX import parity', () => {
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
     await page.getByTestId('sidebar-tab-tools').click()
+    await expect(page.getByTestId('gpx-import-panel')).toBeVisible()
   })
 
   test('renders imported GPX tracks in the panel, layer catalog, review workspace, and map source', async ({
     page,
   }) => {
+    await page.getByTestId('outing-label-input').fill('Team Alpha outing')
+    await page.getByTestId('outing-start-btn').click()
     await page.evaluate(async () => {
       const harness = window.__SARTRACKER_BROWSER_HARNESS__
       if (harness === undefined) {
@@ -40,7 +43,20 @@ test.describe('M22 GPX import parity', () => {
     })
 
     await expect(page.getByTestId('gpx-import-list')).toContainText('alpha')
-    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 imported')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 shown')
+    const importId = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__
+      ?.readState().gpxImports.find((entry) => entry.display_name === 'alpha')?.id ?? null)
+    expect(importId).not.toBeNull()
+    await expect(page.getByTestId('gpx-outing-assigned-by')).toHaveAttribute('maxlength', '120')
+    await page.getByTestId('gpx-outing-assigned-by').fill('Coordinator One')
+    await page.getByTestId(`gpx-import-outing-${importId}`).selectOption({ label: 'Team Alpha outing' })
+    await expect(page.getByTestId('gpx-import-status')).toContainText('new evidence revision')
+    await expect.poll(async () => page.evaluate(() => {
+      const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
+      const imported = state?.gpxImports.find((entry) => entry.display_name === 'alpha')
+      const outing = state?.outings.find((entry) => entry.label === 'Team Alpha outing')
+      return { matches: imported?.outing_id === outing?.id, revision: imported?.revision_sequence }
+    })).toEqual({ matches: true, revision: 2 })
 
     await page.getByTestId('sidebar-tab-layers').click()
     await page.getByTestId('layer-expand-group-gpx-tracks').click()
@@ -66,6 +82,65 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('mission-review-workspace')).toContainText('GPX Imports')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('GPX Import Created')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('/tracks/alpha.gpx')
+  })
+
+  test('shows retained interrupted-import provenance after runtime recovery [DON-274]', async ({ page }) => {
+    await page.evaluate(() => {
+      window.__SARTRACKER_BROWSER_HARNESS__?.injectGpxImportIssues([{
+        batch_id: 'interrupted-batch',
+        file_name: 'team-alpha.gpx',
+        reason: 'Import was interrupted after source bytes were retained.',
+        rejection_count: 3,
+        recorded_at: '2026-08-27T10:00:00.000Z',
+        projection_warnings: ['file_name_truncated'],
+      }])
+    })
+
+    await expect(page.getByTestId('gpx-import-error')).toContainText(
+      '1 persisted GPX import issue',
+    )
+    await expect(page.getByTestId('gpx-import-issues')).toContainText('team-alpha.gpx')
+    await expect(page.getByTestId('gpx-import-issues')).toContainText(
+      'interrupted after source bytes were retained',
+    )
+    await expect(page.getByTestId('gpx-import-issues')).toContainText(
+      '3 rejected point/segment records retained with the exact source',
+    )
+    await expect(page.getByTestId('gpx-import-issues')).toContainText(
+      'Some retained issue fields were shortened for safe display',
+    )
+  })
+
+  test('pages imported GPX projections without accumulating renderer evidence [DON-274]', async ({
+    page,
+  }) => {
+    await page.evaluate(async () => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) throw new Error('Browser harness API unavailable.')
+      await harness.importGpxFiles(Array.from({ length: 26 }, (_, index) => {
+        const suffix = String(index).padStart(2, '0')
+        return {
+          sourcePath: `/tracks/paged-${suffix}.gpx`,
+          fileName: `paged-${suffix}.gpx`,
+          contents: `<gpx version="1.1"><trk><trkseg><trkpt lat="52.${suffix}" lon="-9.70" /><trkpt lat="52.${suffix}" lon="-9.71" /></trkseg></trk></gpx>`,
+        }
+      }))
+    })
+
+    await expect(page.getByTestId('gpx-import-pagination')).toContainText(
+      'More imported evidence is available',
+    )
+    await expect(page.getByTestId('gpx-import-list')).toContainText('paged-00')
+    await expect(page.getByTestId('gpx-import-list')).not.toContainText('paged-25')
+
+    await page.getByTestId('gpx-import-next-page').click()
+
+    await expect(page.getByTestId('gpx-import-pagination')).toContainText('This is the final page')
+    await expect(page.getByTestId('gpx-import-list')).toContainText('paged-25')
+    await expect(page.getByTestId('gpx-import-list')).not.toContainText('paged-00')
+
+    await page.getByTestId('gpx-import-first-page').click()
+    await expect(page.getByTestId('gpx-import-list')).toContainText('paged-00')
   })
 
   test('DON-194: changes individual GPX colours and keeps the layer tree readable on smaller displays', async ({

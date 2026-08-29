@@ -18,6 +18,8 @@ import {
   wgs84ToTM65,
 } from '../../lib/coordinates'
 
+export const MAX_CASUALTY_TREATMENT_LOG_BYTES = 512 * 1_024
+
 export type MarkerDraftCoordinates = {
   readonly lat: number
   readonly lon: number
@@ -181,8 +183,15 @@ export function appendTreatmentUpdate(input: {
 
   const entry = `${formatTreatmentUpdatePrefix(input.timestamp, input.updatedBy)}${note}`
   const existingTreatment = input.existingTreatment.trim()
+  const treatment = existingTreatment === '' ? entry : `${existingTreatment}\n\n${entry}`
+  assertTreatmentLogWithinBudget(treatment)
 
-  return existingTreatment === '' ? entry : `${existingTreatment}\n\n${entry}`
+  return treatment
+}
+
+/** Returns the UTF-8 persistence size of one casualty treatment log. */
+export function getTreatmentLogByteLength(value: string): number {
+  return new TextEncoder().encode(value.trim()).byteLength
 }
 
 export type CasualtyRequiredField = 'name' | 'condition' | 'evacuationPriority'
@@ -248,13 +257,31 @@ export function buildMarkerSaveInput({
     hazard_type: draft.type === 'hazard' ? normalizeOptionalText(draft.hazardType) : null,
     severity: draft.type === 'hazard' ? normalizeOptionalText(draft.severity) : null,
     condition: draft.type === 'casualty' ? normalizeOptionalText(draft.condition) : null,
-    treatment: draft.type === 'casualty' ? normalizeOptionalText(draft.treatment) : null,
+    treatment: draft.type === 'casualty' ? normalizeTreatmentLog(draft.treatment) : null,
     evacuation_priority:
       draft.type === 'casualty' ? normalizeOptionalText(draft.evacuationPriority) : null,
     label_size: normalizeLabelSize(draft.labelSize),
     updated_by: normalizeOptionalText(draft.updatedBy),
     coordinator_ids: normalizeOptionalText(normalizeCoordinatorIds(draft.coordinatorIds)),
     attachment_path: draft.attachmentPath,
+  }
+}
+
+/** Normalizes one complete casualty treatment log inside its evidence envelope. */
+function normalizeTreatmentLog(value: string): string | null {
+  const normalized = normalizeOptionalText(value)
+  if (normalized === null) return null
+  assertTreatmentLogWithinBudget(normalized)
+  return normalized
+}
+
+/** Rejects a treatment log that cannot cross the bounded renderer/persistence seam safely. */
+function assertTreatmentLogWithinBudget(value: string): void {
+  if (getTreatmentLogByteLength(value) > MAX_CASUALTY_TREATMENT_LOG_BYTES) {
+    throw new Error(
+      `Treatment log must be ${MAX_CASUALTY_TREATMENT_LOG_BYTES} UTF-8 bytes or fewer. `
+      + 'Earlier saved entries remain preserved; shorten only the newest unsaved update.',
+    )
   }
 }
 

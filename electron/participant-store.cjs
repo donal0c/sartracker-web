@@ -36,6 +36,7 @@ function createParticipantStore(options) {
               deviceId,
               change: 'member',
               observedAt: timestamp,
+              recordedAt: timestamp,
             })
             insertBackfillCheckpoint(db, {
               missionId: mission.id,
@@ -112,6 +113,7 @@ function createParticipantStore(options) {
             mission.id,
             teamId,
             normalizeDeviceIdArray(input.ref.member_device_ids),
+            addedAt,
             addedAt,
           )
         } else {
@@ -199,6 +201,7 @@ function createParticipantStore(options) {
     recordGroupMembershipEvents(input) {
       const mission = requireMutableMission(db, input?.mission_id)
       const events = normalizeArray(input?.events, 'Group membership events')
+      const recordedAt = readNow()
       const transaction = db.transaction(() => {
         const inserted = []
         for (const event of events) {
@@ -209,7 +212,7 @@ function createParticipantStore(options) {
           const observedAt = normalizeTimestamp(event?.observed_at, 'Membership observation')
           const latest = db.prepare(`SELECT change FROM mission_group_membership_events
             WHERE mission_id = ? AND mission_team_id = ? AND traccar_device_id = ?
-            ORDER BY observed_at DESC, sequence DESC LIMIT 1`)
+            ORDER BY observed_at DESC, COALESCE(sequence, rowid) DESC LIMIT 1`)
             .get(mission.id, teamId, deviceId)
           if (latest?.change === change) continue
           inserted.push(insertMembershipEvent(db, {
@@ -218,13 +221,13 @@ function createParticipantStore(options) {
             deviceId,
             change,
             observedAt,
+            recordedAt,
           }))
         }
         if (inserted.length > 0) {
-          const timestamp = readNow()
-          recordCoverageChange(mission.id, timestamp)
+          recordCoverageChange(mission.id, recordedAt)
           failAfterMutation(faultInjection)
-          insertAudit(db, mission.id, 'group_membership_changed', timestamp, {
+          insertAudit(db, mission.id, 'group_membership_changed', recordedAt, {
             event_count: inserted.length,
             event_ids: inserted.map((event) => event.id),
           })
@@ -237,12 +240,14 @@ function createParticipantStore(options) {
     listGroupMembershipEvents(missionId, teamId) {
       requireMission(db, missionId)
       if (teamId === undefined) {
-        return db.prepare(`SELECT * FROM mission_group_membership_events
-          WHERE mission_id = ? ORDER BY observed_at ASC, sequence ASC`).all(missionId)
+        return db.prepare(`SELECT *, COALESCE(sequence, rowid) AS sequence
+          FROM mission_group_membership_events
+          WHERE mission_id = ? ORDER BY observed_at ASC, COALESCE(sequence, rowid) ASC`).all(missionId)
       }
-      return db.prepare(`SELECT * FROM mission_group_membership_events
+      return db.prepare(`SELECT *, COALESCE(sequence, rowid) AS sequence
+        FROM mission_group_membership_events
         WHERE mission_id = ? AND mission_team_id = ?
-        ORDER BY observed_at ASC, sequence ASC`).all(missionId, teamId)
+        ORDER BY observed_at ASC, COALESCE(sequence, rowid) ASC`).all(missionId, teamId)
     },
 
     upsertParticipantBackfillCheckpoint(input) {
@@ -357,7 +362,7 @@ function createOrGetTeam(db, missionId, input, frozenAt) {
 }
 
 function insertMembershipEvent(db, input) {
-  const sequence = Number(db.prepare(`SELECT COALESCE(MAX(sequence), 0) + 1
+  const sequence = Number(db.prepare(`SELECT COALESCE(MAX(COALESCE(sequence, rowid)), 0) + 1
     FROM mission_group_membership_events`).pluck().get())
   const event = {
     id: randomUUID(),
@@ -367,13 +372,17 @@ function insertMembershipEvent(db, input) {
     traccar_device_id: input.deviceId,
     change: input.change,
     observed_at: input.observedAt,
+    recorded_at: input.recordedAt,
+    recording_completeness: 'complete',
   }
   db.prepare(`INSERT INTO mission_group_membership_events
-    (id, sequence, mission_id, mission_team_id, traccar_device_id, change, observed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    (id, sequence, mission_id, mission_team_id, traccar_device_id, change, observed_at,
+      recorded_at, recording_completeness)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(
       event.id, event.sequence, event.mission_id, event.mission_team_id,
-      event.traccar_device_id, event.change, event.observed_at,
+      event.traccar_device_id, event.change, event.observed_at, event.recorded_at,
+      event.recording_completeness,
     )
   return event
 }
@@ -385,6 +394,7 @@ function synchronizeObservedGroupMembership(
   missionTeamId,
   observedDeviceIds,
   observedAt,
+  recordedAt,
 ) {
   const latestByDevice = new Map()
   const rows = db.prepare(`SELECT traccar_device_id, change
@@ -406,6 +416,7 @@ function synchronizeObservedGroupMembership(
         deviceId,
         change: 'left',
         observedAt,
+        recordedAt,
       })
     }
   }
@@ -417,6 +428,7 @@ function synchronizeObservedGroupMembership(
         deviceId,
         change: 'member',
         observedAt,
+        recordedAt,
       })
     }
   }
@@ -737,9 +749,10 @@ function failAfterMutation(faultInjection) {
 }
 
 function insertAudit(db, missionId, eventType, timestamp, details) {
-  db.prepare(`INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json)
-    VALUES (?, ?, ?, ?, ?)`)
-    .run(randomUUID(), missionId, eventType, timestamp, JSON.stringify(details))
+  db.prepare(`INSERT INTO mission_events (
+    id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
+  ) VALUES (?, ?, ?, ?, ?, ?, 'complete')`)
+    .run(randomUUID(), missionId, eventType, timestamp, JSON.stringify(details), timestamp)
 }
 
 module.exports = { createParticipantStore }

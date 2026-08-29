@@ -15,6 +15,7 @@ test.describe('M15 mission review workspace', () => {
 
   test('shows mission details, audit history, and opens archive paths', async ({ page }) => {
     await createMarker(page, { name: 'Boot Print', typeLabel: 'Clue', position: { x: 460, y: 260 } })
+    await createSearchArea(page, 'Finalized Area')
     await injectTrackingSnapshot(page)
 
     await page.getByTestId('mission-finish-btn').click()
@@ -32,6 +33,16 @@ test.describe('M15 mission review workspace', () => {
       .toContain('finalized')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('Mission Finalized')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('Boot Print')
+
+    await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
+    await expect(page.getByTestId('search-operations-workspace')).toContainText('Finalized Area')
+    await expect(page.getByTestId('search-operations-read-only')).toContainText(
+      'finished or finalized mission is permanently read-only',
+    )
+    await expect(page.getByTestId('search-assignment-record')).toBeDisabled()
+    await expect(page.getByTestId('search-pass-record')).toBeDisabled()
+
+    await page.getByRole('button', { name: 'Mission Details', exact: true }).click()
 
     await page.getByTestId(/mission-review-open-path-/).first().click()
     await expect(page.getByTestId('mission-review-path-feedback')).toContainText('Opened')
@@ -83,6 +94,29 @@ test.describe('M15 mission review workspace', () => {
     // relies on a document-level Escape handler, not a panel-scoped one.
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('mission-review-workspace')).toBeHidden()
+  })
+
+  test('finishing a mission while Review is open fences Search Pass entry [DON-279]', async ({
+    page,
+  }) => {
+    await createSearchArea(page, 'Finish Fence Area')
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
+
+    await expect(page.getByTestId('search-operation-area')).toBeEnabled()
+    await expect(page.getByTestId('search-operations-read-only')).toHaveCount(0)
+
+    await page.getByTestId('mission-finish-btn').click()
+    await page
+      .getByTestId('mission-finish-dialog')
+      .getByRole('button', { name: 'Confirm Finish' })
+      .click()
+
+    await expect(page.getByTestId('search-operations-read-only')).toContainText(
+      'finished or finalized mission is permanently read-only',
+    )
+    await expect(page.getByTestId('search-operation-area')).toBeDisabled()
+    await expect(page.getByTestId('search-pass-record')).toBeDisabled()
   })
 
   test('DON-203: Escape closes only the top dialog over docked Review', async ({ page }) => {
@@ -166,6 +200,162 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-review-marker-detail')).toContainText('Loose Scree')
   })
 
+  test('DON-278: live Pause and Resume preserve an unsubmitted replay time exactly', async ({ page }) => {
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    const historicalDraft = '2026-08-28T12:00'
+    await page.getByTestId('mission-replay-time').fill(historicalDraft)
+    await page.getByTestId('mission-pause-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await expect(page.getByTestId('mission-replay-time')).toHaveValue(historicalDraft)
+    await page.getByTestId('mission-pause-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-replay-time')).toHaveValue(historicalDraft)
+    await page.getByTestId('mission-replay-seek').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText(
+      'Replay — data known at selected time',
+    )
+    await expect(page.getByTestId('mission-replay-time')).toHaveValue(historicalDraft)
+    await expect(page.getByTestId('mission-replay-reconstructed-state')).toContainText(
+      'Known by 28/08/2026, 12:00:00',
+    )
+  })
+
+  test('DON-278: replay is explicitly data-known-at-T while live controls remain operable', async ({ page }) => {
+    await injectTrackingSnapshot(page)
+    await page.evaluate(async () => {
+      await window.__SARTRACKER_BROWSER_HARNESS__?.importGpxFiles([{
+        sourcePath: '/tracks/replay-dated.gpx',
+        fileName: 'replay-dated.gpx',
+        contents: `<gpx version="1.1"><trk><trkseg>
+          <trkpt lat="52" lon="-9.7"><time>2026-04-10T16:50:00Z</time></trkpt>
+          <trkpt lat="52.01" lon="-9.71"><time>2026-04-10T16:55:00Z</time></trkpt>
+        </trkseg></trk></gpx>`,
+      }])
+    })
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('Live map context')
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeEnabled()
+    await page.getByTestId('mission-replay-seek').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText(
+      'Replay — data known at selected time',
+    )
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('4 / 4 dated points')
+    await expect(page.getByTestId('mission-replay-reconstructed-state')).toContainText('Known by')
+    await expect(page.getByTestId('mission-replay-reconstructed-state')).toContainText(
+      'lifecycle active',
+    )
+    await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('Traccar fixTime')
+    await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('GPX source time')
+    await expect(page.getByTestId('mission-replay-display-filters')).toContainText(
+      'never alter reconstructed mission state',
+    )
+    await page.getByTestId('mission-replay-device-filter-alpha').check()
+    await page.getByTestId('mission-replay-apply-filters').click()
+    const acceptedReplayTime = await page.getByTestId('mission-replay-time').inputValue()
+    await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('Traccar fixTime')
+    await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText('GPX source time')
+    await expect(page.getByTestId('mission-replay-limitation-browser_harness_version_history_unavailable')).toBeVisible()
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeEnabled()
+
+    await page.getByRole('button', { name: 'Mission Details', exact: true }).click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await expect(page.getByTestId('mission-replay-time')).toHaveValue(acceptedReplayTime)
+    await expect(page.getByTestId('mission-replay-device-filter-alpha')).toBeChecked()
+
+    await page.getByTestId('mission-replay-return-live').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('Live map context')
+  })
+
+  test('DON-278: browser replay later then earlier restores the exact 500-point page', async ({ page }) => {
+    await page.evaluate(async () => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) throw new Error('Browser harness API unavailable.')
+      const start = Date.parse('2026-04-10T16:00:00.000Z')
+      await harness.injectTrackingSnapshot({
+        devices: [{
+          device_id: 'paging-team', name: 'Paging Team', status: 'online',
+          last_seen: '2026-04-10T17:00:00.000Z', unique_id: null, category: null,
+        }],
+        positions: [],
+        breadcrumbs: Array.from({ length: 502 }, (_, index) => ({
+          id: `paging-fix-${index}`,
+          device_id: 'paging-team',
+          lat: 52 + index / 1_000_000,
+          lon: -9.7,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: new Date(start + index * 1_000).toISOString(),
+          source: null,
+          data_origin: 'live' as const,
+          cache_age_seconds: null,
+          device_cache_stale: false,
+        })),
+      })
+    })
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await page.getByTestId('mission-replay-seek').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('500 / 502 dated points')
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('Showing dated points 1–500 of 502')
+
+    await page.getByTestId('mission-replay-load-more').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('2 / 502 dated points')
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('Showing dated points 501–502 of 502')
+
+    await page.getByTestId('mission-replay-load-previous').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('500 / 502 dated points')
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText('Showing dated points 1–500 of 502')
+  })
+
+  test('DON-278: browser replay rejects a future selected time like packaged Electron', async ({ page }) => {
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await page.getByTestId('mission-replay-time').fill('2099-01-01T12:00')
+    await page.getByTestId('mission-replay-seek').click()
+
+    await expect(page.getByTestId('mission-replay-error')).toContainText(
+      'Mission replay selected time cannot be in the future.',
+    )
+    await expect(page.getByTestId('mission-replay-error')).toContainText(
+      'The live map has not been changed.',
+    )
+  })
+
+  test('DON-278: retired GPX is absent from later browser replay like packaged Electron', async ({ page }) => {
+    await page.getByTestId('sidebar-tab-tools').click()
+    await page.evaluate(async () => {
+      await window.__SARTRACKER_BROWSER_HARNESS__?.importGpxFiles([{
+        sourcePath: '/tracks/retired-replay.gpx',
+        fileName: 'retired-replay.gpx',
+        contents: `<gpx version="1.1"><trk><trkseg>
+          <trkpt lat="52" lon="-9.7"><time>2026-04-10T16:50:00Z</time></trkpt>
+          <trkpt lat="52.01" lon="-9.71"></trkpt>
+        </trkseg></trk></gpx>`,
+      }])
+    })
+    await expect(page.getByTestId('gpx-import-list')).toContainText('retired-replay')
+    await page.getByTestId('gpx-import-list').getByRole('button', { name: 'Retire' }).click()
+    await expect(page.getByTestId('gpx-import-status')).toContainText(
+      'Its evidence remains in mission history.',
+    )
+
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await page.getByTestId('mission-replay-seek').click()
+
+    await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText(
+      'No precisely dated track evidence was known and eligible at this time.',
+    )
+    await expect(page.getByTestId('mission-replay-static-gpx-evidence')).toContainText(
+      'No static GPX evidence was eligible at this time.',
+    )
+  })
+
   test('shows marker evidence and audit metadata in review flows', async ({ page }) => {
     await createMarker(page, {
       name: 'Evidence Cache',
@@ -240,6 +430,21 @@ async function createMarker(
   await page.getByTestId('marker-save-btn').scrollIntoViewIfNeeded()
   await page.getByTestId('marker-save-btn').click()
   await expect(dialog).toBeHidden()
+}
+
+async function createSearchArea(page: import('@playwright/test').Page, name: string) {
+  await page.getByTestId('drawing-toolbar-expand').click()
+  await page.getByTestId('drawing-tool-search_area').click({ force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x: 500, y: 180 }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x: 650, y: 220 }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x: 540, y: 340 }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({
+    position: { x: 540, y: 340 },
+    button: 'right',
+    force: true,
+  })
+  await page.getByTestId('drawing-name-input').fill(name)
+  await page.getByTestId('drawing-save-btn').click()
 }
 
 async function injectTrackingSnapshot(page: import('@playwright/test').Page) {

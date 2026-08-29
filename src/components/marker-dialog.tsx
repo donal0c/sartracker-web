@@ -1,7 +1,13 @@
 import { useState, type HTMLAttributes } from 'react'
 
 import { useMarkerStore } from '../features/markers/marker-store'
-import { appendTreatmentUpdate, getCasualtyValidationErrors, type CasualtyRequiredField } from '../features/markers/marker-draft'
+import {
+  appendTreatmentUpdate,
+  getCasualtyValidationErrors,
+  getTreatmentLogByteLength,
+  MAX_CASUALTY_TREATMENT_LOG_BYTES,
+  type CasualtyRequiredField,
+} from '../features/markers/marker-draft'
 import {
   CASUALTY_CONDITIONS,
   CLUE_TYPES,
@@ -32,6 +38,7 @@ export function MarkerDialog() {
   const saving = useMarkerStore((state) => state.saving)
   const runtimeError = useMarkerStore((state) => state.error)
   const [treatmentUpdate, setTreatmentUpdate] = useState('')
+  const [treatmentAppendError, setTreatmentAppendError] = useState<string | null>(null)
   const [deleteConfirmForId, setDeleteConfirmForId] = useState<string | null>(null)
   const currentDraftId = dialog?.draft.id ?? null
   const deleteConfirmationVisible = deleteConfirmForId !== null && deleteConfirmForId === currentDraftId
@@ -41,15 +48,25 @@ export function MarkerDialog() {
   if (dialog === null || controller === null) {
     return null
   }
+  const closeDialog = (): void => {
+    setTreatmentUpdate('')
+    setTreatmentAppendError(null)
+    controller.closeDialog()
+  }
   const draft = dialog.draft
   const casualtyErrors = getCasualtyValidationErrors(draft)
   const hasCasualtyErrors = casualtyErrors.length > 0
   const isMissingField = (field: CasualtyRequiredField): boolean => casualtyErrors.includes(field)
+  const treatmentLogBytes = getTreatmentLogByteLength(draft.treatment)
+  const treatmentLogSizeError = treatmentLogBytes > MAX_CASUALTY_TREATMENT_LOG_BYTES
+    ? `Treatment log must be ${MAX_CASUALTY_TREATMENT_LOG_BYTES.toLocaleString('en-IE')} UTF-8 bytes or fewer. Earlier saved entries remain preserved; shorten only the newest unsaved update.`
+    : null
+  const treatmentLogError = treatmentLogSizeError ?? treatmentAppendError
 
   return (
     <DialogOverlay
       labelledBy={MARKER_DIALOG_TITLE_ID}
-      onClose={() => controller.closeDialog()}
+      onClose={closeDialog}
       open={dialog !== null}
       panelClassName="max-h-[calc(100vh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-stone-700 bg-stone-900 p-5 shadow-2xl shadow-black/40"
       testId="marker-dialog"
@@ -63,8 +80,9 @@ export function MarkerDialog() {
         </div>
         <button
           className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200 disabled:opacity-50"
+          data-testid="marker-close-btn"
           disabled={saving}
-          onClick={() => controller.closeDialog()}
+          onClick={closeDialog}
           type="button"
         >
           Close
@@ -116,6 +134,7 @@ export function MarkerDialog() {
           <section className="grid gap-4 md:grid-cols-2">
             <Field
               label="Name"
+              maxLength={120}
               disabled={saving}
               error={isMissingField('name') ? 'Required' : undefined}
               onChange={(value) => controller.updateDraft({ name: value })}
@@ -124,6 +143,7 @@ export function MarkerDialog() {
             />
             <Field
               label="Description"
+              maxLength={2_000}
               disabled={saving}
               onChange={(value) => controller.updateDraft({ description: value })}
               testId="marker-description-input"
@@ -145,6 +165,7 @@ export function MarkerDialog() {
           <section className="grid gap-4 md:grid-cols-2">
             <Field
               label="Updated By"
+              maxLength={120}
               disabled={saving}
               onChange={(value) => controller.updateDraft({ updatedBy: value })}
               testId="marker-updated-by-input"
@@ -152,6 +173,7 @@ export function MarkerDialog() {
             />
             <Field
               label="Coordinator IDs"
+              maxLength={2_000}
               disabled={saving}
               onChange={(value) => controller.updateDraft({ coordinatorIds: value })}
               testId="marker-coordinator-ids-input"
@@ -190,6 +212,7 @@ export function MarkerDialog() {
               />
               <Field
                 label="Found By"
+                maxLength={120}
                 disabled={saving}
                 onChange={(value) => controller.updateDraft({ foundBy: value })}
                 testId="marker-found-by-input"
@@ -241,6 +264,7 @@ export function MarkerDialog() {
               />
               <Field
                 label="Found By"
+                maxLength={120}
                 disabled={saving}
                 onChange={(value) => controller.updateDraft({ foundBy: value })}
                 testId="marker-found-by-input"
@@ -259,17 +283,33 @@ export function MarkerDialog() {
                 <TextAreaField
                   className="min-h-44 font-mono"
                   disabled={saving}
+                  error={treatmentLogError ?? undefined}
                   label="Existing Treatment Notes"
-                  onChange={(value) => controller.updateDraft({ treatment: value })}
+                  maxLength={MAX_CASUALTY_TREATMENT_LOG_BYTES}
+                  onChange={(value) => {
+                    setTreatmentAppendError(null)
+                    controller.updateDraft({ treatment: value })
+                  }}
                   testId="marker-treatment-log-input"
                   value={draft.treatment}
                 />
+                <p
+                  className="mt-1 text-xs text-stone-400"
+                  data-testid="marker-treatment-log-budget"
+                >
+                  {treatmentLogBytes.toLocaleString('en-IE')} of{' '}
+                  {MAX_CASUALTY_TREATMENT_LOG_BYTES.toLocaleString('en-IE')} UTF-8 bytes used.
+                </p>
                 <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
                   <TextAreaField
                     className="min-h-28"
                     disabled={saving}
                     label="New Treatment Update"
-                    onChange={setTreatmentUpdate}
+                    maxLength={2_000}
+                    onChange={(value) => {
+                      setTreatmentAppendError(null)
+                      setTreatmentUpdate(value)
+                    }}
                     testId="marker-treatment-update-input"
                     value={treatmentUpdate}
                   />
@@ -278,15 +318,21 @@ export function MarkerDialog() {
                     data-testid="marker-treatment-append-btn"
                     disabled={saving || treatmentUpdate.trim() === ''}
                     onClick={() => {
-                      controller.updateDraft({
-                        treatment: appendTreatmentUpdate({
+                      try {
+                        const treatment = appendTreatmentUpdate({
                           existingTreatment: draft.treatment,
                           note: treatmentUpdate,
                           timestamp: new Date(),
                           updatedBy: draft.updatedBy,
-                        }),
-                      })
-                      setTreatmentUpdate('')
+                        })
+                        controller.updateDraft({ treatment })
+                        setTreatmentUpdate('')
+                        setTreatmentAppendError(null)
+                      } catch (error) {
+                        setTreatmentAppendError(
+                          error instanceof Error ? error.message : 'Treatment update could not be added.',
+                        )
+                      }
                     }}
                     type="button"
                   >
@@ -354,9 +400,9 @@ export function MarkerDialog() {
                     className="rounded-xl border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"
                     data-testid="marker-delete-confirmation"
                   >
-                    <p className="font-semibold">Delete this {draft.type === 'ipp_lkp' ? 'IPP/LKP' : draft.type} marker?</p>
+                    <p className="font-semibold">Retire this {draft.type === 'ipp_lkp' ? 'IPP/LKP' : draft.type} marker?</p>
                     <p className="mt-1 text-xs text-rose-100/80">
-                      This permanently removes the marker and all associated data from the mission.
+                      This removes the marker from the active map. Its revisions and audit evidence remain retained in mission history.
                     </p>
                     <div className="mt-3 flex gap-2">
                       <button
@@ -366,7 +412,7 @@ export function MarkerDialog() {
                         onClick={() => void controller.deleteEditingMarker()}
                         type="button"
                       >
-                        Delete Marker
+                        Retire Marker
                       </button>
                       <button
                         className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-1.5 text-xs font-semibold text-stone-200"
@@ -386,7 +432,7 @@ export function MarkerDialog() {
                     onClick={() => showDeleteConfirmation()}
                     type="button"
                   >
-                    Delete
+                    Retire
                   </button>
                 )
               ) : null}
@@ -395,7 +441,7 @@ export function MarkerDialog() {
               <button
                 className="rounded-lg border border-stone-600 bg-stone-950 px-4 py-2 text-sm text-stone-200 disabled:opacity-50"
                 disabled={saving}
-                onClick={() => controller.closeDialog()}
+                onClick={closeDialog}
                 type="button"
               >
                 Cancel
@@ -403,7 +449,7 @@ export function MarkerDialog() {
               <button
                 className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100 disabled:opacity-50"
                 data-testid="marker-save-btn"
-                disabled={saving || hasCasualtyErrors}
+                disabled={saving || hasCasualtyErrors || treatmentLogSizeError !== null}
                 onClick={() => void controller.saveDraft()}
                 type="button"
               >
@@ -420,20 +466,28 @@ function TextAreaField(props: {
   readonly label: string
   readonly value: string
   readonly disabled?: boolean
+  readonly error?: string | undefined
   readonly onChange: (value: string) => void
   readonly testId: string
   readonly className?: string
+  readonly maxLength?: number
 }) {
+  const hasError = props.error !== undefined
   return (
     <label className="mt-3 block text-sm text-stone-200">
-      <span className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</span>
+      <span className={`text-xs uppercase tracking-[0.2em] ${hasError ? 'text-rose-300' : 'text-stone-300'}`}>
+        {props.label}{hasError ? ' *' : ''}
+      </span>
       <textarea
-        className={`mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 ${props.className ?? ''}`}
+        aria-invalid={hasError || undefined}
+        className={`mt-2 w-full rounded-lg border bg-stone-950 px-3 py-2 text-sm text-stone-100 ${hasError ? 'border-rose-500' : 'border-stone-700'} ${props.className ?? ''}`}
         data-testid={props.testId}
         disabled={props.disabled}
+        maxLength={props.maxLength}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
       />
+      {hasError ? <span className="mt-1 block text-xs text-rose-300" role="alert">{props.error}</span> : null}
     </label>
   )
 }
@@ -445,6 +499,7 @@ function Field(props: {
   readonly error?: string | undefined
   readonly inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
   readonly max?: number
+  readonly maxLength?: number
   readonly min?: number
   readonly onChange: (value: string) => void
   readonly testId: string
@@ -463,6 +518,7 @@ function Field(props: {
         disabled={props.disabled}
         inputMode={props.inputMode}
         max={props.max}
+        maxLength={props.maxLength}
         min={props.min}
         onChange={(event) => props.onChange(event.target.value)}
         type={props.type ?? 'text'}

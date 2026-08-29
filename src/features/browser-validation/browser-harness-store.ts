@@ -14,6 +14,10 @@ import type {
   MissionArchiveInfo,
   MissionReviewReadQuery,
   MissionReviewReadResult,
+  MissionReplayReadInput,
+  MissionReplayReadResult,
+  MissionReplayObjectChunkResult,
+  MissionReplayTrackChunkResult,
   MissionStoreInfo,
   MissionParticipant,
   GroupMembershipEvent,
@@ -35,6 +39,12 @@ import type {
   UpsertGpxTrackImportInput,
   UpsertHelicopterInput,
   UpsertMarkerInput,
+  SearchArea,
+  SearchAssignment,
+  SearchPass,
+  SearchOperationPage,
+  SearchOperationPageKind,
+  MissionReplayFilterPage,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type {
   AcknowledgeIngestEvidenceLossInput,
@@ -56,6 +66,28 @@ import {
   DEFAULT_AUDIT_EVENT_LIMIT,
   isTelemetryEventType,
 } from '../mission-review/audit-events'
+import { normalizeTrackingIsoTimestamp } from '../tracking/tracking-timestamp'
+
+const MAX_SEARCH_OPERATION_ID_LENGTH = 200
+const MAX_SEARCH_OPERATION_LINK_COUNT = 200
+const MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH = 120
+const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
+const MAX_MARKER_TREATMENT_LOG_BYTES = 512 * 1_024
+const MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH = 64
+const MAX_SEARCH_AREA_GEOMETRY_LENGTH = 512 * 1_024
+const MAX_SEARCH_ADVISORY_COVERAGE_LENGTH = 512 * 1_024
+const MAX_MUTABLE_EVIDENCE_GEOMETRY_LENGTH = 512 * 1_024
+const MAX_MUTABLE_EVIDENCE_COORDINATES = 50_000
+const MAX_MUTABLE_EVIDENCE_NESTING_DEPTH = 16
+const MAX_MUTABLE_EVIDENCE_PATH_LENGTH = 4_096
+const MAX_REPLAY_TRACK_LIMIT = 1_000
+const MAX_REPLAY_OBJECT_LIMIT = 100
+const MAX_REPLAY_FILTER_IDS = 200
+const MAX_REPLAY_FILTER_PAGE_LIMIT = 100
+const MAX_REPLAY_CURSOR_OFFSET = 10_000_000
+const MAX_REPLAY_SELECTED_TIME_LENGTH = 64
+const REPLAY_TIMEZONE = 'Europe/Dublin'
+const MAX_GPX_PROJECTION_PAGE_LIMIT = 25
 
 /**
  * Browser validation store for hosted/team-testing mode only.
@@ -78,11 +110,30 @@ type BrowserHarnessState = {
   readonly drawings: readonly Drawing[]
   readonly helicopters: readonly Helicopter[]
   readonly gpxImports: readonly GpxTrackImport[]
+  readonly gpxEvidencePoints: readonly BrowserGpxEvidencePoint[]
+  readonly searchAreas: readonly SearchArea[]
+  readonly searchAssignments: readonly SearchAssignment[]
+  readonly searchPasses: readonly SearchPass[]
   readonly missionEvents: readonly MissionEvent[]
   readonly openedPaths: readonly string[]
   readonly currentMissionId: string | null
   readonly recoverableMissionId: string | null
   readonly evidenceLossByMission: BrowserEvidenceLossByMission
+}
+
+type BrowserGpxEvidencePoint = {
+  readonly importId: string
+  readonly revisionSequence: number
+  /** Outing assignment captured with this evidence revision, not read from current import state. */
+  readonly outingId?: string | null
+  readonly segmentIndex: number
+  readonly pointIndex: number
+  readonly trackName?: string | null
+  readonly lat: number
+  readonly lon: number
+  readonly elevation: number | null
+  readonly timestamp: string | null
+  readonly recordedAt: string
 }
 
 type BrowserMissionTeam = {
@@ -227,8 +278,45 @@ type BrowserHarnessStore = {
   readonly upsertHelicopter: (input: UpsertHelicopterInput) => Promise<Helicopter>
   readonly deleteHelicopter: (helicopterId: string) => Promise<boolean>
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
+  readonly listGpxImportPage: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<{
+    readonly entries: readonly GpxTrackImport[]
+    readonly nextCursor: string | null
+  }>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
+  readonly updateGpxImportPresentation: (input: {
+    readonly id: string
+    readonly mission_id: string
+    readonly display_name?: string
+    readonly metadata_json?: string | null
+  }) => Promise<GpxTrackImport>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
+  readonly assignGpxImportToOuting: (input: { readonly import_id: string; readonly outing_id: string; readonly assigned_by?: string | null }) => Promise<GpxTrackImport>
+  readonly readMissionReplay: (input: MissionReplayReadInput, requestId?: string) => Promise<MissionReplayReadResult>
+  readonly readMissionReplayTrackChunk: (input: MissionReplayReadInput, requestId?: string) => Promise<MissionReplayTrackChunkResult>
+  readonly readMissionReplayObjectChunk: (input: MissionReplayReadInput, requestId?: string) => Promise<MissionReplayObjectChunkResult>
+  readonly readMissionReplayFilterPage: (input: MissionReplayReadInput & {
+    readonly filterKind: 'outing'
+    readonly filterSearch?: string
+    readonly filterCursor?: string
+    readonly filterLimit?: number
+  }, requestId?: string) => Promise<MissionReplayFilterPage>
+  readonly cancelMissionReplay: (requestId: string) => Promise<boolean>
+  readonly listSearchAreas: (missionId: string) => Promise<readonly SearchArea[]>
+  readonly listSearchAssignments: (missionId: string) => Promise<readonly SearchAssignment[]>
+  readonly listSearchPasses: (missionId: string) => Promise<readonly SearchPass[]>
+  readonly listSearchOperationPage: (input: {
+    readonly missionId: string
+    readonly kind: SearchOperationPageKind
+    readonly search?: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<SearchOperationPage>
+  readonly upsertSearchAssignment: (input: Readonly<Record<string, unknown>>) => Promise<SearchAssignment>
+  readonly upsertSearchPass: (input: Readonly<Record<string, unknown>>) => Promise<SearchPass>
 }
 
 let browserHarnessStore: BrowserHarnessStore | null = null
@@ -339,6 +427,11 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const endedAt = normalizeHarnessOutingBoundary(input.ended_at ?? timestamp)
       const outing = { ...existing, ended_at: endedAt, updated_at: timestamp }
       assertHarnessOutingWindow(mission, outing, state.outings)
+      assertHarnessRecordedSearchPassesFitOuting(
+        outing,
+        state.searchAssignments,
+        state.searchPasses,
+      )
       state = {
         ...state,
         outings: state.outings.map((candidate) => candidate.id === outing.id ? outing : candidate),
@@ -386,6 +479,11 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         updated_at: timestamp,
       }
       assertHarnessOutingWindow(mission, outing, state.outings)
+      assertHarnessRecordedSearchPassesFitOuting(
+        outing,
+        state.searchAssignments,
+        state.searchPasses,
+      )
       state = {
         ...state,
         outings: state.outings.map((candidate) => candidate.id === outing.id ? outing : candidate),
@@ -1332,37 +1430,38 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         .filter((marker) => marker.mission_id === missionId)
         .sort((left, right) => left.display_order - right.display_order),
     upsertMarker: async (input) => {
-      ensureMissionMutable(input.mission_id, state.missions)
-      const existingMarker = input.id === undefined || input.id === null
+      const normalizedInput = normalizeBrowserMarkerMutation(input)
+      ensureMissionMutable(normalizedInput.mission_id, state.missions)
+      const existingMarker = normalizedInput.id === undefined || normalizedInput.id === null
         ? null
-        : state.markers.find((marker) => marker.id === input.id) ?? null
+        : state.markers.find((marker) => marker.id === normalizedInput.id) ?? null
       const now = new Date().toISOString()
       const marker = {
-        id: existingMarker?.id ?? input.id ?? createId('marker'),
-        mission_id: input.mission_id,
-        type: input.type,
-        name: input.name,
-        description: input.description ?? null,
-        lat: input.lat,
-        lon: input.lon,
-        irish_grid_e: input.irish_grid_e,
-        irish_grid_n: input.irish_grid_n,
+        id: existingMarker?.id ?? normalizedInput.id ?? createId('marker'),
+        mission_id: normalizedInput.mission_id,
+        type: normalizedInput.type,
+        name: normalizedInput.name,
+        description: normalizedInput.description ?? null,
+        lat: normalizedInput.lat,
+        lon: normalizedInput.lon,
+        irish_grid_e: normalizedInput.irish_grid_e,
+        irish_grid_n: normalizedInput.irish_grid_n,
         created_at: existingMarker?.created_at ?? now,
         updated_at: now,
-        display_order: input.display_order,
-        subject_category: input.subject_category ?? null,
-        clue_type: input.clue_type ?? null,
-        confidence: input.confidence ?? null,
-        found_by: input.found_by ?? null,
-        hazard_type: input.hazard_type ?? null,
-        severity: input.severity ?? null,
-        condition: input.condition ?? null,
-        treatment: input.treatment ?? null,
-        evacuation_priority: input.evacuation_priority ?? null,
-        label_size: input.label_size ?? null,
-        updated_by: input.updated_by ?? null,
-        coordinator_ids: input.coordinator_ids ?? null,
-        attachment_path: input.attachment_path ?? null,
+        display_order: normalizedInput.display_order,
+        subject_category: normalizedInput.subject_category ?? null,
+        clue_type: normalizedInput.clue_type ?? null,
+        confidence: normalizedInput.confidence ?? null,
+        found_by: normalizedInput.found_by ?? null,
+        hazard_type: normalizedInput.hazard_type ?? null,
+        severity: normalizedInput.severity ?? null,
+        condition: normalizedInput.condition ?? null,
+        treatment: normalizedInput.treatment ?? null,
+        evacuation_priority: normalizedInput.evacuation_priority ?? null,
+        label_size: normalizedInput.label_size ?? null,
+        updated_by: normalizedInput.updated_by ?? null,
+        coordinator_ids: normalizedInput.coordinator_ids ?? null,
+        attachment_path: normalizedInput.attachment_path ?? null,
       } satisfies Marker
 
       state = {
@@ -1388,18 +1487,21 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return marker
     },
     deleteMarker: async (markerId) => {
-      const didDelete = state.markers.some((marker) => marker.id === markerId)
+      const normalizedMarkerId = normalizeBrowserEvidenceRequiredText(
+        markerId, 'Marker identity', MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const didDelete = state.markers.some((marker) => marker.id === normalizedMarkerId)
       if (!didDelete) {
         return false
       }
-      const marker = state.markers.find((candidate) => candidate.id === markerId)
+      const marker = state.markers.find((candidate) => candidate.id === normalizedMarkerId)
       if (marker !== undefined) {
         ensureMissionMutable(marker.mission_id, state.missions)
       }
 
       state = {
         ...state,
-        markers: state.markers.filter((marker) => marker.id !== markerId),
+        markers: state.markers.filter((marker) => marker.id !== normalizedMarkerId),
         missionEvents:
           marker === undefined
             ? state.missionEvents
@@ -1417,36 +1519,57 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         .filter((drawing) => drawing.mission_id === missionId)
         .sort((left, right) => left.display_order - right.display_order),
     upsertDrawing: async (input) => {
-      ensureMissionMutable(input.mission_id, state.missions)
+      const normalizedInput = input.type === 'search_area'
+        ? normalizeBrowserSearchAreaDrawing(input)
+        : normalizeBrowserDrawingMutation(input)
+      ensureMissionMutable(normalizedInput.mission_id, state.missions)
       const existingDrawing =
-        input.id === undefined || input.id === null
+        normalizedInput.id === undefined || normalizedInput.id === null
           ? null
-          : state.drawings.find((drawing) => drawing.id === input.id) ?? null
+          : state.drawings.find((drawing) => drawing.id === normalizedInput.id) ?? null
       const now = new Date().toISOString()
       const drawing = {
-        id: existingDrawing?.id ?? input.id ?? createId('drawing'),
-        mission_id: input.mission_id,
-        type: input.type,
-        name: input.name,
-        description: input.description ?? null,
-        color: input.color ?? null,
-        width: input.width ?? null,
-        distance_m: input.distance_m ?? null,
-        temporary_measure: input.temporary_measure ?? null,
-        label: input.label ?? null,
-        display_order: input.display_order,
-        geometry_json: input.geometry_json,
-        metadata_json: input.metadata_json ?? null,
+        id: existingDrawing?.id ?? normalizedInput.id ?? createId('drawing'),
+        mission_id: normalizedInput.mission_id,
+        type: normalizedInput.type,
+        name: normalizedInput.name,
+        description: normalizedInput.description ?? null,
+        color: normalizedInput.color ?? null,
+        width: normalizedInput.width ?? null,
+        distance_m: normalizedInput.distance_m ?? null,
+        temporary_measure: normalizedInput.temporary_measure ?? null,
+        label: normalizedInput.label ?? null,
+        display_order: normalizedInput.display_order,
+        geometry_json: normalizedInput.geometry_json,
+        metadata_json: normalizedInput.metadata_json ?? null,
         created_at: existingDrawing?.created_at ?? now,
         updated_at: now,
       } satisfies Drawing
+      const stableArea = drawing.type === 'search_area'
+        ? {
+            id: drawing.id,
+            mission_id: drawing.mission_id,
+            name: drawing.name,
+            status: 'active' as const,
+            geometry_json: drawing.geometry_json,
+            legacy_drawing_id: drawing.id,
+            version_sequence: (state.searchAreas.find((area) => area.id === drawing.id)?.version_sequence ?? 0) + 1,
+            updated_by: null,
+            created_at: existingDrawing?.created_at ?? now,
+            updated_at: now,
+            retired_at: null,
+          } satisfies SearchArea
+        : null
 
       state = {
         ...state,
         drawings: upsertDrawing(state.drawings, drawing),
+        searchAreas: stableArea === null
+          ? state.searchAreas
+          : upsertByStableId(state.searchAreas, stableArea),
         missionEvents: appendEvent(
           state.missionEvents,
-          input.mission_id,
+          normalizedInput.mission_id,
           existingDrawing === null ? 'drawing_created' : 'drawing_updated',
           now,
           {
@@ -1461,18 +1584,21 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return drawing
     },
     deleteDrawing: async (drawingId) => {
-      const didDelete = state.drawings.some((drawing) => drawing.id === drawingId)
+      const normalizedDrawingId = normalizeBrowserSearchText(
+        drawingId, 'Drawing identity', MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const didDelete = state.drawings.some((drawing) => drawing.id === normalizedDrawingId)
       if (!didDelete) {
         return false
       }
-      const drawing = state.drawings.find((candidate) => candidate.id === drawingId)
+      const drawing = state.drawings.find((candidate) => candidate.id === normalizedDrawingId)
       if (drawing !== undefined) {
         ensureMissionMutable(drawing.mission_id, state.missions)
       }
 
       state = {
         ...state,
-        drawings: state.drawings.filter((drawing) => drawing.id !== drawingId),
+        drawings: state.drawings.filter((drawing) => drawing.id !== normalizedDrawingId),
         missionEvents:
           drawing === undefined
             ? state.missionEvents
@@ -1559,16 +1685,86 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     },
     listGpxImports: async (missionId) =>
       state.gpxImports
-        .filter((entry) => entry.mission_id === missionId)
+        .filter((entry) => entry.mission_id === missionId && entry.retired_at == null)
         .sort((left, right) => left.display_name.localeCompare(right.display_name)),
+    listGpxImportPage: async (input) => {
+      const limit = input.limit ?? MAX_GPX_PROJECTION_PAGE_LIMIT
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_GPX_PROJECTION_PAGE_LIMIT) {
+        throw new Error('Browser GPX projection page limit is invalid.')
+      }
+      const missionId = normalizeBrowserGpxProjectionContext(input.missionId)
+      const cursor = decodeBrowserGpxProjectionCursor(input.cursor, missionId)
+      const candidates = state.gpxImports
+        .filter((entry) => entry.mission_id === missionId && entry.retired_at == null)
+        .sort(compareBrowserGpxProjectionOrder)
+        .filter((entry) => cursor === null || compareBrowserGpxProjectionOrder(entry, cursor) > 0)
+      const page = candidates.slice(0, limit + 1)
+      const entries = page.slice(0, limit).map(stripBrowserGpxRetainedBytes)
+      const finalEntry = entries.at(-1)
+      return {
+        entries,
+        nextCursor: page.length > limit && finalEntry !== undefined
+          ? encodeBrowserGpxProjectionCursor(missionId, finalEntry)
+          : null,
+      }
+    },
     upsertGpxImport: async (input) => {
       ensureMissionMutable(input.mission_id, state.missions)
+      const existingWithId = input.id === undefined
+        ? undefined
+        : state.gpxImports.find((entry) => entry.id === input.id)
+      if (existingWithId !== undefined && existingWithId.mission_id !== input.mission_id) {
+        throw new Error(`Cannot move GPX evidence ${existingWithId.id} to a different mission.`)
+      }
       const existingImport =
-        state.gpxImports.find(
+        state.gpxImports.find((entry) =>
+          entry.mission_id === input.mission_id
+          && input.content_sha256 != null
+          && entry.content_sha256 === input.content_sha256,
+        ) ?? state.gpxImports.find(
           (entry) =>
-            entry.mission_id === input.mission_id && entry.source_path === input.source_path,
+            entry.mission_id === input.mission_id
+            && (entry.id === input.id || entry.source_path === input.source_path),
         ) ?? null
+      if (existingImport !== null && existingImport.content_sha256 === input.content_sha256) {
+        if (existingImport.geometry_json !== input.geometry_json
+          || existingImport.timing_class !== (input.timing_class ?? existingImport.timing_class)
+          || (existingImport.outing_id ?? null) !== (input.outing_id ?? existingImport.outing_id ?? null)) {
+          throw new Error('The same retained GPX bytes cannot change evidence fields; use the presentation or outing-assignment operation instead.')
+        }
+        const requestedEvidencePoints = input.points ?? []
+        if (requestedEvidencePoints.length > 0) {
+          const retainedPoints = state.gpxEvidencePoints
+            .filter((point) => point.importId === existingImport.id
+              && point.revisionSequence === existingImport.revision_sequence)
+            .map((point) => ({
+              segment_index: point.segmentIndex,
+              point_index: point.pointIndex,
+              track_name: point.trackName ?? null,
+              lat: point.lat,
+              lon: point.lon,
+              elevation: point.elevation,
+              timestamp: point.timestamp,
+            }))
+          const requestedPoints = requestedEvidencePoints.map((point) => ({
+            segment_index: point.segment_index,
+            point_index: point.point_index,
+            track_name: point.track_name ?? null,
+            lat: point.lat,
+            lon: point.lon,
+            elevation: point.elevation ?? null,
+            timestamp: point.timestamp ?? null,
+          }))
+          if (JSON.stringify(retainedPoints) !== JSON.stringify(requestedPoints)) {
+            throw new Error('The same retained GPX bytes cannot change evidence fields; parsed points differ from the retained revision.')
+          }
+        }
+        return existingImport
+      }
       const now = new Date().toISOString()
+      const revisionSequence = existingImport === null
+        ? 1
+        : (existingImport.revision_sequence ?? 1) + 1
       const gpxImport = {
         id: existingImport?.id ?? input.id ?? createId('gpx'),
         mission_id: input.mission_id,
@@ -1577,6 +1773,13 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         display_name: input.display_name,
         geometry_json: input.geometry_json,
         metadata_json: input.metadata_json ?? null,
+        content_sha256: input.content_sha256 ?? existingImport?.content_sha256 ?? null,
+        source_bytes_base64: input.source_bytes_base64 ?? existingImport?.source_bytes_base64 ?? null,
+        timing_class: input.timing_class ?? existingImport?.timing_class ?? 'undated',
+        outing_id: input.outing_id ?? existingImport?.outing_id ?? null,
+        revision_sequence: revisionSequence,
+        retired_at: null,
+        retired_by: null,
         imported_at: existingImport?.imported_at ?? now,
         updated_at: now,
       } satisfies GpxTrackImport
@@ -1584,6 +1787,22 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         gpxImports: upsertGpxImport(state.gpxImports, gpxImport),
+        gpxEvidencePoints: [
+          ...state.gpxEvidencePoints,
+          ...(input.points ?? []).map((point) => ({
+            importId: gpxImport.id,
+            revisionSequence,
+            outingId: gpxImport.outing_id ?? null,
+            segmentIndex: point.segment_index,
+            pointIndex: point.point_index,
+            trackName: point.track_name ?? null,
+            lat: point.lat,
+            lon: point.lon,
+            elevation: point.elevation,
+            timestamp: point.timestamp,
+            recordedAt: now,
+          })),
+        ],
         missionEvents: appendEvent(
           state.missionEvents,
           input.mission_id,
@@ -1600,6 +1819,36 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return gpxImport
     },
+    updateGpxImportPresentation: async (input) => {
+      ensureMissionMutable(input.mission_id, state.missions)
+      const existing = state.gpxImports.find((entry) => entry.id === input.id)
+      if (existing === undefined || existing.mission_id !== input.mission_id
+        || existing.retired_at != null) {
+        throw new Error('Active GPX evidence was not found in the requested mission.')
+      }
+      const timestamp = new Date().toISOString()
+      const updated = {
+        ...existing,
+        display_name: input.display_name ?? existing.display_name,
+        metadata_json: input.metadata_json === undefined
+          ? existing.metadata_json
+          : input.metadata_json,
+        updated_at: timestamp,
+      }
+      state = {
+        ...state,
+        gpxImports: upsertGpxImport(state.gpxImports, updated),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          'gpx_import_presentation_updated',
+          timestamp,
+          { gpx_import_id: input.id },
+        ),
+      }
+      save()
+      return updated
+    },
     deleteGpxImport: async (importId) => {
       const gpxImport = state.gpxImports.find((candidate) => candidate.id === importId)
       if (gpxImport === undefined) {
@@ -1609,7 +1858,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       ensureMissionMutable(gpxImport.mission_id, state.missions)
       state = {
         ...state,
-        gpxImports: state.gpxImports.filter((entry) => entry.id !== importId),
+        gpxImports: state.gpxImports.map((entry) => entry.id === importId
+          ? { ...entry, retired_at: new Date().toISOString() }
+          : entry),
         missionEvents: appendEvent(
           state.missionEvents,
           gpxImport.mission_id,
@@ -1626,9 +1877,273 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return true
     },
+    assignGpxImportToOuting: async (input) => {
+      const existing = state.gpxImports.find((entry) => entry.id === input.import_id)
+      if (existing === undefined || existing.retired_at != null) throw new Error('Active GPX evidence was not found.')
+      ensureMissionMutable(existing.mission_id, state.missions)
+      const outing = state.outings.find((entry) => entry.id === input.outing_id)
+      if (outing?.mission_id !== existing.mission_id) throw new Error('GPX evidence outing is not in the same mission.')
+      const nextSequence = (existing.revision_sequence ?? 1) + 1
+      const recordedAt = new Date().toISOString()
+      const updated: GpxTrackImport = {
+        ...existing,
+        outing_id: outing.id,
+        revision_sequence: nextSequence,
+        updated_at: recordedAt,
+      }
+      const previousPoints = state.gpxEvidencePoints.filter((point) =>
+        point.importId === existing.id && point.revisionSequence === (existing.revision_sequence ?? 1))
+      state = {
+        ...state,
+        gpxImports: state.gpxImports.map((entry) => entry.id === updated.id ? updated : entry),
+        gpxEvidencePoints: [
+          ...state.gpxEvidencePoints,
+          ...previousPoints.map((point) => ({
+            ...point,
+            revisionSequence: nextSequence,
+            outingId: outing.id,
+            recordedAt,
+          })),
+        ],
+      }
+      save()
+      return updated
+    },
+    readMissionReplay: async (input) => buildBrowserReplay(state, input),
+    readMissionReplayTrackChunk: async (input) => {
+      const replay = await buildBrowserReplay(state, input)
+      return {
+        missionId: replay.missionId,
+        selectedTime: replay.selectedTime,
+        tracks: replay.tracks,
+        trackCursor: replay.trackCursor,
+        previousCursor: replay.previousCursor,
+        totalTrackCount: replay.totalTrackCount,
+        nextCursor: replay.nextCursor,
+        progress: replay.progress,
+      }
+    },
+    readMissionReplayObjectChunk: async (input) => {
+      const replay = await buildBrowserReplay(state, input)
+      return {
+        missionId: replay.missionId,
+        selectedTime: replay.selectedTime,
+        objects: replay.objects,
+        totalObjectCount: replay.totalObjectCount,
+        objectCursor: replay.objectCursor,
+        nextObjectCursor: replay.nextObjectCursor,
+        progress: 1,
+        summarizedObjectCount: 0,
+      }
+    },
+    readMissionReplayFilterPage: async (input) =>
+      buildBrowserReplayFilterPage(state, input),
+    cancelMissionReplay: async () => true,
+    listSearchAreas: async (missionId) => {
+      const normalizedMissionId = normalizeBrowserSearchText(
+        missionId, 'Search area mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      return state.searchAreas.filter(
+        (area) => area.mission_id === normalizedMissionId && area.retired_at === null,
+      )
+    },
+    listSearchAssignments: async (missionId) => {
+      const normalizedMissionId = normalizeBrowserSearchText(
+        missionId, 'Search assignment mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      return state.searchAssignments.filter(
+        (assignment) => assignment.mission_id === normalizedMissionId
+          && assignment.retired_at === null,
+      )
+    },
+    listSearchPasses: async (missionId) => {
+      const normalizedMissionId = normalizeBrowserSearchText(
+        missionId, 'Search pass mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      return state.searchPasses.filter((pass) => pass.mission_id === normalizedMissionId)
+    },
+    listSearchOperationPage: async (input) =>
+      buildBrowserSearchOperationPage(state, input),
+    upsertSearchAssignment: async (input) => {
+      const assignmentId = normalizeBrowserOptionalSearchIdentity(
+        input.id, 'Search assignment identity',
+      )
+      const missionId = normalizeBrowserSearchText(
+        input.mission_id,
+        'Search assignment mission',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const areaId = normalizeBrowserSearchText(
+        input.search_area_id,
+        'Search assignment area',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const outingId = normalizeBrowserSearchText(
+        input.outing_id,
+        'Search assignment outing',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const teamId = normalizeBrowserSearchText(
+        input.team_id,
+        'Search assignment team',
+        MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+      )
+      const participantIds = normalizeBrowserIds(
+        input.participant_ids,
+        'Search assignment participant links',
+      )
+      const notes = normalizeBrowserOptionalSearchText(
+        input.notes,
+        'Search assignment notes',
+        MAX_SEARCH_OPERATION_NOTES_LENGTH,
+      )
+      const updatedBy = normalizeBrowserOptionalSearchText(
+        input.updated_by,
+        'Search assignment coordinator',
+        MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+      )
+      normalizeBrowserOptionalSearchTimestamp(
+        input.effective_at, 'Search assignment effective time',
+      )
+      ensureMissionMutable(missionId, state.missions)
+      const area = state.searchAreas.find((entry) => entry.id === areaId)
+      if (area?.mission_id !== missionId || area.retired_at !== null || area.status === 'retired') {
+        throw new Error('Search assignment requires an active search area in this mission.')
+      }
+      const outing = state.outings.find((entry) => entry.id === outingId)
+      if (outing?.mission_id !== missionId) {
+        throw new Error('Search assignment requires an outing in this mission.')
+      }
+      const existing = assignmentId === null
+        ? null
+        : state.searchAssignments.find((entry) => entry.id === assignmentId) ?? null
+      if (
+        existing !== null
+        && (existing.search_area_id !== area.id || existing.outing_id !== outing.id)
+        && state.searchPasses.some((pass) => pass.assignment_id === existing.id)
+      ) {
+        throw new Error(
+          `Cannot change search assignment scope ${existing.id} after a recorded search pass; create a new assignment.`,
+        )
+      }
+      const timestamp = new Date().toISOString()
+      const assignment: SearchAssignment = {
+        id: existing?.id ?? assignmentId ?? createId('search-assignment'),
+        mission_id: missionId,
+        search_area_id: areaId,
+        outing_id: outingId,
+        team_id: teamId,
+        participant_ids_json: JSON.stringify(participantIds),
+        notes,
+        version_sequence: (existing?.version_sequence ?? 0) + 1,
+        updated_by: updatedBy,
+        created_at: existing?.created_at ?? timestamp,
+        updated_at: timestamp,
+        retired_at: null,
+      }
+      state = { ...state, searchAssignments: upsertByStableId(state.searchAssignments, assignment) }
+      save()
+      return assignment
+    },
+    upsertSearchPass: async (input) => {
+      const passId = normalizeBrowserOptionalSearchIdentity(input.id, 'Search pass identity')
+      const missionId = normalizeBrowserSearchText(
+        input.mission_id,
+        'Search pass mission',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const areaId = normalizeBrowserSearchText(
+        input.search_area_id,
+        'Search pass area',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const assignmentId = normalizeBrowserSearchText(
+        input.assignment_id,
+        'Search pass assignment',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      const outcome = normalizeBrowserSearchPassOutcome(input.outcome)
+      const startedAt = normalizeHarnessSearchPassBoundary(input.started_at, 'start')
+      const endedAt = input.ended_at == null
+        ? null
+        : normalizeHarnessSearchPassBoundary(input.ended_at, 'end')
+      const notes = normalizeBrowserOptionalSearchText(
+        input.notes,
+        'Search pass notes',
+        MAX_SEARCH_OPERATION_NOTES_LENGTH,
+      )
+      const coordinatorName = normalizeBrowserSearchText(
+        input.coordinator_name,
+        'Search pass coordinator',
+        MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+      )
+      const advisoryCoverage = input.advisory_coverage_json == null
+        ? undefined
+        : normalizeBrowserOptionalJsonText(
+          input.advisory_coverage_json,
+          'Search pass advisory coverage',
+          MAX_SEARCH_ADVISORY_COVERAGE_LENGTH,
+        )
+      const participantIds = normalizeBrowserOptionalIds(
+        input.participant_ids, 'Search pass participant links',
+      )
+      const clueIds = normalizeBrowserOptionalIds(input.clue_ids, 'Search pass clue links')
+      const trackEvidenceIds = normalizeBrowserOptionalIds(
+        input.track_evidence_ids, 'Search pass track links',
+      )
+      ensureMissionMutable(missionId, state.missions)
+      const mission = requireMission(missionId, state.missions)
+      const area = state.searchAreas.find((entry) => entry.id === areaId)
+      const assignment = state.searchAssignments.find((entry) => entry.id === assignmentId)
+      if (area?.mission_id !== missionId || area.retired_at !== null || area.status === 'retired') {
+        throw new Error('Search pass requires an active search area in this mission.')
+      }
+      if (assignment?.mission_id !== missionId || assignment.search_area_id !== area.id
+        || assignment.retired_at !== null) {
+        throw new Error('Search pass requires an active matching assignment.')
+      }
+      const outing = state.outings.find((entry) => entry.id === assignment.outing_id)
+      if (outing?.mission_id !== missionId) {
+        throw new Error('Search pass assignment outing is not in this mission.')
+      }
+      const existing = passId === null
+        ? null
+        : state.searchPasses.find((entry) => entry.id === passId) ?? null
+      const timestamp = new Date().toISOString()
+      if (endedAt !== null && endedAt < startedAt) {
+        throw new Error('Search pass end time cannot precede its start time.')
+      }
+      assertHarnessSearchPassWindow({ mission, outing, startedAt, endedAt, currentTime: timestamp })
+      if (endedAt === null) {
+        throw new Error('A coordinator-declared search pass outcome requires an explicit pass end time.')
+      }
+      const pass: SearchPass = {
+        id: existing?.id ?? passId ?? createId('search-pass'),
+        mission_id: missionId,
+        search_area_id: areaId,
+        assignment_id: assignmentId,
+        started_at: startedAt,
+        ended_at: endedAt,
+        outcome,
+        notes,
+        coordinator_name: coordinatorName,
+        advisory_coverage_json: advisoryCoverage === undefined
+          ? existing?.advisory_coverage_json ?? null
+          : advisoryCoverage,
+        version_sequence: (existing?.version_sequence ?? 0) + 1,
+        created_at: existing?.created_at ?? timestamp,
+        updated_at: timestamp,
+        participant_ids: participantIds ?? existing?.participant_ids ?? [],
+        clue_ids: clueIds ?? existing?.clue_ids ?? [],
+        track_evidence_ids: trackEvidenceIds ?? existing?.track_evidence_ids ?? [],
+      }
+      state = { ...state, searchPasses: upsertByStableId(state.searchPasses, pass) }
+      save()
+      return pass
+    },
   }
 
-  return browserHarnessStore
+  return browserHarnessStore as BrowserHarnessStore
 }
 
 export function readBrowserHarnessState(): BrowserHarnessState {
@@ -1660,6 +2175,8 @@ function createBrowserHarnessPosition(input: AddPositionInput): Position {
     source: input.source ?? null,
     timestamp: input.timestamp ?? new Date().toISOString(),
     data_origin: input.data_origin ?? 'live',
+    received_at: new Date().toISOString(),
+    timestamp_source: input.timestamp_source ?? null,
   }
 }
 
@@ -1672,6 +2189,1231 @@ function compareBrowserHarnessPositions(left: Position, right: Position): number
     ) ||
     left.id.localeCompare(right.id)
   )
+}
+
+type BrowserGpxProjectionCursor = Pick<GpxTrackImport, 'display_name' | 'imported_at' | 'id'>
+
+/** Removes retained GPX source bytes from the renderer projection boundary. */
+function stripBrowserGpxRetainedBytes(entry: GpxTrackImport): GpxTrackImport {
+  const { source_bytes_base64: retainedBytes, ...projection } = entry
+  void retainedBytes
+  return projection
+}
+
+/** Orders browser-validation GPX projections by the same stable fields encoded in its cursor. */
+function compareBrowserGpxProjectionOrder(
+  left: BrowserGpxProjectionCursor,
+  right: BrowserGpxProjectionCursor,
+): number {
+  return left.display_name.localeCompare(right.display_name)
+    || left.imported_at.localeCompare(right.imported_at)
+    || left.id.localeCompare(right.id)
+}
+
+/** Encodes one opaque browser-validation GPX keyset cursor with its mission context. */
+function encodeBrowserGpxProjectionCursor(
+  missionId: string,
+  entry: BrowserGpxProjectionCursor,
+): string {
+  return encodeURIComponent(JSON.stringify({
+    v: 2,
+    kind: 'imports',
+    contextId: missionId,
+    displayName: entry.display_name,
+    importedAt: entry.imported_at,
+    id: entry.id,
+  }))
+}
+
+/** Decodes one bounded browser-validation GPX keyset cursor. */
+function decodeBrowserGpxProjectionCursor(
+  value: string | undefined,
+  expectedMissionId: string,
+): BrowserGpxProjectionCursor | null {
+  if (value === undefined) return null
+  if (value.length < 1 || value.length > 4_000) {
+    throw new Error('Browser GPX projection cursor is invalid.')
+  }
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value)) as Readonly<Record<string, unknown>>
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)
+      || parsed.v !== 2 || parsed.kind !== 'imports'
+      || parsed.contextId !== expectedMissionId
+      || !isBoundedBrowserGpxCursorText(parsed.displayName, true)
+      || !isBoundedBrowserGpxCursorText(parsed.importedAt, false, 100)
+      || !isBoundedBrowserGpxCursorText(parsed.id, false)) {
+      throw new Error('invalid shape')
+    }
+    return {
+      display_name: parsed.displayName,
+      imported_at: parsed.importedAt,
+      id: parsed.id,
+    }
+  } catch {
+    throw new Error('Browser GPX projection cursor is invalid.')
+  }
+}
+
+/** Normalizes the mission identity bound into a browser GPX cursor. */
+function normalizeBrowserGpxProjectionContext(value: string): string {
+  if (typeof value !== 'string' || value.trim() === '' || value.length > 1_000) {
+    throw new Error('Browser GPX projection mission identifier is invalid.')
+  }
+  return value.trim()
+}
+
+/** Checks decoded browser cursor text before using it as a keyset boundary. */
+function isBoundedBrowserGpxCursorText(
+  value: unknown,
+  allowEmpty: boolean,
+  maximumLength = 1_000,
+): value is string {
+  return typeof value === 'string'
+    && value.length <= maximumLength
+    && (allowEmpty || value.length > 0)
+}
+
+/** Preflights the browser harness with the packaged Replay envelope contract. */
+function normalizeBrowserReplayInput(input: MissionReplayReadInput): {
+  readonly missionId: string
+  readonly selectedTime: string
+  readonly timezone: typeof REPLAY_TIMEZONE
+} {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new Error('Mission replay input is invalid.')
+  }
+  if (typeof input.missionId !== 'string'
+    || input.missionId.length < 1 || input.missionId.length > 200) {
+    throw new Error('Mission replay mission ID is invalid.')
+  }
+  if (typeof input.selectedTime !== 'string'
+    || input.selectedTime.length < 1
+    || input.selectedTime.length > MAX_REPLAY_SELECTED_TIME_LENGTH
+    || input.selectedTime !== input.selectedTime.trim()) {
+    throw new Error('Mission replay selected time is invalid.')
+  }
+  let selectedTime: string
+  try {
+    selectedTime = normalizeTrackingIsoTimestamp(input.selectedTime, 'Mission replay selected time')
+  } catch {
+    throw new Error('Mission replay selected time is invalid.')
+  }
+  const timezone = input.timezone ?? REPLAY_TIMEZONE
+  if (timezone !== REPLAY_TIMEZONE) {
+    throw new Error('Mission replay timezone is invalid.')
+  }
+  return { missionId: input.missionId, selectedTime, timezone }
+}
+
+/** Returns one bounded searchable Search Operations page with production-shaped projections. */
+function buildBrowserSearchOperationPage(
+  state: BrowserHarnessState,
+  input: {
+    readonly missionId: string
+    readonly kind: SearchOperationPageKind
+    readonly search?: string
+    readonly cursor?: string
+    readonly limit?: number
+  },
+): SearchOperationPage {
+  const missionId = normalizeBrowserSearchText(
+    input.missionId, 'Search Operations page mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+  )
+  if (!['areas', 'assignments', 'outings', 'passes'].includes(input.kind)) {
+    throw new Error('Search Operations page kind is invalid.')
+  }
+  const search = normalizeBrowserOptionalSearchText(
+    input.search ?? '', 'Search Operations page search', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  ) ?? ''
+  const limit = input.limit ?? 25
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
+    throw new Error('Search Operations page limit must be between 1 and 50.')
+  }
+  const generation = browserSearchOperationGeneration(state, missionId)
+  const cursor = decodeBrowserSearchOperationCursor(input.cursor, {
+    missionId, kind: input.kind, search, generation,
+  })
+  const loweredSearch = search.toLocaleLowerCase('en-IE')
+  const rows = browserSearchOperationRows(state, missionId, input.kind)
+    .filter((row) => row.searchText.toLocaleLowerCase('en-IE').includes(loweredSearch))
+    .sort((left, right) => left.orderValue.localeCompare(right.orderValue)
+      || left.id.localeCompare(right.id))
+  const eligible = cursor === null ? rows : rows.filter((row) =>
+    row.orderValue > cursor.orderValue
+    || (row.orderValue === cursor.orderValue && row.id > cursor.id))
+  const visible = eligible.slice(0, limit)
+  const last = visible.at(-1)
+  return {
+    kind: input.kind,
+    search,
+    generation,
+    entries: visible.map((row) => row.projection),
+    totalCount: rows.length,
+    nextCursor: eligible.length <= limit || last === undefined
+      ? null
+      : encodeBrowserBase64Url(JSON.stringify({
+          v: 2, missionId, kind: input.kind, search, generation,
+          orderValue: last.orderValue, id: last.id,
+        })),
+  }
+}
+
+/** Produces bounded browser projections and deterministic search/order keys. */
+function browserSearchOperationRows(
+  state: BrowserHarnessState,
+  missionId: string,
+  kind: SearchOperationPageKind,
+): readonly {
+  readonly id: string
+  readonly orderValue: string
+  readonly searchText: string
+  readonly projection: SearchOperationPage['entries'][number]
+}[] {
+  if (kind === 'areas') return state.searchAreas
+    .filter((area) => area.mission_id === missionId && area.retired_at === null)
+    .map((area) => ({
+      id: area.id, orderValue: area.name, searchText: `${area.name} ${area.id}`,
+      projection: {
+        id: area.id, mission_id: area.mission_id, name: area.name, status: area.status,
+        version_sequence: area.version_sequence, updated_by: area.updated_by,
+        created_at: area.created_at, updated_at: area.updated_at,
+        retired_at: area.retired_at, geometry_available: true,
+      },
+    }))
+  if (kind === 'assignments') return state.searchAssignments
+    .filter((assignment) => assignment.mission_id === missionId && assignment.retired_at === null)
+    .map((assignment) => ({
+      id: assignment.id, orderValue: assignment.created_at,
+      searchText: `${assignment.id} ${assignment.team_id} ${assignment.search_area_id} ${assignment.outing_id} ${assignment.updated_by ?? ''}`,
+      projection: {
+        id: assignment.id, mission_id: assignment.mission_id,
+        search_area_id: assignment.search_area_id, outing_id: assignment.outing_id,
+        team_id: assignment.team_id, version_sequence: assignment.version_sequence,
+        updated_by: assignment.updated_by, created_at: assignment.created_at,
+        updated_at: assignment.updated_at, retired_at: assignment.retired_at,
+      },
+    }))
+  if (kind === 'outings') return state.outings
+    .filter((outing) => outing.mission_id === missionId)
+    .map((outing) => ({
+      id: outing.id, orderValue: outing.started_at,
+      searchText: `${outing.id} ${outing.label}`, projection: outing,
+    }))
+  return state.searchPasses.filter((pass) => pass.mission_id === missionId).map((pass) => ({
+    id: pass.id, orderValue: pass.started_at,
+    searchText: `${pass.id} ${pass.search_area_id} ${pass.assignment_id} ${pass.coordinator_name} ${pass.outcome} ${pass.notes ?? ''}`,
+    projection: {
+      id: pass.id, mission_id: pass.mission_id, search_area_id: pass.search_area_id,
+      assignment_id: pass.assignment_id, started_at: pass.started_at,
+      ended_at: pass.ended_at, outcome: pass.outcome,
+      coordinator_name: pass.coordinator_name, version_sequence: pass.version_sequence,
+      created_at: pass.created_at, updated_at: pass.updated_at,
+      participant_count: pass.participant_ids?.length ?? 0,
+      clue_count: pass.clue_ids?.length ?? 0,
+      track_evidence_count: pass.track_evidence_ids?.length ?? 0,
+    },
+  }))
+}
+
+/** Decodes one browser Search Operations keyset cursor with context binding. */
+function decodeBrowserSearchOperationCursor(
+  value: string | undefined,
+  context: {
+    readonly missionId: string
+    readonly kind: string
+    readonly search: string
+    readonly generation: number
+  },
+): { readonly orderValue: string; readonly id: string } | null {
+  if (value === undefined || value === '') return null
+  if (typeof value !== 'string' || value.length > 2_000) {
+    throw new Error('Search Operations page cursor is invalid.')
+  }
+  try {
+    const parsed = JSON.parse(decodeBrowserBase64Url(value)) as Record<string, unknown>
+    if (parsed.v !== 2 || parsed.missionId !== context.missionId
+      || parsed.kind !== context.kind || parsed.search !== context.search
+      || !Number.isSafeInteger(parsed.generation) || Number(parsed.generation) < 0
+      || typeof parsed.orderValue !== 'string' || parsed.orderValue.length > 200
+      || typeof parsed.id !== 'string' || parsed.id.length < 1 || parsed.id.length > 200) {
+      throw new Error('invalid')
+    }
+    if (parsed.generation !== context.generation) {
+      throw new Error('changed')
+    }
+    return { orderValue: parsed.orderValue, id: parsed.id }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'changed') {
+      throw new Error('Search Operations page changed; return to the first page.')
+    }
+    throw new Error('Search Operations page cursor is invalid.')
+  }
+}
+
+/** Derives a monotonic browser-validation generation for retained Search Operations state. */
+function browserSearchOperationGeneration(state: BrowserHarnessState, missionId: string): number {
+  const eventCount = state.missionEvents.filter((event) => event.mission_id === missionId).length
+  const versionTotal = [...state.searchAreas, ...state.searchAssignments, ...state.searchPasses]
+    .filter((entry) => entry.mission_id === missionId)
+    .reduce((total, entry) => total + entry.version_sequence, 0)
+  return eventCount + versionTotal
+}
+
+/** Reads every eligible browser-harness outing identity known at the selected time. */
+function readBrowserEligibleReplayOutingIds(
+  state: BrowserHarnessState,
+  missionId: string,
+  selectedTime: string,
+): readonly string[] {
+  const missionImportIds = new Set(state.gpxImports
+    .filter((entry) => entry.mission_id === missionId
+      && (entry.retired_at === null || entry.retired_at === undefined
+        || entry.retired_at > selectedTime))
+    .map((entry) => entry.id))
+  const latestRevision = new Map<string, number>()
+  for (const point of state.gpxEvidencePoints) {
+    if (missionImportIds.has(point.importId) && point.recordedAt <= selectedTime) {
+      latestRevision.set(
+        point.importId,
+        Math.max(latestRevision.get(point.importId) ?? 0, point.revisionSequence),
+      )
+    }
+  }
+  return [...new Set(state.gpxEvidencePoints
+    .filter((point) => missionImportIds.has(point.importId)
+      && point.revisionSequence === latestRevision.get(point.importId)
+      && point.recordedAt <= selectedTime && point.outingId != null)
+    .map((point) => point.outingId as string))].sort()
+}
+
+/** Reads one bounded searchable Replay outing-choice page in browser validation. */
+function buildBrowserReplayFilterPage(
+  state: BrowserHarnessState,
+  input: MissionReplayReadInput & {
+    readonly filterKind: 'outing'
+    readonly filterSearch?: string
+    readonly filterCursor?: string
+    readonly filterLimit?: number
+  },
+): MissionReplayFilterPage {
+  const envelope = normalizeBrowserReplayInput(input)
+  if (input.filterKind !== 'outing') throw new Error('Mission replay filter kind is invalid.')
+  const search = normalizeBrowserOptionalSearchText(
+    input.filterSearch ?? '', 'Mission replay filter search', 120,
+  ) ?? ''
+  const limit = input.filterLimit ?? MAX_REPLAY_FILTER_PAGE_LIMIT
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_REPLAY_FILTER_PAGE_LIMIT) {
+    throw new Error('Mission replay filter page limit must be between 1 and 100.')
+  }
+  const allEntries = readBrowserEligibleReplayOutingIds(
+    state, envelope.missionId, envelope.selectedTime,
+  ).filter((outingId) => outingId.toLocaleLowerCase('en-IE')
+    .includes(search.toLocaleLowerCase('en-IE')))
+  const cursor = decodeBrowserReplayFilterCursor(input.filterCursor, {
+    missionId: envelope.missionId,
+    selectedTime: envelope.selectedTime,
+    search,
+  })
+  const eligible = cursor === null
+    ? allEntries
+    : allEntries.filter((outingId) => outingId > cursor.lastId)
+  const entries = eligible.slice(0, limit)
+  const lastId = entries.at(-1)
+  return {
+    filterKind: 'outing', search, entries, totalCount: allEntries.length,
+    nextCursor: eligible.length <= limit || lastId === undefined
+      ? null
+      : encodeBrowserBase64Url(JSON.stringify({
+          v: 1, missionId: envelope.missionId, selectedTime: envelope.selectedTime,
+          filterKind: 'outing', search, lastId,
+        })),
+  }
+}
+
+/** Decodes one context-bound browser Replay filter cursor. */
+function decodeBrowserReplayFilterCursor(
+  value: string | undefined,
+  context: { readonly missionId: string; readonly selectedTime: string; readonly search: string },
+): { readonly lastId: string } | null {
+  if (value === undefined || value === '') return null
+  if (typeof value !== 'string' || value.length > 2_000) {
+    throw new Error('Mission replay filter cursor is invalid.')
+  }
+  try {
+    const parsed = JSON.parse(decodeBrowserBase64Url(value)) as Record<string, unknown>
+    if (parsed.v !== 1 || parsed.missionId !== context.missionId
+      || parsed.selectedTime !== context.selectedTime || parsed.filterKind !== 'outing'
+      || parsed.search !== context.search || typeof parsed.lastId !== 'string'
+      || parsed.lastId.length < 1 || parsed.lastId.length > 200) throw new Error('invalid')
+    return { lastId: parsed.lastId }
+  } catch {
+    throw new Error('Mission replay filter cursor is invalid.')
+  }
+}
+
+/** Uses the production replay port with explicit harness completeness limits. */
+async function buildBrowserReplay(
+  state: BrowserHarnessState,
+  input: MissionReplayReadInput,
+): Promise<MissionReplayReadResult> {
+  const envelope = normalizeBrowserReplayInput(input)
+  if (Date.parse(envelope.selectedTime) > Date.now()) {
+    throw new Error('Mission replay selected time cannot be in the future.')
+  }
+  const { missionId, selectedTime, timezone } = envelope
+  if (!Number.isInteger(input.trackLimit) || input.trackLimit < 1
+    || input.trackLimit > MAX_REPLAY_TRACK_LIMIT) {
+    throw new Error(`Mission replay track limit must be between 1 and ${MAX_REPLAY_TRACK_LIMIT}.`)
+  }
+  const objectLimit = input.objectLimit ?? MAX_REPLAY_OBJECT_LIMIT
+  if (!Number.isInteger(objectLimit) || objectLimit < 1 || objectLimit > MAX_REPLAY_OBJECT_LIMIT) {
+    throw new Error(`Mission replay object limit must be between 1 and ${MAX_REPLAY_OBJECT_LIMIT}.`)
+  }
+  const deviceFilterIds = normalizeBrowserReplayFilterIds(input.deviceIds, 'device')
+  const outingFilterIds = normalizeBrowserReplayFilterIds(input.outingIds, 'outing')
+  const cursor = decodeBrowserReplayTrackCursor(input.cursor)
+  const offset = cursor?.direction === 'before'
+    ? Math.max(0, cursor.offset - input.trackLimit)
+    : cursor?.offset ?? 0
+  const objectCursor = decodeBrowserReplayObjectCursor(input.objectCursor)
+  const objectOffset = objectCursor?.offset ?? 0
+  const positionTracks = state.positions
+    .filter((position) =>
+      position.mission_id === missionId
+      && position.timestamp_source === 'fix'
+      && position.received_at != null
+      && position.received_at <= selectedTime
+      && position.timestamp <= selectedTime
+      && (deviceFilterIds === null || deviceFilterIds.includes(position.device_id)),
+    )
+    .map((position) => ({
+      evidence_id: position.source_position_id ?? position.id,
+      source_type: 'traccar_fix' as const,
+      track_id: position.device_id,
+      effective_at: position.timestamp,
+      recorded_at: position.received_at!,
+      lat: position.lat,
+      lon: position.lon,
+      elevation: position.altitude,
+      accuracy: position.accuracy,
+      time_authority: 'fixTime' as const,
+      completeness: 'complete' as const,
+      sourceOrder: 0 as const,
+      stableOrder: position.id,
+    }))
+  if (cursor !== null && (cursor.replayGeneration !== (input.replayGeneration ?? 0)
+    || cursor.eligiblePositionCount !== positionTracks.length)) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
+  const missionImportIds = new Set(state.gpxImports
+    .filter((entry) => entry.mission_id === missionId
+      && (entry.retired_at === null
+        || entry.retired_at === undefined
+        || entry.retired_at > selectedTime))
+    .map((entry) => entry.id))
+  const eligibleRevisionByImport = new Map<string, number>()
+  for (const point of state.gpxEvidencePoints) {
+    if (missionImportIds.has(point.importId) && point.recordedAt <= selectedTime) {
+      eligibleRevisionByImport.set(
+        point.importId,
+        Math.max(eligibleRevisionByImport.get(point.importId) ?? 0, point.revisionSequence),
+      )
+    }
+  }
+  const eligibleGpxPoints = state.gpxEvidencePoints.filter((point) =>
+    missionImportIds.has(point.importId)
+    && point.revisionSequence === eligibleRevisionByImport.get(point.importId)
+    && point.recordedAt <= selectedTime,
+  )
+  const eligibleOutingByImport = new Map<string, string | null>()
+  for (const point of eligibleGpxPoints) {
+    eligibleOutingByImport.set(point.importId, point.outingId ?? null)
+  }
+  /** Mirrors the production display-only outing filter inside browser validation. */
+  const isSelectedGpxImport = (importId: string) => {
+    const outingId = eligibleOutingByImport.get(importId) ?? null
+    return outingFilterIds === null || (outingId !== null && outingFilterIds.includes(outingId))
+  }
+  const gpxTracks = eligibleGpxPoints
+    .filter((point) => {
+      return point.timestamp !== null && point.timestamp <= selectedTime
+        && isSelectedGpxImport(point.importId)
+    })
+    .map((point) => ({
+      evidence_id: `${point.importId}:${point.revisionSequence}:${point.segmentIndex}:${point.pointIndex}`,
+      source_type: 'gpx_point' as const,
+      track_id: point.importId,
+      effective_at: point.timestamp!,
+      recorded_at: point.recordedAt,
+      lat: point.lat,
+      lon: point.lon,
+      elevation: point.elevation,
+      accuracy: null,
+      time_authority: 'gpx_source_time' as const,
+      completeness: 'complete' as const,
+      sourceOrder: 1 as const,
+      stableOrder: `${point.importId}:${String(point.segmentIndex).padStart(8, '0')}:${String(point.pointIndex).padStart(8, '0')}`,
+    }))
+  const allTracks = [...positionTracks, ...gpxTracks].sort((left, right) =>
+    left.effective_at.localeCompare(right.effective_at)
+    || left.recorded_at.localeCompare(right.recorded_at)
+    || left.sourceOrder - right.sourceOrder
+    || left.stableOrder.localeCompare(right.stableOrder)
+    || left.evidence_id.localeCompare(right.evidence_id),
+  )
+  const normalizedReplayContext = {
+    missionId,
+    selectedTime,
+    deviceIds: deviceFilterIds,
+    outingIds: outingFilterIds,
+    timezone,
+    replayGeneration: input.replayGeneration ?? 0,
+  }
+  if (cursor !== null && cursor.eligibleTrackCount !== allTracks.length) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
+  const trackContextHash = await browserReplayCursorContextHash(
+    'track', normalizedReplayContext, allTracks.length,
+  )
+  if (cursor !== null && cursor.contextHash !== trackContextHash) {
+    throw new Error('Mission replay cursor context does not match this request.')
+  }
+  if (objectCursor !== null && (objectCursor.replayGeneration
+    !== normalizedReplayContext.replayGeneration || objectCursor.eligibleObjectCount !== 0)) {
+    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+  }
+  const objectContextHash = objectCursor === null ? null : await browserReplayCursorContextHash(
+    'object', normalizedReplayContext, 0,
+  )
+  if (objectCursor !== null && objectCursor.contextHash !== objectContextHash) {
+    throw new Error('Mission replay object cursor context does not match this request.')
+  }
+  const pageTracks = allTracks.slice(offset, offset + input.trackLimit)
+  const tracks = pageTracks.map(projectBrowserReplayTrack)
+  const nextOffset = offset + pageTracks.length
+  const eligiblePositionCount = positionTracks.length
+  const staticGpxPointCount = eligibleGpxPoints.filter((point) =>
+    point.timestamp === null && isSelectedGpxImport(point.importId)).length
+  const staticGpxEvidence = state.gpxImports
+    .filter((entry) => missionImportIds.has(entry.id)
+      && (outingFilterIds === null
+        || isSelectedGpxImport(entry.id)))
+    .flatMap((entry) => {
+      const revisionSequence = eligibleRevisionByImport.get(entry.id)
+      if (revisionSequence === undefined) return []
+      const staticPoints = eligibleGpxPoints.filter((point) =>
+        point.importId === entry.id
+        && point.revisionSequence === revisionSequence
+        && point.timestamp === null)
+      const firstStaticPoint = staticPoints[0]
+      if (firstStaticPoint === undefined) return []
+      return [{
+        import_id: entry.id,
+        revision_sequence: revisionSequence,
+        source_path: entry.source_path,
+        file_name: entry.file_name,
+        display_name: entry.display_name,
+        content_sha256: entry.content_sha256 ?? null,
+        timing_class: entry.timing_class ?? 'undated' as const,
+        outing_id: eligibleOutingByImport.get(entry.id) ?? null,
+        completeness: entry.content_sha256 == null ? 'legacy_baseline' as const : 'complete' as const,
+        recorded_at: firstStaticPoint.recordedAt,
+        static_point_count: staticPoints.length,
+        rejection_count: 0,
+      }]
+    })
+  const allAvailableOutingIds = readBrowserEligibleReplayOutingIds(
+    state, missionId, selectedTime,
+  )
+  const availableOutingIds = allAvailableOutingIds.slice(0, MAX_REPLAY_FILTER_PAGE_LIMIT)
+  const availableOutingNextCursor = allAvailableOutingIds.length <= availableOutingIds.length
+    ? null
+    : encodeBrowserBase64Url(JSON.stringify({
+        v: 1, missionId, selectedTime, filterKind: 'outing', search: '',
+        lastId: availableOutingIds.at(-1),
+      }))
+  return {
+    missionId,
+    selectedTime,
+    timezone,
+    objects: [],
+    totalObjectCount: 0,
+    objectTypeCounts: {},
+    objectCursor: String(objectOffset),
+    nextObjectCursor: null,
+    missionLifecycle: readBrowserReplayLifecycle(state.missionEvents, missionId, selectedTime),
+    tracks,
+    trackCursor: String(offset),
+    previousCursor: offset === 0 || pageTracks.length === 0 ? null : encodeBrowserReplayTrackCursor(
+      'before', offset, pageTracks[0]!, normalizedReplayContext,
+      eligiblePositionCount, allTracks.length, trackContextHash,
+    ),
+    totalTrackCount: allTracks.length,
+    staticGpxPointCount,
+    availableDeviceIds: [...new Set(state.positions
+      .filter((position) => position.mission_id === missionId
+        && position.timestamp_source === 'fix'
+        && position.received_at != null
+        && position.timestamp <= selectedTime
+        && position.received_at <= selectedTime)
+      .map((position) => position.device_id))].sort(),
+    availableOutingIds,
+    availableOutingTotalCount: allAvailableOutingIds.length,
+    availableOutingNextCursor,
+    deviceFilterIds: deviceFilterIds ?? [],
+    outingFilterIds: outingFilterIds ?? [],
+    staticGpxEvidence,
+    nextCursor: nextOffset < allTracks.length && pageTracks.length > 0
+      ? encodeBrowserReplayTrackCursor(
+          'after', nextOffset, pageTracks.at(-1)!, normalizedReplayContext,
+          eligiblePositionCount, allTracks.length, trackContextHash,
+        )
+      : null,
+    progress: allTracks.length === 0 ? 1 : nextOffset / allTracks.length,
+    limitations: [
+      {
+        code: 'browser_harness_version_history_unavailable',
+        message: 'Browser validation cannot claim historical mutable-object versions from operational SQLite.',
+      },
+      ...(staticGpxPointCount === 0 ? [] : [{
+        code: 'undated_gpx_static',
+        message: 'Undated GPX points remain static and are excluded from precise replay placement.',
+        count: staticGpxPointCount,
+      }]),
+      ...(availableOutingNextCursor === null ? [] : [{
+        code: 'outing_filter_choices_paged',
+        message: 'Additional eligible GPX outings are available through bounded filter-choice pages.',
+        count: allAvailableOutingIds.length - availableOutingIds.length,
+      }]),
+    ],
+  }
+}
+
+/** Reconstructs the browser-validation lifecycle state while retaining its transition evidence. */
+function readBrowserReplayLifecycle(
+  events: readonly MissionEvent[],
+  missionId: string,
+  selectedTime: string,
+): Exclude<MissionReplayReadResult['missionLifecycle'], undefined> {
+  const lifecycleEvents = new Set([
+    'mission_created',
+    'mission_paused',
+    'mission_resumed',
+    'mission_finished',
+    'mission_finalized',
+    'mission_unlocked',
+  ])
+  const latest = events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => event.mission_id === missionId
+      && lifecycleEvents.has(event.event_type)
+      && event.timestamp <= selectedTime)
+    .sort((left, right) => right.event.timestamp.localeCompare(left.event.timestamp)
+      || right.index - left.index)[0]?.event
+
+  return latest === undefined
+    ? null
+    : { ...latest, state: browserReplayLifecycleStateFromEventType(latest.event_type) }
+}
+
+/** Mirrors the packaged replay transition-to-state contract for browser UI conformance. */
+function browserReplayLifecycleStateFromEventType(
+  eventType: string,
+): NonNullable<MissionReplayReadResult['missionLifecycle']>['state'] {
+  switch (eventType) {
+    case 'mission_created':
+    case 'mission_resumed':
+      return 'active'
+    case 'mission_paused':
+      return 'paused'
+    case 'mission_finished':
+    case 'mission_unlocked':
+      return 'finished'
+    case 'mission_finalized':
+      return 'finalized'
+    default:
+      return 'unknown'
+  }
+}
+
+type BrowserReplayOrderRow = {
+  readonly effective_at: string
+  readonly recorded_at: string
+  readonly sourceOrder: 0 | 1
+  readonly stableOrder: string
+}
+
+function projectBrowserReplayTrack(
+  row: MissionReplayReadResult['tracks'][number] & BrowserReplayOrderRow,
+): MissionReplayReadResult['tracks'][number] {
+  return {
+    evidence_id: row.evidence_id,
+    source_type: row.source_type,
+    track_id: row.track_id,
+    effective_at: row.effective_at,
+    recorded_at: row.recorded_at,
+    lat: row.lat,
+    lon: row.lon,
+    elevation: row.elevation,
+    accuracy: row.accuracy,
+    time_authority: row.time_authority,
+    completeness: row.completeness,
+  }
+}
+
+type BrowserReplayCursorContext = {
+  readonly missionId: string
+  readonly selectedTime: string
+  readonly deviceIds: readonly string[] | null
+  readonly outingIds: readonly string[] | null
+  readonly timezone: string
+  readonly replayGeneration: number
+}
+
+/** Encodes the same opaque v4 replay-cursor envelope used by packaged Electron. */
+function encodeBrowserReplayTrackCursor(
+  direction: 'after' | 'before',
+  offset: number,
+  row: BrowserReplayOrderRow,
+  context: BrowserReplayCursorContext,
+  eligiblePositionCount: number,
+  eligibleTrackCount: number,
+  contextHash: string,
+): string {
+  return encodeBrowserBase64Url(JSON.stringify({
+    v: 4,
+    kind: 'track',
+    direction,
+    offset,
+    replayGeneration: context.replayGeneration,
+    eligiblePositionCount,
+    eligibleTrackCount,
+    contextHash,
+    key: [row.effective_at, row.recorded_at, row.sourceOrder, row.stableOrder],
+  }))
+}
+
+/** Decodes and validates one production-compatible browser replay cursor. */
+function decodeBrowserReplayTrackCursor(value: string | null | undefined): {
+  readonly direction: 'after' | 'before'
+  readonly offset: number
+  readonly replayGeneration: number
+  readonly eligiblePositionCount: number
+  readonly eligibleTrackCount: number
+  readonly contextHash: string
+  readonly key: readonly [string, string, 0 | 1, string]
+} | null {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string' || value.length > 2_000 || !/^[A-Za-z0-9_-]+$/u.test(value)) {
+    throw new Error('Mission replay cursor is invalid.')
+  }
+  try {
+    const parsed = JSON.parse(decodeBrowserBase64Url(value)) as Record<string, unknown>
+    const key = parsed.key
+    if (parsed.v !== 4 || parsed.kind !== 'track'
+      || (parsed.direction !== 'after' && parsed.direction !== 'before')
+      || !Number.isSafeInteger(parsed.offset) || Number(parsed.offset) < 0
+      || Number(parsed.offset) > MAX_REPLAY_CURSOR_OFFSET || !Array.isArray(key)
+      || key.length !== 4 || typeof key[0] !== 'string' || typeof key[1] !== 'string'
+      || (key[2] !== 0 && key[2] !== 1) || typeof key[3] !== 'string'
+      || !Number.isSafeInteger(parsed.replayGeneration) || Number(parsed.replayGeneration) < 0
+      || !Number.isSafeInteger(parsed.eligiblePositionCount)
+      || Number(parsed.eligiblePositionCount) < 0
+      || !Number.isSafeInteger(parsed.eligibleTrackCount)
+      || Number(parsed.eligibleTrackCount) < 0
+      || typeof parsed.contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(parsed.contextHash)) {
+      throw new Error('invalid shape')
+    }
+    return {
+      direction: parsed.direction,
+      offset: Number(parsed.offset),
+      replayGeneration: Number(parsed.replayGeneration),
+      eligiblePositionCount: Number(parsed.eligiblePositionCount),
+      eligibleTrackCount: Number(parsed.eligibleTrackCount),
+      contextHash: parsed.contextHash,
+      key: [String(key[0]), String(key[1]), key[2], String(key[3])],
+    }
+  } catch {
+    throw new Error('Mission replay cursor is invalid.')
+  }
+}
+
+function decodeBrowserReplayObjectCursor(value: string | null | undefined): {
+  readonly offset: number
+  readonly replayGeneration: number
+  readonly eligibleObjectCount: number
+  readonly contextHash: string
+} | null {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string' || value.length > 2_000 || !/^[A-Za-z0-9_-]+$/u.test(value)) {
+    throw new Error('Mission replay object cursor is invalid.')
+  }
+  try {
+    const parsed = JSON.parse(decodeBrowserBase64Url(value)) as Record<string, unknown>
+    if (parsed.v !== 4 || parsed.kind !== 'object'
+      || !Number.isSafeInteger(parsed.offset) || Number(parsed.offset) < 0
+      || Number(parsed.offset) > MAX_REPLAY_CURSOR_OFFSET
+      || !Number.isSafeInteger(parsed.replayGeneration) || Number(parsed.replayGeneration) < 0
+      || !Number.isSafeInteger(parsed.eligibleObjectCount)
+      || Number(parsed.eligibleObjectCount) < 0
+      || typeof parsed.contextHash !== 'string' || !/^[a-f0-9]{64}$/u.test(parsed.contextHash)) {
+      throw new Error('invalid shape')
+    }
+    return {
+      offset: Number(parsed.offset),
+      replayGeneration: Number(parsed.replayGeneration),
+      eligibleObjectCount: Number(parsed.eligibleObjectCount),
+      contextHash: parsed.contextHash,
+    }
+  } catch {
+    throw new Error('Mission replay object cursor is invalid.')
+  }
+}
+
+/** Hashes normalized Replay context into the fixed-size token used by both adapters. */
+async function browserReplayCursorContextHash(
+  kind: 'track' | 'object',
+  context: BrowserReplayCursorContext,
+  eligibleSnapshotCount: number,
+): Promise<string> {
+  const payload = new TextEncoder().encode(JSON.stringify({
+    kind,
+    missionId: context.missionId,
+    selectedTime: context.selectedTime,
+    deviceIds: context.deviceIds,
+    outingIds: context.outingIds,
+    timezone: context.timezone,
+    replayGeneration: context.replayGeneration,
+    eligibleSnapshotCount,
+  }))
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', payload)
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+function normalizeBrowserReplayFilterIds(
+  value: readonly string[] | undefined,
+  label: string,
+): readonly string[] | null {
+  if (value === undefined) return null
+  if (!Array.isArray(value) || value.length > MAX_REPLAY_FILTER_IDS) {
+    throw new Error(`Mission replay ${label} filter is invalid.`)
+  }
+  const normalized = value.map((item) => {
+    if (typeof item !== 'string' || item.trim() === '' || item.length > 200) {
+      throw new Error(`Mission replay ${label} filter is invalid.`)
+    }
+    return item.trim()
+  })
+  return [...new Set(normalized)].sort((left, right) => left.localeCompare(right))
+}
+
+function encodeBrowserBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value)
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
+}
+
+function decodeBrowserBase64Url(value: string): string {
+  const normalized = value.replaceAll('-', '+').replaceAll('_', '/')
+    .padEnd(Math.ceil(value.length / 4) * 4, '=')
+  const binary = atob(normalized)
+  return new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)))
+}
+
+/** Mirrors the packaged marker mutation envelope before browser state work. */
+function normalizeBrowserMarkerMutation(input: UpsertMarkerInput): UpsertMarkerInput {
+  const markerType = normalizeBrowserEvidenceRequiredText(
+    input.type, 'Marker type', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+  if (!['ipp_lkp', 'clue', 'hazard', 'casualty'].includes(markerType)) {
+    throw new Error('Marker type is invalid.')
+  }
+  const lat = normalizeBrowserRequiredFiniteNumber(input.lat, 'Marker latitude')
+  const lon = normalizeBrowserRequiredFiniteNumber(input.lon, 'Marker longitude')
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    throw new Error('Marker coordinates are invalid.')
+  }
+  return {
+    id: normalizeBrowserOptionalEvidenceIdentity(input.id, 'Marker identity'),
+    mission_id: normalizeBrowserEvidenceRequiredText(
+      input.mission_id, 'Marker mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: markerType as UpsertMarkerInput['type'],
+    name: normalizeBrowserEvidenceRequiredText(
+      input.name, 'Marker name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBrowserEvidenceOptionalText(
+      input.description, 'Marker description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    lat,
+    lon,
+    irish_grid_e: normalizeBrowserRequiredSafeInteger(input.irish_grid_e, 'Marker ITM easting'),
+    irish_grid_n: normalizeBrowserRequiredSafeInteger(input.irish_grid_n, 'Marker ITM northing'),
+    display_order: normalizeBrowserRequiredSafeInteger(
+      input.display_order, 'Marker display order',
+    ),
+    subject_category: normalizeBrowserMarkerShortText(input.subject_category, 'subject category'),
+    clue_type: normalizeBrowserMarkerShortText(input.clue_type, 'clue type'),
+    confidence: normalizeBrowserOptionalFiniteNumber(input.confidence, 'Marker confidence'),
+    found_by: normalizeBrowserMarkerShortText(input.found_by, 'found by'),
+    hazard_type: normalizeBrowserMarkerShortText(input.hazard_type, 'hazard type'),
+    severity: normalizeBrowserMarkerShortText(input.severity, 'severity'),
+    condition: normalizeBrowserMarkerShortText(input.condition, 'condition'),
+    treatment: normalizeBrowserEvidenceOptionalText(
+      input.treatment, 'Marker treatment', MAX_MARKER_TREATMENT_LOG_BYTES,
+    ),
+    evacuation_priority: normalizeBrowserMarkerShortText(
+      input.evacuation_priority, 'evacuation priority',
+    ),
+    label_size: normalizeBrowserOptionalSafeInteger(input.label_size, 'Marker label size'),
+    updated_by: normalizeBrowserMarkerShortText(input.updated_by, 'coordinator'),
+    coordinator_ids: normalizeBrowserEvidenceOptionalText(
+      input.coordinator_ids, 'Marker coordinator ids', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    attachment_path: normalizeBrowserEvidenceOptionalText(
+      input.attachment_path, 'Marker attachment path', MAX_MUTABLE_EVIDENCE_PATH_LENGTH,
+    ),
+  }
+}
+
+/** Mirrors one optional packaged marker short-text field. */
+function normalizeBrowserMarkerShortText(value: unknown, label: string): string | null {
+  return normalizeBrowserEvidenceOptionalText(
+    value, `Marker ${label}`, MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+}
+
+/** Mirrors the packaged non-search drawing mutation envelope before browser state work. */
+function normalizeBrowserDrawingMutation(input: UpsertDrawingInput): UpsertDrawingInput {
+  const drawingType = normalizeBrowserEvidenceRequiredText(
+    input.type, 'Drawing type', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+  if (!['line', 'range_ring', 'bearing_line', 'search_sector', 'text_label'].includes(drawingType)) {
+    throw new Error('Drawing type is invalid.')
+  }
+  return {
+    id: normalizeBrowserOptionalEvidenceIdentity(input.id, 'Drawing identity'),
+    mission_id: normalizeBrowserEvidenceRequiredText(
+      input.mission_id, 'Drawing mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: drawingType as UpsertDrawingInput['type'],
+    name: normalizeBrowserEvidenceRequiredText(
+      input.name, 'Drawing name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBrowserEvidenceOptionalText(
+      input.description, 'Drawing description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    color: normalizeBrowserEvidenceOptionalText(
+      input.color, 'Drawing colour', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    width: normalizeBrowserOptionalFiniteNumber(input.width, 'Drawing width'),
+    distance_m: normalizeBrowserOptionalFiniteNumber(input.distance_m, 'Drawing distance'),
+    temporary_measure: normalizeBrowserOptionalBoolean(
+      input.temporary_measure, 'Drawing temporary measure',
+    ),
+    label: normalizeBrowserEvidenceOptionalText(
+      input.label, 'Drawing label', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    display_order: normalizeBrowserRequiredSafeInteger(
+      input.display_order, 'Drawing display order',
+    ),
+    geometry_json: normalizeBrowserMutableEvidenceGeometry(input.geometry_json),
+    metadata_json: normalizeBrowserOptionalEvidenceJsonText(
+      input.metadata_json, 'Drawing metadata', MAX_MUTABLE_EVIDENCE_GEOMETRY_LENGTH,
+    ),
+  }
+}
+
+/** Parses and bounds a non-search drawing coordinate tree without recursive stack growth. */
+function normalizeBrowserMutableEvidenceGeometry(value: unknown): string {
+  const normalized = normalizeBrowserEvidenceRequiredText(
+    value, 'Drawing geometry', MAX_MUTABLE_EVIDENCE_GEOMETRY_LENGTH,
+  )
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(normalized)
+  } catch {
+    throw new Error('Drawing geometry is invalid.')
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)
+    || !('type' in parsed) || typeof parsed.type !== 'string'
+    || !('coordinates' in parsed) || !Array.isArray(parsed.coordinates)) {
+    throw new Error('Drawing geometry is invalid.')
+  }
+  const pending: { readonly value: unknown; readonly depth: number }[] = [
+    { value: parsed.coordinates, depth: 0 },
+  ]
+  let coordinateCount = 0
+  while (pending.length > 0) {
+    const candidate = pending.pop()!
+    if (candidate.depth > MAX_MUTABLE_EVIDENCE_NESTING_DEPTH
+      || !Array.isArray(candidate.value)) {
+      throw new Error('Drawing geometry is invalid.')
+    }
+    if (candidate.value.length === 0) continue
+    if (candidate.value.length >= 2
+      && candidate.value.every((item) => typeof item === 'number' && Number.isFinite(item))) {
+      const [longitude, latitude] = candidate.value as readonly number[]
+      if (latitude! < -90 || latitude! > 90 || longitude! < -180 || longitude! > 180) {
+        throw new Error('Drawing geometry is invalid.')
+      }
+      coordinateCount += 1
+      if (coordinateCount > MAX_MUTABLE_EVIDENCE_COORDINATES) {
+        throw new Error('Drawing geometry is invalid.')
+      }
+      continue
+    }
+    for (const child of candidate.value) {
+      if (!Array.isArray(child)) throw new Error('Drawing geometry is invalid.')
+      pending.push({ value: child, depth: candidate.depth + 1 })
+    }
+  }
+  return normalized
+}
+
+/** Normalizes the complete UI-owned search-area envelope before harness state work. */
+function normalizeBrowserSearchAreaDrawing(input: UpsertDrawingInput): UpsertDrawingInput {
+  return {
+    id: normalizeBrowserOptionalSearchIdentity(input.id, 'Search area identity'),
+    mission_id: normalizeBrowserSearchText(
+      input.mission_id, 'Search area mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: 'search_area',
+    name: normalizeBrowserSearchText(
+      input.name, 'Search area name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBrowserOptionalSearchText(
+      input.description, 'Search area description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    color: normalizeBrowserOptionalSearchText(
+      input.color, 'Search area colour', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    width: normalizeBrowserOptionalFiniteNumber(input.width, 'Search area width'),
+    distance_m: normalizeBrowserOptionalFiniteNumber(
+      input.distance_m, 'Search area distance',
+    ),
+    temporary_measure: normalizeBrowserOptionalBoolean(
+      input.temporary_measure, 'Search area temporary-measure flag',
+    ),
+    label: normalizeBrowserOptionalSearchText(
+      input.label, 'Search area label', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    display_order: normalizeBrowserSearchDisplayOrder(input.display_order),
+    geometry_json: normalizeBrowserSearchAreaGeometry(input.geometry_json),
+    metadata_json: normalizeBrowserOptionalJsonText(
+      input.metadata_json,
+      'Search area metadata',
+      MAX_SEARCH_AREA_GEOMETRY_LENGTH,
+    ),
+  }
+}
+
+/** Retains a unique bounded list of explicit harness evidence identities. */
+function normalizeBrowserIds(value: unknown, label: string): readonly string[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new Error(`${label} must be a list.`)
+  if (value.length > MAX_SEARCH_OPERATION_LINK_COUNT) {
+    throw new Error(`${label} may contain at most ${MAX_SEARCH_OPERATION_LINK_COUNT} identities.`)
+  }
+  return [...new Set(value.map((entry) => normalizeBrowserSearchText(
+    entry,
+    label,
+    MAX_SEARCH_OPERATION_ID_LENGTH,
+  )))].sort()
+}
+
+function normalizeBrowserOptionalIds(
+  value: unknown,
+  label: string,
+): readonly string[] | undefined {
+  if (value === undefined || value === null) return undefined
+  return normalizeBrowserIds(value, label)
+}
+
+/** Normalizes one required bounded Search Operations string. */
+function normalizeBrowserSearchText(value: unknown, label: string, maximumLength: number): string {
+  if (value === undefined || value === null) throw new Error(`${label} is required.`)
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  if (value.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
+  }
+  const normalized = value.trim()
+  if (normalized === '') throw new Error(`${label} is required.`)
+  if (normalized.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
+  }
+  return normalized
+}
+
+/** Normalizes one optional bounded Search Operations string. */
+function normalizeBrowserOptionalSearchText(
+  value: unknown,
+  label: string,
+  maximumLength: number,
+): string | null {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  if (value.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
+  }
+  const normalized = value.trim()
+  if (normalized === '') return null
+  if (normalized.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
+  }
+  return normalized
+}
+
+function normalizeBrowserOptionalSearchIdentity(value: unknown, label: string): string | null {
+  if (value === undefined || value === null) return null
+  return normalizeBrowserSearchText(value, label, MAX_SEARCH_OPERATION_ID_LENGTH)
+}
+
+/** Requires one browser evidence string inside the packaged UTF-8 byte envelope. */
+function normalizeBrowserEvidenceRequiredText(
+  value: unknown,
+  label: string,
+  maximumBytes: number,
+): string {
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  const normalized = value.trim()
+  if (normalized === '') throw new Error(`${label} is required.`)
+  if (new TextEncoder().encode(normalized).byteLength > maximumBytes) {
+    throw new Error(`${label} must be ${maximumBytes} UTF-8 bytes or fewer.`)
+  }
+  return normalized
+}
+
+/** Normalizes one optional browser evidence string inside the packaged UTF-8 byte envelope. */
+function normalizeBrowserEvidenceOptionalText(
+  value: unknown,
+  label: string,
+  maximumBytes: number,
+): string | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  const normalized = value.trim()
+  if (normalized === '') return null
+  if (new TextEncoder().encode(normalized).byteLength > maximumBytes) {
+    throw new Error(`${label} must be ${maximumBytes} UTF-8 bytes or fewer.`)
+  }
+  return normalized
+}
+
+function normalizeBrowserOptionalEvidenceIdentity(value: unknown, label: string): string | null {
+  if (value === undefined || value === null) return null
+  return normalizeBrowserEvidenceRequiredText(value, label, MAX_SEARCH_OPERATION_ID_LENGTH)
+}
+
+function normalizeBrowserOptionalEvidenceJsonText(
+  value: unknown,
+  label: string,
+  maximumBytes: number,
+): string | null {
+  const normalized = normalizeBrowserEvidenceOptionalText(value, label, maximumBytes)
+  if (normalized === null) return null
+  try {
+    JSON.parse(normalized)
+  } catch {
+    throw new Error(`${label} must be valid JSON text.`)
+  }
+  return normalized
+}
+
+function normalizeBrowserOptionalJsonText(
+  value: unknown,
+  label: string,
+  maximumLength: number,
+): string | null {
+  const normalized = normalizeBrowserOptionalSearchText(value, label, maximumLength)
+  if (normalized === null) return null
+  try {
+    JSON.parse(normalized)
+  } catch {
+    throw new Error(`${label} must be valid JSON text.`)
+  }
+  return normalized
+}
+
+function normalizeBrowserSearchAreaGeometry(value: unknown): string {
+  const normalized = normalizeBrowserSearchText(
+    value, 'Search area geometry', MAX_SEARCH_AREA_GEOMETRY_LENGTH,
+  )
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(normalized)
+  } catch {
+    throw new Error('Search area geometry must be valid Polygon JSON text.')
+  }
+  if (
+    typeof parsed !== 'object'
+    || parsed === null
+    || Array.isArray(parsed)
+    || !('type' in parsed)
+    || parsed.type !== 'Polygon'
+    || !('coordinates' in parsed)
+    || !Array.isArray(parsed.coordinates)
+  ) {
+    throw new Error('Search area geometry must be valid Polygon JSON text.')
+  }
+  return normalized
+}
+
+function normalizeBrowserOptionalFiniteNumber(value: unknown, label: string): number | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number.`)
+  }
+  return value
+}
+
+function normalizeBrowserRequiredFiniteNumber(value: unknown, label: string): number {
+  const normalized = normalizeBrowserOptionalFiniteNumber(value, label)
+  if (normalized === null) throw new Error(`${label} is required.`)
+  return normalized
+}
+
+function normalizeBrowserRequiredSafeInteger(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new Error(`${label} must be a finite integer.`)
+  }
+  return value
+}
+
+function normalizeBrowserOptionalSafeInteger(value: unknown, label: string): number | null {
+  if (value === undefined || value === null) return null
+  return normalizeBrowserRequiredSafeInteger(value, label)
+}
+
+function normalizeBrowserOptionalBoolean(value: unknown, label: string): boolean | null {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'boolean') throw new Error(`${label} must be true or false.`)
+  return value
+}
+
+function normalizeBrowserSearchDisplayOrder(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new Error('Search area display order must be a finite integer.')
+  }
+  return value
+}
+
+function normalizeBrowserSearchPassOutcome(value: unknown): SearchPass['outcome'] {
+  if (value !== 'full' && value !== 'partial' && value !== 'aborted') {
+    throw new Error('Search pass coordinator outcome is invalid.')
+  }
+  return value
+}
+
+function normalizeBrowserOptionalSearchTimestamp(value: unknown, label: string): string | undefined {
+  if (value === undefined || value === null) return undefined
+  const normalized = normalizeBrowserSearchText(
+    value, label, MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH,
+  )
+  return normalizeTrackingIsoTimestamp(normalized, label)
 }
 
 function readHarnessState(): BrowserHarnessState {
@@ -1689,6 +3431,10 @@ function readHarnessState(): BrowserHarnessState {
       drawings: [],
       helicopters: [],
       gpxImports: [],
+      gpxEvidencePoints: [],
+      searchAreas: [],
+      searchAssignments: [],
+      searchPasses: [],
       missionEvents: [],
       openedPaths: [],
       currentMissionId: null,
@@ -1712,6 +3458,10 @@ function readHarnessState(): BrowserHarnessState {
       drawings: [],
       helicopters: [],
       gpxImports: [],
+      gpxEvidencePoints: [],
+      searchAreas: [],
+      searchAssignments: [],
+      searchPasses: [],
       missionEvents: [],
       openedPaths: [],
       currentMissionId: null,
@@ -1746,6 +3496,10 @@ function readHarnessState(): BrowserHarnessState {
       drawings: Array.isArray(parsed.drawings) ? parsed.drawings : [],
       helicopters: Array.isArray(parsed.helicopters) ? parsed.helicopters : [],
       gpxImports: Array.isArray(parsed.gpxImports) ? parsed.gpxImports : [],
+      gpxEvidencePoints: Array.isArray(parsed.gpxEvidencePoints) ? parsed.gpxEvidencePoints : [],
+      searchAreas: Array.isArray(parsed.searchAreas) ? parsed.searchAreas : [],
+      searchAssignments: Array.isArray(parsed.searchAssignments) ? parsed.searchAssignments : [],
+      searchPasses: Array.isArray(parsed.searchPasses) ? parsed.searchPasses : [],
       missionEvents: Array.isArray(parsed.missionEvents) ? parsed.missionEvents : [],
       openedPaths: Array.isArray(parsed.openedPaths) ? parsed.openedPaths : [],
       currentMissionId:
@@ -1768,6 +3522,10 @@ function readHarnessState(): BrowserHarnessState {
       drawings: [],
       helicopters: [],
       gpxImports: [],
+      gpxEvidencePoints: [],
+      searchAreas: [],
+      searchAssignments: [],
+      searchPasses: [],
       missionEvents: [],
       openedPaths: [],
       currentMissionId: null,
@@ -2259,6 +4017,84 @@ function assertHarnessOutingWindow(
   }
 }
 
+/** Prevents browser validation from moving recorded passes outside their outing. */
+function assertHarnessRecordedSearchPassesFitOuting(
+  outing: Outing,
+  assignments: readonly SearchAssignment[],
+  passes: readonly SearchPass[],
+): void {
+  const assignmentIds = new Set(assignments
+    .filter((assignment) => assignment.outing_id === outing.id)
+    .map((assignment) => assignment.id))
+  const outingStartMs = Date.parse(outing.started_at)
+  const outingEndMs = outing.ended_at === null ? null : Date.parse(outing.ended_at)
+  for (const pass of passes.filter((candidate) => assignmentIds.has(candidate.assignment_id))) {
+    const passStartMs = Date.parse(pass.started_at)
+    const passEndMs = pass.ended_at === null ? null : Date.parse(pass.ended_at)
+    if (outingEndMs !== null && passEndMs === null) {
+      throw new Error(
+        `Cannot end outing while active search pass ${pass.id} remains; record its pass end first.`,
+      )
+    }
+    if (
+      passStartMs < outingStartMs
+      || (outingEndMs !== null && passStartMs >= outingEndMs)
+      || (outingEndMs !== null && passEndMs !== null && passEndMs > outingEndMs)
+    ) {
+      throw new Error(
+        `Outing boundary change would place recorded search pass ${pass.id} outside its outing.`,
+      )
+    }
+  }
+}
+
+/** Mirrors the production assignment-outing pass interval policy. */
+function assertHarnessSearchPassWindow(input: {
+  readonly mission: Mission
+  readonly outing: Outing
+  readonly startedAt: string
+  readonly endedAt: string | null
+  readonly currentTime: string
+}): void {
+  const startedAtMs = Date.parse(input.startedAt)
+  const endedAtMs = input.endedAt === null ? null : Date.parse(input.endedAt)
+  const outingStartMs = Date.parse(input.outing.started_at)
+  const outingEndMs = input.outing.ended_at === null ? null : Date.parse(input.outing.ended_at)
+  const currentTimeMs = Date.parse(input.currentTime)
+  if (startedAtMs < Date.parse(input.mission.start_time)) {
+    throw new Error('Search pass start cannot be before the mission start.')
+  }
+  if (startedAtMs < outingStartMs) {
+    throw new Error('Search pass start cannot be before its assignment outing start.')
+  }
+  if (startedAtMs > currentTimeMs) throw new Error('Search pass start cannot be in the future.')
+  if (endedAtMs !== null && endedAtMs > currentTimeMs) {
+    throw new Error('Search pass end cannot be in the future.')
+  }
+  if (outingEndMs !== null) {
+    if (startedAtMs >= outingEndMs) {
+      throw new Error('Search pass start must be before its assignment outing end.')
+    }
+    if (endedAtMs === null) {
+      throw new Error('A pass in an ended outing must have an explicit pass end.')
+    }
+    if (endedAtMs > outingEndMs) {
+      throw new Error('Search pass end cannot be after its assignment outing end.')
+    }
+  }
+}
+
+/** Normalizes one browser validation pass boundary to canonical UTC. */
+function normalizeHarnessSearchPassBoundary(value: unknown, label: 'start' | 'end'): string {
+  const fieldLabel = `Search pass ${label}`
+  const normalized = normalizeBrowserSearchText(
+    value,
+    fieldLabel,
+    MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH,
+  )
+  return normalizeTrackingIsoTimestamp(normalized, fieldLabel)
+}
+
 /** Normalizes a browser-harness date-time boundary. */
 function normalizeHarnessOutingBoundary(value: string): string {
   const milliseconds = Date.parse(value)
@@ -2512,6 +4348,15 @@ function upsertGpxImport(
   return gpxImports.map((candidate) =>
     candidate.id === gpxImport.id ? gpxImport : candidate,
   )
+}
+
+function upsertByStableId<T extends { readonly id: string }>(
+  entries: readonly T[],
+  next: T,
+): readonly T[] {
+  return entries.some((entry) => entry.id === next.id)
+    ? entries.map((entry) => entry.id === next.id ? next : entry)
+    : [...entries, next]
 }
 
 function appendEvent(

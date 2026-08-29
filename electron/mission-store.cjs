@@ -1,6 +1,6 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
-const { randomUUID } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
 const { runBreadcrumbQueryInWorker } = require('./breadcrumb-query-runner.cjs')
@@ -10,7 +10,20 @@ const {
 const {
   runMissionReviewReadQueryInWorker,
 } = require('./mission-review-read-query-runner.cjs')
+const { runMissionReplayInWorker } = require('./mission-replay-runner.cjs')
+const { runSearchOperationPageInWorker } = require('./search-operations-page-runner.cjs')
 const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
+const { runGpxEvidenceImportInWorker } = require('./gpx-evidence-import-runner.cjs')
+const {
+  startLegacyEvidenceBackfillWorker,
+} = require('./legacy-evidence-backfill-runner.cjs')
+const {
+  DEFAULT_PAGE_BYTE_LIMIT,
+  compactGpxDisplayGeometry,
+  listGpxImportProjectionPage,
+  listGpxImportRevisionProjectionPage,
+  packGpxRendererPage,
+} = require('./gpx-renderer-boundary.cjs')
 const { validateSqliteSnapshotSanity } = require('./sqlite-snapshot-sanity.cjs')
 const { isStrictTrackingTimestamp } = require('./tracking-timestamp.cjs')
 const {
@@ -29,9 +42,21 @@ const {
 const {
   createIngestAnomalyOutbox,
 } = require('./ingest-anomaly-outbox.cjs')
+const { writeFileDurably } = require('./durable-file.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 const { createOutingStore } = require('./outing-store.cjs')
+const {
+  assertLegacyMissionObjectBackfillSettled,
+  createMissionEvidenceVersionStore,
+  initializeLegacyMissionObjectVersionBackfill,
+  readLegacyMissionObjectBackfillPending,
+} = require('./mission-evidence-version-store.cjs')
+const {
+  assertLegacyEventProvenanceReady,
+  initializeLegacyEventProvenanceBackfill,
+  readLegacyEventProvenanceBackfillPending,
+} = require('./mission-event-provenance-backfill.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
@@ -70,13 +95,39 @@ const {
   recordAcceptedCoveragePositions,
 } = require('./coverage-ledger.cjs')
 
-const CURRENT_SCHEMA_VERSION = 11
+const CURRENT_SCHEMA_VERSION = 12
+const LEGACY_GPX_BACKFILL_DELAY_MS = 4
+const MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN = 100
+const MAX_GPX_RECEIPT_RECOVERY_BYTES_PER_TURN = 1024 * 1024
+const MAX_INLINE_GPX_SOURCE_BASE64_LENGTH = 256 * 1024
+const MAX_ADMITTED_GPX_IMPORT_BATCHES = 4
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
 const INGEST_ANOMALY_OUTBOX_DIRECTORY_NAME = 'ingest-anomaly-outbox'
 const COVERAGE_TILE_CACHE_DIRECTORY_NAME = 'coverage-renderer-cache'
 const ARCHIVE_VERSION = 1
+const MAX_SEARCH_OPERATION_ID_LENGTH = 200
+const MAX_SEARCH_OPERATION_LINK_COUNT = 200
+const MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH = 120
+const MAX_SEARCH_OPERATION_NOTES_LENGTH = 2_000
+const MAX_MARKER_TREATMENT_LOG_BYTES = 512 * 1_024
+const MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH = 64
+const MAX_SEARCH_AREA_GEOMETRY_LENGTH = 512 * 1_024
+const MAX_SEARCH_ADVISORY_COVERAGE_LENGTH = 512 * 1_024
+const MAX_MUTABLE_EVIDENCE_GEOMETRY_BYTES = 512 * 1_024
+const MAX_MUTABLE_EVIDENCE_METADATA_BYTES = 512 * 1_024
+const MAX_MUTABLE_EVIDENCE_COORDINATES = 50_000
+const MAX_MUTABLE_EVIDENCE_NESTING_DEPTH = 16
+const MAX_MUTABLE_EVIDENCE_PATH_LENGTH = 4_096
+const MAX_GPX_RENDERER_ID_LENGTH = 1_000
+const MAX_GPX_RENDERER_OUTING_ID_LENGTH = 200
+const MAX_GPX_RENDERER_ACTOR_LENGTH = 120
+const MAX_GPX_ISSUE_FILE_NAME_LENGTH = 500
+const MAX_GPX_ISSUE_HASH_LENGTH = 128
+const MAX_GPX_ISSUE_REASON_LENGTH = 1_000
+const MAX_GPX_ISSUE_TIMESTAMP_LENGTH = 64
+const GPX_ISSUE_TRUNCATION_SUFFIX = '… [truncated for renderer]'
 
 /** Validates the opaque renderer correlation key used only for worker cancellation. */
 function normalizeBreadcrumbQueryRequestId(value, required) {
@@ -348,14 +399,24 @@ function createElectronMissionStore(options) {
   )
   const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
+  const readArchiveFile = options.readArchiveFile ?? fs.readFile
   const storageDiagnostics = options.storageDiagnostics ?? null
   const coverageLedgerFaultInjection = options.coverageLedgerFaultInjection ?? {}
+  const gpxRetirementFaultInjection = options.gpxRetirementFaultInjection ?? {}
+  const gpxReceiptRecoveryFaultInjection = options.gpxReceiptRecoveryFaultInjection ?? {}
   const breadcrumbQueryRunner =
     options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
   const breadcrumbDotQueryRunner =
     options.runBreadcrumbDotQueryInWorker ?? runBreadcrumbDotQueryInWorker
   const missionReviewReadQueryRunner =
     options.runMissionReviewReadQueryInWorker ?? runMissionReviewReadQueryInWorker
+  const missionReplayRunner = options.runMissionReplayInWorker ?? runMissionReplayInWorker
+  const searchOperationPageRunner = options.runSearchOperationPageInWorker
+    ?? runSearchOperationPageInWorker
+  const gpxEvidenceImportRunner = options.runGpxEvidenceImportInWorker ?? runGpxEvidenceImportInWorker
+  const gpxShutdownJoinTimeoutMs = Number.isFinite(options.gpxShutdownJoinTimeoutMs)
+    ? Math.max(1, Math.min(30_000, Number(options.gpxShutdownJoinTimeoutMs)))
+    : 5_000
   const outingFixSummaryRunner =
     options.runOutingFixSummaryInWorker ?? runOutingFixSummaryInWorker
   const coverageQueryRunner =
@@ -372,22 +433,121 @@ function createElectronMissionStore(options) {
   const breadcrumbQueryControllersByRequestId = new Map()
   const breadcrumbDotQueryControllersByRequestId = new Map()
   const missionReviewQueryControllersByRequestId = new Map()
+  const missionReplayQueryControllersByRequestId = new Map()
   const outingFixSummaryControllersByRequestId = new Map()
   const coverageQueryControllersByRequestId = new Map()
   const coverageTileControllersByRequestId = new Map()
+  const activeGpxEvidenceImports = new Set()
+  const activeSearchOperationPageReads = new Set()
+  const attachmentLifecycleTails = new Map()
   const coverageManifestBuildEvidenceByMission = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
+  let missionReplayWorkerTail = Promise.resolve()
   let outingFixSummaryWorkerTail = Promise.resolve()
   let coverageChunkWorkerTail = Promise.resolve()
+  const queuedGpxEvidenceImports = []
+  let gpxImportWorkerActive = false
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
-  migrate(db)
+  const migrationState = migrate(db)
+  let gpxReceiptRecoveryTimer = null
+  let gpxReceiptRecoveryFailure = null
+  let storeClosed = false
+  const legacyEvidenceBackfillPending = migrationState.legacyGpxBackfillRemaining > 0
+    || migrationState.legacyMissionObjectBackfillRemaining > 0
+    || migrationState.legacyEventProvenanceBackfillRemaining > 0
+  let legacyEvidenceBackfillWorker = null
+  let legacyEvidenceBackfillWorkerStopped = !legacyEvidenceBackfillPending
+  if (!legacyEvidenceBackfillPending) {
+    db.prepare(`DELETE FROM metadata
+      WHERE key = 'legacy_evidence_backfill_failure'`).run()
+  } else {
+    try {
+      legacyEvidenceBackfillWorker = (
+        options.startLegacyEvidenceBackfillWorker ?? startLegacyEvidenceBackfillWorker
+      )({
+        databasePath,
+        eventPending: migrationState.legacyEventProvenanceBackfillRemaining > 0,
+        objectPending: migrationState.legacyMissionObjectBackfillRemaining > 0,
+        gpxPending: migrationState.legacyGpxBackfillRemaining > 0,
+      })
+      void legacyEvidenceBackfillWorker.completion.then(
+        (result) => {
+          legacyEvidenceBackfillWorkerStopped = true
+          if (result?.stopped !== true && !storeClosed) {
+            db.prepare(`DELETE FROM metadata
+              WHERE key = 'legacy_evidence_backfill_failure'`).run()
+          }
+        },
+        (error) => {
+          legacyEvidenceBackfillWorkerStopped = true
+          if (!storeClosed) {
+            const failure = safeEvidenceFailureReason(error?.message ?? error)
+            try {
+              db.prepare(`INSERT INTO metadata (key, value) VALUES (
+                'legacy_evidence_backfill_failure', ?
+              ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(failure)
+            } catch (metadataError) {
+              console.error(`Legacy evidence migration failure could not be persisted: ${safeEvidenceFailureReason(metadataError?.message ?? metadataError)}`)
+            }
+            console.error(`Legacy evidence migration stopped safely: ${failure}`)
+          }
+        },
+      )
+    } catch (error) {
+      legacyEvidenceBackfillWorkerStopped = true
+      const failure = safeEvidenceFailureReason(error?.message ?? error)
+      db.prepare(`INSERT INTO metadata (key, value) VALUES (
+        'legacy_evidence_backfill_failure', ?
+      ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(failure)
+      console.error(`Legacy evidence migration could not start safely: ${failure}`)
+    }
+  }
+  const scheduleGpxReceiptRecovery = () => {
+    if (storeClosed || migrationState.gpxReceiptRecoveryRemaining === 0
+      || gpxReceiptRecoveryTimer !== null || gpxReceiptRecoveryFailure !== null) return
+    gpxReceiptRecoveryTimer = setTimeout(() => {
+      gpxReceiptRecoveryTimer = null
+      if (storeClosed) return
+      try {
+        const result = recoverUnsettledGpxImportReceipts(
+          db,
+          now(),
+          MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN,
+          gpxReceiptRecoveryFaultInjection,
+        )
+        migrationState.gpxReceiptRecoveryRemaining = result.remaining
+        if (result.remaining === 0) {
+          db.prepare(`DELETE FROM metadata
+            WHERE key = 'gpx_receipt_recovery_failure'`).run()
+        }
+        scheduleGpxReceiptRecovery()
+      } catch (error) {
+        gpxReceiptRecoveryFailure = safeEvidenceFailureReason(error?.message ?? error)
+        db.prepare(`INSERT INTO metadata (key, value) VALUES (
+          'gpx_receipt_recovery_failure', ?
+        ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+          .run(gpxReceiptRecoveryFailure)
+        console.error(`Interrupted GPX receipt recovery stopped safely: ${gpxReceiptRecoveryFailure}`)
+      }
+    }, LEGACY_GPX_BACKFILL_DELAY_MS)
+  }
+  scheduleGpxReceiptRecovery()
+  const evidenceVersionStore = createMissionEvidenceVersionStore({
+    db,
+    faultInjection: options.evidenceVersionFaultInjection ?? {},
+    assertReady: () => assertLegacyMissionObjectBackfillSettled(db),
+  })
   const outingStore = createOutingStore({
     db,
     faultInjection: options.outingFaultInjection ?? {},
+    recordEvidenceVersion: (input) => {
+      evidenceVersionStore.recordVersion(input)
+      bumpMissionReplayGeneration(db, input.missionId)
+    },
     recordCoverageInvalidation: (input) => appendCoverageInvalidation(db, {
       id: randomUUID(),
       ...input,
@@ -399,6 +559,7 @@ function createElectronMissionStore(options) {
     faultInjection: options.participantFaultInjection ?? {},
     recordCoverageChange: (missionId, updatedAt) => {
       const changeSeq = bumpCoverageChangeSequence(db, missionId, updatedAt)
+      bumpMissionReplayGeneration(db, missionId)
       if (coverageLedgerFaultInjection.afterWrite === true) {
         throw new Error('Injected coverage ledger failure.')
       }
@@ -438,15 +599,79 @@ function createElectronMissionStore(options) {
           archiveDirectory,
           finalizeMissionFaultInjection,
           archiveFaultInjection,
+          readArchiveFile,
         ),
         acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
       ))
     finalizeTail = run.catch(() => {})
     return run
   }
+  const enqueueArchive = (missionId) => {
+    const run = finalizeTail.then(() => {
+      const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
+      return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
+        missionId,
+        'archive',
+        () => createMissionArchive(
+          db,
+          missionId,
+          backupCoordinator,
+          archiveDirectory,
+          true,
+          archiveFaultInjection,
+        ),
+        acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
+      )
+    })
+    finalizeTail = run.catch(() => {})
+    return run
+  }
 
   return {
+    prepareClose: async () => {
+      const active = [...activeGpxEvidenceImports]
+      for (const entry of active) entry.controller.abort()
+      const shutdownTasks = active.map((entry) => entry.quiesced)
+      shutdownTasks.push(...activeSearchOperationPageReads)
+      shutdownTasks.push(...attachmentLifecycleTails.values())
+      if (!legacyEvidenceBackfillWorkerStopped && legacyEvidenceBackfillWorker !== null) {
+        shutdownTasks.push(legacyEvidenceBackfillWorker.terminate().then(() => {
+          legacyEvidenceBackfillWorkerStopped = true
+        }))
+      }
+      if (shutdownTasks.length === 0) return
+      let timeout
+      try {
+        await Promise.race([
+          Promise.all(shutdownTasks),
+          new Promise((_, reject) => {
+            timeout = setTimeout(() => reject(new Error(
+              'A mission evidence worker did not exit within the safe shutdown deadline. The mission store remains open and the exit is not marked clean.',
+            )), gpxShutdownJoinTimeoutMs)
+          }),
+        ])
+      } finally {
+        clearTimeout(timeout)
+      }
+    },
     close: () => {
+      if (activeGpxEvidenceImports.size > 0) {
+        throw new Error('Cannot close the mission store while GPX evidence imports are active; call prepareClose first.')
+      }
+      if (activeSearchOperationPageReads.size > 0) {
+        throw new Error('Cannot close the mission store while Search Operations page reads are active; call prepareClose first.')
+      }
+      if (attachmentLifecycleTails.size > 0) {
+        throw new Error('Cannot close the mission store while marker attachment custody is active; call prepareClose first.')
+      }
+      if (!legacyEvidenceBackfillWorkerStopped) {
+        throw new Error('Cannot close the mission store while legacy evidence reconstruction is active; call prepareClose first.')
+      }
+      storeClosed = true
+      if (gpxReceiptRecoveryTimer !== null) {
+        clearTimeout(gpxReceiptRecoveryTimer)
+        gpxReceiptRecoveryTimer = null
+      }
       ingestAnomalyOutbox.dispose()
       for (const controller of activeBreadcrumbQueryControllers) {
         controller.abort()
@@ -458,6 +683,10 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
       }
       missionReviewQueryControllersByRequestId.clear()
+      for (const activeQuery of missionReplayQueryControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
+      missionReplayQueryControllersByRequestId.clear()
       for (const activeQuery of outingFixSummaryControllersByRequestId.values()) {
         activeQuery.controller.abort()
       }
@@ -480,22 +709,7 @@ function createElectronMissionStore(options) {
       backup_path: backupPath,
     }),
     syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
-    createMissionArchive: async (missionId) => {
-      const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
-      return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
-        missionId,
-        'archive',
-        () => createMissionArchive(
-          db,
-          missionId,
-          backupCoordinator,
-          archiveDirectory,
-          true,
-          archiveFaultInjection,
-        ),
-        acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
-      )
-    },
+    createMissionArchive: async (missionId) => enqueueArchive(missionId),
     createMission: async (input) => {
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
@@ -1061,6 +1275,37 @@ function createElectronMissionStore(options) {
       await activeQuery.completion.catch(() => undefined)
       return true
     },
+    readMissionReplay: async (input, requestId) => {
+      assertLegacyMissionObjectBackfillSettled(db)
+      assertLegacyEventProvenanceReady(db, input?.missionId)
+      assertMissionReplayGpxStateSettled(db, input)
+      return executeMissionReplayRead(input, requestId, 'state')
+    },
+    readMissionReplayTrackChunk: async (input, requestId) => {
+      assertLegacyMissionObjectBackfillSettled(db)
+      assertLegacyEventProvenanceReady(db, input?.missionId)
+      assertMissionReplayGpxStateSettled(db, input)
+      return executeMissionReplayRead(input, requestId, 'chunk')
+    },
+    readMissionReplayObjectChunk: async (input, requestId) => {
+      assertLegacyMissionObjectBackfillSettled(db)
+      assertLegacyEventProvenanceReady(db, input?.missionId)
+      assertMissionReplayGpxStateSettled(db, input)
+      return executeMissionReplayRead(input, requestId, 'objects')
+    },
+    readMissionReplayFilterPage: async (input, requestId) => {
+      assertLegacyEventProvenanceReady(db, input?.missionId)
+      assertMissionReplayGpxStateSettled(db, input)
+      return executeMissionReplayRead(input, requestId, 'filters')
+    },
+    cancelMissionReplay: async (requestId) => {
+      const normalizedRequestId = normalizeMissionReviewRequestId(requestId, true)
+      const activeQuery = missionReplayQueryControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) return false
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
+    },
     listTrackingHistoryCheckpoints: async (missionId) =>
       listTrackingHistoryCheckpoints(db, missionId),
     countPositions: async (missionId, deviceId) => countPositions(db, missionId, deviceId),
@@ -1102,24 +1347,167 @@ function createElectronMissionStore(options) {
       ingestAnomalyOutbox,
       missionId,
     ),
-    upsertMarker: async (input) => upsertById(db, 'markers', input, markerDefaults),
+    upsertMarker: async (input) => upsertVersionedById(
+      db,
+      evidenceVersionStore,
+      'markers',
+      'marker',
+      normalizeMarkerMutation(input),
+      markerDefaults,
+    ),
     getMarker: async (markerId) => getById(db, 'markers', markerId, 'Marker'),
     listMarkers: async (missionId) =>
-      all(db, 'SELECT * FROM markers WHERE mission_id = ? ORDER BY display_order ASC, name ASC', missionId),
-    deleteMarker: async (markerId) => deleteById(db, 'markers', markerId),
-    upsertDrawing: async (input) => upsertById(db, 'drawings', input, drawingDefaults),
+      all(db, 'SELECT * FROM markers WHERE mission_id = ? AND retired_at IS NULL ORDER BY display_order ASC, name ASC', missionId),
+    deleteMarker: async (markerId) => retireVersionedById(
+      db,
+      evidenceVersionStore,
+      'markers',
+      'marker',
+      normalizeBoundedRequiredText(
+        markerId,
+        'Marker identity',
+        MAX_SEARCH_OPERATION_ID_LENGTH,
+      ),
+    ),
+    upsertDrawing: async (input) => upsertDrawingEvidence(db, evidenceVersionStore, input),
     getDrawing: async (drawingId) => getById(db, 'drawings', drawingId, 'Drawing'),
     listDrawings: async (missionId) =>
-      all(db, 'SELECT * FROM drawings WHERE mission_id = ? ORDER BY display_order ASC, name ASC', missionId),
-    deleteDrawing: async (drawingId) => deleteById(db, 'drawings', drawingId),
+      all(db, 'SELECT * FROM drawings WHERE mission_id = ? AND retired_at IS NULL ORDER BY display_order ASC, name ASC', missionId),
+    deleteDrawing: async (drawingId) => retireDrawingEvidence(db, evidenceVersionStore, drawingId),
     upsertHelicopter: async (input) => upsertHelicopter(db, input),
     listHelicopters: async (missionId) =>
       all(db, 'SELECT * FROM helicopters WHERE mission_id = ? ORDER BY slot_key ASC', missionId),
     deleteHelicopter: async (helicopterId) => deleteById(db, 'helicopters', helicopterId),
-    upsertGpxImport: async (input) => upsertById(db, 'gpx_track_imports', input, gpxDefaults),
+    upsertGpxImport: async (input) => projectGpxImportForRenderer(upsertGpxEvidence(db, input)),
     listGpxImports: async (missionId) =>
-      all(db, 'SELECT * FROM gpx_track_imports WHERE mission_id = ? ORDER BY display_name ASC, imported_at ASC', missionId),
-    deleteGpxImport: async (importId) => deleteById(db, 'gpx_track_imports', importId),
+      all(db, `SELECT * FROM gpx_track_imports
+        WHERE mission_id = ? AND retired_at IS NULL AND import_state = 'complete'
+          AND EXISTS (
+            SELECT 1 FROM gpx_import_revisions AS revisions
+            WHERE revisions.import_id = gpx_track_imports.id
+          )
+        ORDER BY display_name ASC, imported_at ASC`, missionId),
+    deleteGpxImport: async (importId) => retireGpxEvidence(
+      db,
+      normalizeGpxRendererId(importId, 'GPX import'),
+      gpxRetirementFaultInjection,
+    ),
+    listGpxImportRevisions: async (importId) => all(
+      db,
+      `SELECT * FROM gpx_import_revisions
+        WHERE import_id = ? ORDER BY revision_sequence ASC`,
+      importId,
+    ),
+    listGpxImportPage: async (input) => listGpxImportProjectionPage(db, input),
+    listGpxImportRevisionPage: async (input) =>
+      listGpxImportRevisionProjectionPage(db, input),
+    listGpxImportIssues: async (input) => listGpxImportIssues(db, input),
+    updateGpxImportPresentation: async (input) => updateGpxImportPresentation(db, input),
+    assignGpxImportToOuting: async (input) =>
+      projectGpxImportForRenderer(assignGpxEvidenceToOuting(db, input)),
+    importGpxEvidencePaths: async (input) => {
+      const candidate = normalizeGpxRendererRecord(input, 'GPX path import')
+      const missionId = normalizeGpxRendererId(candidate.missionId, 'GPX import mission')
+      if (
+        !Array.isArray(candidate.paths) || candidate.paths.length < 1 || candidate.paths.length > 100 ||
+        candidate.paths.some((entry) => typeof entry !== 'string'
+          || entry.length < 1 || entry.length > 4_096 || entry.trim() === '')
+      ) {
+        throw new Error('GPX import paths are invalid.')
+      }
+      const paths = candidate.paths.map((entry) => entry.trim())
+      ensureWritableMission(db, missionId)
+      if (migrationState.gpxReceiptRecoveryRemaining > 0
+        || gpxReceiptRecoveryFailure !== null) {
+        throw new Error(
+          'Interrupted GPX evidence receipts are still being recovered in bounded background slices. Current positions remain available; retry the import after recovery completes.',
+        )
+      }
+      const admittedBatchCount = queuedGpxEvidenceImports.length + (gpxImportWorkerActive ? 1 : 0)
+      if (admittedBatchCount >= MAX_ADMITTED_GPX_IMPORT_BATCHES) {
+        throw new Error(
+          'The GPX evidence import queue is full. Wait for an admitted import to settle before adding more files.',
+        )
+      }
+      const batchId = randomUUID()
+      startGpxImportBatch(db, {
+        batchId,
+        missionId,
+        totalFiles: paths.length,
+        paths,
+      })
+      const controller = new AbortController()
+      const result = enqueueGpxEvidenceImport({
+        databasePath,
+        missionId,
+        paths,
+        batchId,
+        receiptsStarted: true,
+        faultInjection: options.gpxEvidenceImportFaultInjection,
+        signal: controller.signal,
+      })
+      const entry = {
+        controller,
+        completion: Promise.resolve(result).catch(() => undefined),
+        workerExited: result?.workerExited ?? Promise.resolve(),
+      }
+      entry.quiesced = Promise.allSettled([entry.completion, entry.workerExited])
+      activeGpxEvidenceImports.add(entry)
+      entry.quiesced.finally(() => activeGpxEvidenceImports.delete(entry))
+      return result
+    },
+    upsertSearchArea: async (input) => upsertSearchArea(db, evidenceVersionStore, input),
+    listSearchAreas: async (missionId) => {
+      const normalizedMissionId = normalizeBoundedRequiredText(
+        missionId, 'Search area mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      return all(
+        db,
+        `SELECT * FROM search_areas WHERE mission_id = ? AND retired_at IS NULL
+          ORDER BY name ASC, id ASC`,
+        normalizedMissionId,
+      )
+    },
+    retireSearchArea: async (areaId, actor) => retireSearchArea(
+      db,
+      evidenceVersionStore,
+      areaId,
+      actor,
+    ),
+    upsertSearchAssignment: async (input) => upsertSearchAssignment(
+      db,
+      evidenceVersionStore,
+      input,
+    ),
+    listSearchAssignments: async (missionId) => {
+      const normalizedMissionId = normalizeBoundedRequiredText(
+        missionId, 'Search assignment mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+      )
+      return all(
+        db,
+        `SELECT * FROM search_assignments WHERE mission_id = ? AND retired_at IS NULL
+          ORDER BY created_at ASC, id ASC`,
+        normalizedMissionId,
+      )
+    },
+    upsertSearchPass: async (input) => upsertSearchPass(db, evidenceVersionStore, input),
+    listSearchPasses: async (missionId) => listSearchPassRecords(
+      db,
+      normalizeBoundedRequiredText(
+        missionId, 'Search pass mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+      ),
+    ),
+    listSearchOperationPage: async (input) => {
+      const operation = searchOperationPageRunner({ databasePath, query: input })
+      const workerExited = Promise.resolve(operation.workerExited ?? operation)
+      activeSearchOperationPageReads.add(workerExited)
+      void workerExited.finally(() => activeSearchOperationPageReads.delete(workerExited))
+      return await operation
+    },
+    listMissionObjectVersions: async (input) => {
+      assertLegacyMissionObjectBackfillSettled(db)
+      return evidenceVersionStore.listVersions(input)
+    },
     listLayerCatalogMetadata: async (missionId) => listLayerCatalogMetadata(db, missionId),
     upsertLayerCatalogMetadata: async (input) => upsertLayerCatalogMetadata(db, input),
     clearLayerCatalogMetadata: async (missionId) => clearLayerCatalogMetadata(db, missionId),
@@ -1142,11 +1530,35 @@ function createElectronMissionStore(options) {
     })),
     getActiveMission: async () => getActiveMission(db),
     getRecoverableMission: async () => getActiveMission(db),
+    runMarkerAttachmentIngest: async (missionId, writeAttachment) =>
+      enqueueAttachmentLifecycleOperation(missionId, async () => {
+        ensureWritableMission(db, missionId)
+        const attachmentPath = await writeAttachment()
+        insertEvent(db, missionId, 'marker_attachment_ingested', now(), {
+          attachment_path: attachmentPath,
+        })
+        return attachmentPath
+      }),
     pauseMission: async (missionId) => transitionMission(db, missionId, 'active', 'paused'),
     resumeMission: async (missionId) => transitionMission(db, missionId, 'paused', 'active'),
-    finishMission: async (missionId) => finishMission(db, missionId),
+    finishMission: async (missionId) =>
+      enqueueAttachmentLifecycleOperation(missionId, () => finishMission(db, missionId)),
     finalizeMission: async (missionId) => enqueueFinalize(missionId),
     unlockFinalizedMission: async (input) => unlockFinalizedMission(db, input, options.readAdminRoster),
+  }
+
+  /** Orders asynchronous attachment custody and Finish for one mission. */
+  function enqueueAttachmentLifecycleOperation(missionId, execute) {
+    const previous = attachmentLifecycleTails.get(missionId) ?? Promise.resolve()
+    const operation = previous.then(execute)
+    const settledTail = operation.catch(() => undefined)
+    attachmentLifecycleTails.set(missionId, settledTail)
+    void settledTail.finally(() => {
+      if (attachmentLifecycleTails.get(missionId) === settledTail) {
+        attachmentLifecycleTails.delete(missionId)
+      }
+    })
+    return operation
   }
 
   /**
@@ -1167,6 +1579,53 @@ function createElectronMissionStore(options) {
           databasePath,
           query: input.query,
           signal: input.signal,
+        })
+      } catch (error) {
+        releaseWorkerSlot()
+        throw error
+      }
+      const workerExited = operation.workerExited ?? operation
+      void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
+      return operation
+    })
+  }
+
+  async function executeMissionReplayRead(input, requestId, kind) {
+    const normalizedRequestId = normalizeMissionReviewRequestId(requestId, false)
+    if (
+      normalizedRequestId !== null
+      && missionReplayQueryControllersByRequestId.has(normalizedRequestId)
+    ) {
+      throw new Error('Mission replay request ID is already active.')
+    }
+    const controller = new AbortController()
+    const query = enqueueMissionReplayRead({ query: input, signal: controller.signal, kind })
+    const activeQuery = { controller, completion: query }
+    if (normalizedRequestId !== null) {
+      missionReplayQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
+    }
+    try {
+      return await query
+    } finally {
+      if (missionReplayQueryControllersByRequestId.get(normalizedRequestId) === activeQuery) {
+        missionReplayQueryControllersByRequestId.delete(normalizedRequestId)
+      }
+    }
+  }
+
+  function enqueueMissionReplayRead(input) {
+    const previousWorker = missionReplayWorkerTail
+    let releaseWorkerSlot = () => undefined
+    const workerSlot = new Promise((resolve) => { releaseWorkerSlot = resolve })
+    missionReplayWorkerTail = previousWorker.then(() => workerSlot)
+    return previousWorker.then(() => {
+      let operation
+      try {
+        operation = missionReplayRunner({
+          databasePath,
+          query: input.query,
+          signal: input.signal,
+          kind: input.kind,
         })
       } catch (error) {
         releaseWorkerSlot()
@@ -1319,6 +1778,61 @@ function createElectronMissionStore(options) {
     }
   }
 
+  /** Serializes GPX evidence publications so identical concurrent sources share one identity. */
+  function enqueueGpxEvidenceImport(input) {
+    let resolveResult = () => undefined
+    let rejectResult = () => undefined
+    let resolveWorkerExit = () => undefined
+    const result = new Promise((resolve, reject) => {
+      resolveResult = resolve
+      rejectResult = reject
+    })
+    const workerExited = new Promise((resolve) => { resolveWorkerExit = resolve })
+    queuedGpxEvidenceImports.push({
+      input,
+      rejectResult,
+      resolveResult,
+      resolveWorkerExit,
+    })
+    Object.defineProperty(result, 'workerExited', { value: workerExited })
+    startNextGpxEvidenceImport()
+    return result
+  }
+
+  /** Starts the next queued GPX import only after the prior worker has exited. */
+  function startNextGpxEvidenceImport() {
+    if (gpxImportWorkerActive) return
+    const queued = queuedGpxEvidenceImports.shift()
+    if (queued === undefined) return
+    if (queued.input.signal?.aborted === true) {
+      const error = new Error('GPX evidence import worker was cancelled before it started.')
+      error.name = 'AbortError'
+      queued.rejectResult(error)
+      queued.resolveWorkerExit()
+      startNextGpxEvidenceImport()
+      return
+    }
+    gpxImportWorkerActive = true
+    let operation
+    try {
+      operation = gpxEvidenceImportRunner(queued.input)
+    } catch (error) {
+      queued.rejectResult(error)
+      queued.resolveWorkerExit()
+      gpxImportWorkerActive = false
+      startNextGpxEvidenceImport()
+      return
+    }
+    void Promise.resolve(operation).then(queued.resolveResult, queued.rejectResult)
+    void Promise.resolve(operation.workerExited ?? operation)
+      .catch(() => undefined)
+      .finally(() => {
+        queued.resolveWorkerExit()
+        gpxImportWorkerActive = false
+        startNextGpxEvidenceImport()
+      })
+  }
+
   /** Serializes chunk payload reads while allowing small manifest/claim reads alongside. */
   function runCoverageWorker(query, signal, serializeChunk) {
     const resultLimits = readCoverageQueryResultLimits(db, query)
@@ -1365,6 +1879,7 @@ function createElectronMissionStore(options) {
 }
 
 function migrate(db) {
+  const migrationTime = now()
   const applyMigrations = db.transaction(() => {
     db.exec(`
     CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -1380,6 +1895,22 @@ function migrate(db) {
     'ingest_anomaly_mission_health',
   )
   const participantsRequireGrandfathering = !tableExists(db, 'mission_participants')
+  const positionsRequireProvenanceBackfill = !columnExists(
+    db,
+    'positions',
+    'timestamp_provenance_recorded_at',
+  )
+  const eventProvenanceRequiresBackfill = existingSchemaVersion < CURRENT_SCHEMA_VERSION
+    || !columnExists(db, 'mission_events', 'recorded_at')
+    || !columnExists(db, 'mission_events', 'recording_completeness')
+    || !columnExists(db, 'mission_group_membership_events', 'sequence')
+    || !columnExists(db, 'mission_group_membership_events', 'recorded_at')
+    || !columnExists(db, 'mission_group_membership_events', 'recording_completeness')
+  const gpxSourceRevisionRequiresBackfill = !columnExists(
+    db,
+    'gpx_import_revisions',
+    'source_revision_sequence',
+  )
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS missions (
@@ -1449,6 +1980,16 @@ function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_mission_participants_mission
       ON mission_participants(mission_id);
+    CREATE TABLE IF NOT EXISTS mission_replay_generations (
+      mission_id TEXT PRIMARY KEY,
+      generation INTEGER NOT NULL CHECK(generation >= 0),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS mission_finalization_fences (
+      mission_id TEXT PRIMARY KEY,
+      requested_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_mission_participants_active_device
       ON mission_participants(mission_id, traccar_device_id)
       WHERE kind = 'device' AND removed_at IS NULL;
@@ -1463,6 +2004,8 @@ function migrate(db) {
       traccar_device_id TEXT NOT NULL,
       change TEXT NOT NULL CHECK (change IN ('member', 'left')),
       observed_at TEXT NOT NULL,
+      recorded_at TEXT,
+      recording_completeness TEXT CHECK(recording_completeness IN ('complete', 'legacy_baseline')),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       FOREIGN KEY (mission_team_id) REFERENCES mission_teams(id)
     );
@@ -1498,6 +2041,7 @@ function migrate(db) {
       content_hash TEXT,
       source_kind TEXT,
       timestamp_source TEXT CHECK(timestamp_source IS NULL OR timestamp_source = 'fix'),
+      timestamp_provenance_recorded_at TEXT,
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
@@ -1685,10 +2229,217 @@ function migrate(db) {
       display_name TEXT NOT NULL,
       geometry_json TEXT NOT NULL,
       metadata_json TEXT,
+      content_sha256 TEXT,
+      source_bytes_base64 TEXT,
+      timing_class TEXT NOT NULL DEFAULT 'undated' CHECK(timing_class IN ('fully_dated', 'partially_dated', 'undated')),
+      outing_id TEXT,
+      import_state TEXT NOT NULL DEFAULT 'complete' CHECK(import_state IN ('staging', 'complete')),
+      revision_sequence INTEGER NOT NULL DEFAULT 1,
+      retired_at TEXT,
+      retired_by TEXT,
       imported_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (outing_id) REFERENCES outings(id),
       UNIQUE (mission_id, source_path)
+    );
+    CREATE TABLE IF NOT EXISTS gpx_import_aliases (
+      mission_id TEXT NOT NULL,
+      import_id TEXT NOT NULL,
+      source_path TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      PRIMARY KEY (mission_id, source_path),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (import_id) REFERENCES gpx_track_imports(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS gpx_import_revisions (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      import_id TEXT NOT NULL,
+      revision_sequence INTEGER NOT NULL,
+      source_revision_sequence INTEGER NOT NULL CHECK(source_revision_sequence >= 1),
+      content_sha256 TEXT,
+      source_bytes_base64 TEXT,
+      source_path TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      geometry_json TEXT NOT NULL,
+      metadata_json TEXT,
+      timing_class TEXT NOT NULL CHECK(timing_class IN ('fully_dated', 'partially_dated', 'undated')),
+      outing_id TEXT,
+      import_state TEXT NOT NULL DEFAULT 'complete' CHECK(import_state IN ('staging', 'complete')),
+      completeness TEXT NOT NULL CHECK(completeness IN ('complete', 'legacy_baseline')),
+      recorded_at TEXT NOT NULL,
+      audit_event_id TEXT,
+      UNIQUE (import_id, revision_sequence),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (import_id) REFERENCES gpx_track_imports(id) ON DELETE CASCADE,
+      FOREIGN KEY (outing_id) REFERENCES outings(id),
+      FOREIGN KEY (audit_event_id) REFERENCES mission_events(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_gpx_revisions_replay
+      ON gpx_import_revisions(mission_id, recorded_at, import_id, revision_sequence);
+    CREATE TABLE IF NOT EXISTS legacy_gpx_backfill_quarantine (
+      source_rowid INTEGER PRIMARY KEY,
+      import_id_preview TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      geometry_bytes INTEGER NOT NULL,
+      source_bytes_base64_bytes INTEGER NOT NULL,
+      metadata_bytes INTEGER NOT NULL,
+      detected_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS legacy_gpx_backfill_state (
+      singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+      scanned_through_rowid INTEGER NOT NULL CHECK(scanned_through_rowid >= 0),
+      scan_target_rowid INTEGER NOT NULL CHECK(scan_target_rowid >= scanned_through_rowid),
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS legacy_gpx_rowid_scan_state (
+      singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+      low_scanned_through_rowid INTEGER NOT NULL CHECK(low_scanned_through_rowid <= 1),
+      low_target_rowid INTEGER NOT NULL CHECK(low_target_rowid <= low_scanned_through_rowid),
+      high_scanned_through_rowid INTEGER NOT NULL CHECK(high_scanned_through_rowid >= 9007199254740991),
+      high_target_rowid INTEGER NOT NULL CHECK(high_target_rowid >= high_scanned_through_rowid),
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS gpx_evidence_points (
+      import_id TEXT NOT NULL,
+      revision_sequence INTEGER NOT NULL,
+      segment_index INTEGER NOT NULL,
+      point_index INTEGER NOT NULL,
+      track_name TEXT,
+      lat REAL NOT NULL CHECK(lat >= -90 AND lat <= 90),
+      lon REAL NOT NULL CHECK(lon >= -180 AND lon <= 180),
+      elevation REAL,
+      source_time TEXT,
+      PRIMARY KEY (import_id, revision_sequence, segment_index, point_index),
+      FOREIGN KEY (import_id, revision_sequence)
+        REFERENCES gpx_import_revisions(import_id, revision_sequence) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_gpx_points_replay
+      ON gpx_evidence_points(import_id, revision_sequence, source_time, segment_index, point_index);
+    CREATE TABLE IF NOT EXISTS gpx_evidence_rejections (
+      id TEXT PRIMARY KEY,
+      import_id TEXT NOT NULL,
+      revision_sequence INTEGER NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('point', 'segment')),
+      segment_index INTEGER NOT NULL,
+      point_index INTEGER,
+      reason TEXT NOT NULL,
+      source_value TEXT,
+      FOREIGN KEY (import_id, revision_sequence)
+        REFERENCES gpx_import_revisions(import_id, revision_sequence) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS gpx_import_batches (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'completed_with_failures', 'interrupted')),
+      total_files INTEGER NOT NULL,
+      completed_files INTEGER NOT NULL DEFAULT 0,
+      failed_files INTEGER NOT NULL DEFAULT 0,
+      started_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      finished_at TEXT,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS gpx_import_failures (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      mission_id TEXT NOT NULL,
+      source_path TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      content_sha256 TEXT,
+      source_bytes_base64 TEXT,
+      reason TEXT NOT NULL,
+      rejection_count INTEGER NOT NULL DEFAULT 0 CHECK(rejection_count >= 0),
+      rejections_json TEXT NOT NULL DEFAULT '[]',
+      recorded_at TEXT NOT NULL,
+      FOREIGN KEY (batch_id) REFERENCES gpx_import_batches(id) ON DELETE CASCADE,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_gpx_import_failures_mission
+      ON gpx_import_failures(mission_id, recorded_at, batch_id);
+    CREATE TABLE IF NOT EXISTS gpx_import_source_receipts (
+      batch_id TEXT NOT NULL,
+      mission_id TEXT NOT NULL,
+      source_path TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'retained', 'settled', 'failed')),
+      content_sha256 TEXT,
+      source_bytes_base64 TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (batch_id, source_path),
+      FOREIGN KEY (batch_id) REFERENCES gpx_import_batches(id) ON DELETE CASCADE,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_gpx_import_receipts_unsettled
+      ON gpx_import_source_receipts(mission_id, status, updated_at, batch_id);
+    CREATE TABLE IF NOT EXISTS search_areas (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('active', 'retired')),
+      geometry_json TEXT NOT NULL,
+      legacy_drawing_id TEXT,
+      version_sequence INTEGER NOT NULL DEFAULT 1,
+      updated_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      retired_at TEXT,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      UNIQUE (mission_id, legacy_drawing_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_search_areas_mission
+      ON search_areas(mission_id, retired_at, name, id);
+    CREATE TABLE IF NOT EXISTS search_assignments (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      search_area_id TEXT NOT NULL,
+      outing_id TEXT NOT NULL,
+      team_id TEXT NOT NULL,
+      participant_ids_json TEXT NOT NULL,
+      notes TEXT,
+      version_sequence INTEGER NOT NULL DEFAULT 1,
+      updated_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      retired_at TEXT,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (search_area_id) REFERENCES search_areas(id),
+      FOREIGN KEY (outing_id) REFERENCES outings(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_search_assignments_mission
+      ON search_assignments(mission_id, outing_id, search_area_id, created_at, id);
+    CREATE TABLE IF NOT EXISTS search_passes (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      search_area_id TEXT NOT NULL,
+      assignment_id TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      outcome TEXT NOT NULL CHECK(outcome IN ('full', 'partial', 'aborted')),
+      notes TEXT,
+      coordinator_name TEXT NOT NULL,
+      advisory_coverage_json TEXT,
+      version_sequence INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (search_area_id) REFERENCES search_areas(id),
+      FOREIGN KEY (assignment_id) REFERENCES search_assignments(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_search_passes_mission
+      ON search_passes(mission_id, started_at, search_area_id, id);
+    CREATE TABLE IF NOT EXISTS search_pass_evidence_links (
+      pass_id TEXT NOT NULL,
+      version_sequence INTEGER NOT NULL,
+      link_kind TEXT NOT NULL CHECK(link_kind IN ('participant', 'clue', 'track')),
+      target_id TEXT NOT NULL,
+      PRIMARY KEY (pass_id, version_sequence, link_kind, target_id),
+      FOREIGN KEY (pass_id) REFERENCES search_passes(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS mission_events (
       id TEXT PRIMARY KEY,
@@ -1696,8 +2447,69 @@ function migrate(db) {
       event_type TEXT NOT NULL,
       timestamp TEXT NOT NULL,
       details_json TEXT,
+      recorded_at TEXT,
+      recording_completeness TEXT CHECK(recording_completeness IN ('complete', 'legacy_baseline')),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS mission_object_versions (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      object_type TEXT NOT NULL CHECK(object_type IN (
+        'marker', 'drawing', 'outing', 'search_area', 'search_assignment', 'search_pass'
+      )),
+      object_id TEXT NOT NULL,
+      version_sequence INTEGER NOT NULL,
+      operation TEXT NOT NULL CHECK(operation IN (
+        'created', 'updated', 'retired', 'legacy_baseline'
+      )),
+      effective_at TEXT NOT NULL,
+      recorded_at TEXT NOT NULL,
+      completeness TEXT NOT NULL CHECK(completeness IN ('complete', 'legacy_baseline')),
+      state_json TEXT NOT NULL,
+      actor TEXT,
+      correlation_id TEXT,
+      audit_event_id TEXT,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (audit_event_id) REFERENCES mission_events(id),
+      UNIQUE (mission_id, object_type, object_id, version_sequence)
+    );
+    CREATE INDEX IF NOT EXISTS idx_mission_object_versions_replay
+      ON mission_object_versions(mission_id, recorded_at, effective_at, object_type, object_id, version_sequence);
+    CREATE TABLE IF NOT EXISTS legacy_mission_object_backfill_state (
+      object_type TEXT PRIMARY KEY CHECK(object_type IN (
+        'marker', 'drawing', 'outing', 'search_area', 'search_assignment', 'search_pass'
+      )),
+      scanned_through_id TEXT,
+      scan_target_id TEXT,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS legacy_event_provenance_backfill_state (
+      table_name TEXT PRIMARY KEY CHECK(table_name IN (
+        'mission_events', 'mission_group_membership_events'
+      )),
+      scanned_through_id TEXT,
+      scan_target_id TEXT,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS legacy_event_provenance_quarantine (
+      table_name TEXT NOT NULL CHECK(table_name IN (
+        'mission_events', 'mission_group_membership_events'
+      )),
+      source_rowid INTEGER NOT NULL,
+      event_id_preview TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      payload_bytes INTEGER NOT NULL CHECK(payload_bytes >= 0),
+      detected_at TEXT NOT NULL,
+      PRIMARY KEY (table_name, source_rowid)
+    );
+    CREATE TABLE IF NOT EXISTS legacy_event_provenance_quarantine_missions (
+      mission_id TEXT NOT NULL,
+      table_name TEXT NOT NULL CHECK(table_name IN (
+        'mission_events', 'mission_group_membership_events'
+      )),
+      source_rowid INTEGER NOT NULL,
+      PRIMARY KEY (mission_id, table_name, source_rowid)
+    ) WITHOUT ROWID;
     CREATE TABLE IF NOT EXISTS layer_catalog_entries (
       mission_id TEXT NOT NULL,
       node_id TEXT NOT NULL,
@@ -1717,6 +2529,38 @@ function migrate(db) {
     ensureColumnExists(db, 'markers', 'coordinator_ids', 'TEXT')
     ensureColumnExists(db, 'markers', 'attachment_path', 'TEXT')
     ensureColumnExists(db, 'markers', 'label_size', 'INTEGER')
+    ensureColumnExists(db, 'markers', 'retired_at', 'TEXT')
+    ensureColumnExists(db, 'markers', 'retired_by', 'TEXT')
+    ensureColumnExists(db, 'drawings', 'retired_at', 'TEXT')
+    ensureColumnExists(db, 'drawings', 'retired_by', 'TEXT')
+    ensureColumnExists(db, 'gpx_track_imports', 'content_sha256', 'TEXT')
+    ensureColumnExists(db, 'gpx_track_imports', 'source_bytes_base64', 'TEXT')
+    ensureColumnExists(db, 'gpx_track_imports', 'timing_class', "TEXT NOT NULL DEFAULT 'undated'")
+    ensureColumnExists(db, 'gpx_track_imports', 'outing_id', 'TEXT')
+    ensureColumnExists(db, 'gpx_track_imports', 'import_state', "TEXT NOT NULL DEFAULT 'complete'")
+    ensureColumnExists(db, 'gpx_track_imports', 'revision_sequence', 'INTEGER NOT NULL DEFAULT 1')
+    ensureColumnExists(db, 'gpx_track_imports', 'retired_at', 'TEXT')
+    ensureColumnExists(db, 'gpx_track_imports', 'retired_by', 'TEXT')
+    ensureColumnExists(db, 'gpx_import_revisions', 'outing_id', 'TEXT')
+    ensureColumnExists(db, 'gpx_import_revisions', 'import_state', "TEXT NOT NULL DEFAULT 'complete'")
+    ensureColumnExists(
+      db,
+      'gpx_import_revisions',
+      'source_revision_sequence',
+      'INTEGER NOT NULL DEFAULT 1 CHECK(source_revision_sequence >= 1)',
+    )
+    if (gpxSourceRevisionRequiresBackfill) {
+      db.exec(`UPDATE gpx_import_revisions
+        SET source_revision_sequence = revision_sequence;`)
+    }
+    if (existingSchemaVersion === 0) {
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_mission_events_replay
+        ON mission_events(mission_id, timestamp, event_type, id);`)
+    }
+    ensureColumnExists(db, 'gpx_import_failures', 'rejection_count', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumnExists(db, 'gpx_import_failures', 'rejections_json', "TEXT NOT NULL DEFAULT '[]'")
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_gpx_import_content
+      ON gpx_track_imports(mission_id, content_sha256, retired_at);`)
     ensureColumnExists(db, 'positions', 'source_position_id', 'TEXT')
     ensureColumnExists(db, 'positions', 'received_at', 'TEXT')
     ensureColumnExists(db, 'positions', 'content_hash', 'TEXT')
@@ -1727,19 +2571,22 @@ function migrate(db) {
       "timestamp_source",
       "TEXT CHECK(timestamp_source IS NULL OR timestamp_source = 'fix')",
     )
+    ensureColumnExists(db, 'positions', 'timestamp_provenance_recorded_at', 'TEXT')
     ensureColumnExists(db, 'devices', 'group_id', 'TEXT')
     ensureColumnExists(db, 'devices', 'unique_id', 'TEXT')
     // Candidate-v9 stores may contain the rejected global positions index.
     // Dropping it is metadata-only and restores the bounded startup contract.
     db.exec('DROP INDEX IF EXISTS idx_positions_mission_timestamp;')
     ensureColumnExists(db, 'mission_group_membership_events', 'sequence', 'INTEGER')
-    db.exec(`
-      UPDATE mission_group_membership_events
-      SET sequence = rowid
-      WHERE sequence IS NULL;
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_group_membership_sequence
-      ON mission_group_membership_events(sequence);
-    `)
+    ensureColumnExists(db, 'mission_group_membership_events', 'recorded_at', 'TEXT')
+    ensureColumnExists(db, 'mission_group_membership_events', 'recording_completeness', 'TEXT')
+    ensureColumnExists(db, 'mission_events', 'recorded_at', 'TEXT')
+    ensureColumnExists(db, 'mission_events', 'recording_completeness', 'TEXT')
+    initializeLegacyEventProvenanceBackfill(
+      db,
+      migrationTime,
+      eventProvenanceRequiresBackfill,
+    )
     ensureColumnExists(db, 'ingest_anomalies', 'first_seen_at', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'last_seen_at', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'occurrence_count', 'INTEGER NOT NULL DEFAULT 1')
@@ -1762,10 +2609,172 @@ function migrate(db) {
       WHERE source_position_id IS NOT NULL;
     `)
 
+    backfillLegacySearchAreas(db, migrationTime)
+    recoverInterruptedDirectArchiveFences(db, migrationTime)
+    initializeLegacyMissionObjectVersionBackfill(
+      db,
+      migrationTime,
+      existingSchemaVersion < CURRENT_SCHEMA_VERSION,
+    )
+    recoverStagingGpxImports(db, migrationTime)
+    if (positionsRequireProvenanceBackfill && existingSchemaVersion !== 0
+      && tableExists(db, 'mission_replay_position_day_counts')) {
+      db.exec(`
+        DROP TRIGGER IF EXISTS positions_replay_day_count_insert;
+        DROP TRIGGER IF EXISTS positions_replay_day_count_update;
+        DROP TRIGGER IF EXISTS positions_replay_day_count_delete;
+        DROP TABLE mission_replay_position_day_counts;
+      `)
+    }
+    if (existingSchemaVersion === 0) {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_positions_replay_known_fix
+          ON positions(mission_id, received_at, timestamp_provenance_recorded_at, timestamp, id)
+          WHERE timestamp_source = 'fix';
+        CREATE INDEX IF NOT EXISTS idx_positions_replay_unknown_time
+          ON positions(mission_id)
+          WHERE timestamp_source IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_positions_replay_known_at
+          ON positions(
+            mission_id,
+            MAX(timestamp, received_at, COALESCE(timestamp_provenance_recorded_at, received_at))
+          )
+          WHERE timestamp_source = 'fix' AND received_at IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_positions_replay_device_known_at
+          ON positions(
+            mission_id,
+            device_id,
+            MAX(timestamp, received_at, COALESCE(timestamp_provenance_recorded_at, received_at))
+          )
+          WHERE timestamp_source = 'fix' AND received_at IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS mission_replay_position_day_counts (
+          mission_id TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          known_day TEXT NOT NULL,
+          position_count INTEGER NOT NULL CHECK(position_count >= 0),
+          PRIMARY KEY (mission_id, device_id, known_day),
+          FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+        );
+        CREATE TRIGGER IF NOT EXISTS positions_replay_day_count_insert
+        AFTER INSERT ON positions
+        WHEN NEW.timestamp_source = 'fix' AND NEW.received_at IS NOT NULL
+        BEGIN
+          INSERT INTO mission_replay_position_day_counts (
+            mission_id, device_id, known_day, position_count
+          ) VALUES (
+            NEW.mission_id,
+            NEW.device_id,
+            substr(MAX(NEW.timestamp, NEW.received_at,
+              COALESCE(NEW.timestamp_provenance_recorded_at, NEW.received_at)), 1, 10),
+            1
+          ) ON CONFLICT(mission_id, device_id, known_day)
+          DO UPDATE SET position_count = position_count + 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS positions_replay_day_count_update
+        AFTER UPDATE OF mission_id, device_id, timestamp, received_at,
+          timestamp_source, timestamp_provenance_recorded_at ON positions
+        BEGIN
+          UPDATE mission_replay_position_day_counts
+          SET position_count = position_count - 1
+          WHERE OLD.timestamp_source = 'fix' AND OLD.received_at IS NOT NULL
+            AND mission_id = OLD.mission_id AND device_id = OLD.device_id
+            AND known_day = substr(MAX(OLD.timestamp, OLD.received_at,
+              COALESCE(OLD.timestamp_provenance_recorded_at, OLD.received_at)), 1, 10);
+          INSERT INTO mission_replay_position_day_counts (
+            mission_id, device_id, known_day, position_count
+          ) SELECT
+            NEW.mission_id,
+            NEW.device_id,
+            substr(MAX(NEW.timestamp, NEW.received_at,
+              COALESCE(NEW.timestamp_provenance_recorded_at, NEW.received_at)), 1, 10),
+            1
+          WHERE NEW.timestamp_source = 'fix' AND NEW.received_at IS NOT NULL
+          ON CONFLICT(mission_id, device_id, known_day)
+          DO UPDATE SET position_count = position_count + 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS positions_replay_day_count_delete
+        AFTER DELETE ON positions
+        WHEN OLD.timestamp_source = 'fix' AND OLD.received_at IS NOT NULL
+        BEGIN
+          UPDATE mission_replay_position_day_counts
+          SET position_count = position_count - 1
+          WHERE mission_id = OLD.mission_id AND device_id = OLD.device_id
+            AND known_day = substr(MAX(OLD.timestamp, OLD.received_at,
+              COALESCE(OLD.timestamp_provenance_recorded_at, OLD.received_at)), 1, 10);
+        END;
+      `)
+    }
+    db.prepare(`UPDATE gpx_import_batches
+      SET status = CASE WHEN failed_files > 0 THEN 'completed_with_failures' ELSE 'completed' END,
+        updated_at = ?, finished_at = ?
+      WHERE status = 'running'
+        AND completed_files + failed_files = total_files
+        AND NOT EXISTS (
+          SELECT 1 FROM gpx_import_source_receipts AS receipts
+          WHERE receipts.batch_id = gpx_import_batches.id
+            AND receipts.status IN ('pending', 'retained')
+        )`).run(migrationTime, migrationTime)
+    db.prepare(`UPDATE gpx_import_batches
+      SET status = 'interrupted', updated_at = ?, finished_at = ?
+      WHERE status = 'running'`).run(migrationTime, migrationTime)
+
+    db.prepare(`INSERT OR IGNORE INTO legacy_gpx_backfill_state (
+      singleton, scanned_through_rowid, scan_target_rowid, updated_at
+    ) VALUES (1, 0, COALESCE((SELECT rowid FROM gpx_track_imports
+      WHERE rowid BETWEEN 1 AND 9007199254740991
+      ORDER BY rowid DESC LIMIT 1), 0), '1970-01-01T00:00:00.000Z')`).run()
+    db.prepare(`UPDATE legacy_gpx_backfill_state
+      SET scan_target_rowid = COALESCE((SELECT rowid FROM gpx_track_imports
+          WHERE rowid BETWEEN 1 AND 9007199254740991
+          ORDER BY rowid DESC LIMIT 1), 0),
+        scanned_through_rowid = MIN(scanned_through_rowid,
+          COALESCE((SELECT rowid FROM gpx_track_imports
+            WHERE rowid BETWEEN 1 AND 9007199254740991
+            ORDER BY rowid DESC LIMIT 1), 0)),
+        updated_at = ?
+      WHERE singleton = 1 AND (
+        scan_target_rowid != COALESCE((SELECT rowid FROM gpx_track_imports
+          WHERE rowid BETWEEN 1 AND 9007199254740991
+          ORDER BY rowid DESC LIMIT 1), 0)
+        OR scanned_through_rowid > COALESCE((SELECT rowid FROM gpx_track_imports
+          WHERE rowid BETWEEN 1 AND 9007199254740991
+          ORDER BY rowid DESC LIMIT 1), 0)
+      )`).run(migrationTime)
+    db.prepare(`INSERT OR IGNORE INTO legacy_gpx_rowid_scan_state (
+      singleton, low_scanned_through_rowid, low_target_rowid,
+      high_scanned_through_rowid, high_target_rowid, updated_at
+    ) VALUES (1, 1,
+      COALESCE((SELECT rowid FROM gpx_track_imports WHERE rowid < 1
+        ORDER BY rowid ASC LIMIT 1), 1),
+      9007199254740991,
+      COALESCE((SELECT rowid FROM gpx_track_imports WHERE rowid > 9007199254740991
+        ORDER BY rowid DESC LIMIT 1), 9007199254740991),
+      '1970-01-01T00:00:00.000Z')`).run()
+    db.prepare(`UPDATE legacy_gpx_rowid_scan_state SET
+      low_target_rowid = MIN(low_target_rowid, COALESCE((SELECT rowid
+        FROM gpx_track_imports WHERE rowid < 1 ORDER BY rowid ASC LIMIT 1), 1)),
+      high_target_rowid = MAX(high_target_rowid, COALESCE((SELECT rowid
+        FROM gpx_track_imports WHERE rowid > 9007199254740991
+        ORDER BY rowid DESC LIMIT 1), 9007199254740991)),
+      updated_at = ? WHERE singleton = 1 AND (
+        low_target_rowid > COALESCE((SELECT rowid FROM gpx_track_imports
+          WHERE rowid < 1 ORDER BY rowid ASC LIMIT 1), 1)
+        OR high_target_rowid < COALESCE((SELECT rowid FROM gpx_track_imports
+          WHERE rowid > 9007199254740991 ORDER BY rowid DESC LIMIT 1),
+          9007199254740991)
+      )`).run(migrationTime)
+
     db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
       .run(String(CURRENT_SCHEMA_VERSION))
   })
   applyMigrations()
+  const legacyGpxBackfill = backfillLegacyGpxRevisions(db, migrationTime, 3, false)
+  return {
+    legacyGpxBackfillRemaining: legacyGpxBackfill.remaining,
+    legacyMissionObjectBackfillRemaining: readLegacyMissionObjectBackfillPending(db),
+    legacyEventProvenanceBackfillRemaining: readLegacyEventProvenanceBackfillPending(db),
+    gpxReceiptRecoveryRemaining: readUnsettledGpxImportReceiptPending(db),
+  }
 }
 
 /** Returns whether one named schema table already exists. */
@@ -1773,6 +2782,196 @@ function tableExists(db, tableName) {
   return db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
   ).get(tableName) !== undefined
+}
+
+/** Returns whether one named table column is already present. */
+function columnExists(db, tableName, columnName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all()
+    .some((column) => column.name === columnName)
+}
+
+/** Retains interrupted staged GPX bytes as explicit failures before removing partial rows. */
+function recoverStagingGpxImports(db, migrationTime) {
+  const staged = db.prepare(`SELECT revisions.*, imports.import_state AS projection_state
+    FROM gpx_import_revisions AS revisions
+    JOIN gpx_track_imports AS imports ON imports.id = revisions.import_id
+    WHERE revisions.import_state = 'staging'
+    ORDER BY revisions.mission_id, revisions.import_id, revisions.revision_sequence`).all()
+  const byMission = new Map()
+  for (const revision of staged) {
+    const values = byMission.get(revision.mission_id) ?? []
+    values.push(revision)
+    byMission.set(revision.mission_id, values)
+  }
+  for (const [missionId, revisions] of byMission) {
+    const missingFailures = revisions.filter((revision) => db.prepare(`SELECT 1
+      FROM gpx_import_failures WHERE mission_id = ? AND source_path = ? LIMIT 1`)
+      .get(missionId, revision.source_path) === undefined)
+    const batchId = missingFailures.length === 0 ? null : randomUUID()
+    if (batchId !== null) {
+      db.prepare(`INSERT INTO gpx_import_batches (
+        id, mission_id, status, total_files, completed_files, failed_files,
+        started_at, updated_at, finished_at
+      ) VALUES (?, ?, 'interrupted', ?, 0, ?, ?, ?, ?)`).run(
+        batchId, missionId, missingFailures.length, missingFailures.length,
+        migrationTime, migrationTime, migrationTime,
+      )
+    }
+    for (const revision of revisions) {
+      if (batchId !== null && missingFailures.includes(revision)) {
+        db.prepare(`INSERT INTO gpx_import_failures (
+          id, batch_id, mission_id, source_path, file_name, content_sha256,
+          source_bytes_base64, reason, recorded_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          randomUUID(), batchId, missionId, revision.source_path, revision.file_name,
+          revision.content_sha256, revision.source_bytes_base64,
+          'GPX import was interrupted before its staged evidence could be published.',
+          migrationTime,
+        )
+      }
+      db.prepare(`DELETE FROM gpx_import_revisions
+        WHERE import_id = ? AND revision_sequence = ?`)
+        .run(revision.import_id, revision.revision_sequence)
+      if (revision.projection_state === 'staging') {
+        db.prepare(`DELETE FROM gpx_track_imports WHERE id = ? AND import_state = 'staging'`)
+          .run(revision.import_id)
+      }
+    }
+  }
+}
+
+/** Converts one bounded receipt page into explicit failure or exact-settlement evidence. */
+function recoverUnsettledGpxImportReceipts(
+  db,
+  migrationTime,
+  maximumRows = MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN,
+  faultInjection = {},
+) {
+  const rowLimit = Math.max(1, Math.min(MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN, maximumRows))
+  const transaction = db.transaction(() => {
+    const candidates = db.prepare(`SELECT batch_id, mission_id, source_path, file_name,
+      status, content_sha256, created_at, updated_at,
+      COALESCE(length(CAST(source_bytes_base64 AS BLOB)), 0) AS retained_base64_bytes
+    FROM gpx_import_source_receipts
+    WHERE status IN ('pending', 'retained')
+    ORDER BY mission_id, batch_id, source_path
+    LIMIT ?`).all(rowLimit)
+    const receipts = []
+    let remainingBytes = MAX_GPX_RECEIPT_RECOVERY_BYTES_PER_TURN
+    for (const candidate of candidates) {
+      const candidateBytes = Number(candidate.retained_base64_bytes)
+      if (receipts.length > 0 && candidateBytes > remainingBytes) break
+      receipts.push(db.prepare(`SELECT * FROM gpx_import_source_receipts
+        WHERE batch_id = ? AND source_path = ?`).get(candidate.batch_id, candidate.source_path))
+      remainingBytes = Math.max(0, remainingBytes - Math.min(candidateBytes, remainingBytes))
+      if (remainingBytes === 0) break
+    }
+    const batchIds = new Set()
+    const interruptedBatchIds = new Set()
+    for (const receipt of receipts) {
+      batchIds.add(receipt.batch_id)
+      const publicationCandidate = receipt.status === 'retained'
+        ? db.prepare(`SELECT revisions.content_sha256, revisions.source_bytes_base64
+          FROM gpx_import_revisions AS revisions
+          JOIN gpx_track_imports AS imports
+            ON imports.id = revisions.import_id
+            AND imports.revision_sequence = revisions.revision_sequence
+          LEFT JOIN gpx_import_aliases AS aliases
+            ON aliases.mission_id = revisions.mission_id
+            AND aliases.import_id = revisions.import_id
+            AND aliases.source_path = ?
+          WHERE revisions.mission_id = ? AND revisions.content_sha256 = ?
+            AND revisions.import_state = 'complete'
+            AND revisions.completeness = 'complete'
+            AND revisions.source_bytes_base64 IS NOT NULL
+            AND imports.import_state = 'complete' AND imports.retired_at IS NULL
+            AND (revisions.source_path = ? OR aliases.source_path IS NOT NULL)
+          LIMIT 1`)
+          .get(
+            receipt.source_path,
+            receipt.mission_id,
+            receipt.content_sha256,
+            receipt.source_path,
+          )
+        : undefined
+      if (isExactGpxPublicationCandidate(publicationCandidate, receipt.content_sha256)) {
+        settleGpxImportSourceReceiptWithinTransaction(db, {
+          batchId: receipt.batch_id,
+          missionId: receipt.mission_id,
+          sourcePath: receipt.source_path,
+        }, migrationTime)
+        if (faultInjection.afterReceiptSettlement === true) {
+          throw new Error('Injected failure after GPX receipt settlement.')
+        }
+        continue
+      }
+      interruptedBatchIds.add(receipt.batch_id)
+      const existing = db.prepare(`SELECT 1 FROM gpx_import_failures
+        WHERE batch_id = ? AND source_path = ? LIMIT 1`).get(receipt.batch_id, receipt.source_path)
+      if (existing === undefined) {
+        const reason = receipt.status === 'retained'
+          ? 'GPX import was interrupted after source bytes were retained but before evidence was published.'
+          : 'GPX import was interrupted before source bytes were retained.'
+        db.prepare(`INSERT INTO gpx_import_failures (
+          id, batch_id, mission_id, source_path, file_name, content_sha256,
+          source_bytes_base64, reason, recorded_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          randomUUID(), receipt.batch_id, receipt.mission_id, receipt.source_path,
+          receipt.file_name, receipt.content_sha256, receipt.source_bytes_base64,
+          reason, migrationTime,
+        )
+      }
+      db.prepare(`UPDATE gpx_import_source_receipts
+        SET status = 'failed', updated_at = ? WHERE batch_id = ? AND source_path = ?`)
+        .run(migrationTime, receipt.batch_id, receipt.source_path)
+    }
+    for (const batchId of batchIds) {
+      const counts = db.prepare(`SELECT
+        (SELECT COUNT(*) FROM gpx_import_source_receipts
+          WHERE batch_id = ? AND status = 'settled') AS completed_files,
+        (SELECT COUNT(*) FROM gpx_import_failures WHERE batch_id = ?) AS failed_files,
+        (SELECT total_files FROM gpx_import_batches WHERE id = ?) AS total_files`)
+        .get(batchId, batchId, batchId)
+      const completed = Number(counts?.completed_files ?? 0)
+      const failed = Number(counts?.failed_files ?? 0)
+      const total = Number(counts?.total_files ?? 0)
+      const fullyAccounted = completed + failed === total
+      const status = interruptedBatchIds.has(batchId) || !fullyAccounted || failed > 0
+        ? 'interrupted'
+        : 'completed'
+      db.prepare(`UPDATE gpx_import_batches
+        SET status = ?, completed_files = ?, failed_files = ?,
+            updated_at = ?, finished_at = ?
+        WHERE id = ?`).run(status, completed, failed, migrationTime, migrationTime, batchId)
+    }
+    return { remaining: readUnsettledGpxImportReceiptPending(db) }
+  })
+  return transaction.immediate()
+}
+
+/** Returns one when startup still owns interrupted GPX receipts. */
+function readUnsettledGpxImportReceiptPending(db) {
+  return db.prepare(`SELECT 1 FROM gpx_import_source_receipts
+    WHERE status IN ('pending', 'retained') LIMIT 1`).get() === undefined ? 0 : 1
+}
+
+/** Verifies that restart reconciliation points to exact retained bytes, not metadata alone. */
+function isExactGpxPublicationCandidate(candidate, expectedHash) {
+  if (
+    candidate === undefined ||
+    typeof candidate.content_sha256 !== 'string' ||
+    typeof candidate.source_bytes_base64 !== 'string'
+  ) {
+    return false
+  }
+  try {
+    return normalizeGpxContentHash(
+      candidate.content_sha256,
+      candidate.source_bytes_base64,
+    ) === expectedHash
+  } catch {
+    return false
+  }
 }
 
 /** Backfills candidate-v8 anomaly summaries once; field v7 stores have no rows. */
@@ -1869,6 +3068,23 @@ function ensureColumnExists(db, tableName, columnName, columnSql) {
   }
 
   db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnSql}`).run()
+}
+
+/** Promotes legacy search-area drawings to stable identities without inventing assignments or passes. */
+function backfillLegacySearchAreas(db, migrationTime) {
+  db.prepare(`INSERT INTO search_areas (
+    id, mission_id, name, status, geometry_json, legacy_drawing_id,
+    version_sequence, updated_by, created_at, updated_at, retired_at
+  )
+  SELECT drawings.id, drawings.mission_id, drawings.name,
+    CASE WHEN drawings.retired_at IS NULL THEN 'active' ELSE 'retired' END,
+    drawings.geometry_json, drawings.id, 1, NULL,
+    drawings.created_at, ?, drawings.retired_at
+  FROM drawings
+  WHERE drawings.type = 'search_area'
+    AND NOT EXISTS (
+      SELECT 1 FROM search_areas WHERE search_areas.legacy_drawing_id = drawings.id
+    )`).run(migrationTime)
 }
 
 /**
@@ -2067,18 +3283,24 @@ async function acknowledgeIngestEvidenceLoss(db, outbox, input, readAdminRoster)
   if (mission.status !== 'finished') {
     throw new Error('Evidence loss can be acknowledged only after the mission is finished.')
   }
+  assertFinishedMissionBookkeepingAllowed(db, missionId)
   const adminRoster = typeof readAdminRoster === 'function' ? await readAdminRoster() : []
+  assertFinishedMissionBookkeepingAllowed(db, missionId)
   if (!adminRoster.map((value) => value.trim()).includes(adminName)) {
-    appendEvent(db, missionId, 'mission_evidence_loss_acknowledgement_denied', {
-      admin_name: adminName,
-      reason,
-      resulting_status: mission.status,
-    })
+    db.transaction(() => {
+      assertFinishedMissionBookkeepingAllowed(db, missionId)
+      insertEvent(db, missionId, 'mission_evidence_loss_acknowledgement_denied', now(), {
+        admin_name: adminName,
+        reason,
+        resulting_status: 'finished',
+      })
+    })()
     throw new Error('Selected admin is not authorized to acknowledge mission evidence loss.')
   }
   const candidate = await outbox.readEvidenceLossAcknowledgementCandidate(missionId)
   const timestamp = now()
   const transaction = db.transaction(() => {
+    assertFinishedMissionBookkeepingAllowed(db, missionId)
     insertEvent(db, missionId, 'mission_evidence_loss_acknowledged', timestamp, {
       admin_name: adminName,
       reason,
@@ -2378,6 +3600,9 @@ function finishMission(db, missionId) {
   const additionalPausedSeconds =
     mission.status === 'paused' ? calculatePausedSeconds(mission.pause_time, timestamp) : 0
   const transaction = db.transaction(() => {
+    assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db, missionId)
+    assertNoUnsettledGpxImportState(db, missionId)
     db.prepare(`UPDATE missions
       SET status = ?,
           pause_time = NULL,
@@ -2418,13 +3643,108 @@ async function createMissionArchive(
   archiveDirectory,
   recordArchiveEvent = true,
   archiveFaultInjection = {},
+  archiveEventContext = {},
+) {
+  if (!recordArchiveEvent) {
+    return buildMissionArchive(
+      db,
+      missionId,
+      backupCoordinator,
+      archiveDirectory,
+      false,
+      archiveFaultInjection,
+      null,
+    )
+  }
+  const requestedAt = now()
+  db.transaction(() => {
+    const mission = getMission(db, missionId)
+    if (mission.status !== 'finished' && mission.status !== 'finalized') {
+      throw new Error('Only finished or finalized missions can be archived.')
+    }
+    if (archiveEventContext.archive_kind === 'finalized_recovery') {
+      if (!Number.isSafeInteger(archiveEventContext.finalization_epoch)) {
+        throw new Error('Finalized archive recovery epoch is invalid; retry finalization.')
+      }
+      assertMissionUnlockEpoch(db, missionId, archiveEventContext.finalization_epoch)
+    }
+    assertMissionFinalizationNotInProgress(db, missionId)
+    assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db, missionId)
+    assertNoUnsettledGpxImportState(db, missionId)
+    db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
+      VALUES (?, ?)`).run(missionId, requestedAt)
+    insertEvent(db, missionId, 'mission_archive_requested', requestedAt, {
+      resulting_status: mission.status,
+      archive_kind: archiveEventContext.archive_kind ?? 'direct',
+      ...(archiveEventContext.finalization_epoch === undefined
+        ? {}
+        : { finalization_epoch: archiveEventContext.finalization_epoch }),
+      ...(archiveEventContext.replaces_archive_path === undefined
+        ? {}
+        : { replaces_archive_path: archiveEventContext.replaces_archive_path }),
+    })
+  })()
+  try {
+    return await buildMissionArchive(
+      db,
+      missionId,
+      backupCoordinator,
+      archiveDirectory,
+      true,
+      archiveFaultInjection,
+      requestedAt,
+      archiveEventContext,
+    )
+  } catch (error) {
+    db.transaction(() => {
+      const deleted = db.prepare(`DELETE FROM mission_finalization_fences
+        WHERE mission_id = ? AND requested_at = ?`).run(missionId, requestedAt)
+      if (deleted.changes > 0) {
+        appendEvent(db, missionId, 'mission_archive_failed', {
+          resulting_status: getMission(db, missionId).status,
+          archive_kind: archiveEventContext.archive_kind ?? 'direct',
+          ...(archiveEventContext.finalization_epoch === undefined
+            ? {}
+            : { finalization_epoch: archiveEventContext.finalization_epoch }),
+          ...(archiveEventContext.replaces_archive_path === undefined
+            ? {}
+            : { replaces_archive_path: archiveEventContext.replaces_archive_path }),
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    })()
+    throw error
+  }
+}
+
+/** Builds and commits one immutable mission archive under its caller-owned evidence fence. */
+async function buildMissionArchive(
+  db,
+  missionId,
+  backupCoordinator,
+  archiveDirectory,
+  recordArchiveEvent,
+  archiveFaultInjection,
+  directArchiveFenceToken,
+  archiveEventContext = {},
 ) {
   const mission = getMission(db, missionId)
   if (mission.status !== 'finished' && mission.status !== 'finalized') {
     throw new Error('Only finished or finalized missions can be archived.')
   }
+  if (recordArchiveEvent) {
+    const fence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
+      WHERE mission_id = ?`).get(missionId)
+    if (fence?.requested_at !== directArchiveFenceToken) {
+      throw new Error('Mission archive evidence fence is missing; retry archive creation.')
+    }
+  }
+  assertLegacyMissionObjectBackfillSettled(db)
+  assertLegacyEventProvenanceReady(db, missionId)
+  assertNoUnsettledGpxImportState(db, missionId)
 
-  const createdAt = now()
+  const createdAt = directArchiveFenceToken ?? now()
   const backupPath = await backupCoordinator.syncBackup()
   const snapshotBytes = await fs.readFile(backupPath)
   if (snapshotBytes.length === 0) {
@@ -2457,7 +3777,9 @@ async function createMissionArchive(
     { name: 'mission-store.sqlite', data: archiveSnapshotBytes },
   ]
 
-  for (const attachmentPath of listMarkerAttachmentPaths(db, missionId)) {
+  const archiveAttachmentPaths = listMarkerAttachmentPaths(db, missionId)
+  const archiveNames = collisionSafeAttachmentArchiveNames(archiveAttachmentPaths)
+  for (const attachmentPath of archiveAttachmentPaths) {
     let attachmentBytes
     try {
       attachmentBytes = await fs.readFile(attachmentPath)
@@ -2466,7 +3788,7 @@ async function createMissionArchive(
         `Mission archive cannot be created because marker attachment is missing: ${attachmentPath}`,
       )
     }
-    entries.push({ name: `attachments/${path.basename(attachmentPath)}`, data: attachmentBytes })
+    entries.push({ name: `attachments/${archiveNames.get(attachmentPath)}`, data: attachmentBytes })
   }
 
   await fs.mkdir(archiveDirectory, { recursive: true })
@@ -2478,43 +3800,136 @@ async function createMissionArchive(
   const archiveBuffer = createZipArchive(entries)
 
   const archiveName = `${missionId}-${createdAt.replace(/:/g, '-')}.zip`
-  const temporaryPath = path.join(archiveDirectory, `${archiveName}.tmp`)
   const finalPath = path.join(archiveDirectory, archiveName)
 
-  await fs.writeFile(temporaryPath, archiveBuffer)
   try {
     validateArchiveFile(archiveBuffer, missionId)
   } catch (error) {
-    await fs.rm(temporaryPath, { force: true })
     throw error
   }
-  await fs.rename(temporaryPath, finalPath)
+  await writeFileDurably(finalPath, archiveBuffer)
 
   if (recordArchiveEvent) {
-    appendEvent(db, missionId, 'mission_archived', { archive_path: finalPath }, createdAt)
+    try {
+      db.transaction(() => {
+        const currentMission = getMission(db, missionId)
+        if (currentMission.status !== mission.status) {
+          throw new Error('Mission state changed while the archive was being created; retry archive creation.')
+        }
+        const fence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
+          WHERE mission_id = ?`).get(missionId)
+        if (fence?.requested_at !== directArchiveFenceToken) {
+          throw new Error('Mission archive evidence fence changed; retry archive creation.')
+        }
+        appendEvent(db, missionId, 'mission_archived', {
+          archive_path: finalPath,
+          archive_kind: archiveEventContext.archive_kind ?? 'direct',
+          ...(archiveEventContext.finalization_epoch === undefined
+            ? {}
+            : { finalization_epoch: archiveEventContext.finalization_epoch }),
+          ...(archiveEventContext.replaces_archive_path === undefined
+            ? {}
+            : { replaces_archive_path: archiveEventContext.replaces_archive_path }),
+        }, createdAt)
+        db.prepare(`DELETE FROM mission_finalization_fences
+          WHERE mission_id = ? AND requested_at = ?`).run(missionId, directArchiveFenceToken)
+      })()
+    } catch (error) {
+      await fs.rm(finalPath, { force: true })
+      throw error
+    }
   }
 
   return { mission_id: missionId, archive_path: finalPath, created_at: createdAt }
 }
 
-async function validateSqliteSnapshotBuffer(snapshotBytes, label, workingDirectory) {
+/** Validates a SQLite snapshot and optional read-only mission-evidence assertions. */
+async function validateSqliteSnapshotBuffer(
+  snapshotBytes,
+  label,
+  workingDirectory,
+  validateSnapshot = null,
+) {
   const temporaryPath = path.join(workingDirectory, `.sqlite-integrity-${randomUUID()}.sqlite`)
   try {
     await fs.writeFile(temporaryPath, snapshotBytes)
     validateSqliteDatabaseFile(temporaryPath, label)
+    if (validateSnapshot !== null) {
+      const snapshotDb = new Database(temporaryPath, { readonly: true, fileMustExist: true })
+      try {
+        validateSnapshot(snapshotDb)
+      } finally {
+        snapshotDb.close()
+      }
+    }
   } finally {
     await removeSqliteFileSet(temporaryPath)
   }
 }
 
 function listMarkerAttachmentPaths(db, missionId) {
-  return all(
+  const referencedPaths = all(
     db,
     `SELECT attachment_path FROM markers
       WHERE mission_id = ? AND attachment_path IS NOT NULL AND TRIM(attachment_path) != ''
       ORDER BY display_order ASC, created_at ASC`,
     missionId,
   ).map((row) => row.attachment_path)
+
+  const versionRows = all(
+    db,
+    `SELECT state_json FROM mission_object_versions
+      WHERE mission_id = ? AND object_type = 'marker'
+      ORDER BY object_id ASC, version_sequence ASC`,
+    missionId,
+  )
+  for (const row of versionRows) {
+    let state
+    try {
+      state = JSON.parse(row.state_json)
+    } catch {
+      throw new Error('Mission archive cannot enumerate a corrupt marker version attachment.')
+    }
+    if (typeof state?.attachment_path === 'string' && state.attachment_path.trim() !== '') {
+      referencedPaths.push(state.attachment_path)
+    }
+  }
+
+  const ingestEvents = all(
+    db,
+    `SELECT details_json FROM mission_events
+      WHERE mission_id = ? AND event_type = 'marker_attachment_ingested'
+      ORDER BY timestamp ASC, rowid ASC`,
+    missionId,
+  )
+  for (const event of ingestEvents) {
+    let details
+    try {
+      details = JSON.parse(event.details_json)
+    } catch {
+      throw new Error('Mission archive cannot enumerate a corrupt attachment custody event.')
+    }
+    if (typeof details?.attachment_path === 'string' && details.attachment_path.trim() !== '') {
+      referencedPaths.push(details.attachment_path)
+    }
+  }
+
+  return [...new Set(referencedPaths.map((attachmentPath) => path.resolve(attachmentPath)))]
+}
+
+/** Keeps legacy archive names when unique and disambiguates basename collisions. */
+function collisionSafeAttachmentArchiveNames(attachmentPaths) {
+  const basenameCounts = new Map()
+  for (const attachmentPath of attachmentPaths) {
+    const basename = path.basename(attachmentPath)
+    basenameCounts.set(basename, (basenameCounts.get(basename) ?? 0) + 1)
+  }
+  return new Map(attachmentPaths.map((attachmentPath) => {
+    const basename = path.basename(attachmentPath)
+    if (basenameCounts.get(basename) === 1) return [attachmentPath, basename]
+    const pathIdentity = createHash('sha256').update(attachmentPath).digest('hex').slice(0, 12)
+    return [attachmentPath, `${pathIdentity}-${basename}`]
+  }))
 }
 
 /**
@@ -2545,6 +3960,7 @@ function validateArchiveFile(archiveBuffer, missionId) {
   if (snapshotEntry === undefined || snapshotEntry.length === 0) {
     throw new Error('Mission archive contains an empty mission-store.sqlite snapshot.')
   }
+  return entries
 }
 
 async function finalizeMission(
@@ -2554,22 +3970,69 @@ async function finalizeMission(
   archiveDirectory,
   finalizeMissionFaultInjection = {},
   archiveFaultInjection = {},
+  readArchiveFile = fs.readFile,
 ) {
   const mission = getMission(db, missionId)
   if (mission.status === 'finalized') {
-    const existingArchive = await readRecoverableFinalizeArchive(db, missionId)
-    if (existingArchive !== null) {
-      return { mission, archive: existingArchive }
+    assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db, missionId)
+    assertNoUnsettledGpxImportState(db, missionId)
+    const finalizedEpoch = readLatestMissionFinalizedEpoch(db, missionId)
+    let rejectedArchivePath = null
+    let existingArchive = await readRecoverableFinalizeArchive(
+      db,
+      missionId,
+      readArchiveFile,
+      (archivePath) => {
+        rejectedArchivePath ??= archivePath
+      },
+      true,
+      finalizedEpoch,
+    )
+    if (existingArchive === null) {
+      existingArchive = await createMissionArchive(
+        db,
+        missionId,
+        backupCoordinator,
+        archiveDirectory,
+        true,
+        archiveFaultInjection,
+        {
+          archive_kind: 'finalized_recovery',
+          finalization_epoch: finalizedEpoch,
+          ...(rejectedArchivePath === null
+            ? {}
+            : { replaces_archive_path: rejectedArchivePath }),
+        },
+      )
     }
-    throw new Error('Finalized mission is missing a recoverable archive record.')
+    return db.transaction(() => {
+      assertMissionUnlockEpoch(db, missionId, finalizedEpoch)
+      return { mission: getMission(db, missionId), archive: existingArchive }
+    }).immediate()
   }
   if (mission.status !== 'finished') {
     throw new Error('Only finished missions can be finalized.')
   }
+  const resumedProtectedFinalization = db.transaction(() => {
+    assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db, missionId)
+    assertNoUnsettledGpxImportState(db, missionId)
+    const existingFence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
+      WHERE mission_id = ?`).get(missionId)
+    if (existingFence !== undefined) return true
+    const requestedAt = now()
+    db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
+      VALUES (?, ?)`).run(missionId, requestedAt)
+    insertEvent(db, missionId, 'mission_finalize_requested', requestedAt, {
+      resulting_status: 'finished',
+    })
+    return false
+  })()
 
-  appendEvent(db, missionId, 'mission_finalize_requested', { resulting_status: 'finished' })
-
-  let archive = await readRecoverableFinalizeArchive(db, missionId)
+  let archive = resumedProtectedFinalization
+    ? await readRecoverableFinalizeArchive(db, missionId, readArchiveFile)
+    : null
   if (archive === null) {
     try {
       archive = await createMissionArchive(
@@ -2581,10 +4044,14 @@ async function finalizeMission(
         archiveFaultInjection,
       )
     } catch (error) {
-      appendEvent(db, missionId, 'mission_archive_failed', {
-        resulting_status: 'finished',
-        error: error instanceof Error ? error.message : String(error),
-      })
+      db.transaction(() => {
+        appendEvent(db, missionId, 'mission_archive_failed', {
+          resulting_status: 'finished',
+          error: error instanceof Error ? error.message : String(error),
+        })
+        db.prepare('DELETE FROM mission_finalization_fences WHERE mission_id = ?')
+          .run(missionId)
+      })()
       throw error
     }
 
@@ -2599,17 +4066,36 @@ async function finalizeMission(
   }
 
   const transaction = db.transaction(() => {
+    assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db, missionId)
+    assertNoUnsettledGpxImportState(db, missionId)
+    const currentMission = getMission(db, missionId)
+    if (currentMission.status !== 'finished') {
+      throw new Error('Mission finalization state changed before the archive could be sealed.')
+    }
+    if (db.prepare(`SELECT 1 FROM mission_finalization_fences
+      WHERE mission_id = ?`).get(missionId) === undefined) {
+      throw new Error('Mission finalization evidence fence is missing; retry finalization.')
+    }
     db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finalized', missionId)
     insertEvent(db, missionId, 'mission_finalized', now(), {
       resulting_status: 'finalized',
       archive_path: archive.archive_path,
     })
+    db.prepare('DELETE FROM mission_finalization_fences WHERE mission_id = ?').run(missionId)
   })
   transaction()
   return { mission: getMission(db, missionId), archive }
 }
 
-async function readRecoverableFinalizeArchive(db, missionId) {
+async function readRecoverableFinalizeArchive(
+  db,
+  missionId,
+  readArchiveFile = fs.readFile,
+  onRejectedArchive = () => undefined,
+  includeDirectArchives = false,
+  expectedFinalizedEpoch = null,
+) {
   const latestUnlock = db.prepare(
     `SELECT rowid AS event_rowid, timestamp FROM mission_events
       WHERE mission_id = ? AND event_type = ?
@@ -2617,25 +4103,49 @@ async function readRecoverableFinalizeArchive(db, missionId) {
       LIMIT 1`,
   ).get(missionId, 'mission_unlocked')
 
-  const rows = db.prepare(
-    `SELECT rowid AS event_rowid, timestamp, details_json FROM mission_events
-      WHERE mission_id = ? AND event_type = ?
-      ORDER BY timestamp DESC, rowid DESC`,
-  ).all(missionId, 'mission_archive_succeeded')
+  const rows = includeDirectArchives
+    ? db.prepare(
+      `SELECT rowid AS event_rowid, event_type, timestamp, details_json FROM mission_events
+        WHERE mission_id = ? AND event_type IN (?, ?)
+        ORDER BY timestamp DESC, rowid DESC`,
+    ).all(missionId, 'mission_archive_succeeded', 'mission_archived')
+    : db.prepare(
+      `SELECT rowid AS event_rowid, event_type, timestamp, details_json FROM mission_events
+        WHERE mission_id = ? AND event_type = ?
+        ORDER BY timestamp DESC, rowid DESC`,
+    ).all(missionId, 'mission_archive_succeeded')
 
   for (const row of rows) {
     if (latestUnlock !== undefined && !isEventAfter(row, latestUnlock)) {
       continue
     }
     const details = readEventDetails(row.details_json)
+    if (row.event_type === 'mission_archived' && (
+      details.archive_kind !== 'finalized_recovery'
+      || details.finalization_epoch !== expectedFinalizedEpoch
+    )) {
+      continue
+    }
     const archivePath = typeof details.archive_path === 'string' ? details.archive_path : ''
     if (archivePath === '') {
       continue
     }
 
     try {
-      await fs.access(archivePath)
+      const archiveBytes = await readArchiveFile(archivePath)
+      const entries = validateArchiveFile(archiveBytes, missionId)
+      await validateSqliteSnapshotBuffer(
+        entries.get('mission-store.sqlite'),
+        'Recovered mission archive embedded SQLite snapshot',
+        path.dirname(archivePath),
+        (snapshotDb) => {
+          assertLegacyMissionObjectBackfillSettled(snapshotDb)
+          assertLegacyEventProvenanceReady(snapshotDb, missionId)
+          assertNoUnsettledGpxImportState(snapshotDb, missionId)
+        },
+      )
     } catch {
+      onRejectedArchive(archivePath)
       continue
     }
 
@@ -2678,17 +4188,23 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
   if (mission.status !== 'finalized') {
     throw new Error('Only finalized missions can be unlocked.')
   }
+  const finalizedEpoch = readLatestMissionFinalizedEpoch(db, input.mission_id)
   const adminRoster = typeof readAdminRoster === 'function' ? await readAdminRoster() : []
   if (!adminRoster.map((value) => value.trim()).includes(input.admin_name.trim())) {
-    appendEvent(db, input.mission_id, 'mission_unlock_denied', {
-      admin_name: input.admin_name,
-      reason: input.reason,
-      resulting_status: 'finalized',
+    const deniedTransaction = db.transaction(() => {
+      assertMissionUnlockEpoch(db, input.mission_id, finalizedEpoch)
+      insertEvent(db, input.mission_id, 'mission_unlock_denied', now(), {
+        admin_name: input.admin_name,
+        reason: input.reason,
+        resulting_status: 'finalized',
+      })
     })
+    deniedTransaction.immediate()
     throw new Error('Selected admin is not authorized to unlock finalized missions.')
   }
   const timestamp = now()
   const transaction = db.transaction(() => {
+    assertMissionUnlockEpoch(db, input.mission_id, finalizedEpoch)
     db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finished', input.mission_id)
     insertEvent(db, input.mission_id, 'mission_unlocked', timestamp, {
       admin_name: input.admin_name,
@@ -2698,6 +4214,24 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
   })
   transaction()
   return getMission(db, input.mission_id)
+}
+
+/** Reads the immutable audit identity of the currently finalized mission epoch. */
+function readLatestMissionFinalizedEpoch(db, missionId) {
+  return db.prepare(`SELECT rowid FROM mission_events
+    WHERE mission_id = ? AND event_type = 'mission_finalized'
+    ORDER BY rowid DESC LIMIT 1`).get(missionId)?.rowid ?? null
+}
+
+/** Prevents an authorization decision from being applied to a newer finalization epoch. */
+function assertMissionUnlockEpoch(db, missionId, expectedEpoch) {
+  assertMissionFinalizationNotInProgress(db, missionId)
+  if (
+    getMission(db, missionId).status !== 'finalized' ||
+    readLatestMissionFinalizedEpoch(db, missionId) !== expectedEpoch
+  ) {
+    throw new Error('Mission finalization changed while admin authorization was checked. Review and retry the unlock.')
+  }
 }
 
 function upsertDevice(db, input) {
@@ -2890,6 +4424,13 @@ function addPosition(db, input, coverageFaultInjection = {}) {
           })
         }
         if (existing.device_id === input.device_id) {
+          if (decision.decision === 'duplicate' && timestampSource === 'fix'
+            && existing.timestamp_source === null) {
+            db.prepare(`UPDATE positions SET timestamp_source = 'fix',
+              timestamp_provenance_recorded_at = ? WHERE id = ?`)
+              .run(receivedAt, existing.id)
+            bumpMissionReplayGeneration(db, input.mission_id)
+          }
           refreshDeviceContact(db, input.mission_id, input.device_id, timestamp)
         }
       })()
@@ -2899,7 +4440,7 @@ function addPosition(db, input, coverageFaultInjection = {}) {
           `the conflicting observation from ${input.device_id} was retained without changing position truth.`,
         )
       }
-      return existing
+      return getById(db, 'positions', existing.id, 'Position')
     }
     const adopt = db.transaction(() => {
       const result = adoptSourceIdentityForLegacyPosition(
@@ -2931,9 +4472,9 @@ function addPosition(db, input, coverageFaultInjection = {}) {
 
   const id = randomUUID()
   const transaction = db.transaction(() => {
-    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind, timestamp_source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin, receivedAt, canonical.contentHash, sourcePositionId === null ? null : 'traccar', timestampSource)
+    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind, timestamp_source, timestamp_provenance_recorded_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin, receivedAt, canonical.contentHash, sourcePositionId === null ? null : 'traccar', timestampSource, timestampSource === 'fix' ? receivedAt : null)
     db.prepare(
       `UPDATE devices
        SET last_seen = CASE
@@ -2979,10 +4520,12 @@ function addPositionsBulk(
   const existingPositionBySourceIdentity = db.prepare(
     'SELECT * FROM positions WHERE mission_id = ? AND source_position_id = ? LIMIT 1',
   )
-  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind, timestamp_source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind, timestamp_source, timestamp_provenance_recorded_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
   const retainFixTimeProvenance = db.prepare(
-    "UPDATE positions SET timestamp_source = 'fix' WHERE id = ? AND timestamp_source IS NULL",
+    `UPDATE positions SET timestamp_source = 'fix',
+      timestamp_provenance_recorded_at = ?
+      WHERE id = ? AND timestamp_source IS NULL`,
   )
   const updateDevice = db.prepare(
     `UPDATE devices
@@ -2998,6 +4541,7 @@ function addPositionsBulk(
   let changedPositionCount = 0
   let insertedPositionCount = 0
   let skippedAmbiguousLegacyAdoptionCount = 0
+  let replayEligibilityChanged = false
   const acceptedCoveragePositions = []
 
   const transaction = db.transaction(() => {
@@ -3045,7 +4589,8 @@ function addPositionsBulk(
           }
           if (existing.device_id === position.device_id) {
             if (decision.decision === 'duplicate' && timestampSource === 'fix') {
-              retainFixTimeProvenance.run(existing.id)
+              const promotion = retainFixTimeProvenance.run(receivedAt, existing.id)
+              replayEligibilityChanged = replayEligibilityChanged || promotion.changes > 0
             }
             updateDevice.run(
               timestamp,
@@ -3114,6 +4659,7 @@ function addPositionsBulk(
         canonical.contentHash,
         sourcePositionId === null ? null : 'traccar',
         timestampSource,
+        timestampSource === 'fix' ? receivedAt : null,
       )
       updateDevice.run(timestamp, timestamp, input.mission_id, position.device_id)
       changedPositionCount += 1
@@ -3127,6 +4673,7 @@ function addPositionsBulk(
       updatedAt: receivedAt,
       failAfterWrite: coverageFaultInjection.afterWrite === true,
     })
+    if (replayEligibilityChanged) bumpMissionReplayGeneration(db, input.mission_id)
   })
 
   transaction()
@@ -3412,15 +4959,18 @@ function listRecentPositions(db, missionId, perDeviceLimit) {
 }
 
 function latestPositions(db, missionId) {
-  return all(db, `SELECT p.* FROM positions p
-    INNER JOIN (
-      SELECT device_id, MAX(timestamp) AS max_timestamp
-      FROM positions
-      WHERE mission_id = ?
-      GROUP BY device_id
-    ) latest ON p.device_id = latest.device_id AND p.timestamp = latest.max_timestamp
-    WHERE p.mission_id = ?
-    ORDER BY p.device_id ASC`, missionId, missionId)
+  return all(db, `SELECT position.*
+    FROM devices AS device
+    JOIN positions AS position ON position.id = (
+      SELECT candidate.id
+      FROM positions AS candidate
+      WHERE candidate.mission_id = device.mission_id
+        AND candidate.device_id = device.device_id
+      ORDER BY candidate.timestamp DESC, candidate.id DESC
+      LIMIT 1
+    )
+    WHERE device.mission_id = ?
+    ORDER BY device.device_id ASC`, missionId)
 }
 
 // High-volume tracking heartbeats excluded from the review audit log by default.
@@ -3614,6 +5164,168 @@ function upsertById(db, table, input, defaults) {
   return getById(db, table, row.id, table)
 }
 
+/** Persists one current projection and its complete immutable version/audit identity atomically. */
+function upsertVersionedById(
+  db,
+  evidenceVersionStore,
+  table,
+  objectType,
+  input,
+  defaults,
+) {
+  const row = defaults(input)
+  const existing = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(row.id)
+  const missionId = existing?.mission_id ?? input.mission_id
+  if (existing !== undefined && existing.mission_id !== input.mission_id) {
+    throw new Error(`Cannot move ${table} row ${row.id} to a different mission.`)
+  }
+  if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
+    throw new Error(`Cannot update retired ${objectType} evidence ${row.id}.`)
+  }
+  ensureWritableMission(db, missionId)
+  const columns = Object.keys(row)
+  const placeholders = columns.map(() => '?').join(', ')
+  const immutableColumns = IMMUTABLE_UPSERT_COLUMNS[table] ?? new Set(['id'])
+  const assignments = columns
+    .filter((column) => !immutableColumns.has(column))
+    .map((column) => `${column} = excluded.${column}`)
+    .join(', ')
+  const audit = AUDIT_EVENT_TABLES[table]
+  const transaction = db.transaction(() => {
+    db.prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})
+      ON CONFLICT(id) DO UPDATE SET ${assignments}`).run(...columns.map((column) => row[column]))
+    const projected = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(row.id)
+    const timestamp = projected.updated_at ?? now()
+    const auditEventId = insertEvent(
+      db,
+      missionId,
+      existing === undefined ? audit.created : audit.updated,
+      timestamp,
+      audit.upsertDetails(projected),
+    )
+    evidenceVersionStore.recordVersion({
+      missionId,
+      objectType,
+      objectId: row.id,
+      operation: existing === undefined ? 'created' : 'updated',
+      effectiveAt: timestamp,
+      recordedAt: timestamp,
+      state: projected,
+      actor: projected.updated_by ?? null,
+      auditEventId,
+    })
+  })
+  transaction()
+  return getById(db, table, row.id, table)
+}
+
+/** Replaces destructive deletion with an append-only retirement revision. */
+function retireVersionedById(db, evidenceVersionStore, table, objectType, id) {
+  const existing = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id)
+  if (existing === undefined || existing.retired_at !== null) return false
+  ensureWritableMission(db, existing.mission_id)
+  const audit = AUDIT_EVENT_TABLES[table]
+  const timestamp = now()
+  const actor = existing.updated_by ?? null
+  const transaction = db.transaction(() => {
+    db.prepare(`UPDATE ${table} SET retired_at = ?, retired_by = ? WHERE id = ?`)
+      .run(timestamp, actor, id)
+    const projected = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id)
+    const auditEventId = insertEvent(
+      db,
+      existing.mission_id,
+      audit.deleted,
+      timestamp,
+      { ...audit.deleteDetails(existing), retired: true },
+    )
+    evidenceVersionStore.recordVersion({
+      missionId: existing.mission_id,
+      objectType,
+      objectId: id,
+      operation: 'retired',
+      effectiveAt: timestamp,
+      recordedAt: timestamp,
+      state: projected,
+      actor,
+      auditEventId,
+    })
+  })
+  transaction()
+  return true
+}
+
+/** Normalizes one renderer-owned marker before any lookup or JSON version serialization. */
+function normalizeMarkerMutation(input) {
+  const candidate = normalizeMutableEvidenceRecord(input, 'Marker')
+  const markerType = normalizeBoundedEvidenceRequiredText(
+    candidate.type, 'Marker type', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+  if (!['ipp_lkp', 'clue', 'hazard', 'casualty'].includes(markerType)) {
+    throw new Error('Marker type is invalid.')
+  }
+  return {
+    id: normalizeBoundedEvidenceOptionalText(
+      candidate.id, 'Marker identity', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    mission_id: normalizeBoundedEvidenceRequiredText(
+      candidate.mission_id, 'Marker mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: markerType,
+    name: normalizeBoundedEvidenceRequiredText(
+      candidate.name, 'Marker name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBoundedEvidenceOptionalText(
+      candidate.description, 'Marker description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    lat: normalizeRequiredFiniteEvidenceNumber(candidate.lat, 'Marker latitude'),
+    lon: normalizeRequiredFiniteEvidenceNumber(candidate.lon, 'Marker longitude'),
+    irish_grid_e: normalizeRequiredSafeInteger(candidate.irish_grid_e, 'Marker ITM easting'),
+    irish_grid_n: normalizeRequiredSafeInteger(candidate.irish_grid_n, 'Marker ITM northing'),
+    display_order: normalizeRequiredSafeInteger(candidate.display_order, 'Marker display order'),
+    subject_category: normalizeMarkerShortText(candidate.subject_category, 'subject category'),
+    clue_type: normalizeMarkerShortText(candidate.clue_type, 'clue type'),
+    confidence: normalizeOptionalFiniteEvidenceNumber(candidate.confidence, 'Marker confidence'),
+    found_by: normalizeMarkerShortText(candidate.found_by, 'found by'),
+    hazard_type: normalizeMarkerShortText(candidate.hazard_type, 'hazard type'),
+    severity: normalizeMarkerShortText(candidate.severity, 'severity'),
+    condition: normalizeMarkerShortText(candidate.condition, 'condition'),
+    treatment: normalizeMarkerTreatment(candidate.treatment),
+    evacuation_priority: normalizeMarkerShortText(
+      candidate.evacuation_priority, 'evacuation priority',
+    ),
+    label_size: normalizeOptionalSafeInteger(candidate.label_size, 'Marker label size'),
+    updated_by: normalizeMarkerShortText(candidate.updated_by, 'coordinator'),
+    coordinator_ids: normalizeBoundedEvidenceOptionalText(
+      candidate.coordinator_ids, 'Marker coordinator ids', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    attachment_path: normalizeBoundedEvidenceOptionalText(
+      candidate.attachment_path, 'Marker attachment path', MAX_MUTABLE_EVIDENCE_PATH_LENGTH,
+    ),
+  }
+}
+
+/** Normalizes one optional marker short-text field. */
+function normalizeMarkerShortText(value, label) {
+  return normalizeBoundedEvidenceOptionalText(
+    value, `Marker ${label}`, MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+}
+
+/** Normalizes one cumulative casualty treatment log inside its evidence envelope. */
+function normalizeMarkerTreatment(value) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new Error('Marker treatment log must be text.')
+  const normalized = value.trim()
+  if (normalized === '') return null
+  if (Buffer.byteLength(normalized, 'utf8') > MAX_MARKER_TREATMENT_LOG_BYTES) {
+    throw new Error(
+      `Marker treatment log must be ${MAX_MARKER_TREATMENT_LOG_BYTES} UTF-8 bytes or fewer. `
+      + 'Earlier saved entries remain preserved; shorten only the newest unsaved update.',
+    )
+  }
+  return normalized
+}
+
 function markerDefaults(input) {
   validateLatLon(input.lat, input.lon, 'Marker')
   const timestamp = now()
@@ -3665,6 +5377,2372 @@ function drawingDefaults(input) {
     created_at: timestamp,
     updated_at: timestamp,
   }
+}
+
+/** Normalizes any non-search drawing before persistence and immutable versioning. */
+function normalizeDrawingMutation(input) {
+  const candidate = normalizeMutableEvidenceRecord(input, 'Drawing')
+  const drawingType = normalizeBoundedEvidenceRequiredText(
+    candidate.type, 'Drawing type', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+  if (!['line', 'range_ring', 'bearing_line', 'search_sector', 'text_label'].includes(drawingType)) {
+    throw new Error('Drawing type is invalid.')
+  }
+  return {
+    id: normalizeBoundedEvidenceOptionalText(
+      candidate.id, 'Drawing identity', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    mission_id: normalizeBoundedEvidenceRequiredText(
+      candidate.mission_id, 'Drawing mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: drawingType,
+    name: normalizeBoundedEvidenceRequiredText(
+      candidate.name, 'Drawing name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBoundedEvidenceOptionalText(
+      candidate.description, 'Drawing description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    color: normalizeBoundedEvidenceOptionalText(
+      candidate.color, 'Drawing colour', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    width: normalizeOptionalFiniteEvidenceNumber(candidate.width, 'Drawing width'),
+    distance_m: normalizeOptionalFiniteEvidenceNumber(candidate.distance_m, 'Drawing distance'),
+    temporary_measure: normalizeOptionalEvidenceBoolean(
+      candidate.temporary_measure, 'Drawing temporary measure',
+    ),
+    label: normalizeBoundedEvidenceOptionalText(
+      candidate.label, 'Drawing label', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    display_order: normalizeRequiredSafeInteger(
+      candidate.display_order, 'Drawing display order',
+    ),
+    geometry_json: normalizeMutableEvidenceGeometryJson(
+      candidate.geometry_json, 'Drawing geometry',
+    ),
+    metadata_json: normalizeBoundedEvidenceOptionalJson(
+      candidate.metadata_json, 'Drawing metadata', MAX_MUTABLE_EVIDENCE_METADATA_BYTES,
+    ),
+  }
+}
+
+/** Normalizes the complete UI-owned search-area drawing envelope before persistence. */
+function normalizeSearchAreaDrawingMutation(input) {
+  const candidate = normalizeSearchOperationRecord(input, 'Search area drawing')
+  return {
+    id: normalizeOptionalSearchOperationIdentity(candidate.id, 'Search area identity'),
+    mission_id: normalizeBoundedRequiredText(
+      candidate.mission_id, 'Search area mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    type: 'search_area',
+    name: normalizeBoundedRequiredText(
+      candidate.name, 'Search area name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    description: normalizeBoundedOptionalTextValue(
+      candidate.description, 'Search area description', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    color: normalizeBoundedOptionalTextValue(
+      candidate.color, 'Search area colour', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    width: normalizeOptionalFiniteSearchNumber(candidate.width, 'Search area width'),
+    distance_m: normalizeOptionalFiniteSearchNumber(
+      candidate.distance_m, 'Search area distance',
+    ),
+    temporary_measure: normalizeOptionalSearchBoolean(
+      candidate.temporary_measure, 'Search area temporary-measure flag',
+    ),
+    label: normalizeBoundedOptionalTextValue(
+      candidate.label, 'Search area label', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    display_order: normalizeSearchDisplayOrder(candidate.display_order),
+    geometry_json: normalizeSearchAreaGeometryJson(candidate.geometry_json),
+    metadata_json: normalizeBoundedOptionalJsonText(
+      candidate.metadata_json,
+      'Search area metadata',
+      MAX_SEARCH_AREA_GEOMETRY_LENGTH,
+    ),
+  }
+}
+
+/** Normalizes a stable search-area mutation before any database lookup. */
+function normalizeSearchAreaMutation(input) {
+  const candidate = normalizeSearchOperationRecord(input, 'Search area')
+  const status = candidate.status === undefined
+    ? undefined
+    : normalizeSearchAreaStatus(candidate.status)
+  return {
+    id: normalizeOptionalSearchOperationIdentity(candidate.id, 'Search area identity'),
+    mission_id: normalizeBoundedRequiredText(
+      candidate.mission_id, 'Search area mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    name: normalizeBoundedRequiredText(
+      candidate.name, 'Search area name', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    status,
+    geometry_json: normalizeSearchAreaGeometryJson(candidate.geometry_json),
+    legacy_drawing_id: normalizeOptionalSearchOperationIdentity(
+      candidate.legacy_drawing_id, 'Search area legacy drawing identity',
+    ),
+    updated_by: normalizeBoundedOptionalTextValue(
+      candidate.updated_by, 'Search area coordinator', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    effective_at: normalizeOptionalStrictSearchTimestamp(
+      candidate.effective_at, 'Search area effective time',
+    ),
+  }
+}
+
+/** Normalizes an assignment mutation before any database lookup or list processing. */
+function normalizeSearchAssignmentMutation(input) {
+  const candidate = normalizeSearchOperationRecord(input, 'Search assignment')
+  return {
+    id: normalizeOptionalSearchOperationIdentity(candidate.id, 'Search assignment identity'),
+    mission_id: normalizeBoundedRequiredText(
+      candidate.mission_id, 'Search assignment mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    search_area_id: normalizeBoundedRequiredText(
+      candidate.search_area_id, 'Search assignment area', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    outing_id: normalizeBoundedRequiredText(
+      candidate.outing_id, 'Search assignment outing', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    team_id: normalizeBoundedRequiredText(
+      candidate.team_id, 'Search assignment team', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    participant_ids: normalizeIdList(
+      candidate.participant_ids, 'Search assignment participant links',
+    ),
+    notes: normalizeBoundedOptionalTextValue(
+      candidate.notes, 'Search assignment notes', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    updated_by: normalizeBoundedOptionalTextValue(
+      candidate.updated_by,
+      'Search assignment coordinator',
+      MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    effective_at: normalizeOptionalStrictSearchTimestamp(
+      candidate.effective_at, 'Search assignment effective time',
+    ),
+  }
+}
+
+/** Normalizes a coordinator-declared pass before any database lookup or list processing. */
+function normalizeSearchPassMutation(input) {
+  const candidate = normalizeSearchOperationRecord(input, 'Search pass')
+  const endedAt = candidate.ended_at === null || candidate.ended_at === undefined
+    ? null
+    : normalizeStrictSearchTimestamp(candidate.ended_at, 'Search pass end time')
+  return {
+    id: normalizeOptionalSearchOperationIdentity(candidate.id, 'Search pass identity'),
+    mission_id: normalizeBoundedRequiredText(
+      candidate.mission_id, 'Search pass mission', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    search_area_id: normalizeBoundedRequiredText(
+      candidate.search_area_id, 'Search pass area', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    assignment_id: normalizeBoundedRequiredText(
+      candidate.assignment_id, 'Search pass assignment', MAX_SEARCH_OPERATION_ID_LENGTH,
+    ),
+    started_at: normalizeStrictSearchTimestamp(candidate.started_at, 'Search pass start time'),
+    ended_at: endedAt,
+    outcome: normalizeSearchPassOutcome(candidate.outcome),
+    notes: normalizeBoundedOptionalTextValue(
+      candidate.notes, 'Search pass notes', MAX_SEARCH_OPERATION_NOTES_LENGTH,
+    ),
+    coordinator_name: normalizeBoundedRequiredText(
+      candidate.coordinator_name,
+      'Search pass coordinator',
+      MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+    ),
+    advisory_coverage_json:
+      candidate.advisory_coverage_json === null
+      || candidate.advisory_coverage_json === undefined
+        ? undefined
+        : normalizeBoundedOptionalJsonText(
+          candidate.advisory_coverage_json,
+          'Search pass advisory coverage',
+          MAX_SEARCH_ADVISORY_COVERAGE_LENGTH,
+        ),
+    participant_ids: normalizeOptionalSearchIdList(
+      candidate.participant_ids, 'Search pass participant links',
+    ),
+    clue_ids: normalizeOptionalSearchIdList(candidate.clue_ids, 'Search pass clue links'),
+    track_evidence_ids: normalizeOptionalSearchIdList(
+      candidate.track_evidence_ids, 'Search pass track links',
+    ),
+  }
+}
+
+function upsertDrawingEvidence(db, versionStore, input) {
+  const normalizedInput = input?.type === 'search_area'
+    ? normalizeSearchAreaDrawingMutation(input)
+    : normalizeDrawingMutation(input)
+  const transaction = db.transaction(() => {
+    const drawing = upsertVersionedById(
+      db, versionStore, 'drawings', 'drawing', normalizedInput, drawingDefaults,
+    )
+    if (drawing.type === 'search_area') {
+      upsertSearchArea(db, versionStore, {
+        id: drawing.id,
+        mission_id: drawing.mission_id,
+        name: drawing.name,
+        status: 'active',
+        geometry_json: drawing.geometry_json,
+        legacy_drawing_id: drawing.id,
+        effective_at: drawing.updated_at,
+      })
+    }
+    return drawing
+  })
+  return transaction()
+}
+
+function retireDrawingEvidence(db, versionStore, drawingId) {
+  const normalizedDrawingId = normalizeBoundedRequiredText(
+    drawingId,
+    'Drawing identity',
+    MAX_SEARCH_OPERATION_ID_LENGTH,
+  )
+  const transaction = db.transaction(() => {
+    const drawing = db.prepare('SELECT * FROM drawings WHERE id = ?').get(normalizedDrawingId)
+    if (drawing === undefined || drawing.retired_at !== null) return false
+    if (drawing.type === 'search_area') retireSearchArea(db, versionStore, normalizedDrawingId, null)
+    return retireVersionedById(
+      db, versionStore, 'drawings', 'drawing', normalizedDrawingId,
+    )
+  })
+  return transaction()
+}
+
+/** Creates or revises one stable search area and its immutable complete state. */
+function upsertSearchArea(db, versionStore, input) {
+  const normalizedInput = normalizeSearchAreaMutation(input)
+  const missionId = normalizedInput.mission_id
+  ensureWritableMission(db, missionId)
+  const id = normalizedInput.id ?? randomUUID()
+  const existing = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(id)
+  assertSameMission(existing, missionId, 'search area', id)
+  if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
+    throw new Error(`Cannot update retired search area ${id}.`)
+  }
+  const timestamp = now()
+  const status = normalizedInput.status ?? existing?.status ?? 'active'
+  const row = {
+    id,
+    mission_id: missionId,
+    name: normalizedInput.name,
+    status,
+    geometry_json: normalizedInput.geometry_json,
+    legacy_drawing_id: existing?.legacy_drawing_id ?? normalizedInput.legacy_drawing_id ?? null,
+    version_sequence: Number(existing?.version_sequence ?? 0) + 1,
+    updated_by: normalizedInput.updated_by,
+    created_at: existing?.created_at ?? timestamp,
+    updated_at: timestamp,
+    retired_at: status === 'retired' ? timestamp : null,
+  }
+  writeSearchOperationVersion(db, versionStore, {
+    table: 'search_areas', objectType: 'search_area', row, existing,
+    effectiveAt: normalizedInput.effective_at ?? timestamp,
+    actor: row.updated_by,
+    operation: status === 'retired' ? 'retired' : undefined,
+  })
+  return db.prepare('SELECT * FROM search_areas WHERE id = ?').get(id)
+}
+
+/** Retires a stable search area while retaining all assignments, passes, and earlier geometry. */
+function retireSearchArea(db, versionStore, areaId, actor) {
+  const normalizedAreaId = normalizeBoundedRequiredText(
+    areaId, 'Search area identity', MAX_SEARCH_OPERATION_ID_LENGTH,
+  )
+  const normalizedActor = normalizeBoundedOptionalTextValue(
+    actor, 'Search area coordinator', MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH,
+  )
+  const transaction = db.transaction(() => {
+    const existing = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(normalizedAreaId)
+    if (existing === undefined || existing.retired_at !== null) return false
+    ensureWritableMission(db, existing.mission_id)
+    const timestamp = now()
+    const row = {
+      ...existing,
+      status: 'retired',
+      version_sequence: Number(existing.version_sequence) + 1,
+      updated_by: normalizedActor ?? existing.updated_by,
+      updated_at: timestamp,
+      retired_at: timestamp,
+    }
+    writeSearchOperationVersion(db, versionStore, {
+      table: 'search_areas',
+      objectType: 'search_area',
+      row,
+      existing,
+      effectiveAt: timestamp,
+      actor: row.updated_by,
+      operation: 'retired',
+    })
+    return true
+  })
+  return transaction.immediate()
+}
+
+/** Creates or revises one outing-scoped area assignment; repeated assignments stay distinct. */
+function upsertSearchAssignment(db, versionStore, input) {
+  const normalizedInput = normalizeSearchAssignmentMutation(input)
+  const missionId = normalizedInput.mission_id
+  ensureWritableMission(db, missionId)
+  const areaId = normalizedInput.search_area_id
+  const outingId = normalizedInput.outing_id
+  const area = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(areaId)
+  const outing = db.prepare('SELECT * FROM outings WHERE id = ?').get(outingId)
+  if (area?.mission_id !== missionId) throw new Error('Search assignment area is not in this mission.')
+  if (area.retired_at !== null || area.status === 'retired') {
+    throw new Error(`Cannot assign a retired search area ${area.id}.`)
+  }
+  if (outing?.mission_id !== missionId) throw new Error('Search assignment outing is not in this mission.')
+  const id = normalizedInput.id ?? randomUUID()
+  const existing = db.prepare('SELECT * FROM search_assignments WHERE id = ?').get(id)
+  assertSameMission(existing, missionId, 'search assignment', id)
+  if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
+    throw new Error(`Cannot update retired search assignment ${id}.`)
+  }
+  if (
+    existing !== undefined
+    && (existing.search_area_id !== area.id || existing.outing_id !== outing.id)
+    && db.prepare('SELECT 1 FROM search_passes WHERE assignment_id = ? LIMIT 1').get(id) !== undefined
+  ) {
+    throw new Error(
+      `Cannot change search assignment scope ${id} after a recorded search pass; create a new assignment.`,
+    )
+  }
+  const participantIds = normalizedInput.participant_ids
+  const timestamp = now()
+  const row = {
+    id,
+    mission_id: missionId,
+    search_area_id: area.id,
+    outing_id: outing.id,
+    team_id: normalizedInput.team_id,
+    participant_ids_json: JSON.stringify(participantIds),
+    notes: normalizedInput.notes,
+    version_sequence: Number(existing?.version_sequence ?? 0) + 1,
+    updated_by: normalizedInput.updated_by,
+    created_at: existing?.created_at ?? timestamp,
+    updated_at: timestamp,
+    retired_at: null,
+  }
+  writeSearchOperationVersion(db, versionStore, {
+    table: 'search_assignments', objectType: 'search_assignment', row, existing,
+    effectiveAt: normalizedInput.effective_at ?? timestamp,
+    actor: row.updated_by,
+    beforeProjection: () => assertParticipantIdsBelongToMission(db, missionId, participantIds),
+  })
+  return db.prepare('SELECT * FROM search_assignments WHERE id = ?').get(id)
+}
+
+/** Records only a coordinator-declared pass outcome; advisory coverage cannot set this field. */
+function upsertSearchPass(db, versionStore, input) {
+  const normalizedInput = normalizeSearchPassMutation(input)
+  const missionId = normalizedInput.mission_id
+  ensureWritableMission(db, missionId)
+  const mission = getMission(db, missionId)
+  const areaId = normalizedInput.search_area_id
+  const assignmentId = normalizedInput.assignment_id
+  const area = db.prepare('SELECT * FROM search_areas WHERE id = ?').get(areaId)
+  const assignment = db.prepare('SELECT * FROM search_assignments WHERE id = ?').get(assignmentId)
+  if (area?.mission_id !== missionId) throw new Error('Search pass area is not in this mission.')
+  if (area.retired_at !== null || area.status === 'retired') {
+    throw new Error(`Cannot record a pass against retired search area ${area.id}.`)
+  }
+  if (assignment?.mission_id !== missionId || assignment.search_area_id !== area.id) {
+    throw new Error('Search pass assignment does not match this mission and area.')
+  }
+  if (assignment.retired_at !== null) {
+    throw new Error(`Cannot record a pass against retired search assignment ${assignment.id}.`)
+  }
+  const outing = db.prepare('SELECT * FROM outings WHERE id = ?').get(assignment.outing_id)
+  if (outing?.mission_id !== missionId) {
+    throw new Error('Search pass assignment outing is not in this mission.')
+  }
+  const id = normalizedInput.id ?? randomUUID()
+  const existing = db.prepare('SELECT * FROM search_passes WHERE id = ?').get(id)
+  assertSameMission(existing, missionId, 'search pass', id)
+  const timestamp = now()
+  const startedAt = normalizedInput.started_at
+  const endedAt = normalizedInput.ended_at
+  if (endedAt !== null && endedAt < startedAt) {
+    throw new Error('Search pass end time cannot precede its start time.')
+  }
+  assertSearchPassWindowWithinOuting({
+    mission,
+    outing,
+    startedAt,
+    endedAt,
+    currentTime: timestamp,
+  })
+  if (endedAt === null) {
+    throw new Error('A coordinator-declared search pass outcome requires an explicit pass end time.')
+  }
+  const previousLinks = existing === undefined ? null : readSearchPassLinks(
+    db,
+    id,
+    Number(existing.version_sequence),
+  )
+  const links = {
+    participant_ids: normalizeIdList(
+      normalizedInput.participant_ids ?? previousLinks?.participant_ids,
+      'Search pass participant links',
+    ),
+    clue_ids: normalizeIdList(
+      normalizedInput.clue_ids ?? previousLinks?.clue_ids,
+      'Search pass clue links',
+    ),
+    track_evidence_ids: normalizeIdList(
+      normalizedInput.track_evidence_ids ?? previousLinks?.track_evidence_ids,
+      'Search pass track links',
+    ),
+  }
+  const row = {
+    id,
+    mission_id: missionId,
+    search_area_id: area.id,
+    assignment_id: assignment.id,
+    started_at: startedAt,
+    ended_at: endedAt,
+    outcome: normalizedInput.outcome,
+    notes: normalizedInput.notes,
+    coordinator_name: normalizedInput.coordinator_name,
+    advisory_coverage_json: normalizedInput.advisory_coverage_json === undefined
+      ? existing?.advisory_coverage_json ?? null
+      : normalizedInput.advisory_coverage_json,
+    version_sequence: Number(existing?.version_sequence ?? 0) + 1,
+    created_at: existing?.created_at ?? timestamp,
+    updated_at: timestamp,
+  }
+  writeSearchOperationVersion(db, versionStore, {
+    table: 'search_passes', objectType: 'search_pass', row, existing,
+    effectiveAt: startedAt,
+    actor: row.coordinator_name,
+    state: { ...row, ...links, outcome_authority: 'coordinator_declared' },
+    beforeProjection: () => assertSearchPassLinksBelongToMission(db, missionId, links),
+    afterProjection: () => writeSearchPassLinks(db, id, row.version_sequence, links),
+  })
+  return { ...db.prepare('SELECT * FROM search_passes WHERE id = ?').get(id), ...links }
+}
+
+/** Fails closed when a declared pass is outside its coordinator-owned outing. */
+function assertSearchPassWindowWithinOuting(input) {
+  const startedAtMs = Date.parse(input.startedAt)
+  const endedAtMs = input.endedAt === null ? null : Date.parse(input.endedAt)
+  const missionStartMs = Date.parse(input.mission.start_time)
+  const outingStartMs = Date.parse(input.outing.started_at)
+  const outingEndMs = input.outing.ended_at === null ? null : Date.parse(input.outing.ended_at)
+  const currentTimeMs = Date.parse(input.currentTime)
+  if (startedAtMs < missionStartMs) {
+    throw new Error('Search pass start cannot be before the mission start.')
+  }
+  if (startedAtMs < outingStartMs) {
+    throw new Error('Search pass start cannot be before its assignment outing start.')
+  }
+  if (startedAtMs > currentTimeMs) {
+    throw new Error('Search pass start cannot be in the future.')
+  }
+  if (endedAtMs !== null && endedAtMs > currentTimeMs) {
+    throw new Error('Search pass end cannot be in the future.')
+  }
+  if (outingEndMs !== null) {
+    if (startedAtMs >= outingEndMs) {
+      throw new Error('Search pass start must be before its assignment outing end.')
+    }
+    if (endedAtMs === null) {
+      throw new Error('A pass in an ended outing must have an explicit pass end.')
+    }
+    if (endedAtMs > outingEndMs) {
+      throw new Error('Search pass end cannot be after its assignment outing end.')
+    }
+  }
+}
+
+function writeSearchOperationVersion(db, versionStore, input) {
+  const columns = Object.keys(input.row)
+  const immutableColumns = new Set(['id', 'mission_id', 'created_at'])
+  const assignments = columns
+    .filter((column) => !immutableColumns.has(column))
+    .map((column) => `${column} = excluded.${column}`)
+    .join(', ')
+  const operation = input.operation ?? (input.existing === undefined ? 'created' : 'updated')
+  const recordedAt = input.row.updated_at
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, input.row.mission_id)
+    input.beforeProjection?.()
+    db.prepare(`INSERT INTO ${input.table} (${columns.join(', ')})
+      VALUES (${columns.map(() => '?').join(', ')})
+      ON CONFLICT(id) DO UPDATE SET ${assignments}`)
+      .run(...columns.map((column) => input.row[column]))
+    input.afterProjection?.()
+    const auditEventId = insertEvent(
+      db,
+      input.row.mission_id,
+      `${input.objectType}_${operation}`,
+      recordedAt,
+      { object_id: input.row.id, version_sequence: input.row.version_sequence },
+    )
+    versionStore.recordVersion({
+      missionId: input.row.mission_id,
+      objectType: input.objectType,
+      objectId: input.row.id,
+      operation,
+      effectiveAt: input.effectiveAt,
+      recordedAt,
+      state: input.state ?? input.row,
+      actor: input.actor,
+      auditEventId,
+    })
+  })
+  transaction.immediate()
+}
+
+/** Fails the pass transaction unless every evidence link resolves inside its mission. */
+function assertSearchPassLinksBelongToMission(db, missionId, links) {
+  assertParticipantIdsBelongToMission(db, missionId, links.participant_ids)
+  const readClue = db.prepare(`SELECT 1 FROM markers
+    WHERE id = ? AND mission_id = ? AND type = 'clue'`)
+  for (const clueId of links.clue_ids) {
+    if (readClue.get(clueId, missionId) === undefined) {
+      throw new Error(`Search pass clue ${clueId} is not in this mission.`)
+    }
+  }
+  const readTrackEvidence = db.prepare(`SELECT 1 FROM positions
+      WHERE id = ? AND mission_id = ?
+    UNION ALL
+    SELECT 1 FROM gpx_track_imports WHERE id = ? AND mission_id = ? LIMIT 1`)
+  for (const trackEvidenceId of links.track_evidence_ids) {
+    if (readTrackEvidence.get(
+      trackEvidenceId, missionId, trackEvidenceId, missionId,
+    ) === undefined) {
+      throw new Error(`Search pass track evidence ${trackEvidenceId} is not in this mission.`)
+    }
+  }
+}
+
+/** Rejects invented or cross-mission participant identities atomically. */
+function assertParticipantIdsBelongToMission(db, missionId, participantIds) {
+  const readParticipant = db.prepare(`SELECT 1 FROM mission_participants
+    WHERE id = ? AND mission_id = ?`)
+  for (const participantId of participantIds) {
+    if (readParticipant.get(participantId, missionId) === undefined) {
+      throw new Error(`Search participant ${participantId} is not in this mission.`)
+    }
+  }
+}
+
+/** Returns search passes with their exact current-revision evidence links. */
+function listSearchPassRecords(db, missionId) {
+  return db.prepare(`SELECT * FROM search_passes WHERE mission_id = ?
+    ORDER BY started_at ASC, id ASC`).all(missionId).map((pass) => ({
+    ...pass,
+    ...readSearchPassLinks(db, pass.id, Number(pass.version_sequence)),
+  }))
+}
+
+function writeSearchPassLinks(db, passId, versionSequence, links) {
+  const rows = [
+    ...links.participant_ids.map((targetId) => ['participant', targetId]),
+    ...links.clue_ids.map((targetId) => ['clue', targetId]),
+    ...links.track_evidence_ids.map((targetId) => ['track', targetId]),
+  ]
+  for (const [kind, targetId] of rows) {
+    db.prepare(`INSERT INTO search_pass_evidence_links (
+      pass_id, version_sequence, link_kind, target_id
+    ) VALUES (?, ?, ?, ?)`).run(passId, versionSequence, kind, targetId)
+  }
+}
+
+function readSearchPassLinks(db, passId, versionSequence) {
+  const result = { participant_ids: [], clue_ids: [], track_evidence_ids: [] }
+  const keyByKind = { participant: 'participant_ids', clue: 'clue_ids', track: 'track_evidence_ids' }
+  for (const row of db.prepare(`SELECT link_kind, target_id FROM search_pass_evidence_links
+    WHERE pass_id = ? AND version_sequence = ? ORDER BY link_kind, target_id`)
+    .all(passId, versionSequence)) {
+    result[keyByKind[row.link_kind]].push(row.target_id)
+  }
+  return result
+}
+
+const MAX_LEGACY_GPX_METADATA_CANDIDATES_PER_TURN = 10_000
+const MAX_LEGACY_GPX_UNSETTLED_METADATA_CANDIDATES_PER_TURN = 100
+const MAX_LEGACY_GPX_UNSAFE_ROWID_CANDIDATES_PER_TURN = 100
+
+/** Quarantines a bounded signed-int64 rowid page entirely inside SQLite's exact integer domain. */
+function scanUnsafeLegacyGpxRowids(db, migrationTime, maximumCandidates) {
+  const state = db.prepare(`SELECT
+      low_scanned_through_rowid > low_target_rowid AS low_pending,
+      high_scanned_through_rowid < high_target_rowid AS high_pending
+    FROM legacy_gpx_rowid_scan_state WHERE singleton = 1`).get()
+  const direction = Number(state.low_pending) === 1
+    ? 'low'
+    : Number(state.high_pending) === 1 ? 'high' : null
+  if (direction === null) return { remaining: 0 }
+  const isLow = direction === 'low'
+  const pagePredicate = isLow
+    ? `source.rowid < scan.low_scanned_through_rowid
+       AND source.rowid >= scan.low_target_rowid`
+    : `source.rowid > scan.high_scanned_through_rowid
+       AND source.rowid <= scan.high_target_rowid`
+  const pageOrder = isLow ? 'DESC' : 'ASC'
+  const pageBoundary = isLow ? 'MIN(source_rowid)' : 'MAX(source_rowid)'
+  const cursorColumn = isLow ? 'low_scanned_through_rowid' : 'high_scanned_through_rowid'
+  const targetColumn = isLow ? 'low_target_rowid' : 'high_target_rowid'
+  const transaction = db.transaction(() => {
+    db.prepare(`WITH page(source_rowid) AS (
+        SELECT source.rowid FROM gpx_track_imports AS source
+        JOIN legacy_gpx_rowid_scan_state AS scan ON scan.singleton = 1
+        WHERE ${pagePredicate}
+        ORDER BY source.rowid ${pageOrder} LIMIT ?
+      )
+      INSERT OR IGNORE INTO legacy_gpx_backfill_quarantine (
+        source_rowid, import_id_preview, reason, geometry_bytes,
+        source_bytes_base64_bytes, metadata_bytes, detected_at
+      ) SELECT source.rowid, substr(source.id, 1, 100),
+        'legacy_rowid_outside_safe_envelope',
+        length(CAST(source.geometry_json AS BLOB)),
+        length(CAST(COALESCE(source.source_bytes_base64, '') AS BLOB)),
+        length(CAST(COALESCE(source.metadata_json, '') AS BLOB)), ?
+      FROM gpx_track_imports AS source
+      JOIN page ON page.source_rowid = source.rowid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM gpx_import_revisions AS revision WHERE revision.import_id = source.id
+      )`).run(maximumCandidates, migrationTime)
+    db.prepare(`WITH page(source_rowid) AS (
+        SELECT source.rowid FROM gpx_track_imports AS source
+        JOIN legacy_gpx_rowid_scan_state AS scan ON scan.singleton = 1
+        WHERE ${pagePredicate}
+        ORDER BY source.rowid ${pageOrder} LIMIT ?
+      )
+      UPDATE legacy_gpx_rowid_scan_state
+      SET ${cursorColumn} = COALESCE((SELECT ${pageBoundary} FROM page), ${targetColumn}),
+        updated_at = ? WHERE singleton = 1`).run(maximumCandidates, migrationTime)
+  })
+  transaction.immediate()
+  const remaining = db.prepare(`SELECT CASE WHEN
+      low_scanned_through_rowid > low_target_rowid
+      OR high_scanned_through_rowid < high_target_rowid THEN 1 ELSE 0 END AS count
+    FROM legacy_gpx_rowid_scan_state WHERE singleton = 1`).get()
+  return { remaining: Number(remaining.count) }
+}
+
+/** Baselines a hard-bounded pre-v12 GPX slice without inventing source time or byte provenance. */
+function backfillLegacyGpxRevisions(
+  db,
+  migrationTime,
+  maximumImports,
+  migrateBoundedRows = true,
+  maximumCandidates = migrateBoundedRows
+    ? MAX_LEGACY_GPX_METADATA_CANDIDATES_PER_TURN
+    : maximumImports,
+) {
+  const unsafeScan = scanUnsafeLegacyGpxRowids(
+    db,
+    migrationTime,
+    Math.min(maximumCandidates, MAX_LEGACY_GPX_UNSAFE_ROWID_CANDIDATES_PER_TURN),
+  )
+  if (unsafeScan.remaining > 0) return { processed: 0, remaining: 1 }
+  const state = db.prepare(`SELECT scanned_through_rowid, scan_target_rowid
+    FROM legacy_gpx_backfill_state WHERE singleton = 1`).get()
+  const readPageEnd = db.prepare(`SELECT MAX(source_rowid) AS page_end FROM (
+      SELECT source.rowid AS source_rowid FROM gpx_track_imports AS source
+      WHERE source.rowid > ? AND source.rowid <= ?
+      ORDER BY source.rowid ASC LIMIT ?
+    )`)
+  const readLegacyPage = db.prepare(`SELECT
+      source.rowid AS source_rowid,
+      substr(source.id, 1, 100) AS import_id_preview,
+      length(CAST(source.id AS BLOB)) AS id_bytes,
+      length(CAST(source.mission_id AS BLOB)) AS mission_id_bytes,
+      length(CAST(source.source_path AS BLOB)) AS source_path_bytes,
+      length(CAST(source.file_name AS BLOB)) AS file_name_bytes,
+      length(CAST(source.display_name AS BLOB)) AS display_name_bytes,
+      length(CAST(source.geometry_json AS BLOB)) AS geometry_bytes,
+      length(CAST(COALESCE(source.metadata_json, '') AS BLOB)) AS metadata_bytes,
+      length(CAST(COALESCE(source.source_bytes_base64, '') AS BLOB))
+        AS source_bytes_base64_bytes
+    FROM gpx_track_imports AS source
+    WHERE source.rowid > ? AND source.rowid <= ?
+      AND NOT EXISTS (
+        SELECT 1 FROM gpx_import_revisions AS revision WHERE revision.import_id = source.id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM legacy_gpx_backfill_quarantine AS quarantine
+        WHERE quarantine.source_rowid = source.rowid
+      )
+    ORDER BY source.rowid ASC LIMIT ?`)
+  const readBoundedLegacy = db.prepare(`SELECT
+      source.id, source.mission_id, source.content_sha256, source.source_bytes_base64,
+      source.source_path, source.file_name, source.display_name, source.geometry_json,
+      source.metadata_json
+    FROM gpx_track_imports AS source WHERE source.rowid = ?`)
+  const quarantineLegacy = db.prepare(`INSERT OR IGNORE INTO legacy_gpx_backfill_quarantine (
+      source_rowid, import_id_preview, reason, geometry_bytes,
+      source_bytes_base64_bytes, metadata_bytes, detected_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+  const advanceCursor = db.prepare(`UPDATE legacy_gpx_backfill_state
+    SET scanned_through_rowid = ?, updated_at = ? WHERE singleton = 1`)
+  const insertRevision = db.prepare(`INSERT INTO gpx_import_revisions (
+    id, mission_id, import_id, revision_sequence, source_revision_sequence, content_sha256,
+    source_bytes_base64, source_path, file_name, display_name, geometry_json,
+      metadata_json, timing_class, completeness, recorded_at, audit_event_id
+  ) VALUES (?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, 'undated', 'legacy_baseline', ?, NULL)`)
+  const updateProjectionGeometry = db.prepare(`UPDATE gpx_track_imports
+    SET geometry_json = ? WHERE id = ?`)
+  const insertPoint = db.prepare(`INSERT INTO gpx_evidence_points (
+    import_id, revision_sequence, segment_index, point_index, track_name,
+    lat, lon, elevation, source_time
+  ) VALUES (?, 1, ?, ?, ?, ?, ?, ?, NULL)`)
+  const insertRejection = db.prepare(`INSERT INTO gpx_evidence_rejections (
+    id, import_id, revision_sequence, kind, segment_index, point_index, reason, source_value
+  ) VALUES (?, ?, 1, ?, ?, ?, ?, ?)`)
+  const pageEnd = Number(readPageEnd.get(
+    state.scanned_through_rowid,
+    state.scan_target_rowid,
+    maximumCandidates,
+  )?.page_end ?? state.scan_target_rowid)
+  const legacyCandidates = readLegacyPage.all(
+    state.scanned_through_rowid,
+    pageEnd,
+    Math.min(maximumCandidates, MAX_LEGACY_GPX_UNSETTLED_METADATA_CANDIDATES_PER_TURN),
+  )
+  let processed = 0
+  let cursor = Number(state.scanned_through_rowid)
+  let persistedCursor = cursor
+  let cursorBlocked = false
+  for (const candidate of legacyCandidates) {
+    if (processed >= maximumImports) break
+    const quarantineReason = legacyGpxBackfillQuarantineReason(candidate)
+    if (quarantineReason !== null) {
+      const quarantineOne = db.transaction(() => {
+        quarantineLegacy.run(
+          candidate.source_rowid,
+          candidate.import_id_preview,
+          quarantineReason,
+          candidate.geometry_bytes,
+          candidate.source_bytes_base64_bytes,
+          candidate.metadata_bytes,
+          migrationTime,
+        )
+        if (!cursorBlocked) advanceCursor.run(candidate.source_rowid, migrationTime)
+      })
+      quarantineOne.immediate()
+      if (!cursorBlocked) {
+        cursor = Number(candidate.source_rowid)
+        persistedCursor = cursor
+      }
+      processed += 1
+      if (processed >= maximumImports) break
+      continue
+    }
+    if (!migrateBoundedRows) {
+      cursorBlocked = true
+      continue
+    }
+    if (processed >= maximumImports) break
+    const entry = readBoundedLegacy.get(candidate.source_rowid)
+    if (entry === undefined) {
+      cursor = Number(candidate.source_rowid)
+      continue
+    }
+    const migrateOne = db.transaction(() => {
+      const migration = readLegacyGpxMigrationProjection(entry.geometry_json)
+      insertRevision.run(
+        randomUUID(), entry.mission_id, entry.id, entry.content_sha256 ?? null,
+        entry.source_bytes_base64 ?? null, entry.source_path, entry.file_name,
+        entry.display_name, entry.geometry_json, entry.metadata_json ?? null,
+        migrationTime,
+      )
+      updateProjectionGeometry.run(migration.geometryJson, entry.id)
+      for (const rejection of migration.rejections) {
+        insertRejection.run(
+          randomUUID(), entry.id, rejection.kind, rejection.segmentIndex,
+          rejection.pointIndex, rejection.reason, rejection.sourceValue,
+        )
+      }
+      for (const point of migration.points) {
+        insertPoint.run(
+          entry.id,
+          point.segmentIndex,
+          point.pointIndex,
+          entry.display_name,
+          point.lat,
+          point.lon,
+          point.elevation,
+        )
+      }
+      advanceCursor.run(candidate.source_rowid, migrationTime)
+    })
+    migrateOne.immediate()
+    cursor = Number(candidate.source_rowid)
+    persistedCursor = cursor
+    processed += 1
+    if (processed >= maximumImports) break
+  }
+  if (legacyCandidates.length === 0 && cursor < pageEnd) cursor = pageEnd
+  if (cursor > persistedCursor) advanceCursor.run(cursor, migrationTime)
+  const remaining = cursor < Number(state.scan_target_rowid) ? 1 : 0
+  return { processed, remaining }
+}
+
+const MAX_INLINE_LEGACY_GPX_GEOMETRY_BYTES = 128 * 1024
+const MAX_INLINE_LEGACY_GPX_SOURCE_BYTES = 128 * 1024
+const MAX_INLINE_LEGACY_GPX_METADATA_BYTES = 100 * 1024
+
+/** Classifies one legacy row using only SQLite-side byte lengths before selecting its text. */
+function legacyGpxBackfillQuarantineReason(candidate) {
+  if (Number(candidate.geometry_bytes) > MAX_INLINE_LEGACY_GPX_GEOMETRY_BYTES) {
+    return 'legacy_geometry_over_byte_envelope'
+  }
+  if (Number(candidate.source_bytes_base64_bytes) > MAX_INLINE_LEGACY_GPX_SOURCE_BYTES) {
+    return 'legacy_source_bytes_over_byte_envelope'
+  }
+  if (Number(candidate.metadata_bytes) > MAX_INLINE_LEGACY_GPX_METADATA_BYTES) {
+    return 'legacy_metadata_over_byte_envelope'
+  }
+  if (Number(candidate.id_bytes) > 1_000 || Number(candidate.mission_id_bytes) > 1_000
+    || Number(candidate.file_name_bytes) > 1_000 || Number(candidate.display_name_bytes) > 1_000
+    || Number(candidate.source_path_bytes) > 10_000) {
+    return 'legacy_identity_over_byte_envelope'
+  }
+  return null
+}
+
+/** Produces a bounded legacy projection without scanning arbitrarily large coordinate arrays. */
+function readLegacyGpxMigrationProjection(geometryJson) {
+  if (Buffer.byteLength(geometryJson, 'utf8') > MAX_INLINE_LEGACY_GPX_GEOMETRY_BYTES) {
+    return {
+      geometryJson: '{"type":"MultiLineString","coordinates":[]}',
+      points: [],
+      rejections: [{
+        kind: 'segment', segmentIndex: -1, pointIndex: null,
+        reason: 'Legacy geometry exceeds the bounded startup migration budget; the original artifact is retained in the immutable baseline revision but is not reconstructed as exact point evidence.',
+        sourceValue: null,
+      }],
+    }
+  }
+  try {
+    const parsed = JSON.parse(geometryJson)
+    const segments = parsed?.type === 'LineString'
+      ? [parsed.coordinates]
+      : parsed?.type === 'MultiLineString' ? parsed.coordinates : null
+    if (!Array.isArray(segments)) throw new Error('unsupported geometry')
+    const points = []
+    const rejections = []
+    const displaySegments = []
+    for (const [segmentIndex, segment] of segments.entries()) {
+      if (!Array.isArray(segment)) {
+        rejections.push({
+          kind: 'segment', segmentIndex, pointIndex: null,
+          reason: 'invalid_segment', sourceValue: boundedLegacyGpxSourceValue(segment),
+        })
+        continue
+      }
+      const displayPoints = []
+      for (const [pointIndex, coordinate] of segment.entries()) {
+        if (!Array.isArray(coordinate)) {
+          rejections.push({
+            kind: 'point', segmentIndex, pointIndex,
+            reason: 'invalid_coordinates', sourceValue: boundedLegacyGpxSourceValue(coordinate),
+          })
+          continue
+        }
+        const lon = Number(coordinate[0])
+        const lat = Number(coordinate[1])
+        if (!Number.isFinite(lat) || lat < -90 || lat > 90
+          || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+          rejections.push({
+            kind: 'point', segmentIndex, pointIndex,
+            reason: 'invalid_coordinates', sourceValue: boundedLegacyGpxSourceValue(coordinate),
+          })
+          continue
+        }
+        const elevationSource = coordinate[2]
+        const elevation = elevationSource === undefined || elevationSource === null
+          ? null
+          : Number(elevationSource)
+        if (elevation !== null && !Number.isFinite(elevation)) {
+          rejections.push({
+            kind: 'point', segmentIndex, pointIndex,
+            reason: 'invalid_elevation', sourceValue: boundedLegacyGpxSourceValue(elevationSource),
+          })
+        }
+        points.push({
+          segmentIndex, pointIndex, lat, lon,
+          elevation: elevation !== null && Number.isFinite(elevation) ? elevation : null,
+        })
+        displayPoints.push([lon, lat])
+      }
+      if (displayPoints.length >= 2) {
+        displaySegments.push(displayPoints)
+      } else {
+        rejections.push({
+          kind: 'segment', segmentIndex, pointIndex: null,
+          reason: 'insufficient_segment_points', sourceValue: String(displayPoints.length),
+        })
+      }
+    }
+    return {
+      geometryJson: JSON.stringify({ type: 'MultiLineString', coordinates: displaySegments }),
+      points,
+      rejections,
+    }
+  } catch {
+    return {
+      geometryJson: '{"type":"MultiLineString","coordinates":[]}',
+      points: [],
+      rejections: [{
+        kind: 'segment', segmentIndex: -1, pointIndex: null,
+        reason: 'Legacy geometry could not be rendered safely; the original artifact is retained in the immutable baseline revision.',
+        sourceValue: null,
+      }],
+    }
+  }
+}
+
+/** Bounds legacy source fragments retained beside explicit migration rejections. */
+function boundedLegacyGpxSourceValue(value) {
+  try {
+    return JSON.stringify(value).slice(0, 500)
+  } catch {
+    return String(value).slice(0, 500)
+  }
+}
+
+function normalizeIdList(value, label) {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new Error('Search operation evidence links must be a list.')
+  if (value.length > MAX_SEARCH_OPERATION_LINK_COUNT) {
+    throw new Error(`${label} may contain at most ${MAX_SEARCH_OPERATION_LINK_COUNT} identities.`)
+  }
+  return [...new Set(value.map((entry) => normalizeBoundedRequiredText(
+    entry,
+    label,
+    MAX_SEARCH_OPERATION_ID_LENGTH,
+  )))].sort()
+}
+
+function normalizeBoundedRequiredText(value, label, maximumLength) {
+  if (value === undefined || value === null) throw new Error(`${label} is required.`)
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  if (value.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
+  }
+  const normalized = value.trim()
+  if (normalized === '') throw new Error(`${label} is required.`)
+  if (normalized.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
+  }
+  return normalized
+}
+
+function normalizeBoundedOptionalTextValue(value, label, maximumLength) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  if (value.length > maximumLength) {
+    throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
+  }
+  const normalized = value.trim()
+  if (normalized === '') return null
+  return normalized
+}
+
+function normalizeSearchOperationRecord(value, label) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} input must be an object.`)
+  }
+  return value
+}
+
+function normalizeOptionalSearchOperationIdentity(value, label) {
+  if (value === undefined || value === null) return null
+  return normalizeBoundedRequiredText(value, label, MAX_SEARCH_OPERATION_ID_LENGTH)
+}
+
+function normalizeOptionalSearchIdList(value, label) {
+  if (value === undefined || value === null) return undefined
+  return normalizeIdList(value, label)
+}
+
+function normalizeSearchAreaStatus(value) {
+  if (value !== 'active' && value !== 'retired') {
+    throw new Error('Search area status is invalid.')
+  }
+  return value
+}
+
+function normalizeSearchPassOutcome(value) {
+  if (value !== 'full' && value !== 'partial' && value !== 'aborted') {
+    throw new Error('Search pass coordinator outcome is invalid.')
+  }
+  return value
+}
+
+function normalizeSearchDisplayOrder(value) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new Error('Search area display order must be a finite integer.')
+  }
+  return value
+}
+
+function normalizeOptionalFiniteSearchNumber(value, label) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number.`)
+  }
+  return value
+}
+
+function normalizeOptionalSearchBoolean(value, label) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'boolean') throw new Error(`${label} must be true or false.`)
+  return value
+}
+
+function normalizeBoundedOptionalJsonText(value, label, maximumLength) {
+  const normalized = normalizeBoundedOptionalTextValue(value, label, maximumLength)
+  if (normalized === null) return null
+  try {
+    JSON.parse(normalized)
+  } catch {
+    throw new Error(`${label} must be valid JSON text.`)
+  }
+  return normalized
+}
+
+/** Requires a plain evidence mutation envelope before field reads. */
+function normalizeMutableEvidenceRecord(value, label) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} evidence input is invalid.`)
+  }
+  return value
+}
+
+/** Normalizes one required evidence string using its UTF-8 persistence envelope. */
+function normalizeBoundedEvidenceRequiredText(value, label, maximumBytes) {
+  if (typeof value !== 'string') throw new Error(`${label} is invalid.`)
+  const normalized = value.trim()
+  if (normalized === '' || Buffer.byteLength(normalized, 'utf8') > maximumBytes) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return normalized
+}
+
+/** Normalizes one optional evidence string using its UTF-8 persistence envelope. */
+function normalizeBoundedEvidenceOptionalText(value, label, maximumBytes) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string') throw new Error(`${label} is invalid.`)
+  const normalized = value.trim()
+  if (normalized === '') return null
+  if (Buffer.byteLength(normalized, 'utf8') > maximumBytes) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return normalized
+}
+
+/** Normalizes one optional bounded JSON string without retaining parsed renderer objects. */
+function normalizeBoundedEvidenceOptionalJson(value, label, maximumBytes) {
+  const normalized = normalizeBoundedEvidenceOptionalText(value, label, maximumBytes)
+  if (normalized === null) return null
+  try {
+    JSON.parse(normalized)
+  } catch {
+    throw new Error(`${label} is invalid.`)
+  }
+  return normalized
+}
+
+/** Requires one finite renderer number without coercion. */
+function normalizeRequiredFiniteEvidenceNumber(value, label) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return value
+}
+
+/** Normalizes one optional finite renderer number without coercion. */
+function normalizeOptionalFiniteEvidenceNumber(value, label) {
+  if (value === undefined || value === null) return null
+  return normalizeRequiredFiniteEvidenceNumber(value, label)
+}
+
+/** Requires one safe integer used by the persisted evidence projection. */
+function normalizeRequiredSafeInteger(value, label) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return value
+}
+
+/** Normalizes one optional safe integer without renderer coercion. */
+function normalizeOptionalSafeInteger(value, label) {
+  if (value === undefined || value === null) return null
+  return normalizeRequiredSafeInteger(value, label)
+}
+
+/** Normalizes one optional boolean used by a drawing projection. */
+function normalizeOptionalEvidenceBoolean(value, label) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'boolean') throw new Error(`${label} is invalid.`)
+  return value
+}
+
+/** Parses and validates a bounded GeoJSON coordinate tree without recursive stack growth. */
+function normalizeMutableEvidenceGeometryJson(value, label, expectedType = null) {
+  const normalized = normalizeBoundedEvidenceRequiredText(
+    value, label, MAX_MUTABLE_EVIDENCE_GEOMETRY_BYTES,
+  )
+  let parsed
+  try {
+    parsed = JSON.parse(normalized)
+  } catch {
+    throw new Error(`${label} is invalid.`)
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)
+    || typeof parsed.type !== 'string' || !Array.isArray(parsed.coordinates)
+    || (expectedType !== null && parsed.type !== expectedType)) {
+    throw new Error(`${label} is invalid.`)
+  }
+  const pending = [{ value: parsed.coordinates, depth: 0 }]
+  let coordinateCount = 0
+  while (pending.length > 0) {
+    const candidate = pending.pop()
+    if (candidate.depth > MAX_MUTABLE_EVIDENCE_NESTING_DEPTH
+      || !Array.isArray(candidate.value)) {
+      throw new Error(`${label} is invalid.`)
+    }
+    if (candidate.value.length === 0) continue
+    if (candidate.value.length >= 2
+      && candidate.value.every((item) => typeof item === 'number' && Number.isFinite(item))) {
+      const [longitude, latitude] = candidate.value
+      validateLatLon(latitude, longitude, label)
+      coordinateCount += 1
+      if (coordinateCount > MAX_MUTABLE_EVIDENCE_COORDINATES) {
+        throw new Error(`${label} is invalid.`)
+      }
+      continue
+    }
+    for (const child of candidate.value) {
+      if (!Array.isArray(child)) throw new Error(`${label} is invalid.`)
+      pending.push({ value: child, depth: candidate.depth + 1 })
+    }
+  }
+  return normalized
+}
+
+function normalizeSearchAreaGeometryJson(value) {
+  if (typeof value === 'string' && value.length > MAX_SEARCH_AREA_GEOMETRY_LENGTH) {
+    throw new Error(
+      `Search area geometry must be no more than ${MAX_SEARCH_AREA_GEOMETRY_LENGTH} characters.`,
+    )
+  }
+  try {
+    return normalizeMutableEvidenceGeometryJson(
+      value, 'Search area geometry', 'Polygon',
+    )
+  } catch {
+    throw new Error(
+      'Search area geometry must be valid Polygon JSON text within the bounded evidence envelope.',
+    )
+  }
+}
+
+function normalizeOptionalStrictSearchTimestamp(value, label) {
+  if (value === undefined || value === null) return undefined
+  return normalizeStrictSearchTimestamp(value, label)
+}
+
+function normalizeRequiredText(value, label) {
+  if (typeof value !== 'string' || value.trim() === '') throw new Error(`${label} is required.`)
+  return value.trim()
+}
+
+/** Requires a plain renderer-supplied GPX request envelope. */
+function normalizeGpxRendererRecord(value, label) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${label} input must be an object.`)
+  }
+  return value
+}
+
+/** Preflights a GPX renderer identity before any database lookup. */
+function normalizeGpxRendererId(value, label, maximumLength = MAX_GPX_RENDERER_ID_LENGTH) {
+  return normalizeBoundedRequiredText(value, label, maximumLength)
+}
+
+function normalizeOptionalTextValue(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
+
+function assertSameMission(existing, missionId, label, id) {
+  if (existing !== undefined && existing.mission_id !== missionId) {
+    throw new Error(`Cannot move ${label} ${id} to a different mission.`)
+  }
+}
+
+/** Starts one durable GPX batch marker before any file can be accepted. */
+function startGpxImportBatch(db, input) {
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, input.missionId)
+    db.prepare(`INSERT INTO gpx_import_batches (
+      id, mission_id, status, total_files, completed_files, failed_files,
+      started_at, updated_at, finished_at
+    ) VALUES (?, ?, 'running', ?, 0, 0, ?, ?, NULL)`)
+      .run(input.batchId, input.missionId, input.totalFiles, timestamp, timestamp)
+    for (const sourcePath of input.paths ?? []) {
+      db.prepare(`INSERT INTO gpx_import_source_receipts (
+        batch_id, mission_id, source_path, file_name, status,
+        content_sha256, source_bytes_base64, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'pending', NULL, NULL, ?, ?)`)
+        .run(
+          input.batchId,
+          input.missionId,
+          sourcePath,
+          path.basename(sourcePath),
+          timestamp,
+          timestamp,
+        )
+    }
+  })
+  transaction.immediate()
+}
+
+/** Durably records the selected source identity before the first filesystem read. */
+function recordGpxImportSourceReceipt(db, input) {
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, input.missionId)
+    db.prepare(`INSERT INTO gpx_import_source_receipts (
+      batch_id, mission_id, source_path, file_name, status,
+      content_sha256, source_bytes_base64, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, 'pending', NULL, NULL, ?, ?)`)
+      .run(
+        input.batchId,
+        input.missionId,
+        input.sourcePath,
+        input.fileName,
+        timestamp,
+        timestamp,
+      )
+  })
+  transaction.immediate()
+}
+
+/** Retains exact bytes and their verified digest immediately after a successful source read. */
+function retainGpxImportSourceBytes(db, input) {
+  const normalizedHash = normalizeGpxContentHash(input.contentSha256, input.sourceBytesBase64)
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, input.missionId)
+    const result = db.prepare(`UPDATE gpx_import_source_receipts
+      SET status = 'retained', content_sha256 = ?, source_bytes_base64 = ?, updated_at = ?
+      WHERE batch_id = ? AND mission_id = ? AND source_path = ? AND status = 'pending'`)
+      .run(
+        normalizedHash,
+        input.sourceBytesBase64,
+        timestamp,
+        input.batchId,
+        input.missionId,
+        input.sourcePath,
+      )
+    if (result.changes !== 1) {
+      throw new Error('GPX source receipt was not pending when retained bytes were recorded.')
+    }
+  })
+  transaction.immediate()
+}
+
+/** Marks one published GPX source receipt settled in the same batch accounting transaction. */
+function settleGpxImportSourceReceipt(db, input) {
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, input.missionId)
+    settleGpxImportSourceReceiptWithinTransaction(db, input, timestamp)
+  })
+  transaction.immediate()
+}
+
+/** Settles one retained source receipt inside its caller's publication transaction. */
+function settleGpxImportSourceReceiptWithinTransaction(db, input, timestamp) {
+  const result = db.prepare(`UPDATE gpx_import_source_receipts
+    SET status = 'settled', source_bytes_base64 = NULL, updated_at = ?
+    WHERE batch_id = ? AND mission_id = ? AND source_path = ? AND status = 'retained'`)
+    .run(timestamp, input.batchId, input.missionId, input.sourcePath)
+  if (result.changes !== 1) {
+    throw new Error('GPX source receipt was not retained when the import was published.')
+  }
+  db.prepare(`UPDATE gpx_import_batches
+    SET completed_files = completed_files + 1, updated_at = ? WHERE id = ?`)
+    .run(timestamp, input.batchId)
+}
+
+/** Records one retained malformed/read-failed GPX source and advances its batch. */
+function recordGpxImportFailure(db, input) {
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, input.missionId)
+    recordGpxImportFailureWithinTransaction(db, input, timestamp)
+  })
+  transaction.immediate()
+}
+
+/** Records one GPX failure exactly once inside an existing writer transaction. */
+function recordGpxImportFailureWithinTransaction(db, input, timestamp) {
+  const existingFailure = db.prepare(`SELECT 1 FROM gpx_import_failures
+    WHERE batch_id = ? AND source_path = ? LIMIT 1`).get(input.batchId, input.sourcePath)
+  if (existingFailure !== undefined) return false
+  const receipt = db.prepare(`SELECT status FROM gpx_import_source_receipts
+    WHERE batch_id = ? AND mission_id = ? AND source_path = ?`).get(
+    input.batchId,
+    input.missionId,
+    input.sourcePath,
+  )
+  if (receipt?.status === 'settled') {
+    throw new Error('Published GPX source evidence cannot be changed into an import failure.')
+  }
+  const rejections = normalizeGpxFailureRejections(input.rejections)
+  db.prepare(`INSERT INTO gpx_import_failures (
+    id, batch_id, mission_id, source_path, file_name, content_sha256,
+    source_bytes_base64, reason, rejection_count, rejections_json, recorded_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(
+      randomUUID(), input.batchId, input.missionId, input.sourcePath,
+      input.fileName, input.contentSha256, input.sourceBytesBase64,
+      safeEvidenceFailureReason(input.reason), rejections.length,
+      JSON.stringify(rejections), timestamp,
+    )
+  db.prepare(`UPDATE gpx_import_batches
+    SET failed_files = failed_files + 1, updated_at = ? WHERE id = ?`)
+    .run(timestamp, input.batchId)
+  db.prepare(`UPDATE gpx_import_source_receipts
+    SET status = 'failed',
+        content_sha256 = COALESCE(content_sha256, ?),
+        source_bytes_base64 = COALESCE(source_bytes_base64, ?),
+        updated_at = ?
+    WHERE batch_id = ? AND mission_id = ? AND source_path = ?
+      AND status IN ('pending', 'retained')`)
+    .run(
+      input.contentSha256,
+      input.sourceBytesBase64,
+      timestamp,
+      input.batchId,
+      input.missionId,
+      input.sourcePath,
+    )
+  return true
+}
+
+/** Retains structured parser rejection provenance on a failed GPX source. */
+function normalizeGpxFailureRejections(value) {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new Error('GPX failure rejections are invalid.')
+  return value.map((entry) => {
+    if (entry === null || typeof entry !== 'object'
+      || !['point', 'segment'].includes(entry.kind)
+      || !Number.isSafeInteger(entry.segment_index) || entry.segment_index < 0
+      || (entry.point_index !== null
+        && (!Number.isSafeInteger(entry.point_index) || entry.point_index < 0))
+      || typeof entry.reason !== 'string' || entry.reason.trim() === ''
+      || (entry.source_value !== null && typeof entry.source_value !== 'string')) {
+      throw new Error('GPX failure rejection entry is invalid.')
+    }
+    return {
+      kind: entry.kind,
+      segment_index: entry.segment_index,
+      point_index: entry.point_index,
+      reason: entry.reason,
+      source_value: entry.source_value,
+    }
+  })
+}
+
+/** Closes one durable GPX batch with an explicit complete or partial status. */
+function finishGpxImportBatch(db, batchId, missionId) {
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, missionId)
+    const unsettled = db.prepare(`SELECT COUNT(*) AS count
+      FROM gpx_import_source_receipts
+      WHERE batch_id = ? AND status IN ('pending', 'retained')`).get(batchId).count
+    if (unsettled > 0) {
+      throw new Error(`GPX import batch ${batchId} cannot finish while ${unsettled} source receipt(s) are unsettled.`)
+    }
+    db.prepare(`UPDATE gpx_import_batches
+      SET status = CASE WHEN failed_files > 0 THEN 'completed_with_failures' ELSE 'completed' END,
+          updated_at = ?, finished_at = ? WHERE id = ?`)
+      .run(timestamp, timestamp, batchId)
+  })
+  transaction.immediate()
+}
+
+/** Bounds failure text stored and returned to the operator. */
+function safeEvidenceFailureReason(value) {
+  return String(value ?? 'Unknown GPX evidence failure').replace(/[\r\n]+/gu, ' ').trim().slice(0, 1_000)
+}
+
+/** Fails mission lifecycle transitions closed while any durable GPX write state is unsettled. */
+function assertNoUnsettledGpxImportState(db, missionId) {
+  const state = db.prepare(`SELECT
+    (SELECT COUNT(*) FROM gpx_import_batches
+      WHERE mission_id = ? AND status = 'running') AS running_batches,
+    (SELECT COUNT(*) FROM gpx_import_source_receipts
+      WHERE mission_id = ? AND status IN ('pending', 'retained')) AS unsettled_receipts,
+    (SELECT COUNT(*) FROM gpx_import_revisions
+      WHERE mission_id = ? AND import_state = 'staging') AS staging_revisions,
+    (SELECT COUNT(*) FROM gpx_track_imports
+      WHERE mission_id = ? AND import_state = 'staging') AS staging_imports,
+    (SELECT CASE WHEN
+        safe.scanned_through_rowid < safe.scan_target_rowid
+        OR unsafe.low_scanned_through_rowid > unsafe.low_target_rowid
+        OR unsafe.high_scanned_through_rowid < unsafe.high_target_rowid
+      THEN 1 ELSE 0 END
+      FROM legacy_gpx_backfill_state AS safe
+      JOIN legacy_gpx_rowid_scan_state AS unsafe ON unsafe.singleton = safe.singleton
+      WHERE safe.singleton = 1) AS pending_legacy_backfills,
+    (SELECT COUNT(*) FROM gpx_track_imports AS imports
+      JOIN legacy_gpx_backfill_quarantine AS quarantine
+        ON quarantine.source_rowid = imports.rowid
+      WHERE imports.mission_id = ?) AS quarantined_legacy_backfills`)
+    .get(missionId, missionId, missionId, missionId, missionId)
+  const count = Number(state.running_batches) + Number(state.unsettled_receipts)
+    + Number(state.staging_revisions) + Number(state.staging_imports)
+    + Number(state.pending_legacy_backfills) + Number(state.quarantined_legacy_backfills)
+  if (count > 0) {
+    const quarantineNotice = Number(state.quarantined_legacy_backfills) === 0
+      ? ''
+      : ` ${state.quarantined_legacy_backfills} legacy GPX artifact(s) are quarantined outside the safe reconstruction envelope (size, identity, or storage key); the retained originals require a bounded repair path before custody can be declared complete.`
+    throw new Error(
+      `Mission cannot change lifecycle state while GPX evidence import state is unsettled (${count} durable item(s), including any legacy GPX backfill still pending).${quarantineNotice} Wait for the import to settle or restart SAR Tracker to recover it explicitly.`,
+    )
+  }
+}
+
+/** Preflights Replay against startup-owned GPX receipts without blocking unrelated missions. */
+function assertMissionReplayGpxStateSettled(db, input) {
+  const candidate = normalizeGpxRendererRecord(input, 'Mission Replay')
+  const missionId = normalizeGpxRendererId(candidate.missionId, 'Mission Replay mission')
+  const pendingReceipt = db.prepare(`SELECT 1 FROM gpx_import_source_receipts
+    WHERE mission_id = ? AND status IN ('pending', 'retained') LIMIT 1`).get(missionId)
+  if (pendingReceipt !== undefined) {
+    throw new Error(
+      'Replay cannot reconstruct GPX evidence while interrupted durable source receipts are unsettled. Current positions remain available; retry after bounded background recovery completes.',
+    )
+  }
+}
+
+/** Returns one byte-bounded issue page without absolute paths or retained source bytes. */
+function listGpxImportIssues(db, input) {
+  const candidate = normalizeGpxRendererRecord(input, 'GPX issue query')
+  const missionId = normalizeGpxRendererId(candidate.missionId, 'GPX issue mission')
+  getMission(db, missionId)
+  const limit = candidate.limit ?? 50
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error('GPX import issue page limit must be between 1 and 100.')
+  }
+  const cursor = decodeGpxImportIssueCursor(candidate.cursor)
+  const rows = db.prepare(`WITH issues AS (
+      SELECT 'failure' AS issue_kind, failures.rowid AS issue_order_rowid,
+        substr(failures.batch_id, 1, 1000) AS batch_id,
+        length(CAST(failures.batch_id AS BLOB)) > 1000 AS batch_id_truncated,
+        substr(batches.status, 1, 100) AS batch_status,
+        length(CAST(batches.status AS BLOB)) > 100 AS batch_status_truncated,
+        substr(failures.source_path, 1, 4096) AS source_path,
+        length(CAST(failures.source_path AS BLOB)) > 4096 AS source_path_truncated,
+        substr(failures.file_name, 1, 500) AS file_name,
+        length(CAST(failures.file_name AS BLOB)) > 500 AS file_name_truncated,
+        substr(failures.content_sha256, 1, 128) AS content_sha256,
+        length(CAST(COALESCE(failures.content_sha256, '') AS BLOB)) > 128
+          AS content_sha256_truncated,
+        CASE WHEN failures.source_bytes_base64 IS NULL THEN 0 ELSE 1 END AS source_retained,
+        failures.rejection_count AS rejection_count,
+        substr(failures.reason, 1, 1000) AS reason,
+        length(CAST(failures.reason AS BLOB)) > 1000 AS reason_truncated,
+        substr(failures.recorded_at, 1, 64) AS recorded_at,
+        length(CAST(failures.recorded_at AS BLOB)) > 64 AS recorded_at_truncated
+      FROM gpx_import_failures AS failures
+      JOIN gpx_import_batches AS batches ON batches.id = failures.batch_id
+      WHERE failures.mission_id = ?
+      UNION ALL
+      SELECT 'batch' AS issue_kind, batches.rowid AS issue_order_rowid,
+        substr(batches.id, 1, 1000) AS batch_id,
+        length(CAST(batches.id AS BLOB)) > 1000 AS batch_id_truncated,
+        substr(batches.status, 1, 100) AS batch_status,
+        length(CAST(batches.status AS BLOB)) > 100 AS batch_status_truncated,
+        NULL AS source_path, 0 AS source_path_truncated,
+        'Selected GPX batch' AS file_name, 0 AS file_name_truncated,
+        NULL AS content_sha256, 0 AS content_sha256_truncated, 0 AS source_retained,
+        0 AS rejection_count,
+        'GPX import batch was interrupted before batch completion was durably confirmed; review retained imports and per-file evidence.' AS reason,
+        0 AS reason_truncated,
+        substr(batches.updated_at, 1, 64) AS recorded_at,
+        length(CAST(batches.updated_at AS BLOB)) > 64 AS recorded_at_truncated
+      FROM gpx_import_batches AS batches
+      WHERE batches.mission_id = ? AND batches.status = 'interrupted'
+        AND NOT EXISTS (SELECT 1 FROM gpx_import_failures WHERE batch_id = batches.id)
+      UNION ALL
+      SELECT 'quarantine' AS issue_kind, quarantine.source_rowid AS issue_order_rowid,
+        NULL AS batch_id, 0 AS batch_id_truncated,
+        'interrupted' AS batch_status, 0 AS batch_status_truncated,
+        NULL AS source_path, 0 AS source_path_truncated,
+        substr(quarantine.import_id_preview, 1, 500) AS file_name,
+        length(CAST(COALESCE(quarantine.import_id_preview, '') AS BLOB)) > 500
+          AS file_name_truncated,
+        NULL AS content_sha256, 0 AS content_sha256_truncated, 1 AS source_retained,
+        0 AS rejection_count,
+        'Legacy GPX evidence is quarantined outside the safe reconstruction envelope (size, identity, or storage key). The original remains retained; map projection, mission completion, and archive custody stay blocked until bounded repair.' AS reason,
+        0 AS reason_truncated,
+        substr(quarantine.detected_at, 1, 64) AS recorded_at,
+        length(CAST(quarantine.detected_at AS BLOB)) > 64 AS recorded_at_truncated
+      FROM legacy_gpx_backfill_quarantine AS quarantine
+      JOIN gpx_track_imports AS imports ON imports.rowid = quarantine.source_rowid
+      WHERE imports.mission_id = ?
+    )
+    SELECT issue_kind, CAST(issue_order_rowid AS TEXT) AS issue_rowid,
+      batch_id, batch_id_truncated, batch_status, batch_status_truncated,
+      source_path, source_path_truncated, file_name, file_name_truncated,
+      content_sha256, content_sha256_truncated, source_retained,
+      rejection_count,
+      reason, reason_truncated, recorded_at, recorded_at_truncated
+    FROM issues
+    WHERE (? IS NULL OR recorded_at < ?
+      OR (recorded_at = ? AND issue_kind < ?)
+      OR (recorded_at = ? AND issue_kind = ?
+        AND issue_order_rowid < CAST(? AS INTEGER)))
+    ORDER BY recorded_at DESC, issue_kind DESC, issue_order_rowid DESC
+    LIMIT ?`).all(
+      missionId,
+      missionId,
+      missionId,
+      cursor?.recordedAt ?? null,
+      cursor?.recordedAt ?? null,
+      cursor?.recordedAt ?? null,
+      cursor?.issueKind ?? null,
+      cursor?.recordedAt ?? null,
+      cursor?.issueKind ?? null,
+      cursor?.issueRowid ?? null,
+      limit + 1,
+    )
+  const projected = rows.map(projectGpxImportIssueForRenderer)
+  const packed = packGpxRendererPage(projected, {
+    limit,
+    byteLimit: DEFAULT_PAGE_BYTE_LIMIT - 2_048,
+  })
+  const entries = packed.entries
+  const lastRow = rows[entries.length - 1]
+  return {
+    entries,
+    nextCursor: packed.hasMore && lastRow !== undefined
+      ? Buffer.from(JSON.stringify({
+          recordedAt: lastRow.recorded_at,
+          issueKind: lastRow.issue_kind,
+          issueRowid: lastRow.issue_rowid,
+        }), 'utf8')
+        .toString('base64url')
+      : null,
+  }
+}
+
+/** Projects one persisted issue through bounded, explicit renderer scalars. */
+function projectGpxImportIssueForRenderer(row) {
+  const warnings = [
+    ...(row.batch_id_truncated ? ['batch_id_truncated'] : []),
+    ...(row.batch_status_truncated ? ['batch_status_truncated'] : []),
+    ...(row.source_path_truncated ? ['source_path_truncated'] : []),
+    ...(row.file_name_truncated ? ['file_name_truncated'] : []),
+    ...(row.content_sha256_truncated ? ['content_sha256_truncated'] : []),
+    ...(row.reason_truncated ? ['reason_truncated'] : []),
+    ...(row.recorded_at_truncated ? ['recorded_at_truncated'] : []),
+  ]
+  const reason = row.source_path_truncated
+    ? 'Persisted GPX issue reason is retained but its oversized source path prevents safe renderer display.'
+    : redactGpxImportIssueReason(row.reason, row.source_path, row.file_name)
+  return {
+    id: `${row.issue_kind}:${row.issue_rowid}`,
+    batch_id: boundGpxIssueProjectionText(row.batch_id, MAX_GPX_RENDERER_ID_LENGTH, row.batch_id_truncated),
+    batch_status: boundGpxIssueProjectionText(row.batch_status, 100, row.batch_status_truncated),
+    file_name: boundGpxIssueProjectionText(row.file_name, MAX_GPX_ISSUE_FILE_NAME_LENGTH, row.file_name_truncated),
+    content_sha256: boundGpxIssueProjectionText(row.content_sha256, MAX_GPX_ISSUE_HASH_LENGTH, row.content_sha256_truncated),
+    source_retained: Boolean(row.source_retained),
+    rejection_count: Number(row.rejection_count),
+    reason: boundGpxIssueProjectionText(reason, MAX_GPX_ISSUE_REASON_LENGTH, row.reason_truncated),
+    recorded_at: boundGpxIssueProjectionText(row.recorded_at, MAX_GPX_ISSUE_TIMESTAMP_LENGTH, row.recorded_at_truncated),
+    ...(warnings.length === 0 ? {} : { projection_warnings: warnings }),
+  }
+}
+
+/** Marks renderer truncation explicitly while enforcing one scalar limit. */
+function boundGpxIssueProjectionText(value, maximumLength, truncated) {
+  if (value === null || value === undefined) return null
+  const text = String(value)
+  if (!truncated && text.length <= maximumLength) return text
+  return `${text.slice(0, Math.max(0, maximumLength - GPX_ISSUE_TRUNCATION_SUFFIX.length))}${GPX_ISSUE_TRUNCATION_SUFFIX}`
+}
+
+function redactGpxImportIssueReason(reason, sourcePath, fileName) {
+  const bounded = safeEvidenceFailureReason(reason)
+  if (typeof sourcePath !== 'string' || sourcePath.length === 0) return bounded
+  const withoutFilePath = bounded.split(sourcePath).join(fileName ?? 'selected GPX file')
+  const directoryPath = path.dirname(sourcePath)
+  return directoryPath === '.' || directoryPath === path.parse(directoryPath).root
+    ? withoutFilePath
+    : withoutFilePath.split(directoryPath).join('selected GPX directory')
+}
+
+function decodeGpxImportIssueCursor(value) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string' || value.length < 1 || value.length > 500) {
+    throw new Error('GPX import issue cursor is invalid.')
+  }
+  try {
+    const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
+    if (
+      typeof decoded?.recordedAt !== 'string' ||
+      decoded.recordedAt.length < 1 ||
+      decoded.recordedAt.length > MAX_GPX_ISSUE_TIMESTAMP_LENGTH ||
+      typeof decoded?.issueKind !== 'string' ||
+      !/^(failure|batch|quarantine)$/u.test(decoded.issueKind) ||
+      typeof decoded?.issueRowid !== 'string' ||
+      !/^-?(?:0|[1-9][0-9]{0,18})$/u.test(decoded.issueRowid)
+    ) {
+      throw new Error('invalid')
+    }
+    return decoded
+  } catch {
+    throw new Error('GPX import issue cursor is invalid.')
+  }
+}
+
+/** Stores an exact GPX source as append-only evidence, deduplicated by byte digest. */
+function upsertGpxEvidence(db, input, publicationReceipt = null) {
+  const missionId = input.mission_id
+  assertNoUnsettledLegacyGpxTarget(db, input.id, missionId, input.source_path)
+  const timestamp = now()
+  const normalizedHash = normalizeGpxContentHash(
+    input.content_sha256,
+    input.source_bytes_base64,
+  )
+  const displayGeometryJson = compactGpxDisplayGeometry(input.geometry_json)
+  const existingById = input.id === undefined || input.id === null
+    ? undefined
+    : db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(input.id)
+  const existingByPath = db.prepare(
+    'SELECT * FROM gpx_track_imports WHERE mission_id = ? AND source_path = ?',
+  ).get(missionId, input.source_path)
+  const existingByAlias = db.prepare(`SELECT imports.* FROM gpx_import_aliases AS aliases
+    JOIN gpx_track_imports AS imports ON imports.id = aliases.import_id
+    WHERE aliases.mission_id = ? AND aliases.source_path = ?`)
+    .get(missionId, input.source_path)
+  assertGpxIdentityPathAgreement(existingById, existingByPath, existingByAlias)
+  const existing = existingById ?? existingByPath ?? existingByAlias
+  if (existing !== undefined && existing.mission_id !== missionId) {
+    throw new Error(`Cannot move GPX evidence ${existing.id} to a different mission.`)
+  }
+  if (existing?.import_state === 'staging') {
+    throw new Error(`GPX evidence ${existing.id} has an interrupted staged import that must be recovered before retrying.`)
+  }
+
+  if (normalizedHash !== null && existing === undefined) {
+    const contentMatch = db.prepare(`SELECT * FROM gpx_track_imports
+      WHERE mission_id = ? AND content_sha256 = ? AND retired_at IS NULL
+        AND import_state = 'complete'
+        AND EXISTS (
+          SELECT 1 FROM gpx_import_revisions AS revisions
+          WHERE revisions.import_id = gpx_track_imports.id
+        )
+      ORDER BY imported_at ASC LIMIT 1`).get(missionId, normalizedHash)
+    if (contentMatch !== undefined && contentMatch.id !== existing?.id) {
+      assertSameHashGpxEvidenceMatches(db, contentMatch, input, displayGeometryJson)
+      const transaction = db.transaction(() => {
+        ensureWritableMission(db, missionId)
+        const current = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(contentMatch.id)
+        if (current === undefined || current.mission_id !== missionId
+          || current.retired_at !== null || current.import_state !== 'complete'
+          || current.content_sha256 !== normalizedHash
+          || Number(current.revision_sequence) !== Number(contentMatch.revision_sequence)) {
+          throw new Error('GPX evidence changed while a same-content alias was being checked; retry the import.')
+        }
+        upsertGpxAlias(db, missionId, current.id, input.source_path, input.file_name, timestamp)
+        insertEvent(db, missionId, 'gpx_import_alias_added', timestamp, {
+          gpx_import_id: current.id,
+          source_path: input.source_path,
+          content_sha256: normalizedHash,
+        })
+        if (publicationReceipt !== null) {
+          settleGpxImportSourceReceiptWithinTransaction(db, publicationReceipt, timestamp)
+        }
+      })
+      transaction.immediate()
+      return getById(db, 'gpx_track_imports', contentMatch.id, 'GPX import')
+    }
+  }
+
+  if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
+    throw new Error(`Cannot update retired GPX evidence ${existing.id}.`)
+  }
+
+  const id = existing?.id ?? input.id ?? randomUUID()
+  const changedSource = existing !== undefined
+    && (normalizedHash === null || normalizedHash !== existing.content_sha256)
+  const revisionSequence = existing === undefined
+    ? 1
+    : changedSource ? Number(existing.revision_sequence) + 1 : Number(existing.revision_sequence)
+  const row = {
+    id,
+    mission_id: missionId,
+    source_path: existing?.source_path ?? input.source_path,
+    file_name: input.file_name,
+    display_name: input.display_name,
+    geometry_json: displayGeometryJson,
+    metadata_json: input.metadata_json ?? null,
+    content_sha256: normalizedHash ?? existing?.content_sha256 ?? null,
+    source_bytes_base64: input.source_bytes_base64 ?? existing?.source_bytes_base64 ?? null,
+    timing_class: normalizeGpxTimingClass(input.timing_class ?? existing?.timing_class ?? 'undated'),
+    outing_id: input.outing_id ?? existing?.outing_id ?? null,
+    import_state: 'complete',
+    revision_sequence: revisionSequence,
+    retired_at: null,
+    retired_by: null,
+    imported_at: existing?.imported_at ?? timestamp,
+    updated_at: timestamp,
+  }
+  const shouldRecordRevision = existing === undefined || changedSource
+  const completeness = normalizedHash === null || input.source_bytes_base64 === undefined
+    ? 'legacy_baseline'
+    : 'complete'
+  if (existing !== undefined && !changedSource) {
+    assertSameHashGpxEvidenceMatches(db, existing, input, displayGeometryJson)
+  }
+
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, missionId)
+    if (existing !== undefined && !changedSource) {
+      const current = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(existing.id)
+      if (current === undefined || current.mission_id !== missionId
+        || current.retired_at !== null || current.import_state !== 'complete'
+        || current.content_sha256 !== normalizedHash
+        || Number(current.revision_sequence) !== Number(existing.revision_sequence)) {
+        throw new Error('GPX evidence changed while an idempotent retry was being checked; retry the import.')
+      }
+      upsertGpxAlias(db, missionId, current.id, input.source_path, input.file_name, timestamp)
+      if (publicationReceipt !== null) {
+        settleGpxImportSourceReceiptWithinTransaction(db, publicationReceipt, timestamp)
+      }
+      return
+    }
+    const columns = Object.keys(row)
+    const assignments = columns
+      .filter((column) => !IMMUTABLE_UPSERT_COLUMNS.gpx_track_imports.has(column))
+      .map((column) => `${column} = excluded.${column}`)
+      .join(', ')
+    db.prepare(`INSERT INTO gpx_track_imports (${columns.join(', ')})
+      VALUES (${columns.map(() => '?').join(', ')})
+      ON CONFLICT(id) DO UPDATE SET ${assignments}`)
+      .run(...columns.map((column) => row[column]))
+    upsertGpxAlias(db, missionId, id, input.source_path, input.file_name, timestamp)
+    const auditEventId = insertEvent(
+      db,
+      missionId,
+      existing === undefined ? 'gpx_import_created' : 'gpx_import_updated',
+      timestamp,
+      {
+        gpx_import_id: id,
+        source_path: input.source_path,
+        file_name: input.file_name,
+        display_name: input.display_name,
+        content_sha256: row.content_sha256,
+        revision_sequence: revisionSequence,
+        timing_class: row.timing_class,
+        completeness,
+      },
+    )
+    if (shouldRecordRevision) {
+      db.prepare(`INSERT INTO gpx_import_revisions (
+        id, mission_id, import_id, revision_sequence, source_revision_sequence, content_sha256,
+        source_bytes_base64, source_path, file_name, display_name, geometry_json,
+        metadata_json, timing_class, outing_id, import_state, completeness, recorded_at, audit_event_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'complete', ?, ?, ?)`)
+        .run(
+          randomUUID(), missionId, id, revisionSequence, revisionSequence, row.content_sha256,
+          row.source_bytes_base64, input.source_path, row.file_name, row.display_name,
+          displayGeometryJson, row.metadata_json, row.timing_class, row.outing_id, completeness,
+          timestamp, auditEventId,
+        )
+      for (const point of input.points ?? []) {
+        db.prepare(`INSERT INTO gpx_evidence_points (
+          import_id, revision_sequence, segment_index, point_index, track_name,
+          lat, lon, elevation, source_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(
+            id, revisionSequence, point.segment_index, point.point_index,
+            point.track_name ?? null, point.lat, point.lon, point.elevation ?? null,
+            point.timestamp === null || point.timestamp === undefined
+              ? null
+              : normalizeIsoTimestamp(point.timestamp, 'GPX source time'),
+          )
+      }
+      for (const rejection of input.rejections ?? []) {
+        db.prepare(`INSERT INTO gpx_evidence_rejections (
+          id, import_id, revision_sequence, kind, segment_index, point_index, reason, source_value
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(
+            randomUUID(), id, revisionSequence, rejection.kind,
+            rejection.segment_index, rejection.point_index ?? null,
+            rejection.reason, rejection.source_value ?? null,
+          )
+      }
+    }
+    if (publicationReceipt !== null) {
+      settleGpxImportSourceReceiptWithinTransaction(db, publicationReceipt, timestamp)
+    }
+  })
+  transaction.immediate()
+  return getById(db, 'gpx_track_imports', id, 'GPX import')
+}
+
+/** Refuses same-byte retries whose evidence projection or parsed rows disagree. */
+function assertSameHashGpxEvidenceMatches(db, current, input, displayGeometryJson) {
+  const revision = db.prepare(`SELECT geometry_json, timing_class, outing_id,
+      source_revision_sequence
+    FROM gpx_import_revisions
+    WHERE import_id = ? AND revision_sequence = ? AND import_state = 'complete'`)
+    .get(current.id, current.revision_sequence)
+  const requestedTimingClass = normalizeGpxTimingClass(input.timing_class ?? current.timing_class)
+  const requestedOutingId = input.outing_id ?? current.outing_id ?? null
+  if (revision === undefined
+    || revision.geometry_json !== displayGeometryJson
+    || revision.timing_class !== requestedTimingClass
+    || (revision.outing_id ?? null) !== requestedOutingId) {
+    throw new Error('The same retained GPX bytes cannot change evidence fields; use the presentation or outing-assignment operation instead.')
+  }
+  const retainedPoints = db.prepare(`SELECT segment_index, point_index, track_name,
+    lat, lon, elevation, source_time AS timestamp
+    FROM gpx_evidence_points WHERE import_id = ? AND revision_sequence = ?
+    ORDER BY segment_index, point_index`).all(current.id, revision.source_revision_sequence)
+  const requestedPoints = (input.points ?? []).map((point) => ({
+    segment_index: point.segment_index,
+    point_index: point.point_index,
+    track_name: point.track_name ?? null,
+    lat: point.lat,
+    lon: point.lon,
+    elevation: point.elevation ?? null,
+    timestamp: point.timestamp === null || point.timestamp === undefined
+      ? null
+      : normalizeIsoTimestamp(point.timestamp, 'GPX source time'),
+  }))
+  if (JSON.stringify(retainedPoints) !== JSON.stringify(requestedPoints)) {
+    throw new Error('The same retained GPX bytes cannot change evidence fields; parsed points differ from the retained revision.')
+  }
+  const retainedRejections = db.prepare(`SELECT kind, segment_index, point_index, reason, source_value
+    FROM gpx_evidence_rejections WHERE import_id = ? AND revision_sequence = ?
+    ORDER BY segment_index, COALESCE(point_index, -1), kind, reason, COALESCE(source_value, '')`)
+    .all(current.id, revision.source_revision_sequence)
+  const requestedRejections = (input.rejections ?? []).map((rejection) => ({
+    kind: rejection.kind,
+    segment_index: rejection.segment_index,
+    point_index: rejection.point_index ?? null,
+    reason: rejection.reason,
+    source_value: rejection.source_value ?? null,
+  })).sort((left, right) => left.segment_index - right.segment_index
+    || (left.point_index ?? -1) - (right.point_index ?? -1)
+    || left.kind.localeCompare(right.kind)
+    || left.reason.localeCompare(right.reason)
+    || String(left.source_value ?? '').localeCompare(String(right.source_value ?? '')))
+  if (JSON.stringify(retainedRejections) !== JSON.stringify(requestedRejections)) {
+    throw new Error('The same retained GPX bytes cannot change evidence fields; retained rejection evidence differs.')
+  }
+}
+
+/** Yields after each GPX writer slice so current-position writers can acquire WAL ownership. */
+function yieldGpxWriterTurn() {
+  return new Promise((resolve) => setTimeout(resolve, 5))
+}
+
+/** Persists large GPX point sets in short writer slices, publishing only after a final fence. */
+async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationReceipt = null) {
+  if ((input.points?.length ?? 0) <= chunkSize
+    && (input.rejections?.length ?? 0) <= chunkSize
+    && (input.source_bytes_base64?.length ?? 0) <= MAX_INLINE_GPX_SOURCE_BASE64_LENGTH) {
+    return upsertGpxEvidence(db, input, publicationReceipt)
+  }
+  const missionId = input.mission_id
+  assertNoUnsettledLegacyGpxTarget(db, input.id, missionId, input.source_path)
+  const timestamp = now()
+  const normalizedHash = normalizeGpxContentHash(input.content_sha256, input.source_bytes_base64)
+  const existingById = input.id === undefined || input.id === null
+    ? undefined
+    : db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(input.id)
+  const existingByPath = db.prepare(
+    'SELECT * FROM gpx_track_imports WHERE mission_id = ? AND source_path = ?',
+  ).get(missionId, input.source_path)
+  const existingByAlias = db.prepare(`SELECT imports.* FROM gpx_import_aliases AS aliases
+    JOIN gpx_track_imports AS imports ON imports.id = aliases.import_id
+    WHERE aliases.mission_id = ? AND aliases.source_path = ?`)
+    .get(missionId, input.source_path)
+  assertGpxIdentityPathAgreement(existingById, existingByPath, existingByAlias)
+  const existing = existingById ?? existingByPath ?? existingByAlias
+  if (existing !== undefined && existing.mission_id !== missionId) {
+    throw new Error(`Cannot move GPX evidence ${existing.id} to a different mission.`)
+  }
+  if (existing?.import_state === 'staging') {
+    throw new Error(`GPX evidence ${existing.id} has an interrupted staged import that must be recovered before retrying.`)
+  }
+  if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
+    throw new Error(`Cannot update retired GPX evidence ${existing.id}.`)
+  }
+  if (existing === undefined) {
+    const contentMatch = db.prepare(`SELECT * FROM gpx_track_imports
+      WHERE mission_id = ? AND content_sha256 = ? AND retired_at IS NULL
+        AND import_state = 'complete'
+        AND EXISTS (
+          SELECT 1 FROM gpx_import_revisions AS revisions
+          WHERE revisions.import_id = gpx_track_imports.id
+        )
+      ORDER BY imported_at ASC LIMIT 1`).get(missionId, normalizedHash)
+    if (contentMatch !== undefined) return upsertGpxEvidence(
+      db,
+      input,
+      publicationReceipt,
+    )
+  }
+  if (existing !== undefined && normalizedHash === existing.content_sha256) {
+    return upsertGpxEvidence(
+      db,
+      input,
+      publicationReceipt,
+    )
+  }
+
+  const id = existing?.id ?? input.id ?? randomUUID()
+  const revisionSequence = existing === undefined ? 1 : Number(existing.revision_sequence) + 1
+  const completeness = normalizedHash === null || input.source_bytes_base64 === undefined
+    ? 'legacy_baseline'
+    : 'complete'
+  const displayGeometryJson = compactGpxDisplayGeometry(input.geometry_json)
+  const row = {
+    id,
+    mission_id: missionId,
+    source_path: existing?.source_path ?? input.source_path,
+    file_name: input.file_name,
+    display_name: input.display_name,
+    geometry_json: displayGeometryJson,
+    metadata_json: input.metadata_json ?? null,
+    content_sha256: normalizedHash ?? existing?.content_sha256 ?? null,
+    // Exact bytes are authoritative in the immutable revision. Keeping a
+    // second multi-megabyte copy in the active projection doubles one writer
+    // turn and can delay current-position commits on slower field storage.
+    source_bytes_base64: null,
+    timing_class: normalizeGpxTimingClass(input.timing_class ?? existing?.timing_class ?? 'undated'),
+    outing_id: input.outing_id ?? existing?.outing_id ?? null,
+    import_state: 'complete',
+    revision_sequence: revisionSequence,
+    retired_at: null,
+    retired_by: null,
+    imported_at: existing?.imported_at ?? timestamp,
+    updated_at: timestamp,
+  }
+
+  const stage = db.transaction(() => {
+    ensureWritableMission(db, missionId)
+    if (existing === undefined) {
+      const stagedRow = { ...row, import_state: 'staging' }
+      const columns = Object.keys(stagedRow)
+      db.prepare(`INSERT INTO gpx_track_imports (${columns.join(', ')})
+        VALUES (${columns.map(() => '?').join(', ')})`)
+        .run(...columns.map((column) => stagedRow[column]))
+    }
+    db.prepare(`INSERT INTO gpx_import_revisions (
+      id, mission_id, import_id, revision_sequence, source_revision_sequence, content_sha256,
+      source_bytes_base64, source_path, file_name, display_name, geometry_json,
+      metadata_json, timing_class, outing_id, import_state, completeness,
+      recorded_at, audit_event_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'staging', ?, ?, NULL)`)
+      .run(
+        randomUUID(), missionId, id, revisionSequence, revisionSequence, row.content_sha256,
+        input.source_bytes_base64 ?? null, input.source_path, row.file_name, row.display_name,
+        row.geometry_json, row.metadata_json, row.timing_class, row.outing_id,
+        completeness, timestamp,
+      )
+  })
+  stage.immediate()
+  await yieldGpxWriterTurn()
+
+  const pointStatement = db.prepare(`INSERT INTO gpx_evidence_points (
+    import_id, revision_sequence, segment_index, point_index, track_name,
+    lat, lon, elevation, source_time
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  for (let offset = 0; offset < (input.points?.length ?? 0); offset += chunkSize) {
+    const chunk = input.points.slice(offset, offset + chunkSize)
+    const writeChunk = db.transaction(() => {
+      ensureWritableMission(db, missionId)
+      for (const point of chunk) {
+        pointStatement.run(
+          id, revisionSequence, point.segment_index, point.point_index,
+          point.track_name ?? null, point.lat, point.lon, point.elevation ?? null,
+          point.timestamp === null || point.timestamp === undefined
+            ? null
+            : normalizeIsoTimestamp(point.timestamp, 'GPX source time'),
+        )
+      }
+    })
+    writeChunk.immediate()
+    await yieldGpxWriterTurn()
+  }
+  const rejectionStatement = db.prepare(`INSERT INTO gpx_evidence_rejections (
+    id, import_id, revision_sequence, kind, segment_index, point_index, reason, source_value
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+  for (let offset = 0; offset < (input.rejections?.length ?? 0); offset += chunkSize) {
+    const chunk = input.rejections.slice(offset, offset + chunkSize)
+    const writeChunk = db.transaction(() => {
+      ensureWritableMission(db, missionId)
+      for (const rejection of chunk) {
+        rejectionStatement.run(
+          randomUUID(), id, revisionSequence, rejection.kind, rejection.segment_index,
+          rejection.point_index ?? null, rejection.reason, rejection.source_value ?? null,
+        )
+      }
+    })
+    writeChunk.immediate()
+    await yieldGpxWriterTurn()
+  }
+
+  await yieldGpxWriterTurn()
+
+  const publish = db.transaction(() => {
+    ensureWritableMission(db, missionId)
+    const publicationTimestamp = now()
+    const current = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(id)
+    const currentMatchesStage = existing === undefined
+      ? current?.mission_id === missionId && current.import_state === 'staging'
+        && Number(current.revision_sequence) === revisionSequence
+        && current.source_path === row.source_path
+        && current.content_sha256 === row.content_sha256
+      : current?.mission_id === existing.mission_id && current.import_state === 'complete'
+        && current.retired_at === null
+        && Number(current.revision_sequence) === Number(existing.revision_sequence)
+        && current.source_path === existing.source_path
+        && current.content_sha256 === existing.content_sha256
+        && current.metadata_json === existing.metadata_json
+        && current.outing_id === existing.outing_id
+        && current.updated_at === existing.updated_at
+    if (!currentMatchesStage) {
+      const reason = current?.retired_at !== null && current?.retired_at !== undefined
+        ? 'GPX evidence was retired while its replacement revision was staged; the staged revision was not published.'
+        : 'GPX evidence changed while its replacement revision was staged; the stale revision was not published.'
+      db.prepare(`DELETE FROM gpx_import_revisions
+        WHERE import_id = ? AND revision_sequence = ? AND import_state = 'staging'`)
+        .run(id, revisionSequence)
+      if (existing === undefined) {
+        db.prepare(`DELETE FROM gpx_track_imports
+          WHERE id = ? AND revision_sequence = ? AND import_state = 'staging'`)
+          .run(id, revisionSequence)
+      }
+      if (publicationReceipt !== null) {
+        recordGpxImportFailureWithinTransaction(db, {
+          batchId: publicationReceipt.batchId,
+          missionId: publicationReceipt.missionId,
+          sourcePath: publicationReceipt.sourcePath,
+          fileName: row.file_name,
+          contentSha256: row.content_sha256,
+          sourceBytesBase64: input.source_bytes_base64 ?? null,
+          reason,
+        }, publicationTimestamp)
+      }
+      return { published: false, reason }
+    }
+    const publishedRow = {
+      ...row,
+      imported_at: existing?.imported_at ?? publicationTimestamp,
+      updated_at: publicationTimestamp,
+    }
+    const columns = Object.keys(publishedRow)
+    const assignments = columns
+      .filter((column) => !IMMUTABLE_UPSERT_COLUMNS.gpx_track_imports.has(column))
+      .map((column) => `${column} = excluded.${column}`)
+      .join(', ')
+    db.prepare(`INSERT INTO gpx_track_imports (${columns.join(', ')})
+      VALUES (${columns.map(() => '?').join(', ')})
+      ON CONFLICT(id) DO UPDATE SET ${assignments}`)
+      .run(...columns.map((column) => publishedRow[column]))
+    if (existing === undefined) {
+      db.prepare(`UPDATE gpx_track_imports SET imported_at = ? WHERE id = ?`)
+        .run(publicationTimestamp, id)
+    }
+    upsertGpxAlias(db, missionId, id, input.source_path, input.file_name, publicationTimestamp)
+    const auditEventId = insertEvent(
+      db,
+      missionId,
+      existing === undefined ? 'gpx_import_created' : 'gpx_import_updated',
+      publicationTimestamp,
+      {
+        gpx_import_id: id,
+        source_path: input.source_path,
+        content_sha256: row.content_sha256,
+        revision_sequence: revisionSequence,
+        timing_class: row.timing_class,
+        completeness,
+      },
+    )
+    db.prepare(`UPDATE gpx_import_revisions
+      SET import_state = 'complete', recorded_at = ?, audit_event_id = ?
+      WHERE import_id = ? AND revision_sequence = ?`)
+      .run(publicationTimestamp, auditEventId, id, revisionSequence)
+    if (publicationReceipt !== null) {
+      settleGpxImportSourceReceiptWithinTransaction(
+        db,
+        publicationReceipt,
+        publicationTimestamp,
+      )
+    }
+    return { published: true, reason: null }
+  })
+  const publication = publish.immediate()
+  if (!publication.published) throw new Error(publication.reason)
+  return getById(db, 'gpx_track_imports', id, 'GPX import')
+}
+
+/** Updates renderer presentation metadata without resending or rewriting retained GPX evidence. */
+function updateGpxImportPresentation(db, input) {
+  const candidate = normalizeGpxRendererRecord(input, 'GPX presentation')
+  const importId = normalizeGpxRendererId(candidate.id, 'GPX import')
+  const missionId = normalizeGpxRendererId(candidate.mission_id, 'GPX import mission')
+  const displayName = candidate.display_name === undefined
+    ? undefined
+    : normalizeBoundedRequiredText(candidate.display_name, 'GPX display name', 500)
+  if (
+    candidate.metadata_json !== undefined && candidate.metadata_json !== null &&
+    (typeof candidate.metadata_json !== 'string' || candidate.metadata_json.length > 100_000)
+  ) {
+    throw new Error('GPX import presentation metadata must be bounded JSON text.')
+  }
+  if (candidate.metadata_json !== undefined && candidate.metadata_json !== null) {
+    try {
+      JSON.parse(candidate.metadata_json)
+    } catch {
+      throw new Error('GPX import presentation metadata must be valid JSON text.')
+    }
+  }
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    assertNoUnsettledLegacyGpxTarget(db, importId, missionId, null)
+    ensureWritableMission(db, missionId)
+    const existing = db.prepare(`SELECT id, mission_id, import_state, retired_at,
+      display_name, metadata_json
+      FROM gpx_track_imports WHERE id = ?`).get(importId)
+    if (existing === undefined || existing.mission_id !== missionId) {
+      throw new Error('Active GPX evidence was not found in the requested mission.')
+    }
+    if (existing.import_state !== 'complete' || existing.retired_at !== null) {
+      throw new Error('Only active, complete GPX evidence presentation can be updated.')
+    }
+    db.prepare(`UPDATE gpx_track_imports
+      SET display_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?`)
+      .run(
+        displayName ?? existing.display_name,
+        candidate.metadata_json === undefined ? existing.metadata_json : candidate.metadata_json,
+        timestamp,
+        importId,
+      )
+    insertEvent(db, missionId, 'gpx_import_presentation_updated', timestamp, {
+      gpx_import_id: importId,
+      fields: [
+        ...(displayName === undefined ? [] : ['display_name']),
+        ...(candidate.metadata_json === undefined ? [] : ['metadata_json']),
+      ],
+    })
+  })
+  transaction.immediate()
+  return projectGpxImportForRenderer(
+    getById(db, 'gpx_track_imports', importId, 'GPX import'),
+  )
+}
+
+/** Removes exact retained bytes and enforces the single-response renderer budget. */
+function projectGpxImportForRenderer(row) {
+  const { source_bytes_base64: _retainedSourceBytes, ...projection } = row
+  return packGpxRendererPage([projection], { limit: 1 }).entries[0]
+}
+
+/** Reads one GPX projection without materializing retained source bytes in Electron main. */
+function readGpxImportWithoutRetainedBytes(db, importId) {
+  const row = db.prepare(`SELECT id, mission_id, source_path, file_name, display_name,
+      geometry_json, metadata_json, content_sha256, timing_class, outing_id,
+      import_state, revision_sequence, retired_at, retired_by, imported_at, updated_at
+    FROM gpx_track_imports WHERE id = ?`).get(importId)
+  if (row === undefined) throw new Error(`GPX import ${importId} was not found.`)
+  return row
+}
+
+/** Assigns retained GPX evidence to an outing as a new immutable revision. */
+function assignGpxEvidenceToOuting(db, input) {
+  const candidate = normalizeGpxRendererRecord(input, 'GPX outing assignment')
+  const importId = normalizeGpxRendererId(candidate.import_id, 'GPX import')
+  const outingId = normalizeGpxRendererId(
+    candidate.outing_id,
+    'GPX outing',
+    MAX_GPX_RENDERER_OUTING_ID_LENGTH,
+  )
+  const assignedBy = normalizeBoundedOptionalTextValue(
+    candidate.assigned_by,
+    'GPX outing assignment coordinator',
+    MAX_GPX_RENDERER_ACTOR_LENGTH,
+  )
+  assertNoUnsettledLegacyGpxTarget(db, importId, null, null)
+  const existing = db.prepare(`SELECT id, mission_id, outing_id, import_state,
+      retired_at, revision_sequence
+    FROM gpx_track_imports WHERE id = ?`).get(importId)
+  if (existing === undefined || existing.retired_at !== null) {
+    throw new Error(`Active GPX evidence ${importId} was not found.`)
+  }
+  const outing = db.prepare('SELECT * FROM outings WHERE id = ?').get(outingId)
+  if (outing?.mission_id !== existing.mission_id) {
+    throw new Error('GPX evidence outing is not in the same mission.')
+  }
+  if (existing.outing_id === outingId) return readGpxImportWithoutRetainedBytes(db, importId)
+  const timestamp = now()
+  const previousSequence = Number(existing.revision_sequence)
+  const nextSequence = previousSequence + 1
+  const transaction = db.transaction(() => {
+    ensureWritableMission(db, existing.mission_id)
+    const auditEventId = insertEvent(db, existing.mission_id, 'gpx_import_outing_assigned', timestamp, {
+      gpx_import_id: importId,
+      outing_id: outingId,
+      assigned_by: assignedBy,
+      revision_sequence: nextSequence,
+    })
+    db.prepare(`UPDATE gpx_track_imports
+      SET outing_id = ?, revision_sequence = ?, updated_at = ? WHERE id = ?`)
+      .run(outingId, nextSequence, timestamp, importId)
+    db.prepare(`INSERT INTO gpx_import_revisions (
+      id, mission_id, import_id, revision_sequence, source_revision_sequence, content_sha256,
+      source_bytes_base64, source_path, file_name, display_name, geometry_json,
+      metadata_json, timing_class, outing_id, completeness, recorded_at, audit_event_id
+    ) SELECT ?, mission_id, import_id, ?, source_revision_sequence, content_sha256, NULL,
+      source_path, file_name, display_name, geometry_json, metadata_json, timing_class,
+      ?, completeness, ?, ?
+    FROM gpx_import_revisions WHERE import_id = ? AND revision_sequence = ?`)
+      .run(randomUUID(), nextSequence, outingId, timestamp, auditEventId, importId, previousSequence)
+  })
+  transaction.immediate()
+  return readGpxImportWithoutRetainedBytes(db, importId)
+}
+
+/** Retires the transaction-current GPX revision without deleting retained evidence. */
+function retireGpxEvidence(db, importId, faultInjection = {}) {
+  let retired = false
+  const transaction = db.transaction(() => {
+    assertNoUnsettledLegacyGpxTarget(db, importId, null, null)
+    const existing = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(importId)
+    if (existing === undefined || existing.retired_at !== null) return
+    ensureWritableMission(db, existing.mission_id)
+    const timestamp = now()
+    db.prepare('UPDATE gpx_track_imports SET retired_at = ?, updated_at = ? WHERE id = ?')
+      .run(timestamp, timestamp, importId)
+    insertEvent(db, existing.mission_id, 'gpx_import_deleted', timestamp, {
+      gpx_import_id: importId,
+      content_sha256: existing.content_sha256,
+      revision_sequence: existing.revision_sequence,
+      retired: true,
+    })
+    retired = true
+  })
+  faultInjection.beforeTransaction?.()
+  transaction.immediate()
+  return retired
+}
+
+function upsertGpxAlias(db, missionId, importId, sourcePath, fileName, timestamp) {
+  db.prepare(`INSERT INTO gpx_import_aliases (
+    mission_id, import_id, source_path, file_name, first_seen_at, last_seen_at
+  ) VALUES (?, ?, ?, ?, ?, ?)
+  ON CONFLICT(mission_id, source_path) DO UPDATE SET
+    import_id = excluded.import_id,
+    file_name = excluded.file_name,
+    last_seen_at = excluded.last_seen_at`)
+    .run(missionId, importId, sourcePath, fileName, timestamp, timestamp)
+}
+
+function assertGpxIdentityPathAgreement(...candidates) {
+  const identities = [...new Set(candidates.filter(Boolean).map((candidate) => candidate.id))]
+  if (identities.length > 1) {
+    throw new Error(
+      `GPX identity ${identities[0]} cannot use a path that belongs to different GPX evidence ${identities[1]}.`,
+    )
+  }
+}
+
+/** Prevents a revisionless legacy artifact from changing before reconstruction or bounded repair. */
+function assertNoUnsettledLegacyGpxTarget(db, importId, missionId, sourcePath) {
+  const byId = importId === undefined || importId === null
+    ? undefined
+    : db.prepare(`SELECT 1 FROM gpx_track_imports AS imports
+        WHERE imports.id = ? AND NOT EXISTS (
+          SELECT 1 FROM gpx_import_revisions AS revisions WHERE revisions.import_id = imports.id
+        ) LIMIT 1`).get(importId)
+  const byPath = missionId === undefined || missionId === null
+    || sourcePath === undefined || sourcePath === null
+    ? undefined
+    : db.prepare(`SELECT 1 FROM gpx_track_imports AS imports
+        WHERE imports.mission_id = ? AND imports.source_path = ? AND NOT EXISTS (
+          SELECT 1 FROM gpx_import_revisions AS revisions WHERE revisions.import_id = imports.id
+        ) LIMIT 1`)
+      .get(missionId, sourcePath)
+  if (byId !== undefined || byPath !== undefined) {
+    throw new Error(
+      'Revisionless legacy GPX evidence cannot be changed or retired while bounded reconstruction or quarantine repair remains unsettled.',
+    )
+  }
+}
+
+function normalizeGpxContentHash(value, sourceBytesBase64) {
+  if (value === undefined || value === null) return null
+  if (typeof value !== 'string' || !/^[a-f0-9]{64}$/i.test(value)) {
+    throw new Error('GPX source content hash must be a SHA-256 hexadecimal digest.')
+  }
+  const normalized = value.toLowerCase()
+  if (sourceBytesBase64 !== undefined && sourceBytesBase64 !== null) {
+    if (typeof sourceBytesBase64 !== 'string') {
+      throw new Error('GPX retained source bytes must be Base64 text.')
+    }
+    const bytes = Buffer.from(sourceBytesBase64, 'base64')
+    if (bytes.toString('base64') !== sourceBytesBase64.replace(/\s+/gu, '')) {
+      throw new Error('GPX retained source bytes are not valid Base64.')
+    }
+    const actual = createHash('sha256').update(bytes).digest('hex')
+    if (actual !== normalized) {
+      throw new Error('GPX source content hash does not match retained source bytes.')
+    }
+  }
+  return normalized
+}
+
+function normalizeGpxTimingClass(value) {
+  if (!['fully_dated', 'partially_dated', 'undated'].includes(value)) {
+    throw new Error('GPX timing class is invalid.')
+  }
+  return value
+}
+
+function normalizeIsoTimestamp(value, label) {
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return new Date(Date.parse(value)).toISOString()
+}
+
+/** Requires an explicit-offset, calendar-valid instant for coordinator pass evidence. */
+function normalizeStrictSearchTimestamp(value, label) {
+  const normalized = normalizeBoundedRequiredText(
+    value,
+    label,
+    MAX_SEARCH_OPERATION_TIMESTAMP_LENGTH,
+  )
+  if (!isStrictTrackingTimestamp(normalized)) {
+    throw new Error(`${label} must be a valid ISO8601 date-time with an explicit offset.`)
+  }
+  return new Date(Date.parse(normalized)).toISOString()
 }
 
 function gpxDefaults(input) {
@@ -3809,6 +7887,53 @@ function ensureWritableMission(db, missionId) {
   }
 }
 
+/** Rejects finished-mission bookkeeping while its immutable archive is being sealed. */
+function assertMissionFinalizationNotInProgress(db, missionId) {
+  const pending = db.prepare(`SELECT 1 FROM mission_finalization_fences
+    WHERE mission_id = ?`).get(missionId)
+  if (pending !== undefined) {
+    throw new Error(
+      'Mission finalization is in progress; retry this change after finalization completes.',
+    )
+  }
+}
+
+/** Recovers a direct-archive crash without weakening a true finalization fence. */
+function recoverInterruptedDirectArchiveFences(db, migrationTime) {
+  const interrupted = db.prepare(`SELECT fence.mission_id, fence.requested_at,
+      event.details_json
+    FROM mission_finalization_fences AS fence
+    INNER JOIN mission_events AS event
+      ON event.mission_id = fence.mission_id
+      AND event.event_type = 'mission_archive_requested'
+      AND event.timestamp = fence.requested_at`).all()
+  for (const fence of interrupted) {
+    const requestedDetails = readEventDetails(fence.details_json)
+    insertEvent(db, fence.mission_id, 'mission_archive_failed', migrationTime, {
+      resulting_status: getMission(db, fence.mission_id).status,
+      archive_kind: requestedDetails.archive_kind ?? 'direct',
+      ...(requestedDetails.finalization_epoch === undefined
+        ? {}
+        : { finalization_epoch: requestedDetails.finalization_epoch }),
+      ...(requestedDetails.replaces_archive_path === undefined
+        ? {}
+        : { replaces_archive_path: requestedDetails.replaces_archive_path }),
+      error: 'SAR Tracker restarted before the direct mission archive could be sealed; retry archive creation.',
+    })
+    db.prepare(`DELETE FROM mission_finalization_fences
+      WHERE mission_id = ? AND requested_at = ?`).run(fence.mission_id, fence.requested_at)
+  }
+}
+
+/** Revalidates a finished-only write after any asynchronous prerequisite settles. */
+function assertFinishedMissionBookkeepingAllowed(db, missionId) {
+  const mission = getMission(db, missionId)
+  if (mission.status !== 'finished') {
+    throw new Error('Finished-mission bookkeeping is unavailable after finalization.')
+  }
+  assertMissionFinalizationNotInProgress(db, missionId)
+}
+
 function validateLatLon(lat, lon, label) {
   if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
     throw new Error(`${label} latitude must be a finite value between -90 and 90.`)
@@ -3822,13 +7947,33 @@ function appendEvent(db, missionId, eventType, detailsJson, timestamp = now()) {
   insertEvent(db, missionId, eventType, timestamp, detailsJson)
 }
 
-function insertEvent(db, missionId, eventType, timestamp, detailsJson) {
-  db.prepare('INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json) VALUES (?, ?, ?, ?, ?)')
-    .run(randomUUID(), missionId, eventType, timestamp, detailsJson === undefined || detailsJson === null ? null : JSON.stringify(detailsJson))
+function insertEvent(db, missionId, eventType, timestamp, detailsJson, recordedAt = now()) {
+  const eventId = randomUUID()
+  db.prepare(`INSERT INTO mission_events (
+    id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
+  ) VALUES (?, ?, ?, ?, ?, ?, 'complete')`)
+    .run(
+      eventId,
+      missionId,
+      eventType,
+      timestamp,
+      detailsJson === undefined || detailsJson === null ? null : JSON.stringify(detailsJson),
+      recordedAt,
+    )
+  bumpMissionReplayGeneration(db, missionId)
+  return eventId
 }
 
 function now() {
   return new Date().toISOString()
+}
+
+/** Invalidates open replay track cursors after evidence becomes newly queryable. */
+function bumpMissionReplayGeneration(db, missionId) {
+  db.prepare(`INSERT INTO mission_replay_generations (mission_id, generation)
+    VALUES (?, 1)
+    ON CONFLICT(mission_id) DO UPDATE SET generation = generation + 1`)
+    .run(missionId)
 }
 
 /** Creates the stable cancellation error surfaced by renderer-owned coverage reads. */
@@ -3841,4 +7986,13 @@ function createCoverageRequestAbortError() {
 module.exports = {
   CURRENT_SCHEMA_VERSION,
   createElectronMissionStore,
+  finishGpxImportBatch,
+  recordGpxImportFailure,
+  recordGpxImportSourceReceipt,
+  retainGpxImportSourceBytes,
+  settleGpxImportSourceReceipt,
+  startGpxImportBatch,
+  backfillLegacyGpxRevisions,
+  upsertGpxEvidence,
+  upsertGpxEvidenceChunked,
 }

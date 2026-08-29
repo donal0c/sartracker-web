@@ -3,7 +3,6 @@ import type {
   AppSettingsDraft,
   RuntimeBootstrapSettings,
 } from '../features/settings/settings-types'
-import type { GpxImportFileInput } from '../features/gpx/start-gpx-runtime'
 import type { LayerCatalogStore } from '../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
 import type { MissionStore } from '../infrastructure/mission-store/tauri-mission-store'
 import type { DiagnosticEvent } from '../features/diagnostics/diagnostic-event-log'
@@ -86,12 +85,7 @@ export type SarTrackerElectronBridge = {
     readonly replacedExisting: boolean
     readonly message: string
   }>
-  readonly readGpxFiles: (
-    paths: readonly string[],
-  ) => Promise<readonly GpxImportFileInput[]>
-  readonly listGpxDirectoryFiles: (
-    directoryPath: string,
-  ) => Promise<readonly GpxImportFileInput[]>
+  readonly listGpxDirectoryPaths: (directoryPath: string) => Promise<readonly string[]>
   readonly ingestMarkerAttachment: (input: {
     readonly missionId: string
     readonly fileName: string

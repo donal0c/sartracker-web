@@ -28,7 +28,7 @@ Work directly on `master` unless the user explicitly asks for another branch. Do
 
 **Breadcrumb programme exception (explicitly authorized 2026-08-22):** the
 Breadcrumb and Mission-History Programme defined in
-`docs/breadcrumb-programme-execution-policy.md` uses five substantial feature
+`docs/breadcrumb-programme-execution-policy.md` uses six substantial feature
 branches and PRs. No programme implementation is committed directly to
 `master`. This exception lasts through BCP-17 and does not change the default
 for unrelated work. Programme planning, Donal's approval gate, fresh Sol-high

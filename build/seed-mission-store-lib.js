@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-export const FIXTURE_GENERATOR_VERSION = 4
+export const FIXTURE_GENERATOR_VERSION = 5
 export const LEGACY_FIXTURE_GENERATOR_VERSION = 2
 
 const DAY_MS = 24 * 60 * 60 * 1000

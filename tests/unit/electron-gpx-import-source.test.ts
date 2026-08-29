@@ -7,12 +7,11 @@ describe('Electron GPX import source', () => {
     vi.unstubAllGlobals()
   })
 
-  it('delegates file selection and reads to the typed preload bridge', async () => {
+  it('delegates path selection but refuses raw GPX byte reads across the preload bridge', async () => {
     const bridge = {
       chooseGpxFilePaths: vi.fn().mockResolvedValue(['/tracks/a.gpx']),
       chooseGpxDirectoryPath: vi.fn().mockResolvedValue('/tracks'),
-      readGpxFiles: vi.fn().mockResolvedValue([{ fileName: 'a.gpx' }]),
-      listGpxDirectoryFiles: vi.fn().mockResolvedValue([{ fileName: 'b.gpx' }]),
+      listGpxDirectoryPaths: vi.fn().mockResolvedValue(['/tracks/b.gpx']),
     }
     vi.stubGlobal('window', {
       sartrackerElectron: bridge,
@@ -22,7 +21,8 @@ describe('Electron GPX import source', () => {
 
     await expect(source.chooseFilePaths()).resolves.toEqual(['/tracks/a.gpx'])
     await expect(source.chooseDirectoryPath()).resolves.toBe('/tracks')
-    await expect(source.readFiles(['/tracks/a.gpx'])).resolves.toEqual([{ fileName: 'a.gpx' }])
-    await expect(source.listDirectoryFiles('/tracks')).resolves.toEqual([{ fileName: 'b.gpx' }])
+    await expect(source.readFiles(['/tracks/a.gpx'])).rejects.toThrow(/raw GPX.*renderer/i)
+    await expect(source.listDirectoryFiles('/tracks')).rejects.toThrow(/raw GPX.*renderer/i)
+    await expect(source.listDirectoryPaths?.('/tracks')).resolves.toEqual(['/tracks/b.gpx'])
   })
 })

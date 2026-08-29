@@ -1,9 +1,7 @@
 import { useEffect } from 'react'
 
-import { createTauriLayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
 import { createElectronLayerCatalogStore } from '../../infrastructure/layer-catalog-store/electron-layer-catalog-store'
 import { createElectronMissionStore } from '../../infrastructure/mission-store/electron-mission-store'
-import { createTauriMissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
 import { getBrowserHarnessLayerCatalogStore } from '../browser-validation/browser-harness-layer-catalog-store'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
 import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
@@ -35,16 +33,18 @@ export function MissionReviewRuntimeBridge() {
     let cancelled = false
     const harnessActive = shouldEnableMissionBrowserHarness()
     const electronActive = isElectronRuntimeAvailable()
+    if (!harnessActive && !electronActive) {
+      applyMissionReviewRuntime(createMissionReviewRuntimeState({
+        error: 'Mission evidence and replay require the supported Electron desktop runtime. Historical Tauri storage is not an operational PR5 evidence store.',
+      }))
+      return
+    }
     const missionStore = harnessActive
       ? getBrowserHarnessStore()
-      : electronActive
-        ? createElectronMissionStore()
-        : createTauriMissionStore()
+      : createElectronMissionStore()
     const layerCatalogStore = harnessActive
       ? getBrowserHarnessLayerCatalogStore()
-      : electronActive
-        ? createElectronLayerCatalogStore()
-        : createTauriLayerCatalogStore()
+      : createElectronLayerCatalogStore()
 
     void startMissionReviewRuntime({
       missionStore,

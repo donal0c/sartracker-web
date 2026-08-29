@@ -18,6 +18,8 @@ test.describe('M8 drawing workflows', () => {
     await rightClickMap(page, { x: 560, y: 300 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await expect(page.getByTestId('drawing-name-input')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('drawing-description-input')).toHaveAttribute('maxlength', '2000')
     await expect(page.getByTestId('drawing-line-distance-readout')).toContainText('Distance')
     await expect(page.getByTestId('drawing-line-bearing-readout')).toContainText('True')
     await expect(page.getByTestId('drawing-line-bearing-readout')).toContainText('Magnetic')
@@ -38,6 +40,11 @@ test.describe('M8 drawing workflows', () => {
     await rightClickMap(page, { x: 540, y: 340 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await expect(page.getByTestId('drawing-name-input')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('drawing-description-input')).toHaveAttribute('maxlength', '2000')
+    await expect(page.getByTestId('drawing-search-area-team-input')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('drawing-search-area-terrain-input')).toHaveAttribute('maxlength', '120')
+    await expect(page.getByTestId('drawing-search-area-notes-input')).toHaveAttribute('maxlength', '2000')
     await page.getByTestId('drawing-name-input').fill('Sector Alpha')
     await page.getByTestId('drawing-search-area-team-input').fill('Team 1')
     await page.getByTestId('drawing-search-area-status-input').selectOption('Assigned')

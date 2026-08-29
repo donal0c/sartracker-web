@@ -8,6 +8,7 @@ export type GpxImportSource = {
   readonly chooseDirectoryPath: () => Promise<string | null>
   readonly readFiles: (paths: readonly string[]) => Promise<readonly GpxImportFileInput[]>
   readonly listDirectoryFiles: (directoryPath: string) => Promise<readonly GpxImportFileInput[]>
+  readonly listDirectoryPaths?: (directoryPath: string) => Promise<readonly string[]>
 }
 
 /**

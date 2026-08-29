@@ -108,6 +108,14 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - GPX source bytes receive a content hash; changed content creates a new immutable revision.
 - Point timestamps and elevation are retained when present; rejected points/segments are recorded.
 - SAR Tracker never invents GPX timestamps.
+- GPX numeric source scalars are non-empty XML Schema decimals, without
+  exponent notation or nonzero-to-zero underflow. Source time is precise only
+  when it is a full calendar-valid XML Schema date-time carrying `Z` or an
+  explicit offset within `±14:00`; permissive platform coercion is never
+  evidence authority.
+- One source file is limited to 8 MiB for bounded exact-byte retention. Larger
+  files fail explicitly and must be split; concurrent imports serialize so
+  identical content retains one canonical identity plus path aliases.
 - An undated GPX track may be assigned to an outing and displayed as static evidence, but is excluded from precise timeline replay.
 
 ### Finalization, retention, and archive evidence (`SAR-QA-007`, `SAR-QA-020`)
@@ -196,7 +204,7 @@ These are programme gates, subject to measured revision only through an explicit
 
 ## Programme Planning Rule
 
-The programme is delivered through the five ordered PRs in
+The programme is delivered through the six ordered PRs in
 `docs/breadcrumb-programme-execution-policy.md`, followed by one final
 team-facing release. BCP work units remain the just-in-time design and TDD
 boundaries inside those PRs. Each work unit receives a Fable design subsection
@@ -207,3 +215,74 @@ Linear mapping, and completion gate before its production implementation.
 Coverage and replay remain architecturally decoupled even though they ship in
 the same final release. One bounded unpublished packaged checkpoint follows
 the complete-coverage PR; broad qualification is end-weighted to BCP-17.
+
+## PR-5 Implementation Binding (2026-08-27)
+
+PR-5 of six implements the evidence-spine and replay parts of this decision
+without changing any locked team answer:
+
+- schema v12 preserves current projections while atomically appending complete
+  immutable versions and audit identity for markers, drawings, outings, search
+  areas, assignments and passes; legacy rows receive an explicit unknown-history
+  baseline and operator removal becomes retirement rather than physical loss;
+- GPX imports retain exact bytes and SHA-256 identity, path aliases, ordered
+  segments/points, source timestamps and elevation, rejected source elements,
+  timing completeness, outing assignment and immutable revisions. One durable
+  receipt exists for every selected file before worker launch; exact bytes/hash
+  are retained before parsing, and pending/retained receipts recover as explicit
+  failed evidence after interruption. Parsing and bulk persistence run outside
+  the Electron main isolate in 25-point writer slices with an explicit inter-
+  slice writer turn for current positions. Bounded persisted issue pages expose
+  failure reasons after restart, explicitly disclose further pages, and refresh
+  after a current import without sending retained bytes or absolute paths to the
+  renderer. Raw GPX byte-reading IPC is absent. Exact-byte reads use an 8 MiB
+  ceiling, strict shared scalar parsing and serialized worker admission, while
+  shutdown cancels and joins active or queued imports before the database closes;
+- replay folds lifecycle, participant/group state and mutable evidence using
+  both recorded and effective time, and streams exact `fixTime`/dated-GPX rows
+  from a read-only cancellable worker; undated GPX remains explicit static
+  evidence and unproved legacy/missing-time history remains a machine-readable
+  limitation. Traccar `fixTime` remains the sole effective breadcrumb clock;
+  receipt time and nullable `timestamp_provenance_recorded_at` separately record
+  when the row and any later-confirmed fixTime authority became known, without
+  rewriting the original receipt. New stores create compact replay indexes plus
+  transactional daily totals keyed by the maximum of fixTime, receipt time and
+  provenance-known-at time, which is the exact data-known-at-T fence; a selected-
+  day slice remains indexed and bounded. The v11 migration adds only bounded
+  metadata and never performs an unbounded synchronous index/read-model build,
+  retaining the explicit legacy fallback. Every replay response reads from one
+  SQLite WAL snapshot. Opaque track cursors bind a mission replay generation
+  plus the exact eligible-position count from that snapshot; object
+  continuations bind the generation. GPX publication, retained fixTime-
+  provenance promotion, versioned objects, lifecycle and participant/group
+  evidence advance the generation in their owning transaction, while append-
+  only fixes are detected by the cursor-bound count without coupling replay to
+  derived coverage work. A stale page chain fails closed and requires re-seek,
+  while a fresh historical seek still reconstructs evidence by its original
+  recorded/effective clocks. Worker messages remain
+  bounded and the existing mission device/fix-time index drives deterministic
+  merging;
+- finalization creates a durable mission-scoped write fence in the same
+  transaction as its request event before taking the archive snapshot.
+  Finished-mission bookkeeping and asynchronous acknowledgement/archive paths
+  revalidate mission status and the fence in their committing transaction. The
+  fence survives an archive-succeeded interruption so only that protected
+  archive may be reused, clears after a pre-success archive failure, and is
+  removed atomically with the finalized status/event. No stale unprotected
+  success archive is reused by a new finalization attempt;
+- stable search-area identity is separate from repeatable assignments and
+  passes; full/partial/aborted remains solely the coordinator's declaration and
+  advisory geometry cannot write that outcome;
+- the operational live map and current-position cadence remain independent of
+  replay/import state. The browser harness mirrors the application port for UI
+  validation but explicitly reports that it cannot prove desktop version
+  history.
+
+The implementation is traced by `DON-274`, `DON-277`, `DON-278`, `DON-279`,
+`tests/unit/electron-mission-evidence-versioning.test.ts`,
+`tests/unit/electron-mission-replay-query.test.ts`,
+`tests/e2e/mission-review.spec.ts`,
+`tests/e2e/mission-evidence-search-passes.spec.ts`, and
+`tests/e2e/visual/visual-mission-evidence-replay.spec.ts`. Archive encryption,
+restore-and-replay qualification, and release/field acceptance remain PR-6 /
+BCP-17 work.

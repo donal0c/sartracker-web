@@ -213,6 +213,38 @@ describe('marker draft helpers', () => {
     ).toThrow(/Treatment update is required/)
   })
 
+  it('keeps an accumulated treatment log above 2,000 bytes and fails actionably at its evidence budget', () => {
+    const existingTreatment = 'Earlier treatment evidence.\n\n'.repeat(100)
+    const treatment = appendTreatmentUpdate({
+      existingTreatment,
+      note: 'Further treatment recorded',
+      timestamp: new Date(2026, 5, 2, 10, 15, 0),
+      updatedBy: 'Bravo',
+    })
+
+    expect(new TextEncoder().encode(treatment).byteLength).toBeGreaterThan(2_000)
+    expect(() => appendTreatmentUpdate({
+      existingTreatment: 'x'.repeat(512 * 1_024),
+      note: 'Further treatment recorded',
+      timestamp: new Date(2026, 5, 2, 10, 15, 0),
+      updatedBy: 'Bravo',
+    })).toThrow(/Treatment log must be 524288 UTF-8 bytes or fewer/i)
+  })
+
+  it('rejects a directly edited treatment log beyond the persistence budget before IPC', () => {
+    expect(() => buildMarkerSaveInput({
+      missionId: 'mission-1',
+      displayOrder: 2,
+      draft: {
+        ...createMarkerDraftFromMarker(EXISTING_MARKER),
+        type: 'casualty',
+        condition: 'Stable',
+        evacuationPriority: 'Priority 2',
+        treatment: 'x'.repeat(512 * 1_024 + 1),
+      },
+    })).toThrow(/Treatment log must be 524288 UTF-8 bytes or fewer/i)
+  })
+
   it('normalizes audit metadata and attachments into the save payload', () => {
     const input = buildMarkerSaveInput({
       missionId: 'mission-1',

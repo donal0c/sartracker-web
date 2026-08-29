@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 
 import { openExternalPath } from '../infrastructure/file-launcher/tauri-file-launcher'
 import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
@@ -15,9 +15,15 @@ import { useMissionReviewStore } from '../features/mission-review/mission-review
 import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
 import { useMissionStore } from '../features/mission/mission-store'
 
-type ReviewTab = 'mission-details' | 'marker-log' | 'layer-console'
+type ReviewTab = 'mission-details' | 'replay' | 'search-operations' | 'marker-log' | 'layer-console'
 
 const MISSION_REVIEW_WORKSPACE_TITLE_ID = 'mission-review-workspace-title'
+const MissionReplayTab = lazy(async () => ({
+  default: (await import('./mission-evidence-replay-tabs')).MissionReplayTab,
+}))
+const SearchOperationsTab = lazy(async () => ({
+  default: (await import('./mission-evidence-replay-tabs')).SearchOperationsTab,
+}))
 
 /**
  * Renders the mission review workspace for audit, marker review, and mission details.
@@ -40,6 +46,9 @@ export function MissionReviewWorkspace() {
   const error = useMissionReviewStore((state) => state.error)
   const includeTelemetry = useMissionReviewStore((state) => state.includeTelemetry)
   const auditLogTruncated = useMissionReviewStore((state) => state.auditLogTruncated)
+  const gpxImports = useMissionReviewStore((state) => state.gpxImports)
+  const replay = useMissionReviewStore((state) => state.replay)
+  const searchOperations = useMissionReviewStore((state) => state.searchOperations)
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
   const [activeTab, setActiveTab] = useState<ReviewTab>('mission-details')
   const [missionQuery, setMissionQuery] = useState('')
@@ -77,7 +86,7 @@ export function MissionReviewWorkspace() {
     }
 
     void controller.load(selectedMissionId)
-  }, [controller, open, selectedMissionId])
+  }, [controller, missionPhase, open, selectedMissionId])
 
   useEffect(() => {
     setSelectedMarkerId((current) =>
@@ -119,8 +128,8 @@ export function MissionReviewWorkspace() {
           data-testid="mission-review-docked-readonly-note"
           role="status"
         >
-          Review is read-only. Mission controls and the map stay live next to it — close Review or
-          press Esc to return full width.
+          Replay is read-only and the operational map stays live. Search Operations records only
+          explicit coordinator evidence — close Review or press Esc to return full width.
         </p>
       ) : null}
 
@@ -187,6 +196,16 @@ export function MissionReviewWorkspace() {
                 onClick={() => setActiveTab('mission-details')}
               />
               <TabButton
+                active={activeTab === 'replay'}
+                label="Replay"
+                onClick={() => setActiveTab('replay')}
+              />
+              <TabButton
+                active={activeTab === 'search-operations'}
+                label="Search Passes"
+                onClick={() => setActiveTab('search-operations')}
+              />
+              <TabButton
                 active={activeTab === 'marker-log'}
                 label="Marker Log"
                 onClick={() => setActiveTab('marker-log')}
@@ -200,13 +219,53 @@ export function MissionReviewWorkspace() {
 
             <div className="min-h-0 flex-1 overflow-y-auto pt-5" data-testid="mission-review-workspace">
               {loading && snapshot === null ? <EmptyState message="Loading mission review…" /> : null}
-              {error !== null ? <EmptyState message={error} testId="mission-review-error" /> : null}
+              {error !== null && snapshot === null ? <EmptyState message={error} testId="mission-review-error" /> : null}
               {!loading && error === null && snapshot === null ? (
                 <EmptyState message="No missions are available for review." />
               ) : null}
 
-              {snapshot !== null && error === null ? (
-                activeTab === 'mission-details' ? (
+              {snapshot !== null ? (
+                <>
+                  {error !== null ? (
+                    <p className="mb-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="mission-review-stale-warning" role="alert">
+                      Review update failed: {error}. Showing retained evidence. Evidence entry is disabled until Refresh succeeds; bounded search and paging remain available.
+                    </p>
+                  ) : null}
+                  {gpxImports.hasMore || gpxImports.pageNumber > 1 ? (
+                    <section
+                      className="mb-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-3"
+                      data-testid="mission-review-gpx-pagination"
+                    >
+                      <p className="text-xs font-semibold text-amber-100">
+                        Layer Console and GPX totals show bounded page {gpxImports.pageNumber} ({gpxImports.visibleCount} track{gpxImports.visibleCount === 1 ? '' : 's'}).
+                        {gpxImports.hasMore ? ' More imported evidence is available.' : ' This is the final page.'}
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        {gpxImports.pageNumber > 1 ? (
+                          <button
+                            className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-100 disabled:opacity-50"
+                            disabled={controller === null || gpxImports.loading}
+                            onClick={() => void controller?.returnToFirstGpxImports()}
+                            type="button"
+                          >
+                            Return to First Page
+                          </button>
+                        ) : null}
+                        {gpxImports.hasMore ? (
+                          <button
+                            className="rounded-lg border border-amber-300/60 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100 disabled:opacity-50"
+                            data-testid="mission-review-gpx-next-page"
+                            disabled={controller === null || gpxImports.loading}
+                            onClick={() => void controller?.loadNextGpxImports()}
+                            type="button"
+                          >
+                            {gpxImports.loading ? 'Loading…' : 'Show Next GPX Page'}
+                          </button>
+                        ) : null}
+                      </div>
+                    </section>
+                  ) : null}
+                  {activeTab === 'mission-details' ? (
                   <MissionDetailsTab
                     auditLogTruncated={auditLogTruncated}
                     compact={docked}
@@ -217,7 +276,28 @@ export function MissionReviewWorkspace() {
                     pathError={pathError}
                     pathFeedback={pathFeedback}
                     summary={snapshot.summary}
+                    gpxPage={gpxImports}
                   />
+                ) : activeTab === 'replay' ? (
+                  <Suspense fallback={<EmptyState message="Loading Replay workspace…" />}>
+                    <MissionReplayTab
+                      controller={controller}
+                      key={snapshot.mission.id}
+                      missionEndTime={snapshot.mission.finish_time ?? new Date().toISOString()}
+                      replay={replay}
+                    />
+                  </Suspense>
+                ) : activeTab === 'search-operations' ? (
+                  <Suspense fallback={<EmptyState message="Loading search operations…" />}>
+                    <SearchOperationsTab
+                      controller={controller}
+                      key={snapshot.mission.id}
+                      operations={searchOperations}
+                      readOnly={snapshot.mission.status === 'finished' || snapshot.mission.status === 'finalized'}
+                      reviewBusy={loading || refreshing}
+                      writeBlocked={error !== null}
+                    />
+                  </Suspense>
                 ) : activeTab === 'marker-log' ? (
                   <MarkerLogTab
                     compact={docked}
@@ -241,7 +321,8 @@ export function MissionReviewWorkspace() {
                   />
                 ) : (
                   <LayerConsoleTab layerRoot={snapshot.layerRoot} />
-                )
+                )}
+                </>
               ) : null}
             </div>
           </section>
@@ -269,6 +350,7 @@ export function MissionReviewWorkspace() {
 
 function MissionDetailsTab(props: {
   readonly summary: MissionReviewSummary
+  readonly gpxPage: { readonly visibleCount: number; readonly hasMore: boolean; readonly pageNumber: number }
   readonly events: readonly MissionReviewEventRow[]
   readonly includeTelemetry: boolean
   readonly auditLogTruncated: boolean
@@ -285,7 +367,10 @@ function MissionDetailsTab(props: {
         <SummaryCard label="Markers" value={String(props.summary.markerCount)} />
         <SummaryCard label="Devices" value={String(props.summary.trackingDeviceCount)} />
         <SummaryCard label="Breadcrumbs" value={String(props.summary.breadcrumbCount)} />
-        <SummaryCard label="GPX Imports" value={String(props.summary.gpxImportCount)} />
+        <SummaryCard
+          label="GPX Imports"
+          value={`${props.gpxPage.visibleCount}${props.gpxPage.hasMore ? '+' : ''} shown`}
+        />
       </div>
 
       <div className={`grid gap-5 ${props.compact ? '' : 'lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]'}`}>
@@ -303,7 +388,10 @@ function MissionDetailsTab(props: {
             <DetailRow label="Layer Count" value={String(props.summary.layerCount)} />
             <DetailRow label="Feature Count" value={String(props.summary.featureCount)} />
             <DetailRow label="Drawing Count" value={String(props.summary.drawingCount)} />
-            <DetailRow label="GPX Imports" value={String(props.summary.gpxImportCount)} />
+            <DetailRow
+              label="GPX Imports"
+              value={`${props.gpxPage.visibleCount}${props.gpxPage.hasMore ? '+' : ''} on page ${props.gpxPage.pageNumber}`}
+            />
             <DetailRow label="Event Count" value={String(props.summary.eventCount)} />
           </dl>
           <div className="mt-4 rounded-xl border border-stone-800 bg-stone-950/40 p-4">

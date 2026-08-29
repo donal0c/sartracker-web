@@ -82,6 +82,30 @@ describe('mission review model', () => {
     expect(snapshot.layerRoot.children.length).toBeGreaterThan(0)
   })
 
+  it('describes legacy delete event names as retained evidence retirement [DON-277]', () => {
+    const snapshot = buildMissionReviewSnapshot({
+      mission: createMission(),
+      info: createStoreInfo(),
+      events: [
+        createEvent('marker_deleted', { marker_type: 'clue', name: 'Boot Print' }),
+        createEvent('drawing_deleted', { drawing_type: 'line', name: 'Track Line' }),
+        createEvent('gpx_import_deleted', { display_name: 'Team Route' }),
+      ],
+      markers: [],
+      devices: [],
+      breadcrumbCount: 0,
+      drawings: [],
+      gpxImports: [],
+      layerMetadata: [],
+    })
+
+    expect(snapshot.eventRows.map((row) => `${row.title}: ${row.description}`)).toEqual([
+      expect.stringMatching(/retired.*history retained/i),
+      expect.stringMatching(/retired.*history retained/i),
+      expect.stringMatching(/GPX Import Retired.*retired.*evidence retained/i),
+    ])
+  })
+
   it('produces safe coordinate display for invalid lat/lon', () => {
     const snapshot = buildMissionReviewSnapshot({
       mission: createMission(),
