@@ -37,6 +37,10 @@ describe('search operations finalized-mission containment [DON-279]', () => {
           started_at: '2026-08-27T08:00:00.000Z', ended_at: '2026-08-27T10:00:00.000Z',
           created_at: '2026-08-27T08:00:00.000Z', updated_at: '2026-08-27T10:00:00.000Z',
         }],
+        pages: {
+          areas: pageState(1), assignments: pageState(0),
+          outings: pageState(1), passes: pageState(0),
+        },
       },
     })))
 
@@ -49,3 +53,10 @@ describe('search operations finalized-mission containment [DON-279]', () => {
     expect(host.textContent).toContain('Area Alpha')
   })
 })
+
+function pageState(visibleCount: number) {
+  return {
+    search: '', pageNumber: 1, visibleCount, totalCount: visibleCount,
+    hasMore: false, nextCursor: null, loading: false,
+  }
+}

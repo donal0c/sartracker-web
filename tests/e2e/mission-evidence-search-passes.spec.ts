@@ -46,6 +46,17 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     await expect(page.getByTestId('search-assignment-participants')).toHaveAttribute('maxlength', '40200')
     await expect(page.getByTestId('search-assignment-notes')).toHaveAttribute('maxlength', '2000')
     await expect(page.getByTestId('search-pass-notes')).toHaveAttribute('maxlength', '2000')
+    await expect(page.getByTestId('search-operation-areas-page-controls')).toContainText(
+      'Showing 2 of 2',
+    )
+    await page.getByTestId('search-operation-areas-search').fill('Area Beta')
+    await page.getByTestId('search-operation-areas-search-apply').click()
+    await expect(page.getByTestId('search-operation-area').locator('option')).toHaveCount(2)
+    await expect(page.getByTestId('search-operation-area')).toContainText('Area Beta')
+    await expect(page.getByTestId('search-operation-area')).not.toContainText('Area Alpha')
+    await page.getByTestId('search-operation-areas-search').fill('')
+    await page.getByTestId('search-operation-areas-search-apply').click()
+    await expect(page.getByTestId('search-operation-area').locator('option')).toHaveCount(3)
 
     await page.getByTestId('search-operation-coordinator').fill('Coordinator One')
     await page.getByTestId('search-operation-area').selectOption({ label: 'Area Beta' })
@@ -89,6 +100,13 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     await expect(page.locator('[data-testid^="search-pass-search-pass-"]')).toHaveCount(2)
     await expect(page.getByTestId('search-operations-workspace')).toContainText('Coordinator-declared: partial')
     await expect(page.getByTestId('search-operations-workspace')).toContainText('Coordinator-declared: full')
+    await expect(page.getByTestId('search-operation-passes-page-controls')).toContainText(
+      'Showing 2 of 2',
+    )
+    await page.getByTestId('search-operation-passes-search').fill('full')
+    await page.getByTestId('search-operation-passes-search-apply').click()
+    await expect(page.locator('[data-testid^="search-pass-search-pass-"]')).toHaveCount(1)
+    await expect(page.getByTestId('search-pass-page')).toContainText('Coordinator-declared: full')
 
     const recorded = await page.evaluate(() => {
       const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()

@@ -509,6 +509,49 @@ export type SearchPass = {
   readonly track_evidence_ids?: readonly string[]
 }
 
+export type SearchOperationPageKind = 'areas' | 'assignments' | 'outings' | 'passes'
+
+export type SearchAreaProjection = Pick<
+  SearchArea,
+  'id' | 'mission_id' | 'name' | 'status' | 'version_sequence' | 'updated_by'
+  | 'created_at' | 'updated_at' | 'retired_at'
+> & { readonly geometry_available: true }
+
+export type SearchAssignmentProjection = Pick<
+  SearchAssignment,
+  'id' | 'mission_id' | 'search_area_id' | 'outing_id' | 'team_id'
+  | 'version_sequence' | 'updated_by' | 'created_at' | 'updated_at' | 'retired_at'
+>
+
+export type SearchPassProjection = Pick<
+  SearchPass,
+  'id' | 'mission_id' | 'search_area_id' | 'assignment_id' | 'started_at'
+  | 'ended_at' | 'outcome' | 'coordinator_name' | 'version_sequence'
+  | 'created_at' | 'updated_at'
+> & {
+  readonly participant_count: number
+  readonly clue_count: number
+  readonly track_evidence_count: number
+}
+
+export type SearchOperationPage = {
+  readonly kind: SearchOperationPageKind
+  readonly search: string
+  readonly entries: readonly (
+    SearchAreaProjection | SearchAssignmentProjection | Outing | SearchPassProjection
+  )[]
+  readonly totalCount: number
+  readonly nextCursor: string | null
+}
+
+export type MissionReplayFilterPage = {
+  readonly filterKind: 'outing'
+  readonly search: string
+  readonly entries: readonly string[]
+  readonly totalCount: number
+  readonly nextCursor: string | null
+}
+
 export type MissionReplayTrackRecord = {
   readonly evidence_id: string
   readonly source_type: 'traccar_fix' | 'gpx_point'
@@ -582,6 +625,8 @@ export type MissionReplayReadResult = {
   readonly staticGpxPointCount: number
   readonly availableDeviceIds: readonly string[]
   readonly availableOutingIds: readonly string[]
+  readonly availableOutingTotalCount?: number
+  readonly availableOutingNextCursor?: string | null
   readonly deviceFilterIds: readonly string[]
   readonly outingFilterIds: readonly string[]
   readonly staticGpxEvidence: readonly {
@@ -986,6 +1031,15 @@ export type MissionStore = {
     input: MissionReplayReadInput,
     requestId?: string,
   ) => Promise<MissionReplayObjectChunkResult>
+  readonly readMissionReplayFilterPage?: (
+    input: MissionReplayReadInput & {
+      readonly filterKind: 'outing'
+      readonly filterSearch?: string
+      readonly filterCursor?: string
+      readonly filterLimit?: number
+    },
+    requestId?: string,
+  ) => Promise<MissionReplayFilterPage>
   readonly cancelMissionReplay?: (requestId: string) => Promise<boolean>
   readonly listIngestAnomalies?: (
     missionId: string,
@@ -1065,6 +1119,13 @@ export type MissionStore = {
   readonly listSearchAssignments?: (missionId: string) => Promise<readonly SearchAssignment[]>
   readonly upsertSearchPass?: (input: Readonly<Record<string, unknown>>) => Promise<SearchPass>
   readonly listSearchPasses?: (missionId: string) => Promise<readonly SearchPass[]>
+  readonly listSearchOperationPage?: (input: {
+    readonly missionId: string
+    readonly kind: SearchOperationPageKind
+    readonly search?: string
+    readonly cursor?: string
+    readonly limit?: number
+  }) => Promise<SearchOperationPage>
   readonly getMission: (missionId: string) => Promise<Mission>
   readonly listMissions: () => Promise<readonly Mission[]>
   readonly getActiveMission: () => Promise<Mission | null>

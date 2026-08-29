@@ -11,6 +11,7 @@ const {
   runMissionReviewReadQueryInWorker,
 } = require('./mission-review-read-query-runner.cjs')
 const { runMissionReplayInWorker } = require('./mission-replay-runner.cjs')
+const { runSearchOperationPageInWorker } = require('./search-operations-page-runner.cjs')
 const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
 const { runGpxEvidenceImportInWorker } = require('./gpx-evidence-import-runner.cjs')
 const {
@@ -409,6 +410,8 @@ function createElectronMissionStore(options) {
   const missionReviewReadQueryRunner =
     options.runMissionReviewReadQueryInWorker ?? runMissionReviewReadQueryInWorker
   const missionReplayRunner = options.runMissionReplayInWorker ?? runMissionReplayInWorker
+  const searchOperationPageRunner = options.runSearchOperationPageInWorker
+    ?? runSearchOperationPageInWorker
   const gpxEvidenceImportRunner = options.runGpxEvidenceImportInWorker ?? runGpxEvidenceImportInWorker
   const gpxShutdownJoinTimeoutMs = Number.isFinite(options.gpxShutdownJoinTimeoutMs)
     ? Math.max(1, Math.min(30_000, Number(options.gpxShutdownJoinTimeoutMs)))
@@ -434,6 +437,7 @@ function createElectronMissionStore(options) {
   const coverageQueryControllersByRequestId = new Map()
   const coverageTileControllersByRequestId = new Map()
   const activeGpxEvidenceImports = new Set()
+  const activeSearchOperationPageReads = new Set()
   const coverageManifestBuildEvidenceByMission = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
@@ -626,6 +630,7 @@ function createElectronMissionStore(options) {
       const active = [...activeGpxEvidenceImports]
       for (const entry of active) entry.controller.abort()
       const shutdownTasks = active.map((entry) => entry.quiesced)
+      shutdownTasks.push(...activeSearchOperationPageReads)
       if (!legacyEvidenceBackfillWorkerStopped && legacyEvidenceBackfillWorker !== null) {
         shutdownTasks.push(legacyEvidenceBackfillWorker.terminate().then(() => {
           legacyEvidenceBackfillWorkerStopped = true
@@ -649,6 +654,9 @@ function createElectronMissionStore(options) {
     close: () => {
       if (activeGpxEvidenceImports.size > 0) {
         throw new Error('Cannot close the mission store while GPX evidence imports are active; call prepareClose first.')
+      }
+      if (activeSearchOperationPageReads.size > 0) {
+        throw new Error('Cannot close the mission store while Search Operations page reads are active; call prepareClose first.')
       }
       if (!legacyEvidenceBackfillWorkerStopped) {
         throw new Error('Cannot close the mission store while legacy evidence reconstruction is active; call prepareClose first.')
@@ -1279,6 +1287,11 @@ function createElectronMissionStore(options) {
       assertMissionReplayGpxStateSettled(db, input)
       return executeMissionReplayRead(input, requestId, 'objects')
     },
+    readMissionReplayFilterPage: async (input, requestId) => {
+      assertLegacyEventProvenanceReady(db, input?.missionId)
+      assertMissionReplayGpxStateSettled(db, input)
+      return executeMissionReplayRead(input, requestId, 'filters')
+    },
     cancelMissionReplay: async (requestId) => {
       const normalizedRequestId = normalizeMissionReviewRequestId(requestId, true)
       const activeQuery = missionReplayQueryControllersByRequestId.get(normalizedRequestId)
@@ -1478,6 +1491,13 @@ function createElectronMissionStore(options) {
         missionId, 'Search pass mission', MAX_SEARCH_OPERATION_ID_LENGTH,
       ),
     ),
+    listSearchOperationPage: async (input) => {
+      const operation = searchOperationPageRunner({ databasePath, query: input })
+      const workerExited = Promise.resolve(operation.workerExited ?? operation)
+      activeSearchOperationPageReads.add(workerExited)
+      void workerExited.finally(() => activeSearchOperationPageReads.delete(workerExited))
+      return await operation
+    },
     listMissionObjectVersions: async (input) => {
       assertLegacyMissionObjectBackfillSettled(db)
       return evidenceVersionStore.listVersions(input)

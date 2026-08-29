@@ -57,6 +57,10 @@ function replayState(
     loading: false,
     loadingMore: false,
     error: null,
+    outingFilters: {
+      search: '', pageNumber: 1, visibleCount: 0, totalCount: 0,
+      hasMore: false, nextCursor: null, loading: false,
+    },
     result: {
       missionId: 'mission-1',
       selectedTime: REPLAY_TIME,

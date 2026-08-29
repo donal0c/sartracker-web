@@ -9,6 +9,8 @@ const MAX_REPLAY_OBJECT_LIMIT = 100
 const MAX_REPLAY_OBJECT_STATE_BYTES = 4_096
 const MAX_REPLAY_CURSOR_OFFSET = 10_000_000
 const MAX_REPLAY_FILTER_IDS = 200
+const MAX_REPLAY_FILTER_PAGE_LIMIT = 100
+const MAX_REPLAY_FILTER_SEARCH_LENGTH = 120
 const MAX_REPLAY_SELECTED_TIME_LENGTH = 64
 const REPLAY_TIMEZONE = 'Europe/Dublin'
 
@@ -28,6 +30,11 @@ function readMissionReplayStateWithinSnapshot(database, input) {
   const objectResult = readObjectRows(database, normalized, 0)
   const trackResult = readTrackRows(database, normalized, null)
   const staticGpxEvidence = readStaticGpxEvidence(database, normalized)
+  const outingFilterPage = readMissionReplayFilterPageWithinSnapshot(database, {
+    ...normalized,
+    filterKind: 'outing',
+    filterLimit: MAX_REPLAY_FILTER_PAGE_LIMIT,
+  })
   const limitations = readReplayLimitations(
     database,
     normalized,
@@ -60,19 +67,101 @@ function readMissionReplayStateWithinSnapshot(database, input) {
     staticGpxEvidence: staticGpxEvidence.rows,
     nextCursor: trackResult.nextCursor,
     availableDeviceIds: readAvailableDeviceIds(database, normalized),
-    availableOutingIds: readAvailableOutingIds(database, normalized),
+    availableOutingIds: outingFilterPage.entries,
+    availableOutingTotalCount: outingFilterPage.totalCount,
+    availableOutingNextCursor: outingFilterPage.nextCursor,
     deviceFilterIds: normalized.deviceIds ?? [],
     outingFilterIds: normalized.outingIds ?? [],
     progress: trackResult.totalTrackCount === 0
       ? 1
       : trackResult.tracks.length / trackResult.totalTrackCount,
-    limitations: staticGpxEvidence.totalCount > staticGpxEvidence.rows.length
-      ? [...limitations, {
+    limitations: [
+      ...limitations,
+      ...(outingFilterPage.nextCursor === null ? [] : [{
+        code: 'outing_filter_choices_paged',
+        message: 'Additional eligible GPX outings are available through bounded filter-choice pages.',
+        count: outingFilterPage.totalCount - outingFilterPage.entries.length,
+      }]),
+      ...(staticGpxEvidence.totalCount > staticGpxEvidence.rows.length ? [{
           code: 'static_gpx_summary_truncated',
           message: 'Additional static GPX imports are retained and available in the GPX evidence panel.',
           count: staticGpxEvidence.totalCount - staticGpxEvidence.rows.length,
-        }]
-      : limitations,
+        }] : []),
+    ],
+  }
+}
+
+/** Reads one bounded searchable Replay filter-choice page inside a pinned SQLite snapshot. */
+function readMissionReplayFilterPage(database, input) {
+  assertLegacyEventProvenanceReady(database, input?.missionId)
+  return database.transaction(() => {
+    const normalized = normalizeReplayInput(input)
+    return readMissionReplayFilterPageWithinSnapshot(database, {
+      ...normalized,
+      replayGeneration: readMissionReplayGeneration(database, normalized.missionId),
+      filterKind: input.filterKind,
+      filterSearch: input.filterSearch,
+      filterCursor: input.filterCursor,
+      filterLimit: input.filterLimit,
+    })
+  })()
+}
+
+/** Executes one validated Replay outing-choice page. */
+function readMissionReplayFilterPageWithinSnapshot(database, input) {
+  if (input.filterKind !== 'outing') {
+    throw new Error('Mission replay filter kind is invalid.')
+  }
+  const search = normalizeReplayFilterSearch(input.filterSearch)
+  const limit = normalizeReplayFilterPageLimit(input.filterLimit)
+  const cursor = decodeReplayFilterCursor(input.filterCursor, { ...input, search })
+  const eligibleCte = `WITH eligible AS (
+      SELECT revisions.outing_id,
+        ROW_NUMBER() OVER (PARTITION BY revisions.import_id
+          ORDER BY revisions.recorded_at DESC, revisions.revision_sequence DESC) AS replay_rank
+      FROM gpx_import_revisions AS revisions
+      JOIN gpx_track_imports AS imports ON imports.id = revisions.import_id
+      WHERE revisions.mission_id = ? AND revisions.import_state = 'complete'
+        AND revisions.recorded_at <= ?
+        AND (imports.retired_at IS NULL OR imports.retired_at > ?)
+    ), choices AS (
+      SELECT DISTINCT outing_id FROM eligible
+      WHERE replay_rank = 1 AND outing_id IS NOT NULL
+        AND outing_id LIKE ? ESCAPE '\\' COLLATE NOCASE
+    )`
+  const parameters = [
+    input.missionId,
+    input.selectedTime,
+    input.selectedTime,
+    `%${escapeReplayFilterSearch(search)}%`,
+  ]
+  const totalCount = Number(database.prepare(`${eligibleCte}
+    SELECT COUNT(*) AS count FROM choices`).get(...parameters).count)
+  const rows = database.prepare(`${eligibleCte}
+    SELECT outing_id FROM choices
+    ${cursor === null ? '' : 'WHERE outing_id > ?'}
+    ORDER BY outing_id ASC LIMIT ?`).all(
+      ...parameters,
+      ...(cursor === null ? [] : [cursor.lastId]),
+      limit + 1,
+    )
+  const entries = rows.slice(0, limit).map((row) => row.outing_id)
+  const lastId = entries.at(-1)
+  return {
+    filterKind: 'outing',
+    search,
+    entries,
+    totalCount,
+    nextCursor: rows.length <= limit || lastId === undefined
+      ? null
+      : encodeReplayFilterCursor({
+          missionId: input.missionId,
+          selectedTime: input.selectedTime,
+          replayGeneration: input.replayGeneration,
+          filterKind: 'outing',
+          search,
+          lastId,
+        }),
   }
 }
 
@@ -894,6 +983,25 @@ function normalizeReplayWorkerQuery(input, kind) {
         : { objectCursor: input.objectCursor }),
     }
   }
+  if (kind === 'filters') {
+    if (input.filterKind !== 'outing') {
+      throw new Error('Mission replay filter kind is invalid.')
+    }
+    const filterSearch = normalizeReplayFilterSearch(input.filterSearch)
+    const filterLimit = normalizeReplayFilterPageLimit(input.filterLimit)
+    if (input.filterCursor !== undefined && input.filterCursor !== null
+      && (typeof input.filterCursor !== 'string' || input.filterCursor.length > 2_000)) {
+      throw new Error('Mission replay filter cursor is invalid.')
+    }
+    return {
+      ...normalized,
+      filterKind: 'outing',
+      filterSearch,
+      filterLimit,
+      ...(input.filterCursor === undefined || input.filterCursor === null
+        || input.filterCursor === '' ? {} : { filterCursor: input.filterCursor }),
+    }
+  }
   throw new Error('Mission replay worker query kind is invalid.')
 }
 
@@ -1135,22 +1243,57 @@ function readAvailableDeviceIds(database, input) {
     .map((row) => row.device_id)
 }
 
-/** Lists bounded GPX outing filter choices known by the selected replay time. */
-function readAvailableOutingIds(database, input) {
-  return database.prepare(`WITH eligible AS (
-      SELECT revisions.outing_id,
-        ROW_NUMBER() OVER (PARTITION BY revisions.import_id
-          ORDER BY revisions.recorded_at DESC, revisions.revision_sequence DESC) AS replay_rank
-      FROM gpx_import_revisions AS revisions
-      JOIN gpx_track_imports AS imports ON imports.id = revisions.import_id
-      WHERE revisions.mission_id = ? AND revisions.import_state = 'complete'
-        AND revisions.recorded_at <= ?
-        AND (imports.retired_at IS NULL OR imports.retired_at > ?)
+/** Normalizes one bounded filter-choice search substring. */
+function normalizeReplayFilterSearch(value) {
+  if (value === undefined || value === null) return ''
+  if (typeof value !== 'string' || value.length > MAX_REPLAY_FILTER_SEARCH_LENGTH) {
+    throw new Error('Mission replay filter search is invalid.')
+  }
+  return value.trim()
+}
+
+/** Normalizes one bounded filter-choice page size. */
+function normalizeReplayFilterPageLimit(value) {
+  const limit = value ?? MAX_REPLAY_FILTER_PAGE_LIMIT
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_REPLAY_FILTER_PAGE_LIMIT) {
+    throw new Error(
+      `Mission replay filter page limit must be between 1 and ${MAX_REPLAY_FILTER_PAGE_LIMIT}.`,
     )
-    SELECT DISTINCT outing_id FROM eligible
-    WHERE replay_rank = 1 AND outing_id IS NOT NULL ORDER BY outing_id ASC LIMIT ?`)
-    .all(input.missionId, input.selectedTime, input.selectedTime, MAX_REPLAY_FILTER_IDS)
-    .map((row) => row.outing_id)
+  }
+  return limit
+}
+
+/** Escapes a literal Replay filter substring for SQLite LIKE. */
+function escapeReplayFilterSearch(value) {
+  return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')
+}
+
+/** Encodes a replay-generation and query-bound filter continuation. */
+function encodeReplayFilterCursor(value) {
+  return Buffer.from(JSON.stringify({ v: 1, ...value }), 'utf8').toString('base64url')
+}
+
+/** Decodes and verifies a Replay filter continuation before SQLite use. */
+function decodeReplayFilterCursor(value, input) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string' || value.length > 2_000) {
+    throw new Error('Mission replay filter cursor is invalid.')
+  }
+  let parsed
+  try {
+    parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
+  } catch {
+    throw new Error('Mission replay filter cursor is invalid.')
+  }
+  if (parsed?.v !== 1 || parsed.missionId !== input.missionId
+    || parsed.selectedTime !== input.selectedTime
+    || parsed.replayGeneration !== input.replayGeneration
+    || parsed.filterKind !== input.filterKind || parsed.search !== input.search
+    || typeof parsed.lastId !== 'string' || parsed.lastId.length < 1
+    || parsed.lastId.length > 200) {
+    throw new Error('Mission replay filter cursor is invalid.')
+  }
+  return parsed
 }
 
 function parseState(value, objectType, objectId) {
@@ -1172,6 +1315,7 @@ module.exports = {
   encodeReplayObjectCursor,
   encodeReplayTrackCursor,
   readMissionReplayObjectChunk,
+  readMissionReplayFilterPage,
   readMissionReplayState,
   readMissionReplayTrackChunk,
 }

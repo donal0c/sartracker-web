@@ -1232,6 +1232,73 @@ describe('browser harness store', () => {
     })).resolves.toMatchObject({ totalTrackCount: 0 })
   })
 
+  it('mirrors bounded searchable Replay outing-choice pages without hiding the 201st outing [DON-278]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Paged outing choices', start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const current = readBrowserHarnessState()
+    const importedAt = '2026-08-20T10:00:00.000Z'
+    const gpxImports = Array.from({ length: 201 }, (_unused, index) => {
+      const suffix = String(index).padStart(3, '0')
+      return {
+        id: `gpx-${suffix}`, mission_id: mission.id,
+        source_path: `/tracks/paged-${suffix}.gpx`, file_name: `paged-${suffix}.gpx`,
+        display_name: `Paged ${suffix}`,
+        geometry_json: '{"type":"MultiLineString","coordinates":[]}', metadata_json: null,
+        content_sha256: index.toString(16).padStart(64, '0'),
+        source_bytes_base64: 'PGdweCAvPg==', timing_class: 'fully_dated' as const,
+        outing_id: `outing-${suffix}`, revision_sequence: 1,
+        retired_at: null, retired_by: null, imported_at: importedAt, updated_at: importedAt,
+      }
+    })
+    const gpxEvidencePoints = gpxImports.map((entry) => ({
+      importId: entry.id, revisionSequence: 1, outingId: entry.outing_id,
+      segmentIndex: 0, pointIndex: 0, trackName: entry.display_name,
+      lat: 52, lon: -9.7, elevation: null, timestamp: '2026-08-20T09:00:00.000Z',
+      recordedAt: importedAt,
+    }))
+    window.sessionStorage.setItem('sartracker:browser-harness', JSON.stringify({
+      ...current,
+      gpxImports: [...current.gpxImports, ...gpxImports],
+      gpxEvidencePoints: [...current.gpxEvidencePoints, ...gpxEvidencePoints],
+    }))
+    resetBrowserHarnessStore(false)
+    const reloadedStore = getBrowserHarnessStore()
+
+    const replay = await reloadedStore.readMissionReplay({
+      missionId: mission.id, selectedTime: '2026-08-20T10:00:00.000Z',
+      timezone: 'Europe/Dublin', trackLimit: 100,
+    })
+    expect(replay.availableOutingIds).toHaveLength(100)
+    expect(replay.availableOutingTotalCount).toBe(201)
+    expect(replay.availableOutingNextCursor).toEqual(expect.any(String))
+    expect(replay.limitations).toContainEqual(expect.objectContaining({
+      code: 'outing_filter_choices_paged', count: 101,
+    }))
+
+    const second = await reloadedStore.readMissionReplayFilterPage({
+      missionId: mission.id, selectedTime: replay.selectedTime,
+      timezone: 'Europe/Dublin', trackLimit: 100, filterKind: 'outing',
+      filterCursor: replay.availableOutingNextCursor ?? undefined, filterLimit: 100,
+    })
+    const third = await reloadedStore.readMissionReplayFilterPage({
+      missionId: mission.id, selectedTime: replay.selectedTime,
+      timezone: 'Europe/Dublin', trackLimit: 100, filterKind: 'outing',
+      filterCursor: second.nextCursor ?? undefined, filterLimit: 100,
+    })
+    expect(second.entries).toHaveLength(100)
+    expect(third.entries).toEqual(['outing-200'])
+    expect(third.nextCursor).toBeNull()
+    await expect(reloadedStore.readMissionReplayFilterPage({
+      missionId: mission.id, selectedTime: replay.selectedTime,
+      timezone: 'Europe/Dublin', trackLimit: 100, filterKind: 'outing',
+      filterSearch: 'outing-200', filterLimit: 100,
+    })).resolves.toMatchObject({ entries: ['outing-200'], totalCount: 1 })
+  })
+
   it('excludes GPX evidence only after its recorded retirement time [DON-278]', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))

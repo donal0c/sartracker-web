@@ -4,6 +4,7 @@ const { assertReplayResultBounded } = require('./mission-replay-message-policy.c
 const { openMissionReplayDatabase } = require('./mission-replay-database.cjs')
 const {
   readMissionReplayObjectChunk,
+  readMissionReplayFilterPage,
   readMissionReplayState,
   readMissionReplayTrackChunk,
 } = require('./mission-replay-query.cjs')
@@ -19,7 +20,9 @@ function run() {
       ? readMissionReplayTrackChunk(database, workerData.query)
       : workerData.kind === 'objects'
         ? readMissionReplayObjectChunk(database, workerData.query)
-        : readMissionReplayState(database, workerData.query)
+        : workerData.kind === 'filters'
+          ? readMissionReplayFilterPage(database, workerData.query)
+          : readMissionReplayState(database, workerData.query)
     assertReplayResultBounded(result, workerData.query.trackLimit)
     parentPort.postMessage({ type: 'complete', workerThreadId: threadId, result })
   } catch (error) {

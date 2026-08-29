@@ -68,6 +68,11 @@ type MissionEvidenceStore = {
   listSearchAreas(missionId: string): Promise<readonly Readonly<Record<string, unknown>>[]>
   listSearchAssignments(missionId: string): Promise<readonly Readonly<Record<string, unknown>>[]>
   listSearchPasses(missionId: string): Promise<readonly Readonly<Record<string, unknown>>[]>
+  listSearchOperationPage(input: Readonly<Record<string, unknown>>): Promise<{
+    readonly entries: readonly Readonly<Record<string, unknown>>[]
+    readonly totalCount: number
+    readonly nextCursor: string | null
+  }>
   importGpxEvidencePaths(input: { readonly missionId: string; readonly paths: readonly string[] }): Promise<{
     readonly imports: readonly { readonly id: string }[]
     readonly failures: readonly { readonly sourcePath: string; readonly reason: string }[]
@@ -3260,6 +3265,21 @@ describe('mission evidence versioning [DON-277]', () => {
         version_sequence: 2,
       }),
     ])
+    const passPage = await store.listSearchOperationPage({
+      missionId: mission.id, kind: 'passes', limit: 25,
+    })
+    expect(passPage).toMatchObject({
+      totalCount: 1,
+      nextCursor: null,
+      entries: [expect.objectContaining({
+        id: pass.id,
+        outcome: 'partial',
+        participant_count: 1,
+        clue_count: 1,
+        track_evidence_count: 1,
+      })],
+    })
+    expect(JSON.stringify(passPage)).not.toContain('advisory_coverage_json')
     const passVersions = await store.listMissionObjectVersions({
       missionId: mission.id,
       objectType: 'search_pass',

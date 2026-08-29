@@ -4,9 +4,12 @@ import type {
   MissionStore,
   MissionStoreInfo,
   MissionReplayReadResult,
-  SearchArea,
-  SearchAssignment,
-  SearchPass,
+  MissionReplayFilterPage,
+  SearchAreaProjection,
+  SearchAssignmentProjection,
+  SearchOperationPage,
+  SearchOperationPageKind,
+  SearchPassProjection,
   Outing,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { LayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
@@ -29,9 +32,8 @@ type MissionReviewStoreBoundary = Pick<
   | 'listHelicopters'
   | 'listGpxImports'
   | 'listGpxImportPage'
-  | 'listSearchAreas'
-  | 'listSearchAssignments'
-  | 'listSearchPasses'
+  | 'listSearchOperationPage'
+  | 'readMissionReplayFilterPage'
   | 'listOutings'
   | 'upsertSearchAssignment'
   | 'upsertSearchPass'
@@ -57,11 +59,97 @@ export type MissionReviewRuntimeState = {
   }
   readonly replay: MissionReplayRuntimeState
   readonly searchOperations: {
-    readonly areas: readonly SearchArea[]
-    readonly assignments: readonly SearchAssignment[]
-    readonly passes: readonly SearchPass[]
+    readonly areas: readonly SearchAreaProjection[]
+    readonly assignments: readonly SearchAssignmentProjection[]
+    readonly passes: readonly SearchPassProjection[]
     readonly outings: readonly Outing[]
+    readonly pages: Readonly<Record<SearchOperationPageKind, SearchOperationPageState>>
   }
+}
+
+/** Creates an empty bounded-page state for renderer initialization. */
+function emptyPageState(): SearchOperationPageState {
+  return {
+    search: '', pageNumber: 1, visibleCount: 0, totalCount: 0,
+    hasMore: false, nextCursor: null, loading: false,
+  }
+}
+
+/** Converts a Search Operations result into explicit renderer continuation state. */
+function pageStateFromResult(result: SearchOperationPage): SearchOperationPageState {
+  return {
+    search: result.search,
+    pageNumber: 1,
+    visibleCount: result.entries.length,
+    totalCount: result.totalCount,
+    hasMore: result.nextCursor !== null,
+    nextCursor: result.nextCursor,
+    loading: false,
+  }
+}
+
+/** Converts the first Replay outing-choice page into explicit continuation state. */
+function replayOutingPageState(result: MissionReplayReadResult): SearchOperationPageState {
+  return {
+    search: '',
+    pageNumber: 1,
+    visibleCount: result.availableOutingIds.length,
+    totalCount: result.availableOutingTotalCount ?? result.availableOutingIds.length,
+    hasMore: (result.availableOutingNextCursor ?? null) !== null,
+    nextCursor: result.availableOutingNextCursor ?? null,
+    loading: false,
+  }
+}
+
+/** Converts a later Replay filter page into explicit continuation state. */
+function pageStateFromFilterResult(
+  result: MissionReplayFilterPage,
+  pageNumber: number,
+): SearchOperationPageState {
+  return {
+    search: result.search,
+    pageNumber,
+    visibleCount: result.entries.length,
+    totalCount: result.totalCount,
+    hasMore: result.nextCursor !== null,
+    nextCursor: result.nextCursor,
+    loading: false,
+  }
+}
+
+/** Replaces exactly one Search Operations projection and its page metadata. */
+function replaceSearchOperationPage(
+  state: MissionReviewRuntimeState,
+  kind: SearchOperationPageKind,
+  result: SearchOperationPage,
+  pageNumber: number,
+): MissionReviewRuntimeState {
+  const nextPage = { ...pageStateFromResult(result), pageNumber }
+  const entries = result.entries
+  const nextOperations = kind === 'areas'
+    ? { ...state.searchOperations, areas: entries as readonly SearchAreaProjection[] }
+    : kind === 'assignments'
+      ? { ...state.searchOperations, assignments: entries as readonly SearchAssignmentProjection[] }
+      : kind === 'outings'
+        ? { ...state.searchOperations, outings: entries as readonly Outing[] }
+        : { ...state.searchOperations, passes: entries as readonly SearchPassProjection[] }
+  return {
+    ...state,
+    searchOperations: {
+      ...nextOperations,
+      pages: { ...state.searchOperations.pages, [kind]: nextPage },
+    },
+  }
+}
+
+export type SearchOperationPageState = {
+  readonly search: string
+  readonly pageNumber: number
+  readonly visibleCount: number
+  readonly totalCount: number
+  readonly hasMore: boolean
+  readonly nextCursor: string | null
+  readonly loading: boolean
 }
 
 export type MissionReplayRuntimeState = {
@@ -71,6 +159,7 @@ export type MissionReplayRuntimeState = {
   readonly loading: boolean
   readonly loadingMore: boolean
   readonly error: string | null
+  readonly outingFilters: SearchOperationPageState
 }
 
 export type MissionReviewController = {
@@ -90,6 +179,15 @@ export type MissionReviewController = {
   readonly loadNextReplayObjects: () => Promise<void>
   readonly loadPreviousReplayObjects: () => Promise<void>
   readonly returnToLive: () => void
+  readonly searchSearchOperations: (
+    kind: SearchOperationPageKind,
+    search: string,
+  ) => Promise<void>
+  readonly loadNextSearchOperations: (kind: SearchOperationPageKind) => Promise<void>
+  readonly returnToFirstSearchOperations: (kind: SearchOperationPageKind) => Promise<void>
+  readonly searchReplayOutingFilters: (search: string) => Promise<void>
+  readonly loadNextReplayOutingFilters: () => Promise<void>
+  readonly returnToFirstReplayOutingFilters: () => Promise<void>
   readonly recordSearchAssignment: (input: {
     readonly searchAreaId: string
     readonly outingId: string
@@ -135,8 +233,15 @@ const EMPTY_RUNTIME: MissionReviewRuntimeState = {
     loading: false,
     loadingMore: false,
     error: null,
+    outingFilters: emptyPageState(),
   },
-  searchOperations: { areas: [], assignments: [], passes: [], outings: [] },
+  searchOperations: {
+    areas: [], assignments: [], passes: [], outings: [],
+    pages: {
+      areas: emptyPageState(), assignments: emptyPageState(),
+      outings: emptyPageState(), passes: emptyPageState(),
+    },
+  },
 }
 
 export async function startMissionReviewRuntime(
@@ -151,6 +256,9 @@ export async function startMissionReviewRuntime(
   let activeReplayRequestId: string | null = null
   let replayObjectPageCursors: readonly (string | null)[] = [null]
   let replayObjectPageIndex = 0
+  const searchOperationTokens: Record<SearchOperationPageKind, number> = {
+    areas: 0, assignments: 0, outings: 0, passes: 0,
+  }
 
   publishRuntime()
 
@@ -202,6 +310,32 @@ export async function startMissionReviewRuntime(
       resetReplayObjectPagination()
       state = { ...state, replay: { ...EMPTY_RUNTIME.replay } }
       publishRuntime()
+    },
+    searchSearchOperations: async (kind, search) => {
+      await loadSearchOperationPage(kind, search, undefined, 1)
+    },
+    loadNextSearchOperations: async (kind) => {
+      const page = state.searchOperations.pages[kind]
+      if (page.nextCursor === null || page.loading) return
+      await loadSearchOperationPage(kind, page.search, page.nextCursor, page.pageNumber + 1)
+    },
+    returnToFirstSearchOperations: async (kind) => {
+      const page = state.searchOperations.pages[kind]
+      if (page.pageNumber === 1 || page.loading) return
+      await loadSearchOperationPage(kind, page.search, undefined, 1)
+    },
+    searchReplayOutingFilters: async (search) => {
+      await loadReplayOutingFilterPage(search, undefined, 1)
+    },
+    loadNextReplayOutingFilters: async () => {
+      const page = state.replay.outingFilters
+      if (page.nextCursor === null || page.loading) return
+      await loadReplayOutingFilterPage(page.search, page.nextCursor, page.pageNumber + 1)
+    },
+    returnToFirstReplayOutingFilters: async () => {
+      const page = state.replay.outingFilters
+      if (page.pageNumber === 1 || page.loading) return
+      await loadReplayOutingFilterPage(page.search, undefined, 1)
     },
     recordSearchAssignment: async (input) => {
       if (state.selectedMissionId === null || dependencies.missionStore.upsertSearchAssignment === undefined) {
@@ -302,7 +436,7 @@ export async function startMissionReviewRuntime(
       activeReviewRequestId = reviewRequestId
       const [
         reviewRead, info, markers, devices, drawings, helicopters, gpxPage, layerMetadata,
-        searchAreas, searchAssignments, searchPasses, outings,
+        searchAreasPage, searchAssignmentsPage, searchPassesPage, searchOutingsPage,
       ] =
         await Promise.all([
           dependencies.missionStore.readMissionReview({
@@ -319,10 +453,10 @@ export async function startMissionReviewRuntime(
             : Promise.resolve([]),
           readGpxImportProjectionPage(selectedMission.id, currentToken, gpxCursor),
           dependencies.layerCatalogStore.listMetadata(selectedMission.id),
-          dependencies.missionStore.listSearchAreas?.(selectedMission.id) ?? Promise.resolve([]),
-          dependencies.missionStore.listSearchAssignments?.(selectedMission.id) ?? Promise.resolve([]),
-          dependencies.missionStore.listSearchPasses?.(selectedMission.id) ?? Promise.resolve([]),
-          dependencies.missionStore.listOutings?.(selectedMission.id) ?? Promise.resolve([]),
+          readInitialSearchOperationPage(selectedMission.id, 'areas'),
+          readInitialSearchOperationPage(selectedMission.id, 'assignments'),
+          readInitialSearchOperationPage(selectedMission.id, 'passes'),
+          readInitialSearchOperationPage(selectedMission.id, 'outings'),
         ])
       if (activeReviewRequestId === reviewRequestId) {
         activeReviewRequestId = null
@@ -365,10 +499,16 @@ export async function startMissionReviewRuntime(
           ? state.replay
           : { ...EMPTY_RUNTIME.replay },
         searchOperations: {
-          areas: searchAreas,
-          assignments: searchAssignments,
-          passes: searchPasses,
-          outings,
+          areas: searchAreasPage.entries as readonly SearchAreaProjection[],
+          assignments: searchAssignmentsPage.entries as readonly SearchAssignmentProjection[],
+          passes: searchPassesPage.entries as readonly SearchPassProjection[],
+          outings: searchOutingsPage.entries as readonly Outing[],
+          pages: {
+            areas: pageStateFromResult(searchAreasPage),
+            assignments: pageStateFromResult(searchAssignmentsPage),
+            passes: pageStateFromResult(searchPassesPage),
+            outings: pageStateFromResult(searchOutingsPage),
+          },
         },
       }
       publishRuntime()
@@ -401,6 +541,65 @@ export async function startMissionReviewRuntime(
     )
   }
 
+  /** Reads the first bounded page for one Search Operations projection. */
+  async function readInitialSearchOperationPage(
+    missionId: string,
+    kind: SearchOperationPageKind,
+  ): Promise<SearchOperationPage> {
+    if (dependencies.missionStore.listSearchOperationPage === undefined) {
+      return { kind, search: '', entries: [], totalCount: 0, nextCursor: null }
+    }
+    return await dependencies.missionStore.listSearchOperationPage({
+      missionId, kind, limit: 25,
+    })
+  }
+
+  /** Replaces one renderer Search Operations page without accumulating prior pages. */
+  async function loadSearchOperationPage(
+    kind: SearchOperationPageKind,
+    search: string,
+    cursor: string | undefined,
+    pageNumber: number,
+  ): Promise<void> {
+    const missionId = state.selectedMissionId
+    const readPage = dependencies.missionStore.listSearchOperationPage
+    if (missionId === null || readPage === undefined) return
+    const token = ++searchOperationTokens[kind]
+    state = {
+      ...state,
+      searchOperations: {
+        ...state.searchOperations,
+        pages: {
+          ...state.searchOperations.pages,
+          [kind]: { ...state.searchOperations.pages[kind], loading: true },
+        },
+      },
+    }
+    publishRuntime()
+    try {
+      const result = await readPage({
+        missionId, kind, search, limit: 25, ...(cursor === undefined ? {} : { cursor }),
+      })
+      if (token !== searchOperationTokens[kind] || missionId !== state.selectedMissionId) return
+      state = replaceSearchOperationPage(state, kind, result, pageNumber)
+      publishRuntime()
+    } catch (error) {
+      if (token !== searchOperationTokens[kind] || missionId !== state.selectedMissionId) return
+      state = {
+        ...state,
+        error: toErrorMessage(error),
+        searchOperations: {
+          ...state.searchOperations,
+          pages: {
+            ...state.searchOperations.pages,
+            [kind]: { ...state.searchOperations.pages[kind], loading: false },
+          },
+        },
+      }
+      publishRuntime()
+    }
+  }
+
   function cancelActiveReviewRead(): void {
     cancelReviewReadIfActive(activeReviewRequestId)
   }
@@ -417,6 +616,7 @@ export async function startMissionReviewRuntime(
         replay: {
           mode: 'replay', selectedTime, result: null, loading: false,
           loadingMore: false, error: 'Replay is unavailable in this runtime.',
+          outingFilters: emptyPageState(),
         },
       }
       publishRuntime()
@@ -433,6 +633,7 @@ export async function startMissionReviewRuntime(
       replay: {
         mode: 'replay', selectedTime: normalizedTime, result: null,
         loading: true, loadingMore: false, error: null,
+        outingFilters: emptyPageState(),
       },
     }
     publishRuntime()
@@ -453,6 +654,7 @@ export async function startMissionReviewRuntime(
         replay: {
           mode: 'replay', selectedTime: normalizedTime, result,
           loading: false, loadingMore: false, error: null,
+          outingFilters: replayOutingPageState(result),
         },
       }
       publishRuntime()
@@ -464,6 +666,7 @@ export async function startMissionReviewRuntime(
         replay: {
           mode: 'replay', selectedTime: normalizedTime, result: null,
           loading: false, loadingMore: false, error: toErrorMessage(error),
+          outingFilters: emptyPageState(),
         },
       }
       publishRuntime()
@@ -473,6 +676,72 @@ export async function startMissionReviewRuntime(
   async function loadNextReplayChunk(): Promise<void> {
     const replay = state.replay
     await loadReplayTrackChunk(replay.result?.nextCursor ?? null)
+  }
+
+  /** Replaces the visible Replay outing-choice page while retaining selected IDs. */
+  async function loadReplayOutingFilterPage(
+    search: string,
+    cursor: string | undefined,
+    pageNumber: number,
+  ): Promise<void> {
+    const replay = state.replay
+    const missionId = state.selectedMissionId
+    const readPage = dependencies.missionStore.readMissionReplayFilterPage
+    if (replay.result === null || missionId === null || readPage === undefined) return
+    cancelActiveReplayRead()
+    const currentToken = replayToken
+    const requestId = `mission-replay-${requestNamespace}-${++requestSequence}`
+    activeReplayRequestId = requestId
+    state = {
+      ...state,
+      replay: {
+        ...replay,
+        outingFilters: { ...replay.outingFilters, loading: true },
+        error: null,
+      },
+    }
+    publishRuntime()
+    try {
+      const page = await readPage({
+        missionId,
+        selectedTime: replay.result.selectedTime,
+        timezone: replay.result.timezone,
+        trackLimit: 500,
+        objectLimit: 100,
+        filterKind: 'outing',
+        filterSearch: search,
+        filterLimit: 100,
+        ...(cursor === undefined ? {} : { filterCursor: cursor }),
+      }, requestId)
+      if (currentToken !== replayToken || activeReplayRequestId !== requestId) return
+      activeReplayRequestId = null
+      state = {
+        ...state,
+        replay: {
+          ...state.replay,
+          result: {
+            ...replay.result,
+            availableOutingIds: page.entries,
+            availableOutingTotalCount: page.totalCount,
+            availableOutingNextCursor: page.nextCursor,
+          },
+          outingFilters: pageStateFromFilterResult(page, pageNumber),
+        },
+      }
+      publishRuntime()
+    } catch (error) {
+      if (currentToken !== replayToken || activeReplayRequestId !== requestId) return
+      activeReplayRequestId = null
+      state = {
+        ...state,
+        replay: {
+          ...state.replay,
+          outingFilters: { ...state.replay.outingFilters, loading: false },
+          error: toErrorMessage(error),
+        },
+      }
+      publishRuntime()
+    }
   }
 
   async function loadReplayTrackChunk(cursor: string | null): Promise<void> {

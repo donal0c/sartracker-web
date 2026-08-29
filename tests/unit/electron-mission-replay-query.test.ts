@@ -20,6 +20,7 @@ const {
   readMissionReplayState,
   readMissionReplayTrackChunk,
   readMissionReplayObjectChunk,
+  readMissionReplayFilterPage,
 } = require(
   '../../electron/mission-replay-query.cjs',
 ) as {
@@ -33,6 +34,17 @@ const {
     readonly totalObjectCount: number
     readonly objectCursor: string
     readonly nextObjectCursor: string | null
+  }
+  readMissionReplayFilterPage(database: InstanceType<typeof Database>, input: ReplayInput & {
+    readonly filterKind: 'outing'
+    readonly filterSearch?: string
+    readonly filterCursor?: string
+    readonly filterLimit?: number
+  }): {
+    readonly filterKind: 'outing'
+    readonly entries: readonly string[]
+    readonly totalCount: number
+    readonly nextCursor: string | null
   }
 }
 
@@ -56,6 +68,9 @@ type ReplayState = {
   readonly nextObjectCursor: string | null
   readonly objectTypeCounts: Readonly<Record<string, number>>
   readonly availableDeviceIds: readonly string[]
+  readonly availableOutingIds: readonly string[]
+  readonly availableOutingTotalCount: number
+  readonly availableOutingNextCursor: string | null
 }
 type ReplayChunk = {
   readonly tracks: ReplayState['tracks']
@@ -817,6 +832,54 @@ describe('mission replay query [DON-278]', () => {
     expect(final.objects).toHaveLength(5)
     expect(final.objectCursor).toBe('200')
     expect(final.nextObjectCursor).toBeNull()
+  })
+
+  it('pages every eligible Replay outing filter without silent omission [DON-278]', () => {
+    const db = createReplayDatabase()
+    for (let index = 0; index < 201; index += 1) {
+      insertGpx(
+        db,
+        `outing-${index.toString().padStart(3, '0')}`,
+        `gpx-${index.toString().padStart(3, '0')}`,
+      )
+    }
+
+    const state = readMissionReplayState(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 100,
+    })
+    expect(state.availableOutingIds).toHaveLength(100)
+    expect(state.availableOutingTotalCount).toBe(201)
+    expect(state.availableOutingNextCursor).toEqual(expect.any(String))
+    expect(state.limitations).toContainEqual(expect.objectContaining({
+      code: 'outing_filter_choices_paged', count: 101,
+    }))
+
+    const second = readMissionReplayFilterPage(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 100,
+      filterKind: 'outing', filterCursor: state.availableOutingNextCursor ?? undefined,
+      filterLimit: 100,
+    })
+    const third = readMissionReplayFilterPage(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 100,
+      filterKind: 'outing', filterCursor: second.nextCursor ?? undefined, filterLimit: 100,
+    })
+    expect(second.entries).toHaveLength(100)
+    expect(third.entries).toEqual(['outing-200'])
+    expect(new Set([...state.availableOutingIds, ...second.entries, ...third.entries])).toHaveLength(201)
+    expect(third.nextCursor).toBeNull()
+
+    const searched = readMissionReplayFilterPage(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 100,
+      filterKind: 'outing', filterSearch: 'outing-200', filterLimit: 100,
+    })
+    expect(searched.entries).toEqual(['outing-200'])
+    expect(searched.totalCount).toBe(1)
+    expect(() => readMissionReplayFilterPage(db, {
+      missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 100,
+      filterKind: 'outing', filterSearch: 'different',
+      filterCursor: state.availableOutingNextCursor ?? undefined, filterLimit: 100,
+    })).toThrow(/filter cursor is invalid/i)
+    db.close()
   })
 })
 

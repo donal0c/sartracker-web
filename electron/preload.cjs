@@ -80,6 +80,7 @@ const MISSION_STORE_CHANNELS = {
   readMissionReplay: 'sartracker:mission-store:read-mission-replay',
   readMissionReplayTrackChunk: 'sartracker:mission-store:read-mission-replay-track-chunk',
   readMissionReplayObjectChunk: 'sartracker:mission-store:read-mission-replay-object-chunk',
+  readMissionReplayFilterPage: 'sartracker:mission-store:read-mission-replay-filter-page',
   assignGpxImportToOuting: 'sartracker:mission-store:assign-gpx-import-to-outing',
   cancelMissionReplay: 'sartracker:mission-store:cancel-mission-replay',
   listIngestAnomalies: 'sartracker:mission-store:list-ingest-anomalies',
@@ -111,6 +112,7 @@ const MISSION_STORE_CHANNELS = {
   listSearchAssignments: 'sartracker:mission-store:list-search-assignments',
   upsertSearchPass: 'sartracker:mission-store:upsert-search-pass',
   listSearchPasses: 'sartracker:mission-store:list-search-passes',
+  listSearchOperationPage: 'sartracker:mission-store:list-search-operation-page',
   getMission: 'sartracker:mission-store:get-mission',
   listMissions: 'sartracker:mission-store:list-missions',
   getActiveMission: 'sartracker:mission-store:get-active-mission',
@@ -132,12 +134,28 @@ const REPLAY_STORE_METHODS = new Set([
   'readMissionReplay',
   'readMissionReplayTrackChunk',
   'readMissionReplayObjectChunk',
+  'readMissionReplayFilterPage',
 ])
-const BOUNDED_MUTABLE_EVIDENCE_STORE_METHODS = new Set([
+const BOUNDED_EVIDENCE_STORE_METHODS = new Set([
   'upsertMarker',
   'upsertDrawing',
   'deleteMarker',
   'deleteDrawing',
+  'assignGpxImportToOuting',
+  'listGpxImportPage',
+  'listGpxImportIssues',
+  'deleteGpxImport',
+  'listGpxImportRevisionPage',
+  'importGpxEvidencePaths',
+  'updateGpxImportPresentation',
+  'upsertSearchArea',
+  'listSearchAreas',
+  'retireSearchArea',
+  'upsertSearchAssignment',
+  'listSearchAssignments',
+  'upsertSearchPass',
+  'listSearchPasses',
+  'listSearchOperationPage',
 ])
 
 const REPLAY_IPC_STRING_LIMITS = Object.freeze({
@@ -184,6 +202,39 @@ const DRAWING_IPC_STRING_KEYS = Object.freeze([
   'geometry_json', 'metadata_json',
 ])
 const DRAWING_IPC_NUMBER_KEYS = Object.freeze(['width', 'distance_m', 'display_order'])
+const PR5_IPC_STRING_LIMITS = Object.freeze({
+  id: 1_000,
+  missionId: 1_000,
+  importId: 1_000,
+  cursor: 2_000,
+  mission_id: 200,
+  import_id: 1_000,
+  outing_id: 200,
+  search_area_id: 200,
+  assignment_id: 200,
+  legacy_drawing_id: 200,
+  display_name: 500,
+  metadata_json: 512 * 1_024,
+  assigned_by: 120,
+  name: 120,
+  status: 120,
+  geometry_json: 512 * 1_024,
+  effective_at: 64,
+  updated_by: 120,
+  team_id: 120,
+  notes: 2_000,
+  started_at: 64,
+  ended_at: 64,
+  outcome: 120,
+  coordinator_name: 120,
+  advisory_coverage_json: 512 * 1_024,
+  actor: 120,
+  kind: 20,
+  search: 120,
+})
+const PR5_IPC_ID_ARRAY_KEYS = new Set([
+  'participant_ids', 'clue_ids', 'track_evidence_ids',
+])
 
 /**
  * Copies only the closed, bounded Replay request surface into main-process IPC.
@@ -195,7 +246,7 @@ function projectReplayQueryForIpc(input, kind) {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('Mission replay request is invalid.')
   }
-  if (!['state', 'chunk', 'objects'].includes(kind)) {
+  if (!['state', 'chunk', 'objects', 'filters'].includes(kind)) {
     throw new Error('Mission replay request kind is invalid.')
   }
 
@@ -213,8 +264,90 @@ function projectReplayQueryForIpc(input, kind) {
   } else if (kind === 'objects') {
     copyReplayString(input, projected, 'objectCursor')
     copyReplayInteger(input, projected, 'replayGeneration')
+  } else if (kind === 'filters') {
+    copyPr5String(input, projected, 'filterKind', 'Replay filter', 20)
+    copyPr5String(input, projected, 'filterSearch', 'Replay filter', 120)
+    copyPr5String(input, projected, 'filterCursor', 'Replay filter', 2_000)
+    copyPr5Integer(input, projected, 'filterLimit', 'Replay filter')
   }
   return projected
+}
+
+/** Projects one GPX/Search Operations object through a closed allowlist. */
+function projectPr5ObjectForIpc(input, label, stringKeys, integerKeys = [], arrayKeys = []) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error(`${label} input is invalid.`)
+  }
+  const output = {}
+  for (const key of stringKeys) copyPr5String(input, output, key, label)
+  for (const key of integerKeys) copyPr5Integer(input, output, key, label)
+  for (const key of arrayKeys) copyPr5IdArray(input, output, key, label)
+  return output
+}
+
+/** Copies one nullable bounded string under its renderer-to-main byte ceiling. */
+function copyPr5String(input, output, key, label, explicitLimit) {
+  const value = input[key]
+  if (value === undefined) return
+  if (value === null) {
+    output[key] = null
+    return
+  }
+  const maximumLength = explicitLimit ?? PR5_IPC_STRING_LIMITS[key]
+  if (!Number.isSafeInteger(maximumLength) || typeof value !== 'string'
+    || value.length > maximumLength || mutableEvidenceUtf8Length(value) > maximumLength) {
+    throw new Error(`${label} ${evidenceFieldLabel(key)} is invalid.`)
+  }
+  output[key] = value
+}
+
+/** Copies one optional safe integer without renderer coercion. */
+function copyPr5Integer(input, output, key, label) {
+  const value = input[key]
+  if (value === undefined) return
+  if (!Number.isSafeInteger(value)) throw new Error(`${label} ${evidenceFieldLabel(key)} is invalid.`)
+  output[key] = value
+}
+
+/** Copies one bounded identifier list as a fresh small array. */
+function copyPr5IdArray(input, output, key, label) {
+  const value = input[key]
+  if (value === undefined) return
+  if (!PR5_IPC_ID_ARRAY_KEYS.has(key) || !Array.isArray(value) || value.length > 200) {
+    throw new Error(`${label} ${evidenceFieldLabel(key)} is invalid.`)
+  }
+  output[key] = value.map((item) => {
+    if (typeof item !== 'string' || item.length < 1 || item.length > 200
+      || mutableEvidenceUtf8Length(item) > 200) {
+      throw new Error(`${label} ${evidenceFieldLabel(key)} is invalid.`)
+    }
+    return item
+  })
+}
+
+/** Projects a bounded GPX file import envelope before Electron cloning. */
+function projectGpxEvidencePathsForIpc(input) {
+  const output = projectPr5ObjectForIpc(input, 'GPX evidence paths', ['missionId'])
+  if (!Array.isArray(input.paths) || input.paths.length < 1 || input.paths.length > 100) {
+    throw new Error('GPX evidence paths are invalid.')
+  }
+  output.paths = input.paths.map((entry) => {
+    if (typeof entry !== 'string' || entry.length < 1 || entry.length > 4_096
+      || mutableEvidenceUtf8Length(entry) > 4_096) {
+      throw new Error('GPX evidence paths are invalid.')
+    }
+    return entry
+  })
+  return output
+}
+
+/** Bounds one standalone renderer-owned identity or path before cloning. */
+function projectPr5ScalarForIpc(value, label, maximumLength) {
+  if (typeof value !== 'string' || value.trim() === '' || value.length > maximumLength
+    || mutableEvidenceUtf8Length(value) > maximumLength) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return value
 }
 
 /** Copies one optional Replay string after enforcing its IPC byte-amplification bound. */
@@ -380,7 +513,10 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
     return ipcRenderer.invoke(IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL, input)
   },
   listGpxDirectoryPaths(directoryPath) {
-    return ipcRenderer.invoke(LIST_GPX_DIRECTORY_PATHS_CHANNEL, directoryPath)
+    return ipcRenderer.invoke(
+      LIST_GPX_DIRECTORY_PATHS_CHANNEL,
+      projectPr5ScalarForIpc(directoryPath, 'GPX directory path', 4_096),
+    )
   },
   ingestMarkerAttachment(input) {
     return ipcRenderer.invoke(INGEST_MARKER_ATTACHMENT_CHANNEL, input)
@@ -416,7 +552,7 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
     [
       ...Object.entries(MISSION_STORE_CHANNELS)
         .filter(([methodName]) => !REPLAY_STORE_METHODS.has(methodName)
-          && !BOUNDED_MUTABLE_EVIDENCE_STORE_METHODS.has(methodName))
+          && !BOUNDED_EVIDENCE_STORE_METHODS.has(methodName))
         .map(([methodName, channel]) => [
           methodName,
           (...args) => ipcRenderer.invoke(channel, ...args),
@@ -436,6 +572,11 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
         projectReplayQueryForIpc(query, 'objects'),
         requestId,
       )],
+      ['readMissionReplayFilterPage', (query, requestId) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.readMissionReplayFilterPage,
+        projectReplayQueryForIpc(query, 'filters'),
+        requestId,
+      )],
       ['upsertMarker', async (input) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.upsertMarker,
         projectMutableEvidenceForIpc(input, 'marker'),
@@ -451,6 +592,70 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
       ['deleteDrawing', async (drawingId) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.deleteDrawing,
         projectMutableEvidenceIdentityForIpc(drawingId, 'drawing'),
+      )],
+      ['assignGpxImportToOuting', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.assignGpxImportToOuting,
+        projectPr5ObjectForIpc(
+          input, 'GPX outing assignment', ['import_id', 'outing_id', 'assigned_by'],
+        ),
+      )],
+      ['listGpxImportPage', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.listGpxImportPage,
+        projectPr5ObjectForIpc(input, 'GPX import page', ['missionId', 'cursor'], ['limit']),
+      )],
+      ['listGpxImportIssues', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.listGpxImportIssues,
+        projectPr5ObjectForIpc(input, 'GPX import issues', ['missionId', 'cursor'], ['limit']),
+      )],
+      ['deleteGpxImport', async (importId) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.deleteGpxImport,
+        projectPr5ScalarForIpc(importId, 'GPX import identity', 1_000),
+      )],
+      ['listGpxImportRevisionPage', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.listGpxImportRevisionPage,
+        projectPr5ObjectForIpc(input, 'GPX revision page', ['importId', 'cursor'], ['limit']),
+      )],
+      ['importGpxEvidencePaths', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.importGpxEvidencePaths,
+        projectGpxEvidencePathsForIpc(input),
+      )],
+      ['updateGpxImportPresentation', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.updateGpxImportPresentation,
+        projectPr5ObjectForIpc(
+          input, 'GPX presentation', ['id', 'mission_id', 'display_name', 'metadata_json'],
+        ),
+      )],
+      ['upsertSearchArea', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.upsertSearchArea,
+        projectPr5ObjectForIpc(input, 'Search area', [
+          'id', 'mission_id', 'name', 'status', 'geometry_json',
+          'legacy_drawing_id', 'effective_at', 'updated_by',
+        ]),
+      )],
+      ['retireSearchArea', async (areaId, actor) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.retireSearchArea,
+        projectPr5ScalarForIpc(areaId, 'Search area identity', 200),
+        projectPr5ObjectForIpc({ actor }, 'Search area retirement', ['actor']).actor,
+      )],
+      ['upsertSearchAssignment', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.upsertSearchAssignment,
+        projectPr5ObjectForIpc(input, 'Search assignment', [
+          'id', 'mission_id', 'search_area_id', 'outing_id', 'team_id',
+          'notes', 'effective_at', 'updated_by',
+        ], [], ['participant_ids']),
+      )],
+      ['upsertSearchPass', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.upsertSearchPass,
+        projectPr5ObjectForIpc(input, 'Search pass', [
+          'id', 'mission_id', 'search_area_id', 'assignment_id', 'started_at',
+          'ended_at', 'outcome', 'notes', 'coordinator_name', 'advisory_coverage_json',
+        ], [], ['participant_ids', 'clue_ids', 'track_evidence_ids']),
+      )],
+      ['listSearchOperationPage', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.listSearchOperationPage,
+        projectPr5ObjectForIpc(
+          input, 'Search Operations page', ['missionId', 'kind', 'search', 'cursor'], ['limit'],
+        ),
       )],
     ],
   ),

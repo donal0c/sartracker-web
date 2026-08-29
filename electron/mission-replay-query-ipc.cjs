@@ -11,6 +11,7 @@ function registerMissionReplayQueryIpcHandlers(input) {
     state: 'readMissionReplay',
     trackChunk: 'readMissionReplayTrackChunk',
     objectChunk: 'readMissionReplayObjectChunk',
+    filterPage: 'readMissionReplayFilterPage',
   }
 
   for (const [kind, channel] of Object.entries(input.readChannels)) {
@@ -21,7 +22,11 @@ function registerMissionReplayQueryIpcHandlers(input) {
     input.ipcMain.handle(channel, async (event, query, requestId) => {
       input.validateIpcSender(event)
       const scopedRequestId = scopeMissionReplayRequestId(event, requestId)
-      const workerKind = kind === 'trackChunk' ? 'chunk' : kind === 'objectChunk' ? 'objects' : 'state'
+      const workerKind = kind === 'trackChunk'
+        ? 'chunk'
+        : kind === 'objectChunk'
+          ? 'objects'
+          : kind === 'filterPage' ? 'filters' : 'state'
       const normalizedQuery = normalizeReplayWorkerQuery(query, workerKind)
       let cleanupRequested = false
       const cancelDestroyedSenderQuery = () => {

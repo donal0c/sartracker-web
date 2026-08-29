@@ -20,15 +20,21 @@ const { registerMissionReplayQueryIpcHandlers } = require(
       readonly state: string
       readonly trackChunk: string
       readonly objectChunk: string
+      readonly filterPage?: string
     }
     readonly cancelChannel: string
     readonly missionStore: {
       readonly readMissionReplay: (query: unknown, requestId: string) => Promise<unknown>
+      readonly readMissionReplayFilterPage: (query: unknown, requestId: string) => Promise<unknown>
       readonly readMissionReplayTrackChunk: (
         query: unknown,
         requestId: string,
       ) => Promise<unknown>
       readonly readMissionReplayObjectChunk: (
+        query: unknown,
+        requestId: string,
+      ) => Promise<unknown>
+      readonly readMissionReplayFilterPage?: (
         query: unknown,
         requestId: string,
       ) => Promise<unknown>
@@ -73,7 +79,20 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
       readonly upsertDrawing: (input: unknown) => Promise<unknown>
       readonly deleteMarker: (markerId: unknown) => Promise<unknown>
       readonly deleteDrawing: (drawingId: unknown) => Promise<unknown>
+      readonly listGpxImportPage: (input: unknown) => Promise<unknown>
+      readonly importGpxEvidencePaths: (input: unknown) => Promise<unknown>
+      readonly assignGpxImportToOuting: (input: unknown) => Promise<unknown>
+      readonly listGpxImportIssues: (input: unknown) => Promise<unknown>
+      readonly listGpxImportRevisionPage: (input: unknown) => Promise<unknown>
+      readonly updateGpxImportPresentation: (input: unknown) => Promise<unknown>
+      readonly upsertSearchArea: (input: unknown) => Promise<unknown>
+      readonly upsertSearchAssignment: (input: unknown) => Promise<unknown>
+      readonly upsertSearchPass: (input: unknown) => Promise<unknown>
+      readonly listSearchOperationPage: (input: unknown) => Promise<unknown>
     }
+    expect(missionStore).not.toHaveProperty('listSearchAreas')
+    expect(missionStore).not.toHaveProperty('listSearchAssignments')
+    expect(missionStore).not.toHaveProperty('listSearchPasses')
     await missionStore.readMissionReplay({
       missionId: 'mission-1',
       selectedTime: '2026-08-28T12:00:00Z',
@@ -89,6 +108,19 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
         trackLimit: 100,
       },
       'bounded-query',
+    )
+    await missionStore.readMissionReplayFilterPage({
+      missionId: 'mission-1', selectedTime: '2026-08-28T12:00:00Z', trackLimit: 100,
+      filterKind: 'outing', filterSearch: 'Team', filterLimit: 100,
+      rendererControlledBlob: 'x'.repeat(64 * 1024 * 1024),
+    }, 'bounded-filter-query')
+    expect(invoke).toHaveBeenLastCalledWith(
+      'sartracker:mission-store:read-mission-replay-filter-page',
+      {
+        missionId: 'mission-1', selectedTime: '2026-08-28T12:00:00Z', trackLimit: 100,
+        filterKind: 'outing', filterSearch: 'Team', filterLimit: 100,
+      },
+      'bounded-filter-query',
     )
 
     await missionStore.upsertMarker({
@@ -141,6 +173,67 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
       'sartracker:mission-store:delete-drawing',
       expect.anything(),
     )
+
+    const oversizedUnknown = 'x'.repeat(32 * 1024 * 1024)
+    await missionStore.listGpxImportPage({
+      missionId: 'mission-1', limit: 25, rendererControlledBlob: oversizedUnknown,
+    })
+    expect(invoke).toHaveBeenLastCalledWith(
+      'sartracker:mission-store:list-gpx-import-page',
+      { missionId: 'mission-1', limit: 25 },
+    )
+    await missionStore.upsertSearchPass({
+      mission_id: 'mission-1', search_area_id: 'area-1', assignment_id: 'assignment-1',
+      started_at: '2026-08-28T10:00:00.000Z', ended_at: '2026-08-28T10:30:00.000Z',
+      outcome: 'partial', coordinator_name: 'Coordinator', rendererControlledBlob: oversizedUnknown,
+    })
+    expect(invoke.mock.calls.at(-1)?.[1]).not.toHaveProperty('rendererControlledBlob')
+    await missionStore.listSearchOperationPage({
+      missionId: 'mission-1', kind: 'passes', search: 'Team', limit: 25,
+      rendererControlledBlob: oversizedUnknown,
+    })
+    expect(invoke).toHaveBeenLastCalledWith(
+      'sartracker:mission-store:list-search-operation-page',
+      { missionId: 'mission-1', kind: 'passes', search: 'Team', limit: 25 },
+    )
+    await expect(missionStore.importGpxEvidencePaths({
+      missionId: 'mission-1', paths: ['/field/' + 'x'.repeat(5_000)],
+    })).rejects.toThrow(/GPX evidence paths.*invalid/i)
+    await expect(missionStore.upsertSearchPass({
+      mission_id: 'mission-1', search_area_id: 'area-1', assignment_id: 'assignment-1',
+      started_at: '2026-08-28T10:00:00.000Z', ended_at: '2026-08-28T10:30:00.000Z',
+      outcome: 'partial', coordinator_name: 'Coordinator',
+      advisory_coverage_json: 'x'.repeat(512 * 1024 + 1),
+    })).rejects.toThrow(/Search pass advisory coverage.*invalid/i)
+
+    const boundedCalls: readonly [
+      (input: unknown) => Promise<unknown>,
+      Readonly<Record<string, unknown>>,
+    ][] = [
+      [missionStore.assignGpxImportToOuting, {
+        import_id: 'gpx-1', outing_id: 'outing-1', assigned_by: 'Coordinator',
+      }],
+      [missionStore.listGpxImportIssues, { missionId: 'mission-1', limit: 25 }],
+      [missionStore.listGpxImportRevisionPage, { importId: 'gpx-1', limit: 25 }],
+      [missionStore.updateGpxImportPresentation, {
+        id: 'gpx-1', mission_id: 'mission-1', display_name: 'Team track',
+      }],
+      [missionStore.upsertSearchArea, {
+        mission_id: 'mission-1', name: 'Area Alpha', status: 'active',
+        geometry_json: '{"type":"Polygon","coordinates":[]}', updated_by: 'Coordinator',
+      }],
+      [missionStore.upsertSearchAssignment, {
+        mission_id: 'mission-1', search_area_id: 'area-1', outing_id: 'outing-1',
+        team_id: 'Team Alpha', participant_ids: ['participant-1'], updated_by: 'Coordinator',
+      }],
+    ]
+    for (const [call, input] of boundedCalls) {
+      await call({ ...input, rendererControlledBlob: oversizedUnknown })
+      expect(invoke.mock.calls.at(-1)?.[1]).not.toHaveProperty('rendererControlledBlob')
+    }
+    const listGpxDirectoryPaths = exposedBridge?.listGpxDirectoryPaths as (path: string) => Promise<unknown>
+    expect(() => listGpxDirectoryPaths('/field/' + 'x'.repeat(5_000)))
+      .toThrow(/GPX directory path.*invalid/i)
   })
 
   it('projects renderer queries before main dispatch and preload worker cloning', async () => {
@@ -180,6 +273,40 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
     expect(preload).toContain("projectReplayQueryForIpc(query, 'state')")
     expect(preload).toContain("projectReplayQueryForIpc(query, 'chunk')")
     expect(preload).toContain("projectReplayQueryForIpc(query, 'objects')")
+  })
+
+  it('owns bounded Replay filter-choice page IPC on the same cancellable worker lane', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    const readMissionReplayFilterPage = vi.fn().mockResolvedValue({
+      filterKind: 'outing', entries: ['outing-1'], totalCount: 1, nextCursor: null,
+    })
+    const missionStore = {
+      readMissionReplay: vi.fn(),
+      readMissionReplayTrackChunk: vi.fn(),
+      readMissionReplayObjectChunk: vi.fn(),
+      readMissionReplayFilterPage,
+      cancelMissionReplay: vi.fn().mockResolvedValue(false),
+    }
+    registerMissionReplayQueryIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      readChannels: {
+        state: 'state', trackChunk: 'trackChunk', objectChunk: 'objectChunk',
+        filterPage: 'filterPage',
+      },
+      cancelChannel: 'cancel', missionStore, validateIpcSender: vi.fn(),
+    })
+    const sender = Object.assign(new EventEmitter(), { id: 18 })
+
+    await handlers.get('filterPage')?.({ sender }, {
+      missionId: 'mission-1', selectedTime: '2026-08-28T12:00:00Z', trackLimit: 100,
+      filterKind: 'outing', filterSearch: 'Team', filterLimit: 100,
+      rendererControlledBlob: 'x'.repeat(1024 * 1024),
+    }, 'filter-page-1')
+
+    expect(readMissionReplayFilterPage).toHaveBeenCalledWith(expect.objectContaining({
+      missionId: 'mission-1', selectedTime: '2026-08-28T12:00:00.000Z',
+      filterKind: 'outing', filterSearch: 'Team', filterLimit: 100,
+    }), '18:mission-replay:filter-page-1')
   })
 
   it.each([

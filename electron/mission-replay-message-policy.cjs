@@ -22,6 +22,7 @@ function assertReplayResultBounded(result, trackLimit) {
   if (result.staticGpxEvidence !== undefined) {
     assertArrayBound(result.staticGpxEvidence, 100, 'static GPX evidence')
   }
+  if (result.entries !== undefined) assertArrayBound(result.entries, 100, 'filter choices')
   let serialized
   try {
     serialized = JSON.stringify(result)

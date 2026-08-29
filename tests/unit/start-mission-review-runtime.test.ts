@@ -117,6 +117,100 @@ describe('startMissionReviewRuntime', () => {
     }))
   })
 
+  it('keeps one bounded Search Pass page and replaces it through explicit continuation [DON-279]', async () => {
+    const pass = (id: string) => ({
+      id, mission_id: FIRST_MISSION.id, search_area_id: 'area-1',
+      assignment_id: 'assignment-1', started_at: '2026-04-10T08:10:00.000Z',
+      ended_at: '2026-04-10T08:20:00.000Z', outcome: 'partial' as const,
+      coordinator_name: 'Coordinator', version_sequence: 1,
+      created_at: '2026-04-10T08:20:00.000Z', updated_at: '2026-04-10T08:20:00.000Z',
+      participant_count: 0, clue_count: 0, track_evidence_count: 0,
+    })
+    const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+      readonly kind: string; readonly cursor?: string; readonly search?: string
+    }) => {
+      if (input.kind !== 'passes') {
+        return { kind: input.kind, search: input.search ?? '', entries: [], totalCount: 0, nextCursor: null }
+      }
+      return input.cursor === undefined
+        ? { kind: 'passes', search: input.search ?? '', entries: [pass('pass-1')], totalCount: 2, nextCursor: 'pass-page-2' }
+        : { kind: 'passes', search: input.search ?? '', entries: [pass('pass-2')], totalCount: 2, nextCursor: null }
+    })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listSearchOperationPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+    expect(listSearchOperationPage).toHaveBeenCalledWith({
+      missionId: FIRST_MISSION.id, kind: 'passes', limit: 25,
+    })
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchOperations: expect.objectContaining({
+        passes: [expect.objectContaining({ id: 'pass-1' })],
+        pages: expect.objectContaining({
+          passes: expect.objectContaining({ totalCount: 2, hasMore: true, pageNumber: 1 }),
+        }),
+      }),
+    }))
+
+    await runtime.loadNextSearchOperations('passes')
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchOperations: expect.objectContaining({
+        passes: [expect.objectContaining({ id: 'pass-2' })],
+        pages: expect.objectContaining({
+          passes: expect.objectContaining({ totalCount: 2, hasMore: false, pageNumber: 2 }),
+        }),
+      }),
+    }))
+    await runtime.searchSearchOperations('passes', 'Alpha')
+    expect(listSearchOperationPage).toHaveBeenLastCalledWith({
+      missionId: FIRST_MISSION.id, kind: 'passes', search: 'Alpha', limit: 25,
+    })
+  })
+
+  it('replaces Replay outing filter pages without accumulating renderer choices [DON-278]', async () => {
+    const firstReplay = {
+      ...replayResult('2026-04-10T08:20:00.000Z', 'first-fix'),
+      availableOutingIds: ['outing-1'],
+      availableOutingTotalCount: 2,
+      availableOutingNextCursor: 'outing-page-2',
+    }
+    const readMissionReplayFilterPage = vi.fn().mockResolvedValue({
+      filterKind: 'outing', search: '', entries: ['outing-2'], totalCount: 2, nextCursor: null,
+    })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReplay: vi.fn().mockResolvedValue(firstReplay),
+        readMissionReplayFilterPage,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.seekReplay(firstReplay.selectedTime)
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        result: expect.objectContaining({ availableOutingIds: ['outing-1'] }),
+        outingFilters: expect.objectContaining({ totalCount: 2, hasMore: true, pageNumber: 1 }),
+      }),
+    }))
+
+    await runtime.loadNextReplayOutingFilters()
+    expect(readMissionReplayFilterPage).toHaveBeenCalledWith(expect.objectContaining({
+      missionId: FIRST_MISSION.id, filterKind: 'outing', filterCursor: 'outing-page-2',
+    }), expect.any(String))
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      replay: expect.objectContaining({
+        result: expect.objectContaining({ availableOutingIds: ['outing-2'] }),
+        outingFilters: expect.objectContaining({ totalCount: 2, hasMore: false, pageNumber: 2 }),
+      }),
+    }))
+  })
+
   it('cancels superseded replay seeks and publishes only the newest data-known-at-T result [DON-278]', async () => {
     let resolveFirst: ((value: unknown) => void) | undefined
     const readMissionReplay = vi.fn()
