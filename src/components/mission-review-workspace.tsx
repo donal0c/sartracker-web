@@ -288,6 +288,7 @@ export function MissionReviewWorkspace() {
                       controller={controller}
                       operations={searchOperations}
                       readOnly={snapshot.mission.status === 'finished' || snapshot.mission.status === 'finalized'}
+                      refreshing={refreshing}
                     />
                   </Suspense>
                 ) : activeTab === 'marker-log' ? (

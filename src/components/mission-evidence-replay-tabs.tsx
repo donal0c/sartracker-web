@@ -161,6 +161,7 @@ export function SearchOperationsTab(props: {
   readonly controller: MissionReviewController | null
   readonly operations: MissionReviewRuntimeState['searchOperations']
   readonly readOnly: boolean
+  readonly refreshing: boolean
 }) {
   const [teamId, setTeamId] = useState('')
   const [coordinatorName, setCoordinatorName] = useState('')
@@ -232,18 +233,19 @@ export function SearchOperationsTab(props: {
   return <div className="space-y-4" data-testid="search-operations-workspace">
     <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5"><p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Stable search operations</p><p className="mt-2 text-sm text-stone-300">Areas keep one stable identity across revisions and repeated assignments. Pass outcomes are coordinator-entered declarations; coverage is advisory only.</p></section>
     <section className="grid gap-3 rounded-2xl border border-stone-800 bg-stone-900/30 p-5 md:grid-cols-2" data-testid="search-operation-page-controls">
-      <SearchPageNavigator controller={props.controller} kind="areas" label="Search areas" onSearchChange={setAreaSearch} page={props.operations.pages.areas} search={areaSearch} />
-      <SearchPageNavigator controller={props.controller} kind="outings" label="Outings" onSearchChange={setOutingSearch} page={props.operations.pages.outings} search={outingSearch} />
-      <SearchPageNavigator controller={props.controller} kind="assignments" label="Assignments" onSearchChange={setAssignmentSearch} page={props.operations.pages.assignments} search={assignmentSearch} />
-      <SearchPageNavigator controller={props.controller} kind="passes" label="Recorded passes" onSearchChange={setPassSearch} page={props.operations.pages.passes} search={passSearch} />
+      <SearchPageNavigator controller={props.controller} disabled={props.refreshing} kind="areas" label="Search areas" onSearchChange={setAreaSearch} page={props.operations.pages.areas} search={areaSearch} />
+      <SearchPageNavigator controller={props.controller} disabled={props.refreshing} kind="outings" label="Outings" onSearchChange={setOutingSearch} page={props.operations.pages.outings} search={outingSearch} />
+      <SearchPageNavigator controller={props.controller} disabled={props.refreshing} kind="assignments" label="Assignments" onSearchChange={setAssignmentSearch} page={props.operations.pages.assignments} search={assignmentSearch} />
+      <SearchPageNavigator controller={props.controller} disabled={props.refreshing} kind="passes" label="Recorded passes" onSearchChange={setPassSearch} page={props.operations.pages.passes} search={passSearch} />
     </section>
+    {props.refreshing ? <p className="text-xs text-stone-400" data-testid="search-operations-refreshing" role="status">Refreshing retained Search Operations evidence…</p> : null}
     {props.readOnly ? <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="search-operations-read-only">This finished or finalized mission is permanently read-only. Retained assignments and passes remain visible for evidence review; new records require an active mission.</p> : null}
     {props.operations.areas.length > 0 ? <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="search-operation-entry">
       <p className="mb-3 text-xs font-medium text-amber-200">Pass outcomes are coordinator-declared. Coverage remains advisory only and never declares an area searched.</p>
       <fieldset
-        aria-disabled={props.readOnly}
-        className={props.readOnly ? 'opacity-50' : undefined}
-        disabled={props.readOnly}
+        aria-disabled={props.readOnly || props.refreshing}
+        className={props.readOnly || props.refreshing ? 'opacity-50' : undefined}
+        disabled={props.readOnly || props.refreshing}
       >
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-xs text-stone-300">Search area<select className="mt-1 w-full bg-stone-950 p-2" data-testid="search-operation-area" onChange={(event) => { setSelectedAreaId(event.target.value); setSelectedAssignmentId('') }} value={area?.id ?? ''}><option value="">Select search area</option>{props.operations.areas.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
@@ -281,6 +283,7 @@ export function SearchOperationsTab(props: {
 /** Bounded searchable page controls for one Search Operations evidence class. */
 function SearchPageNavigator(props: {
   readonly controller: MissionReviewController | null
+  readonly disabled: boolean
   readonly kind: 'areas' | 'assignments' | 'outings' | 'passes'
   readonly label: string
   readonly onSearchChange: (value: string) => void
@@ -291,10 +294,10 @@ function SearchPageNavigator(props: {
     <p className="text-xs font-semibold text-stone-200">{props.label}</p>
     <p className="mt-1 text-[11px] text-stone-500">Showing {props.page.visibleCount} of {props.page.totalCount.toLocaleString()} · page {props.page.pageNumber}</p>
     <div className="mt-2 flex flex-wrap gap-2">
-      <input className="min-w-44 flex-1 rounded-lg border border-stone-700 bg-stone-950 px-2 py-1 text-xs text-stone-100" data-testid={`search-operation-${props.kind}-search`} maxLength={120} onChange={(event) => props.onSearchChange(event.target.value)} placeholder={`Search ${props.label.toLowerCase()}`} value={props.search} />
-      <button className="rounded-lg border border-stone-600 px-2 py-1 text-xs" data-testid={`search-operation-${props.kind}-search-apply`} disabled={props.page.loading} onClick={() => void props.controller?.searchSearchOperations(props.kind, props.search)} type="button">Search</button>
-      {props.page.pageNumber > 1 ? <button className="rounded-lg border border-stone-600 px-2 py-1 text-xs" data-testid={`search-operation-${props.kind}-first`} disabled={props.page.loading} onClick={() => void props.controller?.returnToFirstSearchOperations(props.kind)} type="button">First</button> : null}
-      {props.page.hasMore ? <button className="rounded-lg border border-stone-600 px-2 py-1 text-xs" data-testid={`search-operation-${props.kind}-next`} disabled={props.page.loading} onClick={() => void props.controller?.loadNextSearchOperations(props.kind)} type="button">Next</button> : null}
+      <input className="min-w-44 flex-1 rounded-lg border border-stone-700 bg-stone-950 px-2 py-1 text-xs text-stone-100" data-testid={`search-operation-${props.kind}-search`} disabled={props.disabled} maxLength={120} onChange={(event) => props.onSearchChange(event.target.value)} placeholder={`Search ${props.label.toLowerCase()}`} value={props.search} />
+      <button className="rounded-lg border border-stone-600 px-2 py-1 text-xs" data-testid={`search-operation-${props.kind}-search-apply`} disabled={props.disabled || props.page.loading} onClick={() => void props.controller?.searchSearchOperations(props.kind, props.search)} type="button">Search</button>
+      {props.page.pageNumber > 1 ? <button className="rounded-lg border border-stone-600 px-2 py-1 text-xs" data-testid={`search-operation-${props.kind}-first`} disabled={props.disabled || props.page.loading} onClick={() => void props.controller?.returnToFirstSearchOperations(props.kind)} type="button">First</button> : null}
+      {props.page.hasMore ? <button className="rounded-lg border border-stone-600 px-2 py-1 text-xs" data-testid={`search-operation-${props.kind}-next`} disabled={props.disabled || props.page.loading} onClick={() => void props.controller?.loadNextSearchOperations(props.kind)} type="button">Next</button> : null}
     </div>
   </div>
 }

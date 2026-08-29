@@ -23,6 +23,7 @@ describe('search operations finalized-mission containment [DON-279]', () => {
     act(() => root?.render(React.createElement(SearchOperationsTab, {
       controller: null,
       readOnly: true,
+      refreshing: false,
       operations: {
         areas: [{
           id: 'area-1', mission_id: 'mission-1', name: 'Area Alpha', status: 'active',
@@ -51,6 +52,31 @@ describe('search operations finalized-mission containment [DON-279]', () => {
     expect((host.querySelector('[data-testid="search-assignment-record"]') as HTMLButtonElement).disabled)
       .toBe(true)
     expect(host.textContent).toContain('Area Alpha')
+  })
+
+  it('disables page controls while retained evidence is refreshing [DON-279]', () => {
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    act(() => root?.render(React.createElement(SearchOperationsTab, {
+      controller: null,
+      readOnly: false,
+      refreshing: true,
+      operations: {
+        areas: [], assignments: [], passes: [], outings: [],
+        pages: {
+          areas: pageState(0), assignments: pageState(0),
+          outings: pageState(0), passes: pageState(0),
+        },
+      },
+    })))
+
+    expect(host.querySelector('[data-testid="search-operations-refreshing"]')?.textContent)
+      .toMatch(/refreshing retained Search Operations evidence/i)
+    expect((host.querySelector('[data-testid="search-operation-passes-search"]') as HTMLInputElement).disabled)
+      .toBe(true)
+    expect((host.querySelector('[data-testid="search-operation-passes-search-apply"]') as HTMLButtonElement).disabled)
+      .toBe(true)
   })
 })
 
