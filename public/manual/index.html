@@ -1667,7 +1667,9 @@
             They do not alter the reconstructed lifecycle, participants, assignments, passes, markers, drawings,
             or search areas. When you switch away from Replay and return, the selected time and filters are
             restored from the accepted replay result, so the visible controls continue to describe the evidence
-            on screen. Undated GPX remains static and is explicitly excluded from precise replay.
+            on screen. Before you apply a new time, that unsubmitted time remains unchanged if live Pause,
+            Resume, current-position updates, or another Review publication rerenders the workspace. Undated GPX
+            remains static and is explicitly excluded from precise replay.
           </p>
           <p>
             Use the earlier/later controls to page through reconstructed objects and exact track evidence; later
@@ -1747,7 +1749,9 @@
             operator to return to the first page. Loading or refreshing Review disables Search Operations
             controls and cancels older page reads so stale results cannot replace the newly loaded evidence.
             The applied search remains visible when you switch tabs or return to a retained page, so its exact
-            matching total is never shown as though it were unfiltered.
+            matching total is never shown as though it were unfiltered. Text you have typed but not yet applied
+            remains a draft while that accepted search scope loads or advances; it is replaced only when a
+            different search is accepted.
           </p>
           <p>
             If a Review load or refresh fails after evidence was already displayed, an amber warning says

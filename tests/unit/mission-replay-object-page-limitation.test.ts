@@ -77,6 +77,42 @@ describe('mission replay object-page limitation [DON-278]', () => {
       .toBe(true)
     await act(async () => root.unmount())
   })
+
+  it('keeps an unsent historical time draft through live-mission rerenders [DON-278]', async () => {
+    host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    const liveReplay: MissionReplayRuntimeState = {
+      mode: 'live', selectedTime: null, result: null,
+      loading: false, loadingMore: false, error: null,
+      outingFilters: {
+        search: '', pageNumber: 1, visibleCount: 0, totalCount: 0,
+        hasMore: false, nextCursor: null, loading: false,
+      },
+    }
+
+    await act(async () => root.render(createElement(MissionReplayTab, {
+      controller: null,
+      missionEndTime: '2026-08-29T07:30:00.000Z',
+      replay: liveReplay,
+    })))
+    const timeInput = host.querySelector('[data-testid="mission-replay-time"]') as HTMLInputElement
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      valueSetter?.call(timeInput, '2026-08-28T12:00')
+      timeInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(timeInput.value).toBe('2026-08-28T12:00')
+
+    await act(async () => root.render(createElement(MissionReplayTab, {
+      controller: null,
+      missionEndTime: '2026-08-29T07:30:01.000Z',
+      replay: liveReplay,
+    })))
+    expect((host.querySelector('[data-testid="mission-replay-time"]') as HTMLInputElement).value)
+      .toBe('2026-08-28T12:00')
+    await act(async () => root.unmount())
+  })
 })
 
 const REPLAY_TIME = '2026-08-27T09:00:00.000Z'

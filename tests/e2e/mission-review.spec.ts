@@ -200,6 +200,27 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-review-marker-detail')).toContainText('Loose Scree')
   })
 
+  test('DON-278: live Pause and Resume preserve an unsubmitted replay time exactly', async ({ page }) => {
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    const historicalDraft = '2026-08-28T12:00'
+    await page.getByTestId('mission-replay-time').fill(historicalDraft)
+    await page.getByTestId('mission-pause-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await expect(page.getByTestId('mission-replay-time')).toHaveValue(historicalDraft)
+    await page.getByTestId('mission-pause-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-replay-time')).toHaveValue(historicalDraft)
+    await page.getByTestId('mission-replay-seek').click()
+    await expect(page.getByTestId('mission-replay-workspace')).toContainText(
+      'Replay — data known at selected time',
+    )
+    await expect(page.getByTestId('mission-replay-time')).toHaveValue(historicalDraft)
+    await expect(page.getByTestId('mission-replay-reconstructed-state')).toContainText(
+      'Known by 28/08/2026, 12:00:00',
+    )
+  })
+
   test('DON-278: replay is explicitly data-known-at-T while live controls remain operable', async ({ page }) => {
     await injectTrackingSnapshot(page)
     await page.evaluate(async () => {

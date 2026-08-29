@@ -140,6 +140,44 @@ describe('search operations finalized-mission containment [DON-279]', () => {
       .toBe('partial')
     expect(host.querySelector('[data-testid="search-operations-write-blocked"]')).not.toBeNull()
   })
+
+  it('keeps an unapplied search draft while its accepted page loads or advances [DON-279]', () => {
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    const renderPage = (loading: boolean, pageNumber: number) => act(() => root?.render(React.createElement(SearchOperationsTab, {
+      controller: null,
+      readOnly: false,
+      reviewBusy: false,
+      writeBlocked: false,
+      operations: {
+        areas: [], assignments: [], passes: [], outings: [],
+        pages: {
+          areas: pageState(0), assignments: pageState(0), outings: pageState(0),
+          passes: {
+            ...pageState(25), search: 'accepted', pageNumber, totalCount: 50,
+            hasMore: true, nextCursor: 'opaque-next', loading,
+          },
+        },
+      },
+    })))
+
+    renderPage(false, 1)
+    const searchInput = host.querySelector('[data-testid="search-operation-passes-search"]') as HTMLInputElement
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      valueSetter?.call(searchInput, 'unapplied draft')
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(searchInput.value).toBe('unapplied draft')
+
+    renderPage(true, 1)
+    expect((host.querySelector('[data-testid="search-operation-passes-search"]') as HTMLInputElement).value)
+      .toBe('unapplied draft')
+    renderPage(false, 2)
+    expect((host.querySelector('[data-testid="search-operation-passes-search"]') as HTMLInputElement).value)
+      .toBe('unapplied draft')
+  })
 })
 
 function pageState(visibleCount: number) {

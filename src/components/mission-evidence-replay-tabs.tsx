@@ -20,7 +20,10 @@ export function MissionReplayTab(props: {
   readonly replay: MissionReplayRuntimeState
 }) {
   const result = props.replay.result
-  const acceptedSelectedTime = result?.selectedTime ?? props.missionEndTime
+  const [liveDefaultTime, setLiveDefaultTime] = useState(props.missionEndTime)
+  const acceptedSelectedTime = result?.selectedTime
+    ?? props.replay.selectedTime
+    ?? liveDefaultTime
   const replayScopeKey = JSON.stringify([
     acceptedSelectedTime,
     result?.deviceFilterIds ?? [],
@@ -58,7 +61,10 @@ export function MissionReplayTab(props: {
           </p>
           <p className="mt-2 text-sm text-stone-200">Replay is read-only and never replaces the operational live map. Current safety positions remain live beside this review.</p>
         </div>
-        {props.replay.mode === 'replay' ? <button className="rounded-lg border border-sky-300/50 px-3 py-2 text-xs font-semibold text-sky-100" data-testid="mission-replay-return-live" onClick={props.controller?.returnToLive} type="button">Return to Live / now</button> : null}
+        {props.replay.mode === 'replay' ? <button className="rounded-lg border border-sky-300/50 px-3 py-2 text-xs font-semibold text-sky-100" data-testid="mission-replay-return-live" onClick={() => {
+          setLiveDefaultTime(props.missionEndTime)
+          props.controller?.returnToLive()
+        }} type="button">Return to Live / now</button> : null}
       </div>
     </section>
     <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5">
@@ -368,16 +374,9 @@ function useAuthoritativeDraft<T>(authoritativeValue: T, ownerKey: string): read
   return [value, (nextValue: T) => setDraft({ ownerKey, value: nextValue })]
 }
 
-/** Identifies the exact accepted page whose search text an editable draft describes. */
+/** Rebinds a search draft only when the backend accepts a different search scope. */
 function searchPageDraftKey(page: MissionReviewRuntimeState['searchOperations']['pages']['areas']): string {
-  return JSON.stringify([
-    page.search,
-    page.pageNumber,
-    page.visibleCount,
-    page.totalCount,
-    page.nextCursor,
-    page.loading,
-  ])
+  return page.search
 }
 
 function Metric(props: { readonly label: string; readonly value: number }) {
