@@ -1732,6 +1732,67 @@ persistence/completeness and concurrency/finalization reviews are required.
 Renderer/input containment remains required on the common final head even
 though no renderer code changed.
 
+## `210826cc` renderer rejection and `f3a14d53` remediation
+
+Broad life-safety/end-to-end reviewer Copernicus (`/root/pr5_broad_a584`),
+persistence/completeness reviewer Raman (`/root/pr5_persistence_a584`) and
+concurrency/finalization reviewer Confucius (`/root/pr5_concurrency_7821`) were
+clean on exact head `210826cc51fc2fa954687a95faef0ce09c029699`, tree
+`80d5d090f1309469114892322952313b0f3d23bf`. Renderer/input containment
+reviewer Cicero (`/root/pr5_renderer_2108`) rejected that same exact head with
+three P2s. Central source retrace accepted all three:
+
+- the variadic Electron preload bridge allowed unknown 32 MiB input fields to
+  cross into the main process on PR5 GPX and Search Operations calls;
+- Search Operations synchronously returned an unbounded 50,000-pass result to
+  the renderer and performed one link-count query per pass; and
+- Replay selected outing filters from a fixed 200-row list, silently making an
+  otherwise eligible 201st GPX outing unreachable even though the browser
+  harness did not impose the same limit.
+
+Strict red tests reproduced the 32 MiB crossing and unreachable 201st outing;
+the 50,000-pass probe measured a 405.63 ms synchronous read, 25,838,891
+renderer bytes and per-pass link reads. Executable replacement
+`f3a14d53847c0830a1404ac6de95e123fcd65154` closes the shared boundary:
+
+- every PR5 preload operation now uses a closed, typed projection with raw
+  string/UTF-8/count limits before IPC; 32/64 MiB unknown fields are stripped,
+  oversized known paths/advisory values are rejected, and the old unbounded
+  Search Operations methods are absent from the renderer bridge;
+- Search Operations uses one read-only worker lane and searchable, opaque,
+  mission/kind/search-bound keyset pages. Each page projects only required
+  fields, defaults to 25 and caps at 50 rows, reports the exact match total,
+  stays within 256 KiB, and computes pass link counts in the page SQL rather
+  than a JavaScript N+1 loop; and
+- Replay exposes the first 100 outing choices plus exact total and explicit
+  `outing_filter_choices_paged` limitation. Further/search pages run on the
+  same worker lane with cursors bound to mission, replay instant, generation
+  and search; selected outing identities remain selected across page changes.
+
+Local replacement proof is green: full serialized unit 296 files / 2,508
+tests; focused renderer/IPC/replay tests 172/172 plus the later visual-text
+assertion 36/36; backend 57 passed / one intentional real-keychain ignore;
+the complete Chromium project 167/167, including the amended Search Operations operator flow;
+visual Playwright 2/2 and a fresh uncached critical review 4/4 at
+`visual-review-2026-08-29T03-01-34Z.json`; ESLint, production TypeScript/Vite
+build and bundle budgets, changed CommonJS syntax and diff checks. The
+50,000-pass worker fixture returns 25 rows with exact total and continuation
+cursor under 256 KiB while a main-process timer remains below 200 ms. The
+201-outing fixture reaches all choices as 100 + 100 + 1 and search finds the
+last outing; invalid search/cursor input fails closed.
+
+The rebuilt unsigned macOS arm64 package passed the deterministic CI-profile
+soak in 12.899 seconds: two launches, 6/6 batches, exact 8,664/8,664 positions,
+one restart, SQLite integrity `ok`, zero redundant-event slope, zero crashes,
+four healthy operator interactions and 1.8 ms maximum main-process round trip.
+Packaged executable SHA-256 is
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`.
+
+Because remediation crosses renderer, preload, IPC, worker, persistence and UI
+contracts, exact-head Linux and all four independent exact-head reviews restart
+on the same final code-and-documentation candidate. PR opened/review-ready is
+intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

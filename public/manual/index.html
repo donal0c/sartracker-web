@@ -1668,6 +1668,12 @@
             seekable without guessing. Future times are rejected without changing the live map.
           </p>
           <p>
+            Large missions page Replay's outing filter choices in sets of up to 100 and show the exact matching
+            total. Use the search box, <strong>Next matching outings</strong>, or return to the first page to reach
+            later retained outings. An outing already selected for the reconstruction stays selected while you
+            search or page, so loading another choice never silently changes the requested evidence scope.
+          </p>
+          <p>
             Replay distinguishes an honestly empty result from evidence removed by display filters. Browser
             validation explicitly says when mutable-object version history is unavailable and makes no absence
             claim; operational mission-object reconstruction requires the supported Electron desktop runtime.
@@ -1719,6 +1725,13 @@
             Finished and finalized missions keep these retained records visible but disable the Search Operations
             entry form permanently. New assignments and passes require an active mission; unlocking a finalized
             mission does not make its retained Search Operations records writable.
+          </p>
+          <p>
+            Search Operations reads retained areas, assignments, outings and passes in bounded pages of 25.
+            Each selector shows the exact matching total and provides search, first-page and next-page controls.
+            Pass cards are loaded independently of the currently visible area page, so a retained pass does not
+            disappear merely because its linked area is on another page. Only the fields and evidence-link counts
+            needed for this review surface cross into the application window.
           </p>
           <p>
             The Audit Log shows operator-meaningful events by default — mission lifecycle changes, marker

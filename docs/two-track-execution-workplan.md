@@ -204,6 +204,24 @@ renderer and input contracts, all four reviewers restart on the same final
 code-and-documentation head after exact-head Linux passes. PR open or
 review-ready remains intermediate; do not merge or release.
 
+PR-5 renderer correction (2026-08-29): broad, persistence and concurrency were
+clean on `210826cc`, but renderer/input containment rejected that exact head.
+Central retrace accepted three P2s: PR5 preload operations did not strip
+unknown multi-megabyte fields, Search Operations performed an unbounded
+synchronous read with per-pass link queries, and Replay's fixed 200-row outing
+filter silently made the 201st eligible GPX outing unreachable. Executable
+replacement `f3a14d53` closes and bounds preload inputs, moves searchable
+Search Operations pages to a read-only worker with opaque keyset cursors and
+exact totals, and adds replay-generation-bound searchable outing-filter pages.
+Strict 32/64 MiB, 50,000-pass and 201-outing regressions are green, as are full
+unit, backend, browser and critical visual gates. Unsigned macOS arm64 packaging
+and the deterministic 6/6-batch packaged soak also pass with exact 8,664/8,664
+positions, integrity `ok`, zero redundant slope and 1.8 ms maximum main round
+trip. The change crosses renderer, IPC and persistence boundaries, so
+exact-head Linux and all four independent reviews restart on one final
+code-and-documentation head. PR opened or review-ready remains intermediate;
+do not merge or release.
+
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is
