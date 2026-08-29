@@ -1686,6 +1686,52 @@ contracts, all four independent reviews restart on the same final
 code-and-documentation head after this exact Linux proof. PR opened/review-ready
 remains intermediate; no merge or release is authorized.
 
+## `e55292bb` review rejection and `9a55b987` remediation
+
+The next broad, persistence/completeness and concurrency/finalization reviewers
+examined exact pushed head
+`e55292bb70d432d05189127ec861a29f71133725`, tree
+`3a98e6db2a7f5d9b91dae5310ea1413f3a9d506c`. Renderer/input containment was
+not started after the backend head was already invalid.
+
+| Reviewer task | Charter | Verdict and disposition |
+| --- | --- | --- |
+| Copernicus, `/root/pr5_broad_a584` | Broad life-safety/end-to-end | **Rejected.** With 2,000,000 complete events followed by one incomplete event, one nominally bounded reconstruction turn blocked a current write for 388.24 ms. Accepted P2. No second finding. |
+| Raman, `/root/pr5_persistence_a584` | Persistence/completeness | **Rejected.** A 10,000-row, 660,525,056-byte retained-payload attack proved the same turn rewrote 10,001 source rows plus its cursor and held the writer for 213.50 ms. Accepted as the same P2. No second finding. |
+| Confucius, `/root/pr5_concurrency_7821` | Concurrency/finalization | **Rejected.** Independently reproduced the sparse-turn P2 at 383.93 ms. Also proved that unlock could win during invalid archive validation, after which the stale repair wrote a recovery archive that a newer finalization epoch later reused. Accepted second P2. |
+| renderer task | Renderer/input containment | Not started after the exact head was already invalid; it remains mandatory in the restarted wave. |
+
+Central source retrace confirmed both unique defects without a new product or
+team question. Strict red tests proved that one turn skipped across 10,000
+complete rows, updated the whole range and prematurely completed its cursor;
+and that a stale repair rejected after unlock nevertheless left an archive
+which was returned after re-finalization.
+
+Executable remediation
+`9a55b987e63e0ac8729fa3c3e79d4eac74509f1a` makes both boundaries explicit:
+
+- the worker first selects at most 1,000 raw source row IDs, selects incomplete
+  candidates only inside that raw page, updates only those exact identities,
+  and advances to the raw page endpoint when no candidate consumes the retained-
+  byte budget. Sparse complete evidence therefore cannot enlarge the immediate
+  writer transaction or skip cursor work; and
+- finalized recovery carries the exact `finalization_epoch` through requested,
+  failed and archived audit evidence. The epoch/status is reasserted inside the
+  same immediate transaction that acquires the archive fence, so unlock cannot
+  interleave. Idempotent recovery accepts a direct archive only when it is a
+  `finalized_recovery` owned by the current exact epoch. Restart recovery retains
+  the same audit context rather than silently relabelling the operation.
+
+Both new tests failed on `e55292bb` and pass on the executable remediation.
+Focused evidence/versioning and mission-store suites pass 167/167; full unit is
+295 files / 2,500 tests; ESLint, changed CommonJS syntax, production build and
+bundle budgets, `git diff --check`, and Rust backend 57 passed / one intentional
+real-keychain ignore are green. Because these are worker/persistence and
+finalization state-machine changes, exact-head Linux plus fresh broad,
+persistence/completeness and concurrency/finalization reviews are required.
+Renderer/input containment remains required on the common final head even
+though no renderer code changed.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
