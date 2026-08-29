@@ -313,6 +313,27 @@ soak are green. Because the accepted corrections span renderer and persistence,
 exact-head Linux and all four reviews restart on the same bound candidate. PR
 opened or review-ready remains intermediate; do not merge or release.
 
+PR-5 attachment-custody/final-archive correction (2026-08-29): exact head
+`d20339dd` was rejected after concurrency reproduced an Electron attachment
+write committing after Finish and persistence reproduced a final standalone
+archive omitting superseded/retired attachment bytes still referenced by
+immutable marker versions. Stricter central retrace retained both as P2 because
+they are deterministic production-path breaches of PR5's finalized-write and
+no-silent-loss contracts, not speculative hardening. Executable replacement
+`7dd35570` serializes attachment custody with Finish per mission while leaving
+current-position writes independent, records completed custody, joins it before
+close, and archives all current/version/audit-referenced bytes under
+collision-safe names with fail-closed missing-file handling. Focused Electron
+proof is 185/185, full unit 2,526/2,526, backend 58/one intentional ignore,
+Chromium 167/167, visual Playwright 2/2 and fresh uncached critical review 4/4,
+lint/build/diff, unsigned macOS packaging and the exact 8,664-position packaged
+soak are green. Exact-head Linux and all four reviews restart on the same bound
+candidate. Prospectively, every reviewer severity is centrally challenged:
+only a reachable production mechanism, repository-backed requirement breach,
+realistic impact and current-PR ownership block as P1/P2; speculative,
+qualification-only, pre-existing, historical/reference-only or out-of-contract
+items are P3/out of scope with the reason recorded.
+
 Completed PR-3 record: `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is

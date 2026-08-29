@@ -2085,6 +2085,86 @@ exact-head Linux and all four independent reviews restart on the same bound
 code-and-documentation candidate. PR opened/review-ready remains intermediate;
 no merge or release is authorized.
 
+## `d20339dd` focused rejections and `7dd35570` remediation
+
+Concurrency/finalization reviewer Confucius
+(`/root/pr5_concurrency_7821`) and persistence/completeness reviewer
+`/root/pr5_persistence_final` rejected exact head
+`d20339dd4b2645cd07b44a066a5040b47d0b23cc`, tree
+`a6974a23d27669d732e094e1856593060ef83471`, with one finding each. The
+renderer review was interrupted once the shared candidate was invalid and the
+broad slot was not started. Linux run
+[`33236199222`](https://github.com/donal0c/sartracker-web/actions/runs/33236199222)
+was canceled. No verdict or CI result on that invalid head counts toward
+completion.
+
+Every reviewer severity is now treated as a proposal and aggressively
+source-retraced. A P1/P2 requires a reachable production path, credible failure
+mechanism, repository-backed PR5 requirement breach, realistic safety/operator
+or evidence impact and PR5 ownership. Speculative hardening,
+qualification-only, pre-existing, historical/reference-only and
+out-of-contract findings are P3 or out of scope with the reason recorded. This
+does not downgrade a demonstrated life-safety, false-Complete,
+finalized-write-fence or silent-evidence-loss failure.
+
+Both `d20339dd` findings remain P2 under that stricter test:
+
+- the production Electron attachment service could complete a filesystem write
+  after a concurrent Finish had committed, deterministically violating the
+  finalized-mission write fence; and
+- the production standalone mission archive enumerated only current marker
+  attachment paths, deterministically omitting superseded or retired bytes
+  still referenced by immutable marker versions and therefore violating the
+  existing no-silent-loss archive contract.
+
+The first was reproduced by
+`/tmp/pr5-attachment-finish-race-d203.cjs`; the second by
+`/tmp/pr5-attachment-archive-repro.cjs`. Focused tests were also observed red:
+the Electron race lacked a custody event and ordered Finish first, the Electron
+archive omitted the original same-basename artifact, and the Rust archive test
+failed `FileNotFound` for the original attachment.
+
+Executable remediation `7dd355704382f90cf62d74f5c51a37a3e2dd98ca`
+uses one per-mission attachment-lifecycle queue for Electron ingest and Finish.
+An ingest that starts first atomically retains its bytes and custody audit
+before Finish; Finish that wins first makes the later ingest fail closed.
+Shutdown joins the same ownership queue, while current-position writes remain
+outside it and retain priority. Final archive enumeration now covers current
+marker state, every immutable marker-version attachment path and completed
+custody events, deduplicates paths, uses deterministic collision-safe archive
+names, and fails visibly if any referenced file is missing. The historical
+Tauri adapter uses the equivalent lifecycle lock, custody events and retained
+archive enumeration without putting current positions behind the lock.
+
+Candidate verification is green:
+
+- focused real Electron filesystem/store/versioning integration: 3 files / 185
+  tests;
+- full serialized unit: 296 files / 2,526 tests;
+- backend: 58 passed / one intentional real-keychain ignore;
+- complete Chromium operator flows: 167/167;
+- targeted replay/evidence visual Playwright: 2/2 and four critical captures;
+- fresh uncached visual review: 4/4, report
+  `visual-review-2026-08-29T05-59-35Z.json`, SHA-256
+  `620bb49ea0123d95c5124b80e9560ea2696ba259445135210d7a1b8f7b171f6a`;
+- ESLint, production TypeScript/Vite build, bundle budgets, Node syntax and
+  diff checks; and
+- unsigned macOS arm64 package identity `sha.7dd355704382`.
+
+The deterministic packaged soak passed in 13.649 seconds: two launches, 6/6
+batches, exact 8,664/8,664 positions and source digest, one restart, SQLite
+integrity `ok`, zero redundant-event slope, zero renderer crashes, four healthy
+operator interactions and 11.129 ms maximum main-process round trip. Packaged
+executable SHA-256 is
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+soak report SHA-256 is
+`fb8a3e5f5fd872b43d8fe6291736d5928465121f47f771d09003fb3e6dbae4ea`.
+
+Because the correction changes a shared persistence/finalization boundary,
+exact-head Linux and all four independent reviews restart on the same bound
+code-and-documentation candidate. PR opened/review-ready remains intermediate;
+no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final

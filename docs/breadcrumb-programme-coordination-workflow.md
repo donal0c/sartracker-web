@@ -172,8 +172,19 @@ exact-tree and exact-diff attestation. It does not invalidate completed code
 reviews when the executable-code and test trees are byte-identical to the
 reviewed head.
 
-Codex centrally source-retraces every reported finding before remediation. A
-confirmed P1/P2 or other safety failure blocks progress and normally returns to
+Codex centrally source-retraces every reported finding before remediation.
+Reviewer severity is a proposal, not the coordinator verdict. A finding blocks
+as P1/P2 only when retrace establishes all of the following: a reachable
+production path, a deterministic or otherwise credible failure mechanism, a
+breach of a repository-backed PR requirement, realistic operator/evidence or
+life-safety impact, and ownership by the current PR. Speculative hardening,
+qualification-only gaps, pre-existing behaviour, historical/reference-adapter
+issues and improvements outside the accepted PR contract are recorded as P3
+or out of scope with the downgrade reason; they do not repeatedly invalidate a
+candidate. Green tests or schedule pressure never downgrade a real
+life-safety, false-Complete, finalized-write or silent-evidence-loss defect.
+
+A confirmed P1/P2 or other safety failure blocks progress and normally returns to
 the same implementation task. After a fix, require one fresh broad independent
 exact-head review plus exact-head rechecks from only the focused reviewers whose
 risk areas changed; unaffected focused reviews do not restart. A fresh task is
