@@ -1592,6 +1592,75 @@ contracts, all four independent reviews restart on the same final
 code-and-documentation head after this exact branch-head Linux proof. PR
 opened/review-ready remains intermediate; no merge or release is authorized.
 
+## `ad21f1a8` review rejection and `b9c47e0d` remediation
+
+The restarted review wave examined exact pushed head
+`ad21f1a8765d72a4bb5232bea3a30f506a93ffca`, tree
+`69a75cb8547814071373d5f7db7d5f8a41ae0c59`:
+
+| Reviewer task | Charter | Verdict and disposition |
+| --- | --- | --- |
+| `/root/pr5_broad_a584` | Broad life-safety/end-to-end | **Rejected.** Prior current-schema candidate text cursors could cast to zero and silently declare incomplete event provenance complete; an already-finalized mission whose old archive was newly rejected had no idempotent governed repair path. Both accepted P2s. |
+| `/root/pr5_persistence_a584` | Persistence/completeness | **Clean** for its two assigned prior findings: a 16 MiB identity was quarantined with 3.95 ms open and exact source retention; affected Mission A remained closed while clean Missions B/C retained custody. Its old-archive compatibility note was superseded by the centrally accepted broad finding. |
+| `/root/pr5_concurrency_7821` | Concurrency/finalization | **Rejected.** Mission-scoped quarantine was logically correct but synchronously scanned the global quarantine table; 2,000,000 retained rows made a clean mission Finish take 2,061.05 ms. Accepted P2. |
+| renderer task | Renderer/input containment | Not started after the exact head was already invalid; it remains mandatory in the next full wave. |
+
+Central retrace accepted the three unique defects without a new team/domain
+question. Strict red tests proved the text cursor left one event incomplete,
+readiness returned true and archive succeeded; finalized idempotent recovery
+threw after rejecting the incomplete archive; and the global quarantine query
+plan drove from every quarantine row rather than the requested mission.
+
+Executable remediation
+`b9c47e0d51c4d76b2dffc1f438a915c62c0847c2` closes the shared seam:
+
+- a durable `rowid-mission-quarantine-v1` state-format marker distinguishes
+  prior event-ID cursors even when a legacy ID happens to contain only digits.
+  Missing/old format state transactionally resets to bounded row-ID targets;
+  the worker revisits only incomplete rows, preserves source evidence and keeps
+  custody closed until bounded reconstruction completes;
+- each quarantine turn atomically records a mission-owned entry in a
+  `WITHOUT ROWID` mapping keyed by `(mission_id, table_name, source_rowid)`.
+  Readiness is now a mission-first primary-key `SELECT 1 ... LIMIT 1`, not a
+  global count/join. A deterministic 500,000-entry regression proves the query
+  plan and clean-mission Finish below the unchanged 200 ms gate; and
+- an already-finalized mission whose previous archive fails current evidence
+  validation creates a new uniquely named archive under the durable archive
+  fence, rechecks the latest finalization/unlock epoch, keeps the rejected
+  archive immutable, and appends explicit `finalized_recovery` audit details
+  linking `replaces_archive_path` to the replacement. Only already-finalized
+  idempotent recovery may reuse this direct recovery archive; an ordinary
+  `finished` Finalize cannot substitute an earlier direct archive.
+
+Local green proof on the executable tree is:
+
+- focused persistence/replay/finalization 193/193, including evidence/versioning
+  71 tests and mission-store 94; full serialized unit 295 files / 2,498 tests;
+- deterministic fixture regeneration repeated exact digest
+  `29476243bc481e33ffcc4658a24278f95e91a538ce435f54d872b0ca1fe45d15`;
+- ESLint, changed CommonJS syntax, production TypeScript/Vite build and bundle
+  budgets; Rust backend 57 passed / one intentional real-keychain ignore;
+- indexed 960k fixture digest
+  `908220e32dc7bfe2bd85f21f17d149cab482c119a850c26eead6c07f03660287`
+  (765,751,296 bytes): 50,000-point import 2.69 ms dispatch / 13,048.99 ms
+  total, 4,148 concurrent current writes 22.42 ms maximum / 1.99 ms p95,
+  event-loop maximum 31.49 ms, Replay seek 62.07 ms, late page 45.44 ms,
+  restart open 2.81 ms and restart Replay 48.19 ms with exact equality. Report
+  SHA-256 is
+  `46bc4583908b4c7ca33d577b180ab7e3a7d255044e047548c9f4a2dfcf2f94a3`;
+  and
+- rebuilt unsigned macOS arm64 package: two launches, 6/6 batches, exact
+  8,664/8,664 positions, SQLite integrity `ok`, one restart, zero redundant
+  slope, zero renderer crashes and four healthy interactions; maximum main
+  round trip 4.70 ms. Report SHA-256 is
+  `8f745ac71ce4927fa9763cc565c2e6e17980e25723d51f9d9a5e76066a0336d6`.
+
+The previously green Chromium 167/167, visual Playwright 58/58 and uncached
+screenshot review 69/69 remain standing because this remediation changes only
+Electron persistence/migration/finalization. Exact branch-head Linux and all
+four independent reviews restart on the final code-and-documentation head. PR
+opened/review-ready remains intermediate; no merge or release is authorized.
+
 ## Proof limits
 
 The clean four-review wave remains the task-completion gate. The final
