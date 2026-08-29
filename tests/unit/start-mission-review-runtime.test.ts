@@ -10,7 +10,10 @@ import type {
   MissionStoreInfo,
   Position,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
-import { startMissionReviewRuntime } from '../../src/features/mission-review/start-mission-review-runtime'
+import {
+  startMissionReviewRuntime,
+  type MissionReviewController,
+} from '../../src/features/mission-review/start-mission-review-runtime'
 
 describe('startMissionReviewRuntime', () => {
   it('loads the preferred mission review snapshot', async () => {
@@ -232,71 +235,17 @@ describe('startMissionReviewRuntime', () => {
   })
 
   it('rejects a Search Operations read started while a mission refresh is pending [DON-279]', async () => {
-    let releaseRefreshList: ((value: readonly Mission[]) => void) | undefined
-    const refreshList = new Promise<readonly Mission[]>((resolve) => {
-      releaseRefreshList = resolve
-    })
-    let listCall = 0
-    const listMissions = vi.fn().mockImplementation(async () => {
-      listCall += 1
-      return listCall === 1 ? [FIRST_MISSION] : await refreshList
-    })
-    let releaseDuringRefresh: ((value: unknown) => void) | undefined
-    const duringRefreshResult = new Promise((resolve) => {
-      releaseDuringRefresh = resolve
-    })
-    let refreshed = false
-    const pass = (id: string) => ({
-      id, mission_id: FIRST_MISSION.id, search_area_id: 'area-1',
-      assignment_id: 'assignment-1', started_at: '2026-04-10T08:10:00.000Z',
-      ended_at: '2026-04-10T08:20:00.000Z', outcome: 'partial' as const,
-      coordinator_name: 'Coordinator', version_sequence: 1,
-      created_at: '2026-04-10T08:20:00.000Z', updated_at: '2026-04-10T08:20:00.000Z',
-      participant_count: 0, clue_count: 0, track_evidence_count: 0,
-    })
-    const page = (kind: string, search = '') => ({
-      kind,
-      search,
-      generation: refreshed ? 2 : 1,
-      entries: kind === 'passes' ? [pass(refreshed ? 'pass-fresh' : 'pass-initial')] : [],
-      totalCount: kind === 'passes' ? 1 : 0,
-      nextCursor: null,
-    })
-    const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
-      readonly kind: string; readonly search?: string
-    }) => input.search === 'during-refresh'
-      ? await duringRefreshResult
-      : page(input.kind, input.search))
-    const applyRuntime = vi.fn()
-    const runtime = await startMissionReviewRuntime({
-      missionStore: createMissionReviewStoreStub({ listMissions, listSearchOperationPage }),
-      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
-      applyRuntime,
-    })
+    await expectMissionReadToBlockSearchOperations(
+      (runtime) => runtime.refreshSelectedMission(),
+      'during-refresh',
+    )
+  })
 
-    await runtime.load(FIRST_MISSION.id)
-    const pendingRefresh = runtime.refreshSelectedMission()
-    await vi.waitFor(() => expect(listMissions).toHaveBeenCalledTimes(2))
-    const pendingSearch = runtime.searchSearchOperations('passes', 'during-refresh')
-    await Promise.resolve()
-    refreshed = true
-    releaseRefreshList?.([FIRST_MISSION])
-    await pendingRefresh
-    releaseDuringRefresh?.({
-      ...page('passes', 'during-refresh'),
-      generation: 1,
-      entries: [pass('pass-stale')],
-    })
-    await pendingSearch
-
-    expect(listSearchOperationPage).not.toHaveBeenCalledWith(expect.objectContaining({
-      search: 'during-refresh',
-    }))
-    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
-      searchOperations: expect.objectContaining({
-        passes: [expect.objectContaining({ id: 'pass-fresh' })],
-      }),
-    }))
+  it('rejects a Search Operations read started while a mission reload is pending [DON-279]', async () => {
+    await expectMissionReadToBlockSearchOperations(
+      (runtime) => runtime.load(FIRST_MISSION.id),
+      'during-load',
+    )
   })
 
   it('fails closed instead of publishing mixed Search Operations generations [DON-279]', async () => {
@@ -1106,6 +1055,74 @@ describe('startMissionReviewRuntime', () => {
     )
   })
 })
+
+/** Proves that neither Review load mode can admit an old page read into new state. */
+async function expectMissionReadToBlockSearchOperations(
+  startMissionRead: (runtime: MissionReviewController) => Promise<void>,
+  staleSearch: string,
+): Promise<void> {
+  let releaseMissionList: ((value: readonly Mission[]) => void) | undefined
+  const missionList = new Promise<readonly Mission[]>((resolve) => {
+    releaseMissionList = resolve
+  })
+  let listCall = 0
+  const listMissions = vi.fn().mockImplementation(async () => {
+    listCall += 1
+    return listCall === 1 ? [FIRST_MISSION] : await missionList
+  })
+  let releaseStalePage: ((value: unknown) => void) | undefined
+  const stalePage = new Promise((resolve) => {
+    releaseStalePage = resolve
+  })
+  let refreshed = false
+  const pass = (id: string) => ({
+    id, mission_id: FIRST_MISSION.id, search_area_id: 'area-1',
+    assignment_id: 'assignment-1', started_at: '2026-04-10T08:10:00.000Z',
+    ended_at: '2026-04-10T08:20:00.000Z', outcome: 'partial' as const,
+    coordinator_name: 'Coordinator', version_sequence: 1,
+    created_at: '2026-04-10T08:20:00.000Z', updated_at: '2026-04-10T08:20:00.000Z',
+    participant_count: 0, clue_count: 0, track_evidence_count: 0,
+  })
+  const page = (kind: string, search = '') => ({
+    kind,
+    search,
+    generation: refreshed ? 2 : 1,
+    entries: kind === 'passes' ? [pass(refreshed ? 'pass-fresh' : 'pass-initial')] : [],
+    totalCount: kind === 'passes' ? 1 : 0,
+    nextCursor: null,
+  })
+  const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+    readonly kind: string; readonly search?: string
+  }) => input.search === staleSearch ? await stalePage : page(input.kind, input.search))
+  const applyRuntime = vi.fn()
+  const runtime = await startMissionReviewRuntime({
+    missionStore: createMissionReviewStoreStub({ listMissions, listSearchOperationPage }),
+    layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+    applyRuntime,
+  })
+
+  await runtime.load(FIRST_MISSION.id)
+  const pendingMissionRead = startMissionRead(runtime)
+  await vi.waitFor(() => expect(listMissions).toHaveBeenCalledTimes(2))
+  const pendingSearch = runtime.searchSearchOperations('passes', staleSearch)
+  await Promise.resolve()
+  refreshed = true
+  releaseMissionList?.([FIRST_MISSION])
+  await pendingMissionRead
+  releaseStalePage?.({
+    ...page('passes', staleSearch), generation: 1, entries: [pass('pass-stale')],
+  })
+  await pendingSearch
+
+  expect(listSearchOperationPage).not.toHaveBeenCalledWith(expect.objectContaining({
+    search: staleSearch,
+  }))
+  expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+    searchOperations: expect.objectContaining({
+      passes: [expect.objectContaining({ id: 'pass-fresh' })],
+    }),
+  }))
+}
 
 const FIRST_MISSION: Mission = {
   id: 'mission-1',

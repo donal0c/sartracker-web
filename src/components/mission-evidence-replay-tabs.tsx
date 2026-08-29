@@ -161,7 +161,7 @@ export function SearchOperationsTab(props: {
   readonly controller: MissionReviewController | null
   readonly operations: MissionReviewRuntimeState['searchOperations']
   readonly readOnly: boolean
-  readonly refreshing: boolean
+  readonly reviewBusy: boolean
 }) {
   const [teamId, setTeamId] = useState('')
   const [coordinatorName, setCoordinatorName] = useState('')
@@ -233,19 +233,19 @@ export function SearchOperationsTab(props: {
   return <div className="space-y-4" data-testid="search-operations-workspace">
     <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5"><p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Stable search operations</p><p className="mt-2 text-sm text-stone-300">Areas keep one stable identity across revisions and repeated assignments. Pass outcomes are coordinator-entered declarations; coverage is advisory only.</p></section>
     <section className="grid gap-3 rounded-2xl border border-stone-800 bg-stone-900/30 p-5 md:grid-cols-2" data-testid="search-operation-page-controls">
-      <SearchPageNavigator controller={props.controller} disabled={props.refreshing} kind="areas" label="Search areas" onSearchChange={setAreaSearch} page={props.operations.pages.areas} search={areaSearch} />
-      <SearchPageNavigator controller={props.controller} disabled={props.refreshing} kind="outings" label="Outings" onSearchChange={setOutingSearch} page={props.operations.pages.outings} search={outingSearch} />
-      <SearchPageNavigator controller={props.controller} disabled={props.refreshing} kind="assignments" label="Assignments" onSearchChange={setAssignmentSearch} page={props.operations.pages.assignments} search={assignmentSearch} />
-      <SearchPageNavigator controller={props.controller} disabled={props.refreshing} kind="passes" label="Recorded passes" onSearchChange={setPassSearch} page={props.operations.pages.passes} search={passSearch} />
+      <SearchPageNavigator controller={props.controller} disabled={props.reviewBusy} kind="areas" label="Search areas" onSearchChange={setAreaSearch} page={props.operations.pages.areas} search={areaSearch} />
+      <SearchPageNavigator controller={props.controller} disabled={props.reviewBusy} kind="outings" label="Outings" onSearchChange={setOutingSearch} page={props.operations.pages.outings} search={outingSearch} />
+      <SearchPageNavigator controller={props.controller} disabled={props.reviewBusy} kind="assignments" label="Assignments" onSearchChange={setAssignmentSearch} page={props.operations.pages.assignments} search={assignmentSearch} />
+      <SearchPageNavigator controller={props.controller} disabled={props.reviewBusy} kind="passes" label="Recorded passes" onSearchChange={setPassSearch} page={props.operations.pages.passes} search={passSearch} />
     </section>
-    {props.refreshing ? <p className="text-xs text-stone-400" data-testid="search-operations-refreshing" role="status">Refreshing retained Search Operations evidence…</p> : null}
+    {props.reviewBusy ? <p className="text-xs text-stone-400" data-testid="search-operations-refreshing" role="status">Updating retained Search Operations evidence…</p> : null}
     {props.readOnly ? <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="search-operations-read-only">This finished or finalized mission is permanently read-only. Retained assignments and passes remain visible for evidence review; new records require an active mission.</p> : null}
     {props.operations.areas.length > 0 ? <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="search-operation-entry">
       <p className="mb-3 text-xs font-medium text-amber-200">Pass outcomes are coordinator-declared. Coverage remains advisory only and never declares an area searched.</p>
       <fieldset
-        aria-disabled={props.readOnly || props.refreshing}
-        className={props.readOnly || props.refreshing ? 'opacity-50' : undefined}
-        disabled={props.readOnly || props.refreshing}
+        aria-disabled={props.readOnly || props.reviewBusy}
+        className={props.readOnly || props.reviewBusy ? 'opacity-50' : undefined}
+        disabled={props.readOnly || props.reviewBusy}
       >
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-xs text-stone-300">Search area<select className="mt-1 w-full bg-stone-950 p-2" data-testid="search-operation-area" onChange={(event) => { setSelectedAreaId(event.target.value); setSelectedAssignmentId('') }} value={area?.id ?? ''}><option value="">Select search area</option>{props.operations.areas.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>

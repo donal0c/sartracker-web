@@ -577,7 +577,7 @@ export async function startMissionReviewRuntime(
   ): Promise<void> {
     const missionId = state.selectedMissionId
     const readPage = dependencies.missionStore.listSearchOperationPage
-    if (missionId === null || readPage === undefined || state.refreshing) return
+    if (missionId === null || readPage === undefined || state.loading || state.refreshing) return
     const reviewToken = refreshToken
     const token = ++searchOperationTokens[kind]
     const expectedGeneration = searchOperationGenerations[kind]
@@ -597,7 +597,7 @@ export async function startMissionReviewRuntime(
         missionId, kind, search, limit: 25, ...(cursor === undefined ? {} : { cursor }),
       })
       if (token !== searchOperationTokens[kind] || reviewToken !== refreshToken
-        || missionId !== state.selectedMissionId || state.refreshing) return
+        || missionId !== state.selectedMissionId || state.loading || state.refreshing) return
       if (cursor !== undefined && result.generation !== expectedGeneration) {
         throw new Error('Search Operations page changed; return to the first page.')
       }
@@ -606,7 +606,7 @@ export async function startMissionReviewRuntime(
       publishRuntime()
     } catch (error) {
       if (token !== searchOperationTokens[kind] || reviewToken !== refreshToken
-        || missionId !== state.selectedMissionId || state.refreshing) return
+        || missionId !== state.selectedMissionId || state.loading || state.refreshing) return
       state = {
         ...state,
         error: toErrorMessage(error),
