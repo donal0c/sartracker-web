@@ -37,11 +37,14 @@ recorded earlier heads, including `c1ad54b8` for persistence/concurrency and
 exact-head independent review of `f5ba8647`. Donal authorized the final
 casualty-treatment/preload/workflow correction to use a focused correction,
 test, and package pass instead of restarting those four reviews. Exact-head
-Linux run `33260131951` was green for `f5ba8647`; it supplies the declared Linux
-unit/build/package, indexed 960,000-position replay, native SQLite/Mesa,
-packaged tracking-soak, launch, and graceful-close matrix. It does not convert
-the prior-head reviews into final-head reviews or prove release, live-provider,
-long-duration field, archive-security, or restore-and-replay behavior.
+Linux run `33260131951` was green for `f5ba8647`. Its package build, native
+SQLite/Mesa inspection, packaged tracking soak, launch, and graceful-close
+steps are `T4` only for the exact artifact flows they drove. The indexed
+960,000-position Replay and 50,000-point GPX qualification imported checkout
+modules directly, so those scale controls remain `T2` integration evidence
+despite running in the same CI job. The run does not convert the prior-head
+reviews into final-head reviews or prove release, live-provider, long-duration
+field, archive-security, or restore-and-replay behavior.
 
 The `DON-248`/`DON-252`/`DON-253` archive-lifecycle successor is also not
 implemented. The canonical programme policy names that successor programme

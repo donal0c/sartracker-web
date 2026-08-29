@@ -136,9 +136,11 @@ and hazard register. Its mandatory post-PR5 reconciliation is recorded against
 merge `eec92812b783a795c093f37268b295dd2179a3af` and final PR5 source head
 `f5ba8647131950dde457e50ce36fe0b8ded7337d`. The landed GPX, immutable-evidence,
 Replay, Search Operations, attachment-custody, IPC/worker, coverage-consumer,
-and archive-inclusion seams were re-opened before their rows were reclassified;
-exact-head Linux run `33260131951` and prior-head independent reviews retain
-separate proof limits. The unimplemented `DON-248`/`DON-252`/`DON-253` archive
+and archive-inclusion seams were re-opened before their rows were reclassified.
+Exact-head Linux run `33260131951` is `T4` only for its packaged tracking-soak,
+launch, and close flows; its direct checkout-module Replay/GPX scale steps are
+`T2`, and prior-head independent reviews retain their separate proof limits.
+The unimplemented `DON-248`/`DON-252`/`DON-253` archive
 successor remains `rewrite-pending` and is the prerequisite for streamed,
 encrypted/locked archive and restore-and-replay resilience. The WAR task
 packet's “PR6” shorthand refers to that successor, not to this docs-only GitHub
