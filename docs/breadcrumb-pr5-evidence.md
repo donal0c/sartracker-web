@@ -1563,9 +1563,33 @@ rows. Green evidence on the executable tree is:
   interactions; maximum main-process round trip was 3.30 ms. Report SHA-256 is
   `35d267794e23ef011b673fb747b31fabae31dd2a86b759fcb18ddd77ae7d5e70`.
 
+Exact branch-dispatch Linux workflow
+[`33224611572`](https://github.com/donal0c/sartracker-web/actions/runs/33224611572)
+then passed every step on pushed candidate
+`fb5f96361b178db542cd6237424c621206351b38`: lint, 295 files / 2,495
+deterministic tests, production build/budgets, Linux x64 AppImage and `.deb`,
+native x86-64 SQLite, Mesa llvmpipe, packaged soak and real AppImage
+launch/graceful close. Its 960k fixture retained digest
+`d4e48eb48d962781475f6864f6190a23f8da163f4d698b03c8365e51b96840db`:
+50,000-point import 5.93 ms dispatch / 12,743.50 ms total; 3,618 concurrent
+current writes 39.86 ms maximum / 2.50 ms p95; event-loop maximum 55.75 ms;
+Replay seek 249.22 ms; late page 169.35 ms; restart open 7.97 ms and restart
+Replay 238.95 ms with exact equality. The Linux soak retained exact
+8,664/8,664 positions over two launches, SQLite integrity `ok`, one restart,
+zero redundant-event slope, zero renderer crashes and four healthy
+interactions; maximum main-process round trip was 47.27 ms. SHA-256 values are
+qualification report
+`1dbb17dd50f63b4cb9e59c7ec7e35d4b504cc2b234c89a49c9c0568e7f3e809a`,
+soak report
+`e219d12fdfbd2574c3bcc84ba0e2bbcfb7c3a17910a03e90756eb5ca604a858b`,
+AppImage
+`8be140d476f8b716d5a412384aaae5caf2deda0555f002bf66e826618e63fa8e`
+and `.deb`
+`6eb1fbc981173511620187bcc32e5be6dd0efb7b286e973306deeb197efc954b`.
+
 Because this remediation crosses worker/persistence and Finalize-recovery
 contracts, all four independent reviews restart on the same final
-code-and-documentation head after exact branch-head Linux proof. PR
+code-and-documentation head after this exact branch-head Linux proof. PR
 opened/review-ready remains intermediate; no merge or release is authorized.
 
 ## Proof limits
