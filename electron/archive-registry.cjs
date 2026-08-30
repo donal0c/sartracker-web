@@ -15,6 +15,9 @@ const {
 } = require('./archive-custody-reconcile-envelope.cjs')
 
 const LEGACY_ARCHIVE_BACKFILL_LIMIT = 50
+const LEGACY_ARCHIVE_BACKFILL_SCAN_ROWS = 1_000
+const LEGACY_ARCHIVE_BACKFILL_CURSOR_KEY = 'legacy_archive_registry_backfill_cursor'
+const LEGACY_ARCHIVE_BACKFILL_TARGET_KEY = 'legacy_archive_registry_backfill_target'
 const MAX_RECONCILE_ROWS = 50
 const MAX_ID_BYTES = 200
 const MAX_TEXT_BYTES = 2_000
@@ -1260,16 +1263,51 @@ function legacyArchiveId(eventRowid, archivePath) {
     .digest('hex')}`
 }
 
-/** Returns whether a filtered legacy archive event remains after the durable cursor. */
+/** Reads one durable legacy archive backfill boundary without scanning mission evidence. */
+function readLegacyArchiveBackfillBoundary(db, key) {
+  const row = db.prepare('SELECT value FROM metadata WHERE key = ?').get(key)
+  if (row === undefined) return null
+  if (typeof row.value !== 'string' || !/^(?:0|[1-9][0-9]*)$/u.test(row.value)) {
+    return Number.NaN
+  }
+  const value = Number(row.value)
+  return Number.isSafeInteger(value) ? value : Number.NaN
+}
+
+/** Captures the fixed upper row identity for one legacy archive backfill generation. */
+function readLegacyArchiveBackfillTarget(db) {
+  const row = db.prepare(`SELECT rowid AS target_rowid FROM mission_events
+    ORDER BY rowid DESC LIMIT 1`).get()
+  const target = Number(row?.target_rowid ?? 0)
+  if (!Number.isSafeInteger(target) || target < 0) {
+    throw new ArchiveRegistryError(
+      'ARCHIVE_REGISTRY_INVALID_STATE',
+      'Legacy archive backfill target is outside the supported row identity range.',
+    )
+  }
+  return target
+}
+
+/** Writes one durable legacy archive backfill boundary. */
+function writeLegacyArchiveBackfillBoundary(db, key, value) {
+  db.prepare(`INSERT INTO metadata (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, String(value))
+}
+
+/** Returns whether fixed legacy archive backfill work remains from metadata alone. */
 function readLegacyArchiveRegistryBackfillPending(db) {
-  const cursor = Number(db.prepare(`SELECT value FROM metadata
-    WHERE key = 'legacy_archive_registry_backfill_cursor'`).get()?.value ?? 0)
-  if (!Number.isSafeInteger(cursor) || cursor < 0) return 1
-  return db.prepare(`SELECT 1 FROM mission_events
-    WHERE rowid > ? AND event_type IN (?, ?) LIMIT 1`).get(
-    cursor,
-    ...LEGACY_ARCHIVE_EVENT_TYPES,
-  ) === undefined ? 0 : 1
+  const cursor = readLegacyArchiveBackfillBoundary(
+    db,
+    LEGACY_ARCHIVE_BACKFILL_CURSOR_KEY,
+  )
+  const target = readLegacyArchiveBackfillBoundary(
+    db,
+    LEGACY_ARCHIVE_BACKFILL_TARGET_KEY,
+  )
+  if (cursor === null || target === null
+    || !Number.isSafeInteger(cursor) || !Number.isSafeInteger(target)
+    || cursor > target) return 1
+  return cursor < target ? 1 : 0
 }
 
 /** Records one bounded legacy archive issue without retaining unsafe historical details. */
@@ -1286,7 +1324,7 @@ function recordLegacyArchiveRegistryIssue(db, event, reasonCode) {
     .run(key, value).changes
 }
 
-/** Registers at most one bounded event page of pre-encryption v1 archives. */
+/** Registers one bounded raw-row page of pre-encryption v1 archive evidence. */
 function backfillLegacyArchiveRegistry(db, input) {
   if (!db || typeof db.prepare !== 'function' || typeof db.transaction !== 'function') {
     throw new ArchiveRegistryError(
@@ -1306,25 +1344,76 @@ function backfillLegacyArchiveRegistry(db, input) {
       `Legacy archive backfill limit must be between 1 and ${LEGACY_ARCHIVE_BACKFILL_LIMIT}.`,
     )
   }
-  const cursor = Number(db.prepare(`SELECT value FROM metadata
-    WHERE key = 'legacy_archive_registry_backfill_cursor'`).get()?.value ?? 0)
-  if (!Number.isSafeInteger(cursor) || cursor < 0) {
-    throw new ArchiveRegistryError(
-      'ARCHIVE_REGISTRY_INVALID_STATE',
-      'Legacy archive backfill cursor is invalid.',
-    )
-  }
-  const page = db.prepare(`SELECT rowid AS event_rowid, id, mission_id, event_type,
-      timestamp, details_json
-    FROM mission_events
-    WHERE rowid > ? AND event_type IN (?, ?)
-    ORDER BY rowid ASC LIMIT ?`).all(cursor, ...LEGACY_ARCHIVE_EVENT_TYPES, limit)
-  let processed = 0
-  let quarantined = 0
   const transaction = db.transaction(() => {
-    let nextCursor = cursor
+    let cursor = readLegacyArchiveBackfillBoundary(
+      db,
+      LEGACY_ARCHIVE_BACKFILL_CURSOR_KEY,
+    )
+    let target = readLegacyArchiveBackfillBoundary(
+      db,
+      LEGACY_ARCHIVE_BACKFILL_TARGET_KEY,
+    )
+    if (cursor === null) {
+      cursor = 0
+      writeLegacyArchiveBackfillBoundary(
+        db,
+        LEGACY_ARCHIVE_BACKFILL_CURSOR_KEY,
+        cursor,
+      )
+    }
+    if (target === null) {
+      target = readLegacyArchiveBackfillTarget(db)
+      writeLegacyArchiveBackfillBoundary(
+        db,
+        LEGACY_ARCHIVE_BACKFILL_TARGET_KEY,
+        target,
+      )
+    }
+    if (!Number.isSafeInteger(cursor) || cursor < 0) {
+      throw new ArchiveRegistryError(
+        'ARCHIVE_REGISTRY_INVALID_STATE',
+        'Legacy archive backfill cursor is invalid.',
+      )
+    }
+    if (!Number.isSafeInteger(target) || target < 0 || cursor > target) {
+      throw new ArchiveRegistryError(
+        'ARCHIVE_REGISTRY_INVALID_STATE',
+        'Legacy archive backfill target is invalid or precedes its cursor.',
+      )
+    }
+    if (cursor === target) {
+      return { processed: 0, quarantined: 0, remaining: 0 }
+    }
+
+    const rawBoundary = db.prepare(`SELECT rowid AS event_rowid FROM mission_events
+      WHERE rowid > ? AND rowid <= ?
+      ORDER BY rowid ASC LIMIT 1 OFFSET ?`).get(
+      cursor,
+      target,
+      LEGACY_ARCHIVE_BACKFILL_SCAN_ROWS - 1,
+    )
+    const scanEnd = rawBoundary === undefined
+      ? target
+      : Number(rawBoundary.event_rowid)
+    if (!Number.isSafeInteger(scanEnd) || scanEnd <= cursor || scanEnd > target) {
+      throw new ArchiveRegistryError(
+        'ARCHIVE_REGISTRY_INVALID_STATE',
+        'Legacy archive backfill raw-row boundary is invalid.',
+      )
+    }
+    const page = db.prepare(`SELECT rowid AS event_rowid, id, mission_id, event_type,
+        timestamp, details_json
+      FROM mission_events
+      WHERE rowid > ? AND rowid <= ? AND event_type IN (?, ?)
+      ORDER BY rowid ASC LIMIT ?`).all(
+      cursor,
+      scanEnd,
+      ...LEGACY_ARCHIVE_EVENT_TYPES,
+      limit,
+    )
+    let processed = 0
+    let quarantined = 0
     for (const event of page) {
-      nextCursor = Number(event.event_rowid)
       let details
       try {
         details = parseEventDetails(event.details_json, 'Legacy archive event')
@@ -1391,18 +1480,31 @@ function backfillLegacyArchiveRegistry(db, input) {
         )
       processed += result.changes
     }
-    if (page.length > 0) {
-      db.prepare(`INSERT INTO metadata (key, value) VALUES (
-        'legacy_archive_registry_backfill_cursor', ?
-      ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(String(nextCursor))
+    const lastEventRowid = page.length === 0 ? null : Number(page.at(-1).event_rowid)
+    if (lastEventRowid !== null
+      && (!Number.isSafeInteger(lastEventRowid)
+        || lastEventRowid <= cursor
+        || lastEventRowid > scanEnd)) {
+      throw new ArchiveRegistryError(
+        'ARCHIVE_REGISTRY_INVALID_STATE',
+        'Legacy archive backfill event page did not advance monotonically.',
+      )
+    }
+    const nextCursor = page.length === limit && lastEventRowid < scanEnd
+      ? lastEventRowid
+      : scanEnd
+    writeLegacyArchiveBackfillBoundary(
+      db,
+      LEGACY_ARCHIVE_BACKFILL_CURSOR_KEY,
+      nextCursor,
+    )
+    return {
+      processed,
+      quarantined,
+      remaining: nextCursor < target ? 1 : 0,
     }
   })
-  transaction.immediate()
-  const nextCursor = page.length === 0 ? cursor : Number(page.at(-1).event_rowid)
-  const remaining = db.prepare(`SELECT 1 FROM mission_events
-    WHERE rowid > ? AND event_type IN (?, ?) LIMIT 1`)
-    .get(nextCursor, ...LEGACY_ARCHIVE_EVENT_TYPES) === undefined ? 0 : 1
-  return { processed, quarantined, remaining }
+  return transaction.immediate()
 }
 
 module.exports = {

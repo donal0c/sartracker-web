@@ -28,6 +28,7 @@ import {
   archiveLifecycleSmokeBatchInsertedEveryRow,
   assertArchiveLifecycleSmokeEvidenceOmitsSecrets,
   parseArchiveLifecycleSmokeArgs,
+  projectArchiveLifecycleSmokeClosedReviewSemantic,
   renderedVersionContainsExactHead,
   resolvePackagedApplicationArchivePath,
   validateArchiveLifecycleSmokeEvidence,
@@ -37,6 +38,10 @@ const execFileAsync = promisify(execFile)
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const MISSION_NAME = 'Packaged Archive Lifecycle Proof'
 const POSITION_CHUNK_SIZE = 512
+const REPLAY_MARKER_COUNT = 101
+const REPLAY_OUTING_COUNT = 101
+const REPLAY_OBJECT_COUNT = REPLAY_MARKER_COUNT + REPLAY_OUTING_COUNT
+const GPX_IMPORT_BATCH_SIZE = 100
 const FAILURE_MESSAGE_LIMIT = 400
 
 let activeLaunch = null
@@ -87,12 +92,20 @@ async function main() {
     const seeded = await seedAndFinishMission(
       initialLaunch.page,
       options.seedPositionRows,
+      path.join(userDataDir, 'archive-lifecycle-input-fixtures'),
     )
     const finalized = await finalizeAndVerifyArchive(
       initialLaunch.page,
       seeded.missionId,
       passphrase,
     )
+    const reviewSelectedTime = finalized.mission.finish_time
+    const reviewSelectedTimeMs = Date.parse(reviewSelectedTime ?? '')
+    if (typeof reviewSelectedTime !== 'string'
+      || !Number.isFinite(reviewSelectedTimeMs)
+      || new Date(reviewSelectedTimeMs).toISOString() !== reviewSelectedTime) {
+      throw new Error('Packaged finalized mission did not retain one canonical finish-time fence.')
+    }
     recoveryCode = finalized.recoveryCode
     const firstReview = await runReadOnlyReview({
       page: initialLaunch.page,
@@ -102,6 +115,9 @@ async function main() {
       secrets: [passphrase, recoveryCode],
       reviewRoot: path.join(userDataDir, 'archive-review'),
       expectedBreadcrumbCount: seeded.seededPositionRows,
+      expectedObjectCount: seeded.seededReplayObjectRows,
+      expectedOutingFilterCount: seeded.seededOutingChoices,
+      selectedTime: reviewSelectedTime,
     })
     const interruption = await interruptRestoreAtDecrypt({
       launch: initialLaunch,
@@ -143,6 +159,9 @@ async function main() {
       secrets: [passphrase, recoveryCode],
       reviewRoot: path.join(userDataDir, 'archive-review'),
       expectedBreadcrumbCount: seeded.seededPositionRows,
+      expectedObjectCount: seeded.seededReplayObjectRows,
+      expectedOutingFilterCount: seeded.seededOutingChoices,
+      selectedTime: reviewSelectedTime,
     })
     const postCleanup = await assertPostCleanupState({
       page: restartedLaunch.page,
@@ -207,7 +226,9 @@ async function main() {
         createdStatus: seeded.createdStatus,
         finishedStatus: seeded.finishedStatus,
         finalizedStatus: finalized.mission.status,
+        seededOutingChoices: seeded.seededOutingChoices,
         seededPositionRows: seeded.seededPositionRows,
+        seededReplayObjectRows: seeded.seededReplayObjectRows,
       },
       archive: {
         archiveId: finalized.archive.id,
@@ -270,7 +291,7 @@ async function main() {
 }
 
 /** Creates a bounded mission and deterministic breadcrumb evidence through preload IPC. */
-async function seedAndFinishMission(page, seededPositionRows) {
+async function seedAndFinishMission(page, seededPositionRows, fixtureRoot) {
   const mission = await page.evaluate(async (missionName) => {
     const store = window.sartrackerElectron?.missionStore
     if (store === undefined) throw new Error('Mission-store preload bridge is unavailable.')
@@ -316,7 +337,12 @@ async function seedAndFinishMission(page, seededPositionRows) {
     }
   }
 
-  return page.evaluate(async ({ missionId, createdStatus, rowCount }) => {
+  const continuationEvidence = await seedReplayContinuationEvidence({
+    page,
+    missionId: mission.id,
+    fixtureRoot,
+  })
+  const finishedMission = await page.evaluate(async ({ missionId, createdStatus, rowCount }) => {
     const store = window.sartrackerElectron?.missionStore
     if (store === undefined) throw new Error('Mission-store preload bridge is unavailable.')
     const persistedCount = await store.countPositions(missionId)
@@ -338,6 +364,131 @@ async function seedAndFinishMission(page, seededPositionRows) {
     createdStatus: mission.status,
     rowCount: seededPositionRows,
   })
+  return { ...finishedMission, ...continuationEvidence }
+}
+
+/** Seeds real object and outing-filter continuation pages through the public preload bridge. */
+async function seedReplayContinuationEvidence(input) {
+  await mkdir(input.fixtureRoot, { recursive: true, mode: 0o700 })
+  const gpxPaths = await Promise.all(Array.from(
+    { length: REPLAY_OUTING_COUNT },
+    async (_unused, index) => {
+      const suffix = String(index + 1).padStart(3, '0')
+      const firstLat = (52.1 + index / 100_000).toFixed(6)
+      const secondLat = (52.1001 + index / 100_000).toFixed(6)
+      const filePath = path.join(input.fixtureRoot, `archive-smoke-${suffix}.gpx`)
+      const contents = `<gpx version="1.1" creator="sartracker-packaged-smoke"><trk><name>Archive smoke ${suffix}</name><trkseg><trkpt lat="${firstLat}" lon="-9.500000"/><trkpt lat="${secondLat}" lon="-9.500100"/></trkseg></trk></gpx>`
+      await writeFile(filePath, contents, { encoding: 'utf8', mode: 0o600 })
+      return filePath
+    },
+  ))
+  let seeded
+  try {
+    seeded = await input.page.evaluate(async (request) => {
+      const store = window.sartrackerElectron?.missionStore
+      if (store === undefined
+        || typeof store.upsertMarker !== 'function'
+        || typeof store.createOuting !== 'function'
+        || typeof store.endOuting !== 'function'
+        || typeof store.importGpxEvidencePaths !== 'function'
+        || typeof store.assignGpxImportToOuting !== 'function') {
+        throw new Error('Replay continuation preload bridge is unavailable.')
+      }
+      for (let index = 0; index < request.markerCount; index += 1) {
+        const suffix = String(index + 1).padStart(3, '0')
+        const marker = await store.upsertMarker({
+          id: `archive-smoke-marker-${suffix}`,
+          mission_id: request.missionId,
+          type: 'clue',
+          name: `Archive smoke marker ${suffix}`,
+          lat: 52.2 + index / 100_000,
+          lon: -9.6 - index / 100_000,
+          irish_grid_e: 500_000 + index,
+          irish_grid_n: 600_000 + index,
+          display_order: index,
+          updated_by: 'packaged-smoke',
+        })
+        if (marker?.id !== `archive-smoke-marker-${suffix}`
+          || marker.mission_id !== request.missionId) {
+          throw new Error('Packaged marker continuation seed returned an invalid result.')
+        }
+      }
+      const outings = []
+      const outingBaseMs = Date.parse('2026-08-29T08:00:00.000Z')
+      for (let index = 0; index < request.outingCount; index += 1) {
+        const suffix = String(index + 1).padStart(3, '0')
+        const startedAt = new Date(outingBaseMs + index * 2_000).toISOString()
+        const endedAt = new Date(outingBaseMs + index * 2_000 + 1_000).toISOString()
+        const outing = await store.createOuting({
+          mission_id: request.missionId,
+          label: `Archive smoke outing ${suffix}`,
+          started_at: startedAt,
+        })
+        const ended = await store.endOuting({
+          mission_id: request.missionId,
+          outing_id: outing.id,
+          ended_at: endedAt,
+        })
+        if (ended?.id !== outing.id || ended.ended_at !== endedAt) {
+          throw new Error('Packaged outing continuation seed returned an invalid result.')
+        }
+        outings.push(ended)
+      }
+      const imports = []
+      for (let offset = 0; offset < request.gpxPaths.length; offset += request.importBatchSize) {
+        const batch = await store.importGpxEvidencePaths({
+          missionId: request.missionId,
+          paths: request.gpxPaths.slice(offset, offset + request.importBatchSize),
+        })
+        if (!Array.isArray(batch?.imports) || !Array.isArray(batch.failures)
+          || batch.failures.length !== 0) {
+          throw new Error('Packaged GPX continuation seed did not import every source.')
+        }
+        imports.push(...batch.imports)
+      }
+      if (imports.length !== request.outingCount
+        || new Set(imports.map((entry) => entry?.id)).size !== request.outingCount) {
+        throw new Error('Packaged GPX continuation seed returned duplicate or missing imports.')
+      }
+      for (let index = 0; index < imports.length; index += 1) {
+        const assigned = await store.assignGpxImportToOuting({
+          import_id: imports[index].id,
+          outing_id: outings[index].id,
+          assigned_by: 'packaged-smoke',
+        })
+        if (assigned?.id !== imports[index].id
+          || assigned.outing_id !== outings[index].id) {
+          throw new Error('Packaged GPX outing assignment returned an invalid result.')
+        }
+      }
+      const [markers, retainedOutings] = await Promise.all([
+        store.listMarkers(request.missionId),
+        store.listOutings(request.missionId),
+      ])
+      if (!Array.isArray(markers) || markers.length !== request.markerCount
+        || !Array.isArray(retainedOutings) || retainedOutings.length !== request.outingCount) {
+        throw new Error('Packaged Replay continuation seed did not retain every live object.')
+      }
+      return {
+        seededReplayObjectRows: markers.length + retainedOutings.length,
+        seededOutingChoices: imports.length,
+      }
+    }, {
+      missionId: input.missionId,
+      markerCount: REPLAY_MARKER_COUNT,
+      outingCount: REPLAY_OUTING_COUNT,
+      importBatchSize: GPX_IMPORT_BATCH_SIZE,
+      gpxPaths,
+    })
+  } finally {
+    await rm(input.fixtureRoot, { recursive: true, force: true })
+  }
+  if (await countResidualEntries(input.fixtureRoot) !== 0
+    || seeded?.seededReplayObjectRows !== REPLAY_OBJECT_COUNT
+    || seeded?.seededOutingChoices !== REPLAY_OUTING_COUNT) {
+    throw new Error('Packaged Replay continuation seed did not close its exact fixture scope.')
+  }
+  return seeded
 }
 
 /** Finalizes through the independent verifier integrated into the public preload lifecycle. */
@@ -379,13 +530,21 @@ async function finalizeAndVerifyArchive(page, missionId, secret) {
     recoveryCode: issuance.recoveryCode,
   })
   const archive = finalized?.result?.archive
-  const mission = finalized?.result?.mission
-  if (mission?.id !== missionId || mission.status !== 'finalized'
+  const projectedMission = finalized?.result?.mission
+  if (projectedMission?.id !== missionId || projectedMission.status !== 'finalized'
     || archive?.mission_id !== missionId || archive.container_version !== 2
     || archive.status !== 'verified' || archive.availability !== 'present'
     || typeof archive.ciphertext_sha256 !== 'string'
     || !Number.isSafeInteger(archive.size_bytes) || archive.size_bytes < 1) {
     throw new Error('Packaged finalization did not return one verified encrypted archive.')
+  }
+  const persistedMission = await page.evaluate(async (selectedMissionId) => {
+    const store = window.sartrackerElectron?.missionStore
+    if (store === undefined) throw new Error('Mission-store preload bridge is unavailable.')
+    return store.getMission(selectedMissionId)
+  }, missionId)
+  if (persistedMission?.id !== missionId || persistedMission.status !== 'finalized') {
+    throw new Error('Packaged finalization did not persist one finalized mission.')
   }
   const createProgressPhases = finalized.progressEntries
     .filter((entry) => entry.kind === 'create')
@@ -394,7 +553,7 @@ async function finalizeAndVerifyArchive(page, missionId, secret) {
     .filter((entry) => entry.kind === 'verify')
     .map((entry) => entry.phase)
   return {
-    mission,
+    mission: persistedMission,
     archive,
     recoveryCode: issuance.recoveryCode,
     createProgressPhases,
@@ -424,6 +583,7 @@ async function runReadOnlyReview(input) {
     privacyCanary: MISSION_NAME,
     secrets: input.secrets,
   })
+  const selectedTime = input.selectedTime
   let review
   let closed = false
   try {
@@ -442,18 +602,117 @@ async function runReadOnlyReview(input) {
           auditLimit: 5_001,
         },
       })
-      const replayResult = await archiveReview.read({
+      const replayQuery = {
+        missionId: request.missionId,
+        selectedTime: request.selectedTime,
+        timezone: 'Europe/Dublin',
+        trackLimit: 1_000,
+        objectLimit: 100,
+      }
+      const initialReplayResult = await archiveReview.read({
         sessionId: request.sessionId,
         requestId: request.replayRequestId,
         method: 'readMissionReplay',
-        input: {
-          missionId: request.missionId,
-          selectedTime: request.selectedTime,
-          timezone: 'Europe/Dublin',
-          trackLimit: 1_000,
-          objectLimit: 100,
-        },
+        input: replayQuery,
       })
+      if (!Number.isSafeInteger(initialReplayResult?.totalTrackCount)
+        || initialReplayResult.totalTrackCount < 0
+        || !Number.isSafeInteger(initialReplayResult?.totalObjectCount)
+        || initialReplayResult.totalObjectCount < 0
+        || !Number.isSafeInteger(initialReplayResult?.availableOutingTotalCount)
+        || initialReplayResult.availableOutingTotalCount < 0) {
+        throw new Error('Packaged Replay initial declared totals are invalid.')
+      }
+      const maximumTrackPages = initialReplayResult.totalTrackCount + 1
+      const maximumObjectPages = initialReplayResult.totalObjectCount + 1
+      const maximumOutingFilterPages = initialReplayResult.availableOutingTotalCount + 1
+      const trackPages = []
+      const seenTrackCursors = new Set()
+      let trackCursor = initialReplayResult?.nextCursor
+      while (trackCursor !== null) {
+        if (typeof trackCursor !== 'string' || trackCursor.length < 1
+          || seenTrackCursors.has(trackCursor) || trackPages.length >= maximumTrackPages) {
+          throw new Error('Packaged Replay track paging is cyclic or unbounded.')
+        }
+        seenTrackCursors.add(trackCursor)
+        const pageRequest = { ...replayQuery, cursor: trackCursor }
+        const result = await archiveReview.read({
+          sessionId: request.sessionId,
+          requestId: crypto.randomUUID(),
+          method: 'readMissionReplayTrackChunk',
+          input: pageRequest,
+        })
+        trackPages.push({ request: pageRequest, result })
+        if (!Array.isArray(result?.tracks)
+          || (result.tracks.length === 0 && result.nextCursor !== null)) {
+          throw new Error('Packaged Replay track paging returned an empty nonterminal page.')
+        }
+        trackCursor = result.nextCursor
+      }
+      const objectPages = []
+      const seenObjectCursors = new Set()
+      let objectCursor = initialReplayResult?.nextObjectCursor
+      while (objectCursor !== null) {
+        if (typeof objectCursor !== 'string' || objectCursor.length < 1
+          || seenObjectCursors.has(objectCursor) || objectPages.length >= maximumObjectPages) {
+          throw new Error('Packaged Replay object paging is cyclic or unbounded.')
+        }
+        seenObjectCursors.add(objectCursor)
+        const pageRequest = {
+          ...replayQuery,
+          objectCursor,
+          replayGeneration: initialReplayResult.replayGeneration,
+        }
+        const result = await archiveReview.read({
+          sessionId: request.sessionId,
+          requestId: crypto.randomUUID(),
+          method: 'readMissionReplayObjectChunk',
+          input: pageRequest,
+        })
+        objectPages.push({ request: pageRequest, result })
+        if (!Array.isArray(result?.objects)
+          || (result.objects.length === 0 && result.nextObjectCursor !== null)) {
+          throw new Error('Packaged Replay object paging returned an empty nonterminal page.')
+        }
+        objectCursor = result.nextObjectCursor
+      }
+      const outingFilterPages = []
+      const seenOutingFilterCursors = new Set()
+      let outingFilterCursor = initialReplayResult?.availableOutingNextCursor
+      while (outingFilterCursor !== null) {
+        if (typeof outingFilterCursor !== 'string' || outingFilterCursor.length < 1
+          || seenOutingFilterCursors.has(outingFilterCursor)
+          || outingFilterPages.length >= maximumOutingFilterPages) {
+          throw new Error('Packaged Replay outing-filter paging is cyclic or unbounded.')
+        }
+        seenOutingFilterCursors.add(outingFilterCursor)
+        const pageRequest = {
+          ...replayQuery,
+          filterKind: 'outing',
+          filterCursor: outingFilterCursor,
+          filterLimit: 100,
+          filterSearch: '',
+        }
+        const result = await archiveReview.read({
+          sessionId: request.sessionId,
+          requestId: crypto.randomUUID(),
+          method: 'readMissionReplayFilterPage',
+          input: pageRequest,
+        })
+        outingFilterPages.push({ request: pageRequest, result })
+        if (!Array.isArray(result?.entries)
+          || (result.entries.length === 0 && result.nextCursor !== null)) {
+          throw new Error('Packaged Replay outing-filter paging returned an empty nonterminal page.')
+        }
+        outingFilterCursor = result.nextCursor
+      }
+      const replayResult = {
+        query: replayQuery,
+        initial: initialReplayResult,
+        trackPages,
+        objectPages,
+        outingFilterPages,
+      }
       const missions = await archiveReview.read({
         sessionId: request.sessionId,
         requestId: request.listRequestId,
@@ -488,10 +747,8 @@ async function runReadOnlyReview(input) {
     }, {
       sessionId: opened.sessionId,
       missionId: input.missionId,
-      selectedTime: new Date(
-        Date.parse('2026-08-29T08:00:01.000Z')
-          + (input.expectedBreadcrumbCount + 60) * 1_000,
-      ).toISOString(),
+      selectedTime,
+      expectedBreadcrumbCount: input.expectedBreadcrumbCount,
       readRequestId: randomUUID(),
       replayRequestId: randomUUID(),
       listRequestId: randomUUID(),
@@ -512,11 +769,18 @@ async function runReadOnlyReview(input) {
     && review.missions.length === 1
     && review.missions[0]?.id === input.missionId
   const breadcrumbCount = review?.reviewResult?.breadcrumbCount
-  const contentSha256 = sha256Text(JSON.stringify({
+  const closedContent = projectArchiveLifecycleSmokeClosedReviewSemantic({
     missions: review?.missions,
     review: review?.reviewResult,
     replay: review?.replayResult,
-  }))
+  }, {
+    missionId: input.missionId,
+    selectedTime,
+    expectedBreadcrumbCount: input.expectedBreadcrumbCount,
+    expectedObjectCount: input.expectedObjectCount,
+    expectedOutingFilterCount: input.expectedOutingFilterCount,
+  })
+  const contentSha256 = sha256Text(JSON.stringify(closedContent))
   if (opened?.archiveId !== input.archive.id
     || opened?.missionId !== input.missionId
     || opened?.immutable !== true || opened?.verified !== true
@@ -529,7 +793,10 @@ async function runReadOnlyReview(input) {
     || openInspection.privacyCanaryDetected !== true
     || openInspection.exactSecretMatches !== 0
     || residualEntriesAfterClose !== 0
-    || breadcrumbCount !== input.expectedBreadcrumbCount) {
+    || breadcrumbCount !== input.expectedBreadcrumbCount
+    || closedContent.replayCounts.trackRows !== input.expectedBreadcrumbCount
+    || closedContent.replayCounts.objectRows !== input.expectedObjectCount
+    || closedContent.replayCounts.outingFilterEntries !== input.expectedOutingFilterCount) {
     throw new Error('Packaged archive review did not prove the closed read-only lifecycle.')
   }
   return {
@@ -541,6 +808,9 @@ async function runReadOnlyReview(input) {
     archiveIdMatched: true,
     readMissionIdMatched: true,
     breadcrumbCount,
+    replayObjectCount: closedContent.replayCounts.objectRows,
+    replayOutingFilterCount: closedContent.replayCounts.outingFilterEntries,
+    replayTrackCount: closedContent.replayCounts.trackRows,
     openResidualFileCount: openInspection.regularFileCount,
     openDirectoriesOwnerOnly: openInspection.directoriesOwnerOnly,
     openFilesOwnerOnly: openInspection.filesOwnerOnly,
@@ -565,7 +835,7 @@ async function interruptRestoreAtDecrypt(input) {
     settleTrigger = resolve
     rejectTrigger = reject
   })
-  await input.page.exposeFunction(bindingName, async (progress) => {
+  await input.launch.page.exposeFunction(bindingName, async (progress) => {
     if (progress?.operationId !== operationId || progress.phase !== 'decrypt') return false
     if (inspectionStarted) return false
     inspectionStarted = true
@@ -598,7 +868,7 @@ async function interruptRestoreAtDecrypt(input) {
       return false
     }
   })
-  await input.page.evaluate((request) => {
+  await input.launch.page.evaluate((request) => {
     const archiveReview = window.sartrackerElectron?.archiveReview
     const callback = window[request.bindingName]
     if (archiveReview === undefined || typeof callback !== 'function') {
@@ -1020,6 +1290,7 @@ async function countArchiveLifecycleResidualEntries(userDataDir) {
     path.join(userDataDir, 'archives', '.staging'),
     path.join(userDataDir, 'archives', '.verification'),
     path.join(userDataDir, 'archive-review'),
+    path.join(userDataDir, 'archive-lifecycle-input-fixtures'),
   ]
   const counts = await Promise.all(roots.map((root) => countResidualEntries(root)))
   return counts.reduce((total, count) => total + count, 0)

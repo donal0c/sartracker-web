@@ -12,14 +12,17 @@ import {
 import os from 'node:os'
 import path from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   assertFieldScaleFixture,
   deriveLivenessEvidence,
   parseTerminalCleanupJournal,
+  readLegacyArchiveMaintenanceProgress,
+  runWithHeartbeatMonitor,
   scanEvidenceRoots,
   stageClosedFixture,
+  waitForMaintenanceSettlement,
   writeQualificationEvidence,
 } from '../../scripts/breadcrumb-pr6-qualification.mjs'
 
@@ -152,6 +155,149 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(() => deriveLivenessEvidence(measurements)).toThrow('200 ms')
   })
 
+  it('waits beyond thirty minutes while exact durable maintenance cursors advance', async () => {
+    let currentTimeMs = 0
+    let cursor = 0
+
+    const settled = await waitForMaintenanceSettlement('/unused.sqlite', {
+      now: () => currentTimeMs,
+      pollIntervalMs: 60_000,
+      readState: () => maintenanceState(cursor, 31),
+      wait: async () => {
+        currentTimeMs += 60_000
+        cursor += 1
+      },
+    })
+
+    expect(currentTimeMs).toBe(31 * 60_000)
+    expect(settled.settled).toBe(true)
+  })
+
+  it('fails after 120 seconds without semantic progress and ignores timestamp noise', async () => {
+    let currentTimeMs = 0
+    let timestampSequence = 0
+
+    await expect(waitForMaintenanceSettlement('/unused.sqlite', {
+      now: () => currentTimeMs,
+      pollIntervalMs: 60_000,
+      readState: () => ({
+        ...maintenanceState(4, 10),
+        observedAt: `2026-08-30T17:00:${String(timestampSequence++).padStart(2, '0')}.000Z`,
+      }),
+      wait: async () => { currentTimeMs += 60_000 },
+    })).rejects.toThrow(/120 seconds|progress/iu)
+
+    expect(currentTimeMs).toBe(120_000)
+  })
+
+  it('fails closed when the observation gap reaches 120 seconds before later progress', async () => {
+    let currentTimeMs = 0
+    let cursor = 4
+
+    await expect(waitForMaintenanceSettlement('/unused.sqlite', {
+      now: () => currentTimeMs,
+      pollIntervalMs: 1_000,
+      readState: () => maintenanceState(cursor, 6),
+      wait: async () => {
+        currentTimeMs += 120_000
+        cursor += 1
+      },
+    })).rejects.toThrow(/120 seconds|progress/iu)
+  })
+
+  it('fails immediately for maintenance failures, cursor regression, or a cyclic state', async () => {
+    const wait = vi.fn(async () => undefined)
+    await expect(waitForMaintenanceSettlement('/unused.sqlite', {
+      readState: () => maintenanceState(1, 10, ['legacy_evidence_backfill_failure']),
+      wait,
+    })).rejects.toThrow(/failure/iu)
+    expect(wait).not.toHaveBeenCalled()
+
+    let regressionIndex = 0
+    const regressionStates = [1, 3, 2]
+    await expect(waitForMaintenanceSettlement('/unused.sqlite', {
+      now: () => regressionIndex * 1_000,
+      pollIntervalMs: 1,
+      readState: () => maintenanceState(regressionStates[regressionIndex] ?? 2, 10),
+      wait: async () => { regressionIndex += 1 },
+    })).rejects.toThrow(/regress/iu)
+
+    let cycleIndex = 0
+    const cycleStates = [1, 2, 1]
+    await expect(waitForMaintenanceSettlement('/unused.sqlite', {
+      now: () => cycleIndex * 1_000,
+      pollIntervalMs: 1,
+      readState: () => maintenanceState(cycleStates[cycleIndex] ?? 1, 10),
+      wait: async () => { cycleIndex += 1 },
+    })).rejects.toThrow(/cyclic|repeated/iu)
+  })
+
+  it('stops the migration heartbeat exactly once when the owned operation fails', async () => {
+    const stop = vi.fn(() => 51)
+
+    await expect(runWithHeartbeatMonitor(
+      async () => { throw new Error('maintenance failed') },
+      () => ({ stop }),
+    )).rejects.toThrow('maintenance failed')
+
+    expect(stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns the migration heartbeat result while finally remains its sole stop owner', async () => {
+    const stop = vi.fn(() => 51)
+
+    await expect(runWithHeartbeatMonitor(
+      async () => 'settled',
+      () => ({ stop }),
+    )).resolves.toEqual({
+      result: 'settled',
+      heartbeatMaxGapMs: 51,
+    })
+
+    expect(stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads legacy archive progress only from its fixed metadata cursor and target', () => {
+    const preparedSql: string[] = []
+    const metadata = new Map<string, string>()
+    const database = {
+      prepare(sql: string) {
+        preparedSql.push(sql)
+        if (!/FROM metadata/iu.test(sql) || /FROM mission_events/iu.test(sql)) {
+          throw new Error('Qualifier attempted to scan mission evidence rows.')
+        }
+        return {
+          get(key: string) {
+            const value = metadata.get(key)
+            return value === undefined ? undefined : { value }
+          },
+        }
+      },
+    }
+
+    expect(readLegacyArchiveMaintenanceProgress(database)).toEqual({
+      cursor: null,
+      target: null,
+      pending: 1,
+    })
+
+    metadata.set('legacy_archive_registry_backfill_cursor', '1000')
+    metadata.set('legacy_archive_registry_backfill_target', '1002')
+    expect(readLegacyArchiveMaintenanceProgress(database)).toEqual({
+      cursor: '1000',
+      target: '1002',
+      pending: 1,
+    })
+
+    metadata.set('legacy_archive_registry_backfill_cursor', '1002')
+    expect(readLegacyArchiveMaintenanceProgress(database)).toEqual({
+      cursor: '1002',
+      target: '1002',
+      pending: 0,
+    })
+    expect(preparedSql.every((sql) => !/FROM mission_events/iu.test(sql))).toBe(true)
+  })
+
   it('scans exact secrets and privacy canaries across stream chunk boundaries without paths', async () => {
     const root = await createTemporaryRoot()
     const reviewRoot = path.join(root, 'review')
@@ -213,5 +359,32 @@ function phaseEvidence(heartbeatMaxGapMs: number, currentPositionMaxCadenceMs: n
     currentPositionMaxCadenceMs,
     currentWrites: 2,
     visibleWrites: 2,
+  }
+}
+
+/** Builds one exact semantic maintenance cursor snapshot without timestamp noise. */
+function maintenanceState(cursor: number, target: number, failureMarkers: string[] = []) {
+  return {
+    schemaVersion: 13,
+    failureMarkers,
+    settled: cursor === target,
+    progress: {
+      schemaVersion: 13,
+      objectCursors: [],
+      eventCursors: [{ key: 'mission_events', cursor: String(cursor), target: String(target) }],
+      safeGpx: { cursor: '0', target: '0' },
+      unsafeGpx: {
+        lowCursor: '1',
+        lowTarget: '1',
+        highCursor: '9007199254740991',
+        highTarget: '9007199254740991',
+      },
+      receiptPending: 0,
+      archiveCursor: '0',
+      archiveTarget: '0',
+      legacyArchivePending: 0,
+      unknownArchiveCustody: 0,
+      unsettledCustody: 0,
+    },
   }
 }

@@ -21,6 +21,7 @@ const {
   LEGACY_ARCHIVE_BACKFILL_LIMIT,
   backfillLegacyArchiveRegistry,
   createArchiveRegistry,
+  readLegacyArchiveRegistryBackfillPending,
 } = require('../../electron/archive-registry.cjs') as ArchiveRegistryModule
 const { inspectArchiveCustodyFile } = require('../../electron/archive-custody-file.cjs') as {
   readonly inspectArchiveCustodyFile: (input: {
@@ -143,6 +144,9 @@ type ArchiveRegistryModule = {
     db: DatabaseConnection,
     input: { readonly archiveDirectory: string; readonly limit?: number },
   ) => { readonly processed: number; readonly remaining: number }
+  readonly readLegacyArchiveRegistryBackfillPending: (
+    db: DatabaseConnection,
+  ) => number
   readonly createArchiveRegistry: (input: {
     readonly db: DatabaseConnection
     readonly archiveDirectory: string
@@ -662,6 +666,100 @@ describe('schema v13 archive lifecycle migration', () => {
 })
 
 describe('legacy v1 registry backfill', () => {
+  it('determines pending work from bounded metadata without scanning mission evidence', () => {
+    const preparedSql: string[] = []
+    const database = {
+      prepare(sql: string) {
+        preparedSql.push(sql)
+        if (/FROM metadata/iu.test(sql)) {
+          return {
+            get(key: unknown) {
+              if (key === 'legacy_archive_registry_backfill_cursor') return undefined
+              if (key === 'legacy_archive_registry_backfill_target') return undefined
+              throw new Error('Unexpected metadata key')
+            },
+          }
+        }
+        throw new Error('Pending check attempted to scan mission evidence rows.')
+      },
+    } as unknown as DatabaseConnection
+
+    expect(readLegacyArchiveRegistryBackfillPending(database)).toBe(1)
+    expect(preparedSql).toHaveLength(2)
+    expect(preparedSql.every((sql) => !/FROM mission_events/iu.test(sql))).toBe(true)
+  })
+
+  it('fails closed on non-canonical or regressed durable scan boundaries', async () => {
+    const fixture = await createFixture()
+    try {
+      fixture.db.prepare(`INSERT INTO metadata (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+        .run('legacy_archive_registry_backfill_cursor', '01')
+      fixture.db.prepare(`INSERT INTO metadata (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+        .run('legacy_archive_registry_backfill_target', '1')
+
+      expect(readLegacyArchiveRegistryBackfillPending(fixture.db)).toBe(1)
+      expect(() => backfillLegacyArchiveRegistry(fixture.db, {
+        archiveDirectory: fixture.archiveDirectory,
+      })).toThrowError(expect.objectContaining({ code: 'ARCHIVE_REGISTRY_INVALID_STATE' }))
+
+      fixture.db.prepare(`UPDATE metadata SET value = '2'
+        WHERE key = 'legacy_archive_registry_backfill_cursor'`).run()
+      expect(readLegacyArchiveRegistryBackfillPending(fixture.db)).toBe(1)
+      expect(() => backfillLegacyArchiveRegistry(fixture.db, {
+        archiveDirectory: fixture.archiveDirectory,
+      })).toThrowError(expect.objectContaining({ code: 'ARCHIVE_REGISTRY_INVALID_STATE' }))
+    } finally {
+      fixture.close()
+    }
+  })
+
+  it('advances a fixed raw-row scan cursor without starving behind unrelated history', async () => {
+    const fixture = await createFixture()
+    try {
+      for (let index = 0; index < 1_001; index += 1) {
+        insertMissionEvent(fixture.db, {
+          missionId: 'bounded-scan-mission',
+          eventId: `bounded-scan-unrelated-${index}`,
+          eventType: 'mission_note_updated',
+          timestamp: '2026-08-29T10:00:00.000Z',
+          details: { sequence: index },
+        })
+      }
+      const archivePath = path.join(fixture.archiveDirectory, 'bounded-scan-legacy.zip')
+      insertMissionEvent(fixture.db, {
+        missionId: 'bounded-scan-mission',
+        eventId: 'bounded-scan-legacy-archive',
+        eventType: 'mission_archived',
+        timestamp: '2026-08-29T11:10:00.000Z',
+        details: { archive_path: archivePath, archive_kind: 'direct' },
+      })
+      fixture.db.prepare(`DELETE FROM metadata WHERE key IN (
+        'legacy_archive_registry_backfill_cursor',
+        'legacy_archive_registry_backfill_target'
+      )`).run()
+
+      expect(backfillLegacyArchiveRegistry(fixture.db, {
+        archiveDirectory: fixture.archiveDirectory,
+      })).toEqual({ processed: 0, quarantined: 0, remaining: 1 })
+      expect(fixture.db.prepare(`SELECT value FROM metadata
+        WHERE key = 'legacy_archive_registry_backfill_cursor'`).get())
+        .toEqual({ value: '1000' })
+      expect(fixture.db.prepare(`SELECT value FROM metadata
+        WHERE key = 'legacy_archive_registry_backfill_target'`).get())
+        .toEqual({ value: '1002' })
+
+      expect(backfillLegacyArchiveRegistry(fixture.db, {
+        archiveDirectory: fixture.archiveDirectory,
+      })).toEqual({ processed: 1, quarantined: 0, remaining: 0 })
+      expect(fixture.db.prepare('SELECT COUNT(*) AS count FROM mission_archives').get())
+        .toEqual({ count: 1 })
+    } finally {
+      fixture.close()
+    }
+  })
+
   it('pages archive events rather than starving behind unrelated mission history', async () => {
     const fixture = await createFixture()
     try {
@@ -682,8 +780,10 @@ describe('legacy v1 registry backfill', () => {
         timestamp: '2026-08-29T11:10:00.000Z',
         details: { archive_path: archivePath, archive_kind: 'direct' },
       })
-      fixture.db.prepare("DELETE FROM metadata WHERE key = 'legacy_archive_registry_backfill_cursor'")
-        .run()
+      fixture.db.prepare(`DELETE FROM metadata WHERE key IN (
+        'legacy_archive_registry_backfill_cursor',
+        'legacy_archive_registry_backfill_target'
+      )`).run()
 
       expect(backfillLegacyArchiveRegistry(fixture.db, {
         archiveDirectory: fixture.archiveDirectory,

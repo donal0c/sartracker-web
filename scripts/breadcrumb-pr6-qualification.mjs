@@ -60,7 +60,8 @@ const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
 const REVIEW_DIRECTORY_NAME = 'archive-review'
 const MINIMUM_FREE_BYTES = 20 * 1024 * 1024 * 1024
-const MAINTENANCE_TIMEOUT_MS = 30 * 60 * 1_000
+const MAINTENANCE_NO_PROGRESS_TIMEOUT_MS = 120 * 1_000
+const MAINTENANCE_POLL_INTERVAL_MS = 1_000
 const HEARTBEAT_INTERVAL_MS = 50
 const SCAN_CHUNK_BYTES = 64 * 1024
 const QUALIFICATION_PHASES = Object.freeze(['create', 'verify', 'restore', 'cleanup'])
@@ -115,18 +116,21 @@ async function main() {
     })
     assertFieldScaleFixture(stagedFixture)
 
-    const migrationHeartbeat = startHeartbeatMonitor()
     const migrationStartedAt = performance.now()
-    store = createElectronMissionStore({ userDataPath: profileRoot })
-    storeOpen = true
-    const info = await store.info()
-    if (info.database_path !== copiedDatabasePath) {
-      throw new Error('The mission store did not open the disposable fixture copy.')
-    }
-    const maintenance = await waitForMaintenanceSettlement(copiedDatabasePath)
-    await delay(HEARTBEAT_INTERVAL_MS + 10)
+    const migrationRun = await runWithHeartbeatMonitor(async () => {
+      store = createElectronMissionStore({ userDataPath: profileRoot })
+      storeOpen = true
+      const info = await store.info()
+      if (info.database_path !== copiedDatabasePath) {
+        throw new Error('The mission store did not open the disposable fixture copy.')
+      }
+      const settledMaintenance = await waitForMaintenanceSettlement(copiedDatabasePath)
+      await delay(HEARTBEAT_INTERVAL_MS + 10)
+      return settledMaintenance
+    })
+    const maintenance = migrationRun.result
+    const migrationHeartbeatMaxGapMs = migrationRun.heartbeatMaxGapMs
     const migrationDurationMs = performance.now() - migrationStartedAt
-    const migrationHeartbeatMaxGapMs = migrationHeartbeat.stop()
     if (migrationHeartbeatMaxGapMs >= MAX_MAIN_CADENCE_MS) {
       throw new Error('Schema migration exceeded the immutable 200 ms heartbeat gate.')
     }
@@ -780,17 +784,57 @@ async function inspectClosedSidecar(sidecarPath) {
 }
 
 /** Waits for every v13 bounded migration/backfill owner to settle durably. */
-async function waitForMaintenanceSettlement(databasePath) {
-  const deadline = Date.now() + MAINTENANCE_TIMEOUT_MS
-  while (Date.now() < deadline) {
-    const state = readMaintenanceState(databasePath)
+export async function waitForMaintenanceSettlement(databasePath, options = {}) {
+  const readState = options.readState ?? readMaintenanceState
+  const readNow = options.now ?? (() => performance.now())
+  const wait = options.wait ?? delay
+  const pollIntervalMs = options.pollIntervalMs ?? MAINTENANCE_POLL_INTERVAL_MS
+  if (typeof readState !== 'function' || typeof readNow !== 'function'
+    || typeof wait !== 'function' || !Number.isFinite(pollIntervalMs)
+    || pollIntervalMs < 1 || pollIntervalMs > MAINTENANCE_NO_PROGRESS_TIMEOUT_MS) {
+    throw new Error('Schema v13 maintenance watchdog configuration is invalid.')
+  }
+  const seenTokens = new Set()
+  let priorState = null
+  let priorToken = null
+  let lastProgressAt = readNow()
+  if (!Number.isFinite(lastProgressAt)) {
+    throw new Error('Schema v13 maintenance watchdog clock is invalid.')
+  }
+  while (true) {
+    const state = readState(databasePath)
     if (state.failureMarkers.length > 0) {
       throw new Error('A durable migration or archive recovery failure marker is present.')
     }
+    const observedAt = readNow()
+    if (!Number.isFinite(observedAt) || observedAt < lastProgressAt) {
+      throw new Error('Schema v13 maintenance watchdog clock is invalid.')
+    }
+    if (priorToken !== null
+      && observedAt - lastProgressAt >= MAINTENANCE_NO_PROGRESS_TIMEOUT_MS) {
+      throw new Error(
+        'Schema v13 maintenance made no durable semantic progress for 120 seconds.',
+      )
+    }
+    const token = maintenanceProgressToken(state)
+    if (priorToken === null) {
+      seenTokens.add(token)
+      priorState = state
+      priorToken = token
+      lastProgressAt = observedAt
+    } else if (token !== priorToken) {
+      if (seenTokens.has(token)) {
+        throw new Error('Schema v13 maintenance entered a repeated cyclic progress state.')
+      }
+      assertMaintenanceProgressDidNotRegress(priorState.progress, state.progress)
+      seenTokens.add(token)
+      priorState = state
+      priorToken = token
+      lastProgressAt = observedAt
+    }
     if (state.settled) return state
-    await delay(HEARTBEAT_INTERVAL_MS)
+    await wait(pollIntervalMs)
   }
-  throw new Error('Schema v13 maintenance did not settle within the fixed qualification deadline.')
 }
 
 /** Reads one closed maintenance snapshot through a separate query-only connection. */
@@ -798,31 +842,39 @@ function readMaintenanceState(databasePath) {
   return withReadonlyDatabase(databasePath, (db) => {
     const schemaVersion = Number(db.prepare(`SELECT value FROM metadata
       WHERE key = 'schema_version'`).get()?.value ?? 0)
-    const objectPending = Number(db.prepare(`SELECT COUNT(*) AS count
-      FROM legacy_mission_object_backfill_state
-      WHERE scan_target_id IS NOT NULL
-        AND (scanned_through_id IS NULL OR scanned_through_id < scan_target_id)`).get().count)
-    const eventPending = Number(db.prepare(`SELECT COUNT(*) AS count
-      FROM legacy_event_provenance_backfill_state
-      WHERE scan_target_id IS NOT NULL AND (scanned_through_id IS NULL
-        OR CAST(scanned_through_id AS INTEGER) < CAST(scan_target_id AS INTEGER))`).get().count)
-    const safeGpxPending = Number(db.prepare(`SELECT CASE WHEN
-        scanned_through_rowid < scan_target_rowid THEN 1 ELSE 0 END AS pending
-      FROM legacy_gpx_backfill_state WHERE singleton = 1`).get()?.pending ?? 1)
-    const unsafeGpxPending = Number(db.prepare(`SELECT CASE WHEN
-        low_scanned_through_rowid > low_target_rowid
-        OR high_scanned_through_rowid < high_target_rowid THEN 1 ELSE 0 END AS pending
-      FROM legacy_gpx_rowid_scan_state WHERE singleton = 1`).get()?.pending ?? 1)
+    const objectCursors = db.prepare(`SELECT object_type AS key,
+        scanned_through_id AS cursor, scan_target_id AS target
+      FROM legacy_mission_object_backfill_state ORDER BY object_type ASC`).all()
+    const eventCursors = db.prepare(`SELECT table_name AS key,
+        CAST(scanned_through_id AS TEXT) AS cursor,
+        CAST(scan_target_id AS TEXT) AS target
+      FROM legacy_event_provenance_backfill_state ORDER BY table_name ASC`).all()
+    const safeGpxRow = db.prepare(`SELECT scanned_through_rowid, scan_target_rowid
+      FROM legacy_gpx_backfill_state WHERE singleton = 1`).get()
+    const unsafeGpxRow = db.prepare(`SELECT low_scanned_through_rowid, low_target_rowid,
+        high_scanned_through_rowid, high_target_rowid
+      FROM legacy_gpx_rowid_scan_state WHERE singleton = 1`).get()
+    const safeGpx = {
+      cursor: String(safeGpxRow?.scanned_through_rowid ?? ''),
+      target: String(safeGpxRow?.scan_target_rowid ?? ''),
+    }
+    const unsafeGpx = {
+      lowCursor: String(unsafeGpxRow?.low_scanned_through_rowid ?? ''),
+      lowTarget: String(unsafeGpxRow?.low_target_rowid ?? ''),
+      highCursor: String(unsafeGpxRow?.high_scanned_through_rowid ?? ''),
+      highTarget: String(unsafeGpxRow?.high_target_rowid ?? ''),
+    }
+    const objectPending = objectCursors.filter((row) => row.target !== null
+      && (row.cursor === null || row.cursor < row.target)).length
+    const eventPending = eventCursors.filter((row) => row.target !== null
+      && (row.cursor === null || BigInt(row.cursor) < BigInt(row.target))).length
+    const safeGpxPending = integerText(safeGpx.cursor) < integerText(safeGpx.target) ? 1 : 0
+    const unsafeGpxPending = integerText(unsafeGpx.lowCursor)
+        > integerText(unsafeGpx.lowTarget)
+      || integerText(unsafeGpx.highCursor) < integerText(unsafeGpx.highTarget) ? 1 : 0
     const receiptPending = Number(db.prepare(`SELECT COUNT(*) AS count
       FROM gpx_import_source_receipts WHERE status IN ('pending', 'retained')`).get().count)
-    const archiveCursor = Number(db.prepare(`SELECT value FROM metadata
-      WHERE key = 'legacy_archive_registry_backfill_cursor'`).get()?.value ?? 0)
-    const legacyArchivePending = Number.isSafeInteger(archiveCursor) && archiveCursor >= 0
-      ? Number(db.prepare(`SELECT COUNT(*) AS count FROM mission_events
-        WHERE rowid > ? AND event_type IN (
-          'mission_archived', 'mission_archive_succeeded'
-        )`).get(archiveCursor).count)
-      : 1
+    const archiveProgress = readLegacyArchiveMaintenanceProgress(db)
     const unknownArchiveCustody = Number(db.prepare(`SELECT COUNT(*) AS count
       FROM mission_archives WHERE availability = 'unknown'`).get().count)
     const unsettledCustody = Number(db.prepare(`SELECT COUNT(*) AS count
@@ -830,9 +882,23 @@ function readMaintenanceState(databasePath) {
     const failureMarkers = db.prepare(`SELECT key FROM metadata
       WHERE key IN (${FAILURE_METADATA_KEYS.map(() => '?').join(', ')})
       ORDER BY key ASC`).all(...FAILURE_METADATA_KEYS).map((row) => row.key)
+    const progress = Object.freeze({
+      schemaVersion,
+      objectCursors: Object.freeze(objectCursors.map((row) => Object.freeze({ ...row }))),
+      eventCursors: Object.freeze(eventCursors.map((row) => Object.freeze({ ...row }))),
+      safeGpx: Object.freeze(safeGpx),
+      unsafeGpx: Object.freeze(unsafeGpx),
+      receiptPending,
+      archiveCursor: archiveProgress.cursor,
+      archiveTarget: archiveProgress.target,
+      legacyArchivePending: archiveProgress.pending,
+      unknownArchiveCustody,
+      unsettledCustody,
+    })
     return Object.freeze({
       schemaVersion,
       failureMarkers: Object.freeze(failureMarkers),
+      progress,
       settled: schemaVersion === 13
         && objectPending === 0
         && eventPending === 0
@@ -844,6 +910,167 @@ function readMaintenanceState(databasePath) {
         && unsettledCustody === 0,
     })
   })
+}
+
+/** Reads only the fixed legacy archive metadata bounds, never mission evidence rows. */
+export function readLegacyArchiveMaintenanceProgress(db) {
+  if (db === null || typeof db !== 'object' || typeof db.prepare !== 'function') {
+    throw new Error('Schema v13 legacy archive maintenance database is invalid.')
+  }
+  const statement = db.prepare('SELECT value FROM metadata WHERE key = ?')
+  const cursor = readOptionalMaintenanceInteger(
+    statement.get('legacy_archive_registry_backfill_cursor'),
+  )
+  const target = readOptionalMaintenanceInteger(
+    statement.get('legacy_archive_registry_backfill_target'),
+  )
+  if (cursor === null || target === null) {
+    return Object.freeze({ cursor: null, target: null, pending: 1 })
+  }
+  if (integerText(cursor) > integerText(target)) {
+    throw new Error('Schema v13 legacy archive maintenance bounds are invalid.')
+  }
+  return Object.freeze({
+    cursor,
+    target,
+    pending: cursor === target ? 0 : 1,
+  })
+}
+
+/** Reads one optional canonical non-negative integer from a metadata row. */
+function readOptionalMaintenanceInteger(row) {
+  if (row === undefined) return null
+  if (row === null || typeof row !== 'object' || typeof row.value !== 'string'
+    || !/^(?:0|[1-9][0-9]*)$/u.test(row.value)) {
+    throw new Error('Schema v13 maintenance progress cursor is invalid.')
+  }
+  return row.value
+}
+
+/** Returns one exact semantic token without clocks, paths or operational noise. */
+function maintenanceProgressToken(state) {
+  if (state === null || typeof state !== 'object' || Array.isArray(state)
+    || state.progress === null || typeof state.progress !== 'object'
+    || Array.isArray(state.progress)) {
+    throw new Error('Schema v13 maintenance progress state is invalid.')
+  }
+  return canonicalJson(state.progress)
+}
+
+/** Rejects every backwards durable cursor or changed captured target. */
+function assertMaintenanceProgressDidNotRegress(previous, current) {
+  if (!Number.isSafeInteger(previous?.schemaVersion)
+    || !Number.isSafeInteger(current?.schemaVersion)
+    || current.schemaVersion < previous.schemaVersion) {
+    throw new Error('Schema v13 maintenance progress regressed.')
+  }
+  assertCursorSeriesDidNotRegress(
+    previous.objectCursors,
+    current.objectCursors,
+    compareTextCursor,
+  )
+  assertCursorSeriesDidNotRegress(
+    previous.eventCursors,
+    current.eventCursors,
+    compareIntegerCursor,
+  )
+  assertFixedTargetCursorDidNotRegress(previous.safeGpx, current.safeGpx, 'cursor', 'target')
+  assertFixedTargetCursorDidNotRegress(
+    previous.unsafeGpx,
+    current.unsafeGpx,
+    'highCursor',
+    'highTarget',
+  )
+  assertFixedTargetCursorDidNotRegress(
+    current.unsafeGpx,
+    previous.unsafeGpx,
+    'lowCursor',
+    'lowTarget',
+  )
+  for (const field of [
+    'receiptPending',
+    'legacyArchivePending',
+    'unsettledCustody',
+  ]) {
+    if (!Number.isSafeInteger(previous[field]) || previous[field] < 0
+      || !Number.isSafeInteger(current[field]) || current[field] < 0
+      || current[field] > previous[field]) {
+      throw new Error('Schema v13 maintenance progress regressed.')
+    }
+  }
+  assertInitializableFixedTargetCursorDidNotRegress(
+    { cursor: previous.archiveCursor, target: previous.archiveTarget },
+    { cursor: current.archiveCursor, target: current.archiveTarget },
+  )
+}
+
+/** Rejects a reordered series, changed target, or backwards cursor. */
+function assertCursorSeriesDidNotRegress(previous, current, compareCursor) {
+  if (!Array.isArray(previous) || !Array.isArray(current)
+    || previous.length !== current.length) {
+    throw new Error('Schema v13 maintenance progress regressed.')
+  }
+  for (let index = 0; index < previous.length; index += 1) {
+    const before = previous[index]
+    const after = current[index]
+    if (before?.key !== after?.key || before?.target !== after?.target
+      || compareCursor(before?.cursor, after?.cursor) > 0) {
+      throw new Error('Schema v13 maintenance progress regressed.')
+    }
+  }
+}
+
+/** Rejects a changed target or backwards bounded integer cursor. */
+function assertFixedTargetCursorDidNotRegress(previous, current, cursorKey, targetKey) {
+  if (previous?.[targetKey] !== current?.[targetKey]
+    || compareIntegerCursor(previous?.[cursorKey], current?.[cursorKey]) > 0) {
+    throw new Error('Schema v13 maintenance progress regressed.')
+  }
+}
+
+/** Allows one missing-key startup transition, then fixes the target permanently. */
+function assertInitializableFixedTargetCursorDidNotRegress(previous, current) {
+  const previousInitialized = previous?.cursor !== null && previous?.target !== null
+  const currentInitialized = current?.cursor !== null && current?.target !== null
+  if ((previous?.cursor === null) !== (previous?.target === null)
+    || (current?.cursor === null) !== (current?.target === null)) {
+    throw new Error('Schema v13 maintenance progress regressed.')
+  }
+  if (!previousInitialized) {
+    if (!currentInitialized) return
+    if (compareIntegerCursor(current.cursor, current.target) > 0) {
+      throw new Error('Schema v13 maintenance progress regressed.')
+    }
+    return
+  }
+  if (!currentInitialized) {
+    throw new Error('Schema v13 maintenance progress regressed.')
+  }
+  assertFixedTargetCursorDidNotRegress(previous, current, 'cursor', 'target')
+}
+
+/** Compares nullable text cursors with null as the not-started minimum. */
+function compareTextCursor(left, right) {
+  if (left === null) return right === null ? 0 : -1
+  if (right === null || typeof left !== 'string' || typeof right !== 'string') return 1
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+/** Compares nullable signed-integer text cursors without precision loss. */
+function compareIntegerCursor(left, right) {
+  if (left === null) return right === null ? 0 : -1
+  if (right === null) return 1
+  const before = integerText(left)
+  const after = integerText(right)
+  return before < after ? -1 : before > after ? 1 : 0
+}
+
+/** Parses one exact signed integer cursor without accepting numeric noise. */
+function integerText(value) {
+  if (typeof value !== 'string' || !/^-?(?:0|[1-9][0-9]*)$/u.test(value)) {
+    throw new Error('Schema v13 maintenance progress cursor is invalid.')
+  }
+  return BigInt(value)
 }
 
 /** Finishes the selected fixture mission without permitting a prior finalization. */
@@ -968,10 +1195,37 @@ function startCurrentPositionProbe({ store, missionId, deviceId, runId }) {
   })
 }
 
+/** Owns one heartbeat monitor and always stops it when the operation settles. */
+export async function runWithHeartbeatMonitor(
+  operation,
+  monitorFactory = startHeartbeatMonitor,
+) {
+  if (typeof operation !== 'function' || typeof monitorFactory !== 'function') {
+    throw new Error('Migration heartbeat ownership is invalid.')
+  }
+  const monitor = monitorFactory()
+  if (monitor === null || typeof monitor !== 'object'
+    || typeof monitor.stop !== 'function') {
+    throw new Error('Migration heartbeat monitor is invalid.')
+  }
+  let result
+  let heartbeatMaxGapMs
+  try {
+    result = await operation()
+  } finally {
+    heartbeatMaxGapMs = monitor.stop()
+  }
+  if (!Number.isFinite(heartbeatMaxGapMs) || heartbeatMaxGapMs < 0) {
+    throw new Error('Migration heartbeat result is invalid.')
+  }
+  return Object.freeze({ result, heartbeatMaxGapMs })
+}
+
 /** Starts one timer-delay monitor that includes synchronous main-thread stalls. */
 function startHeartbeatMonitor() {
   const gaps = []
   let last = performance.now()
+  let stoppedMaxGapMs = null
   const timer = setInterval(() => {
     const current = performance.now()
     gaps.push(current - last)
@@ -980,10 +1234,12 @@ function startHeartbeatMonitor() {
   return Object.freeze({
     /** Stops and returns the measured maximum timer gap. */
     stop() {
+      if (stoppedMaxGapMs !== null) return stoppedMaxGapMs
       clearInterval(timer)
       const final = performance.now()
       gaps.push(final - last)
-      return Math.max(...gaps)
+      stoppedMaxGapMs = Math.max(...gaps)
+      return stoppedMaxGapMs
     },
   })
 }
