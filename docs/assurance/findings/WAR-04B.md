@@ -104,7 +104,7 @@ the AppImage.
 | `WAR04B-H01` | The exact current base packages a private map, credential, mission database, archive fixture, or operational evidence. | No tracked filename matched the private categories; the builder allowlist is narrow; the historical `.deb` was clear. Against that, the current base adds dependencies and `shared/**` packaging after beta.12.11, the ASAR boundary is not inspected, and no current-base artifact was opened. | Inspect the exact final-candidate ASAR/unpacked/extra-resource manifest with no content or secret disclosure. Until then current exposure is **unproven**, not confirmed or cleared. |
 | `WAR04B-H02` | A release build has processed a hostile archive or the historical beta was compromised. | No hostile input, compromise evidence, unexpected live asset, digest mismatch, publisher bypass, or post-publication mutation was found. Vulnerable build behavior and mutable controls establish exposure, not an incident. | Preserve build logs/hashes and investigate only if concrete provenance or integrity evidence appears. Do not manufacture a proof of concept. |
 | `WAR04B-H03` | The remaining 24-record full audit implies 24 shipped exploitable defects. | Graph tracing clears multiple records as unused platform, build-only controlled-input, test-only, updater-only, or absent API paths. Two release blockers and two conditional build-input paths remain. | Repeat the same reachability classification after each controlled lock change; never use the count alone as a release verdict. |
-| `WAR04B-H04` | The unmerged archive-lifecycle implementation leaves dependency/release posture unchanged. | The remote branch still points to `eec92812b783a795c093f37268b295dd2179a3af`. Its local uncommitted implementation currently changes no package, lock, builder, release-workflow, package-wrapper or publisher path, but it is large and mutable. | Run the exact post-PR6 checklist below against the merged SHA. Current inspection is a forward-risk note only. |
+| `WAR04B-H04` | The unmerged archive-lifecycle implementation leaves dependency/release posture unchanged. | The remote `origin/codex/breadcrumb-pr6-archive-lifecycle` ref still points to `eec92812b783a795c093f37268b295dd2179a3af`, the merged PR5 commit used as that worktree's base. This is neither GitHub PR #6 (the merged WAR-01 charter) nor archive-implementation evidence. The local uncommitted implementation currently changes no package, lock, builder, release-workflow, package-wrapper or publisher path, but it is large and mutable. | Run the exact post-PR6 checklist below against the merged SHA. Current inspection is a forward-risk note only. |
 | `WAR04B-H05` | Windows, macOS, installed `.deb`, AppImage and long-duration behavior are equivalent after upgrades. | No WAR-04B cross-platform/scale/package matrix was authorized. Existing evidence is historical and platform-specific. | WAR-12/final qualification owns the exact candidate matrix. |
 
 ## Cleared and positively controlled items
@@ -228,11 +228,12 @@ private-map bytes, operational data, or secret values were sought or handled.
 
 ## Exact post-PR6 refresh checklist
 
-PR6 is not release evidence. The remote branch snapshot was
-`eec92812b783a795c093f37268b295dd2179a3af`; its active implementation is local,
-uncommitted and mutable. At inspection time it changed no package, lock,
-builder, release-workflow, package-wrapper or publisher path, but that observation
-cannot survive later edits or merge.
+Breadcrumb programme PR-6 is not GitHub PR #6 and is not release evidence. The
+remote `origin/codex/breadcrumb-pr6-archive-lifecycle` ref was still its PR5-base
+commit `eec92812b783a795c093f37268b295dd2179a3af`; the active archive implementation
+is local, uncommitted and mutable. At inspection time it changed no package,
+lock, builder, release-workflow, package-wrapper or publisher path, but that
+observation cannot survive later edits or merge.
 
 After PR6 merges, and before WAR-04B is used in any release decision:
 
