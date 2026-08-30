@@ -13,8 +13,9 @@ artifact, or refresh unrelated hazard rows.
 
 **WAR-04 overlay:** platform-services rows `MAP-001`, `SEC-001`, `SEC-002`,
 `SEC-003`, and the `EVD-003` non-overlap judgment were retraced from exact base
-`3d0d36b3874947d3d620bdb5262d9cd2d7233fcf`. All other rows retain the WAR-01
-snapshot and proof limits above; this overlay is not a whole-register re-audit.
+`3d0d36b3874947d3d620bdb5262d9cd2d7233fcf`. Rows outside this WAR-04 overlay
+retain either the WAR-01 snapshot or the explicit WAR-04B overlay above; this
+overlay is not a whole-register re-audit.
 
 **Current master sync:** WAR-04 PR #8 merged from final head
 `3a2278ee8804a9ded0f2fd26626c4c00743c05a6` at
