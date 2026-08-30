@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
+import { chromium } from '@playwright/test'
 import { describe, expect, it } from 'vitest'
 
 import { buildFieldReadinessChecklist } from '../../../../src/features/map/field-readiness-checklist'
@@ -213,12 +214,18 @@ describe('WAR-04 official-map readiness red probes', () => {
       proxy.close()
 
       const servedBytes = tileResult.kind === 'served' ? tileResult.bytes : Buffer.alloc(0)
+      const servedBytesAreBrowserDecodable =
+        tileResult.kind === 'served' && (await isChromiumDecodablePng(servedBytes))
+      const tileRejectedOrDecodable =
+        tileResult.kind === 'error' || servedBytesAreBrowserDecodable
       const observed = {
         packageStatus: saved.officialMaps.packages[0]?.status,
         readiness: checklist.verdict,
         readinessLabel: checklist.summaryLabel,
         tileResult: tileResult.kind,
         contentType: tileResult.kind === 'served' ? tileResult.contentType : null,
+        tileRejectedOrDecodable,
+        servedBytesAreBrowserDecodable,
         servedBytesHavePngSignature: hasPngSignature(servedBytes),
         servedBytesMatchInvalidRow: servedBytes.equals(invalidImageBytes),
       }
@@ -226,6 +233,7 @@ describe('WAR-04 official-map readiness red probes', () => {
 
       expect(observed.readiness).toBe('not_ready')
       expect(observed.readinessLabel).toBe('Not field ready')
+      expect(observed.tileRejectedOrDecodable).toBe(true)
       expect(observed.servedBytesMatchInvalidRow).toBe(false)
     } finally {
       await rm(rootPath, { force: true, recursive: true })
@@ -373,6 +381,26 @@ function hasPngSignature(bytes: Uint8Array): boolean {
   return Buffer.from(bytes.subarray(0, 8)).equals(
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   )
+}
+
+/** Uses the app's Chromium image decoder to reject content-type-only PNG claims. */
+async function isChromiumDecodablePng(bytes: Uint8Array): Promise<boolean> {
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const page = await browser.newPage()
+    return await page.evaluate(async (base64) => {
+      const image = new Image()
+      image.src = `data:image/png;base64,${base64}`
+      try {
+        await image.decode()
+        return image.naturalWidth > 0 && image.naturalHeight > 0
+      } catch {
+        return false
+      }
+    }, Buffer.from(bytes).toString('base64'))
+  } finally {
+    await browser.close()
+  }
 }
 
 /** Proves the synthetic request is wholly inside both positively certified envelopes. */

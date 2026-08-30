@@ -51,10 +51,10 @@ settings/diagnostics lanes. Each confirmation below contains:
 4. the exact existing-control escape.
 
 The proof is `T2`: local integration with real production modules, real SQLite
-handles, synthetic MBTiles, and disposable Electron-profile directories on
-macOS. Source tracing joins the renderer/main boundaries named below. No local
-package was necessary because none of the reproduced behavior exists only in a
-packaged binary.
+handles, synthetic MBTiles, disposable Electron-profile directories, and one
+narrow headless-Chromium image-decode oracle on macOS. Source tracing joins the
+renderer/main boundaries named below. No local package was necessary because
+none of the reproduced behavior exists only in a packaged binary.
 
 ### State space exercised
 
@@ -121,7 +121,8 @@ therefore publishes `Field ready` from declared bounds.
 
 - `does not label or serve a tile row whose bytes are not a decodable PNG`
   registers `not-a-decodable-png`; observed status/readiness are `ready`, and
-  the proxy returns the bytes as `image/png` without a PNG signature.
+  the proxy returns the bytes as `image/png`; the app's Chromium decoder rejects
+  them even though the proxy serves them as image content.
 - `does not certify declared coverage when the requested in-bounds tile is
   absent` registers one valid tile elsewhere while metadata covers the target;
   observed verdict is `Field ready`, then the target returns the visible
@@ -472,7 +473,9 @@ settles them.
 - Map baseline lane: **9 files / 137 tests passed**.
 - Diagnostics baseline lane: **7 files / 65 tests passed**.
 - `npx vitest run --config scripts/assurance/war-04/maps/vitest.config.ts`:
-  **1 file / 4 tests intentionally red**, reproducing all map variants.
+  **1 file / 4 tests intentionally red**, reproducing all map variants. Its
+  invalid-tile oracle uses a local headless Chromium image decode; no page,
+  network, licensed map, or operator workflow is involved.
 - `npx vitest run --config scripts/assurance/war-04/settings-privacy/vitest.config.ts`:
   **2 files / 8 tests intentionally red**, reproducing all settings/privacy
   variants.
@@ -494,8 +497,9 @@ settles them.
 ### Proof not claimed
 
 - no production-code repair or green result for the isolated WAR-04 red probes;
-- no local packaged binary, browser-rendered defect flow, signed artifact,
-  installed `.deb`, AppImage, or Windows run;
+- no local packaged binary, browser-rendered operator flow beyond the isolated
+  synthetic PNG decode, signed artifact, installed `.deb`, AppImage, or Windows
+  run;
 - no live provider, licensed map, network fallback, external host, real profile,
   real credential, or operational data;
 - no broad malformed-MBTiles corpus, full national coverage proof, scale/soak,

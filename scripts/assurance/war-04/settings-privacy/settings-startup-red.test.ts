@@ -178,6 +178,7 @@ describe('WAR-04 settings and credential startup red probes', () => {
       }
       console.info('WAR-04 concurrent-settings observation', observed)
 
+      expect(observed.outcomes).toEqual(['fulfilled', 'fulfilled'])
       expect([
         {
           baseUrl: 'https://one.example.invalid',
