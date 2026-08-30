@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -49,6 +49,13 @@ type ProviderUrlProbeObservation = {
   readonly caseName: string
   readonly rejection: string | null
   readonly persistedMarkers: readonly string[]
+  readonly persistedDataSource: {
+    readonly providerType: AppSettings['dataSource']['providerType']
+    readonly baseUrl: string
+    readonly email: string
+    readonly secretPresent: boolean
+  }
+  readonly credentialFilePresent: boolean
   readonly copiedReportMarkers: readonly string[]
   readonly exportedMarkers: readonly string[]
 }
@@ -155,8 +162,18 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
           rejection = error instanceof Error ? error.message : String(error)
         }
 
+        const reloaded = await store.loadAppSettings()
+        const persistedDataSource = {
+          providerType: reloaded.dataSource.providerType,
+          baseUrl: reloaded.dataSource.baseUrl,
+          email: reloaded.dataSource.email,
+          secretPresent: reloaded.dataSource.secretPresent,
+        }
+        const credentialFilePresent = await fileExists(
+          path.join(userDataPath, 'credentials.json'),
+        )
+
         if (saved === null) {
-          const reloaded = await store.loadAppSettings()
           observations.push({
             caseName: probeCase.caseName,
             rejection,
@@ -164,6 +181,8 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
               reloaded.dataSource.baseUrl,
               probeCase.leakMarkers,
             ),
+            persistedDataSource,
+            credentialFilePresent,
             copiedReportMarkers: [],
             exportedMarkers: [],
           })
@@ -186,6 +205,8 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
             saved.dataSource.baseUrl,
             probeCase.leakMarkers,
           ),
+          persistedDataSource,
+          credentialFilePresent,
           copiedReportMarkers: findRetainedMarkers(copiedReport, probeCase.leakMarkers),
           exportedMarkers: findRetainedMarkers(report, probeCase.leakMarkers),
         })
@@ -201,7 +222,12 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
           observation.copiedReportMarkers.length > 0 ||
           observation.exportedMarkers.length > 0
         : observation.rejection !== PROVIDER_URL_CREDENTIALS_ERROR ||
-          observation.persistedMarkers.length > 0,
+          observation.persistedMarkers.length > 0 ||
+          observation.credentialFilePresent ||
+          observation.persistedDataSource.providerType !== 'none' ||
+          observation.persistedDataSource.baseUrl !== '' ||
+          observation.persistedDataSource.email !== '' ||
+          observation.persistedDataSource.secretPresent,
     )
     expect(unsafeObservations).toEqual([])
   })
@@ -230,14 +256,16 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
       })
       const report = await readFile(reportPath, 'utf8')
       const observed = {
-        coordinateRetained: report.includes('52.0599'),
+        coordinateMarkersRetained: ['-9.5045', '52.0599'].filter((marker) =>
+          report.includes(marker),
+        ),
         credentialRetained: report.includes('nested-credential-canary'),
         profileIdentityRetained: report.includes('field-operator'),
       }
       console.info('WAR-04 nested-diagnostics observation', observed)
 
       expect(observed).toEqual({
-        coordinateRetained: false,
+        coordinateMarkersRetained: [],
         credentialRetained: false,
         profileIdentityRetained: false,
       })
@@ -354,6 +382,19 @@ function findRetainedMarkers(
   markers: readonly string[],
 ): readonly string[] {
   return markers.filter((marker) => value.includes(marker))
+}
+
+/** Reports whether an audit fixture path exists without reading its contents. */
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false
+    }
+    throw error
+  }
 }
 
 /** Creates production runtime-file export wiring over a disposable profile. */

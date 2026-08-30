@@ -222,11 +222,19 @@ rollback, or save queue across the two files.
   placeholder secret;
 - one simultaneous-save probe separates two failure modes: a fixed timestamp
   makes one write reject through a temporary-path collision; then unique
-  temporary names plus a controlled save-context/rename schedule make both
-  writes fulfil in credential-one → credential-two → settings-two →
-  settings-one order, leaving the first URL/email with the second placeholder
-  secret. A full-save queue bypasses the hostile ordering, so temp-name-only
-  repair cannot make the oracle green.
+  temporary names plus a controlled save-context/rename schedule assert both
+  admitted saves and make both writes fulfil in credential-one →
+  credential-two → settings-two → settings-one order, leaving the first
+  URL/email with the second placeholder secret. The oracle soft-asserts both
+  phases and the exact interleaving before it asserts final pair coherence, so
+  the timestamp collision cannot hide the cross-file proof. A queue enclosing
+  the complete save bypasses the hostile ordering and must produce one of the
+  two complete serial orders; temp-name-only repair cannot make the oracle
+  green. Because hostile admission is observed at the initial credential read,
+  this probe qualifies that full-save queue shape only. A transaction,
+  generation scheme, or narrower publication lock acquired after that read
+  needs an explicit commit-admission seam and its own WAR-11 red-to-green
+  oracle rather than inheriting this claim.
 
 **Consequence/severity:** High. Tracking can fail after an apparently bounded
 save error, and a newly entered secret can be sent on the next connection
@@ -312,8 +320,9 @@ accepted case builds the exact renderer text used by `Copy Report` and sends it
 through a real Electron support export. Every case is accepted; each placeholder
 representation remains persisted and in both copied and exported output. A safe
 future rejection must equal the specific Provider-URL embedded-credentials
-policy message and leave that independent profile clean, so partial rejection
-or an unrelated credential-file failure cannot false-green the probe.
+policy message and leave that independent profile at clean data-source defaults
+with no credential file, so partial persistence, partial rejection, or an
+unrelated credential-file failure cannot false-green the probe.
 
 **Consequence/severity:** High privacy impact. A connection credential carried
 in a base URL can be copied into a shareable artifact.
@@ -478,6 +487,7 @@ settles them.
   isolated dependency-install environment issue, not a product failure.
 - Map baseline lane: **9 files / 137 tests passed**.
 - Diagnostics baseline lane: **7 files / 65 tests passed**.
+- Final settings/diagnostics focused recheck: **9 files / 79 tests passed**.
 - `npx vitest run --config scripts/assurance/war-04/maps/vitest.config.ts`:
   **1 file / 4 tests intentionally red**, reproducing all map variants. Its
   invalid-tile oracle uses a local Playwright-managed headless-Chromium image

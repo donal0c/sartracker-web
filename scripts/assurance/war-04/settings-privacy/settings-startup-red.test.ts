@@ -96,7 +96,7 @@ describe('WAR-04 settings and credential startup red probes', () => {
       console.info('WAR-04 unreadable-credential observation', runtime)
 
       expect(runtime.trackingConfig).toBeNull()
-      expect(runtime.trackingDisabledReason).toEqual(expect.any(String))
+      expect(runtime.trackingDisabledReason).toEqual(expect.stringMatching(/\S/u))
     } finally {
       await rm(userDataPath, { force: true, recursive: true })
     }
@@ -269,6 +269,7 @@ describe('WAR-04 settings and credential startup red probes', () => {
       }
 
       const observed = {
+        admittedSaveIds: [...admitted].sort(),
         collisionOutcomes: collisionResults.map((result) => result.status),
         interleavingOutcomes: interleavingResults.map((result) => result.status),
         overlappingSaves,
@@ -277,9 +278,7 @@ describe('WAR-04 settings and credential startup red probes', () => {
       }
       console.info('WAR-04 concurrent-settings observation', observed)
 
-      expect(observed.collisionOutcomes).toEqual(['fulfilled', 'fulfilled'])
-      expect(observed.interleavingOutcomes).toEqual(['fulfilled', 'fulfilled'])
-      expect([
+      const coherentTrackingConfigs = [
         {
           baseUrl: 'https://one.example.invalid',
           email: 'one@example.test',
@@ -290,7 +289,42 @@ describe('WAR-04 settings and credential startup red probes', () => {
           email: 'two@example.test',
           password: 'secret-two',
         },
-      ]).toContainEqual(runtime.trackingConfig)
+      ]
+      const hostileRenameOrder = [
+        'one:credentials.json',
+        'two:credentials.json',
+        'two:settings.json',
+        'one:settings.json',
+      ]
+      const serializedRenameOrders = [
+        [
+          'one:credentials.json',
+          'one:settings.json',
+          'two:credentials.json',
+          'two:settings.json',
+        ],
+        [
+          'two:credentials.json',
+          'two:settings.json',
+          'one:credentials.json',
+          'one:settings.json',
+        ],
+      ]
+
+      expect.soft(observed.admittedSaveIds).toEqual(['one', 'two'])
+      expect.soft(observed.collisionOutcomes).toEqual(['fulfilled', 'fulfilled'])
+      expect.soft(observed.interleavingOutcomes).toEqual(['fulfilled', 'fulfilled'])
+      if (observed.overlappingSaves) {
+        expect.soft(observed.renameOrder).toEqual(hostileRenameOrder)
+        expect.soft(observed.trackingConfig).toEqual({
+          baseUrl: 'https://one.example.invalid',
+          email: 'one@example.test',
+          password: 'secret-two',
+        })
+      } else {
+        expect.soft(serializedRenameOrders).toContainEqual(observed.renameOrder)
+      }
+      expect.soft(coherentTrackingConfigs).toContainEqual(observed.trackingConfig)
     } finally {
       vi.restoreAllMocks()
       await rm(rootPath, { force: true, recursive: true })
