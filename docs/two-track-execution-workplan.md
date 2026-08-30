@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-4 are merged. PR-5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) remains one review unit on `codex/breadcrumb-pr5-evidence-replay` from exact merged PR-4 base `80309c995a18eeb190cce4310c9a46b0f46d5263`. A later Opus 5 review on `2136ad6b` found one accepted P2 in the cumulative casualty treatment log; the approval correction replaces its 2,000-byte borrowed notes cap with an explicit 524,288 UTF-8-byte envelope and also closes the safe Replay-byte-bound and `shared/**` CI-trigger P3s. Donal explicitly authorized focused correction, tests and smoke without another four-review restart. Treat the earlier independent review wave as prior-head evidence, not exact-head review of the correction. Leave the exact pushed successor for Donal's approval only after its focused/full local proof and Linux validation are green. PR-6 archive lifecycle follows only after Donal accepts PR-5.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-5 are merged. PR5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) landed from final head `f5ba8647131950dde457e50ce36fe0b8ded7337d` as merge `eec92812b783a795c093f37268b295dd2179a3af`; exact-head Linux run `33260131951` is green. The final casualty-treatment/preload/workflow correction deliberately used Donal-authorized focused correction/test/package proof rather than restarting the earlier four-review wave, so those reviews remain prior-head evidence and must not be represented as exact-head review of `f5ba8647`. WAR-01's docs-only post-PR5 reconciliation and independent reviews merged through GitHub PR #6 at `182d077804498f5c10aaf0b8b2c1525f29a31da7`. Breadcrumb programme PR-6—the archive-lifecycle stage owned by `DON-248`/`DON-252`/`DON-253` and distinct from GitHub PR #6—is actively being implemented on a separate branch but remains unmerged, mutable, and not release proof. Donal retains its implementation/merge gate. After its exact merged head exists, run WAR-04B's narrow refresh before any release decision. BCP-17 must qualify one exact final candidate before `DON-255` may publish it.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -130,6 +130,63 @@ ship or ask testers for whole Electron profile zips.
 8. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
 9. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
 10. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
+
+### WAR-13A Shadow-use protocol
+
+These are local resilience-programme labels: **WAR-13A** is the protocol and
+release/manual contract in this section; **WAR-13B** is the later execution of
+predeclared field exercises and the exit scorecard under `DON-254`/`DON-255`.
+Neither label creates a separate Linear owner.
+
+The canonical internal controlled/shadow-use protocol is
+`docs/assurance/shadow-use-protocol.md`. It must be linked and completed by the
+eventual internal beta release note. It keeps the independent primary
+operational process authoritative, defines stop/fallback/revert actions and
+proportionate field intake, and fixes the residual-risk and WAR-13B scorecard
+formats. It does not qualify a candidate or make SAR Tracker operationally safe.
+WAR-13B field execution starts only after an exact candidate is published under
+`DON-254`/`DON-255`; `DON-248`/`DON-252`/`DON-253` archive/restore remains
+outside current proof.
+
+### WAR-01 assurance baseline
+
+Whole-application resilience starts with the docs-only WAR-01 assurance charter
+and hazard register. Its mandatory post-PR5 reconciliation is recorded against
+merge `eec92812b783a795c093f37268b295dd2179a3af` and final PR5 source head
+`f5ba8647131950dde457e50ce36fe0b8ded7337d`. The landed GPX, immutable-evidence,
+Replay, Search Operations, attachment-custody, IPC/worker, coverage-consumer,
+and archive-inclusion seams were re-opened before their rows were reclassified.
+Exact-head Linux run `33260131951` is `T4` only for its packaged tracking-soak,
+launch, and close flows; its direct checkout-module Replay/GPX scale steps are
+`T2`, and prior-head independent reviews retain their separate proof limits.
+The unmerged and mutable `DON-248`/`DON-252`/`DON-253` archive successor is
+actively being implemented separately, remains `rewrite-pending`, and is the
+prerequisite for streamed, encrypted/locked archive and restore-and-replay
+resilience. The WAR task
+packet's “PR6” shorthand refers to that successor, not to this docs-only GitHub
+PR #6. WAR-01 does not create speculative Linear issues: each row cites the
+closest existing owner.
+
+### WAR-04 platform-services resilience investigation
+
+[PR #8](https://github.com/donal0c/sartracker-web/pull/8) is the merged
+investigation-only WAR-04 result on exact base
+`3d0d36b3874947d3d620bdb5262d9cd2d7233fcf`. It merged from final head
+`3a2278ee8804a9ded0f2fd26626c4c00743c05a6` at
+`341d95add5a7eceb6db506a2afd0ea70cb1fc944` and records nine confirmed local
+failure/privacy defects across official-map readiness, settings/credential
+startup, and support/incident export, plus six unproven hypotheses and the
+controls cleared by inspection and deterministic synthetic proof. Twelve
+isolated red checks preserve the present failure states; one map oracle uses a
+narrow local Playwright-managed Chromium image decode, while the normal test,
+lint, build, backend, and browser suites remain green and shipping code is
+unchanged. Remediation belongs to three bounded WAR-11 clusters. `DON-264`
+remains a separate persistent overlay-sync diagnostics issue and is not
+silently absorbed by WAR-04. Two independent final-head reviews were clean and
+Electron Linux Validation Build `33302709964` passed. That is branch/package-
+integrity evidence only: the isolated probes remain deliberately red, no
+shipping repair occurred, and broad packaged, live-provider, platform-matrix,
+scale, soak, and field proof remain WAR-12 work.
 
 ### Breadcrumb And Mission-History Programme
 
@@ -856,7 +913,11 @@ This is the default order when the user says “work on the next task.”
 | Done | PR-1: trustworthy ingest and live safety | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | Merged as [PR #1](https://github.com/donal0c/sartracker-web/pull/1) at `9481cf462e0e`; its exact-head review and Linux evidence remain in PR #1 and the handoff archive. |
 | Done | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | Merged to `master` at `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, which is the exact PR-3 base. The preserved review, migration, scale, browser, and package evidence remains attached to PR-2 and the handoff archive. |
 | Done | PR-3: decide and deliver complete mission coverage | Shared Tracking / S2 Electron / Coverage / Verification | `DON-273` / `DON-276` / `DON-275` | Merged as [PR #3](https://github.com/donal0c/sartracker-web/pull/3) at `e3499d81bad68dcbf35dde4ed6ae6bd4d1434db1`; the exact review, migration, scale, browser, visual, macOS, and Ubuntu packaged evidence remains attached to PR #3. |
-| Active bridge | Enforce canonical `fixTime`, explicit local-time display, and history-independent current polling | Shared Tracking / S2 Electron / Evidence / Verification | `DON-267`; `SAR-QA-021`; `SAR-FIELD-002` | Bounded field-feedback correction from merged PR-3. Preserve progressive whole-history coverage and exact paging; prove 37,479 as 10,000 + 10,000 + 10,000 + 7,479. No PR-4 replay, timeline, export, or archive scope. |
+| Done | [PR #4](https://github.com/donal0c/sartracker-web/pull/4): enforce canonical `fixTime`, explicit local-time display, and history-independent current polling | Shared Tracking / S2 Electron / Evidence / Verification | `DON-267`; `SAR-QA-021`; `SAR-FIELD-002` | Merged from final head `a6ebfbebb7b624a85ab437508209d8d56c9cf9d8` at `80309c995a18eeb190cce4310c9a46b0f46d5263`. Exact-head Linux run `33068124294` passed. The bounded bridge preserved progressive whole-history coverage and proved 37,479 as 10,000 + 10,000 + 10,000 + 7,479; that CI/package evidence is not programme-final field qualification, and PR-4 added no Replay, timeline, export, or archive scope. |
+| Done | PR-5: mission evidence and data-known-at-time Replay | Shared Evidence / S2 Electron / Mission Review / Verification | `DON-274` / `DON-277` / `DON-278` / `DON-279` | Merged as [PR #5](https://github.com/donal0c/sartracker-web/pull/5) from final head `f5ba8647131950dde457e50ce36fe0b8ded7337d` at `eec92812b783a795c093f37268b295dd2179a3af`. Exact-head Linux run `33260131951` is green; its package path and the final focused correction are the proof boundary, while the earlier four-review wave remains prior-head evidence. Detailed scope and verification are retained in `docs/breadcrumb-pr5-evidence.md` and PR #5. |
+| Done | [PR #6](https://github.com/donal0c/sartracker-web/pull/6): WAR-01 whole-application assurance charter and stable hazard register | Whole application / Assurance / Verification | Existing owners are cited per hazard; no new issue | Documentation/investigation only, merged at `182d077804498f5c10aaf0b8b2c1525f29a31da7`. Covers all 12 hazard domains and the five absolute blockers. Post-PR5 reconciliation is pinned to merge `eec92812b783a795c093f37268b295dd2179a3af`; merged PR5 rows carry inspected control/evidence limits, `RPL-004` remains `rewrite-pending` for the unmerged and mutable `DON-248`/`DON-252`/`DON-253` archive successor, and the required broad/focused exact-head reviews were clean. Donal retains the implementation/merge gate for the archive successor, not merged GitHub PR #6. |
+| Done | [PR #8](https://github.com/donal0c/sartracker-web/pull/8): WAR-04 platform-services resilience investigation | Map / Settings / Diagnostics / Assurance | `DON-7` / `DON-76` / `DON-177` / `DON-226` / `DON-237`; `DON-264` assessed separately | Investigation/evidence only, merged at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` from final head `3a2278ee8804a9ded0f2fd26626c4c00743c05a6`; no shipping-code remediation. Nine confirmed findings route to three bounded WAR-11 clusters. Twelve isolated synthetic checks preserve the confirmed red states. The normal gates, two exact-head independent reviews and the exact-head Linux branch gate were green. Broad package/provider/platform/scale/soak proof remains WAR-12. |
+| Review-ready | [PR #9](https://github.com/donal0c/sartracker-web/pull/9): WAR-04B release integrity, dependency and repository-control audit | Whole application / Assurance / Release reliability | `DON-146` / `DON-254` / `DON-255` | Investigation/docs only from exact base `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf`; no remediation or release mutation. Confirmed blockers are EOL Electron `40.10.0` and the `electron-builder@26.0.12 -> app-builder-lib@26.0.12` AppImage launcher advisory. The production npm graph is advisory-clean, but a full audit is required because release-bearing Electron/builder code is classified as development dependencies. Live GitHub evidence also confirms mutable unsigned releases, no enforced master/tag review/check boundary, disabled security visibility, no SBOM/attestation, and incomplete ASAR/private-evidence exclusion. `better-sqlite3` PR #1475 is merged and available from `12.10.1`, so `DON-146` is no longer upstream-blocked. PR #8's merge at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` left all audited package, lock, builder, release-workflow, publisher and support-policy inputs blob-identical; its WAR-04 evidence remains separate and supplies no release proof. Use the controlled upgrade order and exact post-programme-PR-6 refresh checklist in `docs/assurance/findings/WAR-04B.md`; the unmerged breadcrumb programme PR-6 archive successor remains mutable and supplies no release proof. This is separate from the merged WAR-01 GitHub PR #6 in the row above. Exact-head review/recheck evidence is retained on PR #9. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
@@ -866,12 +927,12 @@ This is the default order when the user says “work on the next task.”
 | Done locally | Change-gate tracking audit writes and remove position event echoes | S2 Electron / Tracking | `DON-245` | Packaged 2,000-poll proof: 64,000 device row upserts, 16,000 positions, 32 creates, one real update, zero heartbeat/position echoes. |
 | Done locally | Add accelerated packaged tracking soak and growth-budget gate | S2 Electron / Verification | `DON-246` | Packaged CI/5-day/14-day profiles pass after the gate found and fixed unbounded restart hydration; exact position/growth, restart, responsiveness, memory, backup, WAL, log, support, and privacy evidence is machine-readable. |
 | Active | Qualify beta.12 CI artifact on Ubuntu and original field machine | S2 Electron / Release | `DON-247` | Exact artifact `fb6c4922…` passed the full Ubuntu matrix, was published as an internal prerelease, then was downloaded afresh from the release URL and passed the post-publication Ubuntu smoke. The 2026-07-20 field split is explicit: PCLinuxOS AppImage stayed responsive at 218 hours, while a Mint `.deb` stopped accepting application actions around 182 hours even though the in-app clock continued. The packaged soak now classifies the complete Devices interaction boundary: centre hit test/covering element, trusted browser click delivery, React workspace state, timed renderer-to-main IPC, and close path. The refreshed packaged CI profile passed 4/4 `healthy` classifications, 8,664 exact positions, restart, backup, main/renderer responsiveness, and zero redundant telemetry; full `beta:verify --no-smoke` passed lint, build, `165 files / 1159 tests`, backend `47 / 1 ignored`, Chromium `132/132`, package, and packaged soak. Packaged Linux builds include an external report-only hang collector for bounded `/proc`/thread waits, PID-scoped journal, GPU/session facts, sanitized logs/storage diagnostics, optional operator-requested screenshot, and no database/credential/process-environment content. Runbook: `docs/releases/beta12-mint-hang-capture-runbook.md`. Original Mint identical-profile AppImage-vs-`.deb` execution and collector evidence remain before closeout. |
-| Backlog | Decide archive encryption, authenticity, custody, and emergency access | S2 Electron / Archive / Governance | `DON-248` | BCP-14 in PR-6; the earlier bounded-store architecture is now locked in the breadcrumb ADR. |
+| Active (programme PR-6) | Decide archive encryption, authenticity, custody, and emergency access | S2 Electron / Archive / Governance | `DON-248` | BCP-14 in the breadcrumb archive-lifecycle stage; the earlier bounded-store architecture is now locked in the breadcrumb ADR. The implementation remains unmerged and supplies no release proof. |
 | Backlog | Safe background SQLite integrity assurance | S2 Electron / Persistence | `DON-249` | Must not recreate startup/runtime I/O saturation. |
 | Backlog | Oversized legacy database assessment and recovery | S2 Electron / Recovery | `DON-250` | Mission-state-aware; never abandon operational data or run in-process multi-GB VACUUM. |
 | Backlog | Measured indexes and bounded telemetry retention | S2 Electron / Persistence | `DON-251` | The 3.7 GB PR-1 gate measured the pre-existing Review audit scan at about 7.5 s and exact count at about 1.1–1.3 s on Electron main. PR-1 pulls forward only lazy Review loading plus a cancellable read-only worker snapshot so current positions and main heartbeat stay live. Query-plan-driven indexing and interruption-safe telemetry retention remain here; no O(database-size) v8 migration index is authorized. |
-| Backlog | Create streamed encrypted mission archives with restore-and-replay proof | S2 Electron / Archive | `DON-252` | BCP-15 in PR-6; no whole shared DB in memory or unrelated missions in an archive. |
-| Backlog | Add archive-backed review, visible revisions, and indefinite retention | S2 Electron / Governance | `DON-253` | BCP-16 in PR-6; archive bytes stay immutable and evidence has no permanent deletion path. |
+| Active (programme PR-6) | Create streamed encrypted mission archives with restore-and-replay proof | S2 Electron / Archive | `DON-252` | BCP-15 in the breadcrumb archive-lifecycle stage; no whole shared DB in memory or unrelated missions in an archive. The implementation remains unmerged and supplies no release proof. |
+| Active (programme PR-6) | Add archive-backed review, visible revisions, and indefinite retention | S2 Electron / Governance | `DON-253` | BCP-16 in the breadcrumb archive-lifecycle stage; archive bytes stay immutable and evidence has no permanent deletion path. The implementation remains unmerged and supplies no release proof. |
 | Backlog | Qualify the complete breadcrumb and mission-history programme | S2 Electron / Verification | `DON-254` | BCP-17 no-skip qualification of the exact final candidate after all six PRs. |
 | Backlog | Release the complete breadcrumb and mission-history programme | S2 Electron / Release | `DON-255` | One team-facing release only after BCP-17; no intermediate programme releases. |
 | Done | S1: Runtime Boot/Fault Guard | Shared | `sartracker-web-3rl` | Done 2026-05-16 |

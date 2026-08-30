@@ -158,3 +158,14 @@ first and do not delete suspected mission data.
 - Workflow: `.github/workflows/electron-release.yml`
 - Release gates: lint, unit tests, web build, standard Chromium E2E, Linux
   packaging, private-map guard, packaged soak, and AppImage launch
+
+## WAR-04B record amendment (2026-08-30)
+
+The original release record above uses “immutable” for the project's
+procedural write-once tag policy. Read-only GitHub inspection on 2026-08-30
+found `immutable:false` for this public prerelease and no `electron-v*` tag
+ruleset, so technical tag or asset immutability was not enforced. The original
+wording is preserved rather than rewritten; this amendment does not change the
+point-in-time tag, run, asset, or checksum evidence and did not mutate the live
+GitHub release. See `docs/releases/README.md` and
+`docs/assurance/findings/WAR-04B.md`.

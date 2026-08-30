@@ -207,3 +207,11 @@ Beta.12.4 also adds this release-specific blocking observation:
 - [ ] Release note contains exact commit, run, checksums, and evidence
 - [ ] Linear and `handoff/HANDOFF.md` reflect the verified result
 - [ ] Release remains an internal prerelease until guarded publication succeeds
+
+## WAR-04B record amendment (2026-08-30)
+
+The original record above uses “immutable” for the project's procedural
+write-once tag policy. Read-only GitHub inspection on 2026-08-30 found no
+technical release/tag immutability enforcement. The historical wording is
+preserved rather than rewritten; see `docs/releases/README.md` and
+`docs/assurance/findings/WAR-04B.md`.
