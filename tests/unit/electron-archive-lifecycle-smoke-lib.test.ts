@@ -4,6 +4,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
+  archiveLifecycleSmokeBatchInsertedEveryRow,
   assertArchiveLifecycleSmokeEvidenceOmitsSecrets,
   buildArchiveLifecycleSmokeCiEnvironment,
   buildArchiveLifecycleSmokeCiRunnerArgs,
@@ -143,6 +144,16 @@ function completeEvidence(): Readonly<Record<string, unknown>> {
 }
 
 describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON-253]', () => {
+  it('accepts only a public addPositionsBulk array with the exact requested batch length', () => {
+    const exactBatch = Array.from({ length: 512 }, (_unused, index) => ({ id: `${index}` }))
+    expect(archiveLifecycleSmokeBatchInsertedEveryRow(exactBatch, 512)).toBe(true)
+    expect(archiveLifecycleSmokeBatchInsertedEveryRow({ insertedPositionCount: 512 }, 512))
+      .toBe(false)
+    expect(archiveLifecycleSmokeBatchInsertedEveryRow(exactBatch.slice(0, 511), 512)).toBe(false)
+    expect(archiveLifecycleSmokeBatchInsertedEveryRow([...exactBatch, { id: 'extra' }], 512))
+      .toBe(false)
+  })
+
   it('matches a CSS-uppercased full build head without accepting prefixes or longer hex tokens', () => {
     const exactHead = '60bda977c7f69c9b78310c2e8af4a9b3ca5f7d95'
     expect(renderedVersionContainsExactHead(

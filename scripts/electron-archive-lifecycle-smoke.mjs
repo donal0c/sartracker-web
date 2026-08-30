@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 import {
+  archiveLifecycleSmokeBatchInsertedEveryRow,
   assertArchiveLifecycleSmokeEvidenceOmitsSecrets,
   parseArchiveLifecycleSmokeArgs,
   renderedVersionContainsExactHead,
@@ -270,64 +271,72 @@ async function main() {
 
 /** Creates a bounded mission and deterministic breadcrumb evidence through preload IPC. */
 async function seedAndFinishMission(page, seededPositionRows) {
-  return page.evaluate(async ({ missionName, rowCount, chunkSize }) => {
+  const mission = await page.evaluate(async (missionName) => {
     const store = window.sartrackerElectron?.missionStore
     if (store === undefined) throw new Error('Mission-store preload bridge is unavailable.')
-    const mission = await store.createMission({
+    const created = await store.createMission({
       name: missionName,
       start_time: '2026-08-29T08:00:00.000Z',
     })
-    if (mission?.status !== 'active' || typeof mission.id !== 'string') {
+    if (created?.status !== 'active' || typeof created.id !== 'string') {
       throw new Error('Packaged mission creation returned an invalid result.')
     }
     await store.upsertDevice({
-      mission_id: mission.id,
+      mission_id: created.id,
       device_id: 'archive-smoke-tracker',
       name: 'Archive Smoke Tracker',
       color: '#0077AA',
       status: 'online',
     })
-    const baseMs = Date.parse('2026-08-29T08:00:01.000Z')
-    for (let offset = 0; offset < rowCount; offset += chunkSize) {
-      const length = Math.min(chunkSize, rowCount - offset)
-      const positions = Array.from({ length }, (_unused, localIndex) => {
-        const index = offset + localIndex
-        return {
-          source_position_id: `archive-smoke-${index + 1}`,
-          device_id: 'archive-smoke-tracker',
-          lat: 52.05 + index / 10_000_000,
-          lon: -9.5 - index / 10_000_000,
-          timestamp: new Date(baseMs + index * 1_000).toISOString(),
-          timestamp_source: 'fix',
-          data_origin: 'live',
-        }
-      })
-      const result = await store.addPositionsBulk({
-        mission_id: mission.id,
-        positions,
-      })
-      if (result?.insertedPositionCount !== length) {
-        throw new Error('Packaged breadcrumb seed did not insert every requested row.')
+    return created
+  }, MISSION_NAME)
+
+  const baseMs = Date.parse('2026-08-29T08:00:01.000Z')
+  for (let offset = 0; offset < seededPositionRows; offset += POSITION_CHUNK_SIZE) {
+    const length = Math.min(POSITION_CHUNK_SIZE, seededPositionRows - offset)
+    const positions = Array.from({ length }, (_unused, localIndex) => {
+      const index = offset + localIndex
+      return {
+        source_position_id: `archive-smoke-${index + 1}`,
+        device_id: 'archive-smoke-tracker',
+        lat: 52.05 + index / 10_000_000,
+        lon: -9.5 - index / 10_000_000,
+        timestamp: new Date(baseMs + index * 1_000).toISOString(),
+        timestamp_source: 'fix',
+        data_origin: 'live',
       }
+    })
+    const result = await page.evaluate(async (input) => {
+      const store = window.sartrackerElectron?.missionStore
+      if (store === undefined) throw new Error('Mission-store preload bridge is unavailable.')
+      return store.addPositionsBulk(input)
+    }, { mission_id: mission.id, positions })
+    if (!archiveLifecycleSmokeBatchInsertedEveryRow(result, length)) {
+      throw new Error('Packaged breadcrumb seed did not insert every requested row.')
     }
-    const persistedCount = await store.countPositions(mission.id)
+  }
+
+  return page.evaluate(async ({ missionId, createdStatus, rowCount }) => {
+    const store = window.sartrackerElectron?.missionStore
+    if (store === undefined) throw new Error('Mission-store preload bridge is unavailable.')
+    const persistedCount = await store.countPositions(missionId)
     if (persistedCount !== rowCount) {
       throw new Error('Packaged breadcrumb row count did not match the bounded seed.')
     }
-    const finished = await store.finishMission(mission.id)
+    const finished = await store.finishMission(missionId)
     if (finished?.status !== 'finished') {
       throw new Error('Packaged mission finish returned an invalid result.')
     }
     return {
-      missionId: mission.id,
-      createdStatus: mission.status,
+      missionId,
+      createdStatus,
       finishedStatus: finished.status,
       seededPositionRows: persistedCount,
     }
   }, {
-    missionName: MISSION_NAME,
+    missionId: mission.id,
+    createdStatus: mission.status,
     rowCount: seededPositionRows,
-    chunkSize: POSITION_CHUNK_SIZE,
   })
 }
 

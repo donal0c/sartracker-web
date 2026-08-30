@@ -46,6 +46,14 @@ const REVIEW_KEYS = Object.freeze([
   'verified',
 ])
 
+/** Requires the public addPositionsBulk result to contain every requested row. */
+export function archiveLifecycleSmokeBatchInsertedEveryRow(result, expectedCount) {
+  return Array.isArray(result)
+    && Number.isSafeInteger(expectedCount)
+    && expectedCount > 0
+    && result.length === expectedCount
+}
+
 /** Matches one exact rendered 40-hex build head while tolerating CSS letter casing. */
 export function renderedVersionContainsExactHead(renderedText, expectedHead) {
   if (typeof renderedText !== 'string' || typeof expectedHead !== 'string'
