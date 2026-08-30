@@ -14,6 +14,7 @@ import {
   recordDiagnosticEvent,
 } from '../../../../src/features/diagnostics/diagnostic-event-log'
 import { buildDiagnosticsSnapshot } from '../../../../src/features/diagnostics/diagnostics-model'
+import { PROVIDER_URL_CREDENTIALS_ERROR } from '../../../../src/features/settings/settings-validation'
 import {
   createSettingsDraft,
   DEFAULT_APP_SETTINGS,
@@ -42,6 +43,14 @@ type RuntimeLog = {
     readonly fields: Readonly<Record<string, unknown>>
   }) => Promise<void>
   readonly readRecent: (limit?: number) => Promise<readonly unknown[]>
+}
+
+type ProviderUrlProbeObservation = {
+  readonly caseName: string
+  readonly rejection: string | null
+  readonly persistedMarkers: readonly string[]
+  readonly copiedReportMarkers: readonly string[]
+  readonly exportedMarkers: readonly string[]
 }
 
 const { createElectronSettingsStore } = require('../../../../electron/settings-store.cjs') as {
@@ -89,68 +98,112 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
     expect(snapshot.supportReport).not.toContain(String.raw`C:\Users\field-operator`)
   })
 
-  it('does not persist or export encoded query and fragment provider connection details', async () => {
-    const userDataPath = await mkdtemp(path.join(tmpdir(), 'war-04-query-credential-'))
-    const baseUrl =
-      'https://tracking.example.invalid/api?ses%73ion=encoded-key-credential-canary&session=raw-query-credential-canary&encoded=encoded%2Dcredential%2Dcanary&double=double%252Dcredential%252Dcanary#session=fragment-credential-canary'
-    const leakMarkers = [
-      'encoded-key-credential-canary',
-      'raw-query-credential-canary',
-      'encoded%2Dcredential%2Dcanary',
-      'encoded-credential-canary',
-      'double%252Dcredential%252Dcanary',
-      'double%2Dcredential%2Dcanary',
-      'double-credential-canary',
-      'fragment-credential-canary',
+  it('does not persist or export credential-bearing query and fragment forms', async () => {
+    const probeCases = [
+      {
+        caseName: 'raw-query-session',
+        baseUrl: 'https://tracking.example.invalid/api?session=raw-query-credential-canary',
+        leakMarkers: ['raw-query-credential-canary'],
+      },
+      {
+        caseName: 'encoded-query-key-session',
+        baseUrl: 'https://tracking.example.invalid/api?ses%73ion=encoded-key-credential-canary',
+        leakMarkers: ['encoded-key-credential-canary'],
+      },
+      {
+        caseName: 'encoded-query-value-session',
+        baseUrl: 'https://tracking.example.invalid/api?session=encoded%2Dcredential%2Dcanary',
+        leakMarkers: ['encoded%2Dcredential%2Dcanary', 'encoded-credential-canary'],
+      },
+      {
+        caseName: 'double-encoded-query-value-session',
+        baseUrl: 'https://tracking.example.invalid/api?session=double%252Dcredential%252Dcanary',
+        leakMarkers: [
+          'double%252Dcredential%252Dcanary',
+          'double%2Dcredential%2Dcanary',
+          'double-credential-canary',
+        ],
+      },
+      {
+        caseName: 'fragment-session',
+        baseUrl: 'https://tracking.example.invalid/api#session=fragment-credential-canary',
+        leakMarkers: ['fragment-credential-canary'],
+      },
     ] as const
-    try {
-      const store = createElectronSettingsStore({
-        userDataPath,
-        safeStorage: createSafeStorage(),
-        platform: 'darwin',
-      })
-      const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
-      draft.dataSource.providerType = 'traccar_http'
-      draft.dataSource.baseUrl = baseUrl
-      draft.dataSource.email = 'operator@example.test'
-      draft.dataSource.secretInput = 'separately-stored-secret'
-      let saved: AppSettings
+    const observations: ProviderUrlProbeObservation[] = []
+
+    for (const probeCase of probeCases) {
+      const userDataPath = await mkdtemp(
+        path.join(tmpdir(), `war-04-${probeCase.caseName}-`),
+      )
       try {
-        saved = await store.saveAppSettings(draft)
-      } catch (error) {
-        // A targeted rejection before persistence is safe; unrelated write failures are not.
-        expect(error instanceof Error ? error.message : String(error)).toMatch(/credential|secret/i)
-        const reloaded = await store.loadAppSettings()
-        expect(findRetainedMarkers(reloaded.dataSource.baseUrl, leakMarkers)).toEqual([])
-        return
-      }
-      const copiedReport = buildDiagnosticsSnapshot(
-        createDiagnosticsInput(userDataPath, saved),
-      ).supportReport
-      const runtimeFiles = createRuntimeFiles(userDataPath, store.loadAppSettings)
+        const store = createElectronSettingsStore({
+          userDataPath,
+          safeStorage: createSafeStorage(),
+          platform: 'darwin',
+        })
+        const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+        draft.dataSource.providerType = 'traccar_http'
+        draft.dataSource.baseUrl = probeCase.baseUrl
+        draft.dataSource.email = 'operator@example.test'
+        draft.dataSource.secretInput = 'separately-stored-secret'
+        let saved: AppSettings | null = null
+        let rejection: string | null = null
+        try {
+          saved = await store.saveAppSettings(draft)
+        } catch (error) {
+          rejection = error instanceof Error ? error.message : String(error)
+        }
 
-      const reportPath = await runtimeFiles.exportSupportBundle({
-        fileName: 'query-credential-support.txt',
-        contents: copiedReport,
-      })
-      const report = await readFile(reportPath, 'utf8')
-      const observed = {
-        acceptedUrl: saved.dataSource.baseUrl,
-        persistedMarkers: findRetainedMarkers(saved.dataSource.baseUrl, leakMarkers),
-        copiedReportMarkers: findRetainedMarkers(copiedReport, leakMarkers),
-        exportedMarkers: findRetainedMarkers(report, leakMarkers),
-      }
-      console.info('WAR-04 provider-query observation', observed)
+        if (saved === null) {
+          const reloaded = await store.loadAppSettings()
+          observations.push({
+            caseName: probeCase.caseName,
+            rejection,
+            persistedMarkers: findRetainedMarkers(
+              reloaded.dataSource.baseUrl,
+              probeCase.leakMarkers,
+            ),
+            copiedReportMarkers: [],
+            exportedMarkers: [],
+          })
+          continue
+        }
 
-      expect(observed).toEqual({
-        acceptedUrl: saved.dataSource.baseUrl,
-        persistedMarkers: [],
-        copiedReportMarkers: [],
-        exportedMarkers: [],
-      })
-    } finally {
-      await rm(userDataPath, { force: true, recursive: true })
+        const copiedReport = buildDiagnosticsSnapshot(
+          createDiagnosticsInput(userDataPath, saved),
+        ).supportReport
+        const runtimeFiles = createRuntimeFiles(userDataPath, store.loadAppSettings)
+        const reportPath = await runtimeFiles.exportSupportBundle({
+          fileName: `${probeCase.caseName}-support.txt`,
+          contents: copiedReport,
+        })
+        const report = await readFile(reportPath, 'utf8')
+        observations.push({
+          caseName: probeCase.caseName,
+          rejection,
+          persistedMarkers: findRetainedMarkers(
+            saved.dataSource.baseUrl,
+            probeCase.leakMarkers,
+          ),
+          copiedReportMarkers: findRetainedMarkers(copiedReport, probeCase.leakMarkers),
+          exportedMarkers: findRetainedMarkers(report, probeCase.leakMarkers),
+        })
+      } finally {
+        await rm(userDataPath, { force: true, recursive: true })
+      }
     }
+
+    console.info('WAR-04 provider-query observations', observations)
+    const unsafeObservations = observations.filter((observation) =>
+      observation.rejection === null
+        ? observation.persistedMarkers.length > 0 ||
+          observation.copiedReportMarkers.length > 0 ||
+          observation.exportedMarkers.length > 0
+        : observation.rejection !== PROVIDER_URL_CREDENTIALS_ERROR ||
+          observation.persistedMarkers.length > 0,
+    )
+    expect(unsafeObservations).toEqual([])
   })
 
   it('recursively removes coordinates, credentials, and profile identity from nested event fields', async () => {
