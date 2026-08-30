@@ -35,6 +35,15 @@ type ElectronRuntimeFiles = {
   }) => Promise<string>
 }
 
+type RuntimeLog = {
+  readonly appendDurable: (input: {
+    readonly level: string
+    readonly event: string
+    readonly fields: Readonly<Record<string, unknown>>
+  }) => Promise<void>
+  readonly readRecent: (limit?: number) => Promise<readonly unknown[]>
+}
+
 const { createElectronSettingsStore } = require('../../../../electron/settings-store.cjs') as {
   readonly createElectronSettingsStore: (options: {
     readonly userDataPath: string
@@ -58,6 +67,13 @@ const { createElectronRuntimeFiles } = require('../../../../electron/runtime-fil
   }) => ElectronRuntimeFiles
 }
 
+const { createRuntimeLog } = require('../../../../electron/runtime-log.cjs') as {
+  readonly createRuntimeLog: (options: {
+    readonly userDataPath: string
+    readonly now?: () => string
+  }) => RuntimeLog
+}
+
 describe('WAR-04 diagnostics and support-output red probes', () => {
   beforeEach(() => {
     clearDiagnosticEvents()
@@ -73,8 +89,20 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
     expect(snapshot.supportReport).not.toContain(String.raw`C:\Users\field-operator`)
   })
 
-  it('does not persist a provider query credential into exported support output', async () => {
+  it('does not persist or export encoded query and fragment provider connection details', async () => {
     const userDataPath = await mkdtemp(path.join(tmpdir(), 'war-04-query-credential-'))
+    const baseUrl =
+      'https://tracking.example.invalid/api?ses%73ion=encoded-key-credential-canary&session=raw-query-credential-canary&encoded=encoded%2Dcredential%2Dcanary&double=double%252Dcredential%252Dcanary#session=fragment-credential-canary'
+    const leakMarkers = [
+      'encoded-key-credential-canary',
+      'raw-query-credential-canary',
+      'encoded%2Dcredential%2Dcanary',
+      'encoded-credential-canary',
+      'double%252Dcredential%252Dcanary',
+      'double%2Dcredential%2Dcanary',
+      'double-credential-canary',
+      'fragment-credential-canary',
+    ] as const
     try {
       const store = createElectronSettingsStore({
         userDataPath,
@@ -83,30 +111,43 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
       })
       const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
       draft.dataSource.providerType = 'traccar_http'
-      draft.dataSource.baseUrl =
-        'https://tracking.example.invalid/api?session=query-credential-canary'
+      draft.dataSource.baseUrl = baseUrl
       draft.dataSource.email = 'operator@example.test'
       draft.dataSource.secretInput = 'separately-stored-secret'
       let saved: AppSettings
       try {
         saved = await store.saveAppSettings(draft)
-      } catch {
-        // Rejecting a URL-borne credential before persistence is also a safe outcome.
+      } catch (error) {
+        // A targeted rejection before persistence is safe; unrelated write failures are not.
+        expect(error instanceof Error ? error.message : String(error)).toMatch(/credential|secret/i)
+        const reloaded = await store.loadAppSettings()
+        expect(findRetainedMarkers(reloaded.dataSource.baseUrl, leakMarkers)).toEqual([])
         return
       }
+      const copiedReport = buildDiagnosticsSnapshot(
+        createDiagnosticsInput(userDataPath, saved),
+      ).supportReport
       const runtimeFiles = createRuntimeFiles(userDataPath, store.loadAppSettings)
 
       const reportPath = await runtimeFiles.exportSupportBundle({
         fileName: 'query-credential-support.txt',
-        contents: `provider url: ${saved.dataSource.baseUrl}`,
+        contents: copiedReport,
       })
       const report = await readFile(reportPath, 'utf8')
-      console.info('WAR-04 provider-query observation', {
+      const observed = {
         acceptedUrl: saved.dataSource.baseUrl,
-        canaryRetained: report.includes('query-credential-canary'),
-      })
+        persistedMarkers: findRetainedMarkers(saved.dataSource.baseUrl, leakMarkers),
+        copiedReportMarkers: findRetainedMarkers(copiedReport, leakMarkers),
+        exportedMarkers: findRetainedMarkers(report, leakMarkers),
+      }
+      console.info('WAR-04 provider-query observation', observed)
 
-      expect(report).not.toContain('query-credential-canary')
+      expect(observed).toEqual({
+        acceptedUrl: saved.dataSource.baseUrl,
+        persistedMarkers: [],
+        copiedReportMarkers: [],
+        exportedMarkers: [],
+      })
     } finally {
       await rm(userDataPath, { force: true, recursive: true })
     }
@@ -155,29 +196,44 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
   it('removes precise coordinates from direct main-process runtime-log fields', async () => {
     const userDataPath = await mkdtemp(path.join(tmpdir(), 'war-04-main-log-coordinates-'))
     try {
+      const runtimeLog = createRuntimeLog({
+        userDataPath,
+        now: () => '2026-08-29T12:00:00.000Z',
+      })
+      await runtimeLog.appendDurable({
+        level: 'warn',
+        event: 'direct_main_probe',
+        fields: {
+          latitude: 52.123456,
+          context: { longitude: -9.123456 },
+        },
+      })
+      const persistedEntries = await runtimeLog.readRecent()
       const runtimeFiles = createRuntimeFiles(
         userDataPath,
         async () => DEFAULT_APP_SETTINGS,
-        async () => [{
-          ts: '2026-08-29T12:00:00.000Z',
-          level: 'warn',
-          event: 'direct_main_probe',
-          latitude: 52.123456,
-          context: { longitude: -9.123456 },
-        }],
+        () => runtimeLog.readRecent(),
       )
       const reportPath = await runtimeFiles.exportSupportBundle({
         fileName: 'main-log-coordinate-support.txt',
         contents: 'Diagnostics Report',
       })
       const report = await readFile(reportPath, 'utf8')
+      const persistedText = JSON.stringify(persistedEntries)
       const observed = {
+        persistedLatitudeRetained: persistedText.includes('52.123456'),
+        persistedLongitudeRetained: persistedText.includes('-9.123456'),
         latitudeRetained: report.includes('52.123456'),
         longitudeRetained: report.includes('-9.123456'),
       }
       console.info('WAR-04 direct-main coordinate observation', observed)
 
-      expect(observed).toEqual({ latitudeRetained: false, longitudeRetained: false })
+      expect(observed).toEqual({
+        persistedLatitudeRetained: false,
+        persistedLongitudeRetained: false,
+        latitudeRetained: false,
+        longitudeRetained: false,
+      })
     } finally {
       await rm(userDataPath, { force: true, recursive: true })
     }
@@ -185,7 +241,10 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
 })
 
 /** Builds the current renderer report whose exact text is handed to Copy Report. */
-function createDiagnosticsInput(profilePath: string): Parameters<typeof buildDiagnosticsSnapshot>[0] {
+function createDiagnosticsInput(
+  profilePath: string,
+  settings: AppSettings = DEFAULT_APP_SETTINGS,
+): Parameters<typeof buildDiagnosticsSnapshot>[0] {
   return {
     generatedAt: '2026-08-29T12:00:00.000Z',
     appVersion: '0.1.0-beta.12.11',
@@ -198,7 +257,7 @@ function createDiagnosticsInput(profilePath: string): Parameters<typeof buildDia
       hasZustand: true,
       hasTerraDraw: true,
     },
-    settings: DEFAULT_APP_SETTINGS,
+    settings,
     runtimeBootstrap: {
       autosaveEnabled: true,
       autosaveIntervalMs: 30_000,
@@ -234,6 +293,14 @@ function createDiagnosticsInput(profilePath: string): Parameters<typeof buildDia
     },
     selectedMissionId: null,
   }
+}
+
+/** Returns every synthetic connection-detail marker still present in one representation. */
+function findRetainedMarkers(
+  value: string,
+  markers: readonly string[],
+): readonly string[] {
+  return markers.filter((marker) => value.includes(marker))
 }
 
 /** Creates production runtime-file export wiring over a disposable profile. */

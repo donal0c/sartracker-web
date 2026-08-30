@@ -25,7 +25,7 @@ WAR-04 confirmed nine bounded defects across three coherent seams:
 | `WAR04-SET-02` | settings and credential writes can leave a cross-paired provider configuration | High | WAR-11 settings/startup consistency |
 | `WAR04-SET-03` | corrupt settings also disable the support export offered by the startup-fault shell | Medium | WAR-11 settings/startup consistency |
 | `WAR04-PRV-01` | the operator's `Copy Report` action includes the full Electron profile path | Medium | WAR-11 diagnostics allow-listing |
-| `WAR04-PRV-02` | a URL query credential can be persisted and included in support output | High | WAR-11 diagnostics allow-listing |
+| `WAR04-PRV-02` | URL query/fragment connection details can be persisted and included in copied/support output | High | WAR-11 diagnostics allow-listing |
 | `WAR04-PRV-03` | nested renderer fields and direct main-log coordinates cross the export boundary unsanitized | Medium control defect; potentially high consequence | WAR-11 diagnostics allow-listing |
 
 “High” here means the reproduced state can misstate navigation readiness,
@@ -66,7 +66,7 @@ packaged binary.
 | Credential reads | missing, zero-byte/garbage/foreign-shaped JSON, directory substituted for file, local permission-denied read | normal corruption degrades safely; non-`ENOENT` read failure confirmed to abort bootstrap |
 | Settings reads | missing, zero-byte/garbage JSON, out-of-range intervals | missing/default and bounded normalization cleared; malformed JSON fails visibly |
 | Settings writes | credential-write failure, failure after credential commit, identical-timestamp simultaneous saves | first failure ordering cleared; cross-file atomicity/serialization defect confirmed |
-| Provider URL | ordinary URL, raw/encoded userinfo, query-borne placeholder credential | userinfo rejection cleared; query credential persistence/export confirmed |
+| Provider URL | ordinary URL, raw/encoded userinfo, raw/percent-encoded query key/value, double-encoded query value, and fragment-borne placeholder connection detail | userinfo rejection cleared; query/fragment persistence and copied/support export confirmed |
 | Support output | renderer report, Copy Report, Electron diagnostics/support join, startup-fault export, incident-format join | three privacy/recovery defects confirmed |
 | Encodings | canonical POSIX and Windows paths, UNC, JSON-escaped nested data, percent/double-percent path text, nested secret/coordinates | canonical controls cleared; representation-sensitive gaps split between confirmed current boundaries and unproven producer cases |
 | DON-264 | overlay-sync retry/error path versus all WAR-04 production seams | no exact overlap; left separately owned |
@@ -149,7 +149,12 @@ different inode under the same path.
 SQLite reader by package path and persisted-metadata fingerprint at
 `electron/official-map-proxy.cjs:204-323`, neither of which changes during a
 same-path replacement. Successful Settings save does invalidate readers at
-`electron/main.cjs:642-647`, but import itself does not.
+`electron/main.cjs:642-647`, but import itself does not. The operator-reachable
+path is `src/components/settings-workspace.tsx:943-981` through
+`electron/preload.cjs:532-537`: choosing a package completes the irreversible
+copy/rename before Settings save. Discard at
+`src/components/settings-workspace.tsx:861-873` closes the draft but does not
+undo or invalidate that imported file.
 
 **Red reproduction:** `switches a live reader to the package atomically imported
 at the same path` uses the production store, proxy, SQLite reader, and importer.
@@ -158,7 +163,8 @@ old bytes; `invalidateSettings()` immediately switches it to the replacement.
 
 **Consequence/severity:** High safety impact with a bounded trigger. Old or wrong
 map content can remain visible after the app-owned library changes. The window
-is import-before-save, discard/save failure, or another same-path replacement.
+is the directly reachable import-before-save state, discard/save failure, or
+another same-path replacement.
 
 **Escape analysis:** existing tests separately prove atomic import and successful
 Settings-save invalidation. They do not keep a live SQLite reader open across
@@ -278,30 +284,36 @@ redaction, while diagnostics-model tests intentionally retain storage paths for
 display. No test asserts that the exact string passed to the clipboard is safe
 to share.
 
-### WAR04-PRV-02 — query-borne provider credential reaches support output
+### WAR04-PRV-02 — query/fragment provider connection details reach shareable output
 
-**Invariant:** provider credentials must not be accepted in any persisted URL
-form or appear in diagnostics.
+**Invariant:** provider credentials and private connection details must not be
+accepted in any persisted URL form or appear in diagnostics.
 
 **Production path:** both validation layers reject only URL `username` or
 `password`: `src/features/settings/settings-validation.ts:82-94` and
 `electron/settings-store.cjs:419-426,479-497`. The base URL is then persisted
-and printed at `electron/runtime-files.cjs:177-199`; the sanitizer's key and URL
-userinfo patterns in `electron/diagnostic-sanitizer.cjs:1-25` do not recognize a
-query key such as `session`.
+and printed by the renderer report and at
+`electron/runtime-files.cjs:177-199`; the sanitizer's key and URL-userinfo
+patterns in `electron/diagnostic-sanitizer.cjs:1-25` do not recognize query or
+fragment connection details such as `session`.
 
-**Red reproduction:** `does not persist a provider query credential into
-exported support output` saves
-`https://tracking.example.invalid/api?session=query-credential-canary` through
-the real store and exports a real support bundle. The URL is accepted and the
-placeholder value appears in both the Electron and support-report sections.
+**Red reproduction:** `does not persist or export encoded query and fragment
+provider connection details` sends one synthetic `example.invalid` URL through
+the real store with a raw query value, percent-encoded query key/value,
+double-encoded query value, and fragment value. It then builds the exact renderer
+text used by `Copy Report` and sends that through a real Electron support export.
+The URL is accepted; every placeholder representation remains persisted and in
+both copied and exported output. A safe future rejection must be explicitly
+credential/secret-specific and leave none of the markers persisted, so an
+unrelated write failure cannot false-green this probe.
 
 **Consequence/severity:** High privacy impact. A connection credential carried
 in a base URL can be copied into a shareable artifact.
 
 **Escape analysis:** existing controls and tests cover direct and encoded URL
 userinfo plus separately stored credential fields. They do not define or test a
-query-credential policy across persistence, renderer report, and main export.
+query/fragment connection-detail policy across persistence, renderer Copy
+Report, and main export, including encoded representations.
 
 ### WAR04-PRV-03 — nested and direct-main coordinate fields evade sanitization
 
@@ -327,8 +339,9 @@ must not survive because a value is nested or encoded once more.
 
 - a nested renderer context retains a precise coordinate, placeholder token,
   and synthetic Windows profile identity after the report/support join;
-- a direct main-log object retains both `latitude` and nested `longitude` in the
-  support bundle.
+- a direct main-log object is appended with `createRuntimeLog.appendDurable`,
+  read back from the persisted JSONL log with `readRecent`, and retains both
+  `latitude` and nested `longitude` there and in the support bundle.
 
 **Consequence/severity:** Medium current control defect with potentially high
 consequence. If such fields reach either boundary, shared output can expose a
@@ -337,10 +350,11 @@ precise operational location, connection detail, or host identity.
 **Escape analysis:** top-level renderer coordinate keys are tested and redacted;
 main sanitization is recursively tested for secret/path keys. The tests do not
 nest renderer values, double-encode the report representation, or require the
-main sanitizer to recognize coordinate keys. The current in-tree renderer
-producers inspected by WAR-04 use primitive allow-listed fields; no current
-built-in producer of the nested probe was found. That limits present
-reachability but does not satisfy the explicit recursive sanitizer contract.
+main sanitizer to recognize coordinate keys at durable append/read/export. The
+current in-tree renderer producers inspected by WAR-04 use primitive
+allow-listed fields; no current built-in producer of the nested probe was found.
+That limits present reachability but does not satisfy the explicit recursive
+sanitizer contract.
 
 ## 4. Unproven hypotheses and policy questions
 

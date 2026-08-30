@@ -88,13 +88,16 @@ const { createElectronFileSystem } = require('../../../../electron/file-system.c
   }
 }
 
+const TARGET_TILE = { z: 12, x: 1935, y: 1352 } as const
 const TILE_URL =
-  'sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png'
+  `sartracker-official-map://tile/official_discovery_topo/${TARGET_TILE.z}/${TARGET_TILE.x}/${TARGET_TILE.y}.png`
 const VIEW_BOUNDS = { west: -10.1, south: 51.9, east: -9.6, north: 52.2 }
+const PACKAGE_BOUNDS = { west: -10.25, south: 51.85, east: -9.45, north: 52.35 }
 const VALID_PNG_BYTES = Buffer.from(NO_COVERAGE_TILE_BASE64, 'base64')
 
 describe('WAR-04 official-map readiness red probes', () => {
   it('does not keep a registered package field-ready after the file disappears', async () => {
+    expectTargetTileInsideCertifiedBounds()
     const rootPath = await mkdtemp(path.join(tmpdir(), 'war-04-map-missing-'))
     const packagePath = path.join(rootPath, 'registered.mbtiles')
     try {
@@ -129,6 +132,7 @@ describe('WAR-04 official-map readiness red probes', () => {
   })
 
   it('switches a live reader to the package atomically imported at the same path', async () => {
+    expectTargetTileInsideCertifiedBounds()
     const rootPath = await mkdtemp(path.join(tmpdir(), 'war-04-map-replace-'))
     const userDataPath = path.join(rootPath, 'user-data')
     const packagePath = path.join(
@@ -196,6 +200,7 @@ describe('WAR-04 official-map readiness red probes', () => {
   })
 
   it('does not label or serve a tile row whose bytes are not a decodable PNG', async () => {
+    expectTargetTileInsideCertifiedBounds()
     const rootPath = await mkdtemp(path.join(tmpdir(), 'war-04-map-invalid-image-'))
     const packagePath = path.join(rootPath, 'invalid-image.mbtiles')
     const invalidImageBytes = Buffer.from('not-a-decodable-png', 'utf8')
@@ -228,10 +233,11 @@ describe('WAR-04 official-map readiness red probes', () => {
   })
 
   it('does not certify declared coverage when the requested in-bounds tile is absent', async () => {
+    expectTargetTileInsideCertifiedBounds()
     const rootPath = await mkdtemp(path.join(tmpdir(), 'war-04-map-incomplete-'))
     const packagePath = path.join(rootPath, 'incomplete.mbtiles')
     try {
-      createMbtilesPackage(packagePath, VALID_PNG_BYTES, { x: 1934, y: 1344 })
+      createMbtilesPackage(packagePath, VALID_PNG_BYTES, { x: 1934, y: TARGET_TILE.y })
       const saved = await createStore(rootPath).saveAppSettings(createPackageDraft(packagePath))
       const checklist = buildChecklist(saved)
       const proxy = createProxy(async () => saved)
@@ -317,7 +323,7 @@ function createPackageDraft(packagePath: string): AppSettingsDraft {
 function createMbtilesPackage(
   packagePath: string,
   tileBytes: Uint8Array,
-  tile = { x: 1935, y: 1344 },
+  tile = { x: TARGET_TILE.x, y: TARGET_TILE.y },
 ): void {
   const db = new Database(packagePath)
   try {
@@ -333,7 +339,10 @@ function createMbtilesPackage(
     const insertMetadata = db.prepare('INSERT INTO metadata (name, value) VALUES (?, ?)')
     insertMetadata.run('name', 'WAR-04 synthetic package')
     insertMetadata.run('format', 'png')
-    insertMetadata.run('bounds', '-10.25,51.85,-9.45,52.35')
+    insertMetadata.run(
+      'bounds',
+      `${PACKAGE_BOUNDS.west},${PACKAGE_BOUNDS.south},${PACKAGE_BOUNDS.east},${PACKAGE_BOUNDS.north}`,
+    )
     insertMetadata.run('minzoom', '12')
     insertMetadata.run('maxzoom', '12')
     db.prepare(
@@ -352,7 +361,7 @@ function readTileBytes(packagePath: string): Buffer {
       .prepare(
         'SELECT tile_data AS tileData FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?',
       )
-      .get(12, 1935, xyzToTmsY(12, 1344))
+      .get(TARGET_TILE.z, TARGET_TILE.x, xyzToTmsY(TARGET_TILE.z, TARGET_TILE.y))
     return Buffer.from(row?.tileData ?? [])
   } finally {
     db.close()
@@ -364,6 +373,31 @@ function hasPngSignature(bytes: Uint8Array): boolean {
   return Buffer.from(bytes.subarray(0, 8)).equals(
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   )
+}
+
+/** Proves the synthetic request is wholly inside both positively certified envelopes. */
+function expectTargetTileInsideCertifiedBounds(): void {
+  const tileBounds = xyzTileBounds(TARGET_TILE.z, TARGET_TILE.x, TARGET_TILE.y)
+  for (const certifiedBounds of [VIEW_BOUNDS, PACKAGE_BOUNDS]) {
+    expect(tileBounds.west).toBeGreaterThanOrEqual(certifiedBounds.west)
+    expect(tileBounds.south).toBeGreaterThanOrEqual(certifiedBounds.south)
+    expect(tileBounds.east).toBeLessThanOrEqual(certifiedBounds.east)
+    expect(tileBounds.north).toBeLessThanOrEqual(certifiedBounds.north)
+  }
+}
+
+/** Converts one XYZ tile coordinate into its WGS84 footprint. */
+function xyzTileBounds(z: number, x: number, y: number) {
+  const dimension = 2 ** z
+  const longitude = (column: number) => (column / dimension) * 360 - 180
+  const latitude = (row: number) =>
+    (Math.atan(Math.sinh(Math.PI * (1 - (2 * row) / dimension))) * 180) / Math.PI
+  return {
+    west: longitude(x),
+    south: latitude(y + 1),
+    east: longitude(x + 1),
+    north: latitude(y),
+  }
 }
 
 /** Supplies the settings store's narrow safeStorage contract without real credentials. */
