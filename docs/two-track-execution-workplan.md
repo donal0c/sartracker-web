@@ -166,6 +166,21 @@ packet's “PR6” shorthand refers to that successor, not to this docs-only Git
 PR #6. WAR-01 does not create speculative Linear issues: each row cites the
 closest existing owner.
 
+### WAR-04 platform-services resilience investigation
+
+[PR #8](https://github.com/donal0c/sartracker-web/pull/8) is the
+investigation-only WAR-04 result on exact base
+`3d0d36b3874947d3d620bdb5262d9cd2d7233fcf`. It records nine confirmed local
+failure/privacy defects across official-map readiness, settings/credential
+startup, and support/incident export, plus six unproven hypotheses and the
+controls cleared by inspection and deterministic synthetic proof. Twelve
+isolated red checks preserve the present failure states; the normal test,
+lint, build, backend, and browser suites remain green and shipping code is
+unchanged. Remediation belongs to three bounded WAR-11 clusters. `DON-264`
+remains a separate persistent overlay-sync diagnostics issue and is not
+silently absorbed by WAR-04. Broad packaged, live-provider, platform-matrix,
+scale, soak, and field proof remain WAR-12 work.
+
 ### Breadcrumb And Mission-History Programme
 
 The locked domain model is in
@@ -894,6 +909,7 @@ This is the default order when the user says “work on the next task.”
 | Done | [PR #4](https://github.com/donal0c/sartracker-web/pull/4): enforce canonical `fixTime`, explicit local-time display, and history-independent current polling | Shared Tracking / S2 Electron / Evidence / Verification | `DON-267`; `SAR-QA-021`; `SAR-FIELD-002` | Merged from final head `a6ebfbebb7b624a85ab437508209d8d56c9cf9d8` at `80309c995a18eeb190cce4310c9a46b0f46d5263`. Exact-head Linux run `33068124294` passed. The bounded bridge preserved progressive whole-history coverage and proved 37,479 as 10,000 + 10,000 + 10,000 + 7,479; that CI/package evidence is not programme-final field qualification, and PR-4 added no Replay, timeline, export, or archive scope. |
 | Done | PR-5: mission evidence and data-known-at-time Replay | Shared Evidence / S2 Electron / Mission Review / Verification | `DON-274` / `DON-277` / `DON-278` / `DON-279` | Merged as [PR #5](https://github.com/donal0c/sartracker-web/pull/5) from final head `f5ba8647131950dde457e50ce36fe0b8ded7337d` at `eec92812b783a795c093f37268b295dd2179a3af`. Exact-head Linux run `33260131951` is green; its package path and the final focused correction are the proof boundary, while the earlier four-review wave remains prior-head evidence. Detailed scope and verification are retained in `docs/breadcrumb-pr5-evidence.md` and PR #5. |
 | Done | [PR #6](https://github.com/donal0c/sartracker-web/pull/6): WAR-01 whole-application assurance charter and stable hazard register | Whole application / Assurance / Verification | Existing owners are cited per hazard; no new issue | Documentation/investigation only, merged at `182d077804498f5c10aaf0b8b2c1525f29a31da7`. Covers all 12 hazard domains and the five absolute blockers. Post-PR5 reconciliation is pinned to merge `eec92812b783a795c093f37268b295dd2179a3af`; merged PR5 rows carry inspected control/evidence limits, `RPL-004` remains `rewrite-pending` for the unimplemented `DON-248`/`DON-252`/`DON-253` archive successor, and the required broad/focused exact-head reviews were clean. Donal retains the implementation/merge gate for the archive successor, not merged GitHub PR #6. |
+| Review-ready | [PR #8](https://github.com/donal0c/sartracker-web/pull/8): WAR-04 platform-services resilience investigation | Map / Settings / Diagnostics / Assurance | `DON-7` / `DON-76` / `DON-177` / `DON-226` / `DON-237`; `DON-264` assessed separately | Documentation and isolated synthetic red checks only; no shipping-code remediation. Nine confirmed findings route to three bounded WAR-11 clusters. Normal gates remain green. Exact-head maps/readiness and settings/credentials/diagnostics-privacy reviews are mandatory on PR #8 before the investigation closes; broad package/provider/platform/scale/soak proof remains WAR-12. Do not merge from this task. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
