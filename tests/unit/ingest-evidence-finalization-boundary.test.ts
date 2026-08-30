@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { createIngestEvidenceFinalizationBoundary } from '../../src/features/tracking/ingest-evidence-finalization-boundary'
 import { createRejectionEvidenceDelivery } from '../../src/features/tracking/rejection-evidence-delivery'
 
+const CUSTODY = Object.freeze({
+  operationId: '11111111-1111-4111-8111-111111111111',
+  passphrase: 'Four calm words 2026!',
+  recoveryCode: '01234-56789-ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567',
+})
+
 describe('ingest evidence finalization boundary [DON-268]', () => {
   it('drains and seals renderer evidence before committing mission finish', async () => {
     const finishMission = vi.fn().mockResolvedValue({ id: 'mission-1', status: 'finished' })
@@ -54,13 +60,13 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
       reopenMissionEvidenceAfterUnlock: vi.fn(),
     })
 
-    const finalization = bounded.finalizeMission('mission-1')
+    const finalization = bounded.finalizeMission('mission-1', CUSTODY)
     await vi.waitFor(() => expect(flushMission).toHaveBeenCalledWith('mission-1'))
     expect(finalizeMission).not.toHaveBeenCalled()
 
     releaseFlush?.()
     await expect(finalization).resolves.toEqual({ mission: { status: 'finalized' } })
-    expect(finalizeMission).toHaveBeenCalledWith('mission-1')
+    expect(finalizeMission).toHaveBeenCalledWith('mission-1', CUSTODY)
     expect(bounded.marker).toBe('preserved')
   })
 
@@ -78,7 +84,7 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
       },
     )
 
-    await expect(bounded.finalizeMission('mission-1')).rejects.toThrow('evidence unavailable')
+    await expect(bounded.finalizeMission('mission-1', CUSTODY)).rejects.toThrow('evidence unavailable')
     expect(finalizeMission).not.toHaveBeenCalled()
   })
 
@@ -104,8 +110,8 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
       },
     )
 
-    const finalization = bounded.finalizeMission('mission-1')
-    await vi.waitFor(() => expect(finalizeMission).toHaveBeenCalledWith('mission-1'))
+    const finalization = bounded.finalizeMission('mission-1', CUSTODY)
+    await vi.waitFor(() => expect(finalizeMission).toHaveBeenCalledWith('mission-1', CUSTODY))
     expect(runWithMissionFinalizationFence).toHaveBeenCalledTimes(1)
 
     releaseFinalization?.()
@@ -152,7 +158,7 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
     })
     const bounded = createIngestEvidenceFinalizationBoundary(missionStore, evidence)
 
-    await expect(bounded.finalizeMission('mission-1')).resolves.toMatchObject({
+    await expect(bounded.finalizeMission('mission-1', CUSTODY)).resolves.toMatchObject({
       mission: { status: 'finalized' },
     })
     expect(() => evidence.record([], {
@@ -180,7 +186,7 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
       observedAt: '2026-08-23T09:31:00.000Z',
     })).not.toThrow()
 
-    await expect(bounded.finalizeMission('mission-1')).resolves.toMatchObject({
+    await expect(bounded.finalizeMission('mission-1', CUSTODY)).resolves.toMatchObject({
       mission: { status: 'finalized' },
     })
     expect(missionStore.finalizeMission).toHaveBeenCalledTimes(2)
@@ -234,7 +240,7 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
     })
     const bounded = createIngestEvidenceFinalizationBoundary(missionStore, evidence)
 
-    const staleFinalization = bounded.finalizeMission('mission-1')
+    const staleFinalization = bounded.finalizeMission('mission-1', CUSTODY)
     await finalizationCommitted
     await expect(bounded.unlockFinalizedMission({
       mission_id: 'mission-1',

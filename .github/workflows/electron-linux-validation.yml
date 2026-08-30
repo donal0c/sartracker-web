@@ -10,6 +10,9 @@ on:
     paths:
       - '.github/workflows/electron-linux-validation.yml'
       - 'electron/**'
+      - 'docs/**'
+      - 'handoff/**'
+      - 'public/manual/**'
       - 'shared/**'
       - 'src/**'
       - 'tests/**'
@@ -30,15 +33,45 @@ concurrency:
 
 env:
   NODE_VERSION: '22'
+  EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   build:
     name: Build and inspect Linux Electron artifacts
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
-      - name: Checkout
+      - name: Checkout exact source head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SOURCE_SHA }}
+
+      - name: Bind exact source head and tree
+        run: |
+          set -euo pipefail
+          ACTUAL_SOURCE_SHA="$(git rev-parse HEAD)"
+          SOURCE_TREE_SHA="$(git rev-parse HEAD^{tree})"
+          SOURCE_DIRTY="$(git status --porcelain --untracked-files=all)"
+          if [ "$ACTUAL_SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ]; then
+            echo "::error::Checked-out source head does not match EXPECTED_SOURCE_SHA."
+            exit 1
+          fi
+          if [ -n "$SOURCE_DIRTY" ]; then
+            echo "::error::Checked-out source tree is not clean."
+            exit 1
+          fi
+          mkdir -p tmp/electron-validation-evidence
+          export ACTUAL_SOURCE_SHA SOURCE_TREE_SHA
+          node --input-type=module <<'NODE' \
+            > tmp/electron-validation-evidence/source-binding.json
+          const binding = {
+            schema: 'sartracker-electron-linux-source-binding-v1',
+            repositoryHead: process.env.ACTUAL_SOURCE_SHA,
+            repositoryTree: process.env.SOURCE_TREE_SHA,
+            repositoryDirty: false,
+          }
+          process.stdout.write(`${JSON.stringify(binding, null, 2)}\n`)
+          NODE
 
       - name: Install Linux Electron runtime deps
         run: |
@@ -97,6 +130,23 @@ jobs:
           mkdir -p tmp/electron-validation-evidence
           npm run electron:dist:linux
 
+      - name: Restore exact source tree after packaging
+        run: |
+          set -euo pipefail
+          TRACKED_STATUS="$(git status --porcelain --untracked-files=no)"
+          if [ -n "$TRACKED_STATUS" ] \
+            && [ "$TRACKED_STATUS" != " M src/lib/version.generated.ts" ]; then
+            echo "::error::Unexpected tracked changes were created while packaging."
+            git status --short --untracked-files=no
+            exit 1
+          fi
+          git restore --source=HEAD --worktree -- src/lib/version.generated.ts
+          if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
+            echo "::error::Exact source tree was not clean after restoring generated version metadata."
+            git status --short --untracked-files=all
+            exit 1
+          fi
+
       - name: Qualify mission evidence replay at the normal 960k envelope
         run: npm run breadcrumb-pr5:qualify -- --preset=bcp-960k
 
@@ -151,6 +201,15 @@ jobs:
           set -euo pipefail
           xvfb-run -a --server-args='-screen 0 1440x900x24' \
             npm run electron:smoke:tracking-soak:ci
+
+      - name: Packaged archive lifecycle smoke
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            npm run electron:smoke:archive-lifecycle:ci
 
       - name: Launch AppImage smoke
         run: |
@@ -301,7 +360,7 @@ jobs:
       - name: Upload Electron Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: electron-linux-artifacts-${{ github.sha }}
+          name: electron-linux-artifacts-${{ env.EXPECTED_SOURCE_SHA }}
           path: |
             tmp/electron-dist/*.AppImage
             tmp/electron-dist/*.deb
@@ -312,9 +371,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: electron-linux-validation-evidence-${{ github.sha }}
+          name: electron-linux-validation-evidence-${{ env.EXPECTED_SOURCE_SHA }}
           path: |
             tmp/electron-validation-evidence
             tmp/beta-artifacts/tracking-soak-ci
             tmp/breadcrumb-pr5-evidence
+            tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-report.json
           if-no-files-found: warn

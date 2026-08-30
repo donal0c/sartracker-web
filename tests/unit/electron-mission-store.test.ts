@@ -758,8 +758,28 @@ describe('electron mission store', () => {
     )
   })
 
+  it('does not inspect mission events when no finalization fence needs startup recovery', async () => {
+    const originalPrepare = Database.prototype.prepare
+    let unboundedFenceJoinCount = 0
+    Database.prototype.prepare = function prepareWithFenceObservation(sql: string) {
+      if (
+        sql.includes('FROM mission_finalization_fences AS fence')
+        && sql.includes('INNER JOIN mission_events AS event')
+      ) {
+        unboundedFenceJoinCount += 1
+      }
+      return originalPrepare.call(this, sql)
+    }
+    try {
+      store = await createStore()
+      expect(unboundedFenceJoinCount).toBe(0)
+    } finally {
+      Database.prototype.prepare = originalPrepare
+    }
+  })
+
   it('migrates a schema-6 store to the durable tracking-history checkpoint schema', async () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(12)
+    expect(CURRENT_SCHEMA_VERSION).toBe(13)
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-checkpoint-migration-'))
     const databasePath = path.join(userDataPath, 'mission-store.sqlite')
     const legacyDb = new Database(databasePath)
@@ -773,7 +793,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -788,7 +808,7 @@ describe('electron mission store', () => {
         migratedDb
           .prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
           .get(),
-      ).toEqual({ value: '12' })
+      ).toEqual({ value: '13' })
     } finally {
       migratedDb.close()
     }
@@ -830,7 +850,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -890,7 +910,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -1030,7 +1050,7 @@ describe('electron mission store', () => {
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM outings').get()).toEqual({ count: 0 })
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM devices').get()).toEqual({ count: 2 })
       expect(migratedDb.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
-        .toEqual({ value: '12' })
+        .toEqual({ value: '13' })
       expect(migratedDb.prepare(`SELECT name FROM sqlite_master
           WHERE type = 'index' AND name IN (
             'idx_mission_participants_active_device',
@@ -1393,9 +1413,10 @@ describe('electron mission store', () => {
       userDataPath,
       runMissionReviewReadQueryInWorker,
     })
+    const mission = await store.createMission({ name: 'Cancelable Mission Review' })
     const requestId = 'renderer-a:mission-review:request-1'
     const review = store.readMissionReview(
-      { missionId: 'mission-1', includeTelemetry: false, auditLimit: 501 },
+      { missionId: mission.id, includeTelemetry: false, auditLimit: 501 },
       requestId,
     )
     await vi.waitFor(() =>
@@ -1417,13 +1438,16 @@ describe('electron mission store', () => {
       completions.push(() => resolve({ auditEvents: [], breadcrumbCount: 0 }))
     }))
     store = await createStore({ runMissionReviewReadQueryInWorker })
+    const firstMission = await store.createMission({ name: 'First serialized Review' })
+    await store.finishMission(firstMission.id)
+    const secondMission = await store.createMission({ name: 'Second serialized Review' })
     const first = store.readMissionReview({
-      missionId: 'mission-1',
+      missionId: firstMission.id,
       includeTelemetry: false,
       auditLimit: 5,
     }, 'review-first')
     const second = store.readMissionReview({
-      missionId: 'mission-2',
+      missionId: secondMission.id,
       includeTelemetry: false,
       auditLimit: 5,
     }, 'review-second')

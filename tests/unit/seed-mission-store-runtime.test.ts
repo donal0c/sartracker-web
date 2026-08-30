@@ -65,7 +65,7 @@ describe('generateMissionStoreFixture [DON-242]', () => {
     expect(generated.manifest.bytes.byTable.positions).toBeGreaterThan(0)
     expect(generated.manifest.bytes.byTable.mission_events).toBeGreaterThan(0)
     expect(generated.manifest.database.sha256).toBe(
-      '29476243bc481e33ffcc4658a24278f95e91a538ce435f54d872b0ca1fe45d15',
+      'f7f7bef0b3d146794bfde32e549e0feb46f4ba601ce458876d10e8f507b463fe',
     )
     await expect(sha256File(outputPath)).resolves.toBe(generated.manifest.database.sha256)
     await expect(sha256File(copyToPath)).resolves.toBe(generated.manifest.database.sha256)
@@ -170,6 +170,19 @@ describe('generateMissionStoreFixture [DON-242]', () => {
     expect(reused.reused).toBe(true)
     expect(reused.manifest.generatorVersion).toBe(2)
     expect((await stat(outputPath)).mtimeMs).toBe(originalStat.mtimeMs)
+  }, 30_000)
+
+  it('starts the PR5 qualification fixture on the current schema before a bounded interruption', async () => {
+    const tempRoot = await makeTempRoot()
+    const outputPath = path.join(tempRoot, 'cache', 'breadcrumb-pr5.sqlite')
+
+    await expect(generateMissionStoreFixture({
+      preset: 'bcp-960k',
+      outputPath,
+      force: true,
+      progress: () => undefined,
+      faultInjection: { afterPollBatches: 1 },
+    })).rejects.toThrow(/Injected fixture generation interruption after poll batch/u)
   }, 30_000)
 })
 

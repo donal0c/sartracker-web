@@ -26,6 +26,17 @@ const FINALIZED_MISSION: Mission = {
   status: 'finalized',
 }
 
+const ARCHIVED_FINISHED_MISSION: Mission = {
+  ...FINISHED_MISSION,
+  status: 'finalized',
+}
+
+const CUSTODY = Object.freeze({
+  operationId: '11111111-1111-4111-8111-111111111111',
+  passphrase: 'Four calm words 2026!',
+  recoveryCode: '01234-56789-ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567',
+})
+
 describe('startMissionGovernanceRuntime', () => {
   it('hydrates the exact finished mission evidence health for restart governance [DON-276]', async () => {
     const applyRuntime = vi.fn()
@@ -83,14 +94,14 @@ describe('startMissionGovernanceRuntime', () => {
       created_at: '2026-04-10T13:00:00.000Z',
     }
     const finalizeResult: FinalizeMissionResult = {
-      mission: FINALIZED_MISSION,
+      mission: { id: FINISHED_MISSION.id, status: 'finalized' },
       archive,
     }
 
     const listMissions = vi
       .fn()
       .mockResolvedValueOnce([FINISHED_MISSION])
-      .mockResolvedValueOnce([FINALIZED_MISSION])
+      .mockResolvedValueOnce([ARCHIVED_FINISHED_MISSION])
     const finalizeMission = vi.fn().mockResolvedValue(finalizeResult)
 
     const runtime = await startMissionGovernanceRuntime({
@@ -102,13 +113,165 @@ describe('startMissionGovernanceRuntime', () => {
       requestAutosaveSync,
     })
 
-    await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id)).resolves.toEqual(finalizeResult)
-    expect(finalizeMission).toHaveBeenCalledWith(FINISHED_MISSION.id)
+    await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id, CUSTODY))
+      .resolves.toEqual(finalizeResult)
+    expect(finalizeMission).toHaveBeenCalledWith(FINISHED_MISSION.id, CUSTODY)
     expect(requestAutosaveSync).toHaveBeenCalledWith('mission-finalize')
     expect(applyRuntime).toHaveBeenLastCalledWith({
-      governanceMission: FINALIZED_MISSION,
+      governanceMission: ARCHIVED_FINISHED_MISSION,
       governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
     })
+  })
+
+  it('returns durable finalization and publishes terminal truth when reconciliation fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const applyRuntime = vi.fn()
+    const finalizeResult: FinalizeMissionResult = {
+      mission: { id: FINISHED_MISSION.id, status: 'finalized' },
+      archive: {
+        mission_id: FINISHED_MISSION.id,
+        archive_path: '/tmp/mission-finished.sararch',
+        created_at: '2026-08-30T09:00:00.000Z',
+      } as MissionArchiveInfo,
+    }
+    try {
+      const runtime = await startMissionGovernanceRuntime({
+        missionStore: createMissionGovernanceStoreStub({
+          listMissions: vi.fn()
+            .mockResolvedValueOnce([FINISHED_MISSION])
+            .mockRejectedValueOnce(new Error('post-success refresh unavailable')),
+          finalizeMission: vi.fn().mockResolvedValue(finalizeResult),
+        }),
+        applyRuntime,
+      })
+
+      await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id, CUSTODY))
+        .resolves.toEqual(finalizeResult)
+      expect(applyRuntime).toHaveBeenLastCalledWith({
+        governanceMission: ARCHIVED_FINISHED_MISSION,
+        governanceEvidenceHealth: expect.any(Object),
+      })
+      expect(warn).toHaveBeenCalledWith(
+        'Mission governance refresh failed after archive operation.',
+        expect.any(Error),
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('preserves the authoritative finalization rejection when failure reconciliation also fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const terminalFailure = Object.assign(new Error('closed verification failure'), {
+      code: 'ARCHIVE_VERIFY_FAILED',
+    })
+    try {
+      const runtime = await startMissionGovernanceRuntime({
+        missionStore: createMissionGovernanceStoreStub({
+          listMissions: vi.fn()
+            .mockResolvedValueOnce([FINISHED_MISSION])
+            .mockRejectedValueOnce(new Error('post-failure refresh unavailable')),
+          finalizeMission: vi.fn().mockRejectedValue(terminalFailure),
+        }),
+        applyRuntime: vi.fn(),
+      })
+
+      await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id, CUSTODY))
+        .rejects.toBe(terminalFailure)
+      expect(warn).toHaveBeenCalledWith(
+        'Mission governance refresh failed after archive operation.',
+        expect.any(Error),
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('delegates one-time archive recovery issuance and sender-owned cancellation', async () => {
+    const issueMissionArchiveRecoveryCode = vi.fn().mockResolvedValue({
+      operationId: CUSTODY.operationId,
+      recoveryCode: CUSTODY.recoveryCode,
+      expiresAt: '2026-08-29T20:10:00.000Z',
+    })
+    const cancelMissionArchiveOperation = vi.fn().mockResolvedValue(true)
+    const runtime = await startMissionGovernanceRuntime({
+      missionStore: createMissionGovernanceStoreStub({
+        issueMissionArchiveRecoveryCode,
+        cancelMissionArchiveOperation,
+      }),
+      applyRuntime: vi.fn(),
+    })
+
+    await expect(runtime.issueGovernanceArchiveRecoveryCode(FINISHED_MISSION.id))
+      .resolves.toMatchObject({ operationId: CUSTODY.operationId })
+    await expect(runtime.cancelGovernanceArchiveOperation(CUSTODY.operationId)).resolves.toBe(true)
+    expect(issueMissionArchiveRecoveryCode).toHaveBeenCalledWith(FINISHED_MISSION.id)
+    expect(cancelMissionArchiveOperation).toHaveBeenCalledWith(CUSTODY.operationId)
+  })
+
+  it('loads the latest cleanup checklist and refreshes the archived mission after completion', async () => {
+    const archive = {
+      id: 'archive-current',
+      mission_id: FINALIZED_MISSION.id,
+      revision_sequence: 2,
+      status: 'verified',
+      container_version: 2,
+    } as MissionArchiveInfo
+    const eligibility = {
+      eligible: false,
+      blockers: ['fresh_non_machine_unlock_required'] as const,
+      storageState: 'live' as const,
+    }
+    const archivedMission = { ...FINALIZED_MISSION, storage_state: 'archived' as const }
+    const listMissionArchives = vi.fn().mockResolvedValue([
+      { ...archive, id: 'archive-prior', revision_sequence: 1, status: 'superseded' },
+      archive,
+    ])
+    const getMissionCleanupEligibility = vi.fn().mockResolvedValue(eligibility)
+    const startMissionCleanup = vi.fn().mockResolvedValue({
+      missionId: FINALIZED_MISSION.id,
+      archiveId: archive.id,
+      state: 'completed',
+      storageState: 'archived',
+      movedRows: 23,
+    })
+    const requestAutosaveSync = vi.fn().mockResolvedValue(undefined)
+    const runtime = await startMissionGovernanceRuntime({
+      missionStore: createMissionGovernanceStoreStub({
+        listMissions: vi.fn()
+          .mockResolvedValueOnce([FINALIZED_MISSION])
+          .mockResolvedValueOnce([archivedMission]),
+        listMissionArchives,
+        getMissionCleanupEligibility,
+        startMissionCleanup,
+      }),
+      applyRuntime: vi.fn(),
+      requestAutosaveSync,
+    })
+
+    await expect(runtime.readGovernanceCleanupState(FINALIZED_MISSION.id)).resolves.toEqual({
+      archive,
+      eligibility,
+    })
+    expect(getMissionCleanupEligibility).toHaveBeenCalledWith({
+      missionId: FINALIZED_MISSION.id,
+      archiveId: archive.id,
+    })
+    const input = {
+      missionId: FINALIZED_MISSION.id,
+      archiveId: archive.id,
+      operationId: '22222222-2222-4222-8222-222222222222',
+      slotType: 'passphrase' as const,
+      secret: 'Four calm words 2026!',
+      confirmation: FINALIZED_MISSION.name,
+    }
+    await expect(runtime.startGovernanceCleanup(input)).resolves.toMatchObject({
+      state: 'completed',
+      storageState: 'archived',
+      movedRows: 23,
+    })
+    expect(startMissionCleanup).toHaveBeenCalledWith(input)
+    expect(requestAutosaveSync).toHaveBeenCalledWith('mission-cleanup')
   })
 
   it('refreshes mission-scoped health when finalization is blocked by a later loss [DON-276]', async () => {
@@ -145,7 +308,7 @@ describe('startMissionGovernanceRuntime', () => {
       applyRuntime,
     })
 
-    await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id)).rejects.toThrow(
+    await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id, CUSTODY)).rejects.toThrow(
       /evidence health blocks finalization/i,
     )
     expect(getIngestEvidenceHealth).toHaveBeenCalledTimes(2)
@@ -243,7 +406,7 @@ describe('startMissionGovernanceRuntime', () => {
       created_at: '2026-04-10T13:00:00.000Z',
     }
     const finalizeResult: FinalizeMissionResult = {
-      mission: FINALIZED_MISSION,
+      mission: { id: FINISHED_MISSION.id, status: 'finalized' },
       archive,
     }
 
@@ -253,14 +416,14 @@ describe('startMissionGovernanceRuntime', () => {
           listMissions: vi
             .fn()
             .mockResolvedValueOnce([FINISHED_MISSION])
-            .mockResolvedValueOnce([FINALIZED_MISSION]),
+            .mockResolvedValueOnce([ARCHIVED_FINISHED_MISSION]),
           finalizeMission: vi.fn().mockResolvedValue(finalizeResult),
         }),
         applyRuntime: vi.fn(),
         requestAutosaveSync: vi.fn().mockRejectedValue(new Error('backup unavailable')),
       })
 
-      await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id)).resolves.toEqual(
+      await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id, CUSTODY)).resolves.toEqual(
         finalizeResult,
       )
     } finally {
@@ -283,6 +446,11 @@ function createMissionGovernanceStoreStub(overrides: Record<string, unknown> = {
       conflictDeviceIds: [],
     }),
     finalizeMission: vi.fn(),
+    issueMissionArchiveRecoveryCode: vi.fn(),
+    cancelMissionArchiveOperation: vi.fn(),
+    listMissionArchives: vi.fn(),
+    getMissionCleanupEligibility: vi.fn(),
+    startMissionCleanup: vi.fn(),
     acknowledgeIngestEvidenceLoss: vi.fn(),
     unlockFinalizedMission: vi.fn(),
     ...overrides,

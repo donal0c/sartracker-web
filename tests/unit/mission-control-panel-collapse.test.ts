@@ -90,6 +90,58 @@ describe('MissionControlPanel collapse behavior', () => {
       .toContain('participant history backfill is incomplete')
   })
 
+  it('renders the bounded encrypted archive custody flow instead of the legacy confirmation', async () => {
+    const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
+    missionControlMock.model = createModel({
+      phase: 'idle',
+      currentMission: null,
+      governanceMission: createMission({ id: 'mission-finished', status: 'finished' }),
+      showFinalizeDialog: true,
+    })
+
+    render(React.createElement(MissionControlPanel))
+    await act(async () => {
+      await import('../../src/features/mission/mission-archive-custody-dialog')
+    })
+
+    expect(query('[data-testid="mission-archive-custody-dialog"]')).not.toBeNull()
+    expect(query('[data-testid="mission-finalize-confirm"]')).toBeNull()
+  })
+
+  it('shows explicit live/archived storage truth and withholds cleanup and unlock after cleanup', async () => {
+    const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
+    const setShowCleanupDialog = vi.fn()
+    missionControlMock.model = createModel({
+      phase: 'idle',
+      currentMission: null,
+      governanceMission: createMission({
+        id: 'mission-finalized-live',
+        status: 'finalized',
+        storage_state: 'live',
+      }),
+      setShowCleanupDialog,
+    })
+    render(React.createElement(MissionControlPanel))
+
+    expect(query('[data-testid="mission-storage-state"]')?.textContent).toContain('live')
+    click('[data-testid="mission-cleanup-btn"]')
+    expect(setShowCleanupDialog).toHaveBeenCalledWith(true)
+
+    missionControlMock.model = createModel({
+      phase: 'idle',
+      currentMission: null,
+      governanceMission: createMission({
+        id: 'mission-finalized-archived',
+        status: 'finalized',
+        storage_state: 'archived',
+      }),
+    })
+    act(() => root?.render(React.createElement(MissionControlPanel)))
+    expect(query('[data-testid="mission-storage-state"]')?.textContent).toContain('archived')
+    expect(query('[data-testid="mission-cleanup-btn"]')).toBeNull()
+    expect(query('[data-testid="mission-unlock-btn"]')).toBeNull()
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)
@@ -125,6 +177,10 @@ function createModel(overrides: Partial<MissionControlViewModel> = {}): MissionC
     setShowFinalizeDialog: vi.fn(),
     showUnlockDialog: false,
     setShowUnlockDialog: vi.fn(),
+    showCleanupDialog: false,
+    setShowCleanupDialog: vi.fn(),
+    showEvidenceLossDialog: false,
+    setShowEvidenceLossDialog: vi.fn(),
     governanceBusy: false,
     governanceFeedback: null,
     adminRoster: [],
@@ -132,6 +188,8 @@ function createModel(overrides: Partial<MissionControlViewModel> = {}): MissionC
     setSelectedAdmin: vi.fn(),
     unlockReason: '',
     setUnlockReason: vi.fn(),
+    evidenceLossReason: '',
+    setEvidenceLossReason: vi.fn(),
     canOpenReview: true,
     openReviewWorkspace: vi.fn(),
     canStart: false,
@@ -143,7 +201,13 @@ function createModel(overrides: Partial<MissionControlViewModel> = {}): MissionC
     confirmFinish: vi.fn(),
     resumeRecoverable: vi.fn(),
     startFresh: vi.fn(),
+    issueArchiveRecoveryCode: vi.fn(),
+    cancelArchiveOperation: vi.fn(),
+    subscribeArchiveProgress: vi.fn(() => vi.fn()),
     confirmFinalize: vi.fn(),
+    loadCleanupState: vi.fn(),
+    startCleanup: vi.fn(),
+    confirmEvidenceLossAcknowledgement: vi.fn(),
     confirmUnlock: vi.fn(),
     ...overrides,
   }

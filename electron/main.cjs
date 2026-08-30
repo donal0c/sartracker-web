@@ -29,6 +29,17 @@ const {
   registerOutingFixSummaryIpcHandlers,
 } = require('./outing-fix-summary-ipc.cjs')
 const { registerCoverageIpcHandlers } = require('./coverage-ipc.cjs')
+const { registerMissionArchiveIpcHandlers } = require('./mission-archive-ipc.cjs')
+const { registerArchiveReviewIpcHandlers } = require('./archive-review-ipc.cjs')
+const {
+  openVerifiedRestoredAttachment,
+} = require('./archive-review-attachment-opener.cjs')
+const {
+  createArchiveReviewSessionManager,
+} = require('./archive-review-sessions.cjs')
+const {
+  startInterruptedMissionCleanupRecovery,
+} = require('./archive-cleanup-startup.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { validateGpxImportEnvelope } = require('./gpx-import-envelope.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
@@ -65,10 +76,23 @@ const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
 const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
 const MAX_TRACCAR_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024
 
+const ARCHIVE_REVIEW_CHANNELS = Object.freeze({
+  open: 'sartracker:archive-review:open',
+  close: 'sartracker:archive-review:close',
+  cancel: 'sartracker:archive-review:cancel',
+  read: 'sartracker:archive-review:read',
+  mutationDenied: 'sartracker:archive-review:mutation-denied',
+})
+
 const MISSION_STORE_CHANNELS = {
   info: 'sartracker:mission-store:info',
   syncBackup: 'sartracker:mission-store:sync-backup',
-  createMissionArchive: 'sartracker:mission-store:create-mission-archive',
+  issueMissionArchiveRecoveryCode: 'sartracker:mission-store:issue-archive-recovery-code',
+  listMissionArchives: 'sartracker:mission-store:list-mission-archives',
+  verifyMissionArchive: 'sartracker:mission-store:verify-mission-archive',
+  getMissionCleanupEligibility: 'sartracker:mission-store:get-mission-cleanup-eligibility',
+  startMissionCleanup: 'sartracker:mission-store:start-mission-cleanup',
+  cancelMissionArchiveOperation: 'sartracker:mission-store:cancel-mission-archive-operation',
   createMission: 'sartracker:mission-store:create-mission',
   createOuting: 'sartracker:mission-store:create-outing',
   endOuting: 'sartracker:mission-store:end-outing',
@@ -181,6 +205,9 @@ const electronRuntimeContext = {
   crashLog: null,
   runtimeLog: null,
   officialMapProxy: null,
+  archiveReviewSessionManager: null,
+  archiveReviewRendererLossFence: null,
+  archiveCleanupStartupRecovery: null,
   stopEventLoopDiagnostics: null,
   rendererTeardownCoordinator: null,
 }
@@ -218,7 +245,12 @@ function configureLinuxSecretStorage() {
 /**
  * Creates the main SAR Tracker Electron validation window.
  */
-async function createWindow(crashLog, runtimeLog, rendererTeardownCoordinator) {
+async function createWindow(
+  crashLog,
+  runtimeLog,
+  rendererTeardownCoordinator,
+  archiveReviewSessionManager,
+) {
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -234,7 +266,12 @@ async function createWindow(crashLog, runtimeLog, rendererTeardownCoordinator) {
     },
   })
 
-  installWindowTeardownGuards(window, rendererTeardownCoordinator, runtimeLog)
+  installWindowTeardownGuards(
+    window,
+    rendererTeardownCoordinator,
+    archiveReviewSessionManager,
+    runtimeLog,
+  )
 
   if (crashLog !== undefined) {
     // A renderer crash leaves the operator with a blank or frozen window; record
@@ -248,13 +285,35 @@ async function createWindow(crashLog, runtimeLog, rendererTeardownCoordinator) {
       const summary = `renderer ${details?.reason ?? 'gone'}${
         typeof details?.exitCode === 'number' ? ` (exit ${details.exitCode})` : ''
       }`
-      void crashLog.record({ kind: 'render-process-gone', summary })
-      void runtimeLog?.append({
+      const crashRecord = Promise.resolve(
+        crashLog.record({ kind: 'render-process-gone', summary }),
+      )
+      const runtimeRecord = Promise.resolve(runtimeLog?.append({
         level: 'error',
         event: 'render_process_gone',
         fields: { reason: details?.reason ?? 'unknown', exitCode: details?.exitCode ?? null },
-      })
-      void rendererTeardownCoordinator.markRendererUnavailable().catch((error) => {
+      }))
+      const crashedSenderId = window.webContents.id
+      const archiveCleanupPromise = archiveReviewSessionManager
+        .closeForSender(crashedSenderId)
+      const evidenceFence = Promise.all([
+        rendererTeardownCoordinator.markRendererUnavailable(),
+        crashRecord,
+        runtimeRecord,
+      ])
+      const rendererLossFence = {
+        senderId: crashedSenderId,
+        sessionManager: archiveReviewSessionManager,
+        archiveCleanupPromise,
+        evidenceFence,
+        retryPromise: null,
+      }
+      electronRuntimeContext.archiveReviewRendererLossFence = rendererLossFence
+      // A crashed WebContents has no renderer beforeunload fence. Destroy its
+      // BrowserWindow synchronously so Cmd-R or a default reload cannot publish
+      // a fresh renderer before sender-owned archive plaintext is swept.
+      window.destroy()
+      void Promise.all([archiveCleanupPromise, evidenceFence]).catch((error) => {
         reportUnsafeRendererTeardown(error, runtimeLog)
       })
     })
@@ -275,7 +334,12 @@ async function createWindow(crashLog, runtimeLog, rendererTeardownCoordinator) {
  * Prevents renderer content from navigating the operational window or opening
  * auxiliary windows outside the controlled SAR Tracker shell.
  */
-function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtimeLog) {
+function installWindowTeardownGuards(
+  window,
+  rendererTeardownCoordinator,
+  archiveReviewSessionManager,
+  runtimeLog,
+) {
   let closeAllowed = false
   let closeInProgress = false
   let allowNextUnload = false
@@ -286,6 +350,8 @@ function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtim
     if (closeInProgress) return
     closeInProgress = true
     void rendererTeardownCoordinator.prepare(window, 'window_close').then(() => {
+      return archiveReviewSessionManager.closeForSender(window.webContents.id)
+    }).then(() => {
       allowNextUnload = true
       closeAllowed = true
       window.close()
@@ -304,6 +370,8 @@ function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtim
     }
     event.preventDefault()
     void rendererTeardownCoordinator.prepare(window, 'renderer_reload').then(() => {
+      return archiveReviewSessionManager.closeForSender(window.webContents.id)
+    }).then(() => {
       return rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
     }).then(() => {
       allowNextUnload = true
@@ -311,6 +379,7 @@ function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtim
     }).then(() => {
       return rendererTeardownCoordinator.markRendererAvailable()
     }).catch((error) => {
+      allowNextUnload = false
       reportUnsafeRendererTeardown(error, runtimeLog)
     })
   })
@@ -329,6 +398,8 @@ function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtim
     if (reloadInProgress) return
     reloadInProgress = true
     void rendererTeardownCoordinator.prepare(window, 'renderer_reload').then(() => {
+      return archiveReviewSessionManager.closeForSender(window.webContents.id)
+    }).then(() => {
       return rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
     }).then(() => {
       allowNextUnload = true
@@ -340,6 +411,7 @@ function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtim
       window.webContents.reload()
       reloadInProgress = false
     }).catch((error) => {
+      allowNextUnload = false
       reloadInProgress = false
       reportUnsafeRendererTeardown(error, runtimeLog)
     })
@@ -350,19 +422,26 @@ function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtim
 
 /** Keeps the current window alive and tells the operator when fail-closed teardown fails. */
 function reportUnsafeRendererTeardown(error, runtimeLog) {
+  const archiveReviewPlaintextMayRemain = !(error instanceof AggregateError)
+    && typeof error?.code === 'string'
+    && error.code.startsWith('ARCHIVE_REVIEW_')
   void runtimeLog?.append({
     level: 'error',
     event: 'renderer_teardown_blocked',
     fields: {
-      failureClass: error instanceof Error
-        ? 'evidence_loss_marker_unavailable'
-        : 'unknown_teardown_failure',
+      failureClass: archiveReviewPlaintextMayRemain
+        ? 'archive_review_plaintext_cleanup_blocked'
+        : error instanceof Error
+          ? 'evidence_loss_marker_unavailable'
+          : 'unknown_teardown_failure',
     },
   })
   try {
     dialog.showErrorBox(
       'SAR Tracker could not close safely',
-      'Pending tracking evidence could not be drained or marked safely. SAR Tracker has kept the current process open. Preserve the profile and contact support before forcing it closed.',
+      archiveReviewPlaintextMayRemain
+        ? 'Archive Review plaintext cleanup did not complete. A permission-restricted decrypted archive-review working copy may remain app-addressable. SAR Tracker has kept the current process open. Preserve the profile and contact support before forcing it closed.'
+        : 'Pending tracking evidence could not be drained or marked safely. SAR Tracker has kept the current process open. Preserve the profile and contact support before forcing it closed.',
     )
   } catch {
     // The runtime log above retains the blocking failure in headless contexts.
@@ -633,6 +712,7 @@ function registerIpcHandlers(
   officialMapProxy,
   crashLog,
   runtimeLog,
+  archiveReviewSessionManager,
 ) {
   ipcMain.handle(TRACCAR_REQUEST_CHANNEL, createTraccarHttpRequestHandler(settingsStore))
   ipcMain.handle(LOAD_SETTINGS_CHANNEL, (event) => {
@@ -761,14 +841,27 @@ function registerIpcHandlers(
     }
     return officialMapProxy.fetchOfficialMapTile(inputUrl)
   })
-  registerMissionStoreHandlers(missionStore, fileSystem)
+  registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSessionManager)
+  registerArchiveReviewIpcHandlers({
+    ipcMain,
+    channels: ARCHIVE_REVIEW_CHANNELS,
+    sessionManager: archiveReviewSessionManager,
+    validateIpcSender,
+  })
   registerLayerCatalogStoreHandlers(missionStore)
 }
 
 /**
  * Registers named mission-store methods without exposing raw IPC to the renderer.
  */
-function registerMissionStoreHandlers(missionStore, fileSystem) {
+function registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSessionManager) {
+  registerMissionArchiveIpcHandlers({
+    ipcMain,
+    channels: MISSION_STORE_CHANNELS,
+    missionStore,
+    archiveReviewSessionManager,
+    validateIpcSender,
+  })
   registerBreadcrumbQueryIpcHandlers({
     ipcMain,
     listChannel: MISSION_STORE_CHANNELS.listBreadcrumbPositions,
@@ -861,6 +954,13 @@ function registerMissionStoreHandlers(missionStore, fileSystem) {
     'readCoverageTile',
     'cancelCoverageTileRead',
     'importGpxEvidencePaths',
+    'issueMissionArchiveRecoveryCode',
+    'listMissionArchives',
+    'verifyMissionArchive',
+    'getMissionCleanupEligibility',
+    'startMissionCleanup',
+    'cancelMissionArchiveOperation',
+    'finalizeMission',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
     if (ownedQueryMethods.has(methodName)) {
@@ -1162,6 +1262,38 @@ async function startElectronApp() {
     shell,
     getBrowserWindow: () => BrowserWindow.getFocusedWindow(),
   })
+  const archiveReviewSessionManager = createArchiveReviewSessionManager({
+    archiveDirectory: path.join(userDataPath, 'archives'),
+    reviewRoot: path.join(userDataPath, 'archive-review'),
+    registry: Object.freeze({
+      issueReviewTicket: (archiveId) => missionStore.issueMissionArchiveReviewTicket(archiveId),
+      recordReviewOpened: (input) => missionStore.recordMissionArchiveReviewOpened(input),
+      recordReviewClosed: (input) => missionStore.recordMissionArchiveReviewClosed(input),
+      recordReviewMutationDenied: (input) =>
+        missionStore.recordMissionArchiveReviewMutationDenied(input),
+    }),
+    openRestoredAttachment: (input) => openVerifiedRestoredAttachment({
+      ...input,
+      openPath: (stagePath) => shell.openPath(stagePath),
+    }),
+  })
+  electronRuntimeContext.archiveReviewSessionManager = archiveReviewSessionManager
+  await archiveReviewSessionManager.sweepStartup()
+  const archiveCleanupStartupRecovery = await startInterruptedMissionCleanupRecovery({
+    missionStore,
+    sessionManager: archiveReviewSessionManager,
+    onFailure: ({ code }) => runtimeLog.append({
+      level: 'error',
+      event: 'archive_cleanup_restart_failed',
+      fields: { code },
+    }),
+  })
+  electronRuntimeContext.archiveCleanupStartupRecovery = archiveCleanupStartupRecovery
+  void archiveCleanupStartupRecovery.completion.catch(() => runtimeLog.append({
+    level: 'error',
+    event: 'archive_cleanup_restart_lease_failed',
+    fields: { code: 'ARCHIVE_CLEANUP_STARTUP_FAILED' },
+  }).catch(() => undefined))
   const officialMapProxy = createElectronOfficialMapProxy({
     fetch,
     loadSettings: settingsStore.loadAppSettings,
@@ -1176,8 +1308,14 @@ async function startElectronApp() {
     officialMapProxy,
     crashLog,
     runtimeLog,
+    archiveReviewSessionManager,
   )
-  await createWindow(crashLog, runtimeLog, rendererTeardownCoordinator)
+  await createWindow(
+    crashLog,
+    runtimeLog,
+    rendererTeardownCoordinator,
+    archiveReviewSessionManager,
+  )
   electronRuntimeContext.stopEventLoopDiagnostics = startEventLoopDiagnostics(storageDiagnostics)
 
   app.on('before-quit', (event) => {
@@ -1190,6 +1328,7 @@ async function startElectronApp() {
       rendererTeardownCoordinator,
       runtimeLog,
       missionStore,
+      archiveReviewSessionManager,
     )
   })
 }
@@ -1225,6 +1364,7 @@ async function markCleanExitAndQuit(
   rendererTeardownCoordinator,
   runtimeLog,
   missionStore,
+  archiveReviewSessionManager,
 ) {
   if (cleanExitInProgress) {
     return
@@ -1235,6 +1375,7 @@ async function markCleanExitAndQuit(
       await rendererTeardownCoordinator.prepare(window, 'app_quit')
     }
     await rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
+    await archiveReviewSessionManager.prepareClose()
     await missionStore.prepareClose()
     await crashLog.markCleanExit()
     officialMapProxy.close?.()
@@ -1255,15 +1396,40 @@ app.on('window-all-closed', () => {
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     try {
+      await awaitArchiveReviewRendererLossFence()
       await electronRuntimeContext.rendererTeardownCoordinator
         ?.ensureUnexpectedRendererLossFenced()
       await createWindow(
         electronRuntimeContext.crashLog,
         electronRuntimeContext.runtimeLog,
         electronRuntimeContext.rendererTeardownCoordinator,
+        electronRuntimeContext.archiveReviewSessionManager,
       )
+      electronRuntimeContext.archiveReviewRendererLossFence = null
     } catch (error) {
       reportUnsafeRendererRestore(error, electronRuntimeContext.runtimeLog)
     }
   }
 })
+
+/** Retries only archive plaintext cleanup while retaining the one-shot crash/evidence fence. */
+async function awaitArchiveReviewRendererLossFence() {
+  const fence = electronRuntimeContext.archiveReviewRendererLossFence
+  if (fence === null) return
+  await fence.evidenceFence
+  try {
+    await fence.archiveCleanupPromise
+    return
+  } catch {}
+  if (fence.retryPromise === null) {
+    const retry = Promise.resolve().then(() =>
+      fence.sessionManager.closeForSender(fence.senderId))
+    fence.retryPromise = retry
+    void retry.then(() => {
+      fence.archiveCleanupPromise = Promise.resolve()
+    }, () => undefined).finally(() => {
+      if (fence.retryPromise === retry) fence.retryPromise = null
+    })
+  }
+  await fence.retryPromise
+}

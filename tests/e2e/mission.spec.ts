@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+const SYNTHETIC_ARCHIVE_PASSPHRASE = 'Synthetic!Archive123'
 
 test.describe('M5 mission control workflows', () => {
   test.beforeEach(async ({ page }) => {
@@ -122,7 +124,7 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-control')).toContainText('active')
   })
 
-  test('finalizes a finished mission via archive-and-lock governance flow', async ({ page }) => {
+  test('validates custody and finalizes only with a verified archive', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Finalize Flow')
     await page.getByTestId('mission-start-btn').click()
     await page.getByTestId('mission-finish-btn').click()
@@ -130,26 +132,69 @@ test.describe('M5 mission control workflows', () => {
 
     await expect(page.getByTestId('mission-governance-card')).toContainText('Finalize Flow')
     await page.getByTestId('mission-finalize-btn').click()
-    await expect(page.getByTestId('mission-finalize-dialog')).toBeVisible()
-    await page.getByTestId('mission-finalize-confirm').click()
+
+    const custodyDialog = page.getByTestId('mission-archive-custody-dialog')
+    const passphrase = page.getByTestId('archive-passphrase')
+    const passphraseConfirmation = page.getByTestId('archive-passphrase-confirmation')
+    const issueRecoveryCode = page.getByTestId('archive-issue-recovery-code')
+    await expect(custodyDialog).toBeVisible()
+    await expect(passphrase).toHaveAttribute('type', 'password')
+    await expect(passphraseConfirmation).toHaveAttribute('type', 'password')
+    await expect(custodyDialog.getByRole('button', { name: /copy/i })).toHaveCount(0)
+    await expect(custodyDialog.getByText(/clipboard/i)).toHaveCount(0)
+
+    await passphrase.fill('Aa1!synthetic')
+    await passphraseConfirmation.fill('Aa1!synthetic')
+    await expect(custodyDialog.getByRole('alert')).toContainText(
+      'at least 14 characters',
+    )
+    await expect(issueRecoveryCode).toBeDisabled()
+
+    await passphrase.fill('abcdefghijklmn')
+    await passphraseConfirmation.fill('abcdefghijklmn')
+    await expect(custodyDialog.getByRole('alert')).toContainText(
+      'at least three character classes',
+    )
+    await expect(issueRecoveryCode).toBeDisabled()
+
+    await passphrase.fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+    await passphraseConfirmation.fill(`${SYNTHETIC_ARCHIVE_PASSPHRASE}!`)
+    await expect(custodyDialog.getByRole('alert')).toContainText('match exactly')
+    await expect(issueRecoveryCode).toBeDisabled()
+
+    await passphraseConfirmation.fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+    await expect(issueRecoveryCode).toBeEnabled()
+    await issueRecoveryCode.click()
+
+    const recoveryCode = (await page.getByTestId('archive-recovery-code').innerText()).trim()
+    expect(recoveryCode).toMatch(/^[0-9A-HJKMNP-TV-Z]{5}(?:-[0-9A-HJKMNP-TV-Z]{5}){7}$/)
+    const recoveryConfirmation = page.getByTestId('archive-recovery-code-confirmation')
+    await expect(recoveryConfirmation).toHaveAttribute('type', 'password')
+    await recoveryConfirmation.fill(changeLastCharacter(recoveryCode))
+    await expect(custodyDialog.getByRole('alert')).toContainText(
+      'Type the recovery code exactly as shown.',
+    )
+    await expect(page.getByTestId('archive-finalize')).toBeDisabled()
+
+    const beforeFinalize = await readFinalizationState(page, 'Finalize Flow')
+    expect(beforeFinalize).toEqual({ missionStatus: 'finished', archive: null })
+
+    await recoveryConfirmation.fill(recoveryCode)
+    await expect(page.getByTestId('archive-finalize')).toBeEnabled()
+    await page.getByTestId('archive-finalize').click()
 
     await expect(page.getByTestId('mission-governance-card')).toContainText('finalized')
     await expect(page.getByText(/Mission archived to/)).toBeVisible()
+    await expect(custodyDialog).toBeHidden()
 
-    const persistedMission = await page.evaluate(() => {
-      const raw = window.sessionStorage.getItem('sartracker:browser-harness')
-      if (raw === null) {
-        return null
-      }
-
-      const parsed = JSON.parse(raw) as {
-        missions?: Array<{ name: string; status: string }>
-      }
-
-      return parsed.missions?.find((mission) => mission.name === 'Finalize Flow') ?? null
+    const afterFinalize = await readFinalizationState(page, 'Finalize Flow')
+    expect(afterFinalize.missionStatus).toBe('finalized')
+    expect(afterFinalize.archive).toMatchObject({
+      status: 'verified',
+      container_version: 2,
+      archive_path: expect.stringMatching(/\.sararch$/),
     })
-
-    expect(persistedMission?.status).toBe('finalized')
+    expect(afterFinalize.archive?.verified_at).not.toBeNull()
   })
 
   test('archives a known evidence gap only after permanent admin acknowledgement [DON-276]', async ({ page }) => {
@@ -182,7 +227,7 @@ test.describe('M5 mission control workflows', () => {
     )
 
     await page.getByTestId('mission-finalize-btn').click()
-    await page.getByTestId('mission-finalize-confirm').click()
+    await submitSyntheticArchiveCustody(page)
 
     const evidenceDialog = page.getByTestId('mission-evidence-loss-dialog')
     await expect(evidenceDialog).toBeVisible()
@@ -201,8 +246,7 @@ test.describe('M5 mission control workflows', () => {
       'archive and lock may proceed',
     )
 
-    await page.getByTestId('mission-finalize-btn').click()
-    await page.getByTestId('mission-finalize-confirm').click()
+    await finalizeWithSyntheticArchiveCustody(page)
     await expect(page.getByTestId('mission-governance-card')).toContainText('finalized')
 
     const retained = await page.evaluate(() => {
@@ -236,8 +280,7 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('mission-start-btn').click()
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
-    await page.getByTestId('mission-finalize-btn').click()
-    await page.getByTestId('mission-finalize-confirm').click()
+    await finalizeWithSyntheticArchiveCustody(page)
 
     await page.getByTestId('mission-unlock-btn').click()
     await expect(page.getByTestId('mission-unlock-dialog')).toBeVisible()
@@ -400,6 +443,49 @@ test.describe('M5 mission control workflows', () => {
   })
 
 })
+
+async function finalizeWithSyntheticArchiveCustody(page: Page): Promise<void> {
+  await page.getByTestId('mission-finalize-btn').click()
+  await submitSyntheticArchiveCustody(page)
+}
+
+async function submitSyntheticArchiveCustody(page: Page): Promise<void> {
+  const dialog = page.getByTestId('mission-archive-custody-dialog')
+  await expect(dialog).toBeVisible()
+  await page.getByTestId('archive-passphrase').fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+  await page
+    .getByTestId('archive-passphrase-confirmation')
+    .fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+  await page.getByTestId('archive-issue-recovery-code').click()
+  const recoveryCode = (await page.getByTestId('archive-recovery-code').innerText()).trim()
+  await page.getByTestId('archive-recovery-code-confirmation').fill(recoveryCode)
+  await page.getByTestId('archive-finalize').click()
+}
+
+function changeLastCharacter(value: string): string {
+  return `${value.slice(0, -1)}${value.endsWith('0') ? '1' : '0'}`
+}
+
+async function readFinalizationState(page: Page, missionName: string) {
+  return page.evaluate((name) => {
+    const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
+    const mission = state?.missions.find((candidate) => candidate.name === name)
+    const archive = mission === undefined
+      ? undefined
+      : state?.missionArchives.find((candidate) => candidate.mission_id === mission.id)
+    return {
+      missionStatus: mission?.status ?? null,
+      archive: archive === undefined
+        ? null
+        : {
+            archive_path: archive.archive_path,
+            container_version: archive.container_version,
+            status: archive.status,
+            verified_at: archive.verified_at,
+          },
+    }
+  }, missionName)
+}
 
 function parseDuration(value: string | null): number {
   if (value === null) {

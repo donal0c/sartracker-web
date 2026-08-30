@@ -286,3 +286,30 @@ The implementation is traced by `DON-274`, `DON-277`, `DON-278`, `DON-279`,
 `tests/e2e/visual/visual-mission-evidence-replay.spec.ts`. Archive encryption,
 restore-and-replay qualification, and release/field acceptance remain PR-6 /
 BCP-17 work.
+
+## PR-6 Archive Security Binding (2026-08-29)
+
+PR-6 implements the archive lifecycle under
+`docs/breadcrumb-archive-security-decision.md`. The repository-owned
+`SARARCH2` format uses framed AES-256-GCM, a fresh archive key, mandatory
+passphrase and per-archive recovery slots, an optional machine-bound slot, an
+encrypted exhaustive manifest and a separately recorded whole-file SHA-256.
+Its scrypt profile, including `maxmem`, is versioned and validated without
+silent weakening.
+
+Creation uses a pinned mission-scoped SQLite snapshot and streaming workers;
+verification independently restores the sealed file and exhaustively checks
+ciphertext, framing, entries, table inventory, row counts and content digests.
+Sampled replay equality is an additional semantic check and never the basis of
+a completeness claim. Legacy v1 ZIP archives remain readable and visibly
+unencrypted; unknown newer formats fail closed.
+
+Archive review uses an explicit owner-only temporary plaintext session and a
+read-only facade separate from the active mission. Application-owned scratch
+and session files are swept, but this is not a forensic secure-erasure claim.
+Corrections create visible chained supplement archives without mutating prior
+bytes. Live-row cleanup is operator initiated, exhaustive-verification and
+fresh non-machine-unlock gated, bounded, journalled and resumable. Every PR5
+finalization fence, epoch, protected-recovery, finalized-write and replay-
+generation contract remains in force, and current positions never wait for
+archive work.

@@ -1,4 +1,5 @@
 const fs = require('node:fs/promises')
+const fsSync = require('node:fs')
 const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
 
@@ -43,17 +44,46 @@ const {
   createIngestAnomalyOutbox,
 } = require('./ingest-anomaly-outbox.cjs')
 const { writeFileDurably } = require('./durable-file.cjs')
+const {
+  backfillLegacyArchiveRegistry,
+  createArchiveRegistry,
+  readLegacyArchiveRegistryBackfillPending,
+} = require('./archive-registry.cjs')
+const {
+  ACTIVE_ARCHIVE_CUSTODY_JOURNAL_KEY,
+  createArchiveCustodyJournal,
+} = require('./archive-custody-journal.cjs')
+const {
+  startArchiveCustodyOperation,
+} = require('./archive-custody-operation-runner.cjs')
+const { startArchiveVerifyWorker } = require('./archive-verify-runner.cjs')
+const { startArchivePlaintextSweep } = require('./archive-plaintext-sweep-runner.cjs')
+const { startMissionArchiveCreateWorker } = require('./mission-archive-runner.cjs')
+const {
+  startArchiveCleanupCredentialCheck,
+} = require('./archive-cleanup-credential-runner.cjs')
+const { createArchiveCleanupCoordinator } = require('./archive-cleanup.cjs')
+const {
+  assertMissionLiveReviewAvailable: assertMissionLiveReviewSnapshotAvailable,
+  readMissionLiveReviewStorageState,
+} = require('./mission-live-review-access.cjs')
+const {
+  normalizeCustodyFileIdentity,
+  withPinnedCustodyFileIdentity,
+} = require('./archive-custody-file.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 const { createOutingStore } = require('./outing-store.cjs')
 const {
   assertLegacyMissionObjectBackfillSettled,
+  backfillLegacyMissionObjectVersions,
   createMissionEvidenceVersionStore,
   initializeLegacyMissionObjectVersionBackfill,
   readLegacyMissionObjectBackfillPending,
 } = require('./mission-evidence-version-store.cjs')
 const {
   assertLegacyEventProvenanceReady,
+  backfillLegacyEventProvenance,
   initializeLegacyEventProvenanceBackfill,
   readLegacyEventProvenanceBackfillPending,
 } = require('./mission-event-provenance-backfill.cjs')
@@ -95,8 +125,10 @@ const {
   recordAcceptedCoveragePositions,
 } = require('./coverage-ledger.cjs')
 
-const CURRENT_SCHEMA_VERSION = 12
+const CURRENT_SCHEMA_VERSION = 13
+const MISSION_EVIDENCE_VERSION_SCHEMA = 12
 const LEGACY_GPX_BACKFILL_DELAY_MS = 4
+const LEGACY_ARCHIVE_REGISTRY_BACKFILL_DELAY_MS = 4
 const MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN = 100
 const MAX_GPX_RECEIPT_RECOVERY_BYTES_PER_TURN = 1024 * 1024
 const MAX_INLINE_GPX_SOURCE_BASE64_LENGTH = 256 * 1024
@@ -128,6 +160,7 @@ const MAX_GPX_ISSUE_HASH_LENGTH = 128
 const MAX_GPX_ISSUE_REASON_LENGTH = 1_000
 const MAX_GPX_ISSUE_TIMESTAMP_LENGTH = 64
 const GPX_ISSUE_TRUNCATION_SUFFIX = '… [truncated for renderer]'
+const ARCHIVE_UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 
 /** Validates the opaque renderer correlation key used only for worker cancellation. */
 function normalizeBreadcrumbQueryRequestId(value, required) {
@@ -399,6 +432,7 @@ function createElectronMissionStore(options) {
   )
   const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
+  const archiveLifecycleFaultInjection = options.archiveLifecycleFaultInjection ?? {}
   const readArchiveFile = options.readArchiveFile ?? fs.readFile
   const storageDiagnostics = options.storageDiagnostics ?? null
   const coverageLedgerFaultInjection = options.coverageLedgerFaultInjection ?? {}
@@ -441,6 +475,11 @@ function createElectronMissionStore(options) {
   const activeSearchOperationPageReads = new Set()
   const attachmentLifecycleTails = new Map()
   const coverageManifestBuildEvidenceByMission = new Map()
+  const activeArchiveLifecycles = new Set()
+  const activeArchiveLifecyclesByOperationId = new Map()
+  const activeArchiveWorkerOperations = new Set()
+  const activeLiveReviewReadsByMission = new Map()
+  const cleanupReviewBarrierByMission = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
   let missionReplayWorkerTail = Promise.resolve()
@@ -452,10 +491,206 @@ function createElectronMissionStore(options) {
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
-  const migrationState = migrate(db)
+  const migrationState = migrate(db, archiveDirectory)
+  const archiveRegistry = createArchiveRegistry({
+    db,
+    archiveDirectory,
+    appendAuditEvent: (missionId, eventType, details) =>
+      appendEvent(db, missionId, eventType, details),
+  })
+  const archiveCreateRunner = options.startMissionArchiveCreateWorker
+    ?? startMissionArchiveCreateWorker
+  const archiveVerifyRunner = options.startArchiveVerifyWorker ?? startArchiveVerifyWorker
+  const archivePlaintextSweepRunner = options.startArchivePlaintextSweep
+    ?? startArchivePlaintextSweep
+  const archiveCustodyOperationRunner = options.startArchiveCustodyOperation
+    ?? startArchiveCustodyOperation
+  const archiveCustodyJournal = createArchiveCustodyJournal({
+    db,
+    archiveDirectory,
+    runCustodyOperation: (ticket, signal) => archiveCustodyOperationRunner({ ticket, signal }),
+  })
+  const archiveCleanupCredentialRunner = options.startArchiveCleanupCredentialCheck
+    ?? startArchiveCleanupCredentialCheck
+  const archiveCleanupCoordinator = createArchiveCleanupCoordinator({
+    db,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    now,
+    yieldToMain: options.yieldArchiveCleanupToMain
+      ?? (() => new Promise((resolve) => setImmediate(resolve))),
+    appendEvent: (missionId, eventType, timestamp, details) =>
+      insertEvent(db, missionId, eventType, timestamp, details),
+    ...(options.archiveCleanupBatchLimits === undefined
+      ? {}
+      : { batchLimits: options.archiveCleanupBatchLimits }),
+  })
+
+  /** Refuses new live Review reads while cleanup is waiting to own that mission. */
+  const assertStoreLiveMissionReviewAvailable = (missionId) => {
+    assertMissionLiveReviewSnapshotAvailable(db, missionId)
+    if (!cleanupReviewBarrierByMission.has(missionId)) return
+    const error = new Error(
+      'Mission live-store cleanup is starting; ordinary Review is unavailable.',
+    )
+    error.code = 'MISSION_REVIEW_CLEANUP_IN_PROGRESS'
+    throw error
+  }
+
+  /** Runs one synchronous Review facet in the same snapshot as its storage-source gate. */
+  const readLiveMissionReviewFacet = (missionId, read) => db.transaction(() => {
+    assertStoreLiveMissionReviewAvailable(missionId)
+    return read()
+  })()
+
+  /** Tracks one worker-backed Review read so cleanup cannot start between check and use. */
+  const trackLiveMissionReviewRead = (missionId, start) => {
+    assertStoreLiveMissionReviewAvailable(missionId)
+    let operation
+    try {
+      operation = Promise.resolve(start())
+    } catch (error) {
+      throw error
+    }
+    const workerExited = Promise.resolve(operation.workerExited ?? operation)
+    const checked = operation.then((result) => {
+      assertStoreLiveMissionReviewAvailable(missionId)
+      return result
+    })
+    const reads = activeLiveReviewReadsByMission.get(missionId) ?? new Set()
+    activeLiveReviewReadsByMission.set(missionId, reads)
+    let tracked
+    tracked = Promise.allSettled([checked, workerExited]).then(() => undefined).finally(() => {
+      reads.delete(tracked)
+      if (reads.size === 0 && activeLiveReviewReadsByMission.get(missionId) === reads) {
+        activeLiveReviewReadsByMission.delete(missionId)
+      }
+    })
+    reads.add(tracked)
+    return checked
+  }
+
+  /** Blocks new Review reads and joins every previously admitted worker before deletion. */
+  const acquireCleanupReviewBarrier = async (missionId, operationId) => {
+    const currentOwner = cleanupReviewBarrierByMission.get(missionId)
+    if (currentOwner !== undefined && currentOwner !== operationId) {
+      const error = new Error('Another mission cleanup operation already owns Review exclusion.')
+      error.code = 'ARCHIVE_OPERATION_ACTIVE'
+      throw error
+    }
+    cleanupReviewBarrierByMission.set(missionId, operationId)
+    const activeReads = activeLiveReviewReadsByMission.get(missionId)
+    if (activeReads !== undefined) await Promise.allSettled([...activeReads])
+  }
+
+  /** Releases only the exact cleanup operation's live Review exclusion. */
+  const releaseCleanupReviewBarrier = (missionId, operationId) => {
+    if (cleanupReviewBarrierByMission.get(missionId) === operationId) {
+      cleanupReviewBarrierByMission.delete(missionId)
+    }
+  }
   let gpxReceiptRecoveryTimer = null
   let gpxReceiptRecoveryFailure = null
+  let legacyArchiveRegistryBackfillTimer = null
+  let legacyArchiveRegistryBackfillFailure = null
+  let archiveRegistryReconciliationTimer = null
+  let archiveRegistryReconciliationFailure = null
+  let archiveRegistryReconciliationCycleStartedAt = null
+  let archiveRegistryReconciliationActive = null
+  let archiveRegistryReconciliationController = null
+  let archiveRegistryReconciliationComplete = false
+  let archiveCustodyRecoveryTimer = null
+  let archiveCustodyRecoveryActive = null
+  let archiveCustodyRecoveryController = null
+  const persistedArchiveCustodyFailure = db.prepare(`SELECT value FROM metadata
+    WHERE key = 'archive_custody_recovery_failure'`).get()?.value
+  let archiveCustodyRecoveryFailure = archiveCustodyJournal.hasBlockingConflict()
+    || persistedArchiveCustodyFailure !== undefined
+    ? 'ARCHIVE_CUSTODY_RECOVERY_REQUIRED'
+    : null
+  let archiveCustodyRecoveryDidSettle = false
+  let resolveArchiveCustodyRecovery
+  const archiveCustodyRecoverySettled = new Promise((resolve) => {
+    resolveArchiveCustodyRecovery = resolve
+  })
+  const settleArchiveCustodyRecovery = () => {
+    if (archiveCustodyRecoveryDidSettle) return
+    archiveCustodyRecoveryDidSettle = true
+    resolveArchiveCustodyRecovery()
+  }
   let storeClosed = false
+  let archivePlaintextSweepOperation = null
+  let archivePlaintextSweepFailure = null
+  let archivePlaintextSweepFinished = false
+
+  /** Persists one bounded archive-only sweep failure without reflecting local residue. */
+  const persistArchivePlaintextSweepFailure = (code) => {
+    archivePlaintextSweepFailure = code
+    if (storeClosed) return
+    db.prepare(`INSERT INTO metadata (key, value) VALUES (
+      'archive_plaintext_sweep_failure', ?
+    ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(code)
+  }
+
+  /** Starts cleanup only when the fixed verification root exists or is unsafe to inspect. */
+  const startArchivePlaintextStartupSweep = () => {
+    const verificationRoot = path.join(archiveDirectory, '.verification')
+    try {
+      fsSync.lstatSync(verificationRoot)
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        archivePlaintextSweepFinished = true
+        db.prepare(`DELETE FROM metadata
+          WHERE key = 'archive_plaintext_sweep_failure'`).run()
+        return Promise.resolve()
+      }
+      archivePlaintextSweepFinished = true
+      persistArchivePlaintextSweepFailure('ARCHIVE_PLAINTEXT_SWEEP_SCOPE_INVALID')
+      return Promise.resolve()
+    }
+
+    try {
+      archivePlaintextSweepOperation = archivePlaintextSweepRunner({ archiveDirectory })
+    } catch (error) {
+      archivePlaintextSweepFinished = true
+      persistArchivePlaintextSweepFailure(stableArchiveFailureCode(
+        error,
+        'ARCHIVE_PLAINTEXT_SWEEP_FAILED',
+      ))
+      return Promise.resolve()
+    }
+    return (async () => {
+      try {
+        await archivePlaintextSweepOperation
+        await archivePlaintextSweepOperation.workerExited
+        archivePlaintextSweepFailure = null
+        if (!storeClosed) {
+          db.prepare(`DELETE FROM metadata
+            WHERE key = 'archive_plaintext_sweep_failure'`).run()
+        }
+      } catch (error) {
+        try { await archivePlaintextSweepOperation.workerExited } catch {}
+        persistArchivePlaintextSweepFailure(stableArchiveFailureCode(
+          error,
+          'ARCHIVE_PLAINTEXT_SWEEP_FAILED',
+        ))
+      } finally {
+        archivePlaintextSweepFinished = true
+      }
+    })()
+  }
+  const archivePlaintextSweepSettled = startArchivePlaintextStartupSweep()
+
+  /** Gates only archive work on the startup plaintext cleanup result. */
+  const assertArchivePlaintextSweepReady = async () => {
+    await archivePlaintextSweepSettled
+    if (archivePlaintextSweepFailure !== null) {
+      const error = new Error(
+        'Archive plaintext cleanup requires review before archive work can start.',
+      )
+      error.code = archivePlaintextSweepFailure
+      throw error
+    }
+  }
   const legacyEvidenceBackfillPending = migrationState.legacyGpxBackfillRemaining > 0
     || migrationState.legacyMissionObjectBackfillRemaining > 0
     || migrationState.legacyEventProvenanceBackfillRemaining > 0
@@ -535,7 +770,171 @@ function createElectronMissionStore(options) {
       }
     }, LEGACY_GPX_BACKFILL_DELAY_MS)
   }
+
+  /** Continues legacy archive registration in bounded event pages off the open call stack. */
+  const scheduleLegacyArchiveRegistryBackfill = () => {
+    if (
+      storeClosed
+      || migrationState.legacyArchiveRegistryBackfillRemaining === 0
+      || legacyArchiveRegistryBackfillTimer !== null
+      || legacyArchiveRegistryBackfillFailure !== null
+    ) return
+    legacyArchiveRegistryBackfillTimer = setTimeout(() => {
+      legacyArchiveRegistryBackfillTimer = null
+      if (storeClosed) return
+      try {
+        const result = backfillLegacyArchiveRegistry(db, { archiveDirectory })
+        migrationState.legacyArchiveRegistryBackfillRemaining = result.remaining
+        if (result.remaining === 0) {
+          db.prepare(`DELETE FROM metadata
+            WHERE key = 'legacy_archive_registry_backfill_failure'`).run()
+          scheduleArchiveRegistryReconciliation()
+        }
+        scheduleLegacyArchiveRegistryBackfill()
+      } catch (error) {
+        legacyArchiveRegistryBackfillFailure = safeEvidenceFailureReason(
+          error?.message ?? error,
+        )
+        db.prepare(`INSERT INTO metadata (key, value) VALUES (
+          'legacy_archive_registry_backfill_failure', ?
+        ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+          .run(legacyArchiveRegistryBackfillFailure)
+        console.error(
+          `Legacy archive registry backfill stopped safely: ${legacyArchiveRegistryBackfillFailure}`,
+        )
+      }
+    }, LEGACY_ARCHIVE_REGISTRY_BACKFILL_DELAY_MS)
+  }
+
+  /** Reconciles registered custody in bounded asynchronous pages after backfill settles. */
+  const scheduleArchiveRegistryReconciliation = () => {
+    if (
+      storeClosed
+      || migrationState.legacyArchiveRegistryBackfillRemaining !== 0
+      || archiveRegistryReconciliationTimer !== null
+      || archiveRegistryReconciliationActive !== null
+      || archiveRegistryReconciliationFailure !== null
+      || archiveRegistryReconciliationComplete
+    ) return
+    archiveRegistryReconciliationTimer = setTimeout(() => {
+      archiveRegistryReconciliationTimer = null
+      if (storeClosed) return
+      archiveRegistryReconciliationController = new AbortController()
+      archiveRegistryReconciliationCycleStartedAt ??= new Date().toISOString()
+      archiveRegistryReconciliationActive = archiveRegistry.reconcileArchiveAvailability({
+        cycleStartedAt: archiveRegistryReconciliationCycleStartedAt,
+        signal: archiveRegistryReconciliationController.signal,
+      }).then((result) => {
+        if (result.remaining === 0) {
+          archiveRegistryReconciliationComplete = true
+          db.prepare(`DELETE FROM metadata
+            WHERE key = 'archive_registry_reconciliation_failure'`).run()
+        }
+        return result
+      }).catch((error) => {
+        archiveRegistryReconciliationFailure = safeEvidenceFailureReason(
+          error?.message ?? error,
+        )
+        if (!storeClosed) {
+          db.prepare(`INSERT INTO metadata (key, value) VALUES (
+            'archive_registry_reconciliation_failure', ?
+          ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+            .run(archiveRegistryReconciliationFailure)
+          console.error(
+            `Archive registry reconciliation stopped safely: ${archiveRegistryReconciliationFailure}`,
+          )
+        }
+      }).finally(() => {
+        archiveRegistryReconciliationActive = null
+        archiveRegistryReconciliationController = null
+        scheduleArchiveRegistryReconciliation()
+      })
+    }, LEGACY_ARCHIVE_REGISTRY_BACKFILL_DELAY_MS)
+  }
+
+  /** Recovers one exact pre-registration custody operation without delaying store open. */
+  const scheduleArchiveCustodyRecovery = () => {
+    if (storeClosed || archiveCustodyRecoveryDidSettle
+      || archiveCustodyRecoveryTimer !== null || archiveCustodyRecoveryActive !== null) return
+    try {
+      const activeJournal = archiveCustodyJournal.readActive()
+      const hasFinalizationFence = db.prepare(`SELECT 1
+        FROM mission_finalization_fences LIMIT 1`).get() !== undefined
+      if (activeJournal === null
+        && !archiveCustodyJournal.hasBlockingConflict()
+        && !activeJournalRequestIntegrityIsInvalid(db)
+        && (!hasFinalizationFence || !hasUnsettledJournalArchiveFence(db))) {
+        archiveCustodyRecoveryFailure = null
+        db.prepare(`DELETE FROM metadata
+          WHERE key = 'archive_custody_recovery_failure'`).run()
+        settleArchiveCustodyRecovery()
+        return
+      }
+    } catch {
+      // Corrupt or unreadable custody state remains on the deferred recovery
+      // path so store opening stays non-blocking and archive work fails closed.
+    }
+    archiveCustodyRecoveryTimer = setTimeout(() => {
+      archiveCustodyRecoveryTimer = null
+      if (storeClosed) {
+        settleArchiveCustodyRecovery()
+        return
+      }
+      if (archiveCustodyJournal.hasBlockingConflict()
+        || activeJournalRequestIntegrityIsInvalid(db)) {
+        archiveCustodyRecoveryFailure = 'ARCHIVE_CUSTODY_RECOVERY_REQUIRED'
+        db.prepare(`INSERT INTO metadata (key, value) VALUES (
+          'archive_custody_recovery_failure', ?
+        ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+          .run(archiveCustodyRecoveryFailure)
+        settleArchiveCustodyRecovery()
+        return
+      }
+      archiveCustodyRecoveryController = new AbortController()
+      archiveCustodyRecoveryActive = recoverInterruptedArchiveCustody({
+        db,
+        archiveDirectory,
+        archiveRegistry,
+        archiveCustodyJournal,
+        signal: archiveCustodyRecoveryController.signal,
+      }).then(() => {
+        if (archiveCustodyJournal.hasBlockingConflict()
+          || hasUnsettledJournalArchiveFence(db)) {
+          archiveCustodyRecoveryFailure = 'ARCHIVE_CUSTODY_RECOVERY_REQUIRED'
+          db.prepare(`INSERT INTO metadata (key, value) VALUES (
+            'archive_custody_recovery_failure', ?
+          ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+            .run(archiveCustodyRecoveryFailure)
+          return
+        }
+        archiveCustodyRecoveryFailure = null
+        db.prepare(`DELETE FROM metadata
+          WHERE key = 'archive_custody_recovery_failure'`).run()
+      }).catch((error) => {
+        archiveCustodyRecoveryFailure = stableArchiveFailureCode(
+          error,
+          'ARCHIVE_CUSTODY_RECOVERY_REQUIRED',
+        )
+        if (!storeClosed) {
+          db.prepare(`INSERT INTO metadata (key, value) VALUES (
+            'archive_custody_recovery_failure', ?
+          ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+            .run(archiveCustodyRecoveryFailure)
+          console.error(
+            `Archive custody recovery stopped safely (${archiveCustodyRecoveryFailure}).`,
+          )
+        }
+      }).finally(() => {
+        archiveCustodyRecoveryActive = null
+        archiveCustodyRecoveryController = null
+        settleArchiveCustodyRecovery()
+      })
+    }, LEGACY_ARCHIVE_REGISTRY_BACKFILL_DELAY_MS)
+  }
   scheduleGpxReceiptRecovery()
+  scheduleLegacyArchiveRegistryBackfill()
+  scheduleArchiveRegistryReconciliation()
+  scheduleArchiveCustodyRecovery()
   const evidenceVersionStore = createMissionEvidenceVersionStore({
     db,
     faultInjection: options.evidenceVersionFaultInjection ?? {},
@@ -585,29 +984,439 @@ function createElectronMissionStore(options) {
     options.backupFaultInjection ?? {},
     storageDiagnostics,
   )
-  let finalizeTail = Promise.resolve()
-  const enqueueFinalize = (missionId) => {
+  /** Owns physical worker exit so shutdown never closes SQLite under archive work. */
+  const awaitArchiveWorker = async (operation) => {
+    activeArchiveWorkerOperations.add(operation)
+    try {
+      return await operation
+    } finally {
+      await operation.workerExited
+      activeArchiveWorkerOperations.delete(operation)
+    }
+  }
+  let archiveFamilyTail = Promise.resolve()
+
+  /** Waits for the one archive-family slot while allowing queued cancellation to settle now. */
+  const waitForArchiveFamilyTurn = (predecessor, signal) => {
+    if (signal?.aborted === true) return Promise.reject(createArchiveCancellationError())
+    return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        signal?.removeEventListener('abort', onAbort)
+        reject(createArchiveCancellationError())
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
+      void predecessor.then(() => {
+        signal?.removeEventListener('abort', onAbort)
+        if (signal?.aborted === true) {
+          reject(createArchiveCancellationError())
+          return
+        }
+        resolve()
+      }, () => {
+        signal?.removeEventListener('abort', onAbort)
+        reject(new Error('The prior archive operation did not settle safely.'))
+      })
+    })
+  }
+
+  /** Retains FIFO ownership even when a queued operation cancels before its turn. */
+  const appendArchiveFamilyCompletion = (predecessor, completion) =>
+    predecessor.catch(() => undefined).then(() => completion.catch(() => undefined))
+
+  const enqueueFinalize = (missionId, custody, operationContext) => {
+    const context = normalizeArchiveOperationContext(operationContext)
+    if (context !== null && activeArchiveLifecyclesByOperationId.has(context.operationId)) {
+      const error = new Error('Mission archive operation identity is already active.')
+      error.code = 'ARCHIVE_OPERATION_ACTIVE'
+      return Promise.reject(error)
+    }
     const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
-    const run = finalizeTail.then(() =>
-      ingestAnomalyOutbox.runWithHealthyEvidenceFence(
+    const controller = new AbortController()
+    const predecessor = archiveFamilyTail
+    const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
+      await assertArchivePlaintextSweepReady()
+      await archiveCustodyRecoverySettled
+      if (controller.signal.aborted) {
+        const error = new Error('Mission archive finalization was cancelled before it started.')
+        error.name = 'AbortError'
+        throw error
+      }
+      if (archiveCustodyRecoveryFailure !== null) {
+        const error = new Error(
+          'Archive custody recovery requires review before another archive can start.',
+        )
+        error.code = archiveCustodyRecoveryFailure
+        throw error
+      }
+      return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         missionId,
         'finalization',
-        () => finalizeMission(
-          db,
-          missionId,
-          backupCoordinator,
-          archiveDirectory,
-          finalizeMissionFaultInjection,
-          archiveFaultInjection,
-          readArchiveFile,
-        ),
+        () => custody === undefined
+          ? finalizeMission(
+              db,
+              missionId,
+              backupCoordinator,
+              archiveDirectory,
+              finalizeMissionFaultInjection,
+              archiveFaultInjection,
+              readArchiveFile,
+            )
+          : finalizeMissionWithEncryptedArchive({
+              db,
+              databasePath,
+              missionId,
+              archiveDirectory,
+              archiveRegistry,
+              archiveCustodyJournal,
+              archiveCreateRunner,
+              archiveVerifyRunner,
+              awaitArchiveWorker,
+              operationId: context?.operationId,
+              signal: controller.signal,
+              custody,
+              onProgress: context === null
+                ? undefined
+                : (kind, progress) => context.onProgress({ kind, ...progress }),
+              faultInjection: archiveLifecycleFaultInjection,
+            }),
         acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
-      ))
-    finalizeTail = run.catch(() => {})
-    return run
+      )
+    })
+    const lifecycle = { controller, completion: null }
+    const completion = run.finally(() => {
+      activeArchiveLifecycles.delete(lifecycle)
+      if (context !== null
+        && activeArchiveLifecyclesByOperationId.get(context.operationId) === lifecycle) {
+        activeArchiveLifecyclesByOperationId.delete(context.operationId)
+      }
+    })
+    lifecycle.completion = completion
+    activeArchiveLifecycles.add(lifecycle)
+    if (context !== null) {
+      activeArchiveLifecyclesByOperationId.set(context.operationId, lifecycle)
+    }
+    archiveFamilyTail = appendArchiveFamilyCompletion(predecessor, completion)
+    return completion
   }
+
+  /** Runs an independent exhaustive retry against one exact registered archive. */
+  const enqueueArchiveVerification = (verificationInput, operationContext) => {
+    const context = normalizeArchiveOperationContext(operationContext)
+    if (context !== null && activeArchiveLifecyclesByOperationId.has(context.operationId)) {
+      const error = new Error('Mission archive operation identity is already active.')
+      error.code = 'ARCHIVE_OPERATION_ACTIVE'
+      return Promise.reject(error)
+    }
+    const normalizedInput = normalizeArchiveVerificationRetryInput(verificationInput)
+    const controller = new AbortController()
+    const progress = createArchiveLifecycleProgressEmitter(context === null
+      ? undefined
+      : (kind, update) => context.onProgress({ kind, ...update }))
+    const lifecycle = { controller, completion: null }
+    const predecessor = archiveFamilyTail
+    const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
+      await assertArchivePlaintextSweepReady()
+      await archiveCustodyRecoverySettled
+      if (controller.signal.aborted) {
+        const error = new Error('Mission archive verification was cancelled before it started.')
+        error.name = 'AbortError'
+        error.code = 'ARCHIVE_CANCELLED'
+        throw error
+      }
+      if (archiveCustodyRecoveryFailure !== null) {
+        const error = new Error(
+          'Archive custody recovery requires review before verification can start.',
+        )
+        error.code = archiveCustodyRecoveryFailure
+        throw error
+      }
+      const archiveBeforeVerify = archiveRegistry.getArchive(normalizedInput.archiveId)
+      assertArchiveVerificationEpochCurrent(db, archiveBeforeVerify)
+      const ticket = archiveRegistry.issueVerificationTicket(normalizedInput.archiveId)
+      try {
+        const proof = await awaitArchiveWorker(archiveVerifyRunner({
+          request: {
+            ...ticket,
+            operationId: context?.operationId ?? randomUUID(),
+            archiveDirectory,
+            databasePath,
+            passphrase: normalizedInput.passphrase,
+            recoveryCode: normalizedInput.recoveryCode,
+          },
+          signal: controller.signal,
+          ...(context === null
+            ? {}
+            : { onProgress: (update) => progress.forward('verify', update) }),
+        }))
+        const verified = commitArchiveVerificationIfEpochCurrent({
+          db,
+          archiveRegistry,
+          archiveId: normalizedInput.archiveId,
+          verificationProof: proof,
+        })
+        progress.emit('verify', 'verified', 'phases', 1, 1, 'verification-committed')
+        return projectArchiveCustodyRow(verified, archiveDirectory, db)
+      } catch (error) {
+        const current = archiveRegistry.getArchive(normalizedInput.archiveId)
+        appendEvent(db, current.mission_id, 'mission_archive_verification_failed_v2', {
+          archive_id: current.id,
+          resulting_status: getMission(db, current.mission_id).status,
+          error_code: stableArchiveFailureCode(error, 'ARCHIVE_VERIFY_FAILED'),
+        })
+        throw error
+      }
+    })
+    const completion = run.finally(() => {
+      activeArchiveLifecycles.delete(lifecycle)
+      if (context !== null
+        && activeArchiveLifecyclesByOperationId.get(context.operationId) === lifecycle) {
+        activeArchiveLifecyclesByOperationId.delete(context.operationId)
+      }
+    })
+    lifecycle.completion = completion
+    activeArchiveLifecycles.add(lifecycle)
+    if (context !== null) {
+      activeArchiveLifecyclesByOperationId.set(context.operationId, lifecycle)
+    }
+    archiveFamilyTail = appendArchiveFamilyCompletion(predecessor, completion)
+    return completion
+  }
+
+  /** Builds one internal cleanup claim from a freshly validated registry review ticket. */
+  const buildArchiveCleanupEvidence = async ({
+    ticket,
+    reviewActivity,
+    custodyReconciled,
+    nonMachineUnwrap,
+  }) => Object.freeze({
+    archiveId: ticket.archiveId,
+    missionId: ticket.missionId,
+    ciphertextSha256: ticket.ciphertextSha256,
+    sizeBytes: ticket.sizeBytes,
+    verificationProofValidated: true,
+    custodyReconciled,
+    archiveCustodyIdle: archiveCustodyRecoveryFailure === null
+      && !archiveCustodyJournal.hasBlockingConflict()
+      && archiveCustodyJournal.readActive() === null,
+    evidenceHealth: await getIngestEvidenceHealth(
+      db,
+      ingestAnomalyOutbox,
+      ticket.missionId,
+    ),
+    reviewActivity,
+    nonMachineUnwrap,
+  })
+
+  /** Returns a closed fail-safe eligibility result when exact custody cannot be proven. */
+  const buildUnavailableArchiveCleanupEligibility = async ({
+    archiveId,
+    missionId,
+    reviewActivity,
+  }) => archiveCleanupCoordinator.getEligibility({
+    archiveId,
+    missionId,
+    ciphertextSha256: '0'.repeat(64),
+    sizeBytes: 1,
+    verificationProofValidated: false,
+    custodyReconciled: false,
+    archiveCustodyIdle: archiveCustodyRecoveryFailure === null
+      && !archiveCustodyJournal.hasBlockingConflict()
+      && archiveCustodyJournal.readActive() === null,
+    evidenceHealth: await getIngestEvidenceHealth(db, ingestAnomalyOutbox, missionId),
+    reviewActivity,
+    nonMachineUnwrap: null,
+  })
+
+  /** Reconciles one exact archive in the shared archive lane before reporting cleanup checks. */
+  const enqueueMissionCleanupEligibility = (input, eligibilityContext) => {
+    const normalizedInput = normalizeMissionCleanupResumeInput(input)
+    const normalizedContext = normalizeArchiveCleanupEligibilityContext(eligibilityContext)
+    const controller = new AbortController()
+    const lifecycle = { controller, completion: null }
+    const predecessor = archiveFamilyTail
+    const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
+      await assertArchivePlaintextSweepReady()
+      await archiveCustodyRecoverySettled
+      const archive = archiveRegistry.getArchive(normalizedInput.archiveId)
+      if (archive.mission_id !== normalizedInput.missionId) {
+        throw new Error('Mission cleanup archive does not belong to the selected mission.')
+      }
+      if (archiveCustodyRecoveryFailure !== null) {
+        return buildUnavailableArchiveCleanupEligibility({
+          ...normalizedInput,
+          reviewActivity: normalizedContext.reviewActivity,
+        })
+      }
+      try {
+        await archiveRegistry.reconcileArchiveAvailability({
+          archiveId: normalizedInput.archiveId,
+          signal: controller.signal,
+        })
+        const ticket = archiveRegistry.issueReviewTicket(normalizedInput.archiveId)
+        const evidence = await buildArchiveCleanupEvidence({
+          ticket,
+          reviewActivity: normalizedContext.reviewActivity,
+          custodyReconciled: true,
+          nonMachineUnwrap: null,
+        })
+        return archiveCleanupCoordinator.getEligibility(evidence)
+      } catch (error) {
+        if (controller.signal.aborted) throw createArchiveCancellationError()
+        return buildUnavailableArchiveCleanupEligibility({
+          ...normalizedInput,
+          reviewActivity: normalizedContext.reviewActivity,
+        })
+      }
+    })
+    const completion = run.finally(() => {
+      activeArchiveLifecycles.delete(lifecycle)
+    })
+    lifecycle.completion = completion
+    activeArchiveLifecycles.add(lifecycle)
+    archiveFamilyTail = appendArchiveFamilyCompletion(predecessor, completion)
+    return completion
+  }
+
+  /** Runs one cleanup start/resume in the archive family and owns cancellation to exit. */
+  const enqueueMissionCleanup = ({ mode, input, operationContext }) => {
+    const normalizedInput = mode === 'start'
+      ? normalizeMissionCleanupStartInput(input)
+      : normalizeMissionCleanupResumeInput(input)
+    let cleanupSecret = mode === 'start' ? input.secret : null
+    let cleanupReviewBarrierAcquired = false
+    const context = normalizeArchiveCleanupOperationContext(operationContext)
+    if (activeArchiveLifecyclesByOperationId.has(context.operationId)) {
+      const error = new Error('Mission archive operation identity is already active.')
+      error.code = 'ARCHIVE_OPERATION_ACTIVE'
+      return Promise.reject(error)
+    }
+    const controller = new AbortController()
+    const lifecycle = { controller, completion: null }
+    const predecessor = archiveFamilyTail
+    const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
+      await assertArchivePlaintextSweepReady()
+      await archiveCustodyRecoverySettled
+      if (archiveCustodyRecoveryFailure !== null) {
+        const error = new Error(
+          'Archive custody recovery requires review before mission cleanup can start.',
+        )
+        error.code = archiveCustodyRecoveryFailure
+        throw error
+      }
+      if (controller.signal.aborted) throw createArchiveCancellationError()
+      if (mode === 'resume') {
+        await archiveRegistry.reconcileArchiveAvailability({
+          archiveId: normalizedInput.archiveId,
+          signal: controller.signal,
+        })
+      }
+      const ticket = archiveRegistry.issueReviewTicket(normalizedInput.archiveId)
+      if (ticket.containerVersion !== 2 || ticket.missionId !== normalizedInput.missionId) {
+        const error = new Error('Mission cleanup archive identity is unavailable.')
+        error.code = 'ARCHIVE_CLEANUP_IDENTITY_MISMATCH'
+        throw error
+      }
+      let nonMachineUnwrap = null
+      let cleanupFileIdentity = ticket.custodyFileIdentity
+      if (mode === 'start') {
+        const credentialRequest = createArchiveCleanupCredentialRequest({
+          ticket,
+          archiveDirectory,
+          operationId: context.operationId,
+          slotType: normalizedInput.slotType,
+        })
+        let credentialOperation
+        try {
+          credentialOperation = archiveCleanupCredentialRunner({
+            request: credentialRequest,
+            secret: cleanupSecret,
+            signal: controller.signal,
+          })
+        } finally {
+          cleanupSecret = null
+        }
+        const credentialResult = await awaitArchiveWorker(credentialOperation)
+        const currentTicket = archiveRegistry.issueReviewTicket(normalizedInput.archiveId)
+        assertArchiveCleanupTicketUnchanged(ticket, currentTicket)
+        assertArchiveCleanupFileIdentityUnchanged(
+          ticket.custodyFileIdentity,
+          credentialResult.fileIdentity,
+        )
+        cleanupFileIdentity = credentialResult.fileIdentity
+        nonMachineUnwrap = Object.freeze({
+          archiveId: credentialResult.archiveId,
+          missionId: credentialResult.missionId,
+          slotType: credentialResult.slotType,
+          authenticatedAt: now(),
+          ciphertextSha256: credentialResult.ciphertextSha256,
+          sizeBytes: credentialResult.sizeBytes,
+        })
+      }
+      const withCustodyCommit = (commit) => withPinnedCustodyFileIdentity({
+        archiveDirectory,
+        archiveRelativePath: ticket.archiveRelativePath,
+        expectedFileIdentity: cleanupFileIdentity,
+      }, commit)
+      const evidence = await buildArchiveCleanupEvidence({
+        ticket,
+        reviewActivity: context.reviewActivity,
+        custodyReconciled: true,
+        nonMachineUnwrap,
+      })
+      await acquireCleanupReviewBarrier(normalizedInput.missionId, context.operationId)
+      cleanupReviewBarrierAcquired = true
+      const execute = () => mode === 'start'
+        ? archiveCleanupCoordinator.start(evidence, {
+            signal: controller.signal,
+            withCustodyCommit,
+            onProgress: (progress) => context.onProgress({ kind: 'cleanup', ...progress }),
+            ...(options.archiveCleanupFaultInjection === undefined
+              ? {}
+              : { faultInjection: options.archiveCleanupFaultInjection }),
+          })
+        : archiveCleanupCoordinator.resume(evidence, {
+            signal: controller.signal,
+            withCustodyCommit,
+            onProgress: (progress) => context.onProgress({ kind: 'cleanup', ...progress }),
+            ...(options.archiveCleanupFaultInjection === undefined
+              ? {}
+              : { faultInjection: options.archiveCleanupFaultInjection }),
+          })
+      return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
+        normalizedInput.missionId,
+        'mission cleanup',
+        execute,
+      )
+    })
+    const completion = run.finally(() => {
+      cleanupSecret = null
+      if (cleanupReviewBarrierAcquired) {
+        releaseCleanupReviewBarrier(normalizedInput.missionId, context.operationId)
+      }
+      activeArchiveLifecycles.delete(lifecycle)
+      if (activeArchiveLifecyclesByOperationId.get(context.operationId) === lifecycle) {
+        activeArchiveLifecyclesByOperationId.delete(context.operationId)
+      }
+    })
+    lifecycle.completion = completion
+    activeArchiveLifecycles.add(lifecycle)
+    activeArchiveLifecyclesByOperationId.set(context.operationId, lifecycle)
+    archiveFamilyTail = appendArchiveFamilyCompletion(predecessor, completion)
+    return completion
+  }
+
   const enqueueArchive = (missionId) => {
-    const run = finalizeTail.then(() => {
+    const predecessor = archiveFamilyTail
+    const run = predecessor.then(async () => {
+      await assertArchivePlaintextSweepReady()
+      await archiveCustodyRecoverySettled
+      if (archiveCustodyRecoveryFailure !== null) {
+        const error = new Error(
+          'Archive custody recovery requires review before another archive can start.',
+        )
+        error.code = archiveCustodyRecoveryFailure
+        throw error
+      }
       const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
       return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         missionId,
@@ -623,7 +1432,7 @@ function createElectronMissionStore(options) {
         acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
       )
     })
-    finalizeTail = run.catch(() => {})
+    archiveFamilyTail = appendArchiveFamilyCompletion(predecessor, run)
     return run
   }
 
@@ -631,9 +1440,45 @@ function createElectronMissionStore(options) {
     prepareClose: async () => {
       const active = [...activeGpxEvidenceImports]
       for (const entry of active) entry.controller.abort()
+      for (const activeQuery of missionReviewQueryControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
+      for (const activeQuery of missionReplayQueryControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
       const shutdownTasks = active.map((entry) => entry.quiesced)
+      shutdownTasks.push(ingestAnomalyOutbox.dispose())
       shutdownTasks.push(...activeSearchOperationPageReads)
+      for (const reads of activeLiveReviewReadsByMission.values()) {
+        shutdownTasks.push(...reads)
+      }
       shutdownTasks.push(...attachmentLifecycleTails.values())
+      if (!archivePlaintextSweepFinished && archivePlaintextSweepOperation !== null) {
+        archivePlaintextSweepOperation.cancel?.()
+        shutdownTasks.push(archivePlaintextSweepSettled)
+        shutdownTasks.push(archivePlaintextSweepOperation.workerExited)
+      }
+      for (const lifecycle of activeArchiveLifecycles) {
+        lifecycle.controller.abort()
+        shutdownTasks.push(lifecycle.completion)
+      }
+      for (const operation of activeArchiveWorkerOperations) {
+        operation.cancel?.()
+        shutdownTasks.push(operation.workerExited)
+      }
+      if (archiveCustodyRecoveryTimer !== null) {
+        clearTimeout(archiveCustodyRecoveryTimer)
+        archiveCustodyRecoveryTimer = null
+        settleArchiveCustodyRecovery()
+      }
+      if (archiveCustodyRecoveryActive !== null) {
+        archiveCustodyRecoveryController?.abort()
+        shutdownTasks.push(archiveCustodyRecoveryActive)
+      }
+      if (archiveRegistryReconciliationActive !== null) {
+        archiveRegistryReconciliationController?.abort()
+        shutdownTasks.push(archiveRegistryReconciliationActive)
+      }
       if (!legacyEvidenceBackfillWorkerStopped && legacyEvidenceBackfillWorker !== null) {
         shutdownTasks.push(legacyEvidenceBackfillWorker.terminate().then(() => {
           legacyEvidenceBackfillWorkerStopped = true
@@ -642,14 +1487,19 @@ function createElectronMissionStore(options) {
       if (shutdownTasks.length === 0) return
       let timeout
       try {
-        await Promise.race([
-          Promise.all(shutdownTasks),
+        const results = await Promise.race([
+          Promise.allSettled(shutdownTasks),
           new Promise((_, reject) => {
             timeout = setTimeout(() => reject(new Error(
               'A mission evidence worker did not exit within the safe shutdown deadline. The mission store remains open and the exit is not marked clean.',
             )), gpxShutdownJoinTimeoutMs)
           }),
         ])
+        const unexpected = results.find((result) => result.status === 'rejected'
+          && result.reason?.name !== 'AbortError'
+          && result.reason?.code !== 'ARCHIVE_CANCELLED'
+          && result.reason?.code !== 'ARCHIVE_CLEANUP_CANCELLED')
+        if (unexpected !== undefined) throw unexpected.reason
       } finally {
         clearTimeout(timeout)
       }
@@ -661,18 +1511,44 @@ function createElectronMissionStore(options) {
       if (activeSearchOperationPageReads.size > 0) {
         throw new Error('Cannot close the mission store while Search Operations page reads are active; call prepareClose first.')
       }
+      if (activeLiveReviewReadsByMission.size > 0) {
+        throw new Error('Cannot close the mission store while live Mission Review workers are active; call prepareClose first.')
+      }
       if (attachmentLifecycleTails.size > 0) {
         throw new Error('Cannot close the mission store while marker attachment custody is active; call prepareClose first.')
+      }
+      if (!archivePlaintextSweepFinished) {
+        throw new Error('Cannot close the mission store while archive plaintext cleanup is active; call prepareClose first.')
       }
       if (!legacyEvidenceBackfillWorkerStopped) {
         throw new Error('Cannot close the mission store while legacy evidence reconstruction is active; call prepareClose first.')
       }
+      if (activeArchiveLifecycles.size > 0 || activeArchiveWorkerOperations.size > 0) {
+        throw new Error('Cannot close the mission store while archive custody work is active; call prepareClose first.')
+      }
+      if (archiveCustodyRecoveryActive !== null) {
+        throw new Error('Cannot close the mission store while archive custody recovery is active; call prepareClose first.')
+      }
       storeClosed = true
+      archiveRegistryReconciliationController?.abort()
       if (gpxReceiptRecoveryTimer !== null) {
         clearTimeout(gpxReceiptRecoveryTimer)
         gpxReceiptRecoveryTimer = null
       }
-      ingestAnomalyOutbox.dispose()
+      if (legacyArchiveRegistryBackfillTimer !== null) {
+        clearTimeout(legacyArchiveRegistryBackfillTimer)
+        legacyArchiveRegistryBackfillTimer = null
+      }
+      if (archiveRegistryReconciliationTimer !== null) {
+        clearTimeout(archiveRegistryReconciliationTimer)
+        archiveRegistryReconciliationTimer = null
+      }
+      if (archiveCustodyRecoveryTimer !== null) {
+        clearTimeout(archiveCustodyRecoveryTimer)
+        archiveCustodyRecoveryTimer = null
+        settleArchiveCustodyRecovery()
+      }
+      void ingestAnomalyOutbox.dispose()
       for (const controller of activeBreadcrumbQueryControllers) {
         controller.abort()
       }
@@ -710,6 +1586,40 @@ function createElectronMissionStore(options) {
     }),
     syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
     createMissionArchive: async (missionId) => enqueueArchive(missionId),
+    listMissionArchives: async (missionId) => archiveRegistry.listMissionArchives(missionId)
+      .map((row) => projectArchiveCustodyRow(row, archiveDirectory, db)),
+    issueMissionArchiveReviewTicket: (archiveId) => archiveRegistry.issueReviewTicket(archiveId),
+    getMissionCleanupEligibility: (input, context) =>
+      enqueueMissionCleanupEligibility(input, context),
+    startMissionCleanup: (input, operationContext) => enqueueMissionCleanup({
+      mode: 'start',
+      input,
+      operationContext,
+    }),
+    listInterruptedMissionCleanups: async () => db.prepare(`SELECT mission_id, archive_id
+      FROM mission_cleanup_journal WHERE state = 'in_progress'
+      ORDER BY updated_at ASC, mission_id ASC`).all().map((row) => Object.freeze({
+      missionId: row.mission_id,
+      archiveId: row.archive_id,
+    })),
+    resumeMissionCleanup: (input, operationContext) => enqueueMissionCleanup({
+      mode: 'resume',
+      input,
+      operationContext,
+    }),
+    recordMissionArchiveReviewOpened: (input) => archiveRegistry.recordReviewOpened(input),
+    recordMissionArchiveReviewClosed: (input) => archiveRegistry.recordReviewClosed(input),
+    recordMissionArchiveReviewMutationDenied: (input) =>
+      archiveRegistry.recordReviewMutationDenied(input),
+    verifyMissionArchive: async (input, operationContext) =>
+      enqueueArchiveVerification(input, operationContext),
+    cancelMissionArchiveOperation: async (operationId) => {
+      const normalizedOperationId = normalizeArchiveOperationId(operationId)
+      const lifecycle = activeArchiveLifecyclesByOperationId.get(normalizedOperationId)
+      if (lifecycle === undefined) return false
+      lifecycle.controller.abort()
+      return true
+    },
     createMission: async (input) => {
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
@@ -730,7 +1640,10 @@ function createElectronMissionStore(options) {
       input.mission_id,
       () => outingStore.editOutingBoundaries(input),
     ),
-    listOutings: async (missionId) => outingStore.listOutings(missionId),
+    listOutings: async (missionId) => readLiveMissionReviewFacet(
+      missionId,
+      () => outingStore.listOutings(missionId),
+    ),
     selectMissionParticipants: async (input) => runCoverageMutation(
       input.mission_id,
       () => participantStore.selectMissionParticipants(input),
@@ -1053,7 +1966,10 @@ function createElectronMissionStore(options) {
       return result.devices
     },
     getDevice: async (missionId, deviceId) => getDevice(db, missionId, deviceId),
-    listDevices: async (missionId) => all(db, 'SELECT * FROM devices WHERE mission_id = ? ORDER BY name ASC', missionId),
+    listDevices: async (missionId) => readLiveMissionReviewFacet(
+      missionId,
+      () => all(db, 'SELECT * FROM devices WHERE mission_id = ? ORDER BY name ASC', missionId),
+    ),
     addPosition: async (input) => runCoverageMutation(
       input.mission_id,
       () => addPosition(db, input, coverageLedgerFaultInjection),
@@ -1244,10 +2160,11 @@ function createElectronMissionStore(options) {
         throw new Error('Mission Review request ID is already active.')
       }
       const controller = new AbortController()
-      const query = enqueueMissionReviewRead({
-        query: input,
-        signal: controller.signal,
-      })
+      const query = trackLiveMissionReviewRead(input?.missionId, () =>
+        enqueueMissionReviewRead({
+          query: input,
+          signal: controller.signal,
+        }))
       const activeQuery = { controller, completion: query }
       if (normalizedRequestId !== null) {
         missionReviewQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
@@ -1276,27 +2193,35 @@ function createElectronMissionStore(options) {
       return true
     },
     readMissionReplay: async (input, requestId) => {
-      assertLegacyMissionObjectBackfillSettled(db)
-      assertLegacyEventProvenanceReady(db, input?.missionId)
-      assertMissionReplayGpxStateSettled(db, input)
-      return executeMissionReplayRead(input, requestId, 'state')
+      return trackLiveMissionReviewRead(input?.missionId, () => {
+        assertLegacyMissionObjectBackfillSettled(db)
+        assertLegacyEventProvenanceReady(db, input?.missionId)
+        assertMissionReplayGpxStateSettled(db, input)
+        return executeMissionReplayRead(input, requestId, 'state')
+      })
     },
     readMissionReplayTrackChunk: async (input, requestId) => {
-      assertLegacyMissionObjectBackfillSettled(db)
-      assertLegacyEventProvenanceReady(db, input?.missionId)
-      assertMissionReplayGpxStateSettled(db, input)
-      return executeMissionReplayRead(input, requestId, 'chunk')
+      return trackLiveMissionReviewRead(input?.missionId, () => {
+        assertLegacyMissionObjectBackfillSettled(db)
+        assertLegacyEventProvenanceReady(db, input?.missionId)
+        assertMissionReplayGpxStateSettled(db, input)
+        return executeMissionReplayRead(input, requestId, 'chunk')
+      })
     },
     readMissionReplayObjectChunk: async (input, requestId) => {
-      assertLegacyMissionObjectBackfillSettled(db)
-      assertLegacyEventProvenanceReady(db, input?.missionId)
-      assertMissionReplayGpxStateSettled(db, input)
-      return executeMissionReplayRead(input, requestId, 'objects')
+      return trackLiveMissionReviewRead(input?.missionId, () => {
+        assertLegacyMissionObjectBackfillSettled(db)
+        assertLegacyEventProvenanceReady(db, input?.missionId)
+        assertMissionReplayGpxStateSettled(db, input)
+        return executeMissionReplayRead(input, requestId, 'objects')
+      })
     },
     readMissionReplayFilterPage: async (input, requestId) => {
-      assertLegacyEventProvenanceReady(db, input?.missionId)
-      assertMissionReplayGpxStateSettled(db, input)
-      return executeMissionReplayRead(input, requestId, 'filters')
+      return trackLiveMissionReviewRead(input?.missionId, () => {
+        assertLegacyEventProvenanceReady(db, input?.missionId)
+        assertMissionReplayGpxStateSettled(db, input)
+        return executeMissionReplayRead(input, requestId, 'filters')
+      })
     },
     cancelMissionReplay: async (requestId) => {
       const normalizedRequestId = normalizeMissionReviewRequestId(requestId, true)
@@ -1356,8 +2281,10 @@ function createElectronMissionStore(options) {
       markerDefaults,
     ),
     getMarker: async (markerId) => getById(db, 'markers', markerId, 'Marker'),
-    listMarkers: async (missionId) =>
-      all(db, 'SELECT * FROM markers WHERE mission_id = ? AND retired_at IS NULL ORDER BY display_order ASC, name ASC', missionId),
+    listMarkers: async (missionId) => readLiveMissionReviewFacet(
+      missionId,
+      () => all(db, 'SELECT * FROM markers WHERE mission_id = ? AND retired_at IS NULL ORDER BY display_order ASC, name ASC', missionId),
+    ),
     deleteMarker: async (markerId) => retireVersionedById(
       db,
       evidenceVersionStore,
@@ -1371,22 +2298,28 @@ function createElectronMissionStore(options) {
     ),
     upsertDrawing: async (input) => upsertDrawingEvidence(db, evidenceVersionStore, input),
     getDrawing: async (drawingId) => getById(db, 'drawings', drawingId, 'Drawing'),
-    listDrawings: async (missionId) =>
-      all(db, 'SELECT * FROM drawings WHERE mission_id = ? AND retired_at IS NULL ORDER BY display_order ASC, name ASC', missionId),
+    listDrawings: async (missionId) => readLiveMissionReviewFacet(
+      missionId,
+      () => all(db, 'SELECT * FROM drawings WHERE mission_id = ? AND retired_at IS NULL ORDER BY display_order ASC, name ASC', missionId),
+    ),
     deleteDrawing: async (drawingId) => retireDrawingEvidence(db, evidenceVersionStore, drawingId),
     upsertHelicopter: async (input) => upsertHelicopter(db, input),
-    listHelicopters: async (missionId) =>
-      all(db, 'SELECT * FROM helicopters WHERE mission_id = ? ORDER BY slot_key ASC', missionId),
+    listHelicopters: async (missionId) => readLiveMissionReviewFacet(
+      missionId,
+      () => all(db, 'SELECT * FROM helicopters WHERE mission_id = ? ORDER BY slot_key ASC', missionId),
+    ),
     deleteHelicopter: async (helicopterId) => deleteById(db, 'helicopters', helicopterId),
     upsertGpxImport: async (input) => projectGpxImportForRenderer(upsertGpxEvidence(db, input)),
-    listGpxImports: async (missionId) =>
-      all(db, `SELECT * FROM gpx_track_imports
+    listGpxImports: async (missionId) => readLiveMissionReviewFacet(
+      missionId,
+      () => all(db, `SELECT * FROM gpx_track_imports
         WHERE mission_id = ? AND retired_at IS NULL AND import_state = 'complete'
           AND EXISTS (
             SELECT 1 FROM gpx_import_revisions AS revisions
             WHERE revisions.import_id = gpx_track_imports.id
           )
         ORDER BY display_name ASC, imported_at ASC`, missionId),
+    ),
     deleteGpxImport: async (importId) => retireGpxEvidence(
       db,
       normalizeGpxRendererId(importId, 'GPX import'),
@@ -1398,7 +2331,10 @@ function createElectronMissionStore(options) {
         WHERE import_id = ? ORDER BY revision_sequence ASC`,
       importId,
     ),
-    listGpxImportPage: async (input) => listGpxImportProjectionPage(db, input),
+    listGpxImportPage: async (input) => readLiveMissionReviewFacet(
+      input?.missionId,
+      () => listGpxImportProjectionPage(db, input),
+    ),
     listGpxImportRevisionPage: async (input) =>
       listGpxImportRevisionProjectionPage(db, input),
     listGpxImportIssues: async (input) => listGpxImportIssues(db, input),
@@ -1461,11 +2397,14 @@ function createElectronMissionStore(options) {
       const normalizedMissionId = normalizeBoundedRequiredText(
         missionId, 'Search area mission', MAX_SEARCH_OPERATION_ID_LENGTH,
       )
-      return all(
-        db,
-        `SELECT * FROM search_areas WHERE mission_id = ? AND retired_at IS NULL
-          ORDER BY name ASC, id ASC`,
+      return readLiveMissionReviewFacet(
         normalizedMissionId,
+        () => all(
+          db,
+          `SELECT * FROM search_areas WHERE mission_id = ? AND retired_at IS NULL
+            ORDER BY name ASC, id ASC`,
+          normalizedMissionId,
+        ),
       )
     },
     retireSearchArea: async (areaId, actor) => retireSearchArea(
@@ -1483,36 +2422,51 @@ function createElectronMissionStore(options) {
       const normalizedMissionId = normalizeBoundedRequiredText(
         missionId, 'Search assignment mission', MAX_SEARCH_OPERATION_ID_LENGTH,
       )
-      return all(
-        db,
-        `SELECT * FROM search_assignments WHERE mission_id = ? AND retired_at IS NULL
-          ORDER BY created_at ASC, id ASC`,
+      return readLiveMissionReviewFacet(
         normalizedMissionId,
+        () => all(
+          db,
+          `SELECT * FROM search_assignments WHERE mission_id = ? AND retired_at IS NULL
+            ORDER BY created_at ASC, id ASC`,
+          normalizedMissionId,
+        ),
       )
     },
     upsertSearchPass: async (input) => upsertSearchPass(db, evidenceVersionStore, input),
-    listSearchPasses: async (missionId) => listSearchPassRecords(
-      db,
-      normalizeBoundedRequiredText(
+    listSearchPasses: async (missionId) => {
+      const normalizedMissionId = normalizeBoundedRequiredText(
         missionId, 'Search pass mission', MAX_SEARCH_OPERATION_ID_LENGTH,
-      ),
-    ),
-    listSearchOperationPage: async (input) => {
-      const operation = searchOperationPageRunner({ databasePath, query: input })
-      const workerExited = Promise.resolve(operation.workerExited ?? operation)
-      activeSearchOperationPageReads.add(workerExited)
-      void workerExited.finally(() => activeSearchOperationPageReads.delete(workerExited))
-      return await operation
+      )
+      return readLiveMissionReviewFacet(
+        normalizedMissionId,
+        () => listSearchPassRecords(db, normalizedMissionId),
+      )
     },
+    listSearchOperationPage: async (input) => trackLiveMissionReviewRead(
+      input?.missionId,
+      () => {
+        const operation = searchOperationPageRunner({ databasePath, query: input })
+        const workerExited = Promise.resolve(operation.workerExited ?? operation)
+        activeSearchOperationPageReads.add(workerExited)
+        void workerExited.finally(() => activeSearchOperationPageReads.delete(workerExited))
+        const result = Promise.resolve(operation)
+        Object.defineProperty(result, 'workerExited', { value: workerExited })
+        return result
+      },
+    ),
     listMissionObjectVersions: async (input) => {
       assertLegacyMissionObjectBackfillSettled(db)
       return evidenceVersionStore.listVersions(input)
     },
-    listLayerCatalogMetadata: async (missionId) => listLayerCatalogMetadata(db, missionId),
+    listLayerCatalogMetadata: async (missionId) => readLiveMissionReviewFacet(
+      missionId,
+      () => listLayerCatalogMetadata(db, missionId),
+    ),
     upsertLayerCatalogMetadata: async (input) => upsertLayerCatalogMetadata(db, input),
     clearLayerCatalogMetadata: async (missionId) => clearLayerCatalogMetadata(db, missionId),
     getMission: async (missionId) => getMission(db, missionId),
-    listMissions: async () => all(db, 'SELECT * FROM missions ORDER BY start_time DESC'),
+    listMissions: async () => all(db, 'SELECT * FROM missions ORDER BY start_time DESC')
+      .map((mission) => projectMissionStorageState(db, mission)),
     listMissionIdsAwaitingEvidenceClosure: async () => all(
       db,
       `SELECT id FROM missions
@@ -1543,8 +2497,13 @@ function createElectronMissionStore(options) {
     resumeMission: async (missionId) => transitionMission(db, missionId, 'paused', 'active'),
     finishMission: async (missionId) =>
       enqueueAttachmentLifecycleOperation(missionId, () => finishMission(db, missionId)),
-    finalizeMission: async (missionId) => enqueueFinalize(missionId),
-    unlockFinalizedMission: async (input) => unlockFinalizedMission(db, input, options.readAdminRoster),
+    finalizeMission: async (missionId, custody, operationContext) =>
+      enqueueFinalize(missionId, custody, operationContext),
+    unlockFinalizedMission: async (input) => unlockFinalizedMission(
+      db,
+      input,
+      options.readAdminRoster,
+    ),
   }
 
   /** Orders asynchronous attachment custody and Finish for one mission. */
@@ -1568,11 +2527,15 @@ function createElectronMissionStore(options) {
   function enqueueMissionReviewRead(input) {
     const previousWorker = missionReviewWorkerTail
     let releaseWorkerSlot = () => undefined
+    let resolveWorkerExit = () => undefined
     const workerSlot = new Promise((resolve) => {
       releaseWorkerSlot = resolve
     })
+    const workerExited = new Promise((resolve) => {
+      resolveWorkerExit = resolve
+    })
     missionReviewWorkerTail = previousWorker.then(() => workerSlot)
-    return previousWorker.then(() => {
+    const result = previousWorker.then(() => {
       let operation
       try {
         operation = missionReviewReadQueryRunner({
@@ -1582,15 +2545,24 @@ function createElectronMissionStore(options) {
         })
       } catch (error) {
         releaseWorkerSlot()
+        resolveWorkerExit()
         throw error
       }
-      const workerExited = operation.workerExited ?? operation
-      void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
+      const physicalExit = operation.workerExited ?? operation
+      void Promise.resolve(physicalExit).then(() => {
+        releaseWorkerSlot()
+        resolveWorkerExit()
+      }, () => {
+        releaseWorkerSlot()
+        resolveWorkerExit()
+      })
       return operation
     })
+    Object.defineProperty(result, 'workerExited', { value: workerExited })
+    return result
   }
 
-  async function executeMissionReplayRead(input, requestId, kind) {
+  function executeMissionReplayRead(input, requestId, kind) {
     const normalizedRequestId = normalizeMissionReviewRequestId(requestId, false)
     if (
       normalizedRequestId !== null
@@ -1604,21 +2576,25 @@ function createElectronMissionStore(options) {
     if (normalizedRequestId !== null) {
       missionReplayQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
     }
-    try {
-      return await query
-    } finally {
+    const result = Promise.resolve(query).finally(() => {
       if (missionReplayQueryControllersByRequestId.get(normalizedRequestId) === activeQuery) {
         missionReplayQueryControllersByRequestId.delete(normalizedRequestId)
       }
-    }
+    })
+    Object.defineProperty(result, 'workerExited', {
+      value: query.workerExited ?? query,
+    })
+    return result
   }
 
   function enqueueMissionReplayRead(input) {
     const previousWorker = missionReplayWorkerTail
     let releaseWorkerSlot = () => undefined
+    let resolveWorkerExit = () => undefined
     const workerSlot = new Promise((resolve) => { releaseWorkerSlot = resolve })
+    const workerExited = new Promise((resolve) => { resolveWorkerExit = resolve })
     missionReplayWorkerTail = previousWorker.then(() => workerSlot)
-    return previousWorker.then(() => {
+    const result = previousWorker.then(() => {
       let operation
       try {
         operation = missionReplayRunner({
@@ -1629,12 +2605,21 @@ function createElectronMissionStore(options) {
         })
       } catch (error) {
         releaseWorkerSlot()
+        resolveWorkerExit()
         throw error
       }
-      const workerExited = operation.workerExited ?? operation
-      void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
+      const physicalExit = operation.workerExited ?? operation
+      void Promise.resolve(physicalExit).then(() => {
+        releaseWorkerSlot()
+        resolveWorkerExit()
+      }, () => {
+        releaseWorkerSlot()
+        resolveWorkerExit()
+      })
       return operation
     })
+    Object.defineProperty(result, 'workerExited', { value: workerExited })
+    return result
   }
 
   /**
@@ -1878,7 +2863,7 @@ function createElectronMissionStore(options) {
   }
 }
 
-function migrate(db) {
+function migrate(db, archiveDirectory) {
   const migrationTime = now()
   const applyMigrations = db.transaction(() => {
     db.exec(`
@@ -1900,7 +2885,7 @@ function migrate(db) {
     'positions',
     'timestamp_provenance_recorded_at',
   )
-  const eventProvenanceRequiresBackfill = existingSchemaVersion < CURRENT_SCHEMA_VERSION
+  const eventProvenanceRequiresBackfill = existingSchemaVersion < MISSION_EVIDENCE_VERSION_SCHEMA
     || !columnExists(db, 'mission_events', 'recorded_at')
     || !columnExists(db, 'mission_events', 'recording_completeness')
     || !columnExists(db, 'mission_group_membership_events', 'sequence')
@@ -2451,6 +3436,98 @@ function migrate(db) {
       recording_completeness TEXT CHECK(recording_completeness IN ('complete', 'legacy_baseline')),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS mission_archives (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      request_event_rowid INTEGER NOT NULL CHECK(request_event_rowid > 0),
+      request_event_id TEXT NOT NULL,
+      creation_operation_id TEXT,
+      protected_finalization_epoch INTEGER CHECK(
+        protected_finalization_epoch IS NULL OR protected_finalization_epoch > 0
+      ),
+      archive_kind TEXT NOT NULL CHECK(archive_kind IN (
+        'finalized', 'direct', 'finalized_recovery'
+      )),
+      container_version INTEGER NOT NULL CHECK(container_version IN (1, 2)),
+      relative_path TEXT NOT NULL UNIQUE,
+      ciphertext_sha256 TEXT CHECK(
+        ciphertext_sha256 IS NULL
+        OR (length(ciphertext_sha256) = 64 AND ciphertext_sha256 = lower(ciphertext_sha256))
+      ),
+      size_bytes INTEGER CHECK(size_bytes IS NULL OR size_bytes >= 0),
+      created_at TEXT NOT NULL,
+      sealed_event_id TEXT,
+      frame_count INTEGER CHECK(frame_count IS NULL OR frame_count >= 2),
+      header_sha256 TEXT CHECK(
+        header_sha256 IS NULL
+        OR (length(header_sha256) = 64 AND header_sha256 = lower(header_sha256))
+      ),
+      manifest_sha256 TEXT CHECK(
+        manifest_sha256 IS NULL
+        OR (length(manifest_sha256) = 64 AND manifest_sha256 = lower(manifest_sha256))
+      ),
+      entry_count INTEGER CHECK(entry_count IS NULL OR entry_count >= 4),
+      table_count INTEGER CHECK(table_count IS NULL OR table_count > 0),
+      verified_at TEXT,
+      verification_proof_json TEXT,
+      previous_archive_id TEXT,
+      status TEXT NOT NULL CHECK(status IN (
+        'sealed', 'verified', 'superseded'
+      )),
+      availability TEXT NOT NULL DEFAULT 'unknown' CHECK(availability IN (
+        'unknown', 'present', 'missing', 'not_regular', 'mismatched', 'unreadable'
+      )),
+      availability_reason TEXT,
+      last_reconciled_at TEXT,
+      last_observed_file_identity TEXT,
+      slots_json TEXT NOT NULL,
+      last_non_machine_unwrap_at TEXT,
+      legacy_event_rowid INTEGER UNIQUE,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE RESTRICT,
+      FOREIGN KEY (request_event_id) REFERENCES mission_events(id),
+      FOREIGN KEY (sealed_event_id) REFERENCES mission_events(id),
+      FOREIGN KEY (previous_archive_id) REFERENCES mission_archives(id),
+      CHECK(container_version = 1 OR (
+        ciphertext_sha256 IS NOT NULL AND size_bytes IS NOT NULL
+        AND creation_operation_id IS NOT NULL
+        AND frame_count IS NOT NULL AND header_sha256 IS NOT NULL
+        AND manifest_sha256 IS NOT NULL AND entry_count IS NOT NULL
+        AND table_count IS NOT NULL
+      )),
+      CHECK(status != 'verified' OR (verified_at IS NOT NULL AND verification_proof_json IS NOT NULL))
+    );
+    CREATE INDEX IF NOT EXISTS idx_mission_archives_custody
+      ON mission_archives(mission_id, request_event_rowid DESC, created_at DESC, id DESC);
+    CREATE TABLE IF NOT EXISTS mission_archive_supplements (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      archive_id TEXT NOT NULL UNIQUE,
+      previous_archive_id TEXT NOT NULL,
+      supplement_sequence INTEGER NOT NULL CHECK(supplement_sequence > 0),
+      authority TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      audit_event_id TEXT NOT NULL UNIQUE,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE RESTRICT,
+      FOREIGN KEY (archive_id) REFERENCES mission_archives(id) ON DELETE RESTRICT,
+      FOREIGN KEY (previous_archive_id) REFERENCES mission_archives(id) ON DELETE RESTRICT,
+      FOREIGN KEY (audit_event_id) REFERENCES mission_events(id),
+      UNIQUE (mission_id, supplement_sequence),
+      CHECK(archive_id != previous_archive_id)
+    );
+    CREATE TABLE IF NOT EXISTS mission_cleanup_journal (
+      mission_id TEXT PRIMARY KEY,
+      archive_id TEXT NOT NULL,
+      state TEXT NOT NULL CHECK(state IN ('eligible', 'in_progress', 'completed')),
+      progress_json TEXT NOT NULL,
+      started_at TEXT,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      last_error TEXT,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE RESTRICT,
+      FOREIGN KEY (archive_id) REFERENCES mission_archives(id) ON DELETE RESTRICT,
+      CHECK((state = 'completed') = (completed_at IS NOT NULL))
+    );
     CREATE TABLE IF NOT EXISTS mission_object_versions (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -2614,7 +3691,7 @@ function migrate(db) {
     initializeLegacyMissionObjectVersionBackfill(
       db,
       migrationTime,
-      existingSchemaVersion < CURRENT_SCHEMA_VERSION,
+      existingSchemaVersion < MISSION_EVIDENCE_VERSION_SCHEMA,
     )
     recoverStagingGpxImports(db, migrationTime)
     if (positionsRequireProvenanceBackfill && existingSchemaVersion !== 0
@@ -2626,6 +3703,16 @@ function migrate(db) {
         DROP TABLE mission_replay_position_day_counts;
       `)
     }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS mission_replay_position_day_counts (
+        mission_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        known_day TEXT NOT NULL,
+        position_count INTEGER NOT NULL CHECK(position_count >= 0),
+        PRIMARY KEY (mission_id, device_id, known_day),
+        FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+      );
+    `)
     if (existingSchemaVersion === 0) {
       db.exec(`
         CREATE INDEX IF NOT EXISTS idx_positions_replay_known_fix
@@ -2647,14 +3734,6 @@ function migrate(db) {
             MAX(timestamp, received_at, COALESCE(timestamp_provenance_recorded_at, received_at))
           )
           WHERE timestamp_source = 'fix' AND received_at IS NOT NULL;
-        CREATE TABLE IF NOT EXISTS mission_replay_position_day_counts (
-          mission_id TEXT NOT NULL,
-          device_id TEXT NOT NULL,
-          known_day TEXT NOT NULL,
-          position_count INTEGER NOT NULL CHECK(position_count >= 0),
-          PRIMARY KEY (mission_id, device_id, known_day),
-          FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
-        );
         CREATE TRIGGER IF NOT EXISTS positions_replay_day_count_insert
         AFTER INSERT ON positions
         WHEN NEW.timestamp_source = 'fix' AND NEW.received_at IS NOT NULL
@@ -2774,6 +3853,102 @@ function migrate(db) {
     legacyMissionObjectBackfillRemaining: readLegacyMissionObjectBackfillPending(db),
     legacyEventProvenanceBackfillRemaining: readLegacyEventProvenanceBackfillPending(db),
     gpxReceiptRecoveryRemaining: readUnsettledGpxImportReceiptPending(db),
+    legacyArchiveRegistryBackfillRemaining: readLegacyArchiveRegistryBackfillPending(db),
+  }
+}
+
+/** Returns true when an archive-review restore worker has been cancelled. */
+function archiveReviewMigrationCancelled(cancellationFlag) {
+  return cancellationFlag instanceof Int32Array
+    && cancellationFlag.length === 1
+    && Atomics.load(cancellationFlag, 0) !== 0
+}
+
+/** Stops a scratch-only archive migration without weakening its cleanup boundary. */
+function assertArchiveReviewMigrationActive(cancellationFlag) {
+  if (!archiveReviewMigrationCancelled(cancellationFlag)) return
+  const error = new Error('Archive review migration was cancelled.')
+  error.name = 'AbortError'
+  error.code = 'ARCHIVE_CANCELLED'
+  throw error
+}
+
+/**
+ * Migrates only a restored archive scratch database to the current read schema.
+ * Unlike createElectronMissionStore this starts no timers, custody recovery, or
+ * live-store workers. All captured evidence backfills are exhausted synchronously
+ * in the caller's restore worker before the read-only session can become visible.
+ */
+function migrateMissionStoreForArchiveReview(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || typeof input.databasePath !== 'string'
+    || !path.isAbsolute(input.databasePath)
+    || path.resolve(input.databasePath) !== input.databasePath
+    || typeof input.archiveDirectory !== 'string'
+    || !path.isAbsolute(input.archiveDirectory)
+    || path.resolve(input.archiveDirectory) !== input.archiveDirectory
+    || (input.cancellationFlag !== undefined
+      && (!(input.cancellationFlag instanceof Int32Array)
+        || input.cancellationFlag.length !== 1))
+    || (input.onProgress !== undefined && typeof input.onProgress !== 'function')) {
+    throw new Error('Archive review scratch migration request is invalid.')
+  }
+  assertArchiveReviewMigrationActive(input.cancellationFlag)
+  const db = new Database(input.databasePath, { fileMustExist: true })
+  let completedPages = 0
+  const migrationTime = now()
+  const reportProgress = (detail) => {
+    completedPages += 1
+    input.onProgress?.(Object.freeze({ completedPages, detail }))
+  }
+  try {
+    const storedVersion = readStoredSchemaVersion(db)
+    if (!Number.isSafeInteger(storedVersion)
+      || storedVersion < 1
+      || storedVersion > CURRENT_SCHEMA_VERSION) {
+      throw new Error('Archive review scratch database schema is unsupported.')
+    }
+    db.pragma('journal_mode = WAL')
+    db.pragma('synchronous = FULL')
+    db.pragma('foreign_keys = ON')
+    const migrationState = migrate(db, input.archiveDirectory)
+    reportProgress('database-schema-migrated')
+
+    while (migrationState.legacyEventProvenanceBackfillRemaining > 0) {
+      assertArchiveReviewMigrationActive(input.cancellationFlag)
+      migrationState.legacyEventProvenanceBackfillRemaining =
+        backfillLegacyEventProvenance(db, migrationTime).remaining
+      reportProgress('database-events-prepared')
+    }
+    while (migrationState.legacyMissionObjectBackfillRemaining > 0) {
+      assertArchiveReviewMigrationActive(input.cancellationFlag)
+      migrationState.legacyMissionObjectBackfillRemaining =
+        backfillLegacyMissionObjectVersions(db, migrationTime).remaining
+      reportProgress('database-objects-prepared')
+    }
+    while (migrationState.legacyGpxBackfillRemaining > 0) {
+      assertArchiveReviewMigrationActive(input.cancellationFlag)
+      migrationState.legacyGpxBackfillRemaining =
+        backfillLegacyGpxRevisions(db, migrationTime).remaining
+      reportProgress('database-gpx-prepared')
+    }
+    assertArchiveReviewMigrationActive(input.cancellationFlag)
+    const integrityRows = db.pragma('integrity_check')
+    if (!Array.isArray(integrityRows)
+      || integrityRows.length !== 1
+      || integrityRows[0]?.integrity_check !== 'ok'
+      || readStoredSchemaVersion(db) !== CURRENT_SCHEMA_VERSION) {
+      throw new Error('Archive review scratch database migration did not verify.')
+    }
+    db.pragma('wal_checkpoint(TRUNCATE)')
+    db.pragma('journal_mode = DELETE')
+    reportProgress('database-migration-verified')
+    return Object.freeze({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      completedPages,
+    })
+  } finally {
+    db.close()
   }
 }
 
@@ -3551,11 +4726,20 @@ function getMission(db, missionId) {
   if (mission === undefined) {
     throw new Error(`Mission not found: ${missionId}`)
   }
-  return mission
+  return projectMissionStorageState(db, mission)
 }
 
 function getActiveMission(db) {
-  return db.prepare("SELECT * FROM missions WHERE status IN ('active', 'paused') ORDER BY start_time DESC LIMIT 1").get() ?? null
+  const mission = db.prepare("SELECT * FROM missions WHERE status IN ('active', 'paused') ORDER BY start_time DESC LIMIT 1").get()
+  return mission === undefined ? null : projectMissionStorageState(db, mission)
+}
+
+/** Projects the current cleanup epoch without adding a mutable mission column. */
+function projectMissionStorageState(db, mission) {
+  return {
+    ...mission,
+    storage_state: readMissionLiveReviewStorageState(db, mission.id),
+  }
 }
 
 function transitionMission(db, missionId, requiredStatus, nextStatus) {
@@ -3963,6 +5147,70 @@ function validateArchiveFile(archiveBuffer, missionId) {
   return entries
 }
 
+/**
+ * Reads the one still-open post-finalization correction authorization. A normal
+ * first Finish has no such authorization and therefore remains read-only.
+ */
+function readActiveMissionCorrectionAuthorization(db, missionId) {
+  const finalized = db.prepare(`SELECT rowid AS event_rowid, details_json
+    FROM mission_events
+    WHERE mission_id = ? AND event_type = 'mission_finalized'
+    ORDER BY rowid DESC LIMIT 1`).get(missionId)
+  if (finalized === undefined) return null
+  const unlocked = db.prepare(`SELECT rowid AS event_rowid, id, timestamp, details_json
+    FROM mission_events
+    WHERE mission_id = ? AND event_type = 'mission_unlocked' AND rowid > ?
+    ORDER BY rowid DESC LIMIT 1`).get(missionId, finalized.event_rowid)
+  if (unlocked === undefined) return null
+  const finalizedDetails = readEventDetails(finalized.details_json)
+  const unlockDetails = readEventDetails(unlocked.details_json)
+  const authority = typeof unlockDetails.admin_name === 'string'
+    ? unlockDetails.admin_name.trim()
+    : ''
+  const reason = typeof unlockDetails.reason === 'string' ? unlockDetails.reason.trim() : ''
+  if (authority === '' || Buffer.byteLength(authority, 'utf8') > 200
+    || reason === '' || Buffer.byteLength(reason, 'utf8') > 4_000) {
+    throw new Error('Mission correction authorization audit is invalid.')
+  }
+  return Object.freeze({
+    authority,
+    reason,
+    finalizedEventRowid: Number(finalized.event_rowid),
+    previousArchiveId: typeof finalizedDetails.archive_id === 'string'
+      ? finalizedDetails.archive_id
+      : null,
+    unlockEventId: unlocked.id,
+    unlockEventRowid: Number(unlocked.event_rowid),
+    unlockedAt: unlocked.timestamp,
+  })
+}
+
+/** Binds one re-finalization to the exact archive protected by the active unlock. */
+function readActiveArchiveSupplementContext(db, archiveRegistry, missionId) {
+  const authorization = readActiveMissionCorrectionAuthorization(db, missionId)
+  if (authorization === null) return null
+  const missionArchives = archiveRegistry.listMissionArchives(missionId)
+  const previous = authorization.previousArchiveId === null
+    ? missionArchives.find((archive) => archive.status !== 'superseded')
+    : missionArchives.find((archive) => archive.id === authorization.previousArchiveId)
+  if (previous === undefined
+    || previous.mission_id !== missionId
+    || previous.status === 'superseded'
+    || !['sealed', 'verified'].includes(previous.status)
+    || (Number(previous.container_version) === 2 && previous.ciphertext_sha256 === null)) {
+    const error = new Error(
+      'Mission correction predecessor archive is unavailable or no longer current.',
+    )
+    error.code = 'ARCHIVE_SUPPLEMENT_PREDECESSOR_INVALID'
+    throw error
+  }
+  return Object.freeze({
+    ...authorization,
+    previousArchiveId: previous.id,
+    previousArchiveSha256: previous.ciphertext_sha256,
+  })
+}
+
 async function finalizeMission(
   db,
   missionId,
@@ -4088,6 +5336,967 @@ async function finalizeMission(
   return { mission: getMission(db, missionId), archive }
 }
 
+/**
+ * Finalizes one finished mission through the journalled SARARCH2 lifecycle.
+ * The live store holds SQLite locks only for short identity/state transitions; snapshot,
+ * encryption, publish, restore, and exhaustive verification remain worker-owned.
+ */
+async function finalizeMissionWithEncryptedArchive(input) {
+  const {
+    db,
+    databasePath,
+    missionId,
+    archiveDirectory,
+    archiveRegistry,
+    archiveCustodyJournal,
+    archiveCreateRunner,
+    archiveVerifyRunner,
+    awaitArchiveWorker,
+    signal,
+    custody,
+    faultInjection = {},
+  } = input
+  const archiveId = randomUUID()
+  const operationId = input.operationId ?? randomUUID()
+  const requestedAt = now()
+  const finalRelativePath = `${archiveId}.sararch`
+  const temporaryRelativePath = `.staging/${operationId}/${archiveId}.sararch.tmp`
+  const progress = createArchiveLifecycleProgressEmitter(input.onProgress)
+
+  const requestIdentity = db.transaction(() => {
+    const mission = getMission(db, missionId)
+    if (mission.status !== 'finished') {
+      throw new Error('Only finished missions can be finalized.')
+    }
+    assertLegacyMissionObjectBackfillSettled(db)
+    assertLegacyEventProvenanceReady(db, missionId)
+    assertNoUnsettledGpxImportState(db, missionId)
+    assertMissionFinalizationNotInProgress(db, missionId)
+    const supplement = readActiveArchiveSupplementContext(db, archiveRegistry, missionId)
+    db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
+      VALUES (?, ?)`).run(missionId, requestedAt)
+    const requestEventId = insertEvent(
+      db,
+      missionId,
+      'mission_finalize_requested',
+      requestedAt,
+      {
+        resulting_status: 'finished',
+        archive_id: archiveId,
+        operation_id: operationId,
+        archive_kind: 'finalized',
+        archive_relative_path: finalRelativePath,
+        protected_finalization_epoch: null,
+        previous_archive_id: supplement?.previousArchiveId ?? null,
+        previous_archive_sha256: supplement?.previousArchiveSha256 ?? null,
+      },
+    )
+    const requestEventRowid = Number(db.prepare(`SELECT rowid FROM mission_events
+      WHERE id = ?`).get(requestEventId)?.rowid)
+    if (!Number.isSafeInteger(requestEventRowid) || requestEventRowid < 1) {
+      throw new Error('Mission archive request event could not be pinned safely.')
+    }
+    archiveCustodyJournal.planBuildingWithinTransaction({
+      archiveId,
+      archiveKind: 'finalized',
+      createdAt: requestedAt,
+      fenceRequestedAt: requestedAt,
+      finalRelativePath,
+      missionId,
+      operationId,
+      previousArchiveId: supplement?.previousArchiveId ?? null,
+      previousArchiveSha256: supplement?.previousArchiveSha256 ?? null,
+      protectedFinalizationEpoch: null,
+      requestEventId,
+      requestEventRowid,
+      temporaryRelativePath,
+    })
+    return Object.freeze({ requestEventId, requestEventRowid, supplement })
+  }).immediate()
+
+  if (faultInjection.afterRequestBeforeWorker === true) {
+    const interruption = new Error('Simulated archive interruption after durable request.')
+    interruption.code = 'ARCHIVE_SIMULATED_INTERRUPTION'
+    interruption.preserveArchiveCustodyForRestart = true
+    throw interruption
+  }
+
+  let registered = false
+  try {
+    const createRequest = Object.freeze({
+      operationId,
+      archiveId,
+      databasePath,
+      archiveDirectory,
+      missionId,
+      requestEventRowid: requestIdentity.requestEventRowid,
+      fenceRequestedAt: requestedAt,
+      requestEventId: requestIdentity.requestEventId,
+      archiveKind: 'finalized',
+      createdAt: requestedAt,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      inventoryVersion: 1,
+      previousArchiveSha256: requestIdentity.supplement?.previousArchiveSha256 ?? null,
+      protectedFinalizationEpoch: null,
+      passphrase: custody?.passphrase,
+      recoveryCode: custody?.recoveryCode,
+    })
+    const creation = await awaitArchiveWorker(archiveCreateRunner({
+      request: createRequest,
+      signal,
+      ...(input.onProgress === undefined
+        ? {}
+        : { onProgress: (update) => progress.forward('create', update) }),
+    }))
+    const receipt = Object.freeze({
+      ciphertextSha256: creation.ciphertextSha256,
+      containerVersion: creation.containerVersion,
+      entryCount: creation.manifestSummary.entryCount,
+      frameCount: creation.frameCount,
+      headerSha256: creation.headerSha256,
+      inventorySha256: creation.manifestSummary.inventorySha256,
+      inventoryVersion: creation.inventoryVersion,
+      kdfDurationMs: creation.kdfDurationMs,
+      manifestSha256: creation.manifestSummary.manifestSha256,
+      plaintextCleanupConfirmed: creation.plaintextSweepConfirmed,
+      schemaVersion: creation.schemaVersion,
+      sizeBytes: creation.sizeBytes,
+      slots: creation.slots,
+      tableCount: creation.manifestSummary.tableCount,
+      temporaryFileIdentity: creation.temporaryFileIdentity,
+    })
+    progress.emit('create', 'publish', 'files', 0, 1, 'publishing-encrypted-archive')
+    db.transaction(() => {
+      assertEncryptedArchiveRequestStillCurrent(db, {
+        missionId,
+        requestedAt,
+        requestEventId: requestIdentity.requestEventId,
+        requestEventRowid: requestIdentity.requestEventRowid,
+        archiveId,
+        operationId,
+        archiveKind: 'finalized',
+        expectedMissionStatuses: ['finished'],
+        protectedFinalizationEpoch: null,
+        previousArchiveId: requestIdentity.supplement?.previousArchiveId ?? null,
+        previousArchiveSha256: requestIdentity.supplement?.previousArchiveSha256 ?? null,
+      })
+      archiveCustodyJournal.recordPublishPrepared({
+        expectedRevision: 1,
+        observedAt: now(),
+        operationId,
+        receipt,
+      })
+    }).immediate()
+    const publishResult = await archiveCustodyJournal.publishPrepared({
+      expectedRevision: 2,
+      operationId,
+      signal,
+    })
+    progress.emit('create', 'publish', 'files', 1, 1, 'encrypted-archive-published')
+    if (faultInjection.afterPublishBeforeSeal === true) {
+      const interruption = new Error('Simulated archive interruption after durable publish.')
+      interruption.code = 'ARCHIVE_SIMULATED_INTERRUPTION'
+      interruption.preserveArchiveCustodyForRestart = true
+      throw interruption
+    }
+    progress.emit('create', 'seal', 'files', 0, 1, 'sealing-archive-custody')
+    sealPublishedArchiveFromJournal({
+      db,
+      archiveDirectory,
+      archiveRegistry,
+      archiveCustodyJournal,
+      operationId,
+      expectedRevision: 2,
+      publishResult,
+    })
+    registered = true
+    progress.emit('create', 'seal', 'files', 1, 1, 'archive-custody-sealed')
+
+    const verificationTicket = archiveRegistry.issueVerificationTicket(archiveId)
+    const verificationProof = await awaitArchiveWorker(archiveVerifyRunner({
+      request: {
+        ...verificationTicket,
+        operationId,
+        archiveDirectory,
+        databasePath,
+        passphrase: custody.passphrase,
+        recoveryCode: custody.recoveryCode,
+      },
+      signal,
+      ...(input.onProgress === undefined
+        ? {}
+        : { onProgress: (update) => progress.forward('verify', update) }),
+    }))
+    const verifiedArchive = commitArchiveVerificationIfEpochCurrent({
+      db,
+      archiveRegistry,
+      archiveId,
+      verificationProof,
+    })
+    progress.emit('verify', 'verified', 'phases', 1, 1, 'verification-committed')
+    return {
+      mission: getMission(db, missionId),
+      archive: projectArchiveCustodyRow(verifiedArchive, archiveDirectory, db),
+    }
+  } catch (error) {
+    if (error?.preserveArchiveCustodyForRestart === true) throw error
+    if (registered) {
+      const observedFailureCode = stableArchiveFailureCode(error, 'ARCHIVE_VERIFY_FAILED')
+      const failureCode = observedFailureCode === 'ARCHIVE_CANCELLED'
+        ? 'ARCHIVE_VERIFY_CANCELLED'
+        : observedFailureCode.startsWith('ARCHIVE_VERIFY_')
+          ? observedFailureCode
+          : 'ARCHIVE_VERIFY_FAILED'
+      let auditFailure = null
+      try {
+        if (faultInjection.failVerificationFailureAudit === true) {
+          const injected = new Error('Injected post-seal verification-failure audit write failure.')
+          injected.code = 'SQLITE_FULL'
+          throw injected
+        }
+        appendEvent(db, missionId, 'mission_archive_verification_failed_v2', {
+          archive_id: archiveId,
+          resulting_status: getMission(db, missionId).status,
+          error_code: failureCode,
+        })
+      } catch (auditError) {
+        auditFailure = auditError
+      }
+      if (auditFailure !== null) {
+        const auditTerminal = new Error(
+          'Mission archive verification failed after seal and its failure audit could not be written.',
+        )
+        auditTerminal.code = 'ARCHIVE_VERIFY_AUDIT_FAILED'
+        auditTerminal.cause = new AggregateError(
+          [error, auditFailure],
+          'Verification and its post-seal failure audit both failed.',
+        )
+        throw auditTerminal
+      }
+      if (error?.code === failureCode) throw error
+      const failure = new Error(
+        failureCode === 'ARCHIVE_VERIFY_CANCELLED'
+          ? 'Mission archive verification was cancelled after archive custody was sealed.'
+          : 'Mission archive verification failed after archive custody was sealed.',
+      )
+      failure.code = failureCode
+      failure.cause = error
+      throw failure
+    }
+    let settlement
+    try {
+      settlement = await archiveCustodyJournal.reconcileActive()
+    } catch (settlementError) {
+      const failure = new Error(
+        'Mission archive creation stopped and custody recovery requires review before retrying.',
+      )
+      failure.code = 'ARCHIVE_CUSTODY_RECOVERY_REQUIRED'
+      failure.cause = settlementError
+      throw failure
+    }
+    if (settlement?.state === 'conflict') {
+      const failure = new Error(
+        'Mission archive custody conflict requires explicit review before retrying.',
+      )
+      failure.code = 'ARCHIVE_CUSTODY_RECOVERY_REQUIRED'
+      failure.cause = error
+      throw failure
+    }
+    db.transaction(() => {
+      const fence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
+        WHERE mission_id = ?`).get(missionId)
+      if (fence?.requested_at !== requestedAt) return
+      appendEvent(db, missionId, 'mission_archive_failed', {
+        archive_id: archiveId,
+        operation_id: operationId,
+        resulting_status: getMission(db, missionId).status,
+        archive_kind: 'finalized',
+        error_code: stableArchiveFailureCode(error, 'ARCHIVE_CREATE_FAILED'),
+        custody_outcome: settlement?.state ?? 'none',
+      })
+      db.prepare(`DELETE FROM mission_finalization_fences
+        WHERE mission_id = ? AND requested_at = ?`).run(missionId, requestedAt)
+    }).immediate()
+    throw error
+  }
+}
+
+/** Re-sequences the full archive lifecycle and prevents worker completion from overstating custody. */
+function createArchiveLifecycleProgressEmitter(onProgress) {
+  const sequences = { create: 0, verify: 0 }
+  const dispatch = (kind, update) => {
+    if (onProgress === undefined) return
+    sequences[kind] += 1
+    onProgress(kind, Object.freeze({
+      ...update,
+      sequence: sequences[kind],
+    }))
+  }
+  return Object.freeze({
+    forward(kind, update) {
+      dispatch(kind, {
+        ...update,
+        phase: update.phase === 'complete'
+          ? (kind === 'create' ? 'staged' : 'proof')
+          : update.phase,
+      })
+    },
+    emit(kind, phase, unit, completed, total, detail) {
+      dispatch(kind, { phase, unit, completed, total, detail })
+    },
+  })
+}
+
+/** Resumes or safely settles the one durable pre-registration custody operation after restart. */
+async function recoverInterruptedArchiveCustody(input) {
+  const active = input.archiveCustodyJournal.readActive()
+  if (active === null) return null
+  if (input.signal?.aborted === true) {
+    const error = new Error('Archive custody recovery was cancelled.')
+    error.name = 'AbortError'
+    error.code = 'ARCHIVE_CANCELLED'
+    throw error
+  }
+
+  const registered = input.db.prepare(`SELECT id FROM mission_archives WHERE id = ?`)
+    .get(active.archiveId)
+  if (registered !== undefined) {
+    const settlement = await input.archiveCustodyJournal.reconcileActive({
+      signal: input.signal,
+    })
+    if (settlement?.state !== 'registered') {
+      const error = new Error('Registered archive custody disagrees with its active journal.')
+      error.code = 'ARCHIVE_CUSTODY_RECOVERY_REQUIRED'
+      throw error
+    }
+    return input.archiveRegistry.getArchive(active.archiveId)
+  }
+
+  let recoveryError = null
+  if (active.state === 'publish_prepared') {
+    try {
+      const publishResult = await input.archiveCustodyJournal.publishPrepared({
+        expectedRevision: active.revision,
+        operationId: active.operationId,
+        signal: input.signal,
+      })
+      return sealPublishedArchiveFromJournal({
+        db: input.db,
+        archiveDirectory: input.archiveDirectory,
+        archiveRegistry: input.archiveRegistry,
+        archiveCustodyJournal: input.archiveCustodyJournal,
+        operationId: active.operationId,
+        expectedRevision: active.revision,
+        publishResult,
+      })
+    } catch (error) {
+      if (input.signal?.aborted === true || error?.code === 'ARCHIVE_CANCELLED') throw error
+      recoveryError = error
+    }
+  }
+
+  const settlement = await input.archiveCustodyJournal.reconcileActive({
+    signal: input.signal,
+  })
+  if (settlement === null) return null
+  if (settlement.state === 'registered') {
+    return input.archiveRegistry.getArchive(active.archiveId)
+  }
+  if (settlement.state === 'conflict') {
+    const error = new Error('Archive custody conflict requires explicit review.')
+    error.code = 'ARCHIVE_CUSTODY_RECOVERY_REQUIRED'
+    throw error
+  }
+  recordInterruptedArchiveFailure(input.db, active, settlement, recoveryError)
+  return settlement
+}
+
+/** Clears only the exact interrupted fence after custody reached a safe terminal outcome. */
+function recordInterruptedArchiveFailure(db, active, settlement, cause) {
+  db.transaction(() => {
+    const expectedMissionStatuses = active.archiveKind === 'finalized'
+      ? ['finished']
+      : active.archiveKind === 'finalized_recovery'
+        ? ['finalized']
+        : ['finished', 'finalized']
+    assertEncryptedArchiveRequestStillCurrent(db, {
+      missionId: active.missionId,
+      requestedAt: active.fenceRequestedAt,
+      requestEventId: active.requestEventId,
+      requestEventRowid: active.requestEventRowid,
+      archiveId: active.archiveId,
+      operationId: active.operationId,
+      archiveKind: active.archiveKind,
+      expectedMissionStatuses,
+      protectedFinalizationEpoch: active.protectedFinalizationEpoch,
+      previousArchiveId: active.previousArchiveId,
+      previousArchiveSha256: active.previousArchiveSha256,
+    })
+    appendEvent(db, active.missionId, 'mission_archive_failed', {
+      archive_id: active.archiveId,
+      operation_id: active.operationId,
+      archive_kind: active.archiveKind,
+      protected_finalization_epoch: active.protectedFinalizationEpoch,
+      resulting_status: getMission(db, active.missionId).status,
+      custody_outcome: settlement.state,
+      error_code: stableArchiveFailureCode(cause, 'ARCHIVE_CREATE_INTERRUPTED'),
+    })
+    const removed = db.prepare(`DELETE FROM mission_finalization_fences
+      WHERE mission_id = ? AND requested_at = ?`)
+      .run(active.missionId, active.fenceRequestedAt)
+    if (removed.changes !== 1) {
+      throw new Error('Interrupted archive fence changed before safe settlement.')
+    }
+  }).immediate()
+}
+
+/** Commits one published archive, lifecycle transition, exact fence removal, and journal settlement. */
+function sealPublishedArchiveFromJournal(input) {
+  const active = input.archiveCustodyJournal.readActive()
+  if (active?.operationId !== input.operationId
+    || active.revision !== input.expectedRevision
+    || active.state !== 'publish_prepared'
+    || active.receipt === null) {
+    throw new Error('Mission archive custody journal changed before sealing.')
+  }
+  assertPublishedIdentityMatchesReceipt(input.publishResult?.targetIdentity, active.receipt)
+  const mission = getMission(input.db, active.missionId)
+  const expectedMissionStatuses = active.archiveKind === 'finalized'
+    ? ['finished']
+    : active.archiveKind === 'finalized_recovery'
+      ? ['finalized']
+      : ['finished', 'finalized']
+  if (!expectedMissionStatuses.includes(mission.status)) {
+    throw new Error('Mission state changed while the encrypted archive was being sealed.')
+  }
+  assertLegacyMissionObjectBackfillSettled(input.db)
+  assertLegacyEventProvenanceReady(input.db, active.missionId)
+  assertNoUnsettledGpxImportState(input.db, active.missionId)
+  if (active.protectedFinalizationEpoch !== null) {
+    if (mission.status !== 'finalized'
+      || readLatestMissionFinalizedEpoch(input.db, active.missionId)
+        !== active.protectedFinalizationEpoch) {
+      throw new Error('Mission finalization epoch changed before archive sealing.')
+    }
+  }
+  if (active.previousArchiveId !== null) {
+    const previous = input.archiveRegistry.getArchive(active.previousArchiveId)
+    if (previous.mission_id !== active.missionId
+      || previous.ciphertext_sha256 !== active.previousArchiveSha256) {
+      throw new Error('Mission archive predecessor changed before archive sealing.')
+    }
+  } else if (active.previousArchiveSha256 !== null) {
+    throw new Error('Mission archive predecessor identity is incomplete.')
+  }
+  const supplement = active.archiveKind === 'finalized'
+    ? readActiveArchiveSupplementContext(input.db, input.archiveRegistry, active.missionId)
+    : null
+  if ((supplement?.previousArchiveId ?? null) !== active.previousArchiveId
+    || (supplement?.previousArchiveSha256 ?? null) !== active.previousArchiveSha256) {
+    throw new Error('Mission archive correction authorization changed before archive sealing.')
+  }
+
+  const registeredAt = now()
+  return input.db.transaction(() => {
+    assertEncryptedArchiveRequestStillCurrent(input.db, {
+      missionId: active.missionId,
+      requestedAt: active.fenceRequestedAt,
+      requestEventId: active.requestEventId,
+      requestEventRowid: active.requestEventRowid,
+      archiveId: active.archiveId,
+      operationId: active.operationId,
+      archiveKind: active.archiveKind,
+      expectedMissionStatuses,
+      protectedFinalizationEpoch: active.protectedFinalizationEpoch,
+      previousArchiveId: active.previousArchiveId,
+      previousArchiveSha256: active.previousArchiveSha256,
+    })
+    const current = input.archiveCustodyJournal.readActive()
+    if (current?.operationId !== active.operationId
+      || current.revision !== input.expectedRevision
+      || current.state !== 'publish_prepared') {
+      throw new Error('Mission archive custody journal changed inside the seal transaction.')
+    }
+    const receipt = current.receipt
+    const resultingStatus = current.archiveKind === 'finalized'
+      ? 'finalized'
+      : getMission(input.db, current.missionId).status
+    const sealedEventId = insertEvent(
+      input.db,
+      current.missionId,
+      'mission_archive_sealed_v2',
+      current.createdAt,
+      {
+        archive_id: current.archiveId,
+        request_event_rowid: current.requestEventRowid,
+        request_event_id: current.requestEventId,
+        creation_operation_id: current.operationId,
+        protected_finalization_epoch: current.protectedFinalizationEpoch,
+        relative_path: current.finalRelativePath,
+        ciphertext_sha256: receipt.ciphertextSha256,
+        size_bytes: receipt.sizeBytes,
+        frame_count: receipt.frameCount,
+        header_sha256: receipt.headerSha256,
+        manifest_sha256: receipt.manifestSha256,
+        entry_count: receipt.entryCount,
+        table_count: receipt.tableCount,
+        inventory_sha256: receipt.inventorySha256,
+        publish_file_identity: input.publishResult.targetIdentity,
+        resulting_status: resultingStatus,
+      },
+    )
+    const archive = input.archiveRegistry.registerSealedArchive({
+      id: current.archiveId,
+      missionId: current.missionId,
+      requestEventRowid: current.requestEventRowid,
+      requestEventId: current.requestEventId,
+      creationOperationId: current.operationId,
+      protectedFinalizationEpoch: current.protectedFinalizationEpoch,
+      archiveKind: current.archiveKind,
+      containerVersion: receipt.containerVersion,
+      relativePath: current.finalRelativePath,
+      ciphertextSha256: receipt.ciphertextSha256,
+      sizeBytes: receipt.sizeBytes,
+      createdAt: current.createdAt,
+      sealedEventId,
+      frameCount: receipt.frameCount,
+      headerSha256: receipt.headerSha256,
+      manifestSha256: receipt.manifestSha256,
+      entryCount: receipt.entryCount,
+      tableCount: receipt.tableCount,
+      previousArchiveId: current.previousArchiveId,
+      slots: receipt.slots,
+    })
+    if (current.archiveKind === 'finalized') {
+      if (supplement !== null) {
+        const supplementSequence = Number(input.db.prepare(`SELECT
+            COALESCE(MAX(supplement_sequence), 0) + 1 AS next_sequence
+          FROM mission_archive_supplements WHERE mission_id = ?`)
+          .get(current.missionId).next_sequence)
+        const supplementEventId = insertEvent(
+          input.db,
+          current.missionId,
+          'mission_archive_supplement_recorded',
+          registeredAt,
+          {
+            archive_id: current.archiveId,
+            previous_archive_id: supplement.previousArchiveId,
+            supplement_sequence: supplementSequence,
+            authority: supplement.authority,
+            reason: supplement.reason,
+            resulting_status: 'finalized',
+          },
+        )
+        input.archiveRegistry.recordSupplement({
+          id: randomUUID(),
+          missionId: current.missionId,
+          archiveId: current.archiveId,
+          previousArchiveId: supplement.previousArchiveId,
+          supplementSequence,
+          authority: supplement.authority,
+          reason: supplement.reason,
+          createdAt: registeredAt,
+          auditEventId: supplementEventId,
+        })
+      }
+      input.db.prepare('UPDATE missions SET status = ? WHERE id = ?')
+        .run('finalized', current.missionId)
+      insertEvent(input.db, current.missionId, 'mission_finalized', registeredAt, {
+        resulting_status: 'finalized',
+        archive_id: current.archiveId,
+        archive_path: path.join(input.archiveDirectory, current.finalRelativePath),
+        archive_relative_path: current.finalRelativePath,
+        container_version: 2,
+      })
+    }
+    const removed = input.db.prepare(`DELETE FROM mission_finalization_fences
+      WHERE mission_id = ? AND requested_at = ?`)
+      .run(current.missionId, current.fenceRequestedAt)
+    if (removed.changes !== 1) {
+      throw new Error('Mission finalization evidence fence changed before sealing.')
+    }
+    input.archiveCustodyJournal.completeRegisteredWithinTransaction({
+      expectedRevision: input.expectedRevision,
+      operationId: current.operationId,
+      registeredAt,
+    })
+    return archive
+  }).immediate()
+}
+
+/** Requires the published target to be the exact staged inode covered by the creation receipt. */
+function assertPublishedIdentityMatchesReceipt(targetIdentity, receipt) {
+  const source = receipt.temporaryFileIdentity
+  let changedTimeDidNotRegress = false
+  try {
+    changedTimeDidNotRegress = BigInt(targetIdentity?.changedTimeNanoseconds ?? '-1')
+      >= BigInt(source.changedTimeNanoseconds)
+  } catch {}
+  if (targetIdentity === null || typeof targetIdentity !== 'object'
+    || targetIdentity.device !== source.device
+    || targetIdentity.inode !== source.inode
+    || targetIdentity.modifiedTimeNanoseconds !== source.modifiedTimeNanoseconds
+    || targetIdentity.sizeBytes !== source.sizeBytes
+    || targetIdentity.linkCount !== 1
+    || !changedTimeDidNotRegress) {
+    throw new Error('Published mission archive identity differs from its staged creation receipt.')
+  }
+}
+
+/** Revalidates all immutable request and PR5 fence identities before a custody transition. */
+function assertEncryptedArchiveRequestStillCurrent(db, input) {
+  if (!input.expectedMissionStatuses.includes(getMission(db, input.missionId).status)) {
+    throw new Error('Mission state changed while the encrypted archive was being created.')
+  }
+  const fence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
+    WHERE mission_id = ?`).get(input.missionId)
+  const event = db.prepare(`SELECT rowid AS event_rowid, id, mission_id, event_type,
+      timestamp, details_json FROM mission_events WHERE id = ?`).get(input.requestEventId)
+  let details = null
+  try { details = JSON.parse(event?.details_json ?? 'null') } catch {}
+  if (fence?.requested_at !== input.requestedAt
+    || event?.id !== input.requestEventId
+    || Number(event?.event_rowid) !== input.requestEventRowid
+    || event?.mission_id !== input.missionId
+    || event?.event_type !== (input.archiveKind === 'finalized'
+      ? 'mission_finalize_requested'
+      : 'mission_archive_requested')
+    || event?.timestamp !== input.requestedAt
+    || details?.archive_id !== input.archiveId
+    || details?.operation_id !== input.operationId
+    || details?.archive_kind !== input.archiveKind
+    || details?.archive_relative_path !== `${input.archiveId}.sararch`
+    || details?.protected_finalization_epoch !== input.protectedFinalizationEpoch
+    || details?.previous_archive_id !== input.previousArchiveId
+    || details?.previous_archive_sha256 !== input.previousArchiveSha256) {
+    throw new Error('Mission archive request or evidence fence changed before custody transition.')
+  }
+}
+
+/** Projects one registry row for the application API without exposing custody internals. */
+function projectArchiveRegistryRow(row, archiveDirectory) {
+  return Object.freeze({
+    ...row,
+    archive_path: path.join(archiveDirectory, row.relative_path),
+  })
+}
+
+/** Projects one bounded operator-facing custody row without stored proof blobs. */
+function projectArchiveCustodyRow(row, archiveDirectory, db) {
+  const revision = row.revision_sequence === undefined
+    ? db.prepare(`SELECT
+        predecessor.ciphertext_sha256 AS previous_archive_sha256,
+        CASE WHEN supplement.supplement_sequence IS NULL
+          THEN 1 ELSE supplement.supplement_sequence + 1 END AS revision_sequence,
+        COALESCE(totals.supplement_count, 0) + 1 AS revision_count,
+        supplement.authority AS supplement_authority,
+        supplement.reason AS supplement_reason,
+        supplement.created_at AS supplement_created_at
+      FROM mission_archives AS archives
+      LEFT JOIN mission_archives AS predecessor
+        ON predecessor.id = archives.previous_archive_id
+      LEFT JOIN mission_archive_supplements AS supplement
+        ON supplement.archive_id = archives.id
+      LEFT JOIN (
+        SELECT mission_id, COUNT(*) AS supplement_count
+        FROM mission_archive_supplements GROUP BY mission_id
+      ) AS totals ON totals.mission_id = archives.mission_id
+      WHERE archives.id = ?`).get(row.id)
+    : row
+  const revisionSequence = Number(revision?.revision_sequence)
+  const revisionCount = Number(revision?.revision_count)
+  if (!Number.isSafeInteger(revisionSequence) || revisionSequence < 1
+    || !Number.isSafeInteger(revisionCount) || revisionCount < revisionSequence
+    || (revision?.previous_archive_sha256 !== null
+      && (typeof revision?.previous_archive_sha256 !== 'string'
+        || !/^[0-9a-f]{64}$/u.test(revision.previous_archive_sha256)))
+    || (revisionSequence === 1 && (
+      revision?.supplement_authority !== null
+      || revision?.supplement_reason !== null
+      || revision?.supplement_created_at !== null
+    ))
+    || (revisionSequence > 1 && (
+      typeof revision?.supplement_authority !== 'string'
+      || revision.supplement_authority.trim() === ''
+      || typeof revision?.supplement_reason !== 'string'
+      || revision.supplement_reason.trim() === ''
+      || typeof revision?.supplement_created_at !== 'string'
+      || Number.isNaN(Date.parse(revision.supplement_created_at))
+    ))) {
+    throw new Error('Mission archive revision chain is corrupt.')
+  }
+  let slots
+  try {
+    slots = JSON.parse(row.slots_json)
+  } catch {
+    throw new Error('Mission archive slot inventory is corrupt.')
+  }
+  if (!Array.isArray(slots) || slots.length > 3) {
+    throw new Error('Mission archive slot inventory is corrupt.')
+  }
+  return Object.freeze({
+    id: row.id,
+    mission_id: row.mission_id,
+    request_event_rowid: Number(row.request_event_rowid),
+    protected_finalization_epoch: row.protected_finalization_epoch === null
+      ? null
+      : Number(row.protected_finalization_epoch),
+    archive_kind: row.archive_kind,
+    container_version: Number(row.container_version),
+    relative_path: row.relative_path,
+    archive_path: path.join(archiveDirectory, row.relative_path),
+    ciphertext_sha256: row.ciphertext_sha256,
+    size_bytes: row.size_bytes === null ? null : Number(row.size_bytes),
+    created_at: row.created_at,
+    verified_at: row.verified_at,
+    previous_archive_id: row.previous_archive_id,
+    previous_archive_sha256: revision.previous_archive_sha256,
+    revision_sequence: revisionSequence,
+    revision_count: revisionCount,
+    supplement_authority: revision.supplement_authority,
+    supplement_reason: revision.supplement_reason,
+    supplement_created_at: revision.supplement_created_at,
+    status: row.status,
+    availability: row.availability,
+    availability_reason: row.availability_reason,
+    slots: Object.freeze(slots.map((slot) => Object.freeze({
+      slotId: slot.slotId,
+      slotType: slot.slotType,
+    }))),
+    last_non_machine_unwrap_at: row.last_non_machine_unwrap_at,
+  })
+}
+
+/** Validates an optional trusted archive operation context. */
+function normalizeArchiveOperationContext(input) {
+  if (input === undefined || input === null) return null
+  if (typeof input !== 'object' || Array.isArray(input)
+    || Object.keys(input).sort().join(',') !== 'onProgress,operationId'
+    || typeof input.onProgress !== 'function') {
+    throw new Error('Mission archive operation context is invalid.')
+  }
+  return Object.freeze({
+    operationId: normalizeArchiveOperationId(input.operationId),
+    onProgress: input.onProgress,
+  })
+}
+
+/** Validates the non-secret mission/archive pair shared by cleanup query and resume. */
+function normalizeMissionCleanupResumeInput(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || Object.keys(input).sort().join(',') !== 'archiveId,missionId'
+    || typeof input.archiveId !== 'string' || input.archiveId.length < 1
+    || Buffer.byteLength(input.archiveId, 'utf8') > 200
+    || typeof input.missionId !== 'string' || input.missionId.length < 1
+    || Buffer.byteLength(input.missionId, 'utf8') > 200
+    || /[\u0000-\u001f\u007f]/u.test(input.archiveId)
+    || /[\u0000-\u001f\u007f]/u.test(input.missionId)) {
+    throw new Error('Mission cleanup identity is invalid.')
+  }
+  return Object.freeze({ archiveId: input.archiveId, missionId: input.missionId })
+}
+
+/** Validates one bounded non-machine cleanup credential without retaining a copy. */
+function normalizeMissionCleanupStartInput(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || Object.keys(input).sort().join(',') !== 'archiveId,missionId,secret,slotType') {
+    throw new Error('Mission cleanup request is invalid.')
+  }
+  const identity = normalizeMissionCleanupResumeInput({
+    archiveId: input.archiveId,
+    missionId: input.missionId,
+  })
+  if (!['passphrase', 'recovery'].includes(input.slotType)
+    || typeof input.secret !== 'string'
+    || Buffer.byteLength(input.secret, 'utf8') < 1
+    || Buffer.byteLength(input.secret, 'utf8') > 1_024
+    || /[\u0000-\u001f\u007f]/u.test(input.secret)) {
+    throw new Error('Mission cleanup credential is invalid.')
+  }
+  return Object.freeze({ ...identity, slotType: input.slotType })
+}
+
+/** Validates the main-owned review-state snapshot used by an eligibility read. */
+function normalizeArchiveCleanupEligibilityContext(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || Object.keys(input).join(',') !== 'reviewActivity'
+    || typeof input.reviewActivity !== 'boolean') {
+    throw new Error('Mission cleanup eligibility context is invalid.')
+  }
+  return Object.freeze({ reviewActivity: input.reviewActivity })
+}
+
+/** Validates the main-owned cleanup operation identity, progress sink and review lease state. */
+function normalizeArchiveCleanupOperationContext(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || Object.keys(input).sort().join(',') !== 'onProgress,operationId,reviewActivity'
+    || typeof input.onProgress !== 'function'
+    || typeof input.reviewActivity !== 'boolean'
+    || typeof input.operationId !== 'string'
+    || !ARCHIVE_UUID_V4.test(input.operationId)) {
+    throw new Error('Mission cleanup operation context is invalid.')
+  }
+  return Object.freeze({
+    operationId: input.operationId,
+    onProgress: input.onProgress,
+    reviewActivity: input.reviewActivity,
+  })
+}
+
+/** Projects a registry-issued review ticket into the closed credential worker request. */
+function createArchiveCleanupCredentialRequest({
+  ticket,
+  archiveDirectory,
+  operationId,
+  slotType,
+}) {
+  return Object.freeze({
+    archiveId: ticket.archiveId,
+    archiveKind: ticket.archiveKind,
+    archiveRelativePath: ticket.archiveRelativePath,
+    missionId: ticket.missionId,
+    requestEventRowid: ticket.requestEventRowid,
+    requestEventId: ticket.requestEventId,
+    creationOperationId: ticket.creationOperationId,
+    protectedFinalizationEpoch: ticket.protectedFinalizationEpoch,
+    createdAt: ticket.createdAt,
+    previousArchiveSha256: ticket.previousArchiveSha256,
+    containerVersion: ticket.containerVersion,
+    schemaVersion: ticket.schemaVersion,
+    inventoryVersion: ticket.inventoryVersion,
+    ciphertextSha256: ticket.ciphertextSha256,
+    sizeBytes: ticket.sizeBytes,
+    frameCount: ticket.frameCount,
+    headerSha256: ticket.headerSha256,
+    manifestSha256: ticket.manifestSha256,
+    entryCount: ticket.entryCount,
+    tableCount: ticket.tableCount,
+    archiveDirectory,
+    operationId,
+    slotType,
+  })
+}
+
+/** Prevents a registry or proof substitution while the fresh credential worker runs. */
+function assertArchiveCleanupTicketUnchanged(expected, current) {
+  const keys = [
+    'archiveId', 'archiveKind', 'archiveRelativePath', 'missionId',
+    'requestEventRowid', 'requestEventId', 'creationOperationId',
+    'protectedFinalizationEpoch', 'createdAt', 'previousArchiveSha256',
+    'containerVersion', 'schemaVersion', 'inventoryVersion', 'ciphertextSha256',
+    'sizeBytes', 'frameCount', 'headerSha256', 'manifestSha256', 'entryCount',
+    'tableCount', 'verifiedAt', 'availability', 'status',
+  ]
+  if (keys.some((key) => expected[key] !== current[key])) {
+    const error = new Error('Mission cleanup archive identity changed during credential proof.')
+    error.code = 'ARCHIVE_CLEANUP_IDENTITY_CHANGED'
+    throw error
+  }
+  assertArchiveCleanupFileIdentityUnchanged(
+    expected.custodyFileIdentity,
+    current.custodyFileIdentity,
+  )
+}
+
+/** Requires two independently normalized custody identities to name one unchanged file. */
+function assertArchiveCleanupFileIdentityUnchanged(expectedInput, currentInput) {
+  const expected = normalizeCustodyFileIdentity(expectedInput)
+  const current = normalizeCustodyFileIdentity(currentInput)
+  if (Object.keys(expected).some((key) => expected[key] !== current[key])) {
+    const error = new Error('Mission cleanup archive file identity changed.')
+    error.code = 'ARCHIVE_CLEANUP_IDENTITY_CHANGED'
+    throw error
+  }
+}
+
+/** Requires one bounded archive operation identity for cancellation ownership. */
+function normalizeArchiveOperationId(value) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 100
+    || Buffer.byteLength(value, 'utf8') > 100
+    || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value)) {
+    throw new Error('Mission archive operation identity is invalid.')
+  }
+  return value
+}
+
+/** Creates the stable cancellation used before any archive-family worker is entered. */
+function createArchiveCancellationError() {
+  const error = new Error('Mission archive operation was cancelled before it started.')
+  error.name = 'AbortError'
+  error.code = 'ARCHIVE_CANCELLED'
+  return error
+}
+
+/** Validates the exact two-secret retry request before it can enter a worker queue. */
+function normalizeArchiveVerificationRetryInput(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || Object.keys(input).sort().join(',') !== 'archiveId,passphrase,recoveryCode'
+    || typeof input.archiveId !== 'string' || input.archiveId.length < 1
+    || Buffer.byteLength(input.archiveId, 'utf8') > 200
+    || typeof input.passphrase !== 'string' || input.passphrase.length < 14
+    || Buffer.byteLength(input.passphrase, 'utf8') > 1_024
+    || typeof input.recoveryCode !== 'string'
+    || !/^(?:[0-9A-HJKMNP-TV-Z]{5}-){7}[0-9A-HJKMNP-TV-Z]{5}$/u
+      .test(input.recoveryCode)) {
+    throw new Error('Mission archive verification request is invalid.')
+  }
+  return Object.freeze({
+    archiveId: input.archiveId,
+    passphrase: input.passphrase,
+    recoveryCode: input.recoveryCode,
+  })
+}
+
+/** Prevents delayed verification from blessing a superseded finalization epoch. */
+function assertArchiveVerificationEpochCurrent(db, archive) {
+  const mission = getMission(db, archive.mission_id)
+  if (archive.archive_kind === 'finalized') {
+    const finalized = db.prepare(`SELECT rowid AS event_rowid, details_json
+      FROM mission_events WHERE mission_id = ? AND event_type = 'mission_finalized'
+      ORDER BY rowid DESC LIMIT 1`).get(archive.mission_id)
+    const details = readEventDetails(finalized?.details_json)
+    if (mission.status !== 'finalized' || details.archive_id !== archive.id) {
+      const error = new Error(
+        'Mission finalization epoch changed before archive verification could commit.',
+      )
+      error.code = 'ARCHIVE_VERIFY_EPOCH_CHANGED'
+      throw error
+    }
+    return
+  }
+  if (archive.protected_finalization_epoch !== null
+    && (mission.status !== 'finalized'
+      || readLatestMissionFinalizedEpoch(db, archive.mission_id)
+        !== Number(archive.protected_finalization_epoch))) {
+    const error = new Error(
+      'Mission finalization epoch changed before archive verification could commit.',
+    )
+    error.code = 'ARCHIVE_VERIFY_EPOCH_CHANGED'
+    throw error
+  }
+}
+
+/** Atomically rechecks the protected mission epoch and commits one verification proof. */
+function commitArchiveVerificationIfEpochCurrent(input) {
+  const commit = input.db.transaction(() => {
+    const archive = input.archiveRegistry.getArchive(input.archiveId)
+    assertArchiveVerificationEpochCurrent(input.db, archive)
+    return input.archiveRegistry.markVerified({
+      archiveId: input.archiveId,
+      verificationProof: input.verificationProof,
+      verifiedAt: now(),
+    })
+  })
+  return commit.immediate()
+}
+
+/** Maps an internal failure to a stable bounded audit code without reflecting secrets. */
+function stableArchiveFailureCode(error, fallback) {
+  return typeof error?.code === 'string' && /^ARCHIVE_[A-Z0-9_]{1,100}$/u.test(error.code)
+    ? error.code
+    : fallback
+}
+
 async function readRecoverableFinalizeArchive(
   db,
   missionId,
@@ -4188,6 +6397,17 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
   if (mission.status !== 'finalized') {
     throw new Error('Only finalized missions can be unlocked.')
   }
+  if (mission.storage_state === 'cleanup_in_progress') {
+    throw new Error(
+      'Mission live-store archival is in progress. Wait for its durable cleanup to finish or recover before unlocking.',
+    )
+  }
+  if (mission.storage_state === 'archived') {
+    throw new Error(
+      'This mission is archived. Restore its verified archive into a complete live mission before requesting a correction unlock.',
+    )
+  }
+  assertCurrentFinalizedArchiveReviewable(db, input.mission_id)
   const finalizedEpoch = readLatestMissionFinalizedEpoch(db, input.mission_id)
   const adminRoster = typeof readAdminRoster === 'function' ? await readAdminRoster() : []
   if (!adminRoster.map((value) => value.trim()).includes(input.admin_name.trim())) {
@@ -4226,11 +6446,36 @@ function readLatestMissionFinalizedEpoch(db, missionId) {
 /** Prevents an authorization decision from being applied to a newer finalization epoch. */
 function assertMissionUnlockEpoch(db, missionId, expectedEpoch) {
   assertMissionFinalizationNotInProgress(db, missionId)
+  const mission = getMission(db, missionId)
   if (
-    getMission(db, missionId).status !== 'finalized' ||
+    mission.status !== 'finalized' ||
+    mission.storage_state !== 'live' ||
     readLatestMissionFinalizedEpoch(db, missionId) !== expectedEpoch
   ) {
-    throw new Error('Mission finalization changed while admin authorization was checked. Review and retry the unlock.')
+    throw new Error('Mission finalization changed, or its live-storage state changed, while admin authorization was checked. Review and retry the unlock.')
+  }
+  assertCurrentFinalizedArchiveReviewable(db, missionId)
+}
+
+/** Requires a v2 predecessor to be fully verified before it can enter a correction chain. */
+function assertCurrentFinalizedArchiveReviewable(db, missionId) {
+  const finalized = db.prepare(`SELECT details_json FROM mission_events
+    WHERE mission_id = ? AND event_type = 'mission_finalized'
+    ORDER BY rowid DESC LIMIT 1`).get(missionId)
+  const archiveId = readEventDetails(finalized?.details_json).archive_id
+  if (typeof archiveId !== 'string' || archiveId.length < 1) return
+  const archive = db.prepare(`SELECT container_version, status, verified_at,
+      verification_proof_json
+    FROM mission_archives WHERE id = ? AND mission_id = ?`).get(archiveId, missionId)
+  if (archive === undefined || Number(archive.container_version) !== 2) return
+  if (archive.status !== 'verified'
+    || typeof archive.verified_at !== 'string'
+    || archive.verified_at.length < 1
+    || typeof archive.verification_proof_json !== 'string'
+    || archive.verification_proof_json.length < 1) {
+    throw new Error(
+      'Mission archive verification must complete before a correction unlock can create a reviewable supplemental chain.',
+    )
   }
 }
 
@@ -7880,11 +10125,14 @@ function all(db, sql, ...params) {
 
 function ensureWritableMission(db, missionId) {
   const mission = getMission(db, missionId)
-  if (mission.status === 'finished' || mission.status === 'finalized') {
+  if (mission.status === 'finalized'
+    || (mission.status === 'finished'
+      && readActiveMissionCorrectionAuthorization(db, missionId) === null)) {
     throw new Error(
       `Cannot write data to finished mission ${missionId}; resume the mission or unlock it first.`,
     )
   }
+  if (mission.status === 'finished') assertMissionFinalizationNotInProgress(db, missionId)
 }
 
 /** Rejects finished-mission bookkeeping while its immutable archive is being sealed. */
@@ -7898,17 +10146,136 @@ function assertMissionFinalizationNotInProgress(db, missionId) {
   }
 }
 
-/** Recovers a direct-archive crash without weakening a true finalization fence. */
+/** Returns a safely parsed active journal identity for migration fence ownership. */
+function readArchiveCustodyMigrationIdentity(db) {
+  const row = db.prepare('SELECT value FROM metadata WHERE key = ?')
+    .get(ACTIVE_ARCHIVE_CUSTODY_JOURNAL_KEY)
+  if (row === undefined) return null
+  try {
+    const record = JSON.parse(row.value)
+    if (record === null || typeof record !== 'object' || Array.isArray(record)
+      || record.journalVersion !== 1
+      || !['building', 'publish_prepared', 'staging_cleanup_planned', 'quarantine_planned']
+        .includes(record.state)
+      || !ARCHIVE_UUID_V4.test(record.operationId)
+      || !ARCHIVE_UUID_V4.test(record.archiveId)
+      || !ARCHIVE_UUID_V4.test(record.requestEventId)
+      || typeof record.missionId !== 'string' || record.missionId.length < 1
+      || !Number.isSafeInteger(record.requestEventRowid) || record.requestEventRowid < 1
+      || typeof record.fenceRequestedAt !== 'string'
+      || Number.isNaN(Date.parse(record.fenceRequestedAt))
+      || !['finalized', 'direct', 'finalized_recovery'].includes(record.archiveKind)
+      || record.finalRelativePath !== `${record.archiveId}.sararch`
+      || (record.protectedFinalizationEpoch !== null
+        && (!Number.isSafeInteger(record.protectedFinalizationEpoch)
+          || record.protectedFinalizationEpoch < 1))) {
+      return Object.freeze({ corrupt: true })
+    }
+    return Object.freeze({ corrupt: false, record })
+  } catch {
+    return Object.freeze({ corrupt: true })
+  }
+}
+
+/** Returns whether request details identify the journalled SARARCH2 lifecycle. */
+function isJournalArchiveRequest(details) {
+  return details !== null && typeof details === 'object'
+    && ARCHIVE_UUID_V4.test(details.archive_id)
+    && ARCHIVE_UUID_V4.test(details.operation_id)
+    && ['finalized', 'direct', 'finalized_recovery'].includes(details.archive_kind)
+    && details.archive_relative_path === `${details.archive_id}.sararch`
+    && Object.hasOwn(details, 'protected_finalization_epoch')
+}
+
+/** Returns whether one exact active journal record owns the request fence. */
+function journalOwnsArchiveFence(identity, fence, details) {
+  if (!journalOwnsArchiveFenceIdentity(identity, fence)) return false
+  const record = identity.record
+  return record.archiveId === details.archive_id
+    && record.operationId === details.operation_id
+    && record.archiveKind === details.archive_kind
+    && record.finalRelativePath === details.archive_relative_path
+    && record.protectedFinalizationEpoch === details.protected_finalization_epoch
+}
+
+/** Returns whether the active journal owns a fence before trusting event details. */
+function journalOwnsArchiveFenceIdentity(identity, fence) {
+  if (identity === null || identity.corrupt === true) return false
+  const record = identity.record
+  return record.missionId === fence.mission_id
+    && record.fenceRequestedAt === fence.requested_at
+    && record.requestEventId === fence.event_id
+    && record.requestEventRowid === Number(fence.event_rowid)
+}
+
+/** Detects a corrupt or incomplete request row before recovery can settle its journal. */
+function activeJournalRequestIntegrityIsInvalid(db) {
+  const identity = readArchiveCustodyMigrationIdentity(db)
+  if (identity === null) return false
+  if (identity.corrupt === true) return true
+  const record = identity.record
+  const row = db.prepare(`SELECT fence.mission_id, fence.requested_at,
+      event.rowid AS event_rowid, event.id AS event_id, event.details_json
+    FROM mission_finalization_fences AS fence
+    INNER JOIN mission_events AS event
+      ON event.mission_id = fence.mission_id
+      AND event.timestamp = fence.requested_at
+    WHERE fence.mission_id = ? AND fence.requested_at = ?
+      AND event.rowid = ? AND event.id = ?`).get(
+    record.missionId,
+    record.fenceRequestedAt,
+    record.requestEventRowid,
+    record.requestEventId,
+  )
+  if (row === undefined || !journalOwnsArchiveFenceIdentity(identity, row)) return true
+  const details = readEventDetails(row.details_json)
+  return !isJournalArchiveRequest(details) || !journalOwnsArchiveFence(identity, row, details)
+}
+
+/** Detects a journal-shaped fence that cannot be treated as a legacy interrupted ZIP. */
+function hasUnsettledJournalArchiveFence(db) {
+  const rows = db.prepare(`SELECT event.details_json
+    FROM mission_finalization_fences AS fence
+    INNER JOIN mission_events AS event
+      ON event.mission_id = fence.mission_id
+      AND event.event_type IN ('mission_archive_requested', 'mission_finalize_requested')
+      AND event.timestamp = fence.requested_at`).all()
+  return rows.some((row) => isJournalArchiveRequest(readEventDetails(row.details_json)))
+}
+
+/** Recovers a legacy direct-archive crash without weakening a journal-owned fence. */
 function recoverInterruptedDirectArchiveFences(db, migrationTime) {
+  const hasFence = db.prepare(`SELECT 1 FROM mission_finalization_fences
+    LIMIT 1`).get()
+  if (hasFence === undefined) return
+  const activeIdentity = readArchiveCustodyMigrationIdentity(db)
   const interrupted = db.prepare(`SELECT fence.mission_id, fence.requested_at,
-      event.details_json
+      event.rowid AS event_rowid, event.id AS event_id, event.details_json
     FROM mission_finalization_fences AS fence
     INNER JOIN mission_events AS event
       ON event.mission_id = fence.mission_id
       AND event.event_type = 'mission_archive_requested'
       AND event.timestamp = fence.requested_at`).all()
+  let unresolvedJournalFence = false
   for (const fence of interrupted) {
     const requestedDetails = readEventDetails(fence.details_json)
+    if (journalOwnsArchiveFenceIdentity(activeIdentity, fence)) {
+      if (!isJournalArchiveRequest(requestedDetails)
+        || !journalOwnsArchiveFence(activeIdentity, fence, requestedDetails)) {
+        unresolvedJournalFence = true
+      }
+      continue
+    }
+    if (activeIdentity?.corrupt === true) {
+      unresolvedJournalFence = true
+      continue
+    }
+    if (isJournalArchiveRequest(requestedDetails)) {
+      if (!journalOwnsArchiveFence(activeIdentity, fence, requestedDetails)) {
+        unresolvedJournalFence = true
+      }
+      continue
+    }
     insertEvent(db, fence.mission_id, 'mission_archive_failed', migrationTime, {
       resulting_status: getMission(db, fence.mission_id).status,
       archive_kind: requestedDetails.archive_kind ?? 'direct',
@@ -7922,6 +10289,11 @@ function recoverInterruptedDirectArchiveFences(db, migrationTime) {
     })
     db.prepare(`DELETE FROM mission_finalization_fences
       WHERE mission_id = ? AND requested_at = ?`).run(fence.mission_id, fence.requested_at)
+  }
+  if (unresolvedJournalFence || activeIdentity?.corrupt === true) {
+    db.prepare(`INSERT INTO metadata (key, value) VALUES (
+      'archive_custody_recovery_failure', 'ARCHIVE_CUSTODY_RECOVERY_REQUIRED'
+    ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
   }
 }
 
@@ -7944,7 +10316,7 @@ function validateLatLon(lat, lon, label) {
 }
 
 function appendEvent(db, missionId, eventType, detailsJson, timestamp = now()) {
-  insertEvent(db, missionId, eventType, timestamp, detailsJson)
+  return insertEvent(db, missionId, eventType, timestamp, detailsJson)
 }
 
 function insertEvent(db, missionId, eventType, timestamp, detailsJson, recordedAt = now()) {
@@ -7986,6 +10358,7 @@ function createCoverageRequestAbortError() {
 module.exports = {
   CURRENT_SCHEMA_VERSION,
   createElectronMissionStore,
+  migrateMissionStoreForArchiveReview,
   finishGpxImportBatch,
   recordGpxImportFailure,
   recordGpxImportSourceReceipt,

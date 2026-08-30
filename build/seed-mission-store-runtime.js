@@ -200,9 +200,9 @@ function seedDatabase({ databasePath, plan, progress, faultInjection }) {
 
 /** Seeds one mission-model-aware BCP fixture without changing legacy preset emission. */
 function seedBreadcrumbProgrammeDatabase({ databasePath, plan, progress, faultInjection }) {
-  if (CURRENT_SCHEMA_VERSION !== 12) {
+  if (CURRENT_SCHEMA_VERSION !== 13) {
     throw new Error(
-      `Breadcrumb programme fixtures require schema v12; current schema is v${CURRENT_SCHEMA_VERSION}.`,
+      `Breadcrumb programme fixtures require schema v13; current schema is v${CURRENT_SCHEMA_VERSION}.`,
     )
   }
   const db = new Database(databasePath)

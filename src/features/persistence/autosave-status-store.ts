@@ -13,6 +13,7 @@ export type AutosaveSyncReason =
   | 'mission-recover-resume'
   | 'mission-start-fresh'
   | 'mission-finalize'
+  | 'mission-cleanup'
   | 'mission-evidence-loss-acknowledgement'
   | 'mission-unlock'
 
@@ -65,6 +66,7 @@ const LIFECYCLE_SYNC_REASONS = new Set<AutosaveSyncReason>([
   'mission-recover-resume',
   'mission-start-fresh',
   'mission-finalize',
+  'mission-cleanup',
   'mission-unlock',
 ])
 

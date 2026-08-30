@@ -4,6 +4,9 @@ const TELEMETRY_EVENT_TYPES = Object.freeze([
   'mission_backup_synced',
 ])
 const MAX_AUDIT_QUERY_LIMIT = 5_001
+const {
+  assertMissionLiveReviewAvailable,
+} = require('./mission-live-review-access.cjs')
 
 /**
  * Reads the bounded Mission Review audit page and exact breadcrumb count from
@@ -11,11 +14,16 @@ const MAX_AUDIT_QUERY_LIMIT = 5_001
  */
 function readMissionReviewSummary(database, input) {
   const normalized = normalizeMissionReviewReadInput(input)
-  const readSnapshot = database.transaction(() => ({
-    auditEvents: listMissionReviewAuditEvents(database, normalized),
-    breadcrumbCount: countMissionPositions(database, normalized.missionId),
-  }))
-  return readSnapshot()
+  const readSnapshot = database.transaction(() => {
+    assertMissionLiveReviewAvailable(database, normalized.missionId)
+    return {
+      auditEvents: listMissionReviewAuditEvents(database, normalized),
+      breadcrumbCount: countMissionPositions(database, normalized.missionId),
+    }
+  })
+  const result = readSnapshot()
+  assertArchiveReviewResultBudget(result)
+  return result
 }
 
 /** Returns the bounded newest-first audit page with the established telemetry policy. */
@@ -85,3 +93,6 @@ module.exports = {
   normalizeMissionReviewReadInput,
   readMissionReviewSummary,
 }
+const {
+  assertArchiveReviewResultBudget,
+} = require('./archive-review-result-budget.cjs')

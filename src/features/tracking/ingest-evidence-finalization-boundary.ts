@@ -1,8 +1,14 @@
-import type { UnlockFinalizedMissionInput } from '../../infrastructure/mission-store/tauri-mission-store'
+import type {
+  MissionArchiveCustodyInput,
+  UnlockFinalizedMissionInput,
+} from '../../infrastructure/mission-store/tauri-mission-store'
 
 type FinalizableMissionStore = {
   readonly finishMission?: (missionId: string) => Promise<unknown>
-  readonly finalizeMission: (missionId: string) => Promise<unknown>
+  readonly finalizeMission: (
+    missionId: string,
+    custody: MissionArchiveCustodyInput,
+  ) => Promise<unknown>
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<unknown>
 }
 
@@ -42,10 +48,10 @@ export function createIngestEvidenceFinalizationBoundary<
   return {
     ...missionStore,
     ...finishBoundary,
-    finalizeMission: async (missionId: string) =>
+    finalizeMission: async (missionId: string, custody: MissionArchiveCustodyInput) =>
       evidence.runWithMissionFinalizationFence(
         missionId,
-        () => missionStore.finalizeMission(missionId),
+        () => missionStore.finalizeMission(missionId, custody),
       ),
     unlockFinalizedMission: async (
       input: Parameters<Store['unlockFinalizedMission']>[0],

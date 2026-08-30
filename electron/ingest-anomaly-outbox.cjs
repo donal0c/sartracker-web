@@ -86,6 +86,7 @@ function createIngestAnomalyOutbox(options) {
       clearTimeout(replayRetryTimer)
       replayRetryTimer = null
     }
+    return operationTail
   }
 
   /** Writes, projects, and only then removes one canonical envelope. */
@@ -326,9 +327,11 @@ function createIngestAnomalyOutbox(options) {
         corruptCount > 0 ||
         (failure !== null && !acknowledgedLossMatches)
       ) {
-        throw new Error(
+        const error = new Error(
           `Degraded evidence health blocks ${operationName}; resolve durable ingest evidence before continuing.`,
         )
+        error.code = 'EVIDENCE_HEALTH_BLOCKED'
+        throw error
       }
       return operation()
     })
@@ -336,7 +339,12 @@ function createIngestAnomalyOutbox(options) {
 
   /** Replays committed files in deterministic order and quarantines corruption. */
   async function initializeAndReplay() {
+    // initialize() may already be queued when the owning mission store closes.
+    // Once disposal wins that race, startup must not recreate app-addressable
+    // outbox state after the store has released its filesystem ownership.
+    if (disposed) return
     await initializeDirectoryAndFailureState()
+    if (disposed) return
     await replayPending()
   }
 

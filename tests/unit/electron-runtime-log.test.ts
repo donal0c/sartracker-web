@@ -102,6 +102,34 @@ describe('electron runtime log', () => {
     expect(serialized).toContain('[redacted]')
   })
 
+  it('redacts archive passphrases and recovery codes before structured runtime logs touch disk [DON-248]', async () => {
+    const passphraseSentinel = 'Runtime-Archive-Passphrase-Sentinel-9!'
+    const recoveryCodeSentinel = 'RUNTIME-RECOVERY-SENTINEL-7Z'
+    const log = await createLog()
+    await log.append({
+      level: 'warn',
+      event: 'archive_operation_failed',
+      fields: {
+        passphrase: passphraseSentinel,
+        pass_phrase: passphraseSentinel,
+        'pass-phrase': passphraseSentinel,
+        custody: {
+          recoveryCode: recoveryCodeSentinel,
+          recovery_code: recoveryCodeSentinel,
+          'recovery-code': recoveryCodeSentinel,
+        },
+      },
+    })
+
+    const serializedEntry = JSON.stringify((await log.readRecent())[0])
+    const persistedText = await readFile(log.logFilePath, 'utf8')
+    for (const output of [serializedEntry, persistedText]) {
+      expect(output).not.toContain(passphraseSentinel)
+      expect(output).not.toContain(recoveryCodeSentinel)
+      expect(output).toContain('[redacted]')
+    }
+  })
+
   it('rotates the log when it exceeds the size cap and keeps recent entries readable', async () => {
     const log = await createLog({ maxBytes: 512 })
     for (let index = 0; index < 100; index += 1) {

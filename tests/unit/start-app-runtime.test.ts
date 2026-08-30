@@ -11,6 +11,11 @@ import { useParticipantStore } from '../../src/features/participants/participant
 import { createParticipationScope } from '../../src/features/participants/participation-scope'
 
 const coverageFlagState = vi.hoisted(() => ({ enabled: false }))
+const ARCHIVE_CUSTODY = {
+  operationId: '0d1d5cad-68d8-4f2e-a9c7-8372f448d6c3',
+  passphrase: 'Runtime archive passphrase 2026!',
+  recoveryCode: '01234-56789-ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567',
+} as const
 
 vi.mock('../../src/features/runtime/coverage-flag', () => ({
   isCoverageEnabled: () => coverageFlagState.enabled,
@@ -155,8 +160,8 @@ describe('app runtime startup', () => {
     })
     const governanceMissionStore = startMissionGovernanceRuntime.mock.calls[0]?.[0].missionStore
     expect(governanceMissionStore.finalizeMission).not.toBe(missionStore.finalizeMission)
-    await governanceMissionStore.finalizeMission('mission-1')
-    expect(missionStore.finalizeMission).toHaveBeenCalledWith('mission-1')
+    await governanceMissionStore.finalizeMission('mission-1', ARCHIVE_CUSTODY)
+    expect(missionStore.finalizeMission).toHaveBeenCalledWith('mission-1', ARCHIVE_CUSTODY)
   })
 
   it('does not let delayed startup health clear newer renderer-held evidence', async () => {
@@ -266,7 +271,7 @@ describe('app runtime startup', () => {
     })
     await vi.waitFor(() => expect(missionStore.getIngestEvidenceHealth).toHaveBeenCalledOnce())
     const governanceStore = startMissionGovernanceRuntime.mock.calls[0]?.[0].missionStore
-    await governanceStore.finalizeMission(activeMission.id)
+    await governanceStore.finalizeMission(activeMission.id, ARCHIVE_CUSTODY)
 
     resolveStartupHealth?.({
       ...healthyEvidence(),
@@ -318,7 +323,7 @@ describe('app runtime startup', () => {
     })
     await vi.waitFor(() => expect(missionStore.getIngestEvidenceHealth).toHaveBeenCalledOnce())
     const governanceStore = startMissionGovernanceRuntime.mock.calls[0]?.[0].missionStore
-    await governanceStore.finalizeMission(activeMission.id)
+    await governanceStore.finalizeMission(activeMission.id, ARCHIVE_CUSTODY)
 
     rejectStartupHealth?.(new Error('health read failed'))
     await startupHealth.catch(() => undefined)

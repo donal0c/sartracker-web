@@ -26,6 +26,7 @@ const {
     readonly retryDelayMs?: number
   }) => {
     readonly initialize: () => Promise<void>
+    readonly dispose: () => void
     readonly deliver: (envelope: RejectionEnvelope) => Promise<{ readonly persisted: boolean }>
     readonly markEvidenceLoss: (missionId: string, reason: string) => Promise<void>
     readonly stageRendererEvidenceUncertainty: (
@@ -109,6 +110,21 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
 
     expect(projected).toEqual([envelope])
     expect((await readdir(directoryPath)).filter((name) => name.endsWith('.json'))).toHaveLength(0)
+  })
+
+  it('does not recreate its app-addressable directory after disposal wins startup', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-dispose-'))
+    const outboxDirectory = path.join(directoryPath, 'ingest-anomaly-outbox')
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath: outboxDirectory,
+      projectEnvelope: vi.fn(),
+    })
+
+    const initialization = outbox.initialize()
+    outbox.dispose()
+    await initialization
+
+    await expect(readdir(directoryPath)).resolves.toEqual([])
   })
 
   it('durably stages later unique envelopes while an earlier projection remains unavailable', async () => {
@@ -598,7 +614,10 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
       'archive',
       async () => 'archived',
       { acknowledgedLossToken: earlier.token },
-    )).rejects.toThrow(/evidence health/iu)
+    )).rejects.toMatchObject({
+      code: 'EVIDENCE_HEALTH_BLOCKED',
+      message: expect.stringMatching(/evidence health/iu),
+    })
   })
 
   it('rejects renderer teardown when the evidence-loss marker cannot become durable', async () => {

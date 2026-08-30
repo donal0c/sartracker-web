@@ -4,8 +4,12 @@ import type {
   RuntimeBootstrapSettings,
 } from '../features/settings/settings-types'
 import type { LayerCatalogStore } from '../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
-import type { MissionStore } from '../infrastructure/mission-store/tauri-mission-store'
+import type {
+  MissionArchiveProgress,
+  MissionStore,
+} from '../infrastructure/mission-store/tauri-mission-store'
 import type { DiagnosticEvent } from '../features/diagnostics/diagnostic-event-log'
+import type { ArchiveReviewBridge } from '../infrastructure/archive-review/archive-review-types'
 
 export type ElectronTraccarHttpRequest = {
   readonly url: string
@@ -99,6 +103,9 @@ export type SarTrackerElectronBridge = {
     readonly changeSeq: number
   }) => void) => () => void
   readonly onCoverageRendererFailed?: (listener: () => void) => () => void
+  readonly onMissionArchiveProgress?: (
+    listener: (progress: MissionArchiveProgress) => void,
+  ) => () => void
   readonly onAppRuntimeTeardownRequested?: (listener: (input: {
     readonly requestId: string
     readonly reason: string
@@ -107,6 +114,7 @@ export type SarTrackerElectronBridge = {
     readonly requestId: string
     readonly ok: boolean
   }) => void
+  readonly archiveReview: ArchiveReviewBridge
   readonly missionStore: MissionStore
   readonly layerCatalogStore: LayerCatalogStore
   readonly traccarHttpRequest: (

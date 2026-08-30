@@ -141,6 +141,15 @@ describe('mission-review read query [DON-251]', () => {
 function createDatabase(filePath = ':memory:') {
   const database = new Database(filePath)
   database.exec(`
+    CREATE TABLE IF NOT EXISTS missions (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL
+    );
+    INSERT OR IGNORE INTO missions (id, status) VALUES ('mission-1', 'finalized');
+    CREATE TABLE IF NOT EXISTS mission_cleanup_journal (
+      mission_id TEXT PRIMARY KEY,
+      state TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS positions (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
