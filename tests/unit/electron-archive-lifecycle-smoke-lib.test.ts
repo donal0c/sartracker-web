@@ -8,6 +8,7 @@ import {
   buildArchiveLifecycleSmokeCiEnvironment,
   buildArchiveLifecycleSmokeCiRunnerArgs,
   parseArchiveLifecycleSmokeArgs,
+  renderedVersionContainsExactHead,
   resolvePackagedApplicationArchivePath,
   validateArchiveLifecycleSmokeEvidence,
 } from '../../build/electron-archive-lifecycle-smoke-lib.js'
@@ -142,6 +143,22 @@ function completeEvidence(): Readonly<Record<string, unknown>> {
 }
 
 describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON-253]', () => {
+  it('matches a CSS-uppercased full build head without accepting prefixes or longer hex tokens', () => {
+    const exactHead = '60bda977c7f69c9b78310c2e8af4a9b3ca5f7d95'
+    expect(renderedVersionContainsExactHead(
+      `0.1.0-BETA.12.11+SHA.${exactHead.toUpperCase()}`,
+      exactHead,
+    )).toBe(true)
+    expect(renderedVersionContainsExactHead(
+      `0.1.0-BETA.12.11+SHA.${exactHead.slice(0, 12).toUpperCase()}`,
+      exactHead,
+    )).toBe(false)
+    expect(renderedVersionContainsExactHead(
+      `0.1.0-BETA.12.11+SHA.${exactHead.toUpperCase()}A`,
+      exactHead,
+    )).toBe(false)
+  })
+
   it('parses an absolute, exact-head runner command without accepting custody material', () => {
     expect(parseArchiveLifecycleSmokeArgs([
       '--app',

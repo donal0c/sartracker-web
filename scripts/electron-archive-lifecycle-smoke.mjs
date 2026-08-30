@@ -27,6 +27,7 @@ import { chromium } from 'playwright'
 import {
   assertArchiveLifecycleSmokeEvidenceOmitsSecrets,
   parseArchiveLifecycleSmokeArgs,
+  renderedVersionContainsExactHead,
   resolvePackagedApplicationArchivePath,
   validateArchiveLifecycleSmokeEvidence,
 } from '../build/electron-archive-lifecycle-smoke-lib.js'
@@ -771,7 +772,10 @@ async function launchPackagedApp(options, userDataDir, number) {
     const page = context.pages()[0] ?? await context.waitForEvent('page')
     await page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
     const visibleVersionText = await page.getByTestId('app-title').locator('..').innerText()
-    const packagedBuildHeadMatched = visibleVersionText.includes(options.expectedHead)
+    const packagedBuildHeadMatched = renderedVersionContainsExactHead(
+      visibleVersionText,
+      options.expectedHead,
+    )
     if (!packagedBuildHeadMatched) {
       throw new Error('Packaged operator-visible version did not contain the expected exact head.')
     }

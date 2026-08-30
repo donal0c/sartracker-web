@@ -46,6 +46,21 @@ const REVIEW_KEYS = Object.freeze([
   'verified',
 ])
 
+/** Matches one exact rendered 40-hex build head while tolerating CSS letter casing. */
+export function renderedVersionContainsExactHead(renderedText, expectedHead) {
+  if (typeof renderedText !== 'string' || typeof expectedHead !== 'string'
+    || !SHA1.test(expectedHead)) {
+    return false
+  }
+  const renderedHeads = renderedText.matchAll(
+    /(?:^|[^0-9a-f])([0-9a-f]{40})(?![0-9a-f])/giu,
+  )
+  for (const match of renderedHeads) {
+    if (match[1]?.toLowerCase() === expectedHead) return true
+  }
+  return false
+}
+
 /** Parses the fail-closed packaged archive-lifecycle runner command line. */
 export function parseArchiveLifecycleSmokeArgs(argv) {
   const parsed = { extraArgs: [] }
