@@ -2,9 +2,12 @@
 
 ## Verdict
 
-**Current-base release decision: HOLD.** The exact audited base must not be used
-to cut or promote another field candidate. Two dependency findings are directly
-release-blocking:
+**Conflict-refreshed current-`master` release decision: HOLD.** The audited
+release-bearing inputs are byte-identical between exact investigation base
+`3d0d36b3874947d3d620bdb5262d9cd2d7233fcf` and conflict-refresh `master`
+`341d95add5a7eceb6db506a2afd0ea70cb1fc944`; the two dependency findings and
+controlled order therefore apply unchanged. Neither revision may be used to
+cut or promote another field candidate:
 
 1. Electron `40.10.0`, which is the shipped desktop runtime, reached end of life
    on 2026-06-30.
@@ -20,8 +23,8 @@ The latest published beta, labelled for internal use, remains a historical,
 unsigned, non-immutable prerelease. The repository and release are public, so
 that label is not an access-control boundary. Its live hashes and identity were
 internally consistent at the audit snapshot, so WAR-04B did not find evidence
-that it was altered. That does not clear the blockers above or make the beta a
-current-base or field candidate.
+that it was altered. That does not clear the blockers above or make the beta an
+audited-base or field candidate.
 
 ## Scope and proof boundary
 
@@ -29,25 +32,29 @@ current-base or field candidate.
 | --- | --- |
 | Audit date | 2026-08-30 |
 | Exact base | `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf` |
-| Base authority | fetched `origin/master`; local `HEAD` and `origin/master` matched before evidence collection |
+| Initial base authority | fetched `origin/master`; local `HEAD` and `origin/master` matched before evidence collection |
+| Conflict refresh | `origin/master` advanced through merged WAR-04 PR #8: final head `3a2278ee8804a9ded0f2fd26626c4c00743c05a6`, merge `341d95add5a7eceb6db506a2afd0ea70cb1fc944`. The exact base-to-refresh diff adds WAR-04 evidence/docs and isolated synthetic red tests only; every audited package, lock, native/build, release-workflow, publisher, support-policy and release-note input is blob-identical. |
 | Branch | `codex/war-04b-release-integrity-audit` |
 | Pull request | [#9](https://github.com/donal0c/sartracker-web/pull/9) |
 | Dependency inputs | exact `package.json` and lockfile v3; no install or lock mutation |
-| Live repository | public `donal0c/sartracker-web`; read-only API snapshot at 2026-08-30T13:22:43Z and central refresh later that day |
+| Live repository | public `donal0c/sartracker-web`; read-only API snapshot at 2026-08-30T13:22:43Z and conflict refresh at 2026-08-30T16:07:01Z on `master` `341d95add5a7eceb6db506a2afd0ea70cb1fc944` |
 | Release visibility | public GitHub prerelease; “internal” describes intended use, not who can download it |
 | Existing artifact | one bounded inspection of the published beta.12.11 `.deb`; no second artifact inspected |
 | Excluded | production/private systems, credentials, real operational data, private maps, exploit development, dependency changes, package/config/workflow changes, release activity, and cross-machine qualification |
 
 Proof tiers follow `docs/assurance/README.md`. Repository/configuration and
 package-graph inspection is `T0/T1`. The one already-published `.deb` inspection
-is historical `T4` only for beta.12.11. No current-base artifact was built or
-inspected, and no claim below is production or field proof.
+is historical `T4` only for beta.12.11. No artifact from the exact investigation
+base or conflict-refresh `master` was built or inspected, and no claim below is
+production or field proof.
 
-WAR-04 PR #8 was read in full to avoid overlap. Its map/settings/privacy findings
-remain separate and are neither duplicated nor cleared here. For the archive
-lifecycle successor, only the exact remote ref named below is stable evidence;
-the active implementation is unmerged and mutable and is used only to define a
-future refresh boundary.
+Now-merged WAR-04 PR #8 was read in full to avoid overlap. Its map/settings/
+privacy findings remain separate and are neither duplicated nor cleared here.
+Its isolated synthetic scripts are outside the package allowlist and do not
+supply dependency/release remediation, private-data package evidence, or release
+proof. For the archive lifecycle successor, only the exact remote ref named
+below is stable evidence; the active implementation is unmerged and mutable and
+is used only to define a future refresh boundary.
 
 ## Dependency and runtime snapshot
 
@@ -97,7 +104,7 @@ the AppImage.
 | `WAR04B-C03` | **Full-audit release relevance is not gated.** Neither `beta:verify` nor the release workflows run a full dependency audit/reachability check. The clean production-only audit omits both C01 and C02 because of dependency classification. | A release can pass existing gates while shipping an unsupported runtime or affected builder-generated launcher. Blindly failing on advisory counts would create the opposite error by treating unused test/platform packages as field exposure. | Manual WAR-04B reachability review. | Add an always-run inventory that records both production and full audit results and requires explicit packaged/runtime/build/test classification for release-bearing records. Do not use `npm audit fix` as the gate. |
 | `WAR04B-C04` | **Release-production archive tooling is affected.** `tar@6.2.1` is reached through builder/native-rebuild paths and includes critical [GHSA-23hp-3jrh-7fpw](https://github.com/advisories/GHSA-23hp-3jrh-7fpw); `extract-zip@2.0.1` is a direct Electron install dependency and is affected by [GHSA-jmr9-qjv8-65gv](https://github.com/advisories/GHSA-jmr9-qjv8-65gv). | A malicious build archive can exhaust the build host or escape the intended extraction boundary. No hostile archive, compromise, or shipped runtime use was found. | Lock integrity, upstream-origin expectations, Electron download checksums, and ephemeral hosted runners constrain the input and persistence opportunity. | Clear these paths through the isolated builder/Electron update steps, regenerate the lock, re-run both audits, and retrace the exact graph. |
 | `WAR04B-C05` | **Published-release immutability is not enforced.** Beta.12.11 reports `immutable:false`; there is no `electron-v*` tag ruleset; the tag and target commit are unsigned. The guarded publisher strongly checks the draft twice, peels the tag before/after, verifies exact asset metadata and fresh hashes, and refuses published clobbering—but it is a voluntary local path and cannot protect bytes after publication. The active release guide and seven historical source notes used “immutable” for a procedural write-once rule; this branch corrects the guide and appends dated amendments to those records without rewriting their historical text or mutating the live release. | An authorized or compromised account can move/delete the tag or change/delete published assets after the publisher's final observation. The public repository and release make the assets world-downloadable; the internal-use label does not reduce mutation or origin risk. Co-located `SHA256SUMS` detects transfer mismatch only when a trusted copy is already available; it does not establish independent origin. No such mutation was observed. | Exact release notes, fresh-download hashes, retained prior artifact, and manual publisher discipline provide point-in-time detection and recovery evidence; they do not prevent mutation. | Enable [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases) before the next publication; add a compatible tag ruleset; keep the guarded publisher. Do not move or reuse the historical tag. |
-| `WAR04B-C06` | **`master` and release-bearing changes have no server enforcement.** Live state: `master protected=false`; branch-protection endpoint absent; zero repository/effective rulesets; no required review, latest-head approval, conversation resolution, status check, force-push or deletion guard. The exact master SHA had no check runs/statuses. The PR validation path filter omits `.github/workflows/electron-release.yml` and packaged `field-tools/**`. | Direct or force mutation, or a PR changing uncovered release inputs, can reach release source without a technical review/check boundary. Human discipline and event-triggered CI are bypassable. | Default workflow token is read-only and cannot approve PRs; the release job alone raises `contents:write`. Existing PR review practice remains useful but unenforced. | First add an always-emitted release-policy check covering all release inputs. Then apply a small `master` ruleset requiring PR, one independent latest-head approval, resolved conversations, that named check, and blocked force-push/deletion. |
+| `WAR04B-C06` | **`master` and release-bearing changes have no server enforcement.** Live state at both initial `master` `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf` and conflict-refresh `master` `341d95add5a7eceb6db506a2afd0ea70cb1fc944`: `protected=false`; branch-protection endpoint absent; zero repository/effective rulesets; no required review, latest-head approval, conversation resolution, status check, force-push or deletion guard; zero check runs/statuses on each exact SHA. The PR validation path filter omits `.github/workflows/electron-release.yml` and packaged `field-tools/**`. | Direct or force mutation, or a PR changing uncovered release inputs, can reach release source without a technical review/check boundary. Human discipline and event-triggered CI are bypassable. | Default workflow token is read-only and cannot approve PRs; the release job alone raises `contents:write`. Existing PR review practice remains useful but unenforced. | First add an always-emitted release-policy check covering all release inputs. Then apply a small `master` ruleset requiring PR, one independent latest-head approval, resolved conversations, that named check, and blocked force-push/deletion. |
 | `WAR04B-C07` | **Workflow inputs and security visibility are under-controlled.** Every current action is GitHub-owned, but references use mutable `actions/*@v4`; Actions allows all actions and does not require SHA pinning. Secret scanning, push protection, non-provider patterns, validity checks, Dependabot alerts/security updates, and CodeQL are disabled or not configured. Disabled endpoints make alert counts unobservable, not zero. | An action tag or build environment can drift; known dependency/secret/static findings may not be surfaced before merge. | Only GitHub-owned actions are currently referenced; global workflow permissions default read-only. | Pin verified actions to full commit SHAs, restrict the allowlist, enable Dependabot alerts without automatic upgrades, enable secret scanning/push protection, and establish CodeQL baseline before making it merge-blocking. GitHub calls a full SHA the only immutable action reference in its [secure-use guidance](https://docs.github.com/en/actions/reference/security/secure-use). |
 | `WAR04B-C08` | **Cryptographic provenance/SBOM is absent and the build environment floats.** There is no artifact or release attestation, no packaged-dependency SBOM, and no signing/notarization. Node is pinned only to major 22; runner image, npm, apt/compiler inputs, and action tags float. Node 22 itself remains Maintenance LTS through 2027-04-30. | Release notes and hashes identify observed bytes but cannot cryptographically tie them to a workflow/source/build recipe, enumerate the packaged graph, or reproduce every native byte. The unsigned public artifacts cannot be OS-authenticated to Donal; “internal/shadow-only” is an intended-use warning, not access control. | The unsigned/not-for-live-incidents warning, disabled auto-update, exact asset hashes, native ELF inspection, and retained rollback artifact reduce misuse or aid detection; they do not authenticate origin. | After immutable releases and exact build controls, attest the exact installers, create and attest a packaged-dependency SBOM, verify both in promotion, and capture runner/Node/npm/toolchain/native-module identity. Signing remains a separate authorization/qualification decision. See [GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations). |
 | `WAR04B-C09` | **Private-data exclusion checks do not cover the actual package boundary.** The builder uses a narrow allowlist, but `asar:true` hides packaged files from the workflow's ordinary filesystem `find`. That guard only rejects `.mbtiles`, `*discovery*`, and `mountainrescue_org*`; it does not enumerate generic credentials, profiles/databases, archives, fixtures, or raw evidence. `field-tools/**` is copied by wildcard. | A future allowed-path addition or generated file can enter `app.asar`, `app.asar.unpacked`, or extra resources without this guard seeing the relevant filename. This is a confirmed control-coverage gap, not evidence that private material is currently packaged. | Tracked-name scan was clear except excluded `.env.mock`; the build allowlist excludes docs/tests/tmp; historical beta.12.11 `.deb` inspection found no known private filename and exactly three intended field tools. | At the exact candidate, generate a manifest for ASAR, unpacked files and extra resources; enforce explicit private-map, credential, runtime DB/profile, archive/ZIP fixture, verification-output and raw-evidence exclusions; enumerate allowed field tools without reading or printing secret contents. |
@@ -107,7 +114,7 @@ the AppImage.
 
 | ID | Hypothesis | Evidence for/against | Required settlement |
 | --- | --- | --- | --- |
-| `WAR04B-H01` | The exact current base packages a private map, credential, mission database, archive fixture, or operational evidence. | No tracked filename matched the private categories; the builder allowlist is narrow; the historical `.deb` was clear. Against that, the current base adds dependencies and `shared/**` packaging after beta.12.11, the ASAR boundary is not inspected, and no current-base artifact was opened. | Inspect the exact final-candidate ASAR/unpacked/extra-resource manifest with no content or secret disclosure. Until then current exposure is **unproven**, not confirmed or cleared. |
+| `WAR04B-H01` | The exact investigation base or conflict-refresh `master` packages a private map, credential, mission database, archive fixture, or operational evidence. | No tracked filename matched the private categories; the builder allowlist is narrow; the historical `.deb` was clear. The audited base adds dependencies and `shared/**` packaging after beta.12.11; PR #8 adds only docs and isolated `scripts/assurance/**` tests outside that allowlist. The ASAR boundary was not inspected and no artifact from either SHA was opened. | Inspect the exact final-candidate ASAR/unpacked/extra-resource manifest with no content or secret disclosure. Until then current exposure is **unproven**, not confirmed or cleared. |
 | `WAR04B-H02` | A release build has processed a hostile archive or the historical beta was compromised. | No hostile input, compromise evidence, unexpected live asset, digest mismatch, publisher bypass, or post-publication mutation was found. Vulnerable build behavior and mutable controls establish exposure, not an incident. | Preserve build logs/hashes and investigate only if concrete provenance or integrity evidence appears. Do not manufacture a proof of concept. |
 | `WAR04B-H03` | The remaining 24-record full audit implies 24 shipped exploitable defects. | Graph tracing clears multiple records as unused platform, build-only controlled-input, test-only, updater-only, or absent API paths. Two release blockers and two conditional build-input paths remain. | Repeat the same reachability classification after each controlled lock change; never use the count alone as a release verdict. |
 | `WAR04B-H04` | The eventual merged breadcrumb programme PR-6 leaves dependency/release posture unchanged. | No exact archive-implementation commit exists to test this claim. The only stable remote ref, `origin/codex/breadcrumb-pr6-archive-lifecycle`, points to `eec92812b783a795c093f37268b295dd2179a3af`, the merged PR5 commit, so it contains no successor evidence. The launch authority identifies the implementation as unmerged and mutable; local uncommitted state is deliberately excluded from this evidence ledger. This ref is not GitHub PR #6, the merged WAR-01 charter. | Run the exact post-programme-PR-6 checklist below against the merged SHA. Until then dependency/release impact is **unproved**, not unchanged. |
@@ -125,7 +132,7 @@ the AppImage.
 | `WAR04B-K06` | Beta.12.11 identity is presently inconsistent. | Cleared at snapshot only: annotated tag peeled to `bced8052b85c110792a7af5ccb7122a94b2fafad`; release/run identity agreed; all five jobs were green; exactly AppImage, `.deb`, and `SHA256SUMS` were present; live API digests matched the note. Non-immutability remains C05. |
 | `WAR04B-K07` | Historical beta.12.11 `.deb` contains the audited builder/test toolchain or a known private filename. | Cleared for that one historical artifact only: fresh SHA-256 `d5e33b41417e444ea524e73c9e25e21d526b70289d68d0ef7c37cf1726fc2954` matched published records; `better_sqlite3.node` was Linux x86-64; builder/test tools, docs/tests/tmp and known private names were absent; field tools were the expected three scripts. |
 | `WAR04B-K08` | DON-146 is still blocked on upstream `better-sqlite3` PR #1475. | Cleared: [PR #1475](https://github.com/WiseLibs/better-sqlite3/pull/1475) merged on 2026-06-13 and [v12.10.1](https://github.com/WiseLibs/better-sqlite3/releases/tag/v12.10.1) explicitly includes it. The repo remains on 12.10.0, so qualification work is now locally actionable. |
-| `WAR04B-K09` | WAR-04 PR #8 already proves or owns WAR-04B release findings. | Cleared: PR #8 is a separate map/settings/privacy investigation. It changes evidence/docs/tests only and supplies no dependency/release remediation or release proof. |
+| `WAR04B-K09` | WAR-04 PR #8 already proves or owns WAR-04B release findings. | Cleared: PR #8 is a separate map/settings/privacy investigation, now merged from final head `3a2278ee8804a9ded0f2fd26626c4c00743c05a6` at `341d95add5a7eceb6db506a2afd0ea70cb1fc944`. It changes evidence/docs and isolated synthetic tests only and supplies no dependency/release remediation or release proof. |
 
 ## Native module, lock, rebuild, and support posture
 
@@ -217,10 +224,11 @@ The tracked repository scan found:
 
 The historical beta.12.11 `.deb` inspection found no known private filename,
 tests, docs, `.git`, or `tmp`, and its fresh digest matched. It predates the
-current base's `geojson-vt`, `saxes`, `vt-pbf`, and `shared/**` additions.
-Therefore the correct current-base conclusion is: **source controls are
-encouraging; current exact packaged exclusion is unproved.** No credentials,
-private-map bytes, operational data, or secret values were sought or handled.
+audited base's `geojson-vt`, `saxes`, `vt-pbf`, and `shared/**` additions. The
+conflict-refresh master adds no package-allowlisted path. Therefore the correct
+conclusion for both SHAs is: **source controls are encouraging; current exact
+packaged exclusion is unproved.** No credentials, private-map bytes,
+operational data, or secret values were sought or handled.
 
 ## REL hazard reconciliation
 
@@ -285,7 +293,7 @@ gh api repository/branch/protection/rulesets/actions/security/release/tag/commit
 gh run view 31482052296
 gh release view/verify/verify-asset and gh attestation verify
 one fresh beta.12.11 .deb download, SHA-256 check, package/ASAR/native/resource inventory
-git show/diff of GitHub PR #8 (WAR-04) and the exact remote programme PR-6 ref; no local uncommitted state credited
+git diff/ls-tree of `3d0d36b..341d95ad` and `gh pr view 8`; exact remote programme PR-6 ref only, with no local uncommitted state credited
 ```
 
 Primary technical sources:
@@ -314,7 +322,8 @@ Primary technical sources:
 
 ## Residual uncertainty and ownership
 
-- No current-base or programme PR-6 artifact was built or inspected.
+- No artifact from the exact investigation base, conflict-refresh `master`, or
+  programme PR-6 was built or inspected.
 - The one artifact inspection was a historical `.deb`; the affected historical
   AppImage was not opened because the packet permits one artifact only.
 - Disabled security features make current alert inventories unknowable.
