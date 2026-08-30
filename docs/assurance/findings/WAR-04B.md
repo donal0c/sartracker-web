@@ -29,6 +29,7 @@ clear the blockers above or make the beta a current-base or field candidate.
 | Exact base | `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf` |
 | Base authority | fetched `origin/master`; local `HEAD` and `origin/master` matched before evidence collection |
 | Branch | `codex/war-04b-release-integrity-audit` |
+| Pull request | [#9](https://github.com/donal0c/sartracker-web/pull/9) |
 | Dependency inputs | exact `package.json` and lockfile v3; no install or lock mutation |
 | Live repository | `donal0c/sartracker-web`, read-only API snapshot at 2026-08-30T13:22:43Z and central refresh later that day |
 | Existing artifact | one bounded inspection of the published beta.12.11 `.deb`; no second artifact inspected |
