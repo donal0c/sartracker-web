@@ -472,9 +472,10 @@ export function MissionArchiveCustodyDialog({
           <div className="mt-5 border border-amber-400/30 bg-amber-400/10 p-4" role="alert">
             <p className="font-semibold text-amber-100">Archive sealed but not yet verified</p>
             <p className="mt-2 text-sm leading-relaxed text-stone-200">
-              The encrypted archive is sealed and the live mission remains intact. Close this
-              dialog and verify the saved archive from mission history using its original
-              recovery code. Do not treat it as complete until verification succeeds.
+              The encrypted archive is sealed, the mission is now locked read-only, and its live
+              evidence remains intact. Close this dialog, open Saved Mission Archives, and retry
+              exhaustive verification using this archive&apos;s original passphrase and original
+              recovery code. Do not treat the archive as complete until verification succeeds.
             </p>
           </div>
         ) : null}

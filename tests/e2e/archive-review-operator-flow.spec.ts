@@ -139,6 +139,60 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
       'Verified encrypted archive',
     )
   })
+
+  test('retries a sealed verification failure with both original credentials before review is enabled', async ({
+    page,
+  }) => {
+    await openBrowserHarness(page)
+    const archive = await createVerifiedSyntheticArchive(page)
+    await page.evaluate(async (archiveId) => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) throw new Error('Browser archive harness is unavailable.')
+      await harness.prepareArchiveVerificationRetryFixture(archiveId)
+    }, archive.archiveId)
+
+    await page.getByTestId('open-mission-review-workspace').click()
+    const archiveSelect = page.getByTestId(`archive-review-select-${archive.archiveId}`)
+    await expect(archiveSelect).toContainText('Verification required')
+    await expect(archiveSelect).toBeDisabled()
+    await page.getByTestId(`archive-verify-retry-${archive.archiveId}`).click()
+
+    const dialog = page.getByTestId('mission-archive-verification-dialog')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('sealed but not verified')
+    await expect(dialog).toContainText('original passphrase and original recovery code')
+    await expect(page.getByTestId('archive-verification-passphrase')).toHaveAttribute(
+      'type',
+      'password',
+    )
+    await expect(page.getByTestId('archive-verification-recovery-code')).toHaveAttribute(
+      'type',
+      'password',
+    )
+
+    const wrongPassphrase = 'Wrong!Archive1234'
+    await page.getByTestId('archive-verification-passphrase').fill(wrongPassphrase)
+    await page.getByTestId('archive-verification-recovery-code').fill(archive.recoveryCode)
+    await page.getByTestId('archive-verification-start').click()
+    await expect(dialog).toContainText('Archive verification failed safely')
+    await expect(dialog).toContainText('archive remains sealed')
+    await expect(dialog).not.toContainText(wrongPassphrase)
+    await expect(dialog).not.toContainText(archive.recoveryCode)
+
+    await page.getByTestId('archive-verification-retry').click()
+    await page.getByTestId('archive-verification-passphrase').fill(
+      SYNTHETIC_ARCHIVE_PASSPHRASE,
+    )
+    await page.getByTestId('archive-verification-recovery-code').fill(archive.recoveryCode)
+    await page.getByTestId('archive-verification-start').click()
+    await expect(dialog).toContainText('Exhaustive archive verification completed')
+    await expect(dialog).not.toContainText(SYNTHETIC_ARCHIVE_PASSPHRASE)
+    await expect(dialog).not.toContainText(archive.recoveryCode)
+    await page.getByTestId('archive-verification-close').click()
+
+    await expect(archiveSelect).toContainText('Verified encrypted archive')
+    await expect(archiveSelect).toBeEnabled()
+  })
 })
 
 async function openBrowserHarness(page: Page): Promise<void> {
@@ -151,6 +205,7 @@ async function createVerifiedSyntheticArchive(page: Page): Promise<{
   readonly archiveId: string
   readonly archivePath: string
   readonly missionId: string
+  readonly recoveryCode: string
 }> {
   await page.getByTestId('mission-name-input').fill(MISSION_NAME)
   await page.getByTestId('mission-start-btn').click()
@@ -175,7 +230,7 @@ async function createVerifiedSyntheticArchive(page: Page): Promise<{
   await expect(dialog).toBeHidden()
   await expect(page.getByTestId('mission-governance-card')).toContainText('finalized')
 
-  return page.evaluate(() => {
+  const archive = await page.evaluate(() => {
     const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
     const archive = state?.missionArchives.at(-1)
     if (archive === undefined || archive.status !== 'verified') {
@@ -187,4 +242,5 @@ async function createVerifiedSyntheticArchive(page: Page): Promise<{
       missionId: archive.mission_id,
     }
   })
+  return { ...archive, recoveryCode }
 }

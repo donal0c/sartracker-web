@@ -236,6 +236,10 @@ export type BrowserHarnessStore = {
     missionId: string,
   ) => Promise<MissionArchiveRecoveryIssuance>
   readonly listMissionArchives: (missionId: string) => Promise<readonly MissionArchiveInfo[]>
+  /** Browser-only fixture hook for the sealed-but-unverified operator retry path. */
+  readonly prepareArchiveVerificationRetryFixture: (
+    archiveId: string,
+  ) => Promise<MissionArchiveInfo>
   readonly validateMissionArchiveReviewCredential: (input: {
     readonly archiveId: string
     readonly slotType: 'passphrase' | 'recovery'
@@ -1217,6 +1221,42 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return state.missionArchives
         .filter((archive) => archive.mission_id === missionId)
         .toSorted((left, right) => left.created_at.localeCompare(right.created_at))
+    },
+    prepareArchiveVerificationRetryFixture: async (archiveId) => {
+      const archive = state.missionArchives.find((candidate) => candidate.id === archiveId)
+      if (archive === undefined
+        || archive.container_version !== 2
+        || archive.status !== 'verified'
+        || archive.verified_at === null
+        || archive.availability !== 'present'
+        || !archiveCredentialDigests.has(archive.id)) {
+        throw new Error('Browser archive retry fixture requires one verified encrypted archive.')
+      }
+      const sealed: MissionArchiveInfo = {
+        ...archive,
+        status: 'sealed',
+        verified_at: null,
+        last_non_machine_unwrap_at: null,
+      }
+      state = {
+        ...state,
+        missionArchives: state.missionArchives.map((candidate) =>
+          candidate.id === archive.id ? sealed : candidate),
+        missionEvents: state.missionEvents.filter((event) => {
+          if (event.mission_id !== archive.mission_id
+            || event.event_type !== 'mission_archive_verified_v2') return true
+          try {
+            const details = JSON.parse(event.details_json ?? '{}') as {
+              readonly archive_id?: unknown
+            }
+            return details.archive_id !== archive.id
+          } catch {
+            return true
+          }
+        }),
+      }
+      save()
+      return sealed
     },
     getMissionCleanupEligibility: async (input) => {
       const mission = requireMission(input.missionId, state.missions)

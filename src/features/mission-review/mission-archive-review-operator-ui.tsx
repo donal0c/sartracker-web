@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import type { MissionArchiveInfo } from '../../infrastructure/mission-store/tauri-mission-store'
 import {
   archiveReviewAvailability,
+  archiveVerificationRetryAvailability,
   type MissionArchiveReviewOpenInput,
   type MissionArchiveReviewProgress,
   type MissionArchiveReviewSession,
@@ -18,6 +19,7 @@ export type MissionArchiveReviewControlProps = {
   readonly error: string | null
   readonly onOpenArchive: (input: MissionArchiveReviewOpenInput) => Promise<void>
   readonly onCloseArchiveReview: () => Promise<void>
+  readonly onRequestVerification: (archive: MissionArchiveInfo) => void
   readonly onRequestCleanup: (mission: MissionArchiveReviewTimelineEntry['mission']) => void
 }
 
@@ -214,6 +216,7 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
             <div className="mt-3 space-y-2">
               {entry.archives.map((archive) => {
                 const availability = archiveReviewAvailability(archive)
+                const verificationRetry = archiveVerificationRetryAvailability(archive)
                 const selected = archive.id === selectedArchiveId
                 return (
                   <div className="rounded-lg border border-stone-800 p-2" key={archive.id}>
@@ -268,6 +271,22 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
                       <p className="mt-1 text-[11px] font-semibold text-amber-200">
                         {availability.reason}
                       </p>
+                    ) : null}
+                    {verificationRetry.available ? (
+                      <button
+                        className="mt-2 rounded-lg border border-amber-300/60 bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100 disabled:opacity-50"
+                        data-testid={`archive-verify-retry-${archive.id}`}
+                        disabled={busy}
+                        onClick={() => {
+                          setSelectedArchiveId(null)
+                          setSecret('')
+                          setSafeError(null)
+                          props.onRequestVerification(archive)
+                        }}
+                        type="button"
+                      >
+                        Retry exhaustive verification
+                      </button>
                     ) : null}
                   </div>
                 )

@@ -145,6 +145,57 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not infer deskt
       ],
     })
   })
+
+  test('makes sealed verification retry and both original credentials explicit', async ({ page }) => {
+    await navigateToHarness(page)
+    await startMission(page, MISSION_NAME)
+    const archive = await finalizeWithSyntheticArchiveCustody(page)
+    await page.evaluate(async (archiveId) => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) throw new Error('Browser archive harness is unavailable.')
+      await harness.prepareArchiveVerificationRetryFixture(archiveId)
+    }, archive.archiveId)
+
+    await page.getByTestId('open-mission-review-workspace').click()
+    await expect(page.getByTestId(`archive-review-select-${archive.archiveId}`)).toContainText(
+      'Verification required',
+    )
+    await page.getByTestId(`archive-verify-retry-${archive.archiveId}`).click()
+    const dialog = page.getByTestId('mission-archive-verification-dialog')
+    await expect(dialog).toContainText('sealed but not verified')
+    await expect(dialog).toContainText('original passphrase and original recovery code')
+    await expect(page.getByTestId('archive-verification-passphrase')).toHaveAttribute(
+      'type',
+      'password',
+    )
+    await expect(page.getByTestId('archive-verification-recovery-code')).toHaveAttribute(
+      'type',
+      'password',
+    )
+    await expect(page.getByTestId('archive-verification-start')).toBeDisabled()
+
+    await captureElementAndRegister(page, 'mission-archive-verification-dialog', {
+      testId: 'archive-sealed-verification-retry',
+      testName: 'Sealed archive exposes an explicit exhaustive verification retry',
+      area: 'mission-review',
+      severity: 'critical',
+      verificationPrompt: `This is browser-validation evidence of the rendered operator route only; it does not prove cryptography, restored contents, or operating-system cleanup. Verify the visible archive-verification dialog:
+1. The heading must say "Retry archive verification" and visibly state that the archive is sealed but not verified.
+2. It must require both the original archive passphrase and the original archive recovery code, using two visibly masked inputs.
+3. It must say existing archive bytes do not change.
+4. It must explain that verification restores and compares every required item and uses permission-restricted scratch space that is swept automatically.
+5. The Restore and verify action must be visibly disabled while both credentials are empty.
+6. No create-new-archive, re-finalize, edit, delete, cleanup, filesystem path, raw digest, or custody-role assignment should be visible.
+Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not interpret the screenshot as proof that exhaustive verification occurred.`,
+      playwrightAssertions: [
+        'sealed archive is visibly labelled Verification required in the timeline',
+        'verification retry dialog is visible',
+        'both original credential inputs use password type',
+        'verification action is disabled before both credentials are entered',
+        'private archive path is not rendered',
+      ],
+    })
+  })
 })
 
 async function finalizeWithSyntheticArchiveCustody(page: Page): Promise<{

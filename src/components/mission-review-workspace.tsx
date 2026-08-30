@@ -23,7 +23,10 @@ import { useMissionStore } from '../features/mission/mission-store'
 import type {
   ArchiveReviewAttachmentReference,
 } from '../infrastructure/archive-review/electron-archive-review-source'
-import type { Mission } from '../infrastructure/mission-store/tauri-mission-store'
+import type {
+  Mission,
+  MissionArchiveInfo,
+} from '../infrastructure/mission-store/tauri-mission-store'
 
 type ReviewTab = 'mission-details' | 'replay' | 'search-operations' | 'marker-log' | 'layer-console'
 
@@ -37,6 +40,10 @@ const SearchOperationsTab = lazy(async () => ({
 const MissionArchiveCleanupDialog = lazy(async () => ({
   default: (await import('../features/mission/mission-archive-cleanup-dialog'))
     .MissionArchiveCleanupDialog,
+}))
+const MissionArchiveVerificationDialog = lazy(async () => ({
+  default: (await import('../features/mission/mission-archive-verification-dialog'))
+    .MissionArchiveVerificationDialog,
 }))
 
 /**
@@ -98,6 +105,7 @@ export function MissionReviewWorkspace() {
   const [archiveAttachmentLoading, setArchiveAttachmentLoading] = useState(false)
   const [archiveAttachmentError, setArchiveAttachmentError] = useState<string | null>(null)
   const [cleanupMission, setCleanupMission] = useState<Mission | null>(null)
+  const [verificationArchive, setVerificationArchive] = useState<MissionArchiveInfo | null>(null)
   const preferredMissionIdRef = useRef<string | null>(selectedMissionId)
   const lastAutomaticLoadRef = useRef<{
     readonly controller: MissionReviewController
@@ -207,7 +215,13 @@ export function MissionReviewWorkspace() {
             className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:opacity-50"
             data-testid="mission-review-refresh"
             disabled={controller === null || refreshing}
-            onClick={() => void controller?.refreshSelectedMission()}
+            onClick={() => {
+              if (controller === null) return
+              void Promise.all([
+                controller.refreshSelectedMission(),
+                archiveReviewController?.refreshTimeline() ?? Promise.resolve(),
+              ])
+            }}
             type="button"
           >
             {refreshing ? 'Refreshing…' : 'Refresh'}
@@ -300,6 +314,7 @@ export function MissionReviewWorkspace() {
                   }
                   await archiveReviewController.openArchive(input)
                 }}
+                onRequestVerification={setVerificationArchive}
                 onRequestCleanup={setCleanupMission}
                 phase={archiveReviewPhase}
                 progress={archiveReviewProgress}
@@ -503,6 +518,49 @@ export function MissionReviewWorkspace() {
           subscribeProgress={(listener) =>
             window.sartrackerElectron?.onMissionArchiveProgress?.(listener)
               ?? (() => undefined)}
+        />
+      </Suspense>
+    ) : null}
+    {verificationArchive !== null ? (
+      <Suspense fallback={<p role="status">Loading archive verification controls…</p>}>
+        <MissionArchiveVerificationDialog
+          archive={verificationArchive}
+          cancelOperation={async (operationId) => {
+            if (archiveReviewController === null) {
+              throw new Error('Archive verification cancellation is unavailable.')
+            }
+            return archiveReviewController.cancelArchiveVerification(operationId)
+          }}
+          onClose={async (requiresTimelineRefresh) => {
+            if (requiresTimelineRefresh) {
+              if (archiveReviewController === null) {
+                throw new Error('Saved-mission archive refresh is unavailable.')
+              }
+              const published = await archiveReviewController.refreshTimeline()
+              if (!published) {
+                throw new Error('Saved-mission archive refresh was superseded.')
+              }
+            }
+            setVerificationArchive(null)
+          }}
+          onVerified={async () => {
+            if (archiveReviewController === null || controller === null) {
+              throw new Error('Saved-mission Review refresh is unavailable.')
+            }
+            await Promise.all([
+              archiveReviewController.refreshTimeline(),
+              controller.refreshSelectedMission(),
+            ])
+          }}
+          subscribeProgress={(listener) =>
+            window.sartrackerElectron?.onMissionArchiveProgress?.(listener)
+              ?? (() => undefined)}
+          verify={async (input) => {
+            if (archiveReviewController === null) {
+              throw new Error('Archive verification is unavailable.')
+            }
+            return archiveReviewController.verifyArchive(input)
+          }}
         />
       </Suspense>
     ) : null}

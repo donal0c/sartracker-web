@@ -760,6 +760,19 @@ describe('browser harness store', () => {
     expect(result.archive.archive_path).not.toContain('.zip')
     await expect(store.listMissionArchives(mission.id)).resolves.toEqual([result.archive])
 
+    const sealedRetryFixture = await store.prepareArchiveVerificationRetryFixture(
+      result.archive.id,
+    )
+    expect(sealedRetryFixture).toMatchObject({
+      id: result.archive.id,
+      status: 'sealed',
+      verified_at: null,
+      last_non_machine_unwrap_at: null,
+    })
+    await expect(store.listMissionArchives(mission.id)).resolves.toEqual([
+      expect.objectContaining({ id: result.archive.id, status: 'sealed', verified_at: null }),
+    ])
+
     vi.setSystemTime(new Date('2026-08-30T09:05:00.000Z'))
     await expect(store.verifyMissionArchive({
       archiveId: result.archive.id,
@@ -786,7 +799,6 @@ describe('browser harness store', () => {
       .filter((eventType) => eventType.startsWith('mission_archive_'))
     expect(archiveLifecycleEvents).toEqual([
       'mission_archive_sealed_v2',
-      'mission_archive_verified_v2',
       'mission_archive_verified_v2',
     ])
 

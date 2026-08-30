@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   Mission,
   MissionArchiveInfo,
+  MissionStore,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 import type {
   ArchiveReviewBridge,
@@ -29,6 +30,7 @@ const UNVERIFIED_V2_ID = 'archive-v2-unverified'
 const MISSING_V2_ID = 'archive-v2-missing'
 const NEWER_V3_ID = 'archive-v3-newer'
 const SECRET = '01234-56789-ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567'
+const PASSPHRASE = 'Verify-Archive-Passphrase-2026!'
 
 const MISSION: Mission = {
   id: 'mission-archive-fixed',
@@ -140,11 +142,345 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
     expect(state.timeline.find((entry) => entry.mission.id === SECOND_MISSION.id)?.archives)
       .toHaveLength(64)
     expect(Object.keys(controller).sort()).toEqual([
+      'cancelArchiveVerification',
       'closeArchiveReview',
       'dispose',
       'openArchive',
       'refreshTimeline',
+      'verifyArchive',
     ])
+  })
+
+  it('retries one sealed v2 archive with both original credentials and publishes only the verified result', async () => {
+    const verification = deferred<MissionArchiveInfo>()
+    const harness = createHarness({
+      verifyMissionArchive: vi.fn(() => verification.promise),
+    })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+
+    const pending = controller.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })
+    await vi.waitFor(() => expect(harness.verifyMissionArchive).toHaveBeenCalledOnce())
+    expect(harness.verifyMissionArchive).toHaveBeenCalledWith({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })
+    expect(harness.latestState().timeline[0]?.archives.find(
+      (archive) => archive.id === UNVERIFIED_V2_ID,
+    )).toMatchObject({ status: 'sealed', verified_at: null })
+
+    verification.resolve({
+      ...UNVERIFIED_V2,
+      status: 'verified',
+      verified_at: '2026-08-30T17:00:00.000Z',
+      last_non_machine_unwrap_at: '2026-08-30T17:00:00.000Z',
+    })
+    await expect(pending).resolves.toMatchObject({
+      id: UNVERIFIED_V2_ID,
+      status: 'verified',
+    })
+
+    expect(harness.latestState().timeline[0]?.archives.find(
+      (archive) => archive.id === UNVERIFIED_V2_ID,
+    )).toMatchObject({
+      status: 'verified',
+      verified_at: '2026-08-30T17:00:00.000Z',
+    })
+    expect(JSON.stringify(harness.applyRuntime.mock.calls)).not.toContain(PASSPHRASE)
+    expect(JSON.stringify(harness.applyRuntime.mock.calls)).not.toContain(SECRET)
+  })
+
+  it('rejects ineligible or malformed verification retries before IPC and never reflects backend secrets', async () => {
+    const reflectedFailure = new Error(`verification failed for ${PASSPHRASE} ${SECRET}`)
+    const harness = createHarness({
+      verifyMissionArchive: vi.fn().mockRejectedValue(reflectedFailure),
+    })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+
+    for (const archiveId of [VERIFIED_V2_ID, MISSING_V2_ID, NEWER_V3_ID]) {
+      await expect(controller.verifyArchive({
+        archiveId,
+        operationId: OPERATION_ID,
+        passphrase: PASSPHRASE,
+        recoveryCode: SECRET,
+      })).rejects.toThrow(/sealed.*supported.*available|available.*sealed.*supported/iu)
+    }
+    await expect(controller.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: 'not-an-operation-id',
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })).rejects.toThrow(/operation.*invalid|invalid.*operation/iu)
+    await expect(controller.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: '',
+      recoveryCode: SECRET,
+    })).rejects.toThrow(/passphrase.*invalid|credential.*invalid/iu)
+    expect(harness.verifyMissionArchive).not.toHaveBeenCalled()
+
+    await expect(controller.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })).rejects.toThrow(/verification.*failed safely|failed safely.*verification/iu)
+    expect(harness.verifyMissionArchive).toHaveBeenCalledOnce()
+    expect(JSON.stringify(harness.applyRuntime.mock.calls)).not.toContain(PASSPHRASE)
+    expect(JSON.stringify(harness.applyRuntime.mock.calls)).not.toContain(SECRET)
+    expect(JSON.stringify(harness.applyRuntime.mock.calls)).not.toContain(reflectedFailure.message)
+  })
+
+  it('reconciles an untrusted verification response to authoritative sealed status', async () => {
+    const harness = createHarness({
+      verifyMissionArchive: vi.fn().mockResolvedValue({
+        ...UNVERIFIED_V2,
+        id: 'foreign-archive',
+        status: 'verified',
+        verified_at: '2026-08-30T17:00:00.000Z',
+      }),
+    })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+
+    await expect(controller.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })).rejects.toMatchObject({
+      code: 'ARCHIVE_VERIFICATION_RETRYABLE',
+      message: expect.stringMatching(/failed safely.*status remains sealed/iu),
+    })
+    expect(harness.latestState().timeline[0]?.archives.find(
+      (archive) => archive.id === UNVERIFIED_V2_ID,
+    )).toMatchObject({ status: 'sealed', verified_at: null })
+  })
+
+  it('accepts authoritative verified status after the invocation rejects post-commit', async () => {
+    let currentArchive: MissionArchiveInfo = UNVERIFIED_V2
+    const listMissionArchives = vi.fn(async (missionId: string) =>
+      missionId === MISSION.id ? [currentArchive] : [LEGACY_V1])
+    const harness = createHarness({
+      listMissionArchives,
+      verifyMissionArchive: vi.fn(async () => {
+        currentArchive = {
+          ...UNVERIFIED_V2,
+          status: 'verified',
+          verified_at: '2026-08-30T17:00:00.000Z',
+          last_non_machine_unwrap_at: '2026-08-30T17:00:00.000Z',
+        }
+        throw new Error('projection failed after registry commit')
+      }),
+    })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+
+    await expect(controller.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })).resolves.toMatchObject({
+      id: UNVERIFIED_V2_ID,
+      status: 'verified',
+      verified_at: '2026-08-30T17:00:00.000Z',
+    })
+    expect(harness.latestState().timeline[0]?.archives[0]).toMatchObject({
+      id: UNVERIFIED_V2_ID,
+      status: 'verified',
+    })
+  })
+
+  it('withholds retry when rejection cannot reconcile sealed-versus-verified status', async () => {
+    let missionArchiveReads = 0
+    const harness = createHarness({
+      listMissionArchives: vi.fn(async (missionId: string) => {
+        if (missionId !== MISSION.id) return [LEGACY_V1]
+        missionArchiveReads += 1
+        if (missionArchiveReads > 1) throw new Error('timeline unavailable')
+        return [UNVERIFIED_V2]
+      }),
+      verifyMissionArchive: vi.fn().mockRejectedValue(
+        new Error('transport failed after unknown commit point'),
+      ),
+    })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+
+    await expect(controller.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })).rejects.toMatchObject({
+      code: 'ARCHIVE_VERIFICATION_STATUS_UNKNOWN',
+      message: expect.stringMatching(/status could not be established.*refresh/iu),
+    })
+  })
+
+  it('does not treat a superseded reconciliation refresh as authoritative sealed status', async () => {
+    const reconciliationMissions = deferred<readonly Mission[]>()
+    const laterMissions = deferred<readonly Mission[]>()
+    let missionReads = 0
+    const harness = createHarness({
+      listMissions: vi.fn(() => {
+        missionReads += 1
+        if (missionReads === 1) return Promise.resolve([MISSION, SECOND_MISSION])
+        return missionReads === 2 ? reconciliationMissions.promise : laterMissions.promise
+      }),
+      verifyMissionArchive: vi.fn().mockRejectedValue(
+        new Error('transport failed after unknown commit point'),
+      ),
+    })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+
+    const verification = controller.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })
+    await vi.waitFor(() => expect(harness.listMissions).toHaveBeenCalledTimes(2))
+    const laterRefresh = controller.refreshTimeline()
+    await vi.waitFor(() => expect(harness.listMissions).toHaveBeenCalledTimes(3))
+    reconciliationMissions.resolve([MISSION, SECOND_MISSION])
+
+    await expect(verification).rejects.toMatchObject({
+      code: 'ARCHIVE_VERIFICATION_STATUS_UNKNOWN',
+    })
+
+    laterMissions.reject(new Error('newer timeline refresh failed'))
+    await expect(laterRefresh).rejects.toThrow(/newer timeline refresh failed/iu)
+  })
+
+  it('never publishes altered correction-chain metadata from a verification result', async () => {
+    const harness = createHarness({
+      verifyMissionArchive: vi.fn().mockResolvedValue({
+        ...UNVERIFIED_V2,
+        status: 'verified',
+        verified_at: '2026-08-30T17:00:00.000Z',
+        previous_archive_id: 'forged-predecessor',
+        revision_count: 99,
+      }),
+    })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+
+    await expect(controller.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })).rejects.toMatchObject({ code: 'ARCHIVE_VERIFICATION_RETRYABLE' })
+    expect(JSON.stringify(harness.latestState().timeline)).not.toContain('forged-predecessor')
+    expect(harness.latestState().timeline[0]?.archives.find(
+      (archive) => archive.id === UNVERIFIED_V2_ID,
+    )?.revision_count).toBe(1)
+  })
+
+  it('releases verification ownership after a synchronous bridge rejection', async () => {
+    const verifyMissionArchive = vi.fn(() => {
+      throw new Error(`synchronous bridge reflection ${PASSPHRASE} ${SECRET}`)
+    })
+    const harness = createHarness({ verifyMissionArchive })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+    const request = {
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    }
+
+    await expect(controller.verifyArchive(request)).rejects.toThrow(/failed safely/iu)
+    verifyMissionArchive.mockResolvedValueOnce({
+      ...UNVERIFIED_V2,
+      status: 'verified',
+      verified_at: '2026-08-30T17:00:00.000Z',
+    })
+    await expect(controller.verifyArchive(request)).resolves.toMatchObject({
+      id: UNVERIFIED_V2_ID,
+      status: 'verified',
+    })
+    expect(verifyMissionArchive).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(harness.applyRuntime.mock.calls)).not.toContain(PASSPHRASE)
+    expect(JSON.stringify(harness.applyRuntime.mock.calls)).not.toContain(SECRET)
+  })
+
+  it('forwards physical verification cancellation only through the mission archive lane', async () => {
+    const terminal = deferred<MissionArchiveInfo>()
+    const harness = createHarness({
+      verifyMissionArchive: vi.fn(() => terminal.promise),
+    })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+    const pending = controller.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })
+    await vi.waitFor(() => expect(harness.verifyMissionArchive).toHaveBeenCalledOnce())
+
+    await expect(controller.cancelArchiveVerification(OPERATION_ID)).resolves.toBe(true)
+    expect(harness.cancelMissionArchiveOperation).toHaveBeenCalledWith(OPERATION_ID)
+    expect(harness.cancel).not.toHaveBeenCalled()
+    terminal.reject(new Error('cancelled'))
+    await expect(pending).rejects.toThrow(/failed safely/iu)
+  })
+
+  it('never overlaps verification retry with archive restore or an open plaintext session', async () => {
+    const opening = deferred<MissionArchiveReviewSession & { readonly operationId: string }>()
+    const openingHarness = createHarness({ open: vi.fn(() => opening.promise) })
+    const openingController = await startMissionArchiveReviewRuntime(openingHarness.dependencies)
+    const pendingOpen = openingController.openArchive({
+      archiveId: VERIFIED_V2_ID,
+      containerVersion: 2,
+      slotType: 'passphrase',
+      secret: PASSPHRASE,
+    })
+    await vi.waitFor(() => expect(openingHarness.open).toHaveBeenCalledOnce())
+    await expect(openingController.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: FOREIGN_OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })).rejects.toThrow(/active work|archive review/iu)
+    expect(openingHarness.verifyMissionArchive).not.toHaveBeenCalled()
+    opening.resolve({ operationId: OPERATION_ID, ...V2_SESSION })
+    await pendingOpen
+    await expect(openingController.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: FOREIGN_OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })).rejects.toThrow(/active work|archive review/iu)
+    await openingController.closeArchiveReview()
+
+    const verification = deferred<MissionArchiveInfo>()
+    const verificationHarness = createHarness({
+      verifyMissionArchive: vi.fn(() => verification.promise),
+    })
+    const verificationController = await startMissionArchiveReviewRuntime(
+      verificationHarness.dependencies,
+    )
+    const pendingVerification = verificationController.verifyArchive({
+      archiveId: UNVERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      passphrase: PASSPHRASE,
+      recoveryCode: SECRET,
+    })
+    await vi.waitFor(() => expect(verificationHarness.verifyMissionArchive).toHaveBeenCalledOnce())
+    await expect(verificationController.openArchive({
+      archiveId: VERIFIED_V2_ID,
+      containerVersion: 2,
+      slotType: 'passphrase',
+      secret: PASSPHRASE,
+    })).rejects.toThrow(/active work|archive verification/iu)
+    expect(verificationHarness.open).not.toHaveBeenCalled()
+    verification.reject(new Error('cancelled'))
+    await expect(pendingVerification).rejects.toThrow(/failed safely/iu)
   })
 
   it('never lets a stalled older timeline refresh overwrite a newer archived projection', async () => {
@@ -162,7 +498,7 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
 
     const stalledRefresh = controller.refreshTimeline()
     await vi.waitFor(() => expect(listMissions).toHaveBeenCalledTimes(2))
-    await controller.refreshTimeline()
+    await expect(controller.refreshTimeline()).resolves.toBe(true)
     expect(harness.latestState().timeline[0]?.mission.name)
       .toBe('Current archived projection')
 
@@ -171,7 +507,7 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
       name: 'Stale live projection',
       storage_state: 'live',
     }])
-    await stalledRefresh
+    await expect(stalledRefresh).resolves.toBe(false)
 
     expect(harness.latestState().timeline[0]?.mission.name)
       .toBe('Current archived projection')
@@ -849,6 +1185,8 @@ function createHarness(overrides: {
   readonly open?: ArchiveReviewBridge['open']
   readonly close?: ArchiveReviewBridge['close']
   readonly cancel?: ArchiveReviewBridge['cancel']
+  readonly verifyMissionArchive?: MissionStore['verifyMissionArchive']
+  readonly cancelMissionArchiveOperation?: MissionStore['cancelMissionArchiveOperation']
   readonly switchMissionReviewSource?: StartMissionArchiveReviewRuntimeDependencies['switchMissionReviewSource']
 } = {}) {
   const archivesByMission = overrides.archivesByMission ?? new Map([
@@ -870,6 +1208,14 @@ function createHarness(overrides: {
   })))
   const close = vi.fn(overrides.close ?? (async () => true))
   const cancel = vi.fn(overrides.cancel ?? (async () => true))
+  const verifyMissionArchive = vi.fn(overrides.verifyMissionArchive ?? (async () => ({
+    ...UNVERIFIED_V2,
+    status: 'verified' as const,
+    verified_at: '2026-08-30T17:00:00.000Z',
+  })))
+  const cancelMissionArchiveOperation = vi.fn(
+    overrides.cancelMissionArchiveOperation ?? (async () => true),
+  )
   const unsubscribeProgress = vi.fn()
   let progressListener: ((progress: MissionArchiveReviewProgress) => void) | null = null
   const onProgress = vi.fn((listener: (progress: MissionArchiveReviewProgress) => void) => {
@@ -881,7 +1227,12 @@ function createHarness(overrides: {
     overrides.switchMissionReviewSource ?? (async () => undefined),
   )
   const dependencies: StartMissionArchiveReviewRuntimeDependencies = {
-    missionStore: { listMissions, listMissionArchives },
+    missionStore: {
+      listMissions,
+      listMissionArchives,
+      verifyMissionArchive,
+      cancelMissionArchiveOperation,
+    },
     archiveReview: { open, close, cancel, onProgress },
     switchMissionReviewSource,
     applyRuntime,
@@ -895,6 +1246,8 @@ function createHarness(overrides: {
     open,
     close,
     cancel,
+    verifyMissionArchive,
+    cancelMissionArchiveOperation,
     applyRuntime,
     switchMissionReviewSource,
     unsubscribeProgress,

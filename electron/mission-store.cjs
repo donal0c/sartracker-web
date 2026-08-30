@@ -497,6 +497,9 @@ function createElectronMissionStore(options) {
     archiveDirectory,
     appendAuditEvent: (missionId, eventType, details) =>
       appendEvent(db, missionId, eventType, details),
+    ...(options.startArchiveCustodyReconciliation === undefined
+      ? {}
+      : { startCustodyReconciliation: options.startArchiveCustodyReconciliation }),
   })
   const archiveCreateRunner = options.startMissionArchiveCreateWorker
     ?? startMissionArchiveCreateWorker
@@ -1436,6 +1439,55 @@ function createElectronMissionStore(options) {
     return run
   }
 
+  /**
+   * Reconciles only sealed v2 rows whose newly published bytes have not yet
+   * received an availability observation, then returns the fresh projection.
+   * Reconciliation stays worker-backed and FIFO with archive lifecycle work;
+   * an inspection failure leaves the row explicitly unavailable for a later
+   * Refresh instead of hiding the retained mission timeline.
+   */
+  const listMissionArchivesWithRetryAvailability = async (missionId) => {
+    const initial = archiveRegistry.listMissionArchives(missionId)
+    const pendingArchiveIds = initial
+      .filter((archive) => archive.container_version === 2
+        && archive.status === 'sealed'
+        && archive.verified_at === null
+        && archive.availability === 'unknown')
+      .map((archive) => archive.id)
+    if (pendingArchiveIds.length === 0) {
+      return initial.map((row) => projectArchiveCustodyRow(row, archiveDirectory, db))
+    }
+
+    const controller = new AbortController()
+    const lifecycle = { controller, completion: null }
+    const predecessor = archiveFamilyTail
+    const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
+      await archiveCustodyRecoverySettled
+      if (archiveCustodyRecoveryFailure !== null) return
+      for (const archiveId of pendingArchiveIds) {
+        try {
+          await archiveRegistry.reconcileArchiveAvailability({
+            archiveId,
+            signal: controller.signal,
+          })
+        } catch (error) {
+          if (controller.signal.aborted || error?.code === 'ARCHIVE_CANCELLED') throw error
+          // Keep this archive visibly unavailable; a later Refresh retries the
+          // exact worker-backed observation without suppressing other rows.
+        }
+      }
+    })
+    const completion = run.finally(() => {
+      activeArchiveLifecycles.delete(lifecycle)
+    })
+    lifecycle.completion = completion
+    activeArchiveLifecycles.add(lifecycle)
+    archiveFamilyTail = appendArchiveFamilyCompletion(predecessor, completion)
+    await completion
+    return archiveRegistry.listMissionArchives(missionId)
+      .map((row) => projectArchiveCustodyRow(row, archiveDirectory, db))
+  }
+
   return {
     prepareClose: async () => {
       const active = [...activeGpxEvidenceImports]
@@ -1586,8 +1638,7 @@ function createElectronMissionStore(options) {
     }),
     syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
     createMissionArchive: async (missionId) => enqueueArchive(missionId),
-    listMissionArchives: async (missionId) => archiveRegistry.listMissionArchives(missionId)
-      .map((row) => projectArchiveCustodyRow(row, archiveDirectory, db)),
+    listMissionArchives: listMissionArchivesWithRetryAvailability,
     issueMissionArchiveReviewTicket: (archiveId) => archiveRegistry.issueReviewTicket(archiveId),
     getMissionCleanupEligibility: (input, context) =>
       enqueueMissionCleanupEligibility(input, context),

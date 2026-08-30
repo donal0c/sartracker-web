@@ -274,7 +274,8 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
 
   it('fails closed in the control for unverified, missing, newer, and machine-only v2 archives', () => {
     const onOpenArchive = vi.fn().mockResolvedValue(undefined)
-    renderControl(createControlProps({ onOpenArchive }))
+    const onRequestVerification = vi.fn()
+    renderControl(createControlProps({ onOpenArchive, onRequestVerification }))
 
     for (const archiveId of [
       UNVERIFIED_V2_ID,
@@ -287,6 +288,12 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
       act(() => select.click())
     }
     expect(onOpenArchive).not.toHaveBeenCalled()
+    expect(query(`[data-testid="archive-verify-retry-${UNVERIFIED_V2_ID}"]`)).not.toBeNull()
+    for (const archiveId of [MISSING_V2_ID, NEWER_V3_ID, MACHINE_ONLY_V2_ID]) {
+      expect(query(`[data-testid="archive-verify-retry-${archiveId}"]`)).toBeNull()
+    }
+    click(`archive-verify-retry-${UNVERIFIED_V2_ID}`)
+    expect(onRequestVerification).toHaveBeenCalledWith(UNVERIFIED_V2)
     expect(text()).toMatch(/verification required/iu)
     expect(text()).toMatch(/archive file missing/iu)
     expect(text()).toMatch(/newer.*not supported|unsupported.*newer/iu)
@@ -466,6 +473,7 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
       error: null,
       onOpenArchive: vi.fn().mockResolvedValue(undefined),
       onCloseArchiveReview: vi.fn().mockResolvedValue(undefined),
+      onRequestVerification: vi.fn(),
       onRequestCleanup: vi.fn(),
       ...overrides,
     }

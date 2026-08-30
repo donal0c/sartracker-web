@@ -73,6 +73,17 @@ const VERIFIED_CLEANUP_ARCHIVE: MissionArchiveInfo = {
   last_non_machine_unwrap_at: null,
 }
 
+const SEALED_UNVERIFIED_ARCHIVE: MissionArchiveInfo = {
+  ...VERIFIED_CLEANUP_ARCHIVE,
+  id: 'archive-finalized-sealed-unverified',
+  verified_at: null,
+  status: 'sealed',
+  last_non_machine_unwrap_at: null,
+}
+
+const VERIFICATION_PASSPHRASE = 'Verify-Archive-Passphrase-2026!'
+const VERIFICATION_RECOVERY_CODE = '01234-56789-ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567'
+
 const ARCHIVE_SESSION = Object.freeze({
   sessionId: '987c24da-d3cf-4cac-84d2-b1df45a0e94c',
   archiveId: 'archive-v2-verified',
@@ -135,6 +146,38 @@ describe('archive-backed Mission Review workspace safety [DON-253 / BCP-16]', ()
     await act(async () => { await Promise.resolve() })
     assertVerifiedBanner()
     expect(host.querySelector('[data-testid="mission-review-close-archive"]')).not.toBeNull()
+  })
+
+  it('refreshes both live Review and Saved Mission Archives from the visible Refresh action', async () => {
+    const refreshSelectedMission = vi.fn().mockResolvedValue(undefined)
+    const refreshTimeline = vi.fn().mockResolvedValue(undefined)
+    installArchiveReviewState({ refreshSelectedMission })
+    useMissionArchiveReviewStore.setState({
+      controller: {
+        refreshTimeline,
+        verifyArchive: vi.fn(),
+        cancelArchiveVerification: vi.fn(),
+        openArchive: vi.fn(),
+        closeArchiveReview: vi.fn(),
+        dispose: vi.fn(),
+      } as never,
+    })
+
+    await act(async () => {
+      root.render(createElement(MissionReviewWorkspace))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    refreshTimeline.mockClear()
+    refreshSelectedMission.mockClear()
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="mission-review-refresh"]')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(refreshSelectedMission).toHaveBeenCalledOnce()
+    expect(refreshTimeline).toHaveBeenCalledOnce()
   })
 
   it('opens mission-scoped cleanup from the Saved Mission Archives timeline', async () => {
@@ -214,6 +257,75 @@ describe('archive-backed Mission Review workspace safety [DON-253 / BCP-16]', ()
     expect(startGovernanceCleanup).toHaveBeenCalledOnce()
     expect(refreshTimeline).toHaveBeenCalledOnce()
     expect(refreshSelectedMission).toHaveBeenCalledOnce()
+  })
+
+  it('retries a sealed archive from Saved Mission Archives with both original credentials', async () => {
+    const refreshSelectedMission = vi.fn().mockResolvedValue(undefined)
+    installArchiveReviewState({ refreshSelectedMission })
+    useMissionReviewStore.setState({ source: 'live', archiveSession: null } as never)
+    const refreshTimeline = vi.fn().mockResolvedValue(undefined)
+    const verifyArchive = vi.fn().mockResolvedValue({
+      ...SEALED_UNVERIFIED_ARCHIVE,
+      status: 'verified',
+      verified_at: '2026-08-30T17:00:00.000Z',
+    })
+    useMissionArchiveReviewStore.setState({
+      controller: {
+        refreshTimeline,
+        verifyArchive,
+        cancelArchiveVerification: vi.fn().mockResolvedValue(true),
+        openArchive: vi.fn().mockResolvedValue(undefined),
+        closeArchiveReview: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn().mockResolvedValue(undefined),
+      },
+      timeline: [{
+        mission: FINALIZED_LIVE_MISSION,
+        archives: [SEALED_UNVERIFIED_ARCHIVE],
+      }],
+      phase: 'idle',
+      activeOperationId: null,
+      activeArchiveId: null,
+      activeSession: null,
+      progress: null,
+      recoveryRequired: 'none',
+      error: null,
+    })
+
+    await act(async () => {
+      root.render(createElement(MissionReviewWorkspace))
+      await Promise.resolve()
+    })
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>(
+        `[data-testid="archive-verify-retry-${SEALED_UNVERIFIED_ARCHIVE.id}"]`,
+      )?.click()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(host.querySelector('[data-testid="mission-archive-verification-dialog"]'))
+      .not.toBeNull()
+
+    refreshTimeline.mockClear()
+    setDialogInput('archive-verification-passphrase', VERIFICATION_PASSPHRASE)
+    setDialogInput('archive-verification-recovery-code', VERIFICATION_RECOVERY_CODE)
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="archive-verification-start"]')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(verifyArchive).toHaveBeenCalledOnce()
+    expect(verifyArchive).toHaveBeenCalledWith(expect.objectContaining({
+      archiveId: SEALED_UNVERIFIED_ARCHIVE.id,
+      passphrase: VERIFICATION_PASSPHRASE,
+      recoveryCode: VERIFICATION_RECOVERY_CODE,
+      operationId: expect.stringMatching(/^[0-9a-f-]{36}$/iu),
+    }))
+    await vi.waitFor(() => {
+      expect(refreshTimeline).toHaveBeenCalledOnce()
+      expect(refreshSelectedMission).toHaveBeenCalledOnce()
+    })
+    expect(host.textContent).not.toContain(VERIFICATION_PASSPHRASE)
+    expect(host.textContent).not.toContain(VERIFICATION_RECOVERY_CODE)
   })
 
   it('opens a retired marker-version attachment through its exact archived reference', async () => {

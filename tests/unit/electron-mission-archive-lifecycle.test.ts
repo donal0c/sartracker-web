@@ -15,10 +15,20 @@ import { createRequire } from 'node:module'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { archiveVerificationRetryAvailability } from '../../src/features/mission-review/start-mission-archive-review-runtime'
+import type { MissionArchiveInfo } from '../../src/infrastructure/mission-store/tauri-mission-store'
+
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
 const { startArchiveVerifyWorker } = require('../../electron/archive-verify-runner.cjs') as {
   readonly startArchiveVerifyWorker: (
+    input: Readonly<Record<string, unknown>>,
+  ) => Promise<Readonly<Record<string, unknown>>>
+}
+const {
+  startArchiveCustodyReconciliation,
+} = require('../../electron/archive-custody-reconcile-runner.cjs') as {
+  readonly startArchiveCustodyReconciliation: (
     input: Readonly<Record<string, unknown>>,
   ) => Promise<Readonly<Record<string, unknown>>>
 }
@@ -31,6 +41,9 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
       readonly failVerificationFailureAudit?: boolean
     }
     readonly startArchiveVerifyWorker?: (
+      input: Readonly<Record<string, unknown>>,
+    ) => Promise<Readonly<Record<string, unknown>>>
+    readonly startArchiveCustodyReconciliation?: (
       input: Readonly<Record<string, unknown>>,
     ) => Promise<Readonly<Record<string, unknown>>>
     readonly startArchiveCleanupCredentialCheck?: (
@@ -1462,7 +1475,7 @@ describe('encrypted mission archive lifecycle integration', () => {
       expect(sealed[0]).toMatchObject({
         mission_id: mission.id,
         status: 'sealed',
-        availability: 'unknown',
+        availability: 'present',
         archive_path: expect.stringMatching(/\.sararch$/u),
         slots: [
           { slotId: 'passphrase-v1', slotType: 'passphrase' },
@@ -1471,6 +1484,8 @@ describe('encrypted mission archive lifecycle integration', () => {
       })
       expect(sealed[0]).not.toHaveProperty('verification_proof_json')
       expect(sealed[0]).not.toHaveProperty('slots_json')
+      expect(archiveVerificationRetryAvailability(sealed[0] as MissionArchiveInfo))
+        .toEqual({ available: true, reason: null })
 
       const retryProgress: Readonly<Record<string, unknown>>[] = []
       const verified = await store.verifyMissionArchive({
@@ -1491,6 +1506,54 @@ describe('encrypted mission archive lifecycle integration', () => {
         '55555555-5555-4555-8555-555555555555',
       )).toBe(false)
       expect(verifyAttempt).toBe(2)
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 30_000)
+
+  it('retries a transient exact availability inspection on Refresh without restarting', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-archive-retry-refresh-'))
+    temporaryDirectories.add(userDataPath)
+    let reconciliationAttempt = 0
+    const store = createElectronMissionStore({
+      userDataPath,
+      startArchiveVerifyWorker: () => failedWorkerOperation(
+        'ARCHIVE_VERIFY_AUTHENTICATION_FAILED',
+        'closed verifier failure before retry availability',
+      ),
+      startArchiveCustodyReconciliation: (input) => {
+        reconciliationAttempt += 1
+        return reconciliationAttempt === 1
+          ? failedWorkerOperation(
+              'ARCHIVE_CUSTODY_RECONCILIATION_FAILED',
+              'transient exact availability inspection failure',
+            )
+          : startArchiveCustodyReconciliation(input)
+      },
+    })
+    try {
+      const mission = await store.createMission({
+        name: 'Archive availability refresh mission',
+        start_time: '2026-08-29T14:10:00.000Z',
+      })
+      await store.finishMission(mission.id)
+      await expect(store.finalizeMission(mission.id, custody)).rejects.toMatchObject({
+        code: 'ARCHIVE_VERIFY_AUTHENTICATION_FAILED',
+      })
+
+      const firstRefresh = await store.listMissionArchives(mission.id)
+      expect(firstRefresh).toHaveLength(1)
+      expect(firstRefresh[0]).toMatchObject({ status: 'sealed', availability: 'unknown' })
+      expect(archiveVerificationRetryAvailability(firstRefresh[0] as MissionArchiveInfo).available)
+        .toBe(false)
+
+      const secondRefresh = await store.listMissionArchives(mission.id)
+      expect(secondRefresh).toHaveLength(1)
+      expect(secondRefresh[0]).toMatchObject({ status: 'sealed', availability: 'present' })
+      expect(archiveVerificationRetryAvailability(secondRefresh[0] as MissionArchiveInfo))
+        .toEqual({ available: true, reason: null })
+      expect(reconciliationAttempt).toBe(2)
     } finally {
       await store.prepareClose()
       store.close()

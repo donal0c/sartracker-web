@@ -6,8 +6,10 @@ import type {
 import type {
   Mission,
   MissionArchiveInfo,
+  MissionArchiveVerificationInput,
   MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { sameMissionArchiveImmutableIdentity } from '../mission/mission-archive-identity'
 
 export type MissionArchiveReviewSession = ArchiveReviewPublicSession
 export type MissionArchiveReviewProgress = ArchiveReviewProgress
@@ -41,7 +43,13 @@ export type MissionArchiveReviewOpenInput =
     }
 
 export type StartMissionArchiveReviewRuntimeDependencies = {
-  readonly missionStore: Pick<MissionStore, 'listMissions' | 'listMissionArchives'>
+  readonly missionStore: Pick<
+    MissionStore,
+    | 'listMissions'
+    | 'listMissionArchives'
+    | 'verifyMissionArchive'
+    | 'cancelMissionArchiveOperation'
+  >
   readonly archiveReview: ArchiveReviewBridge
   readonly switchMissionReviewSource: (input:
     | { readonly source: 'live' }
@@ -55,7 +63,11 @@ export type StartMissionArchiveReviewRuntimeDependencies = {
 }
 
 export type MissionArchiveReviewController = {
-  readonly refreshTimeline: () => Promise<void>
+  readonly refreshTimeline: () => Promise<boolean>
+  readonly verifyArchive: (
+    input: MissionArchiveVerificationInput,
+  ) => Promise<MissionArchiveInfo>
+  readonly cancelArchiveVerification: (operationId: string) => Promise<boolean>
   readonly openArchive: (input: MissionArchiveReviewOpenInput) => Promise<void>
   readonly closeArchiveReview: () => Promise<void>
   readonly dispose: () => Promise<void>
@@ -65,7 +77,11 @@ const SAFE_OPEN_FAILURE = 'Archive Review failed safely before opening.'
 const SAFE_CLOSE_FAILURE = 'Archive review plaintext cleanup failed safely.'
 const SAFE_AUDIT_RETRY_FAILURE = 'Archive Review plaintext was removed; mutation-denial audit completion is pending.'
 const SAFE_LIVE_RESUME_FAILURE = 'Live mission review failed to resume after archive cleanup.'
+const INVALID_VERIFICATION_RESULT = 'ARCHIVE_VERIFICATION_RESULT_INVALID'
+const VERIFICATION_STATUS_UNKNOWN = 'ARCHIVE_VERIFICATION_STATUS_UNKNOWN'
+const VERIFICATION_RETRYABLE = 'ARCHIVE_VERIFICATION_RETRYABLE'
 const RECOVERY_CODE = /^(?:[0-9A-HJKMNP-TV-Z]{5}-){7}[0-9A-HJKMNP-TV-Z]{5}$/u
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 
 /** Rejects ASCII control characters without relying on a control-character regexp. */
 function containsControlCharacters(value: string): boolean {
@@ -147,6 +163,36 @@ export function archiveReviewAvailability(archive: MissionArchiveInfo): {
   }
   if (!slotTypes.has('passphrase') && !slotTypes.has('recovery')) {
     return { available: false, reason: 'Passphrase or recovery credential is unavailable.' }
+  }
+  return { available: true, reason: null }
+}
+
+/** Determines whether one retained archive can retry the existing exhaustive verifier. */
+export function archiveVerificationRetryAvailability(archive: MissionArchiveInfo): {
+  readonly available: boolean
+  readonly reason: string | null
+} {
+  if (archive.availability !== 'present') {
+    return { available: false, reason: 'Archive file missing or unavailable.' }
+  }
+  if (archive.container_version !== 2) {
+    return { available: false, reason: archive.container_version > 2
+      ? 'Newer archive format is not supported by this build.'
+      : 'Legacy archives do not use encrypted verification retry.' }
+  }
+  if (archive.status !== 'sealed' || archive.verified_at !== null) {
+    return { available: false, reason: 'Only a sealed unverified archive can retry verification.' }
+  }
+  const slotTypes = new Set(archive.slots.map((slot) => slot.slotType))
+  if (!slotTypes.has('passphrase') || !slotTypes.has('recovery')) {
+    return {
+      available: false,
+      reason: 'Original passphrase and recovery credential slots are both required.',
+    }
+  }
+  if (archive.ciphertext_sha256 === null
+    || !/^[0-9a-f]{64}$/iu.test(archive.ciphertext_sha256)) {
+    return { available: false, reason: 'Archive ciphertext identity is invalid.' }
   }
   return { available: true, reason: null }
 }
@@ -233,6 +279,8 @@ export async function startMissionArchiveReviewRuntime(
   let openingTerminal: Promise<void> | null = null
   let closePromise: Promise<void> | null = null
   let pendingAuditSessionId: string | null = null
+  let activeVerificationOperationId: string | null = null
+  let verificationTerminal: Promise<MissionArchiveInfo> | null = null
 
   const apply = (patch: Partial<MissionArchiveReviewRuntimeState>): void => {
     state = { ...state, ...patch }
@@ -249,20 +297,119 @@ export async function startMissionArchiveReviewRuntime(
     apply({ progress: Object.freeze({ ...progress }) })
   })
 
-  const refreshTimeline = async (): Promise<void> => {
+  const refreshTimeline = async (): Promise<boolean> => {
     if (disposed || disposing) throw new Error('Archive review runtime is closed.')
     const generation = ++timelineGeneration
     const missions = await dependencies.missionStore.listMissions()
-    if (disposed || disposing || generation !== timelineGeneration) return
+    if (disposed || disposing || generation !== timelineGeneration) return false
     const archives = await Promise.all(missions.map((mission) =>
       dependencies.missionStore.listMissionArchives(mission.id)))
-    if (disposed || disposing || generation !== timelineGeneration) return
+    if (disposed || disposing || generation !== timelineGeneration) return false
     apply({
       timeline: Object.freeze(missions.map((mission, index) => Object.freeze({
         mission,
         archives: Object.freeze([...(archives[index] ?? [])]),
       }))),
     })
+    return true
+  }
+
+  /** Re-runs exhaustive verification without changing sealed archive bytes. */
+  const verifyArchive = async (
+    input: MissionArchiveVerificationInput,
+  ): Promise<MissionArchiveInfo> => {
+    if (disposed || disposing) throw new Error('Archive review runtime is closed.')
+    if (activeVerificationOperationId !== null || verificationTerminal !== null) {
+      throw new Error('Archive verification already has active work.')
+    }
+    if (state.activeOperationId !== null
+      || state.activeSession !== null
+      || state.recoveryRequired !== 'none'
+      || openingTerminal !== null
+      || closePromise !== null) {
+      throw new Error('Archive Review has active work; archive verification cannot start.')
+    }
+    const keys = Object.keys(input as object).sort().join(',')
+    if (keys !== 'archiveId,operationId,passphrase,recoveryCode') {
+      throw new Error('Archive verification request is invalid.')
+    }
+    if (!UUID_V4.test(input.operationId)) {
+      throw new Error('Archive verification operation identity is invalid.')
+    }
+    const archive = findArchive(state.timeline, input.archiveId)
+    if (archive === null || archiveVerificationRetryAvailability(archive).available !== true) {
+      throw new Error('Archive verification requires an available sealed supported archive.')
+    }
+    try {
+      validateCredential('passphrase', input.passphrase)
+    } catch {
+      throw new Error('Archive verification passphrase credential is invalid.')
+    }
+    try {
+      validateCredential('recovery', input.recoveryCode)
+    } catch {
+      throw new Error('Archive verification recovery credential is invalid.')
+    }
+
+    activeVerificationOperationId = input.operationId
+    let attempt: Promise<MissionArchiveInfo>
+    try {
+      attempt = Promise.resolve(dependencies.missionStore.verifyMissionArchive(input))
+    } catch (error) {
+      attempt = Promise.reject(error)
+    }
+    verificationTerminal = attempt
+    try {
+      const result = await attempt
+      const verified = validateVerificationResult(result, archive)
+      if (!disposed && !disposing) {
+        timelineGeneration += 1
+        apply({
+          timeline: replaceTimelineArchive(state.timeline, verified),
+          error: null,
+        })
+      }
+      return verified
+    } catch {
+      let reconciled: MissionArchiveInfo | null = null
+      try {
+        const published = await refreshTimeline()
+        if (!published) throw archiveVerificationStatusUnknown()
+        reconciled = findArchive(state.timeline, archive.id)
+      } catch {
+        throw archiveVerificationStatusUnknown()
+      }
+      if (reconciled !== null && reconciled.status === 'verified') {
+        try {
+          return validateVerificationResult(reconciled, archive)
+        } catch {
+          throw archiveVerificationStatusUnknown()
+        }
+      }
+      if (reconciled !== null
+        && sameMissionArchiveImmutableIdentity(reconciled, archive)
+        && archiveVerificationRetryAvailability(reconciled).available) {
+        throw Object.assign(
+          new Error('Archive verification failed safely. Authoritative status remains sealed.'),
+          { code: VERIFICATION_RETRYABLE },
+        )
+      }
+      throw archiveVerificationStatusUnknown()
+    } finally {
+      if (activeVerificationOperationId === input.operationId) {
+        activeVerificationOperationId = null
+      }
+      if (verificationTerminal === attempt) verificationTerminal = null
+    }
+  }
+
+  /** Cancels only the exact verification operation owned by this runtime. */
+  const cancelArchiveVerification = async (operationId: string): Promise<boolean> => {
+    if (!UUID_V4.test(operationId)) {
+      throw new Error('Archive verification operation identity is invalid.')
+    }
+    if (activeVerificationOperationId !== operationId) return false
+    return dependencies.missionStore.cancelMissionArchiveOperation(operationId)
   }
 
   const closeArchiveReview = async (): Promise<void> => {
@@ -416,7 +563,9 @@ export async function startMissionArchiveReviewRuntime(
 
   const openArchive = async (input: MissionArchiveReviewOpenInput): Promise<void> => {
     if (disposed || state.activeOperationId !== null || state.activeSession !== null
-      || state.recoveryRequired !== 'none') {
+      || state.recoveryRequired !== 'none'
+      || activeVerificationOperationId !== null
+      || verificationTerminal !== null) {
       throw new Error('Archive review already has active work.')
     }
     const keys = Object.keys(input as object).sort().join(',')
@@ -611,6 +760,16 @@ export async function startMissionArchiveReviewRuntime(
   const dispose = async (): Promise<void> => {
     if (disposed || disposing) return
     disposing = true
+    const pendingVerificationOperationId = activeVerificationOperationId
+    const pendingVerification = verificationTerminal
+    if (pendingVerificationOperationId !== null) {
+      await dependencies.missionStore.cancelMissionArchiveOperation(
+        pendingVerificationOperationId,
+      ).catch(() => false)
+    }
+    if (pendingVerification !== null) {
+      await pendingVerification.catch(() => undefined)
+    }
     timelineGeneration += 1
     try {
       await closeArchiveReview()
@@ -637,5 +796,60 @@ export async function startMissionArchiveReviewRuntime(
     throw new Error('Archive review timeline failed safely.')
   }
 
-  return Object.freeze({ refreshTimeline, openArchive, closeArchiveReview, dispose })
+  return Object.freeze({
+    refreshTimeline,
+    verifyArchive,
+    cancelArchiveVerification,
+    openArchive,
+    closeArchiveReview,
+    dispose,
+  })
+}
+
+/** Accepts only the request-bound verified registry identity returned by main. */
+function validateVerificationResult(
+  result: MissionArchiveInfo,
+  sealed: MissionArchiveInfo,
+): MissionArchiveInfo {
+  if (!sameMissionArchiveImmutableIdentity(result, sealed)
+    || result.container_version !== 2
+    || result.status !== 'verified'
+    || result.verified_at === null
+    || Number.isNaN(Date.parse(result.verified_at))
+    || result.ciphertext_sha256 !== sealed.ciphertext_sha256
+    || result.availability !== 'present') {
+    throw Object.assign(
+      new Error('Archive verification returned an invalid terminal result.'),
+      { code: INVALID_VERIFICATION_RESULT },
+    )
+  }
+  return Object.freeze({
+    ...result,
+    slots: Object.freeze(result.slots.map((slot) => Object.freeze({ ...slot }))),
+  })
+}
+
+/** Returns one closed error when sealed-vs-verified truth needs reconciliation. */
+function archiveVerificationStatusUnknown(): Error & { readonly code: string } {
+  return Object.assign(
+    new Error(
+      'Archive verification status could not be established. Refresh the saved-mission timeline before retrying.',
+    ),
+    { code: VERIFICATION_STATUS_UNKNOWN },
+  )
+}
+
+
+/** Replaces one archive projection without retaining any credential-bearing request. */
+function replaceTimelineArchive(
+  timeline: readonly MissionArchiveReviewTimelineEntry[],
+  verified: MissionArchiveInfo,
+): readonly MissionArchiveReviewTimelineEntry[] {
+  return Object.freeze(timeline.map((entry) => entry.mission.id !== verified.mission_id
+    ? entry
+    : Object.freeze({
+        mission: entry.mission,
+        archives: Object.freeze(entry.archives.map((archive) =>
+          archive.id === verified.id ? verified : archive)),
+      })))
 }
