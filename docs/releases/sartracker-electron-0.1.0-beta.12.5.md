@@ -184,3 +184,11 @@ display/harness attempts are retained separately and are not counted as passes.
 - Workflow: `.github/workflows/electron-release.yml`
 - Release gates: lint, unit tests, web build, standard Chromium E2E, Linux
   packaging, private-map guard, llvmpipe, packaged soak, and AppImage launch
+
+## WAR-04B record amendment (2026-08-30)
+
+The original record above uses “immutable” for the project's procedural
+write-once tag policy. Read-only GitHub inspection on 2026-08-30 found no
+technical release/tag immutability enforcement. The historical wording is
+preserved rather than rewritten; see `docs/releases/README.md` and
+`docs/assurance/findings/WAR-04B.md`.

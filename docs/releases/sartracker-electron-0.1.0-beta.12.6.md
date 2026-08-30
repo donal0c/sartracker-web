@@ -158,3 +158,11 @@ The draft release must not be published until every required row is complete.
 - [ ] Release note contains exact commit, run, checksums, and evidence
 - [ ] Linear and `handoff/HANDOFF.md` reflect the verified result
 - [ ] Guarded publication succeeds and fresh public bytes re-verify
+
+## WAR-04B record amendment (2026-08-30)
+
+The original record above uses “immutable” for the project's procedural
+write-once tag policy. Read-only GitHub inspection on 2026-08-30 found no
+technical release/tag immutability enforcement. The historical wording is
+preserved rather than rewritten; see `docs/releases/README.md` and
+`docs/assurance/findings/WAR-04B.md`.

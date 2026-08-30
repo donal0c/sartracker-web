@@ -264,3 +264,11 @@ schema 5 rather than risk corrupting it. A rollback must use a separately
 preserved pre-upgrade schema-4 profile or a fresh isolated profile, with the
 schema-5 profile retained for recovery. Do not delete, rename, copy over, or
 manually edit mission data without a specific recovery plan.
+
+## WAR-04B record amendment (2026-08-30)
+
+The original record above uses “immutable” for the project's procedural
+write-once tag policy. Read-only GitHub inspection on 2026-08-30 found no
+technical release/tag immutability enforcement. The historical wording is
+preserved rather than rewritten; see `docs/releases/README.md` and
+`docs/assurance/findings/WAR-04B.md`.

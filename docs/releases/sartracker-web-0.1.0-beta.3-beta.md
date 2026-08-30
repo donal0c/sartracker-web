@@ -274,3 +274,11 @@ locally before the release is promoted from draft to published.
 - [x] Release title contains "internal beta".
 - [x] Published 2026-05-17 via `gh release edit v0.1.0-beta.3 --draft=false`.
 - [x] Recorded in `handoff/HANDOFF.md`.
+
+## WAR-04B record amendment (2026-08-30)
+
+The original record above uses “immutable” for the project's procedural
+write-once tag policy. Read-only GitHub inspection on 2026-08-30 found no
+technical release/tag immutability enforcement. The historical wording is
+preserved rather than rewritten; see `docs/releases/README.md` and
+`docs/assurance/findings/WAR-04B.md`.
