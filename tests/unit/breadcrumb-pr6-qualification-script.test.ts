@@ -12,6 +12,7 @@ import {
 import os from 'node:os'
 import path from 'node:path'
 
+import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -171,6 +172,62 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
 
     expect(currentTimeMs).toBe(31 * 60_000)
     expect(settled.settled).toBe(true)
+  })
+
+  it('reads a real fully settled schema-v13 maintenance snapshot', async () => {
+    const root = await createTemporaryRoot()
+    const databasePath = path.join(root, 'settled.sqlite')
+    const database = new Database(databasePath)
+    try {
+      database.exec(`
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata(key, value) VALUES
+          ('schema_version', '13'),
+          ('legacy_archive_registry_backfill_cursor', '0'),
+          ('legacy_archive_registry_backfill_target', '0');
+        CREATE TABLE legacy_mission_object_backfill_state (
+          object_type TEXT PRIMARY KEY,
+          scanned_through_id TEXT,
+          scan_target_id TEXT
+        );
+        CREATE TABLE legacy_event_provenance_backfill_state (
+          table_name TEXT PRIMARY KEY,
+          scanned_through_id INTEGER,
+          scan_target_id INTEGER
+        );
+        CREATE TABLE legacy_gpx_backfill_state (
+          singleton INTEGER PRIMARY KEY,
+          scanned_through_rowid INTEGER,
+          scan_target_rowid INTEGER
+        );
+        INSERT INTO legacy_gpx_backfill_state VALUES (1, 0, 0);
+        CREATE TABLE legacy_gpx_rowid_scan_state (
+          singleton INTEGER PRIMARY KEY,
+          low_scanned_through_rowid INTEGER,
+          low_target_rowid INTEGER,
+          high_scanned_through_rowid INTEGER,
+          high_target_rowid INTEGER
+        );
+        INSERT INTO legacy_gpx_rowid_scan_state
+          VALUES (1, 1, 1, 9007199254740991, 9007199254740991);
+        CREATE TABLE gpx_import_source_receipts (status TEXT NOT NULL);
+        CREATE TABLE mission_archives (availability TEXT NOT NULL);
+      `)
+    } finally {
+      database.close()
+    }
+
+    await expect(waitForMaintenanceSettlement(databasePath)).resolves.toMatchObject({
+      schemaVersion: 13,
+      settled: true,
+      progress: {
+        archiveCursor: '0',
+        archiveTarget: '0',
+        legacyArchivePending: 0,
+        unknownArchiveCustody: 0,
+        unsettledCustody: 0,
+      },
+    })
   })
 
   it('fails after 120 seconds without semantic progress and ignores timestamp noise', async () => {

@@ -905,7 +905,7 @@ function readMaintenanceState(databasePath) {
         && safeGpxPending === 0
         && unsafeGpxPending === 0
         && receiptPending === 0
-        && legacyArchivePending === 0
+        && archiveProgress.pending === 0
         && unknownArchiveCustody === 0
         && unsettledCustody === 0,
     })
