@@ -86,7 +86,7 @@ forms while keeping the internal save destination functional.
 - Real installed `.deb`: `sartracker-web 0.1.0~beta.12.11` is `install ok installed`; `dpkg -V` is clean; installed executable SHA-256 `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8` exactly matches the independently extracted payload. Its 36-hour proof independently passed `279,936/279,936` with report SHA-256 `c37fe334f6b8c72681469b1af21980e5de48488829bca1d544ea0430a631a41c`.
 - Private live-provider installed-`.deb` proof: `10,184` target fixes over exact `10,000 -> 184 -> 10,000` pages with the same complete equality and rendered bounds; allowlisted report SHA-256 `bdc7cf321067def4875eaedb2e730c553d3d6530975c67663cbf686d0e691409`.
 - Newer-schema refusal: schema 8 was rejected by the schema-7 package with the exact native operator message, exit code 1, zero renderer processes, no unhandled rejection, and byte-identical database/backup files; report SHA-256 `7a22a8c23b2da4d40bb34ee89e919fb718d9826ec72b752cde3d7c2dbcdfe984`.
-- Guarded publication freshly downloaded the draft AppImage and `.deb`, revalidated their manifest and asset metadata, re-peeled the procedurally write-once tag, and published without bypass. A second independent public download matched both installer hashes and `SHA256SUMS`; the public AppImage then passed settings persistence, same-mission recovery, finish/finalize, and non-empty archive creation on Ubuntu. WAR-04B later confirmed that GitHub did not technically enforce tag or published-asset immutability at the 2026-08-30 snapshot; that control gap does not invalidate the point-in-time hash evidence. Public lifecycle report SHA-256: `dfc8e39b1ebfa596e7fcc3e33afe373018cb7cb5c9f5f12f32b46fe09250b48e`.
+- Guarded publication freshly downloaded the draft AppImage and `.deb`, revalidated their manifest and asset metadata, re-peeled the immutable tag, and published without bypass. A second independent public download matched both installer hashes and `SHA256SUMS`; the public AppImage then passed settings persistence, same-mission recovery, finish/finalize, and non-empty archive creation on Ubuntu. Public lifecycle report SHA-256: `dfc8e39b1ebfa596e7fcc3e33afe373018cb7cb5c9f5f12f32b46fe09250b48e`.
 
 ## Required qualification
 
@@ -158,3 +158,14 @@ first and do not delete suspected mission data.
 - Workflow: `.github/workflows/electron-release.yml`
 - Release gates: lint, unit tests, web build, standard Chromium E2E, Linux
   packaging, private-map guard, packaged soak, and AppImage launch
+
+## WAR-04B record amendment (2026-08-30)
+
+The original release record above uses “immutable” for the project's
+procedural write-once tag policy. Read-only GitHub inspection on 2026-08-30
+found `immutable:false` for this public prerelease and no `electron-v*` tag
+ruleset, so technical tag or asset immutability was not enforced. The original
+wording is preserved rather than rewritten; this amendment does not change the
+point-in-time tag, run, asset, or checksum evidence and did not mutate the live
+GitHub release. See `docs/releases/README.md` and
+`docs/assurance/findings/WAR-04B.md`.

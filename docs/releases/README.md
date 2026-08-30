@@ -146,6 +146,10 @@ installers themselves) must not be checked in:
   the new note's "What Changed" section. Before the next publication, recheck
   live protection and enable immutable releases through an authorized settings
   change; see `docs/assurance/findings/WAR-04B.md`.
+- Historical release notes sometimes use “immutable” as shorthand for this
+  write-once procedure. That wording is not evidence of a GitHub-enforced
+  control. WAR-04B leaves the original records intact and appends a dated
+  amendment to every affected note.
 - If a release is published (draft = false) and a critical issue is found,
   the next beta should explicitly call out the regression in its
   "What Changed" section, complete the `Regression provenance` section, link

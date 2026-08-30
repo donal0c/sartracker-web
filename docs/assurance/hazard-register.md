@@ -1,8 +1,15 @@
 # SAR Tracker Whole-Application Hazard Register
 
-**Assurance snapshot:** `eec92812b783a795c093f37268b295dd2179a3af`
+**Application assurance snapshot:** `eec92812b783a795c093f37268b295dd2179a3af`
 
-**Register status:** WAR-01 post-PR5 reconciled inspection
+**Register status:** WAR-01 post-PR5 reconciliation plus a targeted WAR-04B
+release-control overlay.
+
+**WAR-04B overlay boundary:** `PKG-002` and `REL-001`–`REL-004` were refreshed
+from exact source base `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf` and the
+2026-08-30 live GitHub/dependency/release snapshot. That targeted refresh does
+not advance the application-code evidence boundary, provide a current-base
+artifact, or refresh unrelated hazard rows.
 
 **Merged evidence boundary:** GitHub PR #5 merged at the assurance snapshot
 from final head `f5ba8647131950dde457e50ce36fe0b8ded7337d`. Exact-head Linux
