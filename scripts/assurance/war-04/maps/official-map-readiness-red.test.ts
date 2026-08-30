@@ -383,7 +383,7 @@ function hasPngSignature(bytes: Uint8Array): boolean {
   )
 }
 
-/** Uses the app's Chromium image decoder to reject content-type-only PNG claims. */
+/** Uses local Playwright-managed headless Chromium to reject content-type-only PNG claims. */
 async function isChromiumDecodablePng(bytes: Uint8Array): Promise<boolean> {
   const browser = await chromium.launch({ headless: true })
   try {

@@ -175,9 +175,9 @@ failure/privacy defects across official-map readiness, settings/credential
 startup, and support/incident export, plus six unproven hypotheses and the
 controls cleared by inspection and deterministic synthetic proof. Twelve
 isolated red checks preserve the present failure states; one map oracle uses a
-narrow local Chromium image decode, while the normal test, lint, build, backend,
-and browser suites remain green and shipping code is unchanged. Remediation
-belongs to three bounded WAR-11 clusters. `DON-264`
+narrow local Playwright-managed Chromium image decode, while the normal test,
+lint, build, backend, and browser suites remain green and shipping code is
+unchanged. Remediation belongs to three bounded WAR-11 clusters. `DON-264`
 remains a separate persistent overlay-sync diagnostics issue and is not
 silently absorbed by WAR-04. Broad packaged, live-provider, platform-matrix,
 scale, soak, and field proof remain WAR-12 work.

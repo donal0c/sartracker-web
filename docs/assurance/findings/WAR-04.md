@@ -52,9 +52,10 @@ settings/diagnostics lanes. Each confirmation below contains:
 
 The proof is `T2`: local integration with real production modules, real SQLite
 handles, synthetic MBTiles, disposable Electron-profile directories, and one
-narrow headless-Chromium image-decode oracle on macOS. Source tracing joins the
-renderer/main boundaries named below. No local package was necessary because
-none of the reproduced behavior exists only in a packaged binary.
+narrow Playwright-managed headless-Chromium image-decode oracle on macOS. Source
+tracing joins the renderer/main boundaries named below. No local package was
+necessary because none of the reproduced behavior exists only in a packaged
+binary.
 
 ### State space exercised
 
@@ -65,7 +66,7 @@ none of the reproduced behavior exists only in a packaged binary.
 | Readiness join | persisted registry → checklist → operator label → tile proxy | false-positive `Field ready` confirmed |
 | Credential reads | missing, zero-byte/garbage/foreign-shaped JSON, directory substituted for file, local permission-denied read | normal corruption degrades safely; non-`ENOENT` read failure confirmed to abort bootstrap |
 | Settings reads | missing, zero-byte/garbage JSON, out-of-range intervals | missing/default and bounded normalization cleared; malformed JSON fails visibly |
-| Settings writes | credential-write failure, failure after credential commit, identical-timestamp simultaneous saves | first failure ordering cleared; cross-file atomicity/serialization defect confirmed |
+| Settings writes | credential-write failure, failure after credential commit, identical-timestamp collision, controlled unique-temp concurrent interleaving | first failure ordering cleared; cross-file atomicity/serialization defect confirmed |
 | Provider URL | ordinary URL, raw/encoded userinfo, raw/percent-encoded `session` query key/value, double-encoded `session` value, and fragment-borne placeholder credential | userinfo rejection cleared; credential-bearing query/fragment persistence and copied/support export confirmed |
 | Support output | renderer report, Copy Report, Electron diagnostics/support join, startup-fault export, incident-format join | three privacy/recovery defects confirmed |
 | Encodings | canonical POSIX and Windows paths, UNC, JSON-escaped nested data, percent/double-percent path text, nested secret/coordinates | canonical controls cleared; representation-sensitive gaps split between confirmed current boundaries and unproven producer cases |
@@ -121,8 +122,9 @@ therefore publishes `Field ready` from declared bounds.
 
 - `does not label or serve a tile row whose bytes are not a decodable PNG`
   registers `not-a-decodable-png`; observed status/readiness are `ready`, and
-  the proxy returns the bytes as `image/png`; the app's Chromium decoder rejects
-  them even though the proxy serves them as image content.
+  the proxy returns the bytes as `image/png`; a local Playwright-managed
+  headless-Chromium decoder rejects them even though the proxy serves them as
+  image content.
 - `does not certify declared coverage when the requested in-bounds tile is
   absent` registers one valid tile elsewhere while metadata covers the target;
   observed verdict is `Field ready`, then the target returns the visible
@@ -218,9 +220,13 @@ rollback, or save queue across the two files.
 - a deterministic injected settings-rename failure after credential commit
   leaves `old.example.invalid` plus `old@example.test` paired with the new
   placeholder secret;
-- two simultaneous saves with a fixed timestamp collide on temporary paths;
-  one rejects and the resulting runtime combines the first URL/email with the
-  second placeholder secret.
+- one simultaneous-save probe separates two failure modes: a fixed timestamp
+  makes one write reject through a temporary-path collision; then unique
+  temporary names plus a controlled save-context/rename schedule make both
+  writes fulfil in credential-one → credential-two → settings-two →
+  settings-one order, leaving the first URL/email with the second placeholder
+  secret. A full-save queue bypasses the hostile ordering, so temp-name-only
+  repair cannot make the oracle green.
 
 **Consequence/severity:** High. Tracking can fail after an apparently bounded
 save error, and a newly entered secret can be sent on the next connection
@@ -474,8 +480,9 @@ settles them.
 - Diagnostics baseline lane: **7 files / 65 tests passed**.
 - `npx vitest run --config scripts/assurance/war-04/maps/vitest.config.ts`:
   **1 file / 4 tests intentionally red**, reproducing all map variants. Its
-  invalid-tile oracle uses a local headless Chromium image decode; no page,
-  network, licensed map, or operator workflow is involved.
+  invalid-tile oracle uses a local Playwright-managed headless-Chromium image
+  decode on one blank local data-URL page; no application page, navigation,
+  network, licensed map, Electron runtime, or operator workflow is involved.
 - `npx vitest run --config scripts/assurance/war-04/settings-privacy/vitest.config.ts`:
   **2 files / 8 tests intentionally red**, reproducing all settings/privacy
   variants.
@@ -497,9 +504,9 @@ settles them.
 ### Proof not claimed
 
 - no production-code repair or green result for the isolated WAR-04 red probes;
-- no local packaged binary, browser-rendered operator flow beyond the isolated
-  synthetic PNG decode, signed artifact, installed `.deb`, AppImage, or Windows
-  run;
+- no Electron or local packaged binary, browser-rendered operator flow beyond
+  the isolated Playwright synthetic-PNG decode, signed artifact, installed
+  `.deb`, AppImage, or Windows run;
 - no live provider, licensed map, network fallback, external host, real profile,
   real credential, or operational data;
 - no broad malformed-MBTiles corpus, full national coverage proof, scale/soak,
@@ -510,5 +517,5 @@ settles them.
 
 Broad exact-artifact, supported-platform, live-provider, licensed-map, scale,
 and soak qualification remains WAR-12 work after the relevant WAR-11 repairs.
-The mandatory independent exact-head review outcomes are recorded on the PR so
-they can identify the actual reviewed commit without changing that commit.
+The mandatory independent outcomes must be recorded on the final exact PR head
+so they identify the actual reviewed commit without changing that commit.

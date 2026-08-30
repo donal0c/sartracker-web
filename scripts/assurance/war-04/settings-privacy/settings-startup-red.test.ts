@@ -5,6 +5,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -45,6 +46,8 @@ type ElectronRuntimeFiles = {
     readonly contents: string
   }) => Promise<string>
 }
+
+type SaveId = 'one' | 'two'
 
 const { createElectronSettingsStore } = require('../../../../electron/settings-store.cjs') as {
   readonly createElectronSettingsStore: (options: {
@@ -152,10 +155,10 @@ describe('WAR-04 settings and credential startup red probes', () => {
   })
 
   it('serializes simultaneous saves without a rejected write or a cross-paired credential', async () => {
-    const userDataPath = await mkdtemp(path.join(tmpdir(), 'war-04-settings-concurrent-'))
-    const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(123_456_789)
+    const rootPath = await mkdtemp(path.join(tmpdir(), 'war-04-settings-concurrent-'))
+    const collisionPath = path.join(rootPath, 'temp-collision')
+    const interleavingPath = path.join(rootPath, 'cross-file-interleaving')
     try {
-      const store = createStore(userDataPath)
       const first = createTrackingDraft({
         baseUrl: 'https://one.example.invalid',
         email: 'one@example.test',
@@ -167,18 +170,115 @@ describe('WAR-04 settings and credential startup red probes', () => {
         secret: 'secret-two',
       })
 
-      const results = await Promise.allSettled([
-        store.saveAppSettings(first),
-        store.saveAppSettings(second),
-      ])
-      const runtime = await createStore(userDataPath).loadRuntimeBootstrapSettings(true)
+      const fixedDateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(123_456_789)
+      let collisionResults: readonly PromiseSettledResult<AppSettings>[]
+      try {
+        const collisionStore = createStore(collisionPath)
+        collisionResults = await Promise.allSettled([
+          collisionStore.saveAppSettings(first),
+          collisionStore.saveAppSettings(second),
+        ])
+      } finally {
+        fixedDateNowSpy.mockRestore()
+      }
+
+      const settingsPath = path.join(interleavingPath, 'settings.json')
+      const credentialsPath = path.join(interleavingPath, 'credentials.json')
+      const saveContext = new AsyncLocalStorage<SaveId>()
+      const admitted = new Set<SaveId>()
+      const committed = new Set<SaveId>()
+      const credentialOneDone = createDeferredSignal()
+      const credentialTwoDone = createDeferredSignal()
+      const settingsTwoDone = createDeferredSignal()
+      const renameOrder: string[] = []
+      let overlappingSaves = false
+      let tempSequence = 700_000_000
+
+      const actualReadFile = fsPromises.readFile.bind(fsPromises)
+      const actualRename = fsPromises.rename.bind(fsPromises)
+      const uniqueDateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => tempSequence++)
+      const readSpy = vi.spyOn(fsPromises, 'readFile').mockImplementation(
+        (async (filePath, ...args) => {
+          const saveId = saveContext.getStore()
+          if (
+            saveId !== undefined &&
+            String(filePath) === credentialsPath &&
+            !admitted.has(saveId)
+          ) {
+            const other: SaveId = saveId === 'one' ? 'two' : 'one'
+            if (admitted.has(other) && !committed.has(other)) {
+              overlappingSaves = true
+            }
+            admitted.add(saveId)
+          }
+          return actualReadFile(filePath, ...args)
+        }) as typeof fsPromises.readFile,
+      )
+      const renameSpy = vi.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
+        const saveId = saveContext.getStore()
+        const target = String(to)
+        const renameAndMark = async (): Promise<void> => {
+          await actualRename(from, to)
+          if (saveId !== undefined && target === settingsPath) {
+            committed.add(saveId)
+          }
+          renameOrder.push(`${saveId ?? 'unscoped'}:${path.basename(target)}`)
+        }
+
+        if (!overlappingSaves || saveId === undefined) {
+          return renameAndMark()
+        }
+        if (target === credentialsPath && saveId === 'one') {
+          await renameAndMark()
+          credentialOneDone.resolve()
+          return
+        }
+        if (target === credentialsPath && saveId === 'two') {
+          await credentialOneDone.promise
+          await renameAndMark()
+          credentialTwoDone.resolve()
+          return
+        }
+        if (target === settingsPath && saveId === 'two') {
+          await credentialTwoDone.promise
+          await renameAndMark()
+          settingsTwoDone.resolve()
+          return
+        }
+        if (target === settingsPath && saveId === 'one') {
+          await settingsTwoDone.promise
+          await renameAndMark()
+          return
+        }
+        return renameAndMark()
+      })
+
+      let interleavingResults: readonly PromiseSettledResult<AppSettings>[]
+      let runtime: RuntimeBootstrapSettings
+      try {
+        const interleavingStore = createStore(interleavingPath)
+        interleavingResults = await Promise.allSettled([
+          saveContext.run('one', () => interleavingStore.saveAppSettings(first)),
+          saveContext.run('two', () => interleavingStore.saveAppSettings(second)),
+        ])
+        runtime = await createStore(interleavingPath).loadRuntimeBootstrapSettings(true)
+      } finally {
+        renameSpy.mockRestore()
+        readSpy.mockRestore()
+        uniqueDateNowSpy.mockRestore()
+      }
+
       const observed = {
-        outcomes: results.map((result) => result.status),
+        collisionOutcomes: collisionResults.map((result) => result.status),
+        interleavingOutcomes: interleavingResults.map((result) => result.status),
+        overlappingSaves,
+        renameOrder,
         trackingConfig: runtime.trackingConfig,
       }
       console.info('WAR-04 concurrent-settings observation', observed)
 
-      expect(observed.outcomes).toEqual(['fulfilled', 'fulfilled'])
+      expect(observed.collisionOutcomes).toEqual(['fulfilled', 'fulfilled'])
+      expect(observed.interleavingOutcomes).toEqual(['fulfilled', 'fulfilled'])
       expect([
         {
           baseUrl: 'https://one.example.invalid',
@@ -192,8 +292,8 @@ describe('WAR-04 settings and credential startup red probes', () => {
         },
       ]).toContainEqual(runtime.trackingConfig)
     } finally {
-      dateNowSpy.mockRestore()
-      await rm(userDataPath, { force: true, recursive: true })
+      vi.restoreAllMocks()
+      await rm(rootPath, { force: true, recursive: true })
     }
   })
 
@@ -225,6 +325,18 @@ function createStore(userDataPath: string): ElectronSettingsStore {
     safeStorage: createSafeStorage(),
     platform: 'darwin',
   })
+}
+
+/** Creates a one-shot barrier for a deterministic asynchronous interleaving. */
+function createDeferredSignal(): {
+  readonly promise: Promise<void>
+  readonly resolve: () => void
+} {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
 }
 
 /** Creates one complete provider-settings draft with a caller-selected credential. */
