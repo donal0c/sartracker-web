@@ -216,18 +216,17 @@ describe('WAR-04 diagnostics and support-output red probes', () => {
     }
 
     console.info('WAR-04 provider-query observations', observations)
-    const unsafeObservations = observations.filter((observation) =>
-      observation.rejection === null
-        ? observation.persistedMarkers.length > 0 ||
-          observation.copiedReportMarkers.length > 0 ||
-          observation.exportedMarkers.length > 0
-        : observation.rejection !== PROVIDER_URL_CREDENTIALS_ERROR ||
-          observation.persistedMarkers.length > 0 ||
-          observation.credentialFilePresent ||
-          observation.persistedDataSource.providerType !== 'none' ||
-          observation.persistedDataSource.baseUrl !== '' ||
-          observation.persistedDataSource.email !== '' ||
-          observation.persistedDataSource.secretPresent,
+    const unsafeObservations = observations.filter(
+      (observation) =>
+        observation.rejection !== PROVIDER_URL_CREDENTIALS_ERROR ||
+        observation.persistedMarkers.length > 0 ||
+        observation.copiedReportMarkers.length > 0 ||
+        observation.exportedMarkers.length > 0 ||
+        observation.credentialFilePresent ||
+        observation.persistedDataSource.providerType !== 'none' ||
+        observation.persistedDataSource.baseUrl !== '' ||
+        observation.persistedDataSource.email !== '' ||
+        observation.persistedDataSource.secretPresent,
     )
     expect(unsafeObservations).toEqual([])
   })
