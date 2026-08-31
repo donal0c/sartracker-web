@@ -6,14 +6,14 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
-> Draft status: the earlier candidate proofs are superseded by red-first
-> archive-lifecycle remediation. The current remediation head is
-> `53164028f72254c4e17fcc0b4b845f7601fee153` (tree
-> `5c347d30691f291164dc65ed25c2bc437f906e55`); deterministic unit tests are
-> `359 files / 3,399 tests`, with lint, build and diff checks green. A new
-> clean frozen candidate commit is required before the exact-head browser,
-> package, Linux and Ubuntu >2 GiB proofs and the five-charter review wave can
-> close. The PR is not complete.
+> Draft status: the earlier candidate proofs and the three initial exact-head
+> reviews are superseded by red-first archive-lifecycle remediation. The frozen
+> remediation head is
+> `f220f59650ba96231f06a4f45015791223934300` (tree
+> `9b5bf3a24da9a4ba6e98e8ee3e21d7ba236e6538`); deterministic unit tests are
+> `359 files / 3,404 tests`, with lint, build and diff checks green. Exact-head
+> browser, package, Linux and Ubuntu >2 GiB proofs are in flight, followed by
+> the five-charter independent review/recheck wave. The PR is not complete.
 
 ## Execution identity
 
@@ -36,7 +36,7 @@ is intermediate. Donal retains approval and merge authority.
 | Frozen code candidate tree | `4be6f73d00de9cf9a4315c133ddfe51295c3e344` |
 | Post-candidate base reconciliation | `af745dc0c4027e25f8f306f38aa603026c3f2277` / tree `13d75423584d6a6f73501168b5cf4d9f5a547af3`, merging `origin/master` `0ca331ff816800e83134142cb109903e5d2c2992` |
 | Exact qualification-harness remediation head | `53164028f72254c4e17fcc0b4b845f7601fee153` / tree `5c347d30691f291164dc65ed25c2bc437f906e55` |
-| Current archive-lifecycle remediation head | `53164028f72254c4e17fcc0b4b845f7601fee153` / tree `5c347d30691f291164dc65ed25c2bc437f906e55` |
+| Current frozen archive-lifecycle remediation head | `f220f59650ba96231f06a4f45015791223934300` / tree `9b5bf3a24da9a4ba6e98e8ee3e21d7ba236e6538` |
 | Immutable final documentation/review head | Recorded after documentation freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; no later repository mutation is permitted without re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |
 
@@ -631,12 +631,33 @@ pushed head revalidated repository identity, source/derived/qualifier hashes,
 distinct inodes, absent sidecars, available RAM/disk and host load before the
 unchanged production command was relaunched. The failed attempt is not proof.
 
-**PENDING — a safe prior-head failure is not passed proof.** Populate
-the full source digest, exact head/tree, Linux machine flags, migration,
-create/verify/restore/Replay/Review/cleanup results, pre/post Review parity,
-source pre/post immutability, whole-process RSS, KDF duration, per-phase
-heartbeat/current-position measurements, residue scans and final report
-digest/mode from the closed validator output.
+## Frozen-head proof wave (2026-08-31)
+
+The remediation head is frozen at `f220f59650ba96231f06a4f45015791223934300`
+with tree `9b5bf3a24da9a4ba6e98e8ee3e21d7ba236e6538`. Local deterministic proof
+is green at `359 files / 3,404 tests`; ESLint, production build/bundle budgets
+and `git diff --check` are green. Exact-head browser proof is green at
+Chromium `172/172`; visual Playwright is `62/62`; uncached visual review is
+`74 pass / 0 fail / 0 error` (`failOn=high`), report
+`test-results/visual-verification/reports/visual-review-2026-08-31T16-24-28Z.json`
+SHA-256 `09216035fa56c9f634f7c8304ab44f0ee188c44efade332eff7f7d1490f2b0cc`.
+
+The exact-head unsigned macOS arm64 packaged lifecycle smoke passed with source
+clean before/after, full packaged build-head binding, archive Review/Replay,
+interrupted-restore startup sweep, credential-gated cleanup and zero plaintext
+or secret residue. Report:
+`tmp/breadcrumb-pr6-packaged-archive-smoke-f220f596/electron-archive-lifecycle-smoke-report.json`,
+SHA-256 `fad472a6edfa97eb1d3e67e92a9ff159115ed021b0b0c616549d61ad9c3352a6`.
+The exact-head physical SIGKILL matrix is qualified `32/32`; report
+`/tmp/sartracker-pr6-kill-matrix-f220f596.json`, SHA-256
+`2ecaae8028a4a6e687f8f4aa9af6223955fdccaf20cdd286d943f49fc5dc804e`.
+
+GitHub Electron Linux workflow run
+`33413321011` is executing against this exact head and remains unqualified
+until every step is green. The Ubuntu >2 GiB field-scale qualifier is also
+running against this exact head on the named reference host; no migration,
+RSS, heartbeat, completeness or final report claim is made until that process
+closes and its evidence is independently checked.
 
 ## Independent review gate
 
