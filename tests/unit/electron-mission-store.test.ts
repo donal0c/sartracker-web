@@ -103,6 +103,7 @@ type ElectronMissionStore = {
   readonly runMarkerAttachmentIngest: (
     missionId: string,
     writeAttachment: () => Promise<string>,
+    cleanupAttachment?: (attachmentPath: string) => Promise<void>,
   ) => Promise<string>
   readonly info: () => Promise<{
     readonly schema_version: number
@@ -4107,6 +4108,29 @@ describe('electron mission store', () => {
     expect(
       archiveSucceededEvents.map((event) => JSON.parse(event.details_json ?? '{}').archive_path),
     ).toEqual([firstFinalize.archive.archive_path, secondFinalize.archive.archive_path])
+  })
+
+  it('rejects blank and oversized correction reasons before unlocking a finalized mission', async () => {
+    store = await createStore({ readAdminRoster: async () => ['Duty Admin'] })
+
+    for (const reason of ['', 'x'.repeat(4_001)]) {
+      const mission = await store.createMission({
+        name: `Invalid correction reason ${reason.length}`,
+      })
+      await store.finishMission(mission.id)
+      await store.finalizeMission(mission.id)
+
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason,
+      })).rejects.toThrow(/reason|correction authorization/iu)
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
+      const unlockEvents = (await store.listMissionEvents(mission.id)).filter(
+        (event) => event.event_type === 'mission_unlocked',
+      )
+      expect(unlockEvents).toHaveLength(0)
+    }
   })
 
   it('rejects a stale admin unlock after another unlock and re-finalization [DON-278]', async () => {

@@ -11,6 +11,8 @@ const MAX_OPERATION_ID_BYTES = 36
 const MAX_ARCHIVE_ID_BYTES = 200
 const MAX_PASSPHRASE_BYTES = 1_024
 const MAX_MISSION_CONFIRMATION_BYTES = 1_024
+const MAX_CORRECTION_ADMIN_BYTES = 160
+const MAX_CORRECTION_REASON_BYTES = 4_000
 const MAX_PROGRESS_DETAIL_BYTES = 200
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 const RECOVERY_CODE = /^(?:[0-9A-HJKMNP-TV-Z]{5}-){7}[0-9A-HJKMNP-TV-Z]{5}$/u
@@ -118,6 +120,17 @@ function normalizeMissionConfirmation(value) {
   )
 }
 
+/** Validates one non-empty correction authority field before it reaches SQLite. */
+function normalizeCorrectionAuthority(value, label, maximumBytes) {
+  if (typeof value !== 'string'
+    || value.trim() === ''
+    || Buffer.byteLength(value, 'utf8') > maximumBytes
+    || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)) {
+    throw archiveIpcError('ARCHIVE_IPC_INVALID_INPUT', `${label} is invalid.`)
+  }
+  return value.trim()
+}
+
 /** Hashes a recovery issuance so main retains no plaintext custody secret. */
 function hashRecoveryCode(value) {
   return createHash('sha256').update(value, 'utf8').digest()
@@ -139,6 +152,15 @@ function projectFinalizedMissionResult(input, expectedMissionId) {
     id: expectedMissionId,
     status: 'finalized',
   })
+}
+
+/** Projects one successful correction unlock result without exposing extra mission fields. */
+function projectUnlockedMissionResult(input, expectedMissionId) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || input.id !== expectedMissionId || input.status !== 'finished') {
+    throw archiveIpcError('ARCHIVE_IPC_INVALID_RESULT', 'Mission unlock result is invalid.')
+  }
+  return Object.freeze({ id: expectedMissionId, status: 'finished' })
 }
 
 /** Requires a projected archive to be bound to the exact requesting mission. */
@@ -643,6 +665,40 @@ function registerMissionArchiveIpcHandlers(input) {
       throw closeArchiveFailure(error, 'ARCHIVE_CREATE_FAILED')
     } finally {
       activeOperations.delete(operationId)
+    }
+  })
+
+  input.ipcMain.handle(channels.unlockFinalizedMission, async (event, request) => {
+    input.validateIpcSender(event)
+    requireExactRecord(
+      request,
+      ['mission_id', 'admin_name', 'reason'],
+      'Mission correction unlock request',
+    )
+    const missionId = normalizeIdentifier(
+      request.mission_id,
+      'Mission correction mission identity',
+      MAX_MISSION_ID_BYTES,
+    )
+    const adminName = normalizeCorrectionAuthority(
+      request.admin_name,
+      'Mission correction authority',
+      MAX_CORRECTION_ADMIN_BYTES,
+    )
+    const reason = normalizeCorrectionAuthority(
+      request.reason,
+      'Mission correction reason',
+      MAX_CORRECTION_REASON_BYTES,
+    )
+    try {
+      const result = await missionStore.unlockFinalizedMission({
+        mission_id: missionId,
+        admin_name: adminName,
+        reason,
+      })
+      return projectUnlockedMissionResult(result, missionId)
+    } catch (error) {
+      throw closeArchiveFailure(error, 'ARCHIVE_UNLOCK_FAILED')
     }
   })
 

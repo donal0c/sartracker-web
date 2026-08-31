@@ -183,6 +183,8 @@ function createElectronFileSystem(options) {
         const destinationPath = path.join(attachmentDirectory, `${randomUUID()}-${fileName}`)
         await writeFileAtomically(destinationPath, bytes)
         return destinationPath
+      }, async (attachmentPath) => {
+        await fs.rm(attachmentPath, { force: true })
       })
     },
     openExternalPath: async (inputPath) => {

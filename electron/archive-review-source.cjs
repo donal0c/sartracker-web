@@ -99,9 +99,6 @@ function scrubSessionPaths(
     if (value === sessionDirectory || value.startsWith(`${sessionDirectory}${path.sep}`)) {
       return null
     }
-    if (isPortableAbsolutePath(value)) {
-      return portableBasename(value)
-    }
     return value
   }
   if (Array.isArray(value)) {
@@ -125,13 +122,6 @@ function scrubSessionPaths(
     ]))
   }
   return value
-}
-
-/** Returns true for a whole-string POSIX, drive-qualified, or UNC absolute path. */
-function isPortableAbsolutePath(value) {
-  return value.startsWith('/')
-    || /^[a-z]:[\\/]/iu.test(value)
-    || /^(?:\\\\|\/\/)/u.test(value)
 }
 
 /** Returns one portable filename from a historical absolute attachment path. */

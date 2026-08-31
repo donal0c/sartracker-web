@@ -94,6 +94,11 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly listLayerCatalogMetadata: (
       missionId: string,
     ) => Promise<readonly Readonly<Record<string, unknown>>[]>
+    readonly runMarkerAttachmentIngest: (
+      missionId: string,
+      writeAttachment: () => Promise<string>,
+      cleanupAttachment?: (attachmentPath: string) => Promise<void>,
+    ) => Promise<string>
     readonly unlockFinalizedMission: (input: {
       readonly mission_id: string
       readonly admin_name: string
@@ -1317,6 +1322,62 @@ describe('encrypted mission archive lifecycle integration', () => {
     }
   }, 120_000)
 
+  it('rejects an attachment that completes after a supplemental archive fence is acquired', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-attachment-finalize-race-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    let releaseWrite = () => undefined
+    let signalWriteStarted = () => undefined
+    const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+    const holdWrite = new Promise<void>((resolve) => { releaseWrite = resolve })
+    try {
+      const mission = await store.createMission({ name: 'Attachment finalization race' })
+      await store.finishMission(mission.id)
+      await store.finalizeMission(mission.id, custody, {
+        operationId: '74747474-7474-4474-8474-747474747474',
+        onProgress: () => undefined,
+      })
+      await store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Correct attachment while reviewing the retained archive.',
+      })
+
+      const attachment = store.runMarkerAttachmentIngest(mission.id, async () => {
+        signalWriteStarted()
+        await holdWrite
+        return path.join(userDataPath, 'missions', mission.id, 'attachments', 'late.txt')
+      })
+      await writeStarted
+
+      let signalSnapshot = () => undefined
+      const snapshotStarted = new Promise<void>((resolve) => { signalSnapshot = resolve })
+      const finalization = store.finalizeMission(mission.id, custody, {
+        operationId: '75757575-7575-4575-8575-757575757575',
+        onProgress: (update) => {
+          if (update.kind === 'create' && update.phase === 'snapshot') signalSnapshot()
+        },
+      })
+      await snapshotStarted
+      releaseWrite()
+
+      await expect(attachment).rejects.toThrow(/finalization is in progress/iu)
+      await expect(finalization).resolves.toMatchObject({
+        mission: { id: mission.id, status: 'finalized' },
+      })
+      const attachmentEvents = (await store.listMissionEvents(mission.id)).filter(
+        (event) => event.event_type === 'marker_attachment_ingested',
+      )
+      expect(attachmentEvents).toHaveLength(0)
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
   it('finalizes only after journalled SARARCH2 publish and records exhaustive verification', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-archive-lifecycle-'))
     temporaryDirectories.add(userDataPath)
@@ -1673,6 +1734,55 @@ describe('encrypted mission archive lifecycle integration', () => {
       } finally {
         db.close()
       }
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 30_000)
+
+  it('sweeps verifier plaintext after an unclassified worker termination', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-verify-generic-residue-'))
+    temporaryDirectories.add(userDataPath)
+    let verifyAttempt = 0
+    let strandedResidue = ''
+    const store = createElectronMissionStore({
+      userDataPath,
+      startArchiveVerifyWorker: (input) => {
+        verifyAttempt += 1
+        if (verifyAttempt !== 1) return startArchiveVerifyWorker(input)
+        const request = input.request as Readonly<Record<string, unknown>>
+        strandedResidue = path.join(
+          userDataPath,
+          'archives',
+          '.verification',
+          String(request.operationId),
+          'restored.sqlite',
+        )
+        require('node:fs').mkdirSync(path.dirname(strandedResidue), {
+          recursive: true,
+          mode: 0o700,
+        })
+        writeFileSync(strandedResidue, 'APP-ADDRESSABLE-PLAINTEXT', { mode: 0o600 })
+        return unclassifiedFailedWorkerOperation('simulated forced verifier termination')
+      },
+    })
+    try {
+      const mission = await store.createMission({ name: 'Generic verifier residue mission' })
+      await store.finishMission(mission.id)
+
+      await expect(store.finalizeMission(mission.id, custody)).rejects.toThrow(
+        /verification failed after archive custody was sealed/iu,
+      )
+      expect(strandedResidue).not.toBe('')
+      expect(existsSync(strandedResidue)).toBe(false)
+      expect(existsSync(path.join(userDataPath, 'archives', '.verification'))).toBe(false)
+
+      const [sealed] = await store.listMissionArchives(mission.id)
+      await expect(store.verifyMissionArchive({
+        archiveId: String(sealed?.id),
+        ...custody,
+      })).resolves.toMatchObject({ status: 'verified' })
+      expect(verifyAttempt).toBe(2)
     } finally {
       await store.prepareClose()
       store.close()

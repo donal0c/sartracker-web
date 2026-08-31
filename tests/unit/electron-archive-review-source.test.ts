@@ -534,6 +534,32 @@ describe('archive-backed Mission Review source [DON-252 / BCP-15]', () => {
     }
   })
 
+  it('preserves path-shaped free-text while scrubbing only path-bearing fields', async () => {
+    const fixture = await createV13Fixture()
+    const runProjectionRead = vi.fn<ProjectionRunner>(() => {
+      const result = Promise.resolve([{
+        id: 'marker-path-shaped-note',
+        mission_id: fixture.missionId,
+        description: '/north ridge/sector 4',
+        attachment_path: '/private/session/attachments/briefing.pdf',
+      }]) as WorkerPromise
+      Object.defineProperty(result, 'workerExited', { value: Promise.resolve() })
+      return result
+    })
+    const source = createSource(fixture, { runProjectionRead })
+
+    try {
+      await expect(source.listMarkers(fixture.missionId)).resolves.toEqual([
+        expect.objectContaining({
+          description: '/north ridge/sector 4',
+          attachment_path: 'briefing.pdf',
+        }),
+      ])
+    } finally {
+      await source.close()
+    }
+  })
+
   it('rejects every foreign-mission read before a worker or attachment action can run', async () => {
     const fixture = await createV13Fixture()
     const reviewRunner = vi.fn(runMissionReviewReadQueryInWorker)

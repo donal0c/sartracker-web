@@ -714,9 +714,8 @@ function createElectronMissionStore(options) {
     }
   }
 
-  /** Latches cleanup failure before an automatic fixed-root sweep can clear it. */
-  const recoverArchiveVerificationPlaintext = async (error) => {
-    if (error?.code !== 'ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED') return
+  /** Sweeps every verifier failure because forced worker exit bypasses verifier finally cleanup. */
+  const recoverArchiveVerificationPlaintext = async () => {
     persistArchivePlaintextSweepFailure('ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED')
     await runArchivePlaintextSweep()
   }
@@ -2571,14 +2570,33 @@ function createElectronMissionStore(options) {
     })),
     getActiveMission: async () => getActiveMission(db),
     getRecoverableMission: async () => getActiveMission(db),
-    runMarkerAttachmentIngest: async (missionId, writeAttachment) =>
+    runMarkerAttachmentIngest: async (missionId, writeAttachment, cleanupAttachment) =>
       enqueueAttachmentLifecycleOperation(missionId, async () => {
         ensureWritableMission(db, missionId)
         const attachmentPath = await writeAttachment()
-        insertEvent(db, missionId, 'marker_attachment_ingested', now(), {
-          attachment_path: attachmentPath,
-        })
-        return attachmentPath
+        try {
+          db.transaction(() => {
+            ensureWritableMission(db, missionId)
+            insertEvent(db, missionId, 'marker_attachment_ingested', now(), {
+              attachment_path: attachmentPath,
+            })
+          }).immediate()
+          return attachmentPath
+        } catch (error) {
+          if (typeof cleanupAttachment === 'function') {
+            try {
+              await cleanupAttachment(attachmentPath)
+            } catch (cleanupError) {
+              const failure = new Error(
+                'Attachment custody cleanup failed after the write was rejected.',
+              )
+              failure.code = 'ATTACHMENT_CLEANUP_FAILED'
+              failure.cause = cleanupError
+              throw failure
+            }
+          }
+          throw error
+        }
       }),
     pauseMission: async (missionId) => transitionMission(db, missionId, 'active', 'paused'),
     resumeMission: async (missionId) => transitionMission(db, missionId, 'paused', 'active'),
@@ -6702,7 +6720,22 @@ function readEventDetails(input) {
 }
 
 async function unlockFinalizedMission(db, input, readAdminRoster) {
-  const mission = getMission(db, input.mission_id)
+  const missionId = normalizeBoundedRequiredText(
+    input?.mission_id,
+    'Mission correction mission identity',
+    200,
+  )
+  const adminName = normalizeCorrectionAuthorityInput(
+    input?.admin_name,
+    'Mission correction authority',
+    160,
+  )
+  const reason = normalizeCorrectionAuthorityInput(
+    input?.reason,
+    'Mission correction reason',
+    4_000,
+  )
+  const mission = getMission(db, missionId)
   if (mission.status !== 'finalized') {
     throw new Error('Only finalized missions can be unlocked.')
   }
@@ -6716,15 +6749,15 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
       'This mission is archived. Restore its verified archive into a complete live mission before requesting a correction unlock.',
     )
   }
-  assertCurrentFinalizedArchiveReviewable(db, input.mission_id)
-  const finalizedEpoch = readLatestMissionFinalizedEpoch(db, input.mission_id)
+  assertCurrentFinalizedArchiveReviewable(db, missionId)
+  const finalizedEpoch = readLatestMissionFinalizedEpoch(db, missionId)
   const adminRoster = typeof readAdminRoster === 'function' ? await readAdminRoster() : []
-  if (!adminRoster.map((value) => value.trim()).includes(input.admin_name.trim())) {
+  if (!adminRoster.map((value) => value.trim()).includes(adminName)) {
     const deniedTransaction = db.transaction(() => {
-      assertMissionUnlockEpoch(db, input.mission_id, finalizedEpoch)
-      insertEvent(db, input.mission_id, 'mission_unlock_denied', now(), {
-        admin_name: input.admin_name,
-        reason: input.reason,
+      assertMissionUnlockEpoch(db, missionId, finalizedEpoch)
+      insertEvent(db, missionId, 'mission_unlock_denied', now(), {
+        admin_name: adminName,
+        reason,
         resulting_status: 'finalized',
       })
     })
@@ -6733,16 +6766,16 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
   }
   const timestamp = now()
   const transaction = db.transaction(() => {
-    assertMissionUnlockEpoch(db, input.mission_id, finalizedEpoch)
-    db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finished', input.mission_id)
-    insertEvent(db, input.mission_id, 'mission_unlocked', timestamp, {
-      admin_name: input.admin_name,
-      reason: input.reason,
+    assertMissionUnlockEpoch(db, missionId, finalizedEpoch)
+    db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finished', missionId)
+    insertEvent(db, missionId, 'mission_unlocked', timestamp, {
+      admin_name: adminName,
+      reason,
       resulting_status: 'finished',
     })
   })
   transaction()
-  return getMission(db, input.mission_id)
+  return getMission(db, missionId)
 }
 
 /** Reads the immutable audit identity of the currently finalized mission epoch. */
@@ -8890,6 +8923,17 @@ function normalizeBoundedRequiredText(value, label, maximumLength) {
     throw new Error(`${label} must be ${maximumLength} characters or fewer.`)
   }
   return normalized
+}
+
+/** Validates a correction authority field using the IPC's byte and control policy. */
+function normalizeCorrectionAuthorityInput(value, label, maximumBytes) {
+  if (typeof value !== 'string'
+    || value.trim() === ''
+    || Buffer.byteLength(value, 'utf8') > maximumBytes
+    || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return value.trim()
 }
 
 function normalizeBoundedOptionalTextValue(value, label, maximumLength) {

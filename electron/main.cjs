@@ -961,6 +961,7 @@ function registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSes
     'startMissionCleanup',
     'cancelMissionArchiveOperation',
     'finalizeMission',
+    'unlockFinalizedMission',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
     if (ownedQueryMethods.has(methodName)) {

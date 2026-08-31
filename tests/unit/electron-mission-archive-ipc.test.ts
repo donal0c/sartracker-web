@@ -17,6 +17,7 @@ const {
 const CHANNELS = Object.freeze({
   issueMissionArchiveRecoveryCode: 'sartracker:mission-store:issue-archive-recovery-code',
   finalizeMission: 'sartracker:mission-store:finalize-mission',
+  unlockFinalizedMission: 'sartracker:mission-store:unlock-finalized-mission',
   listMissionArchives: 'sartracker:mission-store:list-mission-archives',
   verifyMissionArchive: 'sartracker:mission-store:verify-mission-archive',
   getMissionCleanupEligibility: 'sartracker:mission-store:get-mission-cleanup-eligibility',
@@ -96,6 +97,10 @@ function createMainHarness(
       progressObservers.push(context.onProgress)
       return { mission: missionResult(missionId), archive: archiveResult(missionId), custody }
     }),
+    unlockFinalizedMission: vi.fn(async (request: Readonly<Record<string, unknown>>) => ({
+      id: request.mission_id,
+      status: 'finished',
+    })),
     listMissionArchives: vi.fn(async () => []),
     verifyMissionArchive: vi.fn(async () => archiveResult()),
     getMission: vi.fn(async (missionId: string) => missionResult(missionId)),
@@ -151,11 +156,23 @@ function createMainHarness(
 }
 
 describe('mission archive IPC containment [DON-248]', () => {
-  it('registers only the seven explicit archive handlers', () => {
+  it('registers only the eight explicit archive handlers', () => {
     const { handlers } = createMainHarness()
 
     expect([...handlers.keys()].sort()).toEqual(Object.values(CHANNELS).sort())
-    expect(handlers.size).toBe(7)
+    expect(handlers.size).toBe(8)
+  })
+
+  it('rejects an oversized correction reason before reaching the mission store', async () => {
+    const { handlers, missionStore } = createMainHarness()
+    const event = { sender: createSender(8) }
+
+    await expect(handlers.get(CHANNELS.unlockFinalizedMission)?.(event, {
+      mission_id: 'mission-1',
+      admin_name: 'Duty Admin',
+      reason: 'x'.repeat(4_001),
+    })).rejects.toThrow(/reason/iu)
+    expect(missionStore.unlockFinalizedMission).not.toHaveBeenCalled()
   })
 
   it('closed-projects current cleanup eligibility with the main-owned review state', async () => {
