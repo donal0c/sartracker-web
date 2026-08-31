@@ -58,6 +58,9 @@ const {
 } = require('./archive-custody-operation-runner.cjs')
 const { startArchiveVerifyWorker } = require('./archive-verify-runner.cjs')
 const { startArchivePlaintextSweep } = require('./archive-plaintext-sweep-runner.cjs')
+const {
+  startArchiveLegacyPredecessorHash,
+} = require('./archive-legacy-predecessor-runner.cjs')
 const { startMissionArchiveCreateWorker } = require('./mission-archive-runner.cjs')
 const {
   startArchiveCleanupCredentialCheck,
@@ -506,6 +509,8 @@ function createElectronMissionStore(options) {
   const archiveVerifyRunner = options.startArchiveVerifyWorker ?? startArchiveVerifyWorker
   const archivePlaintextSweepRunner = options.startArchivePlaintextSweep
     ?? startArchivePlaintextSweep
+  const archiveLegacyPredecessorHashRunner = options.startArchiveLegacyPredecessorHash
+    ?? startArchiveLegacyPredecessorHash
   const archiveCustodyOperationRunner = options.startArchiveCustodyOperation
     ?? startArchiveCustodyOperation
   const archiveCustodyJournal = createArchiveCustodyJournal({
@@ -624,6 +629,7 @@ function createElectronMissionStore(options) {
   let archivePlaintextSweepOperation = null
   let archivePlaintextSweepFailure = null
   let archivePlaintextSweepFinished = false
+  let archivePlaintextSweepSettled = Promise.resolve()
 
   /** Persists one bounded archive-only sweep failure without reflecting local residue. */
   const persistArchivePlaintextSweepFailure = (code) => {
@@ -632,6 +638,48 @@ function createElectronMissionStore(options) {
     db.prepare(`INSERT INTO metadata (key, value) VALUES (
       'archive_plaintext_sweep_failure', ?
     ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(code)
+  }
+
+  /** Runs and physically joins one fixed-root plaintext sweep while retaining a durable gate. */
+  const runArchivePlaintextSweep = () => {
+    archivePlaintextSweepFinished = false
+    try {
+      archivePlaintextSweepOperation = archivePlaintextSweepRunner({ archiveDirectory })
+    } catch (error) {
+      archivePlaintextSweepFinished = true
+      persistArchivePlaintextSweepFailure(stableArchiveFailureCode(
+        error,
+        'ARCHIVE_PLAINTEXT_SWEEP_FAILED',
+      ))
+      archivePlaintextSweepSettled = Promise.resolve()
+      return archivePlaintextSweepSettled
+    }
+    archivePlaintextSweepSettled = (async () => {
+      try {
+        await archivePlaintextSweepOperation
+        await Promise.resolve(
+          archivePlaintextSweepOperation.workerExited ?? archivePlaintextSweepOperation,
+        )
+        archivePlaintextSweepFailure = null
+        if (!storeClosed) {
+          db.prepare(`DELETE FROM metadata
+            WHERE key = 'archive_plaintext_sweep_failure'`).run()
+        }
+      } catch (error) {
+        try {
+          await Promise.resolve(
+            archivePlaintextSweepOperation.workerExited ?? archivePlaintextSweepOperation,
+          )
+        } catch {}
+        persistArchivePlaintextSweepFailure(stableArchiveFailureCode(
+          error,
+          'ARCHIVE_PLAINTEXT_SWEEP_FAILED',
+        ))
+      } finally {
+        archivePlaintextSweepFinished = true
+      }
+    })()
+    return archivePlaintextSweepSettled
   }
 
   /** Starts cleanup only when the fixed verification root exists or is unsafe to inspect. */
@@ -650,38 +698,9 @@ function createElectronMissionStore(options) {
       persistArchivePlaintextSweepFailure('ARCHIVE_PLAINTEXT_SWEEP_SCOPE_INVALID')
       return Promise.resolve()
     }
-
-    try {
-      archivePlaintextSweepOperation = archivePlaintextSweepRunner({ archiveDirectory })
-    } catch (error) {
-      archivePlaintextSweepFinished = true
-      persistArchivePlaintextSweepFailure(stableArchiveFailureCode(
-        error,
-        'ARCHIVE_PLAINTEXT_SWEEP_FAILED',
-      ))
-      return Promise.resolve()
-    }
-    return (async () => {
-      try {
-        await archivePlaintextSweepOperation
-        await archivePlaintextSweepOperation.workerExited
-        archivePlaintextSweepFailure = null
-        if (!storeClosed) {
-          db.prepare(`DELETE FROM metadata
-            WHERE key = 'archive_plaintext_sweep_failure'`).run()
-        }
-      } catch (error) {
-        try { await archivePlaintextSweepOperation.workerExited } catch {}
-        persistArchivePlaintextSweepFailure(stableArchiveFailureCode(
-          error,
-          'ARCHIVE_PLAINTEXT_SWEEP_FAILED',
-        ))
-      } finally {
-        archivePlaintextSweepFinished = true
-      }
-    })()
+    return runArchivePlaintextSweep()
   }
-  const archivePlaintextSweepSettled = startArchivePlaintextStartupSweep()
+  archivePlaintextSweepSettled = startArchivePlaintextStartupSweep()
 
   /** Gates only archive work on the startup plaintext cleanup result. */
   const assertArchivePlaintextSweepReady = async () => {
@@ -693,6 +712,13 @@ function createElectronMissionStore(options) {
       error.code = archivePlaintextSweepFailure
       throw error
     }
+  }
+
+  /** Latches cleanup failure before an automatic fixed-root sweep can clear it. */
+  const recoverArchiveVerificationPlaintext = async (error) => {
+    if (error?.code !== 'ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED') return
+    persistArchivePlaintextSweepFailure('ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED')
+    await runArchivePlaintextSweep()
   }
   const legacyEvidenceBackfillPending = migrationState.legacyGpxBackfillRemaining > 0
     || migrationState.legacyMissionObjectBackfillRemaining > 0
@@ -899,6 +925,7 @@ function createElectronMissionStore(options) {
         archiveDirectory,
         archiveRegistry,
         archiveCustodyJournal,
+        archiveLegacyPredecessorHashRunner,
         signal: archiveCustodyRecoveryController.signal,
       }).then(() => {
         if (archiveCustodyJournal.hasBlockingConflict()
@@ -1073,7 +1100,9 @@ function createElectronMissionStore(options) {
               archiveCustodyJournal,
               archiveCreateRunner,
               archiveVerifyRunner,
+              archiveLegacyPredecessorHashRunner,
               awaitArchiveWorker,
+              recoverArchiveVerificationPlaintext,
               operationId: context?.operationId,
               signal: controller.signal,
               custody,
@@ -1160,6 +1189,7 @@ function createElectronMissionStore(options) {
         progress.emit('verify', 'verified', 'phases', 1, 1, 'verification-committed')
         return projectArchiveCustodyRow(verified, archiveDirectory, db)
       } catch (error) {
+        await recoverArchiveVerificationPlaintext(error)
         const current = archiveRegistry.getArchive(normalizedInput.archiveId)
         appendEvent(db, current.mission_id, 'mission_archive_verification_failed_v2', {
           archive_id: current.id,
@@ -1372,7 +1402,10 @@ function createElectronMissionStore(options) {
         ? archiveCleanupCoordinator.start(evidence, {
             signal: controller.signal,
             withCustodyCommit,
-            onProgress: (progress) => context.onProgress({ kind: 'cleanup', ...progress }),
+            onProgress: (progress) => deliverArchiveProgressBestEffort(
+              context.onProgress,
+              { kind: 'cleanup', ...progress },
+            ),
             ...(options.archiveCleanupFaultInjection === undefined
               ? {}
               : { faultInjection: options.archiveCleanupFaultInjection }),
@@ -1380,7 +1413,10 @@ function createElectronMissionStore(options) {
         : archiveCleanupCoordinator.resume(evidence, {
             signal: controller.signal,
             withCustodyCommit,
-            onProgress: (progress) => context.onProgress({ kind: 'cleanup', ...progress }),
+            onProgress: (progress) => deliverArchiveProgressBestEffort(
+              context.onProgress,
+              { kind: 'cleanup', ...progress },
+            ),
             ...(options.archiveCleanupFaultInjection === undefined
               ? {}
               : { faultInjection: options.archiveCleanupFaultInjection }),
@@ -5236,19 +5272,36 @@ function readActiveMissionCorrectionAuthorization(db, missionId) {
   })
 }
 
-/** Binds one re-finalization to the exact archive protected by the active unlock. */
-function readActiveArchiveSupplementContext(db, archiveRegistry, missionId) {
+/** Reads one trusted observed file identity retained by custody reconciliation. */
+function readObservedArchiveFileIdentity(value) {
+  let parsed
+  try {
+    parsed = JSON.parse(value)
+    return normalizeCustodyFileIdentity(parsed)
+  } catch {
+    const error = new Error('Mission correction predecessor custody identity is unavailable.')
+    error.code = 'ARCHIVE_SUPPLEMENT_PREDECESSOR_INVALID'
+    throw error
+  }
+}
+
+/** Binds one re-finalization candidate to the exact archive protected by the active unlock. */
+function readActiveArchiveSupplementCandidate(db, archiveRegistry, missionId) {
   const authorization = readActiveMissionCorrectionAuthorization(db, missionId)
   if (authorization === null) return null
   const missionArchives = archiveRegistry.listMissionArchives(missionId)
   const previous = authorization.previousArchiveId === null
     ? missionArchives.find((archive) => archive.status !== 'superseded')
     : missionArchives.find((archive) => archive.id === authorization.previousArchiveId)
+  const containerVersion = Number(previous?.container_version)
   if (previous === undefined
     || previous.mission_id !== missionId
     || previous.status === 'superseded'
     || !['sealed', 'verified'].includes(previous.status)
-    || (Number(previous.container_version) === 2 && previous.ciphertext_sha256 === null)) {
+    || ![1, 2].includes(containerVersion)
+    || previous.availability !== 'present'
+    || (containerVersion === 1 && previous.ciphertext_sha256 !== null)
+    || (containerVersion === 2 && previous.ciphertext_sha256 === null)) {
     const error = new Error(
       'Mission correction predecessor archive is unavailable or no longer current.',
     )
@@ -5258,8 +5311,112 @@ function readActiveArchiveSupplementContext(db, archiveRegistry, missionId) {
   return Object.freeze({
     ...authorization,
     previousArchiveId: previous.id,
-    previousArchiveSha256: previous.ciphertext_sha256,
+    previousArchiveContainerVersion: containerVersion,
+    previousArchiveRelativePath: previous.relative_path,
+    previousArchiveSha256: containerVersion === 2 ? previous.ciphertext_sha256 : null,
+    previousArchiveFileIdentity: containerVersion === 1
+      ? readObservedArchiveFileIdentity(previous.last_observed_file_identity)
+      : null,
   })
+}
+
+/** Returns whether two supplement candidates describe the same authority and predecessor. */
+function sameArchiveSupplementCandidate(left, right) {
+  if (left === null || right === null) return left === right
+  const fields = [
+    'authority',
+    'reason',
+    'finalizedEventRowid',
+    'previousArchiveId',
+    'previousArchiveContainerVersion',
+    'previousArchiveRelativePath',
+    'unlockEventId',
+    'unlockEventRowid',
+    'unlockedAt',
+  ]
+  if (fields.some((field) => left[field] !== right[field])) return false
+  if (left.previousArchiveContainerVersion === 2) {
+    return left.previousArchiveSha256 === right.previousArchiveSha256
+  }
+  const identityKeys = [
+    'changedTimeNanoseconds',
+    'device',
+    'inode',
+    'linkCount',
+    'modifiedTimeNanoseconds',
+    'sizeBytes',
+  ]
+  return identityKeys.every((key) =>
+    left.previousArchiveFileIdentity?.[key] === right.previousArchiveFileIdentity?.[key])
+}
+
+/** Rechecks the exact correction authority and predecessor after asynchronous work. */
+function assertArchiveSupplementCandidateCurrent(db, archiveRegistry, missionId, expected) {
+  const current = readActiveArchiveSupplementCandidate(db, archiveRegistry, missionId)
+  if (!sameArchiveSupplementCandidate(current, expected)) {
+    const error = new Error(
+      'Mission correction predecessor or authorization changed during archive work.',
+    )
+    error.code = 'ARCHIVE_SUPPLEMENT_PREDECESSOR_CHANGED'
+    throw error
+  }
+  return current
+}
+
+/** Runs and physically joins one optional worker operation. */
+async function awaitOwnedArchiveOperation(operation) {
+  try {
+    return await operation
+  } finally {
+    await Promise.resolve(operation?.workerExited ?? operation).catch(() => undefined)
+  }
+}
+
+/** Resolves a legacy predecessor to the SHA-256 of its exact pinned retained bytes. */
+async function resolveArchiveSupplementContext(input) {
+  const candidate = readActiveArchiveSupplementCandidate(
+    input.db,
+    input.archiveRegistry,
+    input.missionId,
+  )
+  if (candidate === null || candidate.previousArchiveContainerVersion === 2) return candidate
+  const operation = input.archiveLegacyPredecessorHashRunner({
+    ticket: {
+      operationId: randomUUID(),
+      archiveId: candidate.previousArchiveId,
+      missionId: input.missionId,
+      archiveDirectory: input.archiveDirectory,
+      archiveRelativePath: candidate.previousArchiveRelativePath,
+      expectedFileIdentity: candidate.previousArchiveFileIdentity,
+    },
+    ...(input.signal === undefined ? {} : { signal: input.signal }),
+  })
+  const proof = input.awaitArchiveWorker === undefined
+    ? await awaitOwnedArchiveOperation(operation)
+    : await input.awaitArchiveWorker(operation)
+  assertArchiveSupplementCandidateCurrent(
+    input.db,
+    input.archiveRegistry,
+    input.missionId,
+    candidate,
+  )
+  return Object.freeze({
+    ...candidate,
+    previousArchiveSha256: proof.sha256,
+    previousArchiveFileIdentity: proof.fileIdentity,
+  })
+}
+
+/** Pins legacy predecessor custody across one short durable main-store transition. */
+function withPinnedArchiveSupplementPredecessor(supplement, archiveDirectory, callback) {
+  if (supplement === null || supplement.previousArchiveContainerVersion !== 1) {
+    return callback(() => undefined)
+  }
+  return withPinnedCustodyFileIdentity({
+    archiveDirectory,
+    archiveRelativePath: supplement.previousArchiveRelativePath,
+    expectedFileIdentity: supplement.previousArchiveFileIdentity,
+  }, callback)
 }
 
 async function finalizeMission(
@@ -5402,7 +5559,9 @@ async function finalizeMissionWithEncryptedArchive(input) {
     archiveCustodyJournal,
     archiveCreateRunner,
     archiveVerifyRunner,
+    archiveLegacyPredecessorHashRunner,
     awaitArchiveWorker,
+    recoverArchiveVerificationPlaintext,
     signal,
     custody,
     faultInjection = {},
@@ -5413,6 +5572,15 @@ async function finalizeMissionWithEncryptedArchive(input) {
   const finalRelativePath = `${archiveId}.sararch`
   const temporaryRelativePath = `.staging/${operationId}/${archiveId}.sararch.tmp`
   const progress = createArchiveLifecycleProgressEmitter(input.onProgress)
+  const resolvedSupplement = await resolveArchiveSupplementContext({
+    db,
+    archiveRegistry,
+    missionId,
+    archiveDirectory,
+    archiveLegacyPredecessorHashRunner,
+    awaitArchiveWorker,
+    signal,
+  })
 
   const requestIdentity = db.transaction(() => {
     const mission = getMission(db, missionId)
@@ -5423,7 +5591,20 @@ async function finalizeMissionWithEncryptedArchive(input) {
     assertLegacyEventProvenanceReady(db, missionId)
     assertNoUnsettledGpxImportState(db, missionId)
     assertMissionFinalizationNotInProgress(db, missionId)
-    const supplement = readActiveArchiveSupplementContext(db, archiveRegistry, missionId)
+    const supplement = assertArchiveSupplementCandidateCurrent(
+      db,
+      archiveRegistry,
+      missionId,
+      resolvedSupplement,
+    )
+    const requestSupplement = supplement === null
+      ? null
+      : Object.freeze({
+          ...resolvedSupplement,
+          ...supplement,
+          previousArchiveSha256: resolvedSupplement.previousArchiveSha256,
+          previousArchiveFileIdentity: resolvedSupplement.previousArchiveFileIdentity,
+        })
     db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
       VALUES (?, ?)`).run(missionId, requestedAt)
     const requestEventId = insertEvent(
@@ -5438,8 +5619,8 @@ async function finalizeMissionWithEncryptedArchive(input) {
         archive_kind: 'finalized',
         archive_relative_path: finalRelativePath,
         protected_finalization_epoch: null,
-        previous_archive_id: supplement?.previousArchiveId ?? null,
-        previous_archive_sha256: supplement?.previousArchiveSha256 ?? null,
+        previous_archive_id: requestSupplement?.previousArchiveId ?? null,
+        previous_archive_sha256: requestSupplement?.previousArchiveSha256 ?? null,
       },
     )
     const requestEventRowid = Number(db.prepare(`SELECT rowid FROM mission_events
@@ -5455,14 +5636,18 @@ async function finalizeMissionWithEncryptedArchive(input) {
       finalRelativePath,
       missionId,
       operationId,
-      previousArchiveId: supplement?.previousArchiveId ?? null,
-      previousArchiveSha256: supplement?.previousArchiveSha256 ?? null,
+      previousArchiveId: requestSupplement?.previousArchiveId ?? null,
+      previousArchiveSha256: requestSupplement?.previousArchiveSha256 ?? null,
       protectedFinalizationEpoch: null,
       requestEventId,
       requestEventRowid,
       temporaryRelativePath,
     })
-    return Object.freeze({ requestEventId, requestEventRowid, supplement })
+    return Object.freeze({
+      requestEventId,
+      requestEventRowid,
+      supplement: requestSupplement,
+    })
   }).immediate()
 
   if (faultInjection.afterRequestBeforeWorker === true) {
@@ -5559,6 +5744,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
       operationId,
       expectedRevision: 2,
       publishResult,
+      resolvedSupplement: requestIdentity.supplement,
     })
     registered = true
     progress.emit('create', 'seal', 'files', 1, 1, 'archive-custody-sealed')
@@ -5592,6 +5778,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
   } catch (error) {
     if (error?.preserveArchiveCustodyForRestart === true) throw error
     if (registered) {
+      await recoverArchiveVerificationPlaintext(error)
       const observedFailureCode = stableArchiveFailureCode(error, 'ARCHIVE_VERIFY_FAILED')
       const failureCode = observedFailureCode === 'ARCHIVE_CANCELLED'
         ? 'ARCHIVE_VERIFY_CANCELLED'
@@ -5678,10 +5865,14 @@ function createArchiveLifecycleProgressEmitter(onProgress) {
   const dispatch = (kind, update) => {
     if (onProgress === undefined) return
     sequences[kind] += 1
-    onProgress(kind, Object.freeze({
-      ...update,
-      sequence: sequences[kind],
-    }))
+    deliverArchiveProgressBestEffort(
+      onProgress,
+      kind,
+      Object.freeze({
+        ...update,
+        sequence: sequences[kind],
+      }),
+    )
   }
   return Object.freeze({
     forward(kind, update) {
@@ -5696,6 +5887,17 @@ function createArchiveLifecycleProgressEmitter(onProgress) {
       dispatch(kind, { phase, unit, completed, total, detail })
     },
   })
+}
+
+/** Keeps a best-effort UI progress observer outside every durable archive outcome. */
+function deliverArchiveProgressBestEffort(observer, ...args) {
+  try {
+    const pending = observer(...args)
+    if (pending !== null && typeof pending === 'object'
+      && typeof pending.catch === 'function') {
+      void pending.catch(() => undefined)
+    }
+  } catch {}
 }
 
 /** Resumes or safely settles the one durable pre-registration custody operation after restart. */
@@ -5726,6 +5928,25 @@ async function recoverInterruptedArchiveCustody(input) {
   let recoveryError = null
   if (active.state === 'publish_prepared') {
     try {
+      const resolvedSupplement = active.archiveKind === 'finalized'
+        ? await resolveArchiveSupplementContext({
+            db: input.db,
+            archiveRegistry: input.archiveRegistry,
+            missionId: active.missionId,
+            archiveDirectory: input.archiveDirectory,
+            archiveLegacyPredecessorHashRunner: input.archiveLegacyPredecessorHashRunner,
+            signal: input.signal,
+          })
+        : null
+      if ((resolvedSupplement?.previousArchiveId ?? null) !== active.previousArchiveId
+        || (resolvedSupplement?.previousArchiveSha256 ?? null)
+          !== active.previousArchiveSha256) {
+        const error = new Error(
+          'Interrupted mission archive predecessor changed before custody recovery.',
+        )
+        error.code = 'ARCHIVE_SUPPLEMENT_PREDECESSOR_CHANGED'
+        throw error
+      }
       const publishResult = await input.archiveCustodyJournal.publishPrepared({
         expectedRevision: active.revision,
         operationId: active.operationId,
@@ -5739,6 +5960,7 @@ async function recoverInterruptedArchiveCustody(input) {
         operationId: active.operationId,
         expectedRevision: active.revision,
         publishResult,
+        resolvedSupplement,
       })
     } catch (error) {
       if (input.signal?.aborted === true || error?.code === 'ARCHIVE_CANCELLED') throw error
@@ -5830,25 +6052,50 @@ function sealPublishedArchiveFromJournal(input) {
       throw new Error('Mission finalization epoch changed before archive sealing.')
     }
   }
+  const resolvedSupplement = active.archiveKind === 'finalized'
+    ? input.resolvedSupplement ?? null
+    : null
+  const currentSupplement = active.archiveKind === 'finalized'
+    ? assertArchiveSupplementCandidateCurrent(
+        input.db,
+        input.archiveRegistry,
+        active.missionId,
+        resolvedSupplement,
+      )
+    : null
+  if ((resolvedSupplement?.previousArchiveId ?? null) !== active.previousArchiveId
+    || (resolvedSupplement?.previousArchiveSha256 ?? null)
+      !== active.previousArchiveSha256
+    || (currentSupplement?.previousArchiveId ?? null) !== active.previousArchiveId) {
+    throw new Error('Mission archive correction authorization changed before archive sealing.')
+  }
   if (active.previousArchiveId !== null) {
     const previous = input.archiveRegistry.getArchive(active.previousArchiveId)
+    const previousContainerVersion = Number(previous.container_version)
     if (previous.mission_id !== active.missionId
-      || previous.ciphertext_sha256 !== active.previousArchiveSha256) {
+      || ![1, 2].includes(previousContainerVersion)
+      || (previousContainerVersion === 1 && previous.ciphertext_sha256 !== null)
+      || (previousContainerVersion === 2
+        && previous.ciphertext_sha256 !== active.previousArchiveSha256)
+      || resolvedSupplement?.previousArchiveContainerVersion !== previousContainerVersion) {
       throw new Error('Mission archive predecessor changed before archive sealing.')
     }
   } else if (active.previousArchiveSha256 !== null) {
     throw new Error('Mission archive predecessor identity is incomplete.')
   }
-  const supplement = active.archiveKind === 'finalized'
-    ? readActiveArchiveSupplementContext(input.db, input.archiveRegistry, active.missionId)
-    : null
-  if ((supplement?.previousArchiveId ?? null) !== active.previousArchiveId
-    || (supplement?.previousArchiveSha256 ?? null) !== active.previousArchiveSha256) {
-    throw new Error('Mission archive correction authorization changed before archive sealing.')
-  }
 
   const registeredAt = now()
-  return input.db.transaction(() => {
+  return withPinnedArchiveSupplementPredecessor(
+    resolvedSupplement,
+    input.archiveDirectory,
+    (assertPredecessorUnchanged) => input.db.transaction(() => {
+    assertPredecessorUnchanged()
+    assertArchiveSupplementCandidateCurrent(
+      input.db,
+      input.archiveRegistry,
+      active.missionId,
+      resolvedSupplement,
+    )
     assertEncryptedArchiveRequestStillCurrent(input.db, {
       missionId: active.missionId,
       requestedAt: active.fenceRequestedAt,
@@ -5868,6 +6115,7 @@ function sealPublishedArchiveFromJournal(input) {
       || current.state !== 'publish_prepared') {
       throw new Error('Mission archive custody journal changed inside the seal transaction.')
     }
+    assertPredecessorUnchanged()
     const receipt = current.receipt
     const resultingStatus = current.archiveKind === 'finalized'
       ? 'finalized'
@@ -5919,7 +6167,7 @@ function sealPublishedArchiveFromJournal(input) {
       slots: receipt.slots,
     })
     if (current.archiveKind === 'finalized') {
-      if (supplement !== null) {
+      if (resolvedSupplement !== null) {
         const supplementSequence = Number(input.db.prepare(`SELECT
             COALESCE(MAX(supplement_sequence), 0) + 1 AS next_sequence
           FROM mission_archive_supplements WHERE mission_id = ?`)
@@ -5931,10 +6179,10 @@ function sealPublishedArchiveFromJournal(input) {
           registeredAt,
           {
             archive_id: current.archiveId,
-            previous_archive_id: supplement.previousArchiveId,
+            previous_archive_id: resolvedSupplement.previousArchiveId,
             supplement_sequence: supplementSequence,
-            authority: supplement.authority,
-            reason: supplement.reason,
+            authority: resolvedSupplement.authority,
+            reason: resolvedSupplement.reason,
             resulting_status: 'finalized',
           },
         )
@@ -5942,10 +6190,10 @@ function sealPublishedArchiveFromJournal(input) {
           id: randomUUID(),
           missionId: current.missionId,
           archiveId: current.archiveId,
-          previousArchiveId: supplement.previousArchiveId,
+          previousArchiveId: resolvedSupplement.previousArchiveId,
           supplementSequence,
-          authority: supplement.authority,
-          reason: supplement.reason,
+          authority: resolvedSupplement.authority,
+          reason: resolvedSupplement.reason,
           createdAt: registeredAt,
           auditEventId: supplementEventId,
         })
@@ -5972,7 +6220,8 @@ function sealPublishedArchiveFromJournal(input) {
       registeredAt,
     })
     return archive
-  }).immediate()
+    }).immediate(),
+  )
 }
 
 /** Requires the published target to be the exact staged inode covered by the creation receipt. */
@@ -6036,7 +6285,11 @@ function projectArchiveRegistryRow(row, archiveDirectory) {
 function projectArchiveCustodyRow(row, archiveDirectory, db) {
   const revision = row.revision_sequence === undefined
     ? db.prepare(`SELECT
-        predecessor.ciphertext_sha256 AS previous_archive_sha256,
+        CASE WHEN predecessor.container_version = 1
+          THEN json_extract(request.details_json, '$.previous_archive_sha256')
+          ELSE predecessor.ciphertext_sha256 END AS previous_archive_sha256,
+        json_extract(request.details_json, '$.previous_archive_id')
+          AS request_previous_archive_id,
         CASE WHEN supplement.supplement_sequence IS NULL
           THEN 1 ELSE supplement.supplement_sequence + 1 END AS revision_sequence,
         COALESCE(totals.supplement_count, 0) + 1 AS revision_count,
@@ -6046,6 +6299,8 @@ function projectArchiveCustodyRow(row, archiveDirectory, db) {
       FROM mission_archives AS archives
       LEFT JOIN mission_archives AS predecessor
         ON predecessor.id = archives.previous_archive_id
+      LEFT JOIN mission_events AS request
+        ON request.rowid = archives.request_event_rowid
       LEFT JOIN mission_archive_supplements AS supplement
         ON supplement.archive_id = archives.id
       LEFT JOIN (
@@ -6058,6 +6313,9 @@ function projectArchiveCustodyRow(row, archiveDirectory, db) {
   const revisionCount = Number(revision?.revision_count)
   if (!Number.isSafeInteger(revisionSequence) || revisionSequence < 1
     || !Number.isSafeInteger(revisionCount) || revisionCount < revisionSequence
+    || (row.previous_archive_id === null
+      ? revision?.request_previous_archive_id !== null
+      : revision?.request_previous_archive_id !== row.previous_archive_id)
     || (revision?.previous_archive_sha256 !== null
       && (typeof revision?.previous_archive_sha256 !== 'string'
         || !/^[0-9a-f]{64}$/u.test(revision.previous_archive_sha256)))

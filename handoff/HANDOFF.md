@@ -4,6 +4,17 @@
 
 ## Current State
 
+- **PR6 remediation is currently green but not frozen (2026-08-31):** branch
+  `codex/breadcrumb-pr6-archive-lifecycle` is at pushed head
+  `53164028f72254c4e17fcc0b4b845f7601fee153` with the archive-review plaintext
+  sweep moved off the Electron main isolate, durable verifier-sweep failure
+  gating, exact legacy-v1 predecessor hashing/chaining, bounded review-path
+  scrubbing, and progress-observer isolation. The full deterministic suite is
+  `359 files / 3,399 tests`, with lint, build and diff checks green. The
+  worktree still contains the remediation plus documentation/manual updates;
+  a new frozen candidate commit and exact-head proof wave are required before
+  PR6 can be called review-ready.
+
 - **WAR-04B release-integrity audit is review-ready in [PR #9](https://github.com/donal0c/sartracker-web/pull/9) after current-`master` reconciliation (2026-08-30):** the exact-base investigation at `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf` confirms two release blockers: shipped Electron `40.10.0` is EOL, and `electron-builder@26.0.12 -> app-builder-lib@26.0.12` generates an affected AppImage launcher. The production-only npm audit is clean but omits those release-bearing dev dependencies. Live GitHub also has no enforced master/tag review/check boundary, enforced release immutability, attestation/SBOM, or enabled secret/Dependabot/CodeQL visibility. The repository and beta are public; “internal” is intended-use policy, not access control. PR #8's merge at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` added the WAR-04 evidence/docs/tests and shared-record reconciliation but left every audited package, lock, builder, release-workflow, publisher and support-policy input blob-identical, so it does not change the WAR-04B findings or supply release proof. No dependency, workflow, release, package/config, product, or GitHub-setting change was made. Follow `docs/assurance/findings/WAR-04B.md` for controlled remediation and the mandatory exact merged breadcrumb programme PR-6 refresh; exact-head review/recheck evidence is retained on PR #9. `better-sqlite3` PR #1475 shipped in `12.10.1`, so `DON-146` is no longer upstream-blocked.
 - **WAR-04 platform-services investigation merged through [PR #8](https://github.com/donal0c/sartracker-web/pull/8) at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` (2026-08-30):** final investigation head `3a2278ee8804a9ded0f2fd26626c4c00743c05a6` records nine confirmed local failure/privacy defects and six unproven hypotheses across official-map readiness, settings/credential startup, and sanitized support/incident export. Twelve isolated synthetic checks preserve the red states; shipping code is unchanged; the normal gates, both exact-head independent reviews and exact-head Linux branch gate were green. Three bounded WAR-11 remediation clusters are still required before WAR-12 release qualification; `DON-264` remains separately owned. The merged investigation is evidence, not remediation or release proof.
 - **WAR-01 merged through [PR #6](https://github.com/donal0c/sartracker-web/pull/6) at `182d077804498f5c10aaf0b8b2c1525f29a31da7` (2026-08-29):** the 40-row assurance register is reconciled to PR5 merge `eec92812b783a795c093f37268b295dd2179a3af`. `RPL-004` remains `rewrite-pending` until breadcrumb programme PR-6, the `DON-248`/`DON-252`/`DON-253` archive successor, lands.

@@ -43,6 +43,9 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly startArchiveVerifyWorker?: (
       input: Readonly<Record<string, unknown>>,
     ) => Promise<Readonly<Record<string, unknown>>>
+    readonly startArchivePlaintextSweep?: (
+      input: Readonly<Record<string, unknown>>,
+    ) => Promise<Readonly<Record<string, unknown>>>
     readonly startArchiveCustodyReconciliation?: (
       input: Readonly<Record<string, unknown>>,
     ) => Promise<Readonly<Record<string, unknown>>>
@@ -403,7 +406,10 @@ describe('encrypted mission archive lifecycle integration', () => {
       }, {
         operationId: '82828282-8282-4282-8282-828282828282',
         reviewActivity: false,
-        onProgress: (update) => progress.push(update),
+        onProgress: (update) => {
+          progress.push(update)
+          throw new Error('simulated cleanup progress observer failure')
+        },
       })).resolves.toMatchObject({
         missionId: mission.id,
         archiveId,
@@ -1069,6 +1075,248 @@ describe('encrypted mission archive lifecycle integration', () => {
     }
   }, 60_000)
 
+  it('chains a corrected SARARCH2 revision to the exact retained legacy ZIP bytes', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-legacy-supplement-'))
+    temporaryDirectories.add(userDataPath)
+    const firstStore = createElectronMissionStore({ userDataPath })
+    const mission = await firstStore.createMission({ name: 'Legacy correction mission' })
+    const marker = await firstStore.upsertMarker({
+      mission_id: mission.id,
+      type: 'clue',
+      name: 'Legacy clue description',
+      lat: 52.0599,
+      lon: -9.5045,
+      irish_grid_e: 480000,
+      irish_grid_n: 580000,
+      display_order: 0,
+      label_size: 14,
+    })
+    await firstStore.finishMission(mission.id)
+    const legacyFinalized = await firstStore.finalizeMission(mission.id, undefined as never)
+    const legacyArchivePath = String(legacyFinalized.archive.archive_path)
+    const legacyArchiveSha256 = sha256File(legacyArchivePath)
+    await firstStore.prepareClose()
+    firstStore.close()
+
+    const migrationDb = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+    try {
+      migrationDb.prepare(`DELETE FROM metadata WHERE key IN (
+        'legacy_archive_registry_backfill_cursor',
+        'legacy_archive_registry_backfill_target'
+      )`).run()
+    } finally {
+      migrationDb.close()
+    }
+
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    } as never)
+    try {
+      let legacyArchive: Readonly<Record<string, unknown>> | undefined
+      await vi.waitFor(async () => {
+        const archives = await store.listMissionArchives(mission.id)
+        legacyArchive = archives.find((archive) => archive.container_version === 1)
+        expect(legacyArchive).toMatchObject({ availability: 'present', status: 'sealed' })
+      }, { timeout: 5_000, interval: 20 })
+      const legacyArchiveId = String(legacyArchive?.id)
+
+      await store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Correct a clue description retained in the legacy archive.',
+      })
+      await store.upsertMarker({
+        id: marker.id,
+        mission_id: mission.id,
+        type: 'clue',
+        name: 'Corrected post-migration clue description',
+        lat: 52.0599,
+        lon: -9.5045,
+        irish_grid_e: 480000,
+        irish_grid_n: 580000,
+        display_order: 0,
+        label_size: 14,
+      })
+      const corrected = await store.finalizeMission(mission.id, custody, {
+        operationId: '73737373-7373-4373-8373-737373737373',
+        onProgress: () => undefined,
+      })
+
+      expect(readArchiveHeader(String(corrected.archive.archive_path))).toMatchObject({
+        previous_archive_sha256: legacyArchiveSha256,
+      })
+      expect(sha256File(legacyArchivePath)).toBe(legacyArchiveSha256)
+      await expect(store.listMissionArchives(mission.id)).resolves.toEqual([
+        expect.objectContaining({
+          id: corrected.archive.id,
+          previous_archive_id: legacyArchiveId,
+          previous_archive_sha256: legacyArchiveSha256,
+          status: 'verified',
+          revision_sequence: 2,
+          revision_count: 2,
+        }),
+        expect.objectContaining({
+          id: legacyArchiveId,
+          container_version: 1,
+          status: 'superseded',
+          revision_sequence: 1,
+          revision_count: 2,
+        }),
+      ])
+      expect(store.issueMissionArchiveReviewTicket(legacyArchiveId)).toMatchObject({
+        archiveId: legacyArchiveId,
+        containerVersion: 1,
+        status: 'superseded',
+      })
+      expect(store.issueMissionArchiveReviewTicket(String(corrected.archive.id))).toMatchObject({
+        archiveId: corrected.archive.id,
+        containerVersion: 2,
+        status: 'verified',
+      })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 90_000)
+
+  it('recovers a published legacy-supplement archive against the same retained ZIP bytes', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-legacy-recovery-'))
+    temporaryDirectories.add(userDataPath)
+    const legacyStore = createElectronMissionStore({ userDataPath })
+    const mission = await legacyStore.createMission({ name: 'Legacy recovery mission' })
+    const marker = await legacyStore.upsertMarker({
+      mission_id: mission.id,
+      type: 'clue',
+      name: 'Legacy recovery clue',
+      lat: 52.0599,
+      lon: -9.5045,
+      irish_grid_e: 480000,
+      irish_grid_n: 580000,
+      display_order: 0,
+      label_size: 14,
+    })
+    await legacyStore.finishMission(mission.id)
+    const legacyFinalized = await legacyStore.finalizeMission(mission.id, undefined as never)
+    const legacyArchivePath = String(legacyFinalized.archive.archive_path)
+    const legacyArchiveSha256 = sha256File(legacyArchivePath)
+    await legacyStore.prepareClose()
+    legacyStore.close()
+
+    const migrationDb = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+    try {
+      migrationDb.prepare(`DELETE FROM metadata WHERE key IN (
+        'legacy_archive_registry_backfill_cursor',
+        'legacy_archive_registry_backfill_target'
+      )`).run()
+    } finally {
+      migrationDb.close()
+    }
+
+    const interrupted = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+      archiveLifecycleFaultInjection: { afterPublishBeforeSeal: true },
+    } as never)
+    let legacyArchiveId = ''
+    await vi.waitFor(async () => {
+      const archives = await interrupted.listMissionArchives(mission.id)
+      const legacy = archives.find((archive) => archive.container_version === 1)
+      expect(legacy).toMatchObject({ availability: 'present', status: 'sealed' })
+      legacyArchiveId = String(legacy?.id)
+    }, { timeout: 5_000, interval: 20 })
+    await interrupted.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Correct the legacy clue before restart recovery.',
+    })
+    await interrupted.upsertMarker({
+      id: marker.id,
+      mission_id: mission.id,
+      type: 'clue',
+      name: 'Corrected legacy recovery clue',
+      lat: 52.0599,
+      lon: -9.5045,
+      irish_grid_e: 480000,
+      irish_grid_n: 580000,
+      display_order: 0,
+      label_size: 14,
+    })
+    await expect(interrupted.finalizeMission(mission.id, custody, {
+      operationId: '74747474-7474-4474-8474-747474747474',
+      onProgress: () => undefined,
+    })).rejects.toMatchObject({ code: 'ARCHIVE_SIMULATED_INTERRUPTION' })
+    interrupted.close()
+
+    const interruptedDb = new Database(path.join(userDataPath, 'mission-store.sqlite'), {
+      readonly: true,
+    })
+    try {
+      const active = JSON.parse(String(interruptedDb.prepare(`SELECT value FROM metadata
+        WHERE key = 'archive_custody_active_operation'`).get()?.value))
+      expect(active).toMatchObject({
+        state: 'publish_prepared',
+        previousArchiveId: legacyArchiveId,
+        previousArchiveSha256: legacyArchiveSha256,
+      })
+    } finally {
+      interruptedDb.close()
+    }
+
+    const recovered = createElectronMissionStore({ userDataPath })
+    try {
+      await vi.waitFor(async () => {
+        expect(await recovered.getMission(mission.id)).toMatchObject({ status: 'finalized' })
+        expect(await recovered.listMissionArchives(mission.id)).toEqual([
+          expect.objectContaining({
+            container_version: 2,
+            status: 'sealed',
+            previous_archive_id: legacyArchiveId,
+            previous_archive_sha256: legacyArchiveSha256,
+          }),
+          expect.objectContaining({
+            id: legacyArchiveId,
+            container_version: 1,
+            status: 'superseded',
+          }),
+        ])
+      }, { timeout: 10_000, interval: 20 })
+      expect(sha256File(legacyArchivePath)).toBe(legacyArchiveSha256)
+
+      const [sealed] = await recovered.listMissionArchives(mission.id)
+      await expect(recovered.verifyMissionArchive({
+        archiveId: String(sealed?.id),
+        ...custody,
+      })).resolves.toMatchObject({ status: 'verified' })
+      expect(recovered.issueMissionArchiveReviewTicket(legacyArchiveId)).toMatchObject({
+        containerVersion: 1,
+        status: 'superseded',
+      })
+      expect(recovered.issueMissionArchiveReviewTicket(String(sealed?.id))).toMatchObject({
+        containerVersion: 2,
+        status: 'verified',
+      })
+
+      const db = new Database(path.join(userDataPath, 'mission-store.sqlite'), {
+        readonly: true,
+      })
+      try {
+        expect(db.prepare(`SELECT event_type, COUNT(*) AS count FROM mission_events
+          WHERE mission_id = ? AND event_type IN (
+            'mission_archive_sealed_v2', 'mission_archive_supplement_recorded'
+          ) GROUP BY event_type ORDER BY event_type`).all(mission.id)).toEqual([
+          { event_type: 'mission_archive_sealed_v2', count: 1 },
+          { event_type: 'mission_archive_supplement_recorded', count: 1 },
+        ])
+      } finally {
+        db.close()
+      }
+    } finally {
+      await recovered.prepareClose()
+      recovered.close()
+    }
+  }, 120_000)
+
   it('finalizes only after journalled SARARCH2 publish and records exhaustive verification', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-archive-lifecycle-'))
     temporaryDirectories.add(userDataPath)
@@ -1164,6 +1412,37 @@ describe('encrypted mission archive lifecycle integration', () => {
 
       const stagingRoot = path.join(userDataPath, 'archives', '.staging')
       expect(existsSync(stagingRoot) ? readdirSync(stagingRoot) : []).toEqual([])
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 30_000)
+
+  it('keeps a verified finalization authoritative when its progress observer throws', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-archive-progress-final-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({ userDataPath })
+    try {
+      const mission = await store.createMission({ name: 'Archive progress observer mission' })
+      await store.finishMission(mission.id)
+
+      await expect(store.finalizeMission(mission.id, custody, {
+        operationId: '12121212-1212-4212-8212-121212121212',
+        onProgress: (progress) => {
+          if (progress.kind === 'verify' && progress.phase === 'verified') {
+            throw new Error('simulated closed renderer during terminal progress')
+          }
+        },
+      })).resolves.toMatchObject({
+        mission: { id: mission.id, status: 'finalized' },
+        archive: { status: 'verified', availability: 'present' },
+      })
+
+      const events = await store.listMissionEvents(mission.id)
+      expect(events.filter((event) => event.event_type === 'mission_archive_verified_v2'))
+        .toHaveLength(1)
+      expect(events.filter((event) => event.event_type === 'mission_archive_verification_failed_v2'))
+        .toHaveLength(0)
     } finally {
       await store.prepareClose()
       store.close()
@@ -1340,6 +1619,130 @@ describe('encrypted mission archive lifecycle integration', () => {
     }
   }, 30_000)
 
+  it('sweeps and gates verifier plaintext residue before allowing a later retry', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-verify-residue-gate-'))
+    temporaryDirectories.add(userDataPath)
+    let verifyAttempt = 0
+    let strandedResidue = ''
+    const store = createElectronMissionStore({
+      userDataPath,
+      startArchiveVerifyWorker: (input) => {
+        verifyAttempt += 1
+        if (verifyAttempt !== 1) return startArchiveVerifyWorker(input)
+        const request = input.request as Readonly<Record<string, unknown>>
+        strandedResidue = path.join(
+          userDataPath,
+          'archives',
+          '.verification',
+          String(request.operationId),
+          'restored.sqlite',
+        )
+        const directory = path.dirname(strandedResidue)
+        require('node:fs').mkdirSync(directory, { recursive: true, mode: 0o700 })
+        writeFileSync(strandedResidue, 'APP-ADDRESSABLE-PLAINTEXT', { mode: 0o600 })
+        return failedWorkerOperation(
+          'ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED',
+          'simulated verifier plaintext cleanup failure',
+        )
+      },
+    })
+    try {
+      const mission = await store.createMission({ name: 'Verifier residue gate mission' })
+      await store.finishMission(mission.id)
+
+      await expect(store.finalizeMission(mission.id, custody)).rejects.toMatchObject({
+        code: 'ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED',
+      })
+      expect(strandedResidue).not.toBe('')
+      expect(existsSync(strandedResidue)).toBe(false)
+      expect(existsSync(path.join(userDataPath, 'archives', '.verification'))).toBe(false)
+
+      const [sealed] = await store.listMissionArchives(mission.id)
+      await expect(store.verifyMissionArchive({
+        archiveId: String(sealed?.id),
+        ...custody,
+      })).resolves.toMatchObject({ status: 'verified' })
+      expect(verifyAttempt).toBe(2)
+
+      const db = new Database(path.join(userDataPath, 'mission-store.sqlite'), {
+        readonly: true,
+      })
+      try {
+        expect(db.prepare(`SELECT value FROM metadata
+          WHERE key = 'archive_plaintext_sweep_failure'`).get()).toBeUndefined()
+      } finally {
+        db.close()
+      }
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 30_000)
+
+  it('keeps archive work durably gated when automatic verifier-residue cleanup fails', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-verify-residue-blocked-'))
+    temporaryDirectories.add(userDataPath)
+    let verifyAttempt = 0
+    let strandedResidue = ''
+    const store = createElectronMissionStore({
+      userDataPath,
+      startArchiveVerifyWorker: (input) => {
+        verifyAttempt += 1
+        const request = input.request as Readonly<Record<string, unknown>>
+        strandedResidue = path.join(
+          userDataPath,
+          'archives',
+          '.verification',
+          String(request.operationId),
+          'restored.sqlite',
+        )
+        require('node:fs').mkdirSync(path.dirname(strandedResidue), {
+          recursive: true,
+          mode: 0o700,
+        })
+        writeFileSync(strandedResidue, 'APP-ADDRESSABLE-PLAINTEXT', { mode: 0o600 })
+        return failedWorkerOperation(
+          'ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED',
+          'simulated verifier plaintext cleanup failure',
+        )
+      },
+      startArchivePlaintextSweep: () => failedWorkerOperation(
+        'ARCHIVE_PLAINTEXT_SWEEP_FAILED',
+        'simulated fixed-root sweep failure',
+      ),
+    })
+    try {
+      const mission = await store.createMission({ name: 'Blocked verifier residue mission' })
+      await store.finishMission(mission.id)
+
+      await expect(store.finalizeMission(mission.id, custody)).rejects.toMatchObject({
+        code: 'ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED',
+      })
+      expect(existsSync(strandedResidue)).toBe(true)
+      const [sealed] = await store.listMissionArchives(mission.id)
+      await expect(store.verifyMissionArchive({
+        archiveId: String(sealed?.id),
+        ...custody,
+      })).rejects.toMatchObject({ code: 'ARCHIVE_PLAINTEXT_SWEEP_FAILED' })
+      expect(verifyAttempt).toBe(1)
+
+      const db = new Database(path.join(userDataPath, 'mission-store.sqlite'), {
+        readonly: true,
+      })
+      try {
+        expect(db.prepare(`SELECT value FROM metadata
+          WHERE key = 'archive_plaintext_sweep_failure'`).get()).toEqual({
+          value: 'ARCHIVE_PLAINTEXT_SWEEP_FAILED',
+        })
+      } finally {
+        db.close()
+      }
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 30_000)
+
   it('classifies cancellation after seal as a verification cancellation', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-archive-cancel-after-seal-'))
     temporaryDirectories.add(userDataPath)
@@ -1493,7 +1896,12 @@ describe('encrypted mission archive lifecycle integration', () => {
         ...custody,
       }, {
         operationId: '55555555-5555-4555-8555-555555555555',
-        onProgress: (progress) => retryProgress.push(progress),
+        onProgress: (progress) => {
+          retryProgress.push(progress)
+          if (progress.phase === 'verified') {
+            throw new Error('simulated closed renderer during retry terminal progress')
+          }
+        },
       })
       expect(verified).toMatchObject({
         id: sealed[0]?.id,
@@ -1502,6 +1910,9 @@ describe('encrypted mission archive lifecycle integration', () => {
       })
       expect(retryProgress.length).toBeGreaterThan(0)
       expect(retryProgress.every((entry) => entry.kind === 'verify')).toBe(true)
+      expect((await store.listMissionEvents(mission.id)).filter(
+        (event) => event.event_type === 'mission_archive_verification_failed_v2',
+      )).toHaveLength(1)
       expect(await store.cancelMissionArchiveOperation(
         '55555555-5555-4555-8555-555555555555',
       )).toBe(false)

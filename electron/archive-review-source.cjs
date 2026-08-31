@@ -14,6 +14,8 @@ const { runSearchOperationPageInWorker } = require('./search-operations-page-run
 
 const MAX_ID_BYTES = 200
 const MAX_REQUEST_ID_BYTES = 200
+const MAX_SCRUB_DEPTH = 32
+const MAX_SCRUB_NODES = 1_000_000
 
 /** Stable archive-review source failure. */
 class ArchiveReviewSourceError extends Error {
@@ -57,49 +59,88 @@ function createReadOnlyError() {
 
 /** Returns true for path-bearing fields whose private directory components must not cross IPC. */
 function isPortableEvidencePathKey(key) {
-  return key === 'attachment_path'
-    || key === 'attachmentPath'
-    || key === 'source_path'
-    || key === 'sourcePath'
+  return typeof key === 'string' && /(?:path|directory)$/iu.test(key)
 }
 
 /** Removes private paths from one JSON-encoded archive evidence envelope. */
-function scrubJsonEnvelope(value, sessionDirectory) {
+function scrubJsonEnvelope(value, sessionDirectory, context, depth) {
   try {
     const parsed = JSON.parse(value)
-    if (parsed === null || typeof parsed !== 'object') return value
-    return JSON.stringify(scrubSessionPaths(parsed, sessionDirectory))
+    if (parsed === null || typeof parsed !== 'object') return null
+    return JSON.stringify(scrubSessionPaths(
+      parsed,
+      sessionDirectory,
+      null,
+      context,
+      depth + 1,
+    ))
   } catch {
-    return value
+    return null
   }
 }
 
 /** Removes any private or app-owned restored-session path from a result projection. */
-function scrubSessionPaths(value, sessionDirectory, key = null) {
+function scrubSessionPaths(
+  value,
+  sessionDirectory,
+  key = null,
+  context = { remainingNodes: MAX_SCRUB_NODES, seen: new WeakSet() },
+  depth = 0,
+) {
+  if (depth > MAX_SCRUB_DEPTH || context.remainingNodes < 1) return null
+  context.remainingNodes -= 1
   if (typeof value === 'string') {
-    if (isPortableEvidencePathKey(key)) return portableBasename(value)
     if (typeof key === 'string' && (key.endsWith('_json') || key.endsWith('Json'))) {
-      return scrubJsonEnvelope(value, sessionDirectory)
+      return scrubJsonEnvelope(value, sessionDirectory, context, depth)
     }
-    return value === sessionDirectory || value.startsWith(`${sessionDirectory}${path.sep}`)
-      ? null
-      : value
+    if (isPortableEvidencePathKey(key)) {
+      return portableBasename(value)
+    }
+    if (value === sessionDirectory || value.startsWith(`${sessionDirectory}${path.sep}`)) {
+      return null
+    }
+    if (isPortableAbsolutePath(value)) {
+      return portableBasename(value)
+    }
+    return value
   }
   if (Array.isArray(value)) {
-    return value.map((entry) => scrubSessionPaths(entry, sessionDirectory, key))
+    if (value.length > context.remainingNodes) return null
+    return value.map((entry) => scrubSessionPaths(
+      entry,
+      sessionDirectory,
+      key,
+      context,
+      depth + 1,
+    ))
   }
   if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [
-      key,
-      scrubSessionPaths(child, sessionDirectory, key),
+    if (context.seen.has(value)) return null
+    context.seen.add(value)
+    const entries = Object.entries(value)
+    if (entries.length > context.remainingNodes) return null
+    return Object.fromEntries(entries.map(([childKey, child]) => [
+      childKey,
+      scrubSessionPaths(child, sessionDirectory, childKey, context, depth + 1),
     ]))
   }
   return value
 }
 
+/** Returns true for a whole-string POSIX, drive-qualified, or UNC absolute path. */
+function isPortableAbsolutePath(value) {
+  return value.startsWith('/')
+    || /^[a-z]:[\\/]/iu.test(value)
+    || /^(?:\\\\|\/\/)/u.test(value)
+}
+
 /** Returns one portable filename from a historical absolute attachment path. */
 function portableBasename(value) {
-  return value.replaceAll('\\', '/').split('/').at(-1)
+  const normalized = value.replaceAll('\\', '/').replace(/\/+$/u, '')
+  const basename = normalized.split('/').at(-1)
+  return basename === undefined || basename === '' || /^[a-z]:$/iu.test(basename)
+    ? null
+    : basename
 }
 
 /** Pins one regular restored database and exposes only its process-local descriptor alias. */

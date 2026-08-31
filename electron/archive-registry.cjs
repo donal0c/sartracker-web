@@ -392,6 +392,57 @@ function createArchiveRegistry({
     return eventId
   }
 
+  /** Derives one chained predecessor digest from the immutable request and registry row. */
+  function derivePreviousArchiveSha256(input) {
+    if (input.previousArchiveId === null) {
+      const previousId = input.requestDetails?.previous_archive_id
+      const previousSha256 = input.requestDetails?.previous_archive_sha256
+      if ((previousId !== undefined && previousId !== null)
+        || (previousSha256 !== undefined && previousSha256 !== null)) {
+        throw new ArchiveRegistryError(
+          'ARCHIVE_REGISTRY_CHAIN_MISMATCH',
+          'Archive request unexpectedly names a predecessor.',
+          { archiveId: input.archiveId },
+        )
+      }
+      return null
+    }
+    let requestSha256
+    try {
+      requestSha256 = normalizeSha256(
+        input.requestDetails?.previous_archive_sha256,
+        'Archive request predecessor identity',
+      )
+    } catch {
+      throw new ArchiveRegistryError(
+        'ARCHIVE_REGISTRY_CHAIN_MISMATCH',
+        'Archive request predecessor identity is unavailable or malformed.',
+        { archiveId: input.archiveId },
+      )
+    }
+    if (input.requestDetails?.previous_archive_id !== input.previousArchiveId
+      || input.previousArchiveId === input.archiveId) {
+      throw new ArchiveRegistryError(
+        'ARCHIVE_REGISTRY_CHAIN_MISMATCH',
+        'Archive request predecessor does not match the registry chain.',
+        { archiveId: input.archiveId },
+      )
+    }
+    const previous = getArchiveRow(db, input.previousArchiveId)
+    const containerVersion = Number(previous.container_version)
+    if (previous.mission_id !== input.missionId
+      || ![1, 2].includes(containerVersion)
+      || (containerVersion === 1 && previous.ciphertext_sha256 !== null)
+      || (containerVersion === 2 && previous.ciphertext_sha256 !== requestSha256)) {
+      throw new ArchiveRegistryError(
+        'ARCHIVE_REGISTRY_CHAIN_MISMATCH',
+        'Archive verification predecessor identity is unavailable or cross-mission.',
+        { archiveId: input.archiveId },
+      )
+    }
+    return requestSha256
+  }
+
   /** Re-derives one closed verification identity from current registry and audit state. */
   function deriveVerificationTicket(archive, requireSealed = true) {
     if (requireSealed && archive.status !== 'sealed') {
@@ -460,20 +511,12 @@ function createArchiveRegistry({
         { archiveId: archive.id },
       )
     }
-    const previousArchive = archive.previous_archive_id === null
-      ? null
-      : getArchiveRow(db, archive.previous_archive_id)
-    if (previousArchive !== null && (
-      previousArchive.mission_id !== archive.mission_id
-      || (Number(previousArchive.container_version) === 2
-        && previousArchive.ciphertext_sha256 === null)
-    )) {
-      throw new ArchiveRegistryError(
-        'ARCHIVE_REGISTRY_CHAIN_MISMATCH',
-        'Archive verification predecessor identity is unavailable or cross-mission.',
-        { archiveId: archive.id },
-      )
-    }
+    const previousArchiveSha256 = derivePreviousArchiveSha256({
+      archiveId: archive.id,
+      missionId: archive.mission_id,
+      previousArchiveId: archive.previous_archive_id,
+      requestDetails,
+    })
     try {
       return normalizeArchiveVerificationIdentity({
         archiveId: archive.id,
@@ -487,7 +530,7 @@ function createArchiveRegistry({
           ? null
           : Number(archive.protected_finalization_epoch),
         createdAt: archive.created_at,
-        previousArchiveSha256: previousArchive?.ciphertext_sha256 ?? null,
+        previousArchiveSha256,
         containerVersion: Number(archive.container_version),
         schemaVersion: 13,
         inventoryVersion: 1,
@@ -604,6 +647,12 @@ function createArchiveRegistry({
           { archiveId: id, requestEventId },
         )
       }
+      derivePreviousArchiveSha256({
+        archiveId: id,
+        missionId,
+        previousArchiveId,
+        requestDetails,
+      })
       const event = db.prepare(`SELECT mission_id, event_type, details_json
         FROM mission_events WHERE id = ?`).get(sealedEventId)
       const details = event === undefined
@@ -631,15 +680,6 @@ function createArchiveRegistry({
           'Archive registry fields do not match the immutable seal event.',
           { archiveId: id, sealedEventId },
         )
-      }
-      if (previousArchiveId !== null) {
-        const previous = getArchiveRow(db, previousArchiveId)
-        if (previous.mission_id !== missionId) {
-          throw new ArchiveRegistryError(
-            'ARCHIVE_REGISTRY_CHAIN_MISMATCH',
-            'Archive predecessor belongs to a different mission.',
-          )
-        }
       }
       db.prepare(`INSERT INTO mission_archives (
         id, mission_id, request_event_rowid, request_event_id,
@@ -685,8 +725,8 @@ function createArchiveRegistry({
     /** Lists one mission's custody chain newest-first without secrets. */
     listMissionArchives(missionId) {
       const normalizedMissionId = normalizeId(missionId, 'Mission ID')
-      return db.prepare(`SELECT archives.*,
-          predecessor.ciphertext_sha256 AS previous_archive_sha256,
+      const rows = db.prepare(`SELECT archives.*,
+          request.details_json AS request_details_json,
           CASE WHEN supplement.supplement_sequence IS NULL
             THEN 1 ELSE supplement.supplement_sequence + 1 END AS revision_sequence,
           COALESCE(totals.supplement_count, 0) + 1 AS revision_count,
@@ -694,8 +734,8 @@ function createArchiveRegistry({
           supplement.reason AS supplement_reason,
           supplement.created_at AS supplement_created_at
         FROM mission_archives AS archives
-        LEFT JOIN mission_archives AS predecessor
-          ON predecessor.id = archives.previous_archive_id
+        LEFT JOIN mission_events AS request
+          ON request.rowid = archives.request_event_rowid
         LEFT JOIN mission_archive_supplements AS supplement
           ON supplement.archive_id = archives.id
         LEFT JOIN (
@@ -705,6 +745,23 @@ function createArchiveRegistry({
         WHERE archives.mission_id = ?
         ORDER BY archives.request_event_rowid DESC, archives.created_at DESC, archives.id DESC`)
         .all(normalizedMissionId)
+      return rows.map((row) => {
+        const { request_details_json: requestDetailsJson, ...archive } = row
+        const requestDetails = parseEventDetails(
+          requestDetailsJson,
+          'Archive request event',
+        )
+        return Object.freeze({
+          ...archive,
+          request_previous_archive_id: requestDetails.previous_archive_id ?? null,
+          previous_archive_sha256: derivePreviousArchiveSha256({
+            archiveId: archive.id,
+            missionId: archive.mission_id,
+            previousArchiveId: archive.previous_archive_id,
+            requestDetails,
+          }),
+        })
+      })
     },
 
     /** Issues one exact non-secret verification identity from current trusted state. */

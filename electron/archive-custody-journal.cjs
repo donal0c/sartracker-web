@@ -13,6 +13,7 @@ const JOURNAL_VERSION = 1
 const PROTOCOL_VERSION = 1
 const MAX_JOURNAL_BYTES = 256 * 1024
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+const LEGACY_ARCHIVE_ID = /^legacy-v1-[0-9a-f]{64}$/u
 const SHA256 = /^[0-9a-f]{64}$/u
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u
 const ARCHIVE_KINDS = new Set(['finalized', 'direct', 'finalized_recovery'])
@@ -130,6 +131,18 @@ function requireExactRecord(value, keys, label) {
 /** Requires one RFC-4122 version-four internal identity. */
 function normalizeUuid(value, label) {
   if (typeof value !== 'string' || !UUID_V4.test(value)) {
+    throw new ArchiveCustodyJournalError(
+      'ARCHIVE_CUSTODY_JOURNAL_INVALID_INPUT',
+      `${label} is invalid.`,
+    )
+  }
+  return value
+}
+
+/** Requires one current UUID or deterministic registered legacy archive identity. */
+function normalizeArchiveId(value, label) {
+  if (typeof value !== 'string'
+    || (!UUID_V4.test(value) && !LEGACY_ARCHIVE_ID.test(value))) {
     throw new ArchiveCustodyJournalError(
       'ARCHIVE_CUSTODY_JOURNAL_INVALID_INPUT',
       `${label} is invalid.`,
@@ -350,7 +363,7 @@ function normalizeBuildingInput(input, updatedAt) {
     archiveKind: input.archiveKind,
     protectedFinalizationEpoch,
     previousArchiveId: hasPreviousId
-      ? normalizeUuid(input.previousArchiveId, 'Previous archive identity')
+      ? normalizeArchiveId(input.previousArchiveId, 'Previous archive identity')
       : null,
     previousArchiveSha256: hasPreviousHash
       ? normalizeSha256(input.previousArchiveSha256, 'Previous archive ciphertext identity')
@@ -438,7 +451,7 @@ function parseJournalValue(value, expectedStateClass = null) {
       )
     }
     if (hasPreviousId) {
-      normalizeUuid(parsed.previousArchiveId, 'Previous archive identity')
+      normalizeArchiveId(parsed.previousArchiveId, 'Previous archive identity')
       normalizeSha256(parsed.previousArchiveSha256, 'Previous archive ciphertext identity')
       if (parsed.previousArchiveId === parsed.archiveId) {
         throw new ArchiveCustodyJournalError(
@@ -734,10 +747,14 @@ function registryMatchesJournal(db, journal) {
   }
 
   if (journal.previousArchiveId !== null) {
-    const previous = db.prepare(`SELECT mission_id, ciphertext_sha256
+    const previous = db.prepare(`SELECT mission_id, container_version, ciphertext_sha256
       FROM mission_archives WHERE id = ?`).get(journal.previousArchiveId)
     if (previous?.mission_id !== journal.missionId
-      || previous?.ciphertext_sha256 !== journal.previousArchiveSha256) {
+      || (Number(previous?.container_version) === 2
+        && previous?.ciphertext_sha256 !== journal.previousArchiveSha256)
+      || (Number(previous?.container_version) === 1
+        && previous?.ciphertext_sha256 !== null)
+      || ![1, 2].includes(Number(previous?.container_version))) {
       return false
     }
   } else if (journal.previousArchiveSha256 !== null) {
@@ -756,6 +773,13 @@ function registryMatchesJournal(db, journal) {
     : journal.archiveKind === 'finalized_recovery'
       ? 'finalized'
       : null
+  const requestPredecessorMatches = journal.previousArchiveId === null
+    ? (requestDetails?.previous_archive_id === undefined
+        || requestDetails.previous_archive_id === null)
+      && (requestDetails?.previous_archive_sha256 === undefined
+        || requestDetails.previous_archive_sha256 === null)
+    : requestDetails?.previous_archive_id === journal.previousArchiveId
+      && requestDetails?.previous_archive_sha256 === journal.previousArchiveSha256
   if (requestEvent?.id !== journal.requestEventId
     || requestEvent?.mission_id !== journal.missionId
     || requestEvent?.event_type !== expectedRequestEventType
@@ -765,6 +789,7 @@ function registryMatchesJournal(db, journal) {
     || requestDetails?.archive_relative_path !== journal.finalRelativePath
     || requestDetails?.operation_id !== journal.operationId
     || requestDetails?.protected_finalization_epoch !== journal.protectedFinalizationEpoch
+    || !requestPredecessorMatches
     || expectedRequestStatus !== null
       && requestDetails?.resulting_status !== expectedRequestStatus) {
     return false

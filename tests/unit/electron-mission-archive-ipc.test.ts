@@ -935,6 +935,67 @@ describe('mission archive IPC containment [DON-248]', () => {
     await pending
   })
 
+  it('keeps progress transport failures non-authoritative for every archive operation', async () => {
+    const { handlers } = createMainHarness({}, {
+      finalizeMission: vi.fn(async (
+        missionId: string,
+        _custody: unknown,
+        context: { readonly onProgress: (progress: Readonly<Record<string, unknown>>) => void },
+      ) => {
+        context.onProgress({
+          kind: 'verify', sequence: 1, phase: 'verified', unit: 'phases',
+          completed: 1, total: 1, detail: 'Verification committed',
+        })
+        return { mission: missionResult(missionId), archive: archiveResult(missionId) }
+      }),
+      verifyMissionArchive: vi.fn(async (
+        _request: unknown,
+        context: { readonly onProgress: (progress: Readonly<Record<string, unknown>>) => void },
+      ) => {
+        context.onProgress({
+          kind: 'verify', sequence: 1, phase: 'verified', unit: 'phases',
+          completed: 1, total: 1, detail: 'Verification committed',
+        })
+        return archiveResult()
+      }),
+      startMissionCleanup: vi.fn(async (
+        _request: unknown,
+        context: { readonly onProgress: (progress: Readonly<Record<string, unknown>>) => void },
+      ) => {
+        context.onProgress({
+          kind: 'cleanup', missionId: 'mission-1', archiveId: archiveResult().id,
+          phase: 'cleanup', tableName: 'positions', deletedRows: 17,
+          totalDeletedRows: 17, tableIndex: 49, tableCount: 49,
+        })
+        return {
+          missionId: 'mission-1', archiveId: archiveResult().id,
+          state: 'completed', storageState: 'archived', deletedRows: 17,
+        }
+      }),
+    })
+    const sender = createSender(7)
+    sender.send.mockImplementation(() => {
+      throw new Error('simulated renderer destruction between liveness check and send')
+    })
+    const event = { sender }
+
+    await handlers.get(CHANNELS.issueMissionArchiveRecoveryCode)?.(event, 'mission-1')
+    await expect(handlers.get(CHANNELS.finalizeMission)?.(event, {
+      missionId: 'mission-1', operationId: OPERATION_ID,
+      passphrase: PASSPHRASE, recoveryCode: RECOVERY_CODE,
+    })).resolves.toMatchObject({ archive: { status: 'verified' } })
+    await expect(handlers.get(CHANNELS.verifyMissionArchive)?.(event, {
+      archiveId: archiveResult().id, operationId: SECOND_OPERATION_ID,
+      passphrase: PASSPHRASE, recoveryCode: RECOVERY_CODE,
+    })).resolves.toMatchObject({ status: 'verified' })
+    await expect(handlers.get(CHANNELS.startMissionCleanup)?.(event, {
+      missionId: 'mission-1', archiveId: archiveResult().id,
+      operationId: OPERATION_ID, slotType: 'passphrase', secret: PASSPHRASE,
+      confirmation: 'Mission result',
+    })).resolves.toMatchObject({ state: 'completed', storageState: 'archived' })
+    expect(sender.send).toHaveBeenCalledTimes(3)
+  })
+
   it('loads in the sandbox and rejects hostile archive inputs before any invoke', async () => {
     const preload = readFileSync('electron/preload.cjs', 'utf8')
     const invoke = vi.fn().mockResolvedValue({})

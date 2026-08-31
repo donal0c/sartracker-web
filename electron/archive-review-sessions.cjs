@@ -9,6 +9,7 @@ const { startArchiveRestore } = require('./archive-restore-runner.cjs')
 const {
   startLegacyArchiveRestore,
 } = require('./legacy-archive-restore-runner.cjs')
+const { startArchiveReviewSweep } = require('./archive-review-sweep-runner.cjs')
 const {
   ARCHIVE_REVIEW_READ_METHODS,
   normalizeArchiveReviewPublicSession,
@@ -446,23 +447,6 @@ function assertPinnedIdentitySync(targetPath, expectedIdentity) {
   return current
 }
 
-/** Rechecks every destructive boundary immediately before one synchronous mutation. */
-function assertCleanupBoundarySync(context) {
-  assertArchiveReviewCustodySeparationSync(
-    context.reviewRoot,
-    context.archiveDirectory,
-    'ARCHIVE_REVIEW_PLAINTEXT_CLEANUP_FAILED',
-  )
-  assertArchiveDirectoryIdentitySync(
-    context.archiveDirectory,
-    context.archiveDirectoryIdentity,
-    'ARCHIVE_REVIEW_PLAINTEXT_CLEANUP_FAILED',
-    false,
-  )
-  assertReviewRootSafeSync(context.reviewRoot, context.rootIdentity)
-  assertPinnedIdentitySync(context.quarantineDirectory, context.quarantineIdentity)
-}
-
 /** Atomically quarantines and unlinks one pinned stale symlink without following it. */
 function removePinnedStartupSymlinkSync(context, entryPath, entryName, entryIdentity) {
   const linkAMatch = SWEEP_LINK_A.exec(entryName)
@@ -507,45 +491,23 @@ function removePinnedStartupSymlinkSync(context, entryPath, entryName, entryIden
   fsSync.unlinkSync(quarantinePath)
 }
 
-/** Removes only pinned leaves and empty directories; it never recursively removes a path. */
-function removePinnedTreeSync(context, directory, directoryIdentity, topLevel) {
-  assertCleanupBoundarySync(context)
-  assertPinnedIdentitySync(directory, directoryIdentity)
-  const entries = fsSync.readdirSync(directory, { withFileTypes: true })
-  for (const entry of entries) {
-    if (topLevel && /\.(?:sararch|zip)$/iu.test(entry.name)) {
-      throw createPlaintextCleanupFailure()
-    }
-    const childPath = path.join(directory, entry.name)
-    assertCleanupBoundarySync(context)
-    assertPinnedIdentitySync(directory, directoryIdentity)
-    const childStat = fsSync.lstatSync(childPath)
-    const childIdentity = Object.freeze({ dev: childStat.dev, ino: childStat.ino })
-    if (childStat.isDirectory() && !childStat.isSymbolicLink()) {
-      removePinnedTreeSync(context, childPath, childIdentity, false)
-      continue
-    }
-    if ((!childStat.isFile() && !childStat.isSymbolicLink())
-      || (childStat.isFile() && childStat.nlink !== 1)) {
-      throw createPlaintextCleanupFailure()
-    }
-    assertCleanupBoundarySync(context)
-    assertPinnedIdentitySync(directory, directoryIdentity)
-    assertPinnedIdentitySync(childPath, childIdentity)
-    fsSync.unlinkSync(childPath)
+/** Joins one sweep operation and its physical worker exit before releasing ownership. */
+async function awaitReviewSweepOperation(operation) {
+  try {
+    await operation
+  } finally {
+    await Promise.resolve(operation?.workerExited ?? operation).catch(() => undefined)
   }
-  assertCleanupBoundarySync(context)
-  assertPinnedIdentitySync(directory, directoryIdentity)
-  fsSync.rmdirSync(directory)
 }
 
-/** Deletes one already-quarantined, inode-pinned review session tree. */
-function removeQuarantinedSessionDirectorySync(
+/** Deletes one already-quarantined, inode-pinned review session tree off the main isolate. */
+async function removeQuarantinedSessionDirectory(
   reviewRoot,
   quarantineDirectory,
   rootIdentity,
   archiveDirectory,
   archiveDirectoryIdentity,
+  startSweep = startArchiveReviewSweep,
 ) {
   const quarantineStat = fsSync.lstatSync(quarantineDirectory)
   if (!quarantineStat.isDirectory() || quarantineStat.isSymbolicLink()) {
@@ -555,14 +517,19 @@ function removeQuarantinedSessionDirectorySync(
     dev: quarantineStat.dev,
     ino: quarantineStat.ino,
   })
-  removePinnedTreeSync({
+  const operation = startSweep({
     reviewRoot,
     rootIdentity,
     archiveDirectory,
     archiveDirectoryIdentity,
     quarantineDirectory,
     quarantineIdentity,
-  }, quarantineDirectory, quarantineIdentity, true)
+  })
+  if (operation === null || (typeof operation !== 'object' && typeof operation !== 'function')
+    || typeof operation.then !== 'function') {
+    throw createPlaintextCleanupFailure()
+  }
+  await awaitReviewSweepOperation(operation)
 }
 
 /** Safely quarantines and removes one exact app-owned session without following a symlink. */
@@ -579,7 +546,9 @@ async function removeOwnedSessionDirectory(
     || dependencies === null
     || typeof dependencies !== 'object'
     || (dependencies.beforeQuarantine !== undefined
-      && typeof dependencies.beforeQuarantine !== 'function')) {
+      && typeof dependencies.beforeQuarantine !== 'function')
+    || (dependencies.startReviewSweep !== undefined
+      && typeof dependencies.startReviewSweep !== 'function')) {
     throw new ArchiveReviewSessionError(
       'ARCHIVE_REVIEW_PLAINTEXT_CLEANUP_FAILED',
       'Archive review plaintext cleanup scope is invalid.',
@@ -619,12 +588,13 @@ async function removeOwnedSessionDirectory(
     }
     if (sessionStat === null && quarantineStat === null) return
     if (sessionStat === null) {
-      removeQuarantinedSessionDirectorySync(
+      await removeQuarantinedSessionDirectory(
         reviewRoot,
         quarantineDirectory,
         rootIdentity,
         archiveDirectory,
         archiveDirectoryIdentity,
+        dependencies.startReviewSweep ?? startArchiveReviewSweep,
       )
       return
     }
@@ -649,18 +619,15 @@ async function removeOwnedSessionDirectory(
     assertReviewRootSafeSync(reviewRoot, rootIdentity)
     assertPinnedIdentitySync(sessionDirectory, sessionIdentity)
     fsSync.renameSync(sessionDirectory, quarantineDirectory)
-    const quarantinedStat = assertPinnedIdentitySync(quarantineDirectory, sessionIdentity)
-    removePinnedTreeSync({
+    assertPinnedIdentitySync(quarantineDirectory, sessionIdentity)
+    await removeQuarantinedSessionDirectory(
       reviewRoot,
+      quarantineDirectory,
       rootIdentity,
       archiveDirectory,
       archiveDirectoryIdentity,
-      quarantineDirectory,
-      quarantineIdentity: Object.freeze({
-        dev: quarantinedStat.dev,
-        ino: quarantinedStat.ino,
-      }),
-    }, quarantineDirectory, sessionIdentity, true)
+      dependencies.startReviewSweep ?? startArchiveReviewSweep,
+    )
   } catch (error) {
     if (error instanceof ArchiveReviewSessionError) throw error
     throw createPlaintextCleanupFailure(error)
@@ -1359,7 +1326,7 @@ function createArchiveReviewSessionManager(options) {
         } else if (sweepLinkMatch !== null) {
           throw createPlaintextCleanupFailure()
         } else if (sweepMatch !== null) {
-          removeQuarantinedSessionDirectorySync(
+          await removeQuarantinedSessionDirectory(
             reviewRoot,
             entryPath,
             reviewRootIdentity,

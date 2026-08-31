@@ -460,6 +460,80 @@ describe('archive-backed Mission Review source [DON-252 / BCP-15]', () => {
     }
   })
 
+  it('removes nested private custody paths from audit JSON without discarding meaningful details', async () => {
+    const fixture = await createV13Fixture()
+    const overflow = { child: null as unknown }
+    let cursor = overflow
+    for (let depth = 0; depth < 80; depth += 1) {
+      const child = { child: null as unknown }
+      cursor.child = child
+      cursor = child
+    }
+    cursor.child = {
+      archive_path: '/Users/private-operator/Library/Application Support/SAR Tracker/deep.sararch',
+    }
+    const runMissionReviewRead = vi.fn<ReviewRunner>(() => {
+      const result = Promise.resolve({
+        auditEvents: [{
+          event_type: 'mission_archive_superseded',
+          details_json: JSON.stringify({
+            archive_id: 'archive-current',
+            archive_path: '/Users/private-operator/SAR custody/current.sararch',
+            correction: {
+              backup_path: 'C:\\Users\\Private Operator\\AppData\\SAR Tracker\\mission-store.backup.sqlite',
+              revisions: [{
+                replaces_archive_path: '\\\\sar-command\\private-custody\\prior.sararch',
+              }],
+            },
+            operator_note: 'Sector A/B was reviewed after the archive retry.',
+            overflow,
+          }),
+        }],
+      }) as WorkerPromise
+      Object.defineProperty(result, 'workerExited', { value: Promise.resolve() })
+      return result
+    })
+    const source = createSource(fixture, { runMissionReviewRead })
+
+    try {
+      const review = await source.readMissionReview({
+        missionId: fixture.missionId,
+        includeTelemetry: false,
+        auditLimit: 100,
+      }, 'private-path-containment') as {
+        readonly auditEvents: readonly [{ readonly details_json: string }]
+      }
+      const details = JSON.parse(review.auditEvents[0].details_json) as {
+        readonly archive_id: string
+        readonly archive_path: string
+        readonly correction: {
+          readonly backup_path: string
+          readonly revisions: readonly [{ readonly replaces_archive_path: string }]
+        }
+        readonly operator_note: string
+        readonly overflow: unknown
+      }
+
+      expect(details).toMatchObject({
+        archive_id: 'archive-current',
+        archive_path: 'current.sararch',
+        correction: {
+          backup_path: 'mission-store.backup.sqlite',
+          revisions: [{ replaces_archive_path: 'prior.sararch' }],
+        },
+        operator_note: 'Sector A/B was reviewed after the archive retry.',
+      })
+      const serialized = JSON.stringify(review)
+      expect(serialized).not.toContain('/Users/private-operator')
+      expect(serialized).not.toContain('C:\\\\Users')
+      expect(serialized).not.toContain('private-custody')
+      expect(serialized).not.toContain('deep.sararch')
+      expect(readObjectDepth(details.overflow)).toBeLessThanOrEqual(32)
+    } finally {
+      await source.close()
+    }
+  })
+
   it('rejects every foreign-mission read before a worker or attachment action can run', async () => {
     const fixture = await createV13Fixture()
     const reviewRunner = vi.fn(runMissionReviewReadQueryInWorker)
@@ -1273,6 +1347,17 @@ function projectionCall(
 
 function pinnedDatabasePathMatcher(): ReturnType<typeof expect.stringMatching> {
   return expect.stringMatching(/^\/(?:dev\/fd|proc\/self\/fd)\/\d+$/u)
+}
+
+/** Counts one deliberately single-child object chain without recursive test code. */
+function readObjectDepth(value: unknown): number {
+  let depth = 0
+  let cursor = value
+  while (cursor !== null && typeof cursor === 'object' && !Array.isArray(cursor)) {
+    depth += 1
+    cursor = (cursor as { readonly child?: unknown }).child
+  }
+  return depth
 }
 
 async function createV13Fixture(): Promise<Fixture> {

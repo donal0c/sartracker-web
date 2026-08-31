@@ -373,6 +373,14 @@ function normalizeProgress(progress, identity) {
   })
 }
 
+/** Delivers non-authoritative progress without letting renderer teardown change durable work. */
+function sendArchiveProgressBestEffort(sender, projectProgress) {
+  try {
+    if (sender?.isDestroyed?.() === true) return
+    sender.send(MISSION_ARCHIVE_PROGRESS_CHANNEL, projectProgress())
+  } catch {}
+}
+
 /** Projects the current fail-closed cleanup checklist without trusting unknown store fields. */
 function projectCleanupEligibility(input) {
   if (input === null || typeof input !== 'object' || Array.isArray(input)
@@ -612,15 +620,11 @@ function registerMissionArchiveIpcHandlers(input) {
         {
           operationId,
           onProgress: (progress) => {
-            if (event.sender?.isDestroyed?.() === true) return
-            event.sender.send(
-              MISSION_ARCHIVE_PROGRESS_CHANNEL,
-              normalizeProgress(progress, {
-                operationId,
-                missionId,
-                kind: progress?.kind,
-              }),
-            )
+            sendArchiveProgressBestEffort(event.sender, () => normalizeProgress(progress, {
+              operationId,
+              missionId,
+              kind: progress?.kind,
+            }))
           },
         },
       )
@@ -703,11 +707,10 @@ function registerMissionArchiveIpcHandlers(input) {
         {
           operationId,
           onProgress: (progress) => {
-            if (event.sender?.isDestroyed?.() === true) return
-            event.sender.send(
-              MISSION_ARCHIVE_PROGRESS_CHANNEL,
-              normalizeProgress(progress, { operationId, missionId: '', kind: 'verify' }),
-            )
+            sendArchiveProgressBestEffort(event.sender, () => normalizeProgress(
+              progress,
+              { operationId, missionId: '', kind: 'verify' },
+            ))
           },
         },
       )
@@ -814,12 +817,12 @@ function registerMissionArchiveIpcHandlers(input) {
             operationId,
             reviewActivity: false,
             onProgress: (progress) => {
-              if (event.sender?.isDestroyed?.() === true) return
               cleanupSequence += 1
-              event.sender.send(
-                MISSION_ARCHIVE_PROGRESS_CHANNEL,
-                normalizeCleanupProgress(progress, { operationId, missionId, archiveId }, cleanupSequence),
-              )
+              sendArchiveProgressBestEffort(event.sender, () => normalizeCleanupProgress(
+                progress,
+                { operationId, missionId, archiveId },
+                cleanupSequence,
+              ))
             },
           },
         )

@@ -37,6 +37,7 @@ const { createArchiveReviewSessionManager, removeOwnedSessionDirectory } = requi
     },
     dependencies?: {
       readonly beforeQuarantine?: () => Promise<void>
+      readonly startReviewSweep?: (input: Readonly<Record<string, unknown>>) => Promise<unknown>
     },
   ) => Promise<void>
 }
@@ -920,6 +921,47 @@ describe('archive review session manager', () => {
     expect(await readdir(harness.reviewRoot)).toEqual([])
     expect(await readFile(path.join(outsideDirectory, 'keep.txt'), 'utf8')).toBe('KEEP')
   })
+
+  it('keeps a large review-session plaintext sweep off the caller event loop', async () => {
+    const harness = await createHarness({ useDefaultRemoveSessionDirectory: true })
+    const sessionDirectory = path.join(harness.reviewRoot, SESSION_ID)
+    const attachmentDirectory = path.join(sessionDirectory, 'attachments')
+    await mkdir(attachmentDirectory, { recursive: true, mode: 0o700 })
+    for (let offset = 0; offset < 5_000; offset += 100) {
+      await Promise.all(Array.from({ length: 100 }, (_, index) => writeFile(
+        path.join(attachmentDirectory, `attachment-${offset + index}.txt`),
+        'REVIEW-PLAINTEXT',
+        { mode: 0o600 },
+      )))
+    }
+    const [rootStat, archiveStat, archiveRealPath] = await Promise.all([
+      stat(harness.reviewRoot),
+      stat(harness.archiveDirectory),
+      realpath(harness.archiveDirectory),
+    ])
+    let heartbeatObserved = false
+    const heartbeat = new Promise<'heartbeat'>((resolve) => {
+      setImmediate(() => {
+        heartbeatObserved = true
+        resolve('heartbeat')
+      })
+    })
+
+    const cleanup = removeOwnedSessionDirectory(
+      harness.reviewRoot,
+      sessionDirectory,
+      { dev: rootStat.dev, ino: rootStat.ino },
+      harness.archiveDirectory,
+      { dev: archiveStat.dev, ino: archiveStat.ino, realPath: archiveRealPath },
+    )
+    expect(heartbeatObserved).toBe(false)
+    await expect(Promise.race([
+      heartbeat,
+      cleanup.then(() => 'cleanup' as const),
+    ])).resolves.toBe('heartbeat')
+    await expect(cleanup).resolves.toBeUndefined()
+    await expect(readdir(harness.reviewRoot)).resolves.toEqual([])
+  }, 30_000)
 
   it('rejects ciphertext custody nested beneath the destructive review root before sweeping', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'sartracker-review-containment-'))

@@ -1349,12 +1349,13 @@ describe('archive registry transitions and disk reconciliation', () => {
         db: fixture.db,
         archiveDirectory: fixture.archiveDirectory,
       })
-      for (const [archiveId, minute, hash, previousArchiveId, requestEventId,
-        creationOperationId] of [
+      for (const [archiveId, minute, hash, previousArchiveId, previousArchiveSha256,
+        requestEventId, creationOperationId] of [
         [
           '44444444-4444-4444-8444-444444444444',
           10,
           'd'.repeat(64),
+          null,
           null,
           '46464646-4646-4646-8646-464646464646',
           '47474747-4747-4747-8747-474747474747',
@@ -1364,6 +1365,7 @@ describe('archive registry transitions and disk reconciliation', () => {
           11,
           'e'.repeat(64),
           '44444444-4444-4444-8444-444444444444',
+          'd'.repeat(64),
           '56565656-5656-4656-8656-565656565656',
           '57575757-5757-4757-8757-575757575757',
         ],
@@ -1381,6 +1383,8 @@ describe('archive registry transitions and disk reconciliation', () => {
             archive_relative_path: relativePath,
             operation_id: creationOperationId,
             protected_finalization_epoch: null,
+            previous_archive_id: previousArchiveId,
+            previous_archive_sha256: previousArchiveSha256,
           },
         })
         insertMissionEvent(fixture.db, {
