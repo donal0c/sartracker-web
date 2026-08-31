@@ -631,13 +631,19 @@ function createElectronMissionStore(options) {
   let archivePlaintextSweepFinished = false
   let archivePlaintextSweepSettled = Promise.resolve()
 
-  /** Persists one bounded archive-only sweep failure without reflecting local residue. */
+  /** Latches one bounded archive-only sweep failure and best-effort persists its gate. */
   const persistArchivePlaintextSweepFailure = (code) => {
     archivePlaintextSweepFailure = code
     if (storeClosed) return
-    db.prepare(`INSERT INTO metadata (key, value) VALUES (
-      'archive_plaintext_sweep_failure', ?
-    ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(code)
+    try {
+      db.prepare(`INSERT INTO metadata (key, value) VALUES (
+        'archive_plaintext_sweep_failure', ?
+      ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(code)
+    } catch {
+      // A failed SQLite gate write must not prevent the fixed-root sweep. The
+      // in-memory latch still blocks this process; startup will retry any
+      // remaining .verification root on the next process instance.
+    }
   }
 
   /** Runs and physically joins one fixed-root plaintext sweep while retaining a durable gate. */

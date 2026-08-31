@@ -640,7 +640,7 @@ and `git diff --check` are green. Exact-head browser proof is green at
 Chromium `172/172`; visual Playwright is `62/62`; uncached visual review is
 `74 pass / 0 fail / 0 error` (`failOn=high`), report
 `test-results/visual-verification/reports/visual-review-2026-08-31T16-24-28Z.json`
-SHA-256 `09216035fa56c9f634f7c8304ab44f0ee188c44efade332eff7f7d1490f2b0cc`.
+SHA-256 `90be35e12311fdb289e3389be0ab5a4edde99751a79622fdcf180257f020c3fa`.
 
 The exact-head unsigned macOS arm64 packaged lifecycle smoke passed with source
 clean before/after, full packaged build-head binding, archive Review/Replay,

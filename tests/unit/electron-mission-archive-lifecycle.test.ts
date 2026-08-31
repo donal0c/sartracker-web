@@ -1789,6 +1789,67 @@ describe('encrypted mission archive lifecycle integration', () => {
     }
   }, 30_000)
 
+  it('still sweeps verifier plaintext when the durable blocker write fails', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-verify-gate-write-failure-'))
+    temporaryDirectories.add(userDataPath)
+    let sweepCalls = 0
+    let verifyAttempt = 0
+    let strandedResidue = ''
+    const store = createElectronMissionStore({
+      userDataPath,
+      startArchiveVerifyWorker: (input) => {
+        verifyAttempt += 1
+        const request = input.request as Readonly<Record<string, unknown>>
+        strandedResidue = path.join(
+          userDataPath,
+          'archives',
+          '.verification',
+          String(request.operationId),
+          'restored.sqlite',
+        )
+        require('node:fs').mkdirSync(path.dirname(strandedResidue), {
+          recursive: true,
+          mode: 0o700,
+        })
+        writeFileSync(strandedResidue, 'APP-ADDRESSABLE-PLAINTEXT', { mode: 0o600 })
+        const databasePath = String(input.databasePath)
+        const triggerDb = new Database(databasePath)
+        try {
+          triggerDb.exec(`CREATE TRIGGER reject_archive_plaintext_failure
+            BEFORE INSERT ON metadata
+            WHEN NEW.key = 'archive_plaintext_sweep_failure'
+            BEGIN SELECT RAISE(FAIL, 'simulated metadata failure'); END`)
+        } finally {
+          triggerDb.close()
+        }
+        return unclassifiedFailedWorkerOperation('simulated verifier failure')
+      },
+      startArchivePlaintextSweep: () => {
+        sweepCalls += 1
+        rmSync(path.join(userDataPath, 'archives', '.verification'), {
+          recursive: true,
+          force: true,
+        })
+        return Promise.resolve({ status: 'clean', removedEntryCount: 1 })
+      },
+    })
+    try {
+      const mission = await store.createMission({ name: 'Verifier gate write failure mission' })
+      await store.finishMission(mission.id)
+
+      await expect(store.finalizeMission(mission.id, custody)).rejects.toMatchObject({
+        code: 'ARCHIVE_VERIFY_FAILED',
+      })
+      expect(sweepCalls).toBe(1)
+      expect(verifyAttempt).toBe(1)
+      expect(strandedResidue).not.toBe('')
+      expect(existsSync(strandedResidue)).toBe(false)
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 30_000)
+
   it('keeps archive work durably gated when automatic verifier-residue cleanup fails', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-verify-residue-blocked-'))
     temporaryDirectories.add(userDataPath)
