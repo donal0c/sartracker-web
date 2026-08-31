@@ -1812,7 +1812,7 @@ describe('encrypted mission archive lifecycle integration', () => {
           mode: 0o700,
         })
         writeFileSync(strandedResidue, 'APP-ADDRESSABLE-PLAINTEXT', { mode: 0o600 })
-        const databasePath = String(input.databasePath)
+        const databasePath = String(request.databasePath)
         const triggerDb = new Database(databasePath)
         try {
           triggerDb.exec(`CREATE TRIGGER reject_archive_plaintext_failure
