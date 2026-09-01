@@ -279,6 +279,52 @@ afterEach(() => {
 })
 
 describe('encrypted mission archive lifecycle integration', () => {
+  it('blocks correction unlock when a verified v2 predecessor is unavailable', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-unavailable-predecessor-'))
+    temporaryDirectories.add(userDataPath)
+    const first = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const mission = await first.createMission({ name: 'Unavailable predecessor mission' })
+    await first.finishMission(mission.id)
+    const finalized = await first.finalizeMission(mission.id, custody, {
+      operationId: '10101010-1010-4010-8010-101010101010',
+      onProgress: () => undefined,
+    })
+    const archivePath = String(finalized.archive.archive_path)
+    const archiveId = String(finalized.archive.id)
+    await first.prepareClose()
+    first.close()
+    rmSync(archivePath, { force: true })
+
+    const reopened = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    try {
+      await vi.waitFor(async () => {
+        await expect(reopened.listMissionArchives(mission.id)).resolves.toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: archiveId,
+              status: 'verified',
+              availability: 'missing',
+            }),
+          ]),
+        )
+      })
+      await expect(reopened.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Do not create a correction epoch without its predecessor bytes.',
+      })).rejects.toThrow(/archive|available|missing|restore/iu)
+    } finally {
+      await reopened.prepareClose()
+      reopened.close()
+    }
+  }, 60_000)
+
   it('rejects cleanup before any delete when custody is replaced after credential proof', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-cleanup-custody-race-'))
     temporaryDirectories.add(userDataPath)

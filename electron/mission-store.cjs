@@ -6813,16 +6813,22 @@ function assertCurrentFinalizedArchiveReviewable(db, missionId) {
   const archiveId = readEventDetails(finalized?.details_json).archive_id
   if (typeof archiveId !== 'string' || archiveId.length < 1) return
   const archive = db.prepare(`SELECT container_version, status, verified_at,
-      verification_proof_json
+      verification_proof_json, availability
     FROM mission_archives WHERE id = ? AND mission_id = ?`).get(archiveId, missionId)
-  if (archive === undefined || Number(archive.container_version) !== 2) return
+  if (archive === undefined) {
+    throw new Error(
+      'Mission archive predecessor is unavailable from the archive registry; a correction unlock cannot create a reviewable supplemental chain.',
+    )
+  }
+  if (Number(archive.container_version) !== 2) return
   if (archive.status !== 'verified'
     || typeof archive.verified_at !== 'string'
     || archive.verified_at.length < 1
     || typeof archive.verification_proof_json !== 'string'
-    || archive.verification_proof_json.length < 1) {
+    || archive.verification_proof_json.length < 1
+    || archive.availability !== 'present') {
     throw new Error(
-      'Mission archive verification must complete before a correction unlock can create a reviewable supplemental chain.',
+      'Mission archive verification and custody availability must complete before a correction unlock can create a reviewable supplemental chain.',
     )
   }
 }
