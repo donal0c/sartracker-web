@@ -7,13 +7,16 @@ tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
 > Draft status: the earlier candidate proofs and the three initial exact-head
-> reviews are superseded by red-first archive-lifecycle remediation. The frozen
-> remediation head is
-> `f220f59650ba96231f06a4f45015791223934300` (tree
-> `9b5bf3a24da9a4ba6e98e8ee3e21d7ba236e6538`); deterministic unit tests are
-> `359 files / 3,404 tests`, with lint, build and diff checks green. Exact-head
-> browser, package, Linux and Ubuntu >2 GiB proofs are in flight, followed by
-> the five-charter independent review/recheck wave. The PR is not complete.
+> reviews are superseded by red-first archive-lifecycle remediation. The current
+> code head is `6f911998` (worker-isolated durable-ingest fix); documentation is
+> being frozen for the qualification rerun. The deterministic suite is green
+> apart from two suite-contention flakes that passed in isolation, with lint,
+> TypeScript, Node syntax and diff checks green. Exact-head browser, visual,
+> packaged macOS, SIGKILL and Linux workflow proofs remain green from the prior
+> implementation surface. Ubuntu >2 GiB qualification is rerunning on this
+> head; no new qualification JSON or final review/recheck claim exists yet.
+> PR6 remains pre-merge and incomplete until that proof and the required
+> independent exact-head review wave are clean.
 
 ## Execution identity
 
@@ -36,7 +39,9 @@ is intermediate. Donal retains approval and merge authority.
 | Frozen code candidate tree | `4be6f73d00de9cf9a4315c133ddfe51295c3e344` |
 | Post-candidate base reconciliation | `af745dc0c4027e25f8f306f38aa603026c3f2277` / tree `13d75423584d6a6f73501168b5cf4d9f5a547af3`, merging `origin/master` `0ca331ff816800e83134142cb109903e5d2c2992` |
 | Exact qualification-harness remediation head | `53164028f72254c4e17fcc0b4b845f7601fee153` / tree `5c347d30691f291164dc65ed25c2bc437f906e55` |
-| Current frozen archive-lifecycle remediation head | `f220f59650ba96231f06a4f45015791223934300` / tree `9b5bf3a24da9a4ba6e98e8ee3e21d7ba236e6538` |
+| Previous archive-lifecycle remediation head (superseded) | `f220f59650ba96231f06a4f45015791223934300` / tree `9b5bf3a24da9a4ba6e98e8ee3e21d7ba236e6538` |
+| Previous archive-lifecycle remediation head | `bd14adb5c4f41797c975089bb3d52dc22da95d1a` / tree `41225f06694b53e0230e446eaf5881f82c699d69` |
+| Current qualification-harness remediation head | `6f911998` / tree recorded after documentation freeze |
 | Immutable final documentation/review head | Recorded after documentation freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; no later repository mutation is permitted without re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |
 
@@ -631,33 +636,38 @@ pushed head revalidated repository identity, source/derived/qualifier hashes,
 distinct inodes, absent sidecars, available RAM/disk and host load before the
 unchanged production command was relaunched. The failed attempt is not proof.
 
-## Frozen-head proof wave (2026-08-31)
+## Frozen-head proof wave (2026-09-01)
 
-The remediation head is frozen at `f220f59650ba96231f06a4f45015791223934300`
-with tree `9b5bf3a24da9a4ba6e98e8ee3e21d7ba236e6538`. Local deterministic proof
-is green at `359 files / 3,404 tests`; ESLint, production build/bundle budgets
-and `git diff --check` are green. Exact-head browser proof is green at
+The previous code head `bd14adb5c4f41797c975089bb3d52dc22da95d1a` is superseded
+for qualification by `6f911998`, which isolates the qualification durable
+ingest lane in a worker while keeping current publication and the main heartbeat
+hard-gated at 200 ms. The prior application-surface proof remains carry-forward
+evidence pending exact-head rechecks. Local targeted qualification tests are
+green (`17` script tests plus `69` qualification tests); the broader suite had
+two timing/contention failures that both passed in isolation. ESLint,
+TypeScript, Node syntax and `git diff --check` are green. Exact-head browser
+proof is green at
 Chromium `172/172`; visual Playwright is `62/62`; uncached visual review is
 `74 pass / 0 fail / 0 error` (`failOn=high`), report
-`test-results/visual-verification/reports/visual-review-2026-08-31T16-24-28Z.json`
-SHA-256 `90be35e12311fdb289e3389be0ab5a4edde99751a79622fdcf180257f020c3fa`.
+`test-results/visual-verification/reports/visual-review-2026-08-31T17-19-45Z.json`,
+SHA-256 `77e6b7580c2c5f10a836669c2869df06ecff0f5cfcb6e020658d6332ad48bd07`.
 
 The exact-head unsigned macOS arm64 packaged lifecycle smoke passed with source
 clean before/after, full packaged build-head binding, archive Review/Replay,
 interrupted-restore startup sweep, credential-gated cleanup and zero plaintext
 or secret residue. Report:
-`tmp/breadcrumb-pr6-packaged-archive-smoke-f220f596/electron-archive-lifecycle-smoke-report.json`,
-SHA-256 `fad472a6edfa97eb1d3e67e92a9ff159115ed021b0b0c616549d61ad9c3352a6`.
+`tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-report.json`,
+SHA-256 `28341369dcb4817cd4cd195498127cb1c1220326a5ea285192b8bf4a8a7bdf4e`.
 The exact-head physical SIGKILL matrix is qualified `32/32`; report
-`/tmp/sartracker-pr6-kill-matrix-f220f596.json`, SHA-256
-`2ecaae8028a4a6e687f8f4aa9af6223955fdccaf20cdd286d943f49fc5dc804e`.
+`/tmp/sartracker-pr6-kill-matrix-bd14adb5-clean.json`, SHA-256
+`2ccc75df733637da41c71345e83fb095599818eff38be3dc2fe959713fa659a2`.
 
-GitHub Electron Linux workflow run
-`33413321011` is executing against this exact head and remains unqualified
-until every step is green. The Ubuntu >2 GiB field-scale qualifier is also
-running against this exact head on the named reference host; no migration,
-RSS, heartbeat, completeness or final report claim is made until that process
-closes and its evidence is independently checked.
+GitHub Electron Linux workflow run `33417666005` passed every step against the
+previous exact application head, including deterministic tests, native SQLite,
+960k replay, tracking soak, packaged archive lifecycle and AppImage launch/close.
+The Ubuntu >2 GiB qualifier is now being rerun against `6f911998` after the
+worker-lane correction; no new qualification JSON or Ubuntu migration,
+completeness, cleanup or final-report claim exists yet.
 
 ## Independent review gate
 

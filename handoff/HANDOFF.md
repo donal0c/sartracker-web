@@ -4,26 +4,22 @@
 
 ## Current State
 
-- **PR6 remediation is frozen and proof-running (2026-08-31):** branch
-  `codex/breadcrumb-pr6-archive-lifecycle` is at pushed head
-  `f220f59650ba96231f06a4f45015791223934300` (tree
-  `9b5bf3a24da9a4ba6e98e8ee3e21d7ba236e6538`) with the archive-review plaintext
-  sweep moved off the Electron main isolate, durable verifier-sweep failure
-  gating, exact legacy-v1 predecessor hashing/chaining, bounded review-path
-  scrubbing, progress-observer isolation, correction IPC/store bounds, and the
-  attachment/finalization fence remediation. The full deterministic suite is
-  `359 files / 3,404 tests`, with lint, build and diff checks green. Exact-head
-  Chromium/visual, packaged macOS, Linux workflow, and Ubuntu >2 GiB proofs are
-  running or complete; the five independent exact-head reviews/rechecks remain
-  before PR6 can be called review-ready.
+- **PR6 qualification-harness remediation is pushed at `6f911998` (2026-09-01):**
+  the current-position probe now publishes in memory and sends durable ingest to
+  a qualification-only worker connection; the 200 ms current/heartbeat gate is
+  unchanged. Targeted qualification tests are green (`17` script, `69` lib),
+  and lint/TypeScript/Node/diff checks are green. Ubuntu >2 GiB qualification
+  is rerunning against this exact head; no final qualification JSON or review-
+  ready claim exists yet. Prior browser/visual/package/SIGKILL/Linux evidence
+  remains carry-forward pending exact-head proof.
 
-- **Frozen-head proof snapshot:** exact-head Chromium `172/172`, visual
+- **Frozen-head proof snapshot (prior implementation surface):** exact-head Chromium `172/172`, visual
   Playwright `62/62`, uncached visual review `74 pass / 0 fail / 0 error`,
   packaged macOS archive lifecycle smoke passed, and the physical SIGKILL
-  matrix is `32/32` qualified. The Linux workflow run `33413321011` and Ubuntu
-  >2 GiB field-scale qualifier are still running; their evidence remains
-  unclaimed until closed and checked. Local proof report hashes and paths are
-  recorded in `docs/breadcrumb-pr6-evidence.md`.
+  matrix is `32/32` qualified. Linux workflow rerun `33417666005` is green;
+  the Ubuntu >2 GiB field-scale qualifier is being rerun after the worker-lane
+  correction. The diagnostics and local proof report hashes are recorded in
+  `docs/breadcrumb-pr6-evidence.md`.
 
 - **WAR-04B release-integrity audit is review-ready in [PR #9](https://github.com/donal0c/sartracker-web/pull/9) after current-`master` reconciliation (2026-08-30):** the exact-base investigation at `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf` confirms two release blockers: shipped Electron `40.10.0` is EOL, and `electron-builder@26.0.12 -> app-builder-lib@26.0.12` generates an affected AppImage launcher. The production-only npm audit is clean but omits those release-bearing dev dependencies. Live GitHub also has no enforced master/tag review/check boundary, enforced release immutability, attestation/SBOM, or enabled secret/Dependabot/CodeQL visibility. The repository and beta are public; “internal” is intended-use policy, not access control. PR #8's merge at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` added the WAR-04 evidence/docs/tests and shared-record reconciliation but left every audited package, lock, builder, release-workflow, publisher and support-policy input blob-identical, so it does not change the WAR-04B findings or supply release proof. No dependency, workflow, release, package/config, product, or GitHub-setting change was made. Follow `docs/assurance/findings/WAR-04B.md` for controlled remediation and the mandatory exact merged breadcrumb programme PR-6 refresh; exact-head review/recheck evidence is retained on PR #9. `better-sqlite3` PR #1475 shipped in `12.10.1`, so `DON-146` is no longer upstream-blocked.
 - **WAR-04 platform-services investigation merged through [PR #8](https://github.com/donal0c/sartracker-web/pull/8) at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` (2026-08-30):** final investigation head `3a2278ee8804a9ded0f2fd26626c4c00743c05a6` records nine confirmed local failure/privacy defects and six unproven hypotheses across official-map readiness, settings/credential startup, and sanitized support/incident export. Twelve isolated synthetic checks preserve the red states; shipping code is unchanged; the normal gates, both exact-head independent reviews and exact-head Linux branch gate were green. Three bounded WAR-11 remediation clusters are still required before WAR-12 release qualification; `DON-264` remains separately owned. The merged investigation is evidence, not remediation or release proof.
