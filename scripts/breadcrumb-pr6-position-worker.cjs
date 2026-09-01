@@ -84,7 +84,7 @@ function writePosition(position) {
         )
         updateDevice.run(timestamp, timestamp, position.mission_id, position.device_id)
       })()
-      return
+      return { busyRetries: attempt }
     } catch (error) {
       if (error?.code !== 'SQLITE_BUSY' || attempt >= SQLITE_BUSY_RETRY_LIMIT) throw error
       attempt += 1
@@ -97,11 +97,12 @@ parentPort.on('message', (message) => {
   if (message?.type === 'position') {
     const startedAt = performance.now()
     try {
-      writePosition(message.position)
+      const result = writePosition(message.position)
       parentPort.postMessage({
         type: 'ack',
         sourcePositionId: message.position.source_position_id,
         latencyMs: performance.now() - startedAt,
+        busyRetries: result.busyRetries,
       })
     } catch (error) {
       parentPort.postMessage({

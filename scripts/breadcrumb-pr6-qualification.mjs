@@ -29,6 +29,7 @@ import { Worker } from 'node:worker_threads'
 
 import {
   MAX_ARCHIVE_PROCESS_RSS_BYTES,
+  MAX_DURABLE_SETTLE_MS,
   MAX_MAIN_CADENCE_MS,
   MIN_FIELD_FIXTURE_BYTES,
   REQUIRED_SCRYPT_PROFILE,
@@ -585,7 +586,11 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
       const entry = pending.get(message.sourcePositionId)
       if (entry === undefined) return
       pending.delete(message.sourcePositionId)
-      entry.resolve({ phase: entry.phase, latencyMs: message.latencyMs })
+      entry.resolve({
+        phase: entry.phase,
+        latencyMs: message.latencyMs,
+        busyRetries: message.busyRetries ?? 0,
+      })
       return
     }
     if (message?.type === 'error' || message?.type === 'fatal') {
@@ -643,13 +648,30 @@ export function deriveLivenessEvidence(measurements) {
   const byPhase = {}
   let heartbeatMaxGapMs = 0
   let currentPositionMaxCadenceMs = 0
+  let durableMaxLatencyMs = 0
+  let durableWriteCount = 0
+  let durableVisibleWrites = 0
+  let durableBusyRetries = 0
+  const durableSettlementMs = measurements?.durableSettlementMs
+  if (!Number.isFinite(durableSettlementMs) || durableSettlementMs < 0
+    || durableSettlementMs > MAX_DURABLE_SETTLE_MS) {
+    throw new Error('Durable current-position settlement exceeded its bounded deadline.')
+  }
   for (const phase of QUALIFICATION_PHASES) {
     const value = measurements?.[phase]
     if (value === null || typeof value !== 'object'
       || !Array.isArray(value.heartbeatGapsMs) || value.heartbeatGapsMs.length < 1
       || !Array.isArray(value.currentCadencesMs) || value.currentCadencesMs.length < 1
+      || !Array.isArray(value.durableLatenciesMs) || value.durableLatenciesMs.length < 1
       || !Number.isSafeInteger(value.currentWrites) || value.currentWrites < 1
-      || value.visibleWrites !== value.currentWrites) {
+      || value.visibleWrites !== value.currentWrites
+      || !Number.isSafeInteger(value.durableWriteCount)
+      || value.durableWriteCount !== value.currentWrites
+      || !Number.isSafeInteger(value.durableVisibleWrites)
+      || value.durableVisibleWrites !== value.durableWriteCount
+      || !Number.isSafeInteger(value.durableBusyRetries)
+      || value.durableBusyRetries < 0
+      || value.durableLatenciesMs.length !== value.durableWriteCount) {
       throw new Error(`Current-position proof for ${phase} is incomplete.`)
     }
     const phaseHeartbeat = Math.max(...value.heartbeatGapsMs)
@@ -660,19 +682,37 @@ export function deriveLivenessEvidence(measurements) {
       || phaseCadence >= MAX_MAIN_CADENCE_MS) {
       throw new Error(`Current positions or heartbeat exceeded the 200 ms gate during ${phase}.`)
     }
+    const phaseDurableMax = Math.max(...value.durableLatenciesMs)
+    if (!Number.isFinite(phaseDurableMax) || phaseDurableMax < 0
+      || phaseDurableMax > MAX_DURABLE_SETTLE_MS) {
+      throw new Error(`Durable current-position settlement exceeded its bounded deadline during ${phase}.`)
+    }
     byPhase[phase] = Object.freeze({
       heartbeatMaxGapMs: phaseHeartbeat,
       currentPositionMaxCadenceMs: phaseCadence,
+      durableMaxLatencyMs: phaseDurableMax,
+      durableWriteCount: value.durableWriteCount,
+      durableVisibleWrites: value.durableVisibleWrites,
+      durableBusyRetries: value.durableBusyRetries,
       currentWrites: value.currentWrites,
       visibleWrites: value.visibleWrites,
     })
     heartbeatMaxGapMs = Math.max(heartbeatMaxGapMs, phaseHeartbeat)
     currentPositionMaxCadenceMs = Math.max(currentPositionMaxCadenceMs, phaseCadence)
+    durableMaxLatencyMs = Math.max(durableMaxLatencyMs, phaseDurableMax)
+    durableWriteCount += value.durableWriteCount
+    durableVisibleWrites += value.durableVisibleWrites
+    durableBusyRetries += value.durableBusyRetries
   }
   return Object.freeze({
     heartbeatMaxGapMs,
     currentPositionMaxCadenceMs,
     currentPositionsIndependent: true,
+    durableMaxLatencyMs,
+    durableWriteCount,
+    durableVisibleWrites,
+    durableBusyRetries,
+    durableSettlementMs,
     byPhase: Object.freeze(byPhase),
   })
 }
@@ -1204,6 +1244,9 @@ export function startCurrentPositionProbe({
   const measurements = Object.fromEntries(QUALIFICATION_PHASES.map((phase) => [phase, {
     heartbeatGapsMs: [],
     currentCadencesMs: [],
+    durableLatenciesMs: [],
+    durableWriteCount: 0,
+    durableBusyRetries: 0,
     currentWrites: 0,
     visibleWrites: 0,
     lastVisibleAt: null,
@@ -1213,9 +1256,13 @@ export function startCurrentPositionProbe({
   let running = true
   let sequence = 0
   let lastTimestampMs = Date.now()
-  let lastHeartbeatAt = performance.now()
   let activeTick = Promise.resolve()
   const currentPositions = new Map()
+  const heartbeatMonitor = startHeartbeatMonitor((gap) => {
+    if (phase !== null && failure === null) {
+      measurements[phase].heartbeatGapsMs.push(gap)
+    }
+  })
   const durableWorker = databasePath === undefined
     ? null
     : startDurablePositionWorker({
@@ -1239,12 +1286,9 @@ export function startCurrentPositionProbe({
   /** Publishes one unique current position before queuing durable persistence. */
   const tick = async () => {
     const tickStartedAt = performance.now()
-    const heartbeatGap = tickStartedAt - lastHeartbeatAt
-    lastHeartbeatAt = tickStartedAt
     const tickPhase = phase
     if (tickPhase === null || failure !== null) return
     const bucket = measurements[tickPhase]
-    bucket.heartbeatGapsMs.push(heartbeatGap)
     sequence += 1
     lastTimestampMs = Math.max(Date.now(), lastTimestampMs + 1)
     const sourcePositionId = `pr6-${runId}-${sequence}`
@@ -1268,7 +1312,6 @@ export function startCurrentPositionProbe({
       bucket.visibleWrites += 1
       const currentCadence = Math.max(
         visibleAt - tickStartedAt,
-        heartbeatGap,
         bucket.lastVisibleAt === null ? 0 : visibleAt - bucket.lastVisibleAt,
       )
       bucket.currentCadencesMs.push(currentCadence)
@@ -1281,9 +1324,24 @@ export function startCurrentPositionProbe({
           latencyMs: performance.now() - durableStartedAt,
         }))
         : durableWorker.enqueue(position, tickPhase)
-      durablePromises.push(durablePromise.catch((error) => {
+      const observedDurablePromise = Promise.resolve(durablePromise).then((result) => {
+        const latencyMs = Number(result?.latencyMs)
+        if (!Number.isFinite(latencyMs) || latencyMs < 0) {
+          throw new Error('Durable current-position latency was invalid.')
+        }
+        const busyRetries = Number(result?.busyRetries ?? 0)
+        if (!Number.isSafeInteger(busyRetries) || busyRetries < 0) {
+          throw new Error('Durable current-position contention count was invalid.')
+        }
+        bucket.durableLatenciesMs.push(latencyMs)
+        bucket.durableWriteCount += 1
+        bucket.durableBusyRetries += busyRetries
+        return result
+      }).catch((error) => {
         failure = error
-      }))
+        return undefined
+      })
+      durablePromises.push(observedDurablePromise)
     } catch (error) {
       failure = error
     }
@@ -1303,26 +1361,64 @@ export function startCurrentPositionProbe({
       running = false
       if (timer !== null) clearTimeout(timer)
       await activeTick
-      await Promise.all(durablePromises)
+      heartbeatMonitor.stop()
+      const durableSettlementStartedAt = performance.now()
+      let durableSettlementTimer = null
+      const durableSettlementTimeout = new Promise((resolve) => {
+        durableSettlementTimer = setTimeout(() => resolve(false), MAX_DURABLE_SETTLE_MS)
+      })
+      const settled = await Promise.race([
+        Promise.allSettled(durablePromises).then(() => true),
+        durableSettlementTimeout,
+      ])
+      if (durableSettlementTimer !== null) clearTimeout(durableSettlementTimer)
+      if (settled !== true && failure === null) {
+        failure = new Error('Durable current-position settlement exceeded its bounded deadline.')
+      }
       if (durableWorker !== null) await durableWorker.stop()
+      const durableWriteCount = Object.values(measurements)
+        .reduce((total, value) => total + value.durableWriteCount, 0)
+      let durableVisibleWrites = durableWriteCount
       if (typeof store.countPositions === 'function') {
         const expectedDurableWrites = QUALIFICATION_PHASES.reduce(
           (total, name) => total + measurements[name].currentWrites,
-          0,
+        0,
         )
         const actualDurableWrites = await store.countPositions(missionId, deviceId)
         if (actualDurableWrites !== expectedDurableWrites) {
           throw new Error('Durable current-position ingest count did not settle exhaustively.')
         }
+        durableVisibleWrites = actualDurableWrites
       }
+      if (typeof store.latestPositions === 'function') {
+        const latest = await store.latestPositions(missionId)
+        const current = Array.isArray(latest)
+          ? latest.find((position) => position?.device_id === deviceId)
+          : null
+        if (current?.source_position_id === undefined
+          || current.source_position_id === null
+          || !String(current.source_position_id).startsWith(`pr6-${runId}-`)) {
+          throw new Error('Durable current-position ingest was not visible through latest positions.')
+        }
+      }
+      const durableSettlementMs = performance.now() - durableSettlementStartedAt
       if (failure !== null) throw failure
       const projected = Object.fromEntries(QUALIFICATION_PHASES.map((name) => [name, {
         heartbeatGapsMs: measurements[name].heartbeatGapsMs,
         currentCadencesMs: measurements[name].currentCadencesMs,
+        durableLatenciesMs: measurements[name].durableLatenciesMs,
+        durableWriteCount: measurements[name].durableWriteCount,
+        durableVisibleWrites: measurements[name].durableWriteCount,
+        durableBusyRetries: measurements[name].durableBusyRetries,
         currentWrites: measurements[name].currentWrites,
         visibleWrites: measurements[name].visibleWrites,
       }]))
-      return deriveLivenessEvidence(projected)
+      return deriveLivenessEvidence({
+        ...projected,
+        durableWriteCount,
+        durableVisibleWrites,
+        durableSettlementMs,
+      })
     },
   })
 }
@@ -1354,13 +1450,17 @@ export async function runWithHeartbeatMonitor(
 }
 
 /** Starts one timer-delay monitor that includes synchronous main-thread stalls. */
-function startHeartbeatMonitor() {
+function startHeartbeatMonitor(onGap) {
   const gaps = []
   let last = performance.now()
   let stoppedMaxGapMs = null
+  const recordGap = (gap) => {
+    gaps.push(gap)
+    try { onGap?.(gap) } catch {}
+  }
   const timer = setInterval(() => {
     const current = performance.now()
-    gaps.push(current - last)
+    recordGap(current - last)
     last = current
   }, HEARTBEAT_INTERVAL_MS)
   return Object.freeze({
@@ -1369,7 +1469,7 @@ function startHeartbeatMonitor() {
       if (stoppedMaxGapMs !== null) return stoppedMaxGapMs
       clearInterval(timer)
       const final = performance.now()
-      gaps.push(final - last)
+      recordGap(final - last)
       stoppedMaxGapMs = Math.max(...gaps)
       return stoppedMaxGapMs
     },

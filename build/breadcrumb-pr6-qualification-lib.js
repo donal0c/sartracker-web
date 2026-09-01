@@ -11,6 +11,7 @@ const { normalizeArchiveVerificationProofForIdentity } = require(
 )
 
 export const MAX_MAIN_CADENCE_MS = 200
+export const MAX_DURABLE_SETTLE_MS = 120_000
 export const MIN_ARCHIVE_CIPHERTEXT_BYTES = 2 * 1024 * 1024 * 1024
 export const MIN_FIELD_FIXTURE_BYTES = 2 * 1024 * 1024 * 1024
 export const MAX_ARCHIVE_PROCESS_RSS_BYTES = 512 * 1024 * 1024
@@ -463,7 +464,8 @@ function validateCleanupAndReview(evidence, archive) {
 function validateLiveness(evidence) {
   const liveness = requireRecord(evidence.liveness, [
     'heartbeatMaxGapMs', 'currentPositionMaxCadenceMs',
-    'currentPositionsIndependent', 'byPhase',
+    'currentPositionsIndependent', 'durableMaxLatencyMs', 'durableWriteCount',
+    'durableVisibleWrites', 'durableBusyRetries', 'durableSettlementMs', 'byPhase',
   ], 'PR6 liveness proof')
   const heartbeatMaxGapMs = requireMeasurement(
     liveness.heartbeatMaxGapMs,
@@ -473,13 +475,43 @@ function validateLiveness(evidence) {
     liveness.currentPositionMaxCadenceMs,
     'Current-position maximum cadence',
   )
+  const durableMaxLatencyMs = requireMeasurement(
+    liveness.durableMaxLatencyMs,
+    'Durable current-position maximum latency',
+  )
+  const durableWriteCount = requirePositiveInteger(
+    liveness.durableWriteCount,
+    'Durable current-position writes',
+  )
+  const durableVisibleWrites = requirePositiveInteger(
+    liveness.durableVisibleWrites,
+    'Durable current-position visible writes',
+  )
+  const durableBusyRetries = requireNonnegativeInteger(
+    liveness.durableBusyRetries,
+    'Durable current-position contention retries',
+  )
+  const durableSettlementMs = requireMeasurement(
+    liveness.durableSettlementMs,
+    'Durable current-position settlement',
+  )
+  if (durableMaxLatencyMs > MAX_DURABLE_SETTLE_MS
+    || durableSettlementMs > MAX_DURABLE_SETTLE_MS
+    || durableVisibleWrites !== durableWriteCount) {
+    throw qualificationFailure(
+      'PR6_QUALIFICATION_LIVENESS_FAILED',
+      'PR6 durable current-position settlement was incomplete or exceeded its deadline.',
+    )
+  }
   requireProven(liveness.currentPositionsIndependent, 'Current-position independence')
   const byPhase = requireRecord(liveness.byPhase, REQUIRED_LIVE_PHASES, 'Phase liveness')
   let observedHeartbeatMax = 0
   let observedCadenceMax = 0
   for (const phase of REQUIRED_LIVE_PHASES) {
     const phaseEvidence = requireRecord(byPhase[phase], [
-      'heartbeatMaxGapMs', 'currentPositionMaxCadenceMs', 'currentWrites', 'visibleWrites',
+      'heartbeatMaxGapMs', 'currentPositionMaxCadenceMs', 'durableMaxLatencyMs',
+      'durableWriteCount', 'durableVisibleWrites', 'durableBusyRetries',
+      'currentWrites', 'visibleWrites',
     ], `Liveness during ${phase}`)
     const phaseHeartbeat = requireMeasurement(
       phaseEvidence.heartbeatMaxGapMs,
@@ -489,12 +521,31 @@ function validateLiveness(evidence) {
       phaseEvidence.currentPositionMaxCadenceMs,
       `Current-position cadence during ${phase}`,
     )
+    const phaseDurableMax = requireMeasurement(
+      phaseEvidence.durableMaxLatencyMs,
+      `Durable current-position latency during ${phase}`,
+    )
     const writes = requirePositiveInteger(
       phaseEvidence.currentWrites,
       `Current-position writes during ${phase}`,
     )
+    const phaseDurableWrites = requirePositiveInteger(
+      phaseEvidence.durableWriteCount,
+      `Durable current-position writes during ${phase}`,
+    )
+    const phaseDurableVisibleWrites = requirePositiveInteger(
+      phaseEvidence.durableVisibleWrites,
+      `Durable current-position visible writes during ${phase}`,
+    )
+    requireNonnegativeInteger(
+      phaseEvidence.durableBusyRetries,
+      `Durable current-position contention retries during ${phase}`,
+    )
     if (phaseHeartbeat >= MAX_MAIN_CADENCE_MS || phaseCadence >= MAX_MAIN_CADENCE_MS
-      || phaseEvidence.visibleWrites !== writes) {
+      || phaseEvidence.visibleWrites !== writes
+      || phaseDurableMax > MAX_DURABLE_SETTLE_MS
+      || phaseDurableWrites !== writes
+      || phaseDurableVisibleWrites !== phaseDurableWrites) {
       throw qualificationFailure(
         'PR6_QUALIFICATION_LIVENESS_FAILED',
         `PR6 qualification liveness failed during ${phase}.`,
@@ -503,8 +554,24 @@ function validateLiveness(evidence) {
     observedHeartbeatMax = Math.max(observedHeartbeatMax, phaseHeartbeat)
     observedCadenceMax = Math.max(observedCadenceMax, phaseCadence)
   }
+  const observedDurableMax = Object.values(byPhase).reduce(
+    (maximum, phase) => Math.max(maximum, phase.durableMaxLatencyMs), 0,
+  )
+  const observedDurableWrites = Object.values(byPhase).reduce(
+    (total, phase) => total + phase.durableWriteCount, 0,
+  )
+  const observedDurableVisibleWrites = Object.values(byPhase).reduce(
+    (total, phase) => total + phase.durableVisibleWrites, 0,
+  )
+  const observedDurableBusyRetries = Object.values(byPhase).reduce(
+    (total, phase) => total + phase.durableBusyRetries, 0,
+  )
   if (heartbeatMaxGapMs !== observedHeartbeatMax
     || currentPositionMaxCadenceMs !== observedCadenceMax
+    || durableMaxLatencyMs !== observedDurableMax
+    || durableWriteCount !== observedDurableWrites
+    || durableVisibleWrites !== observedDurableVisibleWrites
+    || durableBusyRetries !== observedDurableBusyRetries
     || heartbeatMaxGapMs >= MAX_MAIN_CADENCE_MS
     || currentPositionMaxCadenceMs >= MAX_MAIN_CADENCE_MS) {
     throw qualificationFailure(

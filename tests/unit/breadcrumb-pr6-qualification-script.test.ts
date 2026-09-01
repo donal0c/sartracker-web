@@ -132,19 +132,28 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
   })
 
   it('derives exact per-phase maxima and fails at the immutable 200 ms gate', () => {
-    const measurements = Object.fromEntries(
+    const measurements = Object.assign(Object.fromEntries(
       ['create', 'verify', 'restore', 'cleanup'].map((phase, index) => [phase, {
         heartbeatGapsMs: [50 + index, 80 + index],
         currentCadencesMs: [70 + index, 90 + index],
+        durableLatenciesMs: [300, 100],
+        durableWriteCount: 2,
+        durableVisibleWrites: 2,
+        durableBusyRetries: 1,
         currentWrites: 2,
         visibleWrites: 2,
       }]),
-    )
+    ), { durableSettlementMs: 12 })
 
     expect(deriveLivenessEvidence(measurements)).toEqual({
       heartbeatMaxGapMs: 83,
       currentPositionMaxCadenceMs: 93,
       currentPositionsIndependent: true,
+      durableMaxLatencyMs: 300,
+      durableWriteCount: 8,
+      durableVisibleWrites: 8,
+      durableBusyRetries: 4,
+      durableSettlementMs: 12,
       byPhase: {
         create: phaseEvidence(80, 90),
         verify: phaseEvidence(81, 91),
@@ -183,6 +192,24 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(result.byPhase.create.currentWrites).toBeGreaterThan(1)
     expect(result.byPhase.create.visibleWrites)
       .toBe(result.byPhase.create.currentWrites)
+  })
+
+  it('fails closed when the measured main event loop stalls despite off-thread durable ingest', async () => {
+    const probe = startCurrentPositionProbe({
+      store: { addPosition: vi.fn(async () => undefined) },
+      missionId: 'probe-mission',
+      deviceId: 'probe-device',
+      runId: 'probe-run',
+    })
+    probe.setPhase('create')
+    await new Promise((resolve) => setTimeout(resolve, 90))
+    const blockedUntil = performance.now() + 240
+    while (performance.now() < blockedUntil) { /* intentional event-loop stall */ }
+    for (const phase of ['verify', 'restore', 'cleanup'] as const) {
+      probe.setPhase(phase)
+      await new Promise((resolve) => setTimeout(resolve, 70))
+    }
+    await expect(probe.stop()).rejects.toThrow('200 ms')
   })
 
   it('drains durable ingest through the qualification worker without blocking publication', async () => {
@@ -232,6 +259,10 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       countPositions: vi.fn(() => database.prepare(
         'SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?',
       ).get('worker-mission', 'worker-device').count),
+      latestPositions: vi.fn(() => database.prepare(
+        `SELECT * FROM positions WHERE mission_id = ? AND device_id = ?
+         ORDER BY timestamp DESC, id DESC LIMIT 1`,
+      ).all('worker-mission', 'worker-device')),
     }
     const probe = startCurrentPositionProbe({
       store,
@@ -249,7 +280,12 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       const currentWrites = Object.values(result.byPhase)
         .reduce((total, phase) => total + phase.currentWrites, 0)
       expect(currentWrites).toBeGreaterThan(2)
+      expect(result.durableWriteCount).toBe(currentWrites)
+      expect(result.durableVisibleWrites).toBe(currentWrites)
+      expect(result.durableMaxLatencyMs).toBeGreaterThanOrEqual(0)
+      expect(result.durableSettlementMs).toBeGreaterThanOrEqual(0)
       expect(store.countPositions).toHaveBeenCalledWith('worker-mission', 'worker-device')
+      expect(store.latestPositions).toHaveBeenCalledWith('worker-mission')
       expect(database.prepare(
         'SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?',
       ).get('worker-mission', 'worker-device').count).toBe(currentWrites)
@@ -634,6 +670,10 @@ function phaseEvidence(heartbeatMaxGapMs: number, currentPositionMaxCadenceMs: n
   return {
     heartbeatMaxGapMs,
     currentPositionMaxCadenceMs,
+    durableMaxLatencyMs: 300,
+    durableWriteCount: 2,
+    durableVisibleWrites: 2,
+    durableBusyRetries: 1,
     currentWrites: 2,
     visibleWrites: 2,
   }

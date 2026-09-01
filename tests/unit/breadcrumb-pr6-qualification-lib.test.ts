@@ -131,6 +131,9 @@ describe('Breadcrumb PR6 qualification evidence contract [DON-252 / BCP-15]', ()
     ['review residual remains', (value: QualificationEvidence) => { value.reviewAfterCleanup.plaintextSweptAfterClose = false }],
     ['heartbeat too slow', (value: QualificationEvidence) => { value.liveness.heartbeatMaxGapMs = MAX_MAIN_CADENCE_MS }],
     ['current cadence too slow', (value: QualificationEvidence) => { value.liveness.currentPositionMaxCadenceMs = MAX_MAIN_CADENCE_MS }],
+    ['durable settle exceeded', (value: QualificationEvidence) => { value.liveness.durableSettlementMs = 120_001 }],
+    ['durable write missing', (value: QualificationEvidence) => { value.liveness.durableVisibleWrites = 0 }],
+    ['durable retry count mismatch', (value: QualificationEvidence) => { value.liveness.durableBusyRetries = 1 }],
     ['no writes during restore', (value: QualificationEvidence) => { value.liveness.byPhase.restore.currentWrites = 0 }],
     ['write not visible', (value: QualificationEvidence) => { value.liveness.byPhase.cleanup.visibleWrites = 0 }],
     ['RSS too high', (value: QualificationEvidence) => { value.resources.peakProcessRssBytes = MAX_ARCHIVE_PROCESS_RSS_BYTES + 1 }],
@@ -352,6 +355,11 @@ function validEvidence() {
       heartbeatMaxGapMs: MAX_MAIN_CADENCE_MS - 1,
       currentPositionMaxCadenceMs: MAX_MAIN_CADENCE_MS - 1,
       currentPositionsIndependent: true,
+      durableMaxLatencyMs: 300,
+      durableWriteCount: 4,
+      durableVisibleWrites: 4,
+      durableBusyRetries: 0,
+      durableSettlementMs: 1,
       byPhase: {
         create: validPhaseLiveness(),
         verify: validPhaseLiveness(),
@@ -413,6 +421,10 @@ function validPhaseLiveness() {
   return {
     heartbeatMaxGapMs: MAX_MAIN_CADENCE_MS - 1,
     currentPositionMaxCadenceMs: MAX_MAIN_CADENCE_MS - 1,
+    durableMaxLatencyMs: 300,
+    durableWriteCount: 1,
+    durableVisibleWrites: 1,
+    durableBusyRetries: 0,
     currentWrites: 1,
     visibleWrites: 1,
   }
