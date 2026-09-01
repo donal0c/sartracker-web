@@ -258,7 +258,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     }
   })
 
-  it('retries durable ingest while a concurrent cleanup transaction briefly holds SQLite', async () => {
+  it('retries durable ingest while a concurrent cleanup transaction sustains SQLite contention', async () => {
     const root = await createTemporaryRoot()
     const databasePath = path.join(root, 'mission-store.sqlite')
     const database = new Database(databasePath)
@@ -302,7 +302,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     database.prepare(`INSERT INTO devices(id, mission_id, device_id, status)
       VALUES (?, ?, ?, ?)`).run('busy-device-row', 'busy-mission', 'busy-device', 'online')
     database.exec('BEGIN IMMEDIATE')
-    const releaseLock = setTimeout(() => database.exec('COMMIT'), 1_500)
+    const releaseLock = setTimeout(() => database.exec('COMMIT'), 6_000)
     const store = {
       countPositions: vi.fn(() => database.prepare(
         'SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?',
@@ -317,7 +317,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     })
     probe.setPhase('create')
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1_900))
+      await new Promise((resolve) => setTimeout(resolve, 6_400))
       for (const phase of ['verify', 'restore', 'cleanup'] as const) {
         probe.setPhase(phase)
         await new Promise((resolve) => setTimeout(resolve, 70))
@@ -334,7 +334,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       try { database.exec('ROLLBACK') } catch { /* transaction already released */ }
       database.close()
     }
-  })
+  }, 15_000)
 
   it('fails closed when the durable worker exits before shutdown begins', async () => {
     class ExitingWorker {

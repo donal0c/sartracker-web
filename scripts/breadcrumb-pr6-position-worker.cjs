@@ -6,8 +6,11 @@ const Database = require('better-sqlite3')
 const { canonicalizeAcceptedPosition } = require('../electron/position-ingest-policy.cjs')
 
 const SQLITE_BUSY_TIMEOUT_MS = 250
-const SQLITE_BUSY_RETRY_LIMIT = 12
-const SQLITE_BUSY_RETRY_DELAY_MS = 100
+// Archive finalization/cleanup can hold the WAL writer lock for tens of seconds
+// on field-scale stores. Keep the retry budget finite while allowing that
+// off-main-thread durable lane to drain before reporting a real failure.
+const SQLITE_BUSY_RETRY_LIMIT = 120
+const SQLITE_BUSY_RETRY_DELAY_MS = 250
 const busySleepBuffer = new SharedArrayBuffer(4)
 const busySleepView = new Int32Array(busySleepBuffer)
 
