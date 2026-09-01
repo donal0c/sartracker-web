@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 
@@ -529,5 +529,51 @@ describe('mutable secret-buffer cleanup', () => {
     expect(() => zeroBuffer('managed-runtime-secret' as unknown as Buffer)).toThrow(
       /mutable buffer/i,
     )
+  })
+
+  it('cleans copied key material when validation fails after the copy', async () => {
+    const fillSpy = vi.spyOn(Buffer.prototype, 'fill')
+    try {
+      await expect(
+        wrapMissionArchiveKey({
+          missionArchiveKey: FIXED_MAK,
+          slotType: 'invalid' as SlotType,
+          slotId: 'operator-passphrase-v1',
+          secret: 'correct horse battery staple',
+          headerDigest: FIXED_HEADER_DIGEST,
+          randomBytes: fixedSlotRandomBytes,
+        }),
+      ).rejects.toThrow(/slot type/i)
+      expect(fillSpy).toHaveBeenCalled()
+
+      fillSpy.mockClear()
+      expect(() =>
+        encryptFrame({
+          missionArchiveKey: FIXED_MAK,
+          noncePrefix: FIXED_NONCE_PREFIX,
+          frameIndex: 0n,
+          final: 'invalid' as unknown as boolean,
+          plaintext: Buffer.from('evidence'),
+          headerDigest: FIXED_HEADER_DIGEST,
+        }),
+      ).toThrow(/final flag/i)
+      expect(fillSpy).toHaveBeenCalled()
+
+      fillSpy.mockClear()
+      expect(() =>
+        decryptFrame({
+          missionArchiveKey: FIXED_MAK,
+          noncePrefix: FIXED_NONCE_PREFIX,
+          frameIndex: 0n,
+          final: 'invalid' as unknown as boolean,
+          ciphertext: Buffer.alloc(0),
+          authTag: Buffer.alloc(16),
+          headerDigest: FIXED_HEADER_DIGEST,
+        }),
+      ).toThrow(/final flag/i)
+      expect(fillSpy).toHaveBeenCalled()
+    } finally {
+      fillSpy.mockRestore()
+    }
   })
 })

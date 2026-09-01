@@ -567,23 +567,27 @@ async function wrapMissionArchiveKey({
   headerDigest,
   randomBytes,
 }) {
-  const mak = copyBytes(
-    missionArchiveKey,
-    'The mission archive key',
-    MISSION_ARCHIVE_KEY_BYTES,
-  )
-  const normalizedSlotType = normalizeSlotType(slotType)
-  const normalizedSlotId = normalizeSlotId(slotId)
-  const normalizedSecret = normalizeSlotSecret(normalizedSlotType, secret)
-  const header = copyBytes(headerDigest, 'The canonical archive header digest', HEADER_DIGEST_BYTES)
-  const salt = obtainRandomBytes(
-    randomBytes,
-    SARARCH2_SCRYPT_PROFILE.saltBytes,
-    'The archive key slot salt',
-  )
-  const nonce = obtainRandomBytes(randomBytes, WRAP_NONCE_BYTES, 'The archive key slot nonce')
+  let mak
+  let header
+  let salt
+  let nonce
   let wrappingKey
   try {
+    mak = copyBytes(
+      missionArchiveKey,
+      'The mission archive key',
+      MISSION_ARCHIVE_KEY_BYTES,
+    )
+    const normalizedSlotType = normalizeSlotType(slotType)
+    const normalizedSlotId = normalizeSlotId(slotId)
+    const normalizedSecret = normalizeSlotSecret(normalizedSlotType, secret)
+    header = copyBytes(headerDigest, 'The canonical archive header digest', HEADER_DIGEST_BYTES)
+    salt = obtainRandomBytes(
+      randomBytes,
+      SARARCH2_SCRYPT_PROFILE.saltBytes,
+      'The archive key slot salt',
+    )
+    nonce = obtainRandomBytes(randomBytes, WRAP_NONCE_BYTES, 'The archive key slot nonce')
     wrappingKey = await deriveSlotKey({
       secret: normalizedSecret,
       salt,
@@ -617,10 +621,10 @@ async function wrapMissionArchiveKey({
       authTag: authTag.toString('base64'),
     })
   } finally {
-    zeroBuffer(mak)
-    zeroBuffer(header)
-    zeroBuffer(salt)
-    zeroBuffer(nonce)
+    if (mak !== undefined) zeroBuffer(mak)
+    if (header !== undefined) zeroBuffer(header)
+    if (salt !== undefined) zeroBuffer(salt)
+    if (nonce !== undefined) zeroBuffer(nonce)
     if (wrappingKey !== undefined) {
       zeroBuffer(wrappingKey)
     }
@@ -751,22 +755,26 @@ function encryptFrame({
   plaintext,
   headerDigest,
 }) {
-  const mak = copyBytes(
-    missionArchiveKey,
-    'The mission archive key',
-    MISSION_ARCHIVE_KEY_BYTES,
-  )
-  const plaintextBytes = copyBytes(plaintext, 'The archive frame plaintext')
-  const finalFlag = normalizeFinalFlag(final)
-  normalizePlaintextLength(plaintextBytes.length)
-  const nonce = deriveFrameNonce(noncePrefix, frameIndex)
-  const aad = createFrameAad({
-    headerDigest,
-    frameIndex,
-    final: finalFlag,
-    plaintextLength: plaintextBytes.length,
-  })
+  let mak
+  let plaintextBytes
+  let nonce
+  let aad
   try {
+    mak = copyBytes(
+      missionArchiveKey,
+      'The mission archive key',
+      MISSION_ARCHIVE_KEY_BYTES,
+    )
+    plaintextBytes = copyBytes(plaintext, 'The archive frame plaintext')
+    const finalFlag = normalizeFinalFlag(final)
+    normalizePlaintextLength(plaintextBytes.length)
+    nonce = deriveFrameNonce(noncePrefix, frameIndex)
+    aad = createFrameAad({
+      headerDigest,
+      frameIndex,
+      final: finalFlag,
+      plaintextLength: plaintextBytes.length,
+    })
     const cipher = createCipheriv('aes-256-gcm', mak, nonce, {
       authTagLength: AUTH_TAG_BYTES,
     })
@@ -776,10 +784,10 @@ function encryptFrame({
       authTag: cipher.getAuthTag(),
     }
   } finally {
-    zeroBuffer(mak)
-    zeroBuffer(plaintextBytes)
-    zeroBuffer(nonce)
-    zeroBuffer(aad)
+    if (mak !== undefined) zeroBuffer(mak)
+    if (plaintextBytes !== undefined) zeroBuffer(plaintextBytes)
+    if (nonce !== undefined) zeroBuffer(nonce)
+    if (aad !== undefined) zeroBuffer(aad)
   }
 }
 
@@ -808,25 +816,30 @@ function decryptFrame({
   headerDigest,
   plaintextLength,
 }) {
-  const mak = copyBytes(
-    missionArchiveKey,
-    'The mission archive key',
-    MISSION_ARCHIVE_KEY_BYTES,
-  )
-  const ciphertextBytes = copyBytes(ciphertext, 'The archive frame ciphertext')
-  const tag = copyBytes(authTag, 'The archive frame authentication tag', AUTH_TAG_BYTES)
-  const finalFlag = normalizeFinalFlag(final)
-  const declaredPlaintextLength = normalizePlaintextLength(
-    plaintextLength === undefined ? ciphertextBytes.length : plaintextLength,
-  )
-  const nonce = deriveFrameNonce(noncePrefix, frameIndex)
-  const aad = createFrameAad({
-    headerDigest,
-    frameIndex,
-    final: finalFlag,
-    plaintextLength: declaredPlaintextLength,
-  })
+  let mak
+  let ciphertextBytes
+  let tag
+  let nonce
+  let aad
   try {
+    mak = copyBytes(
+      missionArchiveKey,
+      'The mission archive key',
+      MISSION_ARCHIVE_KEY_BYTES,
+    )
+    ciphertextBytes = copyBytes(ciphertext, 'The archive frame ciphertext')
+    tag = copyBytes(authTag, 'The archive frame authentication tag', AUTH_TAG_BYTES)
+    const finalFlag = normalizeFinalFlag(final)
+    const declaredPlaintextLength = normalizePlaintextLength(
+      plaintextLength === undefined ? ciphertextBytes.length : plaintextLength,
+    )
+    nonce = deriveFrameNonce(noncePrefix, frameIndex)
+    aad = createFrameAad({
+      headerDigest,
+      frameIndex,
+      final: finalFlag,
+      plaintextLength: declaredPlaintextLength,
+    })
     try {
       const decipher = createDecipheriv('aes-256-gcm', mak, nonce, {
         authTagLength: AUTH_TAG_BYTES,
@@ -838,11 +851,11 @@ function decryptFrame({
       throw new ArchiveAuthenticationError()
     }
   } finally {
-    zeroBuffer(mak)
-    zeroBuffer(ciphertextBytes)
-    zeroBuffer(tag)
-    zeroBuffer(nonce)
-    zeroBuffer(aad)
+    if (mak !== undefined) zeroBuffer(mak)
+    if (ciphertextBytes !== undefined) zeroBuffer(ciphertextBytes)
+    if (tag !== undefined) zeroBuffer(tag)
+    if (nonce !== undefined) zeroBuffer(nonce)
+    if (aad !== undefined) zeroBuffer(aad)
   }
 }
 
