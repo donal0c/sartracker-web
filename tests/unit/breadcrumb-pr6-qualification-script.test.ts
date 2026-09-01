@@ -556,6 +556,56 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(outcome).not.toBe('timed-out')
   })
 
+  it('bounds graceful worker shutdown after all writes acknowledge', async () => {
+    class AcknowledgingHungWorker {
+      listeners = new Map<string, ((value?: unknown) => void)[]>()
+
+      on(event: string, listener: (value?: unknown) => void) {
+        const existing = this.listeners.get(event) ?? []
+        existing.push(listener)
+        this.listeners.set(event, existing)
+        return this
+      }
+
+      postMessage(message: { type?: string; position?: { source_position_id?: string } }) {
+        if (message.type === 'position') {
+          setTimeout(() => {
+            for (const listener of this.listeners.get('message') ?? []) {
+              listener({
+                type: 'ack',
+                sourcePositionId: message.position?.source_position_id,
+                latencyMs: 1,
+                busyRetries: 0,
+              })
+            }
+          }, 5)
+        }
+      }
+
+      terminate() { return Promise.resolve(0) }
+    }
+
+    const probe = startCurrentPositionProbe({
+      store: {},
+      missionId: 'ack-hung-mission',
+      deviceId: 'ack-hung-device',
+      runId: 'ack-hung-run',
+      databasePath: path.join(os.tmpdir(), 'ack-hung-probe.sqlite'),
+      createWorker: () => new AcknowledgingHungWorker(),
+      durableSettlementTimeoutMs: 25,
+    })
+    probe.setPhase('create')
+    await new Promise((resolve) => setTimeout(resolve, 90))
+
+    const outcome = await Promise.race([
+      probe.stop().then(() => 'resolved', (error: Error) => `rejected:${error.message}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve('timed-out'), 250)),
+    ])
+
+    expect(outcome).toMatch(/^rejected:/u)
+    expect(outcome).not.toBe('timed-out')
+  })
+
   it('waits beyond thirty minutes while exact durable maintenance cursors advance', async () => {
     let currentTimeMs = 0
     let cursor = 0

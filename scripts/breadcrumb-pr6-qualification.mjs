@@ -628,17 +628,46 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
       return promise
     },
     /** Drains every queued write, or force-terminates after a settlement timeout. */
-    async stop({ force = false } = {}) {
+    async stop({ force = false, timeoutMs = MAX_DURABLE_SETTLE_MS } = {}) {
+      if (!Number.isFinite(timeoutMs) || timeoutMs < 0
+        || timeoutMs > MAX_DURABLE_SETTLE_MS) {
+        throw new Error('Durable position worker shutdown timeout is invalid.')
+      }
       stopping = true
-      if (force) {
-        rejectPending(new Error('Durable position worker was terminated after its settlement deadline.'))
+      const forceTerminate = async (reason) => {
+        rejectPending(reason)
         try {
           if (typeof worker.terminate === 'function') await worker.terminate()
         } finally {
           resolveStopped()
         }
+      }
+      if (force) {
+        await forceTerminate(new Error('Durable position worker was terminated after its settlement deadline.'))
         if (failure !== null) throw failure
         return
+      }
+      const waitFor = async (promise, durationMs) => {
+        if (durationMs <= 0) return false
+        let timer = null
+        try {
+          return await Promise.race([
+            promise.then(() => true),
+            new Promise((resolve) => {
+              timer = setTimeout(() => resolve(false), durationMs)
+            }),
+          ])
+        } finally {
+          if (timer !== null) clearTimeout(timer)
+        }
+      }
+      const shutdownStartedAt = performance.now()
+      const remaining = () => Math.max(0, timeoutMs - (performance.now() - shutdownStartedAt))
+      const drained = await waitFor(Promise.allSettled(allWrites), remaining())
+      if (drained !== true) {
+        const error = new Error('Durable position worker settlement exceeded its bounded deadline.')
+        await forceTerminate(error)
+        throw failure
       }
       const results = await Promise.allSettled(allWrites)
       const rejected = results.find((result) => result.status === 'rejected')
@@ -646,7 +675,12 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
       try { worker.postMessage({ type: 'stop' }) } catch (error) {
         if (failure === null) failure = error
       }
-      await stopped
+      const stoppedWithinDeadline = await waitFor(stopped, remaining())
+      if (stoppedWithinDeadline !== true) {
+        const error = new Error('Durable position worker shutdown exceeded its bounded deadline.')
+        await forceTerminate(error)
+        throw failure
+      }
       if (typeof worker.terminate === 'function') await worker.terminate()
       if (failure !== null) throw failure
     },
@@ -1386,6 +1420,7 @@ export function startCurrentPositionProbe({
       await activeTick
       heartbeatMonitor.stop()
       const durableSettlementStartedAt = performance.now()
+      const durableSettlementDeadline = durableSettlementStartedAt + durableSettlementTimeoutMs
       let durableSettlementTimer = null
       const durableSettlementTimeout = new Promise((resolve) => {
         durableSettlementTimer = setTimeout(() => resolve(false), durableSettlementTimeoutMs)
@@ -1401,7 +1436,10 @@ export function startCurrentPositionProbe({
       }
       if (durableWorker !== null) {
         try {
-          await durableWorker.stop({ force: settlementTimedOut || failure !== null })
+          await durableWorker.stop({
+            force: settlementTimedOut || failure !== null,
+            timeoutMs: Math.max(0, durableSettlementDeadline - performance.now()),
+          })
         } catch (error) {
           if (failure === null) failure = error
         }
