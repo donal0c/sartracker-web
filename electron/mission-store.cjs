@@ -1030,6 +1030,10 @@ function createElectronMissionStore(options) {
     }
   }
   let archiveFamilyTail = Promise.resolve()
+  // Unlock reconciliation has its own FIFO so an operator authorization can
+  // preempt stale legacy archive validation while still serializing custody workers.
+  let archiveUnlockReconciliationTail = Promise.resolve()
+  const activeUnlockReconciliationsByMission = new Map()
 
   /** Advances one bounded legacy-registry generation so a new v1 archive can be reviewed. */
   const ensureLegacyArchiveRegistryForMission = (missionId) => {
@@ -1062,26 +1066,57 @@ function createElectronMissionStore(options) {
   }
 
   /** Reconciles the exact current predecessor before an authorized correction unlock. */
-  const reconcileFinalizedMissionArchive = async (missionId) => {
-    await archiveCustodyRecoverySettled
-    if (archiveCustodyRecoveryFailure !== null) {
-      const error = new Error(
-        'Archive custody recovery requires review before a correction unlock can start.',
-      )
-      error.code = archiveCustodyRecoveryFailure
-      throw error
-    }
-    ensureLegacyArchiveRegistryForMission(missionId)
-    const current = archiveRegistry.listMissionArchives(missionId)
-      .find((archive) => archive.status !== 'superseded')
-    if (current === undefined) {
-      const error = new Error(
-        'Mission archive predecessor is unavailable from the archive registry; correction is blocked safely.',
-      )
-      error.code = 'ARCHIVE_SUPPLEMENT_PREDECESSOR_INVALID'
-      throw error
-    }
-    await archiveRegistry.reconcileArchiveAvailability({ archiveId: current.id })
+  const reconcileFinalizedMissionArchive = (missionId) => {
+    const existing = activeUnlockReconciliationsByMission.get(missionId)
+    if (existing !== undefined) return existing.completion
+    const controller = new AbortController()
+    const lifecycle = { controller, completion: null }
+    const predecessor = archiveUnlockReconciliationTail
+    const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
+      await archiveCustodyRecoverySettled
+      if (archiveCustodyRecoveryFailure !== null) {
+        const error = new Error(
+          'Archive custody recovery requires review before a correction unlock can start.',
+        )
+        error.code = archiveCustodyRecoveryFailure
+        throw error
+      }
+      ensureLegacyArchiveRegistryForMission(missionId)
+      const finalized = db.prepare(`SELECT details_json
+        FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_finalized'
+        ORDER BY rowid DESC LIMIT 1`).get(missionId)
+      const finalizedDetails = readEventDetails(finalized?.details_json)
+      const finalizedArchiveId = typeof finalizedDetails.archive_id === 'string'
+        ? finalizedDetails.archive_id
+        : null
+      const current = archiveRegistry.listMissionArchives(missionId)
+        .find((archive) => finalizedArchiveId === null
+          ? archive.status !== 'superseded'
+          : archive.id === finalizedArchiveId)
+      if (current === undefined) {
+        const error = new Error(
+          'Mission archive predecessor is unavailable from the archive registry; correction is blocked safely.',
+        )
+        error.code = 'ARCHIVE_SUPPLEMENT_PREDECESSOR_INVALID'
+        throw error
+      }
+      await archiveRegistry.reconcileArchiveAvailability({
+        archiveId: current.id,
+        signal: controller.signal,
+      })
+    })
+    const completion = run.finally(() => {
+      activeArchiveLifecycles.delete(lifecycle)
+      if (activeUnlockReconciliationsByMission.get(missionId) === lifecycle) {
+        activeUnlockReconciliationsByMission.delete(missionId)
+      }
+    })
+    lifecycle.completion = completion
+    activeArchiveLifecycles.add(lifecycle)
+    activeUnlockReconciliationsByMission.set(missionId, lifecycle)
+    archiveUnlockReconciliationTail = appendArchiveFamilyCompletion(predecessor, completion)
+    return completion
   }
 
   /** Waits for the one archive-family slot while allowing queued cancellation to settle now. */
@@ -5398,9 +5433,9 @@ function readActiveArchiveSupplementCandidate(db, archiveRegistry, missionId) {
     previousArchiveContainerVersion: containerVersion,
     previousArchiveRelativePath: previous.relative_path,
     previousArchiveSha256: containerVersion === 2 ? previous.ciphertext_sha256 : null,
-    previousArchiveFileIdentity: containerVersion === 1
-      ? readObservedArchiveFileIdentity(previous.last_observed_file_identity)
-      : null,
+    previousArchiveFileIdentity: readObservedArchiveFileIdentity(
+      previous.last_observed_file_identity,
+    ),
   })
 }
 
@@ -5419,9 +5454,6 @@ function sameArchiveSupplementCandidate(left, right) {
     'unlockedAt',
   ]
   if (fields.some((field) => left[field] !== right[field])) return false
-  if (left.previousArchiveContainerVersion === 2) {
-    return left.previousArchiveSha256 === right.previousArchiveSha256
-  }
   const identityKeys = [
     'changedTimeNanoseconds',
     'device',
@@ -5430,8 +5462,10 @@ function sameArchiveSupplementCandidate(left, right) {
     'modifiedTimeNanoseconds',
     'sizeBytes',
   ]
-  return identityKeys.every((key) =>
-    left.previousArchiveFileIdentity?.[key] === right.previousArchiveFileIdentity?.[key])
+  return (left.previousArchiveContainerVersion !== 2
+    || left.previousArchiveSha256 === right.previousArchiveSha256)
+    && identityKeys.every((key) =>
+      left.previousArchiveFileIdentity?.[key] === right.previousArchiveFileIdentity?.[key])
 }
 
 /** Rechecks the exact correction authority and predecessor after asynchronous work. */
@@ -5458,12 +5492,31 @@ async function awaitOwnedArchiveOperation(operation) {
 
 /** Resolves a legacy predecessor to the SHA-256 of its exact pinned retained bytes. */
 async function resolveArchiveSupplementContext(input) {
-  const candidate = readActiveArchiveSupplementCandidate(
+  let candidate = readActiveArchiveSupplementCandidate(
     input.db,
     input.archiveRegistry,
     input.missionId,
   )
-  if (candidate === null || candidate.previousArchiveContainerVersion === 2) return candidate
+  if (candidate === null) return candidate
+  if (candidate.previousArchiveContainerVersion === 2) {
+    await input.archiveRegistry.reconcileArchiveAvailability({
+      archiveId: candidate.previousArchiveId,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+    })
+    candidate = readActiveArchiveSupplementCandidate(
+      input.db,
+      input.archiveRegistry,
+      input.missionId,
+    )
+    if (candidate === null || candidate.previousArchiveContainerVersion !== 2) {
+      const error = new Error(
+        'Mission correction predecessor changed during its exact custody reconciliation.',
+      )
+      error.code = 'ARCHIVE_SUPPLEMENT_PREDECESSOR_CHANGED'
+      throw error
+    }
+    return candidate
+  }
   const operation = input.archiveLegacyPredecessorHashRunner({
     ticket: {
       operationId: randomUUID(),
@@ -5491,9 +5544,9 @@ async function resolveArchiveSupplementContext(input) {
   })
 }
 
-/** Pins legacy predecessor custody across one short durable main-store transition. */
+/** Pins predecessor custody across one short durable main-store transition. */
 function withPinnedArchiveSupplementPredecessor(supplement, archiveDirectory, callback) {
-  if (supplement === null || supplement.previousArchiveContainerVersion !== 1) {
+  if (supplement === null) {
     return callback(() => undefined)
   }
   return withPinnedCustodyFileIdentity({

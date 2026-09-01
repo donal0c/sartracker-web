@@ -382,6 +382,176 @@ describe('encrypted mission archive lifecycle integration', () => {
     }
   }, 60_000)
 
+  it('blocks a correction finalization when its v2 predecessor disappears after unlock', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-v2-predecessor-after-unlock-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    try {
+      const mission = await store.createMission({ name: 'Post-unlock predecessor mission' })
+      await store.finishMission(mission.id)
+      const first = await store.finalizeMission(mission.id, custody, {
+        operationId: '12121212-1212-4121-8121-121212121212',
+        onProgress: () => undefined,
+      })
+      const predecessorPath = String(first.archive.archive_path)
+      await store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Correct the mission while retaining the first archive as custody.',
+      })
+      rmSync(predecessorPath, { force: true })
+
+      await expect(store.finalizeMission(mission.id, custody, {
+        operationId: '13131313-1313-4131-8131-131313131313',
+        onProgress: () => undefined,
+      })).rejects.toThrow(/archive|available|missing|predecessor/iu)
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('reconciles the archive bound to the latest finalization event, not a newer registry row', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-finalization-archive-binding-'))
+    temporaryDirectories.add(userDataPath)
+    const initial = createElectronMissionStore({ userDataPath })
+    const mission = await initial.createMission({ name: 'Finalization archive binding mission' })
+    await initial.finishMission(mission.id)
+    const finalized = await initial.finalizeMission(mission.id, custody, {
+      operationId: '15151515-1515-4151-8151-151515151515',
+      onProgress: () => undefined,
+    })
+    const predecessorPath = String(finalized.archive.archive_path)
+    const predecessorId = String(finalized.archive.id)
+    await initial.prepareClose()
+    initial.close()
+
+    const databasePath = path.join(userDataPath, 'mission-store.sqlite')
+    const database = new Database(databasePath)
+    try {
+      const successorId = 'f6f6f6f6-f6f6-46f6-86f6-f6f6f6f6f6f6'
+      const successorRelativePath = `${successorId}.sararch`
+      const successorPath = path.join(userDataPath, 'archives', successorRelativePath)
+      writeFileSync(successorPath, readFileSync(predecessorPath), { mode: 0o600 })
+      const successorStat = lstatSync(successorPath, { bigint: true })
+      const successorIdentity = JSON.stringify({
+        changedTimeNanoseconds: successorStat.ctimeNs.toString(),
+        device: successorStat.dev.toString(),
+        inode: successorStat.ino.toString(),
+        linkCount: Number(successorStat.nlink),
+        modifiedTimeNanoseconds: successorStat.mtimeNs.toString(),
+        sizeBytes: Number(successorStat.size),
+      })
+      database.prepare(`INSERT INTO mission_archives (
+        id, mission_id, request_event_rowid, request_event_id,
+        creation_operation_id, protected_finalization_epoch, archive_kind,
+        container_version, relative_path, ciphertext_sha256, size_bytes, created_at,
+        sealed_event_id, frame_count, header_sha256, manifest_sha256, entry_count,
+        table_count, verified_at, verification_proof_json, previous_archive_id,
+        status, availability, availability_reason, last_reconciled_at,
+        last_observed_file_identity, slots_json, last_non_machine_unwrap_at,
+        legacy_event_rowid
+      ) SELECT ?, mission_id, request_event_rowid, request_event_id,
+        creation_operation_id, protected_finalization_epoch, 'direct',
+        container_version, ?, ciphertext_sha256, size_bytes, '2099-01-01T00:00:00.000Z',
+        sealed_event_id, frame_count, header_sha256, manifest_sha256, entry_count,
+        table_count, verified_at, verification_proof_json, NULL,
+        'verified', 'present', NULL, last_reconciled_at,
+        ?, slots_json, NULL, NULL
+      FROM mission_archives WHERE id = ?`).run(
+        successorId,
+        successorRelativePath,
+        successorIdentity,
+        predecessorId,
+      )
+      rmSync(predecessorPath, { force: true })
+    } finally {
+      database.close()
+    }
+
+    const reopened = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    try {
+      await expect(reopened.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Do not reconcile a different registry row than the finalization event.',
+      })).rejects.toThrow(/archive|available|missing|predecessor/iu)
+      await expect(reopened.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
+    } finally {
+      await reopened.prepareClose()
+      reopened.close()
+    }
+  }, 60_000)
+
+  it('joins an in-flight unlock reconciliation before closing the mission store', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-unlock-reconciliation-shutdown-'))
+    temporaryDirectories.add(userDataPath)
+    let blockNextReconciliation = false
+    let reconciliationStarted = false
+    let cancellationCount = 0
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+      startArchiveCustodyReconciliation: (input) => {
+        if (!blockNextReconciliation) return startArchiveCustodyReconciliation(input)
+        blockNextReconciliation = false
+        reconciliationStarted = true
+        let releaseWorker
+        const workerExited = new Promise((resolve) => {
+          releaseWorker = resolve
+        })
+        let rejectOperation
+        const completion = new Promise((_, reject) => {
+          rejectOperation = reject
+        })
+        input.signal?.addEventListener('abort', () => {
+          cancellationCount += 1
+          const error = new Error('Archive custody reconciliation was cancelled.')
+          error.name = 'AbortError'
+          error.code = 'ARCHIVE_CANCELLED'
+          rejectOperation(error)
+          releaseWorker()
+        }, { once: true })
+        Object.defineProperties(completion, {
+          workerExited: { value: workerExited },
+          cancel: { value: () => input.signal?.dispatchEvent(new Event('abort')) },
+        })
+        return completion
+      },
+    })
+    try {
+      const mission = await store.createMission({ name: 'Unlock shutdown race mission' })
+      await store.finishMission(mission.id)
+      await store.finalizeMission(mission.id, custody, {
+        operationId: '14141414-1414-4141-8141-141414141414',
+        onProgress: () => undefined,
+      })
+      blockNextReconciliation = true
+      const unlock = store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Validate clean shutdown joins correction custody reconciliation.',
+      })
+      await vi.waitFor(() => expect(reconciliationStarted).toBe(true))
+      await expect(store.prepareClose()).resolves.toBeUndefined()
+      expect(cancellationCount).toBe(1)
+      expect(() => store.close()).not.toThrow()
+      await expect(unlock).rejects.toMatchObject({ code: 'ARCHIVE_CANCELLED' })
+    } finally {
+      if (!reconciliationStarted) {
+        await store.prepareClose()
+        store.close()
+      }
+    }
+  }, 60_000)
+
   it('rejects cleanup before any delete when custody is replaced after credential proof', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-cleanup-custody-race-'))
     temporaryDirectories.add(userDataPath)
