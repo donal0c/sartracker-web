@@ -23,6 +23,7 @@ import {
   runWithHeartbeatMonitor,
   scanEvidenceRoots,
   stageClosedFixture,
+  startCurrentPositionProbe,
   waitForMaintenanceSettlement,
   writeQualificationEvidence,
 } from '../../scripts/breadcrumb-pr6-qualification.mjs'
@@ -154,6 +155,107 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
 
     measurements.cleanup.heartbeatGapsMs.push(200)
     expect(() => deriveLivenessEvidence(measurements)).toThrow('200 ms')
+  })
+
+  it('keeps current publication moving while durable persistence is pending', async () => {
+    let releasePersistence: (() => void) | undefined
+    const persistence = new Promise<void>((resolve) => {
+      releasePersistence = resolve
+    })
+    const probe = startCurrentPositionProbe({
+      store: {
+        addPosition: vi.fn(() => persistence),
+      },
+      missionId: 'probe-mission',
+      deviceId: 'probe-device',
+      runId: 'probe-run',
+    })
+    probe.setPhase('create')
+
+    await new Promise((resolve) => setTimeout(resolve, 180))
+    releasePersistence?.()
+    for (const phase of ['verify', 'restore', 'cleanup'] as const) {
+      probe.setPhase(phase)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+    }
+    const result = await probe.stop()
+
+    expect(result.byPhase.create.currentWrites).toBeGreaterThan(1)
+    expect(result.byPhase.create.visibleWrites)
+      .toBe(result.byPhase.create.currentWrites)
+  })
+
+  it('drains durable ingest through the qualification worker without blocking publication', async () => {
+    const root = await createTemporaryRoot()
+    const databasePath = path.join(root, 'mission-store.sqlite')
+    const database = new Database(databasePath)
+    database.pragma('journal_mode = WAL')
+    database.pragma('foreign_keys = ON')
+    database.exec(`
+      CREATE TABLE missions (id TEXT PRIMARY KEY, status TEXT NOT NULL);
+      CREATE TABLE devices (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        last_seen TEXT,
+        UNIQUE (mission_id, device_id),
+        FOREIGN KEY (mission_id) REFERENCES missions(id)
+      );
+      CREATE TABLE positions (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        source_position_id TEXT,
+        name TEXT,
+        lat REAL NOT NULL,
+        lon REAL NOT NULL,
+        altitude REAL,
+        speed REAL,
+        battery REAL,
+        accuracy REAL,
+        source TEXT,
+        timestamp TEXT NOT NULL,
+        data_origin TEXT NOT NULL,
+        received_at TEXT,
+        content_hash TEXT,
+        source_kind TEXT,
+        timestamp_source TEXT,
+        timestamp_provenance_recorded_at TEXT,
+        FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
+      );
+    `)
+    database.prepare('INSERT INTO missions(id, status) VALUES (?, ?)').run('worker-mission', 'active')
+    database.prepare(`INSERT INTO devices(id, mission_id, device_id, status)
+      VALUES (?, ?, ?, ?)`).run('worker-device-row', 'worker-mission', 'worker-device', 'online')
+    const store = {
+      countPositions: vi.fn(() => database.prepare(
+        'SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?',
+      ).get('worker-mission', 'worker-device').count),
+    }
+    const probe = startCurrentPositionProbe({
+      store,
+      missionId: 'worker-mission',
+      deviceId: 'worker-device',
+      runId: 'worker-run',
+      databasePath,
+    })
+    try {
+      for (const phase of ['create', 'verify', 'restore', 'cleanup'] as const) {
+        probe.setPhase(phase)
+        await new Promise((resolve) => setTimeout(resolve, 70))
+      }
+      const result = await probe.stop()
+      const currentWrites = Object.values(result.byPhase)
+        .reduce((total, phase) => total + phase.currentWrites, 0)
+      expect(currentWrites).toBeGreaterThan(2)
+      expect(store.countPositions).toHaveBeenCalledWith('worker-mission', 'worker-device')
+      expect(database.prepare(
+        'SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?',
+      ).get('worker-mission', 'worker-device').count).toBe(currentWrites)
+    } finally {
+      database.close()
+    }
   })
 
   it('waits beyond thirty minutes while exact durable maintenance cursors advance', async () => {

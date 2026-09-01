@@ -25,6 +25,7 @@ import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
+import { Worker } from 'node:worker_threads'
 
 import {
   MAX_ARCHIVE_PROCESS_RSS_BYTES,
@@ -55,6 +56,7 @@ const {
 
 const execFileAsync = promisify(execFile)
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const POSITION_WORKER_PATH = path.join(projectRoot, 'scripts/breadcrumb-pr6-position-worker.cjs')
 const PROFILE_MARKER = '.breadcrumb-pr6-qualification-owned'
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -152,6 +154,7 @@ async function main() {
       missionId: probeMission.id,
       deviceId: probeDeviceId,
       runId,
+      databasePath: copiedDatabasePath,
     })
 
     passphrase = createEphemeralPassphrase()
@@ -553,6 +556,86 @@ export function assertFieldScaleFixture(input) {
     throw new Error('Qualification requires a copied database fixture greater than 2 GiB.')
   }
   return true
+}
+
+/** Starts the qualification-only durable ingest worker on its own SQLite connection. */
+function startDurablePositionWorker({ databasePath, missionId, deviceId, workerPath = POSITION_WORKER_PATH, createWorker }) {
+  if (typeof databasePath !== 'string' || !path.isAbsolute(databasePath)
+    || path.resolve(databasePath) !== databasePath) {
+    throw new Error('Durable position worker database path is invalid.')
+  }
+  const worker = (createWorker ?? ((target, options) => new Worker(target, options)))(
+    workerPath,
+    { workerData: { databasePath, missionId, deviceId } },
+  )
+  const pending = new Map()
+  const allWrites = []
+  let failure = null
+  let stopping = false
+  let resolveStopped
+  const stopped = new Promise((resolve) => { resolveStopped = resolve })
+
+  const rejectPending = (error) => {
+    if (failure === null) failure = error
+    for (const entry of pending.values()) entry.reject(error)
+    pending.clear()
+  }
+  worker.on('message', (message) => {
+    if (message?.type === 'ack') {
+      const entry = pending.get(message.sourcePositionId)
+      if (entry === undefined) return
+      pending.delete(message.sourcePositionId)
+      entry.resolve({ phase: entry.phase, latencyMs: message.latencyMs })
+      return
+    }
+    if (message?.type === 'error' || message?.type === 'fatal') {
+      const error = new Error(message.message ?? 'Durable position worker failed.')
+      error.name = message.name ?? 'Error'
+      if (message.code !== null && message.code !== undefined) error.code = message.code
+      rejectPending(error)
+      return
+    }
+    if (message?.type === 'stopped') resolveStopped()
+  })
+  worker.on('error', rejectPending)
+  worker.on('exit', (code) => {
+    if (code !== 0 && !stopping) {
+      rejectPending(new Error(`Durable position worker exited with code ${code}.`))
+    }
+    if (stopping) resolveStopped()
+  })
+
+  return Object.freeze({
+    /** Queues one durable position without performing SQLite work on the measured thread. */
+    enqueue(position, phase) {
+      if (failure !== null) return Promise.reject(failure)
+      const promise = new Promise((resolve, reject) => {
+        pending.set(position.source_position_id, { phase, resolve, reject })
+        try {
+          worker.postMessage({ type: 'position', position })
+        } catch (error) {
+          pending.delete(position.source_position_id)
+          rejectPending(error)
+          reject(error)
+        }
+      })
+      allWrites.push(promise)
+      return promise
+    },
+    /** Drains every queued write and closes the worker without hiding failures. */
+    async stop() {
+      stopping = true
+      const results = await Promise.allSettled(allWrites)
+      const rejected = results.find((result) => result.status === 'rejected')
+      if (rejected !== undefined && failure === null) failure = rejected.reason
+      try { worker.postMessage({ type: 'stop' }) } catch (error) {
+        if (failure === null) failure = error
+      }
+      await stopped
+      if (typeof worker.terminate === 'function') await worker.terminate()
+      if (failure !== null) throw failure
+    },
+  })
 }
 
 /** Derives validator-ready liveness evidence and enforces the hard gate locally. */
@@ -1101,8 +1184,23 @@ function createEphemeralPassphrase() {
   }
 }
 
-/** Starts sequential current-position writes and immediate latest-position reads. */
-function startCurrentPositionProbe({ store, missionId, deviceId, runId }) {
+/**
+ * Starts an in-memory current-position publisher with bounded durable ingest.
+ *
+ * Current visibility is intentionally published before durable ingest is queued,
+ * matching the production renderer ordering. When a database path is supplied,
+ * the qualification-only durable lane uses a worker connection so SQLite fsync
+ * latency cannot be mistaken for operator-visible current-position cadence.
+ */
+export function startCurrentPositionProbe({
+  store,
+  missionId,
+  deviceId,
+  runId,
+  databasePath,
+  workerPath,
+  createWorker,
+}) {
   const measurements = Object.fromEntries(QUALIFICATION_PHASES.map((phase) => [phase, {
     heartbeatGapsMs: [],
     currentCadencesMs: [],
@@ -1117,6 +1215,17 @@ function startCurrentPositionProbe({ store, missionId, deviceId, runId }) {
   let lastTimestampMs = Date.now()
   let lastHeartbeatAt = performance.now()
   let activeTick = Promise.resolve()
+  const currentPositions = new Map()
+  const durableWorker = databasePath === undefined
+    ? null
+    : startDurablePositionWorker({
+      databasePath,
+      missionId,
+      deviceId,
+      workerPath,
+      createWorker,
+    })
+  const durablePromises = []
   let failure = null
 
   /** Schedules the next non-overlapping probe turn. */
@@ -1127,7 +1236,7 @@ function startCurrentPositionProbe({ store, missionId, deviceId, runId }) {
     }, HEARTBEAT_INTERVAL_MS)
   }
 
-  /** Writes one unique position and requires it to be immediately current. */
+  /** Publishes one unique current position before queuing durable persistence. */
   const tick = async () => {
     const tickStartedAt = performance.now()
     const heartbeatGap = tickStartedAt - lastHeartbeatAt
@@ -1140,7 +1249,7 @@ function startCurrentPositionProbe({ store, missionId, deviceId, runId }) {
     lastTimestampMs = Math.max(Date.now(), lastTimestampMs + 1)
     const sourcePositionId = `pr6-${runId}-${sequence}`
     try {
-      await store.addPosition({
+      const position = Object.freeze({
         mission_id: missionId,
         device_id: deviceId,
         source_position_id: sourcePositionId,
@@ -1149,12 +1258,12 @@ function startCurrentPositionProbe({ store, missionId, deviceId, runId }) {
         timestamp: new Date(lastTimestampMs).toISOString(),
         timestamp_source: 'fix',
       })
+      const publishedAt = performance.now()
+      currentPositions.set(deviceId, position)
       bucket.currentWrites += 1
-      const current = await store.latestPositions(missionId)
-      const visibleAt = performance.now()
-      const visible = current.some((position) =>
-        position.device_id === deviceId
-        && position.source_position_id === sourcePositionId)
+      const visibleAt = publishedAt
+      const current = currentPositions.get(deviceId)
+      const visible = current?.source_position_id === sourcePositionId
       if (!visible) throw new Error('The just-written probe position was not current.')
       bucket.visibleWrites += 1
       const currentCadence = Math.max(
@@ -1164,6 +1273,17 @@ function startCurrentPositionProbe({ store, missionId, deviceId, runId }) {
       )
       bucket.currentCadencesMs.push(currentCadence)
       bucket.lastVisibleAt = visibleAt
+
+      const durableStartedAt = performance.now()
+      const durablePromise = durableWorker === null
+        ? Promise.resolve().then(() => store.addPosition(position)).then(() => ({
+          phase: tickPhase,
+          latencyMs: performance.now() - durableStartedAt,
+        }))
+        : durableWorker.enqueue(position, tickPhase)
+      durablePromises.push(durablePromise.catch((error) => {
+        failure = error
+      }))
     } catch (error) {
       failure = error
     }
@@ -1183,6 +1303,18 @@ function startCurrentPositionProbe({ store, missionId, deviceId, runId }) {
       running = false
       if (timer !== null) clearTimeout(timer)
       await activeTick
+      await Promise.all(durablePromises)
+      if (durableWorker !== null) await durableWorker.stop()
+      if (typeof store.countPositions === 'function') {
+        const expectedDurableWrites = QUALIFICATION_PHASES.reduce(
+          (total, name) => total + measurements[name].currentWrites,
+          0,
+        )
+        const actualDurableWrites = await store.countPositions(missionId, deviceId)
+        if (actualDurableWrites !== expectedDurableWrites) {
+          throw new Error('Durable current-position ingest count did not settle exhaustively.')
+        }
+      }
       if (failure !== null) throw failure
       const projected = Object.fromEntries(QUALIFICATION_PHASES.map((name) => [name, {
         heartbeatGapsMs: measurements[name].heartbeatGapsMs,
