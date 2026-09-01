@@ -294,6 +294,61 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     }
   })
 
+  it('measures durable worker queue time from publication through acknowledgement', async () => {
+    class DelayedAckWorker {
+      listeners = new Map<string, ((value?: unknown) => void)[]>()
+
+      on(event: string, listener: (value?: unknown) => void) {
+        const existing = this.listeners.get(event) ?? []
+        existing.push(listener)
+        this.listeners.set(event, existing)
+        return this
+      }
+
+      postMessage(message: { type?: string; position?: { source_position_id?: string } }) {
+        if (message.type === 'position') {
+          setTimeout(() => {
+            for (const listener of this.listeners.get('message') ?? []) {
+              listener({
+                type: 'ack',
+                sourcePositionId: message.position?.source_position_id,
+                latencyMs: 1,
+                busyRetries: 0,
+              })
+            }
+          }, 300)
+          return
+        }
+        if (message.type === 'stop') {
+          for (const listener of this.listeners.get('message') ?? []) {
+            listener({ type: 'stopped' })
+          }
+        }
+      }
+
+      terminate() { return Promise.resolve(0) }
+    }
+
+    const probe = startCurrentPositionProbe({
+      store: {},
+      missionId: 'queue-mission',
+      deviceId: 'queue-device',
+      runId: 'queue-run',
+      databasePath: path.join(os.tmpdir(), 'queue-probe.sqlite'),
+      createWorker: () => new DelayedAckWorker(),
+    })
+    probe.setPhase('create')
+    await new Promise((resolve) => setTimeout(resolve, 90))
+    for (const phase of ['verify', 'restore', 'cleanup'] as const) {
+      probe.setPhase(phase)
+      await new Promise((resolve) => setTimeout(resolve, 70))
+    }
+
+    const result = await probe.stop()
+
+    expect(result.durableMaxLatencyMs).toBeGreaterThanOrEqual(250)
+  })
+
   it('retries durable ingest while a concurrent cleanup transaction sustains SQLite contention', async () => {
     const root = await createTemporaryRoot()
     const databasePath = path.join(root, 'mission-store.sqlite')

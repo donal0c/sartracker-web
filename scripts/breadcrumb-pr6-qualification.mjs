@@ -1323,7 +1323,14 @@ export function startCurrentPositionProbe({
           phase: tickPhase,
           latencyMs: performance.now() - durableStartedAt,
         }))
-        : durableWorker.enqueue(position, tickPhase)
+        : durableWorker.enqueue(position, tickPhase).then((result) => ({
+          ...result,
+          // Measure from publication/enqueue on the coordinator thread through
+          // acknowledgement, including any worker queueing delay. The worker's
+          // own handler duration is useful diagnostically but cannot stand in
+          // for end-to-end durable settlement latency.
+          latencyMs: performance.now() - durableStartedAt,
+        }))
       const observedDurablePromise = Promise.resolve(durablePromise).then((result) => {
         const latencyMs = Number(result?.latencyMs)
         if (!Number.isFinite(latencyMs) || latencyMs < 0) {
