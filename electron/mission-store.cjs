@@ -1031,6 +1031,59 @@ function createElectronMissionStore(options) {
   }
   let archiveFamilyTail = Promise.resolve()
 
+  /** Advances one bounded legacy-registry generation so a new v1 archive can be reviewed. */
+  const ensureLegacyArchiveRegistryForMission = (missionId) => {
+    const latest = db.prepare(`SELECT MAX(rowid) AS rowid FROM mission_events
+      WHERE mission_id = ? AND event_type IN ('mission_archive_succeeded', 'mission_archived')`)
+      .get(missionId)
+    const latestRowid = Number(latest?.rowid ?? 0)
+    if (!Number.isSafeInteger(latestRowid) || latestRowid < 0) {
+      throw new Error('Legacy archive registry boundary is invalid; correction is blocked safely.')
+    }
+    const targetRow = db.prepare(`SELECT value FROM metadata
+      WHERE key = 'legacy_archive_registry_backfill_target'`).get()
+    const targetValue = targetRow?.value
+    if (targetValue !== undefined && !/^(?:0|[1-9][0-9]*)$/u.test(targetValue)) {
+      throw new Error('Legacy archive registry target is invalid; correction is blocked safely.')
+    }
+    const target = Number(targetValue ?? 0)
+    if (!Number.isSafeInteger(target) || target < 0) {
+      throw new Error('Legacy archive registry target is invalid; correction is blocked safely.')
+    }
+    if (latestRowid > target) {
+      db.prepare(`INSERT INTO metadata (key, value) VALUES (
+        'legacy_archive_registry_backfill_target', ?
+      ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(String(latestRowid))
+      migrationState.legacyArchiveRegistryBackfillRemaining = 1
+    }
+    if (migrationState.legacyArchiveRegistryBackfillRemaining === 0) return
+    const result = backfillLegacyArchiveRegistry(db, { archiveDirectory })
+    migrationState.legacyArchiveRegistryBackfillRemaining = result.remaining
+  }
+
+  /** Reconciles the exact current predecessor before an authorized correction unlock. */
+  const reconcileFinalizedMissionArchive = async (missionId) => {
+    await archiveCustodyRecoverySettled
+    if (archiveCustodyRecoveryFailure !== null) {
+      const error = new Error(
+        'Archive custody recovery requires review before a correction unlock can start.',
+      )
+      error.code = archiveCustodyRecoveryFailure
+      throw error
+    }
+    ensureLegacyArchiveRegistryForMission(missionId)
+    const current = archiveRegistry.listMissionArchives(missionId)
+      .find((archive) => archive.status !== 'superseded')
+    if (current === undefined) {
+      const error = new Error(
+        'Mission archive predecessor is unavailable from the archive registry; correction is blocked safely.',
+      )
+      error.code = 'ARCHIVE_SUPPLEMENT_PREDECESSOR_INVALID'
+      throw error
+    }
+    await archiveRegistry.reconcileArchiveAvailability({ archiveId: current.id })
+  }
+
   /** Waits for the one archive-family slot while allowing queued cancellation to settle now. */
   const waitForArchiveFamilyTurn = (predecessor, signal) => {
     if (signal?.aborted === true) return Promise.reject(createArchiveCancellationError())
@@ -1086,8 +1139,9 @@ function createElectronMissionStore(options) {
       return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         missionId,
         'finalization',
-        () => custody === undefined
-          ? finalizeMission(
+        async () => {
+          const result = custody === undefined
+            ? await finalizeMission(
               db,
               missionId,
               backupCoordinator,
@@ -1096,7 +1150,7 @@ function createElectronMissionStore(options) {
               archiveFaultInjection,
               readArchiveFile,
             )
-          : finalizeMissionWithEncryptedArchive({
+            : await finalizeMissionWithEncryptedArchive({
               db,
               databasePath,
               missionId,
@@ -1115,7 +1169,10 @@ function createElectronMissionStore(options) {
                 ? undefined
                 : (kind, progress) => context.onProgress({ kind, ...progress }),
               faultInjection: archiveLifecycleFaultInjection,
-            }),
+            })
+          if (custody === undefined) ensureLegacyArchiveRegistryForMission(missionId)
+          return result
+        },
         acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
       )
     })
@@ -2610,10 +2667,11 @@ function createElectronMissionStore(options) {
       enqueueAttachmentLifecycleOperation(missionId, () => finishMission(db, missionId)),
     finalizeMission: async (missionId, custody, operationContext) =>
       enqueueFinalize(missionId, custody, operationContext),
-    unlockFinalizedMission: async (input) => unlockFinalizedMission(
+    unlockFinalizedMission: (input) => unlockFinalizedMission(
       db,
       input,
       options.readAdminRoster,
+      reconcileFinalizedMissionArchive,
     ),
   }
 
@@ -4961,7 +5019,9 @@ async function createMissionArchive(
       if (!Number.isSafeInteger(archiveEventContext.finalization_epoch)) {
         throw new Error('Finalized archive recovery epoch is invalid; retry finalization.')
       }
-      assertMissionUnlockEpoch(db, missionId, archiveEventContext.finalization_epoch)
+      assertMissionUnlockEpoch(db, missionId, archiveEventContext.finalization_epoch, {
+        requireArchiveReviewable: false,
+      })
     }
     assertMissionFinalizationNotInProgress(db, missionId)
     assertLegacyMissionObjectBackfillSettled(db)
@@ -5487,7 +5547,9 @@ async function finalizeMission(
       )
     }
     return db.transaction(() => {
-      assertMissionUnlockEpoch(db, missionId, finalizedEpoch)
+      assertMissionUnlockEpoch(db, missionId, finalizedEpoch, {
+        requireArchiveReviewable: false,
+      })
       return { mission: getMission(db, missionId), archive: existingArchive }
     }).immediate()
   }
@@ -6725,7 +6787,12 @@ function readEventDetails(input) {
   }
 }
 
-async function unlockFinalizedMission(db, input, readAdminRoster) {
+async function unlockFinalizedMission(
+  db,
+  input,
+  readAdminRoster,
+  reconcileFinalizedArchive = async () => undefined,
+) {
   const missionId = normalizeBoundedRequiredText(
     input?.mission_id,
     'Mission correction mission identity',
@@ -6755,6 +6822,8 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
       'This mission is archived. Restore its verified archive into a complete live mission before requesting a correction unlock.',
     )
   }
+  assertMissionFinalizationNotInProgress(db, missionId)
+  await reconcileFinalizedArchive(missionId)
   assertCurrentFinalizedArchiveReviewable(db, missionId)
   const finalizedEpoch = readLatestMissionFinalizedEpoch(db, missionId)
   const adminRoster = typeof readAdminRoster === 'function' ? await readAdminRoster() : []
@@ -6770,6 +6839,7 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
     deniedTransaction.immediate()
     throw new Error('Selected admin is not authorized to unlock finalized missions.')
   }
+  await reconcileFinalizedArchive(missionId)
   const timestamp = now()
   const transaction = db.transaction(() => {
     assertMissionUnlockEpoch(db, missionId, finalizedEpoch)
@@ -6792,7 +6862,12 @@ function readLatestMissionFinalizedEpoch(db, missionId) {
 }
 
 /** Prevents an authorization decision from being applied to a newer finalization epoch. */
-function assertMissionUnlockEpoch(db, missionId, expectedEpoch) {
+function assertMissionUnlockEpoch(
+  db,
+  missionId,
+  expectedEpoch,
+  { requireArchiveReviewable = true } = {},
+) {
   assertMissionFinalizationNotInProgress(db, missionId)
   const mission = getMission(db, missionId)
   if (
@@ -6802,7 +6877,7 @@ function assertMissionUnlockEpoch(db, missionId, expectedEpoch) {
   ) {
     throw new Error('Mission finalization changed, or its live-storage state changed, while admin authorization was checked. Review and retry the unlock.')
   }
-  assertCurrentFinalizedArchiveReviewable(db, missionId)
+  if (requireArchiveReviewable) assertCurrentFinalizedArchiveReviewable(db, missionId)
 }
 
 /** Requires a v2 predecessor to be fully verified before it can enter a correction chain. */
@@ -6811,16 +6886,34 @@ function assertCurrentFinalizedArchiveReviewable(db, missionId) {
     WHERE mission_id = ? AND event_type = 'mission_finalized'
     ORDER BY rowid DESC LIMIT 1`).get(missionId)
   const archiveId = readEventDetails(finalized?.details_json).archive_id
-  if (typeof archiveId !== 'string' || archiveId.length < 1) return
-  const archive = db.prepare(`SELECT container_version, status, verified_at,
-      verification_proof_json, availability
-    FROM mission_archives WHERE id = ? AND mission_id = ?`).get(archiveId, missionId)
+  const archive = typeof archiveId === 'string' && archiveId.length > 0
+    ? db.prepare(`SELECT container_version, status, verified_at,
+        verification_proof_json, availability
+      FROM mission_archives WHERE id = ? AND mission_id = ?`).get(archiveId, missionId)
+    : db.prepare(`SELECT container_version, status, verified_at,
+        verification_proof_json, availability
+      FROM mission_archives
+      WHERE mission_id = ? AND status != 'superseded'
+      ORDER BY request_event_rowid DESC, rowid DESC LIMIT 1`).get(missionId)
   if (archive === undefined) {
     throw new Error(
       'Mission archive predecessor is unavailable from the archive registry; a correction unlock cannot create a reviewable supplemental chain.',
     )
   }
-  if (Number(archive.container_version) !== 2) return
+  if (Number(archive.container_version) === 1) {
+    if (!['sealed', 'superseded'].includes(archive.status)
+      || archive.availability !== 'present') {
+      throw new Error(
+        'Mission archive predecessor custody availability must be present before a correction unlock can create a reviewable supplemental chain.',
+      )
+    }
+    return
+  }
+  if (Number(archive.container_version) !== 2) {
+    throw new Error(
+      'Mission archive predecessor format is unsupported; correction is blocked safely.',
+    )
+  }
   if (archive.status !== 'verified'
     || typeof archive.verified_at !== 'string'
     || archive.verified_at.length < 1

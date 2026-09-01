@@ -325,6 +325,63 @@ describe('encrypted mission archive lifecycle integration', () => {
     }
   }, 60_000)
 
+  it('reconciles a v2 predecessor again before an in-process correction unlock', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-stale-predecessor-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    try {
+      const mission = await store.createMission({ name: 'Stale predecessor mission' })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, custody, {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        onProgress: () => undefined,
+      })
+      rmSync(String(finalized.archive.archive_path), { force: true })
+
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Do not open a correction epoch after custody bytes disappear.',
+      })).rejects.toThrow(/archive|available|missing|restore/iu)
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finalized',
+      })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('blocks a legacy correction unlock when the retained ZIP predecessor is unavailable', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-legacy-unavailable-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    try {
+      const mission = await store.createMission({ name: 'Legacy unavailable predecessor mission' })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, undefined as never)
+      rmSync(String(finalized.archive.archive_path), { force: true })
+
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Do not open a correction epoch after legacy custody bytes disappear.',
+      })).rejects.toThrow(/archive|available|missing|restore/iu)
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finalized',
+      })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
   it('rejects cleanup before any delete when custody is replaced after credential proof', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-cleanup-custody-race-'))
     temporaryDirectories.add(userDataPath)
