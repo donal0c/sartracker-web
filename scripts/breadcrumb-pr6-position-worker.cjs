@@ -5,6 +5,12 @@ const { randomUUID } = require('node:crypto')
 const Database = require('better-sqlite3')
 const { canonicalizeAcceptedPosition } = require('../electron/position-ingest-policy.cjs')
 
+const SQLITE_BUSY_TIMEOUT_MS = 250
+const SQLITE_BUSY_RETRY_LIMIT = 12
+const SQLITE_BUSY_RETRY_DELAY_MS = 100
+const busySleepBuffer = new SharedArrayBuffer(4)
+const busySleepView = new Int32Array(busySleepBuffer)
+
 if (parentPort === null) throw new Error('Breadcrumb PR6 position worker requires a parent port.')
 
 let database
@@ -16,7 +22,7 @@ try {
   database.pragma('journal_mode = WAL')
   database.pragma('synchronous = FULL')
   database.pragma('foreign_keys = ON')
-  database.pragma('busy_timeout = 1000')
+  database.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`)
   insertPosition = database.prepare(`INSERT INTO positions (
     id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed,
     battery, accuracy, source, timestamp, data_origin, received_at, content_hash,
@@ -48,30 +54,40 @@ function writePosition(position) {
   const timestamp = new Date(position.timestamp).toISOString()
   const canonical = canonicalizeAcceptedPosition({ ...position, timestamp })
   const receivedAt = new Date().toISOString()
-  database.transaction(() => {
-    insertPosition.run(
-      randomUUID(),
-      position.mission_id,
-      position.device_id,
-      position.source_position_id,
-      position.name ?? null,
-      position.lat,
-      position.lon,
-      position.altitude ?? null,
-      position.speed ?? null,
-      position.battery ?? null,
-      position.accuracy ?? null,
-      position.source ?? null,
-      timestamp,
-      position.data_origin ?? 'live',
-      receivedAt,
-      canonical.contentHash,
-      position.source_position_id === null ? null : 'traccar',
-      position.timestamp_source ?? null,
-      position.timestamp_source === 'fix' ? receivedAt : null,
-    )
-    updateDevice.run(timestamp, timestamp, position.mission_id, position.device_id)
-  })()
+  let attempt = 0
+  while (true) {
+    try {
+      database.transaction(() => {
+        insertPosition.run(
+          randomUUID(),
+          position.mission_id,
+          position.device_id,
+          position.source_position_id,
+          position.name ?? null,
+          position.lat,
+          position.lon,
+          position.altitude ?? null,
+          position.speed ?? null,
+          position.battery ?? null,
+          position.accuracy ?? null,
+          position.source ?? null,
+          timestamp,
+          position.data_origin ?? 'live',
+          receivedAt,
+          canonical.contentHash,
+          position.source_position_id === null ? null : 'traccar',
+          position.timestamp_source ?? null,
+          position.timestamp_source === 'fix' ? receivedAt : null,
+        )
+        updateDevice.run(timestamp, timestamp, position.mission_id, position.device_id)
+      })()
+      return
+    } catch (error) {
+      if (error?.code !== 'SQLITE_BUSY' || attempt >= SQLITE_BUSY_RETRY_LIMIT) throw error
+      attempt += 1
+      Atomics.wait(busySleepView, 0, 0, SQLITE_BUSY_RETRY_DELAY_MS)
+    }
+  }
 }
 
 parentPort.on('message', (message) => {

@@ -258,6 +258,84 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     }
   })
 
+  it('retries durable ingest while a concurrent cleanup transaction briefly holds SQLite', async () => {
+    const root = await createTemporaryRoot()
+    const databasePath = path.join(root, 'mission-store.sqlite')
+    const database = new Database(databasePath)
+    database.pragma('journal_mode = WAL')
+    database.pragma('foreign_keys = ON')
+    database.exec(`
+      CREATE TABLE missions (id TEXT PRIMARY KEY, status TEXT NOT NULL);
+      CREATE TABLE devices (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        last_seen TEXT,
+        UNIQUE (mission_id, device_id),
+        FOREIGN KEY (mission_id) REFERENCES missions(id)
+      );
+      CREATE TABLE positions (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        source_position_id TEXT,
+        name TEXT,
+        lat REAL NOT NULL,
+        lon REAL NOT NULL,
+        altitude REAL,
+        speed REAL,
+        battery REAL,
+        accuracy REAL,
+        source TEXT,
+        timestamp TEXT NOT NULL,
+        data_origin TEXT NOT NULL,
+        received_at TEXT,
+        content_hash TEXT,
+        source_kind TEXT,
+        timestamp_source TEXT,
+        timestamp_provenance_recorded_at TEXT,
+        FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
+      );
+    `)
+    database.prepare('INSERT INTO missions(id, status) VALUES (?, ?)').run('busy-mission', 'active')
+    database.prepare(`INSERT INTO devices(id, mission_id, device_id, status)
+      VALUES (?, ?, ?, ?)`).run('busy-device-row', 'busy-mission', 'busy-device', 'online')
+    database.exec('BEGIN IMMEDIATE')
+    const releaseLock = setTimeout(() => database.exec('COMMIT'), 1_500)
+    const store = {
+      countPositions: vi.fn(() => database.prepare(
+        'SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?',
+      ).get('busy-mission', 'busy-device').count),
+    }
+    const probe = startCurrentPositionProbe({
+      store,
+      missionId: 'busy-mission',
+      deviceId: 'busy-device',
+      runId: 'busy-run',
+      databasePath,
+    })
+    probe.setPhase('create')
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1_900))
+      for (const phase of ['verify', 'restore', 'cleanup'] as const) {
+        probe.setPhase(phase)
+        await new Promise((resolve) => setTimeout(resolve, 70))
+      }
+      const result = await probe.stop()
+      const currentWrites = Object.values(result.byPhase)
+        .reduce((total, phase) => total + phase.currentWrites, 0)
+      expect(currentWrites).toBeGreaterThan(1)
+      expect(database.prepare(
+        'SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?',
+      ).get('busy-mission', 'busy-device').count).toBe(currentWrites)
+    } finally {
+      clearTimeout(releaseLock)
+      try { database.exec('ROLLBACK') } catch { /* transaction already released */ }
+      database.close()
+    }
+  })
+
   it('fails closed when the durable worker exits before shutdown begins', async () => {
     class ExitingWorker {
       listeners = new Map<string, ((value?: unknown) => void)[]>()
