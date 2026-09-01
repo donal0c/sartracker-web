@@ -599,10 +599,10 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
   })
   worker.on('error', rejectPending)
   worker.on('exit', (code) => {
-    if (code !== 0 && !stopping) {
+    if (!stopping) {
       rejectPending(new Error(`Durable position worker exited with code ${code}.`))
     }
-    if (stopping) resolveStopped()
+    resolveStopped()
   })
 
   return Object.freeze({

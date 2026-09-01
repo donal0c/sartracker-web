@@ -258,6 +258,46 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     }
   })
 
+  it('fails closed when the durable worker exits before shutdown begins', async () => {
+    class ExitingWorker {
+      listeners = new Map<string, ((value?: unknown) => void)[]>()
+
+      constructor() {
+        setTimeout(() => {
+          for (const listener of this.listeners.get('exit') ?? []) listener(1)
+        }, 10)
+      }
+
+      on(event: string, listener: (value?: unknown) => void) {
+        const existing = this.listeners.get(event) ?? []
+        existing.push(listener)
+        this.listeners.set(event, existing)
+        return this
+      }
+
+      postMessage() {}
+
+      terminate() { return Promise.resolve(0) }
+    }
+
+    const probe = startCurrentPositionProbe({
+      store: {},
+      missionId: 'probe-mission',
+      deviceId: 'probe-device',
+      runId: 'probe-run',
+      databasePath: path.join(os.tmpdir(), 'probe.sqlite'),
+      createWorker: () => new ExitingWorker(),
+    })
+    probe.setPhase('create')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const outcome = await Promise.race([
+      probe.stop().then(() => 'resolved', (error: Error) => `rejected:${error.message}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve('timed-out'), 300)),
+    ])
+    expect(outcome).toMatch(/^rejected:/u)
+  })
+
   it('waits beyond thirty minutes while exact durable maintenance cursors advance', async () => {
     let currentTimeMs = 0
     let cursor = 0
