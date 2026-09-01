@@ -627,9 +627,19 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
       allWrites.push(promise)
       return promise
     },
-    /** Drains every queued write and closes the worker without hiding failures. */
-    async stop() {
+    /** Drains every queued write, or force-terminates after a settlement timeout. */
+    async stop({ force = false } = {}) {
       stopping = true
+      if (force) {
+        rejectPending(new Error('Durable position worker was terminated after its settlement deadline.'))
+        try {
+          if (typeof worker.terminate === 'function') await worker.terminate()
+        } finally {
+          resolveStopped()
+        }
+        if (failure !== null) throw failure
+        return
+      }
       const results = await Promise.allSettled(allWrites)
       const rejected = results.find((result) => result.status === 'rejected')
       if (rejected !== undefined && failure === null) failure = rejected.reason
@@ -1240,7 +1250,13 @@ export function startCurrentPositionProbe({
   databasePath,
   workerPath,
   createWorker,
+  durableSettlementTimeoutMs = MAX_DURABLE_SETTLE_MS,
 }) {
+  if (!Number.isFinite(durableSettlementTimeoutMs)
+    || durableSettlementTimeoutMs < 1
+    || durableSettlementTimeoutMs > MAX_DURABLE_SETTLE_MS) {
+    throw new Error('Durable current-position settlement timeout is invalid.')
+  }
   const measurements = Object.fromEntries(QUALIFICATION_PHASES.map((phase) => [phase, {
     heartbeatGapsMs: [],
     currentCadencesMs: [],
@@ -1372,17 +1388,24 @@ export function startCurrentPositionProbe({
       const durableSettlementStartedAt = performance.now()
       let durableSettlementTimer = null
       const durableSettlementTimeout = new Promise((resolve) => {
-        durableSettlementTimer = setTimeout(() => resolve(false), MAX_DURABLE_SETTLE_MS)
+        durableSettlementTimer = setTimeout(() => resolve(false), durableSettlementTimeoutMs)
       })
       const settled = await Promise.race([
         Promise.allSettled(durablePromises).then(() => true),
         durableSettlementTimeout,
       ])
       if (durableSettlementTimer !== null) clearTimeout(durableSettlementTimer)
-      if (settled !== true && failure === null) {
+      const settlementTimedOut = settled !== true
+      if (settlementTimedOut && failure === null) {
         failure = new Error('Durable current-position settlement exceeded its bounded deadline.')
       }
-      if (durableWorker !== null) await durableWorker.stop()
+      if (durableWorker !== null) {
+        try {
+          await durableWorker.stop({ force: settlementTimedOut || failure !== null })
+        } catch (error) {
+          if (failure === null) failure = error
+        }
+      }
       const durableWriteCount = Object.values(measurements)
         .reduce((total, value) => total + value.durableWriteCount, 0)
       let durableVisibleWrites = durableWriteCount

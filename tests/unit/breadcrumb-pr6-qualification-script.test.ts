@@ -467,6 +467,95 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(outcome).toMatch(/^rejected:/u)
   })
 
+  it('bounds shutdown when a durable worker never acknowledges queued writes', async () => {
+    class NonAcknowledgingWorker {
+      listeners = new Map<string, ((value?: unknown) => void)[]>()
+
+      on(event: string, listener: (value?: unknown) => void) {
+        const existing = this.listeners.get(event) ?? []
+        existing.push(listener)
+        this.listeners.set(event, existing)
+        return this
+      }
+
+      postMessage() {}
+
+      terminate() { return Promise.resolve(0) }
+    }
+
+    const probe = startCurrentPositionProbe({
+      store: {},
+      missionId: 'hung-mission',
+      deviceId: 'hung-device',
+      runId: 'hung-run',
+      databasePath: path.join(os.tmpdir(), 'hung-probe.sqlite'),
+      createWorker: () => new NonAcknowledgingWorker(),
+      durableSettlementTimeoutMs: 25,
+    })
+    probe.setPhase('create')
+    await new Promise((resolve) => setTimeout(resolve, 90))
+
+    const outcome = await Promise.race([
+      probe.stop().then(() => 'resolved', (error: Error) => `rejected:${error.message}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve('timed-out'), 250)),
+    ])
+
+    expect(outcome).toMatch(/^rejected:/u)
+    expect(outcome).not.toBe('timed-out')
+  })
+
+  it('bounds shutdown when a durable worker errors then ignores its stop message', async () => {
+    class ErrorThenHungWorker {
+      listeners = new Map<string, ((value?: unknown) => void)[]>()
+      failed = false
+
+      on(event: string, listener: (value?: unknown) => void) {
+        const existing = this.listeners.get(event) ?? []
+        existing.push(listener)
+        this.listeners.set(event, existing)
+        return this
+      }
+
+      postMessage(message: { type?: string; position?: { source_position_id?: string } }) {
+        if (message.type === 'position' && !this.failed) {
+          this.failed = true
+          setTimeout(() => {
+            for (const listener of this.listeners.get('message') ?? []) {
+              listener({
+                type: 'error',
+                sourcePositionId: message.position?.source_position_id,
+                code: 'SQLITE_BUSY',
+                message: 'synthetic durable failure',
+              })
+            }
+          }, 5)
+        }
+      }
+
+      terminate() { return Promise.resolve(0) }
+    }
+
+    const probe = startCurrentPositionProbe({
+      store: {},
+      missionId: 'error-hung-mission',
+      deviceId: 'error-hung-device',
+      runId: 'error-hung-run',
+      databasePath: path.join(os.tmpdir(), 'error-hung-probe.sqlite'),
+      createWorker: () => new ErrorThenHungWorker(),
+      durableSettlementTimeoutMs: 25,
+    })
+    probe.setPhase('create')
+    await new Promise((resolve) => setTimeout(resolve, 90))
+
+    const outcome = await Promise.race([
+      probe.stop().then(() => 'resolved', (error: Error) => `rejected:${error.message}`),
+      new Promise<string>((resolve) => setTimeout(() => resolve('timed-out'), 250)),
+    ])
+
+    expect(outcome).toMatch(/^rejected:/u)
+    expect(outcome).not.toBe('timed-out')
+  })
+
   it('waits beyond thirty minutes while exact durable maintenance cursors advance', async () => {
     let currentTimeMs = 0
     let cursor = 0
