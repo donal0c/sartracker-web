@@ -606,6 +606,65 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(outcome).not.toBe('timed-out')
   })
 
+  it('fails closed when a durable worker exits non-zero during graceful shutdown', async () => {
+    class ExitOnStopWorker {
+      listeners = new Map<string, ((value?: unknown) => void)[]>()
+
+      on(event: string, listener: (value?: unknown) => void) {
+        const existing = this.listeners.get(event) ?? []
+        existing.push(listener)
+        this.listeners.set(event, existing)
+        return this
+      }
+
+      postMessage(message: { type?: string; position?: { source_position_id?: string } }) {
+        if (message.type === 'position') {
+          setTimeout(() => {
+            for (const listener of this.listeners.get('message') ?? []) {
+              listener({
+                type: 'ack',
+                sourcePositionId: message.position?.source_position_id,
+                latencyMs: 1,
+                busyRetries: 0,
+              })
+            }
+          }, 5)
+          return
+        }
+        if (message.type === 'stop') {
+          for (const listener of this.listeners.get('message') ?? []) {
+            listener({ type: 'stopped' })
+          }
+          for (const listener of this.listeners.get('exit') ?? []) listener(1)
+        }
+      }
+
+      terminate() { return Promise.resolve(0) }
+    }
+
+    const probe = startCurrentPositionProbe({
+      store: {},
+      missionId: 'exit-mission',
+      deviceId: 'exit-device',
+      runId: 'exit-run',
+      databasePath: path.join(os.tmpdir(), 'exit-probe.sqlite'),
+      createWorker: () => new ExitOnStopWorker(),
+    })
+    probe.setPhase('create')
+    await new Promise((resolve) => setTimeout(resolve, 90))
+    for (const phase of ['verify', 'restore', 'cleanup'] as const) {
+      probe.setPhase(phase)
+      await new Promise((resolve) => setTimeout(resolve, 70))
+    }
+
+    const outcome = await probe.stop().then(
+      () => 'resolved',
+      (error: Error) => `rejected:${error.message}`,
+    )
+
+    expect(outcome).toMatch(/^rejected:/u)
+  })
+
   it('waits beyond thirty minutes while exact durable maintenance cursors advance', async () => {
     let currentTimeMs = 0
     let cursor = 0

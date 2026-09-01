@@ -573,6 +573,8 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
   const allWrites = []
   let failure = null
   let stopping = false
+  let exitCode = null
+  let terminationRequested = false
   let resolveStopped
   const stopped = new Promise((resolve) => { resolveStopped = resolve })
 
@@ -604,8 +606,12 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
   })
   worker.on('error', rejectPending)
   worker.on('exit', (code) => {
+    exitCode = code
+    if (code !== 0 && failure === null && !terminationRequested) {
+      failure = new Error(`Durable position worker exited with code ${code}.`)
+    }
     if (!stopping) {
-      rejectPending(new Error(`Durable position worker exited with code ${code}.`))
+      rejectPending(failure ?? new Error(`Durable position worker exited before shutdown with code ${code}.`))
     }
     resolveStopped()
   })
@@ -637,7 +643,10 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
       const forceTerminate = async (reason) => {
         rejectPending(reason)
         try {
-          if (typeof worker.terminate === 'function') await worker.terminate()
+          if (typeof worker.terminate === 'function') {
+            terminationRequested = true
+            await worker.terminate()
+          }
         } finally {
           resolveStopped()
         }
@@ -681,7 +690,13 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
         await forceTerminate(error)
         throw failure
       }
-      if (typeof worker.terminate === 'function') await worker.terminate()
+      if (typeof worker.terminate === 'function') {
+        terminationRequested = true
+        await worker.terminate()
+      }
+      if (exitCode !== null && exitCode !== 0 && failure === null && !terminationRequested) {
+        failure = new Error(`Durable position worker exited with code ${exitCode}.`)
+      }
       if (failure !== null) throw failure
     },
   })
