@@ -85,6 +85,390 @@ const FAILURE_METADATA_KEYS = Object.freeze([
 ])
 const SHA256 = /^[0-9a-f]{64}$/u
 const SAFE_TABLE = /^[A-Za-z_][A-Za-z0-9_]*$/u
+const SAFE_DIAGNOSTIC_TOKEN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u
+const SAFE_DIAGNOSTIC_GATE = /^[A-Za-z][A-Za-z0-9:_-]{0,63}$/u
+const GIT_SHA = /^[0-9a-f]{40}$/u
+const FAILURE_RECEIPT_SCHEMA = 'sartracker-breadcrumb-pr6-qualification-failure-v1'
+const FAILURE_RECEIPT_SUFFIX = '.failure.json'
+const DIAGNOSTIC_PROGRESS_KINDS = new Set(['create', 'verify', 'restore', 'cleanup'])
+const DIAGNOSTIC_PROGRESS_UNITS = new Set(['bytes', 'rows', 'files', 'phases'])
+const DIAGNOSTIC_DURABLE_FAILURE_CODES = new Set([
+  'SQLITE_BUSY',
+  'DURABLE_WORKER_FAILURE',
+  'DURABLE_WORKER_EXIT',
+  'DURABLE_SETTLEMENT_TIMEOUT',
+  'DURABLE_INGEST_INCOMPLETE',
+])
+const DIAGNOSTIC_ARCHIVE_FAILURE_CODES = new Set([
+  'ARCHIVE_CANCELLED',
+  'ARCHIVE_VERIFY_ARCHIVE_CHANGED',
+  'ARCHIVE_VERIFY_ARCHIVE_UNAVAILABLE',
+  'ARCHIVE_VERIFY_ATTACHMENT_MISMATCH',
+  'ARCHIVE_VERIFY_AUTHENTICATION_FAILED',
+  'ARCHIVE_VERIFY_CIPHERTEXT_MISMATCH',
+  'ARCHIVE_VERIFY_DISK_FULL',
+  'ARCHIVE_VERIFY_ENTRY_MISMATCH',
+  'ARCHIVE_VERIFY_FAILED',
+  'ARCHIVE_VERIFY_FORMAT_INVALID',
+  'ARCHIVE_VERIFY_GPX_MISMATCH',
+  'ARCHIVE_VERIFY_IDENTITY_MISMATCH',
+  'ARCHIVE_VERIFY_INVENTORY_MISMATCH',
+  'ARCHIVE_VERIFY_LIVE_STORE_UNAVAILABLE',
+  'ARCHIVE_VERIFY_MANIFEST_INVALID',
+  'ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED',
+  'ARCHIVE_VERIFY_REPLAY_MISMATCH',
+  'ARCHIVE_VERIFY_SCHEMA_MISMATCH',
+  'ARCHIVE_VERIFY_SCOPE_MISMATCH',
+  'ARCHIVE_VERIFY_SLOT_MISMATCH',
+  'ARCHIVE_VERIFY_SQLITE_INVALID',
+  'ARCHIVE_VERIFY_TABLE_MISMATCH',
+  'ARCHIVE_VERIFY_UNSUPPORTED_FORMAT',
+  'ARCHIVE_VERIFY_WRONG_KEY',
+])
+
+/** Creates one bounded in-memory diagnostic ledger for a single qualification run. */
+export function createQualificationDiagnostics({
+  runId,
+  expectedRepositoryHead,
+  expectedRepositoryTree,
+}) {
+  if (!SAFE_DIAGNOSTIC_TOKEN.test(runId ?? '')
+    || !GIT_SHA.test(expectedRepositoryHead ?? '')
+    || !GIT_SHA.test(expectedRepositoryTree ?? '')) {
+    throw new Error('Qualification diagnostic identity is invalid.')
+  }
+  let lastPhase = 'preflight'
+  let lastGate = 'startup'
+  let archiveProgress = null
+  let cleanupCursor = null
+  let archiveIdentity = null
+  let rss = null
+  const durableWorker = {
+    queuedWrites: 0,
+    acknowledgedWrites: 0,
+    rejectedWrites: 0,
+    pendingWrites: 0,
+    busyRetries: 0,
+    maxDurableLatencyMs: 0,
+    failureCode: null,
+    exitCode: null,
+    terminationRequested: false,
+  }
+  const liveness = {}
+
+  const validToken = (value) => typeof value === 'string' && SAFE_DIAGNOSTIC_TOKEN.test(value)
+  const validNonNegativeInteger = (value) => Number.isSafeInteger(value) && value >= 0
+  const ensureLivenessPhase = (phase) => {
+    if (!validToken(phase)) return null
+    liveness[phase] ??= { heartbeatMaxGapMs: 0, currentPositionMaxCadenceMs: 0 }
+    return liveness[phase]
+  }
+  const snapshot = () => Object.freeze({
+    lastPhase,
+    lastGate,
+    archiveProgress: archiveProgress === null ? null : Object.freeze({ ...archiveProgress }),
+    durableWorker: Object.freeze({ ...durableWorker }),
+    liveness: Object.freeze(Object.fromEntries(
+      Object.entries(liveness).map(([phase, value]) => [phase, Object.freeze({ ...value })]),
+    )),
+    cleanupCursor: cleanupCursor === null ? null : Object.freeze({ ...cleanupCursor }),
+    archiveIdentity: archiveIdentity === null ? null : Object.freeze({ ...archiveIdentity }),
+    rss: rss === null ? null : Object.freeze({ ...rss }),
+  })
+
+  return Object.freeze({
+    runId,
+    expectedRepositoryHead,
+    expectedRepositoryTree,
+    /** Records the last lifecycle phase without retaining arbitrary input. */
+    setPhase(phase) {
+      if (validToken(phase)) lastPhase = phase
+    },
+    /** Records one stable gate name without retaining arbitrary input. */
+    markGate(gate) {
+      if (typeof gate === 'string' && SAFE_DIAGNOSTIC_GATE.test(gate)) lastGate = gate
+    },
+    /** Records the latest bounded archive progress tuple. */
+    recordArchiveProgress(update) {
+      if (update === null || typeof update !== 'object' || Array.isArray(update)
+        || !DIAGNOSTIC_PROGRESS_KINDS.has(update.kind)
+        || !validToken(update.phase) || !DIAGNOSTIC_PROGRESS_UNITS.has(update.unit)
+        || !validNonNegativeInteger(update.completed)
+        || (update.total !== null && !validNonNegativeInteger(update.total))) return
+      archiveProgress = {
+        kind: update.kind,
+        phase: update.phase,
+        unit: update.unit,
+        completed: update.completed,
+        total: update.total ?? null,
+      }
+    },
+    /** Records one durable position enqueue without retaining the position payload. */
+    recordDurableQueued(phase) {
+      if (!validToken(phase)) return
+      durableWorker.queuedWrites += 1
+      durableWorker.pendingWrites += 1
+    },
+    /** Records one durable acknowledgement using bounded numeric measurements. */
+    recordDurableAck({ phase, latencyMs, busyRetries }) {
+      if (!validToken(phase) || !Number.isFinite(latencyMs) || latencyMs < 0
+        || !validNonNegativeInteger(busyRetries)) return
+      durableWorker.acknowledgedWrites += 1
+      durableWorker.pendingWrites = Math.max(0, durableWorker.pendingWrites - 1)
+      durableWorker.busyRetries += busyRetries
+      durableWorker.maxDurableLatencyMs = Math.max(durableWorker.maxDurableLatencyMs, latencyMs)
+    },
+    /** Records the first durable-worker failure code and rejects no later evidence. */
+    recordDurableFailure(code, rejectedCount = 1) {
+      const normalizedCode = DIAGNOSTIC_DURABLE_FAILURE_CODES.has(code)
+        ? code
+        : 'DURABLE_WORKER_FAILURE'
+      if (durableWorker.failureCode === null) durableWorker.failureCode = normalizedCode
+      const boundedRejectedCount = validNonNegativeInteger(rejectedCount) ? rejectedCount : 1
+      durableWorker.rejectedWrites += boundedRejectedCount
+      durableWorker.pendingWrites = Math.max(0, durableWorker.pendingWrites - boundedRejectedCount)
+    },
+    /** Records an observed worker exit code without retaining process details. */
+    recordWorkerExit(code) {
+      if (Number.isSafeInteger(code) && code >= 0) durableWorker.exitCode = code
+    },
+    /** Records that the worker was deliberately terminated during bounded teardown. */
+    recordWorkerTerminationRequested() {
+      durableWorker.terminationRequested = true
+    },
+    /** Records a bounded heartbeat maximum for one lifecycle phase. */
+    recordHeartbeat(phase, gapMs) {
+      const target = ensureLivenessPhase(phase)
+      if (target !== null && Number.isFinite(gapMs) && gapMs >= 0) {
+        target.heartbeatMaxGapMs = Math.max(target.heartbeatMaxGapMs, gapMs)
+      }
+    },
+    /** Records a bounded current-position cadence maximum for one lifecycle phase. */
+    recordCurrentCadence(phase, cadenceMs) {
+      const target = ensureLivenessPhase(phase)
+      if (target !== null && Number.isFinite(cadenceMs) && cadenceMs >= 0) {
+        target.currentPositionMaxCadenceMs = Math.max(target.currentPositionMaxCadenceMs, cadenceMs)
+      }
+    },
+    /** Records the latest journal cursor without retaining mission identifiers. */
+    recordCleanupProgress(update) {
+      if (update === null || typeof update !== 'object' || Array.isArray(update)
+        || !validToken(update.tableName)
+        || !validNonNegativeInteger(update.tableIndex)
+        || !validNonNegativeInteger(update.tableCount)
+        || update.tableIndex > update.tableCount
+        || !validNonNegativeInteger(update.tableBatch)
+        || !validNonNegativeInteger(update.deletedRows)
+        || !validNonNegativeInteger(update.totalDeletedRows)
+        || update.deletedRows > update.totalDeletedRows) return
+      cleanupCursor = {
+        tableName: update.tableName,
+        tableIndex: update.tableIndex,
+        tableCount: update.tableCount,
+        tableBatch: update.tableBatch,
+        deletedRows: update.deletedRows,
+        totalDeletedRows: update.totalDeletedRows,
+      }
+    },
+    /** Records only archive byte identity and registry state, never its path. */
+    recordArchiveIdentity(update) {
+      if (update === null || typeof update !== 'object' || Array.isArray(update)
+        || !SHA256.test(update.sha256 ?? '')
+        || !validNonNegativeInteger(update.sizeBytes)
+        || !validToken(update.registryStatus)) return
+      archiveIdentity = {
+        sha256: update.sha256,
+        sizeBytes: update.sizeBytes,
+        registryStatus: update.registryStatus,
+      }
+    },
+    /** Records only bounded process resource measurements. */
+    recordRss(update) {
+      if (update === null || typeof update !== 'object' || Array.isArray(update)
+        || !validNonNegativeInteger(update.peakProcessRssBytes)
+        || !validNonNegativeInteger(update.linuxVmHwmBytes)
+        || !validNonNegativeInteger(update.sampleCount)) return
+      rss = {
+        peakProcessRssBytes: update.peakProcessRssBytes,
+        linuxVmHwmBytes: update.linuxVmHwmBytes,
+        sampleCount: update.sampleCount,
+      }
+    },
+    /** Returns a defensive, bounded snapshot suitable for a failure receipt. */
+    snapshot,
+  })
+}
+
+/** Maps one qualification exception to a fixed non-secret failure vocabulary. */
+export function classifyQualificationFailure(error) {
+  const code = typeof error?.code === 'string' ? error.code : ''
+  if (code === 'SQLITE_BUSY') {
+    return Object.freeze({ topLevelCode: 'DURABLE_INGEST_FAILED', causeCode: 'SQLITE_BUSY' })
+  }
+  if (DIAGNOSTIC_ARCHIVE_FAILURE_CODES.has(code)) {
+    return Object.freeze({ topLevelCode: 'ARCHIVE_VERIFICATION_FAILED', causeCode: code })
+  }
+  if (code === 'DURABLE_WORKER_EXIT') {
+    return Object.freeze({ topLevelCode: 'DURABLE_INGEST_FAILED', causeCode: code })
+  }
+  const message = typeof error?.message === 'string' ? error.message : ''
+  if (/200 ms|heartbeat|cadence/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'LIVENESS_GATE_FAILED', causeCode: 'MAIN_LIVENESS_GATE' })
+  }
+  if (/durable.*settlement|settlement.*deadline/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'DURABLE_INGEST_FAILED', causeCode: 'DURABLE_SETTLEMENT_TIMEOUT' })
+  }
+  if (/current-position ingest count|latest positions/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'DURABLE_INGEST_FAILED', causeCode: 'DURABLE_INGEST_INCOMPLETE' })
+  }
+  if (/cleanup.*(complete|archived|blocker|credential)/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'CLEANUP_GATE_FAILED', causeCode: 'CLEANUP_INCOMPLETE' })
+  }
+  if (/archive.*(bytes|registry|identity)/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'ARCHIVE_IDENTITY_FAILED', causeCode: 'ARCHIVE_IDENTITY_MISMATCH' })
+  }
+  if (/review.*changed|archive review|replay/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'ARCHIVE_REVIEW_FAILED', causeCode: 'ARCHIVE_REPLAY_COMPARISON_FAILED' })
+  }
+  if (/residue|secret scanning/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'RESIDUE_SCAN_FAILED', causeCode: 'RESIDUE_SCAN_FAILED' })
+  }
+  if (/source fixture changed/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'SOURCE_INTEGRITY_FAILED', causeCode: 'SOURCE_FIXTURE_CHANGED' })
+  }
+  if (/maintenance|schema migration/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'MIGRATION_FAILED', causeCode: 'MIGRATION_UNSETTLED' })
+  }
+  if (/verification|archive proof|seal receipt/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'ARCHIVE_VERIFICATION_FAILED', causeCode: 'ARCHIVE_VERIFY_FAILED' })
+  }
+  if (/evidence/iu.test(message)) {
+    return Object.freeze({ topLevelCode: 'EVIDENCE_VALIDATION_FAILED', causeCode: 'EVIDENCE_INVALID' })
+  }
+  return Object.freeze({
+    topLevelCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
+    causeCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
+  })
+}
+
+/** Returns the sibling path used for one non-success qualification failure receipt. */
+export function qualificationFailurePath(evidencePath) {
+  if (typeof evidencePath !== 'string' || !path.isAbsolute(evidencePath)
+    || path.resolve(evidencePath) !== evidencePath) {
+    throw new Error('Qualification failure receipt path is invalid.')
+  }
+  return `${evidencePath}${FAILURE_RECEIPT_SUFFIX}`
+}
+
+/** Builds one non-secret, bounded failure receipt from the diagnostic ledger. */
+export function createQualificationFailureReceipt({
+  diagnostics,
+  error,
+  expectedRepositoryHead,
+  observedRepositoryHead,
+  expectedRepositoryTree,
+  observedRepositoryTree,
+  profileCleanupCompleted,
+}) {
+  if (diagnostics === null || typeof diagnostics?.snapshot !== 'function') {
+    throw new Error('Qualification diagnostics are unavailable.')
+  }
+  if (!SAFE_DIAGNOSTIC_TOKEN.test(diagnostics.runId ?? '')) {
+    throw new Error('Qualification failure receipt run identity is invalid.')
+  }
+  const identity = {
+    expectedRepositoryHead: GIT_SHA.test(expectedRepositoryHead ?? '') ? expectedRepositoryHead : null,
+    observedRepositoryHead: GIT_SHA.test(observedRepositoryHead ?? '') ? observedRepositoryHead : null,
+    expectedRepositoryTree: GIT_SHA.test(expectedRepositoryTree ?? '') ? expectedRepositoryTree : null,
+    observedRepositoryTree: GIT_SHA.test(observedRepositoryTree ?? '') ? observedRepositoryTree : null,
+  }
+  if (identity.expectedRepositoryHead === null || identity.expectedRepositoryTree === null) {
+    throw new Error('Qualification failure receipt source identity is invalid.')
+  }
+  return Object.freeze({
+    schema: FAILURE_RECEIPT_SCHEMA,
+    run: Object.freeze({
+      runId: diagnostics.runId,
+      recordedAt: new Date().toISOString(),
+    }),
+    source: Object.freeze(identity),
+    failure: classifyQualificationFailure(error),
+    diagnostics: diagnostics.snapshot(),
+    cleanup: Object.freeze({ profileCleanupCompleted: profileCleanupCompleted === true }),
+  })
+}
+
+/** Rejects diagnostic payloads that could expose secrets, paths, stacks, or mission data. */
+function assertQualificationFailureReceiptSafe(receipt) {
+  if (receipt === null || typeof receipt !== 'object' || Array.isArray(receipt)
+    || receipt.schema !== FAILURE_RECEIPT_SCHEMA) {
+    throw new Error('Qualification failure receipt schema is invalid.')
+  }
+  const forbiddenKeys = new Set([
+    'message', 'stack', 'passphrase', 'recoveryCode', 'fixturePath', 'evidencePath',
+    'profileRoot', 'missionId', 'deviceId',
+  ])
+  const visit = (value) => {
+    if (value === null || typeof value !== 'object') {
+      if (typeof value === 'string'
+        && /(?:^|[\s"'])\/(?:[A-Za-z0-9_.-]+[\/A-Za-z0-9_.-]*)/u.test(value)) {
+        throw new Error('Qualification failure receipt contains an absolute path.')
+      }
+      return
+    }
+    if (Array.isArray(value)) {
+      value.forEach(visit)
+      return
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (forbiddenKeys.has(key)) throw new Error('Qualification failure receipt contains private fields.')
+      visit(child)
+    }
+  }
+  visit(receipt)
+}
+
+/** Atomically publishes one sibling mode-0600 failure receipt without overwriting prior evidence. */
+export async function writeQualificationFailureReceipt(evidencePath, receipt) {
+  const failurePath = qualificationFailurePath(evidencePath)
+  try {
+    await lstat(failurePath)
+    throw new Error('Qualification failure receipt already exists.')
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+  assertQualificationFailureReceiptSafe(receipt)
+  const parent = path.dirname(failurePath)
+  await mkdir(parent, { recursive: true, mode: 0o700 })
+  const temporaryPath = path.join(
+    parent,
+    `.${path.basename(failurePath)}.tmp-${process.pid}-${randomUUID()}`,
+  )
+  let handle = null
+  try {
+    handle = await open(temporaryPath, 'wx', 0o600)
+    await handle.chmod(0o600)
+    await handle.writeFile(`${JSON.stringify(receipt, null, 2)}\n`, 'utf8')
+    await handle.sync()
+    await handle.close()
+    handle = null
+    try {
+      await link(temporaryPath, failurePath)
+    } catch (error) {
+      if (error?.code === 'EEXIST') throw new Error('Qualification failure receipt already exists.')
+      throw error
+    }
+    await chmod(failurePath, 0o600)
+    await unlink(temporaryPath)
+    const directoryHandle = await open(parent, fsConstants.O_RDONLY)
+    try { await directoryHandle.sync() } finally { await directoryHandle.close() }
+  } finally {
+    if (handle !== null) await handle.close().catch(() => undefined)
+    await unlink(temporaryPath).catch((error) => {
+      if (error?.code !== 'ENOENT') throw error
+    })
+  }
+}
 
 /** Runs one exact-head Linux reference-host archive lifecycle qualification. */
 async function main() {
@@ -103,22 +487,34 @@ async function main() {
   const copiedDatabasePath = path.join(profileRoot, DATABASE_FILE_NAME)
   const archiveDirectory = path.join(profileRoot, ARCHIVE_DIRECTORY_NAME)
   const reviewRoot = path.join(profileRoot, REVIEW_DIRECTORY_NAME)
-  const rssSampler = startRssSampler()
+  const diagnostics = createQualificationDiagnostics({
+    runId,
+    expectedRepositoryHead: sourceBefore.head,
+    expectedRepositoryTree: sourceBefore.tree,
+  })
+  const rssSampler = startRssSampler(diagnostics)
   let store = null
   let reviewManager = null
   let positionProbe = null
   let passphrase = null
   let recoveryCode = null
   let storeOpen = false
+  let failure = null
+  let profileCleanupCompleted = false
+  let successSummary = null
 
   try {
+    diagnostics.markGate('preflight:free-space')
     await assertMinimumFreeSpace(profileRoot)
+    diagnostics.markGate('preflight:fixture')
     const stagedFixture = await stageClosedFixture({
       fixturePath: options.fixturePath,
       destinationPath: copiedDatabasePath,
     })
     assertFieldScaleFixture(stagedFixture)
 
+    diagnostics.setPhase('migration')
+    diagnostics.markGate('migration:start')
     const migrationStartedAt = performance.now()
     const migrationRun = await runWithHeartbeatMonitor(async () => {
       store = createElectronMissionStore({ userDataPath: profileRoot })
@@ -133,11 +529,13 @@ async function main() {
     })
     const maintenance = migrationRun.result
     const migrationHeartbeatMaxGapMs = migrationRun.heartbeatMaxGapMs
+    diagnostics.recordHeartbeat('migration', migrationHeartbeatMaxGapMs)
     const migrationDurationMs = performance.now() - migrationStartedAt
     if (migrationHeartbeatMaxGapMs >= MAX_MAIN_CADENCE_MS) {
       throw new Error('Schema migration exceeded the immutable 200 ms heartbeat gate.')
     }
 
+    diagnostics.markGate('migration:complete')
     const targetMission = await prepareTargetMission(store, options.missionId)
     const probeMission = await store.createMission({
       name: 'PR6 reference-host current-position probe',
@@ -156,6 +554,7 @@ async function main() {
       deviceId: probeDeviceId,
       runId,
       databasePath: copiedDatabasePath,
+      diagnostics,
     })
 
     passphrase = createEphemeralPassphrase()
@@ -168,6 +567,8 @@ async function main() {
       cleanup: 0,
     }
 
+    diagnostics.setPhase('create')
+    diagnostics.markGate('create:start')
     positionProbe.setPhase('create')
     const createStartedAt = performance.now()
     let verifyStartedAt = null
@@ -177,6 +578,10 @@ async function main() {
       {
         operationId: randomUUID(),
         onProgress(update) {
+          diagnostics.recordArchiveProgress(update)
+          if (update?.kind && update?.phase) {
+            diagnostics.markGate(`${update.kind}:${update.phase}`)
+          }
           if (update?.kind !== 'verify' || verifyStartedAt !== null) return
           verifyStartedAt = performance.now()
           phaseDurationsMs.create = verifyStartedAt - createStartedAt
@@ -188,6 +593,8 @@ async function main() {
       throw new Error('Encrypted finalization did not enter independent verification.')
     }
     phaseDurationsMs.verify = performance.now() - verifyStartedAt
+    diagnostics.setPhase('verify')
+    diagnostics.markGate('verify:complete')
     if (finalized?.mission?.status !== 'finalized'
       || finalized?.archive?.status !== 'verified') {
       throw new Error('Encrypted mission finalization did not finish verified.')
@@ -200,12 +607,19 @@ async function main() {
     )
     const archivePath = path.join(archiveDirectory, stored.archive.archiveRelativePath)
     const archiveBeforeCleanup = await hashClosedRegularFile(archivePath)
+    diagnostics.recordArchiveIdentity({
+      sha256: archiveBeforeCleanup.sha256,
+      sizeBytes: archiveBeforeCleanup.sizeBytes,
+      registryStatus: stored.archive.status,
+    })
     if (archiveBeforeCleanup.sha256 !== stored.archive.ciphertextSha256
       || archiveBeforeCleanup.sizeBytes !== stored.archive.sizeBytes) {
       throw new Error('Published archive bytes differ from their verified registry identity.')
     }
 
     reviewManager = createReviewManager({ store, reviewRoot, archiveDirectory })
+    diagnostics.setPhase('restore')
+    diagnostics.markGate('restore:start')
     await reviewManager.sweepStartup()
     const timezone = resolvedTimezone()
     positionProbe.setPhase('restore')
@@ -221,6 +635,7 @@ async function main() {
       passphrase,
       recoveryCode,
     })
+    diagnostics.markGate('restore:complete')
     phaseDurationsMs.restore = performance.now() - restoreStartedAt
 
     const eligibility = await store.getMissionCleanupEligibility({
@@ -237,6 +652,8 @@ async function main() {
     let reviewLeaseHeld = true
     let cleanupResult
     try {
+      diagnostics.setPhase('cleanup')
+      diagnostics.markGate('cleanup:start')
       positionProbe.setPhase('cleanup')
       const cleanupStartedAt = performance.now()
       cleanupResult = await store.startMissionCleanup({
@@ -246,13 +663,17 @@ async function main() {
         secret: recoveryCode,
       }, {
         operationId: randomUUID(),
-        onProgress: () => undefined,
+        onProgress: (update) => {
+          diagnostics.recordCleanupProgress(update)
+          if (update?.tableName) diagnostics.markGate(`cleanup:${update.tableName}`)
+        },
         reviewActivity: false,
       })
       phaseDurationsMs.cleanup = performance.now() - cleanupStartedAt
     } finally {
       cleanupLease.release()
     }
+    diagnostics.markGate('cleanup:complete')
     reviewLeaseHeld = reviewLeaseHeld && cleanupResult?.state === 'completed'
     if (cleanupResult?.state !== 'completed' || cleanupResult?.storageState !== 'archived') {
       throw new Error('Eligibility-gated live mission cleanup did not complete.')
@@ -260,6 +681,7 @@ async function main() {
 
     const liveness = await positionProbe.stop()
     positionProbe = null
+    diagnostics.markGate('cleanup:liveness-settled')
     const cleanupProof = readCleanupProof({
       databasePath: copiedDatabasePath,
       missionId: targetMission.id,
@@ -293,6 +715,7 @@ async function main() {
       passphrase,
       recoveryCode,
     })
+    diagnostics.markGate('cleanup:review-closed')
     if (reviewAfterCleanup.replayPageCount !== reviewBeforeCleanup.replayPageCount
       || reviewAfterCleanup.replayDigest !== reviewBeforeCleanup.replayDigest) {
       throw new Error('Archive-backed Review changed after cleanup.')
@@ -312,7 +735,10 @@ async function main() {
       missionId: targetMission.id,
       archiveId: stored.archive.archiveId,
     })
+    diagnostics.setPhase('restart')
+    diagnostics.markGate('restart:complete')
 
+    diagnostics.setPhase('residue')
     const kdf = await measureProductionKdf()
     const finalResidue = await scanEvidenceRoots({
       roots: residueRoots(archiveDirectory, reviewRoot),
@@ -332,7 +758,9 @@ async function main() {
       || profileSecretScan.secretMatches.length > 0) {
       throw new Error('App-addressable residue or exact secret scanning failed closed.')
     }
+    diagnostics.markGate('residue:complete')
 
+    diagnostics.setPhase('source')
     const fixtureAfter = await inspectClosedFixtureSource(
       options.fixturePath,
       stagedFixture.sourceIdentity,
@@ -343,7 +771,9 @@ async function main() {
     }
     const sourceAfter = await readRepositorySourceState()
     assertSameExactSource(sourceBefore, sourceAfter)
+    diagnostics.markGate('source:unchanged')
     const resources = await rssSampler.stop()
+    diagnostics.markGate('resources:complete')
     const runCompletedAtMs = Date.now()
     const evidence = {
       schema: 'sartracker-breadcrumb-pr6-qualification-v1',
@@ -442,24 +872,75 @@ async function main() {
       recoveryCode,
     ])
     await writeQualificationEvidence(options.evidencePath, evidence)
-    process.stdout.write(`${JSON.stringify({
+    successSummary = {
       passed: true,
       repositoryHead: sourceAfter.head,
       ciphertextBytes: stored.archive.sizeBytes,
       tableCount: stored.archive.tableCount,
-    })}\n`)
-  } finally {
-    if (positionProbe !== null) await positionProbe.stop().catch(() => undefined)
-    if (reviewManager !== null) await reviewManager.prepareClose().catch(() => undefined)
-    if (store !== null && storeOpen) {
-      await store.prepareClose().catch(() => undefined)
-      try { store.close() } catch {}
     }
-    await rssSampler.stop().catch(() => undefined)
+  } catch (error) {
+    failure = error
+    diagnostics.markGate('failure:captured')
+  } finally {
+    let cleanupFailed = false
+    if (positionProbe !== null) {
+      try { await positionProbe.stop() } catch (error) {
+        cleanupFailed = true
+        if (failure === null) failure = error
+      }
+    }
+    if (reviewManager !== null) {
+      try { await reviewManager.prepareClose() } catch (error) {
+        cleanupFailed = true
+        if (failure === null) failure = error
+      }
+    }
+    if (store !== null && storeOpen) {
+      try { await store.prepareClose() } catch (error) {
+        cleanupFailed = true
+        if (failure === null) failure = error
+      }
+      try { store.close() } catch (error) {
+        cleanupFailed = true
+        if (failure === null) failure = error
+      }
+    }
+    try { await rssSampler.stop() } catch (error) {
+      cleanupFailed = true
+      if (failure === null) failure = error
+    }
     passphrase = null
     recoveryCode = null
-    await removeOwnedProfileRoot(profileRoot)
+    try {
+      await removeOwnedProfileRoot(profileRoot)
+      profileCleanupCompleted = true
+    } catch (error) {
+      cleanupFailed = true
+      if (failure === null) failure = error
+    }
+    if (cleanupFailed) diagnostics.markGate('teardown:incomplete')
+    else diagnostics.markGate('teardown:complete')
   }
+
+  if (failure !== null) {
+    const sourceAfter = await readRepositorySourceState().catch(() => null)
+    try {
+      const receipt = createQualificationFailureReceipt({
+        diagnostics,
+        error: failure,
+        expectedRepositoryHead: sourceBefore.head,
+        observedRepositoryHead: sourceAfter?.head,
+        expectedRepositoryTree: sourceBefore.tree,
+        observedRepositoryTree: sourceAfter?.tree,
+        profileCleanupCompleted,
+      })
+      await writeQualificationFailureReceipt(options.evidencePath, receipt)
+    } catch {
+      // Failure diagnostics are strictly best-effort and never replace the real failure.
+    }
+    throw failure
+  }
+  process.stdout.write(`${JSON.stringify(successSummary)}\n`)
 }
 
 /** Streams one pinned closed fixture into a new mode-0600 disposable database copy. */
@@ -560,7 +1041,14 @@ export function assertFieldScaleFixture(input) {
 }
 
 /** Starts the qualification-only durable ingest worker on its own SQLite connection. */
-function startDurablePositionWorker({ databasePath, missionId, deviceId, workerPath = POSITION_WORKER_PATH, createWorker }) {
+function startDurablePositionWorker({
+  databasePath,
+  missionId,
+  deviceId,
+  workerPath = POSITION_WORKER_PATH,
+  createWorker,
+  diagnostics,
+}) {
   if (typeof databasePath !== 'string' || !path.isAbsolute(databasePath)
     || path.resolve(databasePath) !== databasePath) {
     throw new Error('Durable position worker database path is invalid.')
@@ -572,6 +1060,7 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
   const pending = new Map()
   const allWrites = []
   let failure = null
+  let failureReported = false
   let stopping = false
   let exitCode = null
   let terminationRequested = false
@@ -580,6 +1069,11 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
 
   const rejectPending = (error) => {
     if (failure === null) failure = error
+    const code = typeof error?.code === 'string' ? error.code : 'DURABLE_WORKER_FAILURE'
+    if (!failureReported) {
+      failureReported = true
+      diagnostics?.recordDurableFailure(code, Math.max(1, pending.size))
+    }
     for (const entry of pending.values()) entry.reject(error)
     pending.clear()
   }
@@ -588,6 +1082,11 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
       const entry = pending.get(message.sourcePositionId)
       if (entry === undefined) return
       pending.delete(message.sourcePositionId)
+      diagnostics?.recordDurableAck({
+        phase: entry.phase,
+        latencyMs: Number(message.latencyMs),
+        busyRetries: Number(message.busyRetries ?? 0),
+      })
       entry.resolve({
         phase: entry.phase,
         latencyMs: message.latencyMs,
@@ -607,11 +1106,18 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
   worker.on('error', rejectPending)
   worker.on('exit', (code) => {
     exitCode = code
+    diagnostics?.recordWorkerExit(code)
     if (code !== 0 && failure === null && !terminationRequested) {
       failure = new Error(`Durable position worker exited with code ${code}.`)
+      failure.code = 'DURABLE_WORKER_EXIT'
+      if (stopping) diagnostics?.recordDurableFailure('DURABLE_WORKER_EXIT', 0)
     }
     if (!stopping) {
-      rejectPending(failure ?? new Error(`Durable position worker exited before shutdown with code ${code}.`))
+      const exitFailure = failure ?? Object.assign(
+        new Error(`Durable position worker exited before shutdown with code ${code}.`),
+        { code: 'DURABLE_WORKER_EXIT' },
+      )
+      rejectPending(exitFailure)
     }
     resolveStopped()
   })
@@ -622,6 +1128,7 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
       if (failure !== null) return Promise.reject(failure)
       const promise = new Promise((resolve, reject) => {
         pending.set(position.source_position_id, { phase, resolve, reject })
+        diagnostics?.recordDurableQueued(phase)
         try {
           worker.postMessage({ type: 'position', position })
         } catch (error) {
@@ -645,6 +1152,7 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
         try {
           if (typeof worker.terminate === 'function') {
             terminationRequested = true
+            diagnostics?.recordWorkerTerminationRequested()
             await worker.terminate()
           }
         } finally {
@@ -692,10 +1200,13 @@ function startDurablePositionWorker({ databasePath, missionId, deviceId, workerP
       }
       if (typeof worker.terminate === 'function') {
         terminationRequested = true
+        diagnostics?.recordWorkerTerminationRequested()
         await worker.terminate()
       }
       if (exitCode !== null && exitCode !== 0 && failure === null && !terminationRequested) {
         failure = new Error(`Durable position worker exited with code ${exitCode}.`)
+        failure.code = 'DURABLE_WORKER_EXIT'
+        diagnostics?.recordDurableFailure('DURABLE_WORKER_EXIT', 0)
       }
       if (failure !== null) throw failure
     },
@@ -1299,6 +1810,7 @@ export function startCurrentPositionProbe({
   databasePath,
   workerPath,
   createWorker,
+  diagnostics,
   durableSettlementTimeoutMs = MAX_DURABLE_SETTLE_MS,
 }) {
   if (!Number.isFinite(durableSettlementTimeoutMs)
@@ -1326,6 +1838,7 @@ export function startCurrentPositionProbe({
   const heartbeatMonitor = startHeartbeatMonitor((gap) => {
     if (phase !== null && failure === null) {
       measurements[phase].heartbeatGapsMs.push(gap)
+      diagnostics?.recordHeartbeat(phase, gap)
     }
   })
   const durableWorker = databasePath === undefined
@@ -1336,6 +1849,7 @@ export function startCurrentPositionProbe({
       deviceId,
       workerPath,
       createWorker,
+      diagnostics,
     })
   const durablePromises = []
   let failure = null
@@ -1381,6 +1895,7 @@ export function startCurrentPositionProbe({
       )
       bucket.currentCadencesMs.push(currentCadence)
       bucket.lastVisibleAt = visibleAt
+      diagnostics?.recordCurrentCadence(tickPhase, currentCadence)
 
       const durableStartedAt = performance.now()
       const durablePromise = durableWorker === null
@@ -1410,7 +1925,10 @@ export function startCurrentPositionProbe({
         bucket.durableBusyRetries += busyRetries
         return result
       }).catch((error) => {
-        failure = error
+        if (failure === null) failure = error
+        if (durableWorker === null) {
+          diagnostics?.recordDurableFailure(error?.code ?? 'DURABLE_WORKER_FAILURE')
+        }
         return undefined
       })
       durablePromises.push(observedDurablePromise)
@@ -1461,6 +1979,7 @@ export function startCurrentPositionProbe({
       }
       const durableWriteCount = Object.values(measurements)
         .reduce((total, value) => total + value.durableWriteCount, 0)
+      if (failure !== null) throw failure
       let durableVisibleWrites = durableWriteCount
       if (typeof store.countPositions === 'function') {
         const expectedDurableWrites = QUALIFICATION_PHASES.reduce(
@@ -2077,7 +2596,7 @@ function withReadonlyDatabase(databasePath, read) {
 }
 
 /** Starts conservative whole-process RSS sampling, including worker-thread allocations. */
-function startRssSampler() {
+function startRssSampler(diagnostics) {
   const samples = [process.memoryUsage().rss]
   let stopped = null
   const timer = setInterval(() => samples.push(process.memoryUsage().rss), HEARTBEAT_INTERVAL_MS)
@@ -2098,6 +2617,7 @@ function startRssSampler() {
         linuxVmHwmBytes,
         sampleCount: samples.length,
       })
+      diagnostics?.recordRss(stopped)
       if (peakProcessRssBytes > MAX_ARCHIVE_PROCESS_RSS_BYTES) {
         throw new Error('The whole-process archive lifecycle exceeded the 512 MiB RSS gate.')
       }

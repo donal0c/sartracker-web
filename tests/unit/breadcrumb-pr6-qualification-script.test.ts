@@ -17,8 +17,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   assertFieldScaleFixture,
+  classifyQualificationFailure,
+  createQualificationDiagnostics,
+  createQualificationFailureReceipt,
   deriveLivenessEvidence,
   parseTerminalCleanupJournal,
+  qualificationFailurePath,
   readLegacyArchiveMaintenanceProgress,
   runWithHeartbeatMonitor,
   scanEvidenceRoots,
@@ -26,6 +30,7 @@ import {
   startCurrentPositionProbe,
   waitForMaintenanceSettlement,
   writeQualificationEvidence,
+  writeQualificationFailureReceipt,
 } from '../../scripts/breadcrumb-pr6-qualification.mjs'
 
 const temporaryRoots: string[] = []
@@ -548,12 +553,14 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     await new Promise((resolve) => setTimeout(resolve, 90))
 
     const outcome = await Promise.race([
-      probe.stop().then(() => 'resolved', (error: Error) => `rejected:${error.message}`),
+      probe.stop().then(() => 'resolved', (error: Error & { code?: string }) => ({
+        message: error.message,
+        code: error.code,
+      })),
       new Promise<string>((resolve) => setTimeout(() => resolve('timed-out'), 250)),
     ])
 
-    expect(outcome).toMatch(/^rejected:/u)
-    expect(outcome).not.toBe('timed-out')
+    expect(outcome).toMatchObject({ message: 'synthetic durable failure', code: 'SQLITE_BUSY' })
   })
 
   it('bounds graceful worker shutdown after all writes acknowledge', async () => {
@@ -907,6 +914,172 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect((await lstat(evidencePath)).mode & 0o777).toBe(0o600)
     await expect(writeQualificationEvidence(evidencePath, { replaced: true }))
       .rejects.toThrow('already exists')
+  })
+
+  it('retains only bounded phase, progress, worker, liveness, and cleanup diagnostics', () => {
+    const diagnostics = createQualificationDiagnostics({
+      runId: 'run-1',
+      expectedRepositoryHead: 'a'.repeat(40),
+      expectedRepositoryTree: 'b'.repeat(40),
+    })
+
+    diagnostics.setPhase('cleanup')
+    diagnostics.markGate('cleanup:transaction')
+    diagnostics.recordArchiveProgress({
+      kind: 'create',
+      phase: 'encrypt',
+      unit: 'bytes',
+      completed: 42,
+      total: 100,
+    })
+    diagnostics.recordDurableQueued('cleanup')
+    diagnostics.recordDurableAck({ phase: 'cleanup', latencyMs: 12, busyRetries: 2 })
+    diagnostics.recordDurableFailure('SQLITE_BUSY')
+    diagnostics.recordWorkerExit(1)
+    diagnostics.recordHeartbeat('cleanup', 34)
+    diagnostics.recordCurrentCadence('cleanup', 45)
+    diagnostics.recordCleanupProgress({
+      tableName: 'positions',
+      tableIndex: 2,
+      tableCount: 4,
+      tableBatch: 9,
+      deletedRows: 5000,
+      totalDeletedRows: 45000,
+    })
+    diagnostics.recordArchiveIdentity({
+      sha256: 'c'.repeat(64),
+      sizeBytes: 45000,
+      registryStatus: 'verified',
+    })
+    diagnostics.recordRss({
+      peakProcessRssBytes: 1234,
+      linuxVmHwmBytes: 1200,
+      sampleCount: 8,
+    })
+
+    expect(diagnostics.snapshot()).toEqual({
+      lastPhase: 'cleanup',
+      lastGate: 'cleanup:transaction',
+      archiveProgress: {
+        kind: 'create', phase: 'encrypt', unit: 'bytes', completed: 42, total: 100,
+      },
+      durableWorker: {
+        queuedWrites: 1,
+        acknowledgedWrites: 1,
+        rejectedWrites: 1,
+        pendingWrites: 0,
+        busyRetries: 2,
+        maxDurableLatencyMs: 12,
+        failureCode: 'SQLITE_BUSY',
+        exitCode: 1,
+        terminationRequested: false,
+      },
+      liveness: {
+        cleanup: {
+          heartbeatMaxGapMs: 34,
+          currentPositionMaxCadenceMs: 45,
+        },
+      },
+      cleanupCursor: {
+        tableName: 'positions',
+        tableIndex: 2,
+        tableCount: 4,
+        tableBatch: 9,
+        deletedRows: 5000,
+        totalDeletedRows: 45000,
+      },
+      archiveIdentity: { sha256: 'c'.repeat(64), sizeBytes: 45000, registryStatus: 'verified' },
+      rss: { peakProcessRssBytes: 1234, linuxVmHwmBytes: 1200, sampleCount: 8 },
+    })
+  })
+
+  it('classifies failures into a fixed vocabulary without retaining messages or paths', () => {
+    expect(classifyQualificationFailure(Object.assign(new Error('/tmp/secret.sqlite'), {
+      code: 'SQLITE_BUSY',
+    }))).toEqual({
+      topLevelCode: 'DURABLE_INGEST_FAILED',
+      causeCode: 'SQLITE_BUSY',
+    })
+    expect(classifyQualificationFailure(new Error('unexpected /private/path and secret')))
+      .toEqual({
+        topLevelCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
+        causeCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
+      })
+  })
+
+  it('builds a safe failure receipt with no secret, path, stack, or mission content', () => {
+    const diagnostics = createQualificationDiagnostics({
+      runId: 'run-2',
+      expectedRepositoryHead: 'a'.repeat(40),
+      expectedRepositoryTree: 'b'.repeat(40),
+    })
+    diagnostics.setPhase('verify')
+    diagnostics.markGate('verify:replay')
+    const receipt = createQualificationFailureReceipt({
+      diagnostics,
+      error: Object.assign(new Error('/private/secret/mission.sqlite'), {
+        code: 'ARCHIVE_VERIFY_REPLAY_MISMATCH',
+        stack: 'secret stack',
+      }),
+      expectedRepositoryHead: 'a'.repeat(40),
+      observedRepositoryHead: 'a'.repeat(40),
+      expectedRepositoryTree: 'b'.repeat(40),
+      observedRepositoryTree: 'b'.repeat(40),
+      profileCleanupCompleted: true,
+    })
+
+    expect(receipt).toMatchObject({
+      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v1',
+      run: { runId: 'run-2' },
+      failure: {
+        topLevelCode: 'ARCHIVE_VERIFICATION_FAILED',
+        causeCode: 'ARCHIVE_VERIFY_REPLAY_MISMATCH',
+      },
+      cleanup: { profileCleanupCompleted: true },
+    })
+    expect(JSON.stringify(receipt)).not.toContain('/private/secret/mission.sqlite')
+    expect(JSON.stringify(receipt)).not.toContain('secret stack')
+  })
+
+  it('writes a sibling mode-0600 failure receipt atomically and never overwrites it', async () => {
+    const root = await createTemporaryRoot()
+    const evidencePath = path.join(root, 'evidence', 'qualification.json')
+    const failurePath = qualificationFailurePath(evidencePath)
+    const receipt = {
+      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v1',
+      run: { runId: 'run-3' },
+      failure: {
+        topLevelCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
+        causeCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
+      },
+    }
+
+    await writeQualificationFailureReceipt(evidencePath, receipt)
+
+    expect(JSON.parse(await readFile(failurePath, 'utf8'))).toEqual(receipt)
+    expect((await lstat(failurePath)).mode & 0o777).toBe(0o600)
+    await expect(writeQualificationFailureReceipt(evidencePath, { replaced: true }))
+      .rejects.toThrow('already exists')
+    await expect(lstat(evidencePath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('rejects failure receipts containing private fields or absolute paths', async () => {
+    const root = await createTemporaryRoot()
+    const evidencePath = path.join(root, 'evidence', 'qualification.json')
+    const privateReceipt = {
+      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v1',
+      message: 'do not persist this',
+    }
+
+    await expect(writeQualificationFailureReceipt(evidencePath, privateReceipt))
+      .rejects.toThrow(/private fields/iu)
+
+    const pathReceipt = {
+      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v1',
+      run: { runId: 'run-4', detail: '/private/secret.sqlite' },
+    }
+    await expect(writeQualificationFailureReceipt(evidencePath, pathReceipt))
+      .rejects.toThrow(/absolute path/iu)
   })
 })
 
