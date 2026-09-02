@@ -625,6 +625,33 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
     })
   })
 
+  it('retains the open plaintext session when correction fails before cleanup can be confirmed', async () => {
+    const harness = createHarness({
+      restoreMissionForCorrection: vi.fn(async () => {
+        throw new Error('restore failed')
+      }),
+      close: vi.fn(async () => { throw new Error('cleanup failed') }),
+    })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+    await controller.openArchive({
+      archiveId: VERIFIED_V2_ID,
+      containerVersion: 2,
+      slotType: 'passphrase',
+      secret: SECRET,
+    })
+
+    await expect(controller.restoreForCorrection({
+      admin_name: 'Duty Admin',
+      reason: 'Correct a recorded clue.',
+    })).rejects.toThrow(/failed safely/iu)
+    expect(harness.latestState()).toMatchObject({
+      phase: 'error',
+      activeSession: V2_SESSION,
+      recoveryRequired: 'plaintext_cleanup',
+    })
+    expect(harness.switchMissionReviewSource).not.toHaveBeenLastCalledWith({ source: 'live' })
+  })
+
   it('accepts verified superseded v2, but rejects unverified, missing, newer, and malformed credential requests before IPC', async () => {
     const harness = createHarness()
     harness.open.mockResolvedValue({

@@ -39,7 +39,12 @@ describe('archived mission correction rehydration', () => {
   it('restores the emptied mission namespace from the authenticated snapshot without replacing retained history', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-'))
     temporaryDirectories.add(userDataPath)
-    const store = createElectronMissionStore({ userDataPath })
+    const archiveCorrectionFaultInjection = { afterRehydrateBeforeUnlock: true }
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+      archiveCorrectionFaultInjection,
+    })
     const custody = {
       passphrase: 'Correct Restore 2026!',
       recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
@@ -78,17 +83,32 @@ describe('archived mission correction rehydration', () => {
         onProgress: () => undefined,
       })
       expect(await store.getMission(mission.id)).toMatchObject({ storage_state: 'archived' })
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: archiveId,
+        snapshot_path: snapshotPath,
+        admin_name: 'Duty Admin',
+        reason: 'Restore this archived mission for a recorded correction.',
+      })).rejects.toThrow(/failed safely/iu)
+      const failedDb = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+      try {
+        expect(failedDb.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?').get(mission.id))
+          .toEqual({ count: 0 })
+        expect(failedDb.prepare('SELECT status FROM missions WHERE id = ?').get(mission.id))
+          .toEqual({ status: 'finalized' })
+      } finally {
+        failedDb.close()
+      }
+      archiveCorrectionFaultInjection.afterRehydrateBeforeUnlock = false
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: archiveId,
+        snapshot_path: snapshotPath,
+        admin_name: 'Duty Admin',
+        reason: 'Restore this archived mission for a recorded correction.',
+      })).resolves.toMatchObject({ status: 'finished', storage_state: 'live' })
       const liveDb = new Database(path.join(userDataPath, 'mission-store.sqlite'))
       try {
-        expect(liveDb.prepare('SELECT COUNT(*) AS count FROM devices WHERE mission_id = ?').get(mission.id))
-          .toEqual({ count: 0 })
-        rehydrateMissionFromSnapshot({
-          db: liveDb,
-          snapshotPath,
-          missionId: mission.id,
-          archiveId,
-          schemaVersion: CURRENT_SCHEMA_VERSION,
-        })
         expect(liveDb.prepare('SELECT COUNT(*) AS count FROM devices WHERE mission_id = ?').get(mission.id))
           .toEqual({ count: 1 })
         expect(liveDb.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?').get(mission.id))
@@ -100,6 +120,72 @@ describe('archived mission correction rehydration', () => {
         liveDb.close()
       }
       expect(readFileSync(snapshotPath).length).toBeGreaterThan(0)
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('rolls back restored rows when the atomic correction completion callback fails', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-rollback-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({ userDataPath })
+    const custody = {
+      passphrase: 'Atomic Restore 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Atomic correction restore' })
+      await store.upsertDevice({
+        mission_id: mission.id,
+        device_id: 'rollback-device',
+        name: 'Rollback Device',
+        color: '#0088ff',
+        status: 'offline',
+      })
+      await store.addPosition({
+        mission_id: mission.id,
+        device_id: 'rollback-device',
+        lat: 52.1,
+        lon: -9.1,
+        timestamp: '2026-09-02T10:00:00.000Z',
+        timestamp_source: 'fix',
+      })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, custody)
+      const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
+      const snapshotPath = path.join(userDataPath, 'rollback-snapshot.sqlite')
+      await store.syncBackup('correction-fixture')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '17171717-1717-4171-8171-171717171717',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      const liveDb = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+      try {
+        expect(() => rehydrateMissionFromSnapshot({
+          db: liveDb,
+          snapshotPath,
+          missionId: mission.id,
+          archiveId,
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          onRestored: () => { throw new Error('injected post-copy failure') },
+        })).toThrow('injected post-copy failure')
+        expect(liveDb.prepare('SELECT COUNT(*) AS count FROM devices WHERE mission_id = ?').get(mission.id))
+          .toEqual({ count: 0 })
+        expect(liveDb.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?').get(mission.id))
+          .toEqual({ count: 0 })
+        expect(liveDb.prepare('SELECT status FROM missions WHERE id = ?').get(mission.id))
+          .toEqual({ status: 'finalized' })
+      } finally {
+        liveDb.close()
+      }
     } finally {
       await store.prepareClose()
       store.close()

@@ -512,7 +512,9 @@ function registerMissionArchiveIpcHandlers(input) {
     || typeof input.ipcMain?.handle !== 'function'
     || typeof input.validateIpcSender !== 'function'
     || typeof input.archiveReviewSessionManager?.hasReviewActivity !== 'function'
-    || typeof input.archiveReviewSessionManager?.acquireCleanupLease !== 'function') {
+    || typeof input.archiveReviewSessionManager?.acquireCleanupLease !== 'function'
+    || (input.removeCorrectionSnapshot !== undefined
+      && typeof input.removeCorrectionSnapshot !== 'function')) {
     throw new TypeError('Mission archive IPC registration is invalid.')
   }
   const channels = input.channels
@@ -520,6 +522,9 @@ function registerMissionArchiveIpcHandlers(input) {
   const generateRecoveryCode = input.generateRecoveryCode ?? generateArchiveRecoveryCode
   const randomUUID = input.randomUUID ?? cryptoRandomUUID
   const nowMs = input.nowMs ?? Date.now
+  const removeCorrectionSnapshot = input.removeCorrectionSnapshot ?? (
+    (directory) => fs.rm(directory, { recursive: true, force: true })
+  )
   const issuances = input.issuanceLedger ?? new Map()
   if (!(issuances instanceof Map)) {
     throw new TypeError('Mission archive recovery issuance ledger is invalid.')
@@ -751,6 +756,8 @@ function registerMissionArchiveIpcHandlers(input) {
       )
     }
     let snapshot = null
+    let result = null
+    let operationFailure = null
     try {
       if (typeof input.archiveReviewSessionManager.snapshotForCorrection !== 'function') {
         throw archiveIpcError(
@@ -764,22 +771,32 @@ function registerMissionArchiveIpcHandlers(input) {
         operationId,
         archiveId,
       })
-      const result = await missionStore.unlockFinalizedMission({
+      result = await missionStore.unlockFinalizedMission({
         mission_id: missionId,
         archive_id: snapshot.archiveId,
         snapshot_path: snapshot.snapshotPath,
         admin_name: adminName,
         reason,
       })
-      return projectUnlockedMissionResult(result, missionId)
     } catch (error) {
-      throw closeArchiveFailure(error, 'ARCHIVE_REHYDRATE_FAILED')
-    } finally {
-      if (snapshot?.snapshotPath !== undefined) {
-        await fs.rm(path.dirname(snapshot.snapshotPath), { recursive: true, force: true })
-          .catch(() => undefined)
+      operationFailure = error
+    }
+    let cleanupFailure = null
+    if (snapshot?.snapshotPath !== undefined) {
+      try {
+        await removeCorrectionSnapshot(path.dirname(snapshot.snapshotPath))
+      } catch (error) {
+        cleanupFailure = error
       }
     }
+    if (cleanupFailure !== null) {
+      throw archiveIpcError(
+        'ARCHIVE_REHYDRATE_CLEANUP_FAILED',
+        'Mission archive correction restore completed with unresolved plaintext cleanup.',
+      )
+    }
+    if (operationFailure !== null) throw operationFailure
+    return projectUnlockedMissionResult(result, missionId)
   })
 
   input.ipcMain.handle(channels.listMissionArchives, async (event, missionId) => {

@@ -234,6 +234,12 @@ function rehydrateMissionFromSnapshot(input) {
       'Archive correction live store is invalid.',
     )
   }
+  if (input.onRestored !== undefined && typeof input.onRestored !== 'function') {
+    throw new ArchiveRehydrateError(
+      'ARCHIVE_REHYDRATE_REQUEST_INVALID',
+      'Archive correction completion callback is invalid.',
+    )
+  }
 
   let snapshot
   try {
@@ -316,6 +322,7 @@ function rehydrateMissionFromSnapshot(input) {
           WHERE ${selection.whereSql}`).run(...selection.parameters)
       }
       rebuildDerivedMissionState(database, missionId)
+      input.onRestored?.()
     })
     transaction.immediate()
   } finally {

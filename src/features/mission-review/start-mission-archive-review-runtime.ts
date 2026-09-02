@@ -581,6 +581,15 @@ export async function startMissionArchiveReviewRuntime(
     if (session === null || operationId === null) {
       throw new Error('Restore for correction requires an open verified archive session.')
     }
+    const archive = findArchive(state.timeline, session.archiveId)
+    if (archive === null
+      || archive.container_version !== 2
+      || archive.status !== 'verified'
+      || session.containerVersion !== 2
+      || session.verified !== true
+      || archiveReviewAvailability(archive).available !== true) {
+      throw new Error('Restore for correction requires the current verified v2 archive.')
+    }
     if (typeof dependencies.missionStore.restoreMissionForCorrection !== 'function') {
       throw new Error('Restore for correction is unavailable in this runtime.')
     }
@@ -620,18 +629,35 @@ export async function startMissionArchiveReviewRuntime(
         error: null,
       })
     } catch {
-      apply({
-        phase: 'error',
-        activeSession: null,
-        activeOperationId: null,
-        activeArchiveId: session.archiveId,
-        recoveryRequired: 'live_source_resume',
-        error: 'Archive correction restore failed safely. Live Mission Review may need to be resumed.',
-      })
+      let plaintextClosed = false
       try {
-        await dependencies.switchMissionReviewSource({ source: 'live' })
+        plaintextClosed = await dependencies.archiveReview.close({ sessionId: session.sessionId }) === true
       } catch {
-        // The explicit recovery state remains visible for the operator.
+        plaintextClosed = false
+      }
+      if (!plaintextClosed) {
+        apply({
+          phase: 'error',
+          activeSession: session,
+          activeOperationId: null,
+          activeArchiveId: session.archiveId,
+          recoveryRequired: 'plaintext_cleanup',
+          error: SAFE_CLOSE_FAILURE,
+        })
+      } else {
+        apply({
+          phase: 'error',
+          activeSession: null,
+          activeOperationId: null,
+          activeArchiveId: session.archiveId,
+          recoveryRequired: 'live_source_resume',
+          error: 'Archive correction restore failed safely. Live Mission Review may need to be resumed.',
+        })
+        try {
+          await dependencies.switchMissionReviewSource({ source: 'live' })
+        } catch {
+          // The explicit recovery state remains visible for the operator.
+        }
       }
       throw new Error('Archive correction restore failed safely.')
     }

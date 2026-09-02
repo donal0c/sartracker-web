@@ -58,6 +58,7 @@ const {
 } = require('./archive-custody-operation-runner.cjs')
 const { startArchiveVerifyWorker } = require('./archive-verify-runner.cjs')
 const { startArchivePlaintextSweep } = require('./archive-plaintext-sweep-runner.cjs')
+const { startArchiveCorrectionWorker } = require('./archive-correction-runner.cjs')
 const {
   startArchiveLegacyPredecessorHash,
 } = require('./archive-legacy-predecessor-runner.cjs')
@@ -70,7 +71,6 @@ const {
   assertMissionLiveReviewAvailable: assertMissionLiveReviewSnapshotAvailable,
   readMissionLiveReviewStorageState,
 } = require('./mission-live-review-access.cjs')
-const { rehydrateMissionFromSnapshot } = require('./archive-rehydrate.cjs')
 const {
   normalizeCustodyFileIdentity,
   withPinnedCustodyFileIdentity,
@@ -437,6 +437,7 @@ function createElectronMissionStore(options) {
   const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
   const archiveLifecycleFaultInjection = options.archiveLifecycleFaultInjection ?? {}
+  const archiveCorrectionFaultInjection = options.archiveCorrectionFaultInjection ?? {}
   const readArchiveFile = options.readArchiveFile ?? fs.readFile
   const storageDiagnostics = options.storageDiagnostics ?? null
   const coverageLedgerFaultInjection = options.coverageLedgerFaultInjection ?? {}
@@ -510,6 +511,8 @@ function createElectronMissionStore(options) {
   const archiveVerifyRunner = options.startArchiveVerifyWorker ?? startArchiveVerifyWorker
   const archivePlaintextSweepRunner = options.startArchivePlaintextSweep
     ?? startArchivePlaintextSweep
+  const archiveCorrectionRunner = options.startArchiveCorrectionWorker
+    ?? startArchiveCorrectionWorker
   const archiveLegacyPredecessorHashRunner = options.startArchiveLegacyPredecessorHash
     ?? startArchiveLegacyPredecessorHash
   const archiveCustodyOperationRunner = options.startArchiveCustodyOperation
@@ -2725,11 +2728,16 @@ function createElectronMissionStore(options) {
       input,
       options.readAdminRoster,
       reconcileFinalizedMissionArchive,
-      (rehydrationInput) => rehydrateMissionFromSnapshot({
-        ...rehydrationInput,
-        db,
-        schemaVersion: CURRENT_SCHEMA_VERSION,
-      }),
+      (rehydrationInput) => awaitArchiveWorker(archiveCorrectionRunner({
+        databasePath,
+        snapshotPath: rehydrationInput.snapshotPath,
+        missionId: rehydrationInput.missionId,
+        archiveId: rehydrationInput.archiveId,
+        finalizedEpoch: rehydrationInput.finalizedEpoch,
+        adminName: rehydrationInput.adminName,
+        reason: rehydrationInput.reason,
+        faultInjection: archiveCorrectionFaultInjection,
+      })),
     ),
   }
 
@@ -6964,28 +6972,30 @@ async function unlockFinalizedMission(
       missionId,
       archiveId: input.archive_id,
       snapshotPath: input.snapshot_path,
+      finalizedEpoch,
+      adminName,
+      reason,
+      onRestored: () => {
+        const current = getMission(db, missionId)
+        if (current.status !== 'finalized'
+          || current.storage_state !== 'archived'
+          || readLatestMissionFinalizedEpoch(db, missionId) !== finalizedEpoch) {
+          const error = new Error(
+            'Mission finalization or archive storage changed before correction unlock could commit.',
+          )
+          error.code = 'ARCHIVE_REHYDRATE_EPOCH_CHANGED'
+          throw error
+        }
+        db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finished', missionId)
+        insertEvent(db, missionId, 'mission_unlocked', now(), {
+          admin_name: adminName,
+          reason,
+          restored_from_archive_id: input.archive_id,
+          resulting_status: 'finished',
+          storage_state: 'live',
+        })
+      },
     })
-    const transaction = db.transaction(() => {
-      const current = getMission(db, missionId)
-      if (current.status !== 'finalized'
-        || current.storage_state !== 'archived'
-        || readLatestMissionFinalizedEpoch(db, missionId) !== finalizedEpoch) {
-        const error = new Error(
-          'Mission finalization or archive storage changed before correction unlock could commit.',
-        )
-        error.code = 'ARCHIVE_REHYDRATE_EPOCH_CHANGED'
-        throw error
-      }
-      db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finished', missionId)
-      insertEvent(db, missionId, 'mission_unlocked', now(), {
-        admin_name: adminName,
-        reason,
-        restored_from_archive_id: input.archive_id,
-        resulting_status: 'finished',
-        storage_state: 'live',
-      })
-    })
-    transaction.immediate()
     return getMission(db, missionId)
   }
   assertMissionFinalizationNotInProgress(db, missionId)

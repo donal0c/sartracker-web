@@ -300,6 +300,12 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
     })
   })
 
+  it('does not offer correction restore for a legacy or non-current archive session', () => {
+    renderControl(createControlProps({ activeSession: V1_SESSION }))
+    expect(query('[data-testid="archive-review-restore-correction"]')).toBeNull()
+    expect(query('[data-testid="archive-review-correction-admin"]')).toBeNull()
+  })
+
   it('opens a supported v1 archive credential-free and labels it Legacy unencrypted', async () => {
     const onOpenArchive = vi.fn().mockResolvedValue(undefined)
     renderControl(createControlProps({ onOpenArchive }))

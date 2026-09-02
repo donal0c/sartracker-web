@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { mkdir, mkdtemp } from 'node:fs/promises'
+import { rm } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -224,6 +225,38 @@ describe('mission archive IPC containment [DON-248]', () => {
       .rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('reports correction snapshot cleanup failure instead of claiming a clean restore', async () => {
+    const stagingRoot = await mkdtemp(join(tmpdir(), 'sartracker-correction-cleanup-'))
+    const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
+    await mkdir(stagingDirectory)
+    const snapshotPath = join(stagingDirectory, 'mission-store.sqlite')
+    const snapshotForCorrection = vi.fn(async () => ({
+      missionId: 'mission-1',
+      archiveId: 'archive-1',
+      snapshotPath,
+    }))
+    try {
+      const { handlers } = createMainHarness({
+        archiveReviewSessionManager: {
+          hasReviewActivity: vi.fn(() => true),
+          acquireCleanupLease: vi.fn(),
+          snapshotForCorrection,
+        },
+        removeCorrectionSnapshot: vi.fn(async () => { throw new Error('disk full') }),
+      })
+      await expect(handlers.get(CHANNELS.restoreMissionForCorrection)?.({ sender: createSender(8) }, {
+        mission_id: 'mission-1',
+        archiveId: 'archive-1',
+        operationId: OPERATION_ID,
+        sessionId: '44444444-4444-4444-8444-444444444444',
+        admin_name: 'Duty Admin',
+        reason: 'Correct a recorded clue.',
+      })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_CLEANUP_FAILED' })
+    } finally {
+      await rm(stagingRoot, { recursive: true, force: true })
+    }
+  })
+
   it('rejects an oversized correction reason before reaching the mission store', async () => {
     const { handlers, missionStore } = createMainHarness()
     const event = { sender: createSender(8) }
@@ -234,6 +267,37 @@ describe('mission archive IPC containment [DON-248]', () => {
       reason: 'x'.repeat(4_001),
     })).rejects.toThrow(/reason/iu)
     expect(missionStore.unlockFinalizedMission).not.toHaveBeenCalled()
+  })
+
+  it('rejects hostile correction input before invoking IPC collaborators', async () => {
+    const snapshotForCorrection = vi.fn()
+    const { handlers, missionStore } = createMainHarness({
+      archiveReviewSessionManager: {
+        hasReviewActivity: vi.fn(() => true),
+        acquireCleanupLease: vi.fn(),
+        snapshotForCorrection,
+      },
+    })
+    const event = { sender: createSender(8) }
+    await expect(handlers.get(CHANNELS.restoreMissionForCorrection)?.(event, {
+      mission_id: 'mission-1',
+      archiveId: 'archive-1',
+      operationId: OPERATION_ID,
+      sessionId: '44444444-4444-4444-8444-444444444444',
+      admin_name: 'Duty Admin',
+      reason: 'x'.repeat(64 * 1024 * 1024),
+    })).rejects.toMatchObject({ code: 'ARCHIVE_IPC_INVALID_INPUT' })
+    await expect(handlers.get(CHANNELS.restoreMissionForCorrection)?.(event, {
+      mission_id: 'mission-1',
+      archiveId: 'archive-1',
+      operationId: OPERATION_ID,
+      sessionId: '44444444-4444-4444-8444-444444444444',
+      admin_name: 'Duty Admin',
+      reason: 'Correct a clue.',
+      unknown: true,
+    })).rejects.toMatchObject({ code: 'ARCHIVE_IPC_INVALID_INPUT' })
+    expect(snapshotForCorrection).not.toHaveBeenCalled()
+    expect(missionStore.restoreMissionForCorrection).not.toHaveBeenCalled()
   })
 
   it('closed-projects current cleanup eligibility with the main-owned review state', async () => {

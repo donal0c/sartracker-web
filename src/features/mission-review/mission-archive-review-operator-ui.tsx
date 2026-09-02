@@ -155,52 +155,72 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
     return null
   }, [props.timeline, selectedArchiveId])
 
+  const correctionArchive = useMemo(() => {
+    if (props.activeSession === null) return null
+    for (const entry of props.timeline) {
+      const archive = entry.archives.find((candidate) =>
+        candidate.id === props.activeSession?.archiveId
+        && candidate.mission_id === props.activeSession?.missionId)
+      if (archive !== undefined) return archive
+    }
+    return null
+  }, [props.activeSession, props.timeline])
+  const correctionAvailable = props.activeSession?.containerVersion === 2
+    && props.activeSession.verified === true
+    && correctionArchive?.container_version === 2
+    && correctionArchive.status === 'verified'
+    && archiveReviewAvailability(correctionArchive).available === true
+
   if (props.activeSession !== null) {
     return (
       <section className="rounded-xl border border-stone-700 bg-stone-950/50 p-4">
         <p className="text-sm font-bold text-stone-100">Archive Review session is open.</p>
         <p className="mt-1 text-xs text-stone-400">The selected mission is fixed and read-only.</p>
-        <p className="mt-2 text-xs leading-relaxed text-amber-100/80">
-          Need to correct the mission? Restore the verified snapshot into a new live revision.
-          Earlier archive bytes remain unchanged and the action is recorded.
-        </p>
-        <label className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-stone-400">
-          Authorizing admin
-          <input
-            autoComplete="off"
-            className="mt-1 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm font-normal normal-case tracking-normal text-stone-100"
-            data-testid="archive-review-correction-admin"
-            onChange={(event) => setCorrectionAdmin(event.target.value)}
-            value={correctionAdmin}
-          />
-        </label>
-        <label className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-stone-400">
-          Correction reason
-          <input
-            className="mt-1 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm font-normal normal-case tracking-normal text-stone-100"
-            data-testid="archive-review-correction-reason"
-            onChange={(event) => setCorrectionReason(event.target.value)}
-            value={correctionReason}
-          />
-        </label>
-        <button
-          className="mt-3 rounded-lg border border-rose-300/60 bg-rose-300/10 px-3 py-2 text-xs font-bold text-rose-100 disabled:opacity-50"
-          data-testid="archive-review-restore-correction"
-          disabled={props.phase === 'closing' || restoring
-            || correctionAdmin.trim() === '' || correctionReason.trim() === ''}
-          onClick={() => {
-            setRestoring(true)
-            setSafeError(null)
-            void props.onRestoreForCorrection({
-              admin_name: correctionAdmin.trim(),
-              reason: correctionReason.trim(),
-            }).catch(() => setSafeError('Archive correction restore failed safely.'))
-              .finally(() => setRestoring(false))
-          }}
-          type="button"
-        >
-          {restoring ? 'Restoring for correction…' : 'Restore for correction'}
-        </button>
+        {correctionAvailable ? (
+          <>
+            <p className="mt-2 text-xs leading-relaxed text-amber-100/80">
+              Need to correct the mission? Restore the verified snapshot into a new live revision.
+              Earlier archive bytes remain unchanged and the action is recorded.
+            </p>
+            <label className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-stone-400">
+              Authorizing admin
+              <input
+                autoComplete="off"
+                className="mt-1 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm font-normal normal-case tracking-normal text-stone-100"
+                data-testid="archive-review-correction-admin"
+                onChange={(event) => setCorrectionAdmin(event.target.value)}
+                value={correctionAdmin}
+              />
+            </label>
+            <label className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-stone-400">
+              Correction reason
+              <input
+                className="mt-1 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm font-normal normal-case tracking-normal text-stone-100"
+                data-testid="archive-review-correction-reason"
+                onChange={(event) => setCorrectionReason(event.target.value)}
+                value={correctionReason}
+              />
+            </label>
+            <button
+              className="mt-3 rounded-lg border border-rose-300/60 bg-rose-300/10 px-3 py-2 text-xs font-bold text-rose-100 disabled:opacity-50"
+              data-testid="archive-review-restore-correction"
+              disabled={props.phase === 'closing' || restoring
+                || correctionAdmin.trim() === '' || correctionReason.trim() === ''}
+              onClick={() => {
+                setRestoring(true)
+                setSafeError(null)
+                void props.onRestoreForCorrection({
+                  admin_name: correctionAdmin.trim(),
+                  reason: correctionReason.trim(),
+                }).catch(() => setSafeError('Archive correction restore failed safely.'))
+                  .finally(() => setRestoring(false))
+              }}
+              type="button"
+            >
+              {restoring ? 'Restoring for correction…' : 'Restore for correction'}
+            </button>
+          </>
+        ) : null}
         <button
           className="mt-3 rounded-lg border border-amber-300/60 px-3 py-2 text-xs font-bold text-amber-100 disabled:opacity-50"
           data-testid="archive-review-close"
