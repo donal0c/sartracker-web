@@ -220,8 +220,10 @@ async function createMissionArchiveFile(input) {
       protectedFinalizationEpoch: request.protectedFinalizationEpoch,
       fenceRequestedAt: request.fenceRequestedAt,
       requestEventId: request.requestEventId,
+      previousArchiveId: request.previousArchiveId ?? null,
       schemaVersion: request.schemaVersion,
       inventoryVersion: request.inventoryVersion,
+      finalizationProjection: request.finalizationProjection ?? null,
       isCancelled: () => Atomics.load(cancellationFlag, 0) !== 0,
       onProgress: (progress) => emit(
         progress.phase,

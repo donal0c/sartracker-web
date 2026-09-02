@@ -8,6 +8,7 @@ import type {
   MissionCleanupEligibility,
   MissionCleanupResult,
   MissionStore,
+  ResumeMissionCleanupInput,
   StartMissionCleanupInput,
   UnlockFinalizedMissionInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
@@ -25,6 +26,7 @@ type MissionGovernanceStoreBoundary = Pick<
   | 'listMissionArchives'
   | 'getMissionCleanupEligibility'
   | 'startMissionCleanup'
+  | 'resumeMissionCleanup'
   | 'acknowledgeIngestEvidenceLoss'
   | 'unlockFinalizedMission'
 >
@@ -52,6 +54,9 @@ export type MissionGovernanceController = {
   }>
   readonly startGovernanceCleanup: (
     input: StartMissionCleanupInput,
+  ) => Promise<MissionCleanupResult>
+  readonly resumeGovernanceCleanup: (
+    input: ResumeMissionCleanupInput,
   ) => Promise<MissionCleanupResult>
   readonly finalizeGovernanceMission: (
     missionId: string,
@@ -102,6 +107,22 @@ export async function startMissionGovernanceRuntime(
         throw new Error('Mission live-store archival is unavailable.')
       }
       const result = await dependencies.missionStore.startMissionCleanup(input)
+      if (governanceMission?.id === input.missionId
+        && result.missionId === input.missionId
+        && result.archiveId === input.archiveId
+        && result.storageState === 'archived') {
+        governanceMission = { ...governanceMission, storage_state: 'archived' }
+        publishRuntime()
+      }
+      await reconcileGovernanceMissionAfterArchiveOperation()
+      await requestAutosaveSync('mission-cleanup')
+      return result
+    },
+    resumeGovernanceCleanup: async (input) => {
+      if (dependencies.missionStore.resumeMissionCleanup === undefined) {
+        throw new Error('Mission live-store archival recovery is unavailable.')
+      }
+      const result = await dependencies.missionStore.resumeMissionCleanup(input)
       if (governanceMission?.id === input.missionId
         && result.missionId === input.missionId
         && result.archiveId === input.archiveId

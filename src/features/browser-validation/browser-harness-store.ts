@@ -51,6 +51,7 @@ import type {
   SearchOperationPage,
   SearchOperationPageKind,
   StartMissionCleanupInput,
+  ResumeMissionCleanupInput,
   MissionReplayFilterPage,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type {
@@ -254,6 +255,9 @@ export type BrowserHarnessStore = {
   }) => Promise<MissionCleanupEligibility>
   readonly startMissionCleanup: (
     input: StartMissionCleanupInput,
+  ) => Promise<MissionCleanupResult>
+  readonly resumeMissionCleanup: (
+    input: ResumeMissionCleanupInput,
   ) => Promise<MissionCleanupResult>
   readonly cancelMissionArchiveOperation: (operationId: string) => Promise<boolean>
   readonly finalizeMission: (
@@ -1361,6 +1365,55 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       // Browser validation deliberately retains its synthetic fixture rows so
       // post-cleanup archive-review UI remains exercisable. This is not desktop
       // persistence, deletion, cryptography, or filesystem-cleanup proof.
+      save()
+      return {
+        missionId: mission.id,
+        archiveId: archive.id,
+        state: 'completed',
+        storageState: 'archived',
+        movedRows,
+      }
+    },
+    resumeMissionCleanup: async (input) => {
+      const operationId = normalizeBrowserArchiveOperationId(input.operationId)
+      const mission = requireMission(input.missionId, state.missions)
+      const archive = state.missionArchives.find((candidate) => candidate.id === input.archiveId)
+      if (archive?.mission_id !== mission.id) {
+        throw browserCleanupError(
+          'ARCHIVE_CLEANUP_NOT_ELIGIBLE',
+          'Mission cleanup archive is unavailable in browser validation mode.',
+        )
+      }
+      if (mission.storage_state === 'archived') {
+        return {
+          missionId: mission.id,
+          archiveId: archive.id,
+          state: 'completed',
+          storageState: 'archived',
+          movedRows: 0,
+        }
+      }
+      const completedAt = new Date().toISOString()
+      const movedRows = countBrowserSyntheticMissionRows(state, mission.id)
+      const archivedMission: Mission = { ...mission, storage_state: 'archived' }
+      const updatedArchive: MissionArchiveInfo = {
+        ...archive,
+        last_non_machine_unwrap_at: completedAt,
+      }
+      state = replaceMission(state, archivedMission, null, null)
+      state = {
+        ...state,
+        missionArchives: state.missionArchives.map((candidate) =>
+          candidate.id === updatedArchive.id ? updatedArchive : candidate),
+        missionEvents: appendEvent(state.missionEvents, mission.id, 'mission_cleanup_completed', completedAt, {
+          archive_id: archive.id,
+          operation_id: operationId,
+          moved_rows: movedRows,
+          storage_state: 'archived',
+          browser_validation_only: true,
+          resumed: true,
+        }),
+      }
       save()
       return {
         missionId: mission.id,

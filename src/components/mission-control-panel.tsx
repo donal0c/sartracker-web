@@ -91,6 +91,7 @@ export function MissionControlPanel({
     confirmFinalize,
     loadCleanupState,
     startCleanup,
+    resumeCleanup,
     confirmEvidenceLossAcknowledgement,
     confirmUnlock,
   } = useMissionControlViewModel()
@@ -460,6 +461,7 @@ export function MissionControlPanel({
             mission={governanceMission}
             onClose={() => setShowCleanupDialog(false)}
             onCompleted={() => undefined}
+            resumeCleanup={resumeCleanup}
             startCleanup={startCleanup}
             subscribeProgress={subscribeArchiveProgress}
           />

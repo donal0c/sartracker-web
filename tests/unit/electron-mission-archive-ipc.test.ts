@@ -22,6 +22,7 @@ const CHANNELS = Object.freeze({
   verifyMissionArchive: 'sartracker:mission-store:verify-mission-archive',
   getMissionCleanupEligibility: 'sartracker:mission-store:get-mission-cleanup-eligibility',
   startMissionCleanup: 'sartracker:mission-store:start-mission-cleanup',
+  resumeMissionCleanup: 'sartracker:mission-store:resume-mission-cleanup',
   cancelMissionArchiveOperation: 'sartracker:mission-store:cancel-mission-archive-operation',
 })
 
@@ -117,6 +118,13 @@ function createMainHarness(
       storageState: 'archived',
       deletedRows: 17,
     })),
+    resumeMissionCleanup: vi.fn(async () => ({
+      missionId: 'mission-1',
+      archiveId: archiveResult().id,
+      state: 'completed',
+      storageState: 'archived',
+      deletedRows: 17,
+    })),
     cancelMissionArchiveOperation: vi.fn(async () => true),
     ...missionStoreOverrides,
   }
@@ -156,11 +164,11 @@ function createMainHarness(
 }
 
 describe('mission archive IPC containment [DON-248]', () => {
-  it('registers only the eight explicit archive handlers', () => {
+  it('registers only the nine explicit archive handlers', () => {
     const { handlers } = createMainHarness()
 
     expect([...handlers.keys()].sort()).toEqual(Object.values(CHANNELS).sort())
-    expect(handlers.size).toBe(8)
+    expect(handlers.size).toBe(9)
   })
 
   it('rejects an oversized correction reason before reaching the mission store', async () => {
@@ -248,6 +256,40 @@ describe('mission archive IPC containment [DON-248]', () => {
       blockers: ['cleanup_in_progress'],
       storageState: 'cleanup_in_progress',
     })
+  })
+
+  it('resumes an interrupted cleanup with a fresh bounded operation identity', async () => {
+    const { handlers, missionStore, archiveReviewSessionManager, cleanupLease } = createMainHarness()
+    const sender = createSender(7)
+    await expect(handlers.get(CHANNELS.resumeMissionCleanup)?.({ sender }, {
+      missionId: 'mission-1',
+      archiveId: archiveResult().id,
+      operationId: SECOND_OPERATION_ID,
+      hostile: 'must not cross IPC',
+    })).rejects.toMatchObject({ code: 'ARCHIVE_IPC_INVALID_INPUT' })
+    expect(missionStore.resumeMissionCleanup).not.toHaveBeenCalled()
+
+    await expect(handlers.get(CHANNELS.resumeMissionCleanup)?.({ sender }, {
+      missionId: 'mission-1',
+      archiveId: archiveResult().id,
+      operationId: SECOND_OPERATION_ID,
+    })).resolves.toEqual({
+      missionId: 'mission-1',
+      archiveId: archiveResult().id,
+      state: 'completed',
+      storageState: 'archived',
+      movedRows: 17,
+    })
+    expect(missionStore.resumeMissionCleanup).toHaveBeenCalledWith({
+      missionId: 'mission-1',
+      archiveId: archiveResult().id,
+    }, expect.objectContaining({
+      operationId: SECOND_OPERATION_ID,
+      reviewActivity: false,
+      onProgress: expect.any(Function),
+    }))
+    expect(archiveReviewSessionManager.acquireCleanupLease).toHaveBeenCalledWith('mission-1')
+    expect(cleanupLease.release).toHaveBeenCalledOnce()
   })
 
   it('requires exact mission-name confirmation and holds the review lease through cleanup exit', async () => {
@@ -1046,6 +1088,7 @@ describe('mission archive IPC containment [DON-248]', () => {
       readonly verifyMissionArchive: (input: unknown) => Promise<unknown>
       readonly getMissionCleanupEligibility: (input: unknown) => Promise<unknown>
       readonly startMissionCleanup: (input: unknown) => Promise<unknown>
+      readonly resumeMissionCleanup: (input: unknown) => Promise<unknown>
       readonly cancelMissionArchiveOperation: (operationId: unknown) => Promise<unknown>
     }
     expect(missionStore).not.toHaveProperty('createMissionArchive')
@@ -1089,6 +1132,11 @@ describe('mission archive IPC containment [DON-248]', () => {
         secret: RECOVERY_CODE,
         confirmation: huge,
       }),
+      () => missionStore.resumeMissionCleanup({
+        missionId: huge,
+        archiveId: archiveResult().id,
+        operationId: SECOND_OPERATION_ID,
+      }),
       () => missionStore.cancelMissionArchiveOperation(huge),
       () => missionStore.cancelMissionArchiveOperation('client-op-1'),
     ]
@@ -1120,6 +1168,17 @@ describe('mission archive IPC containment [DON-248]', () => {
       slotType: 'recovery',
       secret: RECOVERY_CODE,
       confirmation: 'Mission result',
+    })
+    await missionStore.resumeMissionCleanup({
+      missionId: 'mission-1',
+      archiveId: archiveResult().id,
+      operationId: SECOND_OPERATION_ID,
+      hostileBlob: huge,
+    })
+    expect(invoke).toHaveBeenLastCalledWith(CHANNELS.resumeMissionCleanup, {
+      missionId: 'mission-1',
+      archiveId: archiveResult().id,
+      operationId: SECOND_OPERATION_ID,
     })
 
     await missionStore.finalizeMission('mission-1', {

@@ -22,6 +22,7 @@ const {
 const { computeMissionReplaySemanticProof } = require('./archive-replay-proof.cjs')
 
 const CURRENT_SCHEMA_VERSION = 13
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const MAX_COPY_BATCH_ROWS = 64
 const MAX_COPY_BATCH_BYTES = 4 * 1024 * 1024
 const COPY_PROGRESS_INTERVAL_ROWS = 4_096
@@ -467,6 +468,112 @@ function removeScratchFileSet(databasePath) {
   }
 }
 
+/** Adds the terminal finalized projection that is committed after archive bytes are sealed. */
+function applyFinalizationProjection(scratch, input) {
+  const projection = input.finalizationProjection
+  if (projection === undefined || projection === null) return false
+  const mission = scratch.prepare('SELECT status FROM missions WHERE id = ?')
+    .get(input.missionId)
+  if (mission?.status !== 'finished') {
+    throw new ArchiveScratchError(
+      'ARCHIVE_SCOPE_INVALID',
+      'Mission archive finalization projection requires a finished mission snapshot.',
+    )
+  }
+  const existingFinalization = scratch.prepare(`SELECT id FROM mission_events
+    WHERE id = ?`).get(projection.eventId)
+  if (existingFinalization !== undefined) {
+    throw new ArchiveScratchError(
+      'ARCHIVE_SCOPE_INVALID',
+      'Mission archive finalization projection event identity is already present.',
+    )
+  }
+  if (projection.supplement !== null) {
+    scratch.prepare(`INSERT INTO mission_events (
+      id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
+    ) VALUES (?, ?, 'mission_archive_supplement_recorded', ?, ?, ?, 'complete')`).run(
+      projection.supplement.eventId,
+      input.missionId,
+      projection.timestamp,
+      JSON.stringify({
+        archive_id: input.archiveId,
+        previous_archive_id: input.previousArchiveId,
+        supplement_sequence: projection.supplement.sequence,
+        authority: projection.supplement.authority,
+        reason: projection.supplement.reason,
+        resulting_status: 'finalized',
+      }),
+      projection.recordedAt,
+    )
+  }
+  scratch.prepare('UPDATE missions SET status = ? WHERE id = ?')
+    .run('finalized', input.missionId)
+  scratch.prepare(`INSERT INTO mission_events (
+    id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
+  ) VALUES (?, ?, 'mission_finalized', ?, ?, ?, 'complete')`).run(
+    projection.eventId,
+    input.missionId,
+    projection.timestamp,
+    JSON.stringify({
+      resulting_status: 'finalized',
+      archive_id: input.archiveId,
+      archive_path: projection.archivePath,
+      archive_relative_path: projection.archiveRelativePath,
+      container_version: 2,
+    }),
+    projection.recordedAt,
+  )
+  return true
+}
+
+/** Validates the bounded projected terminal lifecycle identity supplied by the main store. */
+function assertFinalizationProjection(input) {
+  const projection = input.finalizationProjection
+  if (projection === undefined || projection === null) return
+  if (input.archiveKind !== 'finalized'
+    || projection === null
+    || typeof projection !== 'object'
+    || Array.isArray(projection)
+    || !UUID_V4.test(projection.eventId)
+    || typeof projection.timestamp !== 'string'
+    || Number.isNaN(Date.parse(projection.timestamp))
+    || new Date(projection.timestamp).toISOString() !== projection.timestamp
+    || typeof projection.recordedAt !== 'string'
+    || Number.isNaN(Date.parse(projection.recordedAt))
+    || new Date(projection.recordedAt).toISOString() !== projection.recordedAt
+    || typeof projection.archivePath !== 'string'
+    || !path.isAbsolute(projection.archivePath)
+    || path.resolve(projection.archivePath) !== projection.archivePath
+    || projection.archiveRelativePath !== `${input.archiveId}.sararch`
+    || !Object.hasOwn(projection, 'supplement')) {
+    throw new ArchiveScratchError(
+      'ARCHIVE_SCOPE_INVALID',
+      'Mission archive finalization projection identity is invalid.',
+    )
+  }
+  if (projection.supplement === null) return
+  const supplement = projection.supplement
+  if (supplement === null
+    || typeof supplement !== 'object'
+    || Array.isArray(supplement)
+    || !UUID_V4.test(supplement.eventId)
+    || !Number.isSafeInteger(supplement.sequence)
+    || supplement.sequence < 1
+    || typeof supplement.authority !== 'string'
+    || supplement.authority.length < 1
+    || supplement.authority.length > 200
+    || typeof supplement.reason !== 'string'
+    || supplement.reason.length < 1
+    || supplement.reason.length > 2_000
+    || input.previousArchiveId === null
+    || typeof input.previousArchiveId !== 'string') {
+    throw new ArchiveScratchError(
+      'ARCHIVE_SCOPE_INVALID',
+      'Mission archive supplement projection identity is invalid.',
+    )
+  }
+}
+
 /**
  * Creates and exhaustively proves one mission-scoped v13 SQLite scratch database.
  * The live source is opened read-only and held in one pinned transaction throughout.
@@ -486,6 +593,7 @@ function createMissionArchiveScratch(input) {
       'Mission archive scratch input is invalid.',
     )
   }
+  assertFinalizationProjection(input)
   fs.mkdirSync(path.dirname(input.scratchDatabasePath), { recursive: true, mode: 0o700 })
   let source
   let scratch
@@ -548,6 +656,18 @@ function createMissionArchiveScratch(input) {
         )
       }
       sourceProofs.set(declaration.tableName, sourceProof)
+    }
+
+    const projectedFinalization = applyFinalizationProjection(scratch, input)
+    if (projectedFinalization) {
+      for (const tableName of ['missions', 'mission_events']) {
+        const projectedProof = computeArchivedTableContentDigest(scratch, {
+          tableName,
+          schemaVersion: input.schemaVersion,
+          isCancelled: input.isCancelled,
+        })
+        sourceProofs.set(tableName, projectedProof)
+      }
     }
 
     const sqliteWorkBytes = Math.max(1, fs.statSync(input.sourceDatabasePath).size)
@@ -641,13 +761,16 @@ function createMissionArchiveScratch(input) {
       missionId: input.missionId,
       isCancelled: input.isCancelled,
     })
-    const sourceReplaySemanticProof = computeMissionReplaySemanticProof(source, {
-      missionId: input.missionId,
-      requestEventId: input.requestEventId,
-      archiveKind: input.archiveKind,
-      isCancelled: input.isCancelled,
-      onProgress: forwardProofRows('source-replay'),
-    })
+    const sourceReplaySemanticProof = computeMissionReplaySemanticProof(
+      projectedFinalization ? scratch : source,
+      {
+        missionId: input.missionId,
+        requestEventId: input.requestEventId,
+        archiveKind: input.archiveKind,
+        isCancelled: input.isCancelled,
+        onProgress: forwardProofRows('source-replay'),
+      },
+    )
     const scratchGpxContentProof = computeArchiveGpxContentProof(scratch, {
       missionId: input.missionId,
       isCancelled: input.isCancelled,

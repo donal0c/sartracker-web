@@ -866,6 +866,12 @@ function createElectronMissionStore(options) {
         }
         return result
       }).catch((error) => {
+        // prepareClose() deliberately aborts this best-effort startup sweep.
+        // Cancellation is a clean shutdown outcome, not a durable registry
+        // failure that should strand the next process behind a false marker.
+        if (error?.name === 'AbortError' || error?.code === 'ARCHIVE_CANCELLED') {
+          return
+        }
         archiveRegistryReconciliationFailure = safeEvidenceFailureReason(
           error?.message ?? error,
         )
@@ -5708,6 +5714,8 @@ async function finalizeMissionWithEncryptedArchive(input) {
   const archiveId = randomUUID()
   const operationId = input.operationId ?? randomUUID()
   const requestedAt = now()
+  const finalizationEventId = deriveArchiveLifecycleEventId(archiveId, 'mission-finalized')
+  const supplementEventId = deriveArchiveLifecycleEventId(archiveId, 'supplement')
   const finalRelativePath = `${archiveId}.sararch`
   const temporaryRelativePath = `.staging/${operationId}/${archiveId}.sararch.tmp`
   const progress = createArchiveLifecycleProgressEmitter(input.onProgress)
@@ -5744,6 +5752,10 @@ async function finalizeMissionWithEncryptedArchive(input) {
           previousArchiveSha256: resolvedSupplement.previousArchiveSha256,
           previousArchiveFileIdentity: resolvedSupplement.previousArchiveFileIdentity,
         })
+    const supplementSequence = requestSupplement === null
+      ? null
+      : Number(db.prepare(`SELECT COALESCE(MAX(supplement_sequence), 0) + 1 AS next_sequence
+        FROM mission_archive_supplements WHERE mission_id = ?`).get(missionId).next_sequence)
     db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
       VALUES (?, ?)`).run(missionId, requestedAt)
     const requestEventId = insertEvent(
@@ -5786,6 +5798,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
       requestEventId,
       requestEventRowid,
       supplement: requestSupplement,
+      supplementSequence,
     })
   }).immediate()
 
@@ -5811,10 +5824,26 @@ async function finalizeMissionWithEncryptedArchive(input) {
       createdAt: requestedAt,
       schemaVersion: CURRENT_SCHEMA_VERSION,
       inventoryVersion: 1,
+      previousArchiveId: requestIdentity.supplement?.previousArchiveId ?? null,
       previousArchiveSha256: requestIdentity.supplement?.previousArchiveSha256 ?? null,
       protectedFinalizationEpoch: null,
       passphrase: custody?.passphrase,
       recoveryCode: custody?.recoveryCode,
+      finalizationProjection: Object.freeze({
+        eventId: finalizationEventId,
+        timestamp: requestedAt,
+        recordedAt: requestedAt,
+        archivePath: path.join(archiveDirectory, finalRelativePath),
+        archiveRelativePath: finalRelativePath,
+        supplement: requestIdentity.supplement === null
+          ? null
+          : Object.freeze({
+              eventId: supplementEventId,
+              sequence: requestIdentity.supplementSequence,
+              authority: requestIdentity.supplement.authority,
+              reason: requestIdentity.supplement.reason,
+            }),
+      }),
     })
     const creation = await awaitArchiveWorker(archiveCreateRunner({
       request: createRequest,
@@ -6311,11 +6340,13 @@ function sealPublishedArchiveFromJournal(input) {
             COALESCE(MAX(supplement_sequence), 0) + 1 AS next_sequence
           FROM mission_archive_supplements WHERE mission_id = ?`)
           .get(current.missionId).next_sequence)
-        const supplementEventId = insertEvent(
+        const supplementEventId = deriveArchiveLifecycleEventId(current.archiveId, 'supplement')
+        insertEventWithId(
           input.db,
+          supplementEventId,
           current.missionId,
           'mission_archive_supplement_recorded',
-          registeredAt,
+          current.fenceRequestedAt,
           {
             archive_id: current.archiveId,
             previous_archive_id: resolvedSupplement.previousArchiveId,
@@ -6324,6 +6355,7 @@ function sealPublishedArchiveFromJournal(input) {
             reason: resolvedSupplement.reason,
             resulting_status: 'finalized',
           },
+          current.fenceRequestedAt,
         )
         input.archiveRegistry.recordSupplement({
           id: randomUUID(),
@@ -6333,19 +6365,19 @@ function sealPublishedArchiveFromJournal(input) {
           supplementSequence,
           authority: resolvedSupplement.authority,
           reason: resolvedSupplement.reason,
-          createdAt: registeredAt,
+          createdAt: current.fenceRequestedAt,
           auditEventId: supplementEventId,
         })
       }
       input.db.prepare('UPDATE missions SET status = ? WHERE id = ?')
         .run('finalized', current.missionId)
-      insertEvent(input.db, current.missionId, 'mission_finalized', registeredAt, {
+      insertEventWithId(input.db, deriveArchiveLifecycleEventId(current.archiveId, 'mission-finalized'), current.missionId, 'mission_finalized', current.fenceRequestedAt, {
         resulting_status: 'finalized',
         archive_id: current.archiveId,
         archive_path: path.join(input.archiveDirectory, current.finalRelativePath),
         archive_relative_path: current.finalRelativePath,
         container_version: 2,
-      })
+      }, current.fenceRequestedAt)
     }
     const removed = input.db.prepare(`DELETE FROM mission_finalization_fences
       WHERE mission_id = ? AND requested_at = ?`)
@@ -10831,7 +10863,10 @@ function appendEvent(db, missionId, eventType, detailsJson, timestamp = now()) {
 }
 
 function insertEvent(db, missionId, eventType, timestamp, detailsJson, recordedAt = now()) {
-  const eventId = randomUUID()
+  return insertEventWithId(db, randomUUID(), missionId, eventType, timestamp, detailsJson, recordedAt)
+}
+
+function insertEventWithId(db, eventId, missionId, eventType, timestamp, detailsJson, recordedAt = now()) {
   db.prepare(`INSERT INTO mission_events (
     id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
   ) VALUES (?, ?, ?, ?, ?, ?, 'complete')`)
@@ -10845,6 +10880,17 @@ function insertEvent(db, missionId, eventType, timestamp, detailsJson, recordedA
     )
   bumpMissionReplayGeneration(db, missionId)
   return eventId
+}
+
+/** Derives one stable UUID-shaped lifecycle event identity from an archive identity. */
+function deriveArchiveLifecycleEventId(archiveId, kind) {
+  const digest = createHash('sha256')
+    .update(`sartracker-archive-lifecycle:${kind}:${archiveId}`, 'utf8')
+    .digest('hex')
+  const bytes = digest.slice(0, 32).split('')
+  bytes[12] = '4'
+  bytes[16] = ['8', '9', 'a', 'b'][Number.parseInt(bytes[16], 16) % 4]
+  return `${bytes.slice(0, 8).join('')}-${bytes.slice(8, 12).join('')}-${bytes.slice(12, 16).join('')}-${bytes.slice(16, 20).join('')}-${bytes.slice(20).join('')}`
 }
 
 function now() {

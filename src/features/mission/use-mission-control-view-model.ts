@@ -10,6 +10,7 @@ import type {
   MissionArchiveRecoveryIssuance,
   MissionCleanupEligibility,
   MissionCleanupResult,
+  ResumeMissionCleanupInput,
   StartMissionCleanupInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { readMissionArchiveErrorCode } from './mission-archive-error'
@@ -82,6 +83,7 @@ export type MissionControlViewModel = {
     readonly eligibility: MissionCleanupEligibility
   }>
   readonly startCleanup: (input: StartMissionCleanupInput) => Promise<MissionCleanupResult>
+  readonly resumeCleanup: (input: ResumeMissionCleanupInput) => Promise<MissionCleanupResult>
   readonly confirmEvidenceLossAcknowledgement: () => Promise<void>
   readonly confirmUnlock: () => Promise<void>
 }
@@ -411,6 +413,24 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     }
   }
 
+  async function resumeCleanup(input: ResumeMissionCleanupInput): Promise<MissionCleanupResult> {
+    if (governanceController === null || governanceMission?.id !== input.missionId) {
+      throw new Error('Mission live-store archival recovery is unavailable.')
+    }
+    setGovernanceBusy(true)
+    setActionError(null)
+    setGovernanceFeedback(null)
+    try {
+      const result = await governanceController.resumeGovernanceCleanup(input)
+      setGovernanceFeedback(
+        'Live-store archival recovery completed. The mission remains listed and available through read-only archive review.',
+      )
+      return result
+    } finally {
+      setGovernanceBusy(false)
+    }
+  }
+
   return {
     phase,
     currentMission,
@@ -461,6 +481,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     confirmFinalize,
     loadCleanupState,
     startCleanup,
+    resumeCleanup,
     confirmEvidenceLossAcknowledgement,
     confirmUnlock,
   }

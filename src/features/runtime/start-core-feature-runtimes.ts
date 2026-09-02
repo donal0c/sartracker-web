@@ -79,6 +79,7 @@ export type CoreFeatureRuntimeMissionStore = Pick<
   | 'listMissionArchives'
   | 'getMissionCleanupEligibility'
   | 'startMissionCleanup'
+  | 'resumeMissionCleanup'
   | 'issueMissionArchiveRecoveryCode'
   | 'cancelMissionArchiveOperation'
   | 'acknowledgeIngestEvidenceLoss'

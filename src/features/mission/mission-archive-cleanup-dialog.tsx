@@ -8,6 +8,7 @@ import type {
   MissionCleanupBlocker,
   MissionCleanupEligibility,
   MissionCleanupResult,
+  ResumeMissionCleanupInput,
   StartMissionCleanupInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { readMissionArchiveErrorCode } from './mission-archive-error'
@@ -37,6 +38,7 @@ export type MissionArchiveCleanupDialogProps = {
     readonly eligibility: MissionCleanupEligibility
   }>
   readonly startCleanup: (input: StartMissionCleanupInput) => Promise<MissionCleanupResult>
+  readonly resumeCleanup?: (input: ResumeMissionCleanupInput) => Promise<MissionCleanupResult>
   readonly cancelOperation: (operationId: string) => Promise<boolean>
   readonly subscribeProgress?: (
     listener: (progress: MissionArchiveProgress) => void,
@@ -54,6 +56,7 @@ export function MissionArchiveCleanupDialog({
   mission,
   loadState,
   startCleanup,
+  resumeCleanup,
   cancelOperation,
   subscribeProgress,
   createOperationId = () => globalThis.crypto.randomUUID(),
@@ -69,6 +72,7 @@ export function MissionArchiveCleanupDialog({
   const [progress, setProgress] = useState<MissionArchiveProgress | null>(null)
   const [completedRows, setCompletedRows] = useState<number | null>(null)
   const [failureMessage, setFailureMessage] = useState<string | null>(null)
+  const [resumeAvailable, setResumeAvailable] = useState(false)
   const [postCommitWarning, setPostCommitWarning] = useState<string | null>(null)
   const mountedRef = useRef(false)
   const operationIdRef = useRef<string | null>(null)
@@ -76,15 +80,17 @@ export function MissionArchiveCleanupDialog({
   const cancellationRequestedRef = useRef(false)
   const loadStateRef = useRef(loadState)
   const startCleanupRef = useRef(startCleanup)
+  const resumeCleanupRef = useRef(resumeCleanup)
   const cancelOperationRef = useRef(cancelOperation)
   const onCompletedRef = useRef(onCompleted)
 
   useEffect(() => {
     loadStateRef.current = loadState
     startCleanupRef.current = startCleanup
+    resumeCleanupRef.current = resumeCleanup
     cancelOperationRef.current = cancelOperation
     onCompletedRef.current = onCompleted
-  }, [cancelOperation, loadState, onCompleted, startCleanup])
+  }, [cancelOperation, loadState, onCompleted, resumeCleanup, startCleanup])
 
   const hardBlockers = eligibility?.blockers.filter(
     (blocker) => !RESOLVED_DURING_START.has(blocker),
@@ -110,6 +116,13 @@ export function MissionArchiveCleanupDialog({
       if (result.eligibility.storageState === 'archived'
         || result.eligibility.blockers.includes('cleanup_already_completed')) {
         setDialogState('completed')
+      } else if (result.eligibility.storageState === 'cleanup_in_progress'
+        || result.eligibility.blockers.includes('cleanup_in_progress')) {
+        setResumeAvailable(true)
+        setFailureMessage(
+          'Cleanup was interrupted and remains blocked at its durable restart point. Resume it to complete live-store archival.',
+        )
+        setDialogState('failure')
       } else {
         setDialogState('ready')
       }
@@ -235,6 +248,70 @@ export function MissionArchiveCleanupDialog({
       await cancelOperationRef.current(operationId)
     } catch {
       // The active operation remains authoritative and will settle its own closed result.
+    }
+  }
+
+  /** Resumes only the durable journal identified by the current mission/archive pair. */
+  async function handleResume(): Promise<void> {
+    if (!resumeAvailable || archive === null || resumeCleanupRef.current === undefined) return
+    const operationId = createOperationId()
+    if (!UUID_V4.test(operationId)) {
+      setFailureMessage('Cleanup recovery could not start because its operation identity was invalid.')
+      setDialogState('failure')
+      return
+    }
+    operationIdRef.current = operationId
+    latestSequenceRef.current = 0
+    cancellationRequestedRef.current = false
+    setProgress(null)
+    setFailureMessage(null)
+    setDialogState('running')
+    try {
+      const result = await resumeCleanupRef.current({
+        missionId: mission.id,
+        archiveId: archive.id,
+        operationId,
+      })
+      if (!mountedRef.current) return
+      operationIdRef.current = null
+      if (result.missionId !== mission.id || result.archiveId !== archive.id
+        || result.state !== 'completed' || result.storageState !== 'archived'
+        || !Number.isSafeInteger(result.movedRows) || result.movedRows < 0) {
+        setFailureMessage('Cleanup recovery returned an invalid terminal result. Review remains blocked.')
+        setDialogState('failure')
+        return
+      }
+      setCompletedRows(result.movedRows)
+      setResumeAvailable(false)
+      setDialogState('completed')
+      try {
+        const postCommit = onCompletedRef.current(result)
+        if (postCommit !== undefined) {
+          void Promise.resolve(postCommit).catch(() => {
+            if (mountedRef.current) {
+              setPostCommitWarning(
+                'Cleanup completed, but the saved-mission timeline refresh failed. Use Refresh before relying on the displayed storage label.',
+              )
+            }
+          })
+        }
+      } catch {
+        setPostCommitWarning(
+          'Cleanup completed, but the saved-mission timeline refresh failed. Use Refresh before relying on the displayed storage label.',
+        )
+      }
+    } catch (error) {
+      if (!mountedRef.current) return
+      operationIdRef.current = null
+      const code = readMissionArchiveErrorCode(error)
+      const cancelled = cancellationRequestedRef.current
+        || code === 'ARCHIVE_CLEANUP_CANCELLED'
+        || code === 'ARCHIVE_CANCELLED'
+      cancellationRequestedRef.current = false
+      setFailureMessage(cancelled
+        ? 'Cleanup recovery was cancelled safely at its durable restart point. The mission remains blocked.'
+        : 'Cleanup recovery failed at its durable cursor. The verified archive remains intact; retry Resume cleanup after checking the safety checklist.')
+      setDialogState('failure')
     }
   }
 
@@ -401,6 +478,17 @@ export function MissionArchiveCleanupDialog({
           <p className="mt-5 border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-200" role="alert">
             {failureMessage}
           </p>
+        ) : null}
+
+        {dialogState === 'failure' && resumeAvailable && resumeCleanup !== undefined ? (
+          <button
+            className="sar-action-primary mt-3 w-full px-4 py-3 text-sm font-bold"
+            data-testid="archive-cleanup-resume"
+            onClick={() => void handleResume()}
+            type="button"
+          >
+            Resume cleanup
+          </button>
         ) : null}
 
         {dialogState !== 'loading' ? (

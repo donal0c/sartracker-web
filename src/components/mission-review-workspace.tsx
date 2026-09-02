@@ -26,6 +26,8 @@ import type {
 import type {
   Mission,
   MissionArchiveInfo,
+  ResumeMissionCleanupInput,
+  MissionCleanupResult,
 } from '../infrastructure/mission-store/tauri-mission-store'
 
 type ReviewTab = 'mission-details' | 'replay' | 'search-operations' | 'marker-log' | 'layer-console'
@@ -508,6 +510,13 @@ export function MissionReviewWorkspace() {
               archiveReviewController.refreshTimeline(),
               controller.refreshSelectedMission(),
             ])
+          }}
+          resumeCleanup={async (input: ResumeMissionCleanupInput) => {
+            if (governanceController === null) {
+              throw new Error('Mission live-store archival recovery is unavailable.')
+            }
+            const result: MissionCleanupResult = await governanceController.resumeGovernanceCleanup(input)
+            return result
           }}
           startCleanup={async (input) => {
             if (governanceController === null) {

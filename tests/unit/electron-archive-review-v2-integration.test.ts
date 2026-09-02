@@ -699,6 +699,19 @@ describe('verified SARARCH2 archive-backed review integration [DON-252 / BCP-15]
         .toBe(0o600)
 
       const restoredFacade = createManagerFacade(manager, publicSession.sessionId)
+      const restoredMissions = await restoredFacade.call('listMissions', []) as readonly Readonly<Record<string, unknown>>[]
+      expect(restoredMissions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: mission.id, status: 'finalized' }),
+      ]))
+      const restoredAudit = await restoredFacade.call('readMissionReview', [{
+        missionId: mission.id,
+        includeTelemetry: false,
+        auditLimit: 5_001,
+      }, 'restored-finalization-audit']) as {
+        readonly auditEvents: readonly Readonly<Record<string, unknown>>[]
+      }
+      expect(restoredAudit.auditEvents.map((event) => event.event_type))
+        .toContain('mission_finalized')
       await expect(manager.read({
         senderId: SENDER_ID,
         sessionId: publicSession.sessionId,

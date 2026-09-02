@@ -898,6 +898,74 @@ function registerMissionArchiveIpcHandlers(input) {
     }
   })
 
+  input.ipcMain.handle(channels.resumeMissionCleanup, async (event, request) => {
+    input.validateIpcSender(event)
+    const senderId = observeSender(event.sender)
+    requireExactRecord(
+      request,
+      ['archiveId', 'missionId', 'operationId'],
+      'Mission cleanup resume request',
+    )
+    const missionId = normalizeIdentifier(
+      request.missionId,
+      'Mission cleanup mission identity',
+      MAX_MISSION_ID_BYTES,
+    )
+    const archiveId = normalizeIdentifier(
+      request.archiveId,
+      'Mission cleanup archive identity',
+      MAX_ARCHIVE_ID_BYTES,
+    )
+    const operationId = normalizeIdentifier(
+      request.operationId,
+      'Mission cleanup operation identity',
+      MAX_OPERATION_ID_BYTES,
+      UUID_V4,
+    )
+    sweepExpiredIssuances()
+    if (issuances.has(operationId) || activeOperations.has(operationId)) {
+      throw archiveIpcError(
+        'ARCHIVE_OPERATION_ID_CONFLICT',
+        'Mission cleanup recovery operation identity is already in use.',
+      )
+    }
+    let cleanupLease = null
+    try {
+      const mission = await missionStore.getMission(missionId)
+      if (event.sender?.isDestroyed?.() === true) {
+        throw archiveIpcError(
+          'ARCHIVE_CLEANUP_RENDERER_CLOSED',
+          'Mission cleanup recovery was not started because its renderer closed.',
+        )
+      }
+      cleanupLease = input.archiveReviewSessionManager.acquireCleanupLease(missionId)
+      activeOperations.set(operationId, Object.freeze({ senderId, missionId, kind: 'cleanup' }))
+      let cleanupSequence = 0
+      const cleanupOperation = missionStore.resumeMissionCleanup(
+        { missionId, archiveId },
+        {
+          operationId,
+          reviewActivity: false,
+          onProgress: (progress) => {
+            cleanupSequence += 1
+            sendArchiveProgressBestEffort(event.sender, () => normalizeCleanupProgress(
+              progress,
+              { operationId, missionId, archiveId },
+              cleanupSequence,
+            ))
+          },
+        },
+      )
+      const result = await cleanupOperation
+      return projectCleanupResult(result, { missionId, archiveId })
+    } catch (error) {
+      throw closeArchiveFailure(error, 'ARCHIVE_CLEANUP_FAILED')
+    } finally {
+      activeOperations.delete(operationId)
+      cleanupLease?.release()
+    }
+  })
+
   input.ipcMain.handle(channels.cancelMissionArchiveOperation, async (event, operationId) => {
     input.validateIpcSender(event)
     const senderId = observeSender(event.sender)

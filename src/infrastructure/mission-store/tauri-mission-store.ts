@@ -780,6 +780,12 @@ export type StartMissionCleanupInput = {
   readonly confirmation: string
 }
 
+export type ResumeMissionCleanupInput = {
+  readonly missionId: string
+  readonly archiveId: string
+  readonly operationId: string
+}
+
 export type MissionCleanupResult = {
   readonly missionId: string
   readonly archiveId: string
@@ -969,6 +975,9 @@ export type MissionStore = {
   }) => Promise<MissionCleanupEligibility>
   readonly startMissionCleanup?: (
     input: StartMissionCleanupInput,
+  ) => Promise<MissionCleanupResult>
+  readonly resumeMissionCleanup?: (
+    input: ResumeMissionCleanupInput,
   ) => Promise<MissionCleanupResult>
   readonly cancelMissionArchiveOperation: (operationId: string) => Promise<boolean>
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
@@ -1273,6 +1282,9 @@ export function createTauriMissionStore(): MissionStore {
       throw new Error('Mission live-store archival is available only in the Electron application.')
     },
     startMissionCleanup: async () => {
+      throw new Error('Mission live-store archival is available only in the Electron application.')
+    },
+    resumeMissionCleanup: async () => {
       throw new Error('Mission live-store archival is available only in the Electron application.')
     },
     cancelMissionArchiveOperation: async () => false,

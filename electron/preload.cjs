@@ -43,6 +43,7 @@ const MISSION_STORE_CHANNELS = {
   verifyMissionArchive: 'sartracker:mission-store:verify-mission-archive',
   getMissionCleanupEligibility: 'sartracker:mission-store:get-mission-cleanup-eligibility',
   startMissionCleanup: 'sartracker:mission-store:start-mission-cleanup',
+  resumeMissionCleanup: 'sartracker:mission-store:resume-mission-cleanup',
   cancelMissionArchiveOperation: 'sartracker:mission-store:cancel-mission-archive-operation',
   createMission: 'sartracker:mission-store:create-mission',
   createOuting: 'sartracker:mission-store:create-outing',
@@ -178,6 +179,7 @@ const ARCHIVE_STORE_METHODS = new Set([
   'verifyMissionArchive',
   'getMissionCleanupEligibility',
   'startMissionCleanup',
+  'resumeMissionCleanup',
   'cancelMissionArchiveOperation',
   'finalizeMission',
   'unlockFinalizedMission',
@@ -692,6 +694,31 @@ function projectArchiveCleanupStartForIpc(input) {
       input.confirmation,
       'Mission cleanup confirmation',
       ARCHIVE_IPC_LIMITS.confirmation,
+    ),
+  }
+}
+
+/** Projects one bounded durable cleanup-resume request before structured cloning. */
+function projectArchiveCleanupResumeForIpc(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Mission cleanup resume input is invalid.')
+  }
+  return {
+    missionId: projectArchiveString(
+      input.missionId,
+      'Mission cleanup mission identity',
+      ARCHIVE_IPC_LIMITS.missionId,
+    ),
+    archiveId: projectArchiveString(
+      input.archiveId,
+      'Mission cleanup archive identity',
+      ARCHIVE_IPC_LIMITS.archiveId,
+    ),
+    operationId: projectArchiveString(
+      input.operationId,
+      'Mission cleanup operation identity',
+      ARCHIVE_IPC_LIMITS.operationId,
+      { pattern: ARCHIVE_OPERATION_ID_PATTERN },
     ),
   }
 }
@@ -1347,6 +1374,10 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
       ['startMissionCleanup', (input) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.startMissionCleanup,
         projectArchiveCleanupStartForIpc(input),
+      )],
+      ['resumeMissionCleanup', (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.resumeMissionCleanup,
+        projectArchiveCleanupResumeForIpc(input),
       )],
       ['cancelMissionArchiveOperation', (operationId) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.cancelMissionArchiveOperation,

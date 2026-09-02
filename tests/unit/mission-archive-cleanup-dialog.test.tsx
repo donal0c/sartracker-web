@@ -244,6 +244,48 @@ describe('MissionArchiveCleanupDialog [DON-253]', () => {
     expect(readText()).not.toContain('untrusted local failure detail')
   })
 
+  it('offers a durable resume route for cleanup interrupted across restart', async () => {
+    const resumeCleanup = vi.fn().mockResolvedValue({
+      missionId: MISSION_ID,
+      archiveId: ARCHIVE_ID,
+      state: 'completed',
+      storageState: 'archived',
+      movedRows: 12,
+    } satisfies MissionCleanupResult)
+    const props = {
+      ...createProps({
+        loadState: vi.fn().mockResolvedValue({
+          archive: archive(),
+          eligibility: {
+            eligible: false,
+            startableWithCredential: false,
+            blockers: ['cleanup_in_progress'],
+            storageState: 'cleanup_in_progress',
+          },
+        }),
+      }),
+      resumeCleanup,
+    } as MissionArchiveCleanupDialogProps & {
+      readonly resumeCleanup: (input: {
+        readonly missionId: string
+        readonly archiveId: string
+        readonly operationId: string
+      }) => Promise<MissionCleanupResult>
+    }
+    render(props)
+    await flush()
+
+    expect(button('archive-cleanup-resume')).toBeTruthy()
+    await click('archive-cleanup-resume')
+    await flush()
+    expect(resumeCleanup).toHaveBeenCalledWith({
+      missionId: MISSION_ID,
+      archiveId: ARCHIVE_ID,
+      operationId: OPERATION_ID,
+    })
+    expect(state()).toBe('completed')
+  })
+
   function render(props: MissionArchiveCleanupDialogProps): void {
     host = document.createElement('div')
     document.body.append(host)

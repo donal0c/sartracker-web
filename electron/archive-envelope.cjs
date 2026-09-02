@@ -44,6 +44,10 @@ const CREATE_REQUEST_KEYS = Object.freeze([
   'requestEventRowid',
   'schemaVersion',
 ])
+const OPTIONAL_CREATE_REQUEST_KEYS = Object.freeze([
+  'finalizationProjection',
+  'previousArchiveId',
+])
 const CREATE_RESULT_KEYS = Object.freeze([
   'archiveId',
   'archiveKind',
@@ -291,7 +295,16 @@ function normalizeProtectedFinalizationEpoch(value, archiveKind, code) {
 /** Validates the exact serializable request sent to the create worker. */
 function normalizeArchiveCreateRequest(input) {
   const code = 'ARCHIVE_ENVELOPE_INVALID_REQUEST'
-  requireExactRecord(input, CREATE_REQUEST_KEYS, code, 'Archive create request')
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new ArchiveEnvelopeError(code, 'Archive create request must be an object.')
+  }
+  const actualKeys = Object.keys(input).sort()
+  const requiredKeys = [...CREATE_REQUEST_KEYS].sort()
+  const allowedKeys = new Set([...requiredKeys, ...OPTIONAL_CREATE_REQUEST_KEYS])
+  if (requiredKeys.some((key) => !actualKeys.includes(key))
+    || actualKeys.some((key) => !allowedKeys.has(key))) {
+    throw new ArchiveEnvelopeError(code, 'Archive create request has missing or unsupported fields.')
+  }
   const requestEventRowid = input.requestEventRowid
   if (!Number.isSafeInteger(requestEventRowid) || requestEventRowid < 1) {
     throw new ArchiveEnvelopeError(code, 'Archive request event row identity is invalid.')
@@ -304,6 +317,12 @@ function normalizeArchiveCreateRequest(input) {
     || input.inventoryVersion !== ARCHIVE_INVENTORY_VERSION
   ) {
     throw new ArchiveEnvelopeError(code, 'Archive schema or inventory version is unsupported.')
+  }
+  if (input.previousArchiveId !== undefined
+    && input.previousArchiveId !== null
+    && (typeof input.previousArchiveId !== 'string' || input.previousArchiveId.length < 1
+      || input.previousArchiveId.length > 200 || CONTROL_CHARACTERS.test(input.previousArchiveId))) {
+    throw new ArchiveEnvelopeError(code, 'Previous archive identity is invalid.')
   }
   if (
     input.previousArchiveSha256 !== null
@@ -334,6 +353,12 @@ function normalizeArchiveCreateRequest(input) {
     schemaVersion: ARCHIVE_SCHEMA_VERSION,
     inventoryVersion: ARCHIVE_INVENTORY_VERSION,
     previousArchiveSha256: input.previousArchiveSha256,
+    ...(input.previousArchiveId === undefined
+      ? {}
+      : { previousArchiveId: input.previousArchiveId }),
+    ...(input.finalizationProjection === undefined
+      ? {}
+      : { finalizationProjection: input.finalizationProjection }),
     protectedFinalizationEpoch: normalizeProtectedFinalizationEpoch(
       input.protectedFinalizationEpoch,
       input.archiveKind,
