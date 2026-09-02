@@ -21,6 +21,10 @@ export type MissionArchiveReviewControlProps = {
   readonly onCloseArchiveReview: () => Promise<void>
   readonly onRequestVerification: (archive: MissionArchiveInfo) => void
   readonly onRequestCleanup: (mission: MissionArchiveReviewTimelineEntry['mission']) => void
+  readonly onRestoreForCorrection: (input: {
+    readonly admin_name: string
+    readonly reason: string
+  }) => Promise<void>
 }
 
 export type MissionArchiveReviewBannerProps = {
@@ -138,6 +142,9 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
   const [slotType, setSlotType] = useState<'passphrase' | 'recovery'>('passphrase')
   const [secret, setSecret] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [correctionAdmin, setCorrectionAdmin] = useState('')
+  const [correctionReason, setCorrectionReason] = useState('')
+  const [restoring, setRestoring] = useState(false)
   const [safeError, setSafeError] = useState<string | null>(null)
 
   const selectedArchive = useMemo(() => {
@@ -153,6 +160,47 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
       <section className="rounded-xl border border-stone-700 bg-stone-950/50 p-4">
         <p className="text-sm font-bold text-stone-100">Archive Review session is open.</p>
         <p className="mt-1 text-xs text-stone-400">The selected mission is fixed and read-only.</p>
+        <p className="mt-2 text-xs leading-relaxed text-amber-100/80">
+          Need to correct the mission? Restore the verified snapshot into a new live revision.
+          Earlier archive bytes remain unchanged and the action is recorded.
+        </p>
+        <label className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-stone-400">
+          Authorizing admin
+          <input
+            autoComplete="off"
+            className="mt-1 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm font-normal normal-case tracking-normal text-stone-100"
+            data-testid="archive-review-correction-admin"
+            onChange={(event) => setCorrectionAdmin(event.target.value)}
+            value={correctionAdmin}
+          />
+        </label>
+        <label className="mt-3 block text-[11px] font-bold uppercase tracking-wider text-stone-400">
+          Correction reason
+          <input
+            className="mt-1 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm font-normal normal-case tracking-normal text-stone-100"
+            data-testid="archive-review-correction-reason"
+            onChange={(event) => setCorrectionReason(event.target.value)}
+            value={correctionReason}
+          />
+        </label>
+        <button
+          className="mt-3 rounded-lg border border-rose-300/60 bg-rose-300/10 px-3 py-2 text-xs font-bold text-rose-100 disabled:opacity-50"
+          data-testid="archive-review-restore-correction"
+          disabled={props.phase === 'closing' || restoring
+            || correctionAdmin.trim() === '' || correctionReason.trim() === ''}
+          onClick={() => {
+            setRestoring(true)
+            setSafeError(null)
+            void props.onRestoreForCorrection({
+              admin_name: correctionAdmin.trim(),
+              reason: correctionReason.trim(),
+            }).catch(() => setSafeError('Archive correction restore failed safely.'))
+              .finally(() => setRestoring(false))
+          }}
+          type="button"
+        >
+          {restoring ? 'Restoring for correction…' : 'Restore for correction'}
+        </button>
         <button
           className="mt-3 rounded-lg border border-amber-300/60 px-3 py-2 text-xs font-bold text-amber-100 disabled:opacity-50"
           data-testid="archive-review-close"
@@ -167,6 +215,9 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
         >
           {props.phase === 'closing' ? 'Closing…' : 'Close Archive Review'}
         </button>
+        {safeError !== null ? (
+          <p className="mt-3 text-xs font-semibold text-rose-200" role="alert">{safeError}</p>
+        ) : null}
       </section>
     )
   }

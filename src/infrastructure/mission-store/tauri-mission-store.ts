@@ -808,6 +808,15 @@ export type UnlockFinalizedMissionInput = {
   readonly reason: string
 }
 
+export type RestoreMissionForCorrectionInput = {
+  readonly missionId: string
+  readonly archiveId: string
+  readonly operationId: string
+  readonly sessionId: string
+  readonly admin_name: string
+  readonly reason: string
+}
+
 export type MissionEvent = {
   readonly id: string
   readonly mission_id: string
@@ -1261,6 +1270,10 @@ export type MissionStore = {
     custody: MissionArchiveCustodyInput,
   ) => Promise<FinalizeMissionResult>
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<Mission>
+  /** Restores one verified archived snapshot into a new live correction epoch. */
+  readonly restoreMissionForCorrection?: (
+    input: RestoreMissionForCorrectionInput,
+  ) => Promise<Mission>
 }
 
 export function createTauriMissionStore(): MissionStore {
@@ -1355,5 +1368,8 @@ export function createTauriMissionStore(): MissionStore {
       invoke<FinalizeMissionResult>('finalize_mission', { missionId, custody }),
     unlockFinalizedMission: (input) =>
       invoke<Mission>('unlock_finalized_mission', { input }),
+    restoreMissionForCorrection: async () => {
+      throw new Error('Archived mission correction restore is available only in the Electron application.')
+    },
   }
 }

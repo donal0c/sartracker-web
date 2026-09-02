@@ -87,7 +87,9 @@ function createArchiveCleanupCoordinator(options) {
   function getEligibility(input) {
     const evidence = normalizeEvidence(input, true)
     const journal = readJournal(db, evidence.missionId)
-    if (journal?.state === 'completed' && journalMatchesCurrentEpoch(
+    const missionStatus = db.prepare('SELECT status FROM missions WHERE id = ?')
+      .get(evidence.missionId)?.status
+    if (missionStatus === 'finalized' && journal?.state === 'completed' && journalMatchesCurrentEpoch(
       db,
       journal,
       evidence,

@@ -552,6 +552,56 @@ describe('encrypted mission archive lifecycle integration', () => {
     }
   }, 60_000)
 
+  it('does not reschedule startup archive reconciliation after prepareClose begins', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-reconciliation-close-race-'))
+    temporaryDirectories.add(userDataPath)
+    const seeded = createElectronMissionStore({ userDataPath })
+    const mission = await seeded.createMission({ name: 'Reconciliation close race mission' })
+    await seeded.finishMission(mission.id)
+    await seeded.finalizeMission(mission.id, custody, {
+      operationId: '15151515-1515-4515-8515-151515151515',
+      onProgress: () => undefined,
+    })
+    await seeded.prepareClose()
+    seeded.close()
+
+    let starts = 0
+    let cancellations = 0
+    const reopened = createElectronMissionStore({
+      userDataPath,
+      startArchiveCustodyReconciliation: (input) => {
+        starts += 1
+        let rejectOperation
+        const completion = new Promise((_, reject) => { rejectOperation = reject })
+        const workerExited = new Promise((resolve) => {
+          input.signal?.addEventListener('abort', () => {
+            cancellations += 1
+            const error = new Error('Archive custody reconciliation was cancelled.')
+            error.name = 'AbortError'
+            error.code = 'ARCHIVE_CANCELLED'
+            rejectOperation(error)
+            resolve()
+          }, { once: true })
+        })
+        Object.defineProperties(completion, {
+          workerExited: { value: workerExited },
+          cancel: { value: () => input.signal?.dispatchEvent(new Event('abort')) },
+        })
+        return completion
+      },
+    })
+    try {
+      await vi.waitFor(() => expect(starts).toBe(1))
+      await reopened.prepareClose()
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      expect(starts).toBe(1)
+      expect(cancellations).toBe(1)
+      expect(() => reopened.close()).not.toThrow()
+    } finally {
+      try { reopened.close() } catch { void 0 }
+    }
+  }, 60_000)
+
   it('rejects cleanup before any delete when custody is replaced after credential proof', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-cleanup-custody-race-'))
     temporaryDirectories.add(userDataPath)

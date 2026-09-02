@@ -193,6 +193,44 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
     await expect(archiveSelect).toContainText('Verified encrypted archive')
     await expect(archiveSelect).toBeEnabled()
   })
+
+  test('restores a retained archive for an authorized correction and returns to live review', async ({
+    page,
+  }) => {
+    await openBrowserHarness(page)
+    const archive = await createVerifiedSyntheticArchive(page)
+    await page.evaluate(() => {
+      window.localStorage.setItem(
+        'sartracker:browser-settings',
+        JSON.stringify({ missionDefaults: { adminRoster: ['Duty Admin'] } }),
+      )
+    })
+
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByTestId(`archive-cleanup-open-${archive.missionId}`).click()
+    const cleanup = page.getByTestId('mission-archive-cleanup-dialog')
+    await page.getByTestId('archive-cleanup-secret').fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+    await page.getByTestId('archive-cleanup-confirmation').fill(MISSION_NAME)
+    await page.getByTestId('archive-cleanup-start').click()
+    await expect(cleanup).toContainText('Live-store archival completed.')
+    await page.getByTestId('archive-cleanup-close').click()
+
+    await page.getByTestId(`archive-review-select-${archive.archiveId}`).click()
+    await page.getByTestId('archive-review-secret').fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+    await page.getByTestId('archive-review-open').click()
+    await expect(page.getByTestId('archive-review-restore-correction')).toBeDisabled()
+    await page.getByTestId('archive-review-correction-admin').fill('Duty Admin')
+    await page.getByTestId('archive-review-correction-reason').fill('Correct a recorded clue.')
+    await page.getByTestId('archive-review-restore-correction').click()
+
+    await expect(page.getByTestId('mission-review-archive-banner')).toHaveCount(0)
+    await expect(page.getByTestId(`archive-storage-state-${archive.missionId}`)).toHaveText(
+      'Storage: live',
+    )
+    await expect(page.getByTestId('mission-review-workspace')).toContainText(
+      'Correct a recorded clue.',
+    )
+  })
 })
 
 async function openBrowserHarness(page: Page): Promise<void> {

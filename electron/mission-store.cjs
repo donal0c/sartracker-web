@@ -70,6 +70,7 @@ const {
   assertMissionLiveReviewAvailable: assertMissionLiveReviewSnapshotAvailable,
   readMissionLiveReviewStorageState,
 } = require('./mission-live-review-access.cjs')
+const { rehydrateMissionFromSnapshot } = require('./archive-rehydrate.cjs')
 const {
   normalizeCustodyFileIdentity,
   withPinnedCustodyFileIdentity,
@@ -606,6 +607,9 @@ function createElectronMissionStore(options) {
   let archiveRegistryReconciliationActive = null
   let archiveRegistryReconciliationController = null
   let archiveRegistryReconciliationComplete = false
+  // Shutdown is one-way: cancellation of the startup reconciliation pass must
+  // not schedule a replacement pass before SQLite closes.
+  let archiveRegistryReconciliationShutdownRequested = false
   let archiveCustodyRecoveryTimer = null
   let archiveCustodyRecoveryActive = null
   let archiveCustodyRecoveryController = null
@@ -844,6 +848,7 @@ function createElectronMissionStore(options) {
   const scheduleArchiveRegistryReconciliation = () => {
     if (
       storeClosed
+      || archiveRegistryReconciliationShutdownRequested
       || migrationState.legacyArchiveRegistryBackfillRemaining !== 0
       || archiveRegistryReconciliationTimer !== null
       || archiveRegistryReconciliationActive !== null
@@ -852,7 +857,7 @@ function createElectronMissionStore(options) {
     ) return
     archiveRegistryReconciliationTimer = setTimeout(() => {
       archiveRegistryReconciliationTimer = null
-      if (storeClosed) return
+      if (storeClosed || archiveRegistryReconciliationShutdownRequested) return
       archiveRegistryReconciliationController = new AbortController()
       archiveRegistryReconciliationCycleStartedAt ??= new Date().toISOString()
       archiveRegistryReconciliationActive = archiveRegistry.reconcileArchiveAvailability({
@@ -887,7 +892,9 @@ function createElectronMissionStore(options) {
       }).finally(() => {
         archiveRegistryReconciliationActive = null
         archiveRegistryReconciliationController = null
-        scheduleArchiveRegistryReconciliation()
+        if (!archiveRegistryReconciliationShutdownRequested) {
+          scheduleArchiveRegistryReconciliation()
+        }
       })
     }, LEGACY_ARCHIVE_REGISTRY_BACKFILL_DELAY_MS)
   }
@@ -1629,6 +1636,11 @@ function createElectronMissionStore(options) {
 
   return {
     prepareClose: async () => {
+      archiveRegistryReconciliationShutdownRequested = true
+      if (archiveRegistryReconciliationTimer !== null) {
+        clearTimeout(archiveRegistryReconciliationTimer)
+        archiveRegistryReconciliationTimer = null
+      }
       const active = [...activeGpxEvidenceImports]
       for (const entry of active) entry.controller.abort()
       for (const activeQuery of missionReviewQueryControllersByRequestId.values()) {
@@ -2713,6 +2725,11 @@ function createElectronMissionStore(options) {
       input,
       options.readAdminRoster,
       reconcileFinalizedMissionArchive,
+      (rehydrationInput) => rehydrateMissionFromSnapshot({
+        ...rehydrationInput,
+        db,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+      }),
     ),
   }
 
@@ -6877,6 +6894,7 @@ async function unlockFinalizedMission(
   input,
   readAdminRoster,
   reconcileFinalizedArchive = async () => undefined,
+  rehydrateArchivedMission = null,
 ) {
   const missionId = normalizeBoundedRequiredText(
     input?.mission_id,
@@ -6903,9 +6921,72 @@ async function unlockFinalizedMission(
     )
   }
   if (mission.storage_state === 'archived') {
-    throw new Error(
-      'This mission is archived. Restore its verified archive into a complete live mission before requesting a correction unlock.',
-    )
+    if (rehydrateArchivedMission === null
+      || typeof input?.snapshot_path !== 'string'
+      || typeof input?.archive_id !== 'string') {
+      throw new Error(
+        'This mission is archived. Open its verified archive and choose Restore for correction before requesting an unlock.',
+      )
+    }
+    const finalized = db.prepare(`SELECT details_json FROM mission_events
+      WHERE mission_id = ? AND event_type = 'mission_finalized'
+      ORDER BY rowid DESC LIMIT 1`).get(missionId)
+    const finalizedDetails = readEventDetails(finalized?.details_json)
+    if (finalizedDetails.archive_id !== input.archive_id) {
+      const error = new Error('Archived mission correction archive is not the current finalization.')
+      error.code = 'ARCHIVE_REHYDRATE_EPOCH_CHANGED'
+      throw error
+    }
+    await reconcileFinalizedArchive(missionId)
+    assertCurrentFinalizedArchiveReviewable(db, missionId)
+    const finalizedEpoch = readLatestMissionFinalizedEpoch(db, missionId)
+    const adminRoster = typeof readAdminRoster === 'function' ? await readAdminRoster() : []
+    if (!adminRoster.map((value) => value.trim()).includes(adminName)) {
+      const deniedTransaction = db.transaction(() => {
+        const current = getMission(db, missionId)
+        if (current.status !== 'finalized' || current.storage_state !== 'archived'
+          || readLatestMissionFinalizedEpoch(db, missionId) !== finalizedEpoch) {
+          const error = new Error('Mission finalization changed while admin authorization was checked.')
+          error.code = 'ARCHIVE_REHYDRATE_EPOCH_CHANGED'
+          throw error
+        }
+        insertEvent(db, missionId, 'mission_unlock_denied', now(), {
+          admin_name: adminName,
+          reason,
+          resulting_status: 'finalized',
+          storage_state: 'archived',
+        })
+      })
+      deniedTransaction.immediate()
+      throw new Error('Selected admin is not authorized to unlock finalized missions.')
+    }
+    await rehydrateArchivedMission({
+      missionId,
+      archiveId: input.archive_id,
+      snapshotPath: input.snapshot_path,
+    })
+    const transaction = db.transaction(() => {
+      const current = getMission(db, missionId)
+      if (current.status !== 'finalized'
+        || current.storage_state !== 'archived'
+        || readLatestMissionFinalizedEpoch(db, missionId) !== finalizedEpoch) {
+        const error = new Error(
+          'Mission finalization or archive storage changed before correction unlock could commit.',
+        )
+        error.code = 'ARCHIVE_REHYDRATE_EPOCH_CHANGED'
+        throw error
+      }
+      db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finished', missionId)
+      insertEvent(db, missionId, 'mission_unlocked', now(), {
+        admin_name: adminName,
+        reason,
+        restored_from_archive_id: input.archive_id,
+        resulting_status: 'finished',
+        storage_state: 'live',
+      })
+    })
+    transaction.immediate()
+    return getMission(db, missionId)
   }
   assertMissionFinalizationNotInProgress(db, missionId)
   await reconcileFinalizedArchive(missionId)

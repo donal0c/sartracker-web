@@ -161,7 +161,7 @@ export function MissionReviewWorkspace() {
     }
 
     void archiveReviewController.refreshTimeline()
-  }, [archiveReviewController, open])
+  }, [archiveReviewController, docked, open])
 
   useEffect(() => {
     setSelectedMarkerId((current) =>
@@ -318,6 +318,13 @@ export function MissionReviewWorkspace() {
                 }}
                 onRequestVerification={setVerificationArchive}
                 onRequestCleanup={setCleanupMission}
+                onRestoreForCorrection={async (input) => {
+                  if (archiveReviewController === null) {
+                    throw new Error('Archive correction restore is unavailable.')
+                  }
+                  await archiveReviewController.restoreForCorrection(input)
+                  if (controller !== null) await controller.refreshSelectedMission()
+                }}
                 phase={archiveReviewPhase}
                 progress={archiveReviewProgress}
                 recoveryRequired={archiveReviewRecoveryRequired}

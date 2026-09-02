@@ -137,6 +137,7 @@ const MISSION_STORE_CHANNELS = {
   finishMission: 'sartracker:mission-store:finish-mission',
   finalizeMission: 'sartracker:mission-store:finalize-mission',
   unlockFinalizedMission: 'sartracker:mission-store:unlock-finalized-mission',
+  restoreMissionForCorrection: 'sartracker:mission-store:restore-mission-for-correction',
 }
 
 const LAYER_CATALOG_STORE_CHANNELS = {
@@ -183,6 +184,7 @@ const ARCHIVE_STORE_METHODS = new Set([
   'cancelMissionArchiveOperation',
   'finalizeMission',
   'unlockFinalizedMission',
+  'restoreMissionForCorrection',
 ])
 
 const ARCHIVE_IPC_LIMITS = Object.freeze({
@@ -617,6 +619,39 @@ function projectArchiveCorrectionUnlockForIpc(input) {
     ),
     admin_name: adminName,
     reason: reason.trim(),
+  }
+}
+
+/** Projects the sender-owned verified-session correction restore request. */
+function projectArchiveCorrectionRestoreForIpc(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || Object.keys(input).sort().join(',') !== 'admin_name,archiveId,mission_id,operationId,reason,sessionId') {
+    throw new Error('Mission archive correction restore input is invalid.')
+  }
+  const unlock = projectArchiveCorrectionUnlockForIpc({
+    mission_id: input.mission_id,
+    admin_name: input.admin_name,
+    reason: input.reason,
+  })
+  return {
+    ...unlock,
+    archiveId: projectArchiveString(
+      input.archiveId,
+      'Mission correction archive identity',
+      ARCHIVE_IPC_LIMITS.archiveId,
+    ),
+    operationId: projectArchiveString(
+      input.operationId,
+      'Mission correction operation identity',
+      ARCHIVE_IPC_LIMITS.operationId,
+      { pattern: ARCHIVE_OPERATION_ID_PATTERN },
+    ),
+    sessionId: projectArchiveString(
+      input.sessionId,
+      'Mission correction session identity',
+      ARCHIVE_IPC_LIMITS.operationId,
+      { pattern: ARCHIVE_OPERATION_ID_PATTERN },
+    ),
   }
 }
 
@@ -1354,6 +1389,10 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
       ['unlockFinalizedMission', (input) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.unlockFinalizedMission,
         projectArchiveCorrectionUnlockForIpc(input),
+      )],
+      ['restoreMissionForCorrection', (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.restoreMissionForCorrection,
+        projectArchiveCorrectionRestoreForIpc(input),
       )],
       ['listMissionArchives', (missionId) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.listMissionArchives,

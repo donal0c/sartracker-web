@@ -165,6 +165,7 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
       'dispose',
       'openArchive',
       'refreshTimeline',
+      'restoreForCorrection',
       'verifyArchive',
     ])
   })
@@ -586,6 +587,42 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
     })
     expect(harness.latestState().activeSession?.missionId).toBe(MISSION.id)
     expect(JSON.stringify(harness.applyRuntime.mock.calls)).not.toContain(SECRET)
+  })
+
+  it('restores an open verified session for correction and returns Review to the live source', async () => {
+    const restoreMissionForCorrection = vi.fn(async () => ({
+      ...MISSION,
+      status: 'finished' as const,
+      storage_state: 'live' as const,
+    }))
+    const harness = createHarness({ restoreMissionForCorrection })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+    await controller.openArchive({
+      archiveId: VERIFIED_V2_ID,
+      containerVersion: 2,
+      slotType: 'passphrase',
+      secret: SECRET,
+    })
+    harness.switchMissionReviewSource.mockClear()
+    await expect(controller.restoreForCorrection({
+      admin_name: 'Duty Admin',
+      reason: 'Correct a recorded clue.',
+    })).resolves.toBeUndefined()
+    expect(restoreMissionForCorrection).toHaveBeenCalledWith({
+      missionId: MISSION.id,
+      archiveId: VERIFIED_V2_ID,
+      operationId: OPERATION_ID,
+      sessionId: SESSION_ID,
+      admin_name: 'Duty Admin',
+      reason: 'Correct a recorded clue.',
+    })
+    expect(harness.close).toHaveBeenCalledOnce()
+    expect(harness.switchMissionReviewSource).toHaveBeenCalledWith({ source: 'live' })
+    expect(harness.latestState()).toMatchObject({
+      phase: 'idle',
+      activeSession: null,
+      recoveryRequired: 'none',
+    })
   })
 
   it('accepts verified superseded v2, but rejects unverified, missing, newer, and malformed credential requests before IPC', async () => {
@@ -1205,6 +1242,7 @@ function createHarness(overrides: {
   readonly cancel?: ArchiveReviewBridge['cancel']
   readonly verifyMissionArchive?: MissionStore['verifyMissionArchive']
   readonly cancelMissionArchiveOperation?: MissionStore['cancelMissionArchiveOperation']
+  readonly restoreMissionForCorrection?: MissionStore['restoreMissionForCorrection']
   readonly switchMissionReviewSource?: StartMissionArchiveReviewRuntimeDependencies['switchMissionReviewSource']
 } = {}) {
   const archivesByMission = overrides.archivesByMission ?? new Map([
@@ -1234,6 +1272,13 @@ function createHarness(overrides: {
   const cancelMissionArchiveOperation = vi.fn(
     overrides.cancelMissionArchiveOperation ?? (async () => true),
   )
+  const restoreMissionForCorrection = vi.fn(
+    overrides.restoreMissionForCorrection ?? (async () => ({
+      ...MISSION,
+      status: 'finished' as const,
+      storage_state: 'live' as const,
+    })),
+  )
   const unsubscribeProgress = vi.fn()
   let progressListener: ((progress: MissionArchiveReviewProgress) => void) | null = null
   const onProgress = vi.fn((listener: (progress: MissionArchiveReviewProgress) => void) => {
@@ -1250,6 +1295,7 @@ function createHarness(overrides: {
       listMissionArchives,
       verifyMissionArchive,
       cancelMissionArchiveOperation,
+      restoreMissionForCorrection,
     },
     archiveReview: { open, close, cancel, onProgress },
     switchMissionReviewSource,
@@ -1266,6 +1312,7 @@ function createHarness(overrides: {
     cancel,
     verifyMissionArchive,
     cancelMissionArchiveOperation,
+    restoreMissionForCorrection,
     applyRuntime,
     switchMissionReviewSource,
     unsubscribeProgress,

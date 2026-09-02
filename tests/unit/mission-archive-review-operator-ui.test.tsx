@@ -281,6 +281,25 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
     expect(input('archive-review-secret').value).toBe('')
   })
 
+  it('offers a credentialed restore-for-correction action only inside an open archive session', async () => {
+    const restore = vi.fn().mockResolvedValue(undefined)
+    renderControl(createControlProps({
+      activeSession: V2_SESSION,
+      onRestoreForCorrection: restore,
+    }))
+
+    expect(query('[data-testid="archive-review-restore-correction"]')).not.toBeNull()
+    expect(query('[data-testid="archive-review-correction-admin"]')).not.toBeNull()
+    expect(query('[data-testid="archive-review-correction-reason"]')).not.toBeNull()
+    changeInput('archive-review-correction-admin', 'Duty Admin')
+    changeInput('archive-review-correction-reason', 'Correct a recorded clue.')
+    await clickAndFlush('archive-review-restore-correction')
+    expect(restore).toHaveBeenCalledWith({
+      admin_name: 'Duty Admin',
+      reason: 'Correct a recorded clue.',
+    })
+  })
+
   it('opens a supported v1 archive credential-free and labels it Legacy unencrypted', async () => {
     const onOpenArchive = vi.fn().mockResolvedValue(undefined)
     renderControl(createControlProps({ onOpenArchive }))
@@ -501,6 +520,7 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
       onCloseArchiveReview: vi.fn().mockResolvedValue(undefined),
       onRequestVerification: vi.fn(),
       onRequestCleanup: vi.fn(),
+      onRestoreForCorrection: vi.fn().mockResolvedValue(undefined),
       ...overrides,
     }
   }

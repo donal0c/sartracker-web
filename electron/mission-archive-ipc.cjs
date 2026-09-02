@@ -1,6 +1,8 @@
 'use strict'
 
 const { createHash, randomUUID: cryptoRandomUUID, timingSafeEqual } = require('node:crypto')
+const fs = require('node:fs/promises')
+const path = require('node:path')
 
 const { generateRecoveryCode: generateArchiveRecoveryCode } = require('./archive-crypto.cjs')
 
@@ -699,6 +701,84 @@ function registerMissionArchiveIpcHandlers(input) {
       return projectUnlockedMissionResult(result, missionId)
     } catch (error) {
       throw closeArchiveFailure(error, 'ARCHIVE_UNLOCK_FAILED')
+    }
+  })
+
+  input.ipcMain.handle(channels.restoreMissionForCorrection, async (event, request) => {
+    input.validateIpcSender(event)
+    const senderId = observeSender(event.sender)
+    requireExactRecord(
+      request,
+      ['admin_name', 'archiveId', 'mission_id', 'operationId', 'reason', 'sessionId'],
+      'Mission archive correction restore request',
+    )
+    const missionId = normalizeIdentifier(
+      request.mission_id,
+      'Mission correction mission identity',
+      MAX_MISSION_ID_BYTES,
+    )
+    const archiveId = normalizeIdentifier(
+      request.archiveId,
+      'Mission correction archive identity',
+      MAX_ARCHIVE_ID_BYTES,
+    )
+    const operationId = normalizeIdentifier(
+      request.operationId,
+      'Mission correction operation identity',
+      MAX_OPERATION_ID_BYTES,
+      UUID_V4,
+    )
+    const sessionId = normalizeIdentifier(
+      request.sessionId,
+      'Mission correction session identity',
+      MAX_OPERATION_ID_BYTES,
+      UUID_V4,
+    )
+    const adminName = normalizeCorrectionAuthority(
+      request.admin_name,
+      'Mission correction authority',
+      MAX_CORRECTION_ADMIN_BYTES,
+    )
+    const reason = normalizeCorrectionAuthority(
+      request.reason,
+      'Mission correction reason',
+      MAX_CORRECTION_REASON_BYTES,
+    )
+    if (issuances.has(operationId) || activeOperations.has(operationId)) {
+      throw archiveIpcError(
+        'ARCHIVE_OPERATION_ID_CONFLICT',
+        'Mission archive correction operation identity is already in use.',
+      )
+    }
+    let snapshot = null
+    try {
+      if (typeof input.archiveReviewSessionManager.snapshotForCorrection !== 'function') {
+        throw archiveIpcError(
+          'ARCHIVE_REHYDRATE_UNAVAILABLE',
+          'Archive correction restore is unavailable in this runtime.',
+        )
+      }
+      snapshot = await input.archiveReviewSessionManager.snapshotForCorrection({
+        senderId,
+        sessionId,
+        operationId,
+        archiveId,
+      })
+      const result = await missionStore.unlockFinalizedMission({
+        mission_id: missionId,
+        archive_id: snapshot.archiveId,
+        snapshot_path: snapshot.snapshotPath,
+        admin_name: adminName,
+        reason,
+      })
+      return projectUnlockedMissionResult(result, missionId)
+    } catch (error) {
+      throw closeArchiveFailure(error, 'ARCHIVE_REHYDRATE_FAILED')
+    } finally {
+      if (snapshot?.snapshotPath !== undefined) {
+        await fs.rm(path.dirname(snapshot.snapshotPath), { recursive: true, force: true })
+          .catch(() => undefined)
+      }
     }
   })
 

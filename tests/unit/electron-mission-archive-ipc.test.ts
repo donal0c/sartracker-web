@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events'
+import { mkdir, mkdtemp } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 
 import { describe, expect, it, vi } from 'vitest'
@@ -18,6 +21,7 @@ const CHANNELS = Object.freeze({
   issueMissionArchiveRecoveryCode: 'sartracker:mission-store:issue-archive-recovery-code',
   finalizeMission: 'sartracker:mission-store:finalize-mission',
   unlockFinalizedMission: 'sartracker:mission-store:unlock-finalized-mission',
+  restoreMissionForCorrection: 'sartracker:mission-store:restore-mission-for-correction',
   listMissionArchives: 'sartracker:mission-store:list-mission-archives',
   verifyMissionArchive: 'sartracker:mission-store:verify-mission-archive',
   getMissionCleanupEligibility: 'sartracker:mission-store:get-mission-cleanup-eligibility',
@@ -102,6 +106,10 @@ function createMainHarness(
       id: request.mission_id,
       status: 'finished',
     })),
+    restoreMissionForCorrection: vi.fn(async (request: Readonly<Record<string, unknown>>) => ({
+      id: request.mission_id,
+      status: 'finished',
+    })),
     listMissionArchives: vi.fn(async () => []),
     verifyMissionArchive: vi.fn(async () => archiveResult()),
     getMission: vi.fn(async (missionId: string) => missionResult(missionId)),
@@ -135,6 +143,7 @@ function createMainHarness(
   }) as {
     readonly hasReviewActivity: ReturnType<typeof vi.fn>
     readonly acquireCleanupLease: ReturnType<typeof vi.fn>
+    readonly snapshotForCorrection?: ReturnType<typeof vi.fn>
   }
   const issuanceLedger = new Map()
   registerMissionArchiveIpcHandlers({
@@ -164,11 +173,55 @@ function createMainHarness(
 }
 
 describe('mission archive IPC containment [DON-248]', () => {
-  it('registers only the nine explicit archive handlers', () => {
+  it('registers only the ten explicit archive handlers', () => {
     const { handlers } = createMainHarness()
 
     expect([...handlers.keys()].sort()).toEqual(Object.values(CHANNELS).sort())
-    expect(handlers.size).toBe(9)
+    expect(handlers.size).toBe(10)
+  })
+
+  it('restores only the exact sender-owned verified session and removes its correction snapshot staging', async () => {
+    const stagingRoot = await mkdtemp(join(tmpdir(), 'sartracker-correction-ipc-'))
+    const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
+    await mkdir(stagingDirectory)
+    const snapshotPath = join(stagingDirectory, 'mission-store.sqlite')
+    const snapshotForCorrection = vi.fn(async () => ({
+      missionId: 'mission-1',
+      archiveId: 'archive-1',
+      snapshotPath,
+    }))
+    const { handlers, missionStore } = createMainHarness({
+      archiveReviewSessionManager: {
+        hasReviewActivity: vi.fn(() => true),
+        acquireCleanupLease: vi.fn(),
+        snapshotForCorrection,
+      },
+    })
+    const event = { sender: createSender(8) }
+
+    await expect(handlers.get(CHANNELS.restoreMissionForCorrection)?.(event, {
+      mission_id: 'mission-1',
+      archiveId: 'archive-1',
+      operationId: OPERATION_ID,
+      sessionId: '44444444-4444-4444-8444-444444444444',
+      admin_name: 'Duty Admin',
+      reason: 'Correct a recorded clue.',
+    })).resolves.toEqual({ id: 'mission-1', status: 'finished' })
+    expect(snapshotForCorrection).toHaveBeenCalledWith({
+      senderId: 8,
+      sessionId: '44444444-4444-4444-8444-444444444444',
+      operationId: OPERATION_ID,
+      archiveId: 'archive-1',
+    })
+    expect(missionStore.unlockFinalizedMission).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      archive_id: 'archive-1',
+      snapshot_path: snapshotPath,
+      admin_name: 'Duty Admin',
+      reason: 'Correct a recorded clue.',
+    })
+    await expect(import('node:fs/promises').then(({ stat }) => stat(stagingDirectory)))
+      .rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('rejects an oversized correction reason before reaching the mission store', async () => {

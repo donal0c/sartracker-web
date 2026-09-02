@@ -16,9 +16,20 @@ function readMissionLiveReviewStorageState(database, missionId) {
   }
   const journal = database.prepare(`SELECT state FROM mission_cleanup_journal
     WHERE mission_id = ?`).get(missionId)
+  // Older minimal snapshots used by recovery tooling may not expose the
+  // status column. In that case a completed cleanup remains conservatively
+  // archived; only a known finished mission can be reopened as live.
+  const hasMissionStatus = database.prepare('PRAGMA table_info(missions)').all()
+    .some((column) => column?.name === 'status')
+  const mission = hasMissionStatus
+    ? database.prepare('SELECT status FROM missions WHERE id = ?').get(missionId)
+    : null
   if (journal === undefined || journal.state === 'eligible') return 'live'
   if (journal.state === 'in_progress') return 'cleanup_in_progress'
-  if (journal.state === 'completed') return 'archived'
+  // A completed cleanup journal remains as durable history after an explicit
+  // archive-backed correction restore. The mission is live again while the
+  // retained journal still records the prior cleanup epoch.
+  if (journal.state === 'completed') return mission?.status === 'finished' ? 'live' : 'archived'
   throw createAccessError(
     'MISSION_REVIEW_STORAGE_STATE_INVALID',
     'Mission cleanup journal state is invalid; ordinary live Review is unavailable.',

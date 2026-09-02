@@ -1206,6 +1206,74 @@ function createArchiveReviewSessionManager(options) {
       await closeActiveSession(activeSession, 'explicit_close')
     },
 
+    /** Copies one authenticated v2 review snapshot into a sweep-owned correction staging area. */
+    async snapshotForCorrection(input) {
+      const senderId = normalizeSenderId(input?.senderId)
+      if (!UUID_V4.test(input?.sessionId ?? '')
+        || !UUID_V4.test(input?.operationId ?? '')
+        || typeof input?.archiveId !== 'string'
+        || input.archiveId.length < 1) {
+        throw new ArchiveReviewSessionError(
+          'ARCHIVE_REVIEW_INPUT_INVALID',
+          'Archive correction session identity is invalid.',
+        )
+      }
+      if (activeSession === null
+        || activeSession.senderId !== senderId
+        || activeSession.internal.sessionId !== input.sessionId
+        || activeSession.request.operationId !== input.operationId
+        || activeSession.ticket.archiveId !== input.archiveId
+        || activeSession.ticket.containerVersion !== 2
+        || activeSession.internal.verified !== true) {
+        throw new ArchiveReviewSessionError(
+          'ARCHIVE_REVIEW_SESSION_OWNER_MISMATCH',
+          'Archive correction snapshot does not belong to this sender or verified session.',
+        )
+      }
+      const sourcePath = activeSession.internal.databasePath
+      const missionId = activeSession.ticket.missionId
+      const sourceIdentity = normalizeDatabaseIdentity(activeSession.internal.databaseIdentity)
+      const current = fsSync.lstatSync(sourcePath)
+      if (!current.isFile() || current.isSymbolicLink()
+        || current.dev !== sourceIdentity.dev || current.ino !== sourceIdentity.ino
+        || current.size !== sourceIdentity.sizeBytes) {
+        throw new ArchiveReviewSessionError(
+          'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
+          'Archive correction snapshot changed during review.',
+        )
+      }
+      const stagingId = createId()
+      if (!UUID_V4.test(stagingId)) {
+        throw new ArchiveReviewSessionError(
+          'ARCHIVE_REVIEW_IDENTITY_INVALID',
+          'Archive correction staging identity generation failed.',
+        )
+      }
+      const stagingDirectory = path.join(reviewRoot, `.sweep-${stagingId}`)
+      const snapshotPath = path.join(stagingDirectory, 'mission-store.sqlite')
+      await fs.mkdir(stagingDirectory, { recursive: false, mode: 0o700 })
+      try {
+        await fs.copyFile(sourcePath, snapshotPath)
+        const copied = fsSync.lstatSync(snapshotPath)
+        if (!copied.isFile() || copied.isSymbolicLink() || copied.nlink !== 1
+          || copied.size !== sourceIdentity.sizeBytes) {
+          throw new ArchiveReviewSessionError(
+            'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
+            'Archive correction snapshot could not be pinned safely.',
+          )
+        }
+        await closeActiveSession(activeSession, 'correction_restore')
+        return Object.freeze({
+          missionId,
+          archiveId: input.archiveId,
+          snapshotPath,
+        })
+      } catch (error) {
+        await fs.rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined)
+        throw error
+      }
+    },
+
     /** Cancels one sender-owned opening restore. */
     cancel(input) {
       const senderId = normalizeSenderId(input?.senderId)

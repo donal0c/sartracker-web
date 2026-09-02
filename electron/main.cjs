@@ -189,6 +189,7 @@ const MISSION_STORE_CHANNELS = {
   finishMission: 'sartracker:mission-store:finish-mission',
   finalizeMission: 'sartracker:mission-store:finalize-mission',
   unlockFinalizedMission: 'sartracker:mission-store:unlock-finalized-mission',
+  restoreMissionForCorrection: 'sartracker:mission-store:restore-mission-for-correction',
 }
 
 const LAYER_CATALOG_STORE_CHANNELS = {
@@ -964,6 +965,7 @@ function registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSes
     'cancelMissionArchiveOperation',
     'finalizeMission',
     'unlockFinalizedMission',
+    'restoreMissionForCorrection',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
     if (ownedQueryMethods.has(methodName)) {

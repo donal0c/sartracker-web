@@ -40,6 +40,7 @@ import type {
   CoverageTileCatalog,
   RenameOutingInput,
   UnlockFinalizedMissionInput,
+  RestoreMissionForCorrectionInput,
   UpsertDeviceInput,
   UpsertDrawingInput,
   UpsertGpxTrackImportInput,
@@ -273,6 +274,9 @@ export type BrowserHarnessStore = {
     input: AcknowledgeIngestEvidenceLossInput,
   ) => Promise<IngestEvidenceHealth>
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<Mission>
+  readonly restoreMissionForCorrection: (
+    input: RestoreMissionForCorrectionInput,
+  ) => Promise<Mission>
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
   readonly addPosition: (input: AddPositionInput) => Promise<Position>
@@ -1668,6 +1672,47 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         null,
         null,
       )
+      save()
+      return unlockedMission
+    },
+    restoreMissionForCorrection: async (input) => {
+      const mission = requireMission(input.missionId, state.missions)
+      if (mission.status !== 'finalized' || mission.storage_state !== 'archived') {
+        throw new Error('Only archived finalized missions can be restored for correction.')
+      }
+      const settings = readBrowserSettings()
+      if (!settings.missionDefaults.adminRoster.includes(input.admin_name)) {
+        throw new Error('Selected admin is not authorized to restore archived missions.')
+      }
+      if (input.reason.trim() === '') throw new Error('Correction reason is required.')
+      const unlockedMission = {
+        ...mission,
+        status: 'finished' as const,
+        storage_state: 'live' as const,
+      }
+      const requestedAt = new Date().toISOString()
+      state = replaceMission({
+        ...state,
+        missionEvents: appendEvent(
+          appendEvent(state.missionEvents, input.missionId, 'mission_unlock_requested', requestedAt, {
+            admin_name: input.admin_name,
+            reason: input.reason,
+            resulting_status: 'finalized',
+            storage_state: 'archived',
+            archive_id: input.archiveId,
+          }),
+          input.missionId,
+          'mission_unlocked',
+          new Date().toISOString(),
+          {
+            admin_name: input.admin_name,
+            reason: input.reason,
+            restored_from_archive_id: input.archiveId,
+            resulting_status: 'finished',
+            storage_state: 'live',
+          },
+        ),
+      }, unlockedMission, null, null)
       save()
       return unlockedMission
     },

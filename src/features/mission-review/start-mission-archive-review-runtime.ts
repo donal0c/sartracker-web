@@ -49,6 +49,7 @@ export type StartMissionArchiveReviewRuntimeDependencies = {
     | 'listMissionArchives'
     | 'verifyMissionArchive'
     | 'cancelMissionArchiveOperation'
+    | 'restoreMissionForCorrection'
   >
   readonly archiveReview: ArchiveReviewBridge
   readonly switchMissionReviewSource: (input:
@@ -68,6 +69,10 @@ export type MissionArchiveReviewController = {
     input: MissionArchiveVerificationInput,
   ) => Promise<MissionArchiveInfo>
   readonly cancelArchiveVerification: (operationId: string) => Promise<boolean>
+  readonly restoreForCorrection: (input: {
+    readonly admin_name: string
+    readonly reason: string
+  }) => Promise<void>
   readonly openArchive: (input: MissionArchiveReviewOpenInput) => Promise<void>
   readonly closeArchiveReview: () => Promise<void>
   readonly dispose: () => Promise<void>
@@ -281,6 +286,7 @@ export async function startMissionArchiveReviewRuntime(
   let pendingAuditSessionId: string | null = null
   let activeVerificationOperationId: string | null = null
   let verificationTerminal: Promise<MissionArchiveInfo> | null = null
+  const sessionOperationIds = new WeakMap<object, string>()
 
   const apply = (patch: Partial<MissionArchiveReviewRuntimeState>): void => {
     state = { ...state, ...patch }
@@ -564,6 +570,73 @@ export async function startMissionArchiveReviewRuntime(
     }
   }
 
+  /** Restores the authenticated archive snapshot into a new live correction epoch. */
+  const restoreForCorrection = async (input: {
+    readonly admin_name: string
+    readonly reason: string
+  }): Promise<void> => {
+    if (disposed || disposing) throw new Error('Archive review runtime is closed.')
+    const session = state.activeSession
+    const operationId = session === null ? null : sessionOperationIds.get(session) ?? null
+    if (session === null || operationId === null) {
+      throw new Error('Restore for correction requires an open verified archive session.')
+    }
+    if (typeof dependencies.missionStore.restoreMissionForCorrection !== 'function') {
+      throw new Error('Restore for correction is unavailable in this runtime.')
+    }
+    if (typeof input?.admin_name !== 'string' || input.admin_name.trim() === ''
+      || typeof input?.reason !== 'string' || input.reason.trim() === '') {
+      throw new Error('Correction authority and reason are required.')
+    }
+    apply({ phase: 'closing', error: null, progress: null })
+    try {
+      await dependencies.missionStore.restoreMissionForCorrection({
+        missionId: session.missionId,
+        archiveId: session.archiveId,
+        operationId,
+        sessionId: session.sessionId,
+        admin_name: input.admin_name.trim(),
+        reason: input.reason.trim(),
+      })
+      // Electron closes the session while taking its correction snapshot; the
+      // browser harness may still own it, so both paths are intentionally
+      // idempotent here.
+      await dependencies.archiveReview.close({ sessionId: session.sessionId }).catch(() => false)
+      apply({
+        activeSession: null,
+        activeOperationId: null,
+        activeArchiveId: null,
+        recoveryRequired: 'live_source_resume',
+      })
+      await dependencies.switchMissionReviewSource({ source: 'live' })
+      await refreshTimeline()
+      apply({
+        phase: 'idle',
+        activeSession: null,
+        activeOperationId: null,
+        activeArchiveId: null,
+        progress: null,
+        recoveryRequired: 'none',
+        error: null,
+      })
+    } catch {
+      apply({
+        phase: 'error',
+        activeSession: null,
+        activeOperationId: null,
+        activeArchiveId: session.archiveId,
+        recoveryRequired: 'live_source_resume',
+        error: 'Archive correction restore failed safely. Live Mission Review may need to be resumed.',
+      })
+      try {
+        await dependencies.switchMissionReviewSource({ source: 'live' })
+      } catch {
+        // The explicit recovery state remains visible for the operator.
+      }
+      throw new Error('Archive correction restore failed safely.')
+    }
+  }
+
   const openArchive = async (input: MissionArchiveReviewOpenInput): Promise<void> => {
     if (disposed || state.activeOperationId !== null || state.activeSession !== null
       || state.recoveryRequired !== 'none'
@@ -656,6 +729,7 @@ export async function startMissionArchiveReviewRuntime(
         }
         throw new Error(SAFE_OPEN_FAILURE)
       }
+      sessionOperationIds.set(validated, operationId)
       if (disposed || generation !== operationGeneration) {
         try {
           const closed = await dependencies.archiveReview.close({ sessionId: validated.sessionId })
@@ -803,6 +877,7 @@ export async function startMissionArchiveReviewRuntime(
     refreshTimeline,
     verifyArchive,
     cancelArchiveVerification,
+    restoreForCorrection,
     openArchive,
     closeArchiveReview,
     dispose,
