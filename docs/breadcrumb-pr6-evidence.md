@@ -6,17 +6,15 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
-> Draft status: the earlier candidate proofs and the three initial exact-head
-> reviews are superseded by red-first archive-lifecycle remediation. The current
-> code head is `6f911998` (worker-isolated durable-ingest fix); documentation is
-> being frozen for the qualification rerun. The deterministic suite is green
-> apart from two suite-contention flakes that passed in isolation, with lint,
-> TypeScript, Node syntax and diff checks green. Exact-head browser, visual,
-> packaged macOS, SIGKILL and Linux workflow proofs remain green from the prior
-> implementation surface. Ubuntu >2 GiB qualification is rerunning on this
-> head; no new qualification JSON or final review/recheck claim exists yet.
-> PR6 remains pre-merge and incomplete until that proof and the required
-> independent exact-head review wave are clean.
+> Current code/qualification candidate: `661305694d43682a6e4aa0e0fafeeb962affc7ea`
+> / tree `0854dfd72b0b1c04c3e6fda0827ca9761060c6f5`. The local serial
+> deterministic gate and focused/static checks are green. Earlier browser,
+> package, physical-kill and Linux workflow evidence is carry-forward from
+> `3885e6f2` and must be rerun or explicitly rebound on this candidate.
+> Ubuntu >2 GiB qualification is pending after the prior exact-head
+> `SQLITE_BUSY` failure; the five code-head reviews and final documentation-head
+> rechecks remain outstanding. PR6 remains pre-merge; Donal retains approval and
+> merge authority.
 
 ## Execution identity
 
@@ -41,8 +39,8 @@ is intermediate. Donal retains approval and merge authority.
 | Exact qualification-harness remediation head | `53164028f72254c4e17fcc0b4b845f7601fee153` / tree `5c347d30691f291164dc65ed25c2bc437f906e55` |
 | Previous archive-lifecycle remediation head (superseded) | `f220f59650ba96231f06a4f45015791223934300` / tree `9b5bf3a24da9a4ba6e98e8ee3e21d7ba236e6538` |
 | Previous archive-lifecycle remediation head | `bd14adb5c4f41797c975089bb3d52dc22da95d1a` / tree `41225f06694b53e0230e446eaf5881f82c699d69` |
-| Current qualification-harness remediation head | `6f911998` / tree recorded after documentation freeze |
-| Immutable final documentation/review head | Recorded after documentation freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; no later repository mutation is permitted without re-review |
+| Current code/qualification head | `661305694d43682a6e4aa0e0fafeeb962affc7ea` / tree `0854dfd72b0b1c04c3e6fda0827ca9761060c6f5` |
+| Immutable final documentation/review head | Recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; no later repository mutation is permitted without re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |
 
 At candidate freeze, a read-only merge-tree check found no conflict with
@@ -284,13 +282,15 @@ must not be presented as exact-final-head proof:
 
 After the Ubuntu field-harness P2, the qualification code/test tree passed the
 red-first qualifier script/library bundle `68/68`, targeted ESLint, TypeScript
-and diff checks, then the full suite at `354` files / `3,361` tests. The focused
-pre-commit tests/static checks bind the exact committed two-file diff; the full
-run occurred while documentation-only finalization edits were present and is
-therefore code/test-tree evidence pending the clean final-head rerun below. A
-fresh focused independent review of exact head `53164028…` was clean with no
-P1/P2. The application implementation subset is blob-identical to the frozen
-implementation candidate as recorded above.
+and diff checks. The preceding f111 code head passed the local serial full
+deterministic gate at `359` files / `3,416` tests, with lint, TypeScript, Node
+syntax and `git diff --check` green. The 3885 head added the queue-time,
+bounded-shutdown and exit-fault red-first qualification checks. The current
+6613 head adds deferred cleanup boundaries, finite retry of transient
+`SQLITE_BUSY*` conflicts and a 500-position default page, with a six-second
+concurrent-WAL-writer regression. Its full local serial result is recorded in
+the candidate section below. Every final claim is re-bound after the
+documentation commit.
 
 | Physical-process gate | Result |
 | --- | --- |
@@ -636,38 +636,108 @@ pushed head revalidated repository identity, source/derived/qualifier hashes,
 distinct inodes, absent sidecars, available RAM/disk and host load before the
 unchanged production command was relaunched. The failed attempt is not proof.
 
-## Frozen-head proof wave (2026-09-01)
+The subsequent exact `646ce768…` attempt completed the 4.16 GB copy, produced a
+`5,243,848,930`-byte streamed archive and entered independent verification, but
+the qualification-only durable-ingest worker exhausted its finite SQLite-busy
+retry while lifecycle cleanup was active. It failed closed with
+`SQLITE_BUSY`; no qualification JSON was emitted and the disposable profile was
+swept. Its bounded receipt recorded `121,865` queued writes, `121,808`
+acknowledged, `57` rejected, `62` busy retries, and a maximum durable latency of
+`18,199.53 ms`; archive verification had completed and cleanup teardown was
+incomplete. The receipt is diagnostic evidence, not qualification proof. The
+new red-first regression holds a writer lock for six seconds and proves that a
+cleanup boundary retries safely; the implementation now uses deferred
+read-then-write pages, finite `SQLITE_BUSY*` boundary retries and 500-position
+pages. The focused bundle is green on `66130569…`; the controlled >2 GiB rerun
+is still pending.
 
-The previous code head `bd14adb5c4f41797c975089bb3d52dc22da95d1a` is superseded
-for qualification by `6f911998`, which isolates the qualification durable
-ingest lane in a worker while keeping current publication and the main heartbeat
-hard-gated at 200 ms. The prior application-surface proof remains carry-forward
-evidence pending exact-head rechecks. Local targeted qualification tests are
-green (`17` script tests plus `69` qualification tests); the broader suite had
-two timing/contention failures that both passed in isolation. ESLint,
-TypeScript, Node syntax and `git diff --check` are green. Exact-head browser
-proof is green at
-Chromium `172/172`; visual Playwright is `62/62`; uncached visual review is
-`74 pass / 0 fail / 0 error` (`failOn=high`), report
-`test-results/visual-verification/reports/visual-review-2026-08-31T17-19-45Z.json`,
-SHA-256 `77e6b7580c2c5f10a836669c2869df06ecff0f5cfcb6e020658d6332ad48bd07`.
+## Candidate proof wave (2026-09-02)
 
-The exact-head unsigned macOS arm64 packaged lifecycle smoke passed with source
-clean before/after, full packaged build-head binding, archive Review/Replay,
-interrupted-restore startup sweep, credential-gated cleanup and zero plaintext
-or secret residue. Report:
-`tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-report.json`,
-SHA-256 `28341369dcb4817cd4cd195498127cb1c1220326a5ea285192b8bf4a8a7bdf4e`.
-The exact-head physical SIGKILL matrix is qualified `32/32`; report
-`/tmp/sartracker-pr6-kill-matrix-bd14adb5-clean.json`, SHA-256
-`2ccc75df733637da41c71345e83fb095599818eff38be3dc2fe959713fa659a2`.
+The current code head is `661305694d43682a6e4aa0e0fafeeb962affc7ea` / tree
+`0854dfd72b0b1c04c3e6fda0827ca9761060c6f5`. It includes the qualification-only
+durable-ingest worker, worker-exit safe shutdown, crypto buffer cleanup, the
+correction-predecessor reconciliation/pinning/single-flight fixes, the
+red-first liveness-lane remediation, and the cleanup/live-ingest contention
+fix. The qualifier measures a pure
+main-event-loop heartbeat and in-memory current-position publication separately
+from worker-thread durable ingest, records durable latency/contention, verifies
+the latest-position projection after settlement, and enforces a bounded
+120-second durable settlement deadline. The 200 ms heartbeat/current gates,
+full-sync pragmas, zero-loss requirements and current-position priority are
+unchanged. The local archive/lifecycle/qualification regression bundle is
+`71/71`; the exact local serial deterministic gate is `359/3,431` tests.
+ESLint, TypeScript, Node syntax and `git diff --check` are green.
 
-GitHub Electron Linux workflow run `33417666005` passed every step against the
-previous exact application head, including deterministic tests, native SQLite,
-960k replay, tracking soak, packaged archive lifecycle and AppImage launch/close.
-The Ubuntu >2 GiB qualifier is now being rerun against `6f911998` after the
-worker-lane correction; no new qualification JSON or Ubuntu migration,
-completeness, cleanup or final-report claim exists yet.
+The prior local browser and visual gates are bound to 3885, not this candidate:
+Chromium `172/172`, visual Playwright `62/62`, and uncached visual review
+`74 pass / 0 fail / 0 error` (report SHA-256
+`9ef14c76e60dd68c626d2a9d5ed8785c1927503434868889367de092371e8581`). They
+remain carry-forward only until exact candidate and final documentation-head
+reruns; they are not production or field proof.
+
+The exact-head unsigned macOS arm64 package/lifecycle smoke was rerun from a
+clean 3885 checkout. It passed source clean before/after, full packaged
+build-head binding, Archive Review/Replay, interrupted-restore startup sweep,
+credential-gated cleanup and zero plaintext or secret residue. The report binds
+head `3885e6f24159a4aef18fad3f1172bea76db26c03` / tree
+`85c773fba7751c836d5565474260cc529eb8b9d4`; its SHA-256 is
+`5a9d22a5c4d20b05efe1fc61f3df2bfa5f358d484bf1d1ba2dd7c8e5464b0200`.
+The smoke seeded `4,096` tracks, `202` replay objects and `101` outing choices,
+verified both pre/post-cleanup Replay parity, denied a mutation with durable
+audit, swept a decrypt-phase SIGKILL restore residual on restart, and ended
+with zero exact-secret matches and zero plaintext residue. This is unsigned
+package proof, not release or publication.
+
+The real 32-case physical SIGKILL matrix also passed on the clean 3885 checkout:
+verdict `qualified`, all `32` cases, protocol self-test `false`, source clean
+and stable at the same head/tree. Report SHA-256 is
+`f9698e24c194fc1637e79072237e0b6ca3182129c194f0df21a8119a82bae460`.
+
+The prior GitHub Electron Linux workflow run
+[`33509882673`](https://github.com/donal0c/sartracker-web/actions/runs/33509882673)
+passed every gate against the preceding a913 code head: `359/3,416` deterministic
+tests, production build/budgets, Linux packages/native SQLite, 960k Replay,
+Mesa llvmpipe attestation, tracking soak, packaged archive lifecycle and
+AppImage launch/close. The source binding records head
+`a9134e3b3643060caacd357f3ef8405040bb989f`, tree
+`931181203ea1b41c4330b7b9a0317c67ee7eaa1a` and `dirty=false`; its SHA-256 is
+`4b0aa72d32f81f509da35e4af43d1d3fa26e7967cde1dd9f24f01bd96acbf792`.
+Downloaded exact reports are `bcp-960k.json` SHA-256
+`c5c541ad9a7e6b0e236a7c00a5746d92c8f2841db5b2b998c8166297cc7b6129`, tracking
+soak SHA-256 `e3d0f3e9cc75a71bf84ba935564b0cf1cf51ed75002316a5531e437bd04af1b3`,
+packaged lifecycle SHA-256
+`750576337c5ebd8b80201aba91cd3fd04261a3d7d0d5dce48f7a36cd5a8e3270`, and
+`SHA256SUMS` SHA-256
+`b0b0568d7a33c1b3c04ddd228a9978d5b654de48341128f0e735160db6a426d0`.
+The normal-envelope fixture contained 960,000 positions; replay seek was
+`232.54 ms`, late-page seek `159.78 ms`, and the packaged tracking soak stored
+exactly `8,664/8,664` positions with SQLite integrity `ok`. The AppImage is
+`153,090,019` bytes (`2ef57f20129894762ca4a2a2d377e941b11a4cfc9b3dbb81dbd19c9c8e33517d`)
+and the `.deb` is `102,919,648` bytes
+(`ecc09db98a6496cc330460a72a76cb1ff037c65738f66eb6366d8e3c1143e55e`). The
+packaged lifecycle independently verified `4,096` tracks, `202` objects,
+`101` outing choices, credential-gated cleanup of `5,517` rows to zero live
+breadcrumbs, zero secret matches across 65 files and zero terminal plaintext
+residue. This is CI/package proof, not release or publication.
+
+The current code-head GitHub Electron Linux workflow
+[`33552060716`](https://github.com/donal0c/sartracker-web/actions/runs/33552060716)
+also passed every step against `3885e6f24159a4aef18fad3f1172bea76db26c03` /
+tree `85c773fba7751c836d5565474260cc529eb8b9d4`, with clean source binding.
+The normal-envelope Replay fixture contained `960,000` positions; its total
+track count was `1,012,851`, first-page seek `207.34 ms`, late-page seek
+`166.95 ms`, and the 200 ms event-loop gate passed at `59.47 ms`. The packaged
+tracking soak stored exactly `8,664/8,664` positions with SQLite integrity
+`ok`; the packaged archive lifecycle independently verified `4,096` tracks,
+`202` objects, `101` outing choices, cleanup of `5,517` rows, decrypt-phase
+SIGKILL restart sweep and zero terminal plaintext residue. The exact downloaded
+report hashes are source binding `7e08367ff2e5186220ae2c3daef9248efce21f9d4b94aa457ef2c0292e4a7113`,
+`SHA256SUMS` `8058c1df75ddd96bc73545729bef23ce71e830f02cb5747e2acfea648172d8f7`,
+normal-envelope `66bb5905ea1ef81fc85771ad695107cda7342157bdf615aca4408d32b2cf2ee5`,
+tracking soak `bac7067dd8aff03d668ac18e49fb97acdf7fe4e6a11bdb9f81f212fda78f7c0a`,
+and packaged lifecycle `a64281ce06e0255a3976543ed3ffda13a5af24b1d59340762a4a9f22de458229`.
+This is exact code-head CI/package evidence; a final docs-only descendant still
+requires its own workflow binding.
 
 ## Independent review gate
 
@@ -691,6 +761,13 @@ affected review procedure again.
 
 No task agent self-approves. Every finding is centrally source-retraced. P1/P2
 blocks completion. Tests or CI cannot overrule a confirmed finding.
+
+The sustained-contention remediation received a focused independent persistence
+audit on exact code head `a9134e3b…` / tree `93118120…`: CLEAN, with no P1/P2/P3.
+The auditor confirmed worker-local retry isolation, transaction rollback before
+retry, main-thread publication ordering and exact durable-write draining. This
+is remediation evidence only; the full five-charter ledger is still required
+on the final documentation head.
 
 ## Evidence tiers and deferred work
 

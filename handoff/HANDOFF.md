@@ -4,21 +4,26 @@
 
 ## Current State
 
-- **PR6 qualification-harness remediation is pushed at `6f911998` (2026-09-01):**
-  the current-position probe now publishes in memory and sends durable ingest to
-  a qualification-only worker connection; the 200 ms current/heartbeat gate is
-  unchanged. Targeted qualification tests are green (`17` script, `69` lib),
-  and lint/TypeScript/Node/diff checks are green. Ubuntu >2 GiB qualification
-  is rerunning against this exact head; no final qualification JSON or review-
-  ready claim exists yet. Prior browser/visual/package/SIGKILL/Linux evidence
-  remains carry-forward pending exact-head proof.
+- **PR6 implementation candidate is `661305694d43682a6e4aa0e0fafeeb962affc7ea` /
+  tree `0854dfd72b0b1c04c3e6fda0827ca9761060c6f5` (2026-09-02):** the
+  qualification-only durable-ingest worker, worker-exit shutdown handling,
+  crypto cleanup, correction-predecessor reconciliation/pinning fixes, red-first
+  liveness remediation and cleanup/live-ingest contention fix are pushed. The
+  cleanup fix uses deferred read-then-write boundaries, finite transient
+  `SQLITE_BUSY*` retries and 500-position pages; the 200 ms heartbeat/current
+  gate is unchanged. Exact local deterministic proof is `359/359` files and
+  `3,431/3,431` tests; focused archive/lifecycle/qualification checks are
+  `71/71`, with lint, TypeScript, Node syntax and diff checks green. Earlier
+  browser/visual/package/kill/Linux evidence remains carry-forward from 3885;
+  Ubuntu >2 GiB qualification and the final exact-head review/recheck wave are
+  still pending.
 
-- **Frozen-head proof snapshot (prior implementation surface):** exact-head Chromium `172/172`, visual
-  Playwright `62/62`, uncached visual review `74 pass / 0 fail / 0 error`,
-  packaged macOS archive lifecycle smoke passed, and the physical SIGKILL
-  matrix is `32/32` qualified. Linux workflow rerun `33417666005` is green;
-  the Ubuntu >2 GiB field-scale qualifier is being rerun after the worker-lane
-  correction. The diagnostics and local proof report hashes are recorded in
+- **Carry-forward proof snapshot:** exact-head Chromium `172/172`, visual
+  Playwright `62/62`, uncached visual review `74 pass / 0 fail / 0 error`, Linux
+  workflow `33552060716`, unsigned macOS lifecycle and physical SIGKILL `32/32`
+  are green on 3885. They are not exact-candidate proof until rerun or
+  explicitly rebound on 6613 and then rechecked on the final documentation
+  head. The diagnostic receipt and all evidence-tier limits are recorded in
   `docs/breadcrumb-pr6-evidence.md`.
 
 - **WAR-04B release-integrity audit is review-ready in [PR #9](https://github.com/donal0c/sartracker-web/pull/9) after current-`master` reconciliation (2026-08-30):** the exact-base investigation at `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf` confirms two release blockers: shipped Electron `40.10.0` is EOL, and `electron-builder@26.0.12 -> app-builder-lib@26.0.12` generates an affected AppImage launcher. The production-only npm audit is clean but omits those release-bearing dev dependencies. Live GitHub also has no enforced master/tag review/check boundary, enforced release immutability, attestation/SBOM, or enabled secret/Dependabot/CodeQL visibility. The repository and beta are public; “internal” is intended-use policy, not access control. PR #8's merge at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` added the WAR-04 evidence/docs/tests and shared-record reconciliation but left every audited package, lock, builder, release-workflow, publisher and support-policy input blob-identical, so it does not change the WAR-04B findings or supply release proof. No dependency, workflow, release, package/config, product, or GitHub-setting change was made. Follow `docs/assurance/findings/WAR-04B.md` for controlled remediation and the mandatory exact merged breadcrumb programme PR-6 refresh; exact-head review/recheck evidence is retained on PR #9. `better-sqlite3` PR #1475 shipped in `12.10.1`, so `DON-146` is no longer upstream-blocked.
