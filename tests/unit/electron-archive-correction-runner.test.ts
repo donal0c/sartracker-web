@@ -99,4 +99,39 @@ describe('archive correction worker runner', () => {
     worker.emit('exit', 1)
     await expect(operation).resolves.toMatchObject({ archiveId: '11111111-1111-4111-8111-111111111111' })
   })
+
+  it('gives a cooperative correction worker time to sweep staged custody before termination', async () => {
+    vi.useFakeTimers()
+    try {
+      const worker = new EventEmitter() as EventEmitter & {
+        postMessage: (message: unknown) => void
+        terminate: ReturnType<typeof vi.fn>
+      }
+      worker.postMessage = vi.fn()
+      worker.terminate = vi.fn(async () => 1)
+      const controller = new AbortController()
+      const operation = startArchiveCorrectionWorker({
+        databasePath: '/tmp/mission-store.sqlite',
+        snapshotPath: '/tmp/correction.sqlite',
+        missionId: 'mission-1',
+        archiveId: '11111111-1111-4111-8111-111111111111',
+        finalizedEpoch: 1,
+        adminName: 'Duty Admin',
+        reason: 'Correction',
+        attachmentDirectory: '/tmp/attachments',
+        attachmentMappings: [],
+        signal: controller.signal,
+        createWorker: () => worker,
+      })
+      const rejection = expect(operation).rejects.toMatchObject({ code: 'ARCHIVE_CANCELLED' })
+      controller.abort()
+      expect(worker.terminate).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(worker.terminate).toHaveBeenCalledOnce()
+      worker.emit('exit', 1)
+      await rejection
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

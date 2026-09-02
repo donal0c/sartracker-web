@@ -31,6 +31,14 @@ async function hashAttachment(filePath) {
 async function restoreAttachmentCustody() {
   const mappings = workerData.attachmentMappings
   if (!Array.isArray(mappings) || mappings.length === 0) return { created: [], references: new Map() }
+  const cancellationFlag = new Int32Array(workerData.cancellationBuffer)
+  const throwIfCancelled = () => {
+    if (Atomics.load(cancellationFlag, 0) !== 0) {
+      const error = new Error('Archive correction restore was cancelled.')
+      error.code = 'ARCHIVE_CANCELLED'
+      throw error
+    }
+  }
   if (!/^[A-Za-z0-9_-]{1,200}$/u.test(workerData.missionId)) {
     const error = new Error('Archive correction mission attachment identity is invalid.')
     error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
@@ -43,6 +51,7 @@ async function restoreAttachmentCustody() {
   const references = new Map()
   try {
     for (const mapping of mappings) {
+      throwIfCancelled()
       if (mapping === null || typeof mapping !== 'object' || Array.isArray(mapping)
         || typeof mapping.entryName !== 'string'
         || mapping.entryName.startsWith('attachments/') !== true
@@ -98,13 +107,16 @@ async function restoreAttachmentCustody() {
         const temporaryPath = path.join(targetRoot, `.${mapping.sourceRelativePath}.restore-${cryptoRandomUUID()}`)
         try {
           await fs.copyFile(sourcePath, temporaryPath)
+          throwIfCancelled()
           await fs.chmod(temporaryPath, 0o600)
+          throwIfCancelled()
           await fs.rename(temporaryPath, targetPath)
         } finally {
           await fs.rm(temporaryPath, { force: true }).catch(() => undefined)
         }
         created.push(targetPath)
       }
+      throwIfCancelled()
       for (const reference of mapping.references) {
         if (reference === null || typeof reference !== 'object'
           || typeof reference.referenceId !== 'string'

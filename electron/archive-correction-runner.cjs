@@ -4,6 +4,7 @@ const path = require('node:path')
 const { Worker } = require('node:worker_threads')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'archive-correction-worker.cjs')
+const CANCEL_GRACE_MS = 2_000
 const FAILURE_CODES = new Set([
   'ARCHIVE_CANCELLED',
   'ARCHIVE_REHYDRATE_EPOCH_CHANGED',
@@ -28,6 +29,7 @@ function startArchiveCorrectionWorker(input) {
   let settled = false
   let terminal = null
   let cancelOperation = () => undefined
+  let terminationTimer = null
 
   const completion = new Promise((resolve, reject) => {
     try {
@@ -55,8 +57,12 @@ function startArchiveCorrectionWorker(input) {
       }
       Atomics.store(cancellationFlag, 0, 1)
       try { worker.postMessage({ type: 'cancel' }) } catch {}
-      try { void Promise.resolve(worker.terminate()).catch(() => undefined) } catch {}
       rejectOnce(createFailure('ARCHIVE_CANCELLED'))
+      if (terminationTimer === null) {
+        terminationTimer = setTimeout(() => {
+          try { void Promise.resolve(worker.terminate()).catch(() => undefined) } catch {}
+        }, CANCEL_GRACE_MS)
+      }
     }
     cancelOperation = cancel
     if (request.signal !== undefined) {
@@ -85,6 +91,7 @@ function startArchiveCorrectionWorker(input) {
       if (terminal === null) rejectOnce(createFailure('ARCHIVE_REHYDRATE_FAILED'))
     })
     worker.once('exit', (code) => {
+      if (terminationTimer !== null) clearTimeout(terminationTimer)
       request.signal?.removeEventListener('abort', cancel)
       workerExited.resolve()
       if (settled) return
