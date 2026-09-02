@@ -9,6 +9,7 @@ const {
 } = require('./archive-inventory.cjs')
 
 const CLEANUP_PROGRESS_VERSION = 1
+const CLEANUP_BUSY_RETRY_LIMIT = 240
 const RETAINED_MISSION_TABLES = new Set(['mission_events', 'missions'])
 const CLEANUP_OPERATIONAL_TABLES = new Set([
   'gpx_import_source_receipts',
@@ -214,14 +215,26 @@ function createArchiveCleanupCoordinator(options) {
   /** Advances one transaction-sized cursor at a time and yields after every boundary. */
   async function runFromJournal(evidence, executionOptions) {
     let committedDeletionBatches = 0
+    let busyRetries = 0
     try {
       while (true) {
         assertNotCancelled(executionOptions.signal)
-        const outcome = advanceOneBoundary(
-          evidence,
-          executionOptions.faultInjection,
-          executionOptions,
-        )
+        let outcome
+        try {
+          outcome = advanceOneBoundary(
+            evidence,
+            executionOptions.faultInjection,
+            executionOptions,
+          )
+          busyRetries = 0
+        } catch (error) {
+          if (!isRetryableSqliteBusy(error) || busyRetries >= CLEANUP_BUSY_RETRY_LIMIT) {
+            throw error
+          }
+          busyRetries += 1
+          await yieldToMain()
+          continue
+        }
         if (outcome.completed) return outcome.result
         if (outcome.deletedRows > 0) {
           committedDeletionBatches += 1
@@ -387,7 +400,7 @@ function createArchiveCleanupCoordinator(options) {
       return outcome
     })
     return commitWithCustody(executionOptions, (assertCustodyUnchanged) =>
-      advance.immediate(assertCustodyUnchanged))
+      advance.deferred(assertCustodyUnchanged))
   }
 
   /** Retains the forward cursor and records only a stable bounded failure code. */
@@ -469,7 +482,7 @@ function commitWithCustody(executionOptions, commit) {
 
 /** Normalizes the two bounded row-page sizes. */
 function normalizeBatchLimits(input = {}) {
-  const positions = input.positions ?? 5_000
+  const positions = input.positions ?? 500
   const fallback = input.default ?? 50
   if (!Number.isSafeInteger(positions) || positions < 1 || positions > 5_000
     || !Number.isSafeInteger(fallback) || fallback < 1 || fallback > 500) {
@@ -849,6 +862,11 @@ function assertNotCancelled(signal) {
     'ARCHIVE_CLEANUP_CANCELLED',
     'Mission cleanup was cancelled after its last durable batch.',
   )
+}
+
+/** Identifies transient SQLite writer contention that is safe to retry at a boundary. */
+function isRetryableSqliteBusy(error) {
+  return typeof error?.code === 'string' && error.code.startsWith('SQLITE_BUSY')
 }
 
 /** Produces one frozen, deduplicated eligibility result. */

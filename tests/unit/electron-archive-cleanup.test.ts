@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { Worker } from 'node:worker_threads'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -37,7 +38,10 @@ type BetterSqliteDatabase = {
     readonly all: (...parameters: readonly unknown[]) => readonly Record<string, unknown>[]
     readonly run: (...parameters: readonly unknown[]) => { readonly changes: number }
   }
-  readonly transaction: <T>(callback: () => T) => (() => T) & { readonly immediate: () => T }
+  readonly transaction: <T>(callback: () => T) => (() => T) & {
+    readonly deferred: () => T
+    readonly immediate: () => T
+  }
 }
 
 type CleanupEvidence = {
@@ -319,6 +323,59 @@ async function createFixture(input: {
 }
 
 describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
+  it('retries a cleanup boundary after a concurrent WAL writer without failing the live lane', async () => {
+    const fixture = await createFixture({
+      yieldToMain: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+      },
+    })
+    let lockWorker: Worker | null = null
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: { simulateKillAfterCommittedBatch: 1 },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+
+      lockWorker = new Worker(`
+        const Database = require('better-sqlite3')
+        const { parentPort, workerData } = require('node:worker_threads')
+        const db = new Database(workerData.databasePath)
+        db.pragma('journal_mode = WAL')
+        const hold = db.transaction(() => {
+          db.prepare('UPDATE missions SET status = status WHERE id = ?')
+            .run(workerData.missionId)
+          parentPort.postMessage('locked')
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 6_000)
+        })
+        try {
+          hold.immediate()
+          parentPort.postMessage('done')
+        } finally {
+          db.close()
+        }
+      `, {
+        eval: true,
+        workerData: {
+          databasePath: path.join(fixture.directory, 'mission-store.sqlite'),
+          missionId: fixture.missionId,
+        },
+      })
+      await new Promise<void>((resolve, reject) => {
+        lockWorker?.once('message', (message) => {
+          if (message === 'locked') resolve()
+        })
+        lockWorker?.once('error', reject)
+      })
+
+      await expect(fixture.coordinator.resume(fixture.evidence)).resolves.toMatchObject({
+        state: 'completed',
+        storageState: 'archived',
+      })
+    } finally {
+      await lockWorker?.terminate()
+      fixture.db.close()
+    }
+  }, 15_000)
+
   it('stops before the next delete when a mutable database precondition changes during a yield', async () => {
     const attacks = [
       (db: BetterSqliteDatabase, missionId: string) => {
