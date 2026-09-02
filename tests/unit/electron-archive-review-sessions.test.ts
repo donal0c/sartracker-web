@@ -244,9 +244,13 @@ async function createHarness(input: {
   readonly startRestore?: (
     input: Readonly<Record<string, unknown>>,
   ) => RestoreOperation
+  readonly startRestoreFactory?: (
+    reviewRoot: string,
+  ) => (input: Readonly<Record<string, unknown>>) => RestoreOperation
   readonly restoreLegacy?: (
     input: Readonly<Record<string, unknown>>,
   ) => Promise<Readonly<Record<string, unknown>>>
+  readonly startReviewSweep?: (input: Readonly<Record<string, unknown>>) => Promise<unknown>
   readonly removeSessionDirectory?: (sessionDirectory: string) => Promise<void>
   readonly useDefaultRemoveSessionDirectory?: boolean
   readonly createSource?: (
@@ -301,7 +305,9 @@ async function createHarness(input: {
     })()
     return decorateRestoreOperation(completion)
   }
-  const startRestore = vi.fn(input.startRestore ?? defaultStartRestore)
+  const startRestore = vi.fn(
+    input.startRestoreFactory?.(reviewRoot) ?? input.startRestore ?? defaultStartRestore,
+  )
   const restoreLegacy = vi.fn(input.restoreLegacy ?? (async (restoreInput) => {
     const request = restoreInput.request as Readonly<Record<string, unknown>>
     const sessionDirectory = request.sessionDirectory as string
@@ -340,6 +346,7 @@ async function createHarness(input: {
     registry,
     startRestore,
     restoreLegacy,
+    ...(input.startReviewSweep === undefined ? {} : { startReviewSweep: input.startReviewSweep }),
     createSource,
     ...(input.openRestoredAttachment === undefined
       ? {}
@@ -366,6 +373,8 @@ async function createHarness(input: {
     sourceClose,
     removeSessionDirectory,
     setTicket: (next: Readonly<Record<string, unknown>>) => { ticket = next },
+    sessionId: SESSION_ID,
+    archiveId: ARCHIVE_ID,
   }
 }
 
@@ -721,6 +730,50 @@ describe('archive review session manager', () => {
     expect(sourceClose).toHaveBeenCalledOnce()
     expect(removeSessionDirectory).toHaveBeenCalledOnce()
     expect(harness.registry.recordReviewClosed).toHaveBeenCalledOnce()
+    expect(await readdir(harness.reviewRoot)).toEqual([])
+  })
+
+  it('retains correction staging ownership when its sweep fails, then retries the exact staging tree', async () => {
+    const startReviewSweep = vi.fn()
+      .mockImplementationOnce(async () => { throw new Error('staging sweep unavailable') })
+      .mockImplementation(async ({ quarantineDirectory }: { quarantineDirectory: string }) => {
+        await rm(quarantineDirectory, { recursive: true, force: true })
+      })
+    const harness = await createHarness({
+      startReviewSweep,
+      startRestoreFactory: (reviewRoot) => async (restoreInput) => {
+        const request = restoreInput.request as Readonly<Record<string, unknown>>
+        const sessionDirectory = path.join(reviewRoot, request.sessionId as string)
+        const databasePath = path.join(sessionDirectory, 'mission-store.sqlite')
+        await mkdir(sessionDirectory, { recursive: false, mode: 0o700 })
+        await writeFile(databasePath, 'RESTORED-PLAINTEXT', { mode: 0o600 })
+        const identity = await stat(databasePath)
+        return internalRestoreResult(reviewRoot, {
+          sessionDirectory,
+          databasePath,
+          databaseIdentity: { dev: identity.dev, ino: identity.ino, sizeBytes: identity.size },
+        })
+      },
+    })
+    await openSession(harness)
+    const snapshot = await harness.manager.snapshotForCorrection({
+      senderId: SENDER_ID,
+      sessionId: SESSION_ID,
+      operationId: OPERATION_ID,
+      archiveId: ARCHIVE_ID,
+    })
+    expect(snapshot.snapshotPath).toContain('.sweep-')
+    await expect(harness.manager.completeCorrectionSnapshot({
+      senderId: SENDER_ID,
+      sessionId: SESSION_ID,
+      operationId: OPERATION_ID,
+      archiveId: ARCHIVE_ID,
+    })).rejects.toThrow(/cleanup|sweep/iu)
+    expect(await harness.manager.hasReviewActivity()).toBe(true)
+    await expect(harness.manager.close({
+      senderId: SENDER_ID,
+      sessionId: SESSION_ID,
+    })).resolves.toBeUndefined()
     expect(await readdir(harness.reviewRoot)).toEqual([])
   })
 

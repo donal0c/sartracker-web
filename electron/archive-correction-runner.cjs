@@ -8,6 +8,8 @@ const FAILURE_CODES = new Set([
   'ARCHIVE_CANCELLED',
   'ARCHIVE_REHYDRATE_EPOCH_CHANGED',
   'ARCHIVE_REHYDRATE_FAILED',
+  'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID',
+  'ARCHIVE_REHYDRATE_LIVE_ACTIVITY',
   'ARCHIVE_REHYDRATE_LIVE_ROWS_PRESENT',
   'ARCHIVE_REHYDRATE_REQUEST_INVALID',
   'ARCHIVE_REHYDRATE_SCHEMA_INVALID',
@@ -47,6 +49,10 @@ function startArchiveCorrectionWorker(input) {
       reject(error)
     }
     const cancel = () => {
+      if (terminal !== null) {
+        try { void Promise.resolve(worker.terminate()).catch(() => undefined) } catch {}
+        return
+      }
       Atomics.store(cancellationFlag, 0, 1)
       try { worker.postMessage({ type: 'cancel' }) } catch {}
       try { void Promise.resolve(worker.terminate()).catch(() => undefined) } catch {}
@@ -57,7 +63,7 @@ function startArchiveCorrectionWorker(input) {
       request.signal.addEventListener('abort', cancel, { once: true })
     }
     worker.on('message', (message) => {
-      if (settled) return
+      if (settled || terminal !== null) return
       if (message?.type === 'complete') {
         if (terminal !== null || !isComplete(message, request)) {
           rejectOnce(createFailure('ARCHIVE_REHYDRATE_FAILED'))
@@ -75,13 +81,15 @@ function startArchiveCorrectionWorker(input) {
       }
       rejectOnce(createFailure('ARCHIVE_REHYDRATE_FAILED'))
     })
-    worker.once('error', () => rejectOnce(createFailure('ARCHIVE_REHYDRATE_FAILED')))
+    worker.once('error', () => {
+      if (terminal === null) rejectOnce(createFailure('ARCHIVE_REHYDRATE_FAILED'))
+    })
     worker.once('exit', (code) => {
       request.signal?.removeEventListener('abort', cancel)
       workerExited.resolve()
       if (settled) return
       settled = true
-      if (code === 0 && terminal !== null) resolve(terminal)
+      if (terminal !== null) resolve(terminal)
       else reject(createFailure('ARCHIVE_REHYDRATE_FAILED'))
     })
     if (request.signal?.aborted === true) cancel()
@@ -97,7 +105,8 @@ function normalizeRequest(input) {
     throw createFailure('ARCHIVE_REHYDRATE_REQUEST_INVALID')
   }
   const fields = ['databasePath', 'snapshotPath', 'missionId', 'archiveId',
-    'finalizedEpoch', 'adminName', 'reason', 'faultInjection', 'workerPath', 'signal', 'createWorker']
+    'finalizedEpoch', 'adminName', 'reason', 'attachmentDirectory', 'attachmentMappings',
+    'faultInjection', 'workerPath', 'signal', 'createWorker']
   if (Object.keys(input).some((key) => !fields.includes(key))) {
     throw createFailure('ARCHIVE_REHYDRATE_REQUEST_INVALID')
   }
@@ -110,6 +119,14 @@ function normalizeRequest(input) {
   }
   if (!path.isAbsolute(input.databasePath) || path.resolve(input.databasePath) !== input.databasePath
     || !path.isAbsolute(input.snapshotPath) || path.resolve(input.snapshotPath) !== input.snapshotPath) {
+    throw createFailure('ARCHIVE_REHYDRATE_REQUEST_INVALID')
+  }
+  if (typeof input.attachmentDirectory !== 'string'
+    || !path.isAbsolute(input.attachmentDirectory)
+    || path.resolve(input.attachmentDirectory) !== input.attachmentDirectory
+    || Buffer.byteLength(input.attachmentDirectory, 'utf8') > 8_192
+    || !Array.isArray(input.attachmentMappings)
+    || Buffer.byteLength(JSON.stringify(input.attachmentMappings), 'utf8') > 4 * 1024 * 1024) {
     throw createFailure('ARCHIVE_REHYDRATE_REQUEST_INVALID')
   }
   if (!Number.isSafeInteger(input.finalizedEpoch) || input.finalizedEpoch < 1) {
@@ -139,6 +156,8 @@ function normalizeRequest(input) {
     finalizedEpoch: input.finalizedEpoch,
     adminName: input.adminName,
     reason: input.reason,
+    attachmentDirectory: input.attachmentDirectory,
+    attachmentMappings: Object.freeze(input.attachmentMappings.map((entry) => Object.freeze({ ...entry }))),
     faultInjection: input.faultInjection && typeof input.faultInjection === 'object'
       ? Object.freeze({ ...input.faultInjection })
       : Object.freeze({}),

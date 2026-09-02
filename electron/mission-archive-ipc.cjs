@@ -775,27 +775,36 @@ function registerMissionArchiveIpcHandlers(input) {
         mission_id: missionId,
         archive_id: snapshot.archiveId,
         snapshot_path: snapshot.snapshotPath,
+        attachment_directory: snapshot.attachmentDirectory,
+        attachment_mappings: snapshot.attachmentMappings,
         admin_name: adminName,
         reason,
       })
     } catch (error) {
       operationFailure = error
     }
-    let cleanupFailure = null
-    if (snapshot?.snapshotPath !== undefined) {
+    if (operationFailure !== null) throw operationFailure
+    if (snapshot !== null) {
       try {
-        await removeCorrectionSnapshot(path.dirname(snapshot.snapshotPath))
+        if (typeof input.archiveReviewSessionManager.completeCorrectionSnapshot === 'function') {
+          await input.archiveReviewSessionManager.completeCorrectionSnapshot({
+            senderId,
+            sessionId,
+            operationId,
+            archiveId,
+          })
+        } else {
+          await removeCorrectionSnapshot(path.dirname(snapshot.snapshotPath))
+        }
       } catch (error) {
-        cleanupFailure = error
+        const failure = archiveIpcError(
+          'ARCHIVE_REHYDRATE_CLEANUP_FAILED',
+          'Mission archive correction restore completed with unresolved plaintext cleanup.',
+        )
+        failure.cause = error
+        throw failure
       }
     }
-    if (cleanupFailure !== null) {
-      throw archiveIpcError(
-        'ARCHIVE_REHYDRATE_CLEANUP_FAILED',
-        'Mission archive correction restore completed with unresolved plaintext cleanup.',
-      )
-    }
-    if (operationFailure !== null) throw operationFailure
     return projectUnlockedMissionResult(result, missionId)
   })
 

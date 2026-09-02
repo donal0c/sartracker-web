@@ -280,13 +280,24 @@ function rehydrateMissionFromSnapshot(input) {
 
   database.prepare('ATTACH DATABASE ? AS correction_snapshot').run(snapshotPath)
   try {
-    const declarations = listArchiveInventoryForSchema(schemaVersion)
+    const inventory = listArchiveInventoryForSchema(schemaVersion)
+    const declaredNames = inventory.map((entry) => entry.tableName)
+    const snapshotNames = database.prepare(`SELECT name FROM correction_snapshot.sqlite_master
+      WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all().map((row) => row.name)
+    const declaredSet = new Set(declaredNames)
+    const snapshotSet = new Set(snapshotNames)
+    const missing = declaredNames.find((tableName) => !snapshotSet.has(tableName))
+    const undeclared = snapshotNames.find((tableName) => !declaredSet.has(tableName))
+    if (missing !== undefined || undeclared !== undefined) {
+      throw new ArchiveRehydrateError(
+        'ARCHIVE_REHYDRATE_SCHEMA_INVALID',
+        'Archive correction snapshot inventory does not exactly match the migrated schema.',
+      )
+    }
+    const declarations = inventory
       .filter((entry) => !SKIPPED_TABLES.has(entry.tableName)
         && (entry.decision === 'mission_rows' || entry.decision === 'global_rows'))
       .map((entry) => entry.tableName)
-      .filter((tableName) => database.prepare(
-        `SELECT 1 FROM correction_snapshot.sqlite_master WHERE type = 'table' AND name = ?`,
-      ).get(tableName) !== undefined)
     const ordered = orderTables(database, declarations)
     const transaction = database.transaction(() => {
       const currentMission = database.prepare('SELECT status FROM missions WHERE id = ?')

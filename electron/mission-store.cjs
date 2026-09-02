@@ -483,6 +483,7 @@ function createElectronMissionStore(options) {
   const activeArchiveLifecycles = new Set()
   const activeArchiveLifecyclesByOperationId = new Map()
   const activeArchiveWorkerOperations = new Set()
+  let archiveCorrectionAdmission = null
   const activeLiveReviewReadsByMission = new Map()
   const cleanupReviewBarrierByMission = new Map()
   let breadcrumbQueryTail = Promise.resolve()
@@ -1044,6 +1045,37 @@ function createElectronMissionStore(options) {
       await operation.workerExited
       activeArchiveWorkerOperations.delete(operation)
     }
+  }
+
+  /** Rejects synchronous live writes while a correction worker owns the SQLite writer lane. */
+  const assertArchiveCorrectionWriterIdle = () => {
+    if (archiveCorrectionAdmission !== null) {
+      const error = new Error(
+        'Archive correction restore owns the SQLite writer lane; retry this live update after it completes.',
+      )
+      error.code = 'ARCHIVE_REHYDRATE_LIVE_ACTIVITY'
+      throw error
+    }
+  }
+
+  /** Admits one correction only when no operational mission can contend with its writer turn. */
+  const acquireArchiveCorrectionAdmission = () => {
+    assertArchiveCorrectionWriterIdle()
+    if (getActiveMission(db) !== null) {
+      const error = new Error(
+        'Archive correction restore is deferred while an active or paused mission is operational.',
+      )
+      error.code = 'ARCHIVE_REHYDRATE_LIVE_ACTIVITY'
+      throw error
+    }
+    const admission = Object.freeze({ released: false })
+    archiveCorrectionAdmission = admission
+    return admission
+  }
+
+  /** Releases the exact correction admission after its worker has physically exited. */
+  const releaseArchiveCorrectionAdmission = (admission) => {
+    if (archiveCorrectionAdmission === admission) archiveCorrectionAdmission = null
   }
   let archiveFamilyTail = Promise.resolve()
   // Unlock reconciliation has its own FIFO so an operator authorization can
@@ -1826,6 +1858,7 @@ function createElectronMissionStore(options) {
       return true
     },
     createMission: async (input) => {
+      assertArchiveCorrectionWriterIdle()
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.startMission({ startedAt: mission.start_time }),
@@ -2156,8 +2189,12 @@ function createElectronMissionStore(options) {
       await activeQuery.completion.catch(() => undefined)
       return true
     },
-    upsertDevice: async (input) => upsertDevice(db, input),
+    upsertDevice: async (input) => {
+      assertArchiveCorrectionWriterIdle()
+      return upsertDevice(db, input)
+    },
     upsertDevicesBulk: async (input) => {
+      assertArchiveCorrectionWriterIdle()
       const startedAtMs = performance.now()
       const result = upsertDevicesBulk(db, input)
       await safeStorageDiagnostic(() =>
@@ -2180,6 +2217,7 @@ function createElectronMissionStore(options) {
       () => addPosition(db, input, coverageLedgerFaultInjection),
     ),
     addPositionsBulk: async (input) => {
+      assertArchiveCorrectionWriterIdle()
       const startedAtMs = performance.now()
       const result = await runCoverageMutation(
         input.mission_id,
@@ -2197,6 +2235,7 @@ function createElectronMissionStore(options) {
       return result.positions
     },
     persistTrackingPositionsBulk: async (input) => {
+      assertArchiveCorrectionWriterIdle()
       const startedAtMs = performance.now()
       const hasCheckpoints = Array.isArray(input.checkpoints) && input.checkpoints.length > 0
       const result = await runCoverageMutation(
@@ -2222,6 +2261,7 @@ function createElectronMissionStore(options) {
       }
     },
     persistTrackingHistoryBatch: async (input) => {
+      assertArchiveCorrectionWriterIdle()
       const startedAtMs = performance.now()
       const result = await runCoverageMutation(
         input.mission_id,
@@ -2728,17 +2768,45 @@ function createElectronMissionStore(options) {
       input,
       options.readAdminRoster,
       reconcileFinalizedMissionArchive,
-      (rehydrationInput) => awaitArchiveWorker(archiveCorrectionRunner({
-        databasePath,
-        snapshotPath: rehydrationInput.snapshotPath,
-        missionId: rehydrationInput.missionId,
-        archiveId: rehydrationInput.archiveId,
-        finalizedEpoch: rehydrationInput.finalizedEpoch,
-        adminName: rehydrationInput.adminName,
-        reason: rehydrationInput.reason,
-        faultInjection: archiveCorrectionFaultInjection,
-      })),
+      async (rehydrationInput) => {
+        const admission = acquireArchiveCorrectionAdmission()
+        try {
+          try {
+            return await awaitArchiveWorker(archiveCorrectionRunner({
+              databasePath,
+              snapshotPath: rehydrationInput.snapshotPath,
+              missionId: rehydrationInput.missionId,
+              archiveId: rehydrationInput.archiveId,
+              finalizedEpoch: rehydrationInput.finalizedEpoch,
+              adminName: rehydrationInput.adminName,
+              reason: rehydrationInput.reason,
+              attachmentDirectory: rehydrationInput.attachmentDirectory,
+              attachmentMappings: rehydrationInput.attachmentMappings,
+              faultInjection: archiveCorrectionFaultInjection,
+            }))
+          } catch (error) {
+            if (isCommittedArchiveCorrection(db, rehydrationInput.missionId, rehydrationInput.archiveId)) {
+              return getMission(db, rehydrationInput.missionId)
+            }
+            throw error
+          }
+        } finally {
+          releaseArchiveCorrectionAdmission(admission)
+        }
+      },
     ),
+  }
+
+  /** Reconciles a worker death that occurred after the durable correction transaction committed. */
+  function isCommittedArchiveCorrection(database, missionId, archiveId) {
+    const mission = database.prepare('SELECT status FROM missions WHERE id = ?')
+      .get(missionId)
+    if (mission?.status !== 'finished' || readMissionLiveReviewStorageState(database, missionId) !== 'live') return false
+    const event = database.prepare(`SELECT details_json FROM mission_events
+      WHERE mission_id = ? AND event_type = 'mission_unlocked'
+      ORDER BY rowid DESC LIMIT 1`).get(missionId)
+    const details = readEventDetails(event?.details_json)
+    return details.restored_from_archive_id === archiveId
   }
 
   /** Orders asynchronous attachment custody and Finish for one mission. */
@@ -2942,6 +3010,7 @@ function createElectronMissionStore(options) {
 
   /** Publishes only a sequence that moved in the just-committed mutation. */
   async function runCoverageMutation(missionId, execute) {
+    assertArchiveCorrectionWriterIdle()
     const before = readCoverageChangeSequence(missionId)
     const result = await execute()
     const after = readCoverageChangeSequence(missionId)
@@ -6972,6 +7041,9 @@ async function unlockFinalizedMission(
       missionId,
       archiveId: input.archive_id,
       snapshotPath: input.snapshot_path,
+      attachmentDirectory: input.attachment_directory
+        ?? path.join(path.dirname(input.snapshot_path), 'attachments'),
+      attachmentMappings: input.attachment_mappings ?? [],
       finalizedEpoch,
       adminName,
       reason,
