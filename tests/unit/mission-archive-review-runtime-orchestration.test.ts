@@ -112,6 +112,24 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
     vi.unstubAllGlobals()
   })
 
+  it('serializes retained archive reads so opening Review cannot fan out main-process IPC', async () => {
+    let inFlight = 0
+    let maximumInFlight = 0
+    const listMissionArchives = vi.fn(async (missionId: string) => {
+      inFlight += 1
+      maximumInFlight = Math.max(maximumInFlight, inFlight)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      inFlight -= 1
+      return missionId === MISSION.id ? [VERIFIED_V2] : [LEGACY_V1]
+    })
+    const harness = createHarness({ listMissionArchives })
+
+    await startMissionArchiveReviewRuntime(harness.dependencies)
+
+    expect(maximumInFlight).toBe(1)
+    expect(listMissionArchives).toHaveBeenCalledTimes(2)
+  })
+
   it('loads every saved mission and every indefinitely retained archive without a UI-side cap', async () => {
     const retainedLegacyArchives = Array.from({ length: 64 }, (_, index) => archive({
       id: `retained-legacy-${index + 1}`,

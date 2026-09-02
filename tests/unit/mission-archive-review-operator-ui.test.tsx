@@ -196,6 +196,32 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
     expect(onRequestCleanup).toHaveBeenCalledWith(MISSION_ONE)
   })
 
+  it('keeps an interrupted cleanup visibly resumable from Saved Mission Archives', () => {
+    const interruptedMission: Mission = {
+      ...MISSION_ONE,
+      id: 'mission-cleanup-in-progress',
+      name: 'Interrupted Cleanup Mission',
+      storage_state: 'cleanup_in_progress',
+    }
+    const interruptedArchive = archive({
+      id: 'archive-cleanup-in-progress',
+      mission_id: interruptedMission.id,
+    })
+    const onRequestCleanup = vi.fn()
+    renderControl(createControlProps({
+      onRequestCleanup,
+      timeline: [{ mission: interruptedMission, archives: [interruptedArchive] }],
+    }))
+
+    const resume = query(
+      `[data-testid="archive-cleanup-resume-open-${interruptedMission.id}"]`,
+    )
+    expect(resume).not.toBeNull()
+    expect(query(`[data-testid="archive-cleanup-open-${interruptedMission.id}"]`)).toBeNull()
+    ;(resume as HTMLButtonElement).click()
+    expect(onRequestCleanup).toHaveBeenCalledWith(interruptedMission)
+  })
+
   it('renders the immutable supplemental chain with predecessor hash, reason, authority, and date', () => {
     renderControl(createControlProps())
 

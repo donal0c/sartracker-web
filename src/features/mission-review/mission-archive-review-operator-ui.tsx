@@ -199,18 +199,23 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
               Storage: {entry.mission.storage_state ?? 'unknown - cleanup unavailable'}
             </p>
             {entry.mission.status === 'finalized'
-              && entry.mission.storage_state === 'live'
+              && (entry.mission.storage_state === 'live'
+                || entry.mission.storage_state === 'cleanup_in_progress')
               && entry.archives.some((archive) => (
                 archive.container_version === 2 && archive.status === 'verified'
               )) ? (
                 <button
                   className="mt-3 rounded-lg border border-amber-300/50 bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100"
-                  data-testid={`archive-cleanup-open-${entry.mission.id}`}
+                  data-testid={entry.mission.storage_state === 'cleanup_in_progress'
+                    ? `archive-cleanup-resume-open-${entry.mission.id}`
+                    : `archive-cleanup-open-${entry.mission.id}`}
                   disabled={busy}
                   onClick={() => props.onRequestCleanup(entry.mission)}
                   type="button"
                 >
-                  Archive Live Rows
+                  {entry.mission.storage_state === 'cleanup_in_progress'
+                    ? 'Resume Archive Cleanup'
+                    : 'Archive Live Rows'}
                 </button>
               ) : null}
             <div className="mt-3 space-y-2">

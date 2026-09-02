@@ -142,6 +142,28 @@ describe('MissionControlPanel collapse behavior', () => {
     expect(query('[data-testid="mission-unlock-btn"]')).toBeNull()
   })
 
+  it('keeps an interrupted cleanup visibly resumable from Mission Control', async () => {
+    const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
+    const setShowCleanupDialog = vi.fn()
+    missionControlMock.model = createModel({
+      phase: 'idle',
+      currentMission: null,
+      governanceMission: createMission({
+        id: 'mission-cleanup-in-progress',
+        status: 'finalized',
+        storage_state: 'cleanup_in_progress',
+      }),
+      setShowCleanupDialog,
+    })
+
+    render(React.createElement(MissionControlPanel))
+
+    expect(query('[data-testid="mission-cleanup-resume-btn"]')).not.toBeNull()
+    expect(query('[data-testid="mission-cleanup-btn"]')).toBeNull()
+    click('[data-testid="mission-cleanup-resume-btn"]')
+    expect(setShowCleanupDialog).toHaveBeenCalledWith(true)
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)

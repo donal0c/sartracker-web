@@ -193,6 +193,7 @@ export function MissionArchiveCleanupDialog({
       if (result.missionId !== mission.id || result.archiveId !== archive.id
         || result.state !== 'completed' || result.storageState !== 'archived'
         || !Number.isSafeInteger(result.movedRows) || result.movedRows < 0) {
+        setResumeAvailable(resumeCleanupRef.current !== undefined)
         setFailureMessage('Cleanup returned an invalid terminal result. Review remains blocked.')
         setDialogState('failure')
         return
@@ -228,6 +229,7 @@ export function MissionArchiveCleanupDialog({
       setFailureMessage(cancelled
         ? 'Cleanup was cancelled safely at its last durable restart point. No archive bytes changed.'
         : cleanupFailureMessage(code))
+      setResumeAvailable(resumeCleanupRef.current !== undefined)
       setDialogState('failure')
     }
   }

@@ -13,11 +13,9 @@ const {
 } = require('./archive-container.cjs')
 const {
   generateMissionArchiveKey,
-  normalizeRecoveryCode,
   wrapMissionArchiveKey,
   zeroBuffer,
 } = require('./archive-crypto.cjs')
-const { normalizeArchiveCreateRequest } = require('./archive-envelope.cjs')
 const { readArchiveCustodyFileIdentity } = require('./archive-custody-file.cjs')
 const {
   createArchiveInventoryDocument,
@@ -326,15 +324,24 @@ async function createMissionArchiveFile(input) {
       secret: passphraseBytes,
       headerDigest,
     })
+    // The passphrase is no longer needed once its authenticated slot exists.
+    zeroBuffer(passphraseBytes)
     assertNotCancelled(cancellationFlag)
-    const recoveryCode = normalizeRecoveryCode(recoveryCodeBytes.toString('utf8'))
-    const recoverySlot = await wrapMissionArchiveKey({
-      missionArchiveKey,
-      slotType: 'recovery',
-      slotId: 'recovery-v1',
-      secret: recoveryCode,
-      headerDigest,
-    })
+    let recoveryCode = ''
+    let recoverySlot
+    try {
+      recoveryCode = recoveryCodeBytes.toString('utf8')
+      recoverySlot = await wrapMissionArchiveKey({
+        missionArchiveKey,
+        slotType: 'recovery',
+        slotId: 'recovery-v1',
+        secret: recoveryCode,
+        headerDigest,
+      })
+    } finally {
+      recoveryCode = ''
+      zeroBuffer(recoveryCodeBytes)
+    }
     const kdfDurationMs = performance.now() - kdfStartedAt
     headerDigest.fill(0)
     noncePrefix.fill(0)
@@ -480,11 +487,9 @@ async function runWorker() {
   let credentials
   try {
     credentials = await waitForCredentials(parentPort, workerData.request, cancellationFlag)
-    const request = normalizeArchiveCreateRequest({
-      ...workerData.request,
-      passphrase: credentials.passphraseBytes.toString('utf8'),
-      recoveryCode: credentials.recoveryCodeBytes.toString('utf8'),
-    })
+    // The runner already validated and projected this non-secret request.
+    // Credentials arrive only as transferred mutable buffers.
+    const request = workerData.request
     const result = await createMissionArchiveFile({
       request,
       ...credentials,

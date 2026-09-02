@@ -404,17 +404,27 @@ async function unwrapBothSlots(preamble, request, passphraseBytes, recoveryCodeB
   let recoveryKey
   try {
     try {
-      passphraseKey = await unwrapMissionArchiveKey({
-        slot: passphraseSlot,
-        secret: passphraseBytes,
-        headerDigest: preamble.headerDigest,
-      })
-      const recoveryCode = normalizeRecoveryCode(recoveryCodeBytes.toString('utf8'))
-      recoveryKey = await unwrapMissionArchiveKey({
-        slot: recoverySlot,
-        secret: recoveryCode,
-        headerDigest: preamble.headerDigest,
-      })
+      try {
+        passphraseKey = await unwrapMissionArchiveKey({
+          slot: passphraseSlot,
+          secret: passphraseBytes,
+          headerDigest: preamble.headerDigest,
+        })
+      } finally {
+        zeroBuffer(passphraseBytes)
+      }
+      let recoveryCode = ''
+      try {
+        recoveryCode = normalizeRecoveryCode(recoveryCodeBytes.toString('utf8'))
+        recoveryKey = await unwrapMissionArchiveKey({
+          slot: recoverySlot,
+          secret: recoveryCode,
+          headerDigest: preamble.headerDigest,
+        })
+      } finally {
+        recoveryCode = ''
+        zeroBuffer(recoveryCodeBytes)
+      }
     } catch {
       throw new ArchiveVerifyError(
         'ARCHIVE_VERIFY_WRONG_KEY',
@@ -1356,12 +1366,17 @@ async function verifyMissionArchiveFile(input) {
       )
     }
     const preamble = await readPinnedPreamble(request, archive)
-    missionArchiveKey = await unwrapBothSlots(
-      preamble,
-      request,
-      passphraseBytes,
-      recoveryCodeBytes,
-    )
+    try {
+      missionArchiveKey = await unwrapBothSlots(
+        preamble,
+        request,
+        passphraseBytes,
+        recoveryCodeBytes,
+      )
+    } finally {
+      zeroBuffer(passphraseBytes)
+      zeroBuffer(recoveryCodeBytes)
+    }
     emitProgress('keys', 'files', 2, 2, 'mandatory-slots')
     operationDirectory = createVerificationDirectory(request)
     extracted = await extractAndProveEntries({

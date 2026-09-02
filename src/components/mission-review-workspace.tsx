@@ -156,7 +156,7 @@ export function MissionReviewWorkspace() {
   }, [controller, missionPhase, open])
 
   useEffect(() => {
-    if (!open || archiveReviewController === null) {
+    if (!open || archiveReviewController === null || docked) {
       return
     }
 

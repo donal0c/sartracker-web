@@ -302,8 +302,11 @@ export async function startMissionArchiveReviewRuntime(
     const generation = ++timelineGeneration
     const missions = await dependencies.missionStore.listMissions()
     if (disposed || disposing || generation !== timelineGeneration) return false
-    const archives = await Promise.all(missions.map((mission) =>
-      dependencies.missionStore.listMissionArchives(mission.id)))
+    const archives: (readonly MissionArchiveInfo[])[] = []
+    for (const mission of missions) {
+      if (disposed || disposing || generation !== timelineGeneration) return false
+      archives.push(await dependencies.missionStore.listMissionArchives(mission.id))
+    }
     if (disposed || disposing || generation !== timelineGeneration) return false
     apply({
       timeline: Object.freeze(missions.map((mission, index) => Object.freeze({

@@ -396,6 +396,16 @@ export function MissionControlPanel({
                     Archive Live Rows
                   </button>
                 </div>
+              ) : governanceMission.storage_state === 'cleanup_in_progress' ? (
+                <button
+                  className="border border-amber-300/60 bg-amber-300/10 px-3 py-2 text-[12px] font-semibold text-amber-100 disabled:opacity-40"
+                  data-testid="mission-cleanup-resume-btn"
+                  disabled={governanceBusy}
+                  onClick={() => setShowCleanupDialog(true)}
+                  type="button"
+                >
+                  Resume Archive Cleanup
+                </button>
               ) : null}
             </div>
           </div>

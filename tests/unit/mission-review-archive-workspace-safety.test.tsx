@@ -180,6 +180,30 @@ describe('archive-backed Mission Review workspace safety [DON-253 / BCP-16]', ()
     expect(refreshTimeline).toHaveBeenCalledOnce()
   })
 
+  it('does not auto-refresh retained archives on the docked live-position path', async () => {
+    const refreshTimeline = vi.fn().mockResolvedValue(undefined)
+    installArchiveReviewState()
+    useMissionStore.setState({ phase: 'active' })
+    useMissionArchiveReviewStore.setState({
+      controller: {
+        refreshTimeline,
+        verifyArchive: vi.fn(),
+        cancelArchiveVerification: vi.fn(),
+        openArchive: vi.fn(),
+        closeArchiveReview: vi.fn(),
+        dispose: vi.fn(),
+      } as never,
+    })
+
+    await act(async () => {
+      root.render(createElement(MissionReviewWorkspace))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(refreshTimeline).not.toHaveBeenCalled()
+  })
+
   it('opens mission-scoped cleanup from the Saved Mission Archives timeline', async () => {
     const refreshSelectedMission = vi.fn().mockResolvedValue(undefined)
     installArchiveReviewState({ refreshSelectedMission })

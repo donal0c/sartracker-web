@@ -2,7 +2,6 @@
 
 const { parentPort, workerData, isMainThread } = require('node:worker_threads')
 
-const { normalizeArchiveVerifyRequest } = require('./archive-envelope.cjs')
 const { zeroBuffer } = require('./archive-crypto.cjs')
 const { verifyMissionArchiveFile } = require('./archive-verify.cjs')
 
@@ -100,11 +99,7 @@ async function runWorker() {
   let credentials
   try {
     credentials = await waitForCredentials(parentPort, workerData.request, cancellationFlag)
-    const request = normalizeArchiveVerifyRequest({
-      ...workerData.request,
-      passphrase: credentials.passphraseBytes.toString('utf8'),
-      recoveryCode: credentials.recoveryCodeBytes.toString('utf8'),
-    })
+    const request = workerData.request
     const proof = await verifyMissionArchiveFile({
       request: projectNonSecretRequest(request),
       ...credentials,

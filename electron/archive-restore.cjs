@@ -315,7 +315,11 @@ async function restoreMissionArchiveForReview(input) {
     archive = openPinnedArchive(request)
     const preamble = await readPinnedPreamble(request, archive)
     emit('preflight', 1, 1, 'pinned-header')
-    archiveKey = await unwrapReviewSlot(preamble, request, secretBytes)
+    try {
+      archiveKey = await unwrapReviewSlot(preamble, request, secretBytes)
+    } finally {
+      zeroBuffer(secretBytes)
+    }
     emit('keys', 1, 1, request.slotType)
     assertNotCancelled(cancellationFlag)
     emit('ciphertext', 0, request.sizeBytes, 'ciphertext-hashing')
