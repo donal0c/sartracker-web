@@ -1841,9 +1841,11 @@
             outing or assignment edits cannot silently move recorded pass evidence outside its original scope.
             The recorded pass displays its declared outcome, exact time window, revision and evidence-link counts;
             SAR Tracker never substitutes the first area or outing and never invents a zero-duration pass.
-            Finished and finalized missions keep these retained records visible but disable the Search Operations
-            entry form permanently. New assignments and passes require an active mission; unlocking a finalized
-            mission does not make its retained Search Operations records writable.
+            Ordinary finished and finalized missions keep these retained records visible but disable the Search
+            Operations entry form. New assignments and passes otherwise require an active mission. The one
+            explicit exception is an audited correction epoch opened by finalized-mission unlock or archive
+            restore: while that finished correction epoch is active, new correction records may be entered until
+            its supplemental archive is finalized.
           </p>
           <p>
             Search Operations reads retained areas, assignments, outings and passes in bounded pages of 25.
