@@ -58,9 +58,13 @@ function recoverCorrectionAttachmentJournals(input) {
     const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'))
     validateJournal(journal, input.databasePath)
     const mission = input.db.prepare(
-      'SELECT status, storage_state FROM missions WHERE id = ?',
+      'SELECT status FROM missions WHERE id = ?',
     ).get(journal.missionId)
-    const committed = mission?.status === 'finished' && mission.storage_state === 'live'
+    const cleanup = input.db.prepare(
+      'SELECT state FROM mission_cleanup_journal WHERE mission_id = ?',
+    ).get(journal.missionId)
+    const committed = mission?.status === 'finished'
+      && (cleanup === undefined || ['eligible', 'completed'].includes(cleanup.state))
     if (committed && !fs.existsSync(journal.targetRoot)) {
       fs.rmSync(journalPath, { force: true })
       recovered += 1
@@ -83,7 +87,11 @@ function recoverCorrectionAttachmentJournals(input) {
     fs.rmSync(journalPath, { force: true })
     recovered += 1
   }
-  fs.rmSync(directory, { recursive: false, force: true })
+  try {
+    fs.rmdirSync(directory)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
   return Object.freeze({ recovered })
 }
 
