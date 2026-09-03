@@ -44,18 +44,35 @@ async function writeCorrectionAttachmentJournal(input) {
 }
 
 /** Removes one durable custody journal only after its recovery decision is complete. */
-async function removeCorrectionAttachmentJournal(journalPath) {
+async function removeCorrectionAttachmentJournal(journalPath, options = {}) {
+  const sync = options.syncDirectory ?? syncDirectory
+  const backup = await fsp.readFile(journalPath).catch(() => null)
   await fsp.rm(journalPath, { force: true })
-  await syncDirectory(path.dirname(journalPath))
+  try {
+    await sync(path.dirname(journalPath))
+  } catch (error) {
+    if (backup !== null) {
+      await fsp.writeFile(journalPath, backup, { mode: 0o600 }).catch(() => undefined)
+    }
+    throw error
+  }
 }
 
 /** Recovers pending attachment custody after an interrupted correction worker. */
 function recoverCorrectionAttachmentJournals(input) {
   const directory = correctionJournalDirectory(input.databasePath)
   if (!fs.existsSync(directory)) return Object.freeze({ recovered: 0 })
+  const throwIfCancelled = () => {
+    if (input.isCancelled?.() === true) {
+      const error = new Error('Archive correction attachment custody recovery was cancelled.')
+      error.code = 'ARCHIVE_CANCELLED'
+      throw error
+    }
+  }
   const names = fs.readdirSync(directory)
   let recovered = 0
   for (const name of names) {
+    throwIfCancelled()
     if (!JOURNAL_NAME.test(name)) {
       throw new Error('Correction attachment custody journal directory contains an invalid entry.')
     }
@@ -113,7 +130,7 @@ function recoverCorrectionAttachmentJournals(input) {
     }
     if (committed) {
       for (const entry of journal.entries) {
-        const proof = digestAttachment(entry.targetPath)
+        const proof = digestAttachment(entry.targetPath, throwIfCancelled)
         if (proof.sizeBytes !== entry.sizeBytes || proof.sha256 !== entry.sha256) {
           throw new Error('Committed correction attachment custody does not match its journaled bytes.')
         }
@@ -168,7 +185,7 @@ function validateJournal(value, databasePath) {
 }
 
 /** Hashes one canonical attachment through a bounded descriptor for recovery proof. */
-function digestAttachment(filePath) {
+function digestAttachment(filePath, throwIfCancelled = () => undefined) {
   let descriptor
   try {
     descriptor = fs.openSync(
@@ -184,6 +201,7 @@ function digestAttachment(filePath) {
     const chunk = Buffer.allocUnsafe(64 * 1024)
     let offset = 0
     while (offset < identity.size) {
+      throwIfCancelled()
       const read = fs.readSync(
         descriptor,
         chunk,

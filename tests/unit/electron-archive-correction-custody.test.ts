@@ -12,6 +12,7 @@ const Database = require('better-sqlite3') as new (databasePath: string) => Test
 const {
   correctionJournalDirectory,
   recoverCorrectionAttachmentJournals,
+  removeCorrectionAttachmentJournal,
   writeCorrectionAttachmentJournal,
 } = require('../../electron/archive-correction-custody.cjs') as {
   readonly correctionJournalDirectory: (databasePath: string) => string
@@ -19,6 +20,10 @@ const {
     readonly databasePath: string
     readonly db: TestDatabase
   }) => { readonly recovered: number }
+  readonly removeCorrectionAttachmentJournal: (
+    journalPath: string,
+    options?: Readonly<{ readonly syncDirectory?: () => Promise<void> }>,
+  ) => Promise<void>
   readonly writeCorrectionAttachmentJournal: (input: {
     readonly databasePath: string
     readonly missionId: string
@@ -164,6 +169,15 @@ describe('archive correction attachment custody recovery', () => {
 
     expect(fsync).toHaveBeenCalled()
     fsync.mockRestore()
+    fixture.db.close()
+  })
+
+  it('retains the journal if its directory durability proof fails', async () => {
+    const fixture = await createFixture('finalized', 'completed')
+    await expect(removeCorrectionAttachmentJournal(fixture.journalPath, {
+      syncDirectory: async () => { throw new Error('simulated fsync failure') },
+    })).rejects.toThrow(/fsync failure/iu)
+    await expect(readFile(fixture.journalPath)).resolves.toBeTruthy()
     fixture.db.close()
   })
 

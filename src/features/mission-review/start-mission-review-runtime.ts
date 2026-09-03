@@ -1030,6 +1030,9 @@ export async function startMissionReviewRuntime(
 /** Explains why one mission must not fan out through the ordinary live-store Review facade. */
 function liveReviewUnavailableMessage(mission: Mission): string | null {
   if (mission.storage_state === undefined || mission.storage_state === 'live') return null
+  if (mission.storage_state === 'recovery_required') {
+    return 'Archive custody recovery is still running or needs operator review. Ordinary live Review is unavailable until it settles.'
+  }
   if (mission.storage_state === 'archived') {
     return 'This mission is stored in its verified archive. Open it from Saved Mission Archives for read-only Review.'
   }

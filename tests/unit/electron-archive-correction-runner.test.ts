@@ -1,8 +1,20 @@
 import { EventEmitter } from 'node:events'
+import { createRequire } from 'node:module'
+import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { startArchiveCorrectionWorker } from '../../electron/archive-correction-runner.cjs'
+
+const require = createRequire(import.meta.url)
+const Database = require('better-sqlite3') as new (databasePath: string) => { close: () => void }
+const roots: string[] = []
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+})
 
 describe('archive correction worker runner', () => {
   it('does not turn cancellation after durable completion into a false failure', async () => {
@@ -134,4 +146,37 @@ describe('archive correction worker runner', () => {
       vi.useRealTimers()
     }
   })
+
+  it('retains its custody journal when attachment cleanup cannot be proven', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-cleanup-failure-'))
+    roots.push(root)
+    const databasePath = path.join(root, 'mission-store.sqlite')
+    const database = new Database(databasePath)
+    database.close()
+    const attachmentDirectory = path.join(root, 'staged-attachments')
+    await mkdir(attachmentDirectory)
+
+    const operation = startArchiveCorrectionWorker({
+      databasePath,
+      snapshotPath: path.join(root, 'missing-snapshot.sqlite'),
+      missionId: 'mission-1',
+      archiveId: '11111111-1111-4111-8111-111111111111',
+      finalizedEpoch: 1,
+      adminName: 'Duty Admin',
+      reason: 'Cleanup proof test',
+      attachmentDirectory,
+      attachmentMappings: [{
+        entryName: 'attachments/missing.bin',
+        sourceRelativePath: 'field.bin',
+        sizeBytes: 1,
+        sha256: 'a'.repeat(64),
+        references: [],
+      }],
+      faultInjection: { failAttachmentCleanup: true },
+    })
+
+    await expect(operation).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED' })
+    await expect(readdir(path.join(root, 'correction-attachment-journals')))
+      .resolves.toHaveLength(1)
+  }, 20_000)
 })

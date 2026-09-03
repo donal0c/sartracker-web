@@ -4,6 +4,7 @@ const path = require('node:path')
 const { Worker } = require('node:worker_threads')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'archive-correction-custody-recovery-worker.cjs')
+const CANCEL_GRACE_MS = 2_000
 
 /** Starts worker-owned startup recovery for correction attachment custody. */
 function startArchiveCorrectionAttachmentRecovery(input) {
@@ -12,11 +13,15 @@ function startArchiveCorrectionAttachmentRecovery(input) {
   let worker
   let terminal = null
   let settled = false
+  let cancelOperation = () => undefined
+  let terminationTimer = null
+  const cancellationBuffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
+  const cancellationFlag = new Int32Array(cancellationBuffer)
   const completion = new Promise((resolve, reject) => {
     try {
       const workerInput = {
         workerPath: request.workerPath,
-        workerData: { databasePath: request.databasePath },
+        workerData: { databasePath: request.databasePath, cancellationBuffer },
       }
       worker = request.createWorker?.(workerInput)
         ?? new Worker(workerInput.workerPath, { workerData: workerInput.workerData })
@@ -31,6 +36,18 @@ function startArchiveCorrectionAttachmentRecovery(input) {
       settled = true
       reject(error)
     }
+    const cancel = () => {
+      if (settled || terminal !== null) return
+      Atomics.store(cancellationFlag, 0, 1)
+      try { worker.postMessage({ type: 'cancel' }) } catch {}
+      rejectOnce(createFailure('ARCHIVE_CANCELLED'))
+      if (terminationTimer === null) {
+        terminationTimer = setTimeout(() => {
+          try { void Promise.resolve(worker.terminate()).catch(() => undefined) } catch {}
+        }, CANCEL_GRACE_MS)
+      }
+    }
+    cancelOperation = cancel
     worker.on('message', (message) => {
       if (settled || terminal !== null) return
       if (message?.type === 'complete' && isComplete(message)) {
@@ -48,6 +65,7 @@ function startArchiveCorrectionAttachmentRecovery(input) {
       if (terminal === null) rejectOnce(createFailure())
     })
     worker.once('exit', (code) => {
+      if (terminationTimer !== null) clearTimeout(terminationTimer)
       workerExited.resolve()
       if (settled) return
       settled = true
@@ -56,6 +74,7 @@ function startArchiveCorrectionAttachmentRecovery(input) {
     })
   })
   Object.defineProperty(completion, 'workerExited', { value: workerExited.promise })
+  Object.defineProperty(completion, 'cancel', { value: () => cancelOperation() })
   return completion
 }
 
@@ -83,11 +102,13 @@ function normalizeRequest(input) {
 }
 
 /** Returns one closed recovery failure. */
-function createFailure() {
+function createFailure(code = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED') {
   const error = new Error(
-    'Archive correction attachment custody recovery requires operator review before retry.',
+    code === 'ARCHIVE_CANCELLED'
+      ? 'Archive correction attachment custody recovery was cancelled.'
+      : 'Archive correction attachment custody recovery requires operator review before retry.',
   )
-  error.code = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+  error.code = code
   return error
 }
 

@@ -14,6 +14,14 @@ function readMissionLiveReviewStorageState(database, missionId) {
       `Mission not found: ${missionId}`,
     )
   }
+  let correctionRecovery
+  try {
+    correctionRecovery = database.prepare(`SELECT value FROM metadata
+      WHERE key = 'archive_correction_attachment_recovery_failure'`).get()
+  } catch {
+    correctionRecovery = undefined
+  }
+  if (correctionRecovery !== undefined) return 'recovery_required'
   const journal = database.prepare(`SELECT state FROM mission_cleanup_journal
     WHERE mission_id = ?`).get(missionId)
   // Older minimal snapshots used by recovery tooling may not expose the

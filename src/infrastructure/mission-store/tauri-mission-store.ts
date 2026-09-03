@@ -8,7 +8,7 @@ import type {
 export type { IngestEvidenceHealth } from '../../domain/tracking-ingest-evidence'
 
 export type MissionStatus = 'active' | 'paused' | 'finished' | 'finalized'
-export type MissionStorageState = 'live' | 'cleanup_in_progress' | 'archived'
+export type MissionStorageState = 'live' | 'cleanup_in_progress' | 'archived' | 'recovery_required'
 
 export type Mission = {
   readonly id: string

@@ -508,9 +508,13 @@ function createElectronMissionStore(options) {
   const migrationState = migrate(db, archiveDirectory)
   let storeClosed = false
   let archiveCorrectionAttachmentRecoveryFailure = null
+  let archiveCorrectionAttachmentRecoveryShutdownRequested = false
   let archiveCorrectionAttachmentRecoveryPromise = Promise.resolve()
   if (fsSync.existsSync(correctionJournalDirectory(databasePath))) {
     try {
+      db.prepare(`INSERT INTO metadata (key, value) VALUES (
+        'archive_correction_attachment_recovery_failure', 'pending'
+      ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
       const operation = archiveCorrectionAttachmentRecoveryRunner({ databasePath })
       activeArchiveWorkerOperations.add(operation)
       archiveCorrectionAttachmentRecoveryPromise = (async () => {
@@ -522,7 +526,11 @@ function createElectronMissionStore(options) {
             db.prepare(`DELETE FROM metadata
               WHERE key = 'archive_correction_attachment_recovery_failure'`).run()
           }
-        } catch {
+        } catch (error) {
+          if (archiveCorrectionAttachmentRecoveryShutdownRequested
+            && error?.code === 'ARCHIVE_CANCELLED') {
+            return
+          }
           archiveCorrectionAttachmentRecoveryFailure =
             'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
           if (!storeClosed) {
@@ -1747,6 +1755,7 @@ function createElectronMissionStore(options) {
 
   return {
     prepareClose: async () => {
+      archiveCorrectionAttachmentRecoveryShutdownRequested = true
       archiveRegistryReconciliationShutdownRequested = true
       if (archiveRegistryReconciliationTimer !== null) {
         clearTimeout(archiveRegistryReconciliationTimer)

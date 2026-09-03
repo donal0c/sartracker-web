@@ -365,7 +365,8 @@ export function MissionControlPanel({
                   </p>
                 ) : null}
               </div>
-              {governanceMission.status === 'finished' ? (
+              {governanceMission.status === 'finished'
+                && governanceMission.storage_state !== 'recovery_required' ? (
                 <button
                   className="bg-sky-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
                   data-testid="mission-finalize-btn"
@@ -406,6 +407,13 @@ export function MissionControlPanel({
                 >
                   Resume Archive Cleanup
                 </button>
+              ) : governanceMission.storage_state === 'recovery_required' ? (
+                <p
+                  className="max-w-xs text-right text-[12px] leading-relaxed text-amber-200"
+                  data-testid="mission-correction-recovery-required"
+                >
+                  Archive custody recovery is still running or needs operator review. Mission controls remain locked until it settles.
+                </p>
               ) : null}
             </div>
           </div>

@@ -192,7 +192,14 @@ async function restoreAttachmentCustody() {
             try { await directory.sync() } finally { await directory.close() }
           }
         } finally {
-          await fs.rm(temporaryPath, { force: true }).catch(() => undefined)
+          try {
+            await fs.rm(temporaryPath, { force: true })
+          } catch (cleanupError) {
+            const failure = new Error('Archive correction temporary attachment cleanup requires recovery.')
+            failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
+            failure.cause = cleanupError
+            throw failure
+          }
         }
         created.push(targetPath)
       }
@@ -216,14 +223,61 @@ async function restoreAttachmentCustody() {
     }
     return { created, references, journalPath }
   } catch (error) {
-    await Promise.all(created.map((filePath) => fs.rm(filePath, { force: true }).catch(() => undefined)))
-    await Promise.all([...new Set(created.map((filePath) => path.dirname(filePath)))].map(
-      (directory) => syncDirectory(directory).catch(() => undefined),
-    ))
-    if (journalPath !== undefined) {
-      await removeCorrectionAttachmentJournal(journalPath).catch(() => undefined)
-    }
+    await cleanupAttachmentCustody({
+      created,
+      journalPath,
+      preserveJournal: error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+      faultInjection: workerData.faultInjection,
+    })
     throw error
+  }
+}
+
+/** Rolls back newly-created canonical files before releasing their custody journal. */
+async function cleanupAttachmentCustody(input) {
+  if (input.faultInjection?.failAttachmentCleanup === true) {
+    const failure = new Error('Archive correction attachment cleanup requires recovery.')
+    failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
+    throw failure
+  }
+  let cleanupError = null
+  for (const filePath of input.created) {
+    try {
+      await fs.rm(filePath, { force: true })
+      await fs.lstat(filePath).then(() => {
+        throw new Error('Canonical attachment remained after rollback.')
+      }).catch((error) => {
+        if (error?.code !== 'ENOENT') throw error
+      })
+    } catch (error) {
+      cleanupError ??= error
+    }
+  }
+  for (const directory of new Set(input.created.map((filePath) => path.dirname(filePath)))) {
+    try {
+      await syncDirectory(directory)
+    } catch (error) {
+      cleanupError ??= error
+    }
+  }
+  if (cleanupError !== null || input.preserveJournal === true) {
+    if (cleanupError !== null) {
+      const failure = new Error('Archive correction attachment cleanup requires recovery.')
+      failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
+      failure.cause = cleanupError
+      throw failure
+    }
+    return
+  }
+  if (input.journalPath !== undefined) {
+    try {
+      await removeCorrectionAttachmentJournal(input.journalPath)
+    } catch (error) {
+      const failure = new Error('Archive correction attachment cleanup requires recovery.')
+      failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
+      failure.cause = error
+      throw failure
+    }
   }
 }
 
@@ -346,15 +400,15 @@ async function run() {
     })
   } catch (error) {
     if (!transactionCommitted && attachmentCustody !== null) {
-      if (attachmentCustody.created.length > 0) {
-        await Promise.all(attachmentCustody.created.map((filePath) =>
-          fs.rm(filePath, { force: true }).catch(() => undefined)))
-        await Promise.all([...new Set(attachmentCustody.created.map((filePath) => path.dirname(filePath)))].map(
-          (directory) => syncDirectory(directory).catch(() => undefined),
-        ))
-      }
-      if (attachmentCustody.journalPath !== undefined) {
-        await removeCorrectionAttachmentJournal(attachmentCustody.journalPath).catch(() => undefined)
+      try {
+        await cleanupAttachmentCustody({
+          created: attachmentCustody.created,
+          journalPath: attachmentCustody.journalPath,
+          preserveJournal: error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+          faultInjection: workerData.faultInjection,
+        })
+      } catch (cleanupError) {
+        error = cleanupError
       }
     }
     parentPort.postMessage({
