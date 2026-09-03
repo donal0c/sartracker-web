@@ -6,15 +6,207 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
-> Current code/qualification candidate: `661305694d43682a6e4aa0e0fafeeb962affc7ea`
-> / tree `0854dfd72b0b1c04c3e6fda0827ca9761060c6f5`. The local serial
-> deterministic gate and focused/static checks are green. Earlier browser,
-> package, physical-kill and Linux workflow evidence is carry-forward from
-> `3885e6f2` and must be rerun or explicitly rebound on this candidate.
-> Ubuntu >2 GiB qualification is pending after the prior exact-head
-> `SQLITE_BUSY` failure; the five code-head reviews and final documentation-head
-> rechecks remain outstanding. PR6 remains pre-merge; Donal retains approval and
-> merge authority.
+> Current source candidate: `5ce12514056d9adef51a763bb0a0672095d6e805`
+> / tree `0a94e503dc7c4d8b2535d5a41d19ae863069cf36`. It carries the
+> archive-backed correction snapshot inventory fix, completion-to-exit worker
+> race fix, attachment-residue-gated recovery fence, explicit correction close
+> audit, truthful custody recovery state, correction evidence reopening after
+> cleanup retry, clean post-commit worker-exit classification, a shared
+> correction writer fence across live mutations, and the latest red-first fixes
+> for durable correction authorization outside the bounded audit page plus
+> browser verifier persistence/current-predecessor enforcement/supplement
+> provenance. Focused remediation checks are `281/281` green; TypeScript,
+> lint, Node syntax and diff checks are green. Fresh broad, persistence and
+> concurrency reviews are clean at this exact source head; archive-review and
+> mission-review Chromium flows are `17/17` green and archive visual flows are
+> `3/3` green. Full serial unit, package, kill-matrix, Ubuntu >2 GiB, Linux
+> workflow and final documentation-head proof remain pending. PR6 remains
+> pre-merge; Donal retains approval and merge authority.
+
+## 2026-09-03 latest remediation
+
+The post-remediation exact-head broad review found three P2s and all three were
+fixed red-first in `5ce12514…`: Mission Review now receives a durable
+`correctionAuthorized` signal from the same bounded SQLite read snapshot rather
+than inferring authorization from the newest 500 audit rows; browser validation
+persists only sanitized secret verifiers so an archive can be reopened after a
+session reload; and browser corrections require the current archive predecessor,
+supersede the predecessor, and retain the audited supplement authority, reason,
+timestamp and chain metadata. Fresh broad, persistence and concurrency reviews
+at the exact source head are clean, with no P1/P2/P3 findings.
+
+## Candidate proof wave (2026-09-03)
+
+Source remediation is committed and pushed at `5ce12514056d9adef51a763bb0a0672095d6e805`
+/ tree `0a94e503dc7c4d8b2535d5a41d19ae863069cf36`. The affected deterministic
+suite is `281/281` green, archive-review and mission-review Chromium flows are
+`17/17` green, and archive visual Playwright is `3/3` green. The exact-head
+review wave is clean for broad life-safety, persistence/completeness and
+concurrency/finalization; renderer/input containment and the narrow crypto-only
+review remain required on the final documentation head. Full serial unit,
+package, kill-matrix, Ubuntu >2 GiB, Linux workflow and final documentation-head
+proof remain open until their raw reports are bound to the final head. The
+source-head full serial unit gate is now `368/368` files and `3,524/3,524` tests
+green; the four generated archive visual manifests also passed independent
+visual review (`4 pass / 0 fail / 0 error`).
+
+The current P1/P2 remediation is red-first tested at `53269409…`; no prior-head
+review or proof is promoted automatically. The correction restore now rejects a
+same-size staged snapshot mutation using the authenticated SHA-256 and pinned
+regular-file identity. The correction runner validates and carries those fields
+without exposing them in the completion envelope. The outbox write and renderer
+incident paths recheck the durable recovery fence immediately before each
+mutation. The exact-head broad, persistence and concurrency reviews are pending;
+no prior-head approval or proof is promoted automatically.
+
+At `53269409…`, the correction snapshot worker now accepts a completion only
+after a successful worker exit, while archive-backed rehydration validates the
+projected finalization event rather than registry tables intentionally absent
+from the archived snapshot. Mission Store records the global attachment-custody
+recovery blocker only when an attachment journal remains, so no-attachment
+failures cannot strand unrelated missions. These changes are covered by
+red-first completion/exit, abort-window, archive-review snapshot, and
+no-residue-fence tests. Fresh exact-head reviews remain the release gate.
+
+At `22d5089e…`, the review close registry accepts the existing correction
+restore reason, IPC always reports a successful correction envelope, and the
+renderer keeps a durable attachment-custody failure visible while returning to
+the live read-only source. A real archive-review → cleanup → snapshot → restore
+integration test now proves both plaintext sweeps and the correction close audit.
+The fresh exact-head review wave is the release gate.
+
+At `6d666a86…`, IPC now treats a committed correction with a clean live-store
+state as successful even if the worker exits abnormally after its durable
+transaction; committed custody failures retain their explicit failure envelope
+without a second session close. Cleanup retries reopen renderer evidence only
+after plaintext cleanup succeeds, operator banners preserve the safe custody
+cause, governance refreshes in a finally path, and the writer-lane admission is
+applied through all database-backed mutation helpers. Red-first regressions
+cover the post-commit exit, close ownership, cleanup retry, browser legacy
+envelope, UI cause, and held-worker mutation cases. Fresh exact-head reviews
+remain the release gate.
+
+The affected review wave at `26238179…` found a P1/P2 path-swap window in
+correction rehydration and a P2 replay mutation during custody recovery. At
+`64c5143d…`, rehydration copies and authenticates the snapshot through a pinned
+descriptor into a private read-only restore file, while replay pauses on the
+recovery code without adding a false ledger failure. At `4291a49…`, the paused
+replay schedules a bounded retry and resumes after the fence clears, and
+cancellation cannot mask a post-commit custody-cleanup failure. Custody recovery
+writes a durable `completed` marker before removing its final journal directory,
+so a restart can clear only a worker-proven completion. These fixes are covered
+by red-first path-swap, replay-fence, retry-resume, cancellation-race and
+completion-order tests; the fresh exact-head reviews are the release gate.
+
+The broad and persistence reviews at `84424c08…` found the mission-name and
+recovery-write P2s. Both were fixed red-first and pushed at `e9d7bd51…`; no
+prior-head review is promoted as final evidence. A broad-review P3 about sweeping
+pre-commit rejected-restore snapshots remains outside the frozen P2 remediation
+scope because the renderer-owned session close already performs that sweep.
+
+The final concurrency review at `d28a82d…` found a post-commit correction
+attachment-journal removal failure that was being reported as generic rehydrate
+failure. The worker now classifies any unproven post-commit journal removal as
+`ARCHIVE_REHYDRATE_CLEANUP_REQUIRED`; Mission Store persists the durable recovery
+blocker before reconciling the committed unlock, and the red-first attachment
+restore regression proves later correction work is fenced. This fix is pushed at
+`84424c08a9d2e8c3c8ed408367226372b7ab1631` / tree
+`818115351f9d90cf3ecc939e5faa23d066a5d0b9`.
+
+## 2026-09-03 exact-head remediation ledger
+
+The concurrency and renderer rechecks found two P2 defects at `739560cb…`: a
+shared SQLite busy timeout could still block the Electron main loop before the
+retry delay, and the correction snapshot runner did not subscribe to its
+AbortSignal after startup. The red-first fixes are pushed at
+`0bc9563978bfb34455b5c04e62e3c36ccba3d0c4` / tree
+`19744f2498219c8b81dbe40f2dcf1cc1ec9baf8e`; the follow-up cleanup-admission
+P2 is fixed and pushed at `d28a82d7690d3e184efbadd98bfb330c9aca5fac` / tree
+`c212d1cd0d89d5572965ad4958518f2ed7507e3b`:
+
+- cleanup transaction boundaries temporarily set the connection busy timeout
+  to zero, then retry asynchronously at 25 ms, so lock contention cannot stall
+  current-position/UI work;
+- correction cancellation is joined through IPC, the review snapshot worker,
+  mission-store admission, and the archive correction worker; and
+- the exact 40-character source head is embedded in packaged operator-visible
+  version text.
+
+The local full serial gate passed at `d28a82d…`: `368/368` files and
+`3,487/3,487` tests.
+The 32-case local SIGKILL matrix is qualified, and the archive-review/
+mission-review Chromium operator slice is `17/17` green. The standalone
+coverage suite is `1/4` because three pre-existing DON-275 checks still report
+“Participant history is still being added”; this is recorded as a browser-proof
+limitation, not silently treated as PR6 coverage. The Ubuntu field-scale run
+was restarted after the host reboot but is bound to the prior code head and is
+not final proof; rerun it against the final exact documentation head.
+
+## 2026-09-03 correction-custody remediation
+
+The exact-head review wave found one further P2 in the new attachment recovery
+path: startup recovery queried a non-existent `missions.storage_state` column.
+The fix now reads the durable `mission_cleanup_journal` state and has two focused
+restart tests proving that uncommitted attachment residue is removed while bytes
+from an already-committed correction are preserved. This remediation is pushed at
+`d410df0c8fd1ffc421d824496a6a24e40dc438fb` / tree
+`f21a3df774e81913dfa6b9d541443674ea859f0c`.
+
+The candidate also includes the prior fixes for authenticated same-size snapshot
+mutation rejection, session-keyed correction authority, cooperative correction
+worker cancellation, streamed bounded attachment reads/copies, and post-commit
+live-source recovery classification. The next review wave must be run against
+this exact head; no prior-head proof is promoted automatically.
+
+## 2026-09-02 remediation ledger
+
+The previous exact-head broad/persistence reviews exposed two lifecycle gaps.
+The candidate fixes are now source-backed and red-first tested:
+
+- Finalized archives project the post-seal `finalized` mission status and
+  deterministic `mission_finalized` (plus supplement) audit events into the
+  sealed SQLite snapshot. Restored Mission Review therefore retains the
+  terminal lifecycle history instead of presenting a `finished` snapshot.
+- Interrupted cleanup remains a durable `cleanup_in_progress` blocker and now
+  has an explicit operator Resume cleanup action. The request is mission/archive
+  bound, uses a fresh bounded operation identity, and crosses the explicit
+  main/preload handler; the browser harness and IPC containment tests cover the
+  route. Expected shutdown cancellation of the startup registry sweep is not
+  persisted as a false failure marker.
+
+Focused remediation evidence: archive review/lifecycle/cleanup/IPC tests
+`84/84` green; full deterministic unit suite `359` files / `3,433` tests green;
+lint, TypeScript, Node syntax and diff checks green. The candidate was pushed as
+`537fcc9462336e0e1c6cc9916a0aa7f3172b51e1` / tree
+`337a0bd9aea1a02a6a36270bd0363076c430db57`. Independent exact-head review and
+reference-host/package/browser proof are not implied by these local checks.
+
+The next exact-head review wave found and closed two additional P2 gaps:
+
+- Cleanup recovery is now reachable from both Mission Control and Saved Mission
+  Archives while the durable storage state is `cleanup_in_progress`; start and
+  cancellation failures preserve the Resume cleanup action.
+- Retained archive reads are serialized and skipped on the docked active/paused
+  live-position path, so opening Review cannot fan out unbounded archive IPC.
+  Create/verify/restore workers scrub credential buffers at their final
+  KDF/unwrap boundary and do not reconstruct immutable worker credential
+  strings.
+
+The previous resulting candidate was `358370abd39c7ac708164d7adf2d1f564cc00bf8`
+/ tree `29b3c37d755681cf41dc7ef4f9773fc6994e86f4`; its full deterministic gate
+was `360` files / `3,439` tests green. That evidence remains prior-head only;
+no earlier proof is silently promoted to this head.
+
+The next exact-head review wave found and closed one correction-lifecycle P2 and
+one renderer-safety P2. Rehydration and the final unlock event now run through a
+worker-owned transaction, with a rollback/retry fault-injection test. Correction
+snapshot deletion is an explicit terminal failure when sweeping cannot be
+confirmed. The operator only sees correction for the current verified v2 archive;
+if a failed restore cannot confirm plaintext cleanup, the active session remains
+visible in `plaintext_cleanup` recovery. Hostile 64 MiB and unknown-field restore
+inputs are rejected before collaborators are invoked. These fixes are committed
+at `fec8be41704fb8d112483f108bcf5b4113e43faa`; fresh exact-head reviews remain
+the release gate.
 
 ## Execution identity
 
@@ -39,7 +231,15 @@ is intermediate. Donal retains approval and merge authority.
 | Exact qualification-harness remediation head | `53164028f72254c4e17fcc0b4b845f7601fee153` / tree `5c347d30691f291164dc65ed25c2bc437f906e55` |
 | Previous archive-lifecycle remediation head (superseded) | `f220f59650ba96231f06a4f45015791223934300` / tree `9b5bf3a24da9a4ba6e98e8ee3e21d7ba236e6538` |
 | Previous archive-lifecycle remediation head | `bd14adb5c4f41797c975089bb3d52dc22da95d1a` / tree `41225f06694b53e0230e446eaf5881f82c699d69` |
-| Current code/qualification head | `661305694d43682a6e4aa0e0fafeeb962affc7ea` / tree `0854dfd72b0b1c04c3e6fda0827ca9761060c6f5` |
+| Superseded code/qualification head | `661305694d43682a6e4aa0e0fafeeb962affc7ea` / tree `0854dfd72b0b1c04c3e6fda0827ca9761060c6f5` |
+| Remediation candidate (pushed) | `537fcc9462336e0e1c6cc9916a0aa7f3172b51e1` / tree `337a0bd9aea1a02a6a36270bd0363076c430db57` |
+| Superseded correction-worker candidate | `fec8be41704fb8d112483f108bcf5b4113e43faa` / tree `0365f9be98ddcf217306c6b904dca439e6b9e8f0` |
+| Current correction-custody candidate (pushed) | `d410df0c8fd1ffc421d824496a6a24e40dc438fb` / tree `f21a3df774e81913dfa6b9d541443674ea859f0c` |
+| Cleanup-admission remediation candidate (pushed) | `d28a82d7690d3e184efbadd98bfb330c9aca5fac` / tree `c212d1cd0d89d5572965ad4958518f2ed7507e3b` |
+| Post-commit custody-fence remediation candidate (pushed) | `84424c08a9d2e8c3c8ed408367226372b7ab1631` / tree `818115351f9d90cf3ecc939e5faa23d066a5d0b9` |
+| Superseded source candidate (pushed) | `0d6f1bf1ed6f2c0ab9b804229a8ffde536577e3c` / tree `e86f1b5037ca91e4de50d012ac2051c530498c88` |
+| Superseded source candidate (pushed) | `5326940948ee62d97b7ada91017275c65ef5a9a8` / tree `6db7275ba5f3aea30f596f47518fa2b466bf1ccd` |
+| Current source candidate (pushed) | `5ce12514056d9adef51a763bb0a0672095d6e805` / tree `0a94e503dc7c4d8b2535d5a41d19ae863069cf36` |
 | Immutable final documentation/review head | Recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; no later repository mutation is permitted without re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |
 

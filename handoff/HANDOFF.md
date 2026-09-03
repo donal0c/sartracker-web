@@ -4,27 +4,34 @@
 
 ## Current State
 
-- **PR6 implementation candidate is `661305694d43682a6e4aa0e0fafeeb962affc7ea` /
-  tree `0854dfd72b0b1c04c3e6fda0827ca9761060c6f5` (2026-09-02):** the
-  qualification-only durable-ingest worker, worker-exit shutdown handling,
-  crypto cleanup, correction-predecessor reconciliation/pinning fixes, red-first
-  liveness remediation and cleanup/live-ingest contention fix are pushed. The
-  cleanup fix uses deferred read-then-write boundaries, finite transient
-  `SQLITE_BUSY*` retries and 500-position pages; the 200 ms heartbeat/current
-  gate is unchanged. Exact local deterministic proof is `359/359` files and
-  `3,431/3,431` tests; focused archive/lifecycle/qualification checks are
-  `71/71`, with lint, TypeScript, Node syntax and diff checks green. Earlier
-  browser/visual/package/kill/Linux evidence remains carry-forward from 3885;
-  Ubuntu >2 GiB qualification and the final exact-head review/recheck wave are
-  still pending.
+- **PR6 source candidate is `5ce12514056d9adef51a763bb0a0672095d6e805` /
+  tree `0a94e503dc7c4d8b2535d5a41d19ae863069cf36` (2026-09-03):** correction
+  admission uses bounded, cancellable busy handling; archive review carries
+  finalized status/history into the sealed snapshot; registry-free snapshots
+  rehydrate safely; interrupted cleanup has a bounded Resume route; correction
+  worker completion requires a successful exit; custody fencing only persists
+  when journal residue exists; correction close auditing, evidence reopening,
+  truthful custody recovery, durable correction authorization outside the
+  bounded audit page, browser verifier persistence/current-predecessor
+  enforcement, and supplement provenance are covered by red-first tests. The
+  focused remediation set is `281/281` green; TypeScript, lint and Node syntax
+  are green. Fresh broad, persistence and concurrency exact-head reviews are
+  clean; archive-review and mission-review Chromium flows are `17/17` green,
+  archive visual flows are `3/3` green, visual review is `4 pass / 0 fail / 0
+  error`, and the full serial unit gate is `368/368` files / `3,524/3,524`
+  tests. Exact-head package, kill, Ubuntu >2 GiB,
+  Linux workflow and final documentation-head proof remain pending. The latest
+  source fix also classifies clean post-commit worker exits, prevents every live
+  mutation during correction admission, reopens renderer evidence after a
+  successful cleanup retry, preserves the custody cause in the operator banner,
+  and refreshes governance on failed correction paths.
 
-- **Carry-forward proof snapshot:** exact-head Chromium `172/172`, visual
+- **Carry-forward proof snapshot:** earlier Chromium `172/172`, visual
   Playwright `62/62`, uncached visual review `74 pass / 0 fail / 0 error`, Linux
-  workflow `33552060716`, unsigned macOS lifecycle and physical SIGKILL `32/32`
-  are green on 3885. They are not exact-candidate proof until rerun or
-  explicitly rebound on 6613 and then rechecked on the final documentation
-  head. The diagnostic receipt and all evidence-tier limits are recorded in
-  `docs/breadcrumb-pr6-evidence.md`.
+  workflow, unsigned macOS lifecycle and physical SIGKILL `32/32` remain prior-
+  head evidence only. The diagnostic receipt and all evidence-tier limits are
+  recorded in `docs/breadcrumb-pr6-evidence.md`; final claims will bind to one
+  exact documentation head.
 
 - **WAR-04B release-integrity audit is review-ready in [PR #9](https://github.com/donal0c/sartracker-web/pull/9) after current-`master` reconciliation (2026-08-30):** the exact-base investigation at `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf` confirms two release blockers: shipped Electron `40.10.0` is EOL, and `electron-builder@26.0.12 -> app-builder-lib@26.0.12` generates an affected AppImage launcher. The production-only npm audit is clean but omits those release-bearing dev dependencies. Live GitHub also has no enforced master/tag review/check boundary, enforced release immutability, attestation/SBOM, or enabled secret/Dependabot/CodeQL visibility. The repository and beta are public; “internal” is intended-use policy, not access control. PR #8's merge at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` added the WAR-04 evidence/docs/tests and shared-record reconciliation but left every audited package, lock, builder, release-workflow, publisher and support-policy input blob-identical, so it does not change the WAR-04B findings or supply release proof. No dependency, workflow, release, package/config, product, or GitHub-setting change was made. Follow `docs/assurance/findings/WAR-04B.md` for controlled remediation and the mandatory exact merged breadcrumb programme PR-6 refresh; exact-head review/recheck evidence is retained on PR #9. `better-sqlite3` PR #1475 shipped in `12.10.1`, so `DON-146` is no longer upstream-blocked.
 - **WAR-04 platform-services investigation merged through [PR #8](https://github.com/donal0c/sartracker-web/pull/8) at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` (2026-08-30):** final investigation head `3a2278ee8804a9ded0f2fd26626c4c00743c05a6` records nine confirmed local failure/privacy defects and six unproven hypotheses across official-map readiness, settings/credential startup, and sanitized support/incident export. Twelve isolated synthetic checks preserve the red states; shipping code is unchanged; the normal gates, both exact-head independent reviews and exact-head Linux branch gate were green. Three bounded WAR-11 remediation clusters are still required before WAR-12 release qualification; `DON-264` remains separately owned. The merged investigation is evidence, not remediation or release proof.

@@ -1742,7 +1742,10 @@
             press <strong>Esc</strong> to return the map to full width. When there is no active mission,
             Review opens full-screen with the mission selector for cross-mission audit.
             If Finish completes while Review remains open, Review refreshes the persisted mission state and
-            disables Search Operations entry immediately; it never leaves a finished mission editable.
+            disables Search Operations entry immediately; an ordinary finished mission remains read-only.
+            After a separately audited archive restore for correction, the explicit correction epoch is
+            shown as finished but its Search Operations entry is intentionally writable until the next
+            supplemental archive is finalized.
           </p>
           <p>
             Mission Review reads the selected mission only after the workspace is opened. While a large
