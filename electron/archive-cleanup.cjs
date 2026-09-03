@@ -137,7 +137,13 @@ function createArchiveCleanupCoordinator(options) {
     if (!eligibility.eligible) throw createEligibilityError(eligibility.blockers)
     const tables = createCleanupPlan()
     const startedAt = now()
+    const initializationContext = {
+      substage: 'custody_commit',
+      tableName: null,
+      cursor: null,
+    }
     const initialize = db.transaction((assertCustodyUnchanged) => {
+      initializationContext.substage = 'journal_initialize'
       const rechecked = getEligibility(evidence)
       if (!rechecked.eligible) throw createEligibilityError(rechecked.blockers)
       const epoch = readCurrentFinalizationEpoch(db, evidence.missionId)
@@ -202,6 +208,7 @@ function createArchiveCleanupCoordinator(options) {
         resulting_status: 'finalized',
         storage_state: 'cleanup_in_progress',
       })
+      initializationContext.substage = 'custody_commit'
       assertCustodyUnchanged()
     })
     let initializeBusyRetries = 0
@@ -212,6 +219,10 @@ function createArchiveCleanupCoordinator(options) {
           initialize.immediate(assertCustodyUnchanged)))
         break
       } catch (error) {
+        attachCleanupFailureDiagnostic(error, normalizeCleanupFailureDiagnostic({
+          ...initializationContext,
+          causeClass: cleanupCauseClassForCode(error?.code),
+        }))
         if (!isRetryableSqliteBusy(error) || initializeBusyRetries >= CLEANUP_BUSY_RETRY_LIMIT) {
           throw error
         }
@@ -356,6 +367,7 @@ function createArchiveCleanupCoordinator(options) {
 
   /** Commits either one bounded delete page, one table advance, or terminal completion. */
   function advanceOneBoundary(evidence, faultInjection, executionOptions, failureContext) {
+    failureContext.substage = 'custody_commit'
     const advance = db.transaction((assertCustodyUnchanged) => {
       failureContext.substage = 'inventory_reconcile'
       const journal = requireInProgressJournal(db, evidence)
@@ -397,6 +409,7 @@ function createArchiveCleanupCoordinator(options) {
             deletedRows: progress.deletedRows,
           }),
         })
+        failureContext.substage = 'custody_commit'
         assertCustodyUnchanged()
         return outcome
       }
@@ -413,6 +426,10 @@ function createArchiveCleanupCoordinator(options) {
       const keyColumns = readTableKeyColumns(db, tableName)
       const selectedKeys = keyColumns.map((column) =>
         column === 'rowid' ? 'archive_row.rowid' : `archive_row.${quoteIdentifier(column)}`)
+      failureContext.substage = 'select_page'
+      if (faultInjection?.failBeforeSelectForTable === tableName) {
+        throw new Error('Injected cleanup failure before select page.')
+      }
       const selected = db.prepare(`SELECT ${selectedKeys.join(', ')}
         FROM ${quoteIdentifier(tableName)} AS archive_row
         WHERE ${selection.whereSql}
@@ -420,9 +437,9 @@ function createArchiveCleanupCoordinator(options) {
         ...selection.parameters,
         limit,
       )
-      failureContext.substage = 'select_page'
       if (selected.length === 0) {
         const next = { ...progress, tableIndex: progress.tableIndex + 1, tableBatch: 0 }
+        failureContext.substage = 'journal_update'
         updateProgress(db, evidence, next, now())
         const outcome = Object.freeze({
           completed: false,
@@ -432,6 +449,7 @@ function createArchiveCleanupCoordinator(options) {
           tableIndex: next.tableIndex,
           tableCount: next.tables.length,
         })
+        failureContext.substage = 'custody_commit'
         assertCustodyUnchanged()
         return outcome
       }
@@ -439,6 +457,10 @@ function createArchiveCleanupCoordinator(options) {
       const keyExpression = outerKeys.length === 1
         ? outerKeys[0]
         : `(${outerKeys.join(', ')})`
+      failureContext.substage = 'delete_page'
+      if (faultInjection?.failBeforeDeleteForTable === tableName) {
+        throw new Error('Injected cleanup failure before delete page.')
+      }
       const deleted = db.prepare(`DELETE FROM ${quoteIdentifier(tableName)}
         WHERE ${keyExpression} IN (
           SELECT ${selectedKeys.join(', ')}
@@ -446,7 +468,6 @@ function createArchiveCleanupCoordinator(options) {
           WHERE ${selection.whereSql}
           ORDER BY ${selectedKeys.join(', ')} LIMIT ?
         )`).run(...selection.parameters, limit)
-      failureContext.substage = 'delete_page'
       if (deleted.changes !== selected.length) {
         throw new Error('Cleanup delete page changed before its cursor could commit.')
       }
@@ -469,6 +490,7 @@ function createArchiveCleanupCoordinator(options) {
         tableIndex: next.tableIndex,
         tableCount: next.tables.length,
       })
+      failureContext.substage = 'custody_commit'
       assertCustodyUnchanged()
       return outcome
     })

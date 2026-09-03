@@ -316,6 +316,18 @@ export function createQualificationDiagnostics({
 /** Maps one qualification exception to a fixed non-secret failure vocabulary. */
 export function classifyQualificationFailure(error) {
   const code = typeof error?.code === 'string' ? error.code : ''
+  const rawCleanupDiagnostic = error?.cleanupDiagnostic
+  const cleanupDiagnostic = rawCleanupDiagnostic !== null
+    && typeof rawCleanupDiagnostic === 'object'
+    && !Array.isArray(rawCleanupDiagnostic)
+    ? normalizeCleanupFailureDiagnostic(rawCleanupDiagnostic)
+    : null
+  if (cleanupDiagnostic !== null) {
+    return Object.freeze({
+      topLevelCode: 'CLEANUP_GATE_FAILED',
+      causeCode: code === '' ? 'ARCHIVE_CLEANUP_FAILED' : code,
+    })
+  }
   if (code === 'ARCHIVE_CLEANUP_FAILED' || code === 'ARCHIVE_CLEANUP_AUDIT_FAILED') {
     return Object.freeze({ topLevelCode: 'CLEANUP_GATE_FAILED', causeCode: code })
   }

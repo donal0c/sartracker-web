@@ -1067,6 +1067,17 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       topLevelCode: 'CLEANUP_GATE_FAILED',
       causeCode: 'ARCHIVE_CLEANUP_FAILED',
     })
+    expect(classifyQualificationFailure(Object.assign(new Error('cleanup journal busy'), {
+      code: 'SQLITE_BUSY',
+      cleanupDiagnostic: {
+        substage: 'journal_initialize',
+        causeClass: 'sqlite_busy',
+        workerExit: { observed: true, event: 'exit', code: 0 },
+      },
+    }))).toEqual({
+      topLevelCode: 'CLEANUP_GATE_FAILED',
+      causeCode: 'SQLITE_BUSY',
+    })
   })
 
   it('builds a safe failure receipt with no secret, path, stack, or mission content', () => {

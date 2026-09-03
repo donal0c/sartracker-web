@@ -753,6 +753,42 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
     }
   })
 
+  it('attributes failures to the SQL boundary that actually failed', async () => {
+    const selectFixture = await createFixture()
+    try {
+      const selectFailure = await selectFixture.coordinator.start(selectFixture.evidence, {
+        faultInjection: { failBeforeSelectForTable: 'positions' },
+      }).catch((error: unknown) => error as {
+        readonly cleanupDiagnostic?: Readonly<Record<string, unknown>>
+      })
+      expect(selectFailure).toMatchObject({
+        cleanupDiagnostic: {
+          substage: 'select_page',
+          tableName: 'positions',
+        },
+      })
+    } finally {
+      selectFixture.db.close()
+    }
+
+    const deleteFixture = await createFixture()
+    try {
+      const deleteFailure = await deleteFixture.coordinator.start(deleteFixture.evidence, {
+        faultInjection: { failBeforeDeleteForTable: 'positions' },
+      }).catch((error: unknown) => error as {
+        readonly cleanupDiagnostic?: Readonly<Record<string, unknown>>
+      })
+      expect(deleteFailure).toMatchObject({
+        cleanupDiagnostic: {
+          substage: 'delete_page',
+          tableName: 'positions',
+        },
+      })
+    } finally {
+      deleteFixture.db.close()
+    }
+  })
+
   it('resets only the current journal cursor for a newly finalized supplemental epoch', async () => {
     const fixture = await createFixture()
     try {
