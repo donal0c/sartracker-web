@@ -1704,7 +1704,7 @@ function createElectronMissionStore(options) {
       })
       await acquireCleanupReviewBarrier(normalizedInput.missionId, context.operationId)
       cleanupReviewBarrierAcquired = true
-      const execute = () => {
+      const execute = async () => {
         const operation = archiveCleanupWorkerRunner({
           databasePath,
           archiveDirectory,
@@ -1723,11 +1723,7 @@ function createElectronMissionStore(options) {
           ...(options.archiveCleanupFaultInjection === undefined
             ? {} : { faultInjection: options.archiveCleanupFaultInjection }),
         })
-        activeArchiveWorkerOperations.add(operation)
-        void Promise.resolve(operation.workerExited ?? operation).finally(() => {
-          activeArchiveWorkerOperations.delete(operation)
-        })
-        return operation
+        return await awaitArchiveWorker(operation)
       }
       return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         normalizedInput.missionId,

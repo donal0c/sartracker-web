@@ -52,6 +52,9 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly startArchiveCleanupCredentialCheck?: (
       input: Readonly<Record<string, unknown>>,
     ) => Promise<Readonly<Record<string, unknown>>>
+    readonly startArchiveCleanupWorker?: (
+      input: Readonly<Record<string, unknown>>,
+    ) => Promise<Readonly<Record<string, unknown>>>
     readonly runMissionReviewReadQueryInWorker?: (
       input: Readonly<Record<string, unknown>>,
     ) => Promise<Readonly<Record<string, unknown>>>
@@ -1156,7 +1159,7 @@ describe('encrypted mission archive lifecycle integration', () => {
         onProgress: () => observeCleanupProgress?.(),
       })
       let cleanupSettled = false
-      void cleanup.finally(() => { cleanupSettled = true })
+      void cleanup.catch(() => undefined).finally(() => { cleanupSettled = true })
       const beforeWorkerExit = await Promise.race([
         cleanupProgress.then(() => 'cleanup-progress'),
         cleanup.then(() => 'cleanup-complete', () => 'cleanup-failed'),
@@ -1184,6 +1187,101 @@ describe('encrypted mission archive lifecycle integration', () => {
         state: 'completed',
         storageState: 'archived',
       })
+      cleanup = null
+    } finally {
+      releaseWorkerExit?.()
+      await cleanup?.catch(() => undefined)
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('holds cleanup fences until the cancelled cleanup worker physically exits', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-cleanup-worker-exit-'))
+    temporaryDirectories.add(userDataPath)
+    let releaseWorkerExit: (() => void) | undefined
+    const workerExited = new Promise<void>((resolve) => { releaseWorkerExit = resolve })
+    let signal: AbortSignal | undefined
+    let rejectCompletion: ((reason: unknown) => void) | undefined
+    let resolveWorkerStarted: (() => void) | undefined
+    const workerStarted = new Promise<void>((resolve) => { resolveWorkerStarted = resolve })
+    const startArchiveCleanupWorker = (input: Readonly<Record<string, unknown>>) => {
+      signal = input.signal as AbortSignal | undefined
+      const completion = new Promise<Readonly<Record<string, unknown>>>((_resolve, reject) => {
+        rejectCompletion = reject
+      }) as Promise<Readonly<Record<string, unknown>>> & {
+        readonly workerExited: Promise<void>
+        readonly cancel: () => void
+      }
+      Object.defineProperties(completion, {
+        workerExited: { value: workerExited },
+        cancel: { value: () => signal?.dispatchEvent(new Event('abort')) },
+      })
+      signal?.addEventListener('abort', () => {
+        const error = Object.assign(new Error('cleanup worker cancelled'), {
+          code: 'ARCHIVE_CLEANUP_CANCELLED',
+        })
+        rejectCompletion?.(error)
+      }, { once: true })
+      const onProgress = input.onProgress
+      if (typeof onProgress === 'function') onProgress({ phase: 'started' })
+      resolveWorkerStarted?.()
+      return completion
+    }
+    const store = createElectronMissionStore({
+      userDataPath,
+      startArchiveCleanupCredentialCheck: completedCleanupCredentialOperation,
+      startArchiveCleanupWorker,
+    })
+    let cleanup: Promise<Readonly<Record<string, unknown>>> | null = null
+    try {
+      const mission = await store.createMission({ name: 'Cleanup worker exit fence mission' })
+      await store.upsertDevice({
+        mission_id: mission.id,
+        device_id: 'cleanup-worker-exit-device',
+        name: 'Cleanup Worker Exit Device',
+        color: '#335577',
+        status: 'offline',
+      })
+      await store.addPosition({
+        mission_id: mission.id,
+        device_id: 'cleanup-worker-exit-device',
+        lat: 52.1,
+        lon: -9.2,
+        timestamp: '2026-08-30T13:00:00.000Z',
+        timestamp_source: 'fix',
+      })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, custody, {
+        operationId: '94949494-9494-4494-9494-949494949494',
+        onProgress: () => undefined,
+      })
+      cleanup = store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId: String(finalized.archive.id),
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '95959595-9595-4595-9595-959595959595',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      await workerStarted
+      await expect(store.cancelMissionArchiveOperation(
+        '95959595-9595-4595-9595-959595959595',
+      )).resolves.toBe(true)
+
+      let cleanupSettled = false
+      void cleanup.catch(() => undefined).finally(() => { cleanupSettled = true })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(cleanupSettled).toBe(false)
+      await expect(store.listDevices(mission.id)).rejects.toMatchObject({
+        code: 'MISSION_REVIEW_CLEANUP_IN_PROGRESS',
+      })
+
+      releaseWorkerExit?.()
+      releaseWorkerExit = undefined
+      await expect(cleanup).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_CANCELLED' })
       cleanup = null
     } finally {
       releaseWorkerExit?.()
