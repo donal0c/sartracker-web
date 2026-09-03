@@ -9,6 +9,10 @@ const require = createRequire(import.meta.url)
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (input: Readonly<Record<string, unknown>>) => {
     readonly createMission: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
+    readonly createOuting: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
+    readonly renameOuting: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
+    readonly recordIngestEvidenceLoss: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
+    readonly acknowledgeIngestEvidenceLoss: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
     readonly finishMission: (missionId: string) => Promise<Readonly<Record<string, unknown>>>
     readonly finalizeMission: (missionId: string) => Promise<Readonly<Record<string, unknown>>>
     readonly getMission: (missionId: string) => Promise<Readonly<Record<string, unknown>>>
@@ -74,6 +78,54 @@ describe('startup correction custody renderer state', () => {
       })
 
       await expect(store.finalizeMission(mission.id)).rejects.toMatchObject({
+        code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+      })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  })
+
+  it('blocks outing and evidence-loss mutations while durable attachment recovery is required', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-recovery-writes-'))
+    roots.push(root)
+    await mkdir(path.join(root, 'correction-attachment-journals'))
+    const operation = Object.assign(Promise.reject(new Error('recovery failed')), {
+      workerExited: Promise.resolve(),
+    })
+    const store = createElectronMissionStore({
+      userDataPath: root,
+      readAdminRoster: async () => ['Duty Admin'],
+      startArchiveCorrectionAttachmentRecovery: () => operation,
+    })
+    try {
+      const mission = await store.createMission({ name: 'Recovery write fence' })
+      const outing = await store.createOuting({ mission_id: mission.id, label: 'Before' })
+      await store.recordIngestEvidenceLoss({
+        mission_id: mission.id,
+        reason: 'mission_persistence_failed',
+        scope_reason: 'active_mission',
+      })
+      await store.finishMission(mission.id)
+      await vi.waitFor(async () => {
+        await expect(store.getMission(mission.id)).resolves.toMatchObject({
+          status: 'finished',
+          storage_state: 'recovery_required',
+        })
+      })
+
+      await expect(store.renameOuting({
+        mission_id: mission.id,
+        outing_id: outing.id,
+        label: 'Should be blocked',
+      })).rejects.toMatchObject({
+        code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+      })
+      await expect(store.acknowledgeIngestEvidenceLoss({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Acknowledge the recorded loss after recovery.',
+      })).rejects.toMatchObject({
         code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
       })
     } finally {

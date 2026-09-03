@@ -1974,7 +1974,11 @@ function createElectronMissionStore(options) {
       input.mission_id,
       () => outingStore.endOuting(input),
     ),
-    renameOuting: async (input) => outingStore.renameOuting(input),
+    renameOuting: async (input) => {
+      assertArchiveCorrectionWriterIdle(input?.mission_id)
+      assertMissionArchiveCorrectionWritable(db, input?.mission_id)
+      return outingStore.renameOuting(input)
+    },
     editOutingBoundaries: async (input) => runCoverageMutation(
       input.mission_id,
       () => outingStore.editOutingBoundaries(input),
@@ -3122,6 +3126,7 @@ function createElectronMissionStore(options) {
   /** Publishes only a sequence that moved in the just-committed mutation. */
   async function runCoverageMutation(missionId, execute) {
     assertArchiveCorrectionWriterIdle(missionId)
+    assertMissionArchiveCorrectionWritable(db, missionId)
     const before = readCoverageChangeSequence(missionId)
     const result = await execute()
     const after = readCoverageChangeSequence(missionId)
@@ -10968,13 +10973,7 @@ function all(db, sql, ...params) {
 
 function ensureWritableMission(db, missionId) {
   const mission = getMission(db, missionId)
-  if (readMissionLiveReviewStorageState(db, missionId) === 'recovery_required') {
-    const error = new Error(
-      'Archive correction attachment custody recovery requires operator review before writes.',
-    )
-    error.code = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
-    throw error
-  }
+  assertMissionArchiveCorrectionWritable(db, missionId)
   if (mission.status === 'finalized'
     || (mission.status === 'finished'
       && readActiveMissionCorrectionAuthorization(db, missionId) === null)) {
@@ -10983,6 +10982,16 @@ function ensureWritableMission(db, missionId) {
     )
   }
   if (mission.status === 'finished') assertMissionFinalizationNotInProgress(db, missionId)
+}
+
+/** Fences every mission mutation while correction attachment custody is unresolved. */
+function assertMissionArchiveCorrectionWritable(db, missionId) {
+  if (readMissionLiveReviewStorageState(db, missionId) !== 'recovery_required') return
+  const error = new Error(
+    'Archive correction attachment custody recovery requires operator review before writes.',
+  )
+  error.code = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+  throw error
 }
 
 /** Rejects finished-mission bookkeeping while its immutable archive is being sealed. */
@@ -11150,6 +11159,7 @@ function recoverInterruptedDirectArchiveFences(db, migrationTime) {
 /** Revalidates a finished-only write after any asynchronous prerequisite settles. */
 function assertFinishedMissionBookkeepingAllowed(db, missionId) {
   const mission = getMission(db, missionId)
+  assertMissionArchiveCorrectionWritable(db, missionId)
   if (mission.status !== 'finished') {
     throw new Error('Finished-mission bookkeeping is unavailable after finalization.')
   }
