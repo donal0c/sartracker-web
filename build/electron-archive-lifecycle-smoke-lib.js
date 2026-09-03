@@ -15,9 +15,9 @@ const CLOSED_REVIEW_ROOT_KEYS = Object.freeze(['missions', 'replay', 'review'])
 const CLOSED_REVIEW_RESULT_KEYS = Object.freeze([
   'auditEvents',
   'breadcrumbCount',
-  'workerThreadId',
+  'correctionAuthorized',
 ])
-const CLOSED_REVIEW_EXCLUDED_PATHS = Object.freeze(['review.workerThreadId'])
+const CLOSED_REVIEW_EXCLUDED_PATHS = Object.freeze([])
 const CLOSED_REPLAY_KEYS = Object.freeze([
   'initial',
   'objectPages',
@@ -102,7 +102,7 @@ export function archiveLifecycleSmokeBatchInsertedEveryRow(result, expectedCount
     && result.length === expectedCount
 }
 
-/** Excludes only proven worker-session metadata from one complete closed Review payload. */
+/** Validates one complete public closed Review payload without worker metadata. */
 export function projectArchiveLifecycleSmokeClosedReviewSemantic(content, expected) {
   if (content === null || typeof content !== 'object' || Array.isArray(content)
     || Object.keys(content).sort().join(',') !== [...CLOSED_REVIEW_ROOT_KEYS].sort().join(',')
@@ -115,13 +115,10 @@ export function projectArchiveLifecycleSmokeClosedReviewSemantic(content, expect
   }
   if (Object.keys(content.review).sort().join(',')
       !== [...CLOSED_REVIEW_RESULT_KEYS].sort().join(',')
-    || !Number.isSafeInteger(content.review.workerThreadId)
-    || content.review.workerThreadId < 1) {
-    throw new Error('Packaged closed Review worker-session metadata is invalid.')
+    || typeof content.review.correctionAuthorized !== 'boolean') {
+    throw new Error('Packaged closed Review public result shape is invalid.')
   }
-  const semanticReview = Object.fromEntries(
-    Object.entries(content.review).filter(([key]) => key !== 'workerThreadId'),
-  )
+  const semanticReview = content.review
   const replayCounts = validateClosedReplayEvidence(content.replay, expected)
   return Object.freeze({
     excludedPaths: CLOSED_REVIEW_EXCLUDED_PATHS,
