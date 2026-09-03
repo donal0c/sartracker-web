@@ -63,6 +63,8 @@ function createIngestAnomalyOutbox(options) {
   const replayBatchSize = options.replayBatchSize ??
     INGEST_ANOMALY_OUTBOX_REPLAY_BATCH_HYPOTHESIS
   const retryDelayMs = options.retryDelayMs ?? 1_000
+  const assertMissionMutationAllowed = options.assertMissionMutationAllowed
+    ?? (() => undefined)
   const addFailure = (scope, reason) =>
     addFailureToMap(failuresByScope, scope, reason)
 
@@ -92,6 +94,7 @@ function createIngestAnomalyOutbox(options) {
   /** Writes, projects, and only then removes one canonical envelope. */
   function deliver(envelope) {
     return enqueue(async () => {
+      await assertMissionMutationAllowed(envelope?.missionId)
       await fs.mkdir(options.directoryPath, { recursive: true })
       await initializeDirectoryAndFailureState()
       let serialized
@@ -165,6 +168,7 @@ function createIngestAnomalyOutbox(options) {
   /** Persists the honest completeness block when volatile evidence cannot be retained. */
   function markEvidenceLoss(missionId, reason) {
     return enqueue(async () => {
+      await assertMissionMutationAllowed(missionId)
       await initializeDirectoryAndFailureState()
       if (![
         'mission_persistence_failed',
@@ -185,6 +189,9 @@ function createIngestAnomalyOutbox(options) {
       validateRendererEvidenceIncidentId(incidentId)
       const normalizedScopes = normalizeRendererEvidenceIncidentScopes(scopes)
       await initializeDirectoryAndFailureState()
+      for (const scopeEntry of normalizedScopes) {
+        await assertMissionMutationAllowed(scopeEntry.missionId)
+      }
       await validateScopes?.(normalizedScopes)
       const incidentKey = createDeliveryRecoveryKey(incidentId)
       const previous = rendererEvidenceIncidentsByKey.get(incidentKey)
@@ -249,6 +256,7 @@ function createIngestAnomalyOutbox(options) {
       if (!['drained', 'lost'].includes(outcome)) {
         throw new Error('Renderer evidence-drain outcome is invalid.')
       }
+      await assertMissionMutationAllowed(missionId)
       await initializeDirectoryAndFailureState()
       const scope = failureScope(missionId)
       const incidentKey = createDeliveryRecoveryKey(incidentId)
@@ -275,6 +283,9 @@ function createIngestAnomalyOutbox(options) {
       for (const incidentKey of incidentKeys) {
         const incident = rendererEvidenceIncidentsByKey.get(incidentKey)
         if (incident === undefined) continue
+        for (const scopeEntry of incident.scopes) {
+          await assertMissionMutationAllowed(scopeEntry.missionId)
+        }
         resolvedScopes.push(...await resolveRendererEvidenceIncidentScopes(
           incidentKey,
           incident.scopes.map((scopeEntry) => scopeEntry.scope),

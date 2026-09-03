@@ -11,7 +11,12 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly createMission: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
     readonly createOuting: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
     readonly renameOuting: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
+    readonly recordIngestRejections: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
     readonly recordIngestEvidenceLoss: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
+    readonly stageRendererEvidenceUncertainty: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
+    readonly resolveRendererEvidenceUncertainty: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
+    readonly stageRendererEvidenceIncident: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
+    readonly resolveRendererEvidenceIncidents: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
     readonly acknowledgeIngestEvidenceLoss: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
     readonly finishMission: (missionId: string) => Promise<Readonly<Record<string, unknown>>>
     readonly finalizeMission: (missionId: string) => Promise<Readonly<Record<string, unknown>>>
@@ -131,6 +136,112 @@ describe('startup correction custody renderer state', () => {
     } finally {
       await store.prepareClose()
       store.close()
+    }
+  })
+
+  it('blocks every renderer evidence mutation after custody recovery becomes required', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-recovery-evidence-'))
+    roots.push(root)
+    await mkdir(path.join(root, 'correction-attachment-journals'))
+    const operation = Object.assign(Promise.reject(new Error('recovery failed')), {
+      workerExited: Promise.resolve(),
+    })
+    const store = createElectronMissionStore({
+      userDataPath: root,
+      startArchiveCorrectionAttachmentRecovery: () => operation,
+    })
+    try {
+      const mission = await store.createMission({ name: 'Recovery evidence fence' })
+      await store.stageRendererEvidenceIncident({
+        incident_id: 'incident-before-recovery',
+        scopes: [{ mission_id: mission.id, scope_reason: 'active_mission' }],
+      })
+      await store.finishMission(mission.id)
+      await vi.waitFor(async () => {
+        await expect(store.getMission(mission.id)).resolves.toMatchObject({
+          status: 'finished',
+          storage_state: 'recovery_required',
+        })
+      })
+
+      const expected = { code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED' }
+      await expect(store.recordIngestRejections({
+        mission_id: mission.id,
+        rejections: [{
+          deliveryId: 'post-recovery-rejection',
+          anomalyKey: 'source:post-recovery',
+          deviceId: 'tracker-1',
+          sourcePositionId: 'post-recovery',
+          reasonClass: 'invalid_coordinates',
+          receivedAt: '2026-08-22T10:00:00.000Z',
+          canonicalEvidence: { source_position_id: 'post-recovery' },
+        }],
+      })).rejects.toMatchObject(expected)
+      await expect(store.recordIngestEvidenceLoss({
+        mission_id: mission.id,
+        reason: 'mission_persistence_failed',
+      })).rejects.toMatchObject(expected)
+      await expect(store.stageRendererEvidenceUncertainty({
+        mission_id: mission.id,
+        incident_id: 'uncertainty-after-recovery',
+        scope_reason: 'finished_unfinalized_mission',
+      })).rejects.toMatchObject(expected)
+      await expect(store.resolveRendererEvidenceUncertainty({
+        mission_id: mission.id,
+        incident_id: 'incident-before-recovery',
+        outcome: 'lost',
+      })).rejects.toMatchObject(expected)
+      await expect(store.stageRendererEvidenceIncident({
+        incident_id: 'incident-after-recovery',
+        scopes: [{
+          mission_id: mission.id,
+          scope_reason: 'finished_unfinalized_mission',
+        }],
+      })).rejects.toMatchObject(expected)
+      await expect(store.resolveRendererEvidenceIncidents({
+        outcome: 'lost',
+      })).rejects.toMatchObject(expected)
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  })
+
+  it('keeps the correction recovery blocker after its journal directory disappears before restart', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-recovery-missing-journal-'))
+    roots.push(root)
+    const journalDirectory = path.join(root, 'correction-attachment-journals')
+    await mkdir(journalDirectory)
+    const operation = Object.assign(Promise.reject(new Error('recovery failed')), {
+      workerExited: Promise.resolve(),
+    })
+    const firstStore = createElectronMissionStore({
+      userDataPath: root,
+      startArchiveCorrectionAttachmentRecovery: () => operation,
+    })
+    const mission = await firstStore.createMission({ name: 'Missing journal recovery fence' })
+    await firstStore.finishMission(mission.id)
+    await vi.waitFor(async () => {
+      await expect(firstStore.getMission(mission.id)).resolves.toMatchObject({
+        storage_state: 'recovery_required',
+      })
+    })
+    await firstStore.prepareClose()
+    firstStore.close()
+    await rm(journalDirectory, { recursive: true, force: true })
+
+    const secondStore = createElectronMissionStore({ userDataPath: root })
+    try {
+      await expect(secondStore.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finished',
+        storage_state: 'recovery_required',
+      })
+      await expect(secondStore.finalizeMission(mission.id)).rejects.toMatchObject({
+        code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+      })
+    } finally {
+      await secondStore.prepareClose()
+      secondStore.close()
     }
   })
 })

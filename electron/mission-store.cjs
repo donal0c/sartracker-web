@@ -542,8 +542,15 @@ function createElectronMissionStore(options) {
       markArchiveCorrectionAttachmentRecoveryRequired()
     }
   } else {
-    db.prepare(`DELETE FROM metadata
-      WHERE key = 'archive_correction_attachment_recovery_failure'`).run()
+    // A missing journal directory is not proof that attachment custody
+    // recovery completed. Preserve any durable blocker and fail closed until
+    // an operator explicitly resolves the custody state.
+    const recoveryMarker = db.prepare(`SELECT value FROM metadata
+      WHERE key = 'archive_correction_attachment_recovery_failure'`).get()
+    if (recoveryMarker !== undefined) {
+      archiveCorrectionAttachmentRecoveryFailure =
+        'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+    }
   }
   const archiveRegistry = createArchiveRegistry({
     db,
@@ -1067,10 +1074,13 @@ function createElectronMissionStore(options) {
   const ingestAnomalyOutbox = createIngestAnomalyOutbox({
     directoryPath: ingestAnomalyOutboxDirectory,
     faultInjection: ingestEvidenceFaultInjection,
+    assertMissionMutationAllowed: (missionId) =>
+      assertMissionArchiveCorrectionWritable(db, missionId),
     projectEnvelope: (envelope) => {
       if (ingestEvidenceFaultInjection.failProjection === true) {
         throw new Error('Injected ingest anomaly projection failure.')
       }
+      assertMissionArchiveCorrectionWritable(db, envelope.missionId)
       recordRejectedAnomaly(db, envelope)
     },
   })
@@ -4691,6 +4701,7 @@ async function recordIngestRejections(db, outbox, input) {
   if (typeof input?.mission_id !== 'string' || input.mission_id.trim() === '') {
     throw new Error('Rejected-position evidence requires an active mission identity.')
   }
+  assertMissionArchiveCorrectionWritable(db, input.mission_id)
   if (rejections.length > 256) {
     throw new Error('Rejected-position evidence batch exceeds the bounded delivery hypothesis.')
   }
@@ -4703,7 +4714,8 @@ async function recordIngestRejections(db, outbox, input) {
     try {
       await outbox.deliver(envelope)
       acknowledgedDeliveryIds.push(rejection.deliveryId)
-    } catch {
+    } catch (error) {
+      if (error?.code === 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED') throw error
       // The outbox retains a staged record when possible. Failure class is
       // returned below; anomaly content is deliberately never logged here.
     }
@@ -4753,6 +4765,7 @@ async function recordIngestEvidenceLoss(db, outbox, input) {
     throw new Error('Ingest evidence-loss reason is invalid.')
   }
   const mission = getMission(db, missionId)
+  assertMissionArchiveCorrectionWritable(db, missionId)
   if (
     input?.scope_reason !== undefined &&
     input.scope_reason !== rendererEvidenceScopeReason(mission.status)
@@ -4771,6 +4784,7 @@ async function updateRendererEvidenceUncertainty(db, outbox, input, operation) {
     throw new Error('Renderer evidence uncertainty requires mission and incident identities.')
   }
   const mission = getMission(db, missionId)
+  assertMissionArchiveCorrectionWritable(db, missionId)
   const expectedScopeReason = rendererEvidenceScopeReason(mission.status)
   if (expectedScopeReason === null) {
     throw new Error('Finalized missions cannot receive renderer evidence uncertainty.')
@@ -4807,6 +4821,7 @@ async function stageRendererEvidenceIncident(db, outbox, input) {
       throw new Error('Renderer evidence incident mission scope is invalid.')
     }
     const mission = getMission(db, missionId)
+    assertMissionArchiveCorrectionWritable(db, missionId)
     const expectedScopeReason = rendererEvidenceScopeReason(mission.status)
     if (expectedScopeReason === null || scope.scope_reason !== expectedScopeReason) {
       throw new Error('Renderer evidence incident scope reason does not match mission state.')
