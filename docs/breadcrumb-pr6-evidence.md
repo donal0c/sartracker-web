@@ -6,8 +6,8 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
-> Current source candidate: `5ce12514056d9adef51a763bb0a0672095d6e805`
-> / tree `0a94e503dc7c4d8b2535d5a41d19ae863069cf36`. It carries the
+> Current source candidate: `0f0723d4b1ec7e78d4f6c166abad049188660ca6`
+> / tree `b53474dc93069930a0c284ed6507510bd6a87d94`. It carries the
 > archive-backed correction snapshot inventory fix, completion-to-exit worker
 > race fix, attachment-residue-gated recovery fence, explicit correction close
 > audit, truthful custody recovery state, correction evidence reopening after
@@ -15,12 +15,15 @@ is intermediate. Donal retains approval and merge authority.
 > correction writer fence across live mutations, and the latest red-first fixes
 > for durable correction authorization outside the bounded audit page plus
 > browser verifier persistence/current-predecessor enforcement/supplement
-> provenance. Focused remediation checks are `281/281` green; TypeScript,
-> lint, Node syntax and diff checks are green. Fresh broad, persistence and
-> concurrency reviews are clean at this exact source head; archive-review and
-> mission-review Chromium flows are `17/17` green and archive visual flows are
-> `3/3` green. Full serial unit, package, kill-matrix, Ubuntu >2 GiB, Linux
-> workflow and final documentation-head proof remain pending. PR6 remains
+> provenance, plus mutable recovery-code normalization across all archive
+> workers. Focused remediation checks are `281/281` green, crypto/lifetime
+> checks are `39/39` green, and the packaged macOS archive-lifecycle smoke is
+> exact-head green. TypeScript, lint, Node syntax and diff checks are green.
+> Fresh broad, renderer/input, persistence and concurrency reviews are clean at
+> this exact source head; archive-review and mission-review Chromium flows are
+> `17/17` green and archive visual flows are `3/3` green. Full serial unit,
+> kill-matrix, Ubuntu >2 GiB, Linux workflow and final documentation-head proof
+> remain pending. PR6 remains
 > pre-merge; Donal retains approval and merge authority.
 
 ## 2026-09-03 latest remediation
@@ -34,6 +37,15 @@ session reload; and browser corrections require the current archive predecessor,
 supersede the predecessor, and retain the audited supplement authority, reason,
 timestamp and chain metadata. Fresh broad, persistence and concurrency reviews
 at the exact source head are clean, with no P1/P2/P3 findings.
+
+The narrow crypto-only review then found one P2 assurance mismatch: recovery
+credentials were being converted to immutable JavaScript strings in four worker
+paths while the evidence claim said they were not. The remediation is committed
+at `c5a2c354cd954df600ab1e73a1b7e0f44384e3f5`: recovery-code canonicalization
+now stays in mutable bytes, create/verify/restore/cleanup pass those buffers
+directly, and the lifetime regression covers every path. Crypto/lifetime tests
+are `39/39` green and the evidence claim is now bounded to the truthful
+no-worker-string invariant.
 
 ## Candidate proof wave (2026-09-03)
 
@@ -240,7 +252,9 @@ the release gate.
 | Post-commit custody-fence remediation candidate (pushed) | `84424c08a9d2e8c3c8ed408367226372b7ab1631` / tree `818115351f9d90cf3ecc939e5faa23d066a5d0b9` |
 | Superseded source candidate (pushed) | `0d6f1bf1ed6f2c0ab9b804229a8ffde536577e3c` / tree `e86f1b5037ca91e4de50d012ac2051c530498c88` |
 | Superseded source candidate (pushed) | `5326940948ee62d97b7ada91017275c65ef5a9a8` / tree `6db7275ba5f3aea30f596f47518fa2b466bf1ccd` |
-| Current source candidate (pushed) | `5ce12514056d9adef51a763bb0a0672095d6e805` / tree `0a94e503dc7c4d8b2535d5a41d19ae863069cf36` |
+| Superseded source candidate (pushed) | `5ce12514056d9adef51a763bb0a0672095d6e805` / tree `0a94e503dc7c4d8b2535d5a41d19ae863069cf36` |
+| Current source candidate (pushed) | `0f0723d4b1ec7e78d4f6c166abad049188660ca6` / tree `b53474dc93069930a0c284ed6507510bd6a87d94` |
+| Exact-head packaged macOS archive-lifecycle smoke | `0f0723d4…`; report SHA-256 `e30b9c9d3a12b2ae02a36193b3c64e1c2a046a268cb37c28d4c4bbcddf191bbe`; passed with packaged build-head match, two launches, SIGKILL decrypt interruption, restart sweep, exhaustive Review/Replay, fresh-credential cleanup and zero residual entries |
 | Immutable final documentation/review head | Recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; no later repository mutation is permitted without re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |
 

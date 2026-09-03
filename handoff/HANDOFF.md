@@ -4,8 +4,8 @@
 
 ## Current State
 
-- **PR6 source candidate is `5ce12514056d9adef51a763bb0a0672095d6e805` /
-  tree `0a94e503dc7c4d8b2535d5a41d19ae863069cf36` (2026-09-03):** correction
+- **PR6 source candidate is `0f0723d4b1ec7e78d4f6c166abad049188660ca6` /
+  tree `b53474dc93069930a0c284ed6507510bd6a87d94` (2026-09-03):** correction
   admission uses bounded, cancellable busy handling; archive review carries
   finalized status/history into the sealed snapshot; registry-free snapshots
   rehydrate safely; interrupted cleanup has a bounded Resume route; correction
@@ -13,13 +13,14 @@
   when journal residue exists; correction close auditing, evidence reopening,
   truthful custody recovery, durable correction authorization outside the
   bounded audit page, browser verifier persistence/current-predecessor
-  enforcement, and supplement provenance are covered by red-first tests. The
-  focused remediation set is `281/281` green; TypeScript, lint and Node syntax
-  are green. Fresh broad, persistence and concurrency exact-head reviews are
-  clean; archive-review and mission-review Chromium flows are `17/17` green,
-  archive visual flows are `3/3` green, visual review is `4 pass / 0 fail / 0
-  error`, and the full serial unit gate is `368/368` files / `3,524/3,524`
-  tests. Exact-head package, kill, Ubuntu >2 GiB,
+  enforcement, supplement provenance, and mutable recovery-code handling across
+  archive workers are covered by red-first tests. The focused remediation set
+  is `281/281` green; crypto/lifetime checks are `39/39`; TypeScript, lint and
+  Node syntax are green. Fresh broad, renderer/input, persistence and
+  concurrency exact-head reviews are clean; archive-review and mission-review
+  Chromium flows are `17/17` green, archive visual flows are `3/3` green,
+  visual review is `4 pass / 0 fail / 0 error`, and the exact-head packaged
+  macOS archive-lifecycle smoke passed. Full serial unit, kill, Ubuntu >2 GiB,
   Linux workflow and final documentation-head proof remain pending. The latest
   source fix also classifies clean post-commit worker exits, prevents every live
   mutation during correction admission, reopens renderer evidence after a
