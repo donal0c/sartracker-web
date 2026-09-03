@@ -195,10 +195,18 @@ function internalRestoreResult(
     sessionDirectory,
     databasePath: path.join(sessionDirectory, 'mission-store.sqlite'),
     databaseIdentity: DATABASE_IDENTITY,
+    databaseSha256: fsSync.existsSync(path.join(sessionDirectory, 'mission-store.sqlite'))
+      ? digestSha256(fsSync.readFileSync(path.join(sessionDirectory, 'mission-store.sqlite')))
+      : 'a'.repeat(64),
     databaseFileHandle: createFakeDatabaseFileHandle(),
     attachmentMappings: [],
     ...overrides,
   }
+}
+
+/** Computes the bounded fixture digest used by the authenticated-session stub. */
+function digestSha256(bytes: Buffer): string {
+  return require('node:crypto').createHash('sha256').update(bytes).digest('hex')
 }
 
 /** Decorates a restore promise with the runner's physical-lifecycle controls. */
@@ -775,6 +783,81 @@ describe('archive review session manager', () => {
       sessionId: SESSION_ID,
     })).resolves.toBeUndefined()
     expect(await readdir(harness.reviewRoot)).toEqual([])
+  })
+
+  it('rejects a same-size mutation of the authenticated review database before correction staging', async () => {
+    const harness = await createHarness({
+      startRestore: (restoreInput) => {
+        const request = restoreInput.request as Readonly<Record<string, unknown>>
+        const sessionDirectory = path.join(harness.reviewRoot, request.sessionId as string)
+        const databasePath = path.join(sessionDirectory, 'mission-store.sqlite')
+        const completion = (async () => {
+          await mkdir(sessionDirectory, { recursive: false, mode: 0o700 })
+          await writeFile(databasePath, 'RESTORED-PLAINTEXT', { mode: 0o600 })
+          const identity = await stat(databasePath)
+          return internalRestoreResult(harness.reviewRoot, {
+            sessionDirectory,
+            databasePath,
+            databaseIdentity: { dev: identity.dev, ino: identity.ino, sizeBytes: identity.size },
+          })
+        })()
+        return decorateRestoreOperation(completion)
+      },
+    })
+    await openSession(harness)
+    const databasePath = path.join(harness.reviewRoot, SESSION_ID, 'mission-store.sqlite')
+    fsSync.writeFileSync(databasePath, 'RESTORED-PLAINTEXY', { mode: 0o600 })
+    await expect(harness.manager.snapshotForCorrection({
+      senderId: SENDER_ID,
+      sessionId: SESSION_ID,
+      operationId: OPERATION_ID,
+      archiveId: ARCHIVE_ID,
+    })).rejects.toMatchObject({ code: 'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED' })
+    await expect(harness.manager.close({
+      senderId: SENDER_ID,
+      sessionId: SESSION_ID,
+    })).resolves.toBeUndefined()
+  })
+
+  it('claims correction staging ownership before its first asynchronous copy', async () => {
+    const harness = await createHarness({
+      startRestore: (restoreInput) => {
+        const request = restoreInput.request as Readonly<Record<string, unknown>>
+        const sessionDirectory = path.join(harness.reviewRoot, request.sessionId as string)
+        const databasePath = path.join(sessionDirectory, 'mission-store.sqlite')
+        const completion = (async () => {
+          await mkdir(sessionDirectory, { recursive: false, mode: 0o700 })
+          await writeFile(databasePath, 'RESTORED-PLAINTEXT', { mode: 0o600 })
+          const identity = await stat(databasePath)
+          return internalRestoreResult(harness.reviewRoot, {
+            sessionDirectory,
+            databasePath,
+            databaseIdentity: { dev: identity.dev, ino: identity.ino, sizeBytes: identity.size },
+          })
+        })()
+        return decorateRestoreOperation(completion)
+      },
+    })
+    await openSession(harness)
+    const first = harness.manager.snapshotForCorrection({
+      senderId: SENDER_ID,
+      sessionId: SESSION_ID,
+      operationId: OPERATION_ID,
+      archiveId: ARCHIVE_ID,
+    })
+    await expect(harness.manager.snapshotForCorrection({
+      senderId: SENDER_ID,
+      sessionId: SESSION_ID,
+      operationId: OPERATION_ID,
+      archiveId: ARCHIVE_ID,
+    })).rejects.toMatchObject({ code: 'ARCHIVE_REVIEW_SESSION_ACTIVE' })
+    await expect(first).resolves.toMatchObject({ archiveId: ARCHIVE_ID })
+    await expect(harness.manager.completeCorrectionSnapshot({
+      senderId: SENDER_ID,
+      sessionId: SESSION_ID,
+      operationId: OPERATION_ID,
+      archiveId: ARCHIVE_ID,
+    })).resolves.toBeUndefined()
   })
 
   it('retains retryable manager ownership when the close audit fails after a confirmed sweep', async () => {

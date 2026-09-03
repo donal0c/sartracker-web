@@ -277,7 +277,7 @@ function projectProgress(message) {
 /** Shape-closes a successful worker result for the main-isolate manager. */
 function normalizeResult(message, request) {
   const keys = Object.keys(message ?? {}).sort().join(',')
-  if (keys !== 'archiveId,attachmentMappings,databaseFileHandle,databaseIdentity,databasePath,missionId,operationId,sessionDirectory,sessionId,type'
+  if (keys !== 'archiveId,attachmentMappings,databaseFileHandle,databaseIdentity,databasePath,databaseSha256,missionId,operationId,sessionDirectory,sessionId,type'
     || message.operationId !== request.operationId
     || message.sessionId !== request.sessionId
     || message.archiveId !== request.archiveId
@@ -293,6 +293,8 @@ function normalizeResult(message, request) {
     || !Number.isSafeInteger(message.databaseIdentity.ino) || message.databaseIdentity.ino < 1
     || !Number.isSafeInteger(message.databaseIdentity.sizeBytes)
     || message.databaseIdentity.sizeBytes < 1
+    || typeof message.databaseSha256 !== 'string'
+    || !/^[0-9a-f]{64}$/u.test(message.databaseSha256)
     || message.databaseFileHandle === null
     || typeof message.databaseFileHandle !== 'object'
     || !Number.isSafeInteger(message.databaseFileHandle.fd)
@@ -309,6 +311,7 @@ function normalizeResult(message, request) {
     missionId: request.missionId,
     databasePath: message.databasePath,
     databaseIdentity: Object.freeze({ ...message.databaseIdentity }),
+    databaseSha256: message.databaseSha256,
     databaseFileHandle: message.databaseFileHandle,
     sessionDirectory: message.sessionDirectory,
     attachmentMappings: Object.freeze(message.attachmentMappings.map((entry) => Object.freeze({ ...entry }))),

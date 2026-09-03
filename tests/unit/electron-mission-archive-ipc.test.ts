@@ -217,6 +217,7 @@ describe('mission archive IPC containment [DON-248]', () => {
     expect(missionStore.unlockFinalizedMission).toHaveBeenCalledWith({
       mission_id: 'mission-1',
       archive_id: 'archive-1',
+      operation_id: OPERATION_ID,
       snapshot_path: snapshotPath,
       admin_name: 'Duty Admin',
       reason: 'Correct a recorded clue.',

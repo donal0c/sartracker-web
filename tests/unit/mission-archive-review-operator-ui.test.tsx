@@ -300,6 +300,20 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
     })
   })
 
+  it('clears correction authority and reason when the open session identity changes', async () => {
+    renderControl(createControlProps({ activeSession: V2_SESSION }))
+    changeInput('archive-review-correction-admin', 'Duty Admin')
+    changeInput('archive-review-correction-reason', 'Correct a recorded clue.')
+    renderControl(createControlProps({ activeSession: {
+      ...V2_SESSION,
+      sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    } }))
+    await act(async () => { await Promise.resolve() })
+    expect(input('archive-review-correction-admin').value).toBe('')
+    expect(input('archive-review-correction-reason').value).toBe('')
+    expect(button('archive-review-restore-correction').disabled).toBe(true)
+  })
+
   it('does not offer correction restore for a legacy or non-current archive session', () => {
     renderControl(createControlProps({ activeSession: V1_SESSION }))
     expect(query('[data-testid="archive-review-restore-correction"]')).toBeNull()

@@ -105,6 +105,7 @@ function restoreResult(overrides: Readonly<Record<string, unknown>> = {}) {
       'mission-store.sqlite',
     ),
     databaseIdentity: DATABASE_IDENTITY,
+    databaseSha256: 'd'.repeat(64),
     databaseFileHandle,
     attachmentMappings: [],
     ...overrides,

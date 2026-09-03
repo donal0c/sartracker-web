@@ -26,6 +26,7 @@ const {
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const PROGRESS_EMIT_BYTES = 16 * 1024 * 1024
+const FILE_DIGEST_CHUNK_BYTES = 1024 * 1024
 
 /** Stable non-reflective archive restore failure. */
 class ArchiveRestoreError extends Error {
@@ -48,6 +49,44 @@ function normalizeAbsoluteDirectory(value, label) {
     throw new ArchiveRestoreError('ARCHIVE_RESTORE_REQUEST_INVALID', `${label} is invalid.`)
   }
   return value
+}
+
+/** Hashes one restored database through a pinned descriptor without buffering the file. */
+function digestRestoredDatabase(databasePath, expectedIdentity) {
+  let descriptor
+  try {
+    descriptor = fs.openSync(
+      databasePath,
+      fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
+    )
+    const identity = fs.fstatSync(descriptor)
+    if (!identity.isFile() || identity.nlink !== 1
+      || identity.dev !== expectedIdentity.dev
+      || identity.ino !== expectedIdentity.ino
+      || identity.size !== expectedIdentity.sizeBytes) {
+      throw new ArchiveRestoreError(
+        'ARCHIVE_RESTORE_SCOPE_INVALID',
+        'Archive review restored database changed before its content digest was pinned.',
+      )
+    }
+    const hash = createHash('sha256')
+    const chunk = Buffer.allocUnsafe(FILE_DIGEST_CHUNK_BYTES)
+    let offset = 0
+    while (offset < identity.size) {
+      const read = fs.readSync(descriptor, chunk, 0, Math.min(chunk.length, identity.size - offset), offset)
+      if (read < 1) {
+        throw new ArchiveRestoreError(
+          'ARCHIVE_RESTORE_SCOPE_INVALID',
+          'Archive review restored database ended before its pinned content digest was complete.',
+        )
+      }
+      hash.update(chunk.subarray(0, read))
+      offset += read
+    }
+    return hash.digest('hex')
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor)
+  }
 }
 
 /** Validates one trusted non-secret restore request. */
@@ -367,6 +406,7 @@ async function restoreMissionArchiveForReview(input) {
       databaseIdentity.sizeBytes,
       emit,
     )
+    const databaseSha256 = digestRestoredDatabase(inspected.databasePath, databaseIdentity)
     assertPinnedCustodyFileUnchanged(archive)
     const validatedDatabaseIdentity = getRestoredDatabaseIdentity(extracted)
     if (validatedDatabaseIdentity.dev !== databaseIdentity.dev
@@ -402,6 +442,7 @@ async function restoreMissionArchiveForReview(input) {
       missionId: request.missionId,
       databasePath: inspected.databasePath,
       databaseIdentity,
+      databaseSha256,
       databaseFileHandle,
       sessionDirectory,
       attachmentMappings: inspected.attachmentMappings,

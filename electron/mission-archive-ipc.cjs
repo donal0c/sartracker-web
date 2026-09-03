@@ -774,9 +774,14 @@ function registerMissionArchiveIpcHandlers(input) {
       result = await missionStore.unlockFinalizedMission({
         mission_id: missionId,
         archive_id: snapshot.archiveId,
+        operation_id: operationId,
         snapshot_path: snapshot.snapshotPath,
-        attachment_directory: snapshot.attachmentDirectory,
-        attachment_mappings: snapshot.attachmentMappings,
+        ...(snapshot.attachmentDirectory === undefined
+          ? {}
+          : { attachment_directory: snapshot.attachmentDirectory }),
+        ...(snapshot.attachmentMappings === undefined
+          ? {}
+          : { attachment_mappings: snapshot.attachmentMappings }),
         admin_name: adminName,
         reason,
       })
@@ -801,6 +806,7 @@ function registerMissionArchiveIpcHandlers(input) {
           'ARCHIVE_REHYDRATE_CLEANUP_FAILED',
           'Mission archive correction restore completed with unresolved plaintext cleanup.',
         )
+        failure.archiveCorrectionCommitted = result !== null
         failure.cause = error
         throw failure
       }

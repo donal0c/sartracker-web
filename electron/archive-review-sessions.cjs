@@ -22,6 +22,7 @@ const SWEEP_DIRECTORY = /^\.sweep-([0-9a-f-]{36})$/u
 const SWEEP_LINK_A = /^\.sweep-link-a-([0-9a-f-]{36})$/u
 const SWEEP_LINK_B = /^\.sweep-link-b-([0-9a-f-]{36})$/u
 const MAX_PENDING_MUTATION_DENIALS = 128
+const DATABASE_DIGEST_CHUNK_BYTES = 1024 * 1024
 
 /** Stable main-isolate archive review session failure. */
 class ArchiveReviewSessionError extends Error {
@@ -305,6 +306,50 @@ function normalizeDatabaseIdentity(identity) {
   return Object.freeze({ dev: identity.dev, ino: identity.ino, sizeBytes: identity.sizeBytes })
 }
 
+/** Hashes one session database through an inode-pinned descriptor in bounded chunks. */
+function digestSessionDatabase(databasePath, expectedIdentity) {
+  let descriptor
+  try {
+    descriptor = fsSync.openSync(
+      databasePath,
+      fsSync.constants.O_RDONLY | (fsSync.constants.O_NOFOLLOW ?? 0),
+    )
+    const identity = fsSync.fstatSync(descriptor)
+    if (!identity.isFile() || identity.nlink !== 1
+      || identity.dev !== expectedIdentity.dev
+      || identity.ino !== expectedIdentity.ino
+      || identity.size !== expectedIdentity.sizeBytes) {
+      throw new ArchiveReviewSessionError(
+        'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
+        'Archive correction session database changed before its authenticated digest was checked.',
+      )
+    }
+    const hash = require('node:crypto').createHash('sha256')
+    const chunk = Buffer.allocUnsafe(DATABASE_DIGEST_CHUNK_BYTES)
+    let offset = 0
+    while (offset < identity.size) {
+      const read = fsSync.readSync(
+        descriptor,
+        chunk,
+        0,
+        Math.min(chunk.length, identity.size - offset),
+        offset,
+      )
+      if (read < 1) {
+        throw new ArchiveReviewSessionError(
+          'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
+          'Archive correction session database ended before its authenticated digest was complete.',
+        )
+      }
+      hash.update(chunk.subarray(0, read))
+      offset += read
+    }
+    return hash.digest('hex')
+  } finally {
+    if (descriptor !== undefined) fsSync.closeSync(descriptor)
+  }
+}
+
 /** Retains the exact transferable restored database handle from the restore worker. */
 function normalizeDatabaseFileHandle(fileHandle) {
   if (fileHandle === null || typeof fileHandle !== 'object'
@@ -357,6 +402,7 @@ function normalizeInternalResult(result, ticket, request, sessionId, reviewRoot)
       sessionDirectory,
       databasePath: path.join(sessionDirectory, result.databaseFileName),
       databaseIdentity: normalizeDatabaseIdentity(result.databaseIdentity),
+      databaseSha256: null,
       databaseFileHandle: normalizeDatabaseFileHandle(result.databaseFileHandle),
       attachmentMappings: Object.freeze(result.attachmentMappings.map((entry) => Object.freeze({
         ...entry,
@@ -392,6 +438,7 @@ function normalizeInternalResult(result, ticket, request, sessionId, reviewRoot)
         typeof result.databasePath === 'string'
           && !allowedDatabaseNames.has(path.basename(result.databasePath)) && 'database-file',
         result.databaseIdentity === undefined && 'database-identity',
+        !SHA256.test(result.databaseSha256 ?? '') && 'database-sha256',
         result.databaseFileHandle === undefined && 'database-handle',
       ].filter(Boolean)
   if (invalidFields.length > 0) {
@@ -416,6 +463,7 @@ function normalizeInternalResult(result, ticket, request, sessionId, reviewRoot)
     sessionDirectory,
     databasePath: result.databasePath,
     databaseIdentity: normalizeDatabaseIdentity(result.databaseIdentity),
+    databaseSha256: result.databaseSha256,
     databaseFileHandle: normalizeDatabaseFileHandle(result.databaseFileHandle),
     attachmentMappings: Array.isArray(result.attachmentMappings)
       ? Object.freeze(result.attachmentMappings.map((entry) => Object.freeze({ ...entry })))
@@ -805,14 +853,21 @@ function createArchiveReviewSessionManager(options) {
       throw createPlaintextCleanupFailure(error)
     }
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw createPlaintextCleanupFailure()
-    await removeQuarantinedSessionDirectory(
-      reviewRoot,
-      stagingDirectory,
-      reviewRootIdentity,
-      archiveDirectory,
-      archiveDirectoryIdentity,
-      startReviewSweep,
-    )
+    try {
+      await removeQuarantinedSessionDirectory(
+        reviewRoot,
+        stagingDirectory,
+        reviewRootIdentity,
+        archiveDirectory,
+        archiveDirectoryIdentity,
+        startReviewSweep,
+      )
+    } catch (error) {
+      cleanupFailure = error?.code === 'ARCHIVE_REVIEW_PLAINTEXT_CLEANUP_FAILED'
+        ? error
+        : createPlaintextCleanupFailure(error)
+      throw cleanupFailure
+    }
   }
 
   /** Returns one bounded mutation method name without reflecting attacker content. */
@@ -956,6 +1011,11 @@ function createArchiveReviewSessionManager(options) {
     if (activeClose.promise !== null) return activeClose.promise
     const closeState = activeClose
     const attempt = (async () => {
+      if (pendingCorrectionSnapshot?.session === session
+        && pendingCorrectionSnapshot.setupPromise !== null
+        && pendingCorrectionSnapshot.ready !== true) {
+        await pendingCorrectionSnapshot.setupPromise.catch(() => undefined)
+      }
       if (!closeState.sourceClosed) {
         await session.source.close()
         closeState.sourceClosed = true
@@ -980,6 +1040,7 @@ function createArchiveReviewSessionManager(options) {
       })
       activeSession = null
       pendingCorrectionSnapshot = null
+      cleanupFailure = null
       activeClose = null
     })()
     closeState.promise = attempt
@@ -1290,8 +1351,31 @@ function createArchiveReviewSessionManager(options) {
       }
       const stagingDirectory = path.join(reviewRoot, `.sweep-${stagingId}`)
       const snapshotPath = path.join(stagingDirectory, 'mission-store.sqlite')
-      await fs.mkdir(stagingDirectory, { recursive: false, mode: 0o700 })
-      try {
+      const session = activeSession
+      const pending = {
+        session,
+        stagingDirectory,
+        swept: false,
+        ready: false,
+        setupPromise: null,
+      }
+      pendingCorrectionSnapshot = pending
+      const setup = (async () => {
+        try {
+          await fs.mkdir(stagingDirectory, { recursive: false, mode: 0o700 })
+          if (!SHA256.test(session.internal.databaseSha256 ?? '')) {
+            throw new ArchiveReviewSessionError(
+              'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
+              'Archive correction session is missing its authenticated database digest.',
+            )
+          }
+          const sourceDigest = digestSessionDatabase(sourcePath, sourceIdentity)
+          if (sourceDigest !== session.internal.databaseSha256) {
+            throw new ArchiveReviewSessionError(
+              'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
+              'Archive correction session database no longer matches its authenticated content.',
+            )
+          }
         await fs.copyFile(sourcePath, snapshotPath)
         const copied = fsSync.lstatSync(snapshotPath)
         if (!copied.isFile() || copied.isSymbolicLink() || copied.nlink !== 1
@@ -1301,11 +1385,25 @@ function createArchiveReviewSessionManager(options) {
             'Archive correction snapshot could not be pinned safely.',
           )
         }
+        const copiedIdentity = Object.freeze({
+          dev: copied.dev,
+          ino: copied.ino,
+          sizeBytes: copied.size,
+        })
+        const copiedDigest = digestSessionDatabase(snapshotPath, copiedIdentity)
+        const sourceDigestAfterCopy = digestSessionDatabase(sourcePath, sourceIdentity)
+        if (copiedDigest !== session.internal.databaseSha256
+          || sourceDigestAfterCopy !== session.internal.databaseSha256) {
+          throw new ArchiveReviewSessionError(
+            'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
+            'Archive correction snapshot did not retain its authenticated content.',
+          )
+        }
         const sourceAttachmentsDirectory = path.join(path.dirname(sourcePath), 'attachments')
         const stagedAttachmentsDirectory = path.join(stagingDirectory, 'attachments')
-        if (activeSession.internal.attachmentMappings.length > 0) {
+        if (session.internal.attachmentMappings.length > 0) {
           await fs.mkdir(stagedAttachmentsDirectory, { recursive: false, mode: 0o700 })
-          for (const mapping of activeSession.internal.attachmentMappings) {
+          for (const mapping of session.internal.attachmentMappings) {
             const entryName = mapping.entryName
             const sourceAttachment = path.join(
               sourceAttachmentsDirectory,
@@ -1339,24 +1437,34 @@ function createArchiveReviewSessionManager(options) {
             }
           }
         }
-        pendingCorrectionSnapshot = {
-          session: activeSession,
-          stagingDirectory,
-          swept: false,
-        }
+        pending.ready = true
         return Object.freeze({
           missionId,
           archiveId: input.archiveId,
           snapshotPath,
           attachmentDirectory: stagedAttachmentsDirectory,
-          attachmentMappings: activeSession.internal.attachmentMappings,
+          attachmentMappings: session.internal.attachmentMappings,
           sessionId: input.sessionId,
           operationId: input.operationId,
         })
-      } catch (error) {
-        await fs.rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined)
-        throw error
-      }
+        } catch (error) {
+          try {
+            await fs.rm(stagingDirectory, { recursive: true, force: true })
+            if (fsSync.existsSync(stagingDirectory)) {
+              throw createPlaintextCleanupFailure()
+            }
+          } catch (cleanupError) {
+            const failure = createPlaintextCleanupFailure(cleanupError)
+            cleanupFailure = failure
+            pending.cleanupFailure = failure
+            throw failure
+          }
+          if (pendingCorrectionSnapshot === pending) pendingCorrectionSnapshot = null
+          throw error
+        }
+      })()
+      pending.setupPromise = setup
+      return setup
     },
 
     /** Commits ownership of a correction staging tree to the close/sweep retry path. */
@@ -1370,7 +1478,8 @@ function createArchiveReviewSessionManager(options) {
         || activeSession.internal.sessionId !== input.sessionId
         || activeSession.request.operationId !== input.operationId
         || activeSession.ticket.archiveId !== input.archiveId
-        || pendingCorrectionSnapshot?.session !== activeSession) {
+        || pendingCorrectionSnapshot?.session !== activeSession
+        || pendingCorrectionSnapshot.ready !== true) {
         throw new ArchiveReviewSessionError(
           'ARCHIVE_REVIEW_SESSION_OWNER_MISMATCH',
           'Archive correction completion does not belong to this sender or session.',

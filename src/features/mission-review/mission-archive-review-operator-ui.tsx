@@ -142,10 +142,19 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
   const [slotType, setSlotType] = useState<'passphrase' | 'recovery'>('passphrase')
   const [secret, setSecret] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [correctionAdmin, setCorrectionAdmin] = useState('')
-  const [correctionReason, setCorrectionReason] = useState('')
+  const [correctionDraft, setCorrectionDraft] = useState({
+    key: null as string | null,
+    admin: '',
+    reason: '',
+  })
   const [restoring, setRestoring] = useState(false)
   const [safeError, setSafeError] = useState<string | null>(null)
+  const correctionSessionKey = props.activeSession === null
+    ? null
+    : `${props.activeSession.sessionId}\0${props.activeSession.archiveId}\0${props.activeSession.missionId}`
+  const correctionAdmin = correctionDraft.key === correctionSessionKey ? correctionDraft.admin : ''
+  const correctionReason = correctionDraft.key === correctionSessionKey ? correctionDraft.reason : ''
+  const sessionSafeError = correctionDraft.key === correctionSessionKey ? safeError : null
 
   const selectedArchive = useMemo(() => {
     for (const entry of props.timeline) {
@@ -188,7 +197,11 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
                 autoComplete="off"
                 className="mt-1 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm font-normal normal-case tracking-normal text-stone-100"
                 data-testid="archive-review-correction-admin"
-                onChange={(event) => setCorrectionAdmin(event.target.value)}
+                onChange={(event) => setCorrectionDraft({
+                  key: correctionSessionKey,
+                  admin: event.target.value,
+                  reason: correctionReason,
+                })}
                 value={correctionAdmin}
               />
             </label>
@@ -197,7 +210,11 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
               <input
                 className="mt-1 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm font-normal normal-case tracking-normal text-stone-100"
                 data-testid="archive-review-correction-reason"
-                onChange={(event) => setCorrectionReason(event.target.value)}
+                onChange={(event) => setCorrectionDraft({
+                  key: correctionSessionKey,
+                  admin: correctionAdmin,
+                  reason: event.target.value,
+                })}
                 value={correctionReason}
               />
             </label>
@@ -235,8 +252,8 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
         >
           {props.phase === 'closing' ? 'Closing…' : 'Close Archive Review'}
         </button>
-        {safeError !== null ? (
-          <p className="mt-3 text-xs font-semibold text-rose-200" role="alert">{safeError}</p>
+        {sessionSafeError !== null ? (
+          <p className="mt-3 text-xs font-semibold text-rose-200" role="alert">{sessionSafeError}</p>
         ) : null}
       </section>
     )

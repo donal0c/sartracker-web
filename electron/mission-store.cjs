@@ -54,6 +54,9 @@ const {
   createArchiveCustodyJournal,
 } = require('./archive-custody-journal.cjs')
 const {
+  recoverCorrectionAttachmentJournals,
+} = require('./archive-correction-custody.cjs')
+const {
   startArchiveCustodyOperation,
 } = require('./archive-custody-operation-runner.cjs')
 const { startArchiveVerifyWorker } = require('./archive-verify-runner.cjs')
@@ -498,6 +501,19 @@ function createElectronMissionStore(options) {
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   const migrationState = migrate(db, archiveDirectory)
+  let archiveCorrectionAttachmentRecoveryFailure = null
+  try {
+    recoverCorrectionAttachmentJournals({ databasePath, db })
+    db.prepare(`DELETE FROM metadata
+      WHERE key = 'archive_correction_attachment_recovery_failure'`).run()
+  } catch {
+    archiveCorrectionAttachmentRecoveryFailure = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+    db.prepare(`INSERT INTO metadata (key, value) VALUES (
+      'archive_correction_attachment_recovery_failure', ?
+    ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+      archiveCorrectionAttachmentRecoveryFailure,
+    )
+  }
   const archiveRegistry = createArchiveRegistry({
     db,
     archiveDirectory,
@@ -1048,8 +1064,12 @@ function createElectronMissionStore(options) {
   }
 
   /** Rejects synchronous live writes while a correction worker owns the SQLite writer lane. */
-  const assertArchiveCorrectionWriterIdle = () => {
+  const assertArchiveCorrectionWriterIdle = (missionId = undefined) => {
     if (archiveCorrectionAdmission !== null) {
+      if (typeof missionId === 'string') {
+        const mission = db.prepare('SELECT status FROM missions WHERE id = ?').get(missionId)
+        if (mission?.status === 'active' || mission?.status === 'paused') return
+      }
       const error = new Error(
         'Archive correction restore owns the SQLite writer lane; retry this live update after it completes.',
       )
@@ -1060,6 +1080,13 @@ function createElectronMissionStore(options) {
 
   /** Admits one correction only when no operational mission can contend with its writer turn. */
   const acquireArchiveCorrectionAdmission = () => {
+    if (archiveCorrectionAttachmentRecoveryFailure !== null) {
+      const error = new Error(
+        'Archive correction attachment custody recovery requires operator review before retry.',
+      )
+      error.code = archiveCorrectionAttachmentRecoveryFailure
+      throw error
+    }
     assertArchiveCorrectionWriterIdle()
     if (getActiveMission(db) !== null) {
       const error = new Error(
@@ -1858,7 +1885,6 @@ function createElectronMissionStore(options) {
       return true
     },
     createMission: async (input) => {
-      assertArchiveCorrectionWriterIdle()
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.startMission({ startedAt: mission.start_time }),
@@ -2190,11 +2216,11 @@ function createElectronMissionStore(options) {
       return true
     },
     upsertDevice: async (input) => {
-      assertArchiveCorrectionWriterIdle()
+      assertArchiveCorrectionWriterIdle(input.mission_id)
       return upsertDevice(db, input)
     },
     upsertDevicesBulk: async (input) => {
-      assertArchiveCorrectionWriterIdle()
+      assertArchiveCorrectionWriterIdle(input.mission_id)
       const startedAtMs = performance.now()
       const result = upsertDevicesBulk(db, input)
       await safeStorageDiagnostic(() =>
@@ -2217,7 +2243,6 @@ function createElectronMissionStore(options) {
       () => addPosition(db, input, coverageLedgerFaultInjection),
     ),
     addPositionsBulk: async (input) => {
-      assertArchiveCorrectionWriterIdle()
       const startedAtMs = performance.now()
       const result = await runCoverageMutation(
         input.mission_id,
@@ -2235,7 +2260,6 @@ function createElectronMissionStore(options) {
       return result.positions
     },
     persistTrackingPositionsBulk: async (input) => {
-      assertArchiveCorrectionWriterIdle()
       const startedAtMs = performance.now()
       const hasCheckpoints = Array.isArray(input.checkpoints) && input.checkpoints.length > 0
       const result = await runCoverageMutation(
@@ -2261,7 +2285,6 @@ function createElectronMissionStore(options) {
       }
     },
     persistTrackingHistoryBatch: async (input) => {
-      assertArchiveCorrectionWriterIdle()
       const startedAtMs = performance.now()
       const result = await runCoverageMutation(
         input.mission_id,
@@ -2777,6 +2800,7 @@ function createElectronMissionStore(options) {
               snapshotPath: rehydrationInput.snapshotPath,
               missionId: rehydrationInput.missionId,
               archiveId: rehydrationInput.archiveId,
+              operationId: rehydrationInput.operationId,
               finalizedEpoch: rehydrationInput.finalizedEpoch,
               adminName: rehydrationInput.adminName,
               reason: rehydrationInput.reason,
@@ -3010,7 +3034,7 @@ function createElectronMissionStore(options) {
 
   /** Publishes only a sequence that moved in the just-committed mutation. */
   async function runCoverageMutation(missionId, execute) {
-    assertArchiveCorrectionWriterIdle()
+    assertArchiveCorrectionWriterIdle(missionId)
     const before = readCoverageChangeSequence(missionId)
     const result = await execute()
     const after = readCoverageChangeSequence(missionId)
@@ -6988,6 +7012,10 @@ async function unlockFinalizedMission(
     'Mission correction reason',
     4_000,
   )
+  const operationId = typeof input?.operation_id === 'string'
+    && /^[A-Za-z0-9_-]{1,200}$/u.test(input.operation_id)
+    ? input.operation_id
+    : undefined
   const mission = getMission(db, missionId)
   if (mission.status !== 'finalized') {
     throw new Error('Only finalized missions can be unlocked.')
@@ -7040,6 +7068,7 @@ async function unlockFinalizedMission(
     await rehydrateArchivedMission({
       missionId,
       archiveId: input.archive_id,
+      operationId,
       snapshotPath: input.snapshot_path,
       attachmentDirectory: input.attachment_directory
         ?? path.join(path.dirname(input.snapshot_path), 'attachments'),

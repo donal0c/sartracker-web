@@ -1380,8 +1380,11 @@ async function markCleanExitAndQuit(
       await rendererTeardownCoordinator.prepare(window, 'app_quit')
     }
     await rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
-    await archiveReviewSessionManager.prepareClose()
     await missionStore.prepareClose()
+    // Join correction/restore workers before the review manager sweeps their
+    // session and staging inputs; otherwise shutdown can delete a live worker's
+    // source bytes mid-read.
+    await archiveReviewSessionManager.prepareClose()
     await crashLog.markCleanExit()
     officialMapProxy.close?.()
     missionStore.close()

@@ -598,6 +598,7 @@ export async function startMissionArchiveReviewRuntime(
       throw new Error('Correction authority and reason are required.')
     }
     apply({ phase: 'closing', error: null, progress: null })
+    let correctionCommitted = false
     try {
       await dependencies.missionStore.restoreMissionForCorrection({
         missionId: session.missionId,
@@ -607,6 +608,7 @@ export async function startMissionArchiveReviewRuntime(
         admin_name: input.admin_name.trim(),
         reason: input.reason.trim(),
       })
+      correctionCommitted = true
       // Electron closes the session while taking its correction snapshot; the
       // browser harness may still own it, so both paths are intentionally
       // idempotent here.
@@ -628,7 +630,20 @@ export async function startMissionArchiveReviewRuntime(
         recoveryRequired: 'none',
         error: null,
       })
-    } catch {
+    } catch (error) {
+      const committedAfterIpc = error !== null && typeof error === 'object'
+        && (error as { readonly archiveCorrectionCommitted?: unknown }).archiveCorrectionCommitted === true
+      if (correctionCommitted || committedAfterIpc) {
+        apply({
+          phase: 'error',
+          activeSession: null,
+          activeOperationId: null,
+          activeArchiveId: session.archiveId,
+          recoveryRequired: 'live_source_resume',
+          error: SAFE_LIVE_RESUME_FAILURE,
+        })
+        throw new Error(SAFE_CLOSE_FAILURE)
+      }
       let plaintextClosed = false
       try {
         plaintextClosed = await dependencies.archiveReview.close({ sessionId: session.sessionId }) === true

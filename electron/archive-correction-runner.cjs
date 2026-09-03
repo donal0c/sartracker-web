@@ -1,6 +1,7 @@
 'use strict'
 
 const path = require('node:path')
+const { randomUUID } = require('node:crypto')
 const { Worker } = require('node:worker_threads')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'archive-correction-worker.cjs')
@@ -111,7 +112,7 @@ function normalizeRequest(input) {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     throw createFailure('ARCHIVE_REHYDRATE_REQUEST_INVALID')
   }
-  const fields = ['databasePath', 'snapshotPath', 'missionId', 'archiveId',
+  const fields = ['databasePath', 'snapshotPath', 'missionId', 'archiveId', 'operationId',
     'finalizedEpoch', 'adminName', 'reason', 'attachmentDirectory', 'attachmentMappings',
     'faultInjection', 'workerPath', 'signal', 'createWorker']
   if (Object.keys(input).some((key) => !fields.includes(key))) {
@@ -134,6 +135,10 @@ function normalizeRequest(input) {
     || Buffer.byteLength(input.attachmentDirectory, 'utf8') > 8_192
     || !Array.isArray(input.attachmentMappings)
     || Buffer.byteLength(JSON.stringify(input.attachmentMappings), 'utf8') > 4 * 1024 * 1024) {
+    throw createFailure('ARCHIVE_REHYDRATE_REQUEST_INVALID')
+  }
+  if (input.operationId !== undefined
+    && (typeof input.operationId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/u.test(input.operationId))) {
     throw createFailure('ARCHIVE_REHYDRATE_REQUEST_INVALID')
   }
   if (!Number.isSafeInteger(input.finalizedEpoch) || input.finalizedEpoch < 1) {
@@ -160,6 +165,9 @@ function normalizeRequest(input) {
     snapshotPath: input.snapshotPath,
     missionId: input.missionId,
     archiveId: input.archiveId,
+    operationId: typeof input.operationId === 'string' && /^[A-Za-z0-9_-]{1,200}$/u.test(input.operationId)
+      ? input.operationId
+      : randomUUID(),
     finalizedEpoch: input.finalizedEpoch,
     adminName: input.adminName,
     reason: input.reason,

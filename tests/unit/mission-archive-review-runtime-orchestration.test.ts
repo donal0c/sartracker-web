@@ -625,6 +625,29 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
     })
   })
 
+  it('keeps a committed correction in live-source recovery when the post-commit switch fails', async () => {
+    const harness = createHarness()
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+    await controller.openArchive({
+      archiveId: VERIFIED_V2_ID,
+      containerVersion: 2,
+      slotType: 'passphrase',
+      secret: SECRET,
+    })
+    harness.switchMissionReviewSource.mockRejectedValueOnce(new Error('live source unavailable'))
+
+    await expect(controller.restoreForCorrection({
+      admin_name: 'Duty Admin',
+      reason: 'Correct a recorded clue.',
+    })).rejects.toThrow(/failed safely/iu)
+    expect(harness.close).toHaveBeenCalledOnce()
+    expect(harness.latestState()).toMatchObject({
+      phase: 'error',
+      activeSession: null,
+      recoveryRequired: 'live_source_resume',
+    })
+  })
+
   it('retains the open plaintext session when correction fails before cleanup can be confirmed', async () => {
     const harness = createHarness({
       restoreMissionForCorrection: vi.fn(async () => {
