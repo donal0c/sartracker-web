@@ -304,6 +304,19 @@ describe('archived mission correction rehydration', () => {
         status: 'finalized',
         storage_state: 'recovery_required',
       })
+      await expect(store.upsertMarker({
+        mission_id: mission.id,
+        id: '44444444-4444-4444-8444-444444444444',
+        type: 'clue',
+        name: 'Should be blocked',
+        lat: 52.1,
+        lon: -9.1,
+        irish_grid_e: 480000,
+        irish_grid_n: 580000,
+        display_order: 1,
+      })).rejects.toMatchObject({
+        code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+      })
       await expect(store.unlockFinalizedMission(correctionInput)).rejects.toMatchObject({
         code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
       })

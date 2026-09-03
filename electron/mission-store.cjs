@@ -170,6 +170,7 @@ const MAX_GPX_ISSUE_HASH_LENGTH = 128
 const MAX_GPX_ISSUE_REASON_LENGTH = 1_000
 const MAX_GPX_ISSUE_TIMESTAMP_LENGTH = 64
 const GPX_ISSUE_TRUNCATION_SUFFIX = '… [truncated for renderer]'
+const MAX_MISSION_NAME_BYTES = 1_024
 const ARCHIVE_UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 
 /** Validates the opaque renderer correlation key used only for worker cancellation. */
@@ -5116,6 +5117,14 @@ function validateSqliteDatabaseFile(databasePath, label) {
 }
 
 function createMission(db, input) {
+  if (typeof input?.name !== 'string'
+    || input.name.trim() === ''
+    || Buffer.byteLength(input.name, 'utf8') > MAX_MISSION_NAME_BYTES
+    || /[\u0000-\u001f\u007f]/u.test(input.name)) {
+    throw new Error(
+      `Mission name is required and must fit within ${MAX_MISSION_NAME_BYTES} UTF-8 bytes.`,
+    )
+  }
   if (getActiveMission(db) !== null) {
     throw new Error('Cannot create a new mission while another mission is active.')
   }
@@ -10959,6 +10968,13 @@ function all(db, sql, ...params) {
 
 function ensureWritableMission(db, missionId) {
   const mission = getMission(db, missionId)
+  if (readMissionLiveReviewStorageState(db, missionId) === 'recovery_required') {
+    const error = new Error(
+      'Archive correction attachment custody recovery requires operator review before writes.',
+    )
+    error.code = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+    throw error
+  }
   if (mission.status === 'finalized'
     || (mission.status === 'finished'
       && readActiveMissionCorrectionAuthorization(db, missionId) === null)) {

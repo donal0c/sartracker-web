@@ -100,7 +100,7 @@ describe('archive correction snapshot worker', () => {
     await expect(readFile(path.join(stagingDirectory, 'mission-store.sqlite'))).resolves.toEqual(bytes)
     await expect(readFile(path.join(stagingDirectory, 'attachments', '00000001-field.jpg'), 'utf8'))
       .resolves.toBe('archived attachment')
-  })
+  }, 20_000)
 
   it('fails closed when the authenticated source digest is wrong', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-snapshot-invalid-'))

@@ -75,6 +75,7 @@ const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
 const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
 const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
 const MAX_TRACCAR_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024
+const MAX_MISSION_NAME_BYTES = 1_024
 
 const ARCHIVE_REVIEW_CHANNELS = Object.freeze({
   open: 'sartracker:archive-review:open',
@@ -931,6 +932,10 @@ function registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSes
     const paths = await fileSystem.validateGpxEvidencePaths(envelope.paths)
     return missionStore.importGpxEvidencePaths({ missionId: envelope.missionId, paths })
   })
+  ipcMain.handle(MISSION_STORE_CHANNELS.createMission, (event, input) => {
+    validateIpcSender(event)
+    return missionStore.createMission(normalizeMissionCreateForIpc(input))
+  })
   const ownedQueryMethods = new Set([
     'listBreadcrumbPositions',
     'cancelBreadcrumbQuery',
@@ -966,6 +971,7 @@ function registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSes
     'finalizeMission',
     'unlockFinalizedMission',
     'restoreMissionForCorrection',
+    'createMission',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
     if (ownedQueryMethods.has(methodName)) {
@@ -976,6 +982,20 @@ function registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSes
       return missionStore[methodName](...args)
     })
   }
+}
+
+/** Validates the mission name at the main-process IPC boundary before dispatch. */
+function normalizeMissionCreateForIpc(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Mission creation input is invalid.')
+  }
+  const name = input.name
+  if (typeof name !== 'string' || name.trim() === ''
+    || Buffer.byteLength(name, 'utf8') > MAX_MISSION_NAME_BYTES
+    || /[\u0000-\u001f\u007f]/u.test(name)) {
+    throw new Error(`Mission name is required and must fit within ${MAX_MISSION_NAME_BYTES} UTF-8 bytes.`)
+  }
+  return input
 }
 
 /**

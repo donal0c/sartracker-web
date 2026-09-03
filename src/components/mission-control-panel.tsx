@@ -9,6 +9,7 @@ import {
 } from './outing-controls-section'
 import { ParticipantControlsSection } from './participant-controls-section'
 import { InlineDecisionDialog } from './inline-decision-dialog'
+import { MAX_MISSION_NAME_BYTES } from '../lib/mission-name'
 
 const MISSION_NAME_INPUT_ID = 'mission-name-input'
 const MISSION_OFFSET_INPUT_ID = 'mission-offset-input'
@@ -244,6 +245,7 @@ export function MissionControlPanel({
                 data-testid="mission-name-input"
                 disabled={!canStart}
                 id={MISSION_NAME_INPUT_ID}
+                maxLength={MAX_MISSION_NAME_BYTES}
                 onChange={(event) => setMissionName(event.target.value)}
                 placeholder="Search Operation Name"
                 value={missionName}

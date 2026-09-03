@@ -1245,6 +1245,7 @@ describe('mission archive IPC containment [DON-248]', () => {
       window: { addEventListener: vi.fn() },
     })).not.toThrow()
     const missionStore = exposedBridge?.missionStore as {
+      readonly createMission: (input: unknown) => Promise<unknown>
       readonly createMissionArchive?: unknown
       readonly issueMissionArchiveRecoveryCode: (missionId: unknown) => Promise<unknown>
       readonly finalizeMission: (missionId: unknown, custody: unknown) => Promise<unknown>
@@ -1258,6 +1259,7 @@ describe('mission archive IPC containment [DON-248]', () => {
     expect(missionStore).not.toHaveProperty('createMissionArchive')
     const huge = 'x'.repeat(64 * 1024 * 1024)
     const invalidCalls = [
+      () => missionStore.createMission({ name: 'é'.repeat(513) }),
       () => missionStore.issueMissionArchiveRecoveryCode(huge),
       () => missionStore.finalizeMission('mission-1', { passphrase: huge, recoveryCode: RECOVERY_CODE, operationId: OPERATION_ID }),
       () => missionStore.finalizeMission('mission-1', { passphrase: PASSPHRASE, recoveryCode: huge, operationId: OPERATION_ID }),

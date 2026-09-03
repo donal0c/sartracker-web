@@ -12,6 +12,7 @@ import type {
   StartMissionCleanupInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { readMissionArchiveErrorCode } from './mission-archive-error'
+import { MAX_MISSION_NAME_BYTES } from '../../lib/mission-name'
 
 const CLEANUP_TITLE_ID = 'mission-archive-cleanup-title'
 const CLEANUP_DESCRIPTION_ID = 'mission-archive-cleanup-description'
@@ -21,7 +22,7 @@ const RESOLVED_DURING_START = new Set<MissionCleanupBlocker>([
   'fresh_non_machine_unlock_required',
 ])
 const CLEANUP_SCOPE_WARNING = 'bulk evidence rows for this mission move out of the live database; the mission remains listed and reviewable from its verified encrypted archive; nothing is deleted from the archive; this is not an evidence-deletion feature.'
-const MAX_RENDERER_INPUT_CODE_UNITS = 1_024
+const MAX_RENDERER_INPUT_CODE_UNITS = MAX_MISSION_NAME_BYTES
 
 type CleanupDialogState =
   | 'loading'

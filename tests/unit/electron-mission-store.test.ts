@@ -504,6 +504,12 @@ describe('electron mission store', () => {
     }
   })
 
+  it('rejects mission names that cannot be entered in the exact cleanup confirmation', async () => {
+    store = await createStore()
+
+    await expect(store.createMission({ name: 'é'.repeat(513) })).rejects.toThrow(/mission name|1,024|1024/iu)
+  })
+
   it('creates WAL-backed mission storage under userData and survives store restart', async () => {
     store = await createStore()
 

@@ -195,6 +195,7 @@ const ARCHIVE_IPC_LIMITS = Object.freeze({
   recoveryCode: 64,
   credential: 1_024,
   confirmation: 1_024,
+  missionName: 1_024,
   correctionAdmin: 160,
   correctionReason: 4_000,
   detail: 200,
@@ -400,6 +401,35 @@ function projectPr5ScalarForIpc(value, label, maximumLength) {
     throw new Error(`${label} is invalid.`)
   }
   return value
+}
+
+/** Projects the mission-creation request under the same bound as cleanup confirmation. */
+function projectMissionCreateForIpc(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Mission creation input is invalid.')
+  }
+  const name = input.name
+  if (typeof name !== 'string' || name.trim() === ''
+    || name.length > ARCHIVE_IPC_LIMITS.missionName
+    || mutableEvidenceUtf8Length(name) > ARCHIVE_IPC_LIMITS.missionName
+    || /[\u0000-\u001f\u007f]/u.test(name)) {
+    throw new Error('Mission name is required and must fit within 1,024 UTF-8 bytes.')
+  }
+  const output = { name }
+  if (input.start_time !== undefined) {
+    if (typeof input.start_time !== 'string' || input.start_time.length > 64) {
+      throw new Error('Mission start time is invalid.')
+    }
+    output.start_time = input.start_time
+  }
+  if (input.notes !== undefined) {
+    if (input.notes !== null && (typeof input.notes !== 'string'
+      || input.notes.length > 2_000 || mutableEvidenceUtf8Length(input.notes) > 2_000)) {
+      throw new Error('Mission notes are invalid.')
+    }
+    output.notes = input.notes
+  }
+  return output
 }
 
 /** Mirrors the main Replay request-ID contract before Electron serializes IPC. */
@@ -1341,7 +1371,8 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
       ...Object.entries(MISSION_STORE_CHANNELS)
         .filter(([methodName]) => !REPLAY_STORE_METHODS.has(methodName)
           && !BOUNDED_EVIDENCE_STORE_METHODS.has(methodName)
-          && !ARCHIVE_STORE_METHODS.has(methodName))
+          && !ARCHIVE_STORE_METHODS.has(methodName)
+          && methodName !== 'createMission')
         .map(([methodName, channel]) => [
           methodName,
           (...args) => ipcRenderer.invoke(channel, ...args),
@@ -1381,6 +1412,10 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
           'Mission archive mission identity',
           ARCHIVE_IPC_LIMITS.missionId,
         ),
+      )],
+      ['createMission', (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.createMission,
+        projectMissionCreateForIpc(input),
       )],
       ['finalizeMission', (missionId, custody) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.finalizeMission,

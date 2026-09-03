@@ -158,6 +158,18 @@ describe('startMissionRuntime', () => {
     })
   })
 
+  it('rejects mission names larger than the cleanup confirmation bound', async () => {
+    const createMission = vi.fn()
+    const runtime = await startMissionRuntime({
+      missionStore: createMissionStoreStub({ createMission }),
+      applyRuntime: vi.fn(),
+    })
+
+    await expect(runtime.startMission({ name: 'é'.repeat(513) }))
+      .rejects.toThrow(/mission name.*1,?024 UTF-8 bytes/iu)
+    expect(createMission).not.toHaveBeenCalled()
+  })
+
   it('rejects a future start time before it reaches the mission store', async () => {
     const createMission = vi.fn()
     const runtime = await startMissionRuntime({
