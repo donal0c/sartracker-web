@@ -11,15 +11,16 @@ function source(fileName: string): string {
 
 describe('archive credential lifetime boundaries [DON-248 / BCP-14]', () => {
   it('does not rebuild immutable credential strings inside archive workers', () => {
-    const createWorker = source('mission-archive-worker.cjs')
-    const verifyWorker = source('archive-verify-worker.cjs')
+    const workerSources = [
+      source('mission-archive-worker.cjs'),
+      source('archive-verify.cjs'),
+      source('archive-restore.cjs'),
+      source('archive-cleanup-credential.cjs'),
+    ]
 
-    expect(createWorker).toContain('const request = workerData.request')
-    expect(verifyWorker).toContain('const request = workerData.request')
-    expect(createWorker).not.toContain('credentials.passphraseBytes.toString(\'utf8\')')
-    expect(createWorker).not.toContain('credentials.recoveryCodeBytes.toString(\'utf8\')')
-    expect(verifyWorker).not.toContain('credentials.passphraseBytes.toString(\'utf8\')')
-    expect(verifyWorker).not.toContain('credentials.recoveryCodeBytes.toString(\'utf8\')')
+    for (const worker of workerSources) {
+      expect(worker).not.toMatch(/(?:passphraseBytes|recoveryCodeBytes|secretBytes)\.toString\(['"]utf8['"]\)/u)
+    }
   })
 
   it('scrubs credentials immediately after their final KDF or unwrap use', () => {

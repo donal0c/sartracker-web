@@ -7,7 +7,6 @@ const {
   normalizeArchiveVerificationIdentity,
 } = require('./archive-envelope.cjs')
 const {
-  normalizeRecoveryCode,
   unwrapMissionArchiveKey,
   zeroBuffer,
 } = require('./archive-crypto.cjs')
@@ -118,9 +117,7 @@ async function authenticateArchiveCleanupCredential(input) {
     try {
       missionArchiveKey = await unwrapMissionArchiveKey({
         slot,
-        secret: request.slotType === 'recovery'
-          ? normalizeRecoveryCode(secretBytes.toString('utf8'))
-          : secretBytes,
+        secret: secretBytes,
         headerDigest: preamble.headerDigest,
       })
     } catch (error) {

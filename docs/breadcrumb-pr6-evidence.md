@@ -188,9 +188,10 @@ The next exact-head review wave found and closed two additional P2 gaps:
   cancellation failures preserve the Resume cleanup action.
 - Retained archive reads are serialized and skipped on the docked active/paused
   live-position path, so opening Review cannot fan out unbounded archive IPC.
-  Create/verify/restore workers scrub credential buffers at their final
-  KDF/unwrap boundary and do not reconstruct immutable worker credential
-  strings.
+  Create/verify/restore/cleanup workers carry credentials as transferred
+  mutable byte buffers. Recovery-code canonicalization stays in mutable bytes,
+  and the workers scrub those buffers at their final KDF/unwrap boundary; no
+  worker reconstructs an immutable credential string.
 
 The previous resulting candidate was `358370abd39c7ac708164d7adf2d1f564cc00bf8`
 / tree `29b3c37d755681cf41dc7ef4f9773fc6994e86f4`; its full deterministic gate

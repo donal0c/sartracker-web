@@ -12,7 +12,6 @@ const {
   readArchivePreamble,
 } = require('./archive-container.cjs')
 const {
-  normalizeRecoveryCode,
   unwrapMissionArchiveKey,
   zeroBuffer,
 } = require('./archive-crypto.cjs')
@@ -413,18 +412,12 @@ async function unwrapBothSlots(preamble, request, passphraseBytes, recoveryCodeB
       } finally {
         zeroBuffer(passphraseBytes)
       }
-      let recoveryCode = ''
-      try {
-        recoveryCode = normalizeRecoveryCode(recoveryCodeBytes.toString('utf8'))
-        recoveryKey = await unwrapMissionArchiveKey({
-          slot: recoverySlot,
-          secret: recoveryCode,
-          headerDigest: preamble.headerDigest,
-        })
-      } finally {
-        recoveryCode = ''
-        zeroBuffer(recoveryCodeBytes)
-      }
+      recoveryKey = await unwrapMissionArchiveKey({
+        slot: recoverySlot,
+        secret: recoveryCodeBytes,
+        headerDigest: preamble.headerDigest,
+      })
+      zeroBuffer(recoveryCodeBytes)
     } catch {
       throw new ArchiveVerifyError(
         'ARCHIVE_VERIFY_WRONG_KEY',

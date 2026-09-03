@@ -233,10 +233,9 @@ function copySecretBytes(secret) {
  */
 function normalizeSlotSecret(slotType, secret) {
   if (slotType === 'recovery') {
-    if (typeof secret !== 'string') {
-      throw new TypeError('The archive recovery credential must be a recovery-code string.')
-    }
-    return normalizeRecoveryCode(secret)
+    return typeof secret === 'string'
+      ? normalizeRecoveryCode(secret)
+      : normalizeRecoveryCodeBytes(secret)
   }
   return secret
 }
@@ -467,6 +466,69 @@ function normalizeRecoveryCode(value) {
 }
 
 /**
+ * Canonicalizes recovery-code bytes without constructing an immutable string.
+ *
+ * @param {Buffer | Uint8Array} value Candidate recovery-code bytes.
+ * @returns {Buffer} Mutable uppercase, grouped recovery-code bytes.
+ */
+function normalizeRecoveryCodeBytes(value) {
+  if (!Buffer.isBuffer(value) && !(value instanceof Uint8Array)) {
+    throw new TypeError('The archive recovery code must be mutable bytes.')
+  }
+  const source = Buffer.from(value)
+  const compact = Buffer.allocUnsafe(40)
+  let compactLength = 0
+  try {
+    for (const sourceByte of source) {
+      if (sourceByte === 0x09 || sourceByte === 0x0a || sourceByte === 0x0b
+        || sourceByte === 0x0c || sourceByte === 0x0d || sourceByte === 0x20
+        || sourceByte === 0x2d) {
+        continue
+      }
+      const byte = sourceByte >= 0x61 && sourceByte <= 0x7a
+        ? sourceByte - 0x20
+        : sourceByte
+      if (byte === 0x49 || byte === 0x4c || byte === 0x4f || byte === 0x55) {
+        throw new TypeError(
+          'The archive recovery code contains an ambiguous character (I, L, O or U).',
+        )
+      }
+      const isDigit = byte >= 0x30 && byte <= 0x39
+      const isLetter = (byte >= 0x41 && byte <= 0x48)
+        || (byte >= 0x4a && byte <= 0x4b)
+        || (byte >= 0x4d && byte <= 0x4e)
+        || (byte >= 0x50 && byte <= 0x54)
+        || (byte >= 0x56 && byte <= 0x5a)
+      if (!isDigit && !isLetter) {
+        throw new TypeError('The archive recovery code contains an invalid character.')
+      }
+      if (compactLength >= compact.length) {
+        throw new RangeError('The archive recovery code must contain exactly 40 characters.')
+      }
+      compact[compactLength] = byte
+      compactLength += 1
+    }
+    if (compactLength !== compact.length) {
+      throw new RangeError('The archive recovery code must contain exactly 40 characters.')
+    }
+    const canonical = Buffer.alloc(47)
+    let outputOffset = 0
+    for (let index = 0; index < compact.length; index += 1) {
+      if (index > 0 && index % 5 === 0) {
+        canonical[outputOffset] = 0x2d
+        outputOffset += 1
+      }
+      canonical[outputOffset] = compact[index]
+      outputOffset += 1
+    }
+    return canonical
+  } finally {
+    zeroBuffer(source)
+    zeroBuffer(compact)
+  }
+}
+
+/**
  * Accepts only the exact supported SARARCH2 scrypt v1 profile.
  *
  * @param {unknown} profile Candidate serialized profile.
@@ -572,15 +634,17 @@ async function wrapMissionArchiveKey({
   let salt
   let nonce
   let wrappingKey
+  let normalizedSlotType
+  let normalizedSecret
   try {
     mak = copyBytes(
       missionArchiveKey,
       'The mission archive key',
       MISSION_ARCHIVE_KEY_BYTES,
     )
-    const normalizedSlotType = normalizeSlotType(slotType)
+    normalizedSlotType = normalizeSlotType(slotType)
     const normalizedSlotId = normalizeSlotId(slotId)
-    const normalizedSecret = normalizeSlotSecret(normalizedSlotType, secret)
+    normalizedSecret = normalizeSlotSecret(normalizedSlotType, secret)
     header = copyBytes(headerDigest, 'The canonical archive header digest', HEADER_DIGEST_BYTES)
     salt = obtainRandomBytes(
       randomBytes,
@@ -628,6 +692,9 @@ async function wrapMissionArchiveKey({
     if (wrappingKey !== undefined) {
       zeroBuffer(wrappingKey)
     }
+    if (normalizedSlotType === 'recovery' && Buffer.isBuffer(normalizedSecret)) {
+      zeroBuffer(normalizedSecret)
+    }
   }
 }
 
@@ -643,10 +710,12 @@ async function wrapMissionArchiveKey({
  */
 async function unwrapMissionArchiveKey({ slot, secret, headerDigest }) {
   const validatedSlot = validateKeySlot(slot)
-  const normalizedSecret = normalizeSlotSecret(validatedSlot.slotType, secret)
-  const header = copyBytes(headerDigest, 'The canonical archive header digest', HEADER_DIGEST_BYTES)
+  let normalizedSecret
+  let header
   let wrappingKey
   try {
+    normalizedSecret = normalizeSlotSecret(validatedSlot.slotType, secret)
+    header = copyBytes(headerDigest, 'The canonical archive header digest', HEADER_DIGEST_BYTES)
     wrappingKey = await deriveSlotKey({
       secret: normalizedSecret,
       salt: validatedSlot.salt,
@@ -679,13 +748,16 @@ async function unwrapMissionArchiveKey({ slot, secret, headerDigest }) {
       throw new ArchiveWrongKeyError()
     }
   } finally {
-    zeroBuffer(header)
+    if (header !== undefined) zeroBuffer(header)
     zeroBuffer(validatedSlot.salt)
     zeroBuffer(validatedSlot.nonce)
     zeroBuffer(validatedSlot.ciphertext)
     zeroBuffer(validatedSlot.authTag)
     if (wrappingKey !== undefined) {
       zeroBuffer(wrappingKey)
+    }
+    if (validatedSlot.slotType === 'recovery' && Buffer.isBuffer(normalizedSecret)) {
+      zeroBuffer(normalizedSecret)
     }
   }
 }
@@ -880,6 +952,7 @@ module.exports = {
   generateMissionArchiveKey,
   generateRecoveryCode,
   normalizeRecoveryCode,
+  normalizeRecoveryCodeBytes,
   validateScryptParameters,
   deriveSlotKey,
   wrapMissionArchiveKey,

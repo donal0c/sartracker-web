@@ -40,6 +40,7 @@ interface ArchiveCryptoModule {
   readonly generateMissionArchiveKey: (randomBytes?: (size: number) => Buffer) => Buffer
   readonly generateRecoveryCode: (randomBytes?: (size: number) => Buffer) => string
   readonly normalizeRecoveryCode: (value: string) => string
+  readonly normalizeRecoveryCodeBytes: (value: Buffer | Uint8Array) => Buffer
   readonly validateScryptParameters: (profile: unknown) => ScryptProfile
   readonly deriveSlotKey: (input: {
     readonly secret: string | Buffer | Uint8Array
@@ -97,6 +98,7 @@ const {
   generateMissionArchiveKey,
   generateRecoveryCode,
   normalizeRecoveryCode,
+  normalizeRecoveryCodeBytes,
   validateScryptParameters,
   deriveSlotKey,
   wrapMissionArchiveKey,
@@ -220,6 +222,18 @@ describe('SARARCH2 mission archive keys and recovery codes', () => {
     expect(() => normalizeRecoveryCode(`${'0'.repeat(20)}_${'0'.repeat(19)}`)).toThrow(
       /invalid/i,
     )
+  })
+
+  it('normalizes mutable recovery-code bytes without constructing a credential string', () => {
+    const input = Buffer.from('01234 56789 abcde fghjk mnpqr stvwx yz012 34567', 'utf8')
+    const normalized = normalizeRecoveryCodeBytes(input)
+
+    expect(normalized.toString('utf8')).toBe(
+      '01234-56789-ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567',
+    )
+    expect(Buffer.isBuffer(normalized)).toBe(true)
+    zeroBuffer(input)
+    zeroBuffer(normalized)
   })
 })
 

@@ -327,21 +327,14 @@ async function createMissionArchiveFile(input) {
     // The passphrase is no longer needed once its authenticated slot exists.
     zeroBuffer(passphraseBytes)
     assertNotCancelled(cancellationFlag)
-    let recoveryCode = ''
-    let recoverySlot
-    try {
-      recoveryCode = recoveryCodeBytes.toString('utf8')
-      recoverySlot = await wrapMissionArchiveKey({
-        missionArchiveKey,
-        slotType: 'recovery',
-        slotId: 'recovery-v1',
-        secret: recoveryCode,
-        headerDigest,
-      })
-    } finally {
-      recoveryCode = ''
-      zeroBuffer(recoveryCodeBytes)
-    }
+    const recoverySlot = await wrapMissionArchiveKey({
+      missionArchiveKey,
+      slotType: 'recovery',
+      slotId: 'recovery-v1',
+      secret: recoveryCodeBytes,
+      headerDigest,
+    })
+    zeroBuffer(recoveryCodeBytes)
     const kdfDurationMs = performance.now() - kdfStartedAt
     headerDigest.fill(0)
     noncePrefix.fill(0)

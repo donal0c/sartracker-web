@@ -7,7 +7,6 @@ const { createHash } = require('node:crypto')
 const Database = require('better-sqlite3')
 const { normalizeArchiveVerificationIdentity } = require('./archive-envelope.cjs')
 const {
-  normalizeRecoveryCode,
   unwrapMissionArchiveKey,
   zeroBuffer,
 } = require('./archive-crypto.cjs')
@@ -244,12 +243,9 @@ async function unwrapReviewSlot(preamble, request, secretBytes) {
     ? slots.passphraseSlot
     : slots.recoverySlot
   try {
-    const secret = request.slotType === 'recovery'
-      ? normalizeRecoveryCode(secretBytes.toString('utf8'))
-      : secretBytes
     return await unwrapMissionArchiveKey({
       slot,
-      secret,
+      secret: secretBytes,
       headerDigest: preamble.headerDigest,
     })
   } catch {
