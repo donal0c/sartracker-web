@@ -12,4 +12,14 @@ describe('generated app version provenance', () => {
     expect(script).toContain("git rev-parse HEAD")
     expect(script).not.toContain("git rev-parse --short=12 HEAD")
   })
+
+  it('writes exactly one trailing newline to keep the generated source diff-clean', () => {
+    const script = readFileSync(
+      path.resolve(process.cwd(), 'scripts/generate-app-version.mjs'),
+      'utf8',
+    )
+
+    expect(script).toContain("writeFileSync(generatedFilePath, generated, 'utf8')")
+    expect(script).not.toContain('writeFileSync(generatedFilePath, `${generated}\\n`,')
+  })
 })

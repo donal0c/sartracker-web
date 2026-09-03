@@ -155,6 +155,37 @@ describe('archive correction worker runner', () => {
     }
   })
 
+  it('does not mask a late custody cleanup failure behind cancellation', async () => {
+    const worker = new EventEmitter() as EventEmitter & {
+      postMessage: (message: unknown) => void
+      terminate: () => Promise<number>
+    }
+    worker.postMessage = () => undefined
+    worker.terminate = async () => 1
+    const controller = new AbortController()
+    const operation = startArchiveCorrectionWorker({
+      databasePath: '/tmp/mission-store.sqlite',
+      snapshotPath: '/tmp/correction.sqlite',
+      missionId: 'mission-1',
+      archiveId: '11111111-1111-4111-8111-111111111111',
+      expectedSha256: 'a'.repeat(64),
+      expectedIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
+      finalizedEpoch: 1,
+      adminName: 'Duty Admin',
+      reason: 'Correction',
+      attachmentDirectory: '/tmp/attachments',
+      attachmentMappings: [],
+      signal: controller.signal,
+      createWorker: () => worker,
+    })
+    controller.abort()
+    worker.emit('message', { type: 'error', code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED' })
+    worker.emit('exit', 1)
+    await expect(operation).rejects.toMatchObject({
+      code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+    })
+  })
+
   it('retains its custody journal when attachment cleanup cannot be proven', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-cleanup-failure-'))
     roots.push(root)

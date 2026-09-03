@@ -32,7 +32,7 @@ if (!existsSync(generatedDir)) {
   mkdirSync(generatedDir, { recursive: true })
 }
 
-writeFileSync(generatedFilePath, `${generated}\n`, 'utf8')
+writeFileSync(generatedFilePath, generated, 'utf8')
 
 function safeGitCommand(command) {
   try {

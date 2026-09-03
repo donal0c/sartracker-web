@@ -2918,6 +2918,17 @@ function createElectronMissionStore(options) {
             if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') {
               markArchiveCorrectionAttachmentRecoveryRequired()
             }
+            if (error?.code === 'ARCHIVE_CANCELLED'
+              && isCommittedArchiveCorrection(db, rehydrationInput.missionId, rehydrationInput.archiveId)) {
+              markArchiveCorrectionAttachmentRecoveryRequired()
+              const failure = new Error(
+                'Archive correction cancellation occurred after commit before custody cleanup was proven.',
+              )
+              failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
+              failure.cause = error
+              throw failure
+            }
+            if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') throw error
             if (isCommittedArchiveCorrection(db, rehydrationInput.missionId, rehydrationInput.archiveId)) {
               return getMission(db, rehydrationInput.missionId)
             }

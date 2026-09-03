@@ -30,6 +30,7 @@ function startArchiveCorrectionWorker(input) {
   let worker
   let settled = false
   let terminal = null
+  let cancellationRequested = false
   let cancelOperation = () => undefined
   let terminationTimer = null
 
@@ -57,9 +58,10 @@ function startArchiveCorrectionWorker(input) {
         try { void Promise.resolve(worker.terminate()).catch(() => undefined) } catch {}
         return
       }
+      if (cancellationRequested) return
+      cancellationRequested = true
       Atomics.store(cancellationFlag, 0, 1)
       try { worker.postMessage({ type: 'cancel' }) } catch {}
-      rejectOnce(createFailure('ARCHIVE_CANCELLED'))
       if (terminationTimer === null) {
         terminationTimer = setTimeout(() => {
           try { void Promise.resolve(worker.terminate()).catch(() => undefined) } catch {}
@@ -99,7 +101,9 @@ function startArchiveCorrectionWorker(input) {
       if (settled) return
       settled = true
       if (terminal !== null) resolve(terminal)
-      else reject(createFailure('ARCHIVE_REHYDRATE_FAILED'))
+      else reject(createFailure(cancellationRequested
+        ? 'ARCHIVE_CANCELLED'
+        : 'ARCHIVE_REHYDRATE_FAILED'))
     })
     if (request.signal?.aborted === true) cancel()
   })
