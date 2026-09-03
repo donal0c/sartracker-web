@@ -113,10 +113,13 @@ export function projectArchiveLifecycleSmokeClosedReviewSemantic(content, expect
     || Array.isArray(content.replay)) {
     throw new Error('Packaged closed Review content has an invalid root shape.')
   }
-  if (Object.keys(content.review).sort().join(',')
+  const reviewKeys = Object.keys(content.review).sort()
+  if (reviewKeys.join(',')
       !== [...CLOSED_REVIEW_RESULT_KEYS].sort().join(',')
     || typeof content.review.correctionAuthorized !== 'boolean') {
-    throw new Error('Packaged closed Review public result shape is invalid.')
+    throw new Error(
+      `Packaged closed Review public result shape is invalid (${reviewKeys.join(',')}; correctionAuthorized=${typeof content.review.correctionAuthorized}).`,
+    )
   }
   const semanticReview = content.review
   const replayCounts = validateClosedReplayEvidence(content.replay, expected)
