@@ -192,6 +192,68 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
     expect(missionStore.finalizeMission).toHaveBeenCalledTimes(2)
   })
 
+  it('reopens renderer evidence after a successful archive correction restore', async () => {
+    const restoreMissionForCorrection = vi.fn().mockResolvedValue({
+      mission: { id: 'mission-1', status: 'finished' },
+      correction: { committed: true, cleanupComplete: true },
+    })
+    const reopenMissionEvidenceAfterUnlock = vi.fn()
+    const bounded = createIngestEvidenceFinalizationBoundary(
+      {
+        finalizeMission: vi.fn(),
+        unlockFinalizedMission: vi.fn(),
+        restoreMissionForCorrection,
+      },
+      {
+        flushMission: vi.fn(),
+        runWithMissionFinishFence: vi.fn(),
+        runWithMissionFinalizationFence: vi.fn(),
+        reopenMissionEvidenceAfterUnlock,
+      },
+    )
+
+    await expect(bounded.restoreMissionForCorrection?.({
+      mission_id: 'mission-1',
+      archiveId: 'archive-1',
+      operationId: 'operation-1',
+      sessionId: 'session-1',
+      admin_name: 'Duty Admin',
+      reason: 'Correction restore',
+    })).resolves.toMatchObject({ correction: { committed: true } })
+    expect(reopenMissionEvidenceAfterUnlock).toHaveBeenCalledWith('mission-1')
+  })
+
+  it('does not reopen renderer evidence when correction cleanup remains unresolved', async () => {
+    const restoreMissionForCorrection = vi.fn().mockResolvedValue({
+      mission: { id: 'mission-1', status: 'finished' },
+      correction: { committed: true, cleanupComplete: false },
+    })
+    const reopenMissionEvidenceAfterUnlock = vi.fn()
+    const bounded = createIngestEvidenceFinalizationBoundary(
+      {
+        finalizeMission: vi.fn(),
+        unlockFinalizedMission: vi.fn(),
+        restoreMissionForCorrection,
+      },
+      {
+        flushMission: vi.fn(),
+        runWithMissionFinishFence: vi.fn(),
+        runWithMissionFinalizationFence: vi.fn(),
+        reopenMissionEvidenceAfterUnlock,
+      },
+    )
+
+    await expect(bounded.restoreMissionForCorrection?.({
+      mission_id: 'mission-1',
+      archiveId: 'archive-1',
+      operationId: 'operation-1',
+      sessionId: 'session-1',
+      admin_name: 'Duty Admin',
+      reason: 'Correction restore',
+    })).resolves.toMatchObject({ correction: { cleanupComplete: false } })
+    expect(reopenMissionEvidenceAfterUnlock).not.toHaveBeenCalled()
+  })
+
   it('does not let a stale finalization continuation reseal evidence after unlock', async () => {
     let status: 'finished' | 'finalized' = 'finished'
     let confirmFinalizationCommitted: (() => void) | undefined

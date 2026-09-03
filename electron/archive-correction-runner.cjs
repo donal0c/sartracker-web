@@ -31,6 +31,8 @@ function startArchiveCorrectionWorker(input) {
   let settled = false
   let terminal = null
   let cancellationRequested = false
+  let forcedTermination = false
+  let completionTerminationRequested = false
   let cancelOperation = () => undefined
   let terminationTimer = null
 
@@ -55,6 +57,7 @@ function startArchiveCorrectionWorker(input) {
     }
     const cancel = () => {
       if (terminal !== null) {
+        completionTerminationRequested = true
         try { void Promise.resolve(worker.terminate()).catch(() => undefined) } catch {}
         return
       }
@@ -64,6 +67,7 @@ function startArchiveCorrectionWorker(input) {
       try { worker.postMessage({ type: 'cancel' }) } catch {}
       if (terminationTimer === null) {
         terminationTimer = setTimeout(() => {
+          forcedTermination = true
           try { void Promise.resolve(worker.terminate()).catch(() => undefined) } catch {}
         }, CANCEL_GRACE_MS)
       }
@@ -92,7 +96,7 @@ function startArchiveCorrectionWorker(input) {
       rejectOnce(createFailure('ARCHIVE_REHYDRATE_FAILED'))
     })
     worker.once('error', () => {
-      if (terminal === null) rejectOnce(createFailure('ARCHIVE_REHYDRATE_FAILED'))
+      rejectOnce(createFailure('ARCHIVE_REHYDRATE_FAILED'))
     })
     worker.once('exit', (code) => {
       if (terminationTimer !== null) clearTimeout(terminationTimer)
@@ -100,10 +104,17 @@ function startArchiveCorrectionWorker(input) {
       workerExited.resolve()
       if (settled) return
       settled = true
-      if (terminal !== null) resolve(terminal)
-      else reject(createFailure(cancellationRequested
-        ? 'ARCHIVE_CANCELLED'
-        : 'ARCHIVE_REHYDRATE_FAILED'))
+      if (terminal !== null) {
+        if (code === 0 || completionTerminationRequested) resolve(terminal)
+        else reject(createFailure('ARCHIVE_REHYDRATE_FAILED'))
+      }
+      else if (cancellationRequested && forcedTermination) {
+        reject(createFailure('ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'))
+      } else {
+        reject(createFailure(cancellationRequested
+          ? 'ARCHIVE_CANCELLED'
+          : 'ARCHIVE_REHYDRATE_FAILED'))
+      }
     })
     if (request.signal?.aborted === true) cancel()
   })

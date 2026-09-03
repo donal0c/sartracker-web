@@ -76,6 +76,8 @@ const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
 const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
 const MAX_TRACCAR_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024
 const MAX_MISSION_NAME_BYTES = 1_024
+const MAX_MISSION_START_TIME_BYTES = 64
+const MAX_MISSION_NOTES_BYTES = 2_000
 
 const ARCHIVE_REVIEW_CHANNELS = Object.freeze({
   open: 'sartracker:archive-review:open',
@@ -989,13 +991,34 @@ function normalizeMissionCreateForIpc(input) {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('Mission creation input is invalid.')
   }
+  const allowedKeys = new Set(['name', 'start_time', 'notes'])
+  for (const key of Object.keys(input)) {
+    if (!allowedKeys.has(key)) {
+      throw new Error('Mission creation input contains an unsupported field.')
+    }
+  }
   const name = input.name
   if (typeof name !== 'string' || name.trim() === ''
     || Buffer.byteLength(name, 'utf8') > MAX_MISSION_NAME_BYTES
     || /[\u0000-\u001f\u007f]/u.test(name)) {
     throw new Error(`Mission name is required and must fit within ${MAX_MISSION_NAME_BYTES} UTF-8 bytes.`)
   }
-  return input
+  const output = { name }
+  if (input.start_time !== undefined) {
+    if (typeof input.start_time !== 'string'
+      || Buffer.byteLength(input.start_time, 'utf8') > MAX_MISSION_START_TIME_BYTES) {
+      throw new Error('Mission start time is invalid.')
+    }
+    output.start_time = input.start_time
+  }
+  if (input.notes !== undefined) {
+    if (input.notes !== null && (typeof input.notes !== 'string'
+      || Buffer.byteLength(input.notes, 'utf8') > MAX_MISSION_NOTES_BYTES)) {
+      throw new Error('Mission notes are invalid.')
+    }
+    output.notes = input.notes
+  }
+  return output
 }
 
 /**

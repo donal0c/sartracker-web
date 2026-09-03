@@ -802,7 +802,18 @@ function registerMissionArchiveIpcHandlers(input) {
       operationFailure = error
     }
     activeOperations.delete(operationId)
-    if (operationFailure !== null) throw operationFailure
+    let committedCorrectionFailure = false
+    if (operationFailure !== null) {
+      try {
+        const committedMission = await missionStore.getMission(missionId)
+        committedCorrectionFailure = committedMission?.status === 'finished'
+          && committedMission?.storage_state === 'recovery_required'
+        if (committedCorrectionFailure) result = committedMission
+      } catch {
+        committedCorrectionFailure = false
+      }
+      if (!committedCorrectionFailure) throw operationFailure
+    }
     if (snapshot !== null) {
       try {
         if (typeof input.archiveReviewSessionManager.completeCorrectionSnapshot === 'function') {
@@ -830,13 +841,25 @@ function registerMissionArchiveIpcHandlers(input) {
             correction: Object.freeze({
               committed: true,
               cleanupComplete: false,
-              failureCode: failure.code,
+              failureCode: committedCorrectionFailure
+                ? (operationFailure?.code ?? failure.code)
+                : failure.code,
             }),
           })
         }
         failure.cause = error
         throw failure
       }
+    }
+    if (committedCorrectionFailure) {
+      return Object.freeze({
+        ...projectUnlockedMissionResult(result, missionId),
+        correction: Object.freeze({
+          committed: true,
+          cleanupComplete: false,
+          failureCode: operationFailure?.code ?? 'ARCHIVE_REHYDRATE_FAILED',
+        }),
+      })
     }
     return projectUnlockedMissionResult(result, missionId)
   })

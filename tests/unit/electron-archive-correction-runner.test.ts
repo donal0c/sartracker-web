@@ -53,7 +53,7 @@ describe('archive correction worker runner', () => {
     })
   })
 
-  it('keeps the durable completion when the worker reports a late error or exits nonzero', async () => {
+  it('rejects a completion followed by a worker error or nonzero exit', async () => {
     const worker = new EventEmitter() as EventEmitter & {
       postMessage: (message: unknown) => void
       terminate: () => Promise<number>
@@ -81,7 +81,7 @@ describe('archive correction worker runner', () => {
     })
     worker.emit('error', new Error('late worker error'))
     worker.emit('exit', 1)
-    await expect(operation).resolves.toMatchObject({ missionId: 'mission-1' })
+    await expect(operation).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_FAILED' })
   })
 
   it('terminates a worker after completion when shutdown cancellation arrives before exit', async () => {
@@ -143,7 +143,9 @@ describe('archive correction worker runner', () => {
         signal: controller.signal,
         createWorker: () => worker,
       })
-      const rejection = expect(operation).rejects.toMatchObject({ code: 'ARCHIVE_CANCELLED' })
+      const rejection = expect(operation).rejects.toMatchObject({
+        code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+      })
       controller.abort()
       expect(worker.terminate).not.toHaveBeenCalled()
       await vi.advanceTimersByTimeAsync(2_000)

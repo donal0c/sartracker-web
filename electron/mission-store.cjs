@@ -2915,22 +2915,24 @@ function createElectronMissionStore(options) {
             admission.workerExited = Promise.resolve(operation?.workerExited ?? operation)
             return await awaitArchiveWorker(operation)
           } catch (error) {
-            if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') {
+            const committedCorrection = isCommittedArchiveCorrection(
+              db,
+              rehydrationInput.missionId,
+              rehydrationInput.archiveId,
+            )
+            if (committedCorrection) {
               markArchiveCorrectionAttachmentRecoveryRequired()
-            }
-            if (error?.code === 'ARCHIVE_CANCELLED'
-              && isCommittedArchiveCorrection(db, rehydrationInput.missionId, rehydrationInput.archiveId)) {
-              markArchiveCorrectionAttachmentRecoveryRequired()
+              if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') throw error
               const failure = new Error(
-                'Archive correction cancellation occurred after commit before custody cleanup was proven.',
+                'Archive correction failed after commit before custody cleanup was proven.',
               )
               failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
               failure.cause = error
               throw failure
             }
-            if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') throw error
-            if (isCommittedArchiveCorrection(db, rehydrationInput.missionId, rehydrationInput.archiveId)) {
-              return getMission(db, rehydrationInput.missionId)
+            if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') {
+              markArchiveCorrectionAttachmentRecoveryRequired()
+              throw error
             }
             throw error
           }

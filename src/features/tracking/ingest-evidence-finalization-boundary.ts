@@ -1,5 +1,7 @@
 import type {
   MissionArchiveCustodyInput,
+  RestoreMissionForCorrectionInput,
+  RestoreMissionForCorrectionResult,
   UnlockFinalizedMissionInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 
@@ -10,6 +12,9 @@ type FinalizableMissionStore = {
     custody: MissionArchiveCustodyInput,
   ) => Promise<unknown>
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<unknown>
+  readonly restoreMissionForCorrection?: (
+    input: RestoreMissionForCorrectionInput,
+  ) => Promise<RestoreMissionForCorrectionResult>
 }
 
 type RendererEvidenceBoundary = {
@@ -45,9 +50,23 @@ export function createIngestEvidenceFinalizationBoundary<
             () => finishMission(missionId),
           ),
       }
+  const restoreMissionForCorrection = missionStore.restoreMissionForCorrection
+  const correctionBoundary = restoreMissionForCorrection === undefined
+    ? {}
+    : {
+        restoreMissionForCorrection: async (input: RestoreMissionForCorrectionInput) => {
+          const result = await restoreMissionForCorrection(input)
+          const correction = result?.correction
+          if (!(correction?.committed === true && correction.cleanupComplete === false)) {
+            evidence.reopenMissionEvidenceAfterUnlock(input.mission_id)
+          }
+          return result
+        },
+      }
   return {
     ...missionStore,
     ...finishBoundary,
+    ...correctionBoundary,
     finalizeMission: async (missionId: string, custody: MissionArchiveCustodyInput) =>
       evidence.runWithMissionFinalizationFence(
         missionId,

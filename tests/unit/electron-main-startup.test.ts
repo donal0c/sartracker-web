@@ -32,6 +32,7 @@ describe('Electron main startup', () => {
     removeTestProcessListeners('unhandledRejection')
     rmSync(testUserDataPath, { force: true, recursive: true })
     delete process.env.SARTRACKER_ELECTRON_BLOCK_NETWORK
+    delete process.env.ELECTRON_RENDERER_URL
     delete require.cache[require.resolve('../../electron/main.cjs')]
   })
 
@@ -79,6 +80,28 @@ describe('Electron main startup', () => {
     const callback = vi.fn()
     handler({ url: 'https://tile.openstreetmap.org/1/1/1.png' }, callback)
     expect(callback).toHaveBeenCalledWith({ cancel: true })
+  })
+
+  it('rejects oversized mission creation payloads at the direct main IPC boundary', async () => {
+    process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const handler = electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:mission-store:create-mission',
+    )?.[1]
+    const sender = electronMock.BrowserWindow.mock.results[0]?.value.webContents
+    expect(handler).toBeTypeOf('function')
+
+    expect(() => handler({ sender, senderFrame: { url: 'http://localhost:5173/' } }, {
+      name: 'Bounded direct IPC mission',
+      notes: 'x'.repeat(64 * 1024 * 1024),
+    })).toThrow(/notes|invalid|bound/iu)
   })
 
   it('denies unexpected navigation and renderer-opened windows [DON-236]', async () => {

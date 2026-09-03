@@ -312,6 +312,58 @@ describe('mission archive IPC containment [DON-248]', () => {
     }
   })
 
+  it('returns committed correction status when mission-store custody cleanup fails after commit', async () => {
+    const stagingRoot = await mkdtemp(join(tmpdir(), 'sartracker-correction-custody-failure-'))
+    const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
+    await mkdir(stagingDirectory)
+    const snapshotPath = join(stagingDirectory, 'mission-store.sqlite')
+    const snapshotForCorrection = vi.fn(async () => ({
+      missionId: 'mission-1',
+      archiveId: 'archive-1',
+      snapshotPath,
+      databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
+      databaseSha256: 'a'.repeat(64),
+    }))
+    const custodyFailure = Object.assign(new Error('custody cleanup requires recovery'), {
+      code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+    })
+    try {
+      const { handlers } = createMainHarness({
+        archiveReviewSessionManager: {
+          hasReviewActivity: vi.fn(() => true),
+          acquireCleanupLease: vi.fn(),
+          snapshotForCorrection,
+          completeCorrectionSnapshot: vi.fn(async () => true),
+        },
+      }, {
+        unlockFinalizedMission: vi.fn(async () => { throw custodyFailure }),
+        getMission: vi.fn(async () => ({
+          id: 'mission-1',
+          status: 'finished',
+          storage_state: 'recovery_required',
+        })),
+      })
+      await expect(handlers.get(CHANNELS.restoreMissionForCorrection)?.({ sender: createSender(8) }, {
+        mission_id: 'mission-1',
+        archiveId: 'archive-1',
+        operationId: OPERATION_ID,
+        sessionId: '44444444-4444-4444-8444-444444444444',
+        admin_name: 'Duty Admin',
+        reason: 'Keep the operator on the durable custody fence.',
+      })).resolves.toEqual({
+        id: 'mission-1',
+        status: 'finished',
+        correction: {
+          committed: true,
+          cleanupComplete: false,
+          failureCode: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+        },
+      })
+    } finally {
+      await rm(stagingRoot, { recursive: true, force: true })
+    }
+  })
+
   it('rejects an oversized correction reason before reaching the mission store', async () => {
     const { handlers, missionStore } = createMainHarness()
     const event = { sender: createSender(8) }

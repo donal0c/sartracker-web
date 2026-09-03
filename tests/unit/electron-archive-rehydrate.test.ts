@@ -312,13 +312,31 @@ describe('archived mission correction rehydration', () => {
     }
   }, 60_000)
 
-  it('turns a runtime cleanup-required correction failure into a durable same-process recovery fence', async () => {
+  it('turns a generic post-commit correction failure into a durable same-process recovery fence', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-cleanup-fence-'))
     temporaryDirectories.add(userDataPath)
-    const cleanupFailure = Object.assign(new Error('attachment cleanup requires recovery'), {
-      code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+    const cleanupFailure = Object.assign(new Error('worker exited after correction commit'), {
+      code: 'ARCHIVE_REHYDRATE_FAILED',
     })
-    const correctionRunner = vi.fn(() => Promise.reject(cleanupFailure))
+    const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
+      const database = new Database(String(input.databasePath))
+      const timestamp = '2026-09-03T10:00:00.000Z'
+      database.prepare('UPDATE missions SET status = ? WHERE id = ?')
+        .run('finished', input.missionId)
+      database.prepare(`INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
+      ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
+        'generic-post-commit-event',
+        input.missionId,
+        timestamp,
+        JSON.stringify({ restored_from_archive_id: input.archiveId }),
+        timestamp,
+      )
+      database.close()
+      const completion = Promise.reject(cleanupFailure)
+      Object.defineProperty(completion, 'workerExited', { value: Promise.resolve() })
+      return completion
+    })
     const store = createElectronMissionStore({
       userDataPath,
       readAdminRoster: async () => ['Duty Admin'],
@@ -359,7 +377,7 @@ describe('archived mission correction rehydration', () => {
         code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
       })
       await expect(store.getMission(mission.id)).resolves.toMatchObject({
-        status: 'finalized',
+        status: 'finished',
         storage_state: 'recovery_required',
       })
       await expect(store.upsertMarker({
@@ -375,9 +393,7 @@ describe('archived mission correction rehydration', () => {
       })).rejects.toMatchObject({
         code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
       })
-      await expect(store.unlockFinalizedMission(correctionInput)).rejects.toMatchObject({
-        code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
-      })
+      await expect(store.unlockFinalizedMission(correctionInput)).rejects.toThrow(/finalized|recovery/iu)
       expect(correctionRunner).toHaveBeenCalledOnce()
     } finally {
       await store.prepareClose()
@@ -450,6 +466,69 @@ describe('archived mission correction rehydration', () => {
       await expect(store.getMission(mission.id)).resolves.toMatchObject({
         status: 'finished',
         storage_state: 'recovery_required',
+      })
+      expect(correctionRunner).toHaveBeenCalledOnce()
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('fences forced pre-commit cancellation residue in the same process', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-precommit-fence-'))
+    temporaryDirectories.add(userDataPath)
+    const cleanupFailure = Object.assign(new Error('forced cancellation interrupted custody rollback'), {
+      code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+    })
+    const correctionRunner = vi.fn(() => {
+      const completion = Promise.reject(cleanupFailure)
+      Object.defineProperty(completion, 'workerExited', { value: Promise.resolve() })
+      return completion
+    })
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+      startArchiveCorrectionWorker: correctionRunner,
+    })
+    const custody = {
+      passphrase: 'Pre-commit Fence 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Pre-commit cancellation fence' })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, custody)
+      const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
+      await store.syncBackup('correction-fixture')
+      const snapshotPath = path.join(userDataPath, 'precommit-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '25252525-2525-4525-8525-252525252525',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      const correctionInput = {
+        mission_id: mission.id,
+        archive_id: archiveId,
+        snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
+        admin_name: 'Duty Admin',
+        reason: 'Fence residue after forced correction cancellation.',
+      }
+      await expect(store.unlockFinalizedMission(correctionInput)).rejects.toMatchObject({
+        code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+      })
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finalized',
+        storage_state: 'recovery_required',
+      })
+      await expect(store.unlockFinalizedMission(correctionInput)).rejects.toMatchObject({
+        code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
       })
       expect(correctionRunner).toHaveBeenCalledOnce()
     } finally {

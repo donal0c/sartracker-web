@@ -20,6 +20,7 @@ import {
   useMissionReviewStore,
 } from './mission-review-store'
 import { startMissionArchiveReviewRuntime } from './start-mission-archive-review-runtime'
+import { getMissionReviewMissionStore } from './mission-review-runtime-context'
 import {
   createMissionReviewRuntimeState,
   startMissionReviewRuntime,
@@ -52,7 +53,7 @@ export function MissionReviewRuntimeBridge() {
     }
     const missionStore = harnessActive
       ? getBrowserHarnessStore()
-      : createElectronMissionStore()
+      : getMissionReviewMissionStore() ?? createElectronMissionStore()
     const layerCatalogStore = harnessActive
       ? getBrowserHarnessLayerCatalogStore()
       : createElectronLayerCatalogStore()
