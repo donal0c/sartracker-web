@@ -76,6 +76,7 @@ const {
   startArchiveLegacyPredecessorHash,
 } = require('./archive-legacy-predecessor-runner.cjs')
 const { startMissionArchiveCreateWorker } = require('./mission-archive-runner.cjs')
+const { startArchiveCleanupWorker } = require('./archive-cleanup-runner.cjs')
 const {
   startArchiveCleanupCredentialCheck,
 } = require('./archive-cleanup-credential-runner.cjs')
@@ -592,6 +593,8 @@ function createElectronMissionStore(options) {
   })
   const archiveCleanupCredentialRunner = options.startArchiveCleanupCredentialCheck
     ?? startArchiveCleanupCredentialCheck
+  const archiveCleanupWorkerRunner = options.startArchiveCleanupWorker
+    ?? startArchiveCleanupWorker
   const archiveCleanupCoordinator = createArchiveCleanupCoordinator({
     db,
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -1693,11 +1696,6 @@ function createElectronMissionStore(options) {
           sizeBytes: credentialResult.sizeBytes,
         })
       }
-      const withCustodyCommit = (commit) => withPinnedCustodyFileIdentity({
-        archiveDirectory,
-        archiveRelativePath: ticket.archiveRelativePath,
-        expectedFileIdentity: cleanupFileIdentity,
-      }, commit)
       const evidence = await buildArchiveCleanupEvidence({
         ticket,
         reviewActivity: context.reviewActivity,
@@ -1706,29 +1704,31 @@ function createElectronMissionStore(options) {
       })
       await acquireCleanupReviewBarrier(normalizedInput.missionId, context.operationId)
       cleanupReviewBarrierAcquired = true
-      const execute = () => mode === 'start'
-        ? archiveCleanupCoordinator.start(evidence, {
-            signal: controller.signal,
-            withCustodyCommit,
-            onProgress: (progress) => deliverArchiveProgressBestEffort(
-              context.onProgress,
-              { kind: 'cleanup', ...progress },
-            ),
-            ...(options.archiveCleanupFaultInjection === undefined
-              ? {}
-              : { faultInjection: options.archiveCleanupFaultInjection }),
-          })
-        : archiveCleanupCoordinator.resume(evidence, {
-            signal: controller.signal,
-            withCustodyCommit,
-            onProgress: (progress) => deliverArchiveProgressBestEffort(
-              context.onProgress,
-              { kind: 'cleanup', ...progress },
-            ),
-            ...(options.archiveCleanupFaultInjection === undefined
-              ? {}
-              : { faultInjection: options.archiveCleanupFaultInjection }),
-          })
+      const execute = () => {
+        const operation = archiveCleanupWorkerRunner({
+          databasePath,
+          archiveDirectory,
+          archiveRelativePath: ticket.archiveRelativePath,
+          expectedFileIdentity: cleanupFileIdentity,
+          evidence,
+          mode,
+          operationId: context.operationId,
+          signal: controller.signal,
+          onProgress: (progress) => deliverArchiveProgressBestEffort(
+            context.onProgress,
+            { kind: 'cleanup', ...progress },
+          ),
+          ...(options.archiveCleanupBatchLimits === undefined
+            ? {} : { batchLimits: options.archiveCleanupBatchLimits }),
+          ...(options.archiveCleanupFaultInjection === undefined
+            ? {} : { faultInjection: options.archiveCleanupFaultInjection }),
+        })
+        activeArchiveWorkerOperations.add(operation)
+        void Promise.resolve(operation.workerExited ?? operation).finally(() => {
+          activeArchiveWorkerOperations.delete(operation)
+        })
+        return operation
+      }
       return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         normalizedInput.missionId,
         'mission cleanup',
