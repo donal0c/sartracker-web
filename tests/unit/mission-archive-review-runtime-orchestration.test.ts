@@ -625,6 +625,40 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
     })
   })
 
+  it('keeps committed custody recovery visible when correction bytes need operator recovery', async () => {
+    const restoreMissionForCorrection = vi.fn(async () => ({
+      ...MISSION,
+      status: 'finished' as const,
+      storage_state: 'recovery_required' as const,
+      correction: {
+        committed: true,
+        cleanupComplete: true,
+        failureCode: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+      },
+    }))
+    const harness = createHarness({ restoreMissionForCorrection })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+    await controller.openArchive({
+      archiveId: VERIFIED_V2_ID,
+      containerVersion: 2,
+      slotType: 'passphrase',
+      secret: SECRET,
+    })
+
+    await expect(controller.restoreForCorrection({
+      admin_name: 'Duty Admin',
+      reason: 'Keep the attachment custody fence visible.',
+    })).rejects.toThrow(/custody|recovery|failed safely/iu)
+    expect(harness.close).toHaveBeenCalled()
+    expect(harness.switchMissionReviewSource).toHaveBeenCalledWith({ source: 'live' })
+    expect(harness.latestState()).toMatchObject({
+      phase: 'error',
+      activeSession: null,
+      recoveryRequired: 'live_source_resume',
+    })
+    expect(harness.latestState().error).toMatch(/custody|recovery/iu)
+  })
+
   it('keeps a committed correction in live-source recovery when the post-commit switch fails', async () => {
     const harness = createHarness()
     const controller = await startMissionArchiveReviewRuntime(harness.dependencies)

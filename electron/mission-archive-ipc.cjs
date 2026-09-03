@@ -864,7 +864,13 @@ function registerMissionArchiveIpcHandlers(input) {
         }),
       })
     }
-    return projectUnlockedMissionResult(result, missionId)
+    return Object.freeze({
+      ...projectUnlockedMissionResult(result, missionId),
+      correction: Object.freeze({
+        committed: true,
+        cleanupComplete: true,
+      }),
+    })
   })
 
   input.ipcMain.handle(channels.listMissionArchives, async (event, missionId) => {

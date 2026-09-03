@@ -82,6 +82,7 @@ const SAFE_OPEN_FAILURE = 'Archive Review failed safely before opening.'
 const SAFE_CLOSE_FAILURE = 'Archive review plaintext cleanup failed safely.'
 const SAFE_AUDIT_RETRY_FAILURE = 'Archive Review plaintext was removed; mutation-denial audit completion is pending.'
 const SAFE_LIVE_RESUME_FAILURE = 'Live mission review failed to resume after archive cleanup.'
+const SAFE_CUSTODY_RECOVERY_FAILURE = 'Archive correction committed; attachment custody recovery is required.'
 const INVALID_VERIFICATION_RESULT = 'ARCHIVE_VERIFICATION_RESULT_INVALID'
 const VERIFICATION_STATUS_UNKNOWN = 'ARCHIVE_VERIFICATION_STATUS_UNKNOWN'
 const VERIFICATION_RETRYABLE = 'ARCHIVE_VERIFICATION_RETRYABLE'
@@ -609,6 +610,13 @@ export async function startMissionArchiveReviewRuntime(
         reason: input.reason.trim(),
       })
       const correctionStatus = restoreResult.correction
+      if (correctionStatus?.committed === true && correctionStatus.failureCode !== undefined) {
+        correctionCommitted = true
+        const custodyFailure = new Error(SAFE_CUSTODY_RECOVERY_FAILURE)
+        Object.defineProperty(custodyFailure, 'archiveCorrectionCommitted', { value: true })
+        Object.defineProperty(custodyFailure, 'archiveCorrectionCustodyFailure', { value: true })
+        throw custodyFailure
+      }
       if (correctionStatus?.committed === true && correctionStatus.cleanupComplete === false) {
         const cleanupFailure = new Error('Archive correction committed but plaintext cleanup remains unresolved.')
         Object.defineProperty(cleanupFailure, 'archiveCorrectionCommitted', { value: true })
@@ -639,6 +647,8 @@ export async function startMissionArchiveReviewRuntime(
     } catch (error) {
       const committedAfterIpc = error !== null && typeof error === 'object'
         && (error as { readonly archiveCorrectionCommitted?: unknown }).archiveCorrectionCommitted === true
+      const custodyRecoveryAfterIpc = error !== null && typeof error === 'object'
+        && (error as { readonly archiveCorrectionCustodyFailure?: unknown }).archiveCorrectionCustodyFailure === true
       if (correctionCommitted || committedAfterIpc) {
         let plaintextClosed = false
         try {
@@ -657,15 +667,26 @@ export async function startMissionArchiveReviewRuntime(
           })
           throw new Error(SAFE_CLOSE_FAILURE)
         }
+        if (custodyRecoveryAfterIpc) {
+          try {
+            await dependencies.switchMissionReviewSource({ source: 'live' })
+          } catch {
+            // The explicit live-source recovery state remains visible.
+          }
+        }
         apply({
           phase: 'error',
           activeSession: null,
           activeOperationId: null,
           activeArchiveId: session.archiveId,
           recoveryRequired: 'live_source_resume',
-          error: SAFE_LIVE_RESUME_FAILURE,
+          error: custodyRecoveryAfterIpc
+            ? SAFE_CUSTODY_RECOVERY_FAILURE
+            : SAFE_LIVE_RESUME_FAILURE,
         })
-        throw new Error(SAFE_CLOSE_FAILURE)
+        throw new Error(custodyRecoveryAfterIpc
+          ? SAFE_CUSTODY_RECOVERY_FAILURE
+          : SAFE_CLOSE_FAILURE)
       }
       let plaintextClosed = false
       try {

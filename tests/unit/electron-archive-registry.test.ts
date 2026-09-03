@@ -896,12 +896,20 @@ describe('legacy v1 registry backfill', () => {
         slotType: 'legacy_unencrypted',
         plaintextResidual: 'permission_restricted_session_open',
       })).toEqual(expect.any(String))
+      expect(registry.recordReviewClosed({
+        archiveId,
+        missionId,
+        sessionId,
+        closedAt: '2026-08-29T11:33:00.000Z',
+        reason: 'correction_restore',
+        plaintextSweepConfirmed: true,
+      })).toEqual(expect.any(String))
       expect(observed.at(-1)).toMatchObject({
-        eventType: 'mission_archive_review_opened',
+        eventType: 'mission_archive_review_closed',
         details: {
           archive_id: archiveId,
           session_id: sessionId,
-          slot_type: 'legacy_unencrypted',
+          reason: 'correction_restore',
         },
       })
 

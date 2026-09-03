@@ -209,7 +209,14 @@ describe('mission archive IPC containment [DON-248]', () => {
       sessionId: '44444444-4444-4444-8444-444444444444',
       admin_name: 'Duty Admin',
       reason: 'Correct a recorded clue.',
-    })).resolves.toEqual({ id: 'mission-1', status: 'finished' })
+    })).resolves.toEqual({
+      id: 'mission-1',
+      status: 'finished',
+      correction: {
+        committed: true,
+        cleanupComplete: true,
+      },
+    })
     expect(snapshotForCorrection).toHaveBeenCalledWith({
       senderId: 8,
       sessionId: '44444444-4444-4444-8444-444444444444',

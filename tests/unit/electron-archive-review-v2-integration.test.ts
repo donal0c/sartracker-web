@@ -107,6 +107,13 @@ type MissionStore = {
       readonly availability: string
     }
   }>
+  readonly startMissionCleanup: (
+    input: Readonly<Record<string, unknown>>,
+    context: Readonly<Record<string, unknown>>,
+  ) => Promise<Readonly<Record<string, unknown>>>
+  readonly unlockFinalizedMission: (
+    input: Readonly<Record<string, unknown>>,
+  ) => Promise<Readonly<Record<string, unknown>>>
   readonly issueMissionArchiveReviewTicket: (
     archiveId: string,
   ) => ArchiveReviewTicket
@@ -190,6 +197,27 @@ type ArchiveReviewSessionManager = {
     readonly args: readonly unknown[]
   }) => Promise<unknown>
   readonly close: (input: { readonly senderId: number; readonly sessionId: string }) => Promise<void>
+  readonly snapshotForCorrection: (input: {
+    readonly senderId: number
+    readonly sessionId: string
+    readonly operationId: string
+    readonly archiveId: string
+    readonly signal?: AbortSignal
+  }) => Promise<{
+    readonly snapshotPath: string
+    readonly attachmentDirectory: string
+    readonly attachmentMappings: readonly Readonly<Record<string, unknown>>[]
+    readonly databaseIdentity: Readonly<Record<string, unknown>>
+    readonly databaseSha256: string
+    readonly archiveId: string
+  }>
+  readonly completeCorrectionSnapshot: (input: {
+    readonly senderId: number
+    readonly sessionId: string
+    readonly operationId: string
+    readonly archiveId: string
+  }) => Promise<unknown>
+  readonly hasReviewActivity: () => boolean
   readonly prepareClose: () => Promise<void>
 }
 
@@ -786,6 +814,114 @@ describe('verified SARARCH2 archive-backed review integration [DON-252 / BCP-15]
         .toBe(finalized.archive.ciphertext_sha256)
     } finally {
       await liveSource?.close().catch(() => undefined)
+      await manager?.prepareClose().catch(() => undefined)
+      await store.prepareClose().catch(() => undefined)
+      store.close()
+    }
+  }, 120_000)
+
+  it('completes the real archive-review correction close audit after archived restore', async () => {
+    const userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-archive-review-correction-'))
+    temporaryDirectories.add(userDataPath)
+    const reviewRoot = path.join(userDataPath, 'archive-review')
+    const archiveDirectory = path.join(userDataPath, 'archives')
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    let manager: ArchiveReviewSessionManager | null = null
+    try {
+      const mission = await seedReviewMission(store)
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(
+        mission.id,
+        { passphrase: PASSPHRASE, recoveryCode: RECOVERY_CODE },
+        { operationId: CREATE_OPERATION_ID, onProgress: () => undefined },
+      )
+      manager = createArchiveReviewSessionManager({
+        reviewRoot,
+        archiveDirectory,
+        registry: {
+          issueReviewTicket: (archiveId) => store.issueMissionArchiveReviewTicket(archiveId),
+          recordReviewOpened: (input) => store.recordMissionArchiveReviewOpened(input),
+          recordReviewClosed: (input) => store.recordMissionArchiveReviewClosed(input),
+          recordReviewMutationDenied: (input) => store.recordMissionArchiveReviewMutationDenied(input),
+        },
+      })
+      await manager.sweepStartup()
+      const initial = await manager.open({
+        senderId: SENDER_ID,
+        request: {
+          archiveId: finalized.archive.id,
+          containerVersion: 2,
+          operationId: OPEN_OPERATION_ID,
+          slotType: 'passphrase',
+        },
+        secret: PASSPHRASE,
+      })
+      await manager.close({ senderId: SENDER_ID, sessionId: initial.sessionId })
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId: finalized.archive.id,
+        slotType: 'recovery',
+        secret: RECOVERY_CODE,
+      }, {
+        operationId: REBOUND_RESTORE_OPERATION_ID,
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      const session = await manager.open({
+        senderId: SENDER_ID,
+        request: {
+          archiveId: finalized.archive.id,
+          containerVersion: 2,
+          operationId: REBOUND_RESTORE_OPERATION_ID,
+          slotType: 'passphrase',
+        },
+        secret: PASSPHRASE,
+      })
+      const snapshot = await manager.snapshotForCorrection({
+        senderId: SENDER_ID,
+        sessionId: session.sessionId,
+        operationId: REBOUND_RESTORE_OPERATION_ID,
+        archiveId: finalized.archive.id,
+      })
+      const restored = await store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: finalized.archive.id,
+        operation_id: REBOUND_RESTORE_OPERATION_ID,
+        snapshot_path: snapshot.snapshotPath,
+        snapshot_database_identity: snapshot.databaseIdentity,
+        snapshot_database_sha256: snapshot.databaseSha256,
+        attachment_directory: snapshot.attachmentDirectory,
+        attachment_mappings: snapshot.attachmentMappings,
+        admin_name: 'Duty Admin',
+        reason: 'Correct a recorded clue.',
+      })
+      expect(restored).toMatchObject({ status: 'finished', storage_state: 'live' })
+      await expect(manager.completeCorrectionSnapshot({
+        senderId: SENDER_ID,
+        sessionId: session.sessionId,
+        operationId: REBOUND_RESTORE_OPERATION_ID,
+        archiveId: finalized.archive.id,
+      })).resolves.toBeUndefined()
+      expect(manager.hasReviewActivity()).toBe(false)
+      const database = new Database((await store.info()).database_path, {
+        readonly: true,
+        fileMustExist: true,
+      })
+      try {
+        const audit = database.prepare(`SELECT details_json FROM mission_events
+          WHERE mission_id = ? AND event_type = 'mission_archive_review_closed'
+          ORDER BY rowid DESC LIMIT 1`).get(mission.id)
+        expect(JSON.parse(String(audit?.details_json))).toMatchObject({
+          reason: 'correction_restore',
+          plaintext_sweep_confirmed: true,
+        })
+      } finally {
+        database.close()
+      }
+    } finally {
       await manager?.prepareClose().catch(() => undefined)
       await store.prepareClose().catch(() => undefined)
       store.close()

@@ -909,7 +909,7 @@ function createArchiveRegistry({
       const closedAt = normalizeTimestamp(input.closedAt, 'Archive review close time')
       if (archive.mission_id !== missionId
         || input.plaintextSweepConfirmed !== true
-        || !['explicit_close', 'renderer_destroyed', 'app_shutdown'].includes(input.reason)) {
+        || !['explicit_close', 'renderer_destroyed', 'app_shutdown', 'correction_restore'].includes(input.reason)) {
         throw new ArchiveRegistryError(
           'ARCHIVE_REGISTRY_REVIEW_AUDIT_INVALID',
           'Archive review close audit is invalid.',

@@ -378,6 +378,10 @@ describe('archived mission correction rehydration', () => {
     const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
       const database = new Database(String(input.databasePath))
       mkdirSync(correctionJournalDirectory(String(input.databasePath)), { recursive: true })
+      writeFileSync(path.join(
+        correctionJournalDirectory(String(input.databasePath)),
+        'pending.json',
+      ), '{}', { mode: 0o600 })
       const timestamp = '2026-09-03T10:00:00.000Z'
       database.prepare('UPDATE missions SET status = ? WHERE id = ?')
         .run('finished', input.missionId)
@@ -465,6 +469,10 @@ describe('archived mission correction rehydration', () => {
     const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
       const database = new Database(String(input.databasePath))
       mkdirSync(correctionJournalDirectory(String(input.databasePath)), { recursive: true })
+      writeFileSync(path.join(
+        correctionJournalDirectory(String(input.databasePath)),
+        'pending.json',
+      ), '{}', { mode: 0o600 })
       const timestamp = '2026-09-03T11:00:00.000Z'
       database.prepare('UPDATE missions SET status = ? WHERE id = ?')
         .run('finished', input.missionId)
@@ -539,7 +547,10 @@ describe('archived mission correction rehydration', () => {
     const cleanupFailure = Object.assign(new Error('forced cancellation interrupted custody rollback'), {
       code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
     })
-    const correctionRunner = vi.fn(() => {
+    const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
+      // Simulate a stale empty journal directory left by an earlier completed
+      // correction; no journal record remains to justify a global fence.
+      mkdirSync(correctionJournalDirectory(String(input.databasePath)), { recursive: true })
       const completion = Promise.reject(cleanupFailure)
       Object.defineProperty(completion, 'workerExited', { value: Promise.resolve() })
       return completion

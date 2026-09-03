@@ -1159,7 +1159,15 @@ function createElectronMissionStore(options) {
 
   /** Reports whether correction attachment custody left a journal to recover. */
   function hasCorrectionAttachmentRecoveryResidue(databasePath) {
-    return fsSync.existsSync(correctionJournalDirectory(databasePath))
+    const directory = correctionJournalDirectory(databasePath)
+    try {
+      return fsSync.readdirSync(directory).length > 0
+    } catch (error) {
+      if (error?.code === 'ENOENT') return false
+      // An unreadable custody directory is itself unresolved custody state;
+      // fail closed rather than silently treating it as an empty directory.
+      return true
+    }
   }
 
   /** Retains an unresolved correction journal as a durable archive-lane blocker. */
