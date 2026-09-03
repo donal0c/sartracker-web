@@ -41,6 +41,7 @@ import type {
   RenameOutingInput,
   UnlockFinalizedMissionInput,
   RestoreMissionForCorrectionInput,
+  RestoreMissionForCorrectionResult,
   UpsertDeviceInput,
   UpsertDrawingInput,
   UpsertGpxTrackImportInput,
@@ -276,7 +277,7 @@ export type BrowserHarnessStore = {
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<Mission>
   readonly restoreMissionForCorrection: (
     input: RestoreMissionForCorrectionInput,
-  ) => Promise<Mission>
+  ) => Promise<RestoreMissionForCorrectionResult>
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
   readonly addPosition: (input: AddPositionInput) => Promise<Position>

@@ -54,8 +54,11 @@ const {
   createArchiveCustodyJournal,
 } = require('./archive-custody-journal.cjs')
 const {
-  recoverCorrectionAttachmentJournals,
+  correctionJournalDirectory,
 } = require('./archive-correction-custody.cjs')
+const {
+  startArchiveCorrectionAttachmentRecovery,
+} = require('./archive-correction-custody-recovery-runner.cjs')
 const {
   startArchiveCustodyOperation,
 } = require('./archive-custody-operation-runner.cjs')
@@ -446,6 +449,8 @@ function createElectronMissionStore(options) {
   const coverageLedgerFaultInjection = options.coverageLedgerFaultInjection ?? {}
   const gpxRetirementFaultInjection = options.gpxRetirementFaultInjection ?? {}
   const gpxReceiptRecoveryFaultInjection = options.gpxReceiptRecoveryFaultInjection ?? {}
+  const archiveCorrectionAttachmentRecoveryRunner = options.startArchiveCorrectionAttachmentRecovery
+    ?? startArchiveCorrectionAttachmentRecovery
   const breadcrumbQueryRunner =
     options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
   const breadcrumbDotQueryRunner =
@@ -501,18 +506,48 @@ function createElectronMissionStore(options) {
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   const migrationState = migrate(db, archiveDirectory)
+  let storeClosed = false
   let archiveCorrectionAttachmentRecoveryFailure = null
-  try {
-    recoverCorrectionAttachmentJournals({ databasePath, db })
+  let archiveCorrectionAttachmentRecoveryPromise = Promise.resolve()
+  if (fsSync.existsSync(correctionJournalDirectory(databasePath))) {
+    try {
+      const operation = archiveCorrectionAttachmentRecoveryRunner({ databasePath })
+      activeArchiveWorkerOperations.add(operation)
+      archiveCorrectionAttachmentRecoveryPromise = (async () => {
+        try {
+          await operation
+          await Promise.resolve(operation.workerExited ?? operation)
+          archiveCorrectionAttachmentRecoveryFailure = null
+          if (!storeClosed) {
+            db.prepare(`DELETE FROM metadata
+              WHERE key = 'archive_correction_attachment_recovery_failure'`).run()
+          }
+        } catch {
+          archiveCorrectionAttachmentRecoveryFailure =
+            'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+          if (!storeClosed) {
+            db.prepare(`INSERT INTO metadata (key, value) VALUES (
+              'archive_correction_attachment_recovery_failure', ?
+            ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+              archiveCorrectionAttachmentRecoveryFailure,
+            )
+          }
+        } finally {
+          await Promise.resolve(operation.workerExited ?? operation).catch(() => undefined)
+          activeArchiveWorkerOperations.delete(operation)
+        }
+      })()
+    } catch {
+      archiveCorrectionAttachmentRecoveryFailure = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+      db.prepare(`INSERT INTO metadata (key, value) VALUES (
+        'archive_correction_attachment_recovery_failure', ?
+      ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+        archiveCorrectionAttachmentRecoveryFailure,
+      )
+    }
+  } else {
     db.prepare(`DELETE FROM metadata
       WHERE key = 'archive_correction_attachment_recovery_failure'`).run()
-  } catch {
-    archiveCorrectionAttachmentRecoveryFailure = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
-    db.prepare(`INSERT INTO metadata (key, value) VALUES (
-      'archive_correction_attachment_recovery_failure', ?
-    ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
-      archiveCorrectionAttachmentRecoveryFailure,
-    )
   }
   const archiveRegistry = createArchiveRegistry({
     db,
@@ -649,7 +684,6 @@ function createElectronMissionStore(options) {
     archiveCustodyRecoveryDidSettle = true
     resolveArchiveCustodyRecovery()
   }
-  let storeClosed = false
   let archivePlaintextSweepOperation = null
   let archivePlaintextSweepFailure = null
   let archivePlaintextSweepFinished = false
@@ -1079,7 +1113,8 @@ function createElectronMissionStore(options) {
   }
 
   /** Admits one correction only when no operational mission can contend with its writer turn. */
-  const acquireArchiveCorrectionAdmission = () => {
+  const acquireArchiveCorrectionAdmission = async () => {
+    await archiveCorrectionAttachmentRecoveryPromise
     if (archiveCorrectionAttachmentRecoveryFailure !== null) {
       const error = new Error(
         'Archive correction attachment custody recovery requires operator review before retry.',
@@ -1727,6 +1762,7 @@ function createElectronMissionStore(options) {
       }
       const shutdownTasks = active.map((entry) => entry.quiesced)
       shutdownTasks.push(ingestAnomalyOutbox.dispose())
+      shutdownTasks.push(archiveCorrectionAttachmentRecoveryPromise.catch(() => undefined))
       shutdownTasks.push(...activeSearchOperationPageReads)
       for (const reads of activeLiveReviewReadsByMission.values()) {
         shutdownTasks.push(...reads)
@@ -2807,7 +2843,7 @@ function createElectronMissionStore(options) {
       options.readAdminRoster,
       reconcileFinalizedMissionArchive,
       async (rehydrationInput) => {
-        const admission = acquireArchiveCorrectionAdmission()
+        const admission = await acquireArchiveCorrectionAdmission()
         try {
           try {
             const operation = archiveCorrectionRunner({

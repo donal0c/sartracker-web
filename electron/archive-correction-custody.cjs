@@ -78,7 +78,22 @@ function recoverCorrectionAttachmentJournals(input) {
     const cleanup = input.db.prepare(
       'SELECT state FROM mission_cleanup_journal WHERE mission_id = ?',
     ).get(journal.missionId)
-    const committed = mission?.status === 'finished'
+    const unlockEvents = input.db.prepare(`SELECT details_json FROM mission_events
+      WHERE mission_id = ? AND event_type = 'mission_unlocked'`).all(journal.missionId)
+    const hasMatchingCorrectionUnlock = unlockEvents.some((event) => {
+      try {
+        const details = JSON.parse(event.details_json)
+        return details !== null && typeof details === 'object'
+          && details.restored_from_archive_id === journal.archiveId
+          && details.archive_correction_operation_id === journal.operationId
+      } catch {
+        return false
+      }
+    })
+    if (mission?.status === 'finished' && !hasMatchingCorrectionUnlock) {
+      throw new Error('Finished correction custody has no matching durable unlock evidence.')
+    }
+    const committed = hasMatchingCorrectionUnlock
       && (cleanup === undefined || ['eligible', 'completed'].includes(cleanup.state))
     if (!fs.existsSync(journal.targetRoot)) {
       throw new Error(committed
@@ -106,6 +121,7 @@ function recoverCorrectionAttachmentJournals(input) {
     fs.rmSync(journalPath, { force: true })
     recovered += 1
   }
+  syncDirectorySync(directory)
   try {
     fs.rmdirSync(directory)
   } catch (error) {
@@ -175,12 +191,26 @@ function digestAttachment(filePath) {
 
 /** Flushes one directory on hosts that support directory synchronization. */
 async function syncDirectory(directory) {
-  if (process.platform !== 'linux') return
+  if (process.platform === 'win32') return
   const handle = await fsp.open(directory, fs.constants.O_RDONLY | (fs.constants.O_DIRECTORY ?? 0))
   try {
     await handle.sync()
   } finally {
     await handle.close()
+  }
+}
+
+/** Flushes one directory synchronously during startup recovery on supported hosts. */
+function syncDirectorySync(directory) {
+  if (process.platform === 'win32') return
+  const descriptor = fs.openSync(
+    directory,
+    fs.constants.O_RDONLY | (fs.constants.O_DIRECTORY ?? 0),
+  )
+  try {
+    fs.fsyncSync(descriptor)
+  } finally {
+    fs.closeSync(descriptor)
   }
 }
 

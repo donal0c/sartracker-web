@@ -817,7 +817,9 @@ export type RestoreMissionForCorrectionInput = {
   readonly reason: string
 }
 
-export type RestoreMissionForCorrectionResult = Mission & {
+export type RestoreMissionForCorrectionResult = {
+  readonly id: string
+  readonly status: 'finished'
   readonly correction?: {
     readonly committed: boolean
     readonly cleanupComplete: boolean
