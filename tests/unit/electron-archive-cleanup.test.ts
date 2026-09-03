@@ -719,9 +719,26 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
       const before = fixture.db.prepare(
         'SELECT COUNT(*) AS total FROM positions WHERE mission_id = ?',
       ).get(fixture.missionId)?.total
-      await expect(fixture.coordinator.start(fixture.evidence, {
+      const failure = await fixture.coordinator.start(fixture.evidence, {
         faultInjection: { failBeforeJournalUpdateForTable: 'positions' },
-      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_FAILED' })
+      }).catch((error: unknown) => error as {
+        readonly code?: string
+        readonly cleanupDiagnostic?: Readonly<Record<string, unknown>>
+      })
+      expect(failure).toMatchObject({
+        code: 'ARCHIVE_CLEANUP_FAILED',
+        cleanupDiagnostic: {
+          substage: 'delete_page',
+          causeClass: 'internal_failure',
+          tableName: 'positions',
+          cursor: {
+            tableBatch: 0,
+            deletedRows: expect.any(Number),
+            totalDeletedRows: expect.any(Number),
+          },
+          workerExit: { observed: false, event: 'none', code: null },
+        },
+      })
       expect(fixture.db.prepare('SELECT COUNT(*) AS total FROM positions WHERE mission_id = ?')
         .get(fixture.missionId)?.total).toBe(before)
       expect(fixture.db.prepare(`SELECT state, last_error FROM mission_cleanup_journal

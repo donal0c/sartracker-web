@@ -60,4 +60,36 @@ describe('off-main archive cleanup worker [DON-253]', () => {
       clearInterval(heartbeat)
     }
   }, 15_000)
+
+  it('retains only sanitized cleanup failure attribution from a worker error', async () => {
+    const failure = await startArchiveCleanupWorker({
+      ...request,
+      workerPath: path.resolve(
+        'tests/fixtures/archive-cleanup-failure-worker.cjs',
+      ),
+    }).catch((error: unknown) => error as Error & {
+      readonly cleanupDiagnostic?: Readonly<Record<string, unknown>>
+    })
+    expect(failure).toMatchObject({
+      code: 'ARCHIVE_CLEANUP_FAILED',
+      cleanupDiagnostic: {
+        substage: 'delete_page',
+        causeClass: 'sqlite_busy',
+        tableName: 'positions',
+        cursor: {
+          tableIndex: 1,
+          tableCount: 4,
+          tableBatch: 2,
+          deletedRows: 6,
+          totalDeletedRows: 6,
+        },
+        workerExit: {
+          observed: true,
+          event: 'message',
+          code: 0,
+        },
+      },
+    })
+    expect(JSON.stringify(failure.cleanupDiagnostic)).not.toMatch(/private|secret|mission\.sqlite/iu)
+  })
 })

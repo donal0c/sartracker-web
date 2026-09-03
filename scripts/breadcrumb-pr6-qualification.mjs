@@ -54,6 +54,7 @@ const {
   createArchiveTableSelection,
   listArchiveInventoryForSchema,
 } = require('../electron/archive-inventory.cjs')
+const { normalizeCleanupFailureDiagnostic } = require('../electron/archive-cleanup-failure.cjs')
 
 const execFileAsync = promisify(execFile)
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -66,6 +67,7 @@ const MINIMUM_FREE_BYTES = 20 * 1024 * 1024 * 1024
 const MAINTENANCE_NO_PROGRESS_TIMEOUT_MS = 120 * 1_000
 const MAINTENANCE_POLL_INTERVAL_MS = 1_000
 const HEARTBEAT_INTERVAL_MS = 50
+const PRODUCTION_CURRENT_POSITION_INTERVAL_MS = 5_000
 const SCAN_CHUNK_BYTES = 64 * 1024
 const QUALIFICATION_PHASES = Object.freeze(['create', 'verify', 'restore', 'cleanup'])
 const RETAINED_CLEANUP_MISSION_TABLES = new Set(['mission_events', 'missions'])
@@ -146,6 +148,7 @@ export function createQualificationDiagnostics({
   let lastGate = 'startup'
   let archiveProgress = null
   let cleanupCursor = null
+  let cleanupFailure = null
   let archiveIdentity = null
   let rss = null
   const durableWorker = {
@@ -177,6 +180,7 @@ export function createQualificationDiagnostics({
       Object.entries(liveness).map(([phase, value]) => [phase, Object.freeze({ ...value })]),
     )),
     cleanupCursor: cleanupCursor === null ? null : Object.freeze({ ...cleanupCursor }),
+    ...(cleanupFailure === null ? {} : { cleanupFailure }),
     archiveIdentity: archiveIdentity === null ? null : Object.freeze({ ...archiveIdentity }),
     rss: rss === null ? null : Object.freeze({ ...rss }),
   })
@@ -275,6 +279,11 @@ export function createQualificationDiagnostics({
         totalDeletedRows: update.totalDeletedRows,
       }
     },
+    /** Records one sanitized cleanup failure without retaining worker internals. */
+    recordCleanupFailure(update) {
+      if (update === null || typeof update !== 'object' || Array.isArray(update)) return
+      cleanupFailure = normalizeCleanupFailureDiagnostic(update)
+    },
     /** Records only archive byte identity and registry state, never its path. */
     recordArchiveIdentity(update) {
       if (update === null || typeof update !== 'object' || Array.isArray(update)
@@ -307,6 +316,9 @@ export function createQualificationDiagnostics({
 /** Maps one qualification exception to a fixed non-secret failure vocabulary. */
 export function classifyQualificationFailure(error) {
   const code = typeof error?.code === 'string' ? error.code : ''
+  if (code === 'ARCHIVE_CLEANUP_FAILED' || code === 'ARCHIVE_CLEANUP_AUDIT_FAILED') {
+    return Object.freeze({ topLevelCode: 'CLEANUP_GATE_FAILED', causeCode: code })
+  }
   if (code === 'SQLITE_BUSY') {
     return Object.freeze({ topLevelCode: 'DURABLE_INGEST_FAILED', causeCode: 'SQLITE_BUSY' })
   }
@@ -560,6 +572,7 @@ async function main() {
       runId,
       databasePath: copiedDatabasePath,
       diagnostics,
+      currentPositionIntervalMs: PRODUCTION_CURRENT_POSITION_INTERVAL_MS,
     })
 
     passphrase = createEphemeralPassphrase()
@@ -885,6 +898,7 @@ async function main() {
     }
   } catch (error) {
     failure = error
+    diagnostics.recordCleanupFailure(error?.cleanupDiagnostic)
     diagnostics.markGate('failure:captured')
   } finally {
     let cleanupFailed = false
@@ -892,12 +906,14 @@ async function main() {
       try { await positionProbe.stop() } catch (error) {
         cleanupFailed = true
         if (failure === null) failure = error
+        diagnostics.recordCleanupFailure(error?.cleanupDiagnostic)
       }
     }
     if (reviewManager !== null) {
       try { await reviewManager.prepareClose() } catch (error) {
         cleanupFailed = true
         if (failure === null) failure = error
+        diagnostics.recordCleanupFailure(error?.cleanupDiagnostic)
       }
     }
     if (store !== null && storeOpen) {
@@ -1817,11 +1833,17 @@ export function startCurrentPositionProbe({
   createWorker,
   diagnostics,
   durableSettlementTimeoutMs = MAX_DURABLE_SETTLE_MS,
+  currentPositionIntervalMs = HEARTBEAT_INTERVAL_MS,
 }) {
   if (!Number.isFinite(durableSettlementTimeoutMs)
     || durableSettlementTimeoutMs < 1
     || durableSettlementTimeoutMs > MAX_DURABLE_SETTLE_MS) {
     throw new Error('Durable current-position settlement timeout is invalid.')
+  }
+  if (!Number.isFinite(currentPositionIntervalMs)
+    || currentPositionIntervalMs < HEARTBEAT_INTERVAL_MS
+    || currentPositionIntervalMs > 60_000) {
+    throw new Error('Current-position publication interval is invalid.')
   }
   const measurements = Object.fromEntries(QUALIFICATION_PHASES.map((phase) => [phase, {
     heartbeatGapsMs: [],
@@ -1864,7 +1886,7 @@ export function startCurrentPositionProbe({
     if (!running) return
     timer = setTimeout(() => {
       activeTick = tick().finally(schedule)
-    }, HEARTBEAT_INTERVAL_MS)
+    }, currentPositionIntervalMs)
   }
 
   /** Publishes one unique current position before queuing durable persistence. */
@@ -1894,10 +1916,10 @@ export function startCurrentPositionProbe({
       const visible = current?.source_position_id === sourcePositionId
       if (!visible) throw new Error('The just-written probe position was not current.')
       bucket.visibleWrites += 1
-      const currentCadence = Math.max(
-        visibleAt - tickStartedAt,
-        bucket.lastVisibleAt === null ? 0 : visibleAt - bucket.lastVisibleAt,
-      )
+      // Cadence is the time from a production publication attempt to current
+      // visibility. The interval between ordinary polls is not a main-loop
+      // stall and must not be attributed to archive work.
+      const currentCadence = visibleAt - tickStartedAt
       bucket.currentCadencesMs.push(currentCadence)
       bucket.lastVisibleAt = visibleAt
       diagnostics?.recordCurrentCadence(tickPhase, currentCadence)
@@ -1950,6 +1972,11 @@ export function startCurrentPositionProbe({
         throw new Error('Current-position probe phase is invalid.')
       }
       phase = nextPhase
+      if (running && timer !== null) {
+        clearTimeout(timer)
+        timer = null
+        activeTick = activeTick.then(() => tick()).finally(schedule)
+      }
     },
     /** Stops after the active tick and derives the closed liveness proof. */
     async stop() {

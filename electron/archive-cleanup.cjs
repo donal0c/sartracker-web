@@ -7,6 +7,10 @@ const {
   listArchiveInventoryForSchema,
   reconcileArchiveInventory,
 } = require('./archive-inventory.cjs')
+const {
+  cleanupCauseClassForCode,
+  normalizeCleanupFailureDiagnostic,
+} = require('./archive-cleanup-failure.cjs')
 
 const CLEANUP_PROGRESS_VERSION = 1
 const CLEANUP_BUSY_RETRY_LIMIT = 240
@@ -42,6 +46,18 @@ class ArchiveCleanupError extends Error {
     this.name = 'ArchiveCleanupError'
     this.code = code
   }
+}
+
+/** Attaches a bounded, non-enumerable cleanup diagnostic to a public error. */
+function attachCleanupFailureDiagnostic(error, diagnostic) {
+  if (error === null || typeof error !== 'object') return error
+  Object.defineProperty(error, 'cleanupDiagnostic', {
+    value: diagnostic,
+    enumerable: false,
+    configurable: true,
+    writable: false,
+  })
+  return error
 }
 
 /** Creates the kill-safe live-row cleanup owner for one open mission store. */
@@ -236,15 +252,22 @@ function createArchiveCleanupCoordinator(options) {
   async function runFromJournal(evidence, executionOptions) {
     let committedDeletionBatches = 0
     let busyRetries = 0
+    const failureContext = {
+      substage: 'worker_execute',
+      tableName: null,
+      cursor: null,
+    }
     try {
       while (true) {
         assertNotCancelled(executionOptions.signal)
         let outcome
         try {
+          failureContext.substage = 'worker_execute'
           outcome = withBusyTimeoutDisabled(db, () => advanceOneBoundary(
             evidence,
             executionOptions.faultInjection,
             executionOptions,
+            failureContext,
           ))
           busyRetries = 0
         } catch (error) {
@@ -294,7 +317,14 @@ function createArchiveCleanupCoordinator(options) {
         await yieldToMain()
       }
     } catch (error) {
-      if (error?.preserveForRestart === true) throw error
+      const diagnostic = normalizeCleanupFailureDiagnostic({
+        ...failureContext,
+        causeClass: cleanupCauseClassForCode(error?.code),
+      })
+      if (error?.preserveForRestart === true) {
+        attachCleanupFailureDiagnostic(error, diagnostic)
+        throw error
+      }
       const failure = error instanceof ArchiveCleanupError
         && error.code === 'ARCHIVE_CLEANUP_CANCELLED'
         ? error
@@ -303,6 +333,7 @@ function createArchiveCleanupCoordinator(options) {
             'Mission cleanup failed safely and will resume from its durable cursor.',
           )
       if (failure !== error) failure.cause = error
+      attachCleanupFailureDiagnostic(failure, diagnostic)
       try {
         await recordFailure(evidence, failure.code)
       } catch (auditError) {
@@ -311,6 +342,12 @@ function createArchiveCleanupCoordinator(options) {
           'Mission cleanup and its durable failure audit both failed safely.',
         )
         terminal.cause = new AggregateError([error, auditError])
+        attachCleanupFailureDiagnostic(terminal, normalizeCleanupFailureDiagnostic({
+          substage: 'record_failure',
+          causeClass: cleanupCauseClassForCode(auditError?.code),
+          tableName: failureContext.tableName,
+          cursor: failureContext.cursor,
+        }))
         throw terminal
       }
       throw failure
@@ -318,12 +355,22 @@ function createArchiveCleanupCoordinator(options) {
   }
 
   /** Commits either one bounded delete page, one table advance, or terminal completion. */
-  function advanceOneBoundary(evidence, faultInjection, executionOptions) {
+  function advanceOneBoundary(evidence, faultInjection, executionOptions, failureContext) {
     const advance = db.transaction((assertCustodyUnchanged) => {
+      failureContext.substage = 'inventory_reconcile'
       const journal = requireInProgressJournal(db, evidence)
       const progress = normalizeProgress(journal.progress_json)
+      failureContext.tableName = progress.tables[progress.tableIndex] ?? null
+      failureContext.cursor = {
+        tableIndex: progress.tableIndex,
+        tableCount: progress.tables.length,
+        tableBatch: progress.tableBatch,
+        deletedRows: progress.deletedRows,
+        totalDeletedRows: progress.deletedRows,
+      }
       assertProgressStillCurrent(db, evidence, progress, createCleanupPlan())
       if (progress.tableIndex >= progress.tables.length) {
+        failureContext.substage = 'completion'
         const completedAt = now()
         appendEvent(evidence.missionId, 'mission_cleanup_completed', completedAt, {
           archive_id: evidence.archiveId,
@@ -373,6 +420,7 @@ function createArchiveCleanupCoordinator(options) {
         ...selection.parameters,
         limit,
       )
+      failureContext.substage = 'select_page'
       if (selected.length === 0) {
         const next = { ...progress, tableIndex: progress.tableIndex + 1, tableBatch: 0 }
         updateProgress(db, evidence, next, now())
@@ -398,12 +446,14 @@ function createArchiveCleanupCoordinator(options) {
           WHERE ${selection.whereSql}
           ORDER BY ${selectedKeys.join(', ')} LIMIT ?
         )`).run(...selection.parameters, limit)
+      failureContext.substage = 'delete_page'
       if (deleted.changes !== selected.length) {
         throw new Error('Cleanup delete page changed before its cursor could commit.')
       }
       if (faultInjection?.failBeforeJournalUpdateForTable === tableName) {
         throw new Error('Injected cleanup failure before journal update.')
       }
+      failureContext.substage = 'journal_update'
       const next = {
         ...progress,
         tableBatch: progress.tableBatch + 1,

@@ -2,6 +2,10 @@
 
 const path = require('node:path')
 const { Worker } = require('node:worker_threads')
+const {
+  cleanupCauseClassForCode,
+  normalizeCleanupFailureDiagnostic,
+} = require('./archive-cleanup-failure.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'archive-cleanup-worker.cjs')
 const CANCEL_GRACE_MS = 500
@@ -23,6 +27,7 @@ function startArchiveCleanupWorker(input) {
   let terminalResult = null
   let terminationTimer = null
   let cancel = () => undefined
+  let failureError = null
 
   const completion = new Promise((resolve, reject) => {
     try {
@@ -45,6 +50,7 @@ function startArchiveCleanupWorker(input) {
     const rejectOnce = (error) => {
       if (settled) return
       settled = true
+      failureError = error
       reject(error)
     }
     const cancelAndReject = (error) => {
@@ -83,13 +89,31 @@ function startArchiveCleanupWorker(input) {
         return
       }
       if (message.type === 'error') {
-        cancelAndReject(createFailure(message.code))
+        cancelAndReject(createFailure(message.code, message.diagnostic))
         return
       }
-      cancelAndReject(createFailure('ARCHIVE_CLEANUP_FAILED'))
+      cancelAndReject(createFailure('ARCHIVE_CLEANUP_FAILED', {
+        substage: 'worker_protocol',
+        causeClass: 'protocol_invalid',
+      }))
     })
-    worker.once('error', () => cancelAndReject(createFailure('ARCHIVE_CLEANUP_FAILED')))
+    worker.once('error', () => cancelAndReject(createFailure('ARCHIVE_CLEANUP_FAILED', {
+      substage: 'worker_exit',
+      causeClass: 'worker_error',
+      workerExit: { observed: false, event: 'error', code: null },
+    })))
     worker.once('exit', (code) => {
+      if (failureError !== null) {
+        const current = failureError.cleanupDiagnostic ?? {}
+        attachCleanupFailureDiagnostic(failureError, {
+          ...current,
+          workerExit: {
+            observed: true,
+            event: current.workerExit?.event ?? 'exit',
+            code: Number.isSafeInteger(code) && code >= 0 ? code : null,
+          },
+        })
+      }
       workerExited.resolve()
       cleanup()
       if (settled) return
@@ -97,7 +121,11 @@ function startArchiveCleanupWorker(input) {
       if (code === 0 && terminalResult !== null) {
         resolve(Object.freeze({ ...terminalResult }))
       } else {
-        reject(createFailure('ARCHIVE_CLEANUP_FAILED'))
+        reject(createFailure('ARCHIVE_CLEANUP_FAILED', {
+          substage: 'worker_exit',
+          causeClass: 'worker_exit',
+          workerExit: { observed: true, event: 'exit', code },
+        }))
       }
     })
     if (input.signal?.aborted === true) handleAbort()
@@ -135,9 +163,24 @@ function normalizeRequest(input) {
 }
 
 /** Returns a stable failure without reflecting worker internals across IPC. */
-function createFailure(code) {
+function createFailure(code, diagnostic = {}) {
   const error = new Error('Mission archive cleanup failed safely.')
   error.code = typeof code === 'string' ? code : 'ARCHIVE_CLEANUP_FAILED'
+  attachCleanupFailureDiagnostic(error, {
+    ...diagnostic,
+    causeClass: diagnostic.causeClass ?? cleanupCauseClassForCode(error.code),
+  })
+  return error
+}
+
+/** Attaches one normalized, non-secret cleanup diagnostic to an error. */
+function attachCleanupFailureDiagnostic(error, diagnostic) {
+  Object.defineProperty(error, 'cleanupDiagnostic', {
+    value: normalizeCleanupFailureDiagnostic(diagnostic),
+    enumerable: false,
+    configurable: true,
+    writable: false,
+  })
   return error
 }
 

@@ -204,6 +204,27 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       .toBe(result.byPhase.create.currentWrites)
   })
 
+  it('separates the 50 ms heartbeat from a normal-cadence current publication window', async () => {
+    const probe = startCurrentPositionProbe({
+      store: { addPosition: vi.fn(async () => undefined) },
+      missionId: 'probe-mission',
+      deviceId: 'probe-device',
+      runId: 'probe-run',
+      currentPositionIntervalMs: 5_000,
+    })
+    probe.setPhase('create')
+    await new Promise((resolve) => setTimeout(resolve, 180))
+    for (const phase of ['verify', 'restore', 'cleanup'] as const) {
+      probe.setPhase(phase)
+      await new Promise((resolve) => setTimeout(resolve, 70))
+    }
+    const result = await probe.stop()
+
+    expect(result.byPhase.create.currentWrites).toBe(1)
+    expect(result.byPhase.create.visibleWrites).toBe(1)
+    expect(result.byPhase.create.currentPositionMaxCadenceMs).toBeLessThan(200)
+  })
+
   it('fails closed when the measured main event loop stalls despite off-thread durable ingest', async () => {
     const probe = startCurrentPositionProbe({
       store: { addPosition: vi.fn(async () => undefined) },
@@ -951,6 +972,19 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       deletedRows: 5000,
       totalDeletedRows: 45000,
     })
+    diagnostics.recordCleanupFailure({
+      substage: 'delete_page',
+      causeClass: 'sqlite_busy',
+      tableName: 'positions',
+      cursor: {
+        tableIndex: 2,
+        tableCount: 4,
+        tableBatch: 9,
+        deletedRows: 5000,
+        totalDeletedRows: 45000,
+      },
+      workerExit: { observed: true, event: 'message', code: 0 },
+    })
     diagnostics.recordArchiveIdentity({
       sha256: 'c'.repeat(64),
       sizeBytes: 45000,
@@ -993,6 +1027,19 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
         deletedRows: 5000,
         totalDeletedRows: 45000,
       },
+      cleanupFailure: {
+        substage: 'delete_page',
+        causeClass: 'sqlite_busy',
+        tableName: 'positions',
+        cursor: {
+          tableIndex: 2,
+          tableCount: 4,
+          tableBatch: 9,
+          deletedRows: 5000,
+          totalDeletedRows: 45000,
+        },
+        workerExit: { observed: true, event: 'message', code: 0 },
+      },
       archiveIdentity: { sha256: 'c'.repeat(64), sizeBytes: 45000, registryStatus: 'verified' },
       rss: { peakProcessRssBytes: 1234, linuxVmHwmBytes: 1200, sampleCount: 8 },
     })
@@ -1010,6 +1057,16 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
         topLevelCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
         causeCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
       })
+    expect(classifyQualificationFailure(Object.assign(new Error('Mission archive cleanup failed safely.'), {
+      code: 'ARCHIVE_CLEANUP_FAILED',
+      cleanupDiagnostic: {
+        substage: 'delete_page',
+        causeClass: 'sqlite_busy',
+      },
+    }))).toEqual({
+      topLevelCode: 'CLEANUP_GATE_FAILED',
+      causeCode: 'ARCHIVE_CLEANUP_FAILED',
+    })
   })
 
   it('builds a safe failure receipt with no secret, path, stack, or mission content', () => {

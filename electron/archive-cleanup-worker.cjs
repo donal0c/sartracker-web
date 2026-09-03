@@ -8,6 +8,10 @@ const Database = require('better-sqlite3')
 
 const { createArchiveCleanupCoordinator } = require('./archive-cleanup.cjs')
 const { withPinnedCustodyFileIdentity } = require('./archive-custody-file.cjs')
+const {
+  cleanupCauseClassForCode,
+  normalizeCleanupFailureDiagnostic,
+} = require('./archive-cleanup-failure.cjs')
 
 /** Inserts one complete lifecycle event and advances its Replay generation. */
 function appendEvent(db, missionId, eventType, timestamp, details) {
@@ -55,7 +59,7 @@ function createError(code) {
 /** Runs cleanup on a dedicated SQLite connection so main-loop cadence is independent. */
 async function runWorker() {
   const request = workerData.request
-  validateRequest(request)
+  let stage = 'input_validation'
   const cancellationController = new AbortController()
   const cancellationFlag = new Int32Array(workerData.cancellationBuffer)
   const onControlMessage = (message) => {
@@ -65,11 +69,15 @@ async function runWorker() {
     }
   }
   parentPort.on('message', onControlMessage)
-  const db = new Database(request.databasePath)
-  db.pragma('journal_mode = WAL')
-  db.pragma('synchronous = FULL')
-  db.pragma('foreign_keys = ON')
+  let db = null
   try {
+    validateRequest(request)
+    stage = 'worker_open'
+    db = new Database(request.databasePath)
+    db.pragma('journal_mode = WAL')
+    db.pragma('synchronous = FULL')
+    db.pragma('foreign_keys = ON')
+    stage = 'worker_execute'
     const coordinator = createArchiveCleanupCoordinator({
       db,
       schemaVersion: 13,
@@ -104,13 +112,35 @@ async function runWorker() {
       type: 'error',
       operationId: request.operationId,
       code: typeof error?.code === 'string' ? error.code : 'ARCHIVE_CLEANUP_FAILED',
+      diagnostic: normalizeCleanupFailureDiagnostic({
+        ...(error?.cleanupDiagnostic ?? {}),
+        substage: error?.cleanupDiagnostic?.substage ?? stage,
+        causeClass: error?.cleanupDiagnostic?.causeClass
+          ?? cleanupCauseClassForCode(error?.code),
+        workerExit: { observed: false, event: 'message', code: null },
+      }),
     })
   } finally {
     parentPort.off('message', onControlMessage)
-    db.close()
+    if (db !== null) {
+      try {
+        db.close()
+      } catch (error) {
+        parentPort.postMessage({
+          type: 'error',
+          operationId: request.operationId,
+          code: typeof error?.code === 'string' ? error.code : 'ARCHIVE_CLEANUP_FAILED',
+          diagnostic: normalizeCleanupFailureDiagnostic({
+            substage: 'worker_close',
+            causeClass: cleanupCauseClassForCode(error?.code),
+            workerExit: { observed: false, event: 'message', code: null },
+          }),
+        })
+        process.exitCode = 1
+      }
+    }
     parentPort.close()
   }
 }
 
 if (!isMainThread) void runWorker()
-
