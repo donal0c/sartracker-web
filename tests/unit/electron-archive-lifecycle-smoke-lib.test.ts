@@ -54,7 +54,10 @@ function replayObject(type: string, id: string): Readonly<Record<string, unknown
 }
 
 /** Returns one complete public closed Review payload with stable mission semantics. */
-function closedReviewContent(correctionAuthorized = false): Readonly<Record<string, unknown>> {
+function closedReviewContent(
+  correctionAuthorized = false,
+  workerThreadId = 5,
+): Readonly<Record<string, unknown>> {
   const query = {
     missionId: REPLAY_EXPECTED.missionId,
     selectedTime: REPLAY_EXPECTED.selectedTime,
@@ -65,6 +68,7 @@ function closedReviewContent(correctionAuthorized = false): Readonly<Record<stri
   return {
     missions: [{ id: 'mission-1', revision: 3, storage_state: 'live' }],
     review: {
+      workerThreadId,
       auditEvents: [
         { rowid: 1, revision: 1, type: 'mission_created' },
         { rowid: 2, revision: 2, type: 'position_added' },
@@ -341,19 +345,20 @@ function completeEvidence(): Readonly<Record<string, unknown>> {
 }
 
 describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON-253]', () => {
-  it('requires durable correction authorization in the public Review semantic payload', () => {
-    const beforeContent = closedReviewContent(false)
+  it('excludes only worker metadata and requires durable correction authorization', () => {
+    const beforeContent = closedReviewContent(false, 5)
     const before = projectArchiveLifecycleSmokeClosedReviewSemantic(
       beforeContent,
       REPLAY_EXPECTED,
     )
     const after = projectArchiveLifecycleSmokeClosedReviewSemantic(
-      closedReviewContent(true),
+      closedReviewContent(false, 7),
       REPLAY_EXPECTED,
     )
 
-    expect(before.excludedPaths).toEqual([])
+    expect(before.excludedPaths).toEqual(['review.workerThreadId'])
     expect(before.semantic.review).toHaveProperty('correctionAuthorized', false)
+    expect(before.semantic.review).not.toHaveProperty('workerThreadId')
     expect(before.semantic.replay).toBe(beforeContent.replay)
     expect(before.replayCounts).toEqual({
       objectPages: 1,
@@ -363,7 +368,13 @@ describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON
       trackPages: 2,
       trackRows: 5,
     })
-    expect(JSON.stringify(before)).not.toBe(JSON.stringify(after))
+    expect(JSON.stringify(before)).toBe(JSON.stringify(after))
+    expect(JSON.stringify(before)).not.toBe(JSON.stringify(
+      projectArchiveLifecycleSmokeClosedReviewSemantic(
+        closedReviewContent(true, 5),
+        REPLAY_EXPECTED,
+      ),
+    ))
     expect(() => projectArchiveLifecycleSmokeClosedReviewSemantic({
       ...closedReviewContent(),
       unexpected: true,
@@ -373,12 +384,12 @@ describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON
     expect(() => projectArchiveLifecycleSmokeClosedReviewSemantic(
       missingAuthorization,
       REPLAY_EXPECTED,
-    )).toThrow(/public result shape/iu)
-    const leakedWorker = structuredClone(closedReviewContent()) as Record<string, unknown>
-    const leakedReview = leakedWorker.review as Record<string, unknown>
-    leakedReview.workerThreadId = 8
-    expect(() => projectArchiveLifecycleSmokeClosedReviewSemantic(leakedWorker, REPLAY_EXPECTED))
-      .toThrow(/public result shape/iu)
+    )).toThrow(/closed Review|worker.*metadata/iu)
+    const extraWorker = structuredClone(closedReviewContent()) as Record<string, unknown>
+    const extraReview = extraWorker.review as Record<string, unknown>
+    extraReview.workerProcessId = 8
+    expect(() => projectArchiveLifecycleSmokeClosedReviewSemantic(extraWorker, REPLAY_EXPECTED))
+      .toThrow(/closed Review|worker.*metadata/iu)
   })
 
   it.each([

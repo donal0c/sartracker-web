@@ -16,8 +16,9 @@ const CLOSED_REVIEW_RESULT_KEYS = Object.freeze([
   'auditEvents',
   'breadcrumbCount',
   'correctionAuthorized',
+  'workerThreadId',
 ])
-const CLOSED_REVIEW_EXCLUDED_PATHS = Object.freeze([])
+const CLOSED_REVIEW_EXCLUDED_PATHS = Object.freeze(['review.workerThreadId'])
 const CLOSED_REPLAY_KEYS = Object.freeze([
   'initial',
   'objectPages',
@@ -113,15 +114,16 @@ export function projectArchiveLifecycleSmokeClosedReviewSemantic(content, expect
     || Array.isArray(content.replay)) {
     throw new Error('Packaged closed Review content has an invalid root shape.')
   }
-  const reviewKeys = Object.keys(content.review).sort()
-  if (reviewKeys.join(',')
+  if (Object.keys(content.review).sort().join(',')
       !== [...CLOSED_REVIEW_RESULT_KEYS].sort().join(',')
-    || typeof content.review.correctionAuthorized !== 'boolean') {
-    throw new Error(
-      `Packaged closed Review public result shape is invalid (${reviewKeys.join(',')}; correctionAuthorized=${typeof content.review.correctionAuthorized}).`,
-    )
+    || typeof content.review.correctionAuthorized !== 'boolean'
+    || !Number.isSafeInteger(content.review.workerThreadId)
+    || content.review.workerThreadId < 1) {
+    throw new Error('Packaged closed Review worker-session metadata is invalid.')
   }
-  const semanticReview = content.review
+  const semanticReview = Object.fromEntries(
+    Object.entries(content.review).filter(([key]) => key !== 'workerThreadId'),
+  )
   const replayCounts = validateClosedReplayEvidence(content.replay, expected)
   return Object.freeze({
     excludedPaths: CLOSED_REVIEW_EXCLUDED_PATHS,
