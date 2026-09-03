@@ -4,8 +4,8 @@
 
 ## Current State
 
-- **PR6 source candidate is `0f0723d4b1ec7e78d4f6c166abad049188660ca6` /
-  tree `b53474dc93069930a0c284ed6507510bd6a87d94` (2026-09-03):** correction
+- **PR6 source candidate is `561ffcb96960ba3bd62dcede1c616b74a79b22a7` /
+  tree `afbd3b3940d9908edea9d661c24078e471bf63a1` (2026-09-03):** correction
   admission uses bounded, cancellable busy handling; archive review carries
   finalized status/history into the sealed snapshot; registry-free snapshots
   rehydrate safely; interrupted cleanup has a bounded Resume route; correction
@@ -14,18 +14,17 @@
   truthful custody recovery, durable correction authorization outside the
   bounded audit page, browser verifier persistence/current-predecessor
   enforcement, supplement provenance, and mutable recovery-code handling across
-  archive workers are covered by red-first tests. The focused remediation set
-  is `281/281` green; crypto/lifetime checks are `39/39`; TypeScript, lint and
-  Node syntax are green. Fresh broad, renderer/input, persistence and
-  concurrency exact-head reviews are clean; archive-review and mission-review
-  Chromium flows are `17/17` green, archive visual flows are `3/3` green,
-  visual review is `4 pass / 0 fail / 0 error`, and the exact-head packaged
-  macOS archive-lifecycle smoke passed. Full serial unit, kill, Ubuntu >2 GiB,
-  Linux workflow and final documentation-head proof remain pending. The latest
-  source fix also classifies clean post-commit worker exits, prevents every live
-  mutation during correction admission, reopens renderer evidence after a
-  successful cleanup retry, preserves the custody cause in the operator banner,
-  and refreshes governance on failed correction paths.
+  archive workers, main-loop-safe cleanup workers, qualification-safe run
+  identities, and cancelled-cleanup physical-exit fencing are covered by
+  red-first tests. Focused remediation checks are `77/77` green; the full
+  serial unit gate is `369/369` files and `3,527/3,527` tests; TypeScript, lint,
+  Node syntax and diff checks are green. The packaged macOS smoke, local
+  SIGKILL matrix, Chromium `170/173`, and visual Playwright `57/62` runs are
+  b30 prior-head evidence (each retains only the known pre-existing DON-275
+  coverage failures) and are not promoted automatically. Ubuntu >2 GiB and
+  exact-head Linux are running against 561; final-head package/browser/visual
+  reruns, visual review and the remaining exact-head review/recheck wave are
+  pending.
 
 - **Carry-forward proof snapshot:** earlier Chromium `172/172`, visual
   Playwright `62/62`, uncached visual review `74 pass / 0 fail / 0 error`, Linux

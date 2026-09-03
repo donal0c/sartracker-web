@@ -6,25 +6,43 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
-> Current source candidate: `0f0723d4b1ec7e78d4f6c166abad049188660ca6`
-> / tree `b53474dc93069930a0c284ed6507510bd6a87d94`. It carries the
+> Current source candidate: `561ffcb96960ba3bd62dcede1c616b74a79b22a7`
+> / tree `afbd3b3940d9908edea9d661c24078e471bf63a1`. It carries the
 > archive-backed correction snapshot inventory fix, completion-to-exit worker
 > race fix, attachment-residue-gated recovery fence, explicit correction close
 > audit, truthful custody recovery state, correction evidence reopening after
 > cleanup retry, clean post-commit worker-exit classification, a shared
-> correction writer fence across live mutations, and the latest red-first fixes
-> for durable correction authorization outside the bounded audit page plus
-> browser verifier persistence/current-predecessor enforcement/supplement
-> provenance, plus mutable recovery-code normalization across all archive
-> workers. Focused remediation checks are `281/281` green, crypto/lifetime
-> checks are `39/39` green, and the packaged macOS archive-lifecycle smoke is
-> exact-head green. TypeScript, lint, Node syntax and diff checks are green.
-> Fresh broad, renderer/input, persistence and concurrency reviews are clean at
-> this exact source head; archive-review and mission-review Chromium flows are
-> `17/17` green and archive visual flows are `3/3` green. Full serial unit,
-> kill-matrix, Ubuntu >2 GiB, Linux workflow and final documentation-head proof
-> remain pending. PR6 remains
-> pre-merge; Donal retains approval and merge authority.
+> correction writer fence across live mutations, durable correction
+> authorization outside the bounded audit page, browser verifier persistence /
+> current-predecessor enforcement / supplement provenance, mutable recovery-code
+> normalization across archive workers, main-loop-safe cleanup workers,
+> qualification-safe run identities, and cancelled-cleanup physical-exit
+> fencing. Focused remediation checks are `77/77` green, the full serial unit
+> gate is `369/369` files and `3,527/3,527` tests, and lint, TypeScript, Node
+> syntax and diff checks are green. The packaged macOS smoke, local 32-case
+> SIGKILL matrix, Chromium `170/173` run (three known pre-existing DON-275
+> coverage failures), and visual Playwright `57/62` run (five known
+> pre-existing DON-275 coverage failures) are b30 prior-head evidence and are
+> not promoted automatically. The >2 GiB Ubuntu qualification and exact-head
+> Linux workflow are running against 561; final-head package/browser/visual
+> reruns, visual review and the remaining exact-head review/recheck wave are
+> pending. PR6 remains pre-merge; Donal retains approval and merge authority.
+
+## 2026-09-03 cancelled-cleanup fence remediation
+
+The exact-head broad, persistence and concurrency reviews at `b30ebeb2…`
+reproduced a P2: cleanup cancellation rejected before the dedicated SQLite
+worker physically exited, releasing the archive-family and Review fences during
+the worker's termination grace. The red-first regression keeps the cleanup
+promise and mission Review blocked until `workerExited`; the fix is pushed at
+`561ffcb96960ba3bd62dcede1c616b74a79b22a7` / tree
+`afbd3b3940d9908edea9d661c24078e471bf63a1`.
+
+The qualification-safe run-identity fix is `b30ebeb2…`; cleanup moved off the
+Electron main loop at `92c87f01…` after the first >2 GiB attempt measured
+multi-second main heartbeat/current-position gaps. Those earlier receipts are
+prior-head diagnostics only. Final Ubuntu, Linux, package, browser, visual,
+documentation and review evidence must bind to one exact head.
 
 ## 2026-09-03 latest remediation
 
