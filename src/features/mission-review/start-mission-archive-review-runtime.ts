@@ -687,6 +687,11 @@ export async function startMissionArchiveReviewRuntime(
             // The explicit live-source recovery state remains visible.
           }
         }
+        try {
+          await refreshTimeline()
+        } catch {
+          // Preserve the explicit recovery state when timeline refresh is unavailable.
+        }
         apply({
           phase: 'error',
           activeSession: null,
