@@ -139,6 +139,7 @@ function appendCleanupEvent(
 /** Creates a genuine v13 store with two missions and one current verified archive identity. */
 async function createFixture(input: {
   readonly yieldToMain?: (db: BetterSqliteDatabase, missionId: string, archiveId: string) => Promise<void>
+  readonly yieldAfterBusyRetry?: () => Promise<void>
 } = {}): Promise<CleanupFixture> {
   const directory = mkdtempSync(path.join(tmpdir(), 'sartracker-archive-cleanup-'))
   temporaryDirectories.add(directory)
@@ -270,6 +271,9 @@ async function createFixture(input: {
     schemaVersion: 13,
     now: () => new Date(clock++).toISOString(),
     yieldToMain: () => input.yieldToMain?.(db, mission.id, archiveId) ?? Promise.resolve(),
+    ...(input.yieldAfterBusyRetry === undefined
+      ? {}
+      : { yieldAfterBusyRetry: input.yieldAfterBusyRetry }),
     appendEvent: (
       missionId: string,
       eventType: string,
@@ -323,6 +327,49 @@ async function createFixture(input: {
 }
 
 describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
+  it('spaces production busy retries so a short WAL lock does not fail cleanup immediately', async () => {
+    const fixture = await createFixture()
+    let lockWorker: Worker | null = null
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: { simulateKillAfterCommittedBatch: 1 },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+
+      lockWorker = new Worker(`
+        const Database = require('better-sqlite3')
+        const { parentPort, workerData } = require('node:worker_threads')
+        const db = new Database(workerData.databasePath)
+        db.pragma('journal_mode = WAL')
+        const hold = db.transaction(() => {
+          db.prepare('UPDATE missions SET status = status WHERE id = ?').run(workerData.missionId)
+          parentPort.postMessage('locked')
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250)
+        })
+        try { hold.immediate() } finally { db.close() }
+      `, {
+        eval: true,
+        workerData: {
+          databasePath: path.join(fixture.directory, 'mission-store.sqlite'),
+          missionId: fixture.missionId,
+        },
+      })
+      await new Promise<void>((resolve, reject) => {
+        lockWorker?.once('message', (message) => {
+          if (message === 'locked') resolve()
+        })
+        lockWorker?.once('error', reject)
+      })
+
+      await expect(fixture.coordinator.resume(fixture.evidence)).resolves.toMatchObject({
+        state: 'completed',
+        storageState: 'archived',
+      })
+    } finally {
+      await lockWorker?.terminate()
+      fixture.db.close()
+    }
+  }, 15_000)
+
   it('retries a cleanup boundary after a concurrent WAL writer without failing the live lane', async () => {
     const fixture = await createFixture({
       yieldToMain: async () => {

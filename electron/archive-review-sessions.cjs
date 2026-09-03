@@ -1273,6 +1273,18 @@ function createArchiveReviewSessionManager(options) {
           'Archive correction session identity is invalid.',
         )
       }
+      if (input.signal !== undefined && typeof input.signal.addEventListener !== 'function') {
+        throw new ArchiveReviewSessionError(
+          'ARCHIVE_REVIEW_INPUT_INVALID',
+          'Archive correction cancellation signal is invalid.',
+        )
+      }
+      if (input.signal?.aborted === true) {
+        throw new ArchiveReviewSessionError(
+          'ARCHIVE_CANCELLED',
+          'Archive correction restore was cancelled.',
+        )
+      }
       if (activeSession === null
         || activeSession.senderId !== senderId
         || activeSession.internal.sessionId !== input.sessionId
@@ -1339,6 +1351,7 @@ function createArchiveReviewSessionManager(options) {
           snapshotPath,
           attachmentDirectory: path.join(stagingDirectory, 'attachments'),
           attachmentMappings: session.internal.attachmentMappings,
+          signal: input.signal,
         })
         pending.snapshotOperation = snapshotOperation
         const snapshot = await snapshotOperation

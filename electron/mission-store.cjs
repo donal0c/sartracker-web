@@ -1108,8 +1108,9 @@ function createElectronMissionStore(options) {
   }
 
   /** Admits one correction only when no operational mission can contend with its writer turn. */
-  const acquireArchiveCorrectionAdmission = async () => {
+  const acquireArchiveCorrectionAdmission = async (operationId, signal) => {
     await assertArchiveCorrectionAttachmentRecoveryReady()
+    if (signal?.aborted === true) throw createArchiveCancellationError()
     assertArchiveCorrectionWriterIdle()
     if (getActiveMission(db) !== null) {
       const error = new Error(
@@ -1119,6 +1120,7 @@ function createElectronMissionStore(options) {
       throw error
     }
     const admission = {
+      operationId,
       released: false,
       cancel: null,
       workerExited: Promise.resolve(),
@@ -1947,8 +1949,12 @@ function createElectronMissionStore(options) {
     cancelMissionArchiveOperation: async (operationId) => {
       const normalizedOperationId = normalizeArchiveOperationId(operationId)
       const lifecycle = activeArchiveLifecyclesByOperationId.get(normalizedOperationId)
-      if (lifecycle === undefined) return false
-      lifecycle.controller.abort()
+      if (lifecycle !== undefined) {
+        lifecycle.controller.abort()
+        return true
+      }
+      if (archiveCorrectionAdmission?.operationId !== normalizedOperationId) return false
+      archiveCorrectionAdmission.cancel?.()
       return true
     },
     createMission: async (input) => {
@@ -2860,7 +2866,10 @@ function createElectronMissionStore(options) {
       options.readAdminRoster,
       reconcileFinalizedMissionArchive,
       async (rehydrationInput) => {
-        const admission = await acquireArchiveCorrectionAdmission()
+        const admission = await acquireArchiveCorrectionAdmission(
+          rehydrationInput.operationId,
+          rehydrationInput.signal,
+        )
         try {
           try {
             const operation = archiveCorrectionRunner({
@@ -2874,6 +2883,7 @@ function createElectronMissionStore(options) {
               reason: rehydrationInput.reason,
               attachmentDirectory: rehydrationInput.attachmentDirectory,
               attachmentMappings: rehydrationInput.attachmentMappings,
+              signal: rehydrationInput.signal,
               faultInjection: archiveCorrectionFaultInjection,
             })
             admission.cancel = typeof operation?.cancel === 'function'
@@ -7092,6 +7102,10 @@ async function unlockFinalizedMission(
     && /^[A-Za-z0-9_-]{1,200}$/u.test(input.operation_id)
     ? input.operation_id
     : undefined
+  const signal = input?.signal
+  if (signal !== undefined && typeof signal.addEventListener !== 'function') {
+    throw new Error('Mission correction cancellation signal is invalid.')
+  }
   const mission = getMission(db, missionId)
   if (mission.status !== 'finalized') {
     throw new Error('Only finalized missions can be unlocked.')
@@ -7116,6 +7130,7 @@ async function unlockFinalizedMission(
         'This mission is archived. Open its verified archive and choose Restore for correction before requesting an unlock.',
       )
     }
+    if (signal?.aborted === true) throw createArchiveCancellationError()
     const finalized = db.prepare(`SELECT details_json FROM mission_events
       WHERE mission_id = ? AND event_type = 'mission_finalized'
       ORDER BY rowid DESC LIMIT 1`).get(missionId)
@@ -7159,6 +7174,7 @@ async function unlockFinalizedMission(
       finalizedEpoch,
       adminName,
       reason,
+      ...(signal === undefined ? {} : { signal }),
       onRestored: () => {
         const current = getMission(db, missionId)
         if (current.status !== 'finalized'

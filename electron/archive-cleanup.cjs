@@ -10,6 +10,7 @@ const {
 
 const CLEANUP_PROGRESS_VERSION = 1
 const CLEANUP_BUSY_RETRY_LIMIT = 240
+const CLEANUP_BUSY_RETRY_DELAY_MS = 25
 const RETAINED_MISSION_TABLES = new Set(['mission_events', 'missions'])
 const CLEANUP_OPERATIONAL_TABLES = new Set([
   'gpx_import_source_receipts',
@@ -51,6 +52,8 @@ function createArchiveCleanupCoordinator(options) {
     || !Number.isSafeInteger(options.schemaVersion) || options.schemaVersion < 1
     || typeof options.now !== 'function'
     || typeof options.yieldToMain !== 'function'
+    || (options.yieldAfterBusyRetry !== undefined
+      && typeof options.yieldAfterBusyRetry !== 'function')
     || typeof options.appendEvent !== 'function') {
     throw new ArchiveCleanupError(
       'ARCHIVE_CLEANUP_INPUT_INVALID',
@@ -61,6 +64,8 @@ function createArchiveCleanupCoordinator(options) {
   const schemaVersion = options.schemaVersion
   const now = options.now
   const yieldToMain = options.yieldToMain
+  const yieldAfterBusyRetry = options.yieldAfterBusyRetry
+    ?? (() => new Promise((resolve) => setTimeout(resolve, CLEANUP_BUSY_RETRY_DELAY_MS)))
   const appendEvent = options.appendEvent
   const batchLimits = normalizeBatchLimits(options.batchLimits)
   let cleanupPlan = null
@@ -234,7 +239,10 @@ function createArchiveCleanupCoordinator(options) {
             throw error
           }
           busyRetries += 1
-          await yieldToMain()
+          // A setImmediate-only loop can exhaust all retries in a few
+          // milliseconds while SQLite still holds the writer lock. Keep the
+          // retry asynchronous and paced so the main lane remains responsive.
+          await yieldAfterBusyRetry()
           continue
         }
         if (outcome.completed) return outcome.result

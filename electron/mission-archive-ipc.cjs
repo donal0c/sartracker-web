@@ -553,6 +553,7 @@ function registerMissionArchiveIpcHandlers(input) {
       for (const [operationId, operation] of activeOperations) {
         if (operation.senderId !== senderId) continue
         activeOperations.delete(operationId)
+        try { operation.cancel?.() } catch {}
         void Promise.resolve(missionStore.cancelMissionArchiveOperation(operationId))
           .catch(() => undefined)
       }
@@ -755,6 +756,13 @@ function registerMissionArchiveIpcHandlers(input) {
         'Mission archive correction operation identity is already in use.',
       )
     }
+    const controller = new AbortController()
+    activeOperations.set(operationId, Object.freeze({
+      senderId,
+      missionId,
+      kind: 'correction',
+      cancel: () => controller.abort(),
+    }))
     let snapshot = null
     let result = null
     let operationFailure = null
@@ -770,6 +778,7 @@ function registerMissionArchiveIpcHandlers(input) {
         sessionId,
         operationId,
         archiveId,
+        signal: controller.signal,
       })
       result = await missionStore.unlockFinalizedMission({
         mission_id: missionId,
@@ -782,12 +791,14 @@ function registerMissionArchiveIpcHandlers(input) {
         ...(snapshot.attachmentMappings === undefined
           ? {}
           : { attachment_mappings: snapshot.attachmentMappings }),
+        signal: controller.signal,
         admin_name: adminName,
         reason,
       })
     } catch (error) {
       operationFailure = error
     }
+    activeOperations.delete(operationId)
     if (operationFailure !== null) throw operationFailure
     if (snapshot !== null) {
       try {
@@ -1110,10 +1121,11 @@ function registerMissionArchiveIpcHandlers(input) {
     const active = activeOperations.get(normalizedOperationId)
     if (active?.senderId !== senderId) return invalidatedIssuance
     try {
+      try { active.cancel?.() } catch {}
       const cancelledActive = await missionStore.cancelMissionArchiveOperation(
         normalizedOperationId,
       ) === true
-      return invalidatedIssuance || cancelledActive
+      return invalidatedIssuance || cancelledActive || typeof active.cancel === 'function'
     } catch (error) {
       throw closeArchiveFailure(error, 'ARCHIVE_CANCEL_FAILED')
     }

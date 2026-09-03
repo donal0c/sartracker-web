@@ -213,6 +213,7 @@ describe('mission archive IPC containment [DON-248]', () => {
       sessionId: '44444444-4444-4444-8444-444444444444',
       operationId: OPERATION_ID,
       archiveId: 'archive-1',
+      signal: expect.any(AbortSignal),
     })
     expect(missionStore.unlockFinalizedMission).toHaveBeenCalledWith({
       mission_id: 'mission-1',
@@ -221,9 +222,46 @@ describe('mission archive IPC containment [DON-248]', () => {
       snapshot_path: snapshotPath,
       admin_name: 'Duty Admin',
       reason: 'Correct a recorded clue.',
+      signal: expect.any(AbortSignal),
     })
     await expect(import('node:fs/promises').then(({ stat }) => stat(stagingDirectory)))
       .rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('cancels a sender-owned correction restore while the mission store is still running', async () => {
+    let releaseUnlock: ((value: unknown) => void) | undefined
+    const unlock = new Promise((resolve) => { releaseUnlock = resolve })
+    const snapshotForCorrection = vi.fn(async () => ({
+      missionId: 'mission-1',
+      archiveId: 'archive-1',
+      snapshotPath: '/safe/correction/mission-store.sqlite',
+    }))
+    const { handlers, missionStore } = createMainHarness({
+      archiveReviewSessionManager: {
+        hasReviewActivity: vi.fn(() => true),
+        acquireCleanupLease: vi.fn(),
+        snapshotForCorrection,
+      },
+    }, {
+      unlockFinalizedMission: vi.fn(async () => unlock),
+    })
+    const sender = createSender(8)
+    const event = { sender }
+    const pending = handlers.get(CHANNELS.restoreMissionForCorrection)?.(event, {
+      mission_id: 'mission-1',
+      archiveId: 'archive-1',
+      operationId: OPERATION_ID,
+      sessionId: '44444444-4444-4444-8444-444444444444',
+      admin_name: 'Duty Admin',
+      reason: 'Correct a recorded clue.',
+    })
+
+    await vi.waitFor(() => expect(missionStore.unlockFinalizedMission).toHaveBeenCalledOnce())
+    await expect(handlers.get(CHANNELS.cancelMissionArchiveOperation)?.(event, OPERATION_ID))
+      .resolves.toBe(true)
+    expect(missionStore.cancelMissionArchiveOperation).toHaveBeenCalledWith(OPERATION_ID)
+    releaseUnlock?.({ id: 'mission-1', status: 'finished' })
+    await expect(pending).resolves.toMatchObject({ id: 'mission-1', status: 'finished' })
   })
 
   it('returns committed correction status when snapshot cleanup remains unresolved', async () => {
