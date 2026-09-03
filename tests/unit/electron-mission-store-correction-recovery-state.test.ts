@@ -6,6 +6,10 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const Database = require('better-sqlite3') as new (databasePath: string) => {
+  prepare: (sql: string) => { run: (...parameters: readonly unknown[]) => unknown; get: (...parameters: readonly unknown[]) => unknown }
+  close: () => void
+}
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (input: Readonly<Record<string, unknown>>) => {
     readonly createMission: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
@@ -243,5 +247,37 @@ describe('startup correction custody renderer state', () => {
       await secondStore.prepareClose()
       secondStore.close()
     }
+  })
+
+  it('clears a worker-recorded completion marker when its journal directory is gone', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-recovery-complete-'))
+    roots.push(root)
+    const firstStore = createElectronMissionStore({ userDataPath: root })
+    const mission = await firstStore.createMission({ name: 'Completed journal recovery' })
+    await firstStore.finishMission(mission.id)
+    await firstStore.prepareClose()
+    firstStore.close()
+
+    const databasePath = path.join(root, 'mission-store.sqlite')
+    const database = new Database(databasePath)
+    database.prepare(`INSERT INTO metadata (key, value) VALUES (
+      'archive_correction_attachment_recovery_failure', 'completed'
+    ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
+    database.close()
+
+    const secondStore = createElectronMissionStore({ userDataPath: root })
+    try {
+      await expect(secondStore.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finished',
+        storage_state: 'live',
+      })
+    } finally {
+      await secondStore.prepareClose()
+      secondStore.close()
+    }
+    const reopened = new Database(databasePath)
+    expect(reopened.prepare(`SELECT value FROM metadata
+      WHERE key = 'archive_correction_attachment_recovery_failure'`).get()).toBeUndefined()
+    reopened.close()
   })
 })

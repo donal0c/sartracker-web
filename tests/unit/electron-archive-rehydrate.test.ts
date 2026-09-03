@@ -201,17 +201,39 @@ describe('archived mission correction rehydration', () => {
         onProgress: () => undefined,
       })
       const liveDb = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+      const substitutePath = path.join(userDataPath, 'substitute-snapshot.sqlite')
+      copyFileSync(snapshotPath, substitutePath)
+      const substituteDb = new Database(substitutePath)
+      substituteDb.prepare('UPDATE devices SET name = ? WHERE mission_id = ?')
+        .run('SUBSTITUTED', mission.id)
+      substituteDb.close()
+      const guardedLiveDb = new Proxy(liveDb, {
+        get(target, property, receiver) {
+          if (property === 'prepare') {
+            return (sql: string) => {
+              if (sql.startsWith('ATTACH DATABASE')) copyFileSync(substitutePath, snapshotPath)
+              return target.prepare(sql)
+            }
+          }
+          if (property === 'transaction') return target.transaction.bind(target)
+          return Reflect.get(target, property, receiver)
+        },
+      })
       try {
         const proof = snapshotProof(snapshotPath)
         expect(() => rehydrateMissionFromSnapshot({
-          db: liveDb,
+          db: guardedLiveDb,
           snapshotPath,
           expectedSha256: proof.snapshot_database_sha256,
           expectedIdentity: proof.snapshot_database_identity,
           missionId: mission.id,
           archiveId,
           schemaVersion: CURRENT_SCHEMA_VERSION,
-          onRestored: () => { throw new Error('injected post-copy failure') },
+          onRestored: () => {
+            expect(liveDb.prepare('SELECT name FROM devices WHERE mission_id = ?').get(mission.id))
+              .toEqual({ name: 'Rollback Device' })
+            throw new Error('injected post-copy failure')
+          },
         })).toThrow('injected post-copy failure')
         expect(liveDb.prepare('SELECT COUNT(*) AS count FROM devices WHERE mission_id = ?').get(mission.id))
           .toEqual({ count: 0 })

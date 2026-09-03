@@ -494,6 +494,36 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     })
   })
 
+  it('pauses replay without rewriting health when custody recovery fences a staged envelope [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const envelope = createEnvelope('replay-recovery-fence')
+    const staging = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => { throw new Error('projection unavailable') },
+    })
+    await expect(staging.deliver(envelope)).resolves.toEqual({ persisted: true })
+    const markerPath = path.join(
+      directoryPath,
+      `degraded-health-${createHash('sha256').update(envelope.missionId).digest('hex').slice(0, 16)}.json.marker`,
+    )
+    const markerBefore = await fsPromises.readFile(markerPath, 'utf8')
+    const projected = vi.fn()
+    const recoveryError = Object.assign(new Error('custody recovery required'), {
+      code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+    })
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: projected,
+      assertMissionMutationAllowed: () => { throw recoveryError },
+    })
+    await restarted.initialize()
+    expect(projected).not.toHaveBeenCalled()
+    expect(await fsPromises.readFile(markerPath, 'utf8')).toBe(markerBefore)
+    expect((await readdir(directoryPath)).filter((name) => name.endsWith('.json')))
+      .toHaveLength(1)
+    restarted.dispose()
+  })
+
   it('promotes unresolved renderer uncertainty to permanent loss exactly once after restart [DON-276]', async () => {
     directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
     const staging = createIngestAnomalyOutbox({

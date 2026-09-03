@@ -151,6 +151,10 @@ function recoverCorrectionAttachmentJournals(input) {
     recovered += 1
   }
   syncDirectorySync(directory)
+  // Persist completion before the final journal directory removal. If the
+  // worker exits after this point, startup can distinguish completed custody
+  // from an unresolved journal rather than leaving a false pending marker.
+  input.beforeDirectoryRemoval?.()
   try {
     fs.rmdirSync(directory)
   } catch (error) {

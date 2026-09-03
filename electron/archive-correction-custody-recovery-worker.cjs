@@ -25,6 +25,11 @@ function run() {
       databasePath: workerData.databasePath,
       db: database,
       isCancelled: () => Atomics.load(cancellationFlag, 0) !== 0,
+      beforeDirectoryRemoval: () => {
+        database.prepare(`INSERT INTO metadata (key, value) VALUES (
+          'archive_correction_attachment_recovery_failure', 'completed'
+        ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
+      },
     })
     parentPort.postMessage({ type: 'complete', recovered: result.recovered })
   } catch {

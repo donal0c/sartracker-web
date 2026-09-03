@@ -2,7 +2,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { createHash } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
 const { listArchiveInventoryForSchema } = require('./archive-inventory.cjs')
@@ -137,6 +137,89 @@ function assertSnapshotProof(snapshotPath, proof) {
   } finally {
     if (handle !== undefined) {
       try { fs.closeSync(handle) } catch {}
+    }
+  }
+}
+
+/** Copies one authenticated snapshot from its pinned descriptor into a private restore file. */
+function copyVerifiedSnapshot(snapshotPath, proof) {
+  const temporaryPath = `${snapshotPath}.rehydrate-${randomUUID()}`
+  let sourceHandle
+  let targetHandle
+  let completed = false
+  try {
+    sourceHandle = fs.openSync(snapshotPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0))
+    const sourceStat = fs.fstatSync(sourceHandle)
+    if (!sourceStat.isFile() || sourceStat.nlink !== 1
+      || sourceStat.dev !== proof.identity.dev
+      || sourceStat.ino !== proof.identity.ino
+      || sourceStat.size !== proof.identity.sizeBytes) {
+      throw new ArchiveRehydrateError(
+        'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
+        'The verified archive correction snapshot changed before its private copy was made.',
+      )
+    }
+    targetHandle = fs.openSync(
+      temporaryPath,
+      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL
+        | (fs.constants.O_NOFOLLOW ?? 0),
+      0o600,
+    )
+    const hash = createHash('sha256')
+    const chunk = Buffer.allocUnsafe(1024 * 1024)
+    let offset = 0
+    while (offset < sourceStat.size) {
+      const bytesRead = fs.readSync(
+        sourceHandle,
+        chunk,
+        0,
+        Math.min(chunk.length, sourceStat.size - offset),
+        offset,
+      )
+      if (bytesRead < 1) {
+        throw new ArchiveRehydrateError(
+          'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
+          'The verified archive correction snapshot ended before its pinned size.',
+        )
+      }
+      hash.update(chunk.subarray(0, bytesRead))
+      fs.writeSync(targetHandle, chunk, 0, bytesRead)
+      offset += bytesRead
+    }
+    if (hash.digest('hex') !== proof.sha256) {
+      throw new ArchiveRehydrateError(
+        'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
+        'The verified archive correction snapshot digest changed before its private copy was made.',
+      )
+    }
+    fs.fsyncSync(targetHandle)
+    fs.closeSync(targetHandle)
+    targetHandle = undefined
+    const copied = fs.statSync(temporaryPath)
+    if (!copied.isFile() || copied.nlink !== 1 || copied.size !== proof.identity.sizeBytes) {
+      throw new ArchiveRehydrateError(
+        'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
+        'The private archive correction snapshot copy is invalid.',
+      )
+    }
+    fs.chmodSync(temporaryPath, 0o400)
+    completed = true
+    return temporaryPath
+  } catch (error) {
+    if (error instanceof ArchiveRehydrateError) throw error
+    throw new ArchiveRehydrateError(
+      'ARCHIVE_REHYDRATE_SNAPSHOT_UNAVAILABLE',
+      'The verified archive correction snapshot is unavailable.',
+    )
+  } finally {
+    if (targetHandle !== undefined) {
+      try { fs.closeSync(targetHandle) } catch {}
+    }
+    if (sourceHandle !== undefined) {
+      try { fs.closeSync(sourceHandle) } catch {}
+    }
+    if (!completed) {
+      try { fs.rmSync(temporaryPath, { force: true }) } catch {}
     }
   }
 }
@@ -296,32 +379,33 @@ function rehydrateMissionFromSnapshot(input) {
     input.expectedIdentity,
     input.expectedSha256,
   )
-  assertSnapshotProof(snapshotPath, snapshotProof)
-  const schemaVersion = input.schemaVersion
-  if (!Number.isSafeInteger(schemaVersion) || schemaVersion < 1) {
-    throw new ArchiveRehydrateError(
-      'ARCHIVE_REHYDRATE_REQUEST_INVALID',
-      'Archive correction schema identity is invalid.',
-    )
-  }
-  const database = input.db
-  if (database === null || typeof database?.prepare !== 'function'
-    || typeof database?.transaction !== 'function') {
-    throw new ArchiveRehydrateError(
-      'ARCHIVE_REHYDRATE_REQUEST_INVALID',
-      'Archive correction live store is invalid.',
-    )
-  }
-  if (input.onRestored !== undefined && typeof input.onRestored !== 'function') {
-    throw new ArchiveRehydrateError(
-      'ARCHIVE_REHYDRATE_REQUEST_INVALID',
-      'Archive correction completion callback is invalid.',
-    )
-  }
-
-  let snapshot
+  const verifiedSnapshotPath = copyVerifiedSnapshot(snapshotPath, snapshotProof)
   try {
-    snapshot = new Database(snapshotPath, { readonly: true, fileMustExist: true })
+    const schemaVersion = input.schemaVersion
+    if (!Number.isSafeInteger(schemaVersion) || schemaVersion < 1) {
+      throw new ArchiveRehydrateError(
+        'ARCHIVE_REHYDRATE_REQUEST_INVALID',
+        'Archive correction schema identity is invalid.',
+      )
+    }
+    const database = input.db
+    if (database === null || typeof database?.prepare !== 'function'
+      || typeof database?.transaction !== 'function') {
+      throw new ArchiveRehydrateError(
+        'ARCHIVE_REHYDRATE_REQUEST_INVALID',
+        'Archive correction live store is invalid.',
+      )
+    }
+    if (input.onRestored !== undefined && typeof input.onRestored !== 'function') {
+      throw new ArchiveRehydrateError(
+        'ARCHIVE_REHYDRATE_REQUEST_INVALID',
+        'Archive correction completion callback is invalid.',
+      )
+    }
+
+    let snapshot
+    try {
+    snapshot = new Database(verifiedSnapshotPath, { readonly: true, fileMustExist: true })
     snapshot.pragma('query_only = ON')
     const integrity = snapshot.pragma('integrity_check', { simple: true })
     const schema = Number(snapshot.prepare(
@@ -356,11 +440,10 @@ function rehydrateMissionFromSnapshot(input) {
     snapshot?.close()
   }
 
-  // Recheck after all metadata/inventory reads and immediately before ATTACH;
-  // a staged same-size mutation or path substitution must never be restored.
-  assertSnapshotProof(snapshotPath, snapshotProof)
-  database.prepare('ATTACH DATABASE ? AS correction_snapshot').run(snapshotPath)
-  try {
+    // SQLite consumes only the worker-owned, read-only copy authenticated above;
+    // a later staging-path mutation or substitution cannot change these bytes.
+    database.prepare('ATTACH DATABASE ? AS correction_snapshot').run(verifiedSnapshotPath)
+    try {
     const inventory = listArchiveInventoryForSchema(schemaVersion)
     const declaredNames = inventory.map((entry) => entry.tableName)
     const snapshotNames = database.prepare(`SELECT name FROM correction_snapshot.sqlite_master
@@ -420,7 +503,11 @@ function rehydrateMissionFromSnapshot(input) {
   } finally {
     database.exec('DETACH DATABASE correction_snapshot')
   }
-  return Object.freeze({ missionId, archiveId })
+    return Object.freeze({ missionId, archiveId })
+  } finally {
+    try { fs.chmodSync(verifiedSnapshotPath, 0o600) } catch {}
+    try { fs.rmSync(verifiedSnapshotPath, { force: true }) } catch {}
+  }
 }
 
 module.exports = {

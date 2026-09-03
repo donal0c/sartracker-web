@@ -19,6 +19,7 @@ const {
   readonly recoverCorrectionAttachmentJournals: (input: {
     readonly databasePath: string
     readonly db: TestDatabase
+    readonly beforeDirectoryRemoval?: () => void
   }) => { readonly recovered: number }
   readonly removeCorrectionAttachmentJournal: (
     journalPath: string,
@@ -169,6 +170,22 @@ describe('archive correction attachment custody recovery', () => {
 
     expect(fsync).toHaveBeenCalled()
     fsync.mockRestore()
+    fixture.db.close()
+  })
+
+  it('records recovery completion while the final custody journal still exists', async () => {
+    const fixture = await createFixture('finalized', 'completed')
+    let callbackObserved = false
+    expect(recoverCorrectionAttachmentJournals({
+      databasePath: fixture.databasePath,
+      db: fixture.db,
+      beforeDirectoryRemoval: () => {
+        callbackObserved = true
+        expect(fs.existsSync(correctionJournalDirectory(fixture.databasePath))).toBe(true)
+        expect(fs.existsSync(fixture.journalPath)).toBe(false)
+      },
+    })).toEqual({ recovered: 1 })
+    expect(callbackObserved).toBe(true)
     fixture.db.close()
   })
 

@@ -386,8 +386,10 @@ function createIngestAnomalyOutbox(options) {
         continue
       }
       try {
+        await assertMissionMutationAllowed(envelope.missionId)
         await options.projectEnvelope(envelope)
       } catch (error) {
+        if (error?.code === 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED') return
         await persistFailure(
           envelope.missionId,
           error?.code === 'LATE_EVIDENCE_AFTER_FINALIZATION'

@@ -547,7 +547,13 @@ function createElectronMissionStore(options) {
     // an operator explicitly resolves the custody state.
     const recoveryMarker = db.prepare(`SELECT value FROM metadata
       WHERE key = 'archive_correction_attachment_recovery_failure'`).get()
-    if (recoveryMarker !== undefined) {
+    if (recoveryMarker?.value === 'completed') {
+      // The recovery worker records completion before removing its final
+      // journal directory. A restart after that point can safely clear the
+      // marker even though there is no directory left to scan.
+      db.prepare(`DELETE FROM metadata
+        WHERE key = 'archive_correction_attachment_recovery_failure'`).run()
+    } else if (recoveryMarker !== undefined) {
       archiveCorrectionAttachmentRecoveryFailure =
         'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
     }
