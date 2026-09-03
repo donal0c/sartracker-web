@@ -413,27 +413,19 @@ function rehydrateMissionFromSnapshot(input) {
     ).get()?.value)
     const mission = snapshot.prepare('SELECT id, status FROM missions WHERE id = ?').get(missionId)
     const missionCount = Number(snapshot.prepare('SELECT COUNT(*) AS count FROM missions').get().count)
-    const archive = snapshot.prepare(
-      'SELECT id, mission_id, container_version, status, ciphertext_sha256 FROM mission_archives WHERE id = ?',
-    ).get(archiveId)
     const finalized = snapshot.prepare(`SELECT details_json FROM mission_events
       WHERE mission_id = ? AND event_type = 'mission_finalized'
       ORDER BY rowid DESC LIMIT 1`).get(missionId)
+    let finalizedDetails
+    try { finalizedDetails = JSON.parse(finalized?.details_json ?? '{}') } catch { finalizedDetails = {} }
     if (integrity !== 'ok' || schema !== schemaVersion || mission?.id !== missionId
       || mission.status !== 'finalized' || missionCount !== 1
-      || archive?.mission_id !== missionId || archive.status !== 'verified'
-      || archive.container_version !== 2 || !SHA256.test(String(archive.ciphertext_sha256 ?? ''))) {
+      || finalizedDetails.archive_id !== archiveId
+      || finalizedDetails.container_version !== 2
+      || finalizedDetails.archive_relative_path !== `${archiveId}.sararch`) {
       throw new ArchiveRehydrateError(
         'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
         'The verified archive correction snapshot failed identity validation.',
-      )
-    }
-    let finalizedDetails
-    try { finalizedDetails = JSON.parse(finalized?.details_json ?? '{}') } catch { finalizedDetails = {} }
-    if (finalizedDetails.archive_id !== archiveId) {
-      throw new ArchiveRehydrateError(
-        'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
-        'The archive correction snapshot is not bound to the requested finalization.',
       )
     }
   } finally {

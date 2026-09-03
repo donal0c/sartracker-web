@@ -31,6 +31,9 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require(
 const { rehydrateMissionFromSnapshot } = require('../../electron/archive-rehydrate.cjs') as {
   readonly rehydrateMissionFromSnapshot: (input: Readonly<Record<string, unknown>>) => Readonly<Record<string, string>>
 }
+const { correctionJournalDirectory } = require('../../electron/archive-correction-custody.cjs') as {
+  readonly correctionJournalDirectory: (databasePath: string) => string
+}
 
 const temporaryDirectories = new Set<string>()
 
@@ -153,6 +156,60 @@ describe('archived mission correction rehydration', () => {
         liveDb.close()
       }
       expect(readFileSync(snapshotPath).length).toBeGreaterThan(0)
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('accepts an archive-review correction snapshot without registry tables', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-review-snapshot-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const custody = {
+      passphrase: 'Review Snapshot 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Archive review correction snapshot' })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, custody)
+      const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
+      await store.syncBackup('correction-fixture')
+      const snapshotPath = path.join(userDataPath, 'review-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      const snapshotDb = new Database(snapshotPath)
+      try {
+        snapshotDb.pragma('foreign_keys = OFF')
+        snapshotDb.exec(`
+          DELETE FROM mission_cleanup_journal;
+          DELETE FROM mission_archive_supplements;
+          DELETE FROM mission_archives;
+        `)
+      } finally {
+        snapshotDb.close()
+      }
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '19191919-1919-4191-8191-191919191919',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: archiveId,
+        snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
+        admin_name: 'Duty Admin',
+        reason: 'Restore the archive-review snapshot for correction.',
+      })).resolves.toMatchObject({ status: 'finished', storage_state: 'live' })
     } finally {
       await store.prepareClose()
       store.close()
@@ -320,6 +377,7 @@ describe('archived mission correction rehydration', () => {
     })
     const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
       const database = new Database(String(input.databasePath))
+      mkdirSync(correctionJournalDirectory(String(input.databasePath)), { recursive: true })
       const timestamp = '2026-09-03T10:00:00.000Z'
       database.prepare('UPDATE missions SET status = ? WHERE id = ?')
         .run('finished', input.missionId)
@@ -406,6 +464,7 @@ describe('archived mission correction rehydration', () => {
     temporaryDirectories.add(userDataPath)
     const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
       const database = new Database(String(input.databasePath))
+      mkdirSync(correctionJournalDirectory(String(input.databasePath)), { recursive: true })
       const timestamp = '2026-09-03T11:00:00.000Z'
       database.prepare('UPDATE missions SET status = ? WHERE id = ?')
         .run('finished', input.missionId)
@@ -474,7 +533,7 @@ describe('archived mission correction rehydration', () => {
     }
   }, 60_000)
 
-  it('fences forced pre-commit cancellation residue in the same process', async () => {
+  it('does not create a global fence when forced pre-commit cancellation leaves no attachment journal', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-precommit-fence-'))
     temporaryDirectories.add(userDataPath)
     const cleanupFailure = Object.assign(new Error('forced cancellation interrupted custody rollback'), {
@@ -525,12 +584,12 @@ describe('archived mission correction rehydration', () => {
       })
       await expect(store.getMission(mission.id)).resolves.toMatchObject({
         status: 'finalized',
-        storage_state: 'recovery_required',
+        storage_state: 'archived',
       })
       await expect(store.unlockFinalizedMission(correctionInput)).rejects.toMatchObject({
-        code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+        code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
       })
-      expect(correctionRunner).toHaveBeenCalledOnce()
+      expect(correctionRunner).toHaveBeenCalledTimes(2)
     } finally {
       await store.prepareClose()
       store.close()

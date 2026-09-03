@@ -254,6 +254,41 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
     expect(reopenMissionEvidenceAfterUnlock).not.toHaveBeenCalled()
   })
 
+  it('does not reopen renderer evidence when attachment custody remains fenced', async () => {
+    const restoreMissionForCorrection = vi.fn().mockResolvedValue({
+      mission: { id: 'mission-1', status: 'finished' },
+      correction: {
+        committed: true,
+        cleanupComplete: true,
+        failureCode: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+      },
+    })
+    const reopenMissionEvidenceAfterUnlock = vi.fn()
+    const bounded = createIngestEvidenceFinalizationBoundary(
+      {
+        finalizeMission: vi.fn(),
+        unlockFinalizedMission: vi.fn(),
+        restoreMissionForCorrection,
+      },
+      {
+        flushMission: vi.fn(),
+        runWithMissionFinishFence: vi.fn(),
+        runWithMissionFinalizationFence: vi.fn(),
+        reopenMissionEvidenceAfterUnlock,
+      },
+    )
+
+    await expect(bounded.restoreMissionForCorrection?.({
+      mission_id: 'mission-1',
+      archiveId: 'archive-1',
+      operationId: 'operation-1',
+      sessionId: 'session-1',
+      admin_name: 'Duty Admin',
+      reason: 'Retain the attachment custody fence.',
+    })).resolves.toMatchObject({ correction: { cleanupComplete: true } })
+    expect(reopenMissionEvidenceAfterUnlock).not.toHaveBeenCalled()
+  })
+
   it('does not let a stale finalization continuation reseal evidence after unlock', async () => {
     let status: 'finished' | 'finalized' = 'finished'
     let confirmFinalizationCommitted: (() => void) | undefined

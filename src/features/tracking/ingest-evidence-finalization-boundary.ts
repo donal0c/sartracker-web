@@ -57,7 +57,9 @@ export function createIngestEvidenceFinalizationBoundary<
         restoreMissionForCorrection: async (input: RestoreMissionForCorrectionInput) => {
           const result = await restoreMissionForCorrection(input)
           const correction = result?.correction
-          if (!(correction?.committed === true && correction.cleanupComplete === false)) {
+          if (correction?.committed === true
+            && correction.cleanupComplete === true
+            && correction.failureCode === undefined) {
             evidence.reopenMissionEvidenceAfterUnlock(input.mission_id)
           }
           return result

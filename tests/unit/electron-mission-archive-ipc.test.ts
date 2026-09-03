@@ -355,7 +355,7 @@ describe('mission archive IPC containment [DON-248]', () => {
         status: 'finished',
         correction: {
           committed: true,
-          cleanupComplete: false,
+          cleanupComplete: true,
           failureCode: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
         },
       })

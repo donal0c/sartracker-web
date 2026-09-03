@@ -856,7 +856,10 @@ function registerMissionArchiveIpcHandlers(input) {
         ...projectUnlockedMissionResult(result, missionId),
         correction: Object.freeze({
           committed: true,
-          cleanupComplete: false,
+          // The correction snapshot/session has been swept successfully. The
+          // separate failure code records the durable attachment-custody fence;
+          // it must not be misreported to the renderer as plaintext residue.
+          cleanupComplete: true,
           failureCode: operationFailure?.code ?? 'ARCHIVE_REHYDRATE_FAILED',
         }),
       })

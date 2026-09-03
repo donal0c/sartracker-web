@@ -1157,6 +1157,11 @@ function createElectronMissionStore(options) {
     throw error
   }
 
+  /** Reports whether correction attachment custody left a journal to recover. */
+  function hasCorrectionAttachmentRecoveryResidue(databasePath) {
+    return fsSync.existsSync(correctionJournalDirectory(databasePath))
+  }
+
   /** Retains an unresolved correction journal as a durable archive-lane blocker. */
   function markArchiveCorrectionAttachmentRecoveryRequired() {
     archiveCorrectionAttachmentRecoveryFailure =
@@ -2921,7 +2926,9 @@ function createElectronMissionStore(options) {
               rehydrationInput.archiveId,
             )
             if (committedCorrection) {
-              markArchiveCorrectionAttachmentRecoveryRequired()
+              if (hasCorrectionAttachmentRecoveryResidue(databasePath)) {
+                markArchiveCorrectionAttachmentRecoveryRequired()
+              }
               if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') throw error
               const failure = new Error(
                 'Archive correction failed after commit before custody cleanup was proven.',
@@ -2931,7 +2938,9 @@ function createElectronMissionStore(options) {
               throw failure
             }
             if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') {
-              markArchiveCorrectionAttachmentRecoveryRequired()
+              if (hasCorrectionAttachmentRecoveryResidue(databasePath)) {
+                markArchiveCorrectionAttachmentRecoveryRequired()
+              }
               throw error
             }
             throw error

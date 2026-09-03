@@ -17,6 +17,7 @@ function startArchiveCorrectionSnapshot(input) {
   const workerExited = deferred()
   let worker
   let settled = false
+  let completionResult = null
   let cancel = () => undefined
   const completion = new Promise((resolve, reject) => {
     try {
@@ -45,18 +46,21 @@ function startArchiveCorrectionSnapshot(input) {
     worker.on('message', (message) => {
       if (settled) return
       if (message?.type === 'complete') {
+        if (completionResult !== null) {
+          rejectOnce(failure())
+          return
+        }
         if (!isComplete(message, request)) {
           rejectOnce(failure())
           return
         }
-        settled = true
-        resolve(Object.freeze({
+        completionResult = Object.freeze({
           snapshotPath: message.snapshotPath,
           attachmentDirectory: message.attachmentDirectory,
           attachmentMappings: Object.freeze(message.attachmentMappings.map((entry) => Object.freeze({ ...entry }))),
           databaseIdentity: Object.freeze({ ...message.databaseIdentity }),
           databaseSha256: message.databaseSha256,
-        }))
+        })
         return
       }
       if (message?.type === 'error') {
@@ -66,11 +70,15 @@ function startArchiveCorrectionSnapshot(input) {
       rejectOnce(failure())
     })
     worker.once('error', () => rejectOnce(failure()))
-    worker.once('exit', () => {
+    worker.once('exit', (exitCode) => {
       request.signal?.removeEventListener('abort', cancel)
       workerExited.resolve()
       if (settled) return
       settled = true
+      if (completionResult !== null && exitCode === 0) {
+        resolve(completionResult)
+        return
+      }
       reject(failure())
     })
     request.signal?.addEventListener('abort', cancel, { once: true })
