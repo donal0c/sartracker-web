@@ -255,6 +255,65 @@ describe('archived mission correction rehydration', () => {
     }
   }, 60_000)
 
+  it('turns a runtime cleanup-required correction failure into a durable same-process recovery fence', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-cleanup-fence-'))
+    temporaryDirectories.add(userDataPath)
+    const cleanupFailure = Object.assign(new Error('attachment cleanup requires recovery'), {
+      code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+    })
+    const correctionRunner = vi.fn(() => Promise.reject(cleanupFailure))
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+      startArchiveCorrectionWorker: correctionRunner,
+    })
+    const custody = {
+      passphrase: 'Cleanup Fence 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Cleanup fence correction' })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, custody)
+      const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
+      await store.syncBackup('correction-fixture')
+      const snapshotPath = path.join(userDataPath, 'correction-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '23232323-2323-4232-8232-232323232323',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+
+      const correctionInput = {
+        mission_id: mission.id,
+        archive_id: archiveId,
+        snapshot_path: snapshotPath,
+        admin_name: 'Duty Admin',
+        reason: 'Retain a durable recovery blocker after cleanup failure.',
+      }
+      await expect(store.unlockFinalizedMission(correctionInput)).rejects.toMatchObject({
+        code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+      })
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finalized',
+        storage_state: 'recovery_required',
+      })
+      await expect(store.unlockFinalizedMission(correctionInput)).rejects.toMatchObject({
+        code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+      })
+      expect(correctionRunner).toHaveBeenCalledOnce()
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
   it('defers correction while another mission is operational before starting the worker', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-admission-'))
     temporaryDirectories.add(userDataPath)

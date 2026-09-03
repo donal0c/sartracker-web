@@ -531,27 +531,14 @@ function createElectronMissionStore(options) {
             && error?.code === 'ARCHIVE_CANCELLED') {
             return
           }
-          archiveCorrectionAttachmentRecoveryFailure =
-            'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
-          if (!storeClosed) {
-            db.prepare(`INSERT INTO metadata (key, value) VALUES (
-              'archive_correction_attachment_recovery_failure', ?
-            ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
-              archiveCorrectionAttachmentRecoveryFailure,
-            )
-          }
+          markArchiveCorrectionAttachmentRecoveryRequired()
         } finally {
           await Promise.resolve(operation.workerExited ?? operation).catch(() => undefined)
           activeArchiveWorkerOperations.delete(operation)
         }
       })()
     } catch {
-      archiveCorrectionAttachmentRecoveryFailure = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
-      db.prepare(`INSERT INTO metadata (key, value) VALUES (
-        'archive_correction_attachment_recovery_failure', ?
-      ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
-        archiveCorrectionAttachmentRecoveryFailure,
-      )
+      markArchiveCorrectionAttachmentRecoveryRequired()
     }
   } else {
     db.prepare(`DELETE FROM metadata
@@ -1149,6 +1136,18 @@ function createElectronMissionStore(options) {
     )
     error.code = archiveCorrectionAttachmentRecoveryFailure
     throw error
+  }
+
+  /** Retains an unresolved correction journal as a durable archive-lane blocker. */
+  function markArchiveCorrectionAttachmentRecoveryRequired() {
+    archiveCorrectionAttachmentRecoveryFailure =
+      'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+    if (storeClosed) return
+    db.prepare(`INSERT INTO metadata (key, value) VALUES (
+      'archive_correction_attachment_recovery_failure', ?
+    ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+      archiveCorrectionAttachmentRecoveryFailure,
+    )
   }
 
   /** Releases the exact correction admission after its worker has physically exited. */
@@ -2883,6 +2882,9 @@ function createElectronMissionStore(options) {
             admission.workerExited = Promise.resolve(operation?.workerExited ?? operation)
             return await awaitArchiveWorker(operation)
           } catch (error) {
+            if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') {
+              markArchiveCorrectionAttachmentRecoveryRequired()
+            }
             if (isCommittedArchiveCorrection(db, rehydrationInput.missionId, rehydrationInput.archiveId)) {
               return getMission(db, rehydrationInput.missionId)
             }
@@ -7098,6 +7100,13 @@ async function unlockFinalizedMission(
     throw new Error(
       'Mission live-store archival is in progress. Wait for its durable cleanup to finish or recover before unlocking.',
     )
+  }
+  if (mission.storage_state === 'recovery_required') {
+    const error = new Error(
+      'Archive correction attachment custody recovery requires operator review before unlocking.',
+    )
+    error.code = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+    throw error
   }
   if (mission.storage_state === 'archived') {
     if (rehydrateArchivedMission === null
