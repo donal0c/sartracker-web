@@ -508,19 +508,28 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     )
     const markerBefore = await fsPromises.readFile(markerPath, 'utf8')
     const projected = vi.fn()
-    const recoveryError = Object.assign(new Error('custody recovery required'), {
-      code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
-    })
+    let recoveryRequired = true
     const restarted = createIngestAnomalyOutbox({
       directoryPath,
       projectEnvelope: projected,
-      assertMissionMutationAllowed: () => { throw recoveryError },
+      retryDelayMs: 5,
+      assertMissionMutationAllowed: () => {
+        if (recoveryRequired) {
+          throw Object.assign(new Error('custody recovery required'), {
+            code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+          })
+        }
+      },
     })
     await restarted.initialize()
     expect(projected).not.toHaveBeenCalled()
     expect(await fsPromises.readFile(markerPath, 'utf8')).toBe(markerBefore)
     expect((await readdir(directoryPath)).filter((name) => name.endsWith('.json')))
       .toHaveLength(1)
+    recoveryRequired = false
+    await vi.waitFor(() => expect(projected).toHaveBeenCalledOnce())
+    expect((await readdir(directoryPath)).filter((name) => name.endsWith('.json')))
+      .toHaveLength(0)
     restarted.dispose()
   })
 

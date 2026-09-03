@@ -374,6 +374,7 @@ function createIngestAnomalyOutbox(options) {
     const names = selectReplayBatch(pendingNames, replayCursorName, replayBatchSize)
     if (names.length > 0) replayCursorName = names.at(-1)
     let projectedCount = 0
+    let recoveryPaused = false
     for (const name of names) {
       const filePath = path.join(options.directoryPath, name)
       let envelope
@@ -389,7 +390,10 @@ function createIngestAnomalyOutbox(options) {
         await assertMissionMutationAllowed(envelope.missionId)
         await options.projectEnvelope(envelope)
       } catch (error) {
-        if (error?.code === 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED') return
+        if (error?.code === 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED') {
+          recoveryPaused = true
+          break
+        }
         await persistFailure(
           envelope.missionId,
           error?.code === 'LATE_EVIDENCE_AFTER_FINALIZATION'
@@ -410,7 +414,7 @@ function createIngestAnomalyOutbox(options) {
     }
     const remainingPendingCount = (await fs.readdir(options.directoryPath))
       .filter((name) => name.endsWith('.json')).length
-    scheduleReplayRetry(remainingPendingCount, projectedCount)
+    scheduleReplayRetry(remainingPendingCount, recoveryPaused ? 0 : projectedCount)
   }
 
   /** Retries bounded replay in background, draining quickly only after progress. */
