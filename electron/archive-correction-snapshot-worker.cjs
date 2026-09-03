@@ -172,8 +172,9 @@ async function copyAttachments() {
   }
   const names = new Set()
   for (const mapping of mappings) {
-    if (names.has(mapping.sourceRelativePath)) throw invalidRequestError()
-    names.add(mapping.sourceRelativePath)
+    const stagedName = path.basename(mapping.entryName)
+    if (names.has(stagedName)) throw invalidRequestError()
+    names.add(stagedName)
   }
   const stagedDirectory = workerData.attachmentDirectory
   if (mappings.length === 0) return
@@ -187,7 +188,7 @@ async function copyAttachments() {
     throwIfCancelled()
     const sourcePath = path.join(sourceDirectory, mapping.entryName.slice('attachments/'.length))
     if (path.dirname(sourcePath) !== sourceDirectory) throw invalidRequestError()
-    const targetPath = path.join(stagedDirectory, mapping.sourceRelativePath)
+    const targetPath = path.join(stagedDirectory, path.basename(mapping.entryName))
     if (path.dirname(targetPath) !== stagedDirectory) throw invalidRequestError()
     const source = await fs.open(sourcePath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0))
     let target

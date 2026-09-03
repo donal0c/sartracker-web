@@ -24,7 +24,7 @@ describe('archive correction snapshot worker', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-snapshot-'))
     roots.push(root)
     const sourcePath = path.join(root, 'review', 'mission-store.sqlite')
-    const sourceAttachment = path.join(root, 'review', 'attachments', 'field.jpg')
+    const sourceAttachment = path.join(root, 'review', 'attachments', '00000001-field.jpg')
     const stagingDirectory = path.join(root, 'staging')
     const bytes = Buffer.alloc(2 * 1024 * 1024, 0x5a)
     await mkdir(path.dirname(sourcePath), { recursive: true })
@@ -46,7 +46,7 @@ describe('archive correction snapshot worker', () => {
       snapshotPath: path.join(stagingDirectory, 'mission-store.sqlite'),
       attachmentDirectory: path.join(stagingDirectory, 'attachments'),
       attachmentMappings: [{
-        entryName: 'attachments/field.jpg',
+        entryName: 'attachments/00000001-field.jpg',
         sourceRelativePath: 'field.jpg',
         sizeBytes: Buffer.byteLength('archived attachment'),
         sha256: createHash('sha256').update('archived attachment').digest('hex'),
@@ -59,7 +59,7 @@ describe('archive correction snapshot worker', () => {
       databaseSha256: expectedSha256,
     })
     await expect(readFile(path.join(stagingDirectory, 'mission-store.sqlite'))).resolves.toEqual(bytes)
-    await expect(readFile(path.join(stagingDirectory, 'attachments', 'field.jpg'), 'utf8'))
+    await expect(readFile(path.join(stagingDirectory, 'attachments', '00000001-field.jpg'), 'utf8'))
       .resolves.toBe('archived attachment')
   })
 

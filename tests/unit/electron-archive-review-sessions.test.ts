@@ -259,6 +259,7 @@ async function createHarness(input: {
     input: Readonly<Record<string, unknown>>,
   ) => Promise<Readonly<Record<string, unknown>>>
   readonly startReviewSweep?: (input: Readonly<Record<string, unknown>>) => Promise<unknown>
+  readonly startSnapshot?: (input: Readonly<Record<string, unknown>>) => RestoreOperation
   readonly removeSessionDirectory?: (sessionDirectory: string) => Promise<void>
   readonly useDefaultRemoveSessionDirectory?: boolean
   readonly createSource?: (
@@ -355,6 +356,7 @@ async function createHarness(input: {
     startRestore,
     restoreLegacy,
     ...(input.startReviewSweep === undefined ? {} : { startReviewSweep: input.startReviewSweep }),
+    ...(input.startSnapshot === undefined ? {} : { startSnapshot: input.startSnapshot }),
     createSource,
     ...(input.openRestoredAttachment === undefined
       ? {}
@@ -858,6 +860,61 @@ describe('archive review session manager', () => {
       operationId: OPERATION_ID,
       archiveId: ARCHIVE_ID,
     })).resolves.toBeUndefined()
+  })
+
+  it('cancels an in-progress correction snapshot when the session closes', async () => {
+    const completion = deferred<Readonly<Record<string, unknown>>>()
+    const workerExited = deferred<void>()
+    const cancel = vi.fn(() => {
+      completion.resolve({
+        snapshotPath: path.join(harness.reviewRoot, `.sweep-${SESSION_ID}`, 'mission-store.sqlite'),
+        attachmentDirectory: path.join(harness.reviewRoot, `.sweep-${SESSION_ID}`, 'attachments'),
+        attachmentMappings: [],
+        databaseIdentity: DATABASE_IDENTITY,
+        databaseSha256: 'a'.repeat(64),
+      })
+      workerExited.resolve()
+    })
+    const harness = await createHarness({
+      startRestoreFactory: (reviewRoot) => async (restoreInput) => {
+        const request = restoreInput.request as Readonly<Record<string, unknown>>
+        const sessionDirectory = path.join(reviewRoot, request.sessionId as string)
+        const databasePath = path.join(sessionDirectory, 'mission-store.sqlite')
+        await mkdir(sessionDirectory, { recursive: false, mode: 0o700 })
+        await writeFile(databasePath, 'RESTORED-PLAINTEXT', { mode: 0o600 })
+        const identity = await stat(databasePath)
+        return internalRestoreResult(reviewRoot, {
+          sessionDirectory,
+          databasePath,
+          databaseIdentity: { dev: identity.dev, ino: identity.ino, sizeBytes: identity.size },
+        })
+      },
+      startSnapshot: (input) => {
+        const stagingDirectory = input.stagingDirectory as string
+        return decorateRestoreOperation(
+          (async () => {
+            await mkdir(stagingDirectory, { recursive: false, mode: 0o700 })
+            return completion.promise
+          })(),
+          { cancel, workerExited: workerExited.promise },
+        )
+      },
+    })
+    await openSession(harness)
+    const snapshot = harness.manager.snapshotForCorrection({
+      senderId: SENDER_ID,
+      sessionId: SESSION_ID,
+      operationId: OPERATION_ID,
+      archiveId: ARCHIVE_ID,
+    })
+    const close = harness.manager.close({
+      senderId: SENDER_ID,
+      sessionId: SESSION_ID,
+    })
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+    await expect(close).resolves.toBeUndefined()
+    await expect(snapshot).resolves.toMatchObject({ archiveId: ARCHIVE_ID })
+    expect(cancel).toHaveBeenCalledOnce()
   })
 
   it('retains retryable manager ownership when the close audit fails after a confirmed sweep', async () => {

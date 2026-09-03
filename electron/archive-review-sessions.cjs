@@ -974,6 +974,7 @@ function createArchiveReviewSessionManager(options) {
       if (pendingCorrectionSnapshot?.session === session
         && pendingCorrectionSnapshot.setupPromise !== null
         && pendingCorrectionSnapshot.ready !== true) {
+        try { pendingCorrectionSnapshot.snapshotOperation?.cancel?.() } catch {}
         await pendingCorrectionSnapshot.setupPromise.catch(() => undefined)
       }
       if (!closeState.sourceClosed) {
@@ -1318,6 +1319,7 @@ function createArchiveReviewSessionManager(options) {
         swept: false,
         ready: false,
         setupPromise: null,
+        snapshotOperation: null,
       }
       pendingCorrectionSnapshot = pending
       const setup = (async () => {
@@ -1338,6 +1340,7 @@ function createArchiveReviewSessionManager(options) {
           attachmentDirectory: path.join(stagingDirectory, 'attachments'),
           attachmentMappings: session.internal.attachmentMappings,
         })
+        pending.snapshotOperation = snapshotOperation
         const snapshot = await snapshotOperation
         await Promise.resolve(snapshotOperation?.workerExited ?? snapshotOperation)
         pending.ready = true
