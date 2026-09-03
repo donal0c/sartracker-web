@@ -228,11 +228,11 @@ function createArchiveCleanupCoordinator(options) {
         assertNotCancelled(executionOptions.signal)
         let outcome
         try {
-          outcome = advanceOneBoundary(
+          outcome = withBusyTimeoutDisabled(db, () => advanceOneBoundary(
             evidence,
             executionOptions.faultInjection,
             executionOptions,
-          )
+          ))
           busyRetries = 0
         } catch (error) {
           if (!isRetryableSqliteBusy(error) || busyRetries >= CLEANUP_BUSY_RETRY_LIMIT) {
@@ -291,7 +291,7 @@ function createArchiveCleanupCoordinator(options) {
           )
       if (failure !== error) failure.cause = error
       try {
-        recordFailure(evidence, failure.code)
+        await recordFailure(evidence, failure.code)
       } catch (auditError) {
         const terminal = new ArchiveCleanupError(
           'ARCHIVE_CLEANUP_AUDIT_FAILED',
@@ -414,27 +414,38 @@ function createArchiveCleanupCoordinator(options) {
   }
 
   /** Retains the forward cursor and records only a stable bounded failure code. */
-  function recordFailure(evidence, code) {
-    const timestamp = now()
-    const transaction = db.transaction(() => {
-      const journal = readJournal(db, evidence.missionId)
-      if (journal === null || journal.archive_id !== evidence.archiveId
-        || journal.state !== 'in_progress') return
-      db.prepare(`UPDATE mission_cleanup_journal SET updated_at = ?, last_error = ?
-        WHERE mission_id = ? AND archive_id = ? AND state = 'in_progress'`).run(
-        timestamp,
-        code,
-        evidence.missionId,
-        evidence.archiveId,
-      )
-      appendEvent(evidence.missionId, 'mission_cleanup_failed', timestamp, {
-        archive_id: evidence.archiveId,
-        error_code: code,
-        resulting_status: 'finalized',
-        storage_state: 'cleanup_in_progress',
-      })
-    })
-    transaction.immediate()
+  async function recordFailure(evidence, code) {
+    let retries = 0
+    while (true) {
+      try {
+        return withBusyTimeoutDisabled(db, () => {
+          const timestamp = now()
+          const transaction = db.transaction(() => {
+            const journal = readJournal(db, evidence.missionId)
+            if (journal === null || journal.archive_id !== evidence.archiveId
+              || journal.state !== 'in_progress') return
+            db.prepare(`UPDATE mission_cleanup_journal SET updated_at = ?, last_error = ?
+              WHERE mission_id = ? AND archive_id = ? AND state = 'in_progress'`).run(
+              timestamp,
+              code,
+              evidence.missionId,
+              evidence.archiveId,
+            )
+            appendEvent(evidence.missionId, 'mission_cleanup_failed', timestamp, {
+              archive_id: evidence.archiveId,
+              error_code: code,
+              resulting_status: 'finalized',
+              storage_state: 'cleanup_in_progress',
+            })
+          })
+          transaction.immediate()
+        })
+      } catch (error) {
+        if (!isRetryableSqliteBusy(error) || retries >= CLEANUP_BUSY_RETRY_LIMIT) throw error
+        retries += 1
+        await yieldAfterBusyRetry()
+      }
+    }
   }
 
   return Object.freeze({ getEligibility, start, resume })
@@ -488,6 +499,23 @@ function commitWithCustody(executionOptions, commit) {
     )
   }
   return result
+}
+
+/** Runs one cleanup transaction with SQLite lock acquisition made non-blocking. */
+function withBusyTimeoutDisabled(db, callback) {
+  const previousBusyTimeout = Number(db.pragma('busy_timeout', { simple: true }))
+  if (!Number.isSafeInteger(previousBusyTimeout) || previousBusyTimeout < 0) {
+    throw new ArchiveCleanupError(
+      'ARCHIVE_CLEANUP_STATE_INVALID',
+      'SQLite busy-timeout configuration is invalid.',
+    )
+  }
+  db.pragma('busy_timeout = 0')
+  try {
+    return callback()
+  } finally {
+    db.pragma(`busy_timeout = ${previousBusyTimeout}`)
+  }
 }
 
 /** Normalizes the two bounded row-page sizes. */

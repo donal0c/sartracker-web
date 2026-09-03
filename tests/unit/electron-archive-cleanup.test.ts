@@ -343,7 +343,7 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
         const hold = db.transaction(() => {
           db.prepare('UPDATE missions SET status = status WHERE id = ?').run(workerData.missionId)
           parentPort.postMessage('locked')
-          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250)
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_200)
         })
         try { hold.immediate() } finally { db.close() }
       `, {
@@ -360,10 +360,14 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
         lockWorker?.once('error', reject)
       })
 
+      let heartbeatCount = 0
+      const heartbeat = setInterval(() => { heartbeatCount += 1 }, 25)
       await expect(fixture.coordinator.resume(fixture.evidence)).resolves.toMatchObject({
         state: 'completed',
         storageState: 'archived',
       })
+      clearInterval(heartbeat)
+      expect(heartbeatCount).toBeGreaterThanOrEqual(20)
     } finally {
       await lockWorker?.terminate()
       fixture.db.close()

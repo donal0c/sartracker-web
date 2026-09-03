@@ -67,11 +67,13 @@ function startArchiveCorrectionSnapshot(input) {
     })
     worker.once('error', () => rejectOnce(failure()))
     worker.once('exit', () => {
+      request.signal?.removeEventListener('abort', cancel)
       workerExited.resolve()
       if (settled) return
       settled = true
       reject(failure())
     })
+    request.signal?.addEventListener('abort', cancel, { once: true })
     if (request.signal?.aborted === true) cancel()
   })
   Object.defineProperty(completion, 'workerExited', { value: workerExited.promise })

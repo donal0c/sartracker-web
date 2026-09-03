@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
+import { EventEmitter } from 'node:events'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const { startArchiveCorrectionSnapshot } = require(
@@ -20,6 +21,44 @@ afterEach(async () => {
 })
 
 describe('archive correction snapshot worker', () => {
+  it('cancels the snapshot worker when its operation signal aborts after startup', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-snapshot-cancel-'))
+    roots.push(root)
+    const sourcePath = path.join(root, 'mission-store.sqlite')
+    await writeFile(sourcePath, 'mission bytes')
+    const sourceIdentity = await stat(sourcePath)
+    const controller = new AbortController()
+    const postMessage = vi.fn()
+    const terminate = vi.fn(() => {
+      queueMicrotask(() => worker.emit('exit', 0))
+      return Promise.resolve(0)
+    })
+    const worker = Object.assign(new EventEmitter(), { postMessage, terminate })
+
+    const operation = startArchiveCorrectionSnapshot({
+      sourcePath,
+      sourceIdentity: {
+        dev: sourceIdentity.dev,
+        ino: sourceIdentity.ino,
+        sizeBytes: sourceIdentity.size,
+      },
+      expectedSha256: createHash('sha256').update('mission bytes').digest('hex'),
+      stagingDirectory: path.join(root, 'staging'),
+      snapshotPath: path.join(root, 'staging', 'mission-store.sqlite'),
+      attachmentDirectory: path.join(root, 'staging', 'attachments'),
+      attachmentMappings: [],
+      signal: controller.signal,
+      createWorker: () => worker,
+    })
+    controller.abort()
+
+    await expect(operation).rejects.toMatchObject({ code: 'ARCHIVE_CANCELLED' })
+    expect(postMessage).toHaveBeenCalledWith({ type: 'cancel' })
+    expect(terminate).toHaveBeenCalled()
+    await expect((operation as { readonly workerExited: Promise<void> }).workerExited)
+      .resolves.toBeUndefined()
+  })
+
   it('copies and re-authenticates the database and every attachment off the main isolate', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-snapshot-'))
     roots.push(root)
