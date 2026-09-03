@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   assertFieldScaleFixture,
+  createQualificationRunId,
   classifyQualificationFailure,
   createQualificationDiagnostics,
   createQualificationFailureReceipt,
@@ -41,6 +42,10 @@ afterEach(async () => {
 })
 
 describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', () => {
+  it('generates a diagnostics-safe run identity regardless of UUID prefix', () => {
+    expect(createQualificationRunId()).toMatch(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/u)
+  })
+
   it('pins, hashes and streams a closed regular fixture into a mode-0600 copy', async () => {
     const root = await createTemporaryRoot()
     const fixturePath = path.join(root, 'field.sqlite')

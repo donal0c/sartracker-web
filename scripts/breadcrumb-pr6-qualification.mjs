@@ -83,6 +83,11 @@ const FAILURE_METADATA_KEYS = Object.freeze([
   'legacy_archive_registry_backfill_failure',
   'legacy_evidence_backfill_failure',
 ])
+
+/** Creates a diagnostics-safe identity whose first character is always a letter. */
+export function createQualificationRunId() {
+  return `q-${randomUUID()}`
+}
 const SHA256 = /^[0-9a-f]{64}$/u
 const SAFE_TABLE = /^[A-Za-z_][A-Za-z0-9_]*$/u
 const SAFE_DIAGNOSTIC_TOKEN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u
@@ -482,7 +487,7 @@ async function main() {
   const sourceBefore = await readRepositorySourceState()
   assertExactSourceState(sourceBefore, options.expectedRepositoryHead)
   const runStartedAtMs = Date.now()
-  const runId = randomUUID()
+  const runId = createQualificationRunId()
   const profileRoot = await createOwnedProfileRoot()
   const copiedDatabasePath = path.join(profileRoot, DATABASE_FILE_NAME)
   const archiveDirectory = path.join(profileRoot, ARCHIVE_DIRECTORY_NAME)
