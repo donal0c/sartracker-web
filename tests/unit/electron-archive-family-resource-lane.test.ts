@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const Database = require('better-sqlite3')
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (
     options: Readonly<Record<string, unknown>>,
@@ -54,6 +55,13 @@ type ElectronMissionStore = {
   readonly listMissionArchives: (
     missionId: string,
   ) => Promise<readonly { readonly id: string }[]>
+  readonly startMissionCleanup: (
+    input: Readonly<Record<string, unknown>>,
+    context: ArchiveOperationContext,
+  ) => Promise<unknown>
+  readonly unlockFinalizedMission: (
+    input: Readonly<Record<string, unknown>>,
+  ) => Promise<unknown>
   readonly verifyMissionArchive: (
     input: {
       readonly archiveId: string
@@ -287,6 +295,93 @@ describe('mission-store shared archive-family resource lane', () => {
       expect(family.maximumActiveWorkerCount).toBe(1)
     } finally {
       for (const entry of family.entries) entry.fail()
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('waits for correction custody before finalizing a different mission', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-archive-lane-correction-'))
+    temporaryDirectories.add(userDataPath)
+    let releaseCorrection: (() => void) | undefined
+    let rejectCorrection: ((error: Error) => void) | undefined
+    let correctionReleased = false
+    const correctionStarted = vi.fn()
+    const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
+      const correctionDatabase = new Database(String(input.databasePath))
+      correctionDatabase.exec('BEGIN IMMEDIATE')
+      const workerExited = new Promise<void>((resolve) => {
+        releaseCorrection = () => {
+          if (correctionReleased) return
+          correctionReleased = true
+          correctionDatabase.exec('COMMIT')
+          correctionDatabase.close()
+          resolve()
+        }
+      })
+      const completion = new Promise<Readonly<Record<string, unknown>>>(
+        (_resolve, reject) => { rejectCorrection = reject },
+      ) as ArchiveWorkerOperation
+      Object.defineProperties(completion, {
+        workerExited: { value: workerExited },
+        cancel: { value: () => undefined },
+      })
+      correctionStarted()
+      return completion
+    })
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+      startArchiveCorrectionWorker: correctionRunner,
+    })
+    try {
+      const archivedMission = await store.createMission({ name: 'Correction lane source' })
+      await store.finishMission(archivedMission.id)
+      const finalized = await store.finalizeMission(archivedMission.id, CUSTODY)
+      const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
+      await store.startMissionCleanup({
+        missionId: archivedMission.id,
+        archiveId,
+        slotType: 'passphrase',
+        secret: CUSTODY.passphrase,
+      }, {
+        operationId: 'c0a00000-0000-4000-8000-000000000001',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+
+      const finalizationMission = await store.createMission({ name: 'Correction lane finalization' })
+      await store.finishMission(finalizationMission.id)
+      const correction = observe(store.unlockFinalizedMission({
+        mission_id: archivedMission.id,
+        archive_id: archiveId,
+        snapshot_path: path.join(userDataPath, 'correction.sqlite'),
+        admin_name: 'Duty Admin',
+        reason: 'Hold correction custody while another mission finalizes.',
+      }))
+      await vi.waitFor(() => expect(correctionStarted).toHaveBeenCalledOnce())
+
+      const finalization = observe(store.finalizeMission(finalizationMission.id, CUSTODY))
+      await allowQueueTurn()
+      expect(finalizationMission.id).toBeTruthy()
+      expect((await Promise.race([
+        finalization.then(() => 'settled'),
+        new Promise((resolve) => setTimeout(() => resolve('waiting'), 30)),
+      ]))).toBe('waiting')
+
+      rejectCorrection?.(Object.assign(
+        new Error('Correction worker released after custody turn.'),
+        { code: 'ARCHIVE_REHYDRATE_FAILED' },
+      ))
+      releaseCorrection?.()
+      await expect(finalization).resolves.toMatchObject({
+        status: 'fulfilled',
+        value: { mission: { id: finalizationMission.id } },
+      })
+      await expect(correction).resolves.toMatchObject({ status: 'rejected' })
+    } finally {
+      rejectCorrection?.(Object.assign(new Error('Test cleanup'), { code: 'ARCHIVE_REHYDRATE_FAILED' }))
+      releaseCorrection?.()
       await store.prepareClose()
       store.close()
     }

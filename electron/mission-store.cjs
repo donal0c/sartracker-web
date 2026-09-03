@@ -1136,6 +1136,17 @@ function createElectronMissionStore(options) {
   const acquireArchiveCorrectionAdmission = async (operationId, signal) => {
     await assertArchiveCorrectionAttachmentRecoveryReady()
     if (signal?.aborted === true) throw createArchiveCancellationError()
+    // Corrections share the archive-family writer lane. Drain all work already
+    // queued on both archive tails before publishing the correction barrier;
+    // the loop handles a new archive operation being enqueued while we wait.
+    while (true) {
+      const familyPredecessor = archiveFamilyTail
+      const unlockPredecessor = archiveUnlockReconciliationTail
+      await waitForArchiveFamilyTurn(familyPredecessor, signal)
+      await waitForArchiveFamilyTurn(unlockPredecessor, signal)
+      if (archiveFamilyTail === familyPredecessor
+        && archiveUnlockReconciliationTail === unlockPredecessor) break
+    }
     assertArchiveCorrectionWriterIdle()
     if (getActiveMission(db) !== null) {
       const error = new Error(
@@ -1144,13 +1155,20 @@ function createElectronMissionStore(options) {
       error.code = 'ARCHIVE_REHYDRATE_LIVE_ACTIVITY'
       throw error
     }
+    let resolveTurn = () => undefined
+    const turnCompletion = new Promise((resolve) => {
+      resolveTurn = resolve
+    })
     const admission = {
       operationId,
       released: false,
       cancel: null,
       workerExited: Promise.resolve(),
+      turnCompletion,
+      resolveTurn,
     }
     archiveCorrectionAdmission = admission
+    archiveFamilyTail = appendArchiveFamilyCompletion(archiveFamilyTail, turnCompletion)
     return admission
   }
 
@@ -1192,7 +1210,9 @@ function createElectronMissionStore(options) {
 
   /** Releases the exact correction admission after its worker has physically exited. */
   const releaseArchiveCorrectionAdmission = (admission) => {
+    if (admission.released) return
     admission.released = true
+    admission.resolveTurn()
     if (archiveCorrectionAdmission === admission) archiveCorrectionAdmission = null
   }
 
@@ -1202,6 +1222,7 @@ function createElectronMissionStore(options) {
     if (admission === null) return
     try { admission.cancel?.() } catch {}
     await Promise.resolve(admission.workerExited).catch(() => undefined)
+    await Promise.resolve(admission.turnCompletion).catch(() => undefined)
     if (archiveCorrectionAdmission === admission) archiveCorrectionAdmission = null
   }
   let archiveFamilyTail = Promise.resolve()
@@ -1248,6 +1269,7 @@ function createElectronMissionStore(options) {
     const lifecycle = { controller, completion: null }
     const predecessor = archiveUnlockReconciliationTail
     const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
+      await waitForArchiveCorrectionAdmissionCompletion()
       await archiveCustodyRecoverySettled
       if (archiveCustodyRecoveryFailure !== null) {
         const error = new Error(
@@ -1320,6 +1342,16 @@ function createElectronMissionStore(options) {
   /** Retains FIFO ownership even when a queued operation cancels before its turn. */
   const appendArchiveFamilyCompletion = (predecessor, completion) =>
     predecessor.catch(() => undefined).then(() => completion.catch(() => undefined))
+
+  /** Waits for an active correction custody turn to release its archive barrier. */
+  const waitForArchiveCorrectionAdmissionCompletion = async () => {
+    while (true) {
+      const admission = archiveCorrectionAdmission
+      if (admission === null) return
+      await admission.turnCompletion
+      if (archiveCorrectionAdmission === admission) return
+    }
+  }
 
   const enqueueFinalize = (missionId, custody, operationContext) => {
     const context = normalizeArchiveOperationContext(operationContext)
@@ -11058,6 +11090,7 @@ function assertArchiveCorrectionWriterIdleForDatabase(db, missionId) {
 
 /** Fences every mission mutation while correction attachment custody is unresolved. */
 function assertMissionArchiveCorrectionWritable(db, missionId) {
+  assertArchiveCorrectionWriterIdleForDatabase(db, missionId)
   if (readMissionLiveReviewStorageState(db, missionId) !== 'recovery_required') return
   const error = new Error(
     'Archive correction attachment custody recovery requires operator review before writes.',

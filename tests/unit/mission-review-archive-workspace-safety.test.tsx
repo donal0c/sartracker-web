@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SearchOperationsTab } from '../../src/components/mission-evidence-replay-tabs'
 import { MissionReviewWorkspace } from '../../src/components/mission-review-workspace'
+import { hasActiveMissionCorrectionAuthorization } from '../../src/features/mission-review/mission-correction-authorization'
 import { useMissionArchiveReviewStore } from '../../src/features/mission-review/mission-archive-review-store'
 import { buildMissionReviewSnapshot } from '../../src/features/mission-review/mission-review-model'
 import { useMissionReviewStore } from '../../src/features/mission-review/mission-review-store'
@@ -124,6 +125,22 @@ describe('archive-backed Mission Review workspace safety [DON-253 / BCP-16]', ()
     useMissionReviewStore.setState(useMissionReviewStore.getInitialState())
     useMissionArchiveReviewStore.setState(useMissionArchiveReviewStore.getInitialState())
     vi.restoreAllMocks()
+  })
+
+  it('re-enables correction evidence entry only after an audited unlock epoch', () => {
+    const correctionSnapshot = {
+      mission: { ...FINALIZED_LIVE_MISSION, status: 'finished' as const },
+      eventRows: [
+        { eventType: 'mission_finalized' },
+        { eventType: 'mission_unlocked' },
+      ],
+    } as never
+    const ordinaryFinishedSnapshot = {
+      mission: { ...FINALIZED_LIVE_MISSION, status: 'finished' as const },
+      eventRows: [{ eventType: 'mission_finalized' }],
+    } as never
+    expect(hasActiveMissionCorrectionAuthorization(correctionSnapshot)).toBe(true)
+    expect(hasActiveMissionCorrectionAuthorization(ordinaryFinishedSnapshot)).toBe(false)
   })
 
   it('keeps a path-free verified archive banner visible while operators move between Review tabs', async () => {

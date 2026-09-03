@@ -136,6 +136,7 @@ type BrowserHarnessState = {
   readonly currentMissionId: string | null
   readonly recoverableMissionId: string | null
   readonly evidenceLossByMission: BrowserEvidenceLossByMission
+  readonly archiveSnapshots: readonly BrowserArchiveMissionSnapshot[]
 }
 
 type BrowserGpxEvidencePoint = {
@@ -161,6 +162,29 @@ type BrowserMissionTeam = {
   readonly frozen_at: string
 }
 
+/** Immutable browser-validation projection captured at one sealed archive revision. */
+export type BrowserArchiveMissionSnapshot = {
+  readonly archiveId: string
+  readonly missionId: string
+  readonly mission: Mission
+  readonly devices: readonly Device[]
+  readonly positions: readonly Position[]
+  readonly outings: readonly Outing[]
+  readonly missionTeams: readonly BrowserMissionTeam[]
+  readonly missionParticipants: readonly MissionParticipant[]
+  readonly groupMembershipEvents: readonly GroupMembershipEvent[]
+  readonly participantBackfillCheckpoints: readonly ParticipantBackfillCheckpoint[]
+  readonly markers: readonly Marker[]
+  readonly drawings: readonly Drawing[]
+  readonly helicopters: readonly Helicopter[]
+  readonly gpxImports: readonly GpxTrackImport[]
+  readonly gpxEvidencePoints: readonly BrowserGpxEvidencePoint[]
+  readonly searchAreas: readonly SearchArea[]
+  readonly searchAssignments: readonly SearchAssignment[]
+  readonly searchPasses: readonly SearchPass[]
+  readonly missionEvents: readonly MissionEvent[]
+}
+
 type BrowserArchiveRecoveryIssuance = {
   readonly missionId: string
   readonly recoveryCodeDigest: string
@@ -170,6 +194,10 @@ type BrowserArchiveRecoveryIssuance = {
 type BrowserArchiveCredentialDigests = {
   readonly passphraseDigest: string
   readonly recoveryCodeDigest: string
+}
+
+type BrowserCorrectionMission = Mission & {
+  readonly correction_authorized?: boolean
 }
 
 const BROWSER_HARNESS_STORAGE_KEY = 'sartracker:browser-harness'
@@ -239,6 +267,10 @@ export type BrowserHarnessStore = {
     missionId: string,
   ) => Promise<MissionArchiveRecoveryIssuance>
   readonly listMissionArchives: (missionId: string) => Promise<readonly MissionArchiveInfo[]>
+  /** Returns the immutable synthetic rows captured for one sealed archive revision. */
+  readonly readMissionArchiveSnapshot?: (
+    archiveId: string,
+  ) => Promise<BrowserArchiveMissionSnapshot>
   /** Browser-only fixture hook for the sealed-but-unverified operator retry path. */
   readonly prepareArchiveVerificationRetryFixture: (
     archiveId: string,
@@ -1231,6 +1263,13 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         .filter((archive) => archive.mission_id === missionId)
         .toSorted((left, right) => left.created_at.localeCompare(right.created_at))
     },
+    readMissionArchiveSnapshot: async (archiveId) => {
+      const snapshot = state.archiveSnapshots.find((candidate) => candidate.archiveId === archiveId)
+      if (snapshot === undefined) {
+        throw new Error('Mission archive revision is not available in browser validation mode.')
+      }
+      return snapshot
+    },
     prepareArchiveVerificationRetryFixture: async (archiveId) => {
       const archive = state.missionArchives.find((candidate) => candidate.id === archiveId)
       if (archive === undefined
@@ -1533,6 +1572,11 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const createdAt = new Date().toISOString()
       const archiveId = `archive-${operationId}`
       const archivePath = `/tmp/browser-harness/archives/${missionId}-${operationId}.sararch`
+      const previousArchive = state.missionArchives
+        .filter((candidate) => candidate.mission_id === missionId)
+        .toSorted((left, right) => right.revision_sequence - left.revision_sequence
+          || right.created_at.localeCompare(left.created_at))[0]
+      const revisionSequence = (previousArchive?.revision_sequence ?? 0) + 1
       const archive = {
         id: archiveId,
         mission_id: missionId,
@@ -1546,10 +1590,10 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         size_bytes: createBrowserSyntheticArchiveSize(state, missionId),
         created_at: createdAt,
         verified_at: createdAt,
-        previous_archive_id: null,
-        previous_archive_sha256: null,
-        revision_sequence: 1,
-        revision_count: 1,
+        previous_archive_id: previousArchive?.id ?? null,
+        previous_archive_sha256: previousArchive?.ciphertext_sha256 ?? null,
+        revision_sequence: revisionSequence,
+        revision_count: Math.max(previousArchive?.revision_count ?? 0, revisionSequence),
         supplement_authority: null,
         supplement_reason: null,
         supplement_created_at: null,
@@ -1606,6 +1650,13 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           resulting_status: 'finalized',
         }),
       }
+      state = {
+        ...state,
+        archiveSnapshots: [
+          ...state.archiveSnapshots,
+          captureBrowserArchiveSnapshot(state, missionId, archiveId),
+        ],
+      }
       save()
       return { mission: finalizedMission, archive }
     },
@@ -1649,7 +1700,8 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         ...mission,
         status: 'finished' as const,
         storage_state: 'live' as const,
-      }
+        correction_authorized: true,
+      } satisfies BrowserCorrectionMission
       state = replaceMission(
         {
           ...state,
@@ -1678,8 +1730,14 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     },
     restoreMissionForCorrection: async (input) => {
       const mission = requireMission(input.mission_id, state.missions)
-      if (mission.status !== 'finalized' || mission.storage_state !== 'archived') {
+      if (mission.status !== 'finalized'
+        || !['live', 'archived'].includes(mission.storage_state ?? 'live')) {
         throw new Error('Only archived finalized missions can be restored for correction.')
+      }
+      const archive = state.missionArchives.find((candidate) => candidate.id === input.archiveId)
+      if (archive?.mission_id !== mission.id || archive.status !== 'verified'
+        || archive.availability !== 'present') {
+        throw new Error('The selected verified archive is not the current correction predecessor.')
       }
       const settings = readBrowserSettings()
       if (!settings.missionDefaults.adminRoster.includes(input.admin_name)) {
@@ -1690,7 +1748,8 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         ...mission,
         status: 'finished' as const,
         storage_state: 'live' as const,
-      }
+        correction_authorized: true,
+      } satisfies BrowserCorrectionMission
       const requestedAt = new Date().toISOString()
       state = replaceMission({
         ...state,
@@ -2769,7 +2828,7 @@ function normalizeBrowserReplayInput(input: MissionReplayReadInput): {
 }
 
 /** Returns one bounded searchable Search Operations page with production-shaped projections. */
-function buildBrowserSearchOperationPage(
+export function buildBrowserSearchOperationPage(
   state: BrowserHarnessState,
   input: {
     readonly missionId: string
@@ -2950,7 +3009,7 @@ function readBrowserEligibleReplayOutingIds(
 }
 
 /** Reads one bounded searchable Replay outing-choice page in browser validation. */
-function buildBrowserReplayFilterPage(
+export function buildBrowserReplayFilterPage(
   state: BrowserHarnessState,
   input: MissionReplayReadInput & {
     readonly filterKind: 'outing'
@@ -3015,7 +3074,7 @@ function decodeBrowserReplayFilterCursor(
 }
 
 /** Uses the production replay port with explicit harness completeness limits. */
-async function buildBrowserReplay(
+export async function buildBrowserReplay(
   state: BrowserHarnessState,
   input: MissionReplayReadInput,
 ): Promise<MissionReplayReadResult> {
@@ -3900,6 +3959,7 @@ function readHarnessState(): BrowserHarnessState {
       searchPasses: [],
       missionEvents: [],
       missionArchives: [],
+      archiveSnapshots: [],
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
@@ -3928,6 +3988,7 @@ function readHarnessState(): BrowserHarnessState {
       searchPasses: [],
       missionEvents: [],
       missionArchives: [],
+      archiveSnapshots: [],
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
@@ -3972,6 +4033,7 @@ function readHarnessState(): BrowserHarnessState {
       searchPasses: Array.isArray(parsed.searchPasses) ? parsed.searchPasses : [],
       missionEvents: Array.isArray(parsed.missionEvents) ? parsed.missionEvents : [],
       missionArchives: Array.isArray(parsed.missionArchives) ? parsed.missionArchives : [],
+      archiveSnapshots: Array.isArray(parsed.archiveSnapshots) ? parsed.archiveSnapshots : [],
       openedPaths: Array.isArray(parsed.openedPaths) ? parsed.openedPaths : [],
       currentMissionId:
         typeof parsed.currentMissionId === 'string' ? parsed.currentMissionId : null,
@@ -3999,6 +4061,7 @@ function readHarnessState(): BrowserHarnessState {
       searchPasses: [],
       missionEvents: [],
       missionArchives: [],
+      archiveSnapshots: [],
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
@@ -4008,6 +4071,38 @@ function readHarnessState(): BrowserHarnessState {
 }
 
 const MAX_AUDIT_EVENT_LIMIT = 5_000
+
+/** Captures every browser-harness row belonging to one finalized archive revision. */
+function captureBrowserArchiveSnapshot(
+  state: BrowserHarnessState,
+  missionId: string,
+  archiveId: string,
+): BrowserArchiveMissionSnapshot {
+  const importIds = new Set(
+    state.gpxImports.filter((entry) => entry.mission_id === missionId).map((entry) => entry.id),
+  )
+  return Object.freeze({
+    archiveId,
+    missionId,
+    mission: requireMission(missionId, state.missions),
+    devices: Object.freeze(state.devices.filter((entry) => entry.mission_id === missionId)),
+    positions: Object.freeze(state.positions.filter((entry) => entry.mission_id === missionId)),
+    outings: Object.freeze(state.outings.filter((entry) => entry.mission_id === missionId)),
+    missionTeams: Object.freeze(state.missionTeams.filter((entry) => entry.mission_id === missionId)),
+    missionParticipants: Object.freeze(state.missionParticipants.filter((entry) => entry.mission_id === missionId)),
+    groupMembershipEvents: Object.freeze(state.groupMembershipEvents.filter((entry) => entry.mission_id === missionId)),
+    participantBackfillCheckpoints: Object.freeze(state.participantBackfillCheckpoints.filter((entry) => entry.mission_id === missionId)),
+    markers: Object.freeze(state.markers.filter((entry) => entry.mission_id === missionId)),
+    drawings: Object.freeze(state.drawings.filter((entry) => entry.mission_id === missionId)),
+    helicopters: Object.freeze(state.helicopters.filter((entry) => entry.mission_id === missionId)),
+    gpxImports: Object.freeze(state.gpxImports.filter((entry) => entry.mission_id === missionId)),
+    gpxEvidencePoints: Object.freeze(state.gpxEvidencePoints.filter((entry) => importIds.has(entry.importId))),
+    searchAreas: Object.freeze(state.searchAreas.filter((entry) => entry.mission_id === missionId)),
+    searchAssignments: Object.freeze(state.searchAssignments.filter((entry) => entry.mission_id === missionId)),
+    searchPasses: Object.freeze(state.searchPasses.filter((entry) => entry.mission_id === missionId)),
+    missionEvents: Object.freeze(state.missionEvents.filter((entry) => entry.mission_id === missionId)),
+  })
+}
 
 /** Counts synthetic mission-scoped fixture rows without claiming desktop cleanup proof. */
 function countBrowserSyntheticMissionRows(
@@ -4167,7 +4262,8 @@ function requireMission(missionId: string, missions: readonly Mission[]): Missio
 
 function ensureMissionMutable(missionId: string, missions: readonly Mission[]): Mission {
   const mission = requireMission(missionId, missions)
-  if (mission.status === 'finished' || mission.status === 'finalized') {
+  const correctionAuthorized = (mission as BrowserCorrectionMission).correction_authorized === true
+  if ((mission.status === 'finished' && !correctionAuthorized) || mission.status === 'finalized') {
     throw new Error(
       `Cannot write data to finished mission ${missionId}; resume the mission or unlock it first.`,
     )
@@ -4182,7 +4278,8 @@ function requireMutableParticipantMission(
   missions: readonly Mission[],
 ): Mission {
   const mission = requireMission(missionId, missions)
-  if (mission.status === 'finished' || mission.status === 'finalized') {
+  const correctionAuthorized = (mission as BrowserCorrectionMission).correction_authorized === true
+  if ((mission.status === 'finished' && !correctionAuthorized) || mission.status === 'finalized') {
     throw new Error('Finished and finalized missions are read-only for participant changes.')
   }
   return mission

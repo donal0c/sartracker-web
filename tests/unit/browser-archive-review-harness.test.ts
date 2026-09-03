@@ -122,4 +122,55 @@ describe('browser-validation archive review harness [DON-253 / BCP-16]', () => {
     await expect(source.listMissions()).rejects.toThrow(/closed/iu)
     await expect(harness.archiveReview.close({ sessionId: SESSION_ID })).resolves.toBe(false)
   })
+
+  it('reads the selected sealed revision rather than later mutable browser state', async () => {
+    window.localStorage.setItem(
+      'sartracker:browser-settings',
+      JSON.stringify({ missionDefaults: { adminRoster: ['Duty Admin'] } }),
+    )
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Revision-bound archive review' })
+    await store.finishMission(mission.id)
+    const firstIssuance = await store.issueMissionArchiveRecoveryCode(mission.id)
+    const first = await store.finalizeMission(mission.id, {
+      operationId: firstIssuance.operationId,
+      passphrase: PASSPHRASE,
+      recoveryCode: firstIssuance.recoveryCode,
+    })
+    await store.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Create a second synthetic archive revision.',
+    })
+    const secondIssuance = await store.issueMissionArchiveRecoveryCode(mission.id)
+    const second = await store.finalizeMission(mission.id, {
+      operationId: secondIssuance.operationId,
+      passphrase: PASSPHRASE,
+      recoveryCode: secondIssuance.recoveryCode,
+    })
+    expect(second.archive.previous_archive_id).toBe(first.archive.id)
+
+    const harness = createBrowserArchiveReviewHarness({
+      missionStore: store,
+      layerCatalogStore: getBrowserHarnessLayerCatalogStore(),
+      randomUUID: () => SESSION_ID,
+    })
+    const opened = await harness.archiveReview.open({
+      operationId: OPERATION_ID,
+      archiveId: first.archive.id,
+      containerVersion: 2,
+      slotType: 'passphrase',
+      secret: PASSPHRASE,
+    })
+    const review = await harness.createSource(opened).readMissionReview({
+      missionId: mission.id,
+      includeTelemetry: true,
+      auditLimit: 5_000,
+    })
+    expect(review.auditEvents.some((event) =>
+      event.event_type === 'mission_archive_verified_v2'
+      && JSON.parse(event.details_json ?? '{}').archive_id === second.archive.id,
+    )).toBe(false)
+    await harness.archiveReview.close({ sessionId: SESSION_ID })
+  })
 })

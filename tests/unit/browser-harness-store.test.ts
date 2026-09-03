@@ -874,6 +874,50 @@ describe('browser harness store', () => {
     ]))
   })
 
+  it('retains immutable per-revision browser snapshots and chains correction archives', async () => {
+    window.localStorage.setItem(
+      'sartracker:browser-settings',
+      JSON.stringify({ missionDefaults: { adminRoster: ['Duty Admin'] } }),
+    )
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Browser Correction Chain Mission' })
+    await store.finishMission(mission.id)
+    const firstIssuance = await store.issueMissionArchiveRecoveryCode(mission.id)
+    const first = await store.finalizeMission(mission.id, {
+      operationId: firstIssuance.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: firstIssuance.recoveryCode,
+    })
+    const firstSnapshot = await store.readMissionArchiveSnapshot?.(first.archive.id)
+    expect(firstSnapshot?.missionEvents.map((event) => event.event_type)).toContain('mission_finalized')
+
+    await expect(store.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Correct the synthetic browser mission.',
+    })).resolves.toMatchObject({ status: 'finished' })
+    const secondIssuance = await store.issueMissionArchiveRecoveryCode(mission.id)
+    const second = await store.finalizeMission(mission.id, {
+      operationId: secondIssuance.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: secondIssuance.recoveryCode,
+    })
+
+    expect(second.archive).toMatchObject({
+      previous_archive_id: first.archive.id,
+      previous_archive_sha256: first.archive.ciphertext_sha256,
+      revision_sequence: 2,
+      revision_count: 2,
+    })
+    expect(firstSnapshot?.missionEvents.some((event) => {
+      if (event.event_type !== 'mission_archive_verified_v2') return false
+      return JSON.parse(event.details_json ?? '{}').archive_id === second.archive.id
+    })).toBe(false)
+    const secondSnapshot = await store.readMissionArchiveSnapshot?.(second.archive.id)
+    expect(secondSnapshot?.missionEvents.filter((event) => event.event_type === 'mission_finalized'))
+      .toHaveLength(2)
+  })
+
   it('keeps a browser evidence gap critical while allowing audited closure [DON-276]', async () => {
     window.localStorage.setItem(
       'sartracker:browser-settings',

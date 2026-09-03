@@ -15,6 +15,7 @@ import { useMissionReviewStore } from '../features/mission-review/mission-review
 import type { MissionReviewController } from '../features/mission-review/start-mission-review-runtime'
 import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
 import { useMissionArchiveReviewStore } from '../features/mission-review/mission-archive-review-store'
+import { hasActiveMissionCorrectionAuthorization } from '../features/mission-review/mission-correction-authorization'
 import {
   MissionArchiveReviewBanner,
   MissionArchiveReviewControl,
@@ -33,6 +34,7 @@ import type {
 type ReviewTab = 'mission-details' | 'replay' | 'search-operations' | 'marker-log' | 'layer-console'
 
 const MISSION_REVIEW_WORKSPACE_TITLE_ID = 'mission-review-workspace-title'
+
 const MissionReplayTab = lazy(async () => ({
   default: (await import('./mission-evidence-replay-tabs')).MissionReplayTab,
 }))
@@ -83,6 +85,8 @@ export function MissionReviewWorkspace() {
   const missions = useMissionReviewStore((state) => state.missions)
   const selectedMissionId = useMissionReviewStore((state) => state.selectedMissionId)
   const snapshot = useMissionReviewStore((state) => state.snapshot)
+  const correctionAuthorizationActive = snapshot !== null
+    && hasActiveMissionCorrectionAuthorization(snapshot)
   const loading = useMissionReviewStore((state) => state.loading)
   const refreshing = useMissionReviewStore((state) => state.refreshing)
   const error = useMissionReviewStore((state) => state.error)
@@ -447,7 +451,9 @@ export function MissionReviewWorkspace() {
                       hideMutationControls={archiveReadOnlyBoundaryActive}
                       key={snapshot.mission.id}
                       operations={searchOperations}
-                      readOnly={archiveReadOnlyBoundaryActive || snapshot.mission.status === 'finished' || snapshot.mission.status === 'finalized'}
+                      readOnly={archiveReadOnlyBoundaryActive
+                        || (snapshot.mission.status === 'finished' && !correctionAuthorizationActive)
+                        || snapshot.mission.status === 'finalized'}
                       reviewBusy={loading || refreshing}
                       writeBlocked={error !== null}
                     />

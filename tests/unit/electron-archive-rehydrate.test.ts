@@ -15,6 +15,7 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require(
     readonly createMission: (input: Readonly<Record<string, unknown>>) => Promise<{ readonly id: string }>
     readonly upsertDevice: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
     readonly upsertMarker: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
+    readonly recordIngestRejections: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
     readonly runMarkerAttachmentIngest: (missionId: string, write: () => Promise<string>) => Promise<string>
     readonly addPosition: (input: Readonly<Record<string, unknown>>) => Promise<Readonly<Record<string, unknown>>>
     readonly finishMission: (missionId: string) => Promise<Readonly<Record<string, unknown>>>
@@ -732,6 +733,10 @@ describe('archived mission correction rehydration', () => {
         irish_grid_e: 480000,
         irish_grid_n: 580000,
         display_order: 0,
+      })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_LIVE_ACTIVITY' })
+      await expect(store.recordIngestRejections({
+        mission_id: mission.id,
+        rejections: [],
       })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_LIVE_ACTIVITY' })
       releaseWorkerExit?.()
       await expect(correction).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED' })

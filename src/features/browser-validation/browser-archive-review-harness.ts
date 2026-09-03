@@ -6,7 +6,14 @@ import type {
 } from '../../infrastructure/archive-review/archive-review-types'
 import type { ElectronArchiveReviewSource } from '../../infrastructure/archive-review/electron-archive-review-source'
 import type { BrowserHarnessLayerCatalogStore } from './browser-harness-layer-catalog-store'
-import type { BrowserHarnessStore } from './browser-harness-store'
+import {
+  buildBrowserReplay,
+  buildBrowserReplayFilterPage,
+  buildBrowserSearchOperationPage,
+  type BrowserArchiveMissionSnapshot,
+  type BrowserHarnessStore,
+} from './browser-harness-store'
+import { isTelemetryEventType } from '../mission-review/audit-events'
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 
@@ -62,6 +69,7 @@ export function createBrowserArchiveReviewHarness(
   const now = options.now ?? (() => new Date())
   const listeners = new Set<(progress: ArchiveReviewProgress) => void>()
   let activeSession: ArchiveReviewPublicSession | null = null
+  let activeSnapshot: BrowserArchiveMissionSnapshot | null = null
   let activeGeneration = 0
   let opening: { readonly operationId: string; cancelled: boolean } | null = null
   let disposed = false
@@ -112,6 +120,15 @@ export function createBrowserArchiveReviewHarness(
           secret: input.secret,
         })
         if (pending.cancelled || disposed) throw createFailure()
+        activeSnapshot = null
+        if (typeof options.missionStore.readMissionArchiveSnapshot === 'function') {
+          try {
+            activeSnapshot = await options.missionStore.readMissionArchiveSnapshot(archive.id)
+          } catch {
+            // Older browser fixtures predate immutable snapshots; keep the
+            // current-state fallback for those explicitly synthetic cases.
+          }
+        }
         const sessionId = randomUUID()
         if (!UUID_V4.test(sessionId)) throw createFailure()
         const openedAt = now().toISOString()
@@ -145,6 +162,7 @@ export function createBrowserArchiveReviewHarness(
         || activeSession === null
         || input.sessionId !== activeSession.sessionId) return false
       activeSession = null
+      activeSnapshot = null
       return true
     },
     cancel: async (input) => {
@@ -174,6 +192,32 @@ export function createBrowserArchiveReviewHarness(
       throw createFailure('Archive review session is closed.')
     }
     const generation = activeGeneration
+    const snapshot = activeSnapshot
+    const snapshotState = snapshot === null ? null : {
+      missions: [snapshot.mission],
+      devices: snapshot.devices,
+      positions: snapshot.positions,
+      outings: snapshot.outings,
+      missionTeams: snapshot.missionTeams,
+      missionParticipants: snapshot.missionParticipants,
+      groupMembershipEvents: snapshot.groupMembershipEvents,
+      participantBackfillCheckpoints: snapshot.participantBackfillCheckpoints,
+      markers: snapshot.markers,
+      drawings: snapshot.drawings,
+      helicopters: snapshot.helicopters,
+      gpxImports: snapshot.gpxImports,
+      gpxEvidencePoints: snapshot.gpxEvidencePoints,
+      searchAreas: snapshot.searchAreas,
+      searchAssignments: snapshot.searchAssignments,
+      searchPasses: snapshot.searchPasses,
+      missionEvents: snapshot.missionEvents,
+      missionArchives: [],
+      openedPaths: [],
+      currentMissionId: null,
+      recoverableMissionId: null,
+      evidenceLossByMission: {},
+      archiveSnapshots: [],
+    }
 
     function assertOpen(): void {
       if (disposed || activeSession === null || activeGeneration !== generation
@@ -200,12 +244,21 @@ export function createBrowserArchiveReviewHarness(
       },
       listMissions: async () => {
         assertOpen()
-        return (await options.missionStore.listMissions())
-          .filter((mission) => mission.id === session.missionId)
+        return snapshotState === null
+          ? (await options.missionStore.listMissions()).filter((mission) => mission.id === session.missionId)
+          : snapshotState.missions
       },
       readMissionReview: async (input) => {
         assertMission(input.missionId)
-        return await options.missionStore.readMissionReview(input)
+        if (snapshotState === null) return await options.missionStore.readMissionReview(input)
+        const events = snapshotState.missionEvents
+          .filter((event) => input.includeTelemetry || !isTelemetryEventType(event.event_type))
+          .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+          .slice(0, input.auditLimit)
+        return {
+          auditEvents: events,
+          breadcrumbCount: snapshotState.positions.length,
+        }
       },
       cancelMissionReviewRead: async (requestId) => {
         assertOpen()
@@ -213,19 +266,45 @@ export function createBrowserArchiveReviewHarness(
       },
       readMissionReplay: async (input, requestId) => {
         assertMission(input.missionId)
-        return await options.missionStore.readMissionReplay(input, requestId)
+        return snapshotState === null
+          ? await options.missionStore.readMissionReplay(input, requestId)
+          : await buildBrowserReplay(snapshotState, input)
       },
       readMissionReplayTrackChunk: async (input, requestId) => {
         assertMission(input.missionId)
-        return await options.missionStore.readMissionReplayTrackChunk(input, requestId)
+        if (snapshotState === null) return await options.missionStore.readMissionReplayTrackChunk(input, requestId)
+        const replay = await buildBrowserReplay(snapshotState, input)
+        return {
+          missionId: replay.missionId,
+          selectedTime: replay.selectedTime,
+          tracks: replay.tracks,
+          trackCursor: replay.trackCursor,
+          previousCursor: replay.previousCursor,
+          totalTrackCount: replay.totalTrackCount,
+          nextCursor: replay.nextCursor,
+          progress: replay.progress,
+        }
       },
       readMissionReplayObjectChunk: async (input, requestId) => {
         assertMission(input.missionId)
-        return await options.missionStore.readMissionReplayObjectChunk(input, requestId)
+        if (snapshotState === null) return await options.missionStore.readMissionReplayObjectChunk(input, requestId)
+        const replay = await buildBrowserReplay(snapshotState, input)
+        return {
+          missionId: replay.missionId,
+          selectedTime: replay.selectedTime,
+          objects: replay.objects,
+          totalObjectCount: replay.totalObjectCount,
+          objectCursor: replay.objectCursor,
+          nextObjectCursor: replay.nextObjectCursor,
+          progress: 1,
+          summarizedObjectCount: 0,
+        }
       },
       readMissionReplayFilterPage: async (input, requestId) => {
         assertMission(input.missionId)
-        return await options.missionStore.readMissionReplayFilterPage(input, requestId)
+        return snapshotState === null
+          ? await options.missionStore.readMissionReplayFilterPage(input, requestId)
+          : buildBrowserReplayFilterPage(snapshotState, input)
       },
       cancelMissionReplay: async (requestId) => {
         assertOpen()
@@ -233,35 +312,58 @@ export function createBrowserArchiveReviewHarness(
       },
       listMarkers: async (missionId) => {
         assertMission(missionId)
-        return await options.missionStore.listMarkers(missionId)
+        return snapshotState === null
+          ? await options.missionStore.listMarkers(missionId)
+          : snapshotState.markers
       },
       listDevices: async (missionId) => {
         assertMission(missionId)
-        return await options.missionStore.listDevices(missionId)
+        return snapshotState === null
+          ? await options.missionStore.listDevices(missionId)
+          : snapshotState.devices
       },
       listDrawings: async (missionId) => {
         assertMission(missionId)
-        return await options.missionStore.listDrawings(missionId)
+        return snapshotState === null
+          ? await options.missionStore.listDrawings(missionId)
+          : snapshotState.drawings
       },
       listHelicopters: async (missionId) => {
         assertMission(missionId)
-        return await options.missionStore.listHelicopters(missionId)
+        return snapshotState === null
+          ? await options.missionStore.listHelicopters(missionId)
+          : snapshotState.helicopters
       },
       listGpxImports: async (missionId) => {
         assertMission(missionId)
-        return await options.missionStore.listGpxImports(missionId)
+        return snapshotState === null
+          ? await options.missionStore.listGpxImports(missionId)
+          : snapshotState.gpxImports
       },
       listGpxImportPage: async (input) => {
         assertMission(input.missionId)
-        return await options.missionStore.listGpxImportPage(input)
+        if (snapshotState === null) return await options.missionStore.listGpxImportPage(input)
+        const limit = input.limit ?? 25
+        const cursor = input.cursor === undefined ? 0 : Number(input.cursor)
+        const entries = snapshotState.gpxImports.slice(cursor, cursor + limit)
+        return {
+          entries,
+          nextCursor: cursor + entries.length < snapshotState.gpxImports.length
+            ? String(cursor + entries.length)
+            : null,
+        }
       },
       listSearchOperationPage: async (input) => {
         assertMission(input.missionId)
-        return await options.missionStore.listSearchOperationPage(input)
+        return snapshotState === null
+          ? await options.missionStore.listSearchOperationPage(input)
+          : buildBrowserSearchOperationPage(snapshotState, input)
       },
       listOutings: async (missionId) => {
         assertMission(missionId)
-        return await options.missionStore.listOutings(missionId)
+        return snapshotState === null
+          ? await options.missionStore.listOutings(missionId)
+          : snapshotState.outings
       },
       listLayerCatalogMetadata: async (missionId) => {
         assertMission(missionId)
@@ -290,6 +392,7 @@ export function createBrowserArchiveReviewHarness(
       disposed = true
       if (opening !== null) opening.cancelled = true
       activeSession = null
+      activeSnapshot = null
       listeners.clear()
     },
   })
