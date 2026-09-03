@@ -14,7 +14,9 @@ const baseVersion = typeof packageJson.version === 'string' ? packageJson.versio
 
 const runNumber = process.env.GITHUB_RUN_NUMBER ?? process.env.GITHUB_RUN_ID
 const envSha = process.env.EXPECTED_SOURCE_SHA ?? process.env.GITHUB_SHA
-const gitSha = safeGitCommand('git rev-parse --short=12 HEAD')
+// Keep the complete commit id in the operator-visible build tag. Packaged
+// archive proof must bind the running artifact to one exact source head.
+const gitSha = safeGitCommand('git rev-parse HEAD')
 const buildId = runNumber
   ? `run.${runNumber}.sha.${safeString(envSha, gitSha)}`
   : `sha.${safeString(envSha, gitSha)}`
