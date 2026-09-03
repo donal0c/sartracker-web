@@ -14,14 +14,6 @@ function readMissionLiveReviewStorageState(database, missionId) {
       `Mission not found: ${missionId}`,
     )
   }
-  let correctionRecovery
-  try {
-    correctionRecovery = database.prepare(`SELECT value FROM metadata
-      WHERE key = 'archive_correction_attachment_recovery_failure'`).get()
-  } catch {
-    correctionRecovery = undefined
-  }
-  if (correctionRecovery !== undefined) return 'recovery_required'
   const journal = database.prepare(`SELECT state FROM mission_cleanup_journal
     WHERE mission_id = ?`).get(missionId)
   // Older minimal snapshots used by recovery tooling may not expose the
@@ -32,6 +24,17 @@ function readMissionLiveReviewStorageState(database, missionId) {
   const mission = hasMissionStatus
     ? database.prepare('SELECT status FROM missions WHERE id = ?').get(missionId)
     : null
+  let correctionRecovery
+  try {
+    correctionRecovery = database.prepare(`SELECT value FROM metadata
+      WHERE key = 'archive_correction_attachment_recovery_failure'`).get()
+  } catch {
+    correctionRecovery = undefined
+  }
+  if (correctionRecovery !== undefined
+    && (mission?.status === 'finished' || mission?.status === 'finalized')) {
+    return 'recovery_required'
+  }
   if (journal === undefined || journal.state === 'eligible') return 'live'
   if (journal.state === 'in_progress') return 'cleanup_in_progress'
   // A completed cleanup journal remains as durable history after an explicit
@@ -52,6 +55,12 @@ function assertMissionLiveReviewAvailable(database, missionId) {
     throw createAccessError(
       'MISSION_REVIEW_ARCHIVE_REQUIRED',
       'Mission live-store Review is unavailable; open its verified archive from Saved Mission Archives.',
+    )
+  }
+  if (storageState === 'recovery_required') {
+    throw createAccessError(
+      'MISSION_REVIEW_CORRECTION_RECOVERY_REQUIRED',
+      'Archive correction attachment custody recovery requires operator review before opening Review.',
     )
   }
   throw createAccessError(

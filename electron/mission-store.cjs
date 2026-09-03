@@ -1122,14 +1122,7 @@ function createElectronMissionStore(options) {
 
   /** Admits one correction only when no operational mission can contend with its writer turn. */
   const acquireArchiveCorrectionAdmission = async () => {
-    await archiveCorrectionAttachmentRecoveryPromise
-    if (archiveCorrectionAttachmentRecoveryFailure !== null) {
-      const error = new Error(
-        'Archive correction attachment custody recovery requires operator review before retry.',
-      )
-      error.code = archiveCorrectionAttachmentRecoveryFailure
-      throw error
-    }
+    await assertArchiveCorrectionAttachmentRecoveryReady()
     assertArchiveCorrectionWriterIdle()
     if (getActiveMission(db) !== null) {
       const error = new Error(
@@ -1145,6 +1138,17 @@ function createElectronMissionStore(options) {
     }
     archiveCorrectionAdmission = admission
     return admission
+  }
+
+  /** Blocks archive-producing work until correction attachment custody is proven safe. */
+  const assertArchiveCorrectionAttachmentRecoveryReady = async () => {
+    await archiveCorrectionAttachmentRecoveryPromise
+    if (archiveCorrectionAttachmentRecoveryFailure === null) return
+    const error = new Error(
+      'Archive correction attachment custody recovery requires operator review before archive work can start.',
+    )
+    error.code = archiveCorrectionAttachmentRecoveryFailure
+    throw error
   }
 
   /** Releases the exact correction admission after its worker has physically exited. */
@@ -1290,6 +1294,7 @@ function createElectronMissionStore(options) {
     const predecessor = archiveFamilyTail
     const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
       await assertArchivePlaintextSweepReady()
+      await assertArchiveCorrectionAttachmentRecoveryReady()
       await archiveCustodyRecoverySettled
       if (controller.signal.aborted) {
         const error = new Error('Mission archive finalization was cancelled before it started.')
@@ -1377,6 +1382,7 @@ function createElectronMissionStore(options) {
     const predecessor = archiveFamilyTail
     const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
       await assertArchivePlaintextSweepReady()
+      await assertArchiveCorrectionAttachmentRecoveryReady()
       await archiveCustodyRecoverySettled
       if (controller.signal.aborted) {
         const error = new Error('Mission archive verification was cancelled before it started.')
@@ -1498,6 +1504,7 @@ function createElectronMissionStore(options) {
     const predecessor = archiveFamilyTail
     const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
       await assertArchivePlaintextSweepReady()
+      await assertArchiveCorrectionAttachmentRecoveryReady()
       await archiveCustodyRecoverySettled
       const archive = archiveRegistry.getArchive(normalizedInput.archiveId)
       if (archive.mission_id !== normalizedInput.missionId) {
@@ -1557,6 +1564,7 @@ function createElectronMissionStore(options) {
     const predecessor = archiveFamilyTail
     const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
       await assertArchivePlaintextSweepReady()
+      await assertArchiveCorrectionAttachmentRecoveryReady()
       await archiveCustodyRecoverySettled
       if (archiveCustodyRecoveryFailure !== null) {
         const error = new Error(
@@ -1677,6 +1685,7 @@ function createElectronMissionStore(options) {
     const predecessor = archiveFamilyTail
     const run = predecessor.then(async () => {
       await assertArchivePlaintextSweepReady()
+      await assertArchiveCorrectionAttachmentRecoveryReady()
       await archiveCustodyRecoverySettled
       if (archiveCustodyRecoveryFailure !== null) {
         const error = new Error(

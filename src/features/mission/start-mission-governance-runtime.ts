@@ -76,6 +76,7 @@ export async function startMissionGovernanceRuntime(
 ): Promise<MissionGovernanceController> {
   let governanceMission: Mission | null = null
   let governanceEvidenceHealth: IngestEvidenceHealth | null = null
+  let recoveryRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
   await refreshGovernanceMission()
 
@@ -169,10 +170,31 @@ export async function startMissionGovernanceRuntime(
       null
     governanceEvidenceHealth = await readGovernanceEvidenceHealth(governanceMission)
     publishRuntime()
+    scheduleRecoveryRefresh()
   }
 
   function publishRuntime(): void {
     dependencies.applyRuntime({ governanceMission, governanceEvidenceHealth })
+  }
+
+  /** Rechecks a restart-visible custody blocker until the store clears it. */
+  function scheduleRecoveryRefresh(): void {
+    if (governanceMission?.storage_state !== 'recovery_required') {
+      if (recoveryRefreshTimer !== null) {
+        clearTimeout(recoveryRefreshTimer)
+        recoveryRefreshTimer = null
+      }
+      return
+    }
+    if (recoveryRefreshTimer !== null) return
+    recoveryRefreshTimer = setTimeout(() => {
+      recoveryRefreshTimer = null
+      void refreshGovernanceMission().catch((error) => {
+        console.warn('Mission governance recovery refresh failed.', error)
+        scheduleRecoveryRefresh()
+      })
+    }, 500)
+    ;(recoveryRefreshTimer as unknown as { unref?: () => void }).unref?.()
   }
 
   /** Publishes the minimum durable terminal truth before fallible reconciliation. */

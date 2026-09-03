@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type {
   FinalizeMissionResult,
@@ -38,6 +38,36 @@ const CUSTODY = Object.freeze({
 })
 
 describe('startMissionGovernanceRuntime', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('refreshes a recovery-required governance mission after startup custody recovery settles', async () => {
+    vi.useFakeTimers()
+    const recoveryMission = { ...FINISHED_MISSION, storage_state: 'recovery_required' as const }
+    const listMissions = vi.fn()
+      .mockResolvedValueOnce([recoveryMission])
+      .mockResolvedValueOnce([FINISHED_MISSION])
+    const applyRuntime = vi.fn()
+
+    await startMissionGovernanceRuntime({
+      missionStore: createMissionGovernanceStoreStub({ listMissions }),
+      applyRuntime,
+    })
+    expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceMission: recoveryMission,
+      governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(listMissions).toHaveBeenCalledTimes(2)
+    expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceMission: FINISHED_MISSION,
+      governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
+    })
+  })
+
   it('hydrates the exact finished mission evidence health for restart governance [DON-276]', async () => {
     const applyRuntime = vi.fn()
     const getIngestEvidenceHealth = vi.fn().mockResolvedValue({

@@ -194,6 +194,7 @@ async function restoreAttachmentCustody() {
         } finally {
           try {
             await fs.rm(temporaryPath, { force: true })
+            await syncDirectory(targetRoot)
           } catch (cleanupError) {
             const failure = new Error('Archive correction temporary attachment cleanup requires recovery.')
             failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
