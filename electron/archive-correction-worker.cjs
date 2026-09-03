@@ -11,6 +11,7 @@ const { rehydrateMissionFromSnapshot } = require('./archive-rehydrate.cjs')
 const { copyVerifiedAttachment } = require('./archive-correction-attachment-copy.cjs')
 const {
   removeCorrectionAttachmentJournal,
+  syncDirectory,
   writeCorrectionAttachmentJournal,
 } = require('./archive-correction-custody.cjs')
 
@@ -103,7 +104,15 @@ async function restoreAttachmentCustody() {
   }
   const sourceRoot = workerData.attachmentDirectory
   const targetRoot = path.join(path.dirname(workerData.databasePath), 'missions', workerData.missionId, 'attachments')
+  const targetRootExisted = await fs.lstat(targetRoot).then(() => true).catch((error) => {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  })
   await fs.mkdir(targetRoot, { recursive: true, mode: 0o700 })
+  if (!targetRootExisted) {
+    await syncDirectory(path.dirname(targetRoot))
+    await syncDirectory(targetRoot)
+  }
   const created = []
   const references = new Map()
   const journalEntries = []
@@ -208,6 +217,9 @@ async function restoreAttachmentCustody() {
     return { created, references, journalPath }
   } catch (error) {
     await Promise.all(created.map((filePath) => fs.rm(filePath, { force: true }).catch(() => undefined)))
+    await Promise.all([...new Set(created.map((filePath) => path.dirname(filePath)))].map(
+      (directory) => syncDirectory(directory).catch(() => undefined),
+    ))
     if (journalPath !== undefined) {
       await removeCorrectionAttachmentJournal(journalPath).catch(() => undefined)
     }
@@ -333,9 +345,17 @@ async function run() {
       archiveId: workerData.archiveId,
     })
   } catch (error) {
-    if (!transactionCommitted && attachmentCustody?.created?.length > 0) {
-      await Promise.all(attachmentCustody.created.map((filePath) =>
-        fs.rm(filePath, { force: true }).catch(() => undefined)))
+    if (!transactionCommitted && attachmentCustody !== null) {
+      if (attachmentCustody.created.length > 0) {
+        await Promise.all(attachmentCustody.created.map((filePath) =>
+          fs.rm(filePath, { force: true }).catch(() => undefined)))
+        await Promise.all([...new Set(attachmentCustody.created.map((filePath) => path.dirname(filePath)))].map(
+          (directory) => syncDirectory(directory).catch(() => undefined),
+        ))
+      }
+      if (attachmentCustody.journalPath !== undefined) {
+        await removeCorrectionAttachmentJournal(attachmentCustody.journalPath).catch(() => undefined)
+      }
     }
     parentPort.postMessage({
       type: 'error',

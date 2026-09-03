@@ -18,7 +18,9 @@ function correctionJournalDirectory(databasePath) {
 /** Writes one durable attachment-custody plan before any canonical byte is created. */
 async function writeCorrectionAttachmentJournal(input) {
   const directory = correctionJournalDirectory(input.databasePath)
+  const directoryExisted = fs.existsSync(directory)
   await fsp.mkdir(directory, { recursive: true, mode: 0o700 })
+  if (!directoryExisted) await syncDirectory(path.dirname(directory))
   const journalPath = path.join(directory, `${input.operationId}.json`)
   const document = JSON.stringify({
     version: 1,
@@ -75,9 +77,6 @@ function recoverCorrectionAttachmentJournals(input) {
     const mission = input.db.prepare(
       'SELECT status FROM missions WHERE id = ?',
     ).get(journal.missionId)
-    const cleanup = input.db.prepare(
-      'SELECT state FROM mission_cleanup_journal WHERE mission_id = ?',
-    ).get(journal.missionId)
     const unlockEvents = input.db.prepare(`SELECT details_json FROM mission_events
       WHERE mission_id = ? AND event_type = 'mission_unlocked'`).all(journal.missionId)
     const hasMatchingCorrectionUnlock = unlockEvents.some((event) => {
@@ -90,11 +89,23 @@ function recoverCorrectionAttachmentJournals(input) {
         return false
       }
     })
+    const hasOtherCorrectionUnlock = unlockEvents.some((event) => {
+      try {
+        const details = JSON.parse(event.details_json)
+        return details !== null && typeof details === 'object'
+          && typeof details.archive_correction_operation_id === 'string'
+          && details.archive_correction_operation_id !== journal.operationId
+      } catch {
+        return false
+      }
+    })
     if (mission?.status === 'finished' && !hasMatchingCorrectionUnlock) {
       throw new Error('Finished correction custody has no matching durable unlock evidence.')
     }
+    if (!hasMatchingCorrectionUnlock && hasOtherCorrectionUnlock) {
+      throw new Error('Correction attachment custody is owned by a newer correction.')
+    }
     const committed = hasMatchingCorrectionUnlock
-      && (cleanup === undefined || ['eligible', 'completed'].includes(cleanup.state))
     if (!fs.existsSync(journal.targetRoot)) {
       throw new Error(committed
         ? 'Committed correction attachment custody is missing its canonical root.'
@@ -117,6 +128,7 @@ function recoverCorrectionAttachmentJournals(input) {
           }
         }
       }
+      syncDirectorySync(journal.targetRoot)
     }
     fs.rmSync(journalPath, { force: true })
     recovered += 1
@@ -219,4 +231,5 @@ module.exports = {
   recoverCorrectionAttachmentJournals,
   removeCorrectionAttachmentJournal,
   writeCorrectionAttachmentJournal,
+  syncDirectory,
 }

@@ -1,10 +1,11 @@
 import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as new (databasePath: string) => TestDatabase
@@ -130,6 +131,39 @@ describe('archive correction attachment custody recovery', () => {
     })).toEqual({ recovered: 1 })
     await expect(readFile(path.join(fixture.targetRoot, 'field.jpg'), 'utf8'))
       .resolves.toBe('committed')
+    fixture.db.close()
+  })
+
+  it('blocks rather than deleting bytes owned by a newer correction attempt', async () => {
+    const fixture = await createFixture('finalized', 'completed')
+    await writeFile(path.join(fixture.targetRoot, 'field.jpg'), 'committed', { mode: 0o600 })
+    fixture.db.prepare('INSERT INTO mission_events (mission_id, event_type, details_json) VALUES (?, ?, ?)')
+      .run(MISSION_ID, 'mission_unlocked', JSON.stringify({
+        restored_from_archive_id: ARCHIVE_ID,
+        archive_correction_operation_id: 'newer-operation-id',
+      }))
+
+    expect(() => recoverCorrectionAttachmentJournals({
+      databasePath: fixture.databasePath,
+      db: fixture.db,
+    })).toThrow(/newer correction/iu)
+    await expect(readFile(path.join(fixture.targetRoot, 'field.jpg'), 'utf8'))
+      .resolves.toBe('committed')
+    fixture.db.close()
+  })
+
+  it('flushes the target directory before discarding an uncommitted journal', async () => {
+    const fixture = await createFixture('finalized', 'completed')
+    await writeFile(path.join(fixture.targetRoot, 'field.jpg'), 'orphan', { mode: 0o600 })
+    const fsync = vi.spyOn(fs, 'fsyncSync')
+
+    recoverCorrectionAttachmentJournals({
+      databasePath: fixture.databasePath,
+      db: fixture.db,
+    })
+
+    expect(fsync).toHaveBeenCalled()
+    fsync.mockRestore()
     fixture.db.close()
   })
 
