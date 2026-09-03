@@ -652,6 +652,96 @@ describe('archived mission correction rehydration', () => {
     }
   }, 60_000)
 
+  it('fences every live mutation until a committed correction worker has exited', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-writer-fence-'))
+    temporaryDirectories.add(userDataPath)
+    let releaseWorkerExit: (() => void) | undefined
+    const workerExited = new Promise<void>((resolve) => { releaseWorkerExit = resolve })
+    const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
+      const database = new Database(String(input.databasePath))
+      const timestamp = '2026-09-03T12:00:00.000Z'
+      database.prepare('UPDATE missions SET status = ? WHERE id = ?')
+        .run('finished', input.missionId)
+      database.prepare(`INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
+      ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
+        'writer-fence-post-commit-event',
+        input.missionId,
+        timestamp,
+        JSON.stringify({
+          admin_name: 'Duty Admin',
+          reason: 'Fence live writes until correction worker exit.',
+          resulting_status: 'finished',
+          restored_from_archive_id: input.archiveId,
+          archive_correction_operation_id: input.operationId,
+          storage_state: 'live',
+        }),
+        timestamp,
+      )
+      database.close()
+      const completion = Promise.reject(Object.assign(
+        new Error('worker exited after correction commit'),
+        { code: 'ARCHIVE_REHYDRATE_FAILED' },
+      ))
+      Object.defineProperty(completion, 'workerExited', { value: workerExited })
+      return completion
+    })
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+      startArchiveCorrectionWorker: correctionRunner,
+    })
+    const custody = {
+      passphrase: 'Writer Fence Restore 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Writer fence correction' })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, custody)
+      const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
+      await store.syncBackup('correction-fixture')
+      const snapshotPath = path.join(userDataPath, 'correction-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '26262626-2626-4626-8626-262626262626',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      const correction = store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: archiveId,
+        snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
+        admin_name: 'Duty Admin',
+        reason: 'Fence live writes until correction worker exit.',
+      })
+      await vi.waitFor(() => expect(correctionRunner).toHaveBeenCalledOnce())
+      await expect(store.upsertMarker({
+        mission_id: mission.id,
+        id: '55555555-5555-4555-8555-555555555555',
+        type: 'clue',
+        name: 'Blocked during correction',
+        lat: 52.1,
+        lon: -9.1,
+        irish_grid_e: 480000,
+        irish_grid_n: 580000,
+        display_order: 0,
+      })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_LIVE_ACTIVITY' })
+      releaseWorkerExit?.()
+      await expect(correction).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED' })
+    } finally {
+      releaseWorkerExit?.()
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
   it('restores missing archived attachment bytes into canonical mission custody', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-attachment-'))
     temporaryDirectories.add(userDataPath)

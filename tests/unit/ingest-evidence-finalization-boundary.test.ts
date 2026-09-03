@@ -254,6 +254,36 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
     expect(reopenMissionEvidenceAfterUnlock).not.toHaveBeenCalled()
   })
 
+  it('reopens renderer evidence for a legacy successful correction result without an envelope', async () => {
+    const restoreMissionForCorrection = vi.fn().mockResolvedValue({
+      mission: { id: 'mission-1', status: 'finished' },
+    })
+    const reopenMissionEvidenceAfterUnlock = vi.fn()
+    const bounded = createIngestEvidenceFinalizationBoundary(
+      {
+        finalizeMission: vi.fn(),
+        unlockFinalizedMission: vi.fn(),
+        restoreMissionForCorrection,
+      },
+      {
+        flushMission: vi.fn(),
+        runWithMissionFinishFence: vi.fn(),
+        runWithMissionFinalizationFence: vi.fn(),
+        reopenMissionEvidenceAfterUnlock,
+      },
+    )
+
+    await bounded.restoreMissionForCorrection?.({
+      mission_id: 'mission-1',
+      archiveId: 'archive-1',
+      operationId: 'operation-1',
+      sessionId: 'session-1',
+      admin_name: 'Duty Admin',
+      reason: 'Legacy successful correction result',
+    })
+    expect(reopenMissionEvidenceAfterUnlock).toHaveBeenCalledWith('mission-1')
+  })
+
   it('does not reopen renderer evidence when attachment custody remains fenced', async () => {
     const restoreMissionForCorrection = vi.fn().mockResolvedValue({
       mission: { id: 'mission-1', status: 'finished' },

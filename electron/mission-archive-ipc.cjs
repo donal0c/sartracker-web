@@ -807,7 +807,7 @@ function registerMissionArchiveIpcHandlers(input) {
       try {
         const committedMission = await missionStore.getMission(missionId)
         committedCorrectionFailure = committedMission?.status === 'finished'
-          && committedMission?.storage_state === 'recovery_required'
+          && ['live', 'recovery_required'].includes(committedMission?.storage_state)
         if (committedCorrectionFailure) result = committedMission
       } catch {
         committedCorrectionFailure = false
@@ -852,15 +852,19 @@ function registerMissionArchiveIpcHandlers(input) {
       }
     }
     if (committedCorrectionFailure) {
+      const custodyRecoveryRequired = result?.storage_state === 'recovery_required'
       return Object.freeze({
         ...projectUnlockedMissionResult(result, missionId),
         correction: Object.freeze({
           committed: true,
           // The correction snapshot/session has been swept successfully. The
-          // separate failure code records the durable attachment-custody fence;
-          // it must not be misreported to the renderer as plaintext residue.
+          // separate failure code records only a durable attachment-custody
+          // fence; a clean live result is a successful correction despite the
+          // worker's terminal exit status.
           cleanupComplete: true,
-          failureCode: operationFailure?.code ?? 'ARCHIVE_REHYDRATE_FAILED',
+          ...(custodyRecoveryRequired
+            ? { failureCode: operationFailure?.code ?? 'ARCHIVE_REHYDRATE_FAILED' }
+            : {}),
         }),
       })
     }

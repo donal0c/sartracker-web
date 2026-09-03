@@ -497,6 +497,20 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
     expect(close).toHaveBeenCalledOnce()
   })
 
+  it('shows the durable attachment-custody recovery cause in the banner', () => {
+    renderBanner({
+      session: null,
+      closing: false,
+      error: 'Archive correction committed; attachment custody recovery is required.',
+      recoveryRequired: 'live_source_resume',
+      onCloseArchiveReview: vi.fn().mockResolvedValue(undefined),
+    })
+
+    expect(element('mission-review-archive-banner').textContent).toMatch(
+      /attachment custody recovery is required/iu,
+    )
+  })
+
   it('reports a durable audit retry without falsely claiming plaintext remains', async () => {
     const close = vi.fn().mockResolvedValue(undefined)
     renderBanner({

@@ -1284,6 +1284,8 @@ export type MissionStore = {
   readonly restoreMissionForCorrection?: (
     input: RestoreMissionForCorrectionInput,
   ) => Promise<RestoreMissionForCorrectionResult>
+  /** Renderer-only hook used after a correction cleanup retry is proven complete. */
+  readonly reopenMissionEvidenceAfterUnlock?: (missionId: string) => void
 }
 
 export function createTauriMissionStore(): MissionStore {

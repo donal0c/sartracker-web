@@ -4,6 +4,13 @@ const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
+
+// Associates each open SQLite handle with its in-process archive-correction
+// writer fence. Mutation helpers below receive only the database handle, so a
+// weak association keeps the fence at the store boundary without leaking
+// closed stores.
+const archiveCorrectionWriterGuards = new WeakMap()
+
 const { runBreadcrumbQueryInWorker } = require('./breadcrumb-query-runner.cjs')
 const {
   runBreadcrumbDotQueryInWorker,
@@ -1123,6 +1130,7 @@ function createElectronMissionStore(options) {
       throw error
     }
   }
+  archiveCorrectionWriterGuards.set(db, assertArchiveCorrectionWriterIdle)
 
   /** Admits one correction only when no operational mission can contend with its writer turn. */
   const acquireArchiveCorrectionAdmission = async (operationId, signal) => {
@@ -5224,6 +5232,7 @@ function projectMissionStorageState(db, mission) {
 }
 
 function transitionMission(db, missionId, requiredStatus, nextStatus) {
+  assertArchiveCorrectionWriterIdleForDatabase(db, missionId)
   const mission = getMission(db, missionId)
   if (mission.status !== requiredStatus) {
     throw new Error(`Cannot transition mission with status '${mission.status}'.`)
@@ -5248,6 +5257,7 @@ function transitionMission(db, missionId, requiredStatus, nextStatus) {
 }
 
 function finishMission(db, missionId) {
+  assertArchiveCorrectionWriterIdleForDatabase(db, missionId)
   const mission = getMission(db, missionId)
   if (mission.status === 'finished' || mission.status === 'finalized') {
     throw new Error('Mission is already finished.')
@@ -11027,6 +11037,7 @@ function all(db, sql, ...params) {
 }
 
 function ensureWritableMission(db, missionId) {
+  assertArchiveCorrectionWriterIdleForDatabase(db, missionId)
   const mission = getMission(db, missionId)
   assertMissionArchiveCorrectionWritable(db, missionId)
   if (mission.status === 'finalized'
@@ -11038,6 +11049,12 @@ function ensureWritableMission(db, missionId) {
   }
   if (mission.status === 'finished') assertMissionFinalizationNotInProgress(db, missionId)
 }
+
+/** Applies the store-owned archive-correction writer fence to one mutation. */
+function assertArchiveCorrectionWriterIdleForDatabase(db, missionId) {
+  archiveCorrectionWriterGuards.get(db)?.(missionId)
+}
+
 
 /** Fences every mission mutation while correction attachment custody is unresolved. */
 function assertMissionArchiveCorrectionWritable(db, missionId) {

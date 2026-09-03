@@ -60,6 +60,8 @@ export type StartMissionArchiveReviewRuntimeDependencies = {
       }
   ) => Promise<void>
   readonly applyRuntime: (runtime: MissionArchiveReviewRuntimeState) => void
+  /** Reopens renderer rejection-evidence acceptance after correction cleanup is proven. */
+  readonly reopenMissionEvidenceAfterUnlock?: (missionId: string) => void
   readonly randomUUID?: () => string
 }
 
@@ -600,6 +602,7 @@ export async function startMissionArchiveReviewRuntime(
     }
     apply({ phase: 'closing', error: null, progress: null })
     let correctionCommitted = false
+    let correctionCleanupComplete = false
     try {
       const restoreResult = await dependencies.missionStore.restoreMissionForCorrection({
         mission_id: session.missionId,
@@ -610,6 +613,14 @@ export async function startMissionArchiveReviewRuntime(
         reason: input.reason.trim(),
       })
       const correctionStatus = restoreResult.correction
+      correctionCleanupComplete = correctionStatus?.committed === true
+        && correctionStatus.cleanupComplete === true
+      if (correctionStatus?.committed === true && correctionStatus.cleanupComplete === false) {
+        correctionCommitted = true
+        const cleanupFailure = new Error('Archive correction committed but plaintext cleanup remains unresolved.')
+        Object.defineProperty(cleanupFailure, 'archiveCorrectionCommitted', { value: true })
+        throw cleanupFailure
+      }
       if (correctionStatus?.committed === true && correctionStatus.failureCode !== undefined) {
         correctionCommitted = true
         const custodyFailure = new Error(SAFE_CUSTODY_RECOVERY_FAILURE)
@@ -617,16 +628,13 @@ export async function startMissionArchiveReviewRuntime(
         Object.defineProperty(custodyFailure, 'archiveCorrectionCustodyFailure', { value: true })
         throw custodyFailure
       }
-      if (correctionStatus?.committed === true && correctionStatus.cleanupComplete === false) {
-        const cleanupFailure = new Error('Archive correction committed but plaintext cleanup remains unresolved.')
-        Object.defineProperty(cleanupFailure, 'archiveCorrectionCommitted', { value: true })
-        throw cleanupFailure
-      }
       correctionCommitted = true
       // Electron closes the session while taking its correction snapshot; the
       // browser harness may still own it, so both paths are intentionally
       // idempotent here.
-      await dependencies.archiveReview.close({ sessionId: session.sessionId }).catch(() => false)
+      if (!correctionCleanupComplete) {
+        await dependencies.archiveReview.close({ sessionId: session.sessionId }).catch(() => false)
+      }
       apply({
         activeSession: null,
         activeOperationId: null,
@@ -650,11 +658,13 @@ export async function startMissionArchiveReviewRuntime(
       const custodyRecoveryAfterIpc = error !== null && typeof error === 'object'
         && (error as { readonly archiveCorrectionCustodyFailure?: unknown }).archiveCorrectionCustodyFailure === true
       if (correctionCommitted || committedAfterIpc) {
-        let plaintextClosed = false
-        try {
-          plaintextClosed = await dependencies.archiveReview.close({ sessionId: session.sessionId }) === true
-        } catch {
-          plaintextClosed = false
+        let plaintextClosed = correctionCleanupComplete
+        if (!plaintextClosed) {
+          try {
+            plaintextClosed = await dependencies.archiveReview.close({ sessionId: session.sessionId }) === true
+          } catch {
+            plaintextClosed = false
+          }
         }
         if (!plaintextClosed) {
           apply({
@@ -666,6 +676,9 @@ export async function startMissionArchiveReviewRuntime(
             error: SAFE_CLOSE_FAILURE,
           })
           throw new Error(SAFE_CLOSE_FAILURE)
+        }
+        if (!custodyRecoveryAfterIpc) {
+          dependencies.reopenMissionEvidenceAfterUnlock?.(session.missionId)
         }
         if (custodyRecoveryAfterIpc) {
           try {

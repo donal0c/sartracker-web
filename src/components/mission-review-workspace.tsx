@@ -322,8 +322,15 @@ export function MissionReviewWorkspace() {
                   if (archiveReviewController === null) {
                     throw new Error('Archive correction restore is unavailable.')
                   }
-                  await archiveReviewController.restoreForCorrection(input)
-                  if (controller !== null) await controller.refreshSelectedMission()
+                  try {
+                    await archiveReviewController.restoreForCorrection(input)
+                  } finally {
+                    // Refresh governance even when the correction committed but
+                    // leaves a durable custody-recovery blocker visible.
+                    if (controller !== null) {
+                      await controller.refreshSelectedMission().catch(() => undefined)
+                    }
+                  }
                 }}
                 phase={archiveReviewPhase}
                 progress={archiveReviewProgress}

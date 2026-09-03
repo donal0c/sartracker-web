@@ -371,6 +371,58 @@ describe('mission archive IPC containment [DON-248]', () => {
     }
   })
 
+  it('returns committed correction success when a post-commit worker exit has no custody residue', async () => {
+    const stagingRoot = await mkdtemp(join(tmpdir(), 'sartracker-correction-post-commit-exit-'))
+    const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
+    await mkdir(stagingDirectory)
+    const snapshotPath = join(stagingDirectory, 'mission-store.sqlite')
+    const snapshotForCorrection = vi.fn(async () => ({
+      missionId: 'mission-1',
+      archiveId: 'archive-1',
+      snapshotPath,
+      databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
+      databaseSha256: 'a'.repeat(64),
+    }))
+    try {
+      const { handlers } = createMainHarness({
+        archiveReviewSessionManager: {
+          hasReviewActivity: vi.fn(() => true),
+          acquireCleanupLease: vi.fn(),
+          snapshotForCorrection,
+          completeCorrectionSnapshot: vi.fn(async () => true),
+        },
+      }, {
+        unlockFinalizedMission: vi.fn(async () => {
+          throw Object.assign(new Error('worker exited after durable correction commit'), {
+            code: 'ARCHIVE_REHYDRATE_FAILED',
+          })
+        }),
+        getMission: vi.fn(async () => ({
+          id: 'mission-1',
+          status: 'finished',
+          storage_state: 'live',
+        })),
+      })
+      await expect(handlers.get(CHANNELS.restoreMissionForCorrection)?.({ sender: createSender(8) }, {
+        mission_id: 'mission-1',
+        archiveId: 'archive-1',
+        operationId: OPERATION_ID,
+        sessionId: '44444444-4444-4444-8444-444444444444',
+        admin_name: 'Duty Admin',
+        reason: 'Treat a committed worker exit without residue as complete.',
+      })).resolves.toEqual({
+        id: 'mission-1',
+        status: 'finished',
+        correction: {
+          committed: true,
+          cleanupComplete: true,
+        },
+      })
+    } finally {
+      await rm(stagingRoot, { recursive: true, force: true })
+    }
+  })
+
   it('rejects an oversized correction reason before reaching the mission store', async () => {
     const { handlers, missionStore } = createMainHarness()
     const event = { sender: createSender(8) }

@@ -98,7 +98,7 @@ export function MissionArchiveReviewBanner(props: MissionArchiveReviewBannerProp
             </p>
           ) : liveResumePending ? (
             <p className="mt-2 text-xs font-semibold text-rose-200" role="alert">
-              Live Mission Review failed to resume after archive cleanup.
+              {props.error ?? 'Live Mission Review failed to resume after archive cleanup.'}
             </p>
           ) : auditRetryPending ? (
             <p className="mt-2 text-xs font-semibold text-rose-200" role="alert">
@@ -466,7 +466,7 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
       ) : null}
       {props.error !== null || safeError !== null ? (
         <p className="mt-3 text-xs font-semibold text-rose-200" role="alert">
-          {safeError ?? 'Archive Review failed safely.'}
+          {safeError ?? props.error ?? 'Archive Review failed safely.'}
         </p>
       ) : null}
     </section>

@@ -140,6 +140,10 @@ export function MissionReviewRuntimeBridge() {
       }
       let nextArchiveController: Awaited<ReturnType<typeof startMissionArchiveReviewRuntime>>
       try {
+        const reopenMissionEvidenceAfterUnlock = 'reopenMissionEvidenceAfterUnlock' in missionStore
+          && typeof missionStore.reopenMissionEvidenceAfterUnlock === 'function'
+          ? missionStore.reopenMissionEvidenceAfterUnlock
+          : undefined
         nextArchiveController = await startMissionArchiveReviewRuntime({
           missionStore,
           archiveReview: bridge,
@@ -147,6 +151,11 @@ export function MissionReviewRuntimeBridge() {
           applyRuntime: (runtime) => {
             applyMissionArchiveReviewRuntime(runtime)
           },
+          ...(reopenMissionEvidenceAfterUnlock === undefined
+            ? {}
+            : {
+                reopenMissionEvidenceAfterUnlock,
+              }),
         })
       } catch {
         if (!cancelled) {

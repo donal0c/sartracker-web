@@ -649,7 +649,7 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
       admin_name: 'Duty Admin',
       reason: 'Keep the attachment custody fence visible.',
     })).rejects.toThrow(/custody|recovery|failed safely/iu)
-    expect(harness.close).toHaveBeenCalled()
+    expect(harness.close).not.toHaveBeenCalled()
     expect(harness.switchMissionReviewSource).toHaveBeenCalledWith({ source: 'live' })
     expect(harness.latestState()).toMatchObject({
       phase: 'error',
@@ -657,6 +657,42 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
       recoveryRequired: 'live_source_resume',
     })
     expect(harness.latestState().error).toMatch(/custody|recovery/iu)
+  })
+
+  it('does not re-close a session after IPC confirms custody cleanup', async () => {
+    const restoreMissionForCorrection = vi.fn(async () => ({
+      ...MISSION,
+      status: 'finished' as const,
+      storage_state: 'recovery_required' as const,
+      correction: {
+        committed: true,
+        cleanupComplete: true,
+        failureCode: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+      },
+    }))
+    const close = vi.fn(async () => {
+      throw new Error('ARCHIVE_REVIEW_SESSION_OWNER_MISMATCH')
+    })
+    const harness = createHarness({ restoreMissionForCorrection, close })
+    const controller = await startMissionArchiveReviewRuntime(harness.dependencies)
+    await controller.openArchive({
+      archiveId: VERIFIED_V2_ID,
+      containerVersion: 2,
+      slotType: 'passphrase',
+      secret: SECRET,
+    })
+
+    await expect(controller.restoreForCorrection({
+      admin_name: 'Duty Admin',
+      reason: 'Keep custody recovery visible after IPC cleanup.',
+    })).rejects.toThrow(/custody|recovery/iu)
+    expect(close).not.toHaveBeenCalled()
+    expect(harness.switchMissionReviewSource).toHaveBeenCalledWith({ source: 'live' })
+    expect(harness.latestState()).toMatchObject({
+      phase: 'error',
+      activeSession: null,
+      recoveryRequired: 'live_source_resume',
+    })
   })
 
   it('keeps a committed correction in live-source recovery when the post-commit switch fails', async () => {
@@ -707,6 +743,44 @@ describe('mission archive review runtime orchestration [DON-253 / BCP-16]', () =
       recoveryRequired: 'plaintext_cleanup',
     })
     expect(harness.switchMissionReviewSource).not.toHaveBeenLastCalledWith({ source: 'live' })
+  })
+
+  it('reopens renderer evidence after a committed correction cleanup retry succeeds', async () => {
+    const reopenMissionEvidenceAfterUnlock = vi.fn()
+    const harness = createHarness({
+      restoreMissionForCorrection: vi.fn(async () => ({
+        ...MISSION,
+        status: 'finished' as const,
+        storage_state: 'recovery_required' as const,
+        correction: {
+          committed: true,
+          cleanupComplete: false,
+          failureCode: 'ARCHIVE_REHYDRATE_CLEANUP_FAILED',
+        },
+      })),
+    })
+    const controller = await startMissionArchiveReviewRuntime({
+      ...harness.dependencies,
+      reopenMissionEvidenceAfterUnlock,
+    })
+    await controller.openArchive({
+      archiveId: VERIFIED_V2_ID,
+      containerVersion: 2,
+      slotType: 'passphrase',
+      secret: SECRET,
+    })
+
+    await expect(controller.restoreForCorrection({
+      admin_name: 'Duty Admin',
+      reason: 'Reopen renderer evidence after cleanup retry.',
+    })).rejects.toThrow(/custody|failed safely/iu)
+    expect(harness.close).toHaveBeenCalledOnce()
+    expect(reopenMissionEvidenceAfterUnlock).toHaveBeenCalledWith(MISSION.id)
+    expect(harness.latestState()).toMatchObject({
+      phase: 'error',
+      activeSession: null,
+      recoveryRequired: 'live_source_resume',
+    })
   })
 
   it('accepts verified superseded v2, but rejects unverified, missing, newer, and malformed credential requests before IPC', async () => {
