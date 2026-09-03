@@ -188,8 +188,21 @@ function createArchiveCleanupCoordinator(options) {
       })
       assertCustodyUnchanged()
     })
-    commitWithCustody(execution, (assertCustodyUnchanged) =>
-      initialize.immediate(assertCustodyUnchanged))
+    let initializeBusyRetries = 0
+    while (true) {
+      assertNotCancelled(execution.signal)
+      try {
+        withBusyTimeoutDisabled(db, () => commitWithCustody(execution, (assertCustodyUnchanged) =>
+          initialize.immediate(assertCustodyUnchanged)))
+        break
+      } catch (error) {
+        if (!isRetryableSqliteBusy(error) || initializeBusyRetries >= CLEANUP_BUSY_RETRY_LIMIT) {
+          throw error
+        }
+        initializeBusyRetries += 1
+        await yieldAfterBusyRetry()
+      }
+    }
     return runFromJournal(evidence, execution)
   }
 

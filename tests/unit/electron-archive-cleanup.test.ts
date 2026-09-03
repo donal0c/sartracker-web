@@ -327,6 +327,54 @@ async function createFixture(input: {
 }
 
 describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
+  it('keeps the initial cleanup journal transaction non-blocking under a concurrent WAL writer', async () => {
+    const fixture = await createFixture()
+    let lockWorker: Worker | null = null
+    try {
+      lockWorker = new Worker(`
+        const Database = require('better-sqlite3')
+        const { parentPort, workerData } = require('node:worker_threads')
+        const db = new Database(workerData.databasePath)
+        db.pragma('journal_mode = WAL')
+        const hold = db.transaction(() => {
+          db.prepare('UPDATE missions SET status = status WHERE id = ?').run(workerData.missionId)
+          parentPort.postMessage('locked')
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_200)
+        })
+        try { hold.immediate() } finally { db.close() }
+      `, {
+        eval: true,
+        workerData: {
+          databasePath: path.join(fixture.directory, 'mission-store.sqlite'),
+          missionId: fixture.missionId,
+        },
+      })
+      await new Promise<void>((resolve, reject) => {
+        lockWorker?.once('message', (message) => {
+          if (message === 'locked') resolve()
+        })
+        lockWorker?.once('error', reject)
+      })
+
+      let heartbeatCount = 0
+      const heartbeat = setInterval(() => { heartbeatCount += 1 }, 25)
+      await expect(fixture.coordinator.start(fixture.evidence)).resolves.toMatchObject({
+        state: 'completed',
+        storageState: 'archived',
+      })
+      clearInterval(heartbeat)
+      expect(heartbeatCount).toBeGreaterThanOrEqual(20)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_cleanup_journal
+        WHERE mission_id = ? AND state = 'completed'`).get(fixture.missionId)?.total).toBe(1)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_started'`).get(fixture.missionId)?.total)
+        .toBe(1)
+    } finally {
+      await lockWorker?.terminate()
+      fixture.db.close()
+    }
+  }, 15_000)
+
   it('spaces production busy retries so a short WAL lock does not fail cleanup immediately', async () => {
     const fixture = await createFixture()
     let lockWorker: Worker | null = null
