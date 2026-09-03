@@ -20,6 +20,7 @@ const { readMissionReviewSummary } = require(
   ) => {
     readonly auditEvents: readonly { readonly id: string; readonly event_type: string }[]
     readonly breadcrumbCount: number
+    readonly correctionAuthorized: boolean
   }
 }
 
@@ -72,6 +73,50 @@ describe('mission-review read query [DON-251]', () => {
       'operator-middle',
       'telemetry-first',
     ])
+    database.close()
+  })
+
+  it('reports durable correction authorization when lifecycle events are outside the audit page', () => {
+    const database = createDatabase()
+    database.prepare("UPDATE missions SET status = 'finished' WHERE id = 'mission-1'").run()
+    const insertEvent = database.prepare(`
+      INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json)
+      VALUES (?, 'mission-1', ?, ?, ?)
+    `)
+    insertEvent.run(
+      'finalized',
+      'mission_finalized',
+      '2026-08-20T08:00:00.000Z',
+      JSON.stringify({ archive_id: 'archive-1' }),
+    )
+    insertEvent.run(
+      'unlocked',
+      'mission_unlocked',
+      '2026-08-20T08:01:00.000Z',
+      JSON.stringify({ admin_name: 'Duty Admin', reason: 'Correct retained evidence.' }),
+    )
+    const insertNewerEvents = database.transaction(() => {
+      for (let index = 0; index < 505; index += 1) {
+        insertEvent.run(
+          `newer-${index}`,
+          'marker_updated',
+          '2026-08-20T08:02:00.000Z',
+          null,
+        )
+      }
+    })
+    insertNewerEvents()
+
+    const result = readMissionReviewSummary(database, {
+      missionId: 'mission-1',
+      includeTelemetry: false,
+      auditLimit: 501,
+    })
+
+    expect(result.auditEvents).toHaveLength(501)
+    expect(result.auditEvents.some((event) => event.event_type === 'mission_finalized')).toBe(false)
+    expect(result.auditEvents.some((event) => event.event_type === 'mission_unlocked')).toBe(false)
+    expect(result.correctionAuthorized).toBe(true)
     database.close()
   })
 

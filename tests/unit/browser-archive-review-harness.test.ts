@@ -80,6 +80,41 @@ describe('browser-validation archive review harness [DON-253 / BCP-16]', () => {
     })).rejects.toThrow(/already open/iu)
   })
 
+  it('reopens a persisted synthetic archive with either credential after a browser reload', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Reloaded Archive Review Harness' })
+    await store.finishMission(mission.id)
+    const issuance = await store.issueMissionArchiveRecoveryCode(mission.id)
+    const { archive } = await store.finalizeMission(mission.id, {
+      operationId: issuance.operationId,
+      passphrase: PASSPHRASE,
+      recoveryCode: issuance.recoveryCode,
+    })
+    const persisted = window.sessionStorage.getItem('sartracker:browser-harness') ?? ''
+    expect(persisted).not.toContain(PASSPHRASE)
+    expect(persisted).not.toContain(issuance.recoveryCode)
+
+    resetBrowserHarnessStore(false)
+    const reloadedStore = getBrowserHarnessStore()
+    await expect(reloadedStore.validateMissionArchiveReviewCredential({
+      archiveId: archive.id,
+      slotType: 'recovery',
+      secret: issuance.recoveryCode,
+    })).resolves.toMatchObject({ id: archive.id })
+    const harness = createBrowserArchiveReviewHarness({
+      missionStore: reloadedStore,
+      layerCatalogStore: getBrowserHarnessLayerCatalogStore(),
+      randomUUID: () => SESSION_ID,
+    })
+    await expect(harness.archiveReview.open({
+      operationId: OPERATION_ID,
+      archiveId: archive.id,
+      containerVersion: 2,
+      slotType: 'passphrase',
+      secret: PASSPHRASE,
+    })).resolves.toMatchObject({ archiveId: archive.id, missionId: mission.id })
+  })
+
   it('exposes only a fixed read facade and invalidates it after plaintext-session close', async () => {
     const store = getBrowserHarnessStore()
     const mission = await store.createMission({ name: 'Fixed Archive Source' })

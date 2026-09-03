@@ -130,14 +130,16 @@ describe('archive-backed Mission Review workspace safety [DON-253 / BCP-16]', ()
   it('re-enables correction evidence entry only after an audited unlock epoch', () => {
     const correctionSnapshot = {
       mission: { ...FINALIZED_LIVE_MISSION, status: 'finished' as const },
+      correctionAuthorized: true,
+      eventRows: [{ eventType: 'marker_updated' }],
+    } as never
+    const ordinaryFinishedSnapshot = {
+      mission: { ...FINALIZED_LIVE_MISSION, status: 'finished' as const },
+      correctionAuthorized: false,
       eventRows: [
         { eventType: 'mission_finalized' },
         { eventType: 'mission_unlocked' },
       ],
-    } as never
-    const ordinaryFinishedSnapshot = {
-      mission: { ...FINALIZED_LIVE_MISSION, status: 'finished' as const },
-      eventRows: [{ eventType: 'mission_finalized' }],
     } as never
     expect(hasActiveMissionCorrectionAuthorization(correctionSnapshot)).toBe(true)
     expect(hasActiveMissionCorrectionAuthorization(ordinaryFinishedSnapshot)).toBe(false)

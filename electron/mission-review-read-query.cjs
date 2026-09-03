@@ -19,11 +19,44 @@ function readMissionReviewSummary(database, input) {
     return {
       auditEvents: listMissionReviewAuditEvents(database, normalized),
       breadcrumbCount: countMissionPositions(database, normalized.missionId),
+      correctionAuthorized: readMissionCorrectionAuthorization(
+        database,
+        normalized.missionId,
+      ),
     }
   })
   const result = readSnapshot()
   assertArchiveReviewResultBudget(result)
   return result
+}
+
+/** Reads the durable correction epoch independently of the bounded audit page. */
+function readMissionCorrectionAuthorization(database, missionId) {
+  const mission = database.prepare('SELECT status FROM missions WHERE id = ?').get(missionId)
+  if (mission?.status !== 'finished') return false
+  const finalized = database.prepare(`SELECT rowid AS event_rowid
+    FROM mission_events
+    WHERE mission_id = ? AND event_type = 'mission_finalized'
+    ORDER BY rowid DESC LIMIT 1`).get(missionId)
+  if (finalized === undefined) return false
+  const unlocked = database.prepare(`SELECT details_json
+    FROM mission_events
+    WHERE mission_id = ? AND event_type = 'mission_unlocked' AND rowid > ?
+    ORDER BY rowid DESC LIMIT 1`).get(missionId, finalized.event_rowid)
+  if (unlocked === undefined) return false
+  let details
+  try {
+    details = JSON.parse(unlocked.details_json ?? 'null')
+  } catch {
+    return false
+  }
+  if (details === null || typeof details !== 'object' || Array.isArray(details)) return false
+  const authority = typeof details.admin_name === 'string' ? details.admin_name.trim() : ''
+  const reason = typeof details.reason === 'string' ? details.reason.trim() : ''
+  return authority !== ''
+    && Buffer.byteLength(authority, 'utf8') <= 200
+    && reason !== ''
+    && Buffer.byteLength(reason, 'utf8') <= 4_000
 }
 
 /** Returns the bounded newest-first audit page with the established telemetry policy. */
@@ -91,6 +124,7 @@ module.exports = {
   TELEMETRY_EVENT_TYPES,
   listMissionReviewAuditEvents,
   normalizeMissionReviewReadInput,
+  readMissionCorrectionAuthorization,
   readMissionReviewSummary,
 }
 const {

@@ -875,6 +875,8 @@ describe('browser harness store', () => {
   })
 
   it('retains immutable per-revision browser snapshots and chains correction archives', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-30T09:00:00.000Z'))
     window.localStorage.setItem(
       'sartracker:browser-settings',
       JSON.stringify({ missionDefaults: { adminRoster: ['Duty Admin'] } }),
@@ -891,11 +893,13 @@ describe('browser harness store', () => {
     const firstSnapshot = await store.readMissionArchiveSnapshot?.(first.archive.id)
     expect(firstSnapshot?.missionEvents.map((event) => event.event_type)).toContain('mission_finalized')
 
+    vi.setSystemTime(new Date('2026-08-30T10:00:00.000Z'))
     await expect(store.unlockFinalizedMission({
       mission_id: mission.id,
       admin_name: 'Duty Admin',
       reason: 'Correct the synthetic browser mission.',
     })).resolves.toMatchObject({ status: 'finished' })
+    vi.setSystemTime(new Date('2026-08-30T11:00:00.000Z'))
     const secondIssuance = await store.issueMissionArchiveRecoveryCode(mission.id)
     const second = await store.finalizeMission(mission.id, {
       operationId: secondIssuance.operationId,
@@ -908,7 +912,24 @@ describe('browser harness store', () => {
       previous_archive_sha256: first.archive.ciphertext_sha256,
       revision_sequence: 2,
       revision_count: 2,
+      supplement_authority: 'Duty Admin',
+      supplement_reason: 'Correct the synthetic browser mission.',
+      supplement_created_at: '2026-08-30T11:00:00.000Z',
     })
+    await expect(store.listMissionArchives(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        id: first.archive.id,
+        status: 'superseded',
+        revision_sequence: 1,
+        revision_count: 2,
+      }),
+      expect.objectContaining({
+        id: second.archive.id,
+        status: 'verified',
+        revision_sequence: 2,
+        revision_count: 2,
+      }),
+    ])
     expect(firstSnapshot?.missionEvents.some((event) => {
       if (event.event_type !== 'mission_archive_verified_v2') return false
       return JSON.parse(event.details_json ?? '{}').archive_id === second.archive.id
@@ -916,6 +937,31 @@ describe('browser harness store', () => {
     const secondSnapshot = await store.readMissionArchiveSnapshot?.(second.archive.id)
     expect(secondSnapshot?.missionEvents.filter((event) => event.event_type === 'mission_finalized'))
       .toHaveLength(2)
+
+    const persistedState = readBrowserHarnessState()
+    window.sessionStorage.setItem('sartracker:browser-harness', JSON.stringify({
+      ...persistedState,
+      missionArchives: persistedState.missionArchives.map((archive) =>
+        archive.id === first.archive.id ? { ...archive, status: 'verified' } : archive),
+    }))
+    resetBrowserHarnessStore(false)
+    const reloadedStore = getBrowserHarnessStore()
+    await reloadedStore.startMissionCleanup({
+      missionId: mission.id,
+      archiveId: second.archive.id,
+      operationId: '33333333-3333-4333-8333-333333333333',
+      slotType: 'passphrase',
+      secret: 'Harness archive passphrase 2026',
+      confirmation: mission.name,
+    })
+    await expect(reloadedStore.restoreMissionForCorrection({
+      mission_id: mission.id,
+      archiveId: first.archive.id,
+      operationId: '44444444-4444-4444-8444-444444444444',
+      sessionId: '55555555-5555-4555-8555-555555555555',
+      admin_name: 'Duty Admin',
+      reason: 'A stale predecessor must not authorize correction.',
+    })).rejects.toThrow(/current correction predecessor/iu)
   })
 
   it('keeps a browser evidence gap critical while allowing audited closure [DON-276]', async () => {

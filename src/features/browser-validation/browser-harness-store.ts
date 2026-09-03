@@ -132,6 +132,7 @@ type BrowserHarnessState = {
   readonly searchPasses: readonly SearchPass[]
   readonly missionEvents: readonly MissionEvent[]
   readonly missionArchives: readonly MissionArchiveInfo[]
+  readonly archiveCredentialDigests: Readonly<Record<string, BrowserArchiveCredentialDigests>>
   readonly openedPaths: readonly string[]
   readonly currentMissionId: string | null
   readonly recoverableMissionId: string | null
@@ -421,7 +422,6 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
 
   let state = readHarnessState()
   const archiveRecoveryIssuances = new Map<string, BrowserArchiveRecoveryIssuance>()
-  const archiveCredentialDigests = new Map<string, BrowserArchiveCredentialDigests>()
 
   const save = () => {
     state = pruneTrackingPersistence(state, MAX_PERSISTED_TRACKING_POSITIONS)
@@ -1277,7 +1277,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         || archive.status !== 'verified'
         || archive.verified_at === null
         || archive.availability !== 'present'
-        || !archiveCredentialDigests.has(archive.id)) {
+        || state.archiveCredentialDigests[archive.id] === undefined) {
         throw new Error('Browser archive retry fixture requires one verified encrypted archive.')
       }
       const sealed: MissionArchiveInfo = {
@@ -1369,7 +1369,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const normalizedSecret = input.slotType === 'passphrase'
         ? normalizeBrowserArchivePassphrase(input.secret)
         : normalizeBrowserArchiveRecoveryCode(input.secret)
-      const credentials = archive === undefined ? undefined : archiveCredentialDigests.get(archive.id)
+      const credentials = archive === undefined
+        ? undefined
+        : state.archiveCredentialDigests[archive.id]
       const expectedDigest = input.slotType === 'passphrase'
         ? credentials?.passphraseDigest
         : credentials?.recoveryCodeDigest
@@ -1472,7 +1474,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const normalizedSecret = input.slotType === 'passphrase'
         ? normalizeBrowserArchivePassphrase(input.secret)
         : normalizeBrowserArchiveRecoveryCode(input.secret)
-      const credentials = archive === undefined ? undefined : archiveCredentialDigests.get(archive.id)
+      const credentials = archive === undefined
+        ? undefined
+        : state.archiveCredentialDigests[archive.id]
       const expectedDigest = input.slotType === 'passphrase'
         ? credentials?.passphraseDigest
         : credentials?.recoveryCodeDigest
@@ -1496,7 +1500,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       if (archive === undefined) {
         throw new Error('Mission archive is not available for browser validation.')
       }
-      const credentials = archiveCredentialDigests.get(archive.id)
+      const credentials = state.archiveCredentialDigests[archive.id]
       if (credentials === undefined
         || credentials.passphraseDigest !== createBrowserSyntheticSecretDigest(passphrase)
         || credentials.recoveryCodeDigest !== createBrowserSyntheticSecretDigest(recoveryCode)) {
@@ -1572,11 +1576,11 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const createdAt = new Date().toISOString()
       const archiveId = `archive-${operationId}`
       const archivePath = `/tmp/browser-harness/archives/${missionId}-${operationId}.sararch`
-      const previousArchive = state.missionArchives
-        .filter((candidate) => candidate.mission_id === missionId)
-        .toSorted((left, right) => right.revision_sequence - left.revision_sequence
-          || right.created_at.localeCompare(left.created_at))[0]
+      const previousArchive = currentBrowserMissionArchive(state, missionId)
       const revisionSequence = (previousArchive?.revision_sequence ?? 0) + 1
+      const supplement = previousArchive === undefined
+        ? null
+        : readBrowserArchiveSupplement(state, missionId, previousArchive)
       const archive = {
         id: archiveId,
         mission_id: missionId,
@@ -1594,9 +1598,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         previous_archive_sha256: previousArchive?.ciphertext_sha256 ?? null,
         revision_sequence: revisionSequence,
         revision_count: Math.max(previousArchive?.revision_count ?? 0, revisionSequence),
-        supplement_authority: null,
-        supplement_reason: null,
-        supplement_created_at: null,
+        supplement_authority: supplement?.authority ?? null,
+        supplement_reason: supplement?.reason ?? null,
+        supplement_created_at: supplement === null ? null : createdAt,
         status: 'verified',
         availability: 'present',
         availability_reason: null,
@@ -1606,11 +1610,6 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         ],
         last_non_machine_unwrap_at: createdAt,
       } satisfies MissionArchiveInfo
-      archiveCredentialDigests.set(archiveId, {
-        passphraseDigest: createBrowserSyntheticSecretDigest(passphrase),
-        recoveryCodeDigest: createBrowserSyntheticSecretDigest(recoveryCode),
-      })
-
       state = replaceMission(
         {
           ...state,
@@ -1626,7 +1625,23 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       )
       state = {
         ...state,
-        missionArchives: [...state.missionArchives, archive],
+        archiveCredentialDigests: {
+          ...state.archiveCredentialDigests,
+          [archiveId]: {
+            passphraseDigest: createBrowserSyntheticSecretDigest(passphrase),
+            recoveryCodeDigest: createBrowserSyntheticSecretDigest(recoveryCode),
+          },
+        },
+        missionArchives: [
+          ...state.missionArchives.map((candidate) => candidate.mission_id !== missionId
+            ? candidate
+            : {
+                ...candidate,
+                revision_count: revisionSequence,
+                status: candidate.id === previousArchive?.id ? 'superseded' as const : candidate.status,
+              }),
+          archive,
+        ],
         missionEvents: appendEvent(appendEvent(appendEvent(
           state.missionEvents,
           missionId,
@@ -1735,8 +1750,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         throw new Error('Only archived finalized missions can be restored for correction.')
       }
       const archive = state.missionArchives.find((candidate) => candidate.id === input.archiveId)
+      const currentArchive = currentBrowserMissionArchive(state, mission.id)
       if (archive?.mission_id !== mission.id || archive.status !== 'verified'
-        || archive.availability !== 'present') {
+        || archive.availability !== 'present' || currentArchive?.id !== archive.id) {
         throw new Error('The selected verified archive is not the current correction predecessor.')
       }
       const settings = readBrowserSettings()
@@ -3959,6 +3975,7 @@ function readHarnessState(): BrowserHarnessState {
       searchPasses: [],
       missionEvents: [],
       missionArchives: [],
+      archiveCredentialDigests: {},
       archiveSnapshots: [],
       openedPaths: [],
       currentMissionId: null,
@@ -3988,6 +4005,7 @@ function readHarnessState(): BrowserHarnessState {
       searchPasses: [],
       missionEvents: [],
       missionArchives: [],
+      archiveCredentialDigests: {},
       archiveSnapshots: [],
       openedPaths: [],
       currentMissionId: null,
@@ -4033,6 +4051,9 @@ function readHarnessState(): BrowserHarnessState {
       searchPasses: Array.isArray(parsed.searchPasses) ? parsed.searchPasses : [],
       missionEvents: Array.isArray(parsed.missionEvents) ? parsed.missionEvents : [],
       missionArchives: Array.isArray(parsed.missionArchives) ? parsed.missionArchives : [],
+      archiveCredentialDigests: readBrowserArchiveCredentialDigests(
+        parsed.archiveCredentialDigests,
+      ),
       archiveSnapshots: Array.isArray(parsed.archiveSnapshots) ? parsed.archiveSnapshots : [],
       openedPaths: Array.isArray(parsed.openedPaths) ? parsed.openedPaths : [],
       currentMissionId:
@@ -4061,6 +4082,7 @@ function readHarnessState(): BrowserHarnessState {
       searchPasses: [],
       missionEvents: [],
       missionArchives: [],
+      archiveCredentialDigests: {},
       archiveSnapshots: [],
       openedPaths: [],
       currentMissionId: null,
@@ -4068,6 +4090,89 @@ function readHarnessState(): BrowserHarnessState {
       evidenceLossByMission: {},
     }
   }
+}
+
+/** Retains only complete non-secret archive credential verifiers from browser session state. */
+function readBrowserArchiveCredentialDigests(
+  value: unknown,
+): Readonly<Record<string, BrowserArchiveCredentialDigests>> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {}
+  const digests: Record<string, BrowserArchiveCredentialDigests> = {}
+  for (const [archiveId, candidate] of Object.entries(value)) {
+    if (archiveId.length < 1 || archiveId.length > 200 || hasBrowserControlCharacter(archiveId)
+      || candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+    const verifier = candidate as Partial<BrowserArchiveCredentialDigests>
+    if (!/^[a-f0-9]{64}$/u.test(verifier.passphraseDigest ?? '')
+      || !/^[a-f0-9]{64}$/u.test(verifier.recoveryCodeDigest ?? '')) continue
+    digests[archiveId] = {
+      passphraseDigest: verifier.passphraseDigest as string,
+      recoveryCodeDigest: verifier.recoveryCodeDigest as string,
+    }
+  }
+  return digests
+}
+
+/** Detects ASCII control characters without embedding them in a regular expression. */
+function hasBrowserControlCharacter(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0)
+    return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)
+  })
+}
+
+/** Returns the highest retained archive revision for one browser mission. */
+function currentBrowserMissionArchive(
+  state: BrowserHarnessState,
+  missionId: string,
+): MissionArchiveInfo | undefined {
+  return state.missionArchives
+    .filter((archive) => archive.mission_id === missionId)
+    .toSorted((left, right) => right.revision_sequence - left.revision_sequence
+      || right.created_at.localeCompare(left.created_at))[0]
+}
+
+/** Reconstructs the active correction authority bound to one exact predecessor revision. */
+function readBrowserArchiveSupplement(
+  state: BrowserHarnessState,
+  missionId: string,
+  predecessor: MissionArchiveInfo,
+): Readonly<{ authority: string; reason: string }> {
+  const events = state.missionEvents.filter((event) => event.mission_id === missionId)
+  let finalizedIndex = -1
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index]?.event_type === 'mission_finalized') {
+      finalizedIndex = index
+      break
+    }
+  }
+  let unlocked: MissionEvent | undefined
+  for (let index = events.length - 1; index > finalizedIndex; index -= 1) {
+    if (events[index]?.event_type === 'mission_unlocked') {
+      unlocked = events[index]
+      break
+    }
+  }
+  let finalizedDetails: Record<string, unknown> = {}
+  let unlockDetails: Record<string, unknown> = {}
+  try {
+    finalizedDetails = JSON.parse(events[finalizedIndex]?.details_json ?? '{}') as Record<string, unknown>
+    unlockDetails = JSON.parse(unlocked?.details_json ?? '{}') as Record<string, unknown>
+  } catch {
+    throw new Error('Mission correction authorization audit is invalid.')
+  }
+  const authority = typeof unlockDetails.admin_name === 'string'
+    ? unlockDetails.admin_name.trim()
+    : ''
+  const reason = typeof unlockDetails.reason === 'string' ? unlockDetails.reason.trim() : ''
+  if (finalizedIndex < 0 || finalizedDetails.archive_id !== predecessor.id
+    || unlocked === undefined
+    || (typeof unlockDetails.restored_from_archive_id === 'string'
+      && unlockDetails.restored_from_archive_id !== predecessor.id)
+    || authority === '' || new TextEncoder().encode(authority).byteLength > 200
+    || reason === '' || new TextEncoder().encode(reason).byteLength > 4_000) {
+    throw new Error('Mission correction predecessor or authorization is invalid.')
+  }
+  return { authority, reason }
 }
 
 const MAX_AUDIT_EVENT_LIMIT = 5_000

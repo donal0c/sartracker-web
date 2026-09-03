@@ -1565,6 +1565,7 @@ describe('electron mission store', () => {
       }, `oracle-${includeTelemetry}`)).resolves.toEqual({
         auditEvents: expectedAudit,
         breadcrumbCount: expectedCount,
+        correctionAuthorized: false,
       })
     }
   })

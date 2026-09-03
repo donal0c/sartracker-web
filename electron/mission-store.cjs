@@ -2590,6 +2590,7 @@ function createElectronMissionStore(options) {
         return {
           auditEvents: result.auditEvents,
           breadcrumbCount: result.breadcrumbCount,
+          correctionAuthorized: result.correctionAuthorized,
         }
       } finally {
         if (

@@ -595,6 +595,8 @@ export async function startMissionReviewRuntime(
         selectedMissionId: selectedMission.id,
         snapshot: buildMissionReviewSnapshot({
           mission: selectedMission,
+          correctionAuthorized: reviewRead.correctionAuthorized
+            ?? selectedMission.correction_authorized === true,
           info,
           events,
           markers,

@@ -21,6 +21,8 @@ export type Mission = {
   readonly notes: string | null
   readonly schema_version: number
   readonly storage_state?: MissionStorageState
+  /** Explicit browser-validation correction epoch when no desktop review signal exists. */
+  readonly correction_authorized?: boolean
 }
 
 export type Outing = {
@@ -854,6 +856,8 @@ export type MissionReviewReadQuery = {
 export type MissionReviewReadResult = {
   readonly auditEvents: readonly MissionEvent[]
   readonly breadcrumbCount: number
+  /** Durable correction epoch, independent of the bounded audit-event page. */
+  readonly correctionAuthorized?: boolean
 }
 
 export type CreateMissionInput = {

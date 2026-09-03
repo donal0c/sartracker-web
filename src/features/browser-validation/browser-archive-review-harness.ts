@@ -212,6 +212,7 @@ export function createBrowserArchiveReviewHarness(
       searchPasses: snapshot.searchPasses,
       missionEvents: snapshot.missionEvents,
       missionArchives: [],
+      archiveCredentialDigests: {},
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,

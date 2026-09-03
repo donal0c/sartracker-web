@@ -68,6 +68,7 @@ function runMissionReviewReadQueryInWorker(input) {
         completedResult = {
           auditEvents: message.auditEvents,
           breadcrumbCount: message.breadcrumbCount,
+          correctionAuthorized: message.correctionAuthorized,
           workerThreadId: message.workerThreadId,
         }
         return
@@ -113,7 +114,8 @@ function isCompleteMessage(message, auditLimit) {
     Array.isArray(message.auditEvents) &&
     message.auditEvents.length <= auditLimit &&
     Number.isSafeInteger(message.breadcrumbCount) &&
-    message.breadcrumbCount >= 0
+    message.breadcrumbCount >= 0 &&
+    typeof message.correctionAuthorized === 'boolean'
   )
 }
 

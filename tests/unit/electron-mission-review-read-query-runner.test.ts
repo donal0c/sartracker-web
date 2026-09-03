@@ -26,6 +26,7 @@ const { runMissionReviewReadQueryInWorker } = require(
   }) => Promise<{
     readonly auditEvents: readonly { readonly id: string }[]
     readonly breadcrumbCount: number
+    readonly correctionAuthorized: boolean
     readonly workerThreadId: number
   }> & { readonly workerExited?: Promise<void> }
 }
@@ -45,7 +46,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
     const databasePath = path.join(tempDirectory, 'mission-store.sqlite')
     const database = new Database(databasePath)
     database.exec(`
-      CREATE TABLE missions (id TEXT PRIMARY KEY);
+      CREATE TABLE missions (id TEXT PRIMARY KEY, status TEXT NOT NULL);
       CREATE TABLE mission_cleanup_journal (mission_id TEXT PRIMARY KEY, state TEXT NOT NULL);
       CREATE TABLE positions (
         id TEXT PRIMARY KEY,
@@ -60,7 +61,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
         timestamp TEXT NOT NULL,
         details_json TEXT
       );
-      INSERT INTO missions VALUES ('mission-1');
+      INSERT INTO missions VALUES ('mission-1', 'active');
       INSERT INTO positions VALUES
         ('position-1', 'mission-1', 'device-1', '2026-08-20T08:00:00.000Z'),
         ('position-2', 'mission-1', 'device-1', '2026-08-20T08:01:00.000Z');
@@ -86,6 +87,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
     expect(Object.keys(result).sort()).toEqual([
       'auditEvents',
       'breadcrumbCount',
+      'correctionAuthorized',
       'workerThreadId',
     ])
   })
@@ -122,7 +124,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
     const oversizedPostMessageSentinel = `${databasePath}.oversized-post-message`
     const database = new Database(databasePath)
     database.exec(`
-      CREATE TABLE missions (id TEXT PRIMARY KEY);
+      CREATE TABLE missions (id TEXT PRIMARY KEY, status TEXT NOT NULL);
       CREATE TABLE mission_cleanup_journal (mission_id TEXT PRIMARY KEY, state TEXT NOT NULL);
       CREATE TABLE positions (
         id TEXT PRIMARY KEY,
@@ -137,7 +139,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
         timestamp TEXT NOT NULL,
         details_json TEXT
       );
-      INSERT INTO missions VALUES ('mission-1');
+      INSERT INTO missions VALUES ('mission-1', 'active');
     `)
     database.prepare(`INSERT INTO mission_events (
       id, mission_id, event_type, timestamp, details_json
