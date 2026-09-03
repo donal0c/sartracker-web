@@ -442,4 +442,92 @@ describe('archived mission correction rehydration', () => {
       store.close()
     }
   }, 60_000)
+
+  it('fences later archive work when post-commit attachment journal removal cannot be proven', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-post-commit-cleanup-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+      archiveCorrectionFaultInjection: { failAttachmentJournalRemoval: true },
+    })
+    const custody = {
+      passphrase: 'Post Commit Restore 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Post-commit cleanup fence' })
+      const attachmentPath = path.join(userDataPath, 'missions', mission.id, 'attachments', 'field.jpg')
+      const marker = await store.upsertMarker({
+        mission_id: mission.id,
+        id: '33333333-3333-4333-8333-333333333333',
+        type: 'clue',
+        name: 'Post-commit attachment',
+        lat: 52.1,
+        lon: -9.1,
+        irish_grid_e: 480000,
+        irish_grid_n: 580000,
+        display_order: 0,
+        attachment_path: attachmentPath,
+      })
+      const attachmentBytes = Buffer.from('post-commit archived attachment')
+      await store.runMarkerAttachmentIngest(mission.id, async () => {
+        mkdirSync(path.dirname(attachmentPath), { recursive: true })
+        writeFileSync(attachmentPath, attachmentBytes, { mode: 0o600 })
+        return attachmentPath
+      })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, custody)
+      const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
+      await store.syncBackup('correction-fixture')
+      const snapshotPath = path.join(userDataPath, 'post-commit-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '34343434-3434-4434-8434-343434343434',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      rmSync(attachmentPath, { force: true })
+      const stagedAttachmentDirectory = path.join(userDataPath, 'post-commit-stage', 'attachments')
+      mkdirSync(stagedAttachmentDirectory, { recursive: true })
+      writeFileSync(path.join(stagedAttachmentDirectory, 'field.jpg'), attachmentBytes, { mode: 0o600 })
+      const mapping = {
+        entryName: 'attachments/field.jpg',
+        sourceRelativePath: 'field.jpg',
+        sha256: createHash('sha256').update(attachmentBytes).digest('hex'),
+        sizeBytes: attachmentBytes.length,
+        references: [{ referenceId: marker.id, referenceKind: 'marker' }],
+      }
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: archiveId,
+        snapshot_path: snapshotPath,
+        attachment_directory: stagedAttachmentDirectory,
+        attachment_mappings: [mapping],
+        admin_name: 'Duty Admin',
+        reason: 'Prove the post-commit custody fence.',
+      })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED' })
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finished',
+        storage_state: 'recovery_required',
+      })
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: archiveId,
+        snapshot_path: snapshotPath,
+        attachment_directory: stagedAttachmentDirectory,
+        attachment_mappings: [mapping],
+        admin_name: 'Duty Admin',
+        reason: 'A second correction must remain blocked.',
+      })).rejects.toThrow(/finalized|recovery/iu)
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
 })

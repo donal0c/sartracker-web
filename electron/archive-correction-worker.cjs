@@ -392,7 +392,22 @@ async function run() {
     })
     transactionCommitted = true
     if (attachmentCustody.journalPath !== undefined) {
-      await removeCorrectionAttachmentJournal(attachmentCustody.journalPath)
+      try {
+        await removeCorrectionAttachmentJournal(attachmentCustody.journalPath, {
+          ...(workerData.faultInjection?.failAttachmentJournalRemoval === true
+            ? {
+                syncDirectory: async () => {
+                  throw new Error('Injected post-commit attachment journal fsync failure.')
+                },
+              }
+            : {}),
+        })
+      } catch (error) {
+        const failure = new Error('Archive correction attachment cleanup requires recovery.')
+        failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
+        failure.cause = error
+        throw failure
+      }
     }
     parentPort.postMessage({
       type: 'complete',
