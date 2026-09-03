@@ -115,7 +115,7 @@ function normalizeRequest(input) {
   }
   const fields = ['databasePath', 'snapshotPath', 'missionId', 'archiveId', 'operationId',
     'finalizedEpoch', 'adminName', 'reason', 'attachmentDirectory', 'attachmentMappings',
-    'faultInjection', 'workerPath', 'signal', 'createWorker']
+    'expectedSha256', 'expectedIdentity', 'faultInjection', 'workerPath', 'signal', 'createWorker']
   if (Object.keys(input).some((key) => !fields.includes(key))) {
     throw createFailure('ARCHIVE_REHYDRATE_REQUEST_INVALID')
   }
@@ -128,6 +128,15 @@ function normalizeRequest(input) {
   }
   if (!path.isAbsolute(input.databasePath) || path.resolve(input.databasePath) !== input.databasePath
     || !path.isAbsolute(input.snapshotPath) || path.resolve(input.snapshotPath) !== input.snapshotPath) {
+    throw createFailure('ARCHIVE_REHYDRATE_REQUEST_INVALID')
+  }
+  if (!/^[0-9a-f]{64}$/u.test(input.expectedSha256 ?? '')
+    || input.expectedIdentity === null || typeof input.expectedIdentity !== 'object'
+    || Array.isArray(input.expectedIdentity)
+    || Object.keys(input.expectedIdentity).sort().join(',') !== 'dev,ino,sizeBytes'
+    || !Number.isSafeInteger(input.expectedIdentity.dev) || input.expectedIdentity.dev < 0
+    || !Number.isSafeInteger(input.expectedIdentity.ino) || input.expectedIdentity.ino < 1
+    || !Number.isSafeInteger(input.expectedIdentity.sizeBytes) || input.expectedIdentity.sizeBytes < 1) {
     throw createFailure('ARCHIVE_REHYDRATE_REQUEST_INVALID')
   }
   if (typeof input.attachmentDirectory !== 'string'
@@ -172,6 +181,8 @@ function normalizeRequest(input) {
     finalizedEpoch: input.finalizedEpoch,
     adminName: input.adminName,
     reason: input.reason,
+    expectedSha256: input.expectedSha256,
+    expectedIdentity: Object.freeze({ ...input.expectedIdentity }),
     attachmentDirectory: input.attachmentDirectory,
     attachmentMappings: Object.freeze(input.attachmentMappings.map((entry) => Object.freeze({ ...entry }))),
     faultInjection: input.faultInjection && typeof input.faultInjection === 'object'

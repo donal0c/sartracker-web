@@ -1363,6 +1363,8 @@ function createArchiveReviewSessionManager(options) {
           snapshotPath: snapshot.snapshotPath,
           attachmentDirectory: snapshot.attachmentDirectory,
           attachmentMappings: snapshot.attachmentMappings,
+          databaseIdentity: snapshot.databaseIdentity,
+          databaseSha256: snapshot.databaseSha256,
           sessionId: input.sessionId,
           operationId: input.operationId,
         })

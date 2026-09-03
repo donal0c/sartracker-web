@@ -14,6 +14,7 @@ const {
   readonly createIngestAnomalyOutbox: (options: {
     readonly directoryPath: string
     readonly projectEnvelope: (envelope: RejectionEnvelope) => void | Promise<void>
+    readonly assertMissionMutationAllowed?: (missionId: string) => void | Promise<void>
     readonly platform?: NodeJS.Platform
     readonly faultInjection?: {
       readonly failStage?: boolean
@@ -430,6 +431,67 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
       ),
     ) as { readonly rendererEvidenceContexts?: Record<string, unknown> }
     expect(marker.rendererEvidenceContexts).toEqual({})
+  })
+
+  it('rechecks mutation permission after async setup before resolving renderer evidence [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    let phase: 'stage' | 'resolve' = 'stage'
+    let resolveChecks = 0
+    const recoveryError = Object.assign(new Error('custody recovery required'), {
+      code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+    })
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+      assertMissionMutationAllowed: () => {
+        if (phase === 'resolve') {
+          resolveChecks += 1
+          if (resolveChecks > 1) throw recoveryError
+        }
+      },
+    })
+    await outbox.stageRendererEvidenceUncertainty(
+      'mission-1',
+      'request-race-check',
+      'finished_unfinalized_mission',
+    )
+    phase = 'resolve'
+    await expect(outbox.resolveRendererEvidenceUncertainty(
+      'mission-1',
+      'request-race-check',
+      'drained',
+    )).rejects.toMatchObject({
+      code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+    })
+    await expect(outbox.health('mission-1')).resolves.toMatchObject({
+      lastFailure: 'renderer_evidence_pending',
+    })
+  })
+
+  it('does not downgrade a recovery race during envelope staging into storage degradation [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    let checks = 0
+    const recoveryError = Object.assign(new Error('custody recovery required'), {
+      code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+    })
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+      assertMissionMutationAllowed: () => {
+        checks += 1
+        if (checks > 1) throw recoveryError
+      },
+    })
+
+    await expect(outbox.deliver(createEnvelope('recovery-race'))).rejects.toMatchObject({
+      code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+    })
+    expect(checks).toBe(2)
+    await expect(readdir(directoryPath)).resolves.not.toContain('recovery-race.json')
+    await expect(outbox.health('mission-1')).resolves.toMatchObject({
+      pendingCount: 0,
+      lastFailure: null,
+    })
   })
 
   it('promotes unresolved renderer uncertainty to permanent loss exactly once after restart [DON-276]', async () => {

@@ -786,6 +786,8 @@ function registerMissionArchiveIpcHandlers(input) {
         archive_id: snapshot.archiveId,
         operation_id: operationId,
         snapshot_path: snapshot.snapshotPath,
+        snapshot_database_identity: snapshot.databaseIdentity,
+        snapshot_database_sha256: snapshot.databaseSha256,
         ...(snapshot.attachmentDirectory === undefined
           ? {}
           : { attachment_directory: snapshot.attachmentDirectory }),

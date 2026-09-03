@@ -333,6 +333,8 @@ async function run() {
       missionId: workerData.missionId,
       archiveId: workerData.archiveId,
       schemaVersion: 13,
+      expectedSha256: workerData.expectedSha256,
+      expectedIdentity: workerData.expectedIdentity,
       onRestored: () => {
         rewriteAttachmentReferences(database, workerData.missionId, attachmentCustody.references)
         const operational = database.prepare(

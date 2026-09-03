@@ -125,6 +125,7 @@ function createIngestAnomalyOutbox(options) {
           await persistFailure(envelope.missionId, 'outbox_capacity_exhausted')
           throw new Error('Durable outbox capacity is exhausted; evidence was not acknowledged.')
         }
+        await assertMissionMutationAllowed(envelope.missionId)
         try {
           await writeFileDurably(filePath, serialized.text, { platform })
         } catch (error) {
@@ -178,8 +179,9 @@ function createIngestAnomalyOutbox(options) {
         throw new Error('Ingest evidence-loss reason is invalid.')
       }
       validateMissionScope(missionId)
+      await assertMissionMutationAllowed(missionId)
       const scope = failureScope(missionId)
-      await sealEvidenceLoss(scope, reason)
+      await sealEvidenceLoss(scope, missionId, reason)
     })
   }
 
@@ -207,6 +209,9 @@ function createIngestAnomalyOutbox(options) {
       }
       await fs.mkdir(options.directoryPath, { recursive: true })
       const incident = { incidentKey, scopes: combinedScopes }
+      for (const scopeEntry of combinedScopes) {
+        await assertMissionMutationAllowed(scopeEntry.missionId)
+      }
       await persistRendererEvidenceIncident(incident)
       rendererEvidenceIncidentsByKey.set(incidentKey, incident)
       let stagedCount = 0
@@ -220,6 +225,7 @@ function createIngestAnomalyOutbox(options) {
           incidentKey,
           scopeReason: scopeEntry.scopeReason,
         })
+        await assertMissionMutationAllowed(scopeEntry.missionId)
         await persistFailureScope(scopeEntry.scope)
         stagedCount += 1
         if (
@@ -264,6 +270,7 @@ function createIngestAnomalyOutbox(options) {
       if (context === undefined || context.incidentKey !== incidentKey) {
         throw new Error('Renderer evidence-drain uncertainty does not match the pending incident.')
       }
+      await assertMissionMutationAllowed(missionId)
       await resolveRendererEvidenceIncidentScopes(incidentKey, [scope], outcome)
     })
   }
@@ -513,9 +520,13 @@ function createIngestAnomalyOutbox(options) {
     const resolving = incident.scopes.filter((entry) => selected.has(entry.scope))
     const remaining = incident.scopes.filter((entry) => !selected.has(entry.scope))
     if (outcome === 'drained') {
+      for (const scopeEntry of resolving) {
+        await assertMissionMutationAllowed(scopeEntry.missionId)
+      }
       await replaceRendererEvidenceIncident(incidentKey, remaining)
     }
     for (const scopeEntry of resolving) {
+      await assertMissionMutationAllowed(scopeEntry.missionId)
       removeRendererEvidencePendingInMemory(scopeEntry.scope)
       if (outcome === 'lost') {
         if (!failuresByScope.get(scopeEntry.scope)?.has('renderer_pending_evidence_lost')) {
@@ -526,9 +537,13 @@ function createIngestAnomalyOutbox(options) {
           )
         }
       }
+      await assertMissionMutationAllowed(scopeEntry.missionId)
       await persistFailureScope(scopeEntry.scope)
     }
     if (outcome === 'lost') {
+      for (const scopeEntry of resolving) {
+        await assertMissionMutationAllowed(scopeEntry.missionId)
+      }
       await replaceRendererEvidenceIncident(incidentKey, remaining)
     }
     return resolving
@@ -754,7 +769,8 @@ function createIngestAnomalyOutbox(options) {
   }
 
   /** Converts one confirmed renderer incident into a sticky loss generation. */
-  async function sealEvidenceLoss(scope, reason) {
+  async function sealEvidenceLoss(scope, missionId, reason) {
+    await assertMissionMutationAllowed(missionId)
     lossGenerationByScope.set(scope, (lossGenerationByScope.get(scope) ?? 0) + 1)
     addFailure(scope, reason)
     await fs.mkdir(options.directoryPath, { recursive: true })

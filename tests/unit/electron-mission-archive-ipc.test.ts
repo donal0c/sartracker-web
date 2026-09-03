@@ -190,6 +190,8 @@ describe('mission archive IPC containment [DON-248]', () => {
       missionId: 'mission-1',
       archiveId: 'archive-1',
       snapshotPath,
+      databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
+      databaseSha256: 'a'.repeat(64),
     }))
     const { handlers, missionStore } = createMainHarness({
       archiveReviewSessionManager: {
@@ -220,6 +222,8 @@ describe('mission archive IPC containment [DON-248]', () => {
       archive_id: 'archive-1',
       operation_id: OPERATION_ID,
       snapshot_path: snapshotPath,
+      snapshot_database_identity: { dev: 1, ino: 1, sizeBytes: 1 },
+      snapshot_database_sha256: 'a'.repeat(64),
       admin_name: 'Duty Admin',
       reason: 'Correct a recorded clue.',
       signal: expect.any(AbortSignal),
@@ -235,6 +239,8 @@ describe('mission archive IPC containment [DON-248]', () => {
       missionId: 'mission-1',
       archiveId: 'archive-1',
       snapshotPath: '/safe/correction/mission-store.sqlite',
+      databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
+      databaseSha256: 'a'.repeat(64),
     }))
     const { handlers, missionStore } = createMainHarness({
       archiveReviewSessionManager: {
@@ -273,6 +279,8 @@ describe('mission archive IPC containment [DON-248]', () => {
       missionId: 'mission-1',
       archiveId: 'archive-1',
       snapshotPath,
+      databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
+      databaseSha256: 'a'.repeat(64),
     }))
     try {
       const { handlers } = createMainHarness({

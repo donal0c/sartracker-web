@@ -2,6 +2,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { createHash } = require('node:crypto')
 
 const Database = require('better-sqlite3')
 const { listArchiveInventoryForSchema } = require('./archive-inventory.cjs')
@@ -18,6 +19,7 @@ const SKIPPED_TABLES = new Set([
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 const SHA256 = /^[0-9a-f]{64}$/u
+const SNAPSHOT_IDENTITY_KEYS = ['dev', 'ino', 'sizeBytes']
 
 /** Stable archive rehydration failure with no reflected path or mission data. */
 class ArchiveRehydrateError extends Error {
@@ -66,6 +68,77 @@ function normalizeSnapshotPath(value) {
     )
   }
   return value
+}
+
+/** Validates the worker-pinned identity and digest required for correction restore. */
+function normalizeExpectedSnapshotProof(identity, sha256) {
+  if (identity === null || typeof identity !== 'object' || Array.isArray(identity)
+    || Object.keys(identity).sort().join(',') !== SNAPSHOT_IDENTITY_KEYS.join(',')
+    || !Number.isSafeInteger(identity.dev) || identity.dev < 0
+    || !Number.isSafeInteger(identity.ino) || identity.ino < 1
+    || !Number.isSafeInteger(identity.sizeBytes) || identity.sizeBytes < 1
+    || !SHA256.test(sha256 ?? '')) {
+    throw new ArchiveRehydrateError(
+      'ARCHIVE_REHYDRATE_REQUEST_INVALID',
+      'Archive correction snapshot proof is invalid.',
+    )
+  }
+  return Object.freeze({
+    identity: Object.freeze({
+      dev: identity.dev,
+      ino: identity.ino,
+      sizeBytes: identity.sizeBytes,
+    }),
+    sha256,
+  })
+}
+
+/** Re-authenticates one private snapshot file immediately before SQLite opens it. */
+function assertSnapshotProof(snapshotPath, proof) {
+  let handle
+  try {
+    handle = fs.openSync(snapshotPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0))
+    const stat = fs.fstatSync(handle)
+    if (!stat.isFile() || stat.nlink !== 1
+      || stat.dev !== proof.identity.dev
+      || stat.ino !== proof.identity.ino
+      || stat.size !== proof.identity.sizeBytes) {
+      throw new ArchiveRehydrateError(
+        'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
+        'The verified archive correction snapshot changed before restore.',
+      )
+    }
+    const hash = createHash('sha256')
+    const chunk = Buffer.allocUnsafe(1024 * 1024)
+    let offset = 0
+    while (offset < stat.size) {
+      const bytesRead = fs.readSync(handle, chunk, 0, Math.min(chunk.length, stat.size - offset), offset)
+      if (bytesRead < 1) {
+        throw new ArchiveRehydrateError(
+          'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
+          'The verified archive correction snapshot ended before its pinned size.',
+        )
+      }
+      hash.update(chunk.subarray(0, bytesRead))
+      offset += bytesRead
+    }
+    if (hash.digest('hex') !== proof.sha256) {
+      throw new ArchiveRehydrateError(
+        'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
+        'The verified archive correction snapshot digest changed before restore.',
+      )
+    }
+  } catch (error) {
+    if (error instanceof ArchiveRehydrateError) throw error
+    throw new ArchiveRehydrateError(
+      'ARCHIVE_REHYDRATE_SNAPSHOT_UNAVAILABLE',
+      'The verified archive correction snapshot is unavailable.',
+    )
+  } finally {
+    if (handle !== undefined) {
+      try { fs.closeSync(handle) } catch {}
+    }
+  }
 }
 
 /** Reads columns from one attached snapshot table. */
@@ -219,6 +292,11 @@ function rehydrateMissionFromSnapshot(input) {
     )
   }
   const snapshotPath = normalizeSnapshotPath(input.snapshotPath)
+  const snapshotProof = normalizeExpectedSnapshotProof(
+    input.expectedIdentity,
+    input.expectedSha256,
+  )
+  assertSnapshotProof(snapshotPath, snapshotProof)
   const schemaVersion = input.schemaVersion
   if (!Number.isSafeInteger(schemaVersion) || schemaVersion < 1) {
     throw new ArchiveRehydrateError(
@@ -278,6 +356,9 @@ function rehydrateMissionFromSnapshot(input) {
     snapshot?.close()
   }
 
+  // Recheck after all metadata/inventory reads and immediately before ATTACH;
+  // a staged same-size mutation or path substitution must never be restored.
+  assertSnapshotProof(snapshotPath, snapshotProof)
   database.prepare('ATTACH DATABASE ? AS correction_snapshot').run(snapshotPath)
   try {
     const inventory = listArchiveInventoryForSchema(schemaVersion)

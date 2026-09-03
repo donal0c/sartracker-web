@@ -2890,6 +2890,8 @@ function createElectronMissionStore(options) {
             const operation = archiveCorrectionRunner({
               databasePath,
               snapshotPath: rehydrationInput.snapshotPath,
+              expectedSha256: rehydrationInput.expectedSha256,
+              expectedIdentity: rehydrationInput.expectedIdentity,
               missionId: rehydrationInput.missionId,
               archiveId: rehydrationInput.archiveId,
               operationId: rehydrationInput.operationId,
@@ -7197,6 +7199,8 @@ async function unlockFinalizedMission(
       archiveId: input.archive_id,
       operationId,
       snapshotPath: input.snapshot_path,
+      expectedSha256: input.snapshot_database_sha256,
+      expectedIdentity: input.snapshot_database_identity,
       attachmentDirectory: input.attachment_directory
         ?? path.join(path.dirname(input.snapshot_path), 'attachments'),
       attachmentMappings: input.attachment_mappings ?? [],

@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -33,6 +33,19 @@ const { rehydrateMissionFromSnapshot } = require('../../electron/archive-rehydra
 }
 
 const temporaryDirectories = new Set<string>()
+
+/** Returns the authenticated proof carried with one correction snapshot path. */
+function snapshotProof(snapshotPath: string) {
+  const identity = statSync(snapshotPath)
+  return {
+    snapshot_database_sha256: createHash('sha256').update(readFileSync(snapshotPath)).digest('hex'),
+    snapshot_database_identity: {
+      dev: identity.dev,
+      ino: identity.ino,
+      sizeBytes: identity.size,
+    },
+  }
+}
 
 afterEach(() => {
   for (const directory of temporaryDirectories) rmSync(directory, { recursive: true, force: true })
@@ -87,10 +100,25 @@ describe('archived mission correction rehydration', () => {
         onProgress: () => undefined,
       })
       expect(await store.getMission(mission.id)).toMatchObject({ storage_state: 'archived' })
+      const authenticatedProof = snapshotProof(snapshotPath)
+      const substituted = readFileSync(snapshotPath)
+      substituted[substituted.length - 1] ^= 0x01
+      writeFileSync(snapshotPath, substituted)
       await expect(store.unlockFinalizedMission({
         mission_id: mission.id,
         archive_id: archiveId,
         snapshot_path: snapshotPath,
+        snapshot_database_sha256: authenticatedProof.snapshot_database_sha256,
+        snapshot_database_identity: authenticatedProof.snapshot_database_identity,
+        admin_name: 'Duty Admin',
+        reason: 'Reject a substituted correction snapshot.',
+      })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID' })
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: archiveId,
+        snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
         admin_name: 'Duty Admin',
         reason: 'Restore this archived mission for a recorded correction.',
       })).rejects.toThrow(/failed safely/iu)
@@ -108,6 +136,7 @@ describe('archived mission correction rehydration', () => {
         mission_id: mission.id,
         archive_id: archiveId,
         snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
         admin_name: 'Duty Admin',
         reason: 'Restore this archived mission for a recorded correction.',
       })).resolves.toMatchObject({ status: 'finished', storage_state: 'live' })
@@ -173,9 +202,12 @@ describe('archived mission correction rehydration', () => {
       })
       const liveDb = new Database(path.join(userDataPath, 'mission-store.sqlite'))
       try {
+        const proof = snapshotProof(snapshotPath)
         expect(() => rehydrateMissionFromSnapshot({
           db: liveDb,
           snapshotPath,
+          expectedSha256: proof.snapshot_database_sha256,
+          expectedIdentity: proof.snapshot_database_identity,
           missionId: mission.id,
           archiveId,
           schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -229,6 +261,7 @@ describe('archived mission correction rehydration', () => {
         reviewActivity: false,
         onProgress: () => undefined,
       })
+      const proof = snapshotProof(snapshotPath)
       const snapshotDb = new Database(snapshotPath)
       try {
         snapshotDb.exec('DROP TABLE markers')
@@ -240,6 +273,8 @@ describe('archived mission correction rehydration', () => {
         expect(() => rehydrateMissionFromSnapshot({
           db: liveDb,
           snapshotPath,
+          expectedSha256: proof.snapshot_database_sha256,
+          expectedIdentity: proof.snapshot_database_identity,
           missionId: mission.id,
           archiveId,
           schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -294,6 +329,7 @@ describe('archived mission correction rehydration', () => {
         mission_id: mission.id,
         archive_id: archiveId,
         snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
         admin_name: 'Duty Admin',
         reason: 'Retain a durable recovery blocker after cleanup failure.',
       }
@@ -436,6 +472,7 @@ describe('archived mission correction rehydration', () => {
         mission_id: mission.id,
         archive_id: archiveId,
         snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
         attachment_directory: stagedAttachmentDirectory,
         attachment_mappings: [mapping],
         admin_name: 'Duty Admin',
@@ -520,6 +557,7 @@ describe('archived mission correction rehydration', () => {
         mission_id: mission.id,
         archive_id: archiveId,
         snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
         attachment_directory: stagedAttachmentDirectory,
         attachment_mappings: [mapping],
         admin_name: 'Duty Admin',
@@ -533,6 +571,7 @@ describe('archived mission correction rehydration', () => {
         mission_id: mission.id,
         archive_id: archiveId,
         snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
         attachment_directory: stagedAttachmentDirectory,
         attachment_mappings: [mapping],
         admin_name: 'Duty Admin',
