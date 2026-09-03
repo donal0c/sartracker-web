@@ -4,27 +4,23 @@
 
 ## Current State
 
-- **PR6 source candidate is `561ffcb96960ba3bd62dcede1c616b74a79b22a7` /
-  tree `afbd3b3940d9908edea9d661c24078e471bf63a1` (2026-09-03):** correction
-  admission uses bounded, cancellable busy handling; archive review carries
-  finalized status/history into the sealed snapshot; registry-free snapshots
-  rehydrate safely; interrupted cleanup has a bounded Resume route; correction
-  worker completion requires a successful exit; custody fencing only persists
-  when journal residue exists; correction close auditing, evidence reopening,
-  truthful custody recovery, durable correction authorization outside the
-  bounded audit page, browser verifier persistence/current-predecessor
-  enforcement, supplement provenance, and mutable recovery-code handling across
-  archive workers, main-loop-safe cleanup workers, qualification-safe run
-  identities, and cancelled-cleanup physical-exit fencing are covered by
-  red-first tests. Focused remediation checks are `77/77` green; the full
-  serial unit gate is `369/369` files and `3,527/3,527` tests; TypeScript, lint,
-  Node syntax and diff checks are green. The packaged macOS smoke, local
-  SIGKILL matrix, Chromium `170/173`, and visual Playwright `57/62` runs are
-  b30 prior-head evidence (each retains only the known pre-existing DON-275
-  coverage failures) and are not promoted automatically. Ubuntu >2 GiB and
-  exact-head Linux are running against 561; final-head package/browser/visual
-  reruns, visual review and the remaining exact-head review/recheck wave are
-  pending.
+- **PR6 reviewed executable head is `6c26a1746bf5ee97648285eab680f6deff7e14ae` /
+  tree `b6678f7b8fd6d333ada58b60b48057e94783bcd1` (2026-09-03):** cleanup
+  failures now carry bounded sanitized substage/table-cursor/cause/worker-exit
+  attribution through coordinator, worker and runner into qualification
+  receipts; attached cleanup diagnostics take precedence over a colliding raw
+  `SQLITE_BUSY`; and stage markers are assigned before the select/delete/
+  journal/completion/custody operations they describe. The qualification probe
+  separates a pure 50 ms event-loop heartbeat from current-position publication
+  latency and uses a 5 s production-like cadence. Fresh broad, concurrency/
+  renderer, persistence/completeness and narrow crypto reviews are clean; the
+  fresh affected review checks are `153/153`, `447`, `131/131`, and `114/114`.
+  The full serial unit gate is `369/369` files and `3,530/3,530` tests; lint,
+  TypeScript, Node syntax and diff checks are green. Browser/visual/package and
+  Linux results from 3d5 are prior-head evidence only. The superseded Ubuntu
+  run was stopped before evidence completion; one final >2 GiB qualification
+  and final exact-head package/browser/visual/Linux proof remain after the
+  documentation binding. Pre-merge proof is not release or field acceptance.
 
 - **Carry-forward proof snapshot:** earlier Chromium `172/172`, visual
   Playwright `62/62`, uncached visual review `74 pass / 0 fail / 0 error`, Linux

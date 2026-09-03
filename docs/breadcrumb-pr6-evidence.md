@@ -6,8 +6,8 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
-> Current source candidate: `561ffcb96960ba3bd62dcede1c616b74a79b22a7`
-> / tree `afbd3b3940d9908edea9d661c24078e471bf63a1`. It carries the
+> Current source candidate: `6c26a1746bf5ee97648285eab680f6deff7e14ae`
+> / tree `b6678f7b8fd6d333ada58b60b48057e94783bcd1`. It carries the
 > archive-backed correction snapshot inventory fix, completion-to-exit worker
 > race fix, attachment-residue-gated recovery fence, explicit correction close
 > audit, truthful custody recovery state, correction evidence reopening after
@@ -17,16 +17,19 @@ is intermediate. Donal retains approval and merge authority.
 > current-predecessor enforcement / supplement provenance, mutable recovery-code
 > normalization across archive workers, main-loop-safe cleanup workers,
 > qualification-safe run identities, and cancelled-cleanup physical-exit
-> fencing. Focused remediation checks are `77/77` green, the full serial unit
-> gate is `369/369` files and `3,527/3,527` tests, and lint, TypeScript, Node
+> fencing. Focused remediation checks are `176/176` green, the full serial unit
+> gate is `369/369` files and `3,530/3,530` tests, and lint, TypeScript, Node
 > syntax and diff checks are green. The packaged macOS smoke, local 32-case
 > SIGKILL matrix, Chromium `170/173` run (three known pre-existing DON-275
 > coverage failures), and visual Playwright `57/62` run (five known
-> pre-existing DON-275 coverage failures) are b30 prior-head evidence and are
-> not promoted automatically. The >2 GiB Ubuntu qualification and exact-head
-> Linux workflow are running against 561; final-head package/browser/visual
-> reruns, visual review and the remaining exact-head review/recheck wave are
-> pending. PR6 remains pre-merge; Donal retains approval and merge authority.
+> pre-existing DON-275 coverage failures) are exact remediation-head browser
+> evidence from the preceding executable head. The uncached visual review is
+> `67/67` PASS, and the exact-head Linux workflow `33803457910` is green with
+> clean source binding for 3d5. Fresh broad, concurrency/renderer, persistence,
+> and narrow crypto reviews at 6c26 are clean; the prior Ubuntu run was stopped
+> after its source head was superseded and is not promoted. The final docs-only
+> binding and one final >2 GiB qualification remain pending.
+> PR6 remains pre-merge; Donal retains approval and merge authority.
 
 ## 2026-09-03 cancelled-cleanup fence remediation
 
@@ -971,6 +974,36 @@ tracking soak `bac7067dd8aff03d668ac18e49fb97acdf7fe4e6a11bdb9f81f212fda78f7c0a`
 and packaged lifecycle `a64281ce06e0255a3976543ed3ffda13a5af24b1d59340762a4a9f22de458229`.
 This is exact code-head CI/package evidence; a final docs-only descendant still
 requires its own workflow binding.
+
+### Cleanup and qualification remediation (2026-09-03)
+
+The reviewed executable remediation head is `6c26a1746bf5ee97648285eab680f6deff7e14ae`
+with tree `b6678f7b8fd6d333ada58b60b48057e94783bcd1`. Cleanup failures now carry
+a bounded, sanitized substage/table-cursor/cause/worker-exit diagnostic from
+the coordinator through its worker and runner into a non-secret qualification
+receipt, and `ARCHIVE_CLEANUP_FAILED` is classified as a cleanup-gate failure.
+The qualifier measures a pure 50 ms event-loop heartbeat separately from
+current-position publication latency, does not count ordinary poll spacing as
+a stall, and uses the production 5 s current-publication interval with one
+bounded publication at each lifecycle phase transition. The 3,530-test serial
+unit gate, focused lifecycle/cleanup/qualification tests, lint, TypeScript,
+syntax checks, and packaged macOS archive-lifecycle smoke are green locally;
+the package report SHA-256 is
+`b75824cbce71ffe962ee1a0101d829594cd9eaca29a8b529a5f22f972cd39b2a`. The
+cleanup classifier now gives an attached cleanup diagnostic precedence over a
+colliding raw `SQLITE_BUSY` code, and stage markers are assigned before the
+select/delete/journal/completion/custody operations they describe. The fresh
+post-remediation reviews are clean: broad `885/885`, concurrency/renderer
+`447` focused tests, persistence `131/131`, and narrow crypto `114/114`.
+
+The rebooted Ubuntu reference host was rechecked immediately before the
+superseded 3d5 run (about 32 GiB RAM and 129 GiB free at launch), but that
+temporary run was stopped after the 6c26 P2 remediation changed the executable
+head; its partial staging bytes are retained as prior-head diagnostics only.
+The final qualification must use the same written hypothesis against 6c26 after
+the documentation binding is committed, with the worker attribution, pure
+heartbeat, production-like current cadence, bounded durable writes, and the
+unchanged 200 ms gate all source-bound to that final candidate.
 
 ## Independent review gate
 
