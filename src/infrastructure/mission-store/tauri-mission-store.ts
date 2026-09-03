@@ -809,12 +809,20 @@ export type UnlockFinalizedMissionInput = {
 }
 
 export type RestoreMissionForCorrectionInput = {
-  readonly missionId: string
+  readonly mission_id: string
   readonly archiveId: string
   readonly operationId: string
   readonly sessionId: string
   readonly admin_name: string
   readonly reason: string
+}
+
+export type RestoreMissionForCorrectionResult = Mission & {
+  readonly correction?: {
+    readonly committed: boolean
+    readonly cleanupComplete: boolean
+    readonly failureCode?: string
+  }
 }
 
 export type MissionEvent = {
@@ -1273,7 +1281,7 @@ export type MissionStore = {
   /** Restores one verified archived snapshot into a new live correction epoch. */
   readonly restoreMissionForCorrection?: (
     input: RestoreMissionForCorrectionInput,
-  ) => Promise<Mission>
+  ) => Promise<RestoreMissionForCorrectionResult>
 }
 
 export function createTauriMissionStore(): MissionStore {

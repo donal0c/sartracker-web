@@ -1095,13 +1095,27 @@ function createElectronMissionStore(options) {
       error.code = 'ARCHIVE_REHYDRATE_LIVE_ACTIVITY'
       throw error
     }
-    const admission = Object.freeze({ released: false })
+    const admission = {
+      released: false,
+      cancel: null,
+      workerExited: Promise.resolve(),
+    }
     archiveCorrectionAdmission = admission
     return admission
   }
 
   /** Releases the exact correction admission after its worker has physically exited. */
   const releaseArchiveCorrectionAdmission = (admission) => {
+    admission.released = true
+    if (archiveCorrectionAdmission === admission) archiveCorrectionAdmission = null
+  }
+
+  /** Cancels and joins archive correction before a new operational mission can start. */
+  const preemptArchiveCorrectionForOperationalStart = async () => {
+    const admission = archiveCorrectionAdmission
+    if (admission === null) return
+    try { admission.cancel?.() } catch {}
+    await Promise.resolve(admission.workerExited).catch(() => undefined)
     if (archiveCorrectionAdmission === admission) archiveCorrectionAdmission = null
   }
   let archiveFamilyTail = Promise.resolve()
@@ -1885,6 +1899,7 @@ function createElectronMissionStore(options) {
       return true
     },
     createMission: async (input) => {
+      await preemptArchiveCorrectionForOperationalStart()
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.startMission({ startedAt: mission.start_time }),
@@ -2795,7 +2810,7 @@ function createElectronMissionStore(options) {
         const admission = acquireArchiveCorrectionAdmission()
         try {
           try {
-            return await awaitArchiveWorker(archiveCorrectionRunner({
+            const operation = archiveCorrectionRunner({
               databasePath,
               snapshotPath: rehydrationInput.snapshotPath,
               missionId: rehydrationInput.missionId,
@@ -2807,7 +2822,12 @@ function createElectronMissionStore(options) {
               attachmentDirectory: rehydrationInput.attachmentDirectory,
               attachmentMappings: rehydrationInput.attachmentMappings,
               faultInjection: archiveCorrectionFaultInjection,
-            }))
+            })
+            admission.cancel = typeof operation?.cancel === 'function'
+              ? operation.cancel
+              : null
+            admission.workerExited = Promise.resolve(operation?.workerExited ?? operation)
+            return await awaitArchiveWorker(operation)
           } catch (error) {
             if (isCommittedArchiveCorrection(db, rehydrationInput.missionId, rehydrationInput.archiveId)) {
               return getMission(db, rehydrationInput.missionId)

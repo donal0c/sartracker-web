@@ -20,6 +20,30 @@ if (isMainThread || parentPort === null) {
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const SHA256 = /^[0-9a-f]{64}$/u
 
+/** Returns a stable invalid-mapping failure before any custody journal is published. */
+function invalidAttachmentMappingError() {
+  const error = new Error('Archive correction attachment mapping is invalid.')
+  error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
+  return error
+}
+
+/** Validates one archive-authenticated attachment mapping before filesystem work. */
+function isValidAttachmentMapping(mapping) {
+  return mapping !== null && typeof mapping === 'object' && !Array.isArray(mapping)
+    && typeof mapping.entryName === 'string'
+    && mapping.entryName.startsWith('attachments/') === true
+    && path.posix.dirname(mapping.entryName) === 'attachments'
+    && mapping.entryName.split('/').length === 2
+    && typeof mapping.sourceRelativePath === 'string'
+    && path.basename(mapping.sourceRelativePath) === mapping.sourceRelativePath
+    && ['.', '..'].includes(mapping.sourceRelativePath) === false
+    && mapping.sourceRelativePath.length > 0
+    && SHA256.test(mapping.sha256 ?? '')
+    && Number.isSafeInteger(mapping.sizeBytes)
+    && mapping.sizeBytes >= 1 && mapping.sizeBytes <= MAX_ATTACHMENT_BYTES
+    && Array.isArray(mapping.references)
+}
+
 /** Hashes one bounded attachment file while proving its byte length. */
 async function hashAttachment(filePath) {
   let handle
@@ -139,9 +163,7 @@ async function restoreAttachmentCustody() {
   let journalPath
   try {
     for (const mapping of mappings) {
-      if (mapping === null || typeof mapping !== 'object' || Array.isArray(mapping)
-        || typeof mapping.sourceRelativePath !== 'string'
-        || path.basename(mapping.sourceRelativePath) !== mapping.sourceRelativePath) continue
+      if (!isValidAttachmentMapping(mapping)) throw invalidAttachmentMappingError()
       const targetPath = path.join(targetRoot, mapping.sourceRelativePath)
       const preexisting = await fs.lstat(targetPath).then(() => true).catch((error) => {
         if (error?.code === 'ENOENT') return false
@@ -151,6 +173,8 @@ async function restoreAttachmentCustody() {
         sourceRelativePath: mapping.sourceRelativePath,
         targetPath,
         preexisting,
+        sha256: mapping.sha256,
+        sizeBytes: mapping.sizeBytes,
       }))
     }
     if (journalEntries.length > 0) {
@@ -165,23 +189,7 @@ async function restoreAttachmentCustody() {
     }
     for (const mapping of mappings) {
       throwIfCancelled()
-      if (mapping === null || typeof mapping !== 'object' || Array.isArray(mapping)
-        || typeof mapping.entryName !== 'string'
-        || mapping.entryName.startsWith('attachments/') !== true
-        || path.posix.dirname(mapping.entryName) !== 'attachments'
-        || typeof mapping.sourceRelativePath !== 'string'
-        || path.basename(mapping.sourceRelativePath) !== mapping.sourceRelativePath
-        || ['.', '..'].includes(mapping.sourceRelativePath)
-        || mapping.entryName.split('/').length !== 2
-        || mapping.sourceRelativePath.length < 1
-        || !SHA256.test(mapping.sha256 ?? '')
-        || !Number.isSafeInteger(mapping.sizeBytes)
-        || mapping.sizeBytes < 1 || mapping.sizeBytes > MAX_ATTACHMENT_BYTES
-        || !Array.isArray(mapping.references)) {
-        const error = new Error('Archive correction attachment mapping is invalid.')
-        error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-        throw error
-      }
+      if (!isValidAttachmentMapping(mapping)) throw invalidAttachmentMappingError()
       const sourcePath = path.join(sourceRoot, mapping.entryName.slice('attachments/'.length))
       if (path.dirname(sourcePath) !== sourceRoot) {
         const error = new Error('Archive correction attachment source escaped its staging directory.')
@@ -249,6 +257,9 @@ async function restoreAttachmentCustody() {
     return { created, references, journalPath }
   } catch (error) {
     await Promise.all(created.map((filePath) => fs.rm(filePath, { force: true }).catch(() => undefined)))
+    if (journalPath !== undefined) {
+      await removeCorrectionAttachmentJournal(journalPath).catch(() => undefined)
+    }
     throw error
   }
 }

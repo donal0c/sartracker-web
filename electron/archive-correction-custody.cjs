@@ -3,9 +3,12 @@
 const fs = require('node:fs')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
+const { createHash } = require('node:crypto')
 
 const JOURNAL_DIRECTORY_NAME = 'correction-attachment-journals'
-const JOURNAL_NAME = /^[A-Za-z0-9_-]{1,200}\.json$/u
+const JOURNAL_NAME = /^[A-Za-z0-9_-]{1,200}\.json(?:\.tmp)?$/u
+const SHA256 = /^[0-9a-f]{64}$/u
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 /** Returns the app-owned directory containing correction attachment journals. */
 function correctionJournalDirectory(databasePath) {
@@ -55,7 +58,19 @@ function recoverCorrectionAttachmentJournals(input) {
       throw new Error('Correction attachment custody journal directory contains an invalid entry.')
     }
     const journalPath = path.join(directory, name)
-    const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'))
+    if (name.endsWith('.json.tmp')) {
+      // The publish rename happens before any canonical attachment byte is
+      // created, so a leftover temporary record is always incomplete custody.
+      fs.rmSync(journalPath, { force: true })
+      recovered += 1
+      continue
+    }
+    let journal
+    try {
+      journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'))
+    } catch (error) {
+      throw error
+    }
     validateJournal(journal, input.databasePath)
     const mission = input.db.prepare(
       'SELECT status FROM missions WHERE id = ?',
@@ -65,15 +80,19 @@ function recoverCorrectionAttachmentJournals(input) {
     ).get(journal.missionId)
     const committed = mission?.status === 'finished'
       && (cleanup === undefined || ['eligible', 'completed'].includes(cleanup.state))
-    if (committed && !fs.existsSync(journal.targetRoot)) {
-      fs.rmSync(journalPath, { force: true })
-      recovered += 1
-      continue
+    if (!fs.existsSync(journal.targetRoot)) {
+      throw new Error(committed
+        ? 'Committed correction attachment custody is missing its canonical root.'
+        : 'Correction attachment custody root disappeared before recovery.')
     }
-    if (!committed) {
-      if (!fs.existsSync(journal.targetRoot)) {
-        throw new Error('Correction attachment custody root disappeared before recovery.')
+    if (committed) {
+      for (const entry of journal.entries) {
+        const proof = digestAttachment(entry.targetPath)
+        if (proof.sizeBytes !== entry.sizeBytes || proof.sha256 !== entry.sha256) {
+          throw new Error('Committed correction attachment custody does not match its journaled bytes.')
+        }
       }
+    } else {
       for (const entry of journal.entries) {
         if (entry.preexisting === false) fs.rmSync(entry.targetPath, { force: true })
         const prefix = `.${entry.sourceRelativePath}.restore-`
@@ -111,9 +130,46 @@ function validateJournal(value, databasePath) {
       || typeof entry.sourceRelativePath !== 'string'
       || path.basename(entry.sourceRelativePath) !== entry.sourceRelativePath
       || ['.', '..'].includes(entry.sourceRelativePath)
-      || typeof entry.preexisting !== 'boolean') {
+      || typeof entry.preexisting !== 'boolean'
+      || !Number.isSafeInteger(entry.sizeBytes)
+      || entry.sizeBytes < 1 || entry.sizeBytes > MAX_ATTACHMENT_BYTES
+      || !SHA256.test(entry.sha256 ?? '')) {
       throw new Error('Correction attachment custody journal entry is invalid.')
     }
+  }
+}
+
+/** Hashes one canonical attachment through a bounded descriptor for recovery proof. */
+function digestAttachment(filePath) {
+  let descriptor
+  try {
+    descriptor = fs.openSync(
+      filePath,
+      fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
+    )
+    const identity = fs.fstatSync(descriptor)
+    if (!identity.isFile() || identity.nlink !== 1
+      || identity.size < 1 || identity.size > MAX_ATTACHMENT_BYTES) {
+      throw new Error('Correction attachment custody target is not a bounded regular file.')
+    }
+    const hash = createHash('sha256')
+    const chunk = Buffer.allocUnsafe(64 * 1024)
+    let offset = 0
+    while (offset < identity.size) {
+      const read = fs.readSync(
+        descriptor,
+        chunk,
+        0,
+        Math.min(chunk.length, identity.size - offset),
+        offset,
+      )
+      if (read < 1) throw new Error('Correction attachment custody target ended early.')
+      hash.update(chunk.subarray(0, read))
+      offset += read
+    }
+    return { sizeBytes: identity.size, sha256: hash.digest('hex') }
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor)
   }
 }
 

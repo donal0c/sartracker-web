@@ -1,7 +1,8 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -70,6 +71,8 @@ async function createFixture(status: string, cleanupState: string | null) {
       sourceRelativePath: 'field.jpg',
       targetPath: path.join(targetRoot, 'field.jpg'),
       preexisting: false,
+      sizeBytes: Buffer.byteLength('committed'),
+      sha256: createHash('sha256').update('committed').digest('hex'),
     }],
   })
   return { root, databasePath, targetRoot, db, journalPath }
@@ -106,5 +109,30 @@ describe('archive correction attachment custody recovery', () => {
     await expect(readFile(fixture.journalPath)).rejects.toMatchObject({ code: 'ENOENT' })
     fixture.db.close()
   })
-})
 
+  it('retains a committed journal when its canonical attachment root is missing', async () => {
+    const fixture = await createFixture('finished', 'completed')
+    await rm(fixture.targetRoot, { recursive: true, force: true })
+
+    expect(() => recoverCorrectionAttachmentJournals({
+      databasePath: fixture.databasePath,
+      db: fixture.db,
+    })).toThrow(/canonical root/iu)
+    await expect(readFile(fixture.journalPath)).resolves.toBeTruthy()
+    fixture.db.close()
+  })
+
+  it('discards only an incomplete temporary journal publish on restart', async () => {
+    const fixture = await createFixture('finished', 'completed')
+    await writeFile(path.join(fixture.targetRoot, 'field.jpg'), 'committed', { mode: 0o600 })
+    const temporaryJournalPath = `${fixture.journalPath}.tmp`
+    await copyFile(fixture.journalPath, temporaryJournalPath)
+
+    expect(recoverCorrectionAttachmentJournals({
+      databasePath: fixture.databasePath,
+      db: fixture.db,
+    })).toEqual({ recovered: 2 })
+    await expect(readFile(temporaryJournalPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    fixture.db.close()
+  })
+})

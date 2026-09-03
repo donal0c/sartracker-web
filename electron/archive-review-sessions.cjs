@@ -11,6 +11,9 @@ const {
 } = require('./legacy-archive-restore-runner.cjs')
 const { startArchiveReviewSweep } = require('./archive-review-sweep-runner.cjs')
 const {
+  startArchiveCorrectionSnapshot,
+} = require('./archive-correction-snapshot-runner.cjs')
+const {
   ARCHIVE_REVIEW_READ_METHODS,
   normalizeArchiveReviewPublicSession,
 } = require('./archive-review-envelope.cjs')
@@ -22,7 +25,6 @@ const SWEEP_DIRECTORY = /^\.sweep-([0-9a-f-]{36})$/u
 const SWEEP_LINK_A = /^\.sweep-link-a-([0-9a-f-]{36})$/u
 const SWEEP_LINK_B = /^\.sweep-link-b-([0-9a-f-]{36})$/u
 const MAX_PENDING_MUTATION_DENIALS = 128
-const DATABASE_DIGEST_CHUNK_BYTES = 1024 * 1024
 
 /** Stable main-isolate archive review session failure. */
 class ArchiveReviewSessionError extends Error {
@@ -304,50 +306,6 @@ function normalizeDatabaseIdentity(identity) {
     )
   }
   return Object.freeze({ dev: identity.dev, ino: identity.ino, sizeBytes: identity.sizeBytes })
-}
-
-/** Hashes one session database through an inode-pinned descriptor in bounded chunks. */
-function digestSessionDatabase(databasePath, expectedIdentity) {
-  let descriptor
-  try {
-    descriptor = fsSync.openSync(
-      databasePath,
-      fsSync.constants.O_RDONLY | (fsSync.constants.O_NOFOLLOW ?? 0),
-    )
-    const identity = fsSync.fstatSync(descriptor)
-    if (!identity.isFile() || identity.nlink !== 1
-      || identity.dev !== expectedIdentity.dev
-      || identity.ino !== expectedIdentity.ino
-      || identity.size !== expectedIdentity.sizeBytes) {
-      throw new ArchiveReviewSessionError(
-        'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
-        'Archive correction session database changed before its authenticated digest was checked.',
-      )
-    }
-    const hash = require('node:crypto').createHash('sha256')
-    const chunk = Buffer.allocUnsafe(DATABASE_DIGEST_CHUNK_BYTES)
-    let offset = 0
-    while (offset < identity.size) {
-      const read = fsSync.readSync(
-        descriptor,
-        chunk,
-        0,
-        Math.min(chunk.length, identity.size - offset),
-        offset,
-      )
-      if (read < 1) {
-        throw new ArchiveReviewSessionError(
-          'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
-          'Archive correction session database ended before its authenticated digest was complete.',
-        )
-      }
-      hash.update(chunk.subarray(0, read))
-      offset += read
-    }
-    return hash.digest('hex')
-  } finally {
-    if (descriptor !== undefined) fsSync.closeSync(descriptor)
-  }
 }
 
 /** Retains the exact transferable restored database handle from the restore worker. */
@@ -764,6 +722,7 @@ function createArchiveReviewSessionManager(options) {
       archiveDirectoryIdentity,
     ))
   const startReviewSweep = options.startReviewSweep ?? startArchiveReviewSweep
+  const startSnapshot = options.startSnapshot ?? startArchiveCorrectionSnapshot
   const createId = options.randomUUID ?? require('node:crypto').randomUUID
   const now = options.now ?? (() => new Date().toISOString())
   if (typeof registry?.issueReviewTicket !== 'function'
@@ -778,6 +737,7 @@ function createArchiveReviewSessionManager(options) {
     || (recordMutationDenied !== undefined && typeof recordMutationDenied !== 'function')
     || typeof removeSession !== 'function'
     || typeof startReviewSweep !== 'function'
+    || typeof startSnapshot !== 'function'
     || typeof createId !== 'function'
     || typeof now !== 'function') {
     throw new ArchiveReviewSessionError(
@@ -1361,93 +1321,37 @@ function createArchiveReviewSessionManager(options) {
       }
       pendingCorrectionSnapshot = pending
       const setup = (async () => {
+        let snapshotOperation = null
         try {
-          await fs.mkdir(stagingDirectory, { recursive: false, mode: 0o700 })
           if (!SHA256.test(session.internal.databaseSha256 ?? '')) {
             throw new ArchiveReviewSessionError(
               'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
               'Archive correction session is missing its authenticated database digest.',
             )
           }
-          const sourceDigest = digestSessionDatabase(sourcePath, sourceIdentity)
-          if (sourceDigest !== session.internal.databaseSha256) {
-            throw new ArchiveReviewSessionError(
-              'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
-              'Archive correction session database no longer matches its authenticated content.',
-            )
-          }
-        await fs.copyFile(sourcePath, snapshotPath)
-        const copied = fsSync.lstatSync(snapshotPath)
-        if (!copied.isFile() || copied.isSymbolicLink() || copied.nlink !== 1
-          || copied.size !== sourceIdentity.sizeBytes) {
-          throw new ArchiveReviewSessionError(
-            'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
-            'Archive correction snapshot could not be pinned safely.',
-          )
-        }
-        const copiedIdentity = Object.freeze({
-          dev: copied.dev,
-          ino: copied.ino,
-          sizeBytes: copied.size,
+        snapshotOperation = startSnapshot({
+          sourcePath,
+          sourceIdentity,
+          expectedSha256: session.internal.databaseSha256,
+          stagingDirectory,
+          snapshotPath,
+          attachmentDirectory: path.join(stagingDirectory, 'attachments'),
+          attachmentMappings: session.internal.attachmentMappings,
         })
-        const copiedDigest = digestSessionDatabase(snapshotPath, copiedIdentity)
-        const sourceDigestAfterCopy = digestSessionDatabase(sourcePath, sourceIdentity)
-        if (copiedDigest !== session.internal.databaseSha256
-          || sourceDigestAfterCopy !== session.internal.databaseSha256) {
-          throw new ArchiveReviewSessionError(
-            'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
-            'Archive correction snapshot did not retain its authenticated content.',
-          )
-        }
-        const sourceAttachmentsDirectory = path.join(path.dirname(sourcePath), 'attachments')
-        const stagedAttachmentsDirectory = path.join(stagingDirectory, 'attachments')
-        if (session.internal.attachmentMappings.length > 0) {
-          await fs.mkdir(stagedAttachmentsDirectory, { recursive: false, mode: 0o700 })
-          for (const mapping of session.internal.attachmentMappings) {
-            const entryName = mapping.entryName
-            const sourceAttachment = path.join(
-              sourceAttachmentsDirectory,
-              ...entryName.split('/').slice(1),
-            )
-            if (path.dirname(sourceAttachment) !== sourceAttachmentsDirectory) {
-              throw new ArchiveReviewSessionError(
-                'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
-                'Archive correction attachment escaped its authenticated session.',
-              )
-            }
-            const sourceAttachmentStat = fsSync.lstatSync(sourceAttachment)
-            if (!sourceAttachmentStat.isFile() || sourceAttachmentStat.isSymbolicLink()) {
-              throw new ArchiveReviewSessionError(
-                'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
-                'Archive correction attachment is not a pinned regular file.',
-              )
-            }
-            const stagedAttachment = path.join(
-              stagedAttachmentsDirectory,
-              path.basename(entryName),
-            )
-            await fs.copyFile(sourceAttachment, stagedAttachment)
-            const stagedAttachmentStat = fsSync.lstatSync(stagedAttachment)
-            if (!stagedAttachmentStat.isFile() || stagedAttachmentStat.isSymbolicLink()
-              || stagedAttachmentStat.size !== sourceAttachmentStat.size) {
-              throw new ArchiveReviewSessionError(
-                'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
-                'Archive correction attachment could not be pinned safely.',
-              )
-            }
-          }
-        }
+        const snapshot = await snapshotOperation
+        await Promise.resolve(snapshotOperation?.workerExited ?? snapshotOperation)
         pending.ready = true
         return Object.freeze({
           missionId,
           archiveId: input.archiveId,
-          snapshotPath,
-          attachmentDirectory: stagedAttachmentsDirectory,
-          attachmentMappings: session.internal.attachmentMappings,
+          snapshotPath: snapshot.snapshotPath,
+          attachmentDirectory: snapshot.attachmentDirectory,
+          attachmentMappings: snapshot.attachmentMappings,
           sessionId: input.sessionId,
           operationId: input.operationId,
         })
         } catch (error) {
+          await Promise.resolve(snapshotOperation?.workerExited).catch(() => undefined)
           try {
             await fs.rm(stagingDirectory, { recursive: true, force: true })
             if (fsSync.existsSync(stagingDirectory)) {

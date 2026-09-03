@@ -600,14 +600,20 @@ export async function startMissionArchiveReviewRuntime(
     apply({ phase: 'closing', error: null, progress: null })
     let correctionCommitted = false
     try {
-      await dependencies.missionStore.restoreMissionForCorrection({
-        missionId: session.missionId,
+      const restoreResult = await dependencies.missionStore.restoreMissionForCorrection({
+        mission_id: session.missionId,
         archiveId: session.archiveId,
         operationId,
         sessionId: session.sessionId,
         admin_name: input.admin_name.trim(),
         reason: input.reason.trim(),
       })
+      const correctionStatus = restoreResult.correction
+      if (correctionStatus?.committed === true && correctionStatus.cleanupComplete === false) {
+        const cleanupFailure = new Error('Archive correction committed but plaintext cleanup remains unresolved.')
+        Object.defineProperty(cleanupFailure, 'archiveCorrectionCommitted', { value: true })
+        throw cleanupFailure
+      }
       correctionCommitted = true
       // Electron closes the session while taking its correction snapshot; the
       // browser harness may still own it, so both paths are intentionally
@@ -634,6 +640,23 @@ export async function startMissionArchiveReviewRuntime(
       const committedAfterIpc = error !== null && typeof error === 'object'
         && (error as { readonly archiveCorrectionCommitted?: unknown }).archiveCorrectionCommitted === true
       if (correctionCommitted || committedAfterIpc) {
+        let plaintextClosed = false
+        try {
+          plaintextClosed = await dependencies.archiveReview.close({ sessionId: session.sessionId }) === true
+        } catch {
+          plaintextClosed = false
+        }
+        if (!plaintextClosed) {
+          apply({
+            phase: 'error',
+            activeSession: session,
+            activeOperationId: null,
+            activeArchiveId: session.archiveId,
+            recoveryRequired: 'plaintext_cleanup',
+            error: SAFE_CLOSE_FAILURE,
+          })
+          throw new Error(SAFE_CLOSE_FAILURE)
+        }
         apply({
           phase: 'error',
           activeSession: null,

@@ -806,7 +806,20 @@ function registerMissionArchiveIpcHandlers(input) {
           'ARCHIVE_REHYDRATE_CLEANUP_FAILED',
           'Mission archive correction restore completed with unresolved plaintext cleanup.',
         )
-        failure.archiveCorrectionCommitted = result !== null
+        // Electron serializes thrown errors without custom properties. Return
+        // a shape-closed status envelope so the renderer can distinguish a
+        // committed correction from a pre-commit failure across the real IPC
+        // boundary and retain the correct recovery path.
+        if (result !== null) {
+          return Object.freeze({
+            ...projectUnlockedMissionResult(result, missionId),
+            correction: Object.freeze({
+              committed: true,
+              cleanupComplete: false,
+              failureCode: failure.code,
+            }),
+          })
+        }
         failure.cause = error
         throw failure
       }

@@ -226,7 +226,7 @@ describe('mission archive IPC containment [DON-248]', () => {
       .rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('reports correction snapshot cleanup failure instead of claiming a clean restore', async () => {
+  it('returns committed correction status when snapshot cleanup remains unresolved', async () => {
     const stagingRoot = await mkdtemp(join(tmpdir(), 'sartracker-correction-cleanup-'))
     const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
     await mkdir(stagingDirectory)
@@ -252,7 +252,15 @@ describe('mission archive IPC containment [DON-248]', () => {
         sessionId: '44444444-4444-4444-8444-444444444444',
         admin_name: 'Duty Admin',
         reason: 'Correct a recorded clue.',
-      })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_CLEANUP_FAILED' })
+      })).resolves.toEqual({
+        id: 'mission-1',
+        status: 'finished',
+        correction: {
+          committed: true,
+          cleanupComplete: false,
+          failureCode: 'ARCHIVE_REHYDRATE_CLEANUP_FAILED',
+        },
+      })
     } finally {
       await rm(stagingRoot, { recursive: true, force: true })
     }

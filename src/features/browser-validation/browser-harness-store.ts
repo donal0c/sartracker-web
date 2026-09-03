@@ -1676,7 +1676,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return unlockedMission
     },
     restoreMissionForCorrection: async (input) => {
-      const mission = requireMission(input.missionId, state.missions)
+      const mission = requireMission(input.mission_id, state.missions)
       if (mission.status !== 'finalized' || mission.storage_state !== 'archived') {
         throw new Error('Only archived finalized missions can be restored for correction.')
       }
@@ -1694,14 +1694,14 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = replaceMission({
         ...state,
         missionEvents: appendEvent(
-          appendEvent(state.missionEvents, input.missionId, 'mission_unlock_requested', requestedAt, {
+          appendEvent(state.missionEvents, input.mission_id, 'mission_unlock_requested', requestedAt, {
             admin_name: input.admin_name,
             reason: input.reason,
             resulting_status: 'finalized',
             storage_state: 'archived',
             archive_id: input.archiveId,
           }),
-          input.missionId,
+          input.mission_id,
           'mission_unlocked',
           new Date().toISOString(),
           {
