@@ -114,17 +114,36 @@ export function MissionArchiveCleanupDialog({
       }
       setArchive(result.archive)
       setEligibility(result.eligibility)
-      if (result.eligibility.storageState === 'archived'
+      if (result.eligibility.blockers.includes('cleanup_journal_invalid')) {
+        setResumeAvailable(false)
+        setFailureMessage(
+          'Cleanup recovery journal integrity is invalid. Review or repair the recovery state before retrying cleanup.',
+        )
+        setDialogState('failure')
+      } else if (result.eligibility.blockers.includes('cleanup_membership_changed')) {
+        setResumeAvailable(false)
+        setFailureMessage(
+          'Live rows changed after finalization. Re-finalize before cleanup.',
+        )
+        setDialogState('failure')
+      } else if (result.eligibility.storageState === 'archived'
         || result.eligibility.blockers.includes('cleanup_already_completed')) {
+        setResumeAvailable(false)
         setDialogState('completed')
-      } else if (result.eligibility.storageState === 'cleanup_in_progress'
-        || result.eligibility.blockers.includes('cleanup_in_progress')) {
+      } else if (result.eligibility.blockers.includes('cleanup_in_progress')) {
         setResumeAvailable(true)
         setFailureMessage(
           'Cleanup was interrupted and remains blocked at its durable restart point. Resume it to complete live-store archival.',
         )
         setDialogState('failure')
+      } else if (result.eligibility.storageState === 'cleanup_in_progress') {
+        setResumeAvailable(false)
+        setFailureMessage(
+          'Cleanup recovery state could not be proven resumable. Close this dialog and review archive recovery before retrying.',
+        )
+        setDialogState('failure')
       } else {
+        setResumeAvailable(false)
         setDialogState('ready')
       }
     }).catch(() => {
@@ -194,7 +213,7 @@ export function MissionArchiveCleanupDialog({
       if (result.missionId !== mission.id || result.archiveId !== archive.id
         || result.state !== 'completed' || result.storageState !== 'archived'
         || !Number.isSafeInteger(result.movedRows) || result.movedRows < 0) {
-        setResumeAvailable(resumeCleanupRef.current !== undefined)
+        setResumeAvailable(false)
         setFailureMessage('Cleanup returned an invalid terminal result. Review remains blocked.')
         setDialogState('failure')
         return
@@ -230,7 +249,7 @@ export function MissionArchiveCleanupDialog({
       setFailureMessage(cancelled
         ? 'Cleanup was cancelled safely at its last durable restart point. No archive bytes changed.'
         : cleanupFailureMessage(code))
-      setResumeAvailable(resumeCleanupRef.current !== undefined)
+      setResumeAvailable(false)
       setDialogState('failure')
     }
   }
@@ -572,6 +591,8 @@ function cleanupChecklist(eligibility: MissionCleanupEligibility): readonly Clea
     { blocker: 'evidence_health_not_clean', passed: 'Evidence health is clean', blocked: 'Evidence health is not clean' },
     { blocker: 'operational_state_unsettled', passed: 'Operational evidence work is settled', blocked: 'Operational evidence work is unsettled' },
     { blocker: 'archive_review_active', passed: 'No archive review session is active', blocked: 'Archive review is active' },
+    { blocker: 'cleanup_journal_invalid', passed: 'Cleanup recovery journal integrity is valid', blocked: 'Cleanup recovery journal integrity is invalid; review or repair recovery state before retrying' },
+    { blocker: 'cleanup_membership_changed', passed: 'Live rows still match the finalization boundary', blocked: 'Live rows changed after finalization. Re-finalize before cleanup' },
     { blocker: 'cleanup_in_progress', passed: 'No cleanup operation is already in progress', blocked: 'Cleanup is already in progress' },
     { blocker: 'cleanup_already_completed', passed: 'Live-store archival has not already completed', blocked: 'Live-store archival is already completed' },
     { blocker: 'fresh_non_machine_unlock_required', passed: 'Fresh passphrase or recovery credential is proven', blocked: 'Fresh passphrase or recovery code is required at start' },
@@ -599,5 +620,5 @@ function cleanupFailureMessage(code: string | null): string {
   if (code === 'ARCHIVE_CLEANUP_WRONG_KEY') {
     return 'The archive credential was not accepted. The live mission and archive remain unchanged.'
   }
-  return 'Cleanup stopped at its durable cursor. The verified archive remains intact; some live rows may already have moved, and cleanup must resume before ordinary live Review.'
+  return 'Cleanup stopped at its durable cursor. The verified archive remains intact; some live rows may already have moved. Close and reopen Review Archive Cleanup to determine whether recovery is resumable.'
 }

@@ -196,7 +196,7 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
     expect(onRequestCleanup).toHaveBeenCalledWith(MISSION_ONE)
   })
 
-  it('keeps an interrupted cleanup visibly resumable from Saved Mission Archives', () => {
+  it('opens a neutral cleanup review before resumability is known in Saved Mission Archives', () => {
     const interruptedMission: Mission = {
       ...MISSION_ONE,
       id: 'mission-cleanup-in-progress',
@@ -213,12 +213,13 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
       timeline: [{ mission: interruptedMission, archives: [interruptedArchive] }],
     }))
 
-    const resume = query(
-      `[data-testid="archive-cleanup-resume-open-${interruptedMission.id}"]`,
+    const reviewCleanup = query(
+      `[data-testid="archive-cleanup-open-${interruptedMission.id}"]`,
     )
-    expect(resume).not.toBeNull()
-    expect(query(`[data-testid="archive-cleanup-open-${interruptedMission.id}"]`)).toBeNull()
-    ;(resume as HTMLButtonElement).click()
+    expect(reviewCleanup?.textContent).toContain('Review Archive Cleanup')
+    expect(query(`[data-testid="archive-cleanup-resume-open-${interruptedMission.id}"]`))
+      .toBeNull()
+    ;(reviewCleanup as HTMLButtonElement).click()
     expect(onRequestCleanup).toHaveBeenCalledWith(interruptedMission)
   })
 

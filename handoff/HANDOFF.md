@@ -1,500 +1,107 @@
-# HANDOFF.md - Live Baton
+# HANDOFF.md — Live Baton
 
-> Read this before doing work. Keep it short. This is the current baton, not the project diary. Older history lives in `handoff/archive/` plus commits and Linear.
+> Read this after `CLAUDE.md`. Keep this file short and operational. Historical
+> detail lives in `handoff/archive/`, the two-track workplan, Linear, and commits.
 
 ## Current State
 
-- **PR6 reviewed executable head is `6c26a1746bf5ee97648285eab680f6deff7e14ae` /
-  tree `b6678f7b8fd6d333ada58b60b48057e94783bcd1` (2026-09-03):** cleanup
-  failures now carry bounded sanitized substage/table-cursor/cause/worker-exit
-  attribution through coordinator, worker and runner into qualification
-  receipts; attached cleanup diagnostics take precedence over a colliding raw
-  `SQLITE_BUSY`; and stage markers are assigned before the select/delete/
-  journal/completion/custody operations they describe. The qualification probe
-  separates a pure 50 ms event-loop heartbeat from current-position publication
-  latency and uses a 5 s production-like cadence. Fresh broad, concurrency/
-  renderer, persistence/completeness and narrow crypto reviews are clean; the
-  fresh affected review checks are `153/153`, `447`, `131/131`, and `114/114`.
-  The full serial unit gate is `369/369` files and `3,530/3,530` tests; lint,
-  TypeScript, Node syntax and diff checks are green. Browser/visual/package and
-  Linux results from 3d5 are prior-head evidence only. The superseded Ubuntu
-  run was stopped before evidence completion; one final >2 GiB qualification
-  and final exact-head package/browser/visual/Linux proof remain after the
-  documentation binding. Pre-merge proof is not release or field acceptance.
+- **PR #10 recovery is active on the existing
+  `codex/breadcrumb-pr6-archive-lifecycle` branch for `DON-248`, `DON-252`, and
+  `DON-253`.** Donal retains approval, merge, release, and team-contact authority.
+  Final immutable head/tree, proof receipts, and reviewer verdicts belong in the
+  PR/Linear ledger so recording them does not create a different source head.
+- **Exact head `caf9e5e480fcd02cc44d68c8397efcd6ae78f2cd` is rejected.** Its Ubuntu
+  qualifier created and verified a 5,243,848,931-byte archive, but the receipt
+  ended `UNCLASSIFIED_INTERNAL_FAILURE` at `teardown:incomplete`. Profile cleanup
+  did complete. An unbounded `Math.max(...samples)` diagnostics aggregation
+  caused the misleading teardown classification; constant-space aggregation is
+  the repair. Independent measurements also showed real multi-second create,
+  restore, cleanup, and durable-write stalls.
+- **The recovery cause is understood.** The field fixture retained roughly 9.7
+  million high-volume telemetry `mission_events`, and archive paths repeatedly
+  scanned mission history for finalization and acknowledgement state. The old
+  sub-millisecond “current position” measurement was only an in-process map
+  operation and did not prove the packaged renderer path.
+- **The bounded recovery source work and pre-freeze local gates are complete.**
+  It uses deterministic current-finalization lookups, lazy evidence-loss
+  acknowledgement lookup with a durable
+  projection, mission-scoped logical cleanup with a restart-safe rowid cursor
+  and telemetry-only `mission_events` deletion, constant-space diagnostics, and
+  a packaged Electron external watchdog that correlates exact synthetic Traccar
+  fixes through main/preload, React, and the MapLibre source. Every liveness
+  dimension is a strict `<200 ms` gate; ledger overflow and missing continuity
+  fail closed.
 
-- **Carry-forward proof snapshot:** earlier Chromium `172/172`, visual
-  Playwright `62/62`, uncached visual review `74 pass / 0 fail / 0 error`, Linux
-  workflow, unsigned macOS lifecycle and physical SIGKILL `32/32` remain prior-
-  head evidence only. The diagnostic receipt and all evidence-tier limits are
-  recorded in `docs/breadcrumb-pr6-evidence.md`; final claims will bind to one
-  exact documentation head.
+## Locked Safety Boundaries
 
-- **WAR-04B release-integrity audit is review-ready in [PR #9](https://github.com/donal0c/sartracker-web/pull/9) after current-`master` reconciliation (2026-08-30):** the exact-base investigation at `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf` confirms two release blockers: shipped Electron `40.10.0` is EOL, and `electron-builder@26.0.12 -> app-builder-lib@26.0.12` generates an affected AppImage launcher. The production-only npm audit is clean but omits those release-bearing dev dependencies. Live GitHub also has no enforced master/tag review/check boundary, enforced release immutability, attestation/SBOM, or enabled secret/Dependabot/CodeQL visibility. The repository and beta are public; “internal” is intended-use policy, not access control. PR #8's merge at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` added the WAR-04 evidence/docs/tests and shared-record reconciliation but left every audited package, lock, builder, release-workflow, publisher and support-policy input blob-identical, so it does not change the WAR-04B findings or supply release proof. No dependency, workflow, release, package/config, product, or GitHub-setting change was made. Follow `docs/assurance/findings/WAR-04B.md` for controlled remediation and the mandatory exact merged breadcrumb programme PR-6 refresh; exact-head review/recheck evidence is retained on PR #9. `better-sqlite3` PR #1475 shipped in `12.10.1`, so `DON-146` is no longer upstream-blocked.
-- **WAR-04 platform-services investigation merged through [PR #8](https://github.com/donal0c/sartracker-web/pull/8) at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` (2026-08-30):** final investigation head `3a2278ee8804a9ded0f2fd26626c4c00743c05a6` records nine confirmed local failure/privacy defects and six unproven hypotheses across official-map readiness, settings/credential startup, and sanitized support/incident export. Twelve isolated synthetic checks preserve the red states; shipping code is unchanged; the normal gates, both exact-head independent reviews and exact-head Linux branch gate were green. Three bounded WAR-11 remediation clusters are still required before WAR-12 release qualification; `DON-264` remains separately owned. The merged investigation is evidence, not remediation or release proof.
-- **WAR-01 merged through [PR #6](https://github.com/donal0c/sartracker-web/pull/6) at `182d077804498f5c10aaf0b8b2c1525f29a31da7` (2026-08-29):** the 40-row assurance register is reconciled to PR5 merge `eec92812b783a795c093f37268b295dd2179a3af`. `RPL-004` remains `rewrite-pending` until breadcrumb programme PR-6, the `DON-248`/`DON-252`/`DON-253` archive successor, lands.
-- **Regression history is now fail-closed (2026-08-10):** The SAR Tracker Linear project has a canonical [Reliability & Regression Ledger](https://linear.app/donal-oc/document/reliability-and-regression-ledger-4f86841816ee), with `Regression` / `Performance` labels backfilled on `DON-240`, `DON-247`, `DON-259`, and `DON-260`. `CLAUDE.md` now requires field report, affected-build history, root cause, escape analysis, before/after evidence, durable gate, and residual uncertainty before a regression issue can close. Electron release notes must classify regression provenance, and the guarded publisher now rejects a missing/incomplete record.
-- **`DON-260` exact Breadcrumb Dots correction — beta.12.11 published (2026-08-11):** Team beta.12.9 feedback proved Dots still rendered the bounded Line projection, producing adjacent pairs/groups with roughly 60-second gaps. Published beta.12.11 gives Dots a mission-start-bounded exact SQLite page query and dedicated source: <=10,000 fixes render automatically; larger missions use exact Earlier/Later pages; Line alone remains bounded/simplified. The rejected beta.12.10 fourteen-day run exposed a per-page full positions-table roster scan; beta.12.11 uses the indexed mission devices roster. Exact tag `electron-v0.1.0-beta.12.11` / `bced8052b85c`, CI run `31482052296`, AppImage `2844b75f...c295b`, and `.deb` `d5e33b41...c2954` are green. Ubuntu AppImage proof passed 279,936 fixes/28 pages and 1,935,384 fixes/194 pages (`54.632 s` outward, `67.597 s` return, `1.597 GB` peak RSS); the genuinely installed `.deb` is verified and independently passed the 279,936-fix gate. Private GET-only provider proofs passed on AppImage (`10,371` fixes) and installed `.deb` (`10,184`) through exact UI pages, SQLite/source/rendered equality, zero representatives, and return-to-latest. Lifecycle, coordinate rejection, duplicate launch, bad-secret, sanitized exports, newer-schema refusal, forced kill/recovery, retries, checkpoints, Line total, and cold restarts are green. Guarded publication succeeded; a second public download matched both installer hashes and `SHA256SUMS`, and the public AppImage passed settings persistence, same-mission recovery, finalization, and non-empty archive creation (report `dfc8e39b...50b48e`). Final proof-harness verification is `195 files / 1,565 tests`, lint/TypeScript/Node/diff green; Playwright remains `179/179`, visual review `43/43`. **Beta.12.11 is the corrected team beta; beta.12.9/.12.10 are not.**
-- **Programme branch state (2026-08-30):** breadcrumb programme PR-1 through PR-5 and the separate WAR-01 GitHub PR #6 are merged on `master`. PR5 landed at `eec92812b783a795c093f37268b295dd2179a3af` from final head `f5ba8647131950dde457e50ce36fe0b8ded7337d`; exact-head Linux run `33260131951` is green, while earlier independent reviews remain prior-head evidence. Breadcrumb programme PR-6, the `DON-248`/`DON-252`/`DON-253` archive lifecycle, is actively being implemented separately and remains unmerged/mutable; it is not release proof. WAR-13A PR #7 is merged docs-only protocol; it does not release a candidate or provide field proof.
-- **`DON-267` field-feedback bridge is merged:** `SAR-QA-021` now makes Traccar `fixTime` the only exact breadcrumb evidence clock; schema v11 retains `timestamp_source='fix'`; unproved legacy rows fail closed for exact evidence; operator timestamps show local timezone/offset; current polling remains independent of bounded/cancellable history work; and 37,479 exact fixes still traverse 10,000 + 10,000 + 10,000 + 7,479. Exact-head Linux artifact run `33068124294` passed before merge. This is CI/package evidence, not programme-final field qualification.
-- **WAR-13A protocol:** `docs/assurance/shadow-use-protocol.md` separates non-counted synthetic/replay/disposable engineering training from admitted field/real-incident shadow use, and defines primary-source authority, stop/fallback/revert triggers, proportionate evidence intake, residual-risk records, and the WAR-13B scorecard. Before field use, Donal/team must name the existing primary operational source/process and record a successful primary-only drill. This protocol is not operational qualification.
-- **Breadcrumb requirements authority corrected (2026-08-22):** The verbatim team Q&A is retained in `team-feedback/breadcrumb-question-answers-20260822.md` and indexed in `docs/breadcrumb-team-question-and-answer-ledger.md`. `SAR-QA-006`/`SAR-QA-013` establish that one immutable Traccar database row is one source record; repeated polls are idempotent deliveries, not new evidence. The duplicate-question gate remains mandatory.
-- **Active programme implementation:** breadcrumb programme PR-6 owns archive streaming, custody, restore, archive-backed review, and indefinite retention under `DON-248`/`DON-252`/`DON-253`. Until it is merged and qualified, shadow sessions must not rely on current archive/restore behavior. Donal retains the implementation/merge gate.
-- **Desktop lane:** Electron is operational. Tauri remains historical/reference.
-- **`DON-261` / `DON-262` / `DON-263` beta.12.5 released:** exact commit `042d77ad6158`, tag run `30497318233`, and clean no-skip local verification are green. Exact CI checksums are AppImage `41124632…` and `.deb` `0c876bf7…`. The AppImage and real installed `.deb` passed lifecycle/recovery/finalize/archive, coordinate rejection, sanitized exports, corrupt-secret startup, duplicate launch, live Traccar (33 devices), pending/degraded-basemap overlays, and 13 stable empty-history polls with Open Devices fixed at Y `598`. Deterministic five-/fourteen-day soaks stored 691,224/1,935,384 exact positions with zero redundant rows and an identical prefix digest. Independent code and Fable 5 reviews returned `RELEASE` with no P1/P2. Guarded publication succeeded; fresh public bytes matched and the public AppImage passed Ubuntu recovery/finalize/archive. Persistent sync diagnostics remain the non-blocking `DON-264`.
-- **`DON-260` / breadcrumb hotfix historical beta.12.3 proof:** `electron-v0.1.0-beta.12.3` was published at commit `edb5eb2f5e99`; tag run `30449919583` is green and the exact AppImage/`.deb` passed the complete Ubuntu matrix, including two 3.70 GB schema migrations, newer-schema one-shot refusal, live Traccar, and deterministic five-/fourteen-day soaks. Full proof is `171 files / 1,274` unit, Chromium `135/135`, visual `36/36`, independent review `41/41`, and backend `51 passed / 1 ignored`. Fresh published bytes matched all SHA-256 values and the fresh AppImage passed restart/recovery/settings/finalize/archive. The `.deb` is `install ok installed`, `dpkg -V` clean, and its installed executable passed; the enclosing apt command's status 100 came solely from three pre-existing broken NVIDIA/kernel packages, is retained in raw evidence, and Fable independently returned `PASS_WITH_ENVIRONMENT_NOTE` with no P1/P2. Beta.12.1/.12.2 remain retained, unpublished, procedurally write-once candidates; their tags must not be moved or reused, and beta.12.2 is marked abandoned. Full Discovery loading and beta.13 storage/archive work remain out of scope.
-- **Hosted browser:** production was refreshed 2026-07-17 from validated preview `dpl_GcKq6CvpZLDwiiCcCsif7pKvsRAQ` to production `dpl_Gk7Zzx4xYi56Wtyu7NwxDR4p6iwM`; `https://sartracker-web.vercel.app/?missionHarness=1` now serves `0.1.0-beta.12+sha.830d70f5a737`. In-app Browser validation passed OpenTopoMap/OpenStreetMap, coordinates, mission start, reload recovery/resume, marker creation, line drawing, diagnostics, and a zero-warning/error console scan. Browser storage remains non-operational session persistence.
-- **Hosted portfolio follow-up:** `DON-258` still tracks a safe bare-root demo entry. The 1280x720 mast-action crowding found during production validation is corrected locally: compact desktop widths keep the brand and timers readable and use short action labels. The hosted demo remains usable through the explicit harness URL until the next deployment.
-- **DON-229 tracking diagnostics:** completed 2026-07-12. Support and incident bundles now include a bounded, sanitized session ledger for poll cycles, anonymized cursor/window ranges, and Traccar retry attempts, with phase, timing, counts, recovery, failure class, and retained-window coverage. A browser regression reproduces online-to-HTTP-503/offline and verifies the exported evidence excludes the configured username. Verification: focused diagnostics/tracking units `77/77`; full unit `164 files / 1150 tests`; lint; build; backend `47 passed / 1 ignored`; Chromium `130/130`; Electron package. Future candidates not folded into this issue: archive/finalization phase diagnostics and GPX/attachment filesystem failure diagnostics.
-- **DON-259 evidence was necessary but insufficient:** It correctly removed a second 40 m GeoJSON decimator, but its promise was only “every position in the bounded live snapshot.” That snapshot was already the Line selector's representative projection, so beta.12.9 could still group Dots. The beta.12.10 gate now proves Dots from independent raw source identities through SQLite, exact page IPC, GeoJSON, and rendered MapLibre evidence; DON-259's four-point visual remains a component check, not release authority.
-- **DON-247 field confirmation remains open:** PCLinuxOS AppImage stayed responsive at 218 hours, but the Mint `.deb` stopped accepting application actions around 182 hours while the in-app clock continued. The packaged soak now classifies hit testing/occlusion, trusted click delivery, React workspace state, timed main IPC, and close behavior; refreshed packaged CI proof passed 4/4 `healthy` samples, 8,664 exact positions, restart/backup, main/renderer gates, and zero redundant telemetry. Packaged Linux builds include a report-only external collector for bounded `/proc`/thread waits, PID-scoped journal, GPU/session data, sanitized diagnostics, and optional screenshot; it never reads credentials/process environments or copies mission databases. Runbook: `docs/releases/beta12-mint-hang-capture-runbook.md`. Verification: focused `24/24`; full `beta:verify --no-smoke` PASS (lint, build, `165 files / 1159 tests`, backend `47 / 1 ignored`, Chromium `132/132`, package, packaged soak). Synthetic `/proc`, packaged-resource, and embedded-runtime paths pass; the known Ubuntu host was unreachable, so execution on a real Mint/Linux field process and identical-profile AppImage-vs-`.deb` evidence remain.
-- **Latest published team beta:** [`electron-v0.1.0-beta.12.11`](https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.12.11) is the qualified source-exact Breadcrumb Dots correction. Beta.12.9 and the rejected private beta.12.10 must not be represented as the corrected build.
-- **Held betas:** `electron-v0.1.0-beta.9` and `electron-v0.1.0-beta.10` are **ON HOLD** for the Linux tracking-online freeze. Do not roll them out further.
-- **Beta.12 internal prerelease:** tag `electron-v0.1.0-beta.12`, commit `0c05cf9`, release run
-  `29127625505` is fully green. The exact CI AppImage SHA is `fb6c4922…`; its Ubuntu qualification
-  is complete: three field-fixture runs, both multi-day soaks, lifecycle/recovery/finalize/archive,
-  official offline map, coordinate safety, duplicate launch, locked-keyring startup, sanitized
-  diagnostics/support/incident bundles, and live Traccar (33 devices / 8 fixes) all passed. The
-  replacement normal/extended soaks stored exactly 691,224/1,935,384 positions, passed one/two
-  restarts, had zero redundant-event slope, and kept the main process below 177 ms. Local
-  `beta:verify --no-smoke` passed 7/7; report:
-  `tmp/beta-artifacts/verify-0.1.0-beta.12-sha.4f2b3d71f9b8-2026-07-10T22-23-28Z.json`.
-  Published 2026-07-11 so the team can download the qualified bundle. This is delivery for field
-  validation, not final acceptance. A fresh download from the published release URL matched SHA
-  `fb6c4922…` and passed Ubuntu lifecycle/recovery/finalize/archive, coordinate/duplicate-launch,
-  sanitized diagnostics/support/incident export, locked-keyring recovery, and official offline-map
-  smoke. Donal can now inform the team. The original-machine/profile run plus a support bundle
-  remains the closing gate under `DON-247`.
-- **Previous beta:** `electron-v0.1.0-beta.8`, published 2026-06-23 after GitHub Actions run `28012741523` and a deep Ubuntu packaged smoke (43/43) on the CI-built post-fix artifact (AppImage sha `43067cb2…`). Team artifact: https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.8`.
-- **Beta.8 release evidence:** tag `electron-v0.1.0-beta.8` (HEAD `34e3fc1`); CI release run `28012741523` is **green** and the deep Ubuntu packaged smoke PASSED on that CI-built artifact. Release note: `docs/releases/sartracker-electron-0.1.0-beta.8.md`.
-  - Post-fix CI-built checksums: AppImage `43067cb2a99671419da576799beaedd7541b6ade7714fe267ad0c16b68e97911`, deb `fa60e126faee7a6d0f025d0e460317b6c53da1ed58cd3a3d129ac86ea2ca0a2b`.
-  - **Real bug found by the Ubuntu smoke and fixed:** DON-226 `record-diagnostic-event` IPC handler referenced an out-of-scope `runtimeLog`, throwing `ReferenceError` on every event in the packaged main process (durable diagnostic log broken + error spam; operator incident bundles still populated from the renderer store). Fixed in `97663e6` by threading `runtimeLog` into `registerIpcHandlers`, with a red→green regression test. Re-smoke of the post-fix artifact shows zero `runtimeLog` errors and durable `renderer_*` events recorded.
-  - Getting CI green also took several test-harness fixes (none in shipping app code): removed the retired Tauri `cargo test` from the Electron release gates (`gdk-3.0` not on the runner); CI-scaled the DON-210/212 perf-sweep and DON-203 large-hosted-history datasets; and the root-cause fix — `playwright.config.ts` now uses 1 worker + 2 retries under CI to absorb shared-runner contention (local stays 2 workers / 0 retries). Product invariants remain covered by deterministic unit tests.
-  - Ubuntu box note: `donal@192.168.18.31` was upgraded off Wayland to **X11** (kernel 6.17); drive packaged smoke with `--ozone-platform=x11` (Wayland flag segfaults). Beta.8 smoke scripts live on the box at `~/sartracker-don147-validation/repo/tmp/beta8-smoke/`; evidence mirrored to repo `output/beta8-ubuntu-smoke/evidence-fixed/`.
-  - **Smoke result: 43/43 across lifecycle, duplicate-launch (DON-180), safety+diagnostics (DON-226), settings-safety (DON-207/204/208), UI-polish (DON-195/223/197), live Traccar (online 33 devices/8 fixes), and offline Discovery map.**
+- Finalized missions remain read-only. Archive revisions and supplements remain
+  immutable and indefinitely retained.
+- Cleanup requires the existing verified encrypted archive and custody gates.
+  It may remove archived mission rows other than the retained mission stub,
+  rebuildable derived projections, four explicitly settled operational tables,
+  and—within `mission_events` only—the `device_updated`, `position_recorded`,
+  and `mission_backup_synced` telemetry event types. It retains the mission
+  stub, archive and supplement records, and all non-telemetry mission audit
+  records, including operational, finalization, custody, cleanup, supplement,
+  and unknown future event types.
+- Cleanup is logical SQLite deletion. Freed pages may be reused, but the file may
+  not shrink. Physical compaction and oversized-store recovery remain with
+  `DON-250` / `DON-251`; no in-process multi-GB `VACUUM` is authorized.
+- The 50 ms packaged polling profile is time-compressed validation, not a
+  production cadence. The separate greater-than-2-GiB qualifier measures
+  Node/SQLite scale contention; it is not packaged-renderer proof. Both exact-
+  head receipts are required and their evidence limits must stay explicit.
 
-## DON-241 Mission Store Reliability — active baton (2026-07-10)
+## Active Work
 
-- **Programme:** `DON-241`; beta.12 children `DON-242`-`DON-247`, beta.13 children
-  `DON-248`-`DON-255`. Linear blocker relations are the execution order.
-- **Completed checkpoint:** `DON-242` deterministic fixture generator is implemented and fully
-  verified locally. It provides small (8 MiB), CI (128 MiB), local (1 GiB), field (~3.7 GB),
-  five-day, and fourteen-day presets using the real schema, synthetic-only records, atomic cache
-  replacement, streamed checksums, copy-on-test isolation, manifests, dbstat byte accounting, and
-  exact restart checkpoints.
-- **Ubuntu evidence:** `donal@192.168.18.31`, kernel 6.17, 338 GB free. Cached under
-  `~/sartracker-beta12-msr/fixtures/`: five-day 1.254 GB, fourteen-day 3.514 GB, field 3.704 GB.
-  All reopen through the beta.11 adapter and pass full integrity checks. The field fixture contains
-  32 devices, 2.04 million real positions, and 10.24 million redundant telemetry rows; about
-  3.03 GB is `mission_events` and 672 MB is real positions.
-- **Completed checkpoint:** `DON-243` now reproduces beta.11 deterministically on packaged Ubuntu.
-  Three independent field-fixture runs completed three autosaves each; all attributed a
-  5.70-5.82 s Electron main-process stall to the 6.11-6.36 s synchronous integrity-validation
-  phase after a 2.45-3.96 s backup copy. App/fixture checksums, screenshots, sanitized logs,
-  memory high-water, per-cycle phase timings, and fail-closed JSON verdicts are under
-  `~/sartracker-beta12-msr/evidence/beta11-field-run-{1,2,3}/`. Durable summary:
-  `docs/releases/beta12-mission-store-baseline.md`.
-- **Completed checkpoint:** `DON-244` bounded storage diagnostics are implemented and packaged-
-  verified. The existing rotated runtime log plus a ~1 KiB atomic checkpoint record backup phase,
-  queue/timing, file sizes, aggregate tracking/multi-day counters, and 30 s event-loop summaries
-  without operational identity. Final candidate AppImage
-  `fdaae964…` was SIGKILLed only after `validation_started` flushed against the 3.704 GB field
-  fixture; restart/export retained that exact interrupted phase, measured a 6.858 s event-loop
-  stall, and reported a later successful 11.439 s backup. Main DB integrity stayed `ok`, the active
-  mission survived, and privacy scan passed. Evidence:
-  `~/sartracker-beta12-msr/evidence/don244-kill-observed/`; durable summary:
-  `docs/releases/beta12-storage-diagnostics-evidence.md`.
-- **Completed local checkpoint:** `DON-240` removes all size-dependent work from the Electron main
-  isolate during periodic backup: the online SQLite copy runs in a worker, and autosave validates
-  only the fixed 100-byte header plus file metadata before atomic rename. Three packaged Ubuntu
-  field runs completed nine backups with valid healthy verdicts and main maxima of 10.9, 6.5, and
-  2.5 ms. Worker kill/restart/support export passed. Candidate AppImage SHA: `147ec92…`; evidence:
-  `~/sartracker-beta12-msr/evidence/don240-worker-run-{1,2,3}/`; durable summary:
-  `docs/releases/beta12-autosave-freeze-fix.md`.
-- **Field-scale archive gap found:** the same synthetic mission recovered, resumed, finished, and
-  retained `ok` main/backup integrity, but finalization hit Node `ERR_FS_FILE_TOO_LARGE` at the
-  existing whole-DB `fs.readFile` above 2 GiB. Recorded on `DON-252`; do not fold the streamed
-  archive redesign into beta.12. Fresh-store packaged finalization/archive still passes.
-- **Completed local checkpoint:** `DON-245` preserves device/position rows and every `last_seen`,
-  change-gates `device_updated` to name/status/colour, and removes new `position_recorded` echoes.
-  Packaged Ubuntu proof ran 2,000 polls, 64,000 device upserts, and 16,000 positions: exactly 32
-  creates + one deliberate update, zero redundant telemetry events, `ok` integrity, and complete
-  paused-mission restart recovery. Evidence: `~/sartracker-beta12-msr/evidence/don245-growth-2/`;
-  durable summary: `docs/releases/beta12-redundant-write-removal.md`.
-- **Completed local checkpoint:** `DON-246` now has a deterministic packaged mock-Traccar soak with
-  CI, 5-day, and 14-day profiles, exact growth budgets, restart checkpoints, external main-isolate
-  heartbeats, renderer crash/process-memory gates, backup/WAL/log/support evidence, and CI/release
-  integration. The first extended run caught an unbounded full-position restart hydration path at
-  ~3 GiB renderer RSS and exit 133. The fix uses an indexed 5,000-position-per-device restart window
-  while retaining all positions in SQLite. Corrected Ubuntu normal/extended runs persisted exactly
-  691,224/1,935,384 positions, zero redundant rows, passed one/two restarts, integrity/WAL/privacy,
-  zero renderer crashes, main maxima 147.9/146.9 ms, and RSS maxima 1.49/1.64 GB. Evidence:
-  `~/sartracker-beta12-msr/evidence/don246-{normal,extended}-fixed-250ms/`; durable summary:
-  `docs/releases/beta12-tracking-soak-evidence.md`. The replacement exact CI artifact has now
-  passed the complete Ubuntu qualification matrix. Next: `DON-247` original-machine confirmation.
-  `DON-240` stays open in Linear until that explicit gate.
-- **Release split:** beta.12 is the narrow field-freeze/observability release. Beta.13 owns
-  migrations, retention, safe legacy recovery, mission-scoped streamed archives, and
-  archive-backed review/unlock.
-- **Verification:** `DON-242`: lint, build, unit 155 files / 1,096 tests, Playwright 163/163,
-  backend 47 passed / 1 ignored, Ubuntu fixture integrity/reopen. `DON-243`: probe units 9/9,
-  checksum-verified beta.11 AppImage, small-fixture healthy shakedown, and three valid packaged
-  field runs with nine completed autosaves and repeatable main-process freezes. `DON-244`: lint,
-  build/package, unit 158 files / 1,121 tests, Playwright
-  163/163, visual reviewer 39/39, backend 47 passed / 1 ignored, packaged Ubuntu forced-kill/
-  restart/support-export proof, post-kill SQLite integrity, and privacy scan. Final unit/package
-  verification passed after the release-tooling error-path regression was added. `DON-240`: lint,
-  build/package, unit 160 files / 1,126 tests, Playwright 163/163, visual reviewer 39/39, backend
-  47 passed / 1 ignored, three packaged field-scale healthy runs, worker kill/restart proof,
-  field restart/recovery/finish integrity, fresh-store packaged finalization/archive, and
-  `beta:verify --no-smoke` overall PASS (manual release smoke intentionally deferred).
-  `DON-245`: lint, build/package, unit 160 files / 1,127 tests, Playwright 163/163, visual reviewer
-  39/39, backend 47 passed / 1 ignored, and packaged growth verdict with a 4,976,640-byte DB and
-  `ok` integrity. `DON-246`: full `beta:verify --no-smoke` PASS (lint, build, 163 unit files /
-  1,143 tests, backend 47 passed / 1 ignored, Chromium 129/129, package, packaged CI soak), visual
-  Playwright 34/34, independent visual review 39/39, actionlint, and packaged Ubuntu CI/normal/
-  extended profiles with exact restart/count/growth/integrity/WAL/memory/privacy verdicts.
+- Freeze and commit the reviewed strict-TDD recovery on the existing PR branch.
+- Rerun full static, unit, browser, visual, package, packaged-lifecycle and
+  physical SIGKILL gates on that exact clean head. The unsigned macOS package
+  rehearsal built, but its lifecycle runner correctly refused the dirty
+  pre-commit tree and supplies no packaged-liveness proof.
+- Run four independent exact-head reviews: broad life-safety/end-to-end,
+  persistence/completeness, concurrency/finalization/liveness, and renderer/
+  input-containment/operator surface. Source-retrace every finding; any accepted
+  P1/P2 requires red-first repair and affected re-review.
+- After every cheap prerequisite is green, run exactly one fresh controlled
+  Ubuntu greater-than-2-GiB qualification, bound to the exact Linux packaged
+  liveness report and source head/tree.
 
-## Historical DON-240 planning snapshot — superseded by `DON-241`
+## Open Issues That Matter Now
 
-**Beta.11 froze again in the field. The disk/fsync theory is dead** — the field machine is a fast
-Ryzen 7 9700X with NVMe. The real evidence: field `mission-store.sqlite` was **3.69 GB**; the tester
-renamed it aside, the app started on a fresh DB, and the freeze was gone.
+- `DON-248` — archive encryption, authenticity, custody, and emergency access.
+- `DON-252` — streamed encrypted archive plus exhaustive restore/verification.
+- `DON-253` — archive-backed read-only Review, revisions, and logical cleanup.
+- `DON-250` / `DON-251` — deferred oversized-store recovery, physical
+  compaction, retention, and measured indexing.
+- `DON-254` / `DON-255` — programme-wide qualification and the later single
+  team-facing release; neither is part of PR #10 recovery.
+- `DON-247` — original field-machine beta.12 confirmation remains separate.
+- `DON-264` — persistent overlay-sync diagnostics remains a non-blocking backlog
+  item.
 
-Confirmed chain (all verified on `master`, evidence + line refs in the workplan MSR chunk):
-1. **Freeze:** DON-232 commit `1799b2c` (shipped in beta.9) added a synchronous, non-yielding
-   `PRAGMA integrity_check` over the full backup inside `syncBackup`
-   (`electron/mission-store.cjs:303-349`), run by autosave every 30 s on the single-threaded main
-   process that also carries all Traccar HTTP, SQLite IPC, and map tiles. O(DB-size) → at 3.69 GB
-   the whole app hard-blocks every 30 s. beta.8 was a plain `await db.backup()` (yields), which is
-   why beta.8 stayed usable on the same growing DB.
-2. **Growth (latent since beta.8):** `upsertDevice(sBulk)` emits `device_updated` for every device
-   every poll with no change gate (`mission-store.cjs:754/:799`) — ~552k no-op rows/day at
-   32 devices / 5 s. `mission_events` has no index/retention/purge; finalize never deletes live
-   rows. Testers' ~1 month of 24/7 uptime → 3.69 GB.
-3. Amplifiers: whole-DB backup copy every 30 s (~10 TB/day SSD writes at that size); backups append
-   `mission_backup_synced` so the DB is always dirty; `createMissionArchive` reads the entire DB
-   into one Buffer at finalize.
+## Verification Snapshot
 
-**Plan of record:** the **MSR chunk** in `docs/two-track-execution-workplan.md` (WS specs, locked
-decisions, safety invariants, tests, release strategy). **One consolidated beta.12** carries the
-whole fix; the MSR-5 harness replaces the team as the validation environment, so no staged betas.
-Implementation order: **MSR-5 first** (field-scale DB seeder, event-loop-gap probe, plateau soak,
-beta:verify gate — reproduce the freeze before fixing it), then MSR-0 (remove integrity_check from
-the 30 s hot path; O(1) snapshot sanity check + worker-thread startup integrity check), MSR-1
-(change-gate `device_updated`, drop `position_recorded` echo), MSR-4a (oversized-DB startup guard,
-before the MSR-2 migration), MSR-2 (index + telemetry retention, schema v5), MSR-3 (purge telemetry
-to archive on finalize). MSR-4b/4c are deferred backlog hardening. Fallback only if implementation
-slips past the ~1–2 week workaround window (fresh field DB regrows ~140 MB/day): cut an interim
-build with MSR-5 + MSR-0.
+- Combined recovery unit/integration gate: `28` files / `680` tests green.
+- Full deterministic serial unit gate: `375` files / `3,685` tests green.
+  ESLint, TypeScript/production build, bundle budgets, Node syntax, and diff
+  checks are green; backend is `58` passed / `1` platform-specific ignored.
+- Full Chromium operator suite: `173/173` green. Full visual Playwright:
+  `62/62` green. The refreshed 15-check cleanup frame passed an uncached
+  independent critical visual review and now backs the operator-manual image.
+- Unsigned macOS arm64 directory packaging passed. Exact-head packaged
+  lifecycle/liveness, physical SIGKILL, Linux, four-review, and fresh field
+  gates remain pending. Prior-head results are diagnostic only.
 
-Key locked decisions Codex must not re-derive: `last_seen` must NOT participate in the
-`device_updated` event gate (it churns every poll) but the row update stays; purge is
-telemetry-scoped only (review + unlock read live rows; unlock is a status flip, not archive
-restore); never in-process `VACUUM` on a multi-GB legacy DB.
+## Next Actions
 
-**Baton:** planning done (Fable). Codex implements MSR-0 + MSR-5 first, strict TDD, packaged
-verification against a seeded multi-GB DB before/after. **Linear not yet updated** — the planning
-session had no Linear access; create MSR-1…MSR-5 issues from the workplan chunk and record the
-corrected root cause on `DON-240` before or at MSR-0 start.
+1. Freeze, commit, and push the existing PR branch; run exact-head package,
+   browser/visual, kill-matrix, Linux, and four-review gates.
+2. If all remain clean, execute the single fresh Ubuntu field qualification and
+   record the final ledger externally in PR #10 and the three Linear issues.
 
-## DON-240 beta.11 status (2026-07-08) — SUPERSEDED by MSR lane above
+## Blockers
 
-Root cause: beta.9 added SQLite `synchronous = FULL`, and the tracking runtime persisted devices in
-a per-device loop. With 32 devices, each 5 s tracking poll could perform 32 fsync-backed commits on
-the Electron main process. On the field tester's slow disk this stretched online tracking cadence to
-roughly 22-27 s and made map panning, Devices, and diagnostics feel frozen.
+- None at present. The rejected caf9 receipt is diagnosis, not qualification.
 
-Fix shipped in beta.11: `upsertDevicesBulk` batches all devices from a tracking poll into one
-transaction while keeping `synchronous = FULL` durability; per-poll device fsyncs drop from roughly
-32 to 1. Runtime uses the bulk method when available and preserves the per-device fallback.
-
-Validation:
-- Local focused and full gates passed, including `npm run beta:verify -- --no-smoke`: lint, build,
-  unit `1082/1082`, backend `47 passed / 1 ignored`, Chromium E2E `129/129`, and local package.
-- GitHub Actions release run `28972979120` passed gates, Linux bundle, private-map-data guard,
-  AppImage launch smoke, and draft prerelease/SHA256SUMS upload.
-- CI-built asset checksums verified locally and on Ubuntu:
-  AppImage `c528e192afc7c6507e6167df26b217054e1824eacd62ecbcd1fca6be1c89cba6`; `.deb`
-  `adabc02aa68c48447275ec498bc0ea00ee9672a21f0db7237eb2930622d260ca`.
-- Ubuntu packaged smoke evidence is mirrored under `output/beta11-ubuntu-smoke/`: official offline
-  map package readiness/outside warning/diagnostics passed, bad-secret recovery passed,
-  diagnostics/support/incident exports sanitized, coarse Irish Grid `V 80 84 -> V 80500 84500`
-  passed, duplicate launch passed, and core lifecycle/restart/recovery/finish/finalize/archive
-  passed via the legacy smoke except for stale coordinate/diagnostics selectors covered by focused
-  smokes.
-- Full-profile map/tracking probe reached live tracking online (`33` devices / `8` fixes) and kept
-  the main-process heartbeat healthy (`p99 10 ms`, max `959 ms`, zero heartbeat errors). The current
-  Ubuntu desktop session throttled renderer rAF to roughly 1 Hz; beta.10 showed the same renderer
-  verdict under the same session, so that renderer verdict is non-discriminating and not treated as
-  beta.11-specific regression evidence.
-
-Still needed: field retest on the original slow PCLinuxOS/team machine/profile. Ubuntu's fast SSD
-cannot reproduce the fsync latency that caused the real freeze.
-
-## DON-240 earlier root-cause context (2026-07-08, beta.10 field retest still froze)
-
-**Beta.10 (`3e9ce22`, all hotfix + hardening) STILL froze in the field** — tester report: "app
-opens then everything takes 20-30 seconds to respond." Field diagnostic (PCLinuxOS, kernel
-6.12.71, 1.2 GB official Discovery package, 32 devices, 5 s poll) shows the smoking gun: when
-tracking is **idle (0 devices)** snapshots log at a clean 5 s cadence; the moment it goes **online
-(32 devices)** the cadence jumps to **~22-27 s**. The slowdown is entirely in the online tracking
-**persistence** path, not the map.
-
-Root cause: **beta.9 added `db.pragma('synchronous = FULL')` (`mission-store.cjs:26`; NOT present in
-beta.8) — Fable finding #3.** At FULL every commit does an fsync. The tracking runtime upserted
-devices in a **per-device loop** (`start-tracking-runtime.ts`), so a 32-device poll did 32 fsync'd
-commits on the main process every 5 s. On a slow field disk that blocks the event loop for tens of
-seconds → "everything takes 20-30 s". This is why **no probe run on the fast Ubuntu SSD ever
-reproduced it** (fsync is sub-ms there) — the variable is fsync latency, not page cache. The whole
-official-map tile-read / exception-storm investigation was a **red herring** for this symptom (the
-exception-storm removal was still a real, worthwhile fix, just not the freeze).
-
-Fix: added `upsertDevicesBulk` to the mission store
-(one transaction → one fsync for all devices) and switched the runtime persistence to it, keeping
-`synchronous=FULL` so durability is preserved (one fsync/poll is fine even on a slow disk). Per-poll
-device commits: 32 → 1. Positions were already batched via `addPositionsBulk`.
-- `electron/mission-store.cjs` `upsertDevicesBulk(db, input)` + store export; IPC channel added to
-  `main.cjs`/`preload.cjs` (generic bridge picks it up); optional on `MissionStore` and
-  `TrackingRuntimeMissionStore`; runtime uses it with a per-device fallback.
-- Tests (red→green): `electron-mission-store.test.ts` (bulk correctness + created/updated events),
-  `start-tracking-runtime.test.ts` (bulk called once, per-device loop not used).
-- Verified: `tsc -b` clean, eslint clean, full unit suite **153 files / 1082 tests passing**.
-- **Still needed:** field retest on the actual slow machine (or a slow-disk repro) — this is the
-  only environment that reproduces the fsync freeze. Consider also whether to keep FULL vs NORMAL.
-
-## DON-240 Hotfix Hardening (earlier context, 2026-07-08)
-
-Beta.9 is ON HOLD (map/Devices/diagnostics hangs on Linux). Current DON-240 commits on `master`:
-`7f776de` hotfix, `557b9af` freeze probe + hardening, `78fa836` heartbeat fix, `b0008fd` live-load
-probe option, `d00eecb` app-owned credential seeding for live-load probe. Pushed to origin.
-
-Beta.10 replacement prerelease is ready for team retest. Prep commit `b9ddfbe` and test-isolation
-fix `8557a0c` were pushed first; release run `28963733570` then failed before bundling on Settings
-E2E because the workspace could remain visible while `Save, Connect & Close` waited for a slow
-forced reconnect/large breadcrumb load. Commit `3e9ce22` fixes this by closing Settings immediately
-after persistence succeeds and running runtime reload in the background, with a unit regression
-proving slow reconnects no longer block the modal. Tag `electron-v0.1.0-beta.10` points at
-`3e9ce22dff518d4718851296f6c9881559485dd2`; GitHub Actions release run `28965175933` passed gates,
-Linux bundle, private-map-data guard, CI AppImage launch smoke, and draft prerelease/SHA256SUMS
-upload. Ubuntu packaged smoke on `donal-Precision-5570` passed against the CI-built AppImage:
-checksums, full-profile freeze probe with live tracking and Reeks package (`frozen=false`, worst
-stall 50 ms, main p99 21 ms, renderer p99 17 ms, 33 devices / 8 fixes), official offline map smoke,
-diagnostics report/support/incident-bundle exports, mission lifecycle/restart/recovery/finalize/
-archive, coordinate rejection + `V 80 84 -> V 80500 84500`, bad-secret startup recovery, and
-duplicate launch. Evidence is mirrored under `output/beta10-ubuntu-smoke/`. The original team
-freeze machine/profile still needs to retest before beta.9 HOLD is lifted.
-
-Implemented:
-- Official-map proxy caches Settings/package metadata, avoids per-tile `synchronize()`, returns a
-  visible 256x256 hatched no-coverage tile for package misses, and keeps `package_error` loud.
-- Tracking breadcrumb publishing sends current fixes before slow breadcrumb history and avoids
-  duplicate-only overlap fanout.
-- Diagnostics runtime log tail reads are bounded.
-- `positionsEqual` has a compile-time exhaustiveness guard over `NormalizedTrackingPosition`.
-- `npm run electron:smoke:map-freeze` measures renderer rAF drift and main-process IPC RTT during
-  a packaged serpentine pan; it now fails if the main heartbeat collects zero samples. Live-load
-  mode copies the app-owned `credentials.json` from the Ubuntu user's local SAR Tracker config into
-  throwaway userData, avoiding legacy `secrets.json`/libsecret migration over SSH.
-
-Validation so far:
-- Local macOS gates passed: `npm run lint`, `npm run build`, `npm run test` (153/153 files,
-  1079/1079 tests), `npm run test:backend` (47 passed / 1 ignored), plus targeted probe/map/tracking
-  tests.
-- GitHub Linux validation build `28959613296` for `78fa836` passed, including Linux artifact
-  inspection and AppImage launch smoke. CI artifacts copied to Ubuntu at
-  `/home/donal/sartracker-hotfix-78fa836/`; AppImage and deb hashes verified from `SHA256SUMS`
-  (path-normalized).
-- Ubuntu map-only A/B on `donal@192.168.18.31`, X11, package
-  `/home/donal/SARTracker-private-map-assets/don107/packages/reeks-standard-60km-z16.mbtiles`
-  (31,729 tiles): original beta.9 did **not** numerically freeze on this machine even with 14x14 /
-  200 ms heavy pan (`main max 28 ms`, renderer max 17 ms), but it produced **2,527** tile-miss IPC
-  exceptions. CI hotfix under the same load stayed responsive (`main max 43 ms`, renderer max 17 ms)
-  and produced **0** tile-miss exceptions. Evidence:
-  `output/beta9-map-freeze-probe/A-beta9-heavy/` and `B-hotfix-heavy/` on Ubuntu.
-- Ubuntu packaged official-offline smoke passed on the CI hotfix AppImage, including offline
-  package readiness, outside-coverage warning, diagnostics export, and 0 tile-miss exceptions.
-  Evidence: `output/beta9-map-freeze-probe/B-official-offline/` on Ubuntu.
-- Ubuntu full-profile A/B now runs after switching the probe to app-owned credential seeding:
-  `--allow-network --seed-real-tracking-config --password-store=basic`, live tracking online with
-  33 devices / 8 fixes on both builds. Original beta.9 still did **not** numerically freeze
-  (`main max 66 ms`, renderer max 67 ms) but produced **2,542** tile-miss IPC exceptions. CI hotfix
-  stayed responsive (`main max 63 ms`, renderer max 33 ms) and produced **0** tile-miss exceptions.
-  Evidence: `output/beta9-map-freeze-probe/A-beta9-fullprofile/` and `B-hotfix-fullprofile/` on
-  Ubuntu. Cache drop could not be applied because the Ubuntu account has no passwordless sudo.
-
-Open / not release-ready:
-- The strict reproduction gate from `docs/releases/beta9-map-freeze-repro-plan.md` is still **not
-  met**: original beta.9 did not freeze numerically on this Ubuntu host, even with full concurrent
-  tracking load. We can claim the hotfix removes the measured beta.9 exception storm and is
-  responsive under the same load on this machine; we cannot claim categorical field-freeze proof.
-- Bad-secret smoke still needs a clean rerun with `--password-store=basic` or a proper D-Bus/keyring
-  session; earlier A and B failures were baseline validation-environment failures, not hotfix-only.
-- Before replacement release: resolve or bypass the live-secret/keyring smoke blocker with a known
-  good interactive/session setup, then complete the full packaged smoke matrix on the CI-built
-  artifact. Do not publish a replacement beta until that is done.
-
-## Latest Beta.8 Validation - 2026-06-21
-
-- Full local gates passed before the targeted smoke fix: `npm run lint`, `npm run build`, `npm run test` - 152 files / 997 tests, `npm run test:backend` - 47 passed / 1 ignored, `npm run test:e2e:chromium` - 127/127, `npx playwright test --project=visual` - 34/34, `npm run visual:review -- --fail-on critical` - 39/39, and `npm run beta:verify -- --no-smoke` - passed with manual smoke intentionally skipped.
-- Targeted smoke found and fixed `DON-223`: mast action labels overlapped at 1100x720. Fix compacts the command mast grid below 1180px and uses short visible labels while preserving full accessible names. `DON-223` is Done.
-- Post-fix focused verification passed: `npm run lint`, `npm run build`, `npx playwright test tests/e2e/focus-mode.spec.ts tests/e2e/mission.spec.ts --project=chromium` - 17/17, `npx playwright test tests/e2e/visual/visual-app-shell.spec.ts tests/e2e/visual/visual-mission-lifecycle.spec.ts --project=visual` - 13/13, `npm run visual:review -- --only shell-map-scale-small-display --fail-on critical` - passed.
-- Vercel preview deployed via documented prebuilt flow after direct `vercel deploy --yes` failed because `.vercelignore` excludes build inputs. Preview: `https://sartracker-iuj0w2ls4-ocallaghandonal2-1437s-projects.vercel.app`; protected share URL expires 2026-06-22 05:35 UTC: `https://sartracker-iuj0w2ls4-ocallaghandonal2-1437s-projects.vercel.app/?missionHarness=1&_vercel_share=FqNQsHcXOa7AHnXMaKCcyUiyowZCovKN`.
-- Hosted UI smoke passed on that preview with mocked Traccar responses, covering app load, map tiles after wait, mission start, harness tracking display, Devices, marker-at-grid, settings validation, diagnostics, and the 1100x720 mast fix. Evidence is under `output/playwright/beta8-local-smoke/` and `output/playwright/beta8-vercel-smoke/`.
-- `DON-224` root cause: the hosted app still recommended the old Vercel proxy from the HTTP-era Traccar setup. The team server now works directly over `https://kmrtsar.eu` with CORS. Direct deployed-browser smoke against the Vercel preview passed: Settings `Test Connection`, `Save, Connect & Close`, online tracking, and Devices workspace. Evidence: `output/playwright/beta8-direct-https-traccar/`.
-- `DON-225` fixed the drawing blank-name save path: Save is disabled until required drawing name/text is present, and handled `Drawing name is required.` validation no longer rethrows into an uncaught promise rejection. Verified with red-to-green focused units, drawing Chromium E2E, drawing visual E2E/review, full unit, lint, build, and full Chromium 127/127.
-- `DON-226` added beta.8 diagnostic breadcrumbs so map/tracking issue reports can use the sustainable flow: approximate incident time + Export Incident Bundle + optional screenshot/note. Incident bundles now include sanitized, bounded breadcrumbs for basemap/map-health changes, marker saves, measurement completion, tracking status changes, and tracking snapshot counts. They intentionally exclude precise coordinates, credentials, private map package paths, and raw mission data. Verified with focused unit coverage and Chromium Diagnostics E2E; full gates still need rerun after this chunk.
-
-## Beta.8 Candidate Status
-
-DON-190 through DON-199 are complete, committed, pushed, and Linear-closed.
-DON-203 through DON-205 are complete and Linear-closed in the operator hardening batch.
-
-Main beta.8 batch coverage:
-
-- DON-190 Devices workspace list/search/selection behavior.
-- DON-191 Map Tools / RHS Tools consolidation.
-- DON-192 Mission Control minimize behavior, helicopter move to Tools, top-panel simplification.
-- DON-193 Tracking stale-state visibility and map-label readability.
-- DON-194 Layer Tree and GPX readability controls.
-- DON-195 Map shell scale/readability and smaller-display layout.
-- DON-196 Drawing detail panel simplification and required-field emphasis.
-- DON-197 Casualty terminology/order and marker map-label size.
-- DON-198 Mission preview / map sharing / external-resource decisions split to DON-215-DON-218.
-- DON-199 Settings/coordinator access-control decision split to DON-219-DON-221.
-- DON-226 Map/tracking diagnostic breadcrumbs for beta.8 incident bundles.
-
-Additional runtime performance hardening is complete locally for the tracking/Electron data path:
-
-- DON-165: breadcrumb accumulation now keeps per-device ordered state and appends incrementally instead of rebuilding retained history every poll.
-- DON-200: tracking runtime uses an optional bulk mission-store position write; Electron persists bulk rows in one transaction while preserving raw breadcrumb mission truth and telemetry semantics.
-- DON-201: Electron official-map proxy reuses readonly MBTiles readers/statements per package and closes stale handles when package metadata changes.
-- DON-202 / DON-251: Mission Review keeps the scalar exact breadcrumb count, but active Electron Review now obtains it with the bounded audit page through a cancellable read-only worker snapshot instead of scanning on main.
-
-Safety-critical runtime bug fixes are complete locally for the latest sweep:
-
-- DON-206: Traccar device/current-position/breadcrumb list normalization now drops only malformed rows, logs sanitized row context, and keeps single-row normalizers strict. All-invalid current-position responses still fail explicitly.
-- DON-207: Traccar provider URLs with embedded credentials are rejected in renderer/Electron settings, disable live tracking if found in manually edited persisted settings, and are redacted in renderer/Electron diagnostics/support output.
-- DON-208: corrupt persisted autosave/tracking intervals are normalized to 30s default or clamped to 5s-3600s; the polling manager also clamps runtime intervals before scheduling.
-- DON-209: Electron mission finalization can recover idempotently after interruption following `mission_archive_succeeded`; retry reuses the recorded archive and writes exactly one finalization event.
-
-Renderer/map performance hardening is complete locally for the latest sweep:
-
-- DON-210: MapLibre GeoJSON source sync now uses explicit data keys so unchanged tracking/marker/drawing/GPX/helicopter/measurement overlays do not resend identical source data; style-rebuilt source objects still receive data.
-- DON-211: layer catalog refresh skips metadata reload/loading publishes when mission layer structure is unchanged by volatile tracking status/last-seen updates.
-- DON-212: breadcrumb timestamp parsing and line/dot feature construction are cached by immutable breadcrumb array identity and relevant style inputs, preserving per-device breadcrumb fairness while avoiding repeated segmentation work.
-- DON-213: the closed Devices workspace now subscribes only to open/close state; tracking row derivation and heavy device subscriptions mount only while the overlay content is present.
-
-Operator workflow hardening is also complete:
-
-- DON-203: stacked Escape now closes only the top dialog/confirmation above docked Mission Review.
-- DON-204: Settings prompts before discarding unsaved edits.
-- DON-205: Text Label dragging works from visible label text, not only the anchor point; overlay boundary handling prevents docked workspaces from moving labels underneath them.
-- DON-190: Devices workspace layout and selected-list behavior was revalidated without new code changes.
-
-Final browser/regression gate passed after the hardening batch:
-
-- `npm run lint`
-- `npm run build`
-- `npm run test` - 152 files / 976 tests
-- `npm run test:backend` - 47 passed / 1 ignored
-- `npm run test:e2e:chromium` - 126/126
-- `npx playwright test --project=visual` - 34/34
-- `npm run visual:review -- --fail-on critical` - 39/39
-- `node --check electron/main.cjs electron/preload.cjs electron/mission-store.cjs electron/settings-store.cjs`
-- `npm run electron:pack` - local unsigned macOS arm64 directory package, `better-sqlite3` rebuild passed.
-
-DON-206-DON-209 verification snapshot:
-
-- Red-to-green focused regressions: 7 files / 94 tests.
-- `npm run lint`
-- `npm run build`
-- `npm run test` - 152 files / 991 tests
-- `npm run test:backend` - 47 passed / 1 ignored
-- `npm run test:e2e:chromium` - 126/126
-- `npx playwright test --project=visual` - 34/34
-- `npm run visual:review -- --fail-on critical` - 39/39 after hardening stale/ambiguous visual prompts and captures for `marker-ipp-dialog`, `marker-casualty-dialog`, and `mast-tracking-cell-active`; report `test-results/visual-verification/reports/visual-review-2026-06-20T14-12-13Z.json`.
-- `npm run electron:pack` - local unsigned macOS arm64 directory package, `better-sqlite3` rebuild passed.
-- `npm run electron:smoke:bad-secret -- --app "tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/MacOS/SAR Tracker Electron Validation" --evidence-dir tmp/electron-bad-secret-smoke-don206-209` - passed.
-- `npm run beta:verify -- --no-smoke` - passed lint/build/unit/backend/Chromium/package and wrote `tmp/beta-artifacts/verify-0.1.0-beta.7-sha.cfe1fa36752f-2026-06-20T13-49-43Z.json`; manual smoke was intentionally skipped.
-
-Not done in this sweep: no live/private Traccar call, no private official MBTiles smoke, no manual beta smoke prompt, and no release publication.
-
-The final visual gates initially found two stale/ambiguous harness waits/prompts, not product regressions: mast tracking cell prompt wording and casualty marker map-label capture timing. Both were hardened and the full visual gate reran green.
-The paused-mission finish E2E timing assertion was also hardened for second-boundary scheduler drift after reproducing a 1/3 repeat flake; the focused test passed 5/5 and the full mission/full Chromium suites passed afterward.
-
-DON-210-DON-213 verification snapshot:
-
-- Red-to-green focused regressions: 4 files / 28 tests.
-- Adjacent focused unit sweep: 12 files / 77 tests.
-- `npm run test` - 152 files / 997 tests.
-- `npm run lint`
-- `npm run build`
-- `npm run test:backend` - 47 passed / 1 ignored.
-- `npx playwright test tests/e2e/performance-sweep.spec.ts tests/e2e/devices-workspace.spec.ts tests/e2e/layer-panel.spec.ts tests/e2e/map.spec.ts tests/e2e/parity-visibility.spec.ts --project=chromium` - 43/43.
-- `npm run test:e2e:chromium` - 127/127.
-- `npx playwright test --project=visual` - 34/34.
-- `npm run visual:review -- --fail-on critical` - 39/39, 0 critical blocking failures; report `test-results/visual-verification/reports/visual-review-2026-06-20T16-40-09Z.json`.
-- `node --check electron/main.cjs electron/preload.cjs electron/mission-store.cjs electron/official-map-proxy.cjs`
-- `npm run electron:pack` - local unsigned macOS arm64 directory package, `better-sqlite3` rebuild passed.
-- `npm run beta:verify -- --no-smoke` - passed lint/build/unit/backend/Chromium/package and wrote `tmp/beta-artifacts/verify-0.1.0-beta.7-sha.0c0994b495de-2026-06-20T16-32-43Z.json`; manual smoke was intentionally skipped.
-
-Not done in this sweep: no live/private Traccar call, no private official MBTiles smoke, no manual beta smoke prompt, and no release publication. One first `beta:verify --no-smoke` run exposed a transient `electron-main-startup.test.ts` cleanup/order failure after build; the single-file retry, full unit retry, and full beta-verifier rerun all passed.
-
-Performance batch verification snapshot:
-
-- Red-to-green focused unit coverage for DON-165/DON-200/DON-201/DON-202: 6 files / 63 tests.
-- Adjacent runtime/map/store contract units: 10 files / 74 tests.
-- `npm run lint`
-- `npm run test` - 152 files / 975 tests
-- `npm run test:backend` - 47 passed / 1 ignored
-- `npm run build`
-- `npm run test:e2e:chromium` - 121/121
-- `npx playwright test --project=visual` - 34/34
-- `npm run visual:review -- --fail-on critical` - 39/39
-- `node --check electron/main.cjs electron/preload.cjs electron/mission-store.cjs electron/official-map-proxy.cjs`
-- `npm run electron:pack` - local unsigned macOS arm64 directory package, `better-sqlite3` rebuild passed.
-
-Not done: no private Discovery MBTiles package smoke and no release publication were attempted in this batch.
-
-## Beta.8 Release Gate
-
-Beta.8 is published. The packaged release gate passed on the CI-built artifact before publication:
-
-- GitHub Actions run `28012741523` was green.
-- Deep Ubuntu packaged smoke passed 43/43 on the CI-built post-fix artifact.
-- DON-180 duplicate-launch/single-instance smoke passed inside that matrix.
-- Linear `DON-180` is Done as of 2026-06-23.
-
-Do not reopen beta.8 release gating unless new tester evidence points to a regression in the published artifact.
-
-## Current Follow-Ups
-
-- **DON-240 beta.9 freeze:** root cause now CONFIRMED — see "DON-240 ROOT CAUSE CONFIRMED — MSR lane planned (2026-07-10)" above; the investigation summary below is historical. Original context: urgent active blocker created 2026-07-08 from tester feedback. Investigation used three Codex subagents plus Claude; strongest root cause is Electron main-process saturation from official-map tile IPC, amplified by tracking breadcrumb fan-out and diagnostics log export. Local fixes currently cache/coalesce official-map settings in the tile proxy, invalidate on Settings save, return empty PNG tiles for ordinary offline coverage misses instead of throwing per tile, publish current tracking fixes before slow breadcrumb history, no-op duplicate breadcrumb overlap snapshots, and bound runtime-log `readRecent(limit)` parsing. Verification so far: red-to-green focused units, targeted runtime/Electron/tracking units 123/123, lint, build, full unit 152/1062, backend 47 passed / 1 ignored, full Chromium E2E 129/129, in-app Browser smoke against `http://127.0.0.1:1420/?missionHarness=1` covering mission start, map pan, Devices, Diagnostics, Export Report, and Export Support Bundle, local `npm run electron:pack`, and packaged macOS official-offline smoke with private `reeks-standard-60km-z16.mbtiles`; rerun app log has no `fetch-official-map-tile` exception storm. Ubuntu host `donal@192.168.18.31` is currently unreachable over SSH (`ConnectTimeout=8` timed out), so Ubuntu packaged smoke remains open before replacement release.
-- **Fable deep-analysis remediation queue:** `DON-230` is the parent Linear issue for `output/fable-deep-analysis.md` (2026-07-06). `DON-231` through `DON-238` are complete and were included in beta.9. `DON-239` is intentionally parked as low priority for a later tracking-staleness policy pass. The original beta.9 release gate did pass before publication (`npm run beta:verify`, visual E2E/review, local browser and packaged smoke, GitHub Actions run `28875685324`, and Ubuntu CI-artifact smoke under `output/beta9-ubuntu-smoke/`), but team feedback exposed the separate `DON-240` release-blocking freeze and beta.9 is now on hold.
-- **DON-228 beta.8 breadcrumb gap fix:** Eamonn reported a regular missing breadcrumb cadence (“group of 10 then gap”) on beta.8. Root cause was the poller advancing each per-device incremental breadcrumb cursor by `+1000ms`, creating a one-second blind spot after every polling window. Fixed by fetching inclusively from the last seen timestamp and relying on accumulator/persistence dedupe. Verification: red-to-green `tests/unit/polling-manager.test.ts`, focused tracking/diagnostics unit sweep `6 files / 63 tests`, `npx playwright test tests/e2e/settings.spec.ts --project=chromium --grep "DON-228"`, `npx playwright test tests/e2e/settings.spec.ts --project=chromium` `9/9`, `npm run lint`, `npm run build`, `npm run test` `152 files / 1007 tests`, `npm run test:backend` `47 passed / 1 ignored`, `npm run test:e2e:chromium` `128/128`, and `npm run electron:pack`. Linear `DON-228` should stay closed unless team retest shows a different server-side/device cadence issue.
-- `DON-144` remains open: private Discovery package distribution owner/channel and repeatable raw-source-to-MBTiles admin workflow.
-- `DON-214`: Search Area label positioning/zoomed-out drift follow-up.
-- `DON-215`-`DON-218`: mission preview, map export/print, external-resource model, evacuation/gear workflow decisions.
-- `DON-219`-`DON-221`: privileged settings guard, mission unlock authority, and access recovery.
-- `DON-146` remains Backlog but is no longer upstream-blocked: `better-sqlite3` PR #1475 shipped in `12.10.1`; implementation still requires the controlled native/runtime upgrade and qualification sequence in WAR-04B.
-
-## Traccar Test Details
-
-- Current team server: `https://kmrtsar.eu`
-- Validation credentials: `apiuser` / `apiuser` for hosted team testing; `sean` / `sean` also validated on 2026-06-21.
-- Do not use `https://traccar.kmrtsar.eu` or port `:5055`; those are listener/non-API paths.
-- Do not use old direct HTTP URLs such as `http://kmrtsar.eu:8082` or `http://kmrtsar.ddns.net:8082` in hosted browser mode.
-- Hosted browser and desktop should use the direct HTTPS provider base URL: `https://kmrtsar.eu`.
-
-## Useful Commands
-
-- Unit: `npm run test`
-- Backend: `npm run test:backend`
-- Standard E2E: `npm run test:e2e:chromium`
-- Visual E2E: `npx playwright test --project=visual`
-- Visual review: `npm run visual:review -- --fail-on critical`
-- Build: `npm run build`
-- Lint: `npm run lint`
-- Local beta gate: `npm run beta:verify`
-
-For packaged Electron smoke details, read local `SMOKE-TESTING.md` and `docs/electron-beta-handoff.md` before starting.
+Archived pre-recovery baton: `handoff/archive/HANDOFF-history-2026-09-04-pre-pr10-recovery.md`.

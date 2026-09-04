@@ -8,6 +8,9 @@ const { createHash, randomUUID: cryptoRandomUUID } = require('node:crypto')
 const Database = require('better-sqlite3')
 const { randomUUID } = require('node:crypto')
 const { rehydrateMissionFromSnapshot } = require('./archive-rehydrate.cjs')
+const {
+  readCurrentMissionFinalizationBoundary,
+} = require('./mission-finalization-boundary.cjs')
 const { copyVerifiedAttachment } = require('./archive-correction-attachment-copy.cjs')
 const {
   removeCorrectionAttachmentJournal,
@@ -332,6 +335,7 @@ async function run() {
       snapshotPath: workerData.snapshotPath,
       missionId: workerData.missionId,
       archiveId: workerData.archiveId,
+      finalizedEpoch: workerData.finalizedEpoch,
       schemaVersion: 13,
       expectedSha256: workerData.expectedSha256,
       expectedIdentity: workerData.expectedIdentity,
@@ -354,11 +358,12 @@ async function run() {
           .get(workerData.missionId)
         const cleanup = database.prepare(`SELECT state FROM mission_cleanup_journal
           WHERE mission_id = ?`).get(workerData.missionId)
-        const finalizedEpoch = database.prepare(`SELECT rowid FROM mission_events
-          WHERE mission_id = ? AND event_type = 'mission_finalized'
-          ORDER BY rowid DESC LIMIT 1`).get(workerData.missionId)?.rowid
+        const finalizationBoundary = readCurrentMissionFinalizationBoundary(database, {
+          missionId: workerData.missionId,
+          archiveId: workerData.archiveId,
+        })
         if (mission?.status !== 'finalized' || cleanup?.state !== 'completed'
-          || Number(finalizedEpoch) !== workerData.finalizedEpoch) {
+          || finalizationBoundary?.eventRowid !== workerData.finalizedEpoch) {
           const error = new Error('Mission finalization or archive storage changed before correction unlock could commit.')
           error.code = 'ARCHIVE_REHYDRATE_EPOCH_CHANGED'
           throw error

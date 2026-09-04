@@ -41,6 +41,8 @@ const ARCHIVE_CLEANUP_BLOCKERS = new Set([
   'archive_review_active',
   'cleanup_already_completed',
   'cleanup_in_progress',
+  'cleanup_journal_invalid',
+  'cleanup_membership_changed',
   'current_archive_not_verified',
   'current_finalization_epoch_mismatch',
   'evidence_health_not_clean',
@@ -408,6 +410,9 @@ function sendArchiveProgressBestEffort(sender, projectProgress) {
 
 /** Projects the current fail-closed cleanup checklist without trusting unknown store fields. */
 function projectCleanupEligibility(input) {
+  const blockers = Array.isArray(input?.blockers) ? input.blockers : []
+  const cleanupInProgress = blockers.includes('cleanup_in_progress')
+  const cleanupJournalInvalid = blockers.includes('cleanup_journal_invalid')
   if (input === null || typeof input !== 'object' || Array.isArray(input)
     || typeof input.eligible !== 'boolean'
     || !['live', 'cleanup_in_progress', 'archived'].includes(input.storageState)
@@ -420,7 +425,9 @@ function projectCleanupEligibility(input) {
     || (input.storageState === 'archived'
       && (input.eligible || !input.blockers.includes('cleanup_already_completed')))
     || (input.storageState === 'cleanup_in_progress'
-      && (input.eligible || !input.blockers.includes('cleanup_in_progress')))
+      && (input.eligible || cleanupInProgress === cleanupJournalInvalid))
+    || (input.storageState !== 'cleanup_in_progress'
+      && (cleanupInProgress || cleanupJournalInvalid))
     || (input.eligible && input.storageState !== 'live')) {
     throw archiveIpcError(
       'ARCHIVE_IPC_INVALID_RESULT',

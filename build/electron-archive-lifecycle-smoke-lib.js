@@ -71,6 +71,17 @@ const REQUIRED_VERIFY_PHASES = Object.freeze([
   'plaintext_cleanup',
   'verified',
 ])
+const LIVENESS_PHASES = Object.freeze(['create', 'verify', 'restore', 'cleanup'])
+const LIVENESS_PHASE_KEYS = Object.freeze([
+  'currentFixMaxGapMs',
+  'mainWatchdogMaxGapMs',
+  'rendererFrameMaxGapMs',
+  'requestToRendererMaxMs',
+  'sampleCount',
+  'sourceToRendererMaxMs',
+])
+const LIVENESS_HARD_GATE_MS = 200
+const LIVENESS_POLL_INTERVAL_MS = 50
 const REVIEW_KEYS = Object.freeze([
   'archiveIdMatched',
   'breadcrumbCount',
@@ -736,10 +747,21 @@ export function assertArchiveLifecycleSmokeEvidenceOmitsSecrets(evidence, secret
 /** Validates one closed, machine-readable packaged archive-lifecycle proof. */
 export function validateArchiveLifecycleSmokeEvidence(evidence) {
   const failures = []
+  const legacyV1 = evidence !== null
+    && typeof evidence === 'object'
+    && !Array.isArray(evidence)
+    && evidence.schemaVersion === 1
+    && evidence.proofKind === 'packaged-electron-archive-lifecycle-v1'
+  if (!legacyV1 && evidence !== null && typeof evidence === 'object'
+    && !Array.isArray(evidence)
+    && !Object.prototype.hasOwnProperty.call(evidence, 'liveness')) {
+    failures.push('V2 archive-lifecycle liveness evidence is missing.')
+  }
   const root = exactRecord(evidence, [
     'archive',
     'cleanup',
     'interruptedRestore',
+    ...(legacyV1 ? [] : ['liveness']),
     'mission',
     'privacy',
     'proofKind',
@@ -751,13 +773,24 @@ export function validateArchiveLifecycleSmokeEvidence(evidence) {
     'verdict',
   ], 'archive-lifecycle evidence', failures)
   if (root === null) return verdict(failures)
-  requireExact(failures, root.schemaVersion, 1, 'Evidence schema version')
-  requireExact(
-    failures,
-    root.proofKind,
-    'packaged-electron-archive-lifecycle-v1',
-    'Evidence proof kind',
-  )
+  if (legacyV1) {
+    requireExact(failures, root.schemaVersion, 1, 'Evidence schema version')
+    requireExact(
+      failures,
+      root.proofKind,
+      'packaged-electron-archive-lifecycle-v1',
+      'Evidence proof kind',
+    )
+  } else {
+    requireExact(failures, root.schemaVersion, 2, 'Evidence schema version')
+    requireExact(
+      failures,
+      root.proofKind,
+      'packaged-electron-archive-lifecycle-v2',
+      'Evidence proof kind',
+    )
+    validateLiveness(root.liveness, failures)
+  }
 
   validateSource(root.source, failures)
   validateRun(root.run, failures)
@@ -790,6 +823,108 @@ export function validateArchiveLifecycleSmokeEvidence(evidence) {
   validateEmbeddedVerdict(root.verdict, failures)
   scanEvidencePrivacy(root, failures)
   return verdict(failures)
+}
+
+/** Validates external, cross-process liveness aggregates for every blocking phase. */
+function validateLiveness(value, failures) {
+  const liveness = exactRecord(value, [
+    'byPhase',
+    'hardGateMs',
+    'pollProfile',
+    'provenance',
+  ], 'liveness evidence', failures)
+  if (liveness === null) return
+  requireExact(
+    failures,
+    liveness.provenance,
+    'packaged-electron-external-watchdog-v1',
+    'Liveness provenance',
+  )
+  requireExact(
+    failures,
+    liveness.hardGateMs,
+    LIVENESS_HARD_GATE_MS,
+    'Liveness hard gate in milliseconds',
+  )
+  const pollProfile = exactRecord(
+    liveness.pollProfile,
+    ['intervalMs', 'mode'],
+    'liveness poll profile',
+    failures,
+  )
+  if (pollProfile !== null) {
+    requireExact(
+      failures,
+      pollProfile.mode,
+      'time-compressed-validation',
+      'Liveness poll mode',
+    )
+    requireExact(
+      failures,
+      pollProfile.intervalMs,
+      LIVENESS_POLL_INTERVAL_MS,
+      'Liveness poll interval in milliseconds',
+    )
+  }
+  const byPhase = exactRecord(
+    liveness.byPhase,
+    LIVENESS_PHASES,
+    'liveness phase evidence',
+    failures,
+  )
+  if (byPhase === null) return
+  for (const phase of LIVENESS_PHASES) {
+    validateLivenessPhase(byPhase[phase], phase, failures)
+  }
+}
+
+/** Validates one phase with at least one complete sample below every hard gate. */
+function validateLivenessPhase(value, phase, failures) {
+  const label = `${phase[0].toUpperCase()}${phase.slice(1)}`
+  const sample = exactRecord(
+    value,
+    LIVENESS_PHASE_KEYS,
+    `${label} liveness sample`,
+    failures,
+  )
+  if (sample === null) return
+  if (!Number.isSafeInteger(sample.sampleCount) || sample.sampleCount < 1) {
+    failures.push(`${label} liveness must contain at least one full sample.`)
+  }
+  validateLivenessMaximum(
+    sample.currentFixMaxGapMs,
+    `${label} current-fix maximum gap`,
+    failures,
+  )
+  validateLivenessMaximum(
+    sample.sourceToRendererMaxMs,
+    `${label} source-to-renderer maximum`,
+    failures,
+  )
+  validateLivenessMaximum(
+    sample.requestToRendererMaxMs,
+    `${label} request-to-renderer maximum`,
+    failures,
+  )
+  validateLivenessMaximum(
+    sample.mainWatchdogMaxGapMs,
+    `${label} main-watchdog maximum gap`,
+    failures,
+  )
+  validateLivenessMaximum(
+    sample.rendererFrameMaxGapMs,
+    `${label} renderer-frame maximum gap`,
+    failures,
+  )
+}
+
+/** Requires one finite non-negative duration strictly below the fixed hard gate. */
+function validateLivenessMaximum(value, label, failures) {
+  if (!Number.isFinite(value) || value < 0 || value >= LIVENESS_HARD_GATE_MS) {
+    failures.push(
+      `${label} must be finite, non-negative, and less than ${LIVENESS_HARD_GATE_MS} ms.`,
+    )
+  }
 }
 
 /** Validates exact repository and packaged-binary identity. */

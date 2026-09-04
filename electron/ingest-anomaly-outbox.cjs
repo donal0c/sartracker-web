@@ -337,9 +337,21 @@ function createIngestAnomalyOutbox(options) {
         name.endsWith('.corrupt') && fileBelongsToMission(name, missionId),
       ).length
       const failure = selectFailure(missionId, corruptCount)
-      const acknowledgedLossMatches =
-        typeof fenceOptions.acknowledgedLossToken === 'string' &&
-        evidenceLossAcknowledgementMatches(missionId, fenceOptions.acknowledgedLossToken)
+      let acknowledgedLossMatches = false
+      if (failure !== null) {
+        let candidate = null
+        try {
+          candidate = createEvidenceLossAcknowledgementCandidate(missionId)
+        } catch {}
+        if (candidate !== null) {
+          const acknowledgedLossToken = typeof fenceOptions.acknowledgedLossToken === 'string'
+            ? fenceOptions.acknowledgedLossToken
+            : typeof fenceOptions.readAcknowledgedLossToken === 'function'
+              ? await fenceOptions.readAcknowledgedLossToken()
+              : null
+          acknowledgedLossMatches = acknowledgedLossToken === candidate.token
+        }
+      }
       if (
         pendingCount > 0 ||
         corruptCount > 0 ||
@@ -762,15 +774,6 @@ function createIngestAnomalyOutbox(options) {
         .update(JSON.stringify({ scope, reasons, lossGeneration }), 'utf8')
         .digest('hex'),
       reasons,
-    }
-  }
-
-  /** Accepts only a token for the current isolated sticky loss occurrence. */
-  function evidenceLossAcknowledgementMatches(missionId, token) {
-    try {
-      return createEvidenceLossAcknowledgementCandidate(missionId).token === token
-    } catch {
-      return false
     }
   }
 

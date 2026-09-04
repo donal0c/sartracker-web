@@ -5,6 +5,9 @@ const { randomUUID } = require('node:crypto')
 
 const { canonicalJson } = require('./archive-container.cjs')
 const { normalizeCustodyFileIdentity } = require('./archive-custody-file.cjs')
+const {
+  readCurrentMissionFinalizationBoundary,
+} = require('./mission-finalization-boundary.cjs')
 
 const ACTIVE_ARCHIVE_CUSTODY_JOURNAL_KEY = 'archive_custody_active_operation'
 const ARCHIVE_CUSTODY_BLOCKING_CONFLICT_KEY = 'archive_custody_blocking_conflict'
@@ -685,24 +688,19 @@ function missionStateMatchesJournal(db, journal, mission, sealDetails) {
     return false
   }
 
-  const latestFinalization = db.prepare(`SELECT rowid AS event_rowid, id, mission_id,
-      event_type, details_json
-    FROM mission_events
-    WHERE mission_id = ? AND event_type = 'mission_finalized'
-    ORDER BY rowid DESC LIMIT 1`).get(journal.missionId)
-  const finalizationDetails = parseAuditDetails(latestFinalization?.details_json)
+  const finalizationBoundary = readCurrentMissionFinalizationBoundary(db, {
+    missionId: journal.missionId,
+    ...(journal.archiveKind === 'direct' ? {} : { archiveId: journal.archiveId }),
+  })
+  const finalizationDetails = finalizationBoundary?.details
   if (journal.archiveKind === 'finalized') {
-    return latestFinalization?.mission_id === journal.missionId
-      && latestFinalization?.event_type === 'mission_finalized'
-      && finalizationDetails?.resulting_status === 'finalized'
+    return finalizationDetails?.resulting_status === 'finalized'
       && finalizationDetails?.archive_id === journal.archiveId
       && finalizationDetails?.archive_relative_path === journal.finalRelativePath
       && finalizationDetails?.container_version === 2
   }
   if (journal.protectedFinalizationEpoch === null
-    || Number(latestFinalization?.event_rowid) !== journal.protectedFinalizationEpoch
-    || latestFinalization?.mission_id !== journal.missionId
-    || latestFinalization?.event_type !== 'mission_finalized'
+    || finalizationBoundary?.eventRowid !== journal.protectedFinalizationEpoch
     || finalizationDetails?.resulting_status !== 'finalized') {
     return false
   }

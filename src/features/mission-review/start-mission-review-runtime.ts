@@ -1038,7 +1038,7 @@ function liveReviewUnavailableMessage(mission: Mission): string | null {
   if (mission.storage_state === 'archived') {
     return 'This mission is stored in its verified archive. Open it from Saved Mission Archives for read-only Review.'
   }
-  return 'This mission has cleanup in progress. Resume its durable archive cleanup before opening ordinary live Review.'
+  return 'This mission has a blocked cleanup state. Open Review Archive Cleanup and resolve its checked state before opening ordinary live Review.'
 }
 
 /** Replaces page-local large-object disclosure without disturbing mission-wide limitations. */

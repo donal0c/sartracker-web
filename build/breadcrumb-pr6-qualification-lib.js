@@ -4,10 +4,15 @@ import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 
+import { validateArchiveLifecycleSmokeEvidence } from './electron-archive-lifecycle-smoke-lib.js'
+
 const require = createRequire(import.meta.url)
 const { canonicalJson } = require('../electron/archive-container.cjs')
 const { normalizeArchiveVerificationProofForIdentity } = require(
   '../electron/archive-envelope.cjs',
+)
+const { ARCHIVE_CLEANUP_MEMBERSHIP_EVENT_TYPES } = require(
+  '../electron/archive-cleanup-membership.cjs',
 )
 
 export const MAX_MAIN_CADENCE_MS = 200
@@ -29,6 +34,7 @@ export const REQUIRED_SCRYPT_PROFILE = Object.freeze({
 const SHA1 = /^[0-9a-f]{40}$/u
 const SHA256 = /^[0-9a-f]{64}$/u
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+const QUALIFICATION_RUN_ID = /^q-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u
 const REQUIRED_ARCHIVE_TABLE_COUNT = 49
 const REQUIRED_LIVE_PHASES = Object.freeze(['create', 'verify', 'restore', 'cleanup'])
@@ -38,6 +44,8 @@ const REQUIRED_RESIDUE_ROOTS = Object.freeze([
   'verification-scratch',
   'archive-review-sessions',
 ])
+const CONTENTION_PROBE_PROVENANCE = 'node-qualification-coordinator-contention-v1'
+const CONTENTION_PROBE_SCOPE = 'field-scale-archive-contention-not-packaged-renderer-liveness'
 
 /** Stable failure for incomplete or overstated PR6 qualification evidence. */
 export class BreadcrumbPr6QualificationError extends Error {
@@ -51,14 +59,20 @@ export class BreadcrumbPr6QualificationError extends Error {
 
 /** Parses the closed, non-secret command line accepted by the PR6 qualifier. */
 export function parseBreadcrumbPr6QualificationArgs(argv) {
-  if (!Array.isArray(argv) || argv.length !== 8 || argv.some((value) =>
+  if (!Array.isArray(argv) || argv.length !== 10 || argv.some((value) =>
     typeof value !== 'string')) {
     throw qualificationFailure(
       'PR6_QUALIFICATION_ARGUMENT_INVALID',
-      'PR6 qualification requires one fixture, evidence path, mission, and expected head.',
+      'PR6 qualification requires one fixture, evidence path, packaged liveness report, mission, and expected head.',
     )
   }
-  const allowed = ['--fixture', '--evidence', '--mission-id', '--expected-head']
+  const allowed = [
+    '--fixture',
+    '--evidence',
+    '--packaged-liveness-report',
+    '--mission-id',
+    '--expected-head',
+  ]
   const values = new Map()
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index]
@@ -74,17 +88,27 @@ export function parseBreadcrumbPr6QualificationArgs(argv) {
   }
   const fixturePath = values.get('--fixture')
   const evidencePath = values.get('--evidence')
+  const packagedLivenessReportPath = values.get('--packaged-liveness-report')
   const missionId = values.get('--mission-id')
   const expectedRepositoryHead = values.get('--expected-head')
   if (!path.isAbsolute(fixturePath) || path.resolve(fixturePath) !== fixturePath
     || !path.isAbsolute(evidencePath) || path.resolve(evidencePath) !== evidencePath
+    || !path.isAbsolute(packagedLivenessReportPath)
+    || path.resolve(packagedLivenessReportPath) !== packagedLivenessReportPath
+    || packagedLivenessReportPath === evidencePath
     || !isBoundedText(missionId, 200) || !SHA1.test(expectedRepositoryHead)) {
     throw qualificationFailure(
       'PR6_QUALIFICATION_ARGUMENT_INVALID',
       'PR6 qualification paths, mission identity, or expected head are invalid.',
     )
   }
-  return Object.freeze({ fixturePath, evidencePath, missionId, expectedRepositoryHead })
+  return Object.freeze({
+    fixturePath,
+    evidencePath,
+    packagedLivenessReportPath,
+    missionId,
+    expectedRepositoryHead,
+  })
 }
 
 /** Creates one terse qualification error without reflecting supplied evidence. */
@@ -176,7 +200,7 @@ function validateRunIdentity(evidence, expectedHead) {
   const run = requireRecord(evidence.run, [
     'runId', 'startedAt', 'completedAt', 'durationMs', 'phaseDurationsMs',
   ], 'PR6 qualification run')
-  if (typeof run.runId !== 'string' || !UUID_V4.test(run.runId)) {
+  if (typeof run.runId !== 'string' || !QUALIFICATION_RUN_ID.test(run.runId)) {
     throw qualificationFailure('PR6_QUALIFICATION_INVALID', 'PR6 qualification run ID is invalid.')
   }
   const startedAt = requireTimestamp(run.startedAt, 'Qualification start time')
@@ -228,18 +252,33 @@ function validateRunIdentity(evidence, expectedHead) {
   }
 
   const flags = requireRecord(evidence.flags, [
-    'fixtureBasename', 'missionId', 'timezone', 'heartbeatHardGateMs',
-    'currentCadenceHardGateMs', 'rssLimitBytes',
+    'fixtureBasename', 'missionId', 'timezone', 'coordinatorHeartbeatHardGateMs',
+    'syntheticPublicationCadenceHardGateMs', 'rssLimitBytes',
   ], 'PR6 qualification flags')
   if (!isBoundedText(flags.fixtureBasename, 255)
     || path.basename(flags.fixtureBasename) !== flags.fixtureBasename
     || !isBoundedText(flags.missionId, 200) || !isBoundedText(flags.timezone, 128)
-    || flags.heartbeatHardGateMs !== MAX_MAIN_CADENCE_MS
-    || flags.currentCadenceHardGateMs !== MAX_MAIN_CADENCE_MS
+    || flags.coordinatorHeartbeatHardGateMs !== MAX_MAIN_CADENCE_MS
+    || flags.syntheticPublicationCadenceHardGateMs !== MAX_MAIN_CADENCE_MS
     || flags.rssLimitBytes !== MAX_ARCHIVE_PROCESS_RSS_BYTES) {
     throw qualificationFailure('PR6_QUALIFICATION_INVALID', 'Qualification flags are invalid or weakened.')
   }
   return { repositoryHead, repositoryTree, flags }
+}
+
+/** Requires success evidence to prove that every owner joined and the profile was removed. */
+function validateTerminalTeardown(evidence) {
+  const teardown = requireRecord(evidence.teardown, [
+    'status', 'ownersJoined', 'profileCleanupCompleted',
+  ], 'PR6 qualification teardown')
+  if (teardown.status !== 'complete'
+    || teardown.ownersJoined !== true
+    || teardown.profileCleanupCompleted !== true) {
+    throw qualificationFailure(
+      'PR6_QUALIFICATION_GATE_FAILED',
+      'PR6 qualification teardown did not complete safely.',
+    )
+  }
 }
 
 /** Validates that the source fixture was never opened or changed in place. */
@@ -412,7 +451,10 @@ function validateCleanupAndReview(evidence, archive) {
   const cleanup = requireRecord(evidence.cleanup, [
     'state', 'storageState', 'preCredentialBlockers', 'reviewLeaseHeld',
     'deletedTableRowsRemain', 'retainedMissionStub', 'retainedArchiveRegistry',
-    'archiveSha256After',
+    'archiveSha256After', 'journalIdentityBound', 'terminalEligibility',
+    'membershipGeneration', 'cleanableMissionEventTypes', 'guardRevision',
+    'finalizationEpoch', 'finalizationEventId', 'cleanupStartedEventId',
+    'cleanupCompletedEventId',
   ], 'PR6 cleanup proof')
   if (cleanup.state !== 'completed' || cleanup.storageState !== 'archived'
     || requireNonnegativeInteger(
@@ -427,6 +469,32 @@ function validateCleanupAndReview(evidence, archive) {
   requireProven(cleanup.retainedMissionStub, 'Retained mission stub')
   requireProven(cleanup.retainedArchiveRegistry, 'Retained archive registry')
   requireProven(cleanup.reviewLeaseHeld, 'Archive Review cleanup lease')
+  requireProven(cleanup.journalIdentityBound, 'Current cleanup journal identity binding')
+  requireNonnegativeInteger(cleanup.membershipGeneration, 'Cleanup membership generation')
+  requirePositiveInteger(cleanup.guardRevision, 'Cleanup guard revision')
+  requirePositiveInteger(cleanup.finalizationEpoch, 'Cleanup finalization epoch')
+  if (canonicalJson(cleanup.cleanableMissionEventTypes)
+      !== canonicalJson(ARCHIVE_CLEANUP_MEMBERSHIP_EVENT_TYPES)
+    || !UUID_V4.test(cleanup.finalizationEventId ?? '')
+    || !UUID_V4.test(cleanup.cleanupStartedEventId ?? '')
+    || !UUID_V4.test(cleanup.cleanupCompletedEventId ?? '')) {
+    throw qualificationFailure(
+      'PR6_QUALIFICATION_CLEANUP_FAILED',
+      'Cleanup membership or audit custody identity is invalid.',
+    )
+  }
+  const terminalEligibility = requireRecord(cleanup.terminalEligibility, [
+    'eligible', 'blockers', 'storageState',
+  ], 'PR6 terminal cleanup validation')
+  if (terminalEligibility.eligible !== false
+    || terminalEligibility.storageState !== 'archived'
+    || canonicalJson(terminalEligibility.blockers)
+      !== canonicalJson(['cleanup_already_completed'])) {
+    throw qualificationFailure(
+      'PR6_QUALIFICATION_CLEANUP_FAILED',
+      'Production cleanup validation did not confirm the terminal archived state.',
+    )
+  }
   if (!Array.isArray(cleanup.preCredentialBlockers)
     || canonicalJson(cleanup.preCredentialBlockers)
       !== canonicalJson(['fresh_non_machine_unlock_required'])) {
@@ -460,95 +528,171 @@ function validateCleanupAndReview(evidence, archive) {
   }
 }
 
-/** Validates uninterrupted live current-position and heartbeat proof by phase. */
-function validateLiveness(evidence) {
-  const liveness = requireRecord(evidence.liveness, [
-    'heartbeatMaxGapMs', 'currentPositionMaxCadenceMs',
-    'currentPositionsIndependent', 'durableMaxLatencyMs', 'durableWriteCount',
-    'durableVisibleWrites', 'durableBusyRetries', 'durableSettlementMs', 'byPhase',
-  ], 'PR6 liveness proof')
-  const heartbeatMaxGapMs = requireMeasurement(
-    liveness.heartbeatMaxGapMs,
-    'Main heartbeat maximum gap',
+/** Validates the prerequisite packaged renderer proof and its exact field-source binding. */
+function validatePackagedLifecycle(evidence, repositoryHead, repositoryTree) {
+  const binding = requireRecord(evidence.packagedLifecycle, [
+    'canonicalEvidenceSha256', 'evidence', 'rawFileSha256',
+  ], 'Packaged lifecycle binding')
+  const rawFileSha256 = requireDigest(
+    binding.rawFileSha256,
+    SHA256,
+    'Packaged lifecycle raw-file digest',
   )
-  const currentPositionMaxCadenceMs = requireMeasurement(
-    liveness.currentPositionMaxCadenceMs,
-    'Current-position maximum cadence',
+  const canonicalEvidenceSha256 = requireDigest(
+    binding.canonicalEvidenceSha256,
+    SHA256,
+    'Packaged lifecycle canonical-evidence digest',
+  )
+  let derivedDigest
+  try {
+    derivedDigest = createHash('sha256')
+      .update(canonicalJson(binding.evidence), 'utf8').digest('hex')
+  } catch {
+    throw qualificationFailure(
+      'PR6_QUALIFICATION_PACKAGED_LIVENESS_FAILED',
+      'Packaged lifecycle report is not canonical JSON evidence.',
+    )
+  }
+  if (canonicalEvidenceSha256 !== derivedDigest) {
+    throw qualificationFailure(
+      'PR6_QUALIFICATION_PACKAGED_LIVENESS_FAILED',
+      'Packaged lifecycle report digest differs from its embedded evidence.',
+    )
+  }
+  const report = binding.evidence
+  const verdict = validateArchiveLifecycleSmokeEvidence(report)
+  if (report?.schemaVersion !== 2
+    || report?.proofKind !== 'packaged-electron-archive-lifecycle-v2'
+    || verdict.valid !== true || verdict.passed !== true) {
+    throw qualificationFailure(
+      'PR6_QUALIFICATION_PACKAGED_LIVENESS_FAILED',
+      'A clean packaged Electron archive-lifecycle v2 report is required.',
+    )
+  }
+  if (report.run?.platform !== 'linux'
+    || report.source?.packagedBuildHeadMatched !== true) {
+    throw qualificationFailure(
+      'PR6_QUALIFICATION_PACKAGED_LIVENESS_FAILED',
+      'Packaged lifecycle proof must come from a Linux packaged build with exact head visible.',
+    )
+  }
+  if (report.source.expectedHead !== repositoryHead
+    || report.source.headBefore !== repositoryHead
+    || report.source.headAfter !== repositoryHead
+    || report.source.treeBefore !== repositoryTree
+    || report.source.treeAfter !== repositoryTree) {
+    throw qualificationFailure(
+      'PR6_QUALIFICATION_HEAD_MISMATCH',
+      'Packaged lifecycle proof does not match the field qualifier exact head and tree.',
+    )
+  }
+  const packagedSourceToRendererMaxMs = Object.values(report.liveness.byPhase).reduce(
+    (maximum, phase) => Math.max(maximum, phase.sourceToRendererMaxMs),
+    0,
+  )
+  return {
+    rawFileSha256,
+    canonicalEvidenceSha256,
+    packagedSourceToRendererMaxMs,
+  }
+}
+
+/** Validates the in-process scale-contention probe without treating it as renderer proof. */
+function validateContentionProbe(evidence) {
+  const probe = requireRecord(evidence.contentionProbe, [
+    'provenance', 'proofScope', 'coordinatorHeartbeatMaxGapMs',
+    'syntheticPublicationMaxCadenceMs', 'durableMaxLatencyMs', 'durableWriteCount',
+    'durableVisibleWrites', 'durableBusyRetries', 'durableSettlementMs', 'byPhase',
+  ], 'PR6 contention probe')
+  if (probe.provenance !== CONTENTION_PROBE_PROVENANCE
+    || probe.proofScope !== CONTENTION_PROBE_SCOPE) {
+    throw qualificationFailure(
+      'PR6_QUALIFICATION_CONTENTION_PROBE_FAILED',
+      'PR6 contention probe provenance or proof scope is invalid.',
+    )
+  }
+  const coordinatorHeartbeatMaxGapMs = requireMeasurement(
+    probe.coordinatorHeartbeatMaxGapMs,
+    'Coordinator heartbeat maximum gap',
+  )
+  const syntheticPublicationMaxCadenceMs = requireMeasurement(
+    probe.syntheticPublicationMaxCadenceMs,
+    'Synthetic publication maximum cadence',
   )
   const durableMaxLatencyMs = requireMeasurement(
-    liveness.durableMaxLatencyMs,
-    'Durable current-position maximum latency',
+    probe.durableMaxLatencyMs,
+    'Durable synthetic-position maximum latency',
   )
   const durableWriteCount = requirePositiveInteger(
-    liveness.durableWriteCount,
-    'Durable current-position writes',
+    probe.durableWriteCount,
+    'Durable synthetic-position writes',
   )
   const durableVisibleWrites = requirePositiveInteger(
-    liveness.durableVisibleWrites,
-    'Durable current-position visible writes',
+    probe.durableVisibleWrites,
+    'Durable synthetic-position visible writes',
   )
   const durableBusyRetries = requireNonnegativeInteger(
-    liveness.durableBusyRetries,
-    'Durable current-position contention retries',
+    probe.durableBusyRetries,
+    'Durable synthetic-position contention retries',
   )
   const durableSettlementMs = requireMeasurement(
-    liveness.durableSettlementMs,
-    'Durable current-position settlement',
+    probe.durableSettlementMs,
+    'Durable synthetic-position settlement',
   )
   if (durableMaxLatencyMs > MAX_DURABLE_SETTLE_MS
     || durableSettlementMs > MAX_DURABLE_SETTLE_MS
     || durableVisibleWrites !== durableWriteCount) {
     throw qualificationFailure(
-      'PR6_QUALIFICATION_LIVENESS_FAILED',
-      'PR6 durable current-position settlement was incomplete or exceeded its deadline.',
+      'PR6_QUALIFICATION_CONTENTION_PROBE_FAILED',
+      'PR6 durable synthetic-position settlement was incomplete or exceeded its deadline.',
     )
   }
-  requireProven(liveness.currentPositionsIndependent, 'Current-position independence')
-  const byPhase = requireRecord(liveness.byPhase, REQUIRED_LIVE_PHASES, 'Phase liveness')
+  const byPhase = requireRecord(probe.byPhase, REQUIRED_LIVE_PHASES, 'Contention phases')
   let observedHeartbeatMax = 0
   let observedCadenceMax = 0
   for (const phase of REQUIRED_LIVE_PHASES) {
     const phaseEvidence = requireRecord(byPhase[phase], [
-      'heartbeatMaxGapMs', 'currentPositionMaxCadenceMs', 'durableMaxLatencyMs',
+      'coordinatorHeartbeatMaxGapMs', 'syntheticPublicationMaxCadenceMs',
+      'durableMaxLatencyMs',
       'durableWriteCount', 'durableVisibleWrites', 'durableBusyRetries',
-      'currentWrites', 'visibleWrites',
-    ], `Liveness during ${phase}`)
+      'syntheticPublicationCount', 'inProcessVisiblePublicationCount',
+    ], `Contention probe during ${phase}`)
     const phaseHeartbeat = requireMeasurement(
-      phaseEvidence.heartbeatMaxGapMs,
-      `Heartbeat gap during ${phase}`,
+      phaseEvidence.coordinatorHeartbeatMaxGapMs,
+      `Coordinator heartbeat gap during ${phase}`,
     )
     const phaseCadence = requireMeasurement(
-      phaseEvidence.currentPositionMaxCadenceMs,
-      `Current-position cadence during ${phase}`,
+      phaseEvidence.syntheticPublicationMaxCadenceMs,
+      `Synthetic publication cadence during ${phase}`,
     )
     const phaseDurableMax = requireMeasurement(
       phaseEvidence.durableMaxLatencyMs,
-      `Durable current-position latency during ${phase}`,
+      `Durable synthetic-position latency during ${phase}`,
     )
-    const writes = requirePositiveInteger(
-      phaseEvidence.currentWrites,
-      `Current-position writes during ${phase}`,
+    const publications = requirePositiveInteger(
+      phaseEvidence.syntheticPublicationCount,
+      `Synthetic publications during ${phase}`,
     )
     const phaseDurableWrites = requirePositiveInteger(
       phaseEvidence.durableWriteCount,
-      `Durable current-position writes during ${phase}`,
+      `Durable synthetic-position writes during ${phase}`,
     )
     const phaseDurableVisibleWrites = requirePositiveInteger(
       phaseEvidence.durableVisibleWrites,
-      `Durable current-position visible writes during ${phase}`,
+      `Durable synthetic-position visible writes during ${phase}`,
     )
     requireNonnegativeInteger(
       phaseEvidence.durableBusyRetries,
-      `Durable current-position contention retries during ${phase}`,
+      `Durable synthetic-position contention retries during ${phase}`,
     )
     if (phaseHeartbeat >= MAX_MAIN_CADENCE_MS || phaseCadence >= MAX_MAIN_CADENCE_MS
-      || phaseEvidence.visibleWrites !== writes
+      || phaseEvidence.inProcessVisiblePublicationCount !== publications
       || phaseDurableMax > MAX_DURABLE_SETTLE_MS
-      || phaseDurableWrites !== writes
+      || phaseDurableWrites !== publications
       || phaseDurableVisibleWrites !== phaseDurableWrites) {
       throw qualificationFailure(
-        'PR6_QUALIFICATION_LIVENESS_FAILED',
-        `PR6 qualification liveness failed during ${phase}.`,
+        'PR6_QUALIFICATION_CONTENTION_PROBE_FAILED',
+        `PR6 qualification contention probe failed during ${phase}.`,
       )
     }
     observedHeartbeatMax = Math.max(observedHeartbeatMax, phaseHeartbeat)
@@ -566,20 +710,20 @@ function validateLiveness(evidence) {
   const observedDurableBusyRetries = Object.values(byPhase).reduce(
     (total, phase) => total + phase.durableBusyRetries, 0,
   )
-  if (heartbeatMaxGapMs !== observedHeartbeatMax
-    || currentPositionMaxCadenceMs !== observedCadenceMax
+  if (coordinatorHeartbeatMaxGapMs !== observedHeartbeatMax
+    || syntheticPublicationMaxCadenceMs !== observedCadenceMax
     || durableMaxLatencyMs !== observedDurableMax
     || durableWriteCount !== observedDurableWrites
     || durableVisibleWrites !== observedDurableVisibleWrites
     || durableBusyRetries !== observedDurableBusyRetries
-    || heartbeatMaxGapMs >= MAX_MAIN_CADENCE_MS
-    || currentPositionMaxCadenceMs >= MAX_MAIN_CADENCE_MS) {
+    || coordinatorHeartbeatMaxGapMs >= MAX_MAIN_CADENCE_MS
+    || syntheticPublicationMaxCadenceMs >= MAX_MAIN_CADENCE_MS) {
     throw qualificationFailure(
-      'PR6_QUALIFICATION_LIVENESS_FAILED',
-      'PR6 qualification liveness summary is inconsistent or exceeds 200 ms.',
+      'PR6_QUALIFICATION_CONTENTION_PROBE_FAILED',
+      'PR6 qualification contention summary is inconsistent or exceeds 200 ms.',
     )
   }
-  return { heartbeatMaxGapMs, currentPositionMaxCadenceMs }
+  return { coordinatorHeartbeatMaxGapMs, syntheticPublicationMaxCadenceMs }
 }
 
 /** Validates conservative whole-process memory measurements for worker-thread architecture. */
@@ -663,22 +807,36 @@ function validateKdf(evidence) {
  */
 export function validateBreadcrumbPr6QualificationEvidence(input, expectedRepositoryHead) {
   const evidence = requireRecord(input, [
-    'schema', 'run', 'source', 'machine', 'flags', 'fixture', 'migration',
+    'schema', 'run', 'teardown', 'source', 'machine', 'flags', 'fixture', 'migration',
     'archive', 'completeness', 'cleanup', 'reviewBeforeCleanup',
-    'reviewAfterCleanup', 'liveness', 'resources', 'residue', 'kdf',
+    'reviewAfterCleanup', 'packagedLifecycle', 'contentionProbe',
+    'resources', 'residue', 'kdf',
   ], 'PR6 qualification evidence')
-  if (evidence.schema !== 'sartracker-breadcrumb-pr6-qualification-v1') {
+  if (evidence.schema !== 'sartracker-breadcrumb-pr6-qualification-v2') {
     throw qualificationFailure('PR6_QUALIFICATION_INVALID', 'PR6 qualification schema is unsupported.')
   }
   const expectedHead = requireDigest(expectedRepositoryHead, SHA1, 'Expected repository head')
   const { repositoryHead, repositoryTree, flags } = validateRunIdentity(evidence, expectedHead)
+  validateTerminalTeardown(evidence)
+  const {
+    rawFileSha256,
+    canonicalEvidenceSha256,
+    packagedSourceToRendererMaxMs,
+  } = validatePackagedLifecycle(
+    evidence,
+    repositoryHead,
+    repositoryTree,
+  )
   validateFixtureAndMigration(evidence)
   const { archive, ciphertextBytes, normalizedProof } = validateArchiveAndCompleteness(
     evidence,
     flags,
   )
   validateCleanupAndReview(evidence, archive)
-  const { heartbeatMaxGapMs, currentPositionMaxCadenceMs } = validateLiveness(evidence)
+  const {
+    coordinatorHeartbeatMaxGapMs,
+    syntheticPublicationMaxCadenceMs,
+  } = validateContentionProbe(evidence)
   const peakArchiveProcessRssBytes = validateResources(evidence)
   validateResidue(evidence)
   validateKdf(evidence)
@@ -691,7 +849,10 @@ export function validateBreadcrumbPr6QualificationEvidence(input, expectedReposi
     tableCount: normalizedProof.tables.length,
     replaySampleCount: normalizedProof.replaySemantic.samples.length,
     peakArchiveProcessRssBytes,
-    heartbeatMaxGapMs,
-    currentPositionMaxCadenceMs,
+    packagedLifecycleRawFileSha256: rawFileSha256,
+    packagedLifecycleCanonicalEvidenceSha256: canonicalEvidenceSha256,
+    packagedSourceToRendererMaxMs,
+    coordinatorHeartbeatMaxGapMs,
+    syntheticPublicationMaxCadenceMs,
   })
 }

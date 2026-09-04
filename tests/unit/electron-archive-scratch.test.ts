@@ -26,9 +26,17 @@ const { createMissionArchiveScratch } = require('../../electron/archive-scratch.
     readonly requestEventId: string
     readonly schemaVersion: 13
     readonly inventoryVersion: 1
+    readonly finalizationProjection?: Readonly<Record<string, unknown>>
     readonly onProgress?: (input: Readonly<Record<string, unknown>>) => void
     readonly isCancelled?: () => boolean
   }) => Readonly<Record<string, unknown>>
+}
+const {
+  ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES,
+  readArchiveCleanupMembershipGeneration,
+} = require('../../electron/archive-cleanup-membership.cjs') as {
+  readonly ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES: readonly string[]
+  readonly readArchiveCleanupMembershipGeneration: (db: typeof Database, missionId: string) => number
 }
 
 const operationId = '11111111-1111-4111-8111-111111111111'
@@ -79,6 +87,7 @@ function createTwoMissionSource() {
     'position-b', 'mission-b', 'device-b', '2026-08-29T11:01:00.000Z',
     '2026-08-29T11:01:01.000Z', '2026-08-29T11:01:01.000Z',
   )
+  const cleanupMembershipGeneration = readArchiveCleanupMembershipGeneration(db, 'mission-a')
   db.prepare(`INSERT INTO mission_events (
     rowid, id, mission_id, event_type, timestamp, details_json,
     recorded_at, recording_completeness
@@ -94,6 +103,7 @@ function createTwoMissionSource() {
       operation_id: operationId,
       archive_kind: 'finalized',
       archive_relative_path: `${archiveId}.sararch`,
+      cleanup_membership_generation: cleanupMembershipGeneration,
       protected_finalization_epoch: null,
     }),
     fenceRequestedAt,
@@ -168,7 +178,11 @@ describe('mission-scoped archive scratch extraction', () => {
     expect(result.tableProofs.every((proof) => proof.contentSha256.match(/^[a-f0-9]{64}$/u)))
       .toBe(true)
     expect(result.tableProofs.filter((proof) => proof.sourceMatched === false)).toEqual([])
-    expect(result.schemaLedger).toMatchObject({ tableCount: 49, indexCount: 28, triggerCount: 3 })
+    expect(result.schemaLedger).toMatchObject({
+      tableCount: 49,
+      indexCount: 28,
+      triggerCount: ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES.length + 3,
+    })
     expect(result.schemaLedger.sha256).toMatch(/^[a-f0-9]{64}$/u)
     expect(progress.length).toBeGreaterThan(0)
 
@@ -216,6 +230,65 @@ describe('mission-scoped archive scratch extraction', () => {
     })).toThrow()
   })
 
+  it('fails closed when cleanup membership changes after the immutable request event', () => {
+    const fixture = createTwoMissionSource()
+    const live = new Database(fixture.sourceDatabasePath)
+    live.prepare(`INSERT INTO coverage_missions (
+      mission_id, change_seq, enumerated, updated_at
+    ) VALUES ('mission-a', 0, 0, '2026-08-29T19:01:00.000Z')`).run()
+    live.close()
+    const input = extractionInput(fixture.sourceDatabasePath)
+
+    expect(() => createMissionArchiveScratch(input as never))
+      .toThrow(/cleanup membership changed/iu)
+    expect(() => new Database(input.scratchDatabasePath, {
+      readonly: true,
+      fileMustExist: true,
+    })).toThrow()
+  })
+
+  it('binds the captured cleanup generation into the archived finalization projection', () => {
+    const fixture = createTwoMissionSource()
+    const source = new Database(fixture.sourceDatabasePath, { readonly: true })
+    const cleanupMembershipGeneration = readArchiveCleanupMembershipGeneration(
+      source,
+      'mission-a',
+    )
+    source.close()
+    const finalizationEventId = '55555555-5555-4555-8555-555555555555'
+    const input = extractionInput(fixture.sourceDatabasePath, {
+      finalizationProjection: {
+        eventId: finalizationEventId,
+        timestamp: fenceRequestedAt,
+        recordedAt: fenceRequestedAt,
+        archivePath: path.join(
+          path.dirname(fixture.sourceDatabasePath),
+          'archives',
+          `${archiveId}.sararch`,
+        ),
+        archiveRelativePath: `${archiveId}.sararch`,
+        cleanupMembershipGeneration,
+        supplement: null,
+      },
+    })
+
+    createMissionArchiveScratch(input as never)
+
+    const scratch = new Database(input.scratchDatabasePath, { readonly: true })
+    try {
+      const finalized = scratch.prepare(`SELECT details_json FROM mission_events
+        WHERE id = ?`).get(finalizationEventId)
+      expect(JSON.parse(String(finalized.details_json))).toMatchObject({
+        archive_id: archiveId,
+        cleanup_membership_generation: cleanupMembershipGeneration,
+        container_version: 2,
+        resulting_status: 'finalized',
+      })
+    } finally {
+      scratch.close()
+    }
+  })
+
   it('keeps a recovery request row separate from its current protected finalization epoch', () => {
     const fixture = createTwoMissionSource()
     const recoveryRequestEventId = '55555555-5555-4555-8555-555555555555'
@@ -243,6 +316,10 @@ describe('mission-scoped archive scratch extraction', () => {
         operation_id: operationId,
         archive_kind: 'finalized_recovery',
         archive_relative_path: `${archiveId}.sararch`,
+        cleanup_membership_generation: readArchiveCleanupMembershipGeneration(
+          source,
+          'mission-a',
+        ),
         protected_finalization_epoch: 5,
       }),
       recoveryRequestedAt,
@@ -274,6 +351,7 @@ describe('mission-scoped archive scratch extraction', () => {
         operation_id: operationId,
         archive_kind: 'finalized_recovery',
         archive_relative_path: `${archiveId}.sararch`,
+        cleanup_membership_generation: readArchiveCleanupMembershipGeneration(source, 'mission-a'),
         protected_finalization_epoch: 6,
       }),
       recoveryRequestEventId,
@@ -308,7 +386,8 @@ describe('mission-scoped archive scratch extraction', () => {
       expect(scratch.prepare(`SELECT COUNT(*) AS count FROM sqlite_master
         WHERE type = 'index' AND name NOT LIKE 'sqlite_%'`).get().count).toBe(28)
       expect(scratch.prepare(`SELECT COUNT(*) AS count FROM sqlite_master
-        WHERE type = 'trigger'`).get().count).toBe(3)
+        WHERE type = 'trigger'`).get().count)
+        .toBe(ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES.length + 3)
     } finally {
       scratch.close()
     }

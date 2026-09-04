@@ -8,6 +8,11 @@ const Database = require('better-sqlite3')
 const { canonicalJson } = require('../../electron/archive-container.cjs') as {
   readonly canonicalJson: (value: unknown) => string
 }
+const { deriveArchiveLifecycleEventId } = require(
+  '../../electron/mission-finalization-boundary.cjs',
+) as {
+  readonly deriveArchiveLifecycleEventId: (archiveId: string, kind: string) => string
+}
 const {
   ACTIVE_ARCHIVE_CUSTODY_JOURNAL_KEY,
   createArchiveCustodyJournal,
@@ -52,7 +57,7 @@ const requestEventId = '33333333-3333-4333-8333-333333333333'
 const quarantineId = '44444444-4444-4444-8444-444444444444'
 const maintenanceOperationId = '55555555-5555-4555-8555-555555555555'
 const sealedEventId = '66666666-6666-4666-8666-666666666666'
-const finalizedEventId = '77777777-7777-4777-8777-777777777777'
+const finalizedEventId = deriveArchiveLifecycleEventId(archiveId, 'mission-finalized')
 const timestamp = '2026-08-29T22:00:00.000Z'
 
 /** Creates only the durable tables owned by this focused journal boundary. */
@@ -192,6 +197,7 @@ function insertCompleteRegistryWitness(
     operation_id: operationId,
     archive_kind: 'finalized',
     archive_relative_path: `${archiveId}.sararch`,
+    cleanup_membership_generation: 0,
     protected_finalization_epoch: null,
     ...overrides.requestDetails,
   }
@@ -233,6 +239,7 @@ function insertCompleteRegistryWitness(
         archive_id: archiveId,
         archive_path: path.join(archiveDirectory, `${archiveId}.sararch`),
         archive_relative_path: `${archiveId}.sararch`,
+        cleanup_membership_generation: 0,
         container_version: 2,
       }))
   }

@@ -26,19 +26,68 @@ const { listArchiveInventoryForSchema } = require('../../electron/archive-invent
 }
 const temporaryDirectories = new Set<string>()
 const temporaryFiles = new Set<string>()
+const CLEANABLE_MISSION_EVENT_TYPES = [
+  'device_updated',
+  'mission_backup_synced',
+  'position_recorded',
+] as const
+const CLEANUP_TABLE_ORDER = [
+  'coverage_chunks',
+  'coverage_invalidations',
+  'coverage_missions',
+  'drawings',
+  'gpx_evidence_points',
+  'gpx_evidence_rejections',
+  'gpx_import_aliases',
+  'gpx_import_failures',
+  'gpx_import_source_receipts',
+  'helicopters',
+  'ingest_anomalies',
+  'ingest_anomaly_deliveries',
+  'ingest_anomaly_devices',
+  'ingest_anomaly_mission_health',
+  'layer_catalog_entries',
+  'legacy_event_provenance_quarantine_missions',
+  'markers',
+  'mission_group_membership_events',
+  'mission_object_versions',
+  'mission_participants',
+  'mission_replay_position_day_counts',
+  'participant_backfill_checkpoints',
+  'position_revisions',
+  'search_pass_evidence_links',
+  'tracking_history_checkpoints',
+  'gpx_import_batches',
+  'gpx_import_revisions',
+  'mission_teams',
+  'positions',
+  'search_passes',
+  'devices',
+  'gpx_track_imports',
+  'search_assignments',
+  'outings',
+  'search_areas',
+  'mission_events',
+] as const
 
 /** Builds one closed parent-observed fact set for forged-evidence regressions. */
 function parentFacts(
   overrides: Readonly<Record<string, unknown>> = {},
 ): Readonly<Record<string, unknown>> {
-  const inventoryTables = listArchiveInventoryForSchema(13).map((entry, index) => ({
+  const baselineTables = listArchiveInventoryForSchema(13).map((entry, index) => ({
     tableName: entry.tableName,
     decision: entry.decision,
-    rowCount: 0,
+    rowCount: entry.tableName === 'mission_events' ? 3 : 0,
     contentSha256: String((index % 9) + 1).repeat(64),
   }))
-  const inventoryDigest = createHash('sha256')
-    .update(JSON.stringify(inventoryTables), 'utf8')
+  const observedTables = baselineTables.map((entry) => entry.tableName === 'mission_events'
+    ? { ...entry, rowCount: 5, contentSha256: 'f'.repeat(64) }
+    : entry)
+  const baselineDigest = createHash('sha256')
+    .update(JSON.stringify(baselineTables), 'utf8')
+    .digest('hex')
+  const observedDigest = createHash('sha256')
+    .update(JSON.stringify(observedTables), 'utf8')
     .digest('hex')
   return {
     custody: {
@@ -51,6 +100,9 @@ function parentFacts(
       diskCiphertextSha256: 'a'.repeat(64),
       registrySizeBytes: 4096,
       diskSizeBytes: 4096,
+      baselineArchiveCount: 1,
+      baselineArchivesPreserved: true,
+      allRegisteredArchivesMatched: true,
       registeredArchiveCount: 1,
       diskArchiveCount: 1,
       unregisteredArchiveCount: 0,
@@ -68,20 +120,23 @@ function parentFacts(
     cleanup: null,
     inventory: {
       declarationCount: 49,
-      baselineDigestSha256: inventoryDigest,
-      observedDigestSha256: inventoryDigest,
-      changedTables: [],
+      baselineDigestSha256: baselineDigest,
+      observedDigestSha256: observedDigest,
+      changedTables: ['mission_events'],
       unexpectedChangedTables: [],
-      baselineTables: inventoryTables,
-      observedTables: inventoryTables,
+      baselineTables,
+      observedTables,
     },
     mission: {
       idMatched: true,
       status: 'finalized',
       stableCoreMatched: true,
       eventPrefixMatched: true,
+      retainedEventPrefixMatched: true,
       baselineEventRowCount: 3,
       observedEventRowCount: 5,
+      baselineRetainedEventRowCount: 3,
+      observedRetainedEventRowCount: 5,
     },
     residue: { entryCount: 0, fileCount: 0, scannedByteCount: 0, secretMatchCount: 0 },
     review: {
@@ -92,6 +147,95 @@ function parentFacts(
       closedAuditCount: 1,
     },
     ...overrides,
+  }
+}
+
+/** Builds a completed cleanup fact set with explicit retained-event accounting. */
+function completedCleanupFacts(
+  overrides: Readonly<{
+    cleanableEventRowCount?: number
+    eventTotalRowCount?: number
+    retainedEventRowCount?: number
+  }> = {},
+): Readonly<Record<string, unknown>> {
+  const eventTotalRowCount = overrides.eventTotalRowCount ?? 8
+  const cleanableEventRowCount = overrides.cleanableEventRowCount ?? 0
+  const retainedEventRowCount = overrides.retainedEventRowCount
+    ?? eventTotalRowCount - cleanableEventRowCount
+  const canonical = parentFacts()
+  const inventory = canonical.inventory as Readonly<Record<string, unknown>>
+  const baselineTables = (inventory.baselineTables as Readonly<Record<string, unknown>>[])
+    .map((entry) => entry.tableName === 'mission_events'
+      ? { ...entry, rowCount: 12, contentSha256: 'd'.repeat(64) }
+      : entry)
+  const observedTables = (inventory.observedTables as Readonly<Record<string, unknown>>[])
+    .map((entry) => entry.tableName === 'mission_events'
+      ? { ...entry, rowCount: eventTotalRowCount, contentSha256: 'e'.repeat(64) }
+      : entry)
+  const baselineDigestSha256 = createHash('sha256')
+    .update(JSON.stringify(baselineTables), 'utf8')
+    .digest('hex')
+  const observedDigestSha256 = createHash('sha256')
+    .update(JSON.stringify(observedTables), 'utf8')
+    .digest('hex')
+  const observedByTable = new Map(observedTables.map((entry) => [entry.tableName, entry]))
+  const declaredRows = CLEANUP_TABLE_ORDER.map((tableName) => {
+    const observed = observedByTable.get(tableName)
+    if (observed === undefined) throw new Error(`Missing test inventory table ${tableName}.`)
+    const isMissionEvents = tableName === 'mission_events'
+    const totalRowCount = Number(observed.rowCount)
+    const cleanableRowCount = isMissionEvents ? cleanableEventRowCount : totalRowCount
+    return {
+      tableName,
+      decision: observed.decision,
+      cleanupSelection: isMissionEvents
+        ? {
+            kind: 'mission_event_type_allowlist',
+            eventTypes: [...CLEANABLE_MISSION_EVENT_TYPES],
+          }
+        : { kind: 'all_rows' },
+      cleanableRowCount,
+      totalRowCount,
+      retainedRowCount: isMissionEvents ? retainedEventRowCount : 0,
+      zeroRequired: observed.decision !== 'derived_excluded',
+    }
+  })
+  const remainingRows = declaredRows.filter((entry) =>
+    entry.zeroRequired && entry.cleanableRowCount > 0)
+  const reconstructibleDerivedRows = declaredRows.filter((entry) =>
+    !entry.zeroRequired && entry.cleanableRowCount > 0)
+  return {
+    ...canonical,
+    cleanupEligibility: {
+      eligible: false,
+      blockers: ['cleanup_already_completed'],
+      storageState: 'archived',
+    },
+    cleanup: {
+      journalState: 'completed',
+      storageState: 'archived',
+      declaredTableCount: declaredRows.length,
+      declaredRows,
+      remainingRows,
+      reconstructibleDerivedRows,
+    },
+    inventory: {
+      ...inventory,
+      baselineTables,
+      baselineDigestSha256,
+      observedTables,
+      observedDigestSha256,
+      changedTables: ['mission_events'],
+    },
+    mission: {
+      ...(canonical.mission as Readonly<Record<string, unknown>>),
+      eventPrefixMatched: false,
+      retainedEventPrefixMatched: true,
+      baselineEventRowCount: 12,
+      observedEventRowCount: eventTotalRowCount,
+      baselineRetainedEventRowCount: 6,
+      observedRetainedEventRowCount: retainedEventRowCount,
+    },
   }
 }
 
@@ -180,6 +324,39 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
     })).toThrow(/custody|file identity/iu)
   })
 
+  it('binds the whole pre-kill custody set while allowing retained predecessors and supplements', () => {
+    const derive = Reflect.get(killMatrix, 'deriveArchiveKillCaseVerdict') as (
+      input: Readonly<Record<string, unknown>>,
+    ) => Readonly<Record<string, unknown>>
+    const definition = ARCHIVE_KILL_MATRIX_CASES.find((entry) => entry.id === 'restore.ready')
+    expect(() => derive({
+      definition,
+      childFacts: { action: 'startup_plaintext_sweep', outcome: 'completed' },
+      parentFacts: parentFacts({
+        custody: {
+          ...(parentFacts().custody as Readonly<Record<string, unknown>>),
+          baselineArchiveCount: 3,
+          registeredArchiveCount: 3,
+          diskArchiveCount: 3,
+        },
+      }),
+    })).not.toThrow()
+
+    expect(() => derive({
+      definition,
+      childFacts: { action: 'startup_plaintext_sweep', outcome: 'completed' },
+      parentFacts: parentFacts({
+        custody: {
+          ...(parentFacts().custody as Readonly<Record<string, unknown>>),
+          baselineArchiveCount: 3,
+          baselineArchivesPreserved: false,
+          registeredArchiveCount: 3,
+          diskArchiveCount: 3,
+        },
+      }),
+    })).toThrow(/pre-kill|baseline|custody/iu)
+  })
+
   it('uses current post-restart eligibility and not a forged preparation-time boolean', () => {
     const derive = Reflect.get(killMatrix, 'deriveArchiveKillCaseVerdict') as (
       input: Readonly<Record<string, unknown>>,
@@ -226,7 +403,7 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
     const derive = Reflect.get(killMatrix, 'deriveArchiveKillCaseVerdict') as (
       input: Readonly<Record<string, unknown>>,
     ) => Readonly<Record<string, unknown>>
-    const facts = parentFacts()
+    const facts = completedCleanupFacts()
     const inventory = facts.inventory as Readonly<Record<string, unknown>>
     const positionsIndex = (inventory.observedTables as Readonly<Record<string, unknown>>[])
       .findIndex((entry) => entry.tableName === 'positions')
@@ -247,27 +424,8 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
           ...inventory,
           observedTables,
           observedDigestSha256,
-          changedTables: ['positions'],
+          changedTables: ['mission_events', 'positions'],
           unexpectedChangedTables: [],
-        },
-        cleanupEligibility: {
-          eligible: false,
-          blockers: ['cleanup_already_completed'],
-          storageState: 'archived',
-        },
-        cleanup: {
-          journalState: 'completed',
-          storageState: 'archived',
-          declaredTableCount: 1,
-          declaredRows: [{
-            tableName: 'positions',
-            decision: 'mission_rows',
-            rowCount: 0,
-            zeroRequired: true,
-          }],
-          remainingRows: [],
-          reconstructibleDerivedRows: [],
-          postReviewRemainingRows: [],
         },
       },
     })).toThrow(/cleanup.*inventory|row.*contradict|observed/iu)
@@ -302,6 +460,105 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
         },
       }),
     })).toThrow(/exact.*cleanup plan|schema.*13.*cleanup|omits.*table/iu)
+  })
+
+  it('proves zero cleanable telemetry while retaining total operator and custody history', () => {
+    const derive = Reflect.get(killMatrix, 'deriveArchiveKillCaseVerdict') as (
+      input: Readonly<Record<string, unknown>>,
+    ) => Readonly<Record<string, unknown>>
+    const facts = completedCleanupFacts()
+    const verdict = derive({
+      definition: ARCHIVE_KILL_MATRIX_CASES.find((entry) => entry.id === 'cleanup.cleanup'),
+      childFacts: { action: 'cleanup_resume', outcome: 'completed' },
+      parentFacts: facts,
+    })
+
+    expect(verdict).toMatchObject({
+      cleanupResumeProven: true,
+      cleanupDeclaredRowsProven: true,
+      missionStubPreserved: true,
+    })
+    const cleanup = facts.cleanup as Readonly<Record<string, unknown>>
+    const missionEvents = (cleanup.declaredRows as Readonly<Record<string, unknown>>[])
+      .find((entry) => entry.tableName === 'mission_events')
+    expect(missionEvents).toEqual({
+      tableName: 'mission_events',
+      decision: 'mission_rows',
+      cleanupSelection: {
+        kind: 'mission_event_type_allowlist',
+        eventTypes: CLEANABLE_MISSION_EVENT_TYPES,
+      },
+      cleanableRowCount: 0,
+      totalRowCount: 8,
+      retainedRowCount: 8,
+      zeroRequired: true,
+    })
+  })
+
+  it('fails closed when any cleanable mission telemetry remains after cleanup', () => {
+    const derive = Reflect.get(killMatrix, 'deriveArchiveKillCaseVerdict') as (
+      input: Readonly<Record<string, unknown>>,
+    ) => Readonly<Record<string, unknown>>
+    expect(() => derive({
+      definition: ARCHIVE_KILL_MATRIX_CASES.find((entry) => entry.id === 'cleanup.cleanup'),
+      childFacts: { action: 'cleanup_resume', outcome: 'completed' },
+      parentFacts: completedCleanupFacts({ cleanableEventRowCount: 1 }),
+    })).toThrow(/cleanable.*telemetry|cleanup.*row|remaining/iu)
+  })
+
+  it('binds cleanable and retained event counts to the total 49-table inventory row count', () => {
+    const derive = Reflect.get(killMatrix, 'deriveArchiveKillCaseVerdict') as (
+      input: Readonly<Record<string, unknown>>,
+    ) => Readonly<Record<string, unknown>>
+    const canonical = completedCleanupFacts()
+    const cleanup = canonical.cleanup as Readonly<Record<string, unknown>>
+    const declaredRows = cleanup.declaredRows as Readonly<Record<string, unknown>>[]
+    const replaceEvents = (replacement: Readonly<Record<string, unknown>>) => declaredRows
+      .map((entry) => entry.tableName === 'mission_events' ? replacement : entry)
+    const missionEvents = declaredRows.find((entry) => entry.tableName === 'mission_events')
+    expect(missionEvents).toBeDefined()
+    const deriveWithEventRow = (replacement: Readonly<Record<string, unknown>>) => derive({
+      definition: ARCHIVE_KILL_MATRIX_CASES.find((entry) => entry.id === 'cleanup.cleanup'),
+      childFacts: { action: 'cleanup_resume', outcome: 'completed' },
+      parentFacts: {
+        ...canonical,
+        cleanup: { ...cleanup, declaredRows: replaceEvents(replacement) },
+      },
+    })
+
+    expect(() => deriveWithEventRow({ ...missionEvents, totalRowCount: 7 }))
+      .toThrow(/total.*(?:inventory|cleanable|retained)|cleanup.*inventory|row.*contradict/iu)
+    expect(() => deriveWithEventRow({ ...missionEvents, retainedRowCount: 7 }))
+      .toThrow(/retained.*count|cleanup.*inventory|row.*contradict/iu)
+    expect(() => deriveWithEventRow({
+      ...missionEvents,
+      cleanupSelection: { kind: 'all_rows' },
+    })).toThrow(/selection|mission.*event|cleanup.*inventory/iu)
+    expect(() => deriveWithEventRow({
+      ...missionEvents,
+      cleanupSelection: {
+        ...(missionEvents?.cleanupSelection as Readonly<Record<string, unknown>>),
+        undeclaredEventTypePolicy: 'ignore',
+      },
+    })).toThrow(/missing or unsupported fields|selection/iu)
+  })
+
+  it('requires the retained pre-cleanup event subset even though telemetry deletion changes all rows', () => {
+    const derive = Reflect.get(killMatrix, 'deriveArchiveKillCaseVerdict') as (
+      input: Readonly<Record<string, unknown>>,
+    ) => Readonly<Record<string, unknown>>
+    const canonical = completedCleanupFacts()
+    expect(() => derive({
+      definition: ARCHIVE_KILL_MATRIX_CASES.find((entry) => entry.id === 'cleanup.cleanup'),
+      childFacts: { action: 'cleanup_resume', outcome: 'completed' },
+      parentFacts: {
+        ...canonical,
+        mission: {
+          ...(canonical.mission as Readonly<Record<string, unknown>>),
+          retainedEventPrefixMatched: false,
+        },
+      },
+    })).toThrow(/retained.*event|stable mission|audit.*event/iu)
   })
 
   it('rejects fabricated and duplicate tables instead of treating any 49 names as schema v13', () => {
@@ -512,6 +769,53 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
     })
     expect(evidence.durationMs).toBeGreaterThanOrEqual(0)
   })
+
+  it('delivers the cleanup SIGKILL only after a real mission-event delete batch commits', async () => {
+    if (process.platform === 'win32') return
+    const workRoot = mkdtempSync(path.join(tmpdir(), 'sartracker-pr6-kill-cleanup-'))
+    temporaryDirectories.add(workRoot)
+    const childPath = path.resolve('tests/fixtures/breadcrumb-pr6-kill-child.cjs')
+    const selected = resolveArchiveKillMatrixSelection(['cleanup.cleanup'])
+    const definition = selected[0]
+    const preparation = spawnSync(process.execPath, [
+      childPath,
+      '--action', 'prepare',
+      '--root', workRoot,
+      '--cases', definition.id,
+    ], { cwd: path.resolve('.'), encoding: 'utf8', timeout: 30_000 })
+    expect(preparation.status, preparation.stderr).toBe(0)
+    const baseline = captureArchiveKillMatrixBaseline({ root: workRoot, selectedCases: selected })
+    const common = ['--case', definition.id, '--root', workRoot]
+
+    const evidence = await runArchiveKillCase({
+      caseDefinition: definition,
+      childPath,
+      cwd: path.resolve('.'),
+      runArgs: [
+        '--action', 'run', ...common, '--operation-id', definition.operationId,
+      ],
+      reconcileArgs: [
+        '--action', 'reconcile', ...common, '--operation-id', definition.operationId,
+      ],
+      baseline: baseline.cases[definition.id],
+      timeoutMs: 30_000,
+    })
+
+    expect(evidence).toMatchObject({
+      caseId: 'cleanup.cleanup',
+      phaseEvidence: {
+        detail: 'mission-events-delete',
+        unit: 'rows',
+      },
+      restart: {
+        verdict: {
+          cleanupResumeProven: true,
+          cleanupDeclaredRowsProven: true,
+        },
+      },
+    })
+    expect(evidence.phaseEvidence.completed).toBeGreaterThan(0)
+  }, 60_000)
 
   it('fails closed when a restart child tries to inject its own safety assertions', async () => {
     if (process.platform === 'win32') return

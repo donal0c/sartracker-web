@@ -108,6 +108,31 @@ describe('MissionControlPanel collapse behavior', () => {
     expect(query('[data-testid="mission-finalize-confirm"]')).toBeNull()
   })
 
+  it('offers Archive & Lock only for a finished mission whose live storage is proven', async () => {
+    const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
+    missionControlMock.model = createModel({
+      phase: 'idle',
+      currentMission: null,
+      governanceMission: createMission({ status: 'finished', storage_state: 'live' }),
+    })
+    render(React.createElement(MissionControlPanel))
+    expect(query('[data-testid="mission-finalize-btn"]')).not.toBeNull()
+
+    for (const storageState of ['cleanup_in_progress', 'recovery_required'] as const) {
+      missionControlMock.model = createModel({
+        phase: 'idle',
+        currentMission: null,
+        governanceMission: createMission({
+          id: `mission-finished-${storageState}`,
+          status: 'finished',
+          storage_state: storageState,
+        }),
+      })
+      act(() => root?.render(React.createElement(MissionControlPanel)))
+      expect(query('[data-testid="mission-finalize-btn"]')).toBeNull()
+    }
+  })
+
   it('shows explicit live/archived storage truth and withholds cleanup and unlock after cleanup', async () => {
     const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
     const setShowCleanupDialog = vi.fn()
@@ -142,7 +167,7 @@ describe('MissionControlPanel collapse behavior', () => {
     expect(query('[data-testid="mission-unlock-btn"]')).toBeNull()
   })
 
-  it('keeps an interrupted cleanup visibly resumable from Mission Control', async () => {
+  it('opens a neutral cleanup review before resumability is known in Mission Control', async () => {
     const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
     const setShowCleanupDialog = vi.fn()
     missionControlMock.model = createModel({
@@ -158,9 +183,10 @@ describe('MissionControlPanel collapse behavior', () => {
 
     render(React.createElement(MissionControlPanel))
 
-    expect(query('[data-testid="mission-cleanup-resume-btn"]')).not.toBeNull()
-    expect(query('[data-testid="mission-cleanup-btn"]')).toBeNull()
-    click('[data-testid="mission-cleanup-resume-btn"]')
+    const reviewCleanup = query('[data-testid="mission-cleanup-btn"]')
+    expect(reviewCleanup?.textContent).toContain('Review Archive Cleanup')
+    expect(query('[data-testid="mission-cleanup-resume-btn"]')).toBeNull()
+    click('[data-testid="mission-cleanup-btn"]')
     expect(setShowCleanupDialog).toHaveBeenCalledWith(true)
   })
 

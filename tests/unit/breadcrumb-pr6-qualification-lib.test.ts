@@ -12,6 +12,9 @@ import {
   parseBreadcrumbPr6QualificationArgs,
   validateBreadcrumbPr6QualificationEvidence,
 } from '../../build/breadcrumb-pr6-qualification-lib.js'
+import {
+  createPackagedArchiveLifecycleV2Evidence,
+} from '../fixtures/packaged-archive-lifecycle-v2'
 
 const require = createRequire(import.meta.url)
 const { canonicalJson } = require('../../electron/archive-container.cjs') as {
@@ -21,6 +24,11 @@ const { listArchiveInventoryForSchema } = require('../../electron/archive-invent
   readonly listArchiveInventoryForSchema: (
     schemaVersion: number,
   ) => readonly { readonly tableName: string }[]
+}
+const { ARCHIVE_CLEANUP_MEMBERSHIP_EVENT_TYPES } = require(
+  '../../electron/archive-cleanup-membership.cjs',
+) as {
+  readonly ARCHIVE_CLEANUP_MEMBERSHIP_EVENT_TYPES: readonly string[]
 }
 
 const HEAD = 'a'.repeat(40)
@@ -38,15 +46,17 @@ describe('Breadcrumb PR6 qualification evidence contract [DON-252 / BCP-15]', ()
     expect(MIN_ARCHIVE_CIPHERTEXT_BYTES).toBe(2 * 1024 * 1024 * 1024)
   })
 
-  it('accepts only absolute paths, mission identity and explicit head without CLI secrets', () => {
+  it('requires an absolute packaged-liveness report alongside fixture and exact source', () => {
     expect(parseBreadcrumbPr6QualificationArgs([
       '--fixture', '/fixtures/field.sqlite',
       '--evidence', '/evidence/pr6.json',
+      '--packaged-liveness-report', '/evidence/packaged-lifecycle.json',
       '--mission-id', 'fixture-mission-000000000001',
       '--expected-head', HEAD,
     ])).toEqual({
       fixturePath: '/fixtures/field.sqlite',
       evidencePath: '/evidence/pr6.json',
+      packagedLivenessReportPath: '/evidence/packaged-lifecycle.json',
       missionId: 'fixture-mission-000000000001',
       expectedRepositoryHead: HEAD,
     })
@@ -55,6 +65,7 @@ describe('Breadcrumb PR6 qualification evidence contract [DON-252 / BCP-15]', ()
       ['--fixture', 'relative.sqlite', '--evidence', '/evidence/pr6.json', '--mission-id', 'm', '--expected-head', HEAD],
       ['--fixture', '/fixtures/field.sqlite', '--evidence', 'relative.json', '--mission-id', 'm', '--expected-head', HEAD],
       ['--fixture', '/fixtures/field.sqlite', '--evidence', '/evidence/pr6.json', '--mission-id', 'm'],
+      ['--fixture', '/fixtures/field.sqlite', '--evidence', '/evidence/pr6.json', '--packaged-liveness-report', 'relative.json', '--mission-id', 'm', '--expected-head', HEAD],
       ['--fixture', '/fixtures/field.sqlite', '--evidence', '/evidence/pr6.json', '--mission-id', 'm', '--expected-head', HEAD, '--passphrase', 'secret'],
       ['--fixture', '/fixtures/field.sqlite', '--evidence', '/evidence/pr6.json', '--mission-id', 'mission\u0000id', '--expected-head', HEAD],
     ]) {
@@ -71,9 +82,29 @@ describe('Breadcrumb PR6 qualification evidence contract [DON-252 / BCP-15]', ()
       tableCount: 49,
       replaySampleCount: 5,
       peakArchiveProcessRssBytes: MAX_ARCHIVE_PROCESS_RSS_BYTES,
-      heartbeatMaxGapMs: MAX_MAIN_CADENCE_MS - 1,
-      currentPositionMaxCadenceMs: MAX_MAIN_CADENCE_MS - 1,
+      packagedLifecycleRawFileSha256: expect.stringMatching(/^[0-9a-f]{64}$/u),
+      packagedLifecycleCanonicalEvidenceSha256: expect.stringMatching(/^[0-9a-f]{64}$/u),
+      packagedSourceToRendererMaxMs: 125.5,
+      coordinatorHeartbeatMaxGapMs: MAX_MAIN_CADENCE_MS - 1,
+      syntheticPublicationMaxCadenceMs: MAX_MAIN_CADENCE_MS - 1,
     })
+  })
+
+  it('rejects the legacy in-process Map timing claim as packaged current-position proof', () => {
+    const evidence = validEvidence() as QualificationEvidence & {
+      liveness?: Record<string, unknown>
+    }
+    const mutableEvidence = evidence as unknown as Record<string, unknown>
+    delete mutableEvidence.packagedLifecycle
+    delete mutableEvidence.contentionProbe
+    mutableEvidence.schema = 'sartracker-breadcrumb-pr6-qualification-v1'
+    evidence.liveness = {
+      heartbeatMaxGapMs: 1,
+      currentPositionMaxCadenceMs: 1,
+      currentPositionsIndependent: true,
+    }
+
+    expect(() => validateBreadcrumbPr6QualificationEvidence(evidence, HEAD)).toThrow()
   })
 
   it.each([
@@ -82,10 +113,15 @@ describe('Breadcrumb PR6 qualification evidence contract [DON-252 / BCP-15]', ()
     ['tree changed during run', (value: QualificationEvidence) => { value.source.repositoryTreeAfterRun = 'c'.repeat(40) }],
     ['dirty source', (value: QualificationEvidence) => { value.source.repositoryDirtyAfter = true }],
     ['run timestamps reversed', (value: QualificationEvidence) => { value.run.completedAt = '2026-08-29T09:59:59.000Z' }],
+    ['teardown incomplete', (value: QualificationEvidence) => { value.teardown.status = 'incomplete' }],
+    ['owners not joined', (value: QualificationEvidence) => { value.teardown.ownersJoined = false }],
+    ['profile not removed', (value: QualificationEvidence) => {
+      value.teardown.profileCleanupCompleted = false
+    }],
     ['machine is not Linux', (value: QualificationEvidence) => { value.machine.platform = 'darwin' }],
     ['fixture path leaked', (value: QualificationEvidence) => { value.flags.fixtureBasename = '/home/donal/field.sqlite' }],
     ['mission flag differs', (value: QualificationEvidence) => { value.flags.missionId = 'other-mission' }],
-    ['heartbeat gate weakened', (value: QualificationEvidence) => { value.flags.heartbeatHardGateMs = 201 }],
+    ['heartbeat gate weakened', (value: QualificationEvidence) => { value.flags.coordinatorHeartbeatHardGateMs = 201 }],
     ['fixture opened in place', (value: QualificationEvidence) => { value.fixture.copiedBeforeOpen = false }],
     ['source fixture has WAL bytes', (value: QualificationEvidence) => { value.fixture.sourceWalBytes = 1 }],
     ['source fixture changed', (value: QualificationEvidence) => { value.fixture.sourceSha256After = 'f'.repeat(64) }],
@@ -117,6 +153,25 @@ describe('Breadcrumb PR6 qualification evidence contract [DON-252 / BCP-15]', ()
       refreshProofDigest(value)
     }],
     ['cleanup incomplete', (value: QualificationEvidence) => { value.cleanup.state = 'in_progress' }],
+    ['cleanup journal identity unbound', (value: QualificationEvidence) => {
+      value.cleanup.journalIdentityBound = false
+    }],
+    ['cleanup membership generation invalid', (value: QualificationEvidence) => {
+      value.cleanup.membershipGeneration = -1
+    }],
+    ['cleanup telemetry allowlist drifted', (value: QualificationEvidence) => {
+      value.cleanup.cleanableMissionEventTypes = ['position_recorded']
+    }],
+    ['cleanup guard event identity invalid', (value: QualificationEvidence) => {
+      value.cleanup.cleanupCompletedEventId = 'not-an-event-id'
+    }],
+    ['terminal cleanup validator disagrees', (value: QualificationEvidence) => {
+      value.cleanup.terminalEligibility = {
+        eligible: false,
+        blockers: ['cleanup_journal_invalid'],
+        storageState: 'cleanup_in_progress',
+      }
+    }],
     ['cleanup gate bypassed', (value: QualificationEvidence) => { value.cleanup.preCredentialBlockers = [] }],
     ['cleanup review lease absent', (value: QualificationEvidence) => { value.cleanup.reviewLeaseHeld = false }],
     ['live rows remain', (value: QualificationEvidence) => { value.cleanup.deletedTableRowsRemain = 1 }],
@@ -129,13 +184,62 @@ describe('Breadcrumb PR6 qualification evidence contract [DON-252 / BCP-15]', ()
       value.reviewBeforeCleanup.openPrivacyCanaryDetected = false
     }],
     ['review residual remains', (value: QualificationEvidence) => { value.reviewAfterCleanup.plaintextSweptAfterClose = false }],
-    ['heartbeat too slow', (value: QualificationEvidence) => { value.liveness.heartbeatMaxGapMs = MAX_MAIN_CADENCE_MS }],
-    ['current cadence too slow', (value: QualificationEvidence) => { value.liveness.currentPositionMaxCadenceMs = MAX_MAIN_CADENCE_MS }],
-    ['durable settle exceeded', (value: QualificationEvidence) => { value.liveness.durableSettlementMs = 120_001 }],
-    ['durable write missing', (value: QualificationEvidence) => { value.liveness.durableVisibleWrites = 0 }],
-    ['durable retry count mismatch', (value: QualificationEvidence) => { value.liveness.durableBusyRetries = 1 }],
-    ['no writes during restore', (value: QualificationEvidence) => { value.liveness.byPhase.restore.currentWrites = 0 }],
-    ['write not visible', (value: QualificationEvidence) => { value.liveness.byPhase.cleanup.visibleWrites = 0 }],
+    ['packaged canonical evidence digest differs', (value: QualificationEvidence) => {
+      value.packagedLifecycle.canonicalEvidenceSha256 = 'f'.repeat(64)
+    }],
+    ['packaged raw file digest is invalid', (value: QualificationEvidence) => {
+      value.packagedLifecycle.rawFileSha256 = 'invalid'
+    }],
+    ['packaged report is legacy v1', (value: QualificationEvidence) => {
+      value.packagedLifecycle.evidence.schemaVersion = 1
+      value.packagedLifecycle.evidence.proofKind = 'packaged-electron-archive-lifecycle-v1'
+      delete value.packagedLifecycle.evidence.liveness
+      refreshPackagedLifecycleDigest(value)
+    }],
+    ['packaged report is not Linux', (value: QualificationEvidence) => {
+      value.packagedLifecycle.evidence.run.platform = 'darwin'
+      refreshPackagedLifecycleDigest(value)
+    }],
+    ['packaged report head differs', (value: QualificationEvidence) => {
+      value.packagedLifecycle.evidence.source.expectedHead = 'd'.repeat(40)
+      value.packagedLifecycle.evidence.source.headBefore = 'd'.repeat(40)
+      value.packagedLifecycle.evidence.source.headAfter = 'd'.repeat(40)
+      refreshPackagedLifecycleDigest(value)
+    }],
+    ['packaged report tree differs', (value: QualificationEvidence) => {
+      value.packagedLifecycle.evidence.source.treeBefore = 'd'.repeat(40)
+      value.packagedLifecycle.evidence.source.treeAfter = 'd'.repeat(40)
+      refreshPackagedLifecycleDigest(value)
+    }],
+    ['packaged build head is not proven', (value: QualificationEvidence) => {
+      value.packagedLifecycle.evidence.source.packagedBuildHeadMatched = false
+      refreshPackagedLifecycleDigest(value)
+    }],
+    ['packaged source-to-renderer path exceeds 200 ms', (value: QualificationEvidence) => {
+      value.packagedLifecycle.evidence.liveness.byPhase.cleanup.sourceToRendererMaxMs = 200
+      refreshPackagedLifecycleDigest(value)
+    }],
+    ['packaged current-fix continuity exceeds 200 ms', (value: QualificationEvidence) => {
+      value.packagedLifecycle.evidence.liveness.byPhase.cleanup.currentFixMaxGapMs = 200
+      refreshPackagedLifecycleDigest(value)
+    }],
+    ['contention probe provenance is misleading', (value: QualificationEvidence) => {
+      value.contentionProbe.provenance = 'current-position-renderer-proof'
+    }],
+    ['contention probe scope is misleading', (value: QualificationEvidence) => {
+      value.contentionProbe.proofScope = 'packaged-renderer-liveness'
+    }],
+    ['coordinator heartbeat too slow', (value: QualificationEvidence) => {
+      value.contentionProbe.coordinatorHeartbeatMaxGapMs = MAX_MAIN_CADENCE_MS
+    }],
+    ['synthetic publication cadence too slow', (value: QualificationEvidence) => {
+      value.contentionProbe.syntheticPublicationMaxCadenceMs = MAX_MAIN_CADENCE_MS
+    }],
+    ['durable settle exceeded', (value: QualificationEvidence) => { value.contentionProbe.durableSettlementMs = 120_001 }],
+    ['durable write missing', (value: QualificationEvidence) => { value.contentionProbe.durableVisibleWrites = 0 }],
+    ['durable retry count mismatch', (value: QualificationEvidence) => { value.contentionProbe.durableBusyRetries = 1 }],
+    ['no publications during restore', (value: QualificationEvidence) => { value.contentionProbe.byPhase.restore.syntheticPublicationCount = 0 }],
+    ['publication not visible in process', (value: QualificationEvidence) => { value.contentionProbe.byPhase.cleanup.inProcessVisiblePublicationCount = 0 }],
     ['RSS too high', (value: QualificationEvidence) => { value.resources.peakProcessRssBytes = MAX_ARCHIVE_PROCESS_RSS_BYTES + 1 }],
     ['RSS measurement overstated', (value: QualificationEvidence) => { value.resources.measurement = 'worker_only_rss' }],
     ['plaintext residue remains', (value: QualificationEvidence) => {
@@ -251,10 +355,11 @@ function verificationProof() {
 /** Builds one complete passing machine-readable reference-host proof. */
 function validEvidence() {
   const proof = verificationProof()
+  const packagedEvidence = createPackagedArchiveLifecycleV2Evidence() as PackagedEvidence
   return {
-    schema: 'sartracker-breadcrumb-pr6-qualification-v1',
+    schema: 'sartracker-breadcrumb-pr6-qualification-v2',
     run: {
-      runId: '11111111-1111-4111-8111-111111111111',
+      runId: 'q-11111111-1111-4111-8111-111111111111',
       startedAt: '2026-08-29T10:00:00.000Z',
       completedAt: '2026-08-29T11:00:00.000Z',
       durationMs: 3_600_000,
@@ -265,6 +370,11 @@ function validEvidence() {
         restore: 500_000,
         cleanup: 500_000,
       },
+    },
+    teardown: {
+      status: 'complete',
+      ownersJoined: true,
+      profileCleanupCompleted: true,
     },
     source: {
       repositoryHead: HEAD,
@@ -287,8 +397,8 @@ function validEvidence() {
       fixtureBasename: 'mission-store.sqlite',
       missionId: 'fixture-mission-000000000001',
       timezone: 'UTC',
-      heartbeatHardGateMs: MAX_MAIN_CADENCE_MS,
-      currentCadenceHardGateMs: MAX_MAIN_CADENCE_MS,
+      coordinatorHeartbeatHardGateMs: MAX_MAIN_CADENCE_MS,
+      syntheticPublicationCadenceHardGateMs: MAX_MAIN_CADENCE_MS,
       rssLimitBytes: MAX_ARCHIVE_PROCESS_RSS_BYTES,
     },
     fixture: {
@@ -342,19 +452,39 @@ function validEvidence() {
     cleanup: {
       state: 'completed',
       storageState: 'archived',
+      journalIdentityBound: true,
+      membershipGeneration: 0,
+      cleanableMissionEventTypes: [...ARCHIVE_CLEANUP_MEMBERSHIP_EVENT_TYPES],
+      guardRevision: 3,
+      finalizationEpoch: 42,
+      finalizationEventId: '55555555-5555-4555-8555-555555555555',
+      cleanupStartedEventId: '66666666-6666-4666-8666-666666666666',
+      cleanupCompletedEventId: '77777777-7777-4777-8777-777777777777',
       preCredentialBlockers: ['fresh_non_machine_unlock_required'],
       reviewLeaseHeld: true,
       deletedTableRowsRemain: 0,
       retainedMissionStub: true,
       retainedArchiveRegistry: true,
       archiveSha256After: proof.ciphertextSha256,
+      terminalEligibility: {
+        eligible: false,
+        blockers: ['cleanup_already_completed'],
+        storageState: 'archived',
+      },
     },
     reviewBeforeCleanup: validReviewProof('6'.repeat(64)),
     reviewAfterCleanup: validReviewProof('6'.repeat(64)),
-    liveness: {
-      heartbeatMaxGapMs: MAX_MAIN_CADENCE_MS - 1,
-      currentPositionMaxCadenceMs: MAX_MAIN_CADENCE_MS - 1,
-      currentPositionsIndependent: true,
+    packagedLifecycle: {
+      rawFileSha256: 'e'.repeat(64),
+      canonicalEvidenceSha256: createHash('sha256')
+        .update(canonicalJson(packagedEvidence), 'utf8').digest('hex'),
+      evidence: packagedEvidence,
+    },
+    contentionProbe: {
+      provenance: 'node-qualification-coordinator-contention-v1',
+      proofScope: 'field-scale-archive-contention-not-packaged-renderer-liveness',
+      coordinatorHeartbeatMaxGapMs: MAX_MAIN_CADENCE_MS - 1,
+      syntheticPublicationMaxCadenceMs: MAX_MAIN_CADENCE_MS - 1,
       durableMaxLatencyMs: 300,
       durableWriteCount: 4,
       durableVisibleWrites: 4,
@@ -419,14 +549,14 @@ function validReviewProof(replayDigest: string) {
 /** Returns a current-position probe measurement below the hard gate. */
 function validPhaseLiveness() {
   return {
-    heartbeatMaxGapMs: MAX_MAIN_CADENCE_MS - 1,
-    currentPositionMaxCadenceMs: MAX_MAIN_CADENCE_MS - 1,
+    coordinatorHeartbeatMaxGapMs: MAX_MAIN_CADENCE_MS - 1,
+    syntheticPublicationMaxCadenceMs: MAX_MAIN_CADENCE_MS - 1,
     durableMaxLatencyMs: 300,
     durableWriteCount: 1,
     durableVisibleWrites: 1,
     durableBusyRetries: 0,
-    currentWrites: 1,
-    visibleWrites: 1,
+    syntheticPublicationCount: 1,
+    inProcessVisiblePublicationCount: 1,
   }
 }
 
@@ -434,6 +564,31 @@ function validPhaseLiveness() {
 function refreshProofDigest(value: QualificationEvidence) {
   value.completeness.verificationProofSha256 = createHash('sha256')
     .update(canonicalJson(value.completeness.verificationProof)).digest('hex')
+}
+
+/** Rebinds the packaged report after an intentional nested-evidence mutation. */
+function refreshPackagedLifecycleDigest(value: QualificationEvidence) {
+  value.packagedLifecycle.canonicalEvidenceSha256 = createHash('sha256')
+    .update(canonicalJson(value.packagedLifecycle.evidence), 'utf8').digest('hex')
+}
+
+type PackagedEvidence = ReturnType<typeof createPackagedArchiveLifecycleV2Evidence> & {
+  schemaVersion: number
+  proofKind: string
+  run: { platform: string }
+  source: {
+    expectedHead: string
+    headBefore: string
+    headAfter: string
+    treeBefore: string
+    treeAfter: string
+    packagedBuildHeadMatched: boolean
+  }
+  liveness: {
+    byPhase: {
+      cleanup: { currentFixMaxGapMs: number; sourceToRendererMaxMs: number }
+    }
+  }
 }
 
 type QualificationEvidence = ReturnType<typeof validEvidence>

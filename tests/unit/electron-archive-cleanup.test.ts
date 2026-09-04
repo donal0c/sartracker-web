@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -14,10 +14,39 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
 }
 const {
   createArchiveCleanupCoordinator,
+  readArchiveCleanupGuard,
+  readCompletedArchiveCleanupJournalProof,
 } = require('../../electron/archive-cleanup.cjs') as {
   readonly createArchiveCleanupCoordinator: (
     input: Readonly<Record<string, unknown>>,
   ) => ArchiveCleanupCoordinator
+  readonly readCompletedArchiveCleanupJournalProof: (
+    database: BetterSqliteDatabase,
+    input: { readonly missionId: string; readonly archiveId: string },
+  ) => Readonly<Record<string, unknown>>
+  readonly readArchiveCleanupGuard: (
+    database: BetterSqliteDatabase,
+    missionId: string,
+  ) => null | {
+    readonly guard: Readonly<Record<string, unknown>>
+    readonly guardJson: string
+  }
+}
+const {
+  readArchiveCleanupMembershipGeneration,
+} = require('../../electron/archive-cleanup-membership.cjs') as {
+  readonly readArchiveCleanupMembershipGeneration: (
+    db: BetterSqliteDatabase,
+    missionId: string,
+  ) => number
+}
+const { readMissionLiveReviewStorageState } = require(
+  '../../electron/mission-live-review-access.cjs',
+) as {
+  readonly readMissionLiveReviewStorageState: (
+    database: BetterSqliteDatabase,
+    missionId: string,
+  ) => 'live' | 'cleanup_in_progress' | 'archived' | 'recovery_required'
 }
 
 type TestStore = {
@@ -101,6 +130,17 @@ type CleanupFixture = {
   readonly evidence: CleanupEvidence
 }
 
+/** Mirrors the production archive-lifecycle event identity contract. */
+function deriveArchiveLifecycleEventId(archiveId: string, kind: string): string {
+  const digest = createHash('sha256')
+    .update(`sartracker-archive-lifecycle:${kind}:${archiveId}`, 'utf8')
+    .digest('hex')
+  const bytes = digest.slice(0, 32).split('')
+  bytes[12] = '4'
+  bytes[16] = ['8', '9', 'a', 'b'][Number.parseInt(bytes[16], 16) % 4]
+  return `${bytes.slice(0, 8).join('')}-${bytes.slice(8, 12).join('')}-${bytes.slice(12, 16).join('')}-${bytes.slice(16, 20).join('')}-${bytes.slice(20).join('')}`
+}
+
 const temporaryDirectories = new Set<string>()
 
 afterEach(() => {
@@ -140,6 +180,12 @@ function appendCleanupEvent(
 async function createFixture(input: {
   readonly yieldToMain?: (db: BetterSqliteDatabase, missionId: string, archiveId: string) => Promise<void>
   readonly yieldAfterBusyRetry?: () => Promise<void>
+  readonly preparedSql?: string[]
+  readonly beforeFinalization?: (
+    db: BetterSqliteDatabase,
+    missionId: string,
+    archiveId: string,
+  ) => void
 } = {}): Promise<CleanupFixture> {
   const directory = mkdtempSync(path.join(tmpdir(), 'sartracker-archive-cleanup-'))
   temporaryDirectories.add(directory)
@@ -189,7 +235,7 @@ async function createFixture(input: {
   const archiveId = randomUUID()
   const requestEventId = randomUUID()
   const sealedEventId = randomUUID()
-  const finalizedEventId = randomUUID()
+  const finalizedEventId = deriveArchiveLifecycleEventId(archiveId, 'mission-finalized')
   const ciphertextSha256 = 'a'.repeat(64)
   const createdAt = '2026-08-30T12:00:00.000Z'
   db.transaction(() => {
@@ -247,6 +293,7 @@ async function createFixture(input: {
         { slotId: 'recovery-v1', slotType: 'recovery' },
       ]),
     )
+    input.beforeFinalization?.(db, mission.id, archiveId)
     db.prepare(`INSERT INTO mission_events (
       id, mission_id, event_type, timestamp, details_json, recorded_at,
       recording_completeness
@@ -257,6 +304,7 @@ async function createFixture(input: {
       JSON.stringify({
         archive_id: archiveId,
         archive_relative_path: `${archiveId}.sararch`,
+        cleanup_membership_generation: readArchiveCleanupMembershipGeneration(db, mission.id),
         container_version: 2,
         resulting_status: 'finalized',
       }),
@@ -266,8 +314,18 @@ async function createFixture(input: {
   }).immediate()
 
   let clock = Date.parse('2026-08-30T12:05:00.000Z')
+  const coordinatorDb = input.preparedSql === undefined
+    ? db
+    : {
+        prepare: (sql: string) => {
+          input.preparedSql?.push(sql)
+          return db.prepare(sql)
+        },
+        pragma: (sql: string) => db.pragma(sql),
+        transaction: <T>(callback: () => T) => db.transaction(callback),
+      }
   const cleanupCoordinator = createArchiveCleanupCoordinator({
-    db,
+    db: coordinatorDb,
     schemaVersion: 13,
     now: () => new Date(clock++).toISOString(),
     yieldToMain: () => input.yieldToMain?.(db, mission.id, archiveId) ?? Promise.resolve(),
@@ -280,7 +338,7 @@ async function createFixture(input: {
       timestamp: string,
       details: Readonly<Record<string, unknown>>,
     ) => appendCleanupEvent(db, missionId, eventType, timestamp, details),
-    batchLimits: { positions: 3, default: 2 },
+    batchLimits: { positions: 3, missionEvents: 2, default: 2 },
   })
   const defaultCustodyCommit = <T>(
     commit: (assertCustodyUnchanged: () => void) => T,
@@ -593,6 +651,23 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
         .get(fixture.archiveId)?.status).toBe('verified')
       expect(fixture.db.prepare('SELECT state FROM mission_cleanup_journal WHERE mission_id = ?')
         .get(fixture.missionId)?.state).toBe('completed')
+      expect(readCompletedArchiveCleanupJournalProof(fixture.db, {
+        missionId: fixture.missionId,
+        archiveId: fixture.archiveId,
+      })).toMatchObject({
+        archiveId: fixture.archiveId,
+        state: 'completed',
+        finalizationEpoch: expect.any(Number),
+        membershipGeneration: expect.any(Number),
+        startedEventId: expect.any(String),
+        completionEventId: expect.any(String),
+      })
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId)).toBe('archived')
+      const replayGeneration = fixture.db.prepare(`SELECT mission_id, generation
+        FROM mission_replay_generations WHERE mission_id = ?`).get(fixture.missionId)
+      expect(replayGeneration?.mission_id).toBe(fixture.missionId)
+      expect(Number.isSafeInteger(replayGeneration?.generation)).toBe(true)
+      expect(Number(replayGeneration?.generation)).toBeGreaterThan(0)
       expect(fixture.coordinator.getEligibility(fixture.evidence)).toEqual({
         eligible: false,
         blockers: ['cleanup_already_completed'],
@@ -602,6 +677,728 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
         .toHaveLength(3)
       expect(progress.every((update) => Number(update.deletedRows) <= 3)).toBe(true)
       expect(JSON.stringify(progress)).not.toMatch(/delete evidence/iu)
+      const guardRow = fixture.db.prepare(`SELECT key, value FROM metadata
+        WHERE key LIKE 'archive_cleanup_guard_v1:%'`).get()
+      const tamperedGuard = JSON.parse(String(guardRow?.value)) as Record<string, unknown>
+      tamperedGuard.progressSha256 = '0'.repeat(64)
+      fixture.db.prepare('UPDATE metadata SET value = ? WHERE key = ?')
+        .run(JSON.stringify(tamperedGuard), guardRow?.key)
+      expect(() => readCompletedArchiveCleanupJournalProof(fixture.db, {
+        missionId: fixture.missionId,
+        archiveId: fixture.archiveId,
+      })).toThrow(/guard|journal|proof/iu)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('removes only target-mission telemetry events in bounded rowid windows and retains operational audit evidence', async () => {
+    const fixture = await createFixture({
+      beforeFinalization: (db, missionId) => {
+        const insert = db.prepare(`INSERT INTO mission_events (
+          id, mission_id, event_type, timestamp, details_json, recorded_at,
+          recording_completeness
+        ) VALUES (?, ?, ?, ?, NULL, ?, 'complete')`)
+        for (let index = 0; index < 11; index += 1) {
+          insert.run(
+            randomUUID(),
+            missionId,
+            ['device_updated', 'position_recorded', 'mission_backup_synced'][index % 3],
+            `2026-08-30T11:50:${String(index).padStart(2, '0')}.000Z`,
+            `2026-08-30T11:50:${String(index).padStart(2, '0')}.000Z`,
+          )
+        }
+      },
+    })
+    const progress: Readonly<Record<string, unknown>>[] = []
+    try {
+      const insert = fixture.db.prepare(`INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json, recorded_at,
+        recording_completeness
+      ) VALUES (?, ?, ?, ?, NULL, ?, 'complete')`)
+      insert.run(
+        randomUUID(),
+        fixture.missionId,
+        'operator_note_recorded',
+        '2026-08-30T12:11:00.000Z',
+        '2026-08-30T12:11:00.000Z',
+      )
+      for (const eventType of [
+        'mission_archive_available',
+        'mission_cleanup_failed',
+        'future_operator_custody_event',
+      ]) {
+        insert.run(
+          randomUUID(),
+          fixture.missionId,
+          eventType,
+          '2026-08-30T12:11:30.000Z',
+          '2026-08-30T12:11:30.000Z',
+        )
+      }
+      insert.run(
+        randomUUID(),
+        fixture.otherMissionId,
+        'device_updated',
+        '2026-08-30T12:12:00.000Z',
+        '2026-08-30T12:12:00.000Z',
+      )
+
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        onProgress: (update) => progress.push(update),
+      })).resolves.toMatchObject({ state: 'completed', storageState: 'archived' })
+
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type IN (
+          'device_updated', 'position_recorded', 'mission_backup_synced'
+        )`).get(fixture.missionId)?.total).toBe(0)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'operator_note_recorded'`)
+        .get(fixture.missionId)?.total).toBe(1)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type IN (
+          'mission_archive_available', 'mission_cleanup_failed',
+          'future_operator_custody_event'
+        )`).get(fixture.missionId)?.total).toBe(3)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'device_updated'`)
+        .get(fixture.otherMissionId)?.total).toBe(1)
+      expect(progress.some((update) => update.tableName === 'mission_events')).toBe(true)
+      const journal = fixture.db.prepare(`SELECT progress_json FROM mission_cleanup_journal
+        WHERE mission_id = ?`).get(fixture.missionId)
+      expect(JSON.parse(String(journal?.progress_json))).toMatchObject({
+        version: 2,
+        tableCursor: null,
+        missionEventsTargetRowid: expect.any(Number),
+      })
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('fails closed without completion when target telemetry arrives after the fixed high-water', async () => {
+    let insertedLateTelemetry = false
+    let lateTelemetryRowid = 0
+    const fixture = await createFixture({
+      yieldToMain: async (db, missionId) => {
+        if (insertedLateTelemetry) return
+        insertedLateTelemetry = true
+        const lateEventId = randomUUID()
+        db.prepare(`INSERT INTO mission_events (
+          id, mission_id, event_type, timestamp, details_json, recorded_at,
+          recording_completeness
+        ) VALUES (?, ?, 'position_recorded', ?, NULL, ?, 'complete')`).run(
+          lateEventId,
+          missionId,
+          '2026-08-30T12:30:00.000Z',
+          '2026-08-30T12:30:00.000Z',
+        )
+        lateTelemetryRowid = Number(db.prepare(
+          'SELECT rowid FROM mission_events WHERE id = ?',
+        ).get(lateEventId)?.rowid)
+      },
+    })
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence))
+        .rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_FAILED' })
+
+      const journal = fixture.db.prepare(`SELECT state, progress_json, completed_at
+        FROM mission_cleanup_journal WHERE mission_id = ?`).get(fixture.missionId)
+      const progress = JSON.parse(String(journal?.progress_json)) as {
+        readonly finalizationEpoch: number
+        readonly missionEventsTargetRowid: number
+      }
+      const finalizationRowid = Number(fixture.db.prepare(`SELECT rowid FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_finalized'`).get(fixture.missionId)?.rowid)
+      expect(progress.finalizationEpoch).toBe(finalizationRowid)
+      expect(progress.missionEventsTargetRowid).toBe(finalizationRowid)
+      expect(lateTelemetryRowid).toBeGreaterThan(progress.missionEventsTargetRowid)
+      expect(journal).toMatchObject({ state: 'in_progress', completed_at: null })
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_completed'`)
+        .get(fixture.missionId)?.total).toBe(0)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE rowid = ? AND mission_id = ? AND event_type = 'position_recorded'`)
+        .get(lateTelemetryRowid, fixture.missionId)?.total).toBe(1)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('stops on telemetry inserted into a deleted rowid hole during cleanup', async () => {
+    let insertedEventId: string | null = null
+    let insertedRowid = 0
+    const fixture = await createFixture({
+      beforeFinalization: (db, missionId) => {
+        const insert = db.prepare(`INSERT INTO mission_events (
+          id, mission_id, event_type, timestamp, details_json, recorded_at,
+          recording_completeness
+        ) VALUES (?, ?, 'position_recorded', ?, NULL, ?, 'complete')`)
+        for (let index = 0; index < 6; index += 1) {
+          const timestamp = `2026-08-30T11:30:${String(index).padStart(2, '0')}.000Z`
+          insert.run(randomUUID(), missionId, timestamp, timestamp)
+        }
+      },
+      yieldToMain: async (db, missionId) => {
+        if (insertedEventId !== null) return
+        const journal = db.prepare(`SELECT progress_json FROM mission_cleanup_journal
+          WHERE mission_id = ?`).get(missionId)
+        const progress = JSON.parse(String(journal?.progress_json)) as {
+          readonly tables: string[]
+          readonly tableIndex: number
+          readonly tableCursor: number | null
+        }
+        if (progress.tables[progress.tableIndex] !== 'mission_events'
+          || progress.tableCursor === null) return
+        for (let candidate = 1; candidate <= progress.tableCursor; candidate += 1) {
+          if (db.prepare('SELECT 1 FROM mission_events WHERE rowid = ?').get(candidate)
+            !== undefined) continue
+          insertedEventId = randomUUID()
+          insertedRowid = candidate
+          db.prepare(`INSERT INTO mission_events (
+            rowid, id, mission_id, event_type, timestamp, details_json, recorded_at,
+            recording_completeness
+          ) VALUES (?, ?, ?, 'position_recorded', ?, NULL, ?, 'complete')`).run(
+            candidate,
+            insertedEventId,
+            missionId,
+            '2026-08-30T12:30:01.000Z',
+            '2026-08-30T12:30:01.000Z',
+          )
+          return
+        }
+      },
+    })
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence)).rejects.toMatchObject({
+        code: 'ARCHIVE_CLEANUP_FAILED',
+        cause: {
+          code: 'ARCHIVE_CLEANUP_PRECONDITION_CHANGED',
+          blockers: ['cleanup_membership_changed'],
+        },
+      })
+      expect(insertedEventId).not.toBeNull()
+      expect(fixture.db.prepare(`SELECT id FROM mission_events WHERE rowid = ?`)
+        .get(insertedRowid)).toEqual({ id: insertedEventId })
+      expect(fixture.db.prepare(`SELECT state, completed_at FROM mission_cleanup_journal
+        WHERE mission_id = ?`).get(fixture.missionId)).toMatchObject({
+        state: 'in_progress',
+        completed_at: null,
+      })
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('binds cleanup to the finalization event and preserves telemetry written before cleanup starts', async () => {
+    const fixture = await createFixture()
+    try {
+      const finalizationRowid = Number(fixture.db.prepare(`SELECT rowid FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_finalized'`).get(fixture.missionId)?.rowid)
+      const positionsBefore = Number(fixture.db.prepare(
+        'SELECT COUNT(*) AS total FROM positions WHERE mission_id = ?',
+      ).get(fixture.missionId)?.total)
+      const lateEventId = randomUUID()
+      fixture.db.prepare(`INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json, recorded_at,
+        recording_completeness
+      ) VALUES (?, ?, 'position_recorded', ?, NULL, ?, 'complete')`).run(
+        lateEventId,
+        fixture.missionId,
+        '2026-08-30T12:31:00.000Z',
+        '2026-08-30T12:31:00.000Z',
+      )
+
+      expect(fixture.coordinator.getEligibility(fixture.evidence)).toEqual({
+        eligible: false,
+        blockers: ['cleanup_membership_changed'],
+        storageState: 'live',
+      })
+      await expect(fixture.coordinator.start(fixture.evidence)).rejects.toMatchObject({
+        code: 'ARCHIVE_CLEANUP_NOT_ELIGIBLE',
+        blockers: ['cleanup_membership_changed'],
+      })
+      const lateEventRowid = Number(fixture.db.prepare(
+        'SELECT rowid FROM mission_events WHERE id = ?',
+      ).get(lateEventId)?.rowid)
+      expect(lateEventRowid).toBeGreaterThan(finalizationRowid)
+      expect(fixture.db.prepare('SELECT 1 AS present FROM mission_events WHERE id = ?')
+        .get(lateEventId)).toEqual({ present: 1 })
+      expect(Number(fixture.db.prepare(
+        'SELECT COUNT(*) AS total FROM positions WHERE mission_id = ?',
+      ).get(fixture.missionId)?.total)).toBe(positionsBefore)
+      expect(fixture.db.prepare(`SELECT 1 AS present FROM mission_cleanup_journal
+        WHERE mission_id = ?`).get(fixture.missionId)).toBeUndefined()
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_started'`)
+        .get(fixture.missionId)?.total).toBe(0)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('rejects a downgraded v2 journal before another row can be deleted', async () => {
+    const fixture = await createFixture()
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: { simulateKillAfterCommittedBatch: 1 },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+      const positionsBefore = Number(fixture.db.prepare(
+        'SELECT COUNT(*) AS total FROM positions WHERE mission_id = ?',
+      ).get(fixture.missionId)?.total)
+      const journal = fixture.db.prepare(`SELECT progress_json FROM mission_cleanup_journal
+        WHERE mission_id = ?`).get(fixture.missionId)
+      const downgraded = JSON.parse(String(journal?.progress_json)) as Record<string, unknown>
+      downgraded.version = 1
+      delete downgraded.tableCursor
+      delete downgraded.missionEventsTargetRowid
+      fixture.db.prepare(`UPDATE mission_cleanup_journal SET progress_json = ?
+        WHERE mission_id = ?`).run(JSON.stringify(downgraded), fixture.missionId)
+
+      await expect(fixture.coordinator.resume({
+        ...fixture.evidence,
+        nonMachineUnwrap: undefined,
+      } as unknown as Omit<CleanupEvidence, 'nonMachineUnwrap'>)).rejects.toMatchObject({
+        code: 'ARCHIVE_CLEANUP_JOURNAL_CORRUPT',
+      })
+      expect(Number(fixture.db.prepare(
+        'SELECT COUNT(*) AS total FROM positions WHERE mission_id = ?',
+      ).get(fixture.missionId)?.total)).toBe(positionsBefore)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('rejects a forged metadata revision before another row can be deleted', async () => {
+    const fixture = await createFixture()
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: { simulateKillAfterCommittedBatch: 1 },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+      const positionsBefore = Number(fixture.db.prepare(
+        'SELECT COUNT(*) AS total FROM positions WHERE mission_id = ?',
+      ).get(fixture.missionId)?.total)
+      const guardRow = fixture.db.prepare(`SELECT key, value FROM metadata
+        WHERE key LIKE 'archive_cleanup_guard_v1:%'`).get()
+      const guard = JSON.parse(String(guardRow?.value)) as Record<string, unknown>
+      guard.revision = Number(guard.revision) + 1
+      fixture.db.prepare('UPDATE metadata SET value = ? WHERE key = ?')
+        .run(JSON.stringify(guard), guardRow?.key)
+
+      await expect(fixture.coordinator.resume({
+        ...fixture.evidence,
+        nonMachineUnwrap: undefined,
+      } as unknown as Omit<CleanupEvidence, 'nonMachineUnwrap'>)).rejects.toMatchObject({
+        code: 'ARCHIVE_CLEANUP_JOURNAL_CORRUPT',
+      })
+      expect(Number(fixture.db.prepare(
+        'SELECT COUNT(*) AS total FROM positions WHERE mission_id = ?',
+      ).get(fixture.missionId)?.total)).toBe(positionsBefore)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('does not accept an early SQL completed-state flip as archived custody', async () => {
+    const fixture = await createFixture()
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: { simulateKillAfterCommittedBatch: 1 },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+      fixture.db.prepare(`UPDATE mission_cleanup_journal SET
+        state = 'completed', completed_at = ? WHERE mission_id = ?`).run(
+        '2026-08-30T12:32:00.000Z',
+        fixture.missionId,
+      )
+
+      expect(fixture.coordinator.getEligibility(fixture.evidence)).toEqual({
+        eligible: false,
+        blockers: ['cleanup_journal_invalid'],
+        storageState: 'cleanup_in_progress',
+      })
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId))
+        .toBe('cleanup_in_progress')
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_completed'`)
+        .get(fixture.missionId)?.total).toBe(0)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('fails live Review closed when a retained guard has no matching active journal state', async () => {
+    const fixture = await createFixture()
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: { simulateKillAfterCommittedBatch: 1 },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+      expect(readArchiveCleanupGuard(fixture.db, fixture.missionId)).toMatchObject({
+        guard: { missionId: fixture.missionId, state: 'in_progress' },
+      })
+      expect(() => readArchiveCleanupGuard(fixture.db, 'x'.repeat(201))).toThrow(/input/iu)
+
+      fixture.db.prepare(`UPDATE mission_cleanup_journal SET state = 'eligible'
+        WHERE mission_id = ?`).run(fixture.missionId)
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId))
+        .toBe('cleanup_in_progress')
+
+      fixture.db.prepare('DELETE FROM mission_cleanup_journal WHERE mission_id = ?')
+        .run(fixture.missionId)
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId))
+        .toBe('cleanup_in_progress')
+
+      fixture.db.prepare(`UPDATE metadata SET value = '{'
+        WHERE key LIKE 'archive_cleanup_guard_v1:%'`).run()
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId))
+        .toBe('cleanup_in_progress')
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('fails terminal completion and preserves a late row in an already-passed table', async () => {
+    let insertedLateRow = false
+    const fixture = await createFixture({
+      yieldToMain: async (db, missionId) => {
+        if (insertedLateRow) return
+        const journal = db.prepare(`SELECT progress_json FROM mission_cleanup_journal
+          WHERE mission_id = ?`).get(missionId)
+        const progress = JSON.parse(String(journal?.progress_json)) as {
+          readonly tables: string[]
+          readonly tableIndex: number
+        }
+        const passedIndex = progress.tables.indexOf('coverage_missions')
+        if (passedIndex < 0 || progress.tableIndex <= passedIndex) return
+        db.exec('DROP TRIGGER IF EXISTS archive_cleanup_membership_coverage_missions_insert')
+        db.prepare(`INSERT INTO coverage_missions (
+          mission_id, change_seq, enumerated, updated_at
+        ) VALUES (?, 99, 1, ?)`).run(missionId, '2026-08-30T12:33:00.000Z')
+        insertedLateRow = true
+      },
+    })
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence)).rejects.toMatchObject({
+        code: 'ARCHIVE_CLEANUP_FAILED',
+        cause: { code: 'ARCHIVE_CLEANUP_JOURNAL_CORRUPT' },
+        cleanupDiagnostic: { substage: 'completion' },
+      })
+      expect(insertedLateRow).toBe(true)
+      expect(fixture.db.prepare(`SELECT 1 AS present FROM coverage_missions
+        WHERE mission_id = ?`).get(fixture.missionId)).toEqual({ present: 1 })
+      expect(fixture.db.prepare(`SELECT state, completed_at FROM mission_cleanup_journal
+        WHERE mission_id = ?`).get(fixture.missionId)).toMatchObject({
+        state: 'in_progress',
+        completed_at: null,
+      })
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('invalidates completed classification when its verification custody proof changes', async () => {
+    const fixture = await createFixture()
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence)).resolves.toMatchObject({
+        state: 'completed',
+      })
+      fixture.db.prepare(`UPDATE mission_archives SET verification_proof_json = ?
+        WHERE id = ?`).run(JSON.stringify({ exhaustive: true, replaced: true }), fixture.archiveId)
+
+      expect(fixture.coordinator.getEligibility(fixture.evidence)).toEqual({
+        eligible: false,
+        blockers: ['cleanup_journal_invalid'],
+        storageState: 'cleanup_in_progress',
+      })
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId))
+        .toBe('cleanup_in_progress')
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('invalidates completed classification when the bound completion event changes', async () => {
+    const fixture = await createFixture()
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence)).resolves.toMatchObject({
+        state: 'completed',
+      })
+      fixture.db.prepare(`UPDATE mission_events SET details_json = '{}'
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_completed'`)
+        .run(fixture.missionId)
+
+      expect(fixture.coordinator.getEligibility(fixture.evidence)).toEqual({
+        eligible: false,
+        blockers: ['cleanup_journal_invalid'],
+        storageState: 'cleanup_in_progress',
+      })
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('rejects a completed legacy v1 journal instead of silently re-cleaning it', async () => {
+    const fixture = await createFixture()
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence)).resolves.toMatchObject({
+        state: 'completed',
+      })
+      const journal = fixture.db.prepare(`SELECT progress_json FROM mission_cleanup_journal
+        WHERE mission_id = ?`).get(fixture.missionId)
+      const legacyProgress = JSON.parse(String(journal?.progress_json)) as Record<string, unknown>
+      const legacyTables = (legacyProgress.tables as string[])
+        .filter((tableName) => tableName !== 'mission_events')
+      legacyProgress.version = 1
+      legacyProgress.tables = legacyTables
+      legacyProgress.tableIndex = legacyTables.length
+      delete legacyProgress.tableCursor
+      delete legacyProgress.missionEventsTargetRowid
+      fixture.db.prepare(`UPDATE mission_cleanup_journal SET progress_json = ?
+        WHERE mission_id = ?`).run(JSON.stringify(legacyProgress), fixture.missionId)
+      fixture.db.prepare(`DELETE FROM metadata
+        WHERE key LIKE 'archive_cleanup_guard_v1:%'`).run()
+      fixture.db.prepare(`INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json, recorded_at,
+        recording_completeness
+      ) VALUES (?, ?, 'device_updated', ?, NULL, ?, 'complete')`).run(
+        randomUUID(),
+        fixture.missionId,
+        '2026-08-30T12:35:00.000Z',
+        '2026-08-30T12:35:00.000Z',
+      )
+      expect(fixture.coordinator.getEligibility(fixture.evidence)).toEqual({
+        eligible: false,
+        blockers: ['cleanup_journal_invalid'],
+        storageState: 'cleanup_in_progress',
+      })
+      await expect(fixture.coordinator.start(fixture.evidence)).rejects.toMatchObject({
+        code: 'ARCHIVE_CLEANUP_NOT_ELIGIBLE',
+        blockers: ['cleanup_journal_invalid'],
+      })
+
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'device_updated'`)
+        .get(fixture.missionId)?.total).toBe(1)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_started'`)
+        .get(fixture.missionId)?.total).toBe(1)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('rejects an impossible forward cursor rather than skipping eligible telemetry on resume', async () => {
+    const fixture = await createFixture({
+      beforeFinalization: (db, missionId) => {
+        const insert = db.prepare(`INSERT INTO mission_events (
+          id, mission_id, event_type, timestamp, details_json, recorded_at,
+          recording_completeness
+        ) VALUES (?, ?, 'position_recorded', ?, NULL, ?, 'complete')`)
+        for (let index = 0; index < 8; index += 1) {
+          const timestamp = `2026-08-30T11:40:${String(index).padStart(2, '0')}.000Z`
+          insert.run(randomUUID(), missionId, timestamp, timestamp)
+        }
+      },
+    })
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: {
+          simulateKillAfterTableBatch: { tableName: 'mission_events', tableBatch: 1 },
+        },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+
+      const journal = fixture.db.prepare(`SELECT progress_json FROM mission_cleanup_journal
+        WHERE mission_id = ?`).get(fixture.missionId)
+      const corruptProgress = JSON.parse(String(journal?.progress_json)) as Record<string, unknown>
+      corruptProgress.tableCursor = Number(corruptProgress.missionEventsTargetRowid) + 1
+      fixture.db.prepare(`UPDATE mission_cleanup_journal SET progress_json = ?
+        WHERE mission_id = ?`).run(JSON.stringify(corruptProgress), fixture.missionId)
+
+      await expect(fixture.coordinator.resume({
+        ...fixture.evidence,
+        nonMachineUnwrap: undefined,
+      } as unknown as Omit<CleanupEvidence, 'nonMachineUnwrap'>)).rejects.toMatchObject({
+        code: 'ARCHIVE_CLEANUP_JOURNAL_CORRUPT',
+      })
+      expect(Number(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'position_recorded'`)
+        .get(fixture.missionId)?.total)).toBeGreaterThan(0)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_completed'`)
+        .get(fixture.missionId)?.total).toBe(0)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('rejects a forged terminal event cursor while cleanable telemetry remains below high-water', async () => {
+    const fixture = await createFixture({
+      beforeFinalization: (db, missionId) => {
+        const insert = db.prepare(`INSERT INTO mission_events (
+          id, mission_id, event_type, timestamp, details_json, recorded_at,
+          recording_completeness
+        ) VALUES (?, ?, 'position_recorded', ?, NULL, ?, 'complete')`)
+        for (let index = 0; index < 8; index += 1) {
+          const timestamp = `2026-08-30T11:42:${String(index).padStart(2, '0')}.000Z`
+          insert.run(randomUUID(), missionId, timestamp, timestamp)
+        }
+      },
+    })
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: {
+          simulateKillAfterTableBatch: { tableName: 'mission_events', tableBatch: 1 },
+        },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+
+      const journal = fixture.db.prepare(`SELECT progress_json FROM mission_cleanup_journal
+        WHERE mission_id = ?`).get(fixture.missionId)
+      const corruptProgress = JSON.parse(String(journal?.progress_json)) as Record<string, unknown>
+      corruptProgress.tableCursor = corruptProgress.missionEventsTargetRowid
+      fixture.db.prepare(`UPDATE mission_cleanup_journal SET progress_json = ?
+        WHERE mission_id = ?`).run(JSON.stringify(corruptProgress), fixture.missionId)
+      const remainingBeforeResume = Number(fixture.db.prepare(`SELECT COUNT(*) AS total
+        FROM mission_events WHERE mission_id = ? AND rowid <= ?
+          AND event_type IN ('device_updated', 'mission_backup_synced', 'position_recorded')`)
+        .get(fixture.missionId, corruptProgress.missionEventsTargetRowid)?.total)
+      expect(remainingBeforeResume).toBeGreaterThan(0)
+
+      await expect(fixture.coordinator.resume({
+        ...fixture.evidence,
+        nonMachineUnwrap: undefined,
+      } as unknown as Omit<CleanupEvidence, 'nonMachineUnwrap'>)).rejects.toMatchObject({
+        code: 'ARCHIVE_CLEANUP_JOURNAL_CORRUPT',
+      })
+      expect(fixture.db.prepare(`SELECT state, completed_at FROM mission_cleanup_journal
+        WHERE mission_id = ?`).get(fixture.missionId)).toMatchObject({
+        state: 'in_progress',
+        completed_at: null,
+      })
+      expect(Number(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND rowid <= ?
+          AND event_type IN ('device_updated', 'mission_backup_synced', 'position_recorded')`)
+        .get(fixture.missionId, corruptProgress.missionEventsTargetRowid)?.total))
+        .toBe(remainingBeforeResume)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_completed'`)
+        .get(fixture.missionId)?.total).toBe(0)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('rejects a replayed older cursor while the guard retains its newer revision', async () => {
+    const fixture = await createFixture()
+    try {
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: { simulateKillAfterCommittedBatch: 1 },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+      const olderProgressJson = String(fixture.db.prepare(`SELECT progress_json
+        FROM mission_cleanup_journal WHERE mission_id = ?`).get(fixture.missionId)?.progress_json)
+
+      await expect(fixture.coordinator.resume({
+        ...fixture.evidence,
+        nonMachineUnwrap: undefined,
+      } as unknown as Omit<CleanupEvidence, 'nonMachineUnwrap'>, {
+        faultInjection: { simulateKillAfterCommittedBatch: 1 },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+      const currentProgressJson = String(fixture.db.prepare(`SELECT progress_json
+        FROM mission_cleanup_journal WHERE mission_id = ?`).get(fixture.missionId)?.progress_json)
+      expect(currentProgressJson).not.toBe(olderProgressJson)
+
+      fixture.db.prepare(`UPDATE mission_cleanup_journal SET progress_json = ?
+        WHERE mission_id = ?`).run(olderProgressJson, fixture.missionId)
+      const rowsBeforeResume = Number(fixture.db.prepare(`SELECT COUNT(*) AS total
+        FROM positions WHERE mission_id = ?`).get(fixture.missionId)?.total)
+
+      await expect(fixture.coordinator.resume({
+        ...fixture.evidence,
+        nonMachineUnwrap: undefined,
+      } as unknown as Omit<CleanupEvidence, 'nonMachineUnwrap'>))
+        .rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_JOURNAL_CORRUPT' })
+
+      expect(Number(fixture.db.prepare(`SELECT COUNT(*) AS total
+        FROM positions WHERE mission_id = ?`).get(fixture.missionId)?.total))
+        .toBe(rowsBeforeResume)
+      expect(fixture.db.prepare(`SELECT state, completed_at FROM mission_cleanup_journal
+        WHERE mission_id = ?`).get(fixture.missionId)).toMatchObject({
+        state: 'in_progress',
+        completed_at: null,
+      })
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_completed'`)
+        .get(fixture.missionId)?.total).toBe(0)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('resumes telemetry cleanup from its durable rowid window without re-deleting operational events', async () => {
+    const fixture = await createFixture({
+      beforeFinalization: (db, missionId) => {
+        const insert = db.prepare(`INSERT INTO mission_events (
+          id, mission_id, event_type, timestamp, details_json, recorded_at,
+          recording_completeness
+        ) VALUES (?, ?, 'device_updated', ?, NULL, ?, 'complete')`)
+        for (let index = 0; index < 9; index += 1) {
+          const timestamp = `2026-08-30T11:20:${String(index).padStart(2, '0')}.000Z`
+          insert.run(randomUUID(), missionId, timestamp, timestamp)
+        }
+      },
+    })
+    try {
+      const insert = fixture.db.prepare(`INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json, recorded_at,
+        recording_completeness
+      ) VALUES (?, ?, ?, ?, NULL, ?, 'complete')`)
+      insert.run(
+        randomUUID(),
+        fixture.missionId,
+        'operator_note_recorded',
+        '2026-08-30T12:21:00.000Z',
+        '2026-08-30T12:21:00.000Z',
+      )
+
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: {
+          simulateKillAfterTableBatch: { tableName: 'mission_events', tableBatch: 1 },
+        },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+      expect(Number(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'device_updated'`)
+        .get(fixture.missionId)?.total)).toBeGreaterThan(0)
+
+      await expect(fixture.coordinator.resume({
+        ...fixture.evidence,
+        nonMachineUnwrap: undefined,
+      } as unknown as Omit<CleanupEvidence, 'nonMachineUnwrap'>)).resolves.toMatchObject({
+        state: 'completed',
+      })
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'device_updated'`)
+        .get(fixture.missionId)?.total).toBe(0)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'operator_note_recorded'`)
+        .get(fixture.missionId)?.total).toBe(1)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('resolves the current finalization by indexed archive-event identity without a mission history scan', async () => {
+    const preparedSql: string[] = []
+    const fixture = await createFixture({ preparedSql })
+    try {
+      fixture.db.exec('DROP INDEX IF EXISTS idx_mission_events_replay')
+
+      expect(fixture.coordinator.getEligibility(fixture.evidence)).toMatchObject({ eligible: true })
+
+      const finalizationReads = preparedSql.filter((sql) =>
+        sql.includes('event_rowid') && sql.includes('FROM mission_events'))
+      expect(finalizationReads.length).toBeGreaterThan(0)
+      expect(finalizationReads.every((sql) => /WHERE\s+(?:id|rowid)\s*=\s*\?/iu.test(sql)))
+        .toBe(true)
+      expect(finalizationReads.some((sql) => /WHERE\s+mission_id\s*=\s*\?/iu.test(sql)))
+        .toBe(false)
     } finally {
       fixture.db.close()
     }
@@ -753,6 +1550,45 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
     }
   })
 
+  it('resumes after a recorded failure beyond the Replay-generation plan point', async () => {
+    const fixture = await createFixture()
+    try {
+      const replayGenerationBefore = Number(fixture.db.prepare(`SELECT generation
+        FROM mission_replay_generations WHERE mission_id = ?`).get(fixture.missionId)?.generation)
+      await expect(fixture.coordinator.start(fixture.evidence, {
+        faultInjection: { failBeforeSelectForTable: 'positions' },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_FAILED' })
+
+      const journal = fixture.db.prepare(`SELECT progress_json
+        FROM mission_cleanup_journal WHERE mission_id = ?`).get(fixture.missionId)
+      const progress = JSON.parse(String(journal?.progress_json)) as {
+        readonly tables: string[]
+        readonly tableIndex: number
+      }
+      expect(progress.tables).not.toContain('mission_replay_generations')
+      expect(progress.tables[progress.tableIndex]).toBe('positions')
+      const replayGenerationAfterFailure = Number(fixture.db.prepare(`SELECT generation
+        FROM mission_replay_generations WHERE mission_id = ?`).get(fixture.missionId)?.generation)
+      expect(replayGenerationAfterFailure).toBeGreaterThan(replayGenerationBefore)
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_failed'`)
+        .get(fixture.missionId)?.total).toBe(1)
+
+      await expect(fixture.coordinator.resume({
+        ...fixture.evidence,
+        nonMachineUnwrap: undefined,
+      } as unknown as Omit<CleanupEvidence, 'nonMachineUnwrap'>)).resolves.toMatchObject({
+        state: 'completed',
+        storageState: 'archived',
+      })
+      expect(fixture.db.prepare(`SELECT COUNT(*) AS total FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_cleanup_completed'`)
+        .get(fixture.missionId)?.total).toBe(1)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
   it('attributes failures to the SQL boundary that actually failed', async () => {
     const selectFixture = await createFixture()
     try {
@@ -796,12 +1632,33 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
       const archiveId = randomUUID()
       const requestEventId = randomUUID()
       const sealedEventId = randomUUID()
-      const finalizedEventId = randomUUID()
+      const finalizedEventId = deriveArchiveLifecycleEventId(archiveId, 'mission-finalized')
+      const restoreEventId = randomUUID()
+      const correctionOperationId = randomUUID()
+      const restoredAt = '2026-08-30T12:30:00.000Z'
       const createdAt = '2026-08-30T13:00:00.000Z'
       const ciphertextSha256 = 'd'.repeat(64)
+      const restoreDetails = {
+        admin_name: 'Incident Controller',
+        reason: 'Correct supplemental mission evidence',
+        restored_from_archive_id: fixture.archiveId,
+        archive_correction_operation_id: correctionOperationId,
+        resulting_status: 'finished',
+        storage_state: 'live',
+      }
       fixture.db.transaction(() => {
         fixture.db.prepare("UPDATE missions SET status = 'finished' WHERE id = ?")
           .run(fixture.missionId)
+        fixture.db.prepare(`INSERT INTO mission_events (
+          id, mission_id, event_type, timestamp, details_json, recorded_at,
+          recording_completeness
+        ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
+          restoreEventId,
+          fixture.missionId,
+          restoredAt,
+          JSON.stringify(restoreDetails),
+          restoredAt,
+        )
         fixture.db.prepare(`INSERT INTO devices (
           id, mission_id, device_id, name, color, last_seen, status
         ) VALUES (?, ?, 'tracker-supplement', 'Supplement Tracker', '#ffffff', NULL, 'offline')`)
@@ -860,7 +1717,17 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
           finalizedEventId,
           fixture.missionId,
           createdAt,
-          JSON.stringify({ archive_id: archiveId, resulting_status: 'finalized' }),
+          JSON.stringify({
+            archive_id: archiveId,
+            archive_path: `/test-archives/${archiveId}.sararch`,
+            archive_relative_path: `${archiveId}.sararch`,
+            cleanup_membership_generation: readArchiveCleanupMembershipGeneration(
+              fixture.db,
+              fixture.missionId,
+            ),
+            container_version: 2,
+            resulting_status: 'finalized',
+          }),
           createdAt,
         )
         fixture.db.prepare("UPDATE missions SET status = 'finalized' WHERE id = ?")
@@ -880,6 +1747,36 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
           sizeBytes: 8192,
         },
       }
+
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId)).toBe('live')
+      fixture.db.exec('SAVEPOINT invalid_restore_operation')
+      fixture.db.prepare(`UPDATE mission_events SET details_json = ? WHERE id = ?`).run(
+        JSON.stringify({ ...restoreDetails, archive_correction_operation_id: '' }),
+        restoreEventId,
+      )
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId))
+        .toBe('cleanup_in_progress')
+      fixture.db.exec('ROLLBACK TO invalid_restore_operation; RELEASE invalid_restore_operation')
+
+      const cleanupTerminal = readCompletedArchiveCleanupJournalProof(fixture.db, {
+        missionId: fixture.missionId,
+        archiveId: fixture.archiveId,
+      })
+      fixture.db.exec('SAVEPOINT restore_before_completion')
+      fixture.db.prepare(`UPDATE mission_events SET rowid = (
+        SELECT MAX(rowid) + 1 FROM mission_events
+      ) WHERE id = ?`).run(cleanupTerminal.completionEventId)
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId))
+        .toBe('cleanup_in_progress')
+      fixture.db.exec('ROLLBACK TO restore_before_completion; RELEASE restore_before_completion')
+
+      fixture.db.exec('SAVEPOINT restore_after_refinalization')
+      fixture.db.prepare(`UPDATE mission_events SET rowid = (
+        SELECT MAX(rowid) + 1 FROM mission_events
+      ) WHERE id = ?`).run(restoreEventId)
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId))
+        .toBe('cleanup_in_progress')
+      fixture.db.exec('ROLLBACK TO restore_after_refinalization; RELEASE restore_after_refinalization')
 
       expect(fixture.coordinator.getEligibility(nextEvidence)).toMatchObject({
         eligible: true,

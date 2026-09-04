@@ -368,7 +368,7 @@ export function MissionControlPanel({
                 ) : null}
               </div>
               {governanceMission.status === 'finished'
-                && governanceMission.storage_state !== 'recovery_required' ? (
+                && governanceMission.storage_state === 'live' ? (
                 <button
                   className="bg-sky-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
                   data-testid="mission-finalize-btn"
@@ -396,18 +396,18 @@ export function MissionControlPanel({
                     onClick={() => setShowCleanupDialog(true)}
                     type="button"
                   >
-                    Archive Live Rows
+                    Review Archive Cleanup
                   </button>
                 </div>
               ) : governanceMission.storage_state === 'cleanup_in_progress' ? (
                 <button
                   className="border border-amber-300/60 bg-amber-300/10 px-3 py-2 text-[12px] font-semibold text-amber-100 disabled:opacity-40"
-                  data-testid="mission-cleanup-resume-btn"
+                  data-testid="mission-cleanup-btn"
                   disabled={governanceBusy}
                   onClick={() => setShowCleanupDialog(true)}
                   type="button"
                 >
-                  Resume Archive Cleanup
+                  Review Archive Cleanup
                 </button>
               ) : governanceMission.storage_state === 'recovery_required' ? (
                 <p

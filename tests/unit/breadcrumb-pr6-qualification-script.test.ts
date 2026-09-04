@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -16,23 +17,36 @@ import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  MAX_EVIDENCE_PATH_SAMPLES,
   assertFieldScaleFixture,
+  assertCompletedCleanupEligibility,
+  assertCurrentCleanupIdentity,
+  assertReplayGenerationCleanupProjection,
+  createOutstandingPromiseTracker,
   createQualificationRunId,
   classifyQualificationFailure,
   createQualificationDiagnostics,
   createQualificationFailureReceipt,
-  deriveLivenessEvidence,
+  createBoundedMaximumTracker,
+  deriveContentionProbeEvidence,
   parseTerminalCleanupJournal,
+  prepareEvidenceDestination,
   qualificationFailurePath,
+  readPackagedLifecyclePrerequisite,
   readLegacyArchiveMaintenanceProgress,
   runWithHeartbeatMonitor,
   scanEvidenceRoots,
   stageClosedFixture,
-  startCurrentPositionProbe,
+  startQualificationContentionProbe,
   waitForMaintenanceSettlement,
   writeQualificationEvidence,
   writeQualificationFailureReceipt,
 } from '../../scripts/breadcrumb-pr6-qualification.mjs'
+import {
+  createPackagedArchiveLifecycleV2Evidence,
+  PACKAGED_LIFECYCLE_HEAD,
+  PACKAGED_LIFECYCLE_TREE,
+} from '../fixtures/packaged-archive-lifecycle-v2'
 
 const temporaryRoots: string[] = []
 
@@ -91,6 +105,39 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     )
   })
 
+  it('pins a valid exact-source packaged liveness report and detects later replacement', async () => {
+    const root = await createTemporaryRoot()
+    const reportPath = path.join(root, 'packaged-lifecycle.json')
+    const report = createPackagedArchiveLifecycleV2Evidence()
+    const prettyPrinted = `${JSON.stringify(report, null, 2)}\n`
+    await writeFile(reportPath, prettyPrinted, { mode: 0o600 })
+
+    const prerequisite = await readPackagedLifecyclePrerequisite({
+      reportPath,
+      expectedRepositoryHead: PACKAGED_LIFECYCLE_HEAD,
+      expectedRepositoryTree: PACKAGED_LIFECYCLE_TREE,
+    })
+
+    expect(prerequisite.evidence).toEqual(report)
+    expect(prerequisite.rawFileSha256).toBe(
+      createHash('sha256').update(prettyPrinted).digest('hex'),
+    )
+    expect(prerequisite.canonicalEvidenceSha256).toMatch(/^[0-9a-f]{64}$/u)
+    expect(prerequisite.canonicalEvidenceSha256).not.toBe(prerequisite.rawFileSha256)
+    await expect(prerequisite.assertUnchanged()).resolves.toBe(true)
+
+    const embeddedSource = prerequisite.evidence.source as Record<string, unknown>
+    embeddedSource.treeAfter = 'd'.repeat(40)
+    await expect(prerequisite.assertUnchanged()).rejects.toThrow(/changed/iu)
+    embeddedSource.treeAfter = PACKAGED_LIFECYCLE_TREE
+    await expect(prerequisite.assertUnchanged()).resolves.toBe(true)
+
+    const sameSizeTamper = prettyPrinted.replace('mission-packaged-proof', 'mission-packaged-proog')
+    expect(Buffer.byteLength(sameSizeTamper)).toBe(Buffer.byteLength(prettyPrinted))
+    await writeFile(reportPath, sameSizeTamper, { mode: 0o600 })
+    await expect(prerequisite.assertUnchanged()).rejects.toThrow(/changed|replace/iu)
+  })
+
   it('rejects a copied database fixture that is not itself greater than 2 GiB', () => {
     expect(() => assertFieldScaleFixture({
       sourceBytes: 2 * 1024 * 1024 * 1024,
@@ -107,22 +154,32 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       archive_id: 'archive-a',
       state: 'completed',
       progress_json: JSON.stringify({
-        version: 1,
+        version: 2,
         archiveId: 'archive-a',
         ciphertextSha256: 'a'.repeat(64),
         sizeBytes: 2_147_483_649,
         finalizationEpoch: 44,
+        membershipGeneration: 0,
         verificationProofSha256: 'b'.repeat(64),
         tables: ['positions', 'devices'],
         tableIndex: 2,
         tableBatch: 0,
+        tableCursor: null,
+        missionEventsTargetRowid: 44,
         deletedRows: 100,
       }),
     }
 
     expect(parseTerminalCleanupJournal(row, 'archive-a', ['positions', 'devices'])).toEqual({
+      archiveId: 'archive-a',
+      ciphertextSha256: 'a'.repeat(64),
+      finalizationEpoch: 44,
+      missionEventsTargetRowid: 44,
+      membershipGeneration: 0,
+      sizeBytes: 2_147_483_649,
       tables: ['positions', 'devices'],
       deletedRows: 100,
+      verificationProofSha256: 'b'.repeat(64),
     })
     expect(() => parseTerminalCleanupJournal(
       { ...row, state: 'in_progress' },
@@ -139,6 +196,177 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       'archive-a',
       ['positions', 'devices', 'markers'],
     )).toThrow(/complete|table plan/iu)
+    expect(() => parseTerminalCleanupJournal({
+      ...row,
+      progress_json: row.progress_json.replace('"version":2', '"version":1'),
+    }, 'archive-a', ['positions', 'devices'])).toThrow(/exhaust|journal/iu)
+    expect(() => parseTerminalCleanupJournal({
+      ...row,
+      progress_json: row.progress_json.replace(
+        '"missionEventsTargetRowid":44',
+        '"missionEventsTargetRowid":45',
+      ),
+    }, 'archive-a', ['positions', 'devices'])).toThrow(/finalization|epoch|target/iu)
+  })
+
+  it('binds terminal cleanup identity to the current archive, finalization, and proof', () => {
+    const database = new Database(':memory:')
+    const archiveId = '11111111-1111-4111-8111-111111111111'
+    const missionId = 'mission-a'
+    const finalizationEventId = '78c99bba-eb5c-44a5-9b55-1d0d08cebbfd'
+    // Production stores the normalized proof with its construction order, not
+    // canonical key order. The qualifier must bind the exact stored bytes that
+    // the cleanup journal hashed instead of silently reserializing the object.
+    const proof = { schemaVersion: 13, proof: 'exact' }
+    database.exec(`
+      CREATE TABLE metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+      CREATE TABLE mission_events (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        details_json TEXT NOT NULL
+      );
+      CREATE TABLE mission_archives (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        request_event_rowid INTEGER NOT NULL,
+        protected_finalization_epoch INTEGER,
+        archive_kind TEXT NOT NULL,
+        container_version INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        availability TEXT NOT NULL,
+        ciphertext_sha256 TEXT,
+        size_bytes INTEGER,
+        verification_proof_json TEXT
+      );
+    `)
+    database.prepare(`INSERT INTO mission_events (
+      id, mission_id, event_type, details_json
+    ) VALUES (?, ?, 'mission_finalized', ?)`).run(
+      finalizationEventId,
+      missionId,
+      JSON.stringify({
+        archive_id: archiveId,
+        archive_relative_path: `${archiveId}.sararch`,
+        container_version: 2,
+        cleanup_membership_generation: 0,
+        resulting_status: 'finalized',
+      }),
+    )
+    database.prepare(`INSERT INTO mission_archives (
+      id, mission_id, request_event_rowid, protected_finalization_epoch,
+      archive_kind, container_version, status, availability,
+      ciphertext_sha256, size_bytes, verification_proof_json
+    ) VALUES (?, ?, 1, NULL, 'finalized', 2, 'verified', 'present', ?, ?, ?)`).run(
+      archiveId,
+      missionId,
+      'a'.repeat(64),
+      2_147_483_649,
+      JSON.stringify(proof),
+    )
+    const journal = {
+      archiveId,
+      ciphertextSha256: 'a'.repeat(64),
+      finalizationEpoch: 1,
+      membershipGeneration: 0,
+      missionEventsTargetRowid: 1,
+      sizeBytes: 2_147_483_649,
+      verificationProofSha256: createHash('sha256')
+        .update(JSON.stringify(proof)).digest('hex'),
+    }
+
+    expect(assertCurrentCleanupIdentity({ database, missionId, archiveId, journal })).toBe(true)
+    database.prepare('INSERT INTO metadata (key, value) VALUES (?, ?)').run(
+      `archive_cleanup_membership_generation_v1:${Buffer.from(missionId, 'utf8')
+        .toString('hex').toUpperCase()}`,
+      '1',
+    )
+    expect(() => assertCurrentCleanupIdentity({
+      database,
+      missionId,
+      archiveId,
+      journal,
+    })).toThrow(/archive|membership|identity/iu)
+    database.prepare('DELETE FROM metadata').run()
+    expect(() => assertCurrentCleanupIdentity({
+      database,
+      missionId,
+      archiveId,
+      journal: { ...journal, verificationProofSha256: 'b'.repeat(64) },
+    })).toThrow(/archive|proof|identity/iu)
+    database.close()
+  })
+
+  it('accepts any safe positive Replay generation and rejects invalid counters', () => {
+    const database = new Database(':memory:')
+    database.exec(`CREATE TABLE mission_replay_generations (
+      mission_id TEXT PRIMARY KEY,
+      generation INTEGER NOT NULL
+    )`)
+    database.prepare(`INSERT INTO mission_replay_generations (mission_id, generation)
+      VALUES ('mission-a', 1)`).run()
+
+    expect(assertReplayGenerationCleanupProjection(database, 'mission-a')).toBe(true)
+    database.prepare(`UPDATE mission_replay_generations SET generation = 2
+      WHERE mission_id = 'mission-a'`).run()
+    expect(assertReplayGenerationCleanupProjection(database, 'mission-a')).toBe(true)
+    for (const invalidGeneration of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      database.prepare(`UPDATE mission_replay_generations SET generation = ?
+        WHERE mission_id = 'mission-a'`).run(invalidGeneration)
+      expect(() => assertReplayGenerationCleanupProjection(database, 'mission-a'))
+        .toThrow(/Replay generation|projection/iu)
+    }
+    database.close()
+  })
+
+  it('requires the production cleanup validator to classify the terminal epoch as archived', () => {
+    expect(assertCompletedCleanupEligibility({
+      eligible: false,
+      blockers: ['cleanup_already_completed'],
+      storageState: 'archived',
+    })).toBe(true)
+    for (const value of [
+      { eligible: true, blockers: [], storageState: 'live' },
+      { eligible: false, blockers: ['cleanup_journal_invalid'], storageState: 'cleanup_in_progress' },
+    ]) {
+      expect(() => assertCompletedCleanupEligibility(value))
+        .toThrow(/terminal|cleanup|archived/iu)
+    }
+  })
+
+  it('tracks hundreds of thousands of timing observations in constant space', () => {
+    const tracker = createBoundedMaximumTracker()
+    for (let index = 0; index < 250_000; index += 1) tracker.record(index / 10)
+
+    expect(tracker.snapshot()).toEqual({ count: 250_000, max: 24_999.9 })
+    expect(Object.keys(tracker).sort()).toEqual(['record', 'snapshot'])
+  })
+
+  it('retains only unsettled promises while counting the complete observation stream', async () => {
+    const tracker = createOutstandingPromiseTracker()
+    const releases: Array<() => void> = []
+    for (let index = 0; index < 25_000; index += 1) {
+      tracker.track(Promise.resolve(index))
+    }
+    const pending = new Promise<void>((resolve) => releases.push(resolve))
+    tracker.track(pending)
+    await Promise.resolve()
+
+    expect(tracker.snapshot()).toEqual({
+      pendingCount: 1,
+      settledCount: 25_000,
+      trackedCount: 25_001,
+    })
+    releases[0]?.()
+    await tracker.settle()
+    expect(tracker.snapshot()).toEqual({
+      pendingCount: 0,
+      settledCount: 25_001,
+      trackedCount: 25_001,
+    })
   })
 
   it('derives exact per-phase maxima and fails at the immutable 200 ms gate', () => {
@@ -155,10 +383,11 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       }]),
     ), { durableSettlementMs: 12 })
 
-    expect(deriveLivenessEvidence(measurements)).toEqual({
-      heartbeatMaxGapMs: 83,
-      currentPositionMaxCadenceMs: 93,
-      currentPositionsIndependent: true,
+    expect(deriveContentionProbeEvidence(measurements)).toEqual({
+      provenance: 'node-qualification-coordinator-contention-v1',
+      proofScope: 'field-scale-archive-contention-not-packaged-renderer-liveness',
+      coordinatorHeartbeatMaxGapMs: 83,
+      syntheticPublicationMaxCadenceMs: 93,
       durableMaxLatencyMs: 300,
       durableWriteCount: 8,
       durableVisibleWrites: 8,
@@ -173,7 +402,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     })
 
     measurements.cleanup.heartbeatGapsMs.push(200)
-    expect(() => deriveLivenessEvidence(measurements)).toThrow('200 ms')
+    expect(() => deriveContentionProbeEvidence(measurements)).toThrow('200 ms')
   })
 
   it('keeps current publication moving while durable persistence is pending', async () => {
@@ -181,7 +410,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     const persistence = new Promise<void>((resolve) => {
       releasePersistence = resolve
     })
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store: {
         addPosition: vi.fn(() => persistence),
       },
@@ -199,13 +428,13 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     }
     const result = await probe.stop()
 
-    expect(result.byPhase.create.currentWrites).toBeGreaterThan(1)
-    expect(result.byPhase.create.visibleWrites)
-      .toBe(result.byPhase.create.currentWrites)
+    expect(result.byPhase.create.syntheticPublicationCount).toBeGreaterThan(1)
+    expect(result.byPhase.create.inProcessVisiblePublicationCount)
+      .toBe(result.byPhase.create.syntheticPublicationCount)
   })
 
   it('separates the 50 ms heartbeat from a normal-cadence current publication window', async () => {
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store: { addPosition: vi.fn(async () => undefined) },
       missionId: 'probe-mission',
       deviceId: 'probe-device',
@@ -220,13 +449,74 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     }
     const result = await probe.stop()
 
-    expect(result.byPhase.create.currentWrites).toBe(1)
-    expect(result.byPhase.create.visibleWrites).toBe(1)
-    expect(result.byPhase.create.currentPositionMaxCadenceMs).toBeLessThan(200)
+    expect(result.byPhase.create.syntheticPublicationCount).toBe(1)
+    expect(result.byPhase.create.inProcessVisiblePublicationCount).toBe(1)
+    expect(result.byPhase.create.syntheticPublicationMaxCadenceMs).toBeLessThan(200)
+  })
+
+  it('caches probe teardown so every worker is stopped and joined exactly once', async () => {
+    class CountingWorker {
+      listeners = new Map<string, ((value?: unknown) => void)[]>()
+      stopMessages = 0
+      terminateCalls = 0
+
+      on(event: string, listener: (value?: unknown) => void) {
+        const existing = this.listeners.get(event) ?? []
+        existing.push(listener)
+        this.listeners.set(event, existing)
+        return this
+      }
+
+      postMessage(message: { type?: string; position?: { source_position_id?: string } }) {
+        if (message.type === 'position') {
+          queueMicrotask(() => {
+            for (const listener of this.listeners.get('message') ?? []) {
+              listener({
+                type: 'ack',
+                sourcePositionId: message.position?.source_position_id,
+                latencyMs: 1,
+                busyRetries: 0,
+              })
+            }
+          })
+          return
+        }
+        if (message.type === 'stop') {
+          this.stopMessages += 1
+          for (const listener of this.listeners.get('message') ?? []) listener({ type: 'stopped' })
+          for (const listener of this.listeners.get('exit') ?? []) listener(0)
+        }
+      }
+
+      terminate() {
+        this.terminateCalls += 1
+        return Promise.resolve(0)
+      }
+    }
+    const worker = new CountingWorker()
+    const probe = startQualificationContentionProbe({
+      store: {},
+      missionId: 'once-mission',
+      deviceId: 'once-device',
+      runId: 'once-run',
+      databasePath: path.join(os.tmpdir(), 'once-probe.sqlite'),
+      createWorker: () => worker,
+    })
+    for (const phase of ['create', 'verify', 'restore', 'cleanup'] as const) {
+      probe.setPhase(phase)
+      await new Promise((resolve) => setTimeout(resolve, 60))
+    }
+
+    const first = probe.stop()
+    const second = probe.stop()
+    expect(second).toBe(first)
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2)
+    expect(worker.stopMessages).toBe(1)
+    expect(worker.terminateCalls).toBe(1)
   })
 
   it('fails closed when the measured main event loop stalls despite off-thread durable ingest', async () => {
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store: { addPosition: vi.fn(async () => undefined) },
       missionId: 'probe-mission',
       deviceId: 'probe-device',
@@ -295,7 +585,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
          ORDER BY timestamp DESC, id DESC LIMIT 1`,
       ).all('worker-mission', 'worker-device')),
     }
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store,
       missionId: 'worker-mission',
       deviceId: 'worker-device',
@@ -309,7 +599,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       }
       const result = await probe.stop()
       const currentWrites = Object.values(result.byPhase)
-        .reduce((total, phase) => total + phase.currentWrites, 0)
+        .reduce((total, phase) => total + phase.syntheticPublicationCount, 0)
       expect(currentWrites).toBeGreaterThan(2)
       expect(result.durableWriteCount).toBe(currentWrites)
       expect(result.durableVisibleWrites).toBe(currentWrites)
@@ -360,7 +650,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       terminate() { return Promise.resolve(0) }
     }
 
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store: {},
       missionId: 'queue-mission',
       deviceId: 'queue-device',
@@ -430,7 +720,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
         'SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?',
       ).get('busy-mission', 'busy-device').count),
     }
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store,
       missionId: 'busy-mission',
       deviceId: 'busy-device',
@@ -446,7 +736,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       }
       const result = await probe.stop()
       const currentWrites = Object.values(result.byPhase)
-        .reduce((total, phase) => total + phase.currentWrites, 0)
+        .reduce((total, phase) => total + phase.syntheticPublicationCount, 0)
       expect(currentWrites).toBeGreaterThan(1)
       expect(database.prepare(
         'SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?',
@@ -480,7 +770,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       terminate() { return Promise.resolve(0) }
     }
 
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store: {},
       missionId: 'probe-mission',
       deviceId: 'probe-device',
@@ -514,7 +804,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       terminate() { return Promise.resolve(0) }
     }
 
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store: {},
       missionId: 'hung-mission',
       deviceId: 'hung-device',
@@ -566,7 +856,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       terminate() { return Promise.resolve(0) }
     }
 
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store: {},
       missionId: 'error-hung-mission',
       deviceId: 'error-hung-device',
@@ -618,7 +908,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       terminate() { return Promise.resolve(0) }
     }
 
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store: {},
       missionId: 'ack-hung-mission',
       deviceId: 'ack-hung-device',
@@ -675,7 +965,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       terminate() { return Promise.resolve(0) }
     }
 
-    const probe = startCurrentPositionProbe({
+    const probe = startQualificationContentionProbe({
       store: {},
       missionId: 'exit-mission',
       deviceId: 'exit-device',
@@ -929,6 +1219,29 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(JSON.stringify(scan)).not.toContain(root)
   })
 
+  it('caps residue path samples while retaining exact scalar finding counts', async () => {
+    const root = await createTemporaryRoot()
+    const reviewRoot = path.join(root, 'review')
+    await mkdir(reviewRoot, { recursive: true, mode: 0o700 })
+    const findingCount = MAX_EVIDENCE_PATH_SAMPLES + 9
+    await Promise.all(Array.from({ length: findingCount }, (_value, index) =>
+      writeFile(path.join(reviewRoot, `secret-${String(index).padStart(3, '0')}`), 'secret', {
+        mode: 0o600,
+      })))
+
+    const scan = await scanEvidenceRoots({
+      roots: [{ label: 'archive-review-sessions', rootPath: reviewRoot }],
+      secrets: ['secret'],
+      privacyCanary: null,
+    })
+
+    expect(scan.filesScanned).toBe(findingCount)
+    expect(scan.appAddressablePlaintextFileCount).toBe(findingCount)
+    expect(scan.secretMatchCount).toBe(findingCount)
+    expect(scan.appAddressablePlaintextFiles).toHaveLength(MAX_EVIDENCE_PATH_SAMPLES)
+    expect(scan.secretMatches).toHaveLength(MAX_EVIDENCE_PATH_SAMPLES)
+  })
+
   it('atomically writes new mode-0600 evidence and never overwrites prior proof', async () => {
     const root = await createTemporaryRoot()
     const evidencePath = path.join(root, 'evidence', 'qualification.json')
@@ -942,7 +1255,28 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       .rejects.toThrow('already exists')
   })
 
-  it('retains only bounded phase, progress, worker, liveness, and cleanup diagnostics', () => {
+  it('removes only its own final success link when publication fails after linking', async () => {
+    const root = await createTemporaryRoot()
+    const evidencePath = path.join(root, 'evidence', 'qualification.json')
+
+    await expect(writeQualificationEvidence(
+      evidencePath,
+      { schema: 'test', passed: true },
+      { faultInjection: { failAfterLink: true } },
+    )).rejects.toThrow(/after.*link|publication/iu)
+    await expect(lstat(evidencePath)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    const priorProof = '{"schema":"prior-proof"}\n'
+    await writeFile(evidencePath, priorProof, { mode: 0o600 })
+    await expect(writeQualificationEvidence(
+      evidencePath,
+      { schema: 'replacement', passed: true },
+      { faultInjection: { failAfterLink: true } },
+    )).rejects.toThrow('already exists')
+    expect(await readFile(evidencePath, 'utf8')).toBe(priorProof)
+  })
+
+  it('retains only bounded phase, progress, worker, contention, and cleanup diagnostics', () => {
     const diagnostics = createQualificationDiagnostics({
       runId: 'run-1',
       expectedRepositoryHead: 'a'.repeat(40),
@@ -964,6 +1298,8 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     diagnostics.recordWorkerExit(1)
     diagnostics.recordHeartbeat('cleanup', 34)
     diagnostics.recordCurrentCadence('cleanup', 45)
+    diagnostics.recordHeartbeat('attacker-controlled-phase', 999)
+    diagnostics.recordCurrentCadence('attacker-controlled-phase', 999)
     diagnostics.recordCleanupProgress({
       tableName: 'positions',
       tableIndex: 2,
@@ -999,6 +1335,10 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(diagnostics.snapshot()).toEqual({
       lastPhase: 'cleanup',
       lastGate: 'cleanup:transaction',
+      lastOperationalGate: 'cleanup:transaction',
+      teardownStatus: 'not_started',
+      primaryFailure: null,
+      secondaryFailures: [],
       archiveProgress: {
         kind: 'create', phase: 'encrypt', unit: 'bytes', completed: 42, total: 100,
       },
@@ -1013,10 +1353,10 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
         exitCode: 1,
         terminationRequested: false,
       },
-      liveness: {
+      contentionProbe: {
         cleanup: {
-          heartbeatMaxGapMs: 34,
-          currentPositionMaxCadenceMs: 45,
+          coordinatorHeartbeatMaxGapMs: 34,
+          syntheticPublicationMaxCadenceMs: 45,
         },
       },
       cleanupCursor: {
@@ -1045,6 +1385,47 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     })
   })
 
+  it('preserves the first operational failure separately from bounded teardown failures', () => {
+    const diagnostics = createQualificationDiagnostics({
+      runId: 'run-failures',
+      expectedRepositoryHead: 'a'.repeat(40),
+      expectedRepositoryTree: 'b'.repeat(40),
+    })
+    const primary = Object.assign(new Error('cleanup failed'), { code: 'ARCHIVE_CLEANUP_FAILED' })
+    diagnostics.setPhase('cleanup')
+    diagnostics.markGate('cleanup:mission_events')
+    diagnostics.recordPrimaryFailure(primary)
+    diagnostics.recordPrimaryFailure(new Error('must not replace first'))
+    diagnostics.recordSecondaryFailure('position-probe', new Error('join failed'))
+    diagnostics.recordSecondaryFailure('rss-sampler', Object.assign(new Error('rss failed'), {
+      code: 'RSS_GATE_FAILED',
+    }))
+    diagnostics.markGate('teardown:incomplete')
+
+    expect(diagnostics.snapshot()).toMatchObject({
+      lastOperationalGate: 'cleanup:mission_events',
+      teardownStatus: 'incomplete',
+      primaryFailure: {
+        stage: 'cleanup',
+        gate: 'cleanup:mission_events',
+        topLevelCode: 'CLEANUP_GATE_FAILED',
+        causeCode: 'ARCHIVE_CLEANUP_FAILED',
+      },
+      secondaryFailures: [
+        {
+          boundary: 'position-probe',
+          topLevelCode: 'TEARDOWN_FAILED',
+          causeCode: 'TEARDOWN_INTERNAL_FAILURE',
+        },
+        {
+          boundary: 'rss-sampler',
+          topLevelCode: 'RESOURCE_GATE_FAILED',
+          causeCode: 'RSS_GATE_FAILED',
+        },
+      ],
+    })
+  })
+
   it('classifies failures into a fixed vocabulary without retaining messages or paths', () => {
     expect(classifyQualificationFailure(Object.assign(new Error('/tmp/secret.sqlite'), {
       code: 'SQLITE_BUSY',
@@ -1052,6 +1433,17 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       topLevelCode: 'DURABLE_INGEST_FAILED',
       causeCode: 'SQLITE_BUSY',
     })
+    expect(classifyQualificationFailure(Object.assign(new Error('cleanup sqlite busy'), {
+      code: 'SQLITE_BUSY',
+    }), 'cleanup')).toEqual({
+      topLevelCode: 'CLEANUP_GATE_FAILED',
+      causeCode: 'SQLITE_BUSY',
+    })
+    expect(classifyQualificationFailure(new Error('unexpected internal detail'), 'cleanup'))
+      .toEqual({
+        topLevelCode: 'CLEANUP_GATE_FAILED',
+        causeCode: 'CLEANUP_INTERNAL_FAILURE',
+      })
     expect(classifyQualificationFailure(new Error('unexpected /private/path and secret')))
       .toEqual({
         topLevelCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
@@ -1102,7 +1494,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     })
 
     expect(receipt).toMatchObject({
-      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v1',
+      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v2',
       run: { runId: 'run-2' },
       failure: {
         topLevelCode: 'ARCHIVE_VERIFICATION_FAILED',
@@ -1114,12 +1506,48 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(JSON.stringify(receipt)).not.toContain('secret stack')
   })
 
+  it('projects the first stage-aware diagnostic failure into the receipt summary', () => {
+    const diagnostics = createQualificationDiagnostics({
+      runId: 'run-primary',
+      expectedRepositoryHead: 'a'.repeat(40),
+      expectedRepositoryTree: 'b'.repeat(40),
+    })
+    const primary = new Error('opaque cleanup implementation failure')
+    diagnostics.setPhase('cleanup')
+    diagnostics.markGate('cleanup:mission_events')
+    diagnostics.recordPrimaryFailure(primary)
+    diagnostics.recordSecondaryFailure('position-probe', new Error('later teardown failure'))
+
+    const receipt = createQualificationFailureReceipt({
+      diagnostics,
+      error: primary,
+      expectedRepositoryHead: 'a'.repeat(40),
+      observedRepositoryHead: 'a'.repeat(40),
+      expectedRepositoryTree: 'b'.repeat(40),
+      observedRepositoryTree: 'b'.repeat(40),
+      profileCleanupCompleted: false,
+    })
+
+    expect(receipt).toMatchObject({
+      failure: {
+        topLevelCode: 'CLEANUP_GATE_FAILED',
+        causeCode: 'CLEANUP_INTERNAL_FAILURE',
+      },
+      diagnostics: {
+        primaryFailure: {
+          stage: 'cleanup',
+          gate: 'cleanup:mission_events',
+        },
+      },
+    })
+  })
+
   it('writes a sibling mode-0600 failure receipt atomically and never overwrites it', async () => {
     const root = await createTemporaryRoot()
     const evidencePath = path.join(root, 'evidence', 'qualification.json')
     const failurePath = qualificationFailurePath(evidencePath)
     const receipt = {
-      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v1',
+      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v2',
       run: { runId: 'run-3' },
       failure: {
         topLevelCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
@@ -1136,11 +1564,53 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     await expect(lstat(evidencePath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('never publishes a failure receipt beside an existing success artifact', async () => {
+    const root = await createTemporaryRoot()
+    const evidencePath = path.join(root, 'evidence', 'qualification.json')
+    const failurePath = qualificationFailurePath(evidencePath)
+    await writeQualificationEvidence(evidencePath, { schema: 'test', passed: true })
+
+    await expect(writeQualificationFailureReceipt(evidencePath, {
+      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v2',
+      run: { runId: 'run-mutually-exclusive' },
+    })).rejects.toThrow(/success.*already exists|already exists.*success/iu)
+    await expect(lstat(failurePath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('removes only its own final failure-receipt link after a post-link failure', async () => {
+    const root = await createTemporaryRoot()
+    const evidencePath = path.join(root, 'evidence', 'qualification.json')
+    const failurePath = qualificationFailurePath(evidencePath)
+    const receipt = {
+      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v2',
+      run: { runId: 'run-rollback' },
+    }
+
+    await expect(writeQualificationFailureReceipt(
+      evidencePath,
+      receipt,
+      { faultInjection: { failAfterLink: true } },
+    )).rejects.toThrow(/after.*link|publication/iu)
+    await expect(lstat(failurePath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('rejects a qualification destination whose sibling failure receipt already exists', async () => {
+    const root = await realpath(await createTemporaryRoot())
+    const evidencePath = path.join(root, 'evidence', 'qualification.json')
+    const failurePath = qualificationFailurePath(evidencePath)
+    await mkdir(path.dirname(failurePath), { recursive: true })
+    await writeFile(failurePath, '{"stale":true}\n', { mode: 0o600 })
+
+    await expect(prepareEvidenceDestination(evidencePath))
+      .rejects.toThrow('failure receipt already exists')
+    await expect(lstat(evidencePath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('rejects failure receipts containing private fields or absolute paths', async () => {
     const root = await createTemporaryRoot()
     const evidencePath = path.join(root, 'evidence', 'qualification.json')
     const privateReceipt = {
-      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v1',
+      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v2',
       message: 'do not persist this',
     }
 
@@ -1148,7 +1618,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       .rejects.toThrow(/private fields/iu)
 
     const pathReceipt = {
-      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v1',
+      schema: 'sartracker-breadcrumb-pr6-qualification-failure-v2',
       run: { runId: 'run-4', detail: '/private/secret.sqlite' },
     }
     await expect(writeQualificationFailureReceipt(evidencePath, pathReceipt))
@@ -1167,14 +1637,14 @@ async function createTemporaryRoot(): Promise<string> {
 /** Builds one expected phase liveness projection. */
 function phaseEvidence(heartbeatMaxGapMs: number, currentPositionMaxCadenceMs: number) {
   return {
-    heartbeatMaxGapMs,
-    currentPositionMaxCadenceMs,
+    coordinatorHeartbeatMaxGapMs: heartbeatMaxGapMs,
+    syntheticPublicationMaxCadenceMs: currentPositionMaxCadenceMs,
     durableMaxLatencyMs: 300,
     durableWriteCount: 2,
     durableVisibleWrites: 2,
     durableBusyRetries: 1,
-    currentWrites: 2,
-    visibleWrites: 2,
+    syntheticPublicationCount: 2,
+    inProcessVisiblePublicationCount: 2,
   }
 }
 

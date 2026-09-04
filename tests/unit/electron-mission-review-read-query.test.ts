@@ -7,6 +7,11 @@ import { describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
+const { deriveArchiveLifecycleEventId } = require(
+  '../../electron/mission-finalization-boundary.cjs',
+) as {
+  readonly deriveArchiveLifecycleEventId: (archiveId: string, kind: string) => string
+}
 const { readMissionReviewSummary } = require(
   '../../electron/mission-review-read-query.cjs',
 ) as {
@@ -78,17 +83,29 @@ describe('mission-review read query [DON-251]', () => {
 
   it('reports durable correction authorization when lifecycle events are outside the audit page', () => {
     const database = createDatabase()
+    const archiveId = '11111111-1111-4111-8111-111111111111'
     database.prepare("UPDATE missions SET status = 'finished' WHERE id = 'mission-1'").run()
     const insertEvent = database.prepare(`
       INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json)
       VALUES (?, 'mission-1', ?, ?, ?)
     `)
     insertEvent.run(
-      'finalized',
+      deriveArchiveLifecycleEventId(archiveId, 'mission-finalized'),
       'mission_finalized',
       '2026-08-20T08:00:00.000Z',
-      JSON.stringify({ archive_id: 'archive-1' }),
+      JSON.stringify({
+        archive_id: archiveId,
+        archive_path: `/test-archives/${archiveId}.sararch`,
+        archive_relative_path: `${archiveId}.sararch`,
+        cleanup_membership_generation: 0,
+        container_version: 2,
+        resulting_status: 'finalized',
+      }),
     )
+    database.prepare(`INSERT INTO mission_archives (
+      id, mission_id, request_event_rowid, protected_finalization_epoch,
+      archive_kind, container_version, status
+    ) VALUES (?, 'mission-1', 1, NULL, 'finalized', 2, 'verified')`).run(archiveId)
     insertEvent.run(
       'unlocked',
       'mission_unlocked',
@@ -195,6 +212,10 @@ function createDatabase(filePath = ':memory:') {
       mission_id TEXT PRIMARY KEY,
       state TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS positions (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -210,6 +231,17 @@ function createDatabase(filePath = ':memory:') {
       timestamp TEXT NOT NULL,
       details_json TEXT
     );
+    CREATE TABLE IF NOT EXISTS mission_archives (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      request_event_rowid INTEGER NOT NULL,
+      protected_finalization_epoch INTEGER,
+      archive_kind TEXT NOT NULL,
+      container_version INTEGER NOT NULL,
+      status TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_mission_archives_custody
+      ON mission_archives(mission_id, request_event_rowid DESC, id DESC);
   `)
   return database
 }

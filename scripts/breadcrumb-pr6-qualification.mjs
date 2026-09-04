@@ -36,6 +36,7 @@ import {
   parseBreadcrumbPr6QualificationArgs,
   validateBreadcrumbPr6QualificationEvidence,
 } from '../build/breadcrumb-pr6-qualification-lib.js'
+import { validateArchiveLifecycleSmokeEvidence } from '../build/electron-archive-lifecycle-smoke-lib.js'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -55,6 +56,16 @@ const {
   listArchiveInventoryForSchema,
 } = require('../electron/archive-inventory.cjs')
 const { normalizeCleanupFailureDiagnostic } = require('../electron/archive-cleanup-failure.cjs')
+const {
+  readCompletedArchiveCleanupJournalProof,
+} = require('../electron/archive-cleanup.cjs')
+const {
+  readCurrentMissionFinalizationBoundary,
+} = require('../electron/mission-finalization-boundary.cjs')
+const {
+  ARCHIVE_CLEANUP_MEMBERSHIP_EVENT_TYPES,
+  assertArchiveCleanupMembershipGeneration,
+} = require('../electron/archive-cleanup-membership.cjs')
 
 const execFileAsync = promisify(execFile)
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -67,10 +78,14 @@ const MINIMUM_FREE_BYTES = 20 * 1024 * 1024 * 1024
 const MAINTENANCE_NO_PROGRESS_TIMEOUT_MS = 120 * 1_000
 const MAINTENANCE_POLL_INTERVAL_MS = 1_000
 const HEARTBEAT_INTERVAL_MS = 50
-const PRODUCTION_CURRENT_POSITION_INTERVAL_MS = 5_000
+const SYNTHETIC_PUBLICATION_INTERVAL_MS = 5_000
 const SCAN_CHUNK_BYTES = 64 * 1024
+const MAX_PACKAGED_LIVENESS_REPORT_BYTES = 4 * 1024 * 1024
+export const MAX_EVIDENCE_PATH_SAMPLES = 32
 const QUALIFICATION_PHASES = Object.freeze(['create', 'verify', 'restore', 'cleanup'])
-const RETAINED_CLEANUP_MISSION_TABLES = new Set(['mission_events', 'missions'])
+const DIAGNOSTIC_CONTENTION_PHASES = new Set(['migration', ...QUALIFICATION_PHASES])
+const RETAINED_CLEANUP_MISSION_TABLES = new Set(['missions'])
+const RECONSTRUCTED_CLEANUP_DERIVED_TABLES = new Set(['mission_replay_generations'])
 const QUALIFICATION_CLEANUP_OPERATIONAL_TABLES = new Set([
   'gpx_import_source_receipts',
   'ingest_anomaly_deliveries',
@@ -95,7 +110,7 @@ const SAFE_TABLE = /^[A-Za-z_][A-Za-z0-9_]*$/u
 const SAFE_DIAGNOSTIC_TOKEN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u
 const SAFE_DIAGNOSTIC_GATE = /^[A-Za-z][A-Za-z0-9:_-]{0,63}$/u
 const GIT_SHA = /^[0-9a-f]{40}$/u
-const FAILURE_RECEIPT_SCHEMA = 'sartracker-breadcrumb-pr6-qualification-failure-v1'
+const FAILURE_RECEIPT_SCHEMA = 'sartracker-breadcrumb-pr6-qualification-failure-v2'
 const FAILURE_RECEIPT_SUFFIX = '.failure.json'
 const DIAGNOSTIC_PROGRESS_KINDS = new Set(['create', 'verify', 'restore', 'cleanup'])
 const DIAGNOSTIC_PROGRESS_UNITS = new Set(['bytes', 'rows', 'files', 'phases'])
@@ -133,6 +148,13 @@ const DIAGNOSTIC_ARCHIVE_FAILURE_CODES = new Set([
   'ARCHIVE_VERIFY_WRONG_KEY',
 ])
 
+/** Creates one stable-code qualification failure without reflecting sensitive inputs. */
+function createCodedQualificationError(code, message) {
+  const error = new Error(message)
+  error.code = code
+  return error
+}
+
 /** Creates one bounded in-memory diagnostic ledger for a single qualification run. */
 export function createQualificationDiagnostics({
   runId,
@@ -146,6 +168,10 @@ export function createQualificationDiagnostics({
   }
   let lastPhase = 'preflight'
   let lastGate = 'startup'
+  let lastOperationalGate = 'startup'
+  let teardownStatus = 'not_started'
+  let primaryFailure = null
+  const secondaryFailures = []
   let archiveProgress = null
   let cleanupCursor = null
   let cleanupFailure = null
@@ -162,22 +188,30 @@ export function createQualificationDiagnostics({
     exitCode: null,
     terminationRequested: false,
   }
-  const liveness = {}
+  const contentionProbe = {}
 
   const validToken = (value) => typeof value === 'string' && SAFE_DIAGNOSTIC_TOKEN.test(value)
   const validNonNegativeInteger = (value) => Number.isSafeInteger(value) && value >= 0
-  const ensureLivenessPhase = (phase) => {
-    if (!validToken(phase)) return null
-    liveness[phase] ??= { heartbeatMaxGapMs: 0, currentPositionMaxCadenceMs: 0 }
-    return liveness[phase]
+  const ensureContentionPhase = (phase) => {
+    if (!DIAGNOSTIC_CONTENTION_PHASES.has(phase)) return null
+    contentionProbe[phase] ??= {
+      coordinatorHeartbeatMaxGapMs: 0,
+      syntheticPublicationMaxCadenceMs: 0,
+    }
+    return contentionProbe[phase]
   }
   const snapshot = () => Object.freeze({
     lastPhase,
     lastGate,
+    lastOperationalGate,
+    teardownStatus,
+    primaryFailure,
+    secondaryFailures: Object.freeze(secondaryFailures.map((entry) => Object.freeze({ ...entry }))),
     archiveProgress: archiveProgress === null ? null : Object.freeze({ ...archiveProgress }),
     durableWorker: Object.freeze({ ...durableWorker }),
-    liveness: Object.freeze(Object.fromEntries(
-      Object.entries(liveness).map(([phase, value]) => [phase, Object.freeze({ ...value })]),
+    contentionProbe: Object.freeze(Object.fromEntries(
+      Object.entries(contentionProbe)
+        .map(([phase, value]) => [phase, Object.freeze({ ...value })]),
     )),
     cleanupCursor: cleanupCursor === null ? null : Object.freeze({ ...cleanupCursor }),
     ...(cleanupFailure === null ? {} : { cleanupFailure }),
@@ -195,7 +229,34 @@ export function createQualificationDiagnostics({
     },
     /** Records one stable gate name without retaining arbitrary input. */
     markGate(gate) {
-      if (typeof gate === 'string' && SAFE_DIAGNOSTIC_GATE.test(gate)) lastGate = gate
+      if (typeof gate !== 'string' || !SAFE_DIAGNOSTIC_GATE.test(gate)) return
+      lastGate = gate
+      if (gate === 'teardown:complete') teardownStatus = 'complete'
+      else if (gate === 'teardown:incomplete') teardownStatus = 'incomplete'
+      else if (!gate.startsWith('teardown:') && !gate.startsWith('failure:')) {
+        lastOperationalGate = gate
+      }
+    },
+    /** Retains only the first bounded operational failure and its exact stage/gate. */
+    recordPrimaryFailure(error, context = {}) {
+      if (primaryFailure !== null) return
+      const stage = validToken(context.stage) ? context.stage : lastPhase
+      const gate = typeof context.gate === 'string' && SAFE_DIAGNOSTIC_GATE.test(context.gate)
+        ? context.gate
+        : lastOperationalGate
+      primaryFailure = Object.freeze({
+        stage,
+        gate,
+        ...classifyQualificationFailure(error, stage),
+      })
+    },
+    /** Retains a bounded teardown failure without replacing the operational primary. */
+    recordSecondaryFailure(boundary, error) {
+      if (!validToken(boundary) || secondaryFailures.length >= 8) return
+      secondaryFailures.push(Object.freeze({
+        boundary,
+        ...classifyQualificationFailure(error, 'teardown'),
+      }))
     },
     /** Records the latest bounded archive progress tuple. */
     recordArchiveProgress(update) {
@@ -245,18 +306,24 @@ export function createQualificationDiagnostics({
     recordWorkerTerminationRequested() {
       durableWorker.terminationRequested = true
     },
-    /** Records a bounded heartbeat maximum for one lifecycle phase. */
+    /** Records a bounded coordinator heartbeat maximum for one lifecycle phase. */
     recordHeartbeat(phase, gapMs) {
-      const target = ensureLivenessPhase(phase)
+      const target = ensureContentionPhase(phase)
       if (target !== null && Number.isFinite(gapMs) && gapMs >= 0) {
-        target.heartbeatMaxGapMs = Math.max(target.heartbeatMaxGapMs, gapMs)
+        target.coordinatorHeartbeatMaxGapMs = Math.max(
+          target.coordinatorHeartbeatMaxGapMs,
+          gapMs,
+        )
       }
     },
-    /** Records a bounded current-position cadence maximum for one lifecycle phase. */
+    /** Records a bounded synthetic-publication cadence for one lifecycle phase. */
     recordCurrentCadence(phase, cadenceMs) {
-      const target = ensureLivenessPhase(phase)
+      const target = ensureContentionPhase(phase)
       if (target !== null && Number.isFinite(cadenceMs) && cadenceMs >= 0) {
-        target.currentPositionMaxCadenceMs = Math.max(target.currentPositionMaxCadenceMs, cadenceMs)
+        target.syntheticPublicationMaxCadenceMs = Math.max(
+          target.syntheticPublicationMaxCadenceMs,
+          cadenceMs,
+        )
       }
     },
     /** Records the latest journal cursor without retaining mission identifiers. */
@@ -314,7 +381,7 @@ export function createQualificationDiagnostics({
 }
 
 /** Maps one qualification exception to a fixed non-secret failure vocabulary. */
-export function classifyQualificationFailure(error) {
+export function classifyQualificationFailure(error, stage = null) {
   const code = typeof error?.code === 'string' ? error.code : ''
   const rawCleanupDiagnostic = error?.cleanupDiagnostic
   const cleanupDiagnostic = rawCleanupDiagnostic !== null
@@ -331,8 +398,16 @@ export function classifyQualificationFailure(error) {
   if (code === 'ARCHIVE_CLEANUP_FAILED' || code === 'ARCHIVE_CLEANUP_AUDIT_FAILED') {
     return Object.freeze({ topLevelCode: 'CLEANUP_GATE_FAILED', causeCode: code })
   }
+  if (code === 'LIVENESS_GATE_FAILED') {
+    return Object.freeze({ topLevelCode: 'LIVENESS_GATE_FAILED', causeCode: code })
+  }
+  if (code === 'RSS_GATE_FAILED') {
+    return Object.freeze({ topLevelCode: 'RESOURCE_GATE_FAILED', causeCode: code })
+  }
   if (code === 'SQLITE_BUSY') {
-    return Object.freeze({ topLevelCode: 'DURABLE_INGEST_FAILED', causeCode: 'SQLITE_BUSY' })
+    return stage === 'cleanup'
+      ? Object.freeze({ topLevelCode: 'CLEANUP_GATE_FAILED', causeCode: 'SQLITE_BUSY' })
+      : Object.freeze({ topLevelCode: 'DURABLE_INGEST_FAILED', causeCode: 'SQLITE_BUSY' })
   }
   if (DIAGNOSTIC_ARCHIVE_FAILURE_CODES.has(code)) {
     return Object.freeze({ topLevelCode: 'ARCHIVE_VERIFICATION_FAILED', causeCode: code })
@@ -374,6 +449,22 @@ export function classifyQualificationFailure(error) {
   if (/evidence/iu.test(message)) {
     return Object.freeze({ topLevelCode: 'EVIDENCE_VALIDATION_FAILED', causeCode: 'EVIDENCE_INVALID' })
   }
+  const stageFailures = {
+    preflight: ['PREFLIGHT_FAILED', 'PREFLIGHT_INTERNAL_FAILURE'],
+    migration: ['MIGRATION_FAILED', 'MIGRATION_INTERNAL_FAILURE'],
+    create: ['ARCHIVE_CREATION_FAILED', 'ARCHIVE_CREATE_INTERNAL_FAILURE'],
+    verify: ['ARCHIVE_VERIFICATION_FAILED', 'ARCHIVE_VERIFY_INTERNAL_FAILURE'],
+    restore: ['ARCHIVE_REVIEW_FAILED', 'ARCHIVE_RESTORE_INTERNAL_FAILURE'],
+    cleanup: ['CLEANUP_GATE_FAILED', 'CLEANUP_INTERNAL_FAILURE'],
+    restart: ['RESTART_GATE_FAILED', 'RESTART_INTERNAL_FAILURE'],
+    residue: ['RESIDUE_SCAN_FAILED', 'RESIDUE_INTERNAL_FAILURE'],
+    source: ['SOURCE_INTEGRITY_FAILED', 'SOURCE_INTERNAL_FAILURE'],
+    teardown: ['TEARDOWN_FAILED', 'TEARDOWN_INTERNAL_FAILURE'],
+  }
+  const stageFailure = stageFailures[stage]
+  if (stageFailure !== undefined) {
+    return Object.freeze({ topLevelCode: stageFailure[0], causeCode: stageFailure[1] })
+  }
   return Object.freeze({
     topLevelCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
     causeCode: 'UNCLASSIFIED_INTERNAL_FAILURE',
@@ -414,6 +505,13 @@ export function createQualificationFailureReceipt({
   if (identity.expectedRepositoryHead === null || identity.expectedRepositoryTree === null) {
     throw new Error('Qualification failure receipt source identity is invalid.')
   }
+  const diagnosticSnapshot = diagnostics.snapshot()
+  const summarizedFailure = diagnosticSnapshot.primaryFailure === null
+    ? classifyQualificationFailure(error)
+    : Object.freeze({
+        topLevelCode: diagnosticSnapshot.primaryFailure.topLevelCode,
+        causeCode: diagnosticSnapshot.primaryFailure.causeCode,
+      })
   return Object.freeze({
     schema: FAILURE_RECEIPT_SCHEMA,
     run: Object.freeze({
@@ -421,8 +519,8 @@ export function createQualificationFailureReceipt({
       recordedAt: new Date().toISOString(),
     }),
     source: Object.freeze(identity),
-    failure: classifyQualificationFailure(error),
-    diagnostics: diagnostics.snapshot(),
+    failure: summarizedFailure,
+    diagnostics: diagnosticSnapshot,
     cleanup: Object.freeze({ profileCleanupCompleted: profileCleanupCompleted === true }),
   })
 }
@@ -458,45 +556,117 @@ function assertQualificationFailureReceiptSafe(receipt) {
 }
 
 /** Atomically publishes one sibling mode-0600 failure receipt without overwriting prior evidence. */
-export async function writeQualificationFailureReceipt(evidencePath, receipt) {
+export async function writeQualificationFailureReceipt(evidencePath, receipt, options = {}) {
   const failurePath = qualificationFailurePath(evidencePath)
   try {
-    await lstat(failurePath)
-    throw new Error('Qualification failure receipt already exists.')
+    await lstat(evidencePath)
+    throw new Error('Qualification success evidence already exists.')
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
   }
-  assertQualificationFailureReceiptSafe(receipt)
-  const parent = path.dirname(failurePath)
-  await mkdir(parent, { recursive: true, mode: 0o700 })
-  const temporaryPath = path.join(
-    parent,
-    `.${path.basename(failurePath)}.tmp-${process.pid}-${randomUUID()}`,
-  )
-  let handle = null
-  try {
-    handle = await open(temporaryPath, 'wx', 0o600)
-    await handle.chmod(0o600)
-    await handle.writeFile(`${JSON.stringify(receipt, null, 2)}\n`, 'utf8')
-    await handle.sync()
-    await handle.close()
-    handle = null
-    try {
-      await link(temporaryPath, failurePath)
-    } catch (error) {
-      if (error?.code === 'EEXIST') throw new Error('Qualification failure receipt already exists.')
-      throw error
-    }
-    await chmod(failurePath, 0o600)
-    await unlink(temporaryPath)
-    const directoryHandle = await open(parent, fsConstants.O_RDONLY)
-    try { await directoryHandle.sync() } finally { await directoryHandle.close() }
-  } finally {
-    if (handle !== null) await handle.close().catch(() => undefined)
-    await unlink(temporaryPath).catch((error) => {
-      if (error?.code !== 'ENOENT') throw error
-    })
+  await publishNewQualificationArtifact({
+    artifactPath: failurePath,
+    contents: `${JSON.stringify(receipt, null, 2)}\n`,
+    existsMessage: 'Qualification failure receipt already exists.',
+    options,
+    validate: () => assertQualificationFailureReceiptSafe(receipt),
+  })
+}
+
+/**
+ * Pins and validates the same-source packaged renderer proof required before
+ * field-scale work, then exposes a final immutable-file recheck.
+ */
+export async function readPackagedLifecyclePrerequisite({
+  reportPath,
+  expectedRepositoryHead,
+  expectedRepositoryTree,
+}) {
+  if (typeof reportPath !== 'string' || !path.isAbsolute(reportPath)
+    || path.resolve(reportPath) !== reportPath
+    || !GIT_SHA.test(expectedRepositoryHead ?? '')
+    || !GIT_SHA.test(expectedRepositoryTree ?? '')) {
+    throw createCodedQualificationError(
+      'PACKAGED_LIVENESS_PREREQUISITE_INVALID',
+      'Packaged lifecycle prerequisite identity is invalid.',
+    )
   }
+  const pinned = await openPinnedRegularFile(reportPath, null, 'packaged lifecycle report')
+  let reportBytes
+  let rawFileSha256
+  try {
+    if (pinned.identity.sizeBytes > MAX_PACKAGED_LIVENESS_REPORT_BYTES) {
+      throw new Error('The packaged lifecycle report exceeds its bounded size.')
+    }
+    reportBytes = await pinned.handle.readFile()
+    rawFileSha256 = createHash('sha256').update(reportBytes).digest('hex')
+    const identityAfterRead = fileIdentity(await pinned.handle.stat({ bigint: true }))
+    if (!sameFileIdentity(pinned.identity, identityAfterRead)) {
+      throw new Error('The packaged lifecycle report changed while it was read.')
+    }
+  } finally {
+    await pinned.handle.close().catch(() => undefined)
+  }
+  let evidence
+  try {
+    evidence = JSON.parse(reportBytes.toString('utf8'))
+  } catch {
+    throw createCodedQualificationError(
+      'PACKAGED_LIVENESS_PREREQUISITE_INVALID',
+      'Packaged lifecycle prerequisite is not valid JSON.',
+    )
+  }
+  const verdict = validateArchiveLifecycleSmokeEvidence(evidence)
+  if (evidence?.schemaVersion !== 2
+    || evidence?.proofKind !== 'packaged-electron-archive-lifecycle-v2'
+    || verdict.valid !== true || verdict.passed !== true
+    || evidence.run?.platform !== 'linux'
+    || evidence.source?.packagedBuildHeadMatched !== true) {
+    throw createCodedQualificationError(
+      'PACKAGED_LIVENESS_PREREQUISITE_INVALID',
+      'A clean Linux packaged Electron archive-lifecycle v2 report is required.',
+    )
+  }
+  if (evidence.source.expectedHead !== expectedRepositoryHead
+    || evidence.source.headBefore !== expectedRepositoryHead
+    || evidence.source.headAfter !== expectedRepositoryHead
+    || evidence.source.treeBefore !== expectedRepositoryTree
+    || evidence.source.treeAfter !== expectedRepositoryTree) {
+    throw createCodedQualificationError(
+      'PACKAGED_LIVENESS_PREREQUISITE_SOURCE_MISMATCH',
+      'Packaged lifecycle prerequisite does not match the qualifier exact head and tree.',
+    )
+  }
+  const canonicalEvidenceSha256 = createHash('sha256')
+    .update(canonicalJson(evidence), 'utf8').digest('hex')
+  const originalIdentity = pinned.identity
+  return Object.freeze({
+    evidence,
+    rawFileSha256,
+    canonicalEvidenceSha256,
+    /** Re-pins and re-hashes the original report immediately before evidence publication. */
+    async assertUnchanged() {
+      const current = await openPinnedRegularFile(
+        reportPath,
+        originalIdentity,
+        'packaged lifecycle report',
+      )
+      try {
+        const currentRawSha256 = await hashOpenFile(current.handle)
+        const identityAfterHash = fileIdentity(await current.handle.stat({ bigint: true }))
+        const currentCanonicalSha256 = createHash('sha256')
+          .update(canonicalJson(evidence), 'utf8').digest('hex')
+        if (!sameFileIdentity(originalIdentity, identityAfterHash)
+          || currentRawSha256 !== rawFileSha256
+          || currentCanonicalSha256 !== canonicalEvidenceSha256) {
+          throw new Error('The packaged lifecycle report changed before qualification completed.')
+        }
+      } finally {
+        await current.handle.close().catch(() => undefined)
+      }
+      return true
+    },
+  })
 }
 
 /** Runs one exact-head Linux reference-host archive lifecycle qualification. */
@@ -524,15 +694,25 @@ async function main() {
   const rssSampler = startRssSampler(diagnostics)
   let store = null
   let reviewManager = null
-  let positionProbe = null
+  let contentionProbeController = null
   let passphrase = null
   let recoveryCode = null
   let storeOpen = false
   let failure = null
   let profileCleanupCompleted = false
+  let ownersJoined = false
   let successSummary = null
+  let pendingEvidence = null
+  let packagedLifecyclePrerequisite = null
+  let phaseDurationsMs = null
 
   try {
+    diagnostics.markGate('preflight:packaged-liveness')
+    packagedLifecyclePrerequisite = await readPackagedLifecyclePrerequisite({
+      reportPath: options.packagedLivenessReportPath,
+      expectedRepositoryHead: sourceBefore.head,
+      expectedRepositoryTree: sourceBefore.tree,
+    })
     diagnostics.markGate('preflight:free-space')
     await assertMinimumFreeSpace(profileRoot)
     diagnostics.markGate('preflight:fixture')
@@ -561,35 +741,38 @@ async function main() {
     diagnostics.recordHeartbeat('migration', migrationHeartbeatMaxGapMs)
     const migrationDurationMs = performance.now() - migrationStartedAt
     if (migrationHeartbeatMaxGapMs >= MAX_MAIN_CADENCE_MS) {
-      throw new Error('Schema migration exceeded the immutable 200 ms heartbeat gate.')
+      throw createCodedQualificationError(
+        'LIVENESS_GATE_FAILED',
+        'Schema migration exceeded the immutable 200 ms heartbeat gate.',
+      )
     }
 
     diagnostics.markGate('migration:complete')
     const targetMission = await prepareTargetMission(store, options.missionId)
     const probeMission = await store.createMission({
-      name: 'PR6 reference-host current-position probe',
+      name: 'PR6 reference-host scale-contention probe',
     })
     const probeDeviceId = `pr6-probe-${runId}`
     await store.upsertDevice({
       mission_id: probeMission.id,
       device_id: probeDeviceId,
-      name: 'PR6 Current Position Probe',
+      name: 'PR6 Scale Contention Probe',
       color: '#0066CC',
       status: 'online',
     })
-    positionProbe = startCurrentPositionProbe({
+    contentionProbeController = startQualificationContentionProbe({
       store,
       missionId: probeMission.id,
       deviceId: probeDeviceId,
       runId,
       databasePath: copiedDatabasePath,
       diagnostics,
-      currentPositionIntervalMs: PRODUCTION_CURRENT_POSITION_INTERVAL_MS,
+      currentPositionIntervalMs: SYNTHETIC_PUBLICATION_INTERVAL_MS,
     })
 
     passphrase = createEphemeralPassphrase()
     recoveryCode = generateRecoveryCode()
-    const phaseDurationsMs = {
+    phaseDurationsMs = {
       migration: migrationDurationMs,
       create: 0,
       verify: 0,
@@ -599,7 +782,7 @@ async function main() {
 
     diagnostics.setPhase('create')
     diagnostics.markGate('create:start')
-    positionProbe.setPhase('create')
+    contentionProbeController.setPhase('create')
     const createStartedAt = performance.now()
     let verifyStartedAt = null
     const finalized = await store.finalizeMission(
@@ -615,7 +798,7 @@ async function main() {
           if (update?.kind !== 'verify' || verifyStartedAt !== null) return
           verifyStartedAt = performance.now()
           phaseDurationsMs.create = verifyStartedAt - createStartedAt
-          positionProbe.setPhase('verify')
+          contentionProbeController.setPhase('verify')
         },
       },
     )
@@ -652,7 +835,7 @@ async function main() {
     diagnostics.markGate('restore:start')
     await reviewManager.sweepStartup()
     const timezone = resolvedTimezone()
-    positionProbe.setPhase('restore')
+    contentionProbeController.setPhase('restore')
     const restoreStartedAt = performance.now()
     const reviewBeforeCleanup = await runReviewProof({
       manager: reviewManager,
@@ -684,7 +867,7 @@ async function main() {
     try {
       diagnostics.setPhase('cleanup')
       diagnostics.markGate('cleanup:start')
-      positionProbe.setPhase('cleanup')
+      contentionProbeController.setPhase('cleanup')
       const cleanupStartedAt = performance.now()
       cleanupResult = await store.startMissionCleanup({
         missionId: targetMission.id,
@@ -709,14 +892,19 @@ async function main() {
       throw new Error('Eligibility-gated live mission cleanup did not complete.')
     }
 
-    const liveness = await positionProbe.stop()
-    positionProbe = null
-    diagnostics.markGate('cleanup:liveness-settled')
+    const contentionProbe = await contentionProbeController.stop()
+    contentionProbeController = null
+    diagnostics.markGate('cleanup:contention-settled')
     const cleanupProof = readCleanupProof({
       databasePath: copiedDatabasePath,
       missionId: targetMission.id,
       archiveId: stored.archive.archiveId,
     })
+    const terminalCleanupEligibility = await store.getMissionCleanupEligibility({
+      missionId: targetMission.id,
+      archiveId: stored.archive.archiveId,
+    }, { reviewActivity: false })
+    assertCompletedCleanupEligibility(terminalCleanupEligibility)
     const archivedMission = await store.getMission(targetMission.id)
     if (archivedMission.status !== 'finalized' || archivedMission.storage_state !== 'archived') {
       throw new Error('Cleanup did not retain the finalized archived mission stub.')
@@ -780,12 +968,12 @@ async function main() {
       secrets: [passphrase, recoveryCode],
       privacyCanary: null,
     })
-    if (finalResidue.unreadableFiles.length > 0
-      || finalResidue.appAddressablePlaintextFiles.length > 0
-      || finalResidue.secretMatches.length > 0
-      || finalResidue.privacyMatches.length > 0
-      || profileSecretScan.unreadableFiles.length > 0
-      || profileSecretScan.secretMatches.length > 0) {
+    if (finalResidue.unreadableFileCount > 0
+      || finalResidue.appAddressablePlaintextFileCount > 0
+      || finalResidue.secretMatchCount > 0
+      || finalResidue.privacyMatchCount > 0
+      || profileSecretScan.unreadableFileCount > 0
+      || profileSecretScan.secretMatchCount > 0) {
       throw new Error('App-addressable residue or exact secret scanning failed closed.')
     }
     diagnostics.markGate('residue:complete')
@@ -801,27 +989,12 @@ async function main() {
     }
     const sourceAfter = await readRepositorySourceState()
     assertSameExactSource(sourceBefore, sourceAfter)
-    diagnostics.markGate('source:unchanged')
     const resources = await rssSampler.stop()
+    await packagedLifecyclePrerequisite.assertUnchanged()
+    diagnostics.markGate('source:unchanged')
     diagnostics.markGate('resources:complete')
-    const runCompletedAtMs = Date.now()
-    const evidence = {
-      schema: 'sartracker-breadcrumb-pr6-qualification-v1',
-      run: {
-        runId,
-        startedAt: new Date(runStartedAtMs).toISOString(),
-        completedAt: new Date(runCompletedAtMs).toISOString(),
-        durationMs: runCompletedAtMs - runStartedAtMs,
-        phaseDurationsMs,
-      },
-      source: {
-        repositoryHead: sourceBefore.head,
-        repositoryHeadAfterRun: sourceAfter.head,
-        repositoryTree: sourceBefore.tree,
-        repositoryTreeAfterRun: sourceAfter.tree,
-        repositoryDirtyBefore: !sourceBefore.clean,
-        repositoryDirtyAfter: !sourceAfter.clean,
-      },
+    pendingEvidence = {
+      schema: 'sartracker-breadcrumb-pr6-qualification-v2',
       machine: {
         hostname: os.hostname(),
         platform: process.platform,
@@ -835,8 +1008,8 @@ async function main() {
         fixtureBasename: path.basename(options.fixturePath),
         missionId: options.missionId,
         timezone,
-        heartbeatHardGateMs: MAX_MAIN_CADENCE_MS,
-        currentCadenceHardGateMs: MAX_MAIN_CADENCE_MS,
+        coordinatorHeartbeatHardGateMs: MAX_MAIN_CADENCE_MS,
+        syntheticPublicationCadenceHardGateMs: MAX_MAIN_CADENCE_MS,
         rssLimitBytes: MAX_ARCHIVE_PROCESS_RSS_BYTES,
       },
       fixture: {
@@ -863,16 +1036,30 @@ async function main() {
       cleanup: {
         state: cleanupResult.state,
         storageState: cleanupResult.storageState,
+        journalIdentityBound: cleanupProof.identityBound,
+        membershipGeneration: cleanupProof.membershipGeneration,
+        cleanableMissionEventTypes: [...ARCHIVE_CLEANUP_MEMBERSHIP_EVENT_TYPES],
+        guardRevision: cleanupProof.guardRevision,
+        finalizationEpoch: cleanupProof.finalizationEpoch,
+        finalizationEventId: cleanupProof.finalizationEventId,
+        cleanupStartedEventId: cleanupProof.startedEventId,
+        cleanupCompletedEventId: cleanupProof.completionEventId,
         preCredentialBlockers: [...eligibility.blockers],
         reviewLeaseHeld,
         deletedTableRowsRemain: cleanupProof.remainingRows,
         retainedMissionStub: cleanupProof.retainedMissionStub,
         retainedArchiveRegistry: cleanupProof.retainedArchiveRegistry,
         archiveSha256After: archiveAfterCleanup.sha256,
+        terminalEligibility: terminalCleanupEligibility,
       },
       reviewBeforeCleanup,
       reviewAfterCleanup,
-      liveness,
+      packagedLifecycle: {
+        rawFileSha256: packagedLifecyclePrerequisite.rawFileSha256,
+        canonicalEvidenceSha256: packagedLifecyclePrerequisite.canonicalEvidenceSha256,
+        evidence: packagedLifecyclePrerequisite.evidence,
+      },
+      contentionProbe,
       resources,
       residue: {
         rootsChecked: ['archive-staging', 'verification-scratch', 'archive-review-sessions'],
@@ -889,70 +1076,156 @@ async function main() {
       },
       kdf,
     }
-    validateBreadcrumbPr6QualificationEvidence(
-      evidence,
-      options.expectedRepositoryHead,
-    )
-    assertEvidencePayloadSafe(evidence, [
+    assertEvidencePayloadSafe(pendingEvidence, [
       options.fixturePath,
       options.evidencePath,
+      options.packagedLivenessReportPath,
       profileRoot,
       projectRoot,
       passphrase,
       recoveryCode,
     ])
-    await writeQualificationEvidence(options.evidencePath, evidence)
-    successSummary = {
-      passed: true,
-      repositoryHead: sourceAfter.head,
-      ciphertextBytes: stored.archive.sizeBytes,
-      tableCount: stored.archive.tableCount,
-    }
   } catch (error) {
     failure = error
+    diagnostics.recordPrimaryFailure(error)
     diagnostics.recordCleanupFailure(error?.cleanupDiagnostic)
     diagnostics.markGate('failure:captured')
   } finally {
     let cleanupFailed = false
-    if (positionProbe !== null) {
-      try { await positionProbe.stop() } catch (error) {
+    ownersJoined = true
+    if (contentionProbeController !== null) {
+      try { await contentionProbeController.stop() } catch (error) {
         cleanupFailed = true
+        ownersJoined = false
         if (failure === null) failure = error
-        diagnostics.recordCleanupFailure(error?.cleanupDiagnostic)
+        diagnostics.recordPrimaryFailure(error, {
+          stage: 'teardown', gate: 'teardown:contention-probe',
+        })
+        diagnostics.recordSecondaryFailure('contention-probe', error)
       }
     }
     if (reviewManager !== null) {
       try { await reviewManager.prepareClose() } catch (error) {
         cleanupFailed = true
+        ownersJoined = false
         if (failure === null) failure = error
-        diagnostics.recordCleanupFailure(error?.cleanupDiagnostic)
+        diagnostics.recordPrimaryFailure(error, {
+          stage: 'teardown', gate: 'teardown:review-manager',
+        })
+        diagnostics.recordSecondaryFailure('review-manager', error)
       }
     }
     if (store !== null && storeOpen) {
       try { await store.prepareClose() } catch (error) {
         cleanupFailed = true
+        ownersJoined = false
         if (failure === null) failure = error
+        diagnostics.recordPrimaryFailure(error, {
+          stage: 'teardown', gate: 'teardown:store-prepare',
+        })
+        diagnostics.recordSecondaryFailure('store-prepare', error)
       }
       try { store.close() } catch (error) {
         cleanupFailed = true
+        ownersJoined = false
         if (failure === null) failure = error
+        diagnostics.recordPrimaryFailure(error, {
+          stage: 'teardown', gate: 'teardown:store-close',
+        })
+        diagnostics.recordSecondaryFailure('store-close', error)
       }
     }
     try { await rssSampler.stop() } catch (error) {
       cleanupFailed = true
       if (failure === null) failure = error
+      diagnostics.recordPrimaryFailure(error, {
+        stage: 'teardown', gate: 'teardown:rss-sampler',
+      })
+      diagnostics.recordSecondaryFailure('rss-sampler', error)
     }
     passphrase = null
     recoveryCode = null
-    try {
-      await removeOwnedProfileRoot(profileRoot)
-      profileCleanupCompleted = true
-    } catch (error) {
+    if (ownersJoined) {
+      try {
+        await removeOwnedProfileRoot(profileRoot)
+        profileCleanupCompleted = true
+      } catch (error) {
+        cleanupFailed = true
+        if (failure === null) failure = error
+        diagnostics.recordPrimaryFailure(error, {
+          stage: 'teardown', gate: 'teardown:profile-cleanup',
+        })
+        diagnostics.recordSecondaryFailure('profile-cleanup', error)
+      }
+    } else {
       cleanupFailed = true
-      if (failure === null) failure = error
     }
     if (cleanupFailed) diagnostics.markGate('teardown:incomplete')
     else diagnostics.markGate('teardown:complete')
+  }
+
+  if (failure === null) {
+    try {
+      if (pendingEvidence === null || packagedLifecyclePrerequisite === null
+        || phaseDurationsMs === null
+        || ownersJoined !== true || profileCleanupCompleted !== true) {
+        throw new Error('Qualification teardown did not complete before evidence publication.')
+      }
+      const sourceAfterTeardown = await readRepositorySourceState()
+      assertSameExactSource(sourceBefore, sourceAfterTeardown)
+      await packagedLifecyclePrerequisite.assertUnchanged()
+      const runCompletedAtMs = Date.now()
+      const evidence = {
+        ...pendingEvidence,
+        run: {
+          runId,
+          startedAt: new Date(runStartedAtMs).toISOString(),
+          completedAt: new Date(runCompletedAtMs).toISOString(),
+          durationMs: runCompletedAtMs - runStartedAtMs,
+          phaseDurationsMs,
+        },
+        teardown: {
+          status: 'complete',
+          ownersJoined: true,
+          profileCleanupCompleted: true,
+        },
+        source: {
+          repositoryHead: sourceBefore.head,
+          repositoryHeadAfterRun: sourceAfterTeardown.head,
+          repositoryTree: sourceBefore.tree,
+          repositoryTreeAfterRun: sourceAfterTeardown.tree,
+          repositoryDirtyBefore: !sourceBefore.clean,
+          repositoryDirtyAfter: !sourceAfterTeardown.clean,
+        },
+      }
+      validateBreadcrumbPr6QualificationEvidence(
+        evidence,
+        options.expectedRepositoryHead,
+      )
+      assertEvidencePayloadSafe(evidence, [
+        options.fixturePath,
+        options.evidencePath,
+        options.packagedLivenessReportPath,
+        profileRoot,
+        projectRoot,
+      ])
+      await writeQualificationEvidence(options.evidencePath, evidence)
+      successSummary = {
+        passed: true,
+        repositoryHead: sourceAfterTeardown.head,
+        ciphertextBytes: pendingEvidence.archive.sizeBytes,
+        tableCount: pendingEvidence.archive.tableCount,
+        packagedLifecycleRawFileSha256: packagedLifecyclePrerequisite.rawFileSha256,
+        packagedLifecycleCanonicalEvidenceSha256:
+          packagedLifecyclePrerequisite.canonicalEvidenceSha256,
+      }
+    } catch (error) {
+      failure = error
+      diagnostics.recordPrimaryFailure(error, {
+        stage: 'teardown', gate: 'teardown:evidence-publication',
+      })
+      diagnostics.markGate('failure:captured')
+    }
   }
 
   if (failure !== null) {
@@ -1033,11 +1306,13 @@ export function parseTerminalCleanupJournal(row, expectedArchiveId, expectedTabl
     throw new Error('Mission cleanup journal progress is invalid.')
   }
   if (progress === null || typeof progress !== 'object' || Array.isArray(progress)
-    || progress.version !== 1 || progress.archiveId !== expectedArchiveId
+    || progress.version !== 2 || progress.archiveId !== expectedArchiveId
     || !SHA256.test(progress.ciphertextSha256)
     || !SHA256.test(progress.verificationProofSha256)
     || !Number.isSafeInteger(progress.sizeBytes) || progress.sizeBytes < 1
     || !Number.isSafeInteger(progress.finalizationEpoch) || progress.finalizationEpoch < 1
+    || !Number.isSafeInteger(progress.membershipGeneration)
+    || progress.membershipGeneration < 0
     || !Array.isArray(progress.tables) || progress.tables.length < 1
     || progress.tables.length > 100
     || progress.tables.some((tableName) =>
@@ -1045,8 +1320,14 @@ export function parseTerminalCleanupJournal(row, expectedArchiveId, expectedTabl
     || new Set(progress.tables).size !== progress.tables.length
     || progress.tableIndex !== progress.tables.length
     || !Number.isSafeInteger(progress.tableBatch) || progress.tableBatch < 0
+    || progress.tableCursor !== null
+    || !Number.isSafeInteger(progress.missionEventsTargetRowid)
+    || progress.missionEventsTargetRowid < 0
     || !Number.isSafeInteger(progress.deletedRows) || progress.deletedRows < 0) {
     throw new Error('Mission cleanup journal did not exhaust its declared table plan.')
+  }
+  if (progress.missionEventsTargetRowid !== progress.finalizationEpoch) {
+    throw new Error('Mission cleanup event target does not match its exact finalization epoch.')
   }
   if (!Array.isArray(expectedTables) || expectedTables.length < 1
     || expectedTables.some((tableName) =>
@@ -1057,9 +1338,151 @@ export function parseTerminalCleanupJournal(row, expectedArchiveId, expectedTabl
     throw new Error('Mission cleanup journal table plan is not complete for schema v13.')
   }
   return Object.freeze({
+    archiveId: progress.archiveId,
+    ciphertextSha256: progress.ciphertextSha256,
+    sizeBytes: progress.sizeBytes,
+    finalizationEpoch: progress.finalizationEpoch,
+    membershipGeneration: progress.membershipGeneration,
+    verificationProofSha256: progress.verificationProofSha256,
+    missionEventsTargetRowid: progress.missionEventsTargetRowid,
     tables: Object.freeze([...progress.tables]),
     deletedRows: progress.deletedRows,
   })
+}
+
+/**
+ * Binds a terminal cleanup journal to the current archive registry row, exact
+ * protected finalization event, and the currently stored verification proof.
+ */
+export function assertCurrentCleanupIdentity({ database, missionId, archiveId, journal }) {
+  if (database === null || typeof database !== 'object'
+    || typeof database.prepare !== 'function'
+    || typeof missionId !== 'string' || missionId.length < 1
+    || typeof archiveId !== 'string' || archiveId.length < 1
+    || journal === null || typeof journal !== 'object' || Array.isArray(journal)) {
+    throw new Error('Cleanup archive identity proof input is invalid.')
+  }
+  const archive = database.prepare(`SELECT id, mission_id, status, availability,
+      ciphertext_sha256, size_bytes, verification_proof_json
+    FROM mission_archives WHERE id = ? AND mission_id = ?`).get(archiveId, missionId)
+  const finalization = readCurrentMissionFinalizationBoundary(database, {
+    missionId,
+    archiveId,
+  })
+  const proof = parseBoundedQualificationRecord(archive?.verification_proof_json)
+  let verificationProofSha256 = null
+  let membershipGenerationCurrent = false
+  try {
+    if (proof !== null) {
+      verificationProofSha256 = createHash('sha256')
+        .update(archive.verification_proof_json, 'utf8').digest('hex')
+    }
+    assertArchiveCleanupMembershipGeneration(database, {
+      missionId,
+      expectedGeneration: journal.membershipGeneration,
+    })
+    membershipGenerationCurrent = true
+  } catch {
+    verificationProofSha256 = null
+  }
+  if (archive?.id !== archiveId || archive.mission_id !== missionId
+    || archive.status !== 'verified' || archive.availability !== 'present'
+    || journal.archiveId !== archiveId
+    || journal.ciphertextSha256 !== archive.ciphertext_sha256
+    || journal.sizeBytes !== Number(archive.size_bytes)
+    || journal.verificationProofSha256 !== verificationProofSha256
+    || membershipGenerationCurrent !== true
+    || !Number.isSafeInteger(finalization?.eventRowid)
+    || journal.finalizationEpoch !== finalization.eventRowid
+    || journal.membershipGeneration !== finalization.cleanupMembershipGeneration
+    || journal.missionEventsTargetRowid !== finalization.eventRowid) {
+    throw new Error(
+      'Cleanup journal does not match the current archive, finalization, and proof identity.',
+    )
+  }
+  return true
+}
+
+/** Parses one bounded JSON record without reflecting invalid persisted content. */
+function parseBoundedQualificationRecord(input) {
+  if (typeof input !== 'string' || input.length < 1
+    || Buffer.byteLength(input, 'utf8') > 4 * 1024 * 1024) return null
+  try {
+    const parsed = JSON.parse(input)
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : null
+  } catch {
+    return null
+  }
+}
+
+/** Tracks an unbounded observation stream using only a count and maximum. */
+export function createBoundedMaximumTracker() {
+  let count = 0
+  let max = 0
+  return Object.freeze({
+    /** Adds one finite non-negative observation. */
+    record(value) {
+      if (!Number.isFinite(value) || value < 0) {
+        throw new Error('Bounded maximum observation is invalid.')
+      }
+      count += 1
+      max = Math.max(max, value)
+    },
+    /** Returns the immutable aggregate without exposing retained samples. */
+    snapshot() {
+      return Object.freeze({ count, max })
+    },
+  })
+}
+
+/** Tracks only unsettled promises while retaining scalar lifetime accounting. */
+export function createOutstandingPromiseTracker() {
+  const outstanding = new Set()
+  let trackedCount = 0
+  let settledCount = 0
+  return Object.freeze({
+    /** Adds one promise and removes it from memory as soon as it settles. */
+    track(input) {
+      const promise = Promise.resolve(input)
+      trackedCount += 1
+      outstanding.add(promise)
+      const remove = () => {
+        if (outstanding.delete(promise)) settledCount += 1
+      }
+      promise.then(remove, remove)
+      return promise
+    },
+    /** Waits for the currently outstanding set after the producer has stopped. */
+    async settle() {
+      await Promise.allSettled([...outstanding])
+    },
+    /** Returns constant-space lifetime counters without exposing promise objects. */
+    snapshot() {
+      return Object.freeze({
+        pendingCount: outstanding.size,
+        settledCount,
+        trackedCount,
+      })
+    },
+  })
+}
+
+/** Normalizes either test samples or one constant-space production aggregate. */
+function summarizeMeasurements(input) {
+  if (Array.isArray(input)) {
+    const tracker = createBoundedMaximumTracker()
+    for (const value of input) tracker.record(value)
+    return tracker.snapshot()
+  }
+  if (input !== null && typeof input === 'object' && !Array.isArray(input)
+    && Number.isSafeInteger(input.count) && input.count >= 0
+    && Number.isFinite(input.max) && input.max >= 0
+    && (input.count > 0 || input.max === 0)) {
+    return Object.freeze({ count: input.count, max: input.max })
+  }
+  throw new Error('Liveness measurement aggregate is invalid.')
 }
 
 /** Requires the copied database itself, not an unrelated attachment, to prove field scale. */
@@ -1091,7 +1514,7 @@ function startDurablePositionWorker({
     { workerData: { databasePath, missionId, deviceId } },
   )
   const pending = new Map()
-  const allWrites = []
+  const outstandingWrites = createOutstandingPromiseTracker()
   let failure = null
   let failureReported = false
   let stopping = false
@@ -1170,8 +1593,7 @@ function startDurablePositionWorker({
           reject(error)
         }
       })
-      allWrites.push(promise)
-      return promise
+      return outstandingWrites.track(promise)
     },
     /** Drains every queued write, or force-terminates after a settlement timeout. */
     async stop({ force = false, timeoutMs = MAX_DURABLE_SETTLE_MS } = {}) {
@@ -1213,15 +1635,19 @@ function startDurablePositionWorker({
       }
       const shutdownStartedAt = performance.now()
       const remaining = () => Math.max(0, timeoutMs - (performance.now() - shutdownStartedAt))
-      const drained = await waitFor(Promise.allSettled(allWrites), remaining())
+      const drained = await waitFor(outstandingWrites.settle(), remaining())
       if (drained !== true) {
         const error = new Error('Durable position worker settlement exceeded its bounded deadline.')
         await forceTerminate(error)
         throw failure
       }
-      const results = await Promise.allSettled(allWrites)
-      const rejected = results.find((result) => result.status === 'rejected')
-      if (rejected !== undefined && failure === null) failure = rejected.reason
+      const writeSettlement = outstandingWrites.snapshot()
+      if (writeSettlement.pendingCount !== 0
+        || writeSettlement.settledCount !== writeSettlement.trackedCount) {
+        const error = new Error('Durable position worker did not settle every queued write.')
+        error.code = 'DURABLE_INGEST_INCOMPLETE'
+        if (failure === null) failure = error
+      }
       try { worker.postMessage({ type: 'stop' }) } catch (error) {
         if (failure === null) failure = error
       }
@@ -1246,11 +1672,14 @@ function startDurablePositionWorker({
   })
 }
 
-/** Derives validator-ready liveness evidence and enforces the hard gate locally. */
-export function deriveLivenessEvidence(measurements) {
+/**
+ * Derives validator-ready scale-contention evidence. This Node coordinator
+ * probe does not claim packaged renderer or MapLibre current-position proof.
+ */
+export function deriveContentionProbeEvidence(measurements) {
   const byPhase = {}
-  let heartbeatMaxGapMs = 0
-  let currentPositionMaxCadenceMs = 0
+  let coordinatorHeartbeatMaxGapMs = 0
+  let syntheticPublicationMaxCadenceMs = 0
   let durableMaxLatencyMs = 0
   let durableWriteCount = 0
   let durableVisibleWrites = 0
@@ -1258,14 +1687,14 @@ export function deriveLivenessEvidence(measurements) {
   const durableSettlementMs = measurements?.durableSettlementMs
   if (!Number.isFinite(durableSettlementMs) || durableSettlementMs < 0
     || durableSettlementMs > MAX_DURABLE_SETTLE_MS) {
-    throw new Error('Durable current-position settlement exceeded its bounded deadline.')
+    throw createCodedQualificationError(
+      'DURABLE_SETTLEMENT_TIMEOUT',
+      'Durable synthetic-position settlement exceeded its bounded deadline.',
+    )
   }
   for (const phase of QUALIFICATION_PHASES) {
     const value = measurements?.[phase]
     if (value === null || typeof value !== 'object'
-      || !Array.isArray(value.heartbeatGapsMs) || value.heartbeatGapsMs.length < 1
-      || !Array.isArray(value.currentCadencesMs) || value.currentCadencesMs.length < 1
-      || !Array.isArray(value.durableLatenciesMs) || value.durableLatenciesMs.length < 1
       || !Number.isSafeInteger(value.currentWrites) || value.currentWrites < 1
       || value.visibleWrites !== value.currentWrites
       || !Number.isSafeInteger(value.durableWriteCount)
@@ -1273,44 +1702,76 @@ export function deriveLivenessEvidence(measurements) {
       || !Number.isSafeInteger(value.durableVisibleWrites)
       || value.durableVisibleWrites !== value.durableWriteCount
       || !Number.isSafeInteger(value.durableBusyRetries)
-      || value.durableBusyRetries < 0
-      || value.durableLatenciesMs.length !== value.durableWriteCount) {
-      throw new Error(`Current-position proof for ${phase} is incomplete.`)
+      || value.durableBusyRetries < 0) {
+      throw createCodedQualificationError(
+        'LIVENESS_GATE_FAILED',
+        `Scale-contention probe for ${phase} is incomplete.`,
+      )
     }
-    const phaseHeartbeat = Math.max(...value.heartbeatGapsMs)
-    const phaseCadence = Math.max(...value.currentCadencesMs)
+    let heartbeatSummary
+    let cadenceSummary
+    let durableSummary
+    try {
+      heartbeatSummary = summarizeMeasurements(value.heartbeatGapsMs)
+      cadenceSummary = summarizeMeasurements(value.currentCadencesMs)
+      durableSummary = summarizeMeasurements(value.durableLatenciesMs)
+    } catch {
+      throw createCodedQualificationError(
+        'LIVENESS_GATE_FAILED',
+        `Scale-contention probe for ${phase} is incomplete.`,
+      )
+    }
+    if (heartbeatSummary.count < 1 || cadenceSummary.count < 1
+      || durableSummary.count !== value.durableWriteCount) {
+      throw createCodedQualificationError(
+        'LIVENESS_GATE_FAILED',
+        `Scale-contention probe for ${phase} is incomplete.`,
+      )
+    }
+    const phaseHeartbeat = heartbeatSummary.max
+    const phaseCadence = cadenceSummary.max
     if (!Number.isFinite(phaseHeartbeat) || phaseHeartbeat < 0
       || !Number.isFinite(phaseCadence) || phaseCadence < 0
       || phaseHeartbeat >= MAX_MAIN_CADENCE_MS
       || phaseCadence >= MAX_MAIN_CADENCE_MS) {
-      throw new Error(`Current positions or heartbeat exceeded the 200 ms gate during ${phase}.`)
+      throw createCodedQualificationError(
+        'LIVENESS_GATE_FAILED',
+        `Synthetic publication or coordinator heartbeat exceeded the 200 ms gate during ${phase}.`,
+      )
     }
-    const phaseDurableMax = Math.max(...value.durableLatenciesMs)
+    const phaseDurableMax = durableSummary.max
     if (!Number.isFinite(phaseDurableMax) || phaseDurableMax < 0
       || phaseDurableMax > MAX_DURABLE_SETTLE_MS) {
-      throw new Error(`Durable current-position settlement exceeded its bounded deadline during ${phase}.`)
+      throw createCodedQualificationError(
+        'DURABLE_SETTLEMENT_TIMEOUT',
+        `Durable synthetic-position settlement exceeded its bounded deadline during ${phase}.`,
+      )
     }
     byPhase[phase] = Object.freeze({
-      heartbeatMaxGapMs: phaseHeartbeat,
-      currentPositionMaxCadenceMs: phaseCadence,
+      coordinatorHeartbeatMaxGapMs: phaseHeartbeat,
+      syntheticPublicationMaxCadenceMs: phaseCadence,
       durableMaxLatencyMs: phaseDurableMax,
       durableWriteCount: value.durableWriteCount,
       durableVisibleWrites: value.durableVisibleWrites,
       durableBusyRetries: value.durableBusyRetries,
-      currentWrites: value.currentWrites,
-      visibleWrites: value.visibleWrites,
+      syntheticPublicationCount: value.currentWrites,
+      inProcessVisiblePublicationCount: value.visibleWrites,
     })
-    heartbeatMaxGapMs = Math.max(heartbeatMaxGapMs, phaseHeartbeat)
-    currentPositionMaxCadenceMs = Math.max(currentPositionMaxCadenceMs, phaseCadence)
+    coordinatorHeartbeatMaxGapMs = Math.max(coordinatorHeartbeatMaxGapMs, phaseHeartbeat)
+    syntheticPublicationMaxCadenceMs = Math.max(
+      syntheticPublicationMaxCadenceMs,
+      phaseCadence,
+    )
     durableMaxLatencyMs = Math.max(durableMaxLatencyMs, phaseDurableMax)
     durableWriteCount += value.durableWriteCount
     durableVisibleWrites += value.durableVisibleWrites
     durableBusyRetries += value.durableBusyRetries
   }
   return Object.freeze({
-    heartbeatMaxGapMs,
-    currentPositionMaxCadenceMs,
-    currentPositionsIndependent: true,
+    provenance: 'node-qualification-coordinator-contention-v1',
+    proofScope: 'field-scale-archive-contention-not-packaged-renderer-liveness',
+    coordinatorHeartbeatMaxGapMs,
+    syntheticPublicationMaxCadenceMs,
     durableMaxLatencyMs,
     durableWriteCount,
     durableVisibleWrites,
@@ -1330,6 +1791,10 @@ export async function scanEvidenceRoots({ roots, secrets, privacyCanary }) {
   const result = {
     filesScanned: 0,
     bytesScanned: 0,
+    unreadableFileCount: 0,
+    appAddressablePlaintextFileCount: 0,
+    secretMatchCount: 0,
+    privacyMatchCount: 0,
     unreadableFiles: [],
     appAddressablePlaintextFiles: [],
     secretMatches: [],
@@ -1353,46 +1818,167 @@ export async function scanEvidenceRoots({ roots, secrets, privacyCanary }) {
   })
 }
 
-/** Atomically publishes one new mode-0600 JSON evidence file without overwriting proof. */
-export async function writeQualificationEvidence(evidencePath, evidence) {
-  const parent = path.dirname(evidencePath)
-  await mkdir(parent, { recursive: true, mode: 0o700 })
+/** Retains one deterministic logical-path sample and an uncapped scalar count. */
+function recordEvidenceFinding(result, sampleField, countField, logicalName) {
+  result[countField] += 1
+  if (result[sampleField].length < MAX_EVIDENCE_PATH_SAMPLES) {
+    result[sampleField].push(logicalName)
+  }
+}
+
+/** Normalizes the narrow deterministic publication fault used by unit tests. */
+function normalizeQualificationPublicationOptions(input = {}) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || Object.keys(input).some((key) => key !== 'faultInjection')) {
+    throw new Error('Qualification publication options are invalid.')
+  }
+  const faultInjection = input.faultInjection ?? {}
+  if (faultInjection === null || typeof faultInjection !== 'object'
+    || Array.isArray(faultInjection)
+    || Object.keys(faultInjection).some((key) => key !== 'failAfterLink')
+    || (faultInjection.failAfterLink !== undefined
+      && typeof faultInjection.failAfterLink !== 'boolean')) {
+    throw new Error('Qualification publication fault injection is invalid.')
+  }
+  return Object.freeze({ failAfterLink: faultInjection.failAfterLink === true })
+}
+
+/** Returns whether two bigint file stats identify the same regular inode. */
+function isExactRegularFileIdentity(stat, identity) {
+  return stat.isFile() && !stat.isSymbolicLink()
+    && stat.dev === identity.dev && stat.ino === identity.ino
+}
+
+/** Flushes the containing directory after a publication or owned rollback. */
+async function syncQualificationPublicationDirectory(parent) {
+  const directoryHandle = await open(parent, fsConstants.O_RDONLY)
   try {
-    await lstat(evidencePath)
-    throw new Error('Qualification evidence already exists.')
+    await directoryHandle.sync()
+  } finally {
+    await directoryHandle.close()
+  }
+}
+
+/** Removes a final path only while it still names the inode linked by this call. */
+async function rollbackOwnedQualificationLink(artifactPath, identity) {
+  try {
+    const current = await lstat(artifactPath, { bigint: true })
+    if (!isExactRegularFileIdentity(current, identity)) {
+      throw new Error('Qualification publication target changed before rollback.')
+    }
+    await unlink(artifactPath)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
   }
+}
+
+/** Publishes one new inode and retracts only that inode on any post-link failure. */
+async function publishNewQualificationArtifact({
+  artifactPath,
+  contents,
+  existsMessage,
+  options,
+  validate = () => undefined,
+}) {
+  const publicationOptions = normalizeQualificationPublicationOptions(options)
+  if (typeof validate !== 'function') {
+    throw new Error('Qualification publication validator is invalid.')
+  }
+  const parent = path.dirname(artifactPath)
+  await mkdir(parent, { recursive: true, mode: 0o700 })
+  try {
+    await lstat(artifactPath)
+    throw new Error(existsMessage)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+  validate()
   const temporaryPath = path.join(
     parent,
-    `.${path.basename(evidencePath)}.tmp-${process.pid}-${randomUUID()}`,
+    `.${path.basename(artifactPath)}.tmp-${process.pid}-${randomUUID()}`,
   )
   let handle = null
+  let temporaryPresent = false
+  let finalLinkCreated = false
+  let identity = null
   try {
     handle = await open(temporaryPath, 'wx', 0o600)
+    temporaryPresent = true
     await handle.chmod(0o600)
-    await handle.writeFile(`${JSON.stringify(evidence, null, 2)}\n`, 'utf8')
+    await handle.writeFile(contents, 'utf8')
     await handle.sync()
+    const temporaryStat = await handle.stat({ bigint: true })
+    if (!temporaryStat.isFile() || temporaryStat.isSymbolicLink()
+      || temporaryStat.nlink !== 1n || (temporaryStat.mode & 0o777n) !== 0o600n) {
+      throw new Error('Qualification publication temporary file identity is unsafe.')
+    }
+    identity = Object.freeze({ dev: temporaryStat.dev, ino: temporaryStat.ino })
     await handle.close()
     handle = null
     try {
-      await link(temporaryPath, evidencePath)
+      await link(temporaryPath, artifactPath)
+      finalLinkCreated = true
     } catch (error) {
-      if (error?.code === 'EEXIST') {
-        throw new Error('Qualification evidence already exists.')
-      }
+      if (error?.code === 'EEXIST') throw new Error(existsMessage)
       throw error
     }
-    await chmod(evidencePath, 0o600)
+    const linkedStat = await lstat(artifactPath, { bigint: true })
+    if (!isExactRegularFileIdentity(linkedStat, identity)
+      || (linkedStat.mode & 0o777n) !== 0o600n) {
+      throw new Error('Qualification publication final link identity is unsafe.')
+    }
+    if (publicationOptions.failAfterLink) {
+      throw new Error('Injected qualification publication failure after final link.')
+    }
     await unlink(temporaryPath)
-    const directoryHandle = await open(parent, fsConstants.O_RDONLY)
-    try { await directoryHandle.sync() } finally { await directoryHandle.close() }
-  } finally {
-    if (handle !== null) await handle.close().catch(() => undefined)
-    await unlink(temporaryPath).catch((error) => {
-      if (error?.code !== 'ENOENT') throw error
-    })
+    temporaryPresent = false
+    await syncQualificationPublicationDirectory(parent)
+  } catch (error) {
+    const rollbackErrors = []
+    if (handle !== null) {
+      try { await handle.close() } catch (closeError) { rollbackErrors.push(closeError) }
+      handle = null
+    }
+    if (finalLinkCreated && identity !== null) {
+      try {
+        await rollbackOwnedQualificationLink(artifactPath, identity)
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+    }
+    if (temporaryPresent) {
+      try {
+        await unlink(temporaryPath)
+        temporaryPresent = false
+      } catch (temporaryError) {
+        if (temporaryError?.code !== 'ENOENT') rollbackErrors.push(temporaryError)
+      }
+    }
+    if (finalLinkCreated) {
+      try {
+        await syncQualificationPublicationDirectory(parent)
+      } catch (syncError) {
+        rollbackErrors.push(syncError)
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        'Qualification publication failed and its owned rollback was incomplete.',
+      )
+    }
+    throw error
   }
+}
+
+/** Atomically publishes one new mode-0600 JSON evidence file without overwriting proof. */
+export async function writeQualificationEvidence(evidencePath, evidence, options = {}) {
+  await publishNewQualificationArtifact({
+    artifactPath: evidencePath,
+    contents: `${JSON.stringify(evidence, null, 2)}\n`,
+    existsMessage: 'Qualification evidence already exists.',
+    options,
+  })
 }
 
 /** Opens a regular non-symlink file with descriptor/path identity pinned. */
@@ -1828,14 +2414,14 @@ function createEphemeralPassphrase() {
 }
 
 /**
- * Starts an in-memory current-position publisher with bounded durable ingest.
+ * Starts a qualification-only in-process synthetic-position contention probe.
  *
- * Current visibility is intentionally published before durable ingest is queued,
- * matching the production renderer ordering. When a database path is supplied,
- * the qualification-only durable lane uses a worker connection so SQLite fsync
- * latency cannot be mistaken for operator-visible current-position cadence.
+ * The probe publishes to a local Map before durable ingest is queued and uses a
+ * worker connection when a database path is supplied. Its measurements cover
+ * Node coordinator and SQLite pressure only; packaged renderer proof is supplied
+ * independently by the required archive-lifecycle v2 report.
  */
-export function startCurrentPositionProbe({
+export function startQualificationContentionProbe({
   store,
   missionId,
   deviceId,
@@ -1858,9 +2444,9 @@ export function startCurrentPositionProbe({
     throw new Error('Current-position publication interval is invalid.')
   }
   const measurements = Object.fromEntries(QUALIFICATION_PHASES.map((phase) => [phase, {
-    heartbeatGapsMs: [],
-    currentCadencesMs: [],
-    durableLatenciesMs: [],
+    heartbeatGapsMs: createBoundedMaximumTracker(),
+    currentCadencesMs: createBoundedMaximumTracker(),
+    durableLatenciesMs: createBoundedMaximumTracker(),
     durableWriteCount: 0,
     durableBusyRetries: 0,
     currentWrites: 0,
@@ -1876,7 +2462,7 @@ export function startCurrentPositionProbe({
   const currentPositions = new Map()
   const heartbeatMonitor = startHeartbeatMonitor((gap) => {
     if (phase !== null && failure === null) {
-      measurements[phase].heartbeatGapsMs.push(gap)
+      measurements[phase].heartbeatGapsMs.record(gap)
       diagnostics?.recordHeartbeat(phase, gap)
     }
   })
@@ -1890,8 +2476,9 @@ export function startCurrentPositionProbe({
       createWorker,
       diagnostics,
     })
-  const durablePromises = []
+  const outstandingDurablePromises = createOutstandingPromiseTracker()
   let failure = null
+  let stopPromise = null
 
   /** Schedules the next non-overlapping probe turn. */
   const schedule = () => {
@@ -1932,7 +2519,7 @@ export function startCurrentPositionProbe({
       // visibility. The interval between ordinary polls is not a main-loop
       // stall and must not be attributed to archive work.
       const currentCadence = visibleAt - tickStartedAt
-      bucket.currentCadencesMs.push(currentCadence)
+      bucket.currentCadencesMs.record(currentCadence)
       bucket.lastVisibleAt = visibleAt
       diagnostics?.recordCurrentCadence(tickPhase, currentCadence)
 
@@ -1959,7 +2546,7 @@ export function startCurrentPositionProbe({
         if (!Number.isSafeInteger(busyRetries) || busyRetries < 0) {
           throw new Error('Durable current-position contention count was invalid.')
         }
-        bucket.durableLatenciesMs.push(latencyMs)
+        bucket.durableLatenciesMs.record(latencyMs)
         bucket.durableWriteCount += 1
         bucket.durableBusyRetries += busyRetries
         return result
@@ -1970,7 +2557,7 @@ export function startCurrentPositionProbe({
         }
         return undefined
       })
-      durablePromises.push(observedDurablePromise)
+      outstandingDurablePromises.track(observedDurablePromise)
     } catch (error) {
       failure = error
     }
@@ -1990,81 +2577,91 @@ export function startCurrentPositionProbe({
         activeTick = activeTick.then(() => tick()).finally(schedule)
       }
     },
-    /** Stops after the active tick and derives the closed liveness proof. */
-    async stop() {
-      running = false
-      if (timer !== null) clearTimeout(timer)
-      await activeTick
-      heartbeatMonitor.stop()
-      const durableSettlementStartedAt = performance.now()
-      const durableSettlementDeadline = durableSettlementStartedAt + durableSettlementTimeoutMs
-      let durableSettlementTimer = null
-      const durableSettlementTimeout = new Promise((resolve) => {
-        durableSettlementTimer = setTimeout(() => resolve(false), durableSettlementTimeoutMs)
-      })
-      const settled = await Promise.race([
-        Promise.allSettled(durablePromises).then(() => true),
-        durableSettlementTimeout,
-      ])
-      if (durableSettlementTimer !== null) clearTimeout(durableSettlementTimer)
-      const settlementTimedOut = settled !== true
-      if (settlementTimedOut && failure === null) {
-        failure = new Error('Durable current-position settlement exceeded its bounded deadline.')
-      }
-      if (durableWorker !== null) {
-        try {
-          await durableWorker.stop({
-            force: settlementTimedOut || failure !== null,
-            timeoutMs: Math.max(0, durableSettlementDeadline - performance.now()),
-          })
-        } catch (error) {
-          if (failure === null) failure = error
+    /** Stops after the active tick and derives the closed contention proof exactly once. */
+    stop() {
+      if (stopPromise !== null) return stopPromise
+      stopPromise = (async () => {
+        running = false
+        if (timer !== null) clearTimeout(timer)
+        await activeTick
+        heartbeatMonitor.stop()
+        const durableSettlementStartedAt = performance.now()
+        const durableSettlementDeadline = durableSettlementStartedAt + durableSettlementTimeoutMs
+        let durableSettlementTimer = null
+        const durableSettlementTimeout = new Promise((resolve) => {
+          durableSettlementTimer = setTimeout(() => resolve(false), durableSettlementTimeoutMs)
+        })
+        const settled = await Promise.race([
+          outstandingDurablePromises.settle().then(() => true),
+          durableSettlementTimeout,
+        ])
+        if (durableSettlementTimer !== null) clearTimeout(durableSettlementTimer)
+        const settlementTimedOut = settled !== true
+        if (settlementTimedOut && failure === null) {
+          failure = new Error('Durable current-position settlement exceeded its bounded deadline.')
         }
-      }
-      const durableWriteCount = Object.values(measurements)
-        .reduce((total, value) => total + value.durableWriteCount, 0)
-      if (failure !== null) throw failure
-      let durableVisibleWrites = durableWriteCount
-      if (typeof store.countPositions === 'function') {
-        const expectedDurableWrites = QUALIFICATION_PHASES.reduce(
-          (total, name) => total + measurements[name].currentWrites,
-        0,
-        )
-        const actualDurableWrites = await store.countPositions(missionId, deviceId)
-        if (actualDurableWrites !== expectedDurableWrites) {
-          throw new Error('Durable current-position ingest count did not settle exhaustively.')
+        if (durableWorker !== null) {
+          try {
+            await durableWorker.stop({
+              force: settlementTimedOut || failure !== null,
+              timeoutMs: Math.max(0, durableSettlementDeadline - performance.now()),
+            })
+          } catch (error) {
+            if (failure === null) failure = error
+          }
         }
-        durableVisibleWrites = actualDurableWrites
-      }
-      if (typeof store.latestPositions === 'function') {
-        const latest = await store.latestPositions(missionId)
-        const current = Array.isArray(latest)
-          ? latest.find((position) => position?.device_id === deviceId)
-          : null
-        if (current?.source_position_id === undefined
-          || current.source_position_id === null
-          || !String(current.source_position_id).startsWith(`pr6-${runId}-`)) {
-          throw new Error('Durable current-position ingest was not visible through latest positions.')
+        const promiseSettlement = outstandingDurablePromises.snapshot()
+        if ((promiseSettlement.pendingCount !== 0
+          || promiseSettlement.settledCount !== promiseSettlement.trackedCount)
+          && failure === null) {
+          failure = new Error('Durable current-position observations did not settle exhaustively.')
         }
-      }
-      const durableSettlementMs = performance.now() - durableSettlementStartedAt
-      if (failure !== null) throw failure
-      const projected = Object.fromEntries(QUALIFICATION_PHASES.map((name) => [name, {
-        heartbeatGapsMs: measurements[name].heartbeatGapsMs,
-        currentCadencesMs: measurements[name].currentCadencesMs,
-        durableLatenciesMs: measurements[name].durableLatenciesMs,
-        durableWriteCount: measurements[name].durableWriteCount,
-        durableVisibleWrites: measurements[name].durableWriteCount,
-        durableBusyRetries: measurements[name].durableBusyRetries,
-        currentWrites: measurements[name].currentWrites,
-        visibleWrites: measurements[name].visibleWrites,
-      }]))
-      return deriveLivenessEvidence({
-        ...projected,
-        durableWriteCount,
-        durableVisibleWrites,
-        durableSettlementMs,
-      })
+        const durableWriteCount = Object.values(measurements)
+          .reduce((total, value) => total + value.durableWriteCount, 0)
+        if (failure !== null) throw failure
+        let durableVisibleWrites = durableWriteCount
+        if (typeof store.countPositions === 'function') {
+          const expectedDurableWrites = QUALIFICATION_PHASES.reduce(
+            (total, name) => total + measurements[name].currentWrites,
+            0,
+          )
+          const actualDurableWrites = await store.countPositions(missionId, deviceId)
+          if (actualDurableWrites !== expectedDurableWrites) {
+            throw new Error('Durable current-position ingest count did not settle exhaustively.')
+          }
+          durableVisibleWrites = actualDurableWrites
+        }
+        if (typeof store.latestPositions === 'function') {
+          const latest = await store.latestPositions(missionId)
+          const current = Array.isArray(latest)
+            ? latest.find((position) => position?.device_id === deviceId)
+            : null
+          if (current?.source_position_id === undefined
+            || current.source_position_id === null
+            || !String(current.source_position_id).startsWith(`pr6-${runId}-`)) {
+            throw new Error('Durable current-position ingest was not visible through latest positions.')
+          }
+        }
+        const durableSettlementMs = performance.now() - durableSettlementStartedAt
+        if (failure !== null) throw failure
+        const projected = Object.fromEntries(QUALIFICATION_PHASES.map((name) => [name, {
+          heartbeatGapsMs: measurements[name].heartbeatGapsMs.snapshot(),
+          currentCadencesMs: measurements[name].currentCadencesMs.snapshot(),
+          durableLatenciesMs: measurements[name].durableLatenciesMs.snapshot(),
+          durableWriteCount: measurements[name].durableWriteCount,
+          durableVisibleWrites: measurements[name].durableWriteCount,
+          durableBusyRetries: measurements[name].durableBusyRetries,
+          currentWrites: measurements[name].currentWrites,
+          visibleWrites: measurements[name].visibleWrites,
+        }]))
+        return deriveContentionProbeEvidence({
+          ...projected,
+          durableWriteCount,
+          durableVisibleWrites,
+          durableSettlementMs,
+        })
+      })()
+      return stopPromise
     },
   })
 }
@@ -2097,11 +2694,11 @@ export async function runWithHeartbeatMonitor(
 
 /** Starts one timer-delay monitor that includes synchronous main-thread stalls. */
 function startHeartbeatMonitor(onGap) {
-  const gaps = []
+  const gaps = createBoundedMaximumTracker()
   let last = performance.now()
   let stoppedMaxGapMs = null
   const recordGap = (gap) => {
-    gaps.push(gap)
+    gaps.record(gap)
     try { onGap?.(gap) } catch {}
   }
   const timer = setInterval(() => {
@@ -2116,7 +2713,7 @@ function startHeartbeatMonitor(onGap) {
       clearInterval(timer)
       const final = performance.now()
       recordGap(final - last)
-      stoppedMaxGapMs = Math.max(...gaps)
+      stoppedMaxGapMs = gaps.snapshot().max
       return stoppedMaxGapMs
     },
   })
@@ -2236,8 +2833,8 @@ async function runReviewProof({
       secrets: [passphrase, recoveryCode],
       privacyCanary: missionId,
     })
-    if (openScan.filesScanned < 1 || openScan.privacyMatches.length < 1
-      || openScan.secretMatches.length > 0 || openScan.unreadableFiles.length > 0) {
+    if (openScan.filesScanned < 1 || openScan.privacyMatchCount < 1
+      || openScan.secretMatchCount > 0 || openScan.unreadableFileCount > 0) {
       throw new Error('Open archive Review residual classification failed.')
     }
     const info = await manager.read({
@@ -2295,10 +2892,10 @@ async function runReviewProof({
       secrets: [passphrase, recoveryCode],
       privacyCanary: missionId,
     })
-    const plaintextSweptAfterClose = closedScan.appAddressablePlaintextFiles.length === 0
-      && closedScan.unreadableFiles.length === 0
-      && closedScan.secretMatches.length === 0
-      && closedScan.privacyMatches.length === 0
+    const plaintextSweptAfterClose = closedScan.appAddressablePlaintextFileCount === 0
+      && closedScan.unreadableFileCount === 0
+      && closedScan.secretMatchCount === 0
+      && closedScan.privacyMatchCount === 0
     if (!plaintextSweptAfterClose) {
       throw new Error('Archive Review plaintext was not swept after close.')
     }
@@ -2364,20 +2961,24 @@ function countMissionEvent(databasePath, missionId, eventType) {
 /** Proves every terminal journal-planned mission selection is empty after cleanup. */
 function readCleanupProof({ databasePath, missionId, archiveId }) {
   return withReadonlyDatabase(databasePath, (db) => {
-    const row = db.prepare(`SELECT archive_id, state, progress_json
-      FROM mission_cleanup_journal WHERE mission_id = ?`).get(missionId)
     const declarations = listArchiveInventoryForSchema(13)
     const expectedTables = declarations.filter((entry) => (
       entry.decision === 'mission_rows'
         && !RETAINED_CLEANUP_MISSION_TABLES.has(entry.tableName)
     ) || (
       entry.decision === 'derived_excluded'
+        && !RECONSTRUCTED_CLEANUP_DERIVED_TABLES.has(entry.tableName)
         && tableHasColumn(db, entry.tableName, 'mission_id')
     ) || (
       entry.decision === 'operational_excluded'
         && QUALIFICATION_CLEANUP_OPERATIONAL_TABLES.has(entry.tableName)
     )).map((entry) => entry.tableName)
-    const journal = parseTerminalCleanupJournal(row, archiveId, expectedTables)
+    const journal = readCompletedArchiveCleanupJournalProof(db, { missionId, archiveId })
+    if (canonicalJson([...journal.tables].sort())
+      !== canonicalJson([...expectedTables].sort())) {
+      throw new Error('Mission cleanup journal table plan is not complete for schema v13.')
+    }
+    assertCurrentCleanupIdentity({ database: db, missionId, archiveId, journal })
     let remainingRows = 0
     for (const tableName of journal.tables) {
       const declaration = declarations.find((candidate) => candidate.tableName === tableName)
@@ -2386,7 +2987,12 @@ function readCleanupProof({ databasePath, missionId, archiveId }) {
       }
       let whereSql
       let parameters
-      if (declaration.decision === 'mission_rows') {
+      if (tableName === 'mission_events') {
+        const placeholders = ARCHIVE_CLEANUP_MEMBERSHIP_EVENT_TYPES.map(() => '?').join(', ')
+        whereSql = `archive_row."mission_id" = ?
+          AND archive_row."event_type" IN (${placeholders})`
+        parameters = [missionId, ...ARCHIVE_CLEANUP_MEMBERSHIP_EVENT_TYPES]
+      } else if (declaration.decision === 'mission_rows') {
         const selection = createArchiveTableSelection({
           tableName,
           missionId,
@@ -2409,16 +3015,55 @@ function readCleanupProof({ databasePath, missionId, archiveId }) {
       }
       remainingRows += count
     }
+    assertReplayGenerationCleanupProjection(db, missionId)
     const mission = db.prepare('SELECT status FROM missions WHERE id = ?').get(missionId)
     const archive = db.prepare(`SELECT status, availability FROM mission_archives
       WHERE id = ? AND mission_id = ?`).get(archiveId, missionId)
     return Object.freeze({
+      identityBound: true,
+      membershipGeneration: journal.membershipGeneration,
+      guardRevision: journal.guardRevision,
+      finalizationEpoch: journal.finalizationEpoch,
+      finalizationEventId: journal.finalizationEventId,
+      startedEventId: journal.startedEventId,
+      completionEventId: journal.completionEventId,
       remainingRows,
       retainedMissionStub: mission?.status === 'finalized',
       retainedArchiveRegistry: archive?.status === 'verified'
         && archive?.availability === 'present',
     })
   })
+}
+
+/** Proves the retained Replay cache has one valid monotonic generation. */
+export function assertReplayGenerationCleanupProjection(database, missionId) {
+  if (database === null || typeof database !== 'object'
+    || typeof database.prepare !== 'function'
+    || typeof missionId !== 'string' || missionId.length < 1
+    || Buffer.byteLength(missionId, 'utf8') > 200) {
+    throw new Error('Replay generation cleanup projection input is invalid.')
+  }
+  const row = database.prepare(`SELECT mission_id, generation
+    FROM mission_replay_generations WHERE mission_id = ?`).get(missionId)
+  if (row?.mission_id !== missionId
+    || !Number.isSafeInteger(row.generation)
+    || row.generation < 1) {
+    throw new Error('Replay generation cleanup projection is missing or invalid.')
+  }
+  return true
+}
+
+/** Requires the public production cleanup gate to revalidate one terminal epoch. */
+export function assertCompletedCleanupEligibility(eligibility) {
+  const expected = {
+    eligible: false,
+    blockers: ['cleanup_already_completed'],
+    storageState: 'archived',
+  }
+  if (canonicalJson(eligibility) !== canonicalJson(expected)) {
+    throw new Error('Production cleanup validation did not confirm the terminal archived state.')
+  }
+  return true
 }
 
 /** Returns whether one declared table has a named column. */
@@ -2452,6 +3097,11 @@ async function proveRestartSweeps({
     await waitForStartupPlaintextSweep(archiveDirectory, reviewRoot, profileRoot)
     const mission = await restartedStore.getMission(missionId)
     const archives = await restartedStore.listMissionArchives(missionId)
+    const terminalCleanupEligibility = await restartedStore.getMissionCleanupEligibility({
+      missionId,
+      archiveId,
+    }, { reviewActivity: false })
+    assertCompletedCleanupEligibility(terminalCleanupEligibility)
     if (mission.storage_state !== 'archived'
       || !archives.some((archive) => archive.id === archiveId
         && archive.status === 'verified' && archive.availability === 'present')) {
@@ -2476,8 +3126,8 @@ async function waitForStartupPlaintextSweep(archiveDirectory, reviewRoot, profil
     const failure = withReadonlyDatabase(path.join(profileRoot, DATABASE_FILE_NAME), (db) =>
       db.prepare(`SELECT 1 FROM metadata
         WHERE key = 'archive_plaintext_sweep_failure'`).get() !== undefined)
-    if (!failure && scan.unreadableFiles.length === 0
-      && scan.appAddressablePlaintextFiles.length === 0) return
+    if (!failure && scan.unreadableFileCount === 0
+      && scan.appAddressablePlaintextFileCount === 0) return
     await delay(HEARTBEAT_INTERVAL_MS)
   }
   throw new Error('Startup did not sweep app-addressable archive plaintext.')
@@ -2522,11 +3172,11 @@ async function scanNamedRoot(root, secrets, privacyPatterns, result) {
     rootStat = await lstat(root.rootPath)
   } catch (error) {
     if (error?.code === 'ENOENT') return
-    result.unreadableFiles.push(root.label)
+    recordEvidenceFinding(result, 'unreadableFiles', 'unreadableFileCount', root.label)
     return
   }
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
-    result.unreadableFiles.push(root.label)
+    recordEvidenceFinding(result, 'unreadableFiles', 'unreadableFileCount', root.label)
     return
   }
   await scanDirectory(root, '', secrets, privacyPatterns, result)
@@ -2541,7 +3191,12 @@ async function scanDirectory(root, relativeDirectory, secrets, privacyPatterns, 
   try {
     entries = await readdir(directoryPath, { withFileTypes: true })
   } catch {
-    result.unreadableFiles.push(logicalPath(root.label, relativeDirectory))
+    recordEvidenceFinding(
+      result,
+      'unreadableFiles',
+      'unreadableFileCount',
+      logicalPath(root.label, relativeDirectory),
+    )
     return
   }
   entries.sort((left, right) => left.name.localeCompare(right.name, 'en'))
@@ -2552,11 +3207,21 @@ async function scanDirectory(root, relativeDirectory, secrets, privacyPatterns, 
     const entryPath = path.join(root.rootPath, ...relativePath.split('/'))
     let stat
     try { stat = await lstat(entryPath) } catch {
-      result.unreadableFiles.push(logicalPath(root.label, relativePath))
+      recordEvidenceFinding(
+        result,
+        'unreadableFiles',
+        'unreadableFileCount',
+        logicalPath(root.label, relativePath),
+      )
       continue
     }
     if (stat.isSymbolicLink()) {
-      result.unreadableFiles.push(logicalPath(root.label, relativePath))
+      recordEvidenceFinding(
+        result,
+        'unreadableFiles',
+        'unreadableFileCount',
+        logicalPath(root.label, relativePath),
+      )
     } else if (stat.isDirectory()) {
       await scanDirectory(root, relativePath, secrets, privacyPatterns, result)
     } else if (stat.isFile()) {
@@ -2568,7 +3233,12 @@ async function scanDirectory(root, relativeDirectory, secrets, privacyPatterns, 
         result,
       )
     } else {
-      result.unreadableFiles.push(logicalPath(root.label, relativePath))
+      recordEvidenceFinding(
+        result,
+        'unreadableFiles',
+        'unreadableFileCount',
+        logicalPath(root.label, relativePath),
+      )
     }
   }
 }
@@ -2583,7 +3253,7 @@ async function scanRegularEvidenceFile(
 ) {
   const pinned = await openPinnedRegularFile(filePath, null, 'scan file').catch(() => null)
   if (pinned === null) {
-    result.unreadableFiles.push(logicalName)
+    recordEvidenceFinding(result, 'unreadableFiles', 'unreadableFileCount', logicalName)
     return
   }
   const patterns = [...secrets, ...privacyPatterns].map((value) => Buffer.from(value, 'utf8'))
@@ -2610,16 +3280,25 @@ async function scanRegularEvidenceFile(
       carry = window.subarray(Math.max(0, window.byteLength - maximumPatternBytes + 1))
     }
   } catch {
-    result.unreadableFiles.push(logicalName)
+    recordEvidenceFinding(result, 'unreadableFiles', 'unreadableFileCount', logicalName)
     return
   } finally {
     await pinned.handle.close().catch(() => undefined)
   }
   result.filesScanned += 1
   result.bytesScanned += scannedBytes
-  result.appAddressablePlaintextFiles.push(logicalName)
-  if (secretMatched) result.secretMatches.push(logicalName)
-  if (privacyMatched) result.privacyMatches.push(logicalName)
+  recordEvidenceFinding(
+    result,
+    'appAddressablePlaintextFiles',
+    'appAddressablePlaintextFileCount',
+    logicalName,
+  )
+  if (secretMatched) {
+    recordEvidenceFinding(result, 'secretMatches', 'secretMatchCount', logicalName)
+  }
+  if (privacyMatched) {
+    recordEvidenceFinding(result, 'privacyMatches', 'privacyMatchCount', logicalName)
+  }
 }
 
 /** Joins one logical root and POSIX relative path without leaking host paths. */
@@ -2641,29 +3320,34 @@ function withReadonlyDatabase(databasePath, read) {
 
 /** Starts conservative whole-process RSS sampling, including worker-thread allocations. */
 function startRssSampler(diagnostics) {
-  const samples = [process.memoryUsage().rss]
+  const samples = createBoundedMaximumTracker()
+  const baselineProcessRssBytes = process.memoryUsage().rss
+  samples.record(baselineProcessRssBytes)
   let stopped = null
-  const timer = setInterval(() => samples.push(process.memoryUsage().rss), HEARTBEAT_INTERVAL_MS)
+  const timer = setInterval(() => samples.record(process.memoryUsage().rss), HEARTBEAT_INTERVAL_MS)
   return Object.freeze({
     /** Stops once and returns the conservative RSS/VmHWM upper bound. */
     async stop() {
       if (stopped !== null) return stopped
       clearInterval(timer)
-      samples.push(process.memoryUsage().rss)
-      const baselineProcessRssBytes = samples[0]
+      samples.record(process.memoryUsage().rss)
       const linuxVmHwmBytes = await readLinuxVmHwmBytes()
-      const peakProcessRssBytes = Math.max(linuxVmHwmBytes, ...samples)
+      const sampleSummary = samples.snapshot()
+      const peakProcessRssBytes = Math.max(linuxVmHwmBytes, sampleSummary.max)
       stopped = Object.freeze({
         measurement: 'whole_process_rss_conservative_worker_upper_bound',
         baselineProcessRssBytes,
         peakProcessRssBytes,
         peakDeltaBytes: peakProcessRssBytes - baselineProcessRssBytes,
         linuxVmHwmBytes,
-        sampleCount: samples.length,
+        sampleCount: sampleSummary.count,
       })
       diagnostics?.recordRss(stopped)
       if (peakProcessRssBytes > MAX_ARCHIVE_PROCESS_RSS_BYTES) {
-        throw new Error('The whole-process archive lifecycle exceeded the 512 MiB RSS gate.')
+        throw createCodedQualificationError(
+          'RSS_GATE_FAILED',
+          'The whole-process archive lifecycle exceeded the 512 MiB RSS gate.',
+        )
       }
       return stopped
     },
@@ -2728,8 +3412,8 @@ async function assertEvidenceDestinationSourceNeutral(evidencePath) {
   }
 }
 
-/** Creates and validates the evidence parent without accepting symlink indirection. */
-async function prepareEvidenceDestination(evidencePath) {
+/** Creates and validates fresh success and failure evidence destinations. */
+export async function prepareEvidenceDestination(evidencePath) {
   const parent = path.dirname(evidencePath)
   await mkdir(parent, { recursive: true, mode: 0o700 })
   const parentStat = await lstat(parent)
@@ -2737,11 +3421,16 @@ async function prepareEvidenceDestination(evidencePath) {
     || await realpath(parent) !== parent) {
     throw new Error('Qualification evidence parent is unsafe.')
   }
-  try {
-    await lstat(evidencePath)
-    throw new Error('Qualification evidence already exists.')
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error
+  for (const [candidatePath, label] of [
+    [evidencePath, 'Qualification evidence'],
+    [qualificationFailurePath(evidencePath), 'Qualification failure receipt'],
+  ]) {
+    try {
+      await lstat(candidatePath)
+      throw new Error(`${label} already exists.`)
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
   }
 }
 

@@ -72,7 +72,9 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
     await expect(page.getByTestId(`archive-storage-state-${archive.missionId}`)).toHaveText(
       'Storage: live',
     )
-    await page.getByTestId(`archive-cleanup-open-${archive.missionId}`).click()
+    const cleanupEntry = page.getByTestId(`archive-cleanup-open-${archive.missionId}`)
+    await expect(cleanupEntry).toHaveText('Review Archive Cleanup')
+    await cleanupEntry.click()
 
     const dialog = page.getByTestId('mission-archive-cleanup-dialog')
     await expect(dialog).toBeVisible()
@@ -82,7 +84,7 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
     const checks = dialog
       .locator('section[aria-label="Cleanup safety checklist"]')
       .getByRole('listitem')
-    await expect(checks).toHaveCount(13)
+    await expect(checks).toHaveCount(15)
     await expect(checks.filter({ hasText: 'Pending:' })).toHaveCount(1)
     await expect(checks.filter({ hasText: 'Blocked:' })).toHaveCount(0)
     await expect(page.getByTestId('archive-cleanup-secret')).toHaveAttribute('type', 'password')
@@ -267,6 +269,7 @@ async function createVerifiedSyntheticArchive(page: Page): Promise<{
   await page.getByTestId('archive-finalize').click()
   await expect(dialog).toBeHidden()
   await expect(page.getByTestId('mission-governance-card')).toContainText('finalized')
+  await expect(page.getByTestId('mission-cleanup-btn')).toHaveText('Review Archive Cleanup')
 
   const archive = await page.evaluate(() => {
     const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()

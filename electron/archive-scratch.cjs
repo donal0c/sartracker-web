@@ -20,6 +20,14 @@ const {
   computeArchiveGpxContentProof,
 } = require('./archive-gpx-proof.cjs')
 const { computeMissionReplaySemanticProof } = require('./archive-replay-proof.cjs')
+const {
+  readCurrentMissionFinalizationBoundary,
+} = require('./mission-finalization-boundary.cjs')
+const {
+  ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES,
+  ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_SQL,
+  assertArchiveCleanupMembershipGeneration,
+} = require('./archive-cleanup-membership.cjs')
 
 const CURRENT_SCHEMA_VERSION = 13
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
@@ -57,11 +65,13 @@ const EXPECTED_INDEX_NAMES = Object.freeze([
   'idx_search_passes_mission',
 ])
 const EXPECTED_TRIGGER_NAMES = Object.freeze([
+  ...ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES,
   'positions_replay_day_count_delete',
   'positions_replay_day_count_insert',
   'positions_replay_day_count_update',
 ])
 const CANONICAL_MISSING_REPLAY_OBJECTS = Object.freeze({
+  ...ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_SQL,
   idx_mission_events_replay: `CREATE INDEX idx_mission_events_replay
     ON mission_events(mission_id, timestamp, event_type, id)`,
   idx_positions_replay_known_fix: `CREATE INDEX idx_positions_replay_known_fix
@@ -199,6 +209,8 @@ function assertRequestFence(source, input) {
     || details.operation_id !== input.operationId
     || details.archive_kind !== input.archiveKind
     || details.archive_relative_path !== `${input.archiveId}.sararch`
+    || !Number.isSafeInteger(details.cleanup_membership_generation)
+    || details.cleanup_membership_generation < 0
     || details.protected_finalization_epoch !== input.protectedFinalizationEpoch
   ) {
     throw new ArchiveScratchError(
@@ -206,17 +218,31 @@ function assertRequestFence(source, input) {
       'Mission archive request event does not bind the planned custody identity.',
     )
   }
+  try {
+    assertArchiveCleanupMembershipGeneration(source, {
+      missionId: input.missionId,
+      expectedGeneration: details.cleanup_membership_generation,
+    })
+  } catch {
+    throw new ArchiveScratchError(
+      'ARCHIVE_SOURCE_CHANGED',
+      'Mission archive cleanup membership changed after its immutable request event.',
+    )
+  }
+  if (input.finalizationProjection !== undefined
+    && input.finalizationProjection !== null
+    && input.finalizationProjection.cleanupMembershipGeneration
+      !== details.cleanup_membership_generation) {
+    throw new ArchiveScratchError(
+      'ARCHIVE_SCOPE_INVALID',
+      'Mission archive finalization projection does not match its cleanup membership boundary.',
+    )
+  }
   if (input.protectedFinalizationEpoch !== null) {
-    const protectedEvent = source.prepare(`SELECT rowid AS event_rowid, mission_id, event_type
-      FROM mission_events WHERE rowid = ?`).get(input.protectedFinalizationEpoch)
-    const latestFinalizedEpoch = source.prepare(`SELECT rowid AS event_rowid
-      FROM mission_events
-      WHERE mission_id = ? AND event_type = 'mission_finalized'
-      ORDER BY rowid DESC LIMIT 1`).get(input.missionId)
-    if (protectedEvent?.mission_id !== input.missionId
-      || protectedEvent?.event_type !== 'mission_finalized'
-      || Number(protectedEvent.event_rowid) !== input.protectedFinalizationEpoch
-      || Number(latestFinalizedEpoch?.event_rowid) !== input.protectedFinalizationEpoch) {
+    const finalizationBoundary = readCurrentMissionFinalizationBoundary(source, {
+      missionId: input.missionId,
+    })
+    if (finalizationBoundary?.eventRowid !== input.protectedFinalizationEpoch) {
       throw new ArchiveScratchError(
         'ARCHIVE_SCOPE_INVALID',
         'Mission archive protected finalization epoch is not current.',
@@ -519,6 +545,7 @@ function applyFinalizationProjection(scratch, input) {
       archive_id: input.archiveId,
       archive_path: projection.archivePath,
       archive_relative_path: projection.archiveRelativePath,
+      cleanup_membership_generation: projection.cleanupMembershipGeneration,
       container_version: 2,
     }),
     projection.recordedAt,
@@ -545,6 +572,8 @@ function assertFinalizationProjection(input) {
     || !path.isAbsolute(projection.archivePath)
     || path.resolve(projection.archivePath) !== projection.archivePath
     || projection.archiveRelativePath !== `${input.archiveId}.sararch`
+    || !Number.isSafeInteger(projection.cleanupMembershipGeneration)
+    || projection.cleanupMembershipGeneration < 0
     || !Object.hasOwn(projection, 'supplement')) {
     throw new ArchiveScratchError(
       'ARCHIVE_SCOPE_INVALID',

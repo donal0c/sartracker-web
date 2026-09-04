@@ -21,6 +21,14 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly close: () => void
   }
 }
+const { readArchiveCleanupMembershipGeneration } = require(
+  '../../electron/archive-cleanup-membership.cjs',
+) as {
+  readonly readArchiveCleanupMembershipGeneration: (
+    database: InstanceType<typeof Database>,
+    missionId: string,
+  ) => number
+}
 const { startMissionArchiveCreateWorker } = require(
   '../../electron/mission-archive-runner.cjs',
 ) as {
@@ -170,6 +178,7 @@ async function createArchiveFixture() {
     '2026-08-29T10:00:00.000Z',
     '2026-08-29T12:00:00.000Z',
   )
+  const cleanupMembershipGeneration = readArchiveCleanupMembershipGeneration(db, 'mission-a')
   db.prepare(`INSERT INTO mission_events (
     rowid, id, mission_id, event_type, timestamp, details_json,
     recorded_at, recording_completeness
@@ -182,6 +191,7 @@ async function createArchiveFixture() {
       operation_id: operationId,
       archive_kind: 'finalized',
       archive_relative_path: `${archiveId}.sararch`,
+      cleanup_membership_generation: cleanupMembershipGeneration,
       protected_finalization_epoch: null,
     }),
     fenceRequestedAt,

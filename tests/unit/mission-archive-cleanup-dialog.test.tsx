@@ -41,6 +41,8 @@ describe('MissionArchiveCleanupDialog [DON-253]', () => {
       'archive_custody_busy',
       'archive_custody_mismatch',
       'archive_review_active',
+      'cleanup_journal_invalid',
+      'cleanup_membership_changed',
       'cleanup_in_progress',
       'current_archive_not_verified',
       'current_finalization_epoch_mismatch',
@@ -69,6 +71,8 @@ describe('MissionArchiveCleanupDialog [DON-253]', () => {
       'archive work is active',
       'archive file does not match',
       'archive review is active',
+      'cleanup recovery journal integrity is invalid',
+      'live rows changed after finalization',
       'cleanup is already in progress',
       'latest archive is not verified',
       'finalization epoch is not current',
@@ -225,11 +229,13 @@ describe('MissionArchiveCleanupDialog [DON-253]', () => {
   })
 
   it('describes an interrupted multi-batch failure without falsely claiming the live store is intact', async () => {
+    const resumeCleanup = vi.fn()
     render(createProps({
       startCleanup: vi.fn().mockRejectedValue(Object.assign(
         new Error('untrusted local failure detail'),
         { code: 'ARCHIVE_CLEANUP_FAILED' },
       )),
+      resumeCleanup,
     }))
     await flush()
     setInput('archive-cleanup-secret', PASSPHRASE)
@@ -240,6 +246,8 @@ describe('MissionArchiveCleanupDialog [DON-253]', () => {
     expect(state()).toBe('failure')
     expect(readText()).toMatch(/some live rows.*already.*moved|already moved.*live rows/iu)
     expect(readText()).toMatch(/resume|durable cursor/iu)
+    expect(document.querySelector('[data-testid="archive-cleanup-resume"]')).toBeNull()
+    expect(resumeCleanup).not.toHaveBeenCalled()
     expect(readText()).not.toContain('The live mission and verified archive remain intact')
     expect(readText()).not.toContain('untrusted local failure detail')
   })
@@ -284,6 +292,42 @@ describe('MissionArchiveCleanupDialog [DON-253]', () => {
       operationId: OPERATION_ID,
     })
     expect(state()).toBe('completed')
+  })
+
+  it.each([
+    {
+      blocker: 'cleanup_journal_invalid',
+      expected: 'cleanup recovery journal integrity is invalid',
+      storageState: 'cleanup_in_progress',
+    },
+    {
+      blocker: 'cleanup_membership_changed',
+      expected: 'live rows changed after finalization. re-finalize before cleanup',
+      storageState: 'live',
+    },
+  ] as const)('withholds Resume for non-resumable cleanup blocker $blocker', async ({
+    blocker,
+    expected,
+    storageState,
+  }) => {
+    const resumeCleanup = vi.fn()
+    render(createProps({
+      loadState: vi.fn().mockResolvedValue({
+        archive: archive(),
+        eligibility: {
+          eligible: false,
+          startableWithCredential: false,
+          blockers: [blocker],
+          storageState,
+        },
+      }),
+      resumeCleanup,
+    }))
+    await flush()
+
+    expect(readText().toLowerCase()).toContain(expected)
+    expect(document.querySelector('[data-testid="archive-cleanup-resume"]')).toBeNull()
+    expect(resumeCleanup).not.toHaveBeenCalled()
   })
 
   function render(props: MissionArchiveCleanupDialogProps): void {

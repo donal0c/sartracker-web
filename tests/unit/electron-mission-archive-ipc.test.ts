@@ -541,6 +541,33 @@ describe('mission archive IPC containment [DON-248]', () => {
     })
   })
 
+  it.each([
+    ['cleanup_journal_invalid', 'cleanup_in_progress'],
+    ['cleanup_membership_changed', 'live'],
+  ] as const)('preserves %s as a non-resumable cleanup blocker', async (
+    blocker,
+    storageState,
+  ) => {
+    const { handlers } = createMainHarness({}, {
+      getMissionCleanupEligibility: vi.fn(async () => ({
+        eligible: false,
+        startableWithCredential: false,
+        blockers: [blocker],
+        storageState,
+      })),
+    })
+
+    await expect(handlers.get(CHANNELS.getMissionCleanupEligibility)?.(
+      { sender: createSender(7) },
+      { missionId: 'mission-1', archiveId: archiveResult().id },
+    )).resolves.toEqual({
+      eligible: false,
+      startableWithCredential: false,
+      blockers: [blocker],
+      storageState,
+    })
+  })
+
   it('resumes an interrupted cleanup with a fresh bounded operation identity', async () => {
     const { handlers, missionStore, archiveReviewSessionManager, cleanupLease } = createMainHarness()
     const sender = createSender(7)

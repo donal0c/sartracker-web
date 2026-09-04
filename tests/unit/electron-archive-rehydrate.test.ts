@@ -1,5 +1,5 @@
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -57,6 +57,161 @@ afterEach(() => {
 })
 
 describe('archived mission correction rehydration', () => {
+  it('fails closed with the stable snapshot code when the v2 finalization projection is missing', () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-boundary-'))
+    temporaryDirectories.add(userDataPath)
+    const snapshotPath = path.join(userDataPath, 'missing-finalization.sqlite')
+    const archiveId = '11111111-1111-4111-8111-111111111111'
+    const snapshot = new Database(snapshotPath)
+    snapshot.exec(`
+      CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO metadata (key, value) VALUES ('schema_version', '13');
+      CREATE TABLE missions (id TEXT PRIMARY KEY, status TEXT NOT NULL);
+      INSERT INTO missions (id, status) VALUES ('mission-a', 'finalized');
+      CREATE TABLE mission_events (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        details_json TEXT
+      );
+    `)
+    snapshot.close()
+    const proof = snapshotProof(snapshotPath)
+    const live = new Database(':memory:')
+    try {
+      expect(() => rehydrateMissionFromSnapshot({
+        db: live,
+        snapshotPath,
+        expectedSha256: proof.snapshot_database_sha256,
+        expectedIdentity: proof.snapshot_database_identity,
+        missionId: 'mission-a',
+        archiveId,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+      })).toThrow(expect.objectContaining({
+        code: 'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
+      }))
+    } finally {
+      live.close()
+    }
+  })
+
+  it('restores a finalized-recovery archive through its protected original boundary', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-recovery-'))
+    temporaryDirectories.add(userDataPath)
+    const custody = {
+      passphrase: 'Recovery Restore 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    const store = createElectronMissionStore({ userDataPath })
+    let missionId = ''
+    let originalArchiveId = ''
+    const recoveryArchiveId = '92929292-9292-4292-8292-929292929292'
+    const snapshotPath = path.join(userDataPath, 'recovery-correction-snapshot.sqlite')
+    try {
+      const mission = await store.createMission({ name: 'Recovery-bound correction restore' })
+      missionId = mission.id
+      await store.upsertDevice({
+        mission_id: missionId,
+        device_id: 'recovery-device',
+        name: 'Recovery Device',
+        color: '#0088ff',
+        status: 'offline',
+      })
+      await store.finishMission(missionId)
+      const finalized = await store.finalizeMission(missionId, custody) as {
+        readonly archive: { readonly id: string }
+      }
+      originalArchiveId = finalized.archive.id
+      await store.syncBackup('recovery-correction-fixture')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId,
+        archiveId: originalArchiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '93939393-9393-4393-8393-939393939393',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+
+    const live = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+    try {
+      const protectedEpoch = Number(live.prepare(`SELECT rowid FROM mission_events
+        WHERE mission_id = ? AND event_type = 'mission_finalized'
+        ORDER BY rowid DESC LIMIT 1`).get(missionId)?.rowid)
+      const requestEventId = randomUUID()
+      const requestTimestamp = '2026-09-04T12:00:00.000Z'
+      live.prepare(`INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json,
+        recorded_at, recording_completeness
+      ) VALUES (?, ?, 'mission_archive_requested', ?, ?, ?, 'complete')`).run(
+        requestEventId,
+        missionId,
+        requestTimestamp,
+        JSON.stringify({
+          archive_id: recoveryArchiveId,
+          archive_kind: 'finalized_recovery',
+          archive_relative_path: `${recoveryArchiveId}.sararch`,
+          operation_id: '94949494-9494-4494-8494-949494949494',
+          protected_finalization_epoch: protectedEpoch,
+          resulting_status: 'finalized',
+        }),
+        requestTimestamp,
+      )
+      const requestEventRowid = Number(live.prepare('SELECT rowid FROM mission_events WHERE id = ?')
+        .get(requestEventId)?.rowid)
+      live.prepare("UPDATE mission_archives SET status = 'superseded' WHERE id = ?")
+        .run(originalArchiveId)
+      live.prepare(`INSERT INTO mission_archives (
+        id, mission_id, request_event_rowid, request_event_id,
+        creation_operation_id, protected_finalization_epoch, archive_kind,
+        container_version, relative_path, ciphertext_sha256, size_bytes, created_at,
+        sealed_event_id, frame_count, header_sha256, manifest_sha256, entry_count,
+        table_count, verified_at, verification_proof_json, previous_archive_id,
+        status, availability, availability_reason, last_reconciled_at,
+        last_observed_file_identity, slots_json, last_non_machine_unwrap_at,
+        legacy_event_rowid
+      ) SELECT ?, mission_id, ?, ?, ?, ?, 'finalized_recovery',
+        container_version, ?, ciphertext_sha256, size_bytes, ?, sealed_event_id,
+        frame_count, header_sha256, manifest_sha256, entry_count, table_count,
+        verified_at, verification_proof_json, NULL, 'verified', availability,
+        availability_reason, last_reconciled_at, last_observed_file_identity,
+        slots_json, last_non_machine_unwrap_at, NULL
+      FROM mission_archives WHERE id = ?`).run(
+        recoveryArchiveId,
+        requestEventRowid,
+        requestEventId,
+        '94949494-9494-4494-8494-949494949494',
+        protectedEpoch,
+        `${recoveryArchiveId}.sararch`,
+        requestTimestamp,
+        originalArchiveId,
+      )
+      const proof = snapshotProof(snapshotPath)
+
+      expect(rehydrateMissionFromSnapshot({
+        db: live,
+        snapshotPath,
+        expectedSha256: proof.snapshot_database_sha256,
+        expectedIdentity: proof.snapshot_database_identity,
+        missionId,
+        archiveId: recoveryArchiveId,
+        finalizedEpoch: protectedEpoch,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+      })).toEqual({ missionId, archiveId: recoveryArchiveId })
+      expect(live.prepare('SELECT name FROM devices WHERE mission_id = ?').get(missionId))
+        .toEqual({ name: 'Recovery Device' })
+    } finally {
+      live.close()
+    }
+  }, 60_000)
+
   it('restores the emptied mission namespace from the authenticated snapshot without replacing retained history', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-'))
     temporaryDirectories.add(userDataPath)
@@ -392,7 +547,14 @@ describe('archived mission correction rehydration', () => {
         'generic-post-commit-event',
         input.missionId,
         timestamp,
-        JSON.stringify({ restored_from_archive_id: input.archiveId }),
+        JSON.stringify({
+          admin_name: input.adminName,
+          reason: input.reason,
+          restored_from_archive_id: input.archiveId,
+          archive_correction_operation_id: input.operationId,
+          resulting_status: 'finished',
+          storage_state: 'live',
+        }),
         timestamp,
       )
       database.close()
@@ -483,7 +645,14 @@ describe('archived mission correction rehydration', () => {
         'post-commit-cancel-event',
         input.missionId,
         timestamp,
-        JSON.stringify({ restored_from_archive_id: input.archiveId }),
+        JSON.stringify({
+          admin_name: input.adminName,
+          reason: input.reason,
+          restored_from_archive_id: input.archiveId,
+          archive_correction_operation_id: input.operationId,
+          resulting_status: 'finished',
+          storage_state: 'live',
+        }),
         timestamp,
       )
       database.close()

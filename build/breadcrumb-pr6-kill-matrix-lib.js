@@ -19,6 +19,9 @@ const {
   listArchiveInventoryForSchema,
   reconcileArchiveInventory,
 } = require('../electron/archive-inventory.cjs')
+const {
+  CLEANABLE_MISSION_EVENT_TYPES,
+} = require('../electron/archive-cleanup.cjs')
 const { inspectArchiveCustodyFile } = require('../electron/archive-custody-file.cjs')
 const {
   createArchiveReviewSessionManager,
@@ -50,14 +53,13 @@ const CANONICAL_SCHEMA_V13_INVENTORY = Object.freeze(
     decision: entry.decision,
   })),
 )
-const SCHEMA_V13_RETAINED_MISSION_TABLES = new Set(['mission_events', 'missions'])
+const SCHEMA_V13_RETAINED_MISSION_TABLES = new Set(['missions'])
 const SCHEMA_V13_MISSION_ID_DERIVED_TABLES = new Set([
   'coverage_chunks',
   'coverage_invalidations',
   'coverage_missions',
   'ingest_anomaly_devices',
   'ingest_anomaly_mission_health',
-  'mission_replay_generations',
   'mission_replay_position_day_counts',
 ])
 const SCHEMA_V13_CLEANUP_OPERATIONAL_TABLES = new Set([
@@ -66,6 +68,11 @@ const SCHEMA_V13_CLEANUP_OPERATIONAL_TABLES = new Set([
   'participant_backfill_checkpoints',
   'tracking_history_checkpoints',
 ])
+const ALL_ROWS_CLEANUP_SELECTION = Object.freeze({ kind: 'all_rows' })
+const MISSION_EVENT_CLEANUP_SELECTION = Object.freeze({
+  kind: 'mission_event_type_allowlist',
+  eventTypes: CLEANABLE_MISSION_EVENT_TYPES,
+})
 const CANONICAL_SCHEMA_V13_CLEANUP_ORDER = Object.freeze([
   'coverage_chunks',
   'coverage_invalidations',
@@ -87,7 +94,6 @@ const CANONICAL_SCHEMA_V13_CLEANUP_ORDER = Object.freeze([
   'mission_group_membership_events',
   'mission_object_versions',
   'mission_participants',
-  'mission_replay_generations',
   'mission_replay_position_day_counts',
   'participant_backfill_checkpoints',
   'position_revisions',
@@ -103,6 +109,7 @@ const CANONICAL_SCHEMA_V13_CLEANUP_ORDER = Object.freeze([
   'search_assignments',
   'outings',
   'search_areas',
+  'mission_events',
 ])
 const EXPECTED_RESTART_ACTION = Object.freeze({
   create: 'startup_custody_reconciliation',
@@ -252,6 +259,12 @@ export function captureArchiveKillMatrixBaseline(input) {
     recoveryCodes.add(record.recoveryCode)
     const profilePath = resolveFixtureProfile(root, record.profileRelativePath)
     const databasePath = path.join(profilePath, 'mission-store.sqlite')
+    const custody = captureArchiveCustodySet(databasePath, profilePath)
+    if (!custody.allRegisteredArchivesMatched
+      || custody.unregisteredArchiveCount !== 0
+      || custody.diskArchiveCount !== custody.registeredArchiveCount) {
+      throw new Error('Archive kill-matrix baseline custody is not internally consistent.')
+    }
     cases[definition.id] = Object.freeze({
       caseId: definition.id,
       lifecycle: definition.lifecycle,
@@ -261,6 +274,10 @@ export function captureArchiveKillMatrixBaseline(input) {
       archiveId: record.archiveId,
       passphrase: state.passphrase,
       recoveryCode: record.recoveryCode,
+      custody: Object.freeze({
+        archiveCount: custody.includedArchiveCount,
+        immutableDigestSha256: custody.immutableDigestSha256,
+      }),
       inventory: captureMissionInventory(databasePath),
       stableMission: captureStableMissionEvidence(databasePath, record.missionId),
     })
@@ -374,8 +391,11 @@ export function deriveArchiveKillCaseVerdict(input) {
     throw new Error('Archive restart did not preserve the mission identity stub.')
   }
   if (facts.mission?.stableCoreMatched !== true
-    || facts.mission?.eventPrefixMatched !== true) {
-    throw new Error('Archive restart mutated stable mission content or prior audit-event bytes.')
+    || facts.mission?.retainedEventPrefixMatched !== true
+    || (definition.lifecycle !== 'cleanup' && facts.mission?.eventPrefixMatched !== true)) {
+    throw new Error(
+      'Archive restart mutated stable mission content or retained operator/audit-event bytes.',
+    )
   }
   if ((definition.lifecycle === 'create'
       && !['finished', 'finalized'].includes(facts.mission?.status))
@@ -397,6 +417,25 @@ export function deriveArchiveKillCaseVerdict(input) {
     facts.inventory.observedTables,
     'Archive observed inventory',
   )
+  const baselineMissionEvents = facts.inventory.baselineTables
+    .find((entry) => entry.tableName === 'mission_events')
+  const observedMissionEvents = facts.inventory.observedTables
+    .find((entry) => entry.tableName === 'mission_events')
+  if (!Number.isSafeInteger(facts.mission?.baselineEventRowCount)
+    || !Number.isSafeInteger(facts.mission?.observedEventRowCount)
+    || !Number.isSafeInteger(facts.mission?.baselineRetainedEventRowCount)
+    || !Number.isSafeInteger(facts.mission?.observedRetainedEventRowCount)
+    || facts.mission.baselineRetainedEventRowCount < 0
+    || facts.mission.observedRetainedEventRowCount
+      < facts.mission.baselineRetainedEventRowCount
+    || facts.mission.baselineRetainedEventRowCount > facts.mission.baselineEventRowCount
+    || facts.mission.observedRetainedEventRowCount > facts.mission.observedEventRowCount
+    || baselineMissionEvents?.rowCount !== facts.mission.baselineEventRowCount
+    || observedMissionEvents?.rowCount !== facts.mission.observedEventRowCount) {
+    throw new Error(
+      'Mission event observations do not match the total 49-table inventory or retained history.',
+    )
+  }
   const computedBaselineDigest = createHash('sha256')
     .update(JSON.stringify(facts.inventory.baselineTables), 'utf8')
     .digest('hex')
@@ -440,14 +479,19 @@ export function deriveArchiveKillCaseVerdict(input) {
   if (custody?.activeOperationPresent !== false || custody?.blockingConflictPresent !== false) {
     throw new Error('Archive custody did not reconcile after SIGKILL.')
   }
+  if (custody?.baselineArchivesPreserved !== true
+    || custody?.allRegisteredArchivesMatched !== true) {
+    throw new Error('Archive restart did not preserve the immutable pre-kill custody baseline.')
+  }
   if (definition.lifecycle !== 'create' && custody?.applicable === false) {
     throw new Error('Archive custody disappeared after SIGKILL.')
   }
-  if (custody?.applicable === false && (
-    custody?.registeredArchiveCount !== 0
-    || custody?.diskArchiveCount !== 0
-    || custody?.unregisteredArchiveCount !== 0
-  )) {
+  const expectedRegisteredArchiveCount = custody?.baselineArchiveCount
+    + (definition.lifecycle === 'create' && custody?.applicable === true ? 1 : 0)
+  if (!Number.isSafeInteger(expectedRegisteredArchiveCount)
+    || custody?.registeredArchiveCount !== expectedRegisteredArchiveCount
+    || custody?.diskArchiveCount !== expectedRegisteredArchiveCount
+    || custody?.unregisteredArchiveCount !== 0) {
     throw new Error('Archive restart left registry/disk drift or unregistered archive bytes.')
   }
   if (custody?.applicable !== false) {
@@ -455,9 +499,6 @@ export function deriveArchiveKillCaseVerdict(input) {
       || custody?.availability !== 'present'
       || custody?.registryCiphertextSha256 !== custody?.diskCiphertextSha256
       || custody?.registrySizeBytes !== custody?.diskSizeBytes
-      || custody?.registeredArchiveCount !== 1
-      || custody?.diskArchiveCount !== 1
-      || custody?.unregisteredArchiveCount !== 0
       || custody?.registryFileIdentityMatched !== true
       || (custody?.status === 'verified'
         && custody?.verificationProofFileIdentityMatched !== true)) {
@@ -499,12 +540,12 @@ export function deriveArchiveKillCaseVerdict(input) {
       || !Array.isArray(declaredRows)
       || declaredRows.length !== facts.cleanup.declaredTableCount
       || !Array.isArray(facts.cleanup?.remainingRows)
-      || !Array.isArray(facts.cleanup?.reconstructibleDerivedRows)
-      || !Array.isArray(facts.cleanup?.postReviewRemainingRows)) {
+      || !Array.isArray(facts.cleanup?.reconstructibleDerivedRows)) {
       throw new Error(
         'Cleanup did not retain exhaustive zero-row proof for every declared live-row table.',
       )
     }
+    assertCanonicalSchemaV13CleanupPlan(declaredRows)
     const observedByTable = new Map(
       facts.inventory.observedTables.map((entry) => [entry.tableName, entry]),
     )
@@ -516,35 +557,40 @@ export function deriveArchiveKillCaseVerdict(input) {
       declaredNames.add(entry?.tableName)
       const observed = observedByTable.get(entry?.tableName)
       const zeroRequired = observed?.decision !== 'derived_excluded'
+      const normalized = normalizeCleanupDeclaredRow(entry)
+      const expectedSelection = cleanupSelectionForTable(entry?.tableName)
       if (observed === undefined
-        || entry.decision !== observed.decision
-        || entry.rowCount !== observed.rowCount
-        || entry.zeroRequired !== zeroRequired) {
+        || normalized.decision !== observed.decision
+        || normalized.totalRowCount !== observed.rowCount
+        || normalized.zeroRequired !== zeroRequired
+        || JSON.stringify(normalized.cleanupSelection) !== JSON.stringify(expectedSelection)
+        || normalized.cleanableRowCount + normalized.retainedRowCount
+          !== normalized.totalRowCount
+        || (normalized.cleanupSelection.kind === 'all_rows'
+          && (normalized.cleanableRowCount !== normalized.totalRowCount
+            || normalized.retainedRowCount !== 0))) {
         throw new Error('Cleanup row proof contradicts the observed 49-table inventory.')
       }
-      return Object.freeze({
-        tableName: observed.tableName,
-        decision: observed.decision,
-        rowCount: observed.rowCount,
-        zeroRequired,
-      })
+      return normalized
     })
-    assertCanonicalSchemaV13CleanupPlan(declaredRows)
     const expectedRemainingRows = observedCleanupRows.filter((entry) =>
-      entry.zeroRequired && entry.rowCount > 0)
+      entry.zeroRequired && entry.cleanableRowCount > 0)
     const expectedReconstructibleDerivedRows = observedCleanupRows.filter((entry) =>
-      !entry.zeroRequired && entry.rowCount > 0)
-    const expectedPostReviewRemainingRows = observedCleanupRows
-      .filter((entry) => entry.rowCount > 0)
-      .map((entry) => Object.freeze({
-        tableName: entry.tableName,
-        rowCount: entry.rowCount,
-      }))
+      !entry.zeroRequired && entry.cleanableRowCount > 0)
+    const missionEventCleanup = observedCleanupRows
+      .find((entry) => entry.tableName === 'mission_events')
+    if (missionEventCleanup?.cleanableRowCount !== 0) {
+      throw new Error('Cleanup left cleanable mission telemetry in the live store.')
+    }
+    if (missionEventCleanup.retainedRowCount
+      !== facts.mission.observedRetainedEventRowCount) {
+      throw new Error(
+        'Cleanup retained-event count contradicts the mission and 49-table inventory.',
+      )
+    }
     if (JSON.stringify(facts.cleanup.remainingRows) !== JSON.stringify(expectedRemainingRows)
       || JSON.stringify(facts.cleanup.reconstructibleDerivedRows)
         !== JSON.stringify(expectedReconstructibleDerivedRows)
-      || JSON.stringify(facts.cleanup.postReviewRemainingRows)
-        !== JSON.stringify(expectedPostReviewRemainingRows)
       || expectedRemainingRows.length > 0) {
       throw new Error('Cleanup row proof contradicts the observed 49-table inventory.')
     }
@@ -692,7 +738,14 @@ async function observeArchiveKillCase({ definition, baseline }) {
   try {
     await manager.sweepStartup()
     const archives = await store.listMissionArchives(baseline.missionId)
-    if (archiveId === null) archiveId = archives.at(-1)?.id ?? null
+    if (archiveId === null) {
+      const created = archives.filter((entry) =>
+        entry.creation_operation_id === definition.operationId)
+      if (created.length > 1) {
+        throw new Error('Archive creation restart produced duplicate operation custody.')
+      }
+      archiveId = created[0]?.id ?? null
+    }
     const archive = archiveId === null
       ? null
       : archives.find((entry) => entry.id === archiveId) ?? null
@@ -766,7 +819,6 @@ function inspectRestartDatabase({
   const db = new Database(baseline.databasePath, { readonly: true, fileMustExist: true })
   let mission
   let archive
-  let archiveRows
   let activeOperation
   let blockingConflict
   let cleanup
@@ -777,8 +829,6 @@ function inspectRestartDatabase({
       : db.prepare(`SELECT id, mission_id, relative_path, ciphertext_sha256, size_bytes,
           status, availability, last_observed_file_identity, verification_proof_json
         FROM mission_archives WHERE id = ?`).get(archiveId) ?? null
-    archiveRows = db.prepare(`SELECT id, relative_path FROM mission_archives
-      WHERE mission_id = ? ORDER BY id`).all(baseline.missionId)
     activeOperation = readMetadataFromDb(db, 'archive_custody_active_operation')
     blockingConflict = readMetadataFromDb(db, 'archive_custody_blocking_conflict')
       ?? readMetadataFromDb(db, 'archive_custody_recovery_failure')
@@ -790,7 +840,10 @@ function inspectRestartDatabase({
   const stableMission = captureStableMissionEvidence(
     baseline.databasePath,
     baseline.missionId,
-    baseline.stableMission.eventRowCount,
+    {
+      eventHighWaterRowid: baseline.stableMission.eventHighWaterRowid,
+      eventRowCount: baseline.stableMission.eventRowCount,
+    },
   )
   const cleanupTables = cleanup?.tables ?? []
   const allowedChanges = new Set([
@@ -802,29 +855,48 @@ function inspectRestartDatabase({
   ])
   const changedTables = compareInventories(baseline.inventory, inventory)
   const unexpectedChangedTables = changedTables.filter((tableName) => !allowedChanges.has(tableName))
+  if (postCleanupProof !== null
+    && JSON.stringify(postCleanupProof.tableNames) !== JSON.stringify(cleanupTables)) {
+    throw new Error('Post-cleanup journal table plan changed during archive Review.')
+  }
+  const declaredRows = postCleanupProof === null
+    ? []
+    : captureCleanupSelectionRows(
+        baseline.databasePath,
+        baseline.missionId,
+        cleanupTables,
+        inventory.tables,
+      )
   const cleanupProof = postCleanupProof === null ? null : Object.freeze({
-    ...postCleanupProof,
-    postReviewRemainingRows: Object.freeze(cleanupTables.flatMap((tableName) => {
-      const table = inventory.tables.find((entry) => entry.tableName === tableName)
-      return table?.rowCount > 0
-        ? [Object.freeze({ tableName, rowCount: table.rowCount })]
-        : []
-    })),
+    journalState: postCleanupProof.journalState,
+    storageState: postCleanupProof.storageState,
+    declaredTableCount: declaredRows.length,
+    declaredRows,
+    remainingRows: Object.freeze(declaredRows.filter((entry) =>
+      entry.zeroRequired && entry.cleanableRowCount !== 0)),
+    reconstructibleDerivedRows: Object.freeze(declaredRows.filter((entry) =>
+      !entry.zeroRequired && entry.cleanableRowCount !== 0)),
   })
   return {
     mission: Object.freeze({
       idMatched: mission?.id === baseline.missionId,
       status: ['finished', 'finalized'].includes(mission?.status) ? mission.status : null,
       stableCoreMatched: stableMission.coreSha256 === baseline.stableMission.coreSha256,
-      eventPrefixMatched: stableMission.eventPrefixSha256
-        === baseline.stableMission.eventPrefixSha256,
+      eventPrefixMatched: stableMission.eventPrefixComplete
+        && stableMission.eventPrefixSha256 === baseline.stableMission.eventPrefixSha256,
+      retainedEventPrefixMatched: stableMission.retainedEventPrefixSha256
+          === baseline.stableMission.retainedEventPrefixSha256
+        && stableMission.retainedEventPrefixRowCount
+          === baseline.stableMission.retainedEventPrefixRowCount,
       baselineEventRowCount: baseline.stableMission.eventRowCount,
       observedEventRowCount: stableMission.totalEventRowCount,
+      baselineRetainedEventRowCount: baseline.stableMission.retainedEventPrefixRowCount,
+      observedRetainedEventRowCount: stableMission.totalRetainedEventRowCount,
     }),
     custody: inspectCustody({
+      definition,
       baseline,
       archive,
-      archiveRows,
       activeOperation,
       blockingConflict,
     }),
@@ -849,27 +921,34 @@ function inspectRestartDatabase({
 
 /** Inspects one archive through the production pinned-file boundary and registry proof. */
 function inspectCustody({
+  definition,
   baseline,
   archive,
-  archiveRows,
   activeOperation,
   blockingConflict,
 }) {
-  const diskRelativePaths = listCustodyArchiveFiles(
-    path.join(baseline.profilePath, ARCHIVE_DIRECTORY_NAME),
+  const custodySet = captureArchiveCustodySet(
+    baseline.databasePath,
+    baseline.profilePath,
+    definition.lifecycle === 'create' ? archive?.id ?? null : null,
   )
-  const registeredRelativePaths = new Set(archiveRows.map((row) => row.relative_path))
-  const unregisteredArchiveCount = diskRelativePaths
-    .filter((relativePath) => !registeredRelativePaths.has(relativePath)).length
+  const shared = {
+    baselineArchiveCount: baseline.custody.archiveCount,
+    baselineArchivesPreserved: custodySet.includedArchiveCount
+        === baseline.custody.archiveCount
+      && custodySet.immutableDigestSha256 === baseline.custody.immutableDigestSha256,
+    allRegisteredArchivesMatched: custodySet.allRegisteredArchivesMatched,
+    activeOperationPresent: activeOperation !== null,
+    blockingConflictPresent: blockingConflict !== null,
+    diskArchiveCount: custodySet.diskArchiveCount,
+    registeredArchiveCount: custodySet.registeredArchiveCount,
+    unregisteredArchiveCount: custodySet.unregisteredArchiveCount,
+  }
   if (archive === null) {
     return Object.freeze({
       applicable: false,
-      activeOperationPresent: activeOperation !== null,
-      blockingConflictPresent: blockingConflict !== null,
-      diskArchiveCount: diskRelativePaths.length,
-      registeredArchiveCount: archiveRows.length,
       status: null,
-      unregisteredArchiveCount,
+      ...shared,
     })
   }
   let disk = null
@@ -905,26 +984,100 @@ function inspectCustody({
         && verificationProof?.custodyFileIdentity !== undefined
         && JSON.stringify(verificationProof.custodyFileIdentity)
           === JSON.stringify(disk.fileIdentity),
-    activeOperationPresent: activeOperation !== null,
-    blockingConflictPresent: blockingConflict !== null,
     inspectionErrorCode,
-    diskArchiveCount: diskRelativePaths.length,
-    registeredArchiveCount: archiveRows.length,
-    unregisteredArchiveCount,
+    ...shared,
   })
 }
 
-/** Lists final archive-container paths without following links or entering scratch roots. */
-function listCustodyArchiveFiles(archiveDirectory) {
+/**
+ * Digests every immutable registry/disk identity without retaining an archive
+ * list. A newly created archive may be excluded so its pre-existing custody
+ * predecessors and supplements are compared directly with the pre-kill set.
+ */
+function captureArchiveCustodySet(databasePath, profilePath, excludedArchiveId = null) {
+  const archiveDirectory = path.join(profilePath, ARCHIVE_DIRECTORY_NAME)
+  const db = new Database(databasePath, { readonly: true, fileMustExist: true })
+  const immutableHash = createHash('sha256')
+  immutableHash.update('[', 'utf8')
+  let includedArchiveCount = 0
+  let registeredArchiveCount = 0
+  let allRegisteredArchivesMatched = true
+  try {
+    const rows = db.prepare(`SELECT id, mission_id, request_event_rowid, request_event_id,
+        creation_operation_id, protected_finalization_epoch, archive_kind, container_version,
+        relative_path, ciphertext_sha256, size_bytes, created_at, sealed_event_id,
+        frame_count, header_sha256, manifest_sha256, entry_count, table_count,
+        previous_archive_id, slots_json, status, last_observed_file_identity,
+        verification_proof_json
+      FROM mission_archives ORDER BY id`).iterate()
+    for (const row of rows) {
+      registeredArchiveCount += 1
+      let disk = null
+      try {
+        disk = inspectArchiveCustodyFile({
+          archiveDirectory,
+          archiveRelativePath: row.relative_path,
+        })
+      } catch {
+        allRegisteredArchivesMatched = false
+      }
+      const observedFileIdentity = parseBoundedJson(row.last_observed_file_identity)
+      const verificationProof = parseBoundedJson(row.verification_proof_json)
+      if (disk?.ciphertextSha256 !== row.ciphertext_sha256
+        || disk?.sizeBytes !== Number(row.size_bytes)
+        || JSON.stringify(observedFileIdentity) !== JSON.stringify(disk?.fileIdentity)
+        || (row.status === 'verified'
+          && JSON.stringify(verificationProof?.custodyFileIdentity)
+            !== JSON.stringify(disk?.fileIdentity))) {
+        allRegisteredArchivesMatched = false
+      }
+      if (row.id === excludedArchiveId) continue
+      if (includedArchiveCount > 0) immutableHash.update(',', 'utf8')
+      const {
+        last_observed_file_identity: _observedIdentity,
+        status: _status,
+        verification_proof_json: _verificationProof,
+        ...immutableRegistry
+      } = row
+      immutableHash.update(JSON.stringify({
+        ...immutableRegistry,
+        diskCiphertextSha256: disk?.ciphertextSha256 ?? null,
+        diskFileIdentity: disk?.fileIdentity ?? null,
+        diskSizeBytes: disk?.sizeBytes ?? null,
+      }), 'utf8')
+      includedArchiveCount += 1
+    }
+    immutableHash.update(']', 'utf8')
+    let diskArchiveCount = 0
+    let unregisteredArchiveCount = 0
+    const registeredPath = db.prepare('SELECT 1 FROM mission_archives WHERE relative_path = ?')
+    visitCustodyArchiveFiles(archiveDirectory, (relativePath) => {
+      diskArchiveCount += 1
+      if (registeredPath.get(relativePath) === undefined) unregisteredArchiveCount += 1
+    })
+    return Object.freeze({
+      includedArchiveCount,
+      immutableDigestSha256: immutableHash.digest('hex'),
+      registeredArchiveCount,
+      diskArchiveCount,
+      unregisteredArchiveCount,
+      allRegisteredArchivesMatched,
+    })
+  } finally {
+    db.close()
+  }
+}
+
+/** Visits final archive-container paths without following links or entering scratch roots. */
+function visitCustodyArchiveFiles(archiveDirectory, onArchive) {
   let root
   try { root = lstatSync(archiveDirectory) } catch (error) {
-    if (error?.code === 'ENOENT') return Object.freeze([])
+    if (error?.code === 'ENOENT') return
     throw error
   }
   if (!root.isDirectory() || root.isSymbolicLink()) {
     throw new Error('Archive custody directory is unsafe during parent inspection.')
   }
-  const results = []
   const visit = (directory, relativePrefix) => {
     for (const name of readdirSync(directory).sort()) {
       if (relativePrefix === '' && ['.staging', '.verification'].includes(name)) continue
@@ -932,11 +1085,10 @@ function listCustodyArchiveFiles(archiveDirectory) {
       const relativePath = relativePrefix === '' ? name : `${relativePrefix}/${name}`
       const stat = lstatSync(entryPath)
       if (stat.isDirectory() && !stat.isSymbolicLink()) visit(entryPath, relativePath)
-      else if (name.endsWith('.sararch')) results.push(relativePath)
+      else if (name.endsWith('.sararch')) onArchive(relativePath)
     }
   }
   visit(archiveDirectory, '')
-  return Object.freeze(results)
 }
 
 /** Captures all 49 schema-v13 table row counts and content digests from one profile. */
@@ -970,8 +1122,8 @@ function captureMissionInventory(databasePath) {
   }
 }
 
-/** Digests immutable mission fields and the exact prior audit-event prefix. */
-function captureStableMissionEvidence(databasePath, missionId, prefixRowCount = null) {
+/** Digests immutable mission fields, all prior events, and the retained prior-event subset. */
+function captureStableMissionEvidence(databasePath, missionId, priorEventBoundary = null) {
   const db = new Database(databasePath, { readonly: true, fileMustExist: true })
   try {
     const mission = db.prepare(`SELECT id, name, start_time, pause_time, finish_time,
@@ -980,30 +1132,69 @@ function captureStableMissionEvidence(databasePath, missionId, prefixRowCount = 
     if (mission === undefined) throw new Error('Stable mission evidence is missing.')
     const totalEventRowCount = Number(db.prepare(`SELECT COUNT(*) AS count
       FROM mission_events WHERE mission_id = ?`).get(missionId).count)
-    const requestedCount = prefixRowCount ?? totalEventRowCount
+    const totalRetainedEventRowCount = Number(db.prepare(`SELECT COUNT(*) AS count
+      FROM mission_events WHERE mission_id = ? AND event_type NOT IN (${CLEANABLE_MISSION_EVENT_TYPES
+    .map(() => '?').join(', ')})`).get(missionId, ...CLEANABLE_MISSION_EVENT_TYPES).count)
+    const currentHighWaterRowid = Number(db.prepare(`SELECT COALESCE(MAX(rowid), 0) AS rowid
+      FROM mission_events WHERE mission_id = ?`).get(missionId).rowid)
+    const requestedCount = priorEventBoundary?.eventRowCount ?? totalEventRowCount
+    const prefixThroughRowid = priorEventBoundary?.eventHighWaterRowid
+      ?? currentHighWaterRowid
     if (!Number.isSafeInteger(requestedCount) || requestedCount < 0
-      || requestedCount > totalEventRowCount) {
+      || !Number.isSafeInteger(prefixThroughRowid) || prefixThroughRowid < 0
+      || !Number.isSafeInteger(currentHighWaterRowid) || currentHighWaterRowid < 0
+      || !Number.isSafeInteger(totalEventRowCount) || totalEventRowCount < 0
+      || !Number.isSafeInteger(totalRetainedEventRowCount)
+      || totalRetainedEventRowCount < 0) {
       throw new Error('Stable mission event prefix is invalid.')
     }
-    const events = db.prepare(`SELECT rowid AS durable_rowid, * FROM mission_events
-      WHERE mission_id = ? ORDER BY rowid LIMIT ?`).all(missionId, requestedCount)
-    if (events.length !== requestedCount) {
-      throw new Error('Stable mission event prefix is incomplete.')
-    }
+    const events = digestStatementRows(db.prepare(`SELECT rowid AS durable_rowid, *
+      FROM mission_events
+      WHERE mission_id = ? AND rowid <= ? ORDER BY rowid`), missionId, prefixThroughRowid)
+    const retainedEvents = digestStatementRows(db.prepare(`SELECT rowid AS durable_rowid, *
+      FROM mission_events
+      WHERE mission_id = ? AND rowid <= ?
+        AND event_type NOT IN (${CLEANABLE_MISSION_EVENT_TYPES.map(() => '?').join(', ')})
+      ORDER BY rowid`),
+      missionId,
+      prefixThroughRowid,
+      ...CLEANABLE_MISSION_EVENT_TYPES,
+    )
     return Object.freeze({
       coreSha256: createHash('sha256').update(JSON.stringify(mission), 'utf8').digest('hex'),
-      eventPrefixSha256: createHash('sha256')
-        .update(JSON.stringify(events), 'utf8')
-        .digest('hex'),
+      eventPrefixSha256: events.sha256,
+      eventPrefixComplete: events.rowCount === requestedCount,
       eventRowCount: requestedCount,
+      eventHighWaterRowid: prefixThroughRowid,
+      retainedEventPrefixSha256: retainedEvents.sha256,
+      retainedEventPrefixRowCount: retainedEvents.rowCount,
       totalEventRowCount,
+      totalRetainedEventRowCount,
     })
   } finally {
     db.close()
   }
 }
 
-/** Captures the terminal cleanup cursor and every declared row count before Review adds audits. */
+/** Streams ordered SQLite rows into the exact digest of their JSON array. */
+function digestStatementRows(statement, ...parameters) {
+  if (statement === null || typeof statement !== 'object'
+    || typeof statement.iterate !== 'function') {
+    throw new Error('Archive event-prefix statement is invalid.')
+  }
+  const hash = createHash('sha256')
+  hash.update('[', 'utf8')
+  let rowCount = 0
+  for (const row of statement.iterate(...parameters)) {
+    if (rowCount > 0) hash.update(',', 'utf8')
+    hash.update(JSON.stringify(row), 'utf8')
+    rowCount += 1
+  }
+  hash.update(']', 'utf8')
+  return Object.freeze({ rowCount, sha256: hash.digest('hex') })
+}
+
+/** Captures the terminal cleanup journal before Review adds its retained audit events. */
 function capturePostCleanupProof(databasePath, missionId) {
   const db = new Database(databasePath, { readonly: true, fileMustExist: true })
   let cleanup
@@ -1013,26 +1204,44 @@ function capturePostCleanupProof(databasePath, missionId) {
     db.close()
   }
   if (cleanup === null) throw new Error('Post-cleanup journal proof is missing.')
-  const inventory = captureMissionInventory(databasePath)
-  const declaredRows = cleanup.tables.map((tableName) => {
-    const table = inventory.tables.find((entry) => entry.tableName === tableName)
-    return Object.freeze({
-      tableName,
-      decision: table?.decision ?? null,
-      rowCount: table?.rowCount ?? -1,
-      zeroRequired: table?.decision !== 'derived_excluded',
-    })
-  })
   return Object.freeze({
     journalState: cleanup.state,
     storageState: cleanup.state === 'completed' ? 'archived' : 'cleanup_in_progress',
-    declaredTableCount: cleanup.tables.length,
-    declaredRows: Object.freeze(declaredRows),
-    remainingRows: Object.freeze(declaredRows.filter((entry) =>
-      entry.zeroRequired && entry.rowCount !== 0)),
-    reconstructibleDerivedRows: Object.freeze(declaredRows.filter((entry) =>
-      !entry.zeroRequired && entry.rowCount !== 0)),
+    tableNames: cleanup.tables,
   })
+}
+
+/** Captures explicit total, cleanable, and retained counts for every cleanup selection. */
+function captureCleanupSelectionRows(databasePath, missionId, tableNames, inventoryTables) {
+  let cleanableMissionEventRowCount = 0
+  if (tableNames.includes('mission_events')) {
+    const db = new Database(databasePath, { readonly: true, fileMustExist: true })
+    try {
+      const row = db.prepare(`SELECT COUNT(*) AS count FROM mission_events
+        WHERE mission_id = ? AND event_type IN (${CLEANABLE_MISSION_EVENT_TYPES
+    .map(() => '?').join(', ')})`).get(missionId, ...CLEANABLE_MISSION_EVENT_TYPES)
+      cleanableMissionEventRowCount = Number(row.count)
+    } finally {
+      db.close()
+    }
+  }
+  return Object.freeze(tableNames.map((tableName) => {
+    const table = inventoryTables.find((entry) => entry.tableName === tableName)
+    const totalRowCount = table?.rowCount ?? -1
+    const cleanupSelection = cleanupSelectionForTable(tableName)
+    const cleanableRowCount = tableName === 'mission_events'
+      ? cleanableMissionEventRowCount
+      : totalRowCount
+    return Object.freeze({
+      tableName,
+      decision: table?.decision ?? null,
+      cleanupSelection,
+      cleanableRowCount,
+      totalRowCount,
+      retainedRowCount: totalRowCount - cleanableRowCount,
+      zeroRequired: table?.decision !== 'derived_excluded',
+    })
+  }))
 }
 
 /** Returns every changed table, comparing exact decision, row count and content digest. */
@@ -1072,6 +1281,57 @@ function assertCanonicalSchemaV13Tables(tables, label) {
     }
     names.add(actual.tableName)
   }
+}
+
+/** Returns the closed cleanup-selection semantics for one schema-v13 table. */
+function cleanupSelectionForTable(tableName) {
+  return tableName === 'mission_events'
+    ? MISSION_EVENT_CLEANUP_SELECTION
+    : ALL_ROWS_CLEANUP_SELECTION
+}
+
+/** Shape-closes one cleanup row and verifies its total/cleanable/retained accounting. */
+function normalizeCleanupDeclaredRow(input) {
+  requireExactKeys(input, [
+    'cleanableRowCount',
+    'cleanupSelection',
+    'decision',
+    'retainedRowCount',
+    'tableName',
+    'totalRowCount',
+    'zeroRequired',
+  ], 'Archive cleanup row proof')
+  if (typeof input.tableName !== 'string'
+    || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(input.tableName)
+    || !['mission_rows', 'global_rows', 'derived_excluded', 'operational_excluded']
+      .includes(input.decision)
+    || !Number.isSafeInteger(input.cleanableRowCount) || input.cleanableRowCount < 0
+    || !Number.isSafeInteger(input.totalRowCount) || input.totalRowCount < 0
+    || !Number.isSafeInteger(input.retainedRowCount) || input.retainedRowCount < 0
+    || input.cleanableRowCount + input.retainedRowCount !== input.totalRowCount
+    || typeof input.zeroRequired !== 'boolean') {
+    throw new Error('Archive cleanup row proof has invalid total/cleanable/retained counts.')
+  }
+  const expectedSelection = cleanupSelectionForTable(input.tableName)
+  requireExactKeys(
+    input.cleanupSelection,
+    expectedSelection.kind === 'all_rows' ? ['kind'] : ['eventTypes', 'kind'],
+    'Archive cleanup selection',
+  )
+  if (JSON.stringify(input.cleanupSelection) !== JSON.stringify(expectedSelection)
+    || (expectedSelection.kind === 'all_rows'
+      && (input.cleanableRowCount !== input.totalRowCount || input.retainedRowCount !== 0))) {
+    throw new Error('Archive cleanup row proof has invalid selection semantics.')
+  }
+  return Object.freeze({
+    tableName: input.tableName,
+    decision: input.decision,
+    cleanupSelection: expectedSelection,
+    cleanableRowCount: input.cleanableRowCount,
+    totalRowCount: input.totalRowCount,
+    retainedRowCount: input.retainedRowCount,
+    zeroRequired: input.zeroRequired,
+  })
 }
 
 /** Requires the exact schema-v13 cleanup selection and FK-safe journal order. */
@@ -1187,7 +1447,7 @@ function readReviewAudits(databasePath, missionId, archiveId, sessionId) {
     const rows = db.prepare(`SELECT event_type, details_json FROM mission_events
       WHERE mission_id = ? AND event_type IN (
         'mission_archive_review_opened', 'mission_archive_review_closed'
-      ) ORDER BY rowid`).all(missionId)
+      ) ORDER BY rowid`).iterate(missionId)
     let opened = 0
     let closed = 0
     for (const row of rows) {
@@ -1554,26 +1814,37 @@ function normalizeParentFactsForReport(input) {
   ], 'Archive parent evidence')
   requireExactKeys(input.mission, [
     'baselineEventRowCount',
+    'baselineRetainedEventRowCount',
     'eventPrefixMatched',
     'idMatched',
     'observedEventRowCount',
+    'observedRetainedEventRowCount',
+    'retainedEventPrefixMatched',
     'stableCoreMatched',
     'status',
   ], 'Archive mission observation')
   if (typeof input.mission.idMatched !== 'boolean'
     || typeof input.mission.stableCoreMatched !== 'boolean'
     || typeof input.mission.eventPrefixMatched !== 'boolean'
+    || typeof input.mission.retainedEventPrefixMatched !== 'boolean'
     || !['finished', 'finalized', null].includes(input.mission.status)
     || !Number.isSafeInteger(input.mission.baselineEventRowCount)
     || !Number.isSafeInteger(input.mission.observedEventRowCount)
+    || !Number.isSafeInteger(input.mission.baselineRetainedEventRowCount)
+    || !Number.isSafeInteger(input.mission.observedRetainedEventRowCount)
     || input.mission.baselineEventRowCount < 0
-    || input.mission.observedEventRowCount < input.mission.baselineEventRowCount) {
+    || input.mission.observedEventRowCount < 0
+    || input.mission.baselineRetainedEventRowCount < 0
+    || input.mission.observedRetainedEventRowCount < 0) {
     throw new Error('Archive mission observation is invalid.')
   }
   const custodyKeys = input.custody?.applicable === false
     ? [
         'activeOperationPresent',
+        'allRegisteredArchivesMatched',
         'applicable',
+        'baselineArchiveCount',
+        'baselineArchivesPreserved',
         'blockingConflictPresent',
         'diskArchiveCount',
         'registeredArchiveCount',
@@ -1582,9 +1853,12 @@ function normalizeParentFactsForReport(input) {
       ]
     : [
         'activeOperationPresent',
+        'allRegisteredArchivesMatched',
         'applicable',
         'archiveIdMatched',
         'availability',
+        'baselineArchiveCount',
+        'baselineArchivesPreserved',
         'blockingConflictPresent',
         'diskCiphertextSha256',
         'diskArchiveCount',
@@ -1601,10 +1875,14 @@ function normalizeParentFactsForReport(input) {
       ]
   requireExactKeys(input.custody, custodyKeys, 'Archive custody observation')
   if (typeof input.custody.activeOperationPresent !== 'boolean'
+    || typeof input.custody.allRegisteredArchivesMatched !== 'boolean'
+    || typeof input.custody.baselineArchivesPreserved !== 'boolean'
     || typeof input.custody.blockingConflictPresent !== 'boolean'
+    || !Number.isSafeInteger(input.custody.baselineArchiveCount)
     || !Number.isSafeInteger(input.custody.diskArchiveCount)
     || !Number.isSafeInteger(input.custody.registeredArchiveCount)
     || !Number.isSafeInteger(input.custody.unregisteredArchiveCount)
+    || input.custody.baselineArchiveCount < 0
     || input.custody.diskArchiveCount < 0
     || input.custody.registeredArchiveCount < 0
     || input.custody.unregisteredArchiveCount < 0) {
@@ -1715,7 +1993,6 @@ function normalizeReportCleanup(input) {
     'declaredRows',
     'declaredTableCount',
     'journalState',
-    'postReviewRemainingRows',
     'reconstructibleDerivedRows',
     'remainingRows',
     'storageState',
@@ -1733,34 +2010,9 @@ function normalizeReportCleanup(input) {
     throw new Error('Archive cleanup row proof contains duplicate declared tables.')
   }
   assertCanonicalSchemaV13CleanupPlan(input.declaredRows)
-  for (const rows of [
-    input.declaredRows,
-    input.remainingRows,
-    input.reconstructibleDerivedRows,
-  ]) {
+  for (const rows of [input.declaredRows, input.remainingRows, input.reconstructibleDerivedRows]) {
     if (!Array.isArray(rows)) throw new Error('Archive cleanup row proof is invalid.')
-    for (const row of rows) {
-      requireExactKeys(
-        row,
-        ['decision', 'rowCount', 'tableName', 'zeroRequired'],
-        'Archive cleanup row proof',
-      )
-      if (typeof row.tableName !== 'string' || typeof row.decision !== 'string'
-        || !Number.isSafeInteger(row.rowCount) || row.rowCount < 0
-        || typeof row.zeroRequired !== 'boolean') {
-        throw new Error('Archive cleanup row proof is invalid.')
-      }
-    }
-  }
-  if (!Array.isArray(input.postReviewRemainingRows)) {
-    throw new Error('Archive post-Review cleanup row proof is invalid.')
-  }
-  for (const row of input.postReviewRemainingRows) {
-    requireExactKeys(row, ['rowCount', 'tableName'], 'Archive post-Review cleanup row proof')
-    if (typeof row.tableName !== 'string'
-      || !Number.isSafeInteger(row.rowCount) || row.rowCount < 1) {
-      throw new Error('Archive post-Review cleanup row proof is invalid.')
-    }
+    for (const row of rows) normalizeCleanupDeclaredRow(row)
   }
 }
 
@@ -1891,11 +2143,24 @@ function normalizeCaseBaseline(input, definition) {
     || typeof input.missionId !== 'string'
     || (input.archiveId !== null && typeof input.archiveId !== 'string')
     || typeof input.passphrase !== 'string' || !RECOVERY_CODE.test(input.recoveryCode)
+    || !Number.isSafeInteger(input.custody?.archiveCount)
+    || input.custody.archiveCount < 0
+    || !SHA256.test(input.custody?.immutableDigestSha256)
     || input.inventory?.declarationCount !== REQUIRED_INVENTORY_TABLE_COUNT
     || !SHA256.test(input.stableMission?.coreSha256)
     || !SHA256.test(input.stableMission?.eventPrefixSha256)
+    || !SHA256.test(input.stableMission?.retainedEventPrefixSha256)
     || !Number.isSafeInteger(input.stableMission?.eventRowCount)
-    || input.stableMission.eventRowCount < 0) {
+    || input.stableMission.eventRowCount < 0
+    || !Number.isSafeInteger(input.stableMission?.eventHighWaterRowid)
+    || input.stableMission.eventHighWaterRowid < 0
+    || !Number.isSafeInteger(input.stableMission?.retainedEventPrefixRowCount)
+    || input.stableMission.retainedEventPrefixRowCount < 0
+    || input.stableMission.retainedEventPrefixRowCount > input.stableMission.eventRowCount
+    || input.stableMission?.eventPrefixComplete !== true
+    || input.stableMission?.totalEventRowCount !== input.stableMission.eventRowCount
+    || input.stableMission?.totalRetainedEventRowCount
+      !== input.stableMission.retainedEventPrefixRowCount) {
     throw new Error('Archive kill-matrix case baseline is invalid.')
   }
   return input

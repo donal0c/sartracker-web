@@ -88,7 +88,9 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not interpret t
     await expect(dialog).toBeVisible()
     await expect(
       dialog.locator('section[aria-label="Cleanup safety checklist"]').getByRole('listitem'),
-    ).toHaveCount(13)
+    ).toHaveCount(15)
+    await expect(dialog).toContainText('Passed: Cleanup recovery journal integrity is valid')
+    await expect(dialog).toContainText('Passed: Live rows still match the finalization boundary')
     await page.getByTestId('archive-cleanup-secret').fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
     await page.getByTestId('archive-cleanup-confirmation').fill(MISSION_NAME)
     await expect(page.getByTestId('archive-cleanup-start')).toBeEnabled()
@@ -103,13 +105,17 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not interpret t
 2. It must explicitly say the mission remains listed and reviewable from its verified encrypted archive.
 3. It must explicitly say nothing is deleted from the archive and this is not an evidence-deletion feature.
 4. A fixed safety checklist must visibly enumerate every precondition with text status, not colour alone; all immutable checks should pass and a fresh credential should remain pending.
-5. The archive credential must be visibly masked, and the exact mission-name confirmation must identify "${MISSION_NAME}".
-6. The destructive-sounding action must be explicit and visually distinct, with a non-destructive Close action also visible.
-7. No unlock, edit, archive deletion, filesystem path, raw digest, or custody-role assignment should be visible.
+5. The checklist must explicitly show that cleanup recovery-journal integrity is valid.
+6. The checklist must explicitly show that live rows still match the finalization boundary.
+7. The archive credential must be visibly masked, and the exact mission-name confirmation must identify "${MISSION_NAME}".
+8. The destructive-sounding action must be explicit and visually distinct, with a non-destructive Close action also visible.
+9. No unlock, edit, archive deletion, filesystem path, raw digest, or custody-role assignment should be visible.
 Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not treat the screenshot as archive or deletion proof.`,
       playwrightAssertions: [
         'cleanup dialog is visible for the exact finalized-live saved mission',
-        'all thirteen fixed safety checklist rows are rendered',
+        'all fifteen fixed safety checklist rows are rendered',
+        'cleanup recovery-journal integrity is visibly passed',
+        'live-row membership still matching the finalization boundary is visibly passed',
         'fresh archive credential is a masked password input',
         'exact mission-name confirmation is filled',
         'cleanup action is enabled only after the local confirmations',
@@ -134,7 +140,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not treat the s
 1. "${MISSION_NAME}" must remain listed as a finalized saved mission.
 2. Its storage label must explicitly say "Storage: archived".
 3. Its verified encrypted archive revision must remain visible and selectable for review.
-4. No "Archive Live Rows", unlock, edit, delete, or evidence-deletion control should remain.
+4. No "Review Archive Cleanup", unlock, edit, delete, or evidence-deletion control should remain.
 5. The copy must say saved missions and chained archives are retained indefinitely for read-only review.
 Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not infer desktop deletion or archive integrity from this UI screenshot.`,
       playwrightAssertions: [

@@ -20,6 +20,37 @@ import type { MissionArchiveInfo } from '../../src/infrastructure/mission-store/
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
+const { startMissionArchiveCreateWorker } = require(
+  '../../electron/mission-archive-runner.cjs',
+) as {
+  readonly startMissionArchiveCreateWorker: (input: {
+    readonly request: Readonly<Record<string, unknown>>
+  }) => Promise<{
+    readonly temporaryRelativePath: string
+    readonly finalRelativePath: string
+    readonly ciphertextSha256: string
+    readonly sizeBytes: number
+    readonly frameCount: number
+    readonly headerSha256: string
+    readonly manifestSummary: {
+      readonly manifestSha256: string
+      readonly inventorySha256: string
+      readonly entryCount: number
+      readonly tableCount: number
+    }
+    readonly slots: readonly Readonly<Record<string, unknown>>[]
+  }>
+}
+const { createArchiveRegistry } = require('../../electron/archive-registry.cjs') as {
+  readonly createArchiveRegistry: (input: {
+    readonly db: InstanceType<typeof Database>
+    readonly archiveDirectory: string
+  }) => {
+    readonly registerSealedArchive: (
+      input: Readonly<Record<string, unknown>>,
+    ) => Readonly<Record<string, unknown>>
+  }
+}
 const { startArchiveVerifyWorker } = require('../../electron/archive-verify-runner.cjs') as {
   readonly startArchiveVerifyWorker: (
     input: Readonly<Record<string, unknown>>,
@@ -790,7 +821,7 @@ describe('encrypted mission archive lifecycle integration', () => {
         db.close()
       }
       await expect(store.getMission(mission.id)).resolves.toMatchObject({
-        storage_state: 'archived',
+        storage_state: 'cleanup_in_progress',
       })
       await expect(store.readMissionReview({
         missionId: mission.id,
@@ -887,73 +918,282 @@ describe('encrypted mission archive lifecycle integration', () => {
     }
   }, 60_000)
 
+  it.each([
+    ['encrypted', true],
+    ['legacy', false],
+  ] as const)(
+    'rejects %s finalization while the finished mission cleanup state is not live',
+    async (_label, encrypted) => {
+      const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-finalize-storage-state-'))
+      temporaryDirectories.add(userDataPath)
+      const store = createElectronMissionStore({
+        userDataPath,
+        archiveCleanupFaultInjection: { simulateKillAfterCommittedBatch: 1 },
+        startArchiveCleanupCredentialCheck: completedCleanupCredentialOperation,
+      })
+      try {
+        const mission = await store.createMission({ name: 'Blocked finalization storage state' })
+        await store.upsertDevice({
+          mission_id: mission.id,
+          device_id: 'blocked-finalize-device',
+          name: 'Blocked Finalize Device',
+          color: '#225588',
+          status: 'offline',
+        })
+        await store.addPosition({
+          mission_id: mission.id,
+          device_id: 'blocked-finalize-device',
+          lat: 52.1,
+          lon: -9.1,
+          timestamp: '2026-09-04T12:00:00.000Z',
+          timestamp_source: 'fix',
+        })
+        await store.finishMission(mission.id)
+        const finalized = await store.finalizeMission(mission.id, custody, {
+          operationId: encrypted
+            ? '45454545-4545-4545-8545-454545454545'
+            : '46464646-4646-4646-8646-464646464646',
+          onProgress: () => undefined,
+        })
+        await expect(store.startMissionCleanup({
+          missionId: mission.id,
+          archiveId: String(finalized.archive.id),
+          slotType: 'passphrase',
+          secret: custody.passphrase,
+        }, {
+          operationId: encrypted
+            ? '47474747-4747-4747-8747-474747474747'
+            : '48484848-4848-4848-8848-484848484848',
+          reviewActivity: false,
+          onProgress: () => undefined,
+        })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_SIMULATED_KILL' })
+
+        const databasePath = path.join(userDataPath, 'mission-store.sqlite')
+        const database = new Database(databasePath)
+        database.prepare("UPDATE missions SET status = 'finished' WHERE id = ?").run(mission.id)
+        const requestEventsBefore = Number(database.prepare(`SELECT COUNT(*) AS total
+          FROM mission_events WHERE mission_id = ? AND event_type = 'mission_finalize_requested'`)
+          .get(mission.id)?.total)
+        database.close()
+        await expect(store.getMission(mission.id)).resolves.toMatchObject({
+          status: 'finished',
+          storage_state: 'cleanup_in_progress',
+        })
+
+        const finalization = encrypted
+          ? store.finalizeMission(mission.id, custody, {
+              operationId: '49494949-4949-4949-8949-494949494949',
+              onProgress: () => undefined,
+            })
+          : store.finalizeMission(mission.id, undefined as never)
+        await expect(finalization).rejects.toMatchObject({
+          code: 'ARCHIVE_FINALIZATION_STORAGE_NOT_LIVE',
+        })
+
+        const after = new Database(databasePath, { readonly: true })
+        expect(Number(after.prepare(`SELECT COUNT(*) AS total FROM mission_events
+          WHERE mission_id = ? AND event_type = 'mission_finalize_requested'`)
+          .get(mission.id)?.total)).toBe(requestEventsBefore)
+        after.close()
+      } finally {
+        await store.prepareClose()
+        store.close()
+      }
+    },
+    60_000,
+  )
+
   it('projects completed finalized-recovery cleanup as archived and permanently blocks live unlock', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-cleanup-recovery-state-'))
     temporaryDirectories.add(userDataPath)
     const readAdminRoster = vi.fn().mockResolvedValue(['Duty Admin'])
-    const store = createElectronMissionStore({ userDataPath, readAdminRoster })
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster,
+      startArchiveCleanupCredentialCheck: completedCleanupCredentialOperation,
+    })
     try {
       const mission = await store.createMission({ name: 'Recovery archive cleanup mission' })
+      await store.upsertDevice({
+        mission_id: mission.id,
+        device_id: 'recovery-cleanup-device',
+        name: 'Recovery Cleanup Device',
+        color: '#336699',
+        status: 'offline',
+      })
+      await store.addPosition({
+        mission_id: mission.id,
+        device_id: 'recovery-cleanup-device',
+        lat: 52.1,
+        lon: -9.2,
+        timestamp: '2026-08-30T09:59:00.000Z',
+        timestamp_source: 'fix',
+      })
       await store.finishMission(mission.id)
-      const finalized = await store.finalizeMission(mission.id, custody, {
+      await store.finalizeMission(mission.id, custody, {
         operationId: '89898989-8989-4989-8989-898989898989',
         onProgress: () => undefined,
       })
-      const originalArchiveId = String(finalized.archive.id)
       const recoveryArchiveId = '97979797-9797-4797-9797-979797979797'
+      const recoveryOperationId = '96969696-9696-4696-9696-969696969696'
+      const requestEventId = '95959595-9595-4595-8595-959595959595'
+      const sealEventId = '94949494-9494-4494-8494-949494949494'
+      const archiveDirectory = path.join(userDataPath, 'archives')
       const databasePath = path.join(userDataPath, 'mission-store.sqlite')
+      const requestedAt = new Date().toISOString()
       const db = new Database(databasePath)
+      let finalizedEpoch: number
+      let membershipGeneration: number
+      let requestEventRowid: number
       try {
-        const finalizedEpoch = Number(db.prepare(`SELECT rowid FROM mission_events
-          WHERE mission_id = ? AND event_type = 'mission_finalized'
-          ORDER BY rowid DESC LIMIT 1`).get(mission.id).rowid)
-        db.prepare(`INSERT INTO mission_archives (
-          id, mission_id, request_event_rowid, request_event_id,
-          creation_operation_id, protected_finalization_epoch, archive_kind,
-          container_version, relative_path, ciphertext_sha256, size_bytes, created_at,
-          sealed_event_id, frame_count, header_sha256, manifest_sha256, entry_count,
-          table_count, verified_at, verification_proof_json, previous_archive_id,
-          status, availability, availability_reason, last_reconciled_at,
-          last_observed_file_identity, slots_json, last_non_machine_unwrap_at,
-          legacy_event_rowid
-        ) SELECT ?, mission_id, request_event_rowid, request_event_id,
-          ?, ?, 'finalized_recovery', container_version, ?, ciphertext_sha256,
-          size_bytes, created_at, sealed_event_id, frame_count, header_sha256,
-          manifest_sha256, entry_count, table_count, verified_at,
-          verification_proof_json, NULL, 'verified', 'present', NULL,
-          last_reconciled_at, last_observed_file_identity, slots_json, NULL, NULL
-        FROM mission_archives WHERE id = ?`).run(
-          recoveryArchiveId,
-          '96969696-9696-4696-9696-969696969696',
-          finalizedEpoch,
-          `${recoveryArchiveId}.sararch`,
-          originalArchiveId,
+        const finalization = db.prepare(`SELECT rowid AS event_rowid, details_json
+          FROM mission_events WHERE mission_id = ? AND event_type = 'mission_finalized'
+          ORDER BY rowid DESC LIMIT 1`).get(mission.id)
+        finalizedEpoch = Number(finalization.event_rowid)
+        membershipGeneration = Number(
+          JSON.parse(String(finalization.details_json)).cleanup_membership_generation,
         )
-        db.prepare(`INSERT INTO mission_cleanup_journal (
-          mission_id, archive_id, state, progress_json, started_at, updated_at,
-          completed_at, last_error
-        ) VALUES (?, ?, 'completed', ?, ?, ?, ?, NULL)`).run(
-          mission.id,
-          recoveryArchiveId,
-          JSON.stringify({
-            version: 1,
-            archiveId: recoveryArchiveId,
-            ciphertextSha256: String(finalized.archive.ciphertext_sha256),
-            sizeBytes: Number(finalized.archive.size_bytes),
-            finalizationEpoch: finalizedEpoch,
-            verificationProofSha256: 'a'.repeat(64),
-            tables: ['positions'],
-            tableIndex: 1,
-            tableBatch: 0,
-            deletedRows: 1,
-          }),
-          '2026-08-30T10:00:00.000Z',
-          '2026-08-30T10:01:00.000Z',
-          '2026-08-30T10:01:00.000Z',
-        )
+        const requested = db.transaction(() => {
+          db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
+            VALUES (?, ?)`).run(mission.id, requestedAt)
+          return db.prepare(`INSERT INTO mission_events (
+              id, mission_id, event_type, timestamp, details_json, recorded_at,
+              recording_completeness
+            ) VALUES (?, ?, 'mission_archive_requested', ?, ?, ?, 'complete')`).run(
+            requestEventId,
+            mission.id,
+            requestedAt,
+            JSON.stringify({
+              resulting_status: 'finalized',
+              archive_id: recoveryArchiveId,
+              operation_id: recoveryOperationId,
+              archive_kind: 'finalized_recovery',
+              archive_relative_path: `${recoveryArchiveId}.sararch`,
+              cleanup_membership_generation: membershipGeneration,
+              protected_finalization_epoch: finalizedEpoch,
+              previous_archive_id: null,
+              previous_archive_sha256: null,
+            }),
+            requestedAt,
+          )
+        })()
+        requestEventRowid = Number(requested.lastInsertRowid)
       } finally {
         db.close()
       }
+
+      const recoveryCreateRequest = {
+        operationId: recoveryOperationId,
+        archiveId: recoveryArchiveId,
+        databasePath,
+        archiveDirectory,
+        missionId: mission.id,
+        requestEventRowid,
+        fenceRequestedAt: requestedAt,
+        requestEventId,
+        archiveKind: 'finalized_recovery',
+        createdAt: requestedAt,
+        schemaVersion: 13,
+        inventoryVersion: 1,
+        previousArchiveId: null,
+        previousArchiveSha256: null,
+        protectedFinalizationEpoch: finalizedEpoch,
+        passphrase: custody.passphrase,
+        recoveryCode: custody.recoveryCode,
+      }
+      const creation = await startMissionArchiveCreateWorker({
+        request: recoveryCreateRequest,
+      })
+      renameSync(
+        path.join(archiveDirectory, String(creation.temporaryRelativePath)),
+        path.join(archiveDirectory, String(creation.finalRelativePath)),
+      )
+      const registrationDb = new Database(databasePath)
+      try {
+        registrationDb.transaction(() => {
+          registrationDb.prepare(`INSERT INTO mission_events (
+              id, mission_id, event_type, timestamp, details_json, recorded_at,
+              recording_completeness
+            ) VALUES (?, ?, 'mission_archive_sealed_v2', ?, ?, ?, 'complete')`).run(
+            sealEventId,
+            mission.id,
+            requestedAt,
+            JSON.stringify({
+              archive_id: recoveryArchiveId,
+              request_event_rowid: requestEventRowid,
+              request_event_id: requestEventId,
+              creation_operation_id: recoveryOperationId,
+              protected_finalization_epoch: finalizedEpoch,
+              relative_path: creation.finalRelativePath,
+              ciphertext_sha256: creation.ciphertextSha256,
+              size_bytes: creation.sizeBytes,
+              frame_count: creation.frameCount,
+              header_sha256: creation.headerSha256,
+              manifest_sha256: creation.manifestSummary.manifestSha256,
+              entry_count: creation.manifestSummary.entryCount,
+              table_count: creation.manifestSummary.tableCount,
+              inventory_sha256: creation.manifestSummary.inventorySha256,
+              resulting_status: 'finalized',
+            }),
+            requestedAt,
+          )
+          createArchiveRegistry({ db: registrationDb, archiveDirectory }).registerSealedArchive({
+            id: recoveryArchiveId,
+            missionId: mission.id,
+            requestEventRowid,
+            requestEventId,
+            creationOperationId: recoveryOperationId,
+            protectedFinalizationEpoch: finalizedEpoch,
+            archiveKind: 'finalized_recovery',
+            containerVersion: 2,
+            relativePath: creation.finalRelativePath,
+            ciphertextSha256: creation.ciphertextSha256,
+            sizeBytes: creation.sizeBytes,
+            createdAt: requestedAt,
+            sealedEventId: sealEventId,
+            previousArchiveId: null,
+            frameCount: creation.frameCount,
+            headerSha256: creation.headerSha256,
+            manifestSha256: creation.manifestSummary.manifestSha256,
+            entryCount: creation.manifestSummary.entryCount,
+            tableCount: creation.manifestSummary.tableCount,
+            slots: creation.slots,
+          })
+          registrationDb.prepare(`DELETE FROM mission_finalization_fences
+            WHERE mission_id = ? AND requested_at = ?`).run(mission.id, requestedAt)
+        })()
+      } finally {
+        registrationDb.close()
+      }
+
+      await expect(store.verifyMissionArchive({
+        archiveId: recoveryArchiveId,
+        passphrase: custody.passphrase,
+        recoveryCode: custody.recoveryCode,
+      }, {
+        operationId: '93939393-9393-4393-8393-939393939393',
+        onProgress: () => undefined,
+      })).resolves.toMatchObject({
+        archive_kind: 'finalized_recovery',
+        status: 'verified',
+        availability: 'present',
+      })
+
+      await expect(store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId: recoveryArchiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '92929292-9292-4292-8292-929292929292',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })).resolves.toMatchObject({
+        missionId: mission.id,
+        archiveId: recoveryArchiveId,
+        state: 'completed',
+        storageState: 'archived',
+      })
 
       await expect(store.getMission(mission.id)).resolves.toMatchObject({
         status: 'finalized',
@@ -1501,6 +1741,40 @@ describe('encrypted mission archive lifecycle integration', () => {
     }
   }, 60_000)
 
+  it('does not enter the legacy registry scan for an ordinary registry-backed v2 unlock', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-v2-unlock-boundary-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    } as never)
+    try {
+      const mission = await store.createMission({ name: 'Bounded v2 unlock mission' })
+      await store.finishMission(mission.id)
+      await store.finalizeMission(mission.id, custody, {
+        operationId: '73737373-7373-4373-8373-737373737373',
+        onProgress: () => undefined,
+      })
+      const database = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+      try {
+        database.prepare(`INSERT INTO metadata (key, value) VALUES (
+          'legacy_archive_registry_backfill_target', 'invalid-test-boundary'
+        ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
+      } finally {
+        database.close()
+      }
+
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'The current v2 registry boundary must not consult legacy scan state.',
+      })).resolves.toMatchObject({ status: 'finished' })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
   it('chains a corrected SARARCH2 revision to the exact retained legacy ZIP bytes', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-legacy-supplement-'))
     temporaryDirectories.add(userDataPath)
@@ -1876,6 +2150,13 @@ describe('encrypted mission archive lifecycle integration', () => {
           FROM mission_events WHERE mission_id = ? AND event_type = 'mission_finalize_requested'
           ORDER BY rowid DESC LIMIT 1`).get(mission.id).details_json))
         expect(requestDetails.operation_id).toBe('11111111-1111-4111-8111-111111111111')
+        expect(requestDetails.cleanup_membership_generation).toEqual(expect.any(Number))
+        expect(Number.isSafeInteger(requestDetails.cleanup_membership_generation)).toBe(true)
+        const finalizedDetails = JSON.parse(String(db.prepare(`SELECT details_json
+          FROM mission_events WHERE mission_id = ? AND event_type = 'mission_finalized'
+          ORDER BY rowid DESC LIMIT 1`).get(mission.id).details_json))
+        expect(finalizedDetails.cleanup_membership_generation)
+          .toBe(requestDetails.cleanup_membership_generation)
         expect(db.prepare(`SELECT 1 FROM metadata
           WHERE key = 'archive_custody_active_operation'`).get()).toBeUndefined()
         const terminal = db.prepare(`SELECT value FROM metadata
@@ -1894,6 +2175,51 @@ describe('encrypted mission archive lifecycle integration', () => {
 
       const stagingRoot = path.join(userDataPath, 'archives', '.staging')
       expect(existsSync(stagingRoot) ? readdirSync(stagingRoot) : []).toEqual([])
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 30_000)
+
+  it('refuses to seal when late removable telemetry changes cleanup membership', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-archive-membership-race-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({ userDataPath })
+    try {
+      const mission = await store.createMission({
+        name: 'Archive membership race mission',
+        start_time: '2026-08-29T10:00:00.000Z',
+      })
+      await store.finishMission(mission.id)
+      let mutationCommitted = false
+
+      await expect(store.finalizeMission(mission.id, custody, {
+        operationId: '13131313-1313-4313-8313-131313131313',
+        onProgress: (progress) => {
+          if (mutationCommitted || progress.kind !== 'create'
+            || progress.phase !== 'publish' || progress.completed !== 1) return
+          const writer = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+          try {
+            writer.prepare(`INSERT INTO mission_events (
+              id, mission_id, event_type, timestamp, details_json,
+              recorded_at, recording_completeness
+            ) VALUES (
+              'late-position-telemetry', ?, 'position_recorded',
+              '2026-08-29T10:05:00.000Z', '{}',
+              '2026-08-29T10:05:00.000Z', 'complete'
+            )`).run(mission.id)
+            mutationCommitted = true
+          } finally {
+            writer.close()
+          }
+        },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_MEMBERSHIP_CHANGED' })
+
+      expect(mutationCommitted).toBe(true)
+      expect(await store.getMission(mission.id)).toMatchObject({ status: 'finished' })
+      expect((await store.listMissionEvents(mission.id)).filter(
+        (event) => event.event_type === 'mission_finalized',
+      )).toHaveLength(0)
     } finally {
       await store.prepareClose()
       store.close()
@@ -2098,6 +2424,66 @@ describe('encrypted mission archive lifecycle integration', () => {
     } finally {
       await store.prepareClose()
       store.close()
+    }
+  }, 30_000)
+
+  it('allows a direct v2 archive verification retry without a finalization boundary', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-direct-v2-verify-'))
+    temporaryDirectories.add(userDataPath)
+    const first = createElectronMissionStore({
+      userDataPath,
+      startArchiveVerifyWorker: () => failedWorkerOperation(
+        'ARCHIVE_VERIFY_AUTHENTICATION_FAILED',
+        'leave one sealed archive for direct-verification regression setup',
+      ),
+    })
+    let archiveId = ''
+    try {
+      const mission = await first.createMission({ name: 'Direct v2 verification mission' })
+      await first.finishMission(mission.id)
+      await expect(first.finalizeMission(mission.id, custody)).rejects.toMatchObject({
+        code: 'ARCHIVE_VERIFY_AUTHENTICATION_FAILED',
+      })
+      archiveId = String((await first.listMissionArchives(mission.id))[0]?.id)
+    } finally {
+      await first.prepareClose()
+      first.close()
+    }
+    const database = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+    try {
+      const archive = database.prepare(`SELECT request_event_id FROM mission_archives
+        WHERE id = ?`).get(archiveId)
+      const request = database.prepare('SELECT details_json FROM mission_events WHERE id = ?')
+        .get(archive.request_event_id)
+      const requestDetails = JSON.parse(String(request.details_json))
+      requestDetails.archive_kind = 'direct'
+      database.prepare(`UPDATE mission_events
+        SET event_type = 'mission_archive_requested', details_json = ? WHERE id = ?`).run(
+        JSON.stringify(requestDetails),
+        archive.request_event_id,
+      )
+      database.prepare(`UPDATE mission_archives
+        SET archive_kind = 'direct' WHERE id = ?`).run(archiveId)
+    } finally {
+      database.close()
+    }
+    const retryWorker = vi.fn(() => failedWorkerOperation(
+      'ARCHIVE_VERIFY_AUTHENTICATION_FAILED',
+      'direct verification reached the independent worker',
+    ))
+    const reopened = createElectronMissionStore({
+      userDataPath,
+      startArchiveVerifyWorker: retryWorker,
+    })
+    try {
+      await expect(reopened.verifyMissionArchive({
+        archiveId,
+        ...custody,
+      })).rejects.toMatchObject({ code: 'ARCHIVE_VERIFY_AUTHENTICATION_FAILED' })
+      expect(retryWorker).toHaveBeenCalledOnce()
+    } finally {
+      await reopened.prepareClose()
+      reopened.close()
     }
   }, 30_000)
 

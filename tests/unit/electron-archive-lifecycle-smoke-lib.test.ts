@@ -344,6 +344,41 @@ function completeEvidence(): Readonly<Record<string, unknown>> {
   }
 }
 
+/** Returns one complete process-faithful liveness sample for a lifecycle phase. */
+function completeLivenessPhase(): Readonly<Record<string, unknown>> {
+  return {
+    sampleCount: 2,
+    currentFixMaxGapMs: 124.5,
+    sourceToRendererMaxMs: 125.5,
+    requestToRendererMaxMs: 126.5,
+    mainWatchdogMaxGapMs: 127.5,
+    rendererFrameMaxGapMs: 128.5,
+  }
+}
+
+/** Upgrades the legacy fixture to the strict process-faithful v2 evidence contract. */
+function completeV2Evidence(): Readonly<Record<string, unknown>> {
+  return {
+    ...completeEvidence(),
+    schemaVersion: 2,
+    proofKind: 'packaged-electron-archive-lifecycle-v2',
+    liveness: {
+      provenance: 'packaged-electron-external-watchdog-v1',
+      hardGateMs: 200,
+      pollProfile: {
+        mode: 'time-compressed-validation',
+        intervalMs: 50,
+      },
+      byPhase: {
+        create: completeLivenessPhase(),
+        verify: completeLivenessPhase(),
+        restore: completeLivenessPhase(),
+        cleanup: completeLivenessPhase(),
+      },
+    },
+  }
+}
+
 describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON-253]', () => {
   it('excludes only worker metadata and requires durable correction authorization', () => {
     const beforeContent = closedReviewContent(false, 5)
@@ -821,6 +856,81 @@ describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON
       passed: true,
       failureReasons: [],
     })
+  })
+
+  it('accepts v2 evidence only with process-faithful liveness for every lifecycle phase', () => {
+    expect(validateArchiveLifecycleSmokeEvidence(completeV2Evidence())).toEqual({
+      valid: true,
+      passed: true,
+      failureReasons: [],
+    })
+
+    const missingLiveness = { ...completeV2Evidence() }
+    delete missingLiveness.liveness
+    const missingVerdict = validateArchiveLifecycleSmokeEvidence(missingLiveness)
+    expect(missingVerdict.passed).toBe(false)
+    expect(missingVerdict.failureReasons.join('\n')).toMatch(/liveness/iu)
+  })
+
+  it.each([
+    ['wrong provenance', { provenance: 'renderer-self-report' }, /provenance/iu],
+    ['weakened hard gate', { hardGateMs: 201 }, /hard gate|200/iu],
+    ['wrong poll mode', {
+      pollProfile: { mode: 'production-cadence', intervalMs: 50 },
+    }, /poll.*mode|time-compressed/iu],
+    ['wrong poll interval', {
+      pollProfile: { mode: 'time-compressed-validation', intervalMs: 51 },
+    }, /poll.*interval|50/iu],
+  ])('rejects v2 liveness with %s', (_label, update, expected) => {
+    const evidence = completeV2Evidence() as Record<string, Record<string, unknown>>
+    const liveness = evidence.liveness
+    const verdict = validateArchiveLifecycleSmokeEvidence({
+      ...evidence,
+      liveness: { ...liveness, ...update },
+    })
+    expect(verdict.passed).toBe(false)
+    expect(verdict.failureReasons.join('\n')).toMatch(expected)
+  })
+
+  it.each([
+    ['no full sample', 'sampleCount', 0, /sample/iu],
+    ['current-fix continuity at the gate', 'currentFixMaxGapMs', 200, /current.*fix|200/iu],
+    ['source-to-renderer at the gate', 'sourceToRendererMaxMs', 200, /source.*renderer|200/iu],
+    ['request-to-renderer at the gate', 'requestToRendererMaxMs', 200, /request.*renderer|200/iu],
+    ['main watchdog at the gate', 'mainWatchdogMaxGapMs', 200, /main.*watchdog|200/iu],
+    ['renderer frame at the gate', 'rendererFrameMaxGapMs', 200, /renderer.*frame|200/iu],
+    ['negative maximum', 'rendererFrameMaxGapMs', -1, /renderer.*frame|non-negative/iu],
+    ['non-finite maximum', 'mainWatchdogMaxGapMs', Number.NaN, /main.*watchdog|finite/iu],
+  ])('rejects a v2 phase with %s', (_label, key, value, expected) => {
+    const evidence = completeV2Evidence() as Record<string, Record<string, unknown>>
+    const liveness = evidence.liveness
+    const byPhase = liveness.byPhase as Record<string, Record<string, unknown>>
+    const verdict = validateArchiveLifecycleSmokeEvidence({
+      ...evidence,
+      liveness: {
+        ...liveness,
+        byPhase: {
+          ...byPhase,
+          cleanup: { ...byPhase.cleanup, [key]: value },
+        },
+      },
+    })
+    expect(verdict.passed).toBe(false)
+    expect(verdict.failureReasons.join('\n')).toMatch(expected)
+  })
+
+  it('requires exactly create, verify, restore, and cleanup liveness phases', () => {
+    const evidence = completeV2Evidence() as Record<string, Record<string, unknown>>
+    const liveness = evidence.liveness
+    const byPhase = liveness.byPhase as Record<string, Record<string, unknown>>
+    const missingRestore = { ...byPhase }
+    delete missingRestore.restore
+    const verdict = validateArchiveLifecycleSmokeEvidence({
+      ...evidence,
+      liveness: { ...liveness, byPhase: missingRestore },
+    })
+    expect(verdict.passed).toBe(false)
+    expect(verdict.failureReasons.join('\n')).toMatch(/phase.*missing|missing.*phase|liveness.*phase/iu)
   })
 
   it('requires exact physically seeded object and outing continuation totals', () => {

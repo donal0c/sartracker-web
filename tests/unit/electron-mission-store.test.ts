@@ -2423,6 +2423,58 @@ describe('electron mission store', () => {
       admin_name: 'Duty Admin',
       reason: 'Runtime failed during the 22:14 tracking poll; incident log retained.',
     })
+    const database = new Database(path.join(userDataPath!, 'mission-store.sqlite'), {
+      readonly: true,
+    })
+    try {
+      const projection = database.prepare(`SELECT key, value FROM metadata
+        WHERE key LIKE 'mission_evidence_loss_acknowledgement:%'`).get()
+      expect(projection?.key).toMatch(/^mission_evidence_loss_acknowledgement:[a-f0-9]{64}$/u)
+      expect(JSON.parse(String(projection?.value))).toMatchObject({
+        version: 1,
+        missionId: mission.id,
+        adminName: 'Duty Admin',
+        reason: 'Runtime failed during the 22:14 tracking poll; incident log retained.',
+        lossToken: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        eventId: expect.any(String),
+      })
+    } finally {
+      database.close()
+    }
+  })
+
+  it('uses the legacy audit fallback only when acknowledged loss still needs it [DON-276]', async () => {
+    store = await createStore({
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const mission = await store.createMission({ name: 'Legacy Acknowledged Evidence Gap' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+    await store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Legacy audit fallback remains fail-closed and exact.',
+    })
+    store.close()
+
+    const database = new Database(path.join(userDataPath!, 'mission-store.sqlite'))
+    try {
+      database.prepare(`DELETE FROM metadata
+        WHERE key LIKE 'mission_evidence_loss_acknowledgement:%'`).run()
+    } finally {
+      database.close()
+    }
+    store = createElectronMissionStore({
+      userDataPath: userDataPath!,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+
+    await expect(store.finalizeMission(mission.id)).resolves.toMatchObject({
+      mission: { status: 'finalized' },
+    })
   })
 
   it('records denied evidence-loss acknowledgement and keeps finalization blocked [DON-276]', async () => {

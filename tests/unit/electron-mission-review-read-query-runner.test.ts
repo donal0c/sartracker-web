@@ -46,6 +46,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
     const databasePath = path.join(tempDirectory, 'mission-store.sqlite')
     const database = new Database(databasePath)
     database.exec(`
+      CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE missions (id TEXT PRIMARY KEY, status TEXT NOT NULL);
       CREATE TABLE mission_cleanup_journal (mission_id TEXT PRIMARY KEY, state TEXT NOT NULL);
       CREATE TABLE positions (
@@ -124,6 +125,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
     const oversizedPostMessageSentinel = `${databasePath}.oversized-post-message`
     const database = new Database(databasePath)
     database.exec(`
+      CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE missions (id TEXT PRIMARY KEY, status TEXT NOT NULL);
       CREATE TABLE mission_cleanup_journal (mission_id TEXT PRIMARY KEY, state TEXT NOT NULL);
       CREATE TABLE positions (

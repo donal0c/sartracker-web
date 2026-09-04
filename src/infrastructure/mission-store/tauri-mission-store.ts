@@ -756,6 +756,8 @@ export type MissionCleanupBlocker =
   | 'archive_review_active'
   | 'cleanup_already_completed'
   | 'cleanup_in_progress'
+  | 'cleanup_journal_invalid'
+  | 'cleanup_membership_changed'
   | 'current_archive_not_verified'
   | 'current_finalization_epoch_mismatch'
   | 'evidence_health_not_clean'

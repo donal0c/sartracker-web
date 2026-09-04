@@ -6,30 +6,50 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
-> Current source candidate: `6c26a1746bf5ee97648285eab680f6deff7e14ae`
-> / tree `b6678f7b8fd6d333ada58b60b48057e94783bcd1`. It carries the
-> archive-backed correction snapshot inventory fix, completion-to-exit worker
-> race fix, attachment-residue-gated recovery fence, explicit correction close
-> audit, truthful custody recovery state, correction evidence reopening after
-> cleanup retry, clean post-commit worker-exit classification, a shared
-> correction writer fence across live mutations, durable correction
-> authorization outside the bounded audit page, browser verifier persistence /
-> current-predecessor enforcement / supplement provenance, mutable recovery-code
-> normalization across archive workers, main-loop-safe cleanup workers,
-> qualification-safe run identities, and cancelled-cleanup physical-exit
-> fencing. Focused remediation checks are `176/176` green, the full serial unit
-> gate is `369/369` files and `3,530/3,530` tests, and lint, TypeScript, Node
-> syntax and diff checks are green. The packaged macOS smoke, local 32-case
-> SIGKILL matrix, Chromium `170/173` run (three known pre-existing DON-275
-> coverage failures), and visual Playwright `57/62` run (five known
-> pre-existing DON-275 coverage failures) are exact remediation-head browser
-> evidence from the preceding executable head. The uncached visual review is
-> `67/67` PASS, and the exact-head Linux workflow `33803457910` is green with
-> clean source binding for 3d5. Fresh broad, concurrency/renderer, persistence,
-> and narrow crypto reviews at 6c26 are clean; the prior Ubuntu run was stopped
-> after its source head was superseded and is not promoted. The final docs-only
-> binding and one final >2 GiB qualification remain pending.
-> PR6 remains pre-merge; Donal retains approval and merge authority.
+> This document is part of the PR #10 recovery candidate. Once source is frozen
+> and the pending gates complete, its exact final commit/tree, post-freeze gate
+> results, four independent review verdicts, Linux packaged report, and field
+> receipt must be recorded in PR #10 and `DON-248`/`DON-252`/`DON-253` so that
+> recording them does not create a different source head.
+>
+> Exact head `caf9e5e480fcd02cc44d68c8397efcd6ae78f2cd` / tree
+> `81a8ef3e3639f6e8e7cd048691a87b8488a4d998` is rejected. Its Ubuntu run
+> produced and verified a `5,243,848,931`-byte archive but ended
+> `UNCLASSIFIED_INTERNAL_FAILURE` at `teardown:incomplete`; disposable-profile
+> cleanup completed. A `Math.max(...samples)` argument overflow over roughly
+> 200,000 samples caused that misleading teardown classification, but the run
+> independently breached the hard liveness gate: create `1826.63 ms`, restore
+> `2070.74 ms`, cleanup `1033.56 ms`, and durable latency `1029.43 ms`. The
+> sub-millisecond “current position” figures measured only an in-process `Map`,
+> not the packaged renderer path.
+>
+> The diagnosed stalls came from roughly 9.7 million retained high-volume
+> `mission_events` plus repeated finalization/history scans. The recovery uses
+> deterministic finalization-boundary lookups, preserves fail-closed cleanup,
+> and restricts `mission_events` deletion to a declared telemetry allowlist
+> while retaining operational, finalization, custody, cleanup, supplement, and
+> unknown future audit events.
+>
+> At documentation freeze, cheap exact-head gates, four reviews, the Linux
+> packaged liveness report, and exactly one fresh controlled Ubuntu
+> greater-than-2-GiB qualification remain pending. No merge, release, field
+> acceptance, or final review result is claimed here. Donal retains approval
+> and merge authority.
+
+## 2026-09-04 recovery pre-freeze verification
+
+The reviewed recovery tree passed the combined affected gate (`28` files /
+`680` tests), the full deterministic serial unit gate (`375` files / `3,685`
+tests), ESLint, TypeScript/production build, bundle budgets, Node syntax, and
+diff checks. The legacy backend passed `58` tests with one platform-specific
+keychain test ignored. Full Chromium passed `173/173`; full visual Playwright
+passed `62/62`. The refreshed 15-check cleanup frame then passed an uncached
+independent critical visual review and replaced the operator-manual image.
+
+Unsigned macOS arm64 directory packaging passed. The packaged lifecycle runner
+correctly rejected the still-dirty pre-commit tree, so this rehearsal supplies
+no packaged-liveness proof. Clean exact-head package/lifecycle, physical
+SIGKILL, Linux, four-review, and single fresh field gates remain pending.
 
 ## 2026-09-03 cancelled-cleanup fence remediation
 
@@ -74,11 +94,13 @@ Source remediation is committed and pushed at `5ce12514056d9adef51a763bb0a067209
 / tree `0a94e503dc7c4d8b2535d5a41d19ae863069cf36`. The affected deterministic
 suite is `281/281` green, archive-review and mission-review Chromium flows are
 `17/17` green, and archive visual Playwright is `3/3` green. The exact-head
-review wave is clean for broad life-safety, persistence/completeness and
-concurrency/finalization; renderer/input containment and the narrow crypto-only
-review remain required on the final documentation head. Full serial unit,
-package, kill-matrix, Ubuntu >2 GiB, Linux workflow and final documentation-head
-proof remain open until their raw reports are bound to the final head. The
+review wave was clean for three of the four final charters: broad life-safety,
+persistence/completeness and concurrency/finalization. Renderer/input
+containment remained required on the final documentation head. The narrow
+crypto-only check was remediation evidence, not a fifth final-review charter.
+Full serial unit, package, kill-matrix, Ubuntu >2 GiB, Linux workflow and final
+documentation-head proof remain open until their raw reports are bound to the
+final head. The
 source-head full serial unit gate is now `368/368` files and `3,524/3,524` tests
 green; the four generated archive visual manifests also passed independent
 visual review (`4 pass / 0 fail / 0 error`).
@@ -226,6 +248,11 @@ The next exact-head review wave found and closed two additional P2 gaps:
   and the workers scrub those buffers at their final KDF/unwrap boundary; no
   worker reconstructs an immutable credential string.
 
+Those are historical candidate claims. The recovered operator surface keeps
+the entry action neutral and offers Resume only after eligibility proves an
+intact, explicitly in-progress cleanup journal; invalid recovery state and
+membership drift remain non-resumable blockers.
+
 The previous resulting candidate was `358370abd39c7ac708164d7adf2d1f564cc00bf8`
 / tree `29b3c37d755681cf41dc7ef4f9773fc6994e86f4`; its full deterministic gate
 was `360` files / `3,439` tests green. That evidence remains prior-head only;
@@ -268,44 +295,27 @@ the release gate.
 | Superseded code/qualification head | `661305694d43682a6e4aa0e0fafeeb962affc7ea` / tree `0854dfd72b0b1c04c3e6fda0827ca9761060c6f5` |
 | Remediation candidate (pushed) | `537fcc9462336e0e1c6cc9916a0aa7f3172b51e1` / tree `337a0bd9aea1a02a6a36270bd0363076c430db57` |
 | Superseded correction-worker candidate | `fec8be41704fb8d112483f108bcf5b4113e43faa` / tree `0365f9be98ddcf217306c6b904dca439e6b9e8f0` |
-| Current correction-custody candidate (pushed) | `d410df0c8fd1ffc421d824496a6a24e40dc438fb` / tree `f21a3df774e81913dfa6b9d541443674ea859f0c` |
+| Superseded correction-custody candidate (pushed) | `d410df0c8fd1ffc421d824496a6a24e40dc438fb` / tree `f21a3df774e81913dfa6b9d541443674ea859f0c` |
 | Cleanup-admission remediation candidate (pushed) | `d28a82d7690d3e184efbadd98bfb330c9aca5fac` / tree `c212d1cd0d89d5572965ad4958518f2ed7507e3b` |
 | Post-commit custody-fence remediation candidate (pushed) | `84424c08a9d2e8c3c8ed408367226372b7ab1631` / tree `818115351f9d90cf3ecc939e5faa23d066a5d0b9` |
 | Superseded source candidate (pushed) | `0d6f1bf1ed6f2c0ab9b804229a8ffde536577e3c` / tree `e86f1b5037ca91e4de50d012ac2051c530498c88` |
 | Superseded source candidate (pushed) | `5326940948ee62d97b7ada91017275c65ef5a9a8` / tree `6db7275ba5f3aea30f596f47518fa2b466bf1ccd` |
 | Superseded source candidate (pushed) | `5ce12514056d9adef51a763bb0a0672095d6e805` / tree `0a94e503dc7c4d8b2535d5a41d19ae863069cf36` |
-| Current source candidate (pushed) | `0f0723d4b1ec7e78d4f6c166abad049188660ca6` / tree `b53474dc93069930a0c284ed6507510bd6a87d94` |
-| Exact-head packaged macOS archive-lifecycle smoke | `0f0723d4…`; report SHA-256 `e30b9c9d3a12b2ae02a36193b3c64e1c2a046a268cb37c28d4c4bbcddf191bbe`; passed with packaged build-head match, two launches, SIGKILL decrypt interruption, restart sweep, exhaustive Review/Replay, fresh-credential cleanup and zero residual entries |
-| Immutable final documentation/review head | Recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; no later repository mutation is permitted without re-review |
+| Superseded pre-recovery packaged candidate | `0f0723d4b1ec7e78d4f6c166abad049188660ca6` / tree `b53474dc93069930a0c284ed6507510bd6a87d94` |
+| Prior-head packaged macOS archive-lifecycle smoke (superseded) | `0f0723d4…`; report SHA-256 `e30b9c9d3a12b2ae02a36193b3c64e1c2a046a268cb37c28d4c4bbcddf191bbe`; passed its then-current gates but predates the recovery and is not final-head proof |
+| Rejected field-diagnostic head | `caf9e5e480fcd02cc44d68c8397efcd6ae78f2cd` / tree `81a8ef3e3639f6e8e7cd048691a87b8488a4d998`; its failed receipt is diagnosis, not qualification |
+| Recovery candidate and final proof | Pending. Once source is frozen and every gate completes, the exact immutable head/tree and results must be recorded in the PR #10 and Linear ledger |
+| Immutable final documentation/review head | Pending. It must be recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; any later repository mutation requires affected re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |
 
-At candidate freeze, a read-only merge-tree check found no conflict with
-`origin/master` at `0ca331ff…`. That base advance contains assurance/docs and
-isolated investigation probes, not PR6 shipping-code remediation. It was merged
-at `af745dc0…` only after the isolated Ubuntu fixture was closed and the
-candidate qualifier launched. Any candidate-to-final proof claim states exact
-blob equivalence or is rerun rather than silently treating evidence as exact-
-final-head.
-
-Candidate carry-forward is blob-bound, not inferred from commit ancestry. The
-sorted path set is every non-documentation path changed from initial base
-`eec92812…` to implementation candidate `3b148e532…`; documentation,
-`handoff/` and `public/manual/` are excluded. Removing only the field qualifier
-script and its execution test leaves 177 application/shared-proof paths. That
-path-list SHA-256 is
-`bb4c51dffb57c45982be78e862e160426be45d2c0ddf024f312cf5763ac8becb`,
-and the Git mode/type/blob/path manifest SHA-256 is identically
-`e732558fe5bf57349f50a3c69f0ed11e9f1b95cf55ab8b86a923bf90e6be486b`
-at both `3b148e532…` and `53164028…`. The manifest is the literal `git
-ls-tree` record for each sorted path, concatenated in that path order. This
-binds the earlier local/Linux
-application proof across the master reconciliation and field-harness fix. The
-full 179-path list SHA-256 is
-`04d538fc59faa68aa42c09129c9a39c594ba8465dad40e268f5fa727a6c16248`;
-the corrected exact qualification-head manifest SHA-256 is
-`9d02c9a6f237b8acbd652685eef2f99b0b524b01a2a2563c29882a471345d329`.
-The final documentation tree must reproduce that full manifest exactly or the
-affected proof must rerun.
+Historical carry-forward note: before the `caf9e5e…` field run, a read-only
+merge-tree check and blob manifest bound selected earlier application proof
+across a master reconciliation. The recorded path-list and manifest digests
+apply only to those named prior heads. This recovery changes finalization,
+cleanup, qualification, and packaged-liveness inputs, so none of those old
+manifests is current or mandatory for the final tree. The affected proof must be
+rerun on the new immutable candidate rather than carried forward by ancestry or
+partial blob equivalence.
 
 The first candidate was committed only after the staged tree was clean, the focused
 qualification and kill harnesses were independently rechecked, and the local
@@ -421,10 +431,20 @@ attributed to `SAR-QA-006` or `SAR-QA-013`.
   completeness.
 - Creation, verification and restore failure is explicit and leaves
   operational mission evidence intact. Cleanup is an intentional, bounded
-  deletion of eligible live bulk rows: interruption preserves the verified
-  archive and mission stub, resumes from a durable cursor without evidence
-  loss, and can temporarily block ordinary live Review until storage state is
-  consistent. A sealed-but-unverified archive is not represented as complete.
+  deletion of archived mission rows, rebuildable derived projections, and the
+  four settled operational tables `gpx_import_source_receipts`,
+  `ingest_anomaly_deliveries`, `participant_backfill_checkpoints`, and
+  `tracking_history_checkpoints`. The mission rows are represented in the
+  verified archive; the derived and operational exclusions are not claimed as
+  archive evidence. Within `mission_events`, only `device_updated`,
+  `position_recorded`, and `mission_backup_synced` telemetry is cleanable.
+  Interruption preserves the verified archive, mission stub, archive/supplement
+  registry, every non-telemetry mission audit event, and unknown future audit
+  event type. Resume is offered only when an intact journal explicitly proves
+  cleanup is in progress. Invalid recovery state fails closed, and live-row
+  membership changed after finalization requires re-finalization; ordinary live
+  Review stays blocked until storage state is consistent. A sealed-but-
+  unverified archive is not represented as complete.
 - Sealing/finalization locks the mission read-only. Independent verification
   establishes archive completeness and Review eligibility; it does not perform
   the lock.
@@ -437,11 +457,17 @@ attributed to `SAR-QA-006` or `SAR-QA-013`.
 - A correction produces a new visible supplemental revision chained to the
   preceding ciphertext hash. Earlier archive bytes are never mutated or
   deleted.
-- Moving bulk mission rows out of the live database is a separate explicit,
-  credential-gated, journalled and resumable action. It is never automatic and
-  never deletes the verified archive or mission timeline stub.
-- Current positions do not wait for archive create, verify, restore, Review or
-  cleanup work.
+- Removing eligible mission-scoped live data after archival is a separate,
+  explicit, credential-gated and journalled action. It is resumable only when
+  the validated journal proves an interrupted cleanup; an invalid journal or
+  guard remains non-resumable, and membership drift requires re-finalization.
+  Cleanup is never automatic and never deletes the verified archive or mission
+  timeline stub. This is logical SQLite deletion: freed pages may be reused
+  without shrinking the database file.
+- Current-position independence during archive create, verify, restore, Review,
+  and cleanup is a hard invariant. Its candidate-specific proof must come from
+  the pending exact-head packaged external-watchdog report; it is not asserted
+  from unit or in-process timing alone.
 
 ## Security decision and truthful claims
 
@@ -889,7 +915,7 @@ is still pending.
 
 ## Candidate proof wave (2026-09-02)
 
-The current code head is `661305694d43682a6e4aa0e0fafeeb962affc7ea` / tree
+This historical code head was `661305694d43682a6e4aa0e0fafeeb962affc7ea` / tree
 `0854dfd72b0b1c04c3e6fda0827ca9761060c6f5`. It includes the qualification-only
 durable-ingest worker, worker-exit safe shutdown, crypto buffer cleanup, the
 correction-predecessor reconciliation/pinning/single-flight fixes, the
@@ -902,14 +928,16 @@ the latest-position projection after settlement, and enforces a bounded
 full-sync pragmas, zero-loss requirements and current-position priority are
 unchanged. The local archive/lifecycle/qualification regression bundle is
 `71/71`; the exact local serial deterministic gate is `359/3,431` tests.
-ESLint, TypeScript, Node syntax and `git diff --check` are green.
+ESLint, TypeScript, Node syntax and `git diff --check` were green. This wave is
+superseded and supplies no current-candidate proof.
 
 The prior local browser and visual gates are bound to 3885, not this candidate:
 Chromium `172/172`, visual Playwright `62/62`, and uncached visual review
 `74 pass / 0 fail / 0 error` (report SHA-256
 `9ef14c76e60dd68c626d2a9d5ed8785c1927503434868889367de092371e8581`). They
-remain carry-forward only until exact candidate and final documentation-head
-reruns; they are not production or field proof.
+are historical prior-head evidence and cannot be carried forward through this
+recovery; exact-candidate reruns are required. They are not production or field
+proof.
 
 The exact-head unsigned macOS arm64 package/lifecycle smoke was rerun from a
 clean 3885 checkout. It passed source clean before/after, full packaged
@@ -954,9 +982,10 @@ and the `.deb` is `102,919,648` bytes
 packaged lifecycle independently verified `4,096` tracks, `202` objects,
 `101` outing choices, credential-gated cleanup of `5,517` rows to zero live
 breadcrumbs, zero secret matches across 65 files and zero terminal plaintext
-residue. This is CI/package proof, not release or publication.
+residue. This is historical prior-head CI/package proof, not current-candidate,
+release, or publication proof.
 
-The current code-head GitHub Electron Linux workflow
+The superseded code-head GitHub Electron Linux workflow
 [`33552060716`](https://github.com/donal0c/sartracker-web/actions/runs/33552060716)
 also passed every step against `3885e6f24159a4aef18fad3f1172bea76db26c03` /
 tree `85c773fba7751c836d5565474260cc529eb8b9d4`, with clean source binding.
@@ -972,45 +1001,48 @@ report hashes are source binding `7e08367ff2e5186220ae2c3daef9248efce21f9d4b94aa
 normal-envelope `66bb5905ea1ef81fc85771ad695107cda7342157bdf615aca4408d32b2cf2ee5`,
 tracking soak `bac7067dd8aff03d668ac18e49fb97acdf7fe4e6a11bdb9f81f212fda78f7c0a`,
 and packaged lifecycle `a64281ce06e0255a3976543ed3ffda13a5af24b1d59340762a4a9f22de458229`.
-This is exact code-head CI/package evidence; a final docs-only descendant still
-requires its own workflow binding.
+This is historical prior-head CI/package evidence. The recovery changes its
+inputs, so the final candidate requires a fresh exact-head workflow run.
 
-### Cleanup and qualification remediation (2026-09-03)
+### 2026-09-04 rejected caf9 run and recovery proof contract
 
-The reviewed executable remediation head is `6c26a1746bf5ee97648285eab680f6deff7e14ae`
-with tree `b6678f7b8fd6d333ada58b60b48057e94783bcd1`. Cleanup failures now carry
-a bounded, sanitized substage/table-cursor/cause/worker-exit diagnostic from
-the coordinator through its worker and runner into a non-secret qualification
-receipt, and `ARCHIVE_CLEANUP_FAILED` is classified as a cleanup-gate failure.
-The qualifier measures a pure 50 ms event-loop heartbeat separately from
-current-position publication latency, does not count ordinary poll spacing as
-a stall, and uses the production 5 s current-publication interval with one
-bounded publication at each lifecycle phase transition. The 3,530-test serial
-unit gate, focused lifecycle/cleanup/qualification tests, lint, TypeScript,
-syntax checks, and packaged macOS archive-lifecycle smoke are green locally;
-the package report SHA-256 is
-`b75824cbce71ffe962ee1a0101d829594cd9eaca29a8b529a5f22f972cd39b2a`. The
-cleanup classifier now gives an attached cleanup diagnostic precedence over a
-colliding raw `SQLITE_BUSY` code, and stage markers are assigned before the
-select/delete/journal/completion/custody operations they describe. The fresh
-post-remediation reviews are clean: broad `885/885`, concurrency/renderer
-`447` focused tests, persistence `131/131`, and narrow crypto `114/114`.
+The exact `caf9e5e…` reference-host attempt is a failed diagnostic. It created
+and independently verified a `5,243,848,931`-byte encrypted archive, but its
+bounded failure receipt ended `UNCLASSIFIED_INTERNAL_FAILURE` at
+`teardown:incomplete`. The disposable profile was removed. The apparent
+teardown failure came from spreading roughly 200,000 samples into `Math.max`,
+but removing that harness defect cannot turn the run into a pass: create,
+restore, cleanup, and durable-write measurements separately exceeded the
+strict 200 ms gate. The written recovery hypothesis attributes those stalls to
+roughly 9.7 million retained telemetry audit rows and repeated finalization /
+acknowledgement history scans. Only one new controlled field run is permitted
+after the cheap prerequisites; the caf9 receipt is never qualification proof.
 
-The rebooted Ubuntu reference host was rechecked immediately before the
-superseded 3d5 run (about 32 GiB RAM and 129 GiB free at launch), but that
-temporary run was stopped after the 6c26 P2 remediation changed the executable
-head; its partial staging bytes are retained as prior-head diagnostics only.
-The final qualification must use the same written hypothesis against 6c26 after
-the documentation binding is committed, with the worker attribution, pure
-heartbeat, production-like current cadence, bounded durable writes, and the
-unchanged 200 ms gate all source-bound to that final candidate.
+The replacement liveness contract uses a loopback synthetic Traccar server that
+emits unique source-position IDs with canonical timestamps. The packaged Linux
+Electron path carries each fix through Traccar HTTP, the main/preload boundary,
+React tracking state, and the real MapLibre tracking source. A watchdog outside
+the app correlates the exact IDs and timestamps and checks phase/operation start
+to first fix, consecutive fixes, operation and phase tails, request-to-renderer,
+source-to-renderer, main-inspector, and renderer-frame gaps across create,
+verify, restore, and cleanup. Every value must be strictly less than 200 ms;
+`200` fails. The 50 ms poll is time-compressed validation, not production
+cadence. Source and renderer ledgers are bounded, and any overflow fails closed.
+
+The pending raw packaged-report SHA-256 and canonical-evidence SHA-256 must be
+recorded distinctly, pinned, and bound to exact source head/tree and packaged
+build. The separate greater-than-2-GiB qualifier measures Node/SQLite scale
+contention; it must not be described as packaged renderer proof. Both exact-head
+receipts are required as complementary evidence. Even if they pass, they do not
+prove live Traccar, the original field machine, production, or a packaged
+renderer running the multi-GiB workload itself.
 
 ## Independent review gate
 
 All code, tests, documentation and proof claims freeze on one immutable final
 head before review. Recording a verdict in this file afterward would create a
-new unreviewed head, so the exact SHA/tree, five verdicts, central source
-retrace and any remediation/rechecks are recorded externally in the
+new unreviewed head, so the exact SHA/tree, four verdicts, central source
+retrace and any remediation/rechecks must be recorded externally in the
 [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10)
 and the three Linear issues. PR #10 must remain draft until every required row
 is clean; a later repository mutation invalidates that ledger and requires the
@@ -1020,10 +1052,12 @@ affected review procedure again.
 | --- | --- |
 | Broad life-safety / end-to-end | PR #10 exact-head ledger and Linear |
 | Persistence / completeness | PR #10 exact-head ledger and Linear |
-| Concurrency / finalization | PR #10 exact-head ledger and Linear |
-| Renderer / input containment | PR #10 exact-head ledger and Linear |
-| Narrow crypto framing/KDF/slot/secret-lifetime review | PR #10 exact-head ledger and Linear |
-| Fresh broad plus affected focused rechecks after accepted remediation | PR #10 exact-head ledger and Linear, when remediation occurs |
+| Concurrency / finalization / liveness | PR #10 exact-head ledger and Linear |
+| Renderer / input containment / operator surface | PR #10 exact-head ledger and Linear |
+
+Remediation rechecks are conditional follow-up evidence, not a fifth charter.
+If a final-head finding is accepted, its fresh broad and affected focused
+rechecks must also be recorded in the PR #10 and Linear ledger before closeout.
 
 No task agent self-approves. Every finding is centrally source-retraced. P1/P2
 blocks completion. Tests or CI cannot overrule a confirmed finding.
@@ -1032,7 +1066,7 @@ The sustained-contention remediation received a focused independent persistence
 audit on exact code head `a9134e3b…` / tree `93118120…`: CLEAN, with no P1/P2/P3.
 The auditor confirmed worker-local retry isolation, transaction rollback before
 retry, main-thread publication ordering and exact durable-write draining. This
-is remediation evidence only; the full five-charter ledger is still required
+is remediation evidence only; the full four-charter ledger is still required
 on the final documentation head.
 
 ## Evidence tiers and deferred work
@@ -1044,6 +1078,11 @@ on the final documentation head.
 - Reference-host proof covers one synthetic >2 GiB workload on one Ubuntu
   machine, not all hardware or production incidents.
 - GitHub Linux workflow covers its exact CI runner/artifacts, not publication.
+- Physical SQLite compaction is not part of PR #10. Logical cleanup may leave
+  the file size unchanged while SQLite reuses freed pages. Safe oversized-store
+  recovery, physical compaction, standing retention, and measured index work
+  remain explicitly deferred to `DON-250` / `DON-251`; no in-process multi-GB
+  `VACUUM` is authorized.
 
 BCP-17/final release qualification, live Traccar, the original field machine,
 multi-machine custody, the team tabletop, installer fleet coverage, release,

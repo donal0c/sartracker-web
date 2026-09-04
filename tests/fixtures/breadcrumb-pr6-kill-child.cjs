@@ -118,7 +118,9 @@ function normalizeProgress(lifecycle, progress) {
       unit: 'rows',
       completed: Number(progress.totalDeletedRows ?? progress.deletedRows ?? 0),
       total: null,
-      detail: 'bounded-delete',
+      detail: progress.tableName === 'mission_events' && Number(progress.deletedRows) > 0
+        ? 'mission-events-delete'
+        : 'bounded-delete',
     })
   }
   const detail = ['passphrase', 'recovery'].includes(progress.detail)
@@ -212,6 +214,9 @@ async function prepareActualFixture(input) {
         archiveId: null,
         recoveryCode: createUniqueRecoveryCode(recoveryCodes),
       }
+      if (definition.lifecycle === 'cleanup') {
+        seedPreFinalizationCleanableEvents(profilePath, missionId, index + 1)
+      }
       if (definition.lifecycle === 'create') {
         createMissionCount += 1
       } else if (definition.lifecycle === 'verify') {
@@ -258,6 +263,35 @@ async function prepareActualFixture(input) {
   })
 }
 
+/** Seeds legacy telemetry audit rows before finalization for the physical cleanup kill case. */
+function seedPreFinalizationCleanableEvents(profilePath, missionId, caseIndex) {
+  const database = new Database(path.join(profilePath, 'mission-store.sqlite'))
+  try {
+    database.pragma('busy_timeout = 5000')
+    const insert = database.prepare(`INSERT INTO mission_events (
+      id, mission_id, event_type, timestamp, details_json, recorded_at,
+      recording_completeness
+    ) VALUES (?, ?, 'position_recorded', ?, ?, ?, 'complete')`)
+    const write = database.transaction(() => {
+      for (let index = 0; index < 4; index += 1) {
+        const timestamp = new Date(
+          Date.parse('2026-08-28T00:20:00.000Z') + caseIndex * 1_000 + index,
+        ).toISOString()
+        insert.run(
+          `64000000-0000-4000-8000-${String(caseIndex * 10 + index).padStart(12, '0')}`,
+          missionId,
+          timestamp,
+          JSON.stringify({ source: 'kill-matrix-legacy-telemetry-fixture' }),
+          timestamp,
+        )
+      }
+    })
+    write.immediate()
+  } finally {
+    database.close()
+  }
+}
+
 /** Returns one physical-exit-compatible verify failure after archive sealing. */
 function failedPreparationVerifyOperation() {
   const error = new Error('Preparation retained a sealed unverified archive.')
@@ -299,7 +333,7 @@ async function runActualCase(input) {
   const profilePath = resolveCaseProfile(input.root, record.profileRelativePath)
   const store = createElectronMissionStore({
     userDataPath: profilePath,
-    archiveCleanupBatchLimits: { positions: 1, default: 1 },
+    archiveCleanupBatchLimits: { positions: 1, missionEvents: 1, default: 1 },
   })
   const hit = (progress) => {
     if (progress?.phase === definition.phase) emitReachedAndHold(definition, progress)
@@ -346,7 +380,11 @@ async function runActualCase(input) {
       operationId: input.operationId,
       reviewActivity: false,
       onProgress: (progress) => {
-        if (progress.kind === 'cleanup') hit({ ...progress, phase: 'cleanup' })
+        if (progress.kind === 'cleanup'
+          && progress.tableName === 'mission_events'
+          && Number(progress.deletedRows) > 0) {
+          hit({ ...progress, phase: 'cleanup' })
+        }
       },
     })
   }
@@ -363,7 +401,7 @@ async function reconcileActualCase(input) {
   const databasePath = path.join(profilePath, 'mission-store.sqlite')
   const store = createElectronMissionStore({
     userDataPath: profilePath,
-    archiveCleanupBatchLimits: { positions: 1, default: 1 },
+    archiveCleanupBatchLimits: { positions: 1, missionEvents: 1, default: 1 },
   })
   let reviewManager = null
   try {

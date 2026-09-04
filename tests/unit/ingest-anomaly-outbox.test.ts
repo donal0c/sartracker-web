@@ -59,7 +59,10 @@ const {
       missionId: string,
       operationName: string,
       operation: () => Promise<Result>,
-      options?: { readonly acknowledgedLossToken?: string },
+      options?: {
+        readonly acknowledgedLossToken?: string
+        readonly readAcknowledgedLossToken?: () => string | null | Promise<string | null>
+      },
     ) => Promise<Result>
     readonly health: (missionId?: string) => Promise<{
       readonly pendingCount: number
@@ -680,6 +683,56 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
       'mission-1',
     )
     expect(restartedCandidate).toEqual(candidate)
+  })
+
+  it('reads an acknowledgement lazily only when the fenced mission has acknowledgeable loss', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    const readAcknowledgedLossToken = vi.fn<() => string | null>()
+
+    await expect(outbox.runWithHealthyEvidenceFence(
+      'mission-1',
+      'finalization',
+      async () => 'healthy',
+      { readAcknowledgedLossToken },
+    )).resolves.toBe('healthy')
+    expect(readAcknowledgedLossToken).not.toHaveBeenCalled()
+
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+    const candidate = await outbox.readEvidenceLossAcknowledgementCandidate('mission-1')
+    readAcknowledgedLossToken.mockReturnValue(candidate.token)
+
+    await expect(outbox.runWithHealthyEvidenceFence(
+      'mission-1',
+      'finalization',
+      async () => 'acknowledged',
+      { readAcknowledgedLossToken },
+    )).resolves.toBe('acknowledged')
+    expect(readAcknowledgedLossToken).toHaveBeenCalledOnce()
+  })
+
+  it('does not read an acknowledgement for a non-acknowledgeable outbox failure', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+      faultInjection: { failStage: true },
+    })
+    await expect(outbox.deliver(createEnvelope('failed-stage'))).rejects.toThrow(
+      /storage is unavailable/iu,
+    )
+    const readAcknowledgedLossToken = vi.fn<() => string | null>()
+
+    await expect(outbox.runWithHealthyEvidenceFence(
+      'mission-1',
+      'archive',
+      async () => 'must-not-run',
+      { readAcknowledgedLossToken },
+    )).rejects.toMatchObject({ code: 'EVIDENCE_HEALTH_BLOCKED' })
+    expect(readAcknowledgedLossToken).not.toHaveBeenCalled()
   })
 
   it('refuses loss acknowledgement while the mission still has pending durable evidence', async () => {

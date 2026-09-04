@@ -6,6 +6,11 @@ const { createHash, randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
 const { listArchiveInventoryForSchema } = require('./archive-inventory.cjs')
+const {
+  readCurrentMissionFinalizationBoundary,
+  readMissionFinalizationBoundaryByEpoch,
+  readV2MissionFinalizationBoundaryByArchiveId,
+} = require('./mission-finalization-boundary.cjs')
 
 const SKIPPED_TABLES = new Set([
   'metadata',
@@ -368,7 +373,9 @@ function rehydrateMissionFromSnapshot(input) {
   const missionId = input?.missionId
   const archiveId = input?.archiveId
   if (typeof missionId !== 'string' || missionId.length < 1 || missionId.length > 200
-    || typeof archiveId !== 'string' || !UUID_V4.test(archiveId)) {
+    || typeof archiveId !== 'string' || !UUID_V4.test(archiveId)
+    || (input.finalizedEpoch !== undefined
+      && (!Number.isSafeInteger(input.finalizedEpoch) || input.finalizedEpoch < 1))) {
     throw new ArchiveRehydrateError(
       'ARCHIVE_REHYDRATE_REQUEST_INVALID',
       'Archive correction identity is invalid.',
@@ -402,6 +409,16 @@ function rehydrateMissionFromSnapshot(input) {
         'Archive correction completion callback is invalid.',
       )
     }
+    const currentBoundary = input.finalizedEpoch === undefined
+      ? null
+      : readCurrentMissionFinalizationBoundary(database, { missionId, archiveId })
+    if (input.finalizedEpoch !== undefined
+      && currentBoundary?.eventRowid !== input.finalizedEpoch) {
+      throw new ArchiveRehydrateError(
+        'ARCHIVE_REHYDRATE_EPOCH_CHANGED',
+        'Mission finalization changed before archive correction restore could start.',
+      )
+    }
 
     let snapshot
     try {
@@ -413,16 +430,34 @@ function rehydrateMissionFromSnapshot(input) {
     ).get()?.value)
     const mission = snapshot.prepare('SELECT id, status FROM missions WHERE id = ?').get(missionId)
     const missionCount = Number(snapshot.prepare('SELECT COUNT(*) AS count FROM missions').get().count)
-    const finalized = snapshot.prepare(`SELECT details_json FROM mission_events
-      WHERE mission_id = ? AND event_type = 'mission_finalized'
-      ORDER BY rowid DESC LIMIT 1`).get(missionId)
-    let finalizedDetails
-    try { finalizedDetails = JSON.parse(finalized?.details_json ?? '{}') } catch { finalizedDetails = {} }
+    const finalized = currentBoundary?.containerVersion === 2
+      ? readV2MissionFinalizationBoundaryByArchiveId(snapshot, {
+          missionId,
+          archiveId: currentBoundary.finalizationArchiveId,
+        })
+      : input.finalizedEpoch === undefined
+        ? readV2MissionFinalizationBoundaryByArchiveId(snapshot, { missionId, archiveId })
+        : readMissionFinalizationBoundaryByEpoch(snapshot, {
+            missionId,
+            eventRowid: input.finalizedEpoch,
+          })
+    const finalizedDetails = finalized?.details
+    const finalizationIdentityMatches = currentBoundary === null
+      ? finalized?.finalizationArchiveId === archiveId
+        && finalized?.containerVersion === 2
+      : finalized?.eventId === currentBoundary.eventId
+        && finalized?.finalizationArchiveId === currentBoundary.finalizationArchiveId
+        && finalized?.containerVersion === currentBoundary.containerVersion
+        && finalized?.cleanupMembershipGeneration
+          === currentBoundary.cleanupMembershipGeneration
     if (integrity !== 'ok' || schema !== schemaVersion || mission?.id !== missionId
       || mission.status !== 'finalized' || missionCount !== 1
-      || finalizedDetails.archive_id !== archiveId
-      || finalizedDetails.container_version !== 2
-      || finalizedDetails.archive_relative_path !== `${archiveId}.sararch`) {
+      || !finalizationIdentityMatches
+      || (finalized?.containerVersion === 2 && (
+        finalizedDetails?.container_version !== 2
+        || finalizedDetails?.archive_relative_path
+          !== `${finalized.finalizationArchiveId}.sararch`
+      ))) {
       throw new ArchiveRehydrateError(
         'ARCHIVE_REHYDRATE_SNAPSHOT_INVALID',
         'The verified archive correction snapshot failed identity validation.',

@@ -29,6 +29,10 @@ const {
 const { computeArchiveGpxContentProof } = require('./archive-gpx-proof.cjs')
 const { computeMissionReplaySemanticProof } = require('./archive-replay-proof.cjs')
 const {
+  readCurrentMissionFinalizationBoundary,
+  readMissionFinalizationBoundaryByEpoch,
+} = require('./mission-finalization-boundary.cjs')
+const {
   assertPinnedCustodyFileUnchanged,
   digestPinnedCustodyFile,
   openPinnedCustodyFile,
@@ -1036,7 +1040,7 @@ function verifyAttachmentLedger(db, request, manifest) {
 }
 
 /** Requires one database snapshot to retain the archive's exact request identity. */
-function assertReplayRequestIdentity(db, request) {
+function assertReplayRequestIdentity(db, request, finalizationScope) {
   const requestEvent = db.prepare(`SELECT rowid AS event_rowid, id, mission_id,
       event_type, details_json
     FROM mission_events
@@ -1073,16 +1077,15 @@ function assertReplayRequestIdentity(db, request) {
     )
   }
   if (request.protectedFinalizationEpoch !== null) {
-    const protectedEvent = db.prepare(`SELECT rowid AS event_rowid, mission_id, event_type
-      FROM mission_events WHERE rowid = ?`).get(request.protectedFinalizationEpoch)
-    const latestFinalized = db.prepare(`SELECT rowid AS event_rowid
-      FROM mission_events
-      WHERE mission_id = ? AND event_type = 'mission_finalized'
-      ORDER BY rowid DESC LIMIT 1`).get(request.missionId)
-    if (protectedEvent?.mission_id !== request.missionId
-      || protectedEvent?.event_type !== 'mission_finalized'
-      || Number(protectedEvent.event_rowid) !== request.protectedFinalizationEpoch
-      || Number(latestFinalized?.event_rowid) !== request.protectedFinalizationEpoch) {
+    const finalizationBoundary = finalizationScope === 'restored-protected-epoch'
+      ? readMissionFinalizationBoundaryByEpoch(db, {
+          missionId: request.missionId,
+          eventRowid: request.protectedFinalizationEpoch,
+        })
+      : readCurrentMissionFinalizationBoundary(db, {
+          missionId: request.missionId,
+        })
+    if (finalizationBoundary?.eventRowid !== request.protectedFinalizationEpoch) {
       throw new ArchiveVerifyError(
         'ARCHIVE_VERIFY_SCOPE_MISMATCH',
         'Mission archive protected finalization epoch is not current.',
@@ -1107,7 +1110,7 @@ function computePinnedLiveReplayProof(input) {
   try {
     const calculate = live.transaction(() => {
       assertNotCancelled(input.cancellationFlag)
-      assertReplayRequestIdentity(live, input.request)
+      assertReplayRequestIdentity(live, input.request, 'live-current')
       return computeMissionReplaySemanticProof(live, {
         missionId: input.request.missionId,
         requestEventId: input.request.requestEventId,
@@ -1201,7 +1204,7 @@ function verifyRestoredEvidence(input) {
         'Mission archive restored database contains the wrong mission scope.',
       )
     }
-    assertReplayRequestIdentity(restored, input.request)
+    assertReplayRequestIdentity(restored, input.request, 'restored-protected-epoch')
     if (canonicalJson(computeSchemaLedger(restored)) !== canonicalJson(input.manifest.schema_ledger)) {
       throw new ArchiveVerifyError(
         'ARCHIVE_VERIFY_SCHEMA_MISMATCH',

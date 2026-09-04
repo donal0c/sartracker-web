@@ -20,6 +20,19 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly close: () => void
   }
 }
+const { readArchiveCleanupMembershipGeneration } = require(
+  '../../electron/archive-cleanup-membership.cjs',
+) as {
+  readonly readArchiveCleanupMembershipGeneration: (
+    database: InstanceType<typeof Database>,
+    missionId: string,
+  ) => number
+}
+const { deriveArchiveLifecycleEventId } = require(
+  '../../electron/mission-finalization-boundary.cjs',
+) as {
+  readonly deriveArchiveLifecycleEventId: (archiveId: string, kind: string) => string
+}
 const { startMissionArchiveCreateWorker } = require(
   '../../electron/mission-archive-runner.cjs',
 ) as {
@@ -93,7 +106,7 @@ afterEach(() => {
 })
 
 /** Creates a v13 source store with one mission and its pre-bound archive request. */
-function createSource() {
+function createSource(prepareSource?: (db: BetterSqliteDatabase) => void) {
   const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-archive-verify-'))
   temporaryDirectories.add(userDataPath)
   const store = createElectronMissionStore({ userDataPath })
@@ -105,6 +118,11 @@ function createSource() {
     id, name, status, start_time, finish_time, paused_seconds, schema_version
   ) VALUES ('mission-a', 'Mission A', 'finished', ?, ?, 0, 13)`).run(
     '2026-08-29T10:00:00.000Z', '2026-08-29T12:00:00.000Z',
+  )
+  prepareSource?.(db)
+  const cleanupMembershipGeneration = readArchiveCleanupMembershipGeneration(
+    db,
+    'mission-a',
   )
   db.prepare(`INSERT INTO mission_events (
     rowid, id, mission_id, event_type, timestamp, details_json,
@@ -118,6 +136,7 @@ function createSource() {
       operation_id: operationId,
       archive_kind: 'finalized',
       archive_relative_path: `${archiveId}.sararch`,
+      cleanup_membership_generation: cleanupMembershipGeneration,
       protected_finalization_epoch: null,
     }),
     fenceRequestedAt,
@@ -125,20 +144,12 @@ function createSource() {
   db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
     VALUES ('mission-a', ?)`).run(fenceRequestedAt)
   db.close()
-  return { userDataPath, databasePath, archiveDirectory }
+  return { userDataPath, databasePath, archiveDirectory, cleanupMembershipGeneration }
 }
 
 /** Creates one real staged SARARCH2 archive through the production worker. */
 async function createArchive(prepareSource?: (db: BetterSqliteDatabase) => void) {
-  const fixture = createSource()
-  if (prepareSource !== undefined) {
-    const db = new Database(fixture.databasePath) as BetterSqliteDatabase
-    try {
-      prepareSource(db)
-    } finally {
-      db.close()
-    }
-  }
+  const fixture = createSource(prepareSource)
   const result = await startMissionArchiveCreateWorker({
     request: {
       operationId,
@@ -157,6 +168,15 @@ async function createArchive(prepareSource?: (db: BetterSqliteDatabase) => void)
       protectedFinalizationEpoch: null,
       passphrase,
       recoveryCode,
+      finalizationProjection: {
+        eventId: deriveArchiveLifecycleEventId(archiveId, 'mission-finalized'),
+        timestamp: fenceRequestedAt,
+        recordedAt: fenceRequestedAt,
+        archivePath: path.join(fixture.archiveDirectory, `${archiveId}.sararch`),
+        archiveRelativePath: `${archiveId}.sararch`,
+        cleanupMembershipGeneration: fixture.cleanupMembershipGeneration,
+        supplement: null,
+      },
     },
   }) as {
     readonly temporaryRelativePath: string
@@ -175,6 +195,27 @@ async function createArchive(prepareSource?: (db: BetterSqliteDatabase) => void)
     path.join(fixture.archiveDirectory, result.temporaryRelativePath),
     path.join(fixture.archiveDirectory, result.finalRelativePath),
   )
+  const live = new Database(fixture.databasePath)
+  live.transaction(() => {
+    live.prepare("UPDATE missions SET status = 'finalized' WHERE id = 'mission-a'").run()
+    live.prepare(`INSERT INTO mission_events (
+      id, mission_id, event_type, timestamp, details_json,
+      recorded_at, recording_completeness
+    ) VALUES (?, 'mission-a', 'mission_finalized', ?, ?, ?, 'complete')`).run(
+      deriveArchiveLifecycleEventId(archiveId, 'mission-finalized'),
+      fenceRequestedAt,
+      JSON.stringify({
+        resulting_status: 'finalized',
+        archive_id: archiveId,
+        archive_path: path.join(fixture.archiveDirectory, `${archiveId}.sararch`),
+        archive_relative_path: `${archiveId}.sararch`,
+        cleanup_membership_generation: fixture.cleanupMembershipGeneration,
+        container_version: 2,
+      }),
+      fenceRequestedAt,
+    )
+  })()
+  live.close()
   return { fixture, result }
 }
 
@@ -205,6 +246,7 @@ async function createRecoveryArchive() {
       operation_id: operationId,
       archive_kind: 'finalized_recovery',
       archive_relative_path: `${archiveId}.sararch`,
+      cleanup_membership_generation: fixture.cleanupMembershipGeneration,
       protected_finalization_epoch: 5,
     }),
     recoveryRequestedAt,

@@ -31,15 +31,16 @@ function createDatabase() {
 }
 
 describe('mission live Review access gate [DON-253]', () => {
-  it('treats every completed cleanup as archived even when no custody linkage can be read', () => {
+  it('fails closed when completed cleanup has no verifiable guard or audit custody', () => {
     const database = createDatabase()
     try {
+      database.prepare("UPDATE missions SET status = 'finished' WHERE id = 'mission-a'").run()
       database.prepare(`INSERT INTO mission_cleanup_journal (mission_id, state)
         VALUES ('mission-a', 'completed')`).run()
 
-      expect(readMissionLiveReviewStorageState(database, 'mission-a')).toBe('archived')
+      expect(readMissionLiveReviewStorageState(database, 'mission-a')).toBe('cleanup_in_progress')
       expect(() => assertMissionLiveReviewAvailable(database, 'mission-a'))
-        .toThrow(/archive/iu)
+        .toThrow(/cleanup/iu)
     } finally {
       database.close()
     }
@@ -59,7 +60,13 @@ describe('mission live Review access gate [DON-253]', () => {
       expect(readMissionLiveReviewStorageState(database, 'mission-a'))
         .toBe('cleanup_in_progress')
       expect(() => assertMissionLiveReviewAvailable(database, 'mission-a'))
-        .toThrow(/cleanup/iu)
+        .toThrow(/Review Archive Cleanup/iu)
+      try {
+        assertMissionLiveReviewAvailable(database, 'mission-a')
+      } catch (error) {
+        expect(error).toMatchObject({ code: 'MISSION_REVIEW_CLEANUP_IN_PROGRESS' })
+        expect(String((error as Error).message)).not.toMatch(/resume/iu)
+      }
 
       database.prepare("UPDATE mission_cleanup_journal SET state = 'unexpected'").run()
       expect(() => readMissionLiveReviewStorageState(database, 'mission-a'))

@@ -82,6 +82,15 @@ const {
 } = require('./archive-cleanup-credential-runner.cjs')
 const { createArchiveCleanupCoordinator } = require('./archive-cleanup.cjs')
 const {
+  assertArchiveCleanupMembershipGeneration,
+  installArchiveCleanupMembershipTriggers,
+  readArchiveCleanupMembershipGeneration,
+} = require('./archive-cleanup-membership.cjs')
+const {
+  deriveArchiveLifecycleEventId,
+  readCurrentMissionFinalizationBoundary,
+} = require('./mission-finalization-boundary.cjs')
+const {
   assertMissionLiveReviewAvailable: assertMissionLiveReviewSnapshotAvailable,
   readMissionLiveReviewStorageState,
 } = require('./mission-live-review-access.cjs')
@@ -157,6 +166,13 @@ const ARCHIVE_DIRECTORY_NAME = 'archives'
 const INGEST_ANOMALY_OUTBOX_DIRECTORY_NAME = 'ingest-anomaly-outbox'
 const COVERAGE_TILE_CACHE_DIRECTORY_NAME = 'coverage-renderer-cache'
 const ARCHIVE_VERSION = 1
+const EVIDENCE_LOSS_ACKNOWLEDGEMENT_PROJECTION_PREFIX =
+  'mission_evidence_loss_acknowledgement:'
+const ACKNOWLEDGEABLE_INGEST_EVIDENCE_LOSS_REASONS = new Set([
+  'mission_persistence_failed',
+  'renderer_pending_evidence_lost',
+  'renderer_pending_capacity_exhausted',
+])
 const MAX_SEARCH_OPERATION_ID_LENGTH = 200
 const MAX_SEARCH_OPERATION_LINK_COUNT = 200
 const MAX_SEARCH_OPERATION_SHORT_TEXT_LENGTH = 120
@@ -1281,19 +1297,18 @@ function createElectronMissionStore(options) {
         error.code = archiveCustodyRecoveryFailure
         throw error
       }
-      ensureLegacyArchiveRegistryForMission(missionId)
-      const finalized = db.prepare(`SELECT details_json
-        FROM mission_events
-        WHERE mission_id = ? AND event_type = 'mission_finalized'
-        ORDER BY rowid DESC LIMIT 1`).get(missionId)
-      const finalizedDetails = readEventDetails(finalized?.details_json)
-      const finalizedArchiveId = typeof finalizedDetails.archive_id === 'string'
-        ? finalizedDetails.archive_id
-        : null
-      const current = archiveRegistry.listMissionArchives(missionId)
-        .find((archive) => finalizedArchiveId === null
-          ? archive.status !== 'superseded'
-          : archive.id === finalizedArchiveId)
+      let registeredArchives = archiveRegistry.listMissionArchives(missionId)
+      const registeredFinalization = registeredArchives.find((archive) =>
+        archive.status !== 'superseded'
+          && ['finalized', 'finalized_recovery'].includes(archive.archive_kind))
+      if (Number(registeredFinalization?.container_version) !== 2) {
+        ensureLegacyArchiveRegistryForMission(missionId)
+        registeredArchives = archiveRegistry.listMissionArchives(missionId)
+      }
+      const finalizedBoundary = readCurrentMissionFinalizationBoundary(db, { missionId })
+      const current = finalizedBoundary === null
+        ? undefined
+        : registeredArchives.find((archive) => archive.id === finalizedBoundary.archiveId)
       if (current === undefined) {
         const error = new Error(
           'Mission archive predecessor is unavailable from the archive registry; correction is blocked safely.',
@@ -1363,7 +1378,6 @@ function createElectronMissionStore(options) {
       error.code = 'ARCHIVE_OPERATION_ACTIVE'
       return Promise.reject(error)
     }
-    const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
     const controller = new AbortController()
     const predecessor = archiveFamilyTail
     const run = waitForArchiveFamilyTurn(predecessor, controller.signal).then(async () => {
@@ -1419,7 +1433,10 @@ function createElectronMissionStore(options) {
           if (custody === undefined) ensureLegacyArchiveRegistryForMission(missionId)
           return result
         },
-        acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
+        {
+          readAcknowledgedLossToken: () =>
+            readAcknowledgedEvidenceLossToken(db, missionId),
+        },
       )
     })
     const lifecycle = { controller, completion: null }
@@ -1761,7 +1778,6 @@ function createElectronMissionStore(options) {
         error.code = archiveCustodyRecoveryFailure
         throw error
       }
-      const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
       return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         missionId,
         'archive',
@@ -1773,7 +1789,10 @@ function createElectronMissionStore(options) {
           true,
           archiveFaultInjection,
         ),
-        acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
+        {
+          readAcknowledgedLossToken: () =>
+            readAcknowledgedEvidenceLossToken(db, missionId),
+        },
       )
     })
     archiveFamilyTail = appendArchiveFamilyCompletion(predecessor, run)
@@ -4348,6 +4367,9 @@ function migrate(db, archiveDirectory) {
           9007199254740991)
       )`).run(migrationTime)
 
+    // Install after synchronous schema migration. Later bounded/background
+    // evidence writes are runtime membership changes and must advance it.
+    installArchiveCleanupMembershipTriggers(db, CURRENT_SCHEMA_VERSION)
     db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
       .run(String(CURRENT_SCHEMA_VERSION))
   })
@@ -4807,15 +4829,16 @@ async function getIngestEvidenceHealth(db, outbox, missionId) {
     ...(await mapIngestEvidenceHealth(outbox, missionId)),
     ...summarizeIngestAnomalies(db, missionId),
   }
-  if (missionId === undefined || missionId === null) return health
-  const acknowledgement = readEvidenceLossAcknowledgement(db, missionId)
-  if (acknowledgement === null) return health
+  if (missionId === undefined || missionId === null
+    || !ACKNOWLEDGEABLE_INGEST_EVIDENCE_LOSS_REASONS.has(health.reason)) return health
+  let candidate
   try {
-    const candidate = await outbox.readEvidenceLossAcknowledgementCandidate(missionId)
-    if (candidate.token !== acknowledgement.lossToken) return health
+    candidate = await outbox.readEvidenceLossAcknowledgementCandidate(missionId)
   } catch {
     return health
   }
+  const acknowledgement = readEvidenceLossAcknowledgement(db, missionId)
+  if (acknowledgement === null || candidate.token !== acknowledgement.lossToken) return health
   return {
     ...health,
     acknowledgedLoss: {
@@ -4986,12 +5009,20 @@ async function acknowledgeIngestEvidenceLoss(db, outbox, input, readAdminRoster)
   const timestamp = now()
   const transaction = db.transaction(() => {
     assertFinishedMissionBookkeepingAllowed(db, missionId)
-    insertEvent(db, missionId, 'mission_evidence_loss_acknowledged', timestamp, {
+    const eventId = insertEvent(db, missionId, 'mission_evidence_loss_acknowledged', timestamp, {
       admin_name: adminName,
       reason,
       loss_token: candidate.token,
       loss_reasons: candidate.reasons,
       resulting_status: mission.status,
+    })
+    writeEvidenceLossAcknowledgementProjection(db, {
+      missionId,
+      eventId,
+      adminName,
+      reason,
+      lossToken: candidate.token,
+      acknowledgedAt: timestamp,
     })
   })
   transaction()
@@ -5000,6 +5031,11 @@ async function acknowledgeIngestEvidenceLoss(db, outbox, input, readAdminRoster)
 
 /** Returns the latest exact loss-token acknowledgement retained in mission audit. */
 function readEvidenceLossAcknowledgement(db, missionId) {
+  const projected = db.prepare('SELECT value FROM metadata WHERE key = ?')
+    .get(evidenceLossAcknowledgementProjectionKey(missionId))
+  if (projected !== undefined) {
+    return readProjectedEvidenceLossAcknowledgement(db, missionId, projected.value)
+  }
   const event = db.prepare(
     `SELECT timestamp, details_json FROM mission_events
       WHERE mission_id = ? AND event_type = 'mission_evidence_loss_acknowledged'
@@ -5018,6 +5054,55 @@ function readEvidenceLossAcknowledgement(db, missionId) {
     reason: details.reason,
     lossToken: details.loss_token,
     acknowledgedAt: event.timestamp,
+  }
+}
+
+/** Names one bounded primary-key projection for a mission acknowledgement. */
+function evidenceLossAcknowledgementProjectionKey(missionId) {
+  return `${EVIDENCE_LOSS_ACKNOWLEDGEMENT_PROJECTION_PREFIX}${createHash('sha256')
+    .update(missionId, 'utf8')
+    .digest('hex')}`
+}
+
+/** Writes the exact latest acknowledgement beside its immutable event transaction. */
+function writeEvidenceLossAcknowledgementProjection(db, acknowledgement) {
+  db.prepare(`INSERT INTO metadata (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+    evidenceLossAcknowledgementProjectionKey(acknowledgement.missionId),
+    JSON.stringify({ version: 1, ...acknowledgement }),
+  )
+}
+
+/** Validates one bounded acknowledgement projection against its indexed audit event. */
+function readProjectedEvidenceLossAcknowledgement(db, missionId, value) {
+  if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > 4_096) return null
+  let projection
+  try { projection = JSON.parse(value) } catch { return null }
+  if (projection === null || typeof projection !== 'object' || Array.isArray(projection)
+    || Object.keys(projection).sort().join(',')
+      !== 'acknowledgedAt,adminName,eventId,lossToken,missionId,reason,version'
+    || projection.version !== 1
+    || projection.missionId !== missionId
+    || typeof projection.eventId !== 'string' || projection.eventId.length < 1
+    || typeof projection.adminName !== 'string'
+    || typeof projection.reason !== 'string'
+    || typeof projection.acknowledgedAt !== 'string'
+    || typeof projection.lossToken !== 'string'
+    || !/^[a-f0-9]{64}$/u.test(projection.lossToken)) return null
+  const event = db.prepare(`SELECT mission_id, event_type, timestamp, details_json
+    FROM mission_events WHERE id = ?`).get(projection.eventId)
+  const details = readEventDetails(event?.details_json)
+  if (event?.mission_id !== missionId
+    || event?.event_type !== 'mission_evidence_loss_acknowledged'
+    || event?.timestamp !== projection.acknowledgedAt
+    || details.admin_name !== projection.adminName
+    || details.reason !== projection.reason
+    || details.loss_token !== projection.lossToken) return null
+  return {
+    adminName: projection.adminName,
+    reason: projection.reason,
+    lossToken: projection.lossToken,
+    acknowledgedAt: projection.acknowledgedAt,
   }
 }
 
@@ -5674,17 +5759,13 @@ function validateArchiveFile(archiveBuffer, missionId) {
  * first Finish has no such authorization and therefore remains read-only.
  */
 function readActiveMissionCorrectionAuthorization(db, missionId) {
-  const finalized = db.prepare(`SELECT rowid AS event_rowid, details_json
-    FROM mission_events
-    WHERE mission_id = ? AND event_type = 'mission_finalized'
-    ORDER BY rowid DESC LIMIT 1`).get(missionId)
-  if (finalized === undefined) return null
+  const finalized = readCurrentMissionFinalizationBoundary(db, { missionId })
+  if (finalized === null) return null
   const unlocked = db.prepare(`SELECT rowid AS event_rowid, id, timestamp, details_json
     FROM mission_events
     WHERE mission_id = ? AND event_type = 'mission_unlocked' AND rowid > ?
-    ORDER BY rowid DESC LIMIT 1`).get(missionId, finalized.event_rowid)
+    ORDER BY rowid DESC LIMIT 1`).get(missionId, finalized.eventRowid)
   if (unlocked === undefined) return null
-  const finalizedDetails = readEventDetails(finalized.details_json)
   const unlockDetails = readEventDetails(unlocked.details_json)
   const authority = typeof unlockDetails.admin_name === 'string'
     ? unlockDetails.admin_name.trim()
@@ -5697,10 +5778,8 @@ function readActiveMissionCorrectionAuthorization(db, missionId) {
   return Object.freeze({
     authority,
     reason,
-    finalizedEventRowid: Number(finalized.event_rowid),
-    previousArchiveId: typeof finalizedDetails.archive_id === 'string'
-      ? finalizedDetails.archive_id
-      : null,
+    finalizedEventRowid: finalized.eventRowid,
+    previousArchiveId: finalized.archiveId,
     unlockEventId: unlocked.id,
     unlockEventRowid: Number(unlocked.event_rowid),
     unlockedAt: unlocked.timestamp,
@@ -5872,6 +5951,16 @@ function withPinnedArchiveSupplementPredecessor(supplement, archiveDirectory, ca
   }, callback)
 }
 
+/** Blocks finalization until the finished mission is wholly represented by live rows. */
+function assertMissionFinalizationStorageLive(mission) {
+  if (mission.storage_state === 'live') return
+  const error = new Error(
+    'Archive & Lock is unavailable while live-store cleanup or archive recovery is unresolved. Open Review Archive Cleanup, resolve the blocked state, and retry.',
+  )
+  error.code = 'ARCHIVE_FINALIZATION_STORAGE_NOT_LIVE'
+  throw error
+}
+
 async function finalizeMission(
   db,
   missionId,
@@ -5925,7 +6014,13 @@ async function finalizeMission(
   if (mission.status !== 'finished') {
     throw new Error('Only finished missions can be finalized.')
   }
+  assertMissionFinalizationStorageLive(mission)
   const resumedProtectedFinalization = db.transaction(() => {
+    const currentMission = getMission(db, missionId)
+    if (currentMission.status !== 'finished') {
+      throw new Error('Only finished missions can be finalized.')
+    }
+    assertMissionFinalizationStorageLive(currentMission)
     assertLegacyMissionObjectBackfillSettled(db)
     assertLegacyEventProvenanceReady(db, missionId)
     assertNoUnsettledGpxImportState(db, missionId)
@@ -5984,6 +6079,7 @@ async function finalizeMission(
     if (currentMission.status !== 'finished') {
       throw new Error('Mission finalization state changed before the archive could be sealed.')
     }
+    assertMissionFinalizationStorageLive(currentMission)
     if (db.prepare(`SELECT 1 FROM mission_finalization_fences
       WHERE mission_id = ?`).get(missionId) === undefined) {
       throw new Error('Mission finalization evidence fence is missing; retry finalization.')
@@ -6021,6 +6117,11 @@ async function finalizeMissionWithEncryptedArchive(input) {
     custody,
     faultInjection = {},
   } = input
+  const initialMission = getMission(db, missionId)
+  if (initialMission.status !== 'finished') {
+    throw new Error('Only finished missions can be finalized.')
+  }
+  assertMissionFinalizationStorageLive(initialMission)
   const archiveId = randomUUID()
   const operationId = input.operationId ?? randomUUID()
   const requestedAt = now()
@@ -6044,6 +6145,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
     if (mission.status !== 'finished') {
       throw new Error('Only finished missions can be finalized.')
     }
+    assertMissionFinalizationStorageLive(mission)
     assertLegacyMissionObjectBackfillSettled(db)
     assertLegacyEventProvenanceReady(db, missionId)
     assertNoUnsettledGpxImportState(db, missionId)
@@ -6066,6 +6168,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
       ? null
       : Number(db.prepare(`SELECT COALESCE(MAX(supplement_sequence), 0) + 1 AS next_sequence
         FROM mission_archive_supplements WHERE mission_id = ?`).get(missionId).next_sequence)
+    const cleanupMembershipGeneration = readArchiveCleanupMembershipGeneration(db, missionId)
     db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
       VALUES (?, ?)`).run(missionId, requestedAt)
     const requestEventId = insertEvent(
@@ -6079,6 +6182,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
         operation_id: operationId,
         archive_kind: 'finalized',
         archive_relative_path: finalRelativePath,
+        cleanup_membership_generation: cleanupMembershipGeneration,
         protected_finalization_epoch: null,
         previous_archive_id: requestSupplement?.previousArchiveId ?? null,
         previous_archive_sha256: requestSupplement?.previousArchiveSha256 ?? null,
@@ -6107,6 +6211,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
     return Object.freeze({
       requestEventId,
       requestEventRowid,
+      cleanupMembershipGeneration,
       supplement: requestSupplement,
       supplementSequence,
     })
@@ -6145,6 +6250,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
         recordedAt: requestedAt,
         archivePath: path.join(archiveDirectory, finalRelativePath),
         archiveRelativePath: finalRelativePath,
+        cleanupMembershipGeneration: requestIdentity.cleanupMembershipGeneration,
         supplement: requestIdentity.supplement === null
           ? null
           : Object.freeze({
@@ -6520,6 +6626,9 @@ function sealPublishedArchiveFromJournal(input) {
   if (!expectedMissionStatuses.includes(mission.status)) {
     throw new Error('Mission state changed while the encrypted archive was being sealed.')
   }
+  if (active.archiveKind === 'finalized') {
+    assertMissionFinalizationStorageLive(mission)
+  }
   assertLegacyMissionObjectBackfillSettled(input.db)
   assertLegacyEventProvenanceReady(input.db, active.missionId)
   assertNoUnsettledGpxImportState(input.db, active.missionId)
@@ -6574,7 +6683,7 @@ function sealPublishedArchiveFromJournal(input) {
       active.missionId,
       resolvedSupplement,
     )
-    assertEncryptedArchiveRequestStillCurrent(input.db, {
+    const cleanupMembershipGeneration = assertEncryptedArchiveRequestStillCurrent(input.db, {
       missionId: active.missionId,
       requestedAt: active.fenceRequestedAt,
       requestEventId: active.requestEventId,
@@ -6686,6 +6795,7 @@ function sealPublishedArchiveFromJournal(input) {
         archive_id: current.archiveId,
         archive_path: path.join(input.archiveDirectory, current.finalRelativePath),
         archive_relative_path: current.finalRelativePath,
+        cleanup_membership_generation: cleanupMembershipGeneration,
         container_version: 2,
       }, current.fenceRequestedAt)
     }
@@ -6726,8 +6836,12 @@ function assertPublishedIdentityMatchesReceipt(targetIdentity, receipt) {
 
 /** Revalidates all immutable request and PR5 fence identities before a custody transition. */
 function assertEncryptedArchiveRequestStillCurrent(db, input) {
-  if (!input.expectedMissionStatuses.includes(getMission(db, input.missionId).status)) {
+  const mission = getMission(db, input.missionId)
+  if (!input.expectedMissionStatuses.includes(mission.status)) {
     throw new Error('Mission state changed while the encrypted archive was being created.')
+  }
+  if (input.archiveKind === 'finalized') {
+    assertMissionFinalizationStorageLive(mission)
   }
   const fence = db.prepare(`SELECT requested_at FROM mission_finalization_fences
     WHERE mission_id = ?`).get(input.missionId)
@@ -6747,11 +6861,17 @@ function assertEncryptedArchiveRequestStillCurrent(db, input) {
     || details?.operation_id !== input.operationId
     || details?.archive_kind !== input.archiveKind
     || details?.archive_relative_path !== `${input.archiveId}.sararch`
+    || !Number.isSafeInteger(details?.cleanup_membership_generation)
+    || details.cleanup_membership_generation < 0
     || details?.protected_finalization_epoch !== input.protectedFinalizationEpoch
     || details?.previous_archive_id !== input.previousArchiveId
     || details?.previous_archive_sha256 !== input.previousArchiveSha256) {
     throw new Error('Mission archive request or evidence fence changed before custody transition.')
   }
+  return assertArchiveCleanupMembershipGeneration(db, {
+    missionId: input.missionId,
+    expectedGeneration: details.cleanup_membership_generation,
+  })
 }
 
 /** Projects one registry row for the application API without exposing custody internals. */
@@ -7040,24 +7160,17 @@ function normalizeArchiveVerificationRetryInput(input) {
 /** Prevents delayed verification from blessing a superseded finalization epoch. */
 function assertArchiveVerificationEpochCurrent(db, archive) {
   const mission = getMission(db, archive.mission_id)
-  if (archive.archive_kind === 'finalized') {
-    const finalized = db.prepare(`SELECT rowid AS event_rowid, details_json
-      FROM mission_events WHERE mission_id = ? AND event_type = 'mission_finalized'
-      ORDER BY rowid DESC LIMIT 1`).get(archive.mission_id)
-    const details = readEventDetails(finalized?.details_json)
-    if (mission.status !== 'finalized' || details.archive_id !== archive.id) {
-      const error = new Error(
-        'Mission finalization epoch changed before archive verification could commit.',
-      )
-      error.code = 'ARCHIVE_VERIFY_EPOCH_CHANGED'
-      throw error
-    }
-    return
-  }
-  if (archive.protected_finalization_epoch !== null
-    && (mission.status !== 'finalized'
-      || readLatestMissionFinalizedEpoch(db, archive.mission_id)
-        !== Number(archive.protected_finalization_epoch))) {
+  if (archive.archive_kind === 'direct'
+    && archive.protected_finalization_epoch === null) return
+  const boundary = readCurrentMissionFinalizationBoundary(db, {
+    missionId: archive.mission_id,
+    ...(['finalized', 'finalized_recovery'].includes(archive.archive_kind)
+      ? { archiveId: archive.id }
+      : {}),
+  })
+  if (mission.status !== 'finalized' || boundary === null
+    || (archive.protected_finalization_epoch !== null
+      && boundary.eventRowid !== Number(archive.protected_finalization_epoch))) {
     const error = new Error(
       'Mission finalization epoch changed before archive verification could commit.',
     )
@@ -7236,12 +7349,13 @@ async function unlockFinalizedMission(
         'This mission is archived. Open its verified archive and choose Restore for correction before requesting an unlock.',
       )
     }
+    const correctionOperationId = operationId ?? randomUUID()
     if (signal?.aborted === true) throw createArchiveCancellationError()
-    const finalized = db.prepare(`SELECT details_json FROM mission_events
-      WHERE mission_id = ? AND event_type = 'mission_finalized'
-      ORDER BY rowid DESC LIMIT 1`).get(missionId)
-    const finalizedDetails = readEventDetails(finalized?.details_json)
-    if (finalizedDetails.archive_id !== input.archive_id) {
+    const finalizedBoundary = readCurrentMissionFinalizationBoundary(db, {
+      missionId,
+      archiveId: input.archive_id,
+    })
+    if (finalizedBoundary === null) {
       const error = new Error('Archived mission correction archive is not the current finalization.')
       error.code = 'ARCHIVE_REHYDRATE_EPOCH_CHANGED'
       throw error
@@ -7272,7 +7386,7 @@ async function unlockFinalizedMission(
     await rehydrateArchivedMission({
       missionId,
       archiveId: input.archive_id,
-      operationId,
+      operationId: correctionOperationId,
       snapshotPath: input.snapshot_path,
       expectedSha256: input.snapshot_database_sha256,
       expectedIdentity: input.snapshot_database_identity,
@@ -7299,6 +7413,7 @@ async function unlockFinalizedMission(
           admin_name: adminName,
           reason,
           restored_from_archive_id: input.archive_id,
+          archive_correction_operation_id: correctionOperationId,
           resulting_status: 'finished',
           storage_state: 'live',
         })
@@ -7340,9 +7455,7 @@ async function unlockFinalizedMission(
 
 /** Reads the immutable audit identity of the currently finalized mission epoch. */
 function readLatestMissionFinalizedEpoch(db, missionId) {
-  return db.prepare(`SELECT rowid FROM mission_events
-    WHERE mission_id = ? AND event_type = 'mission_finalized'
-    ORDER BY rowid DESC LIMIT 1`).get(missionId)?.rowid ?? null
+  return readCurrentMissionFinalizationBoundary(db, { missionId })?.eventRowid ?? null
 }
 
 /** Prevents an authorization decision from being applied to a newer finalization epoch. */
@@ -7366,10 +7479,8 @@ function assertMissionUnlockEpoch(
 
 /** Requires a v2 predecessor to be fully verified before it can enter a correction chain. */
 function assertCurrentFinalizedArchiveReviewable(db, missionId) {
-  const finalized = db.prepare(`SELECT details_json FROM mission_events
-    WHERE mission_id = ? AND event_type = 'mission_finalized'
-    ORDER BY rowid DESC LIMIT 1`).get(missionId)
-  const archiveId = readEventDetails(finalized?.details_json).archive_id
+  const finalized = readCurrentMissionFinalizationBoundary(db, { missionId })
+  const archiveId = finalized?.archiveId
   const archive = typeof archiveId === 'string' && archiveId.length > 0
     ? db.prepare(`SELECT container_version, status, verified_at,
         verification_proof_json, availability
@@ -11299,17 +11410,6 @@ function insertEventWithId(db, eventId, missionId, eventType, timestamp, details
     )
   bumpMissionReplayGeneration(db, missionId)
   return eventId
-}
-
-/** Derives one stable UUID-shaped lifecycle event identity from an archive identity. */
-function deriveArchiveLifecycleEventId(archiveId, kind) {
-  const digest = createHash('sha256')
-    .update(`sartracker-archive-lifecycle:${kind}:${archiveId}`, 'utf8')
-    .digest('hex')
-  const bytes = digest.slice(0, 32).split('')
-  bytes[12] = '4'
-  bytes[16] = ['8', '9', 'a', 'b'][Number.parseInt(bytes[16], 16) % 4]
-  return `${bytes.slice(0, 8).join('')}-${bytes.slice(8, 12).join('')}-${bytes.slice(12, 16).join('')}-${bytes.slice(16, 20).join('')}-${bytes.slice(20).join('')}`
 }
 
 function now() {

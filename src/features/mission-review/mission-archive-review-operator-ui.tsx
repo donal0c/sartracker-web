@@ -294,16 +294,12 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
               )) ? (
                 <button
                   className="mt-3 rounded-lg border border-amber-300/50 bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100"
-                  data-testid={entry.mission.storage_state === 'cleanup_in_progress'
-                    ? `archive-cleanup-resume-open-${entry.mission.id}`
-                    : `archive-cleanup-open-${entry.mission.id}`}
+                  data-testid={`archive-cleanup-open-${entry.mission.id}`}
                   disabled={busy}
                   onClick={() => props.onRequestCleanup(entry.mission)}
                   type="button"
                 >
-                  {entry.mission.storage_state === 'cleanup_in_progress'
-                    ? 'Resume Archive Cleanup'
-                    : 'Archive Live Rows'}
+                  Review Archive Cleanup
                 </button>
               ) : null}
             <div className="mt-3 space-y-2">

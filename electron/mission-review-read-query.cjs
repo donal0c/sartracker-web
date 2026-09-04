@@ -7,6 +7,9 @@ const MAX_AUDIT_QUERY_LIMIT = 5_001
 const {
   assertMissionLiveReviewAvailable,
 } = require('./mission-live-review-access.cjs')
+const {
+  readCurrentMissionFinalizationBoundary,
+} = require('./mission-finalization-boundary.cjs')
 
 /**
  * Reads the bounded Mission Review audit page and exact breadcrumb count from
@@ -34,15 +37,12 @@ function readMissionReviewSummary(database, input) {
 function readMissionCorrectionAuthorization(database, missionId) {
   const mission = database.prepare('SELECT status FROM missions WHERE id = ?').get(missionId)
   if (mission?.status !== 'finished') return false
-  const finalized = database.prepare(`SELECT rowid AS event_rowid
-    FROM mission_events
-    WHERE mission_id = ? AND event_type = 'mission_finalized'
-    ORDER BY rowid DESC LIMIT 1`).get(missionId)
-  if (finalized === undefined) return false
+  const finalized = readCurrentMissionFinalizationBoundary(database, { missionId })
+  if (finalized === null) return false
   const unlocked = database.prepare(`SELECT details_json
     FROM mission_events
     WHERE mission_id = ? AND event_type = 'mission_unlocked' AND rowid > ?
-    ORDER BY rowid DESC LIMIT 1`).get(missionId, finalized.event_rowid)
+    ORDER BY rowid DESC LIMIT 1`).get(missionId, finalized.eventRowid)
   if (unlocked === undefined) return false
   let details
   try {

@@ -38,6 +38,36 @@ describe('tracking geojson', () => {
     expect(collection.features[0]?.properties.stale).toBe(true)
   })
 
+  it('carries the exact upstream identity and fix time on each current-device feature', () => {
+    const position = normalizeTraccarPosition(
+      {
+        id: 8_941,
+        deviceId: 7,
+        latitude: 52.1234567,
+        longitude: -9.7654321,
+        fixTime: '2026-08-10T12:34:56.000Z',
+      },
+      'live',
+    )
+
+    const collection = createDeviceFeatureCollection({
+      devices: [],
+      positions: [position],
+      breadcrumbs: [],
+    })
+
+    expect(collection.features).toEqual([
+      expect.objectContaining({
+        id: 'device:7',
+        properties: expect.objectContaining({
+          deviceId: '7',
+          sourcePositionId: '8941',
+          timestamp: '2026-08-10T12:34:56.000Z',
+        }),
+      }),
+    ])
+  })
+
   it('adds derived attention presentation without changing current coordinates [DON-269]', () => {
     const snapshot = {
       devices: devicesFixture.map((device) => normalizeTraccarDevice(device)),

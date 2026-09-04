@@ -77,6 +77,7 @@ function createSource() {
       operation_id: operationId,
       archive_kind: 'finalized',
       archive_relative_path: `${archiveId}.sararch`,
+      cleanup_membership_generation: 0,
       protected_finalization_epoch: null,
     }),
     fenceRequestedAt,

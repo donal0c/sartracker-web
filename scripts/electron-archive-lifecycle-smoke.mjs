@@ -33,6 +33,9 @@ import {
   resolvePackagedApplicationArchivePath,
   validateArchiveLifecycleSmokeEvidence,
 } from '../build/electron-archive-lifecycle-smoke-lib.js'
+import {
+  startArchiveLifecycleLivenessMockTraccarServer,
+} from '../build/electron-archive-lifecycle-liveness-mock-traccar.js'
 
 const execFileAsync = promisify(execFile)
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -43,19 +46,29 @@ const REPLAY_OUTING_COUNT = 101
 const REPLAY_OBJECT_COUNT = REPLAY_MARKER_COUNT + REPLAY_OUTING_COUNT
 const GPX_IMPORT_BATCH_SIZE = 100
 const FAILURE_MESSAGE_LIMIT = 400
+const LIVENESS_PHASES = Object.freeze(['create', 'verify', 'restore', 'cleanup'])
+const LIVENESS_HARD_GATE_MS = 200
+const LIVENESS_POLL_INTERVAL_MS = 50
+const RENDERER_LIVENESS_LEDGER_CAPACITY = 256
+const LIVENESS_MISSION_NAME = 'Packaged Archive Liveness Probe'
+const LIVENESS_EMAIL = 'archive-liveness@example.invalid'
+const LIVENESS_SECRET = 'synthetic-archive-liveness-secret'
 
 let activeLaunch = null
 let passphrase = ''
 let recoveryCode = ''
 
-main().catch(async (error) => {
-  await stopLaunch(activeLaunch).catch(() => undefined)
-  const sanitized = sanitizeFailureMessage(error)
-  passphrase = ''
-  recoveryCode = ''
-  console.error(`electron-archive-lifecycle-smoke: ${sanitized}`)
-  process.exitCode = 1
-})
+if (process.argv[1] !== undefined
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(async (error) => {
+    await stopLaunch(activeLaunch).catch(() => undefined)
+    const sanitized = sanitizeFailureMessage(error)
+    passphrase = ''
+    recoveryCode = ''
+    console.error(`electron-archive-lifecycle-smoke: ${sanitized}`)
+    process.exitCode = 1
+  })
+}
 
 /** Runs the complete packaged lifecycle and writes one closed evidence report. */
 async function main() {
@@ -85,7 +98,11 @@ async function main() {
   passphrase = createEphemeralPassphrase()
   let initialLaunch
   let restartedLaunch
+  let mockServer
+  let livenessProbe
   try {
+    mockServer = await startArchiveLifecycleLivenessMockTraccarServer()
+    await seedLivenessRuntimeConfiguration(userDataDir, mockServer.baseUrl)
     initialLaunch = await launchPackagedApp(options, userDataDir, 1)
     packagedBuildHeadMatches.push(initialLaunch.packagedBuildHeadMatched)
     activeLaunch = initialLaunch
@@ -94,11 +111,24 @@ async function main() {
       options.seedPositionRows,
       path.join(userDataDir, 'archive-lifecycle-input-fixtures'),
     )
-    const finalized = await finalizeAndVerifyArchive(
+    livenessProbe = createPackagedLivenessProbe(mockServer)
+    await livenessProbe.attachLaunch(initialLaunch)
+    await startLivenessMission(initialLaunch.page, mockServer.deviceId)
+    await livenessProbe.setPhase('create')
+    await livenessProbe.waitForPhaseSample('create', options.timeoutMs)
+    const [createOperation, verifyOperation] = await livenessProbe.beginPhaseOperations([
+      'create',
+      'verify',
+    ])
+    const finalized = await livenessProbe.guardOperation(finalizeAndVerifyArchive(
       initialLaunch.page,
       seeded.missionId,
       passphrase,
-    )
+      (phase) => livenessProbe.setPhaseFromRenderer(phase),
+    ), [createOperation, verifyOperation])
+    await livenessProbe.setPhase('verify')
+    await livenessProbe.completePhaseOperation(createOperation)
+    await livenessProbe.completePhaseOperation(verifyOperation)
     const reviewSelectedTime = finalized.mission.finish_time
     const reviewSelectedTimeMs = Date.parse(reviewSelectedTime ?? '')
     if (typeof reviewSelectedTime !== 'string'
@@ -107,7 +137,10 @@ async function main() {
       throw new Error('Packaged finalized mission did not retain one canonical finish-time fence.')
     }
     recoveryCode = finalized.recoveryCode
-    const firstReview = await runReadOnlyReview({
+    await livenessProbe.setPhase('restore')
+    await livenessProbe.waitForPhaseSample('restore', options.timeoutMs)
+    const firstReviewOperation = await livenessProbe.beginPhaseOperation('restore')
+    const firstReview = await livenessProbe.guardOperation(runReadOnlyReview({
       page: initialLaunch.page,
       archive: finalized.archive,
       missionId: seeded.missionId,
@@ -118,14 +151,22 @@ async function main() {
       expectedObjectCount: seeded.seededReplayObjectRows,
       expectedOutingFilterCount: seeded.seededOutingChoices,
       selectedTime: reviewSelectedTime,
-    })
-    const interruption = await interruptRestoreAtDecrypt({
+    }), firstReviewOperation)
+    await livenessProbe.completePhaseOperation(firstReviewOperation)
+    const interruptedRestoreOperation = await livenessProbe.beginPhaseOperation('restore')
+    const interruption = await livenessProbe.guardOperation(interruptRestoreAtDecrypt({
       launch: initialLaunch,
       archive: finalized.archive,
       secret: passphrase,
       timeoutMs: options.timeoutMs,
       reviewRoot: path.join(userDataDir, 'archive-review'),
-    })
+      beforeKill: async () => {
+        await livenessProbe.endPhaseOperation(interruptedRestoreOperation)
+        await livenessProbe.completePhaseOperation(interruptedRestoreOperation)
+        await livenessProbe.detachLaunch(initialLaunch)
+      },
+    }))
+    const restoreSamplesBeforeRestart = livenessProbe.phaseSampleCount('restore')
     observedLaunchExits.push({ number: initialLaunch.number, signal: interruption.exitSignal })
     initialLaunch = null
     activeLaunch = null
@@ -133,6 +174,21 @@ async function main() {
     restartedLaunch = await launchPackagedApp(options, userDataDir, 2)
     packagedBuildHeadMatches.push(restartedLaunch.packagedBuildHeadMatched)
     activeLaunch = restartedLaunch
+    await livenessProbe.attachLaunch(restartedLaunch)
+    await livenessProbe.setPhase('restore')
+    const resumedRestoreOperation = await livenessProbe.beginPhaseOperation('restore')
+    await livenessProbe.guardOperation((async () => {
+      await resumeLivenessMission(restartedLaunch.page)
+      await livenessProbe.waitForPhaseSample(
+        'restore',
+        options.timeoutMs,
+        resumedRestoreOperation.sampleCount + 1,
+      )
+    })(), resumedRestoreOperation)
+    await livenessProbe.completePhaseOperation(resumedRestoreOperation)
+    if (livenessProbe.phaseSampleCount('restore') <= restoreSamplesBeforeRestart) {
+      throw new Error('Archive-lifecycle restore liveness did not resume after restart.')
+    }
     const residualEntriesAfterRestart = await countResidualEntries(
       path.join(userDataDir, 'archive-review'),
     )
@@ -144,14 +200,20 @@ async function main() {
       seeded.missionId,
       finalized.archive,
     )
-    const cleanupResult = await runCleanup({
+    await livenessProbe.setPhase('cleanup')
+    await livenessProbe.waitForPhaseSample('cleanup', options.timeoutMs)
+    const cleanupOperation = await livenessProbe.beginPhaseOperation('cleanup')
+    const cleanupResult = await livenessProbe.guardOperation(runCleanup({
       page: restartedLaunch.page,
       missionId: seeded.missionId,
       missionName: MISSION_NAME,
       archiveId: finalized.archive.id,
       secret: passphrase,
-    })
-    const secondReview = await runReadOnlyReview({
+    }), cleanupOperation)
+    await livenessProbe.completePhaseOperation(cleanupOperation)
+    await livenessProbe.setPhase('restore')
+    const secondReviewOperation = await livenessProbe.beginPhaseOperation('restore')
+    const secondReview = await livenessProbe.guardOperation(runReadOnlyReview({
       page: restartedLaunch.page,
       archive: retainedAfterRestart,
       missionId: seeded.missionId,
@@ -162,13 +224,16 @@ async function main() {
       expectedObjectCount: seeded.seededReplayObjectRows,
       expectedOutingFilterCount: seeded.seededOutingChoices,
       selectedTime: reviewSelectedTime,
-    })
+    }), secondReviewOperation)
+    await livenessProbe.completePhaseOperation(secondReviewOperation)
     const postCleanup = await assertPostCleanupState({
       page: restartedLaunch.page,
       missionId: seeded.missionId,
       archive: finalized.archive,
     })
     const cleanup = { ...cleanupResult, ...postCleanup }
+    await livenessProbe.detachLaunch(restartedLaunch)
+    const liveness = await livenessProbe.finish()
     const restartedExit = await stopLaunch(restartedLaunch)
     observedLaunchExits.push({ number: restartedLaunch.number, signal: restartedExit.signal })
     restartedLaunch = null
@@ -195,8 +260,8 @@ async function main() {
     }
     const finishedAtMs = Date.now()
     const evidence = {
-      schemaVersion: 1,
-      proofKind: 'packaged-electron-archive-lifecycle-v1',
+      schemaVersion: 2,
+      proofKind: 'packaged-electron-archive-lifecycle-v2',
       source: {
         expectedHead: options.expectedHead,
         headBefore: sourceBefore.head,
@@ -256,6 +321,7 @@ async function main() {
       },
       cleanup,
       reviewAfterCleanup: secondReview,
+      liveness,
       privacy: {
         secretsProvidedOnlyViaPreload: true,
         secretsAbsentFromProcessArguments: true,
@@ -283,8 +349,10 @@ async function main() {
     passphrase = ''
     recoveryCode = ''
   } finally {
+    await livenessProbe?.stop().catch(() => undefined)
     await stopLaunch(restartedLaunch).catch(() => undefined)
     await stopLaunch(initialLaunch).catch(() => undefined)
+    await mockServer?.close().catch(() => undefined)
     activeLaunch = null
     await removeDisposableProfile(userDataDir)
   }
@@ -492,7 +560,7 @@ async function seedReplayContinuationEvidence(input) {
 }
 
 /** Finalizes through the independent verifier integrated into the public preload lifecycle. */
-async function finalizeAndVerifyArchive(page, missionId, secret) {
+async function finalizeAndVerifyArchive(page, missionId, secret, onPhase) {
   const issuance = await page.evaluate(async (selectedMissionId) => {
     const store = window.sartrackerElectron?.missionStore
     if (store === undefined) throw new Error('Mission-store preload bridge is unavailable.')
@@ -501,6 +569,8 @@ async function finalizeAndVerifyArchive(page, missionId, secret) {
   if (typeof issuance?.operationId !== 'string' || typeof issuance?.recoveryCode !== 'string') {
     throw new Error('Packaged recovery issuance was invalid.')
   }
+  const phaseBindingName = `__sartrackerArchiveLivenessPhase_${issuance.operationId.replaceAll('-', '')}`
+  await page.exposeFunction(phaseBindingName, (phase) => onPhase(phase))
   const finalized = await page.evaluate(async (input) => {
     const bridge = window.sartrackerElectron
     if (bridge?.missionStore === undefined
@@ -508,9 +578,16 @@ async function finalizeAndVerifyArchive(page, missionId, secret) {
       throw new Error('Archive preload bridge is unavailable.')
     }
     const progressEntries = []
+    const livenessTransitions = []
+    let latestLivenessPhase = null
     const unsubscribe = bridge.onMissionArchiveProgress((progress) => {
       if (progress.operationId === input.operationId) {
         progressEntries.push({ kind: progress.kind, phase: progress.phase })
+        if ((progress.kind === 'create' || progress.kind === 'verify')
+          && progress.kind !== latestLivenessPhase) {
+          latestLivenessPhase = progress.kind
+          livenessTransitions.push(window[input.phaseBindingName](progress.kind))
+        }
       }
     })
     try {
@@ -519,6 +596,7 @@ async function finalizeAndVerifyArchive(page, missionId, secret) {
         passphrase: input.passphrase,
         recoveryCode: input.recoveryCode,
       })
+      await Promise.all(livenessTransitions)
       return { result, progressEntries }
     } finally {
       unsubscribe()
@@ -528,6 +606,7 @@ async function finalizeAndVerifyArchive(page, missionId, secret) {
     operationId: issuance.operationId,
     passphrase: secret,
     recoveryCode: issuance.recoveryCode,
+    phaseBindingName,
   })
   const archive = finalized?.result?.archive
   const projectedMission = finalized?.result?.mission
@@ -859,6 +938,8 @@ async function interruptRestoreAtDecrypt(input) {
       if (inspection?.regularFileCount < 1 || inspection.privacyCanaryDetected !== true) {
         throw new Error('Timed out before interrupted restore plaintext was materially observable.')
       }
+      await input.beforeKill()
+      input.launch.mainInspector.close()
       const requested = input.launch.appProcess.kill('SIGKILL')
       if (!requested) throw new Error('Electron rejected the restore SIGKILL request.')
       settleTrigger({ phase: progress.phase, inspection })
@@ -901,6 +982,7 @@ async function interruptRestoreAtDecrypt(input) {
     30_000,
     'Timed out waiting for the SIGKILLed Electron process to exit.',
   )
+  input.launch.mainInspector.close()
   await input.launch.browser.close().catch(() => undefined)
   input.launch.exitResult = exit
   input.launch.closed = true
@@ -1021,18 +1103,1052 @@ async function assertPostCleanupState(input) {
   return { remainingBreadcrumbRows: result.remainingBreadcrumbRows }
 }
 
+/** Seeds one isolated accelerated Traccar profile before Electron opens it. */
+async function seedLivenessRuntimeConfiguration(userDataDir, baseUrl) {
+  await writeFile(path.join(userDataDir, 'settings.json'), `${JSON.stringify({
+    missionDefaults: {
+      autoRefreshEnabled: true,
+      autoRefreshIntervalSeconds: 5,
+      autoSaveEnabled: true,
+      autoSaveIntervalSeconds: 30,
+      primaryMissionRoot: '',
+      backupMissionRoot: '',
+      coordinatorRoster: [],
+      adminRoster: [],
+    },
+    dataSource: {
+      providerType: 'traccar_http',
+      baseUrl,
+      authMode: 'basic',
+      email: LIVENESS_EMAIL,
+      autoConnect: true,
+      trackingCacheEnabled: false,
+      replayEnabled: false,
+      replayStart: '',
+      replayDurationHours: 4,
+    },
+    officialMaps: {
+      sourceType: 'none',
+      sourcePath: '',
+      status: 'not_configured',
+      username: '',
+      availableSources: [],
+      serviceCount: 0,
+      message: 'Official maps are not configured.',
+      packages: [],
+    },
+    weather: { links: [] },
+  }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  await writeFile(path.join(userDataDir, 'credentials.json'), `${JSON.stringify({
+    version: 1,
+    traccar: { basic: { secret: LIVENESS_SECRET } },
+  }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+}
+
+/** Starts the separate live probe mission through the real operator/runtime path. */
+async function startLivenessMission(page, expectedDeviceId) {
+  await page.getByTestId('mission-name-input').fill(LIVENESS_MISSION_NAME)
+  const participantSelection = page.getByTestId('participant-selection-step')
+  const missionModelEnabled = await participantSelection.isVisible().catch(() => false)
+  if (missionModelEnabled) {
+    const deviceCheckboxes = page
+      .getByTestId('participant-device-picker')
+      .locator('input[type="checkbox"]')
+    await deviceCheckboxes.first().waitFor({ state: 'attached', timeout: 30_000 })
+    const deviceCount = await deviceCheckboxes.count()
+    if (deviceCount !== 1) {
+      throw new Error('Archive-lifecycle liveness mission did not receive one mock device.')
+    }
+    await deviceCheckboxes.first().check({ force: true })
+  }
+  await page.getByTestId('mission-start-btn').click({ force: true })
+  const mission = await waitForActiveMission(page, LIVENESS_MISSION_NAME, 30_000)
+  if (missionModelEnabled) {
+    await page.waitForFunction((deviceId) => {
+      const active = document.querySelector('[data-testid="participant-active-list"]')
+      return active?.textContent?.includes(String(deviceId)) === true
+        || active?.children.length === 1
+    }, expectedDeviceId, { timeout: 30_000 })
+  }
+  return mission
+}
+
+/** Resumes the live probe mission after the deliberate restore SIGKILL. */
+async function resumeLivenessMission(page) {
+  const recoveryDialog = page.getByTestId('mission-recovery-dialog')
+  await recoveryDialog.waitFor({ state: 'visible', timeout: 30_000 })
+  await recoveryDialog.getByRole('button', { name: 'Resume' }).click({ force: true })
+  await recoveryDialog.waitFor({ state: 'hidden', timeout: 30_000 })
+  return waitForActiveMission(page, LIVENESS_MISSION_NAME, 30_000)
+}
+
+/** Waits until the backend and renderer agree on one active probe mission. */
+async function waitForActiveMission(page, expectedName, timeoutMs) {
+  await page.waitForFunction(async (missionName) => {
+    const mission = await window.sartrackerElectron?.missionStore.getActiveMission()
+    return mission?.status === 'active' && mission.name === missionName
+  }, expectedName, { timeout: timeoutMs })
+  const mission = await page.evaluate(async () =>
+    window.sartrackerElectron?.missionStore.getActiveMission())
+  if (mission?.status !== 'active' || mission.name !== expectedName) {
+    throw new Error('Archive-lifecycle liveness mission was not active.')
+  }
+  return mission
+}
+
+/**
+ * Aggregates source, renderer, main-process, and frame evidence outside the app.
+ * Only exact mock-source identities observed at the MapLibre boundary count as
+ * complete samples.
+ */
+export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
+  const installRenderer = dependencies.installRendererLivenessProbe
+    ?? installRendererLivenessProbe
+  const setRendererPhase = dependencies.setRendererLivenessPhase
+    ?? setRendererLivenessPhase
+  const collectRenderer = dependencies.collectRendererLivenessProbe
+    ?? collectRendererLivenessProbe
+  const startWatchdog = dependencies.startExternalLaunchWatchdog
+    ?? startExternalLaunchWatchdog
+  const readNow = dependencies.now ?? Date.now
+  const wait = dependencies.delay ?? delay
+  if (typeof mockServer?.setPhase !== 'function'
+    || typeof mockServer.drainCurrentFixLedger !== 'function') {
+    throw new Error('Archive-lifecycle liveness source ledger is not drainable.')
+  }
+  const byPhase = Object.fromEntries(LIVENESS_PHASES.map((phase) => [phase, {
+    sampleCount: 0,
+    currentFixMaxGapMs: 0,
+    sourceToRendererMaxMs: 0,
+    requestToRendererMaxMs: 0,
+    mainWatchdogMaxGapMs: 0,
+    rendererFrameMaxGapMs: 0,
+  }]))
+  const channelCounts = Object.fromEntries(LIVENESS_PHASES.map((phase) => [phase, {
+    main: 0,
+    rendererFrame: 0,
+  }]))
+  const sourceByIdentity = new Map()
+  const operationCheckpoints = new Map()
+  const errors = new Set()
+  let signalFailure
+  const failureSignal = new Promise((resolve) => { signalFailure = resolve })
+  const recordError = (kind) => {
+    if (errors.has(kind)) return
+    errors.add(kind)
+    signalFailure(kind)
+  }
+  let activePhase = null
+  let activeContinuityInterval = null
+  let activeLaunch = null
+  let finished = false
+  let operationSerial = Promise.resolve()
+
+  const enqueue = (operation) => {
+    const result = operationSerial.then(operation)
+    operationSerial = result.catch(() => undefined)
+    return result
+  }
+
+  const ingestSourceLedger = () => {
+    const drained = mockServer.drainCurrentFixLedger()
+    if (!Array.isArray(drained?.entries)
+      || !Number.isSafeInteger(drained.overflowCount) || drained.overflowCount < 0) {
+      recordError('source_ledger_invalid')
+      return
+    }
+    if (drained.overflowCount > 0) recordError('source_ledger_overflow')
+    for (const entry of drained.entries) {
+      if (!LIVENESS_PHASES.includes(entry?.phase)) continue
+      if (typeof entry.sourcePositionId !== 'string' || entry.sourcePositionId === ''
+        || !Number.isSafeInteger(entry.requestStartedAtMs) || entry.requestStartedAtMs < 0
+        || !Number.isSafeInteger(entry.emittedAtMs)
+        || entry.emittedAtMs < entry.requestStartedAtMs
+        || typeof entry.sourceTimestamp !== 'string'
+        || entry.sourceTimestamp !== new Date(entry.emittedAtMs).toISOString()
+        || sourceByIdentity.has(entry.sourcePositionId)) {
+        recordError('source_ledger_entry_invalid')
+        continue
+      }
+      sourceByIdentity.set(entry.sourcePositionId, entry)
+    }
+  }
+
+  const expirePendingSources = () => {
+    const currentTimeMs = readNow()
+    if (!Number.isSafeInteger(currentTimeMs) || currentTimeMs < 0) {
+      recordError('external_watchdog_clock_invalid')
+      return
+    }
+    for (const [identity, source] of sourceByIdentity) {
+      const requestAgeMs = currentTimeMs - source.requestStartedAtMs
+      const sourceAgeMs = currentTimeMs - source.emittedAtMs
+      if (requestAgeMs < 0 || sourceAgeMs < 0) {
+        sourceByIdentity.delete(identity)
+        recordError('current_fix_clock_invalid')
+      } else if (requestAgeMs >= LIVENESS_HARD_GATE_MS
+        || sourceAgeMs >= LIVENESS_HARD_GATE_MS) {
+        sourceByIdentity.delete(identity)
+        recordError('current_fix_not_observed_before_gate')
+      }
+    }
+  }
+
+  const throwIfInstrumentationFailed = () => {
+    if (errors.size > 0) {
+      throw new Error(
+        `Archive-lifecycle external watchdog recorded an instrumentation failure (${[...errors].sort().join(',')}).`,
+      )
+    }
+  }
+
+  const readExternalNow = () => {
+    const currentTimeMs = readNow()
+    if (!Number.isSafeInteger(currentTimeMs) || currentTimeMs < 0) {
+      recordError('external_watchdog_clock_invalid')
+      return null
+    }
+    return currentTimeMs
+  }
+
+  const recordCurrentFixGap = (phase, gapMs) => {
+    if (!LIVENESS_PHASES.includes(phase)
+      || !Number.isFinite(gapMs) || gapMs < 0) {
+      recordError('current_fix_clock_invalid')
+      return
+    }
+    byPhase[phase].currentFixMaxGapMs = Math.max(
+      byPhase[phase].currentFixMaxGapMs,
+      gapMs,
+    )
+    if (gapMs >= LIVENESS_HARD_GATE_MS) {
+      recordError('current_fix_continuity_gate_breached')
+    }
+  }
+
+  const auditActiveContinuity = (currentTimeMs = readExternalNow()) => {
+    const interval = activeContinuityInterval
+    if (interval === null || currentTimeMs === null) return
+    const boundedTimeMs = interval.endedAtMs === null
+      ? currentTimeMs
+      : Math.min(currentTimeMs, interval.endedAtMs)
+    const previousTimeMs = interval.lastObservedAtMs ?? interval.startedAtMs
+    recordCurrentFixGap(interval.phase, Math.max(0, boundedTimeMs - previousTimeMs))
+  }
+
+  const beginContinuityInterval = (phase) => {
+    if (activeContinuityInterval !== null) {
+      recordError('current_fix_continuity_state_invalid')
+      return
+    }
+    const startedAtMs = readExternalNow()
+    if (startedAtMs === null) return
+    activeContinuityInterval = {
+      phase,
+      startedAtMs,
+      endedAtMs: null,
+      lastObservedAtMs: null,
+    }
+    for (const operation of operationCheckpoints.values()) {
+      if (operation.phase === phase && operation.endedAtMs === null) {
+        operation.continuitySegmentStartedAtMs = startedAtMs
+        operation.continuityLastObservedAtMs = null
+      }
+    }
+  }
+
+  const markContinuityIntervalEnded = (phase, endedAtMs) => {
+    const interval = activeContinuityInterval
+    if (interval === null || interval.phase !== phase || interval.endedAtMs !== null) {
+      recordError('current_fix_continuity_state_invalid')
+      return
+    }
+    interval.endedAtMs = endedAtMs
+  }
+
+  const closeOperationContinuitySegment = (operation, endedAtMs) => {
+    if (operation.continuitySegmentStartedAtMs === null) return
+    const previousTimeMs = operation.continuityLastObservedAtMs
+      ?? operation.continuitySegmentStartedAtMs
+    recordCurrentFixGap(operation.phase, Math.max(0, endedAtMs - previousTimeMs))
+    operation.continuitySegmentStartedAtMs = null
+    operation.continuityLastObservedAtMs = null
+  }
+
+  const closeContinuityInterval = (phase, endedAtMs) => {
+    const interval = activeContinuityInterval
+    if (interval === null || interval.phase !== phase || interval.endedAtMs !== endedAtMs) {
+      recordError('current_fix_continuity_state_invalid')
+      return
+    }
+    const previousTimeMs = interval.lastObservedAtMs ?? interval.startedAtMs
+    recordCurrentFixGap(phase, Math.max(0, endedAtMs - previousTimeMs))
+    for (const operation of operationCheckpoints.values()) {
+      if (operation.phase === phase && operation.endedAtMs === null) {
+        closeOperationContinuitySegment(operation, endedAtMs)
+      }
+    }
+    activeContinuityInterval = null
+  }
+
+  const rendererFrameTailIsValid = (frameTail) => frameTail === null || (
+    frameTail !== null
+    && typeof frameTail === 'object'
+    && !Array.isArray(frameTail)
+    && JSON.stringify(Object.keys(frameTail).sort()) === JSON.stringify(['gapMs', 'phase'])
+    && LIVENESS_PHASES.includes(frameTail.phase)
+    && Number.isFinite(frameTail.gapMs)
+    && frameTail.gapMs >= 0
+  )
+
+  const recordRendererFrameGap = (frame, countFrame) => {
+    if (!LIVENESS_PHASES.includes(frame?.phase)
+      || !Number.isFinite(frame?.gapMs) || frame.gapMs < 0) {
+      recordError('renderer_frame_sample_invalid')
+      return
+    }
+    if (countFrame) channelCounts[frame.phase].rendererFrame += 1
+    byPhase[frame.phase].rendererFrameMaxGapMs = Math.max(
+      byPhase[frame.phase].rendererFrameMaxGapMs,
+      frame.gapMs,
+    )
+    if (frame.gapMs >= LIVENESS_HARD_GATE_MS) {
+      recordError('renderer_frame_gate_breached')
+    }
+  }
+
+  const recordRendererFrameTail = (frameTail) => {
+    if (!rendererFrameTailIsValid(frameTail)) {
+      recordError('renderer_frame_tail_invalid')
+      return
+    }
+    if (frameTail !== null) recordRendererFrameGap(frameTail, false)
+  }
+
+  const recordRendererSnapshot = (snapshot) => {
+    ingestSourceLedger()
+    const rendererSnapshotKeys = [
+      'currentFixOverflowCount',
+      'currentFixes',
+      'frameGapOverflowCount',
+      'frameGaps',
+      'frameTail',
+    ]
+    if (snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot)
+      || JSON.stringify(Object.keys(snapshot).sort()) !== JSON.stringify(rendererSnapshotKeys)
+      || !Array.isArray(snapshot.currentFixes)
+      || snapshot.currentFixes.length > RENDERER_LIVENESS_LEDGER_CAPACITY
+      || !Array.isArray(snapshot.frameGaps)
+      || snapshot.frameGaps.length > RENDERER_LIVENESS_LEDGER_CAPACITY
+      || !Number.isSafeInteger(snapshot.currentFixOverflowCount)
+      || snapshot.currentFixOverflowCount < 0
+      || !Number.isSafeInteger(snapshot.frameGapOverflowCount)
+      || snapshot.frameGapOverflowCount < 0
+      || !rendererFrameTailIsValid(snapshot.frameTail)) {
+      recordError('renderer_liveness_snapshot_invalid')
+      expirePendingSources()
+      auditActiveContinuity()
+      return
+    }
+    if (snapshot.currentFixOverflowCount > 0) {
+      recordError('renderer_current_fix_ledger_overflow')
+    }
+    if (snapshot.frameGapOverflowCount > 0) {
+      recordError('renderer_frame_gap_ledger_overflow')
+    }
+    for (const frame of snapshot.frameGaps) recordRendererFrameGap(frame, true)
+    recordRendererFrameTail(snapshot.frameTail)
+    for (const observation of snapshot.currentFixes) {
+      if (observation === null || typeof observation !== 'object'
+        || Array.isArray(observation)
+        || typeof observation.sourcePositionId !== 'string'
+        || observation.sourcePositionId === '') {
+        recordError('renderer_current_fix_sample_invalid')
+        continue
+      }
+      const source = sourceByIdentity.get(observation.sourcePositionId)
+      if (source === undefined) continue
+      sourceByIdentity.delete(observation.sourcePositionId)
+      if (observation.phase !== source.phase) {
+        recordError('current_fix_phase_identity_mismatch')
+        continue
+      }
+      if (observation.sourceTimestamp !== source.sourceTimestamp) {
+        recordError('current_fix_timestamp_identity_mismatch')
+        continue
+      }
+      if (!Number.isSafeInteger(observation.observedAtMs)
+        || observation.observedAtMs < 0) {
+        recordError('renderer_current_fix_sample_invalid')
+        continue
+      }
+      const sourceToRendererMs = observation.observedAtMs - source.emittedAtMs
+      const requestToRendererMs = observation.observedAtMs - source.requestStartedAtMs
+      if (!Number.isFinite(sourceToRendererMs) || sourceToRendererMs < 0
+        || !Number.isFinite(requestToRendererMs) || requestToRendererMs < 0) {
+        recordError('current_fix_clock_invalid')
+        continue
+      }
+      const phaseEvidence = byPhase[source.phase]
+      phaseEvidence.sampleCount += 1
+      phaseEvidence.sourceToRendererMaxMs = Math.max(
+        phaseEvidence.sourceToRendererMaxMs,
+        sourceToRendererMs,
+      )
+      phaseEvidence.requestToRendererMaxMs = Math.max(
+        phaseEvidence.requestToRendererMaxMs,
+        requestToRendererMs,
+      )
+      const interval = activeContinuityInterval
+      if (interval === null || interval.phase !== source.phase) {
+        recordError('current_fix_continuity_state_invalid')
+      } else {
+        const previousObservedAtMs = interval.lastObservedAtMs ?? interval.startedAtMs
+        recordCurrentFixGap(source.phase, observation.observedAtMs - previousObservedAtMs)
+        interval.lastObservedAtMs = observation.observedAtMs
+      }
+      for (const operation of operationCheckpoints.values()) {
+        if (operation.phase === source.phase
+          && source.requestStartedAtMs >= operation.startedAtMs
+          && (operation.endedAtMs === null || (
+            source.emittedAtMs < operation.endedAtMs
+            && observation.observedAtMs < operation.endedAtMs
+          ))) {
+          operation.freshSampleCount += 1
+          if (operation.continuitySegmentStartedAtMs !== null) {
+            const previousObservedAtMs = operation.continuityLastObservedAtMs
+              ?? operation.continuitySegmentStartedAtMs
+            recordCurrentFixGap(
+              source.phase,
+              observation.observedAtMs - previousObservedAtMs,
+            )
+            operation.continuityLastObservedAtMs = observation.observedAtMs
+          }
+        }
+      }
+      if (sourceToRendererMs >= LIVENESS_HARD_GATE_MS
+        || requestToRendererMs >= LIVENESS_HARD_GATE_MS) {
+        recordError('current_fix_gate_breached')
+      }
+    }
+    expirePendingSources()
+    auditActiveContinuity()
+  }
+
+  const recordMainGap = (phase, gapMs) => {
+    if (!LIVENESS_PHASES.includes(phase) || !Number.isFinite(gapMs) || gapMs < 0) {
+      recordError('main_watchdog_sample_invalid')
+      return
+    }
+    channelCounts[phase].main += 1
+    byPhase[phase].mainWatchdogMaxGapMs = Math.max(
+      byPhase[phase].mainWatchdogMaxGapMs,
+      gapMs,
+    )
+    if (gapMs >= LIVENESS_HARD_GATE_MS) recordError('main_watchdog_gate_breached')
+    auditActiveContinuity()
+  }
+
+  const collectCurrentRendererSnapshot = async () => {
+    if (activeLaunch === null) {
+      ingestSourceLedger()
+      expirePendingSources()
+      return
+    }
+    try {
+      recordRendererSnapshot(await withTimeout(
+        collectRenderer(activeLaunch.page, false),
+        LIVENESS_HARD_GATE_MS,
+        'Electron renderer liveness collection timed out.',
+      ))
+    } catch {
+      recordError('renderer_cdp_watchdog_failed')
+      throwIfInstrumentationFailed()
+    }
+  }
+
+  const settlePendingPhase = async (phase) => {
+    if (phase === null) {
+      await collectCurrentRendererSnapshot()
+      throwIfInstrumentationFailed()
+      return
+    }
+    const deadline = readNow() + LIVENESS_HARD_GATE_MS
+    while (true) {
+      await collectCurrentRendererSnapshot()
+      throwIfInstrumentationFailed()
+      if (![...sourceByIdentity.values()].some((source) => source.phase === phase)) return
+      if (readNow() >= deadline) {
+        for (const [identity, source] of sourceByIdentity) {
+          if (source.phase === phase) sourceByIdentity.delete(identity)
+        }
+        recordError('current_fix_not_observed_before_gate')
+        throwIfInstrumentationFailed()
+      }
+      await wait(10)
+    }
+  }
+
+  const pauseAndSettleActivePhase = async () => {
+    const pausedPhase = activePhase
+    await mockServer.setPhase(null)
+    if (pausedPhase === null) {
+      if (activeContinuityInterval !== null) {
+        recordError('current_fix_continuity_state_invalid')
+      }
+      await settlePendingPhase(null)
+      return null
+    }
+    const pausedAtMs = readExternalNow()
+    if (pausedAtMs === null) throwIfInstrumentationFailed()
+    markContinuityIntervalEnded(pausedPhase, pausedAtMs)
+    activePhase = null
+    await settlePendingPhase(pausedPhase)
+    closeContinuityInterval(pausedPhase, pausedAtMs)
+    throwIfInstrumentationFailed()
+    return pausedPhase
+  }
+
+  const resumePhase = async (phase) => {
+    beginContinuityInterval(phase)
+    throwIfInstrumentationFailed()
+    activePhase = phase
+    if (activeLaunch !== null) {
+      let previousFrameTail
+      try {
+        previousFrameTail = await withTimeout(
+          setRendererPhase(activeLaunch.page, phase),
+          LIVENESS_HARD_GATE_MS,
+          'Electron renderer liveness phase transition timed out.',
+        )
+      } catch {
+        recordError('renderer_cdp_watchdog_failed')
+        throwIfInstrumentationFailed()
+      }
+      recordRendererFrameTail(previousFrameTail)
+      throwIfInstrumentationFailed()
+    }
+    auditActiveContinuity()
+    throwIfInstrumentationFailed()
+    await mockServer.setPhase(phase)
+    auditActiveContinuity()
+    throwIfInstrumentationFailed()
+  }
+
+  const transitionToPhase = async (phase) => {
+    requireLivenessPhase(phase)
+    if (activePhase === phase) return
+    await pauseAndSettleActivePhase()
+    await resumePhase(phase)
+  }
+
+  const attachLaunch = async (launch) => {
+    return enqueue(async () => {
+      if (finished || activeLaunch !== null) {
+        throw new Error('Archive-lifecycle liveness launch attachment is invalid.')
+      }
+      await installRenderer(launch.page, mockServer.deviceId)
+      const preservedPhase = activePhase
+      activePhase = null
+      activeLaunch = launch
+      if (preservedPhase !== null) await resumePhase(preservedPhase)
+      const watchdog = startWatchdog({
+        launch,
+        readPhase: () => activePhase,
+        onMainGap: recordMainGap,
+        onRendererSnapshot: recordRendererSnapshot,
+        onError: recordError,
+      })
+      launch.externalLivenessWatchdog = watchdog
+    })
+  }
+
+  const detachLaunch = async (launch) => {
+    return enqueue(async () => {
+      if (activeLaunch !== launch) {
+        throw new Error('Archive-lifecycle liveness launch detachment is invalid.')
+      }
+      const preservedPhase = await pauseAndSettleActivePhase()
+      if (launch.externalLivenessWatchdog !== undefined) {
+        await launch.externalLivenessWatchdog.stop()
+        launch.externalLivenessWatchdog = undefined
+      }
+      ingestSourceLedger()
+      expirePendingSources()
+      throwIfInstrumentationFailed()
+      if (sourceByIdentity.size !== 0) {
+        recordError('source_identity_left_pending_at_detach')
+        throwIfInstrumentationFailed()
+      }
+      activeLaunch = null
+      if (preservedPhase !== null) activePhase = preservedPhase
+    })
+  }
+
+  const setPhase = async (phase) => {
+    return enqueue(() => transitionToPhase(phase))
+  }
+
+  const setPhaseFromRenderer = (phase) => {
+    return setPhase(phase)
+  }
+
+  const beginPhaseOperations = async (phases) => enqueue(async () => {
+    if (!Array.isArray(phases) || phases.length < 1
+      || new Set(phases).size !== phases.length) {
+      throw new Error('Archive-lifecycle liveness operation phases are invalid.')
+    }
+    for (const phase of phases) requireLivenessPhase(phase)
+    throwIfInstrumentationFailed()
+    const preservedPhase = activePhase
+    if (preservedPhase !== null) await pauseAndSettleActivePhase()
+    else await collectCurrentRendererSnapshot()
+    for (const phase of phases) {
+      if ([...sourceByIdentity.values()].some((source) => source.phase === phase)) {
+        recordError('source_identity_left_pending_at_operation_start')
+      }
+    }
+    throwIfInstrumentationFailed()
+    const startedAtMs = readNow()
+    if (!Number.isSafeInteger(startedAtMs) || startedAtMs < 0) {
+      recordError('external_watchdog_clock_invalid')
+      throwIfInstrumentationFailed()
+    }
+    const checkpoints = phases.map((phase) => Object.freeze({
+      phase,
+      sampleCount: byPhase[phase].sampleCount,
+    }))
+    checkpoints.forEach((checkpoint) => operationCheckpoints.set(checkpoint, {
+      phase: checkpoint.phase,
+      startedAtMs,
+      endedAtMs: null,
+      freshSampleCount: 0,
+      continuitySegmentStartedAtMs: null,
+      continuityLastObservedAtMs: null,
+    }))
+    if (preservedPhase !== null) await resumePhase(preservedPhase)
+    return checkpoints
+  })
+
+  const beginPhaseOperation = async (phase) => {
+    const [checkpoint] = await beginPhaseOperations([phase])
+    return checkpoint
+  }
+
+  const endPhaseOperations = async (checkpoints) => enqueue(async () => {
+    const operations = checkpoints.map((checkpoint) => operationCheckpoints.get(checkpoint))
+    if (operations.some((operation) => operation === undefined || operation.endedAtMs !== null)) {
+      throw new Error('Archive-lifecycle liveness operation checkpoint is invalid.')
+    }
+    const endedAtMs = readNow()
+    if (!Number.isSafeInteger(endedAtMs) || endedAtMs < 0
+      || operations.some((operation) => endedAtMs < operation.startedAtMs)) {
+      recordError('external_watchdog_clock_invalid')
+      throwIfInstrumentationFailed()
+    }
+    for (const operation of operations) {
+      closeOperationContinuitySegment(operation, endedAtMs)
+      operation.endedAtMs = endedAtMs
+    }
+    auditActiveContinuity(endedAtMs)
+    throwIfInstrumentationFailed()
+    await collectCurrentRendererSnapshot()
+    throwIfInstrumentationFailed()
+  })
+
+  const endPhaseOperation = (checkpoint) => endPhaseOperations([checkpoint])
+
+  const completePhaseOperation = async (checkpoint) => enqueue(async () => {
+    const operation = operationCheckpoints.get(checkpoint)
+    if (operation === undefined || operation.endedAtMs === null) {
+      throw new Error('Archive-lifecycle liveness operation checkpoint is invalid.')
+    }
+    const phase = checkpoint.phase
+    const preservedPhase = activePhase
+    if (preservedPhase === phase) {
+      await pauseAndSettleActivePhase()
+    } else {
+      await collectCurrentRendererSnapshot()
+      if ([...sourceByIdentity.values()].some((source) => source.phase === phase)) {
+        recordError('source_identity_left_pending_at_operation_end')
+      }
+    }
+    operationCheckpoints.delete(checkpoint)
+    const advanced = byPhase[phase].sampleCount > checkpoint.sampleCount
+      && operation.freshSampleCount > 0
+    if (preservedPhase === phase) await resumePhase(phase)
+    throwIfInstrumentationFailed()
+    if (!advanced) {
+      throw new Error(
+        `Archive-lifecycle ${phase} operation completed without a fresh MapLibre current fix.`,
+      )
+    }
+  })
+
+  const guardOperation = async (operationPromise, checkpoints = []) => {
+    throwIfInstrumentationFailed()
+    const boundedCheckpoints = Array.isArray(checkpoints) ? checkpoints : [checkpoints]
+    for (const checkpoint of boundedCheckpoints) {
+      const operation = operationCheckpoints.get(checkpoint)
+      if (operation === undefined || operation.endedAtMs !== null) {
+        throw new Error('Archive-lifecycle liveness operation checkpoint is invalid.')
+      }
+    }
+    const result = await Promise.race([
+      Promise.resolve(operationPromise),
+      failureSignal.then(() => throwIfInstrumentationFailed()),
+    ])
+    if (boundedCheckpoints.length > 0) await endPhaseOperations(boundedCheckpoints)
+    return result
+  }
+
+  const waitForPhaseSample = async (phase, timeoutMs, minimumCount = 1) => {
+    requireLivenessPhase(phase)
+    if (!Number.isSafeInteger(minimumCount) || minimumCount < 1) {
+      throw new Error('Archive-lifecycle liveness sample target is invalid.')
+    }
+    const deadline = readNow() + timeoutMs
+    while (readNow() < deadline) {
+      await collectCurrentRendererSnapshot()
+      throwIfInstrumentationFailed()
+      if (byPhase[phase].sampleCount >= minimumCount
+        && channelCounts[phase].main > 0
+        && channelCounts[phase].rendererFrame > 0) return
+      await wait(10)
+    }
+    throw new Error(`Archive-lifecycle ${phase} liveness did not produce a full sample.`)
+  }
+
+  const stop = async () => {
+    return enqueue(async () => {
+      if (activeLaunch !== null) {
+        await pauseAndSettleActivePhase()
+        const launch = activeLaunch
+        if (launch.externalLivenessWatchdog !== undefined) {
+          await launch.externalLivenessWatchdog.stop()
+          launch.externalLivenessWatchdog = undefined
+        }
+        activeLaunch = null
+      } else {
+        await mockServer.setPhase(null)
+        activePhase = null
+        if (activeContinuityInterval !== null) {
+          recordError('current_fix_continuity_state_invalid')
+          activeContinuityInterval = null
+        }
+      }
+      ingestSourceLedger()
+      expirePendingSources()
+      if (sourceByIdentity.size !== 0) recordError('source_identity_left_pending_at_finish')
+    })
+  }
+
+  const finish = async () => {
+    if (finished) throw new Error('Archive-lifecycle liveness evidence is already finalized.')
+    await stop()
+    finished = true
+    if (operationCheckpoints.size !== 0) recordError('liveness_operation_not_completed')
+    if (activeContinuityInterval !== null) {
+      recordError('current_fix_continuity_state_invalid')
+    }
+    throwIfInstrumentationFailed()
+    for (const phase of LIVENESS_PHASES) {
+      const evidence = byPhase[phase]
+      if (evidence.sampleCount < 1
+        || channelCounts[phase].main < 1
+        || channelCounts[phase].rendererFrame < 1) {
+        throw new Error(`Archive-lifecycle ${phase} liveness evidence is incomplete.`)
+      }
+      for (const value of [
+        evidence.currentFixMaxGapMs,
+        evidence.sourceToRendererMaxMs,
+        evidence.requestToRendererMaxMs,
+        evidence.mainWatchdogMaxGapMs,
+        evidence.rendererFrameMaxGapMs,
+      ]) {
+        if (!Number.isFinite(value) || value < 0 || value >= LIVENESS_HARD_GATE_MS) {
+          throw new Error(`Archive-lifecycle ${phase} liveness breached the hard gate.`)
+        }
+      }
+    }
+    return {
+      provenance: 'packaged-electron-external-watchdog-v1',
+      hardGateMs: LIVENESS_HARD_GATE_MS,
+      pollProfile: {
+        mode: 'time-compressed-validation',
+        intervalMs: LIVENESS_POLL_INTERVAL_MS,
+      },
+      byPhase: Object.fromEntries(LIVENESS_PHASES.map((phase) => [phase, {
+        sampleCount: byPhase[phase].sampleCount,
+        currentFixMaxGapMs: roundMilliseconds(byPhase[phase].currentFixMaxGapMs),
+        sourceToRendererMaxMs: roundMilliseconds(byPhase[phase].sourceToRendererMaxMs),
+        requestToRendererMaxMs: roundMilliseconds(byPhase[phase].requestToRendererMaxMs),
+        mainWatchdogMaxGapMs: roundMilliseconds(byPhase[phase].mainWatchdogMaxGapMs),
+        rendererFrameMaxGapMs: roundMilliseconds(byPhase[phase].rendererFrameMaxGapMs),
+      }])),
+    }
+  }
+
+  return {
+    attachLaunch,
+    beginPhaseOperation,
+    beginPhaseOperations,
+    completePhaseOperation,
+    detachLaunch,
+    endPhaseOperation,
+    finish,
+    guardOperation,
+    setPhase,
+    setPhaseFromRenderer,
+    stop,
+    waitForPhaseSample,
+    phaseSampleCount: (phase) => byPhase[phase]?.sampleCount ?? 0,
+  }
+}
+
+/** Starts independent inspector and renderer-CDP watchdog loops for one launch. */
+function startExternalLaunchWatchdog(input) {
+  let stopped = false
+  let stopPromise = null
+  const mainTask = (async () => {
+    let previousCompletedAt = performance.now()
+    while (!stopped) {
+      const cycleStartedAt = performance.now()
+      const phase = input.readPhase()
+      try {
+        await withTimeout(
+          input.launch.mainInspector.evaluate('process.uptime()'),
+          LIVENESS_HARD_GATE_MS,
+          'Electron main inspector watchdog timed out.',
+        )
+        const completedAt = performance.now()
+        if (LIVENESS_PHASES.includes(phase)) {
+          input.onMainGap(phase, completedAt - previousCompletedAt)
+        }
+        previousCompletedAt = completedAt
+      } catch {
+        if (!stopped) input.onError('main_inspector_watchdog_failed')
+      }
+      await delay(Math.max(0, LIVENESS_POLL_INTERVAL_MS -
+        (performance.now() - cycleStartedAt)))
+    }
+  })()
+  const rendererTask = (async () => {
+    while (!stopped) {
+      const cycleStartedAt = performance.now()
+      try {
+        input.onRendererSnapshot(await withTimeout(
+          collectRendererLivenessProbe(input.launch.page, false),
+          LIVENESS_HARD_GATE_MS,
+          'Electron renderer liveness watchdog timed out.',
+        ))
+      } catch {
+        if (!stopped) input.onError('renderer_cdp_watchdog_failed')
+      }
+      await delay(Math.max(0, LIVENESS_POLL_INTERVAL_MS -
+        (performance.now() - cycleStartedAt)))
+    }
+  })()
+
+  return {
+    stop: () => {
+      stopPromise ??= (async () => {
+        stopped = true
+        await Promise.all([mainTask, rendererTask])
+        const finalSnapshot = await withTimeout(
+          collectRendererLivenessProbe(input.launch.page, true),
+          LIVENESS_HARD_GATE_MS,
+          'Electron renderer liveness teardown timed out.',
+        )
+        input.onRendererSnapshot(finalSnapshot)
+      })()
+      return stopPromise
+    },
+  }
+}
+
+/** Installs the MapLibre identity observer and frame-gap recorder via renderer CDP. */
+export async function installRendererLivenessProbe(page, deviceId) {
+  await page.waitForFunction(() => {
+    const source = window.__SARTRACKER_MAP__?.getSource('tracking')
+    return source !== undefined
+      && typeof source.setData === 'function'
+      && typeof source.updateData === 'function'
+  }, undefined, { timeout: 60_000 })
+  await page.evaluate(({ expectedDeviceId, ledgerCapacity, phases }) => {
+    window.__SARTRACKER_ARCHIVE_LIVENESS__?.cleanup()
+    const source = window.__SARTRACKER_MAP__?.getSource('tracking')
+    if (source === undefined
+      || typeof source.setData !== 'function'
+      || typeof source.updateData !== 'function') {
+      throw new Error('Packaged MapLibre tracking source is unavailable.')
+    }
+    const allowedPhases = new Set(phases)
+    const currentFixes = []
+    const frameGaps = []
+    const originalSetData = source.setData
+    const originalUpdateData = source.updateData
+    let phase = null
+    let previousFrameAt = performance.now()
+    let frameId = null
+    let stopped = false
+    let latestSourcePositionId = null
+    let currentFixOverflowCount = 0
+    let frameGapOverflowCount = 0
+
+    const appendBounded = (ledger, value, recordOverflow) => {
+      if (ledger.length >= ledgerCapacity) {
+        ledger.shift()
+        recordOverflow()
+      }
+      ledger.push(value)
+    }
+
+    const recordCurrentFix = (value) => {
+      if (!allowedPhases.has(phase)) return
+      const features = Array.isArray(value?.features)
+        ? value.features
+        : Array.isArray(value?.add)
+          ? value.add
+          : []
+      const feature = features.find((candidate) =>
+        candidate?.properties?.featureKind === 'device'
+        && candidate.properties.deviceId === String(expectedDeviceId))
+      const sourcePositionId = feature?.properties?.sourcePositionId
+      const sourceTimestamp = feature?.properties?.timestamp
+      if (typeof sourcePositionId !== 'string' || sourcePositionId === ''
+        || typeof sourceTimestamp !== 'string' || sourceTimestamp === ''
+        || sourcePositionId === latestSourcePositionId) return
+      latestSourcePositionId = sourcePositionId
+      appendBounded(currentFixes, {
+        phase,
+        sourcePositionId,
+        sourceTimestamp,
+        observedAtMs: Date.now(),
+      }, () => { currentFixOverflowCount += 1 })
+    }
+
+    source.setData = function setLivenessObservedData(data) {
+      const result = Reflect.apply(originalSetData, this, [data])
+      recordCurrentFix(data)
+      return result
+    }
+    source.updateData = function updateLivenessObservedData(diff) {
+      const result = Reflect.apply(originalUpdateData, this, [diff])
+      recordCurrentFix(diff)
+      return result
+    }
+
+    const frame = (now) => {
+      if (stopped) return
+      if (allowedPhases.has(phase)) {
+        appendBounded(
+          frameGaps,
+          { phase, gapMs: now - previousFrameAt },
+          () => { frameGapOverflowCount += 1 },
+        )
+      }
+      previousFrameAt = now
+      frameId = window.requestAnimationFrame(frame)
+    }
+    frameId = window.requestAnimationFrame(frame)
+
+    window.__SARTRACKER_ARCHIVE_LIVENESS__ = {
+      setPhase: (nextPhase) => {
+        if (!allowedPhases.has(nextPhase)) {
+          throw new Error('Renderer liveness phase is invalid.')
+        }
+        const switchedAt = performance.now()
+        const previousFrameTail = allowedPhases.has(phase)
+          ? { phase, gapMs: switchedAt - previousFrameAt }
+          : null
+        phase = nextPhase
+        previousFrameAt = switchedAt
+        return previousFrameTail
+      },
+      drain: () => {
+        const snapshot = {
+          currentFixes: currentFixes.splice(0, currentFixes.length),
+          frameGaps: frameGaps.splice(0, frameGaps.length),
+          frameTail: allowedPhases.has(phase)
+            ? { phase, gapMs: performance.now() - previousFrameAt }
+            : null,
+          currentFixOverflowCount,
+          frameGapOverflowCount,
+        }
+        currentFixOverflowCount = 0
+        frameGapOverflowCount = 0
+        return snapshot
+      },
+      cleanup: () => {
+        if (stopped) return
+        stopped = true
+        if (frameId !== null) window.cancelAnimationFrame(frameId)
+        source.setData = originalSetData
+        source.updateData = originalUpdateData
+      },
+    }
+  }, {
+    expectedDeviceId: deviceId,
+    ledgerCapacity: RENDERER_LIVENESS_LEDGER_CAPACITY,
+    phases: LIVENESS_PHASES,
+  })
+}
+
+/** Changes the renderer-frame and MapLibre observer phase before source emission. */
+async function setRendererLivenessPhase(page, phase) {
+  return page.evaluate((nextPhase) => {
+    const probe = window.__SARTRACKER_ARCHIVE_LIVENESS__
+    if (probe === undefined) throw new Error('Renderer liveness probe is unavailable.')
+    return probe.setPhase(nextPhase)
+  }, phase)
+}
+
+/** Drains bounded renderer observations, optionally restoring MapLibre methods. */
+async function collectRendererLivenessProbe(page, cleanup) {
+  return page.evaluate((shouldCleanup) => {
+    const probe = window.__SARTRACKER_ARCHIVE_LIVENESS__
+    if (probe === undefined) throw new Error('Renderer liveness probe is unavailable.')
+    const snapshot = probe.drain()
+    if (shouldCleanup) {
+      probe.cleanup()
+      delete window.__SARTRACKER_ARCHIVE_LIVENESS__
+    }
+    return snapshot
+  }, cleanup)
+}
+
+/** Rejects unknown lifecycle labels before they can weaken phase attribution. */
+function requireLivenessPhase(phase) {
+  if (!LIVENESS_PHASES.includes(phase)) {
+    throw new Error('Archive-lifecycle liveness phase is invalid.')
+  }
+}
+
+/** Retains deterministic sub-millisecond watchdog maxima in JSON evidence. */
+function roundMilliseconds(value) {
+  return Math.round(value * 1_000) / 1_000
+}
+
 /** Launches one packaged Electron main process and connects to its sandboxed renderer. */
 async function launchPackagedApp(options, userDataDir, number) {
   const remoteDebuggingPort = await findFreePort()
+  let inspectorPort = await findFreePort()
+  while (inspectorPort === remoteDebuggingPort) inspectorPort = await findFreePort()
   const appProcess = spawn(
     options.appPath,
-    [`--remote-debugging-port=${remoteDebuggingPort}`, ...options.extraArgs],
+    [
+      `--inspect=${inspectorPort}`,
+      `--remote-debugging-port=${remoteDebuggingPort}`,
+      ...options.extraArgs,
+    ],
     {
       cwd: projectRoot,
       env: {
         ...process.env,
         SARTRACKER_ELECTRON_USER_DATA_PATH: userDataDir,
         SARTRACKER_ELECTRON_BLOCK_NETWORK: '1',
+        SARTRACKER_ELECTRON_SOAK_POLL_INTERVAL_MS: String(LIVENESS_POLL_INTERVAL_MS),
       },
       stdio: ['ignore', 'ignore', 'pipe'],
     },
@@ -1044,12 +2160,15 @@ async function launchPackagedApp(options, userDataDir, number) {
     appProcess.once('exit', (code, signal) => resolve({ code, signal }))
   })
   let browser
+  let mainInspector
   try {
     await waitForCdp(remoteDebuggingPort, appProcess, () => launchError)
+    mainInspector = await connectMainInspector(inspectorPort, appProcess)
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${remoteDebuggingPort}`)
     const context = browser.contexts()[0]
     const page = context.pages()[0] ?? await context.waitForEvent('page')
     await page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
+    await page.locator('.maplibregl-canvas').waitFor({ state: 'attached', timeout: 60_000 })
     const visibleVersionText = await page.getByTestId('app-title').locator('..').innerText()
     const packagedBuildHeadMatched = renderedVersionContainsExactHead(
       visibleVersionText,
@@ -1069,12 +2188,14 @@ async function launchPackagedApp(options, userDataDir, number) {
       appProcess,
       browser,
       page,
+      mainInspector,
       exit,
       exitResult: null,
       packagedBuildHeadMatched,
       closed: false,
     }
   } catch (error) {
+    mainInspector?.close()
     await browser?.close().catch(() => undefined)
     if (appProcess.exitCode === null && appProcess.signalCode === null) {
       appProcess.kill('SIGKILL')
@@ -1094,6 +2215,8 @@ async function stopLaunch(launch) {
       'Electron shutdown exit was not observable.',
     )
   }
+  await launch.externalLivenessWatchdog?.stop().catch(() => undefined)
+  launch.mainInspector?.close()
   await launch.browser?.close().catch(() => undefined)
   if (launch.appProcess.exitCode === null && launch.appProcess.signalCode === null) {
     launch.appProcess.kill('SIGTERM')
@@ -1132,6 +2255,92 @@ async function waitForCdp(port, child, readLaunchError) {
     await delay(100)
   }
   throw new Error('Timed out waiting for packaged Electron renderer readiness.')
+}
+
+/** Connects an external Runtime inspector to the packaged Electron main process. */
+async function connectMainInspector(port, appProcess) {
+  const deadline = Date.now() + 60_000
+  let webSocketUrl
+  while (Date.now() < deadline) {
+    if (appProcess.exitCode !== null || appProcess.signalCode !== null) {
+      throw new Error('Packaged Electron exited before main-inspector readiness.')
+    }
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`)
+      if (response.ok) {
+        const targets = await response.json()
+        webSocketUrl = targets[0]?.webSocketDebuggerUrl
+        if (typeof webSocketUrl === 'string') break
+      }
+    } catch {
+      // Main-inspector readiness is polled until the bounded deadline.
+    }
+    await delay(100)
+  }
+  if (typeof webSocketUrl !== 'string') {
+    throw new Error('Timed out waiting for packaged Electron main-inspector readiness.')
+  }
+
+  const socket = new WebSocket(webSocketUrl)
+  await new Promise((resolve, reject) => {
+    socket.addEventListener('open', resolve, { once: true })
+    socket.addEventListener(
+      'error',
+      () => reject(new Error('Packaged Electron main inspector failed to connect.')),
+      { once: true },
+    )
+  })
+  let requestId = 0
+  let closed = false
+  const pending = new Map()
+  const rejectPending = () => {
+    if (closed) return
+    closed = true
+    for (const request of pending.values()) {
+      request.reject(new Error('Packaged Electron main inspector closed.'))
+    }
+    pending.clear()
+  }
+  socket.addEventListener('close', rejectPending)
+  socket.addEventListener('error', rejectPending)
+  socket.addEventListener('message', (event) => {
+    let message
+    try {
+      message = JSON.parse(String(event.data))
+    } catch {
+      rejectPending()
+      return
+    }
+    const request = pending.get(message.id)
+    if (request === undefined) return
+    pending.delete(message.id)
+    if (message.error !== undefined || message.result?.exceptionDetails !== undefined) {
+      request.reject(new Error('Packaged Electron main inspector evaluation failed.'))
+      return
+    }
+    request.resolve(message.result?.result?.value)
+  })
+
+  return {
+    evaluate: (expression) => new Promise((resolve, reject) => {
+      if (closed) {
+        reject(new Error('Packaged Electron main inspector is closed.'))
+        return
+      }
+      requestId += 1
+      pending.set(requestId, { resolve, reject })
+      socket.send(JSON.stringify({
+        id: requestId,
+        method: 'Runtime.evaluate',
+        params: { expression, returnByValue: true },
+      }))
+    }),
+    close: () => {
+      if (closed) return
+      rejectPending()
+      socket.close()
+    },
+  }
 }
 
 /** Allocates one loopback-only ephemeral debugging port. */
