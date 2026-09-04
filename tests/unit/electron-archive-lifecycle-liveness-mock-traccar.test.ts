@@ -22,6 +22,7 @@ describe('packaged archive-lifecycle liveness mock Traccar [DON-252 / BCP-15]', 
       const headers = { Cookie: cookie ?? '' }
 
       await server.setPhase('create')
+      expect(server.readCurrentFixSequence()).toBe(0)
       const first = await fetch(`${server.baseUrl}/api/positions`, { headers })
         .then((response) => response.json()) as Array<Record<string, unknown>>
       const second = await fetch(`${server.baseUrl}/api/positions`, { headers })
@@ -48,6 +49,7 @@ describe('packaged archive-lifecycle liveness mock Traccar [DON-252 / BCP-15]', 
         && entry.sourceTimestamp === new Date(entry.emittedAtMs).toISOString(),
       )).toBe(true)
       expect(server.readCurrentFixLedger(1)).toEqual([snapshot.currentFixLedger[1]])
+      expect(server.readCurrentFixSequence()).toBe(2)
 
       snapshot.currentFixLedger[0]!.phase = 'cleanup'
       expect(server.snapshot().currentFixLedger[0]?.phase).toBe('create')

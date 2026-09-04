@@ -32,6 +32,14 @@
   from a genuinely new stop failure. It also settles the external watchdog and
   releases launch ownership before propagating that fresh stop failure; the
   strict `<200 ms` gate is unchanged.
+- **Exact local head `74bdd95ca3bbd09f775ba111d53f6313e76769d6` is
+  rejected.** Its clean package produced one exact create sample with every gap
+  below 34 ms, then failed `source_identity_left_pending_at_operation_start`
+  before an archive operation began. Continuous polling emitted a source fix
+  between the non-atomic renderer and source ledger cuts. That normal in-flight
+  join state must remain under its original 200 ms expiry and must not count as
+  operation-fresh. The receipt also counted a secondary teardown expiry without
+  identifying it; bounded sanitized cleanup attribution is required.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
@@ -53,7 +61,14 @@
   valid repeated-correction lineage now remains live after re-finalization and
   ordinary Admin Unlock. Its deterministic archive-owned unlock IDs and linked
   rowid/time proofs require only existing unique-id and rowid point reads: no
-  startup index, migration, history scan, or sort was added.
+  startup index, migration, history scan, or sort was added. Causal source-
+  sequence fences now separate global continuous-poll evidence from finite
+  operation-fresh evidence, and renderer drain/correlation is serialized across
+  explicit and watchdog collection without extending the strict 200 ms duty.
+  Late timed-out drains are poisoned; drains finishing after watchdog stop
+  cannot commit stale evidence. Genuinely new cleanup failures carry bounded,
+  sanitized per-step receipt details, while nullish/hostile failure shapes
+  remain terminal and cannot suppress the receipt.
 
 ## Locked Safety Boundaries
 
@@ -80,8 +95,8 @@
 - Freeze and commit the red-first liveness-accounting, failure-receipt, and
   correction-lineage repair on the existing PR branch.
 - Rerun package/lifecycle first on that exact clean head, then full static,
-  browser, visual, physical SIGKILL, and Linux gates. Never rerun the unchanged
-  rejected `49523dc8` candidate.
+  browser, visual, physical SIGKILL, and Linux gates. Never rerun unchanged
+  rejected heads `49523dc8`, `81e47973`, or `74bdd95`.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -105,12 +120,12 @@
 
 ## Verification Snapshot
 
-- Replacement root integration gate: `12` files / `266` tests green.
-- The final renderer-clock/cleanup correction is `3` files / `129` focused
-  tests green. The current full deterministic serial unit gate is `375` files /
-  `3,712` tests green. Full
-  ESLint, TypeScript/production build, bundle budgets, focused Node syntax,
-  diff checks, and backend `58` passed / `1` ignored are green.
+- Current causal-fence, watchdog-stop, and cleanup-receipt gates are green:
+  `4` files / `157` focused tests and `5` files / `196` expanded affected tests.
+  The full deterministic serial suite is `375` files / `3,737` tests green.
+- Full ESLint, TypeScript/production build, bundle budgets, focused Node syntax,
+  diff checks, and the backend (`58` passed / `1` platform-specific ignored)
+  are green. These are pre-freeze local checks, not exact-head package proof.
 - Chromium `173/173`, visual Playwright `62/62`, and the refreshed manual-frame
   review are prior-head evidence until rerun. Exact-head package/lifecycle,
   physical SIGKILL, Linux, four-review, and fresh field gates remain pending.
@@ -125,8 +140,8 @@
 
 ## Blockers
 
-- PR #10 is not ready. `caf9e5e8`, `49523dc8`, and `81e47973` are rejected
-  diagnostics; the replacement exact-head package/lifecycle gate must pass
-  before Linux or field-scale qualification.
+- PR #10 is not ready. `caf9e5e8`, `49523dc8`, `81e47973`, and `74bdd95` are
+  rejected diagnostics; the replacement exact-head package/lifecycle gate must
+  pass before Linux or field-scale qualification.
 
 Archived pre-recovery baton: `handoff/archive/HANDOFF-history-2026-09-04-pre-pr10-recovery.md`.

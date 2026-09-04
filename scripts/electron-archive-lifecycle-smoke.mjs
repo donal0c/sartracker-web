@@ -54,6 +54,58 @@ const RENDERER_LIVENESS_LEDGER_CAPACITY = 256
 const LIVENESS_MISSION_NAME = 'Packaged Archive Liveness Probe'
 const LIVENESS_EMAIL = 'archive-liveness@example.invalid'
 const LIVENESS_SECRET = 'synthetic-archive-liveness-secret'
+const CLEANUP_STEP_LIMIT = 8
+const CLEANUP_FAILURE_DETAIL_LIMIT = CLEANUP_STEP_LIMIT + 1
+const CLEANUP_STEP_NAME_LIMIT = 48
+const CLEANUP_STEP_NAME_PATTERN = /^[a-z][a-z0-9_]*$/u
+const LIVENESS_PROBE_STOP_STEP = 'liveness_probe_stop'
+const PROFILE_REMOVAL_STEP = 'profile_removal'
+const UNREADABLE_CLEANUP_DETAIL_STEP_PREFIX = 'cleanup_detail_unreadable_'
+const UNREADABLE_CLEANUP_DETAIL_MESSAGE = 'Archive-lifecycle cleanup failure detail was unreadable.'
+const DIAGNOSTIC_ARRAY_LIMIT = 16
+const DIAGNOSTIC_ENTRY_LIMIT = 96
+const DIAGNOSTIC_DEPTH_LIMIT = 5
+const FAILURE_MESSAGE_INPUT_LIMIT = 4_096
+const UNSAFE_FAILURE_MESSAGE = 'Archive-lifecycle failure did not expose a safe message.'
+const OVERSIZED_FAILURE_MESSAGE = 'Archive-lifecycle failure message exceeded the bounded evidence limit.'
+const OMITTED_DIAGNOSTIC_VALUE = Symbol('omitted_archive_lifecycle_diagnostic_value')
+const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
+  'activeLaunchNumber',
+  'activePhase',
+  'auditedAtMs',
+  'cleanup',
+  'create',
+  'currentFixContinuity',
+  'currentFixMaxGapMs',
+  'currentFixTimeout',
+  'emittedAtMs',
+  'endedAtMs',
+  'errorKinds',
+  'freshSampleCount',
+  'gapMs',
+  'gapType',
+  'intervalStartedAtMs',
+  'invalidRendererFrame',
+  'mainSampleCount',
+  'mainWatchdogMaxGapMs',
+  'operationCount',
+  'operationOverflowCount',
+  'operations',
+  'phase',
+  'phaseMetrics',
+  'previousObservedAtMs',
+  'rendererFrameMaxGapMs',
+  'rendererFrameSampleCount',
+  'requestAgeMs',
+  'requestStartedAtMs',
+  'requestToRendererMaxMs',
+  'restore',
+  'sampleCount',
+  'sourceAgeMs',
+  'sourceToRendererMaxMs',
+  'startedAtMs',
+  'verify',
+])
 
 let activeLaunch = null
 let passphrase = ''
@@ -353,8 +405,13 @@ async function main() {
     profilePath: userDataDir,
     removeProfile: removeDisposableProfile,
     steps: [
-      { blocksProfileCleanup: false, run: () => livenessProbe?.stop(lifecycleFailure) },
       {
+        name: LIVENESS_PROBE_STOP_STEP,
+        blocksProfileCleanup: false,
+        run: () => livenessProbe?.stop(lifecycleFailure),
+      },
+      {
+        name: 'restarted_launch_stop',
         blocksProfileCleanup: true,
         run: async () => {
           try {
@@ -366,6 +423,7 @@ async function main() {
         },
       },
       {
+        name: 'initial_launch_stop',
         blocksProfileCleanup: true,
         run: async () => {
           try {
@@ -376,7 +434,11 @@ async function main() {
           }
         },
       },
-      { blocksProfileCleanup: false, run: () => mockServer?.close() },
+      {
+        name: 'mock_server_close',
+        blocksProfileCleanup: false,
+        run: () => mockServer?.close(),
+      },
     ],
   })
   lifecycleFailure = cleanup.failure
@@ -408,6 +470,7 @@ async function main() {
         processCleanupCompleted: cleanup.processCleanupCompleted,
         profileCleanupCompleted,
         cleanupFailureCount: cleanup.cleanupFailureCount,
+        cleanupFailures: cleanup.cleanupFailures,
         secrets,
         sourceBefore,
         startedAtMs,
@@ -1281,6 +1344,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   const readNow = dependencies.now ?? Date.now
   const wait = dependencies.delay ?? delay
   if (typeof mockServer?.setPhase !== 'function'
+    || typeof mockServer.readCurrentFixSequence !== 'function'
     || typeof mockServer.drainCurrentFixLedger !== 'function') {
     throw new Error('Archive-lifecycle liveness source ledger is not drainable.')
   }
@@ -1320,11 +1384,34 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   let activeLaunch = null
   let finished = false
   let operationSerial = Promise.resolve()
+  let rendererCollectionSerial = Promise.resolve()
+  let rendererCollectionFailure = null
+  let sourceEntrySequenceHighWatermark = 0
+  let sourceFenceHighWatermark = 0
 
   const enqueue = (operation) => {
     const result = operationSerial.then(operation)
     operationSerial = result.catch(() => undefined)
     return result
+  }
+
+  /** Reads one non-regressing source-side operation fence. */
+  const readSourceSequenceFence = () => {
+    let sequence
+    try {
+      sequence = mockServer.readCurrentFixSequence()
+    } catch {
+      recordError('source_sequence_fence_invalid')
+      return sourceFenceHighWatermark
+    }
+    if (!Number.isSafeInteger(sequence) || sequence < 0
+      || sequence < sourceEntrySequenceHighWatermark
+      || sequence < sourceFenceHighWatermark) {
+      recordError('source_sequence_fence_invalid')
+      return sourceFenceHighWatermark
+    }
+    sourceFenceHighWatermark = sequence
+    return sequence
   }
 
   const ingestSourceLedger = () => {
@@ -1336,8 +1423,10 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     }
     if (drained.overflowCount > 0) recordError('source_ledger_overflow')
     for (const entry of drained.entries) {
-      if (!LIVENESS_PHASES.includes(entry?.phase)) continue
-      if (typeof entry.sourcePositionId !== 'string' || entry.sourcePositionId === ''
+      if (!LIVENESS_PHASES.includes(entry?.phase)
+        || !Number.isSafeInteger(entry.sequence) || entry.sequence < 1
+        || entry.sequence <= sourceEntrySequenceHighWatermark
+        || typeof entry.sourcePositionId !== 'string' || entry.sourcePositionId === ''
         || !Number.isSafeInteger(entry.requestStartedAtMs) || entry.requestStartedAtMs < 0
         || !Number.isSafeInteger(entry.emittedAtMs)
         || entry.emittedAtMs < entry.requestStartedAtMs
@@ -1347,6 +1436,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         recordError('source_ledger_entry_invalid')
         continue
       }
+      sourceEntrySequenceHighWatermark = entry.sequence
       sourceByIdentity.set(entry.sourcePositionId, entry)
     }
   }
@@ -1693,9 +1783,14 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       for (const operation of operationCheckpoints.values()) {
         if (operation.phase === source.phase
           && operation.continuitySegmentStartedAtMs !== null
+          && source.sequence > operation.startSourceSequence
           && source.requestStartedAtMs >= operation.startedAtMs
+          && source.emittedAtMs >= operation.startedAtMs
+          && observation.observedAtMs >= operation.startedAtMs
           && (operation.endedAtMs === null || (
-            source.emittedAtMs < operation.endedAtMs
+            source.sequence <= operation.endSourceSequence
+            && source.requestStartedAtMs < operation.endedAtMs
+            && source.emittedAtMs < operation.endedAtMs
             && observation.observedAtMs < operation.endedAtMs
           ))) {
           operation.freshSampleCount += 1
@@ -1738,6 +1833,39 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     auditActiveContinuity()
   }
 
+  /** Serializes each renderer drain together with source-ledger correlation. */
+  const collectAndRecordRendererSnapshot = (
+    launch,
+    cleanup = false,
+    shouldRecord = () => true,
+  ) => {
+    if (rendererCollectionFailure !== null) {
+      return Promise.reject(rendererCollectionFailure)
+    }
+    const collection = rendererCollectionSerial.then(async () => {
+      if (rendererCollectionFailure !== null) throw rendererCollectionFailure
+      const snapshot = await collectRenderer(launch.page, cleanup)
+      if (rendererCollectionFailure !== null) throw rendererCollectionFailure
+      if (shouldRecord()) recordRendererSnapshot(snapshot)
+    })
+    rendererCollectionSerial = collection.catch(() => undefined)
+    let collectionSettled = false
+    void collection.then(
+      () => { collectionSettled = true },
+      () => { collectionSettled = true },
+    )
+    return withTimeout(
+      collection,
+      LIVENESS_HARD_GATE_MS,
+      cleanup
+        ? 'Electron renderer liveness teardown timed out.'
+        : 'Electron renderer liveness collection timed out.',
+    ).catch((error) => {
+      if (!collectionSettled) rendererCollectionFailure = error
+      throw error
+    })
+  }
+
   const collectCurrentRendererSnapshot = async () => {
     if (activeLaunch === null) {
       ingestSourceLedger()
@@ -1745,11 +1873,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       return
     }
     try {
-      recordRendererSnapshot(await withTimeout(
-        collectRenderer(activeLaunch.page, false),
-        LIVENESS_HARD_GATE_MS,
-        'Electron renderer liveness collection timed out.',
-      ))
+      await collectAndRecordRendererSnapshot(activeLaunch, false)
     } catch (error) {
       throwRendererCdpFailure(
         error,
@@ -1898,6 +2022,8 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         readPhase: () => activePhase,
         onMainGap: recordMainGap,
         onRendererSnapshot: recordRendererSnapshot,
+        collectRendererSnapshot: (cleanup = false, shouldRecord = () => true) =>
+          collectAndRecordRendererSnapshot(launch, cleanup, shouldRecord),
         onError: recordError,
       })
       launch.externalLivenessWatchdog = watchdog
@@ -1942,11 +2068,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     for (const phase of phases) requireLivenessPhase(phase)
     throwIfInstrumentationFailed()
     await collectCurrentRendererSnapshot()
-    for (const phase of phases) {
-      if ([...sourceByIdentity.values()].some((source) => source.phase === phase)) {
-        recordError('source_identity_left_pending_at_operation_start')
-      }
-    }
+    const startSourceSequence = readSourceSequenceFence()
     throwIfInstrumentationFailed()
     const startedAtMs = readNow()
     if (!Number.isSafeInteger(startedAtMs) || startedAtMs < 0) {
@@ -1961,6 +2083,8 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       phase: checkpoint.phase,
       startedAtMs,
       endedAtMs: null,
+      startSourceSequence,
+      endSourceSequence: null,
       freshSampleCount: 0,
       continuitySegmentStartedAtMs: activePhase === checkpoint.phase ? startedAtMs : null,
       continuityLastObservedAtMs: null,
@@ -1984,7 +2108,12 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       recordError('external_watchdog_clock_invalid')
       throwIfInstrumentationFailed()
     }
-    for (const operation of operations) operation.endedAtMs = endedAtMs
+    const endSourceSequence = readSourceSequenceFence()
+    throwIfInstrumentationFailed()
+    for (const operation of operations) {
+      operation.endedAtMs = endedAtMs
+      operation.endSourceSequence = endSourceSequence
+    }
     let collectionFailure
     try {
       await collectCurrentRendererSnapshot()
@@ -2002,6 +2131,29 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
 
   const endPhaseOperation = (checkpoint) => endPhaseOperations([checkpoint])
 
+  /** Identifies only the finite source interval owned by one ended operation. */
+  const sourceIsPendingFromOperation = (source, operation) => (
+    source.phase === operation.phase
+    && source.sequence > operation.startSourceSequence
+    && source.sequence <= operation.endSourceSequence
+    && source.requestStartedAtMs >= operation.startedAtMs
+    && source.emittedAtMs >= operation.startedAtMs
+    && source.requestStartedAtMs < operation.endedAtMs
+    && source.emittedAtMs < operation.endedAtMs
+  )
+
+  /** Settles in-window identities without chasing the continuously moving tail. */
+  const settlePendingOperationSources = async (operation) => {
+    while ([...sourceByIdentity.values()].some((source) =>
+      sourceIsPendingFromOperation(source, operation))) {
+      await collectCurrentRendererSnapshot()
+      throwIfInstrumentationFailed()
+      if (![...sourceByIdentity.values()].some((source) =>
+        sourceIsPendingFromOperation(source, operation))) return
+      await wait(10)
+    }
+  }
+
   const completePhaseOperation = async (checkpoint) => enqueue(async () => {
     const operation = operationCheckpoints.get(checkpoint)
     if (operation === undefined || operation.endedAtMs === null) {
@@ -2009,10 +2161,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     }
     const phase = checkpoint.phase
     await collectCurrentRendererSnapshot()
-    if ([...sourceByIdentity.values()].some((source) => source.phase === phase
-      && source.requestStartedAtMs < operation.endedAtMs)) {
-      recordError('source_identity_left_pending_at_operation_end')
-    }
+    await settlePendingOperationSources(operation)
     operationCheckpoints.delete(checkpoint)
     const advanced = byPhase[phase].sampleCount > checkpoint.sampleCount
       && operation.freshSampleCount > 0
@@ -2183,6 +2332,13 @@ export function startExternalLaunchWatchdog(input) {
   let stopPromise = null
   let attributedPhase = input.readPhase()
   let previousCompletedAt = performance.now()
+  const collectRendererSnapshot = async (cleanup) => {
+    if (typeof input.collectRendererSnapshot === 'function') {
+      await input.collectRendererSnapshot(cleanup, () => cleanup || !stopped)
+      return
+    }
+    return collectRendererLivenessProbe(input.launch.page, cleanup)
+  }
   /** Records the old phase tail without resetting cross-phase heartbeat continuity. */
   const setPhase = (phase) => {
     if (phase !== null && !LIVENESS_PHASES.includes(phase)) {
@@ -2226,11 +2382,11 @@ export function startExternalLaunchWatchdog(input) {
       const cycleStartedAt = performance.now()
       try {
         const snapshot = await withTimeout(
-          collectRendererLivenessProbe(input.launch.page, false),
+          collectRendererSnapshot(false),
           LIVENESS_HARD_GATE_MS,
           'Electron renderer liveness watchdog timed out.',
         )
-        if (!stopped) input.onRendererSnapshot(snapshot)
+        if (!stopped && snapshot !== undefined) input.onRendererSnapshot(snapshot)
       } catch {
         if (!stopped) input.onError('renderer_cdp_watchdog_failed')
       }
@@ -2247,11 +2403,11 @@ export function startExternalLaunchWatchdog(input) {
         stopped = true
         await Promise.all([mainTask, rendererTask])
         const finalSnapshot = await withTimeout(
-          collectRendererLivenessProbe(input.launch.page, true),
+          collectRendererSnapshot(true),
           LIVENESS_HARD_GATE_MS,
           'Electron renderer liveness teardown timed out.',
         )
-        input.onRendererSnapshot(finalSnapshot)
+        if (finalSnapshot !== undefined) input.onRendererSnapshot(finalSnapshot)
       })()
       return stopPromise
     },
@@ -2696,27 +2852,48 @@ async function prepareEvidenceDirectory(directory, protectedPaths) {
   await mkdir(resolved, { recursive: true, mode: 0o700 })
 }
 
+/** Accepts one fixed, non-sensitive cleanup stage identifier. */
+function cleanupStepNameIsValid(value) {
+  return typeof value === 'string'
+    && value.length >= 1
+    && value.length <= CLEANUP_STEP_NAME_LIMIT
+    && CLEANUP_STEP_NAME_PATTERN.test(value)
+    && !value.startsWith(UNREADABLE_CLEANUP_DETAIL_STEP_PREFIX)
+}
+
 /**
  * Settles owned runtime resources and removes the disposable profile only after
  * every launch stop has been confirmed.
  */
 export async function cleanupArchiveLifecycleResources(input) {
   if (!Array.isArray(input?.steps)
-    || input.steps.some((step) => typeof step?.run !== 'function'
+    || input.steps.length > CLEANUP_STEP_LIMIT
+    || input.steps.some((step) => !cleanupStepNameIsValid(step?.name)
+      || step.name === PROFILE_REMOVAL_STEP
+      || typeof step?.run !== 'function'
       || typeof step.blocksProfileCleanup !== 'boolean')
+    || new Set(input.steps.map((step) => step.name)).size !== input.steps.length
     || typeof input?.removeProfile !== 'function'
     || (input.profilePath !== null && typeof input.profilePath !== 'string')) {
     throw new Error('Archive-lifecycle cleanup inputs are invalid.')
   }
+  const primaryFailure = input.failure
+  const hasPrimaryFailure = primaryFailure !== null && primaryFailure !== undefined
   let failure = input.failure
   let processCleanupCompleted = true
-  let cleanupFailureCount = 0
+  const cleanupFailures = []
+  const retainCleanupFailure = (step, error) => {
+    if (step === LIVENESS_PROBE_STOP_STEP
+      && hasPrimaryFailure && error === primaryFailure) return
+    cleanupFailures.push(Object.freeze({ step, error }))
+  }
   for (const step of input.steps) {
     try {
       await step.run()
     } catch (error) {
-      cleanupFailureCount += 1
-      if (failure === null || failure === undefined) failure = error
+      const normalizedError = normalizeNullishCleanupFailure(error, step.name)
+      retainCleanupFailure(step.name, normalizedError)
+      if (failure === null || failure === undefined) failure = normalizedError
       if (step.blocksProfileCleanup) processCleanupCompleted = false
     }
   }
@@ -2726,16 +2903,213 @@ export async function cleanupArchiveLifecycleResources(input) {
       await input.removeProfile(input.profilePath)
       profileCleanupCompleted = true
     } catch (error) {
-      cleanupFailureCount += 1
-      if (failure === null || failure === undefined) failure = error
+      const normalizedError = normalizeNullishCleanupFailure(error, PROFILE_REMOVAL_STEP)
+      retainCleanupFailure(PROFILE_REMOVAL_STEP, normalizedError)
+      if (failure === null || failure === undefined) failure = normalizedError
     }
   }
   return Object.freeze({
-    cleanupFailureCount,
+    cleanupFailureCount: cleanupFailures.length,
+    cleanupFailures: Object.freeze(cleanupFailures),
     failure: failure ?? null,
     processCleanupCompleted,
     profileCleanupCompleted,
   })
+}
+
+/** Converts a nullish rejection into one stable, receipt-safe failure. */
+function normalizeNullishCleanupFailure(error, step) {
+  if (error !== null && error !== undefined) return error
+  return new Error(`Archive-lifecycle cleanup step ${step} failed without a reason.`)
+}
+
+/** Creates one bounded placeholder when hostile detail access cannot be trusted. */
+function unreadableCleanupFailureDetail(index) {
+  return Object.freeze({
+    step: `${UNREADABLE_CLEANUP_DETAIL_STEP_PREFIX}${index}`,
+    error: new Error(UNREADABLE_CLEANUP_DETAIL_MESSAGE),
+  })
+}
+
+/** Reads one own detail field without trusting proxy traps or accessors. */
+function readCleanupFailureDetailField(detail, field) {
+  try {
+    if (!Object.hasOwn(detail, field)) return { state: 'missing', value: undefined }
+    return { state: 'present', value: detail[field] }
+  } catch {
+    return { state: 'unreadable', value: undefined }
+  }
+}
+
+/** Classifies array identity without allowing a revoked proxy to escape. */
+function safelyIsArray(value) {
+  try {
+    return Array.isArray(value)
+  } catch {
+    return null
+  }
+}
+
+/** Reads one bounded detail list while preserving count consistency. */
+function readConsistentCleanupFailureDetails(input) {
+  if (!Number.isSafeInteger(input.cleanupFailureCount)
+    || input.cleanupFailureCount < 0
+    || input.cleanupFailureCount > CLEANUP_FAILURE_DETAIL_LIMIT) {
+    throw new Error('Archive-lifecycle cleanup failure count does not match its details.')
+  }
+  const unreadableDetails = () => Object.freeze(Array.from(
+    { length: input.cleanupFailureCount },
+    (_entry, index) => unreadableCleanupFailureDetail(index),
+  ))
+  let details
+  try {
+    details = input.cleanupFailures
+  } catch {
+    return unreadableDetails()
+  }
+  const arrayIdentity = safelyIsArray(details)
+  if (arrayIdentity === null) return unreadableDetails()
+  if (!arrayIdentity) {
+    throw new Error('Archive-lifecycle cleanup failure count does not match its details.')
+  }
+  let detailCount
+  try {
+    detailCount = details.length
+  } catch {
+    return unreadableDetails()
+  }
+  if (detailCount !== input.cleanupFailureCount) {
+    throw new Error('Archive-lifecycle cleanup failure count does not match its details.')
+  }
+  const names = new Set()
+  const projected = []
+  for (let index = 0; index < detailCount; index += 1) {
+    let detail
+    try {
+      detail = details[index]
+    } catch {
+      projected.push(unreadableCleanupFailureDetail(index))
+      continue
+    }
+    const detailArrayIdentity = safelyIsArray(detail)
+    if (detailArrayIdentity === null) {
+      projected.push(unreadableCleanupFailureDetail(index))
+      continue
+    }
+    if (detail === null || typeof detail !== 'object' || detailArrayIdentity) {
+      throw new Error('Archive-lifecycle cleanup failure details are invalid.')
+    }
+    const step = readCleanupFailureDetailField(detail, 'step')
+    const error = readCleanupFailureDetailField(detail, 'error')
+    if (step.state === 'unreadable' || error.state === 'unreadable') {
+      projected.push(unreadableCleanupFailureDetail(index))
+      continue
+    }
+    if (step.state !== 'present' || error.state !== 'present'
+      || !cleanupStepNameIsValid(step.value) || names.has(step.value)) {
+      throw new Error('Archive-lifecycle cleanup failure details are invalid.')
+    }
+    names.add(step.value)
+    projected.push(Object.freeze({
+      step: step.value,
+      error: normalizeNullishCleanupFailure(error.value, step.value),
+    }))
+  }
+  return Object.freeze(projected)
+}
+
+/** Projects only known, finite liveness fields into terminal evidence. */
+function readProjectedArchiveLifecycleDiagnostics(error, secrets) {
+  let diagnostics
+  try {
+    diagnostics = error?.archiveLifecycleDiagnostics
+  } catch {
+    return null
+  }
+  const arrayIdentity = safelyIsArray(diagnostics)
+  if (diagnostics === null || typeof diagnostics !== 'object'
+    || arrayIdentity !== false) return null
+  const seen = new WeakSet()
+  const budget = { remaining: DIAGNOSTIC_ENTRY_LIMIT }
+  const projected = projectArchiveLifecycleDiagnosticValue(
+    diagnostics,
+    secrets,
+    seen,
+    budget,
+    0,
+  )
+  return projected === OMITTED_DIAGNOSTIC_VALUE ? null : projected
+}
+
+/** Recursively copies one allow-listed diagnostic value within fixed bounds. */
+function projectArchiveLifecycleDiagnosticValue(value, secrets, seen, budget, depth) {
+  if (budget.remaining <= 0) return OMITTED_DIAGNOSTIC_VALUE
+  budget.remaining -= 1
+  if (value === null || typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string') return sanitizeFailureMessage(value, secrets)
+  if (depth >= DIAGNOSTIC_DEPTH_LIMIT) return null
+  const arrayIdentity = safelyIsArray(value)
+  if (arrayIdentity === null) return null
+  if (typeof value !== 'object') return null
+  if (seen.has(value)) return null
+  seen.add(value)
+  if (arrayIdentity) {
+    const projected = []
+    let length
+    try {
+      length = value.length
+    } catch {
+      return projected
+    }
+    if (!Number.isSafeInteger(length) || length < 0) return projected
+    const entryCount = Math.min(length, DIAGNOSTIC_ARRAY_LIMIT)
+    for (let index = 0; index < entryCount; index += 1) {
+      if (budget.remaining <= 0) break
+      let entry
+      try {
+        entry = value[index]
+      } catch {
+        continue
+      }
+      const projectedEntry = projectArchiveLifecycleDiagnosticValue(
+        entry,
+        secrets,
+        seen,
+        budget,
+        depth + 1,
+      )
+      if (projectedEntry !== OMITTED_DIAGNOSTIC_VALUE) projected.push(projectedEntry)
+    }
+    return projected
+  }
+  const projected = {}
+  for (const key of ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS) {
+    if (budget.remaining <= 0) break
+    let hasKey
+    try {
+      hasKey = Object.hasOwn(value, key)
+    } catch {
+      continue
+    }
+    if (!hasKey) continue
+    let entry
+    try {
+      entry = value[key]
+    } catch {
+      continue
+    }
+    if (entry === undefined || typeof entry === 'function' || typeof entry === 'symbol') continue
+    const projectedEntry = projectArchiveLifecycleDiagnosticValue(
+      entry,
+      secrets,
+      seen,
+      budget,
+      depth + 1,
+    )
+    if (projectedEntry !== OMITTED_DIAGNOSTIC_VALUE) projected[key] = projectedEntry
+  }
+  return projected
 }
 
 /** Atomically publishes one success report and removes any opposite terminal receipt. */
@@ -2754,8 +3128,20 @@ export async function writeArchiveLifecycleFailureReceipt(input, dependencies = 
     || input.secrets.some((secret) => typeof secret !== 'string' || secret.length < 1)) {
     throw new Error('Archive-lifecycle failure receipt secret set is invalid.')
   }
+  const cleanupFailureDetails = readConsistentCleanupFailureDetails(input)
   const failedAtMs = Date.now()
-  const diagnostics = input.error?.archiveLifecycleDiagnostics
+  const diagnostics = readProjectedArchiveLifecycleDiagnostics(input.error, input.secrets)
+  const cleanupFailures = cleanupFailureDetails.map(({ step, error }) => {
+    const cleanupDiagnostics = readProjectedArchiveLifecycleDiagnostics(error, input.secrets)
+    return {
+      step,
+      classification: cleanupDiagnostics === null
+        ? 'cleanup_failure'
+        : 'external_liveness_gate_failure',
+      message: sanitizeFailureMessage(error, input.secrets),
+      archiveLifecycleDiagnostics: cleanupDiagnostics,
+    }
+  })
   const receipt = {
     schemaVersion: 1,
     proofKind: 'packaged-electron-archive-lifecycle-failure-v1',
@@ -2775,17 +3161,15 @@ export async function writeArchiveLifecycleFailureReceipt(input, dependencies = 
       observedLaunchCount: input.observedLaunchCount,
     },
     failure: {
-      classification: diagnostics === undefined
+      classification: diagnostics === null
         ? 'lifecycle_failure'
         : 'external_liveness_gate_failure',
       message: sanitizeFailureMessage(input.error, input.secrets),
-      archiveLifecycleDiagnostics: diagnostics ?? null,
+      archiveLifecycleDiagnostics: diagnostics,
     },
     cleanup: {
-      cleanupFailureCount: Number.isSafeInteger(input.cleanupFailureCount)
-        && input.cleanupFailureCount >= 0
-        ? input.cleanupFailureCount
-        : 0,
+      cleanupFailureCount: input.cleanupFailureCount,
+      failures: cleanupFailures,
       processCleanupCompleted: input.processCleanupCompleted === true,
       profileCleanupCompleted: input.profileCleanupCompleted === true,
     },
@@ -3024,15 +3408,43 @@ function delay(milliseconds) {
 
 /** Removes custody-like values and local paths from one terminal failure message. */
 function sanitizeFailureMessage(error, secrets = [passphrase, recoveryCode]) {
-  let source = error instanceof Error ? error.message : String(error)
-  for (const secret of secrets) {
-    if (secret !== '') source = source.replaceAll(secret, '[REDACTED]')
+  return sanitizeBoundedFailureMessage(readBoundedFailureMessage(error), secrets)
+}
+
+/** Reads one failure message without invoking hostile object coercion. */
+function readBoundedFailureMessage(error) {
+  let source
+  if (typeof error === 'string') {
+    source = error
+  } else if (typeof error === 'number' || typeof error === 'boolean'
+    || typeof error === 'bigint') {
+    source = String(error)
+  } else if ((typeof error === 'object' && error !== null)
+    || typeof error === 'function') {
+    try {
+      source = Reflect.get(error, 'message')
+    } catch {
+      return UNSAFE_FAILURE_MESSAGE
+    }
+    if (typeof source !== 'string') return UNSAFE_FAILURE_MESSAGE
+  } else {
+    return UNSAFE_FAILURE_MESSAGE
   }
+  if (source.length > FAILURE_MESSAGE_INPUT_LIMIT) return OVERSIZED_FAILURE_MESSAGE
   return source
+}
+
+/** Redacts one already-bounded primitive message. */
+function sanitizeBoundedFailureMessage(source, secrets) {
+  let sanitized = source
+  for (const secret of secrets) {
+    if (secret !== '') sanitized = sanitized.replaceAll(secret, '[REDACTED]')
+  }
+  return sanitized
     .replaceAll(/(?:[0-9A-HJKMNP-TV-Z]{5}-){7}[0-9A-HJKMNP-TV-Z]{5}/gu, '[REDACTED]')
-    .replaceAll(/(['"`])(\/[^'"`\r\n]*)\1/gu, '$1[PATH]$1')
+    .replaceAll(/(['"`])(?:[A-Za-z]:[\\/]|[\\/]+)[^'"`\r\n]*\1/gu, '$1[PATH]$1')
     // An unquoted path containing spaces has no reliable closing delimiter, so
     // fail closed by redacting from its absolute-path boundary through the line.
-    .replaceAll(/(^|[\s(=,:])\/[^\r\n]*/gu, '$1[PATH]')
+    .replaceAll(/(^|[^A-Za-z0-9_\\/])(?:[A-Za-z]:[\\/]|[\\/]+)[^\r\n]*/gu, '$1[PATH]')
     .slice(0, FAILURE_MESSAGE_LIMIT)
 }

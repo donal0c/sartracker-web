@@ -136,6 +136,7 @@ export async function startArchiveLifecycleLivenessMockTraccarServer(options = {
     readCurrentFixLedger: (afterSequence = 0) => currentFixLedger
       .filter((entry) => entry.sequence > afterSequence)
       .map((entry) => ({ ...entry })),
+    readCurrentFixSequence: () => currentFixSequence,
     drainCurrentFixLedger: () => {
       const entries = currentFixLedger.splice(0, currentFixLedger.length)
         .map((entry) => ({ ...entry }))

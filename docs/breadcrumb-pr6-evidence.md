@@ -63,6 +63,17 @@ is intermediate. Donal retains approval and merge authority.
 > while a genuinely new stop failure remains distinct and fail-closed. The
 > strict gate remains unchanged.
 >
+> Exact local head `74bdd95ca3bbd09f775ba111d53f6313e76769d6` / tree
+> `3bef9c115d5fadeb4ae9427532f27be80a8177ce` is also rejected. Its clean
+> package produced one healthy exact create-phase sample with every measured
+> gap below `34 ms`, then failed `source_identity_left_pending_at_operation_start`
+> before any operation began. The renderer and source ledgers were cut at
+> different instants while 50 ms polling remained active, so a normal in-flight
+> identity was treated as an immediate error rather than remaining governed by
+> its original strict 200 ms deadline. This is a measurement-boundary defect,
+> not product- or host-stall evidence. Its unexplained cleanup count also exposed
+> that the receipt omitted secondary cleanup-failure attribution.
+>
 > A separate red-first regression preserves live Review after cleanup → archive
 > correction restore → re-finalization → ordinary Admin Unlock, including
 > repeated cycles and current/intermediate recovery archives. Unlocks now have
@@ -155,6 +166,63 @@ deterministic serial suite is `375` files / `3,712` tests green; full ESLint,
 TypeScript/production build, bundle budgets, focused Node syntax, diff checks,
 and the legacy backend (`58` passed / `1` ignored) are green. Exact-package and
 later candidate gates remain pending on the replacement commit.
+
+## 2026-09-04 rejected `74bdd95` operation-boundary candidate
+
+The renderer-clock and watchdog-settlement repair was committed at
+`74bdd95ca3bbd09f775ba111d53f6313e76769d6` / tree
+`3bef9c115d5fadeb4ae9427532f27be80a8177ce`. Its exact clean macOS arm64
+package completed with executable SHA-256
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and ASAR SHA-256
+`f15d9284fed1e926e6d32b17d3a7f0c65c868ffbf320f3bc86d2bc4d752fe416`.
+The one packaged lifecycle attempt then wrote a 0600 failure receipt, SHA-256
+`2e55a78add58b79d24476084690d17440207586169f56be3d212734d904e1c6f`.
+
+The receipt recorded one exact create-phase sample, `3 ms` source-to-renderer
+and request-to-renderer maxima, `12.68 ms` main and `8.9 ms` renderer-frame
+maxima, no current-fix timeout or continuity breach, and zero operations. A
+second source identity was emitted between the renderer observation cut and the
+source-ledger cut. The old start assertion rejected that ordinary
+join state immediately, even though unmatched identities already have a strict
+per-source `>=200 ms` expiry. During teardown that same identity reached its
+real deadline and created a distinct secondary liveness error; cleanup counted
+it but the receipt retained only the primary error details.
+
+The replacement must use causal operation fences: a pre-start identity remains
+global liveness evidence but cannot satisfy fresh-operation proof, only sources
+inside the exclusive-start/inclusive-end source window may count, and finite
+in-window pending identities settle only to their original deadline. Renderer
+collection/delivery must be serialized so a concurrent watchdog cannot hide a
+valid observation across a checkpoint boundary. No polling pause, global-empty
+wait, continuity reset, or deadline extension is permitted. Secondary cleanup
+failures must remain fail-closed and appear as bounded sanitized receipt detail.
+Head `74bdd95` will not be rerun unchanged.
+
+The red-first replacement now implements those fences against the mock source's
+monotonic sequence and serializes renderer drain plus source correlation across
+explicit and watchdog collection. A periodic drain that completes after
+watchdog stop begins is discarded inside that serialized commit boundary; the
+final cleanup drain is still recorded. A timed-out drain poisons later
+collection, cannot commit late exact-fix evidence, and cannot start another raw
+drain. Start-pending and post-end sources retain their global liveness duty but
+cannot satisfy operation freshness, while only the finite in-window set is
+settled at completion. The strict per-source `>=200 ms` rejection is unchanged.
+
+Cleanup now attributes each genuinely new failure to one stable bounded step,
+including profile removal, while ignoring only an exact primary error replayed
+by liveness stop. Count/detail disagreement fails closed. Terminal projection is
+allow-listed, secret/path-redacted, depth/array/global-node bounded, and total
+for nullish rejections, hostile getters/proxies, cycles, and malformed messages,
+so those inputs cannot be misreported as success or suppress the required
+receipt. Two independent implementation audits exposed and drove the watchdog
+commit-boundary and hostile-receipt corrections. The combined focused gate is
+`4` files / `157` tests green and the expanded affected gate is `5` files /
+`196` tests green. The full deterministic serial suite is `375` files / `3,737`
+tests green, alongside full ESLint, TypeScript/production build, bundle budgets,
+focused Node syntax, diff checks, and the legacy backend (`58` passed / `1`
+platform-specific ignored). These remain pre-freeze local checks, not exact-head
+package, Linux, or field proof.
 
 ## 2026-09-03 cancelled-cleanup fence remediation
 
