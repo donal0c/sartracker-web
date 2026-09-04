@@ -353,7 +353,7 @@ async function main() {
     profilePath: userDataDir,
     removeProfile: removeDisposableProfile,
     steps: [
-      { blocksProfileCleanup: false, run: () => livenessProbe?.stop() },
+      { blocksProfileCleanup: false, run: () => livenessProbe?.stop(lifecycleFailure) },
       {
         blocksProfileCleanup: true,
         run: async () => {
@@ -1301,11 +1301,18 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   const errors = new Set()
   let currentFixContinuity = null
   let currentFixTimeout = null
+  let invalidRendererFrame = null
+  // Keep the causal snapshot stable while the error-kind set is unchanged so
+  // cleanup can recognize a replay; a genuinely new kind invalidates it.
+  let instrumentationFailure = null
+  let ignoredInstrumentationFailure = null
+  let preserveStopFailureCause = false
   let signalFailure
   const failureSignal = new Promise((resolve) => { signalFailure = resolve })
   const recordError = (kind) => {
     if (errors.has(kind)) return
     errors.add(kind)
+    instrumentationFailure = null
     signalFailure(kind)
   }
   let activePhase = null
@@ -1384,6 +1391,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       activeLaunchNumber: Number.isSafeInteger(activeLaunch?.number) ? activeLaunch.number : null,
       currentFixContinuity,
       currentFixTimeout,
+      invalidRendererFrame,
       operationCount: activeOperations.length,
       operationOverflowCount: Math.max(0, activeOperations.length - LIVENESS_PHASES.length),
       operations: activeOperations.slice(0, LIVENESS_PHASES.length)
@@ -1403,17 +1411,28 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
 
   const throwIfInstrumentationFailed = () => {
     if (errors.size > 0) {
-      const failure = new Error(
-        `Archive-lifecycle external watchdog recorded an instrumentation failure (${[...errors].sort().join(',')}).`,
-      )
-      Object.defineProperty(failure, 'archiveLifecycleDiagnostics', {
-        configurable: false,
-        enumerable: false,
-        writable: false,
-        value: buildFailureDiagnostics(),
-      })
-      throw failure
+      if (instrumentationFailure === null) {
+        instrumentationFailure = new Error(
+          `Archive-lifecycle external watchdog recorded an instrumentation failure (${[...errors].sort().join(',')}).`,
+        )
+        Object.defineProperty(instrumentationFailure, 'archiveLifecycleDiagnostics', {
+          configurable: false,
+          enumerable: false,
+          writable: false,
+          value: buildFailureDiagnostics(),
+        })
+      }
+      if (instrumentationFailure === ignoredInstrumentationFailure) return
+      throw instrumentationFailure
     }
+  }
+
+  const throwRendererCdpFailure = (error, stopMessage) => {
+    recordError('renderer_cdp_watchdog_failed')
+    if (preserveStopFailureCause) {
+      throw new Error(stopMessage, { cause: error })
+    }
+    throwIfInstrumentationFailed()
   }
 
   const readExternalNow = () => {
@@ -1554,6 +1573,20 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   const recordRendererFrameGap = (frame, countFrame) => {
     if (!LIVENESS_PHASES.includes(frame?.phase)
       || !Number.isFinite(frame?.gapMs) || frame.gapMs < 0) {
+      if (invalidRendererFrame === null) {
+        const rawGapMs = frame?.gapMs
+        let gapType = 'invalid_phase'
+        if (typeof rawGapMs !== 'number') gapType = 'non_numeric'
+        else if (!Number.isFinite(rawGapMs)) gapType = 'non_finite'
+        else if (rawGapMs < 0) gapType = 'negative'
+        invalidRendererFrame = Object.freeze({
+          phase: LIVENESS_PHASES.includes(frame?.phase) ? frame.phase : null,
+          gapMs: Number.isFinite(rawGapMs)
+            ? Math.max(-LIVENESS_HARD_GATE_MS, Math.min(LIVENESS_HARD_GATE_MS, rawGapMs))
+            : null,
+          gapType,
+        })
+      }
       recordError('renderer_frame_sample_invalid')
       return
     }
@@ -1717,9 +1750,11 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         LIVENESS_HARD_GATE_MS,
         'Electron renderer liveness collection timed out.',
       ))
-    } catch {
-      recordError('renderer_cdp_watchdog_failed')
-      throwIfInstrumentationFailed()
+    } catch (error) {
+      throwRendererCdpFailure(
+        error,
+        'Archive-lifecycle renderer collection failed during liveness stop.',
+      )
     }
   }
 
@@ -1770,9 +1805,11 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
           LIVENESS_HARD_GATE_MS,
           'Electron renderer liveness phase pause timed out.',
         )
-      } catch {
-        recordError('renderer_cdp_watchdog_failed')
-        throwIfInstrumentationFailed()
+      } catch (error) {
+        throwRendererCdpFailure(
+          error,
+          'Archive-lifecycle renderer phase pause failed during liveness stop.',
+        )
       }
       recordRendererFrameTail(previousFrameTail)
     }
@@ -1789,9 +1826,11 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
           LIVENESS_HARD_GATE_MS,
           'Electron renderer liveness phase transition timed out.',
         )
-      } catch {
-        recordError('renderer_cdp_watchdog_failed')
-        throwIfInstrumentationFailed()
+      } catch (error) {
+        throwRendererCdpFailure(
+          error,
+          'Archive-lifecycle renderer phase transition failed.',
+        )
       }
       recordRendererFrameTail(previousFrameTail)
       throwIfInstrumentationFailed()
@@ -1825,9 +1864,11 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
           LIVENESS_HARD_GATE_MS,
           'Electron renderer liveness phase transition timed out.',
         )
-      } catch {
-        recordError('renderer_cdp_watchdog_failed')
-        throwIfInstrumentationFailed()
+      } catch (error) {
+        throwRendererCdpFailure(
+          error,
+          'Archive-lifecycle renderer phase transition failed.',
+        )
       }
       recordRendererFrameTail(previousFrameTail)
       throwIfInstrumentationFailed()
@@ -2017,27 +2058,59 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     throw new Error(`Archive-lifecycle ${phase} liveness did not produce a full sample.`)
   }
 
-  const stop = async () => {
+  const stop = async (knownFailure = null) => {
     return enqueue(async () => {
-      if (activeLaunch !== null) {
-        await pauseAndSettleActivePhase()
-        const launch = activeLaunch
-        if (launch.externalLivenessWatchdog !== undefined) {
-          await launch.externalLivenessWatchdog.stop()
-          launch.externalLivenessWatchdog = undefined
-        }
-        activeLaunch = null
-      } else {
-        await mockServer.setPhase(null)
-        activePhase = null
-        if (activeContinuityInterval !== null) {
-          recordError('current_fix_continuity_state_invalid')
-          activeContinuityInterval = null
-        }
+      const suppressKnownFailure = knownFailure !== null
+        && knownFailure === instrumentationFailure
+      const previousIgnoredFailure = ignoredInstrumentationFailure
+      const previousPreserveStopFailureCause = preserveStopFailureCause
+      if (suppressKnownFailure) {
+        ignoredInstrumentationFailure = knownFailure
+        preserveStopFailureCause = true
       }
-      ingestSourceLedger()
-      expirePendingSources()
-      if (sourceByIdentity.size !== 0) recordError('source_identity_left_pending_at_finish')
+      try {
+        if (activeLaunch !== null) {
+          const launch = activeLaunch
+          let launchStopFailure
+          try {
+            await pauseAndSettleActivePhase()
+          } catch (error) {
+            launchStopFailure = error
+          }
+          try {
+            if (launch.externalLivenessWatchdog !== undefined) {
+              await launch.externalLivenessWatchdog.stop()
+            }
+          } catch (error) {
+            launchStopFailure = launchStopFailure === undefined
+              ? error
+              : new AggregateError(
+                  [launchStopFailure, error],
+                  'Archive-lifecycle liveness stop recorded multiple failures.',
+                )
+          } finally {
+            launch.externalLivenessWatchdog = undefined
+            activeLaunch = null
+            activePhase = null
+            activeContinuityInterval = null
+          }
+          if (launchStopFailure !== undefined) throw launchStopFailure
+        } else {
+          await mockServer.setPhase(null)
+          activePhase = null
+          if (activeContinuityInterval !== null) {
+            recordError('current_fix_continuity_state_invalid')
+            activeContinuityInterval = null
+          }
+        }
+        ingestSourceLedger()
+        expirePendingSources()
+        if (sourceByIdentity.size !== 0) recordError('source_identity_left_pending_at_finish')
+        throwIfInstrumentationFailed()
+      } finally {
+        ignoredInstrumentationFailure = previousIgnoredFailure
+        preserveStopFailureCause = previousPreserveStopFailureCause
+      }
     })
   }
 
@@ -2257,16 +2330,17 @@ export async function installRendererLivenessProbe(page, deviceId) {
       return result
     }
 
-    const frame = (now) => {
+    const frame = () => {
       if (stopped) return
+      const observedAt = performance.now()
       if (allowedPhases.has(phase)) {
         appendBounded(
           frameGaps,
-          { phase, gapMs: now - previousFrameAt },
+          { phase, gapMs: observedAt - previousFrameAt },
           () => { frameGapOverflowCount += 1 },
         )
       }
-      previousFrameAt = now
+      previousFrameAt = observedAt
       frameId = window.requestAnimationFrame(frame)
     }
     frameId = window.requestAnimationFrame(frame)

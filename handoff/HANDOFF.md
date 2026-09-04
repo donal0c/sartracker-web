@@ -23,6 +23,15 @@
   A faithful macOS package reproduced a second generic
   `current_fix_not_observed_before_gate` failure. The runner wrote no failure
   receipt, so those labels did not identify a phase or prove a product stall.
+- **Exact local head `81e47973714ff5cbbd908329559009c281b352fe` is also
+  rejected.** Its clean macOS package emitted the new 0600 failure receipt and
+  stopped in `create` before any archive operation (`operationCount: 0`) on
+  `renderer_frame_sample_invalid`. The first queued animation-frame timestamp
+  predated the `performance.now()` phase arm. The narrow red-first repair uses
+  one clock for both endpoints and distinguishes a repeated primary probe fault
+  from a genuinely new stop failure. It also settles the external watchdog and
+  releases launch ownership before propagating that fresh stop failure; the
+  strict `<200 ms` gate is unchanged.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
@@ -97,7 +106,9 @@
 ## Verification Snapshot
 
 - Replacement root integration gate: `12` files / `266` tests green.
-- Full deterministic serial unit gate: `375` files / `3,707` tests green. Full
+- The final renderer-clock/cleanup correction is `3` files / `129` focused
+  tests green. The current full deterministic serial unit gate is `375` files /
+  `3,712` tests green. Full
   ESLint, TypeScript/production build, bundle budgets, focused Node syntax,
   diff checks, and backend `58` passed / `1` ignored are green.
 - Chromium `173/173`, visual Playwright `62/62`, and the refreshed manual-frame
@@ -114,8 +125,8 @@
 
 ## Blockers
 
-- PR #10 is not ready. Both `caf9e5e8` and `49523dc8` are rejected diagnostics;
-  the replacement exact-head package/lifecycle gate must pass before Linux or
-  field-scale qualification.
+- PR #10 is not ready. `caf9e5e8`, `49523dc8`, and `81e47973` are rejected
+  diagnostics; the replacement exact-head package/lifecycle gate must pass
+  before Linux or field-scale qualification.
 
 Archived pre-recovery baton: `handoff/archive/HANDOFF-history-2026-09-04-pre-pr10-recovery.md`.

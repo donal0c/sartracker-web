@@ -42,6 +42,9 @@ function createProbeHarness() {
   let rendererPhaseDelayMs = 0
   let rendererFrameTailDelayMs = 0
   let watchdogStopDelayMs = 0
+  let watchdogStopCount = 0
+  let watchdogStopSettled = false
+  let rendererCollectionFailure: Error | null = null
   let rendererSnapshot: RendererSnapshot = {
     currentFixes: [],
     frameGaps: [],
@@ -93,11 +96,19 @@ function createProbeHarness() {
       rendererSnapshot.frameTail = phase === null ? null : { phase, gapMs: 0 }
       return delayedTail
     },
-    collectRendererLivenessProbe: async () => drainRenderer(),
+    collectRendererLivenessProbe: async () => {
+      if (rendererCollectionFailure !== null) {
+        const failure = rendererCollectionFailure
+        rendererCollectionFailure = null
+        throw failure
+      }
+      return drainRenderer()
+    },
     startExternalLaunchWatchdog: (input: typeof watchdogInput) => {
       watchdogInput = input
       return {
         stop: async () => {
+          watchdogStopCount += 1
           const snapshot = drainRenderer()
           nowMs += watchdogStopDelayMs
           if (snapshot.frameTail !== null) {
@@ -107,6 +118,7 @@ function createProbeHarness() {
             }
           }
           input?.onRendererSnapshot(snapshot)
+          watchdogStopSettled = true
         },
       }
     },
@@ -206,6 +218,9 @@ function createProbeHarness() {
       rendererFrameTailDelayMs = frameTailMilliseconds
     },
     delayWatchdogStop: (milliseconds: number) => { watchdogStopDelayMs = milliseconds },
+    failNextRendererCollection: (error: Error) => { rendererCollectionFailure = error },
+    watchdogStopCount: () => watchdogStopCount,
+    watchdogStopSettled: () => watchdogStopSettled,
     pendingSourceCount: () => sourceEntries.length,
     drainCount: () => drainCount,
   }
@@ -395,6 +410,104 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     await expect(harness.probe.waitForPhaseSample('verify', 100)).rejects.toThrow(
       /renderer_liveness_snapshot_invalid/u,
     )
+  })
+
+  it('attaches one bounded invalid-frame diagnostic to the liveness failure', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.publishRendererSnapshot({
+      currentFixes: [],
+      frameGaps: [{ phase: 'create', gapMs: -0.625 }],
+      frameTail: { phase: 'create', gapMs: 0 },
+      currentFixOverflowCount: 0,
+      frameGapOverflowCount: 0,
+    })
+
+    const failure = await harness.probe.waitForPhaseSample('create', 100)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: Readonly<Record<string, unknown>>
+      }
+
+    expect(failure.archiveLifecycleDiagnostics).toMatchObject({
+      errorKinds: ['renderer_frame_sample_invalid'],
+      invalidRendererFrame: {
+        phase: 'create',
+        gapMs: -0.625,
+        gapType: 'negative',
+      },
+    })
+  })
+
+  it('rethrows one stable liveness failure during cleanup finalization', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.publishRendererSnapshot({
+      currentFixes: [],
+      frameGaps: [{ phase: 'create', gapMs: -0.625 }],
+      frameTail: { phase: 'create', gapMs: 0 },
+      currentFixOverflowCount: 0,
+      frameGapOverflowCount: 0,
+    })
+    const primaryFailure = await harness.probe.waitForPhaseSample('create', 100)
+      .catch((error: unknown) => error)
+
+    await expect(harness.probe.stop(primaryFailure)).resolves.toBeUndefined()
+  })
+
+  it('creates a new liveness failure when finalization records a new error kind', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.publishRendererSnapshot({
+      currentFixes: [],
+      frameGaps: [{ phase: 'create', gapMs: -0.625 }],
+      frameTail: { phase: 'create', gapMs: 0 },
+      currentFixOverflowCount: 0,
+      frameGapOverflowCount: 0,
+    })
+    const primaryFailure = await harness.probe.waitForPhaseSample('create', 100)
+      .catch((error: unknown) => error)
+
+    harness.publishRendererSnapshot({})
+    const evolvedFailure = await harness.probe.waitForPhaseSample('create', 100)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: { errorKinds?: string[] }
+      }
+
+    expect(evolvedFailure).not.toBe(primaryFailure)
+    expect(evolvedFailure.archiveLifecycleDiagnostics?.errorKinds).toEqual([
+      'renderer_frame_sample_invalid',
+      'renderer_liveness_snapshot_invalid',
+    ])
+  })
+
+  it('propagates a new stop-time CDP failure even when its kind was already recorded', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.failNextRendererCollection(new Error('Initial renderer CDP failure.'))
+    const primaryFailure = await harness.probe.waitForPhaseSample('create', 100)
+      .catch((error: unknown) => error)
+    harness.failNextRendererCollection(new Error('New stop-time renderer CDP failure.'))
+
+    const stopFailure = await harness.probe.stop(primaryFailure)
+      .catch((error: unknown) => error)
+
+    expect(stopFailure).not.toBe(primaryFailure)
+    expect(stopFailure).toEqual(expect.objectContaining({
+      message: expect.stringMatching(/stop.*renderer|renderer.*stop/iu),
+    }))
+    expect(harness.watchdogStopCount()).toBe(1)
+    expect(harness.watchdogStopSettled()).toBe(true)
+    expect(harness.launch.externalLivenessWatchdog).toBeUndefined()
+
+    const replacementLaunch = { page: {}, externalLivenessWatchdog: undefined }
+    await expect(harness.probe.attachLaunch(replacementLaunch)).resolves.toBeUndefined()
+    await expect(harness.probe.stop(primaryFailure)).resolves.toBeUndefined()
+    expect(harness.watchdogStopCount()).toBe(2)
+    expect(replacementLaunch.externalLivenessWatchdog).toBeUndefined()
   })
 
   it('fails when exact-correlated current fixes stall for 200 ms after an initial sample', async () => {
@@ -770,6 +883,12 @@ describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
     try {
       await installRendererLivenessProbe(page, 991)
       fakeWindow.__SARTRACKER_ARCHIVE_LIVENESS__?.setPhase('create')
+      const queuedFrame = nextFrame
+      if (queuedFrame === null) throw new Error('Renderer frame callback was unavailable.')
+      queuedFrame(rendererNow - 0.625)
+      expect(fakeWindow.__SARTRACKER_ARCHIVE_LIVENESS__?.drain()).toMatchObject({
+        frameGaps: [{ phase: 'create', gapMs: 0 }],
+      })
       for (let index = 0; index < 258; index += 1) {
         source.setData({
           features: [{

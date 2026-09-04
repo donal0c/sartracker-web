@@ -170,6 +170,47 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
     expect(source).toContain('if (cleanup.processCleanupCompleted) activeLaunch = null')
   })
 
+  it('counts only a genuinely new liveness finalization failure during cleanup', async () => {
+    const primaryFailure = new Error('Primary liveness failure.')
+    const newStopFailure = new Error('New liveness stop failure.')
+    const removeProfile = vi.fn(async () => undefined)
+    const repeated = await cleanupArchiveLifecycleResources({
+      failure: primaryFailure,
+      profilePath: '/tmp/sartracker-pr6-archive-smoke-repeat',
+      removeProfile,
+      steps: [{
+        blocksProfileCleanup: false,
+        run: async () => undefined,
+      }],
+    })
+
+    expect(repeated).toMatchObject({
+      failure: primaryFailure,
+      cleanupFailureCount: 0,
+      processCleanupCompleted: true,
+      profileCleanupCompleted: true,
+    })
+
+    const withNewFailure = await cleanupArchiveLifecycleResources({
+      failure: primaryFailure,
+      profilePath: '/tmp/sartracker-pr6-archive-smoke-new-stop',
+      removeProfile,
+      steps: [{
+        blocksProfileCleanup: false,
+        run: async () => { throw newStopFailure },
+      }],
+    })
+    expect(withNewFailure).toMatchObject({
+      failure: primaryFailure,
+      cleanupFailureCount: 1,
+      processCleanupCompleted: true,
+      profileCleanupCompleted: true,
+    })
+    expect(readFileSync(runnerPath, 'utf8')).toContain(
+      'run: () => livenessProbe?.stop(lifecycleFailure)',
+    )
+  })
+
   it('atomically publishes exactly one success or failure terminal artifact', async () => {
     const evidenceDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-lifecycle-terminal-'))
     const successPath = path.join(evidenceDir, 'electron-archive-lifecycle-smoke-report.json')
@@ -242,17 +283,16 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
     const error = new Error(`Gate failed for ${secret} at ${evidenceDir}/private-profile`)
     Object.defineProperty(error, 'archiveLifecycleDiagnostics', {
       value: Object.freeze({
-        errorKinds: ['current_fix_continuity_gate_breached'],
-        activePhase: 'restore',
+        errorKinds: ['renderer_frame_sample_invalid'],
+        activePhase: 'create',
         activeLaunchNumber: 2,
-        currentFixContinuity: Object.freeze({
-          phase: 'restore',
-          gapMs: 200,
-          intervalStartedAtMs: 100,
-          previousObservedAtMs: 150,
-          auditedAtMs: 350,
-        }),
+        currentFixContinuity: null,
         currentFixTimeout: null,
+        invalidRendererFrame: Object.freeze({
+          phase: 'create',
+          gapMs: -0.625,
+          gapType: 'negative',
+        }),
         operationCount: 0,
         operationOverflowCount: 0,
         operations: Object.freeze([]),
@@ -285,8 +325,13 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
         failure: {
           classification: 'external_liveness_gate_failure',
           archiveLifecycleDiagnostics: {
-            errorKinds: ['current_fix_continuity_gate_breached'],
-            activePhase: 'restore',
+            errorKinds: ['renderer_frame_sample_invalid'],
+            activePhase: 'create',
+            invalidRendererFrame: {
+              phase: 'create',
+              gapMs: -0.625,
+              gapType: 'negative',
+            },
           },
         },
         cleanup: { profileCleanupCompleted: true },

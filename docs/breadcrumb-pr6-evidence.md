@@ -51,6 +51,18 @@ is intermediate. Donal retains approval and merge authority.
 > survive, and enforces exactly one atomic sanitized terminal artifact. The
 > strict `<200 ms` gate is unchanged.
 >
+> Exact local head `81e47973714ff5cbbd908329559009c281b352fe` / tree
+> `4d3f561969090808ed1e4abfad0fc050f764a622` is a third rejected diagnostic.
+> Its clean macOS arm64 package reached the new failure receipt, which recorded
+> `renderer_frame_sample_invalid` in `create` before any archive operation
+> began (`operationCount: 0`). Source retrace proved a measurement-clock defect:
+> phase arming used `performance.now()`, while the first queued animation-frame
+> callback supplied a timestamp from before arming. The renderer probe now
+> measures both endpoints with `performance.now()`. Re-reporting the same
+> primary probe fault during teardown is no longer counted as a cleanup failure,
+> while a genuinely new stop failure remains distinct and fail-closed. The
+> strict gate remains unchanged.
+>
 > A separate red-first regression preserves live Review after cleanup → archive
 > correction restore → re-finalization → ordinary Admin Unlock, including
 > repeated cycles and current/intermediate recovery archives. Unlocks now have
@@ -112,6 +124,37 @@ syntax, diff checks, and the legacy backend (`58` passed / `1` platform-specific
 ignored). These are dirty-tree implementation checks, not exact-head package or
 Linux proof. A replacement commit, exact package, browser/visual, physical-kill,
 Linux, four-review, and field gates remain open.
+
+## 2026-09-04 rejected `81e47973` renderer-clock candidate
+
+The next local candidate was committed at
+`81e47973714ff5cbbd908329559009c281b352fe` / tree
+`4d3f561969090808ed1e4abfad0fc050f764a622`. Its clean macOS arm64 package
+completed with executable SHA-256
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and ASAR SHA-256
+`baf77ea65a944aa9eee0c996b8c91d8ce23123949264138464f64ba20f04001a`.
+The exact packaged lifecycle then rejected it after `3,931 ms` with one
+0600 failure receipt, SHA-256
+`918d83542d14cfeaec085ea6099d7c01dd96f5a016f28f4ad31025c1202ec7b8`.
+
+That receipt recorded only `renderer_frame_sample_invalid`, active phase
+`create`, one launch, zero operations, and no current-fix timeout or continuity
+breach. Owned process and profile cleanup both completed. The negative first
+frame came from mixing the queued animation-frame callback timestamp with the
+later `performance.now()` phase-arm timestamp, so this was a harness
+measurement rejection before product work, not archive-stall evidence. The
+red-first repair uses one monotonic clock for both samples, adds one bounded
+`phase`/`gapMs`/`gapType` invalid-frame diagnostic, and preserves a distinct
+new stop-time failure even when its error kind matches the primary fault. A
+pre-freeze audit additionally found that this fresh failure could escape before
+the external watchdog settled; its red-first regression now proves unconditional
+watchdog stop, released launch ownership, and successful replacement attachment.
+Focused liveness/smoke verification is `3` files / `129` tests green. The full
+deterministic serial suite is `375` files / `3,712` tests green; full ESLint,
+TypeScript/production build, bundle budgets, focused Node syntax, diff checks,
+and the legacy backend (`58` passed / `1` ignored) are green. Exact-package and
+later candidate gates remain pending on the replacement commit.
 
 ## 2026-09-03 cancelled-cleanup fence remediation
 
