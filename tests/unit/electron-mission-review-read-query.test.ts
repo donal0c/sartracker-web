@@ -107,7 +107,7 @@ describe('mission-review read query [DON-251]', () => {
       archive_kind, container_version, status
     ) VALUES (?, 'mission-1', 1, NULL, 'finalized', 2, 'verified')`).run(archiveId)
     insertEvent.run(
-      'unlocked',
+      deriveArchiveLifecycleEventId(archiveId, 'mission-unlocked'),
       'mission_unlocked',
       '2026-08-20T08:01:00.000Z',
       JSON.stringify({ admin_name: 'Duty Admin', reason: 'Correct retained evidence.' }),

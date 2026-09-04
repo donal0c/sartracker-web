@@ -20,6 +20,11 @@ import type { MissionArchiveInfo } from '../../src/infrastructure/mission-store/
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
+const { deriveArchiveLifecycleEventId } = require(
+  '../../electron/mission-finalization-boundary.cjs',
+) as {
+  readonly deriveArchiveLifecycleEventId: (archiveId: string, kind: string) => string
+}
 const { startMissionArchiveCreateWorker } = require(
   '../../electron/mission-archive-runner.cjs',
 ) as {
@@ -1705,6 +1710,10 @@ describe('encrypted mission archive lifecycle integration', () => {
         const supplementEvent = db.prepare(`SELECT event_type, timestamp, details_json
           FROM mission_events WHERE id = ?`).get(supplement.audit_event_id)
         expect(supplementEvent.event_type).toBe('mission_archive_supplement_recorded')
+        const unlockEvent = db.prepare(`SELECT rowid AS event_rowid, id, timestamp
+          FROM mission_events WHERE id = ?`).get(
+          deriveArchiveLifecycleEventId(firstArchiveId, 'mission-unlocked'),
+        )
         expect(JSON.parse(String(supplementEvent.details_json))).toEqual({
           archive_id: second.archive.id,
           previous_archive_id: firstArchiveId,
@@ -1712,6 +1721,9 @@ describe('encrypted mission archive lifecycle integration', () => {
           authority: 'Duty Admin',
           reason: 'Correct the clue description recorded during review.',
           resulting_status: 'finalized',
+          unlock_event_id: unlockEvent.id,
+          unlock_event_rowid: unlockEvent.event_rowid,
+          unlocked_at: unlockEvent.timestamp,
         })
         const versions = db.prepare(`SELECT version_sequence, state_json, audit_event_id
           FROM mission_object_versions

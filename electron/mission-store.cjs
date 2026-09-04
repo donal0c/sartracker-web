@@ -3021,11 +3021,17 @@ function createElectronMissionStore(options) {
     const mission = database.prepare('SELECT status FROM missions WHERE id = ?')
       .get(missionId)
     if (mission?.status !== 'finished' || readMissionLiveReviewStorageState(database, missionId) !== 'live') return false
-    const event = database.prepare(`SELECT details_json FROM mission_events
-      WHERE mission_id = ? AND event_type = 'mission_unlocked'
-      ORDER BY rowid DESC LIMIT 1`).get(missionId)
+    let unlockEventId
+    try {
+      unlockEventId = deriveArchiveLifecycleEventId(archiveId, 'mission-unlocked')
+    } catch {
+      return false
+    }
+    const event = database.prepare(`SELECT mission_id, event_type, details_json
+      FROM mission_events WHERE id = ?`).get(unlockEventId)
     const details = readEventDetails(event?.details_json)
-    return details.restored_from_archive_id === archiveId
+    return event?.mission_id === missionId && event.event_type === 'mission_unlocked'
+      && details.restored_from_archive_id === archiveId
   }
 
   /** Orders asynchronous attachment custody and Finish for one mission. */
@@ -5761,11 +5767,23 @@ function validateArchiveFile(archiveBuffer, missionId) {
 function readActiveMissionCorrectionAuthorization(db, missionId) {
   const finalized = readCurrentMissionFinalizationBoundary(db, { missionId })
   if (finalized === null) return null
-  const unlocked = db.prepare(`SELECT rowid AS event_rowid, id, timestamp, details_json
-    FROM mission_events
-    WHERE mission_id = ? AND event_type = 'mission_unlocked' AND rowid > ?
-    ORDER BY rowid DESC LIMIT 1`).get(missionId, finalized.eventRowid)
-  if (unlocked === undefined) return null
+  let unlockEventId
+  try {
+    unlockEventId = deriveArchiveLifecycleEventId(finalized.archiveId, 'mission-unlocked')
+  } catch {
+    return null
+  }
+  const unlocked = db.prepare(`SELECT rowid AS event_rowid, id, mission_id,
+      event_type, timestamp, details_json
+    FROM mission_events WHERE id = ?`).get(unlockEventId)
+  const unlockEventRowid = Number(unlocked?.event_rowid)
+  if (unlocked?.id !== unlockEventId || unlocked.mission_id !== missionId
+    || unlocked.event_type !== 'mission_unlocked'
+    || !Number.isSafeInteger(unlockEventRowid)
+    || unlockEventRowid <= finalized.eventRowid
+    || typeof unlocked.timestamp !== 'string'
+    || Number.isNaN(Date.parse(unlocked.timestamp))
+    || new Date(unlocked.timestamp).toISOString() !== unlocked.timestamp) return null
   const unlockDetails = readEventDetails(unlocked.details_json)
   const authority = typeof unlockDetails.admin_name === 'string'
     ? unlockDetails.admin_name.trim()
@@ -5781,7 +5799,7 @@ function readActiveMissionCorrectionAuthorization(db, missionId) {
     finalizedEventRowid: finalized.eventRowid,
     previousArchiveId: finalized.archiveId,
     unlockEventId: unlocked.id,
-    unlockEventRowid: Number(unlocked.event_rowid),
+    unlockEventRowid,
     unlockedAt: unlocked.timestamp,
   })
 }
@@ -6258,6 +6276,9 @@ async function finalizeMissionWithEncryptedArchive(input) {
               sequence: requestIdentity.supplementSequence,
               authority: requestIdentity.supplement.authority,
               reason: requestIdentity.supplement.reason,
+              unlockEventId: requestIdentity.supplement.unlockEventId,
+              unlockEventRowid: requestIdentity.supplement.unlockEventRowid,
+              unlockedAt: requestIdentity.supplement.unlockedAt,
             }),
       }),
     })
@@ -6773,6 +6794,9 @@ function sealPublishedArchiveFromJournal(input) {
             authority: resolvedSupplement.authority,
             reason: resolvedSupplement.reason,
             resulting_status: 'finalized',
+            unlock_event_id: resolvedSupplement.unlockEventId,
+            unlock_event_rowid: resolvedSupplement.unlockEventRowid,
+            unlocked_at: resolvedSupplement.unlockedAt,
           },
           current.fenceRequestedAt,
         )
@@ -7399,9 +7423,13 @@ async function unlockFinalizedMission(
       ...(signal === undefined ? {} : { signal }),
       onRestored: () => {
         const current = getMission(db, missionId)
+        const currentBoundary = readCurrentMissionFinalizationBoundary(db, {
+          missionId,
+          archiveId: input.archive_id,
+        })
         if (current.status !== 'finalized'
           || current.storage_state !== 'archived'
-          || readLatestMissionFinalizedEpoch(db, missionId) !== finalizedEpoch) {
+          || currentBoundary?.eventRowid !== finalizedEpoch) {
           const error = new Error(
             'Mission finalization or archive storage changed before correction unlock could commit.',
           )
@@ -7409,14 +7437,22 @@ async function unlockFinalizedMission(
           throw error
         }
         db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finished', missionId)
-        insertEvent(db, missionId, 'mission_unlocked', now(), {
-          admin_name: adminName,
-          reason,
-          restored_from_archive_id: input.archive_id,
-          archive_correction_operation_id: correctionOperationId,
-          resulting_status: 'finished',
-          storage_state: 'live',
-        })
+        const unlockedAt = now()
+        insertEventWithId(
+          db,
+          deriveArchiveLifecycleEventId(input.archive_id, 'mission-unlocked'),
+          missionId,
+          'mission_unlocked',
+          unlockedAt,
+          {
+            admin_name: adminName,
+            reason,
+            restored_from_archive_id: input.archive_id,
+            archive_correction_operation_id: correctionOperationId,
+            resulting_status: 'finished',
+            storage_state: 'live',
+          },
+        )
       },
     })
     return getMission(db, missionId)
@@ -7441,13 +7477,20 @@ async function unlockFinalizedMission(
   await reconcileFinalizedArchive(missionId)
   const timestamp = now()
   const transaction = db.transaction(() => {
-    assertMissionUnlockEpoch(db, missionId, finalizedEpoch)
+    const currentBoundary = assertMissionUnlockEpoch(db, missionId, finalizedEpoch)
     db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finished', missionId)
-    insertEvent(db, missionId, 'mission_unlocked', timestamp, {
-      admin_name: adminName,
-      reason,
-      resulting_status: 'finished',
-    })
+    insertEventWithId(
+      db,
+      deriveArchiveLifecycleEventId(currentBoundary.archiveId, 'mission-unlocked'),
+      missionId,
+      'mission_unlocked',
+      timestamp,
+      {
+        admin_name: adminName,
+        reason,
+        resulting_status: 'finished',
+      },
+    )
   })
   transaction()
   return getMission(db, missionId)
@@ -7467,14 +7510,16 @@ function assertMissionUnlockEpoch(
 ) {
   assertMissionFinalizationNotInProgress(db, missionId)
   const mission = getMission(db, missionId)
+  const boundary = readCurrentMissionFinalizationBoundary(db, { missionId })
   if (
     mission.status !== 'finalized' ||
     mission.storage_state !== 'live' ||
-    readLatestMissionFinalizedEpoch(db, missionId) !== expectedEpoch
+    boundary?.eventRowid !== expectedEpoch
   ) {
     throw new Error('Mission finalization changed, or its live-storage state changed, while admin authorization was checked. Review and retry the unlock.')
   }
   if (requireArchiveReviewable) assertCurrentFinalizedArchiveReviewable(db, missionId)
+  return boundary
 }
 
 /** Requires a v2 predecessor to be fully verified before it can enter a correction chain. */

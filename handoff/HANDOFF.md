@@ -17,12 +17,18 @@
   caused the misleading teardown classification; constant-space aggregation is
   the repair. Independent measurements also showed real multi-second create,
   restore, cleanup, and durable-write stalls.
+- **Exact recovery head `49523dc8b460a2080c5fbbd3bc11c961296f481d` is
+  rejected.** Linux run `33908771732` passed through packaged tracking soak,
+  then the archive lifecycle failed `current_fix_continuity_gate_breached`.
+  A faithful macOS package reproduced a second generic
+  `current_fix_not_observed_before_gate` failure. The runner wrote no failure
+  receipt, so those labels did not identify a phase or prove a product stall.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
   sub-millisecond “current position” measurement was only an in-process map
   operation and did not prove the packaged renderer path.
-- **The bounded recovery source work and pre-freeze local gates are complete.**
+- **Replacement source work is locally green but not frozen.**
   It uses deterministic current-finalization lookups, lazy evidence-loss
   acknowledgement lookup with a durable
   projection, mission-scoped logical cleanup with a restart-safe rowid cursor
@@ -30,7 +36,15 @@
   a packaged Electron external watchdog that correlates exact synthetic Traccar
   fixes through main/preload, React, and the MapLibre source. Every liveness
   dimension is a strict `<200 ms` gate; ledger overflow and missing continuity
-  fail closed.
+  fail closed. The liveness repair now starts after instrumentation is armed,
+  preserves exact-fix, main, and renderer continuity across phase handoffs,
+  drains the final operation ledger, ends before unrelated terminal closeout,
+  pauses renderer attribution before teardown, keeps profiles when an owned
+  process may survive, and enforces one atomic sanitized terminal artifact. A
+  valid repeated-correction lineage now remains live after re-finalization and
+  ordinary Admin Unlock. Its deterministic archive-owned unlock IDs and linked
+  rowid/time proofs require only existing unique-id and rowid point reads: no
+  startup index, migration, history scan, or sort was added.
 
 ## Locked Safety Boundaries
 
@@ -54,11 +68,11 @@
 
 ## Active Work
 
-- Freeze and commit the reviewed strict-TDD recovery on the existing PR branch.
-- Rerun full static, unit, browser, visual, package, packaged-lifecycle and
-  physical SIGKILL gates on that exact clean head. The unsigned macOS package
-  rehearsal built, but its lifecycle runner correctly refused the dirty
-  pre-commit tree and supplies no packaged-liveness proof.
+- Freeze and commit the red-first liveness-accounting, failure-receipt, and
+  correction-lineage repair on the existing PR branch.
+- Rerun package/lifecycle first on that exact clean head, then full static,
+  browser, visual, physical SIGKILL, and Linux gates. Never rerun the unchanged
+  rejected `49523dc8` candidate.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -82,26 +96,26 @@
 
 ## Verification Snapshot
 
-- Combined recovery unit/integration gate: `28` files / `680` tests green.
-- Full deterministic serial unit gate: `375` files / `3,685` tests green.
-  ESLint, TypeScript/production build, bundle budgets, Node syntax, and diff
-  checks are green; backend is `58` passed / `1` platform-specific ignored.
-- Full Chromium operator suite: `173/173` green. Full visual Playwright:
-  `62/62` green. The refreshed 15-check cleanup frame passed an uncached
-  independent critical visual review and now backs the operator-manual image.
-- Unsigned macOS arm64 directory packaging passed. Exact-head packaged
-  lifecycle/liveness, physical SIGKILL, Linux, four-review, and fresh field
-  gates remain pending. Prior-head results are diagnostic only.
+- Replacement root integration gate: `12` files / `266` tests green.
+- Full deterministic serial unit gate: `375` files / `3,707` tests green. Full
+  ESLint, TypeScript/production build, bundle budgets, focused Node syntax,
+  diff checks, and backend `58` passed / `1` ignored are green.
+- Chromium `173/173`, visual Playwright `62/62`, and the refreshed manual-frame
+  review are prior-head evidence until rerun. Exact-head package/lifecycle,
+  physical SIGKILL, Linux, four-review, and fresh field gates remain pending.
 
 ## Next Actions
 
-1. Freeze, commit, and push the existing PR branch; run exact-head package,
-   browser/visual, kill-matrix, Linux, and four-review gates.
+1. Freeze a replacement commit locally and run exact-head package/lifecycle.
+   If it is green, push the existing PR branch and run browser/visual,
+   kill-matrix, Linux, and exactly four final-head review charters.
 2. If all remain clean, execute the single fresh Ubuntu field qualification and
    record the final ledger externally in PR #10 and the three Linear issues.
 
 ## Blockers
 
-- None at present. The rejected caf9 receipt is diagnosis, not qualification.
+- PR #10 is not ready. Both `caf9e5e8` and `49523dc8` are rejected diagnostics;
+  the replacement exact-head package/lifecycle gate must pass before Linux or
+  field-scale qualification.
 
 Archived pre-recovery baton: `handoff/archive/HANDOFF-history-2026-09-04-pre-pr10-recovery.md`.

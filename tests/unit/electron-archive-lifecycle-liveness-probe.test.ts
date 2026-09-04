@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createPackagedLivenessProbe,
   installRendererLivenessProbe,
+  startExternalLaunchWatchdog,
 } from '../../scripts/electron-archive-lifecycle-smoke.mjs'
 
 const PHASES = ['create', 'verify', 'restore', 'cleanup'] as const
@@ -40,6 +41,7 @@ function createProbeHarness() {
   let sourceEntries: SourceEntry[] = []
   let rendererPhaseDelayMs = 0
   let rendererFrameTailDelayMs = 0
+  let watchdogStopDelayMs = 0
   let rendererSnapshot: RendererSnapshot = {
     currentFixes: [],
     frameGaps: [],
@@ -48,7 +50,7 @@ function createProbeHarness() {
     frameGapOverflowCount: 0,
   }
   let watchdogInput: {
-    onMainGap: (phase: Phase, gapMs: number) => void
+    onMainGap: (phase: Phase, gapMs: number, countSample?: boolean) => void
     onRendererSnapshot: (snapshot: RendererSnapshot) => void
   } | null = null
   const mockServer = {
@@ -78,7 +80,7 @@ function createProbeHarness() {
     now: () => nowMs,
     delay: async () => { nowMs += 10 },
     installRendererLivenessProbe: async () => undefined,
-    setRendererLivenessPhase: async (_page: unknown, phase: Phase) => {
+    setRendererLivenessPhase: async (_page: unknown, phase: Phase | null) => {
       const delayedTail = rendererSnapshot.frameTail === null
         ? null
         : {
@@ -88,14 +90,24 @@ function createProbeHarness() {
       nowMs += rendererPhaseDelayMs
       rendererPhaseDelayMs = 0
       rendererFrameTailDelayMs = 0
-      rendererSnapshot.frameTail = { phase, gapMs: 0 }
+      rendererSnapshot.frameTail = phase === null ? null : { phase, gapMs: 0 }
       return delayedTail
     },
     collectRendererLivenessProbe: async () => drainRenderer(),
     startExternalLaunchWatchdog: (input: typeof watchdogInput) => {
       watchdogInput = input
       return {
-        stop: async () => input?.onRendererSnapshot(drainRenderer()),
+        stop: async () => {
+          const snapshot = drainRenderer()
+          nowMs += watchdogStopDelayMs
+          if (snapshot.frameTail !== null) {
+            snapshot.frameTail = {
+              ...snapshot.frameTail,
+              gapMs: snapshot.frameTail.gapMs + watchdogStopDelayMs,
+            }
+          }
+          input?.onRendererSnapshot(snapshot)
+        },
       }
     },
   })
@@ -149,6 +161,31 @@ function createProbeHarness() {
       }
       return source
     },
+    queueCorrelatedCurrentFix: () => {
+      if (activePhase === null) throw new Error('Test source phase is not active.')
+      sequence += 1
+      const sourcePositionId = `source-${sequence}`
+      const sourceTimestamp = new Date(nowMs).toISOString()
+      const source = {
+        sequence,
+        phase: activePhase,
+        sourcePositionId,
+        sourceTimestamp,
+        requestStartedAtMs: nowMs,
+        emittedAtMs: nowMs,
+      }
+      sourceEntries.push(source)
+      nowMs += 10
+      rendererSnapshot.currentFixes.push({
+        phase: activePhase,
+        sourcePositionId,
+        sourceTimestamp,
+        observedAtMs: nowMs,
+      })
+      rendererSnapshot.frameGaps.push({ phase: activePhase, gapMs: 16 })
+      nowMs += 1
+      return source
+    },
     publishRendererFix,
     publishRendererSnapshot: (snapshot: unknown) => {
       watchdogInput?.onRendererSnapshot(snapshot as RendererSnapshot)
@@ -168,12 +205,23 @@ function createProbeHarness() {
       rendererPhaseDelayMs = milliseconds
       rendererFrameTailDelayMs = frameTailMilliseconds
     },
+    delayWatchdogStop: (milliseconds: number) => { watchdogStopDelayMs = milliseconds },
     pendingSourceCount: () => sourceEntries.length,
     drainCount: () => drainCount,
   }
 }
 
 describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]', () => {
+  it('starts current-fix continuity after the initial renderer observer is armed', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    harness.delayNextRendererPhase(200, 0)
+
+    await expect(harness.probe.setPhase('create')).resolves.toBeUndefined()
+    harness.emitCurrentFix(true)
+    await expect(harness.probe.waitForPhaseSample('create', 100)).resolves.toBeUndefined()
+  })
+
   it('rejects a pre-operation sample and requires a fresh MapLibre fix in every phase', async () => {
     const harness = createProbeHarness()
     await harness.probe.attachLaunch(harness.launch)
@@ -246,16 +294,15 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     )
   })
 
-  it('rejects an exact fix observed under a different renderer phase', async () => {
+  it('attributes exact renderer observations from the external source identity during phase handoff', async () => {
     const harness = createProbeHarness()
     await harness.probe.attachLaunch(harness.launch)
     await harness.probe.setPhase('create')
     const operation = await harness.probe.beginPhaseOperation('create')
     harness.emitCurrentFix(true, undefined, 'verify')
 
-    await expect(harness.probe.guardOperation(Promise.resolve(), operation)).rejects.toThrow(
-      /current_fix_phase_identity_mismatch/u,
-    )
+    await expect(harness.probe.guardOperation(Promise.resolve(), operation)).resolves.toBeUndefined()
+    await expect(harness.probe.completePhaseOperation(operation)).resolves.toBeUndefined()
   })
 
   it('rejects a fix that reaches MapLibre only after the guarded operation ended', async () => {
@@ -277,6 +324,18 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     await expect(harness.probe.completePhaseOperation(operation)).rejects.toThrow(
       /operation completed without a fresh MapLibre current fix/u,
     )
+  })
+
+  it('accepts an exact fix observed before operation end but drained at the boundary', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('verify')
+    const operation = await harness.probe.beginPhaseOperation('verify')
+    harness.queueCorrelatedCurrentFix()
+
+    await harness.probe.guardOperation(Promise.resolve(), operation)
+
+    await expect(harness.probe.completePhaseOperation(operation)).resolves.toBeUndefined()
   })
 
   it('fails closed when the bounded external source ledger reports overflow', async () => {
@@ -353,6 +412,61 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     )
   })
 
+  it('attaches bounded phase and clock evidence to a continuity failure', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+    harness.advanceClock(200)
+    harness.publishWatchdogTick()
+
+    const failure = await harness.probe.waitForPhaseSample('create', 100)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: Readonly<Record<string, unknown>>
+      }
+    expect(failure.archiveLifecycleDiagnostics).toMatchObject({
+      errorKinds: ['current_fix_continuity_gate_breached'],
+      activePhase: 'create',
+      currentFixContinuity: {
+        phase: 'create',
+        gapMs: 200,
+        intervalStartedAtMs: expect.any(Number),
+        previousObservedAtMs: expect.any(Number),
+        auditedAtMs: expect.any(Number),
+      },
+      operations: [],
+    })
+  })
+
+  it('attaches bounded source-age evidence when an exact fix misses the gate', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    harness.emitCurrentFix(false)
+    harness.advanceClock(190)
+    harness.publishWatchdogTick()
+
+    const failure = await harness.probe.waitForPhaseSample('restore', 100)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: Readonly<Record<string, unknown>>
+      }
+    expect(failure.archiveLifecycleDiagnostics).toMatchObject({
+      errorKinds: [
+        'current_fix_continuity_gate_breached',
+        'current_fix_not_observed_before_gate',
+      ],
+      activePhase: 'restore',
+      currentFixTimeout: {
+        phase: 'restore',
+        requestAgeMs: 200,
+        sourceAgeMs: 200,
+        auditedAtMs: expect.any(Number),
+      },
+      operations: [],
+    })
+  })
+
   it('fails when a phase has no first exact-correlated fix within 200 ms', async () => {
     const harness = createProbeHarness()
     await harness.probe.attachLaunch(harness.launch)
@@ -404,6 +518,17 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     )
   })
 
+  it('pauses renderer attribution before a delayed watchdog teardown', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+    harness.delayWatchdogStop(200)
+
+    await expect(harness.probe.detachLaunch(harness.launch)).resolves.toBeUndefined()
+  })
+
   it('keeps phase continuity active while switching the renderer observer', async () => {
     const harness = createProbeHarness()
     await harness.probe.attachLaunch(harness.launch)
@@ -412,6 +537,23 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     harness.delayNextRendererPhase(200, 0)
 
     await expect(harness.probe.setPhase('verify')).rejects.toThrow(
+      /current_fix_continuity_gate_breached/u,
+    )
+  })
+
+  it('does not split one strict cross-phase current-fix gap into passing tails', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+    harness.delayNextRendererPhase(100, 0)
+
+    await harness.probe.setPhase('verify')
+    harness.advanceClock(90)
+    harness.emitCurrentFix(true)
+
+    await expect(harness.probe.waitForPhaseSample('verify', 100)).rejects.toThrow(
       /current_fix_continuity_gate_breached/u,
     )
   })
@@ -488,6 +630,104 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
 })
 
 describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
+  it('records the active main-process phase tail before suppressing teardown work', async () => {
+    let evaluationCount = 0
+    let secondEvaluationStarted: (() => void) | undefined
+    const secondEvaluation = new Promise<void>((resolve) => {
+      secondEvaluationStarted = resolve
+    })
+    const mainGaps: Array<{ phase: Phase; gapMs: number; countSample: boolean }> = []
+    const errors: string[] = []
+    const emptySnapshot: RendererSnapshot = {
+      currentFixes: [],
+      frameGaps: [],
+      frameTail: null,
+      currentFixOverflowCount: 0,
+      frameGapOverflowCount: 0,
+    }
+    const watchdog = startExternalLaunchWatchdog({
+      launch: {
+        mainInspector: {
+          evaluate: () => {
+            evaluationCount += 1
+            if (evaluationCount === 1) return Promise.resolve(1)
+            secondEvaluationStarted?.()
+            return new Promise(() => undefined)
+          },
+        },
+        page: { evaluate: () => Promise.resolve(emptySnapshot) },
+      },
+      readPhase: () => 'restore',
+      onMainGap: (phase: Phase, gapMs: number, countSample = true) => {
+        mainGaps.push({ phase, gapMs, countSample })
+      },
+      onRendererSnapshot: () => undefined,
+      onError: (error: string) => errors.push(error),
+    })
+
+    await secondEvaluation
+    await new Promise((resolve) => setTimeout(resolve, 160))
+    await watchdog.stop()
+
+    expect(errors).toEqual([])
+    expect(mainGaps).toContainEqual({
+      phase: 'restore',
+      gapMs: expect.any(Number),
+      countSample: false,
+    })
+    expect(mainGaps.findLast((gap) => gap.countSample === false)?.gapMs)
+      .toBeGreaterThanOrEqual(200)
+  })
+
+  it('drops in-flight active-phase samples after watchdog teardown begins', async () => {
+    let resolveMain: ((value: unknown) => void) | undefined
+    let resolveRenderer: ((value: RendererSnapshot) => void) | undefined
+    let rendererCollectionCount = 0
+    const finalSnapshot: RendererSnapshot = {
+      currentFixes: [],
+      frameGaps: [],
+      frameTail: null,
+      currentFixOverflowCount: 0,
+      frameGapOverflowCount: 0,
+    }
+    const onMainGap = vi.fn()
+    const onRendererSnapshot = vi.fn()
+    const watchdog = startExternalLaunchWatchdog({
+      launch: {
+        mainInspector: {
+          evaluate: () => new Promise((resolve) => { resolveMain = resolve }),
+        },
+        page: {
+          evaluate: () => {
+            rendererCollectionCount += 1
+            if (rendererCollectionCount === 1) {
+              return new Promise((resolve) => { resolveRenderer = resolve })
+            }
+            return Promise.resolve(finalSnapshot)
+          },
+        },
+      },
+      readPhase: () => 'restore',
+      onMainGap,
+      onRendererSnapshot,
+      onError: vi.fn(),
+    })
+
+    expect(resolveMain).toBeTypeOf('function')
+    expect(resolveRenderer).toBeTypeOf('function')
+    const stopped = watchdog.stop()
+    resolveMain?.(1)
+    resolveRenderer?.({
+      ...finalSnapshot,
+      frameTail: { phase: 'restore', gapMs: 250 },
+    })
+    await stopped
+
+    expect(onMainGap.mock.calls.filter((call) => call[2] !== false)).toHaveLength(0)
+    expect(onRendererSnapshot).toHaveBeenCalledTimes(1)
+    expect(onRendererSnapshot).toHaveBeenCalledWith(finalSnapshot)
+  })
+
   it('caps both renderer ledgers and externally samples the undrained frame tail', async () => {
     const source = {
       setData: (value: unknown) => { void value },
@@ -505,7 +745,7 @@ describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
       cancelAnimationFrame: (id: number) => { void id },
     } as unknown as Window & {
       __SARTRACKER_ARCHIVE_LIVENESS__?: {
-        setPhase: (phase: Phase) => { phase: Phase; gapMs: number } | null
+        setPhase: (phase: Phase | null) => { phase: Phase; gapMs: number } | null
         drain: () => RendererSnapshot
         cleanup: () => void
       }
@@ -567,7 +807,15 @@ describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
         gapMs: 200,
       })
       expect(fakeWindow.__SARTRACKER_ARCHIVE_LIVENESS__?.drain()).toMatchObject({
-        frameTail: { phase: 'verify', gapMs: 0 },
+        frameTail: { phase: 'verify', gapMs: 200 },
+      })
+      rendererNow += 25
+      expect(fakeWindow.__SARTRACKER_ARCHIVE_LIVENESS__?.setPhase(null)).toEqual({
+        phase: 'verify',
+        gapMs: 225,
+      })
+      expect(fakeWindow.__SARTRACKER_ARCHIVE_LIVENESS__?.drain()).toMatchObject({
+        frameTail: null,
       })
       fakeWindow.__SARTRACKER_ARCHIVE_LIVENESS__?.cleanup()
     } finally {

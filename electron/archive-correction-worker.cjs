@@ -6,9 +6,9 @@ const path = require('node:path')
 const { createHash, randomUUID: cryptoRandomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
-const { randomUUID } = require('node:crypto')
 const { rehydrateMissionFromSnapshot } = require('./archive-rehydrate.cjs')
 const {
+  deriveArchiveLifecycleEventId,
   readCurrentMissionFinalizationBoundary,
 } = require('./mission-finalization-boundary.cjs')
 const { copyVerifiedAttachment } = require('./archive-correction-attachment-copy.cjs')
@@ -379,7 +379,7 @@ async function run() {
         database.prepare(`INSERT INTO mission_events (
           id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
         ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
-          randomUUID(),
+          deriveArchiveLifecycleEventId(workerData.archiveId, 'mission-unlocked'),
           workerData.missionId,
           timestamp,
           JSON.stringify({

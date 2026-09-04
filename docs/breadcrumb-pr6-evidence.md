@@ -30,15 +30,45 @@ is intermediate. Donal retains approval and merge authority.
 > while retaining operational, finalization, custody, cleanup, supplement, and
 > unknown future audit events.
 >
-> At documentation freeze, cheap exact-head gates, four reviews, the Linux
+> Exact recovery head `49523dc8b460a2080c5fbbd3bc11c961296f481d` is also
+> rejected. Linux run `33908771732` passed its source, lint, 3,685-test, build,
+> package, Replay, native-module, llvmpipe, and tracking-soak gates, then failed
+> packaged archive lifecycle with `current_fix_continuity_gate_breached`.
+> A faithful macOS package reproduction failed with
+> `current_fix_not_observed_before_gate`. Neither run emitted a failure receipt,
+> so neither generic label proved a product stall or identified its phase.
+>
+> Source retrace reproduced the harness defects: timing began before its
+> observer/source attribution was armed; phase handoff split exact-fix, main,
+> and renderer-frame continuity; operation close preceded the final ledger
+> drain; the terminal restore phase was re-armed across unrelated closeout; and
+> teardown retained the old renderer-frame phase. Failed process shutdown could
+> also remove the still-owned profile, success publication was not atomic, and
+> failure-receipt publication was optional. The red-first replacement keeps one
+> exact-identity timeline across active phase handoffs, drains observations at
+> the operation boundary, ends timing before terminal closeout, pauses renderer
+> attribution before teardown, retains a profile while any owned process may
+> survive, and enforces exactly one atomic sanitized terminal artifact. The
+> strict `<200 ms` gate is unchanged.
+>
+> A separate red-first regression preserves live Review after cleanup → archive
+> correction restore → re-finalization → ordinary Admin Unlock, including
+> repeated cycles and current/intermediate recovery archives. Unlocks now have
+> deterministic archive-owned audit identities, and supplements carry their
+> exact id, rowid, and time. Lineage verification therefore uses only existing
+> unique-id and integer-rowid point reads; it creates no startup index and scans
+> or sorts no mission history. Broken ancestry, identity, chronology, or status
+> fails closed.
+>
+> For the replacement candidate, cheap exact-head gates, four reviews, the Linux
 > packaged liveness report, and exactly one fresh controlled Ubuntu
 > greater-than-2-GiB qualification remain pending. No merge, release, field
 > acceptance, or final review result is claimed here. Donal retains approval
 > and merge authority.
 
-## 2026-09-04 recovery pre-freeze verification
+## 2026-09-04 superseded first-candidate pre-freeze verification
 
-The reviewed recovery tree passed the combined affected gate (`28` files /
+Before `49523dc8` was frozen, its dirty-tree predecessor passed the combined affected gate (`28` files /
 `680` tests), the full deterministic serial unit gate (`375` files / `3,685`
 tests), ESLint, TypeScript/production build, bundle budgets, Node syntax, and
 diff checks. The legacy backend passed `58` tests with one platform-specific
@@ -49,7 +79,39 @@ independent critical visual review and replaced the operator-manual image.
 Unsigned macOS arm64 directory packaging passed. The packaged lifecycle runner
 correctly rejected the still-dirty pre-commit tree, so this rehearsal supplies
 no packaged-liveness proof. Clean exact-head package/lifecycle, physical
-SIGKILL, Linux, four-review, and single fresh field gates remain pending.
+SIGKILL, Linux, four-review, and single fresh field gates remained pending. This
+is superseded first-candidate evidence, not proof for the replacement source.
+
+## 2026-09-04 rejected `49523dc8` packaged-liveness candidate
+
+The first clean recovery candidate was committed and pushed at
+`49523dc8b460a2080c5fbbd3bc11c961296f481d` / tree
+`fa0de2f87281412232a04c5aaf35456d8a37c34c`. Linux run
+[`33908771732`](https://github.com/donal0c/sartracker-web/actions/runs/33908771732)
+passed every gate through packaged tracking soak, then stopped at packaged
+archive lifecycle after roughly ten seconds. Its only terminal detail was
+`current_fix_continuity_gate_breached`; the always-upload artifact contained no
+lifecycle report because that runner wrote success evidence only. A clean
+macOS package of the same exact head reproduced the evidence gap while failing
+with `current_fix_not_observed_before_gate`.
+
+The four independent head reviews are diagnostic only because the source must
+change. Broad review found no correctness break and one optional P3 trigger-
+coverage gap. Persistence review's apparent multi-mission lease mismatch was
+disproved: the session manager deliberately owns one global Review/plaintext
+lane, and the existing two-mission test holds that global lease across the
+sequential recovery batch. Its journal CAS and escaped SQL consistency notes
+were also not correctness defects. Concurrency and renderer reviews reproduced
+the liveness accounting defects above; renderer review additionally found the
+valid repeated-correction lineage stranded as `cleanup_in_progress`.
+
+Red-first remediation is green across the root integration gate (`12` files /
+`266` tests) and the full deterministic serial suite (`375` files / `3,707`
+tests), plus full ESLint, TypeScript/production build, bundle budgets, focused
+syntax, diff checks, and the legacy backend (`58` passed / `1` platform-specific
+ignored). These are dirty-tree implementation checks, not exact-head package or
+Linux proof. A replacement commit, exact package, browser/visual, physical-kill,
+Linux, four-review, and field gates remain open.
 
 ## 2026-09-03 cancelled-cleanup fence remediation
 

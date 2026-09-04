@@ -203,6 +203,7 @@ jobs:
             npm run electron:smoke:tracking-soak:ci
 
       - name: Packaged archive lifecycle smoke
+        id: archive_lifecycle_smoke
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
@@ -210,6 +211,46 @@ jobs:
           set -euo pipefail
           xvfb-run -a --server-args='-screen 0 1440x900x24' \
             npm run electron:smoke:archive-lifecycle:ci
+
+      - name: Verify archive lifecycle terminal evidence
+        if: ${{ always() && steps.archive_lifecycle_smoke.outcome != 'skipped' }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { lstat, readFile } from 'node:fs/promises'
+
+          const candidates = [
+            {
+              path: 'tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-report.json',
+              passed: true,
+            },
+            {
+              path: 'tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json',
+              passed: false,
+            },
+          ]
+          const terminalArtifacts = []
+          for (const candidate of candidates) {
+            try {
+              terminalArtifacts.push({ ...candidate, identity: await lstat(candidate.path) })
+            } catch (error) {
+              if (error?.code !== 'ENOENT') throw error
+            }
+          }
+          if (terminalArtifacts.length !== 1) {
+            throw new Error('Archive lifecycle must publish exactly one terminal evidence artifact.')
+          }
+          const [terminal] = terminalArtifacts
+          if (!terminal.identity.isFile() || terminal.identity.isSymbolicLink()
+            || terminal.identity.size < 1 || terminal.identity.size > 4 * 1024 * 1024
+            || (terminal.identity.mode & 0o777) !== 0o600) {
+            throw new Error('Archive lifecycle terminal evidence identity is unsafe or unbounded.')
+          }
+          const evidence = JSON.parse(await readFile(terminal.path, 'utf8'))
+          if (evidence?.verdict?.passed !== terminal.passed) {
+            throw new Error('Archive lifecycle terminal evidence verdict does not match its filename.')
+          }
+          console.log(`archive-lifecycle-terminal-evidence=${terminal.path}`)
+          NODE
 
       - name: Launch AppImage smoke
         run: |
@@ -377,4 +418,5 @@ jobs:
             tmp/beta-artifacts/tracking-soak-ci
             tmp/breadcrumb-pr5-evidence
             tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-report.json
+            tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json
           if-no-files-found: warn

@@ -38,6 +38,11 @@ const {
   readonly ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES: readonly string[]
   readonly readArchiveCleanupMembershipGeneration: (db: typeof Database, missionId: string) => number
 }
+const { deriveArchiveLifecycleEventId } = require(
+  '../../electron/mission-finalization-boundary.cjs',
+) as {
+  readonly deriveArchiveLifecycleEventId: (archiveId: string, kind: string) => string
+}
 
 const operationId = '11111111-1111-4111-8111-111111111111'
 const archiveId = '22222222-2222-4222-8222-222222222222'
@@ -283,6 +288,74 @@ describe('mission-scoped archive scratch extraction', () => {
         cleanup_membership_generation: cleanupMembershipGeneration,
         container_version: 2,
         resulting_status: 'finalized',
+      })
+    } finally {
+      scratch.close()
+    }
+  })
+
+  it('preserves the exact unlock rowid/id/time in a supplemental finalization projection', () => {
+    const fixture = createTwoMissionSource()
+    const previousArchiveId = '66666666-6666-4666-8666-666666666666'
+    const unlockEventId = deriveArchiveLifecycleEventId(previousArchiveId, 'mission-unlocked')
+    const unlockedAt = '2026-08-29T18:30:00.000Z'
+    const source = new Database(fixture.sourceDatabasePath)
+    const cleanupMembershipGeneration = readArchiveCleanupMembershipGeneration(
+      source,
+      'mission-a',
+    )
+    source.prepare(`INSERT INTO mission_events (
+      rowid, id, mission_id, event_type, timestamp, details_json,
+      recorded_at, recording_completeness
+    ) VALUES (41, ?, 'mission-a', 'mission_unlocked', ?, ?, ?, 'complete')`).run(
+      unlockEventId,
+      unlockedAt,
+      JSON.stringify({
+        admin_name: 'Duty Admin',
+        reason: 'Correct the archived mission.',
+        resulting_status: 'finished',
+      }),
+      unlockedAt,
+    )
+    source.close()
+    const supplementEventId = '77777777-7777-4777-8777-777777777777'
+    const input = extractionInput(fixture.sourceDatabasePath, {
+      previousArchiveId,
+      finalizationProjection: {
+        eventId: '55555555-5555-4555-8555-555555555555',
+        timestamp: fenceRequestedAt,
+        recordedAt: fenceRequestedAt,
+        archivePath: path.join(
+          path.dirname(fixture.sourceDatabasePath),
+          'archives',
+          `${archiveId}.sararch`,
+        ),
+        archiveRelativePath: `${archiveId}.sararch`,
+        cleanupMembershipGeneration,
+        supplement: {
+          eventId: supplementEventId,
+          sequence: 1,
+          authority: 'Duty Admin',
+          reason: 'Correct the archived mission.',
+          unlockEventId,
+          unlockEventRowid: 41,
+          unlockedAt,
+        },
+      },
+    })
+
+    createMissionArchiveScratch(input as never)
+
+    const scratch = new Database(input.scratchDatabasePath, { readonly: true })
+    try {
+      expect(scratch.prepare(`SELECT rowid AS event_rowid FROM mission_events
+        WHERE id = ?`).get(unlockEventId)).toEqual({ event_rowid: 41 })
+      const supplement = scratch.prepare(`SELECT details_json FROM mission_events
+        WHERE id = ?`).get(supplementEventId)
+      expect(JSON.parse(String(supplement.details_json))).toMatchObject({
+        unlock_event_id: unlockEventId,
+        unlock_event_rowid: 41,
+        unlocked_at: unlockedAt,
       })
     } finally {
       scratch.close()

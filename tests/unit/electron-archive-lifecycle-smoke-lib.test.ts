@@ -1083,11 +1083,22 @@ describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON
       path.resolve('scripts/electron-archive-lifecycle-smoke.mjs'),
       'utf8',
     )
+    const cleanupStart = runnerSource.indexOf(
+      'const cleanup = await cleanupArchiveLifecycleResources({',
+    )
+    const successPublication = runnerSource.indexOf(
+      'successReportPath = await writeArchiveLifecycleSuccessReport({',
+      cleanupStart,
+    )
     expect(runnerSource).toContain("mkdtemp(path.join(os.tmpdir(), 'sartracker-pr6-archive-smoke-'))")
     expect(runnerSource).not.toContain("path.join(options.evidenceDir, 'user-data')")
-    expect(runnerSource).toContain('await removeDisposableProfile(userDataDir)')
-    expect(runnerSource.indexOf('await removeDisposableProfile(userDataDir)'))
-      .toBeLessThan(runnerSource.indexOf("'electron-archive-lifecycle-smoke-report.json'"))
+    expect(runnerSource).toContain('removeProfile: removeDisposableProfile')
+    expect(runnerSource).toContain(
+      'if (input.profilePath !== null && processCleanupCompleted)',
+    )
+    expect(runnerSource).toContain('await input.removeProfile(input.profilePath)')
+    expect(cleanupStart).toBeGreaterThan(0)
+    expect(successPublication).toBeGreaterThan(cleanupStart)
   })
 
   it.each([

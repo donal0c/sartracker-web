@@ -8,6 +8,7 @@ const {
   assertMissionLiveReviewAvailable,
 } = require('./mission-live-review-access.cjs')
 const {
+  deriveArchiveLifecycleEventId,
   readCurrentMissionFinalizationBoundary,
 } = require('./mission-finalization-boundary.cjs')
 
@@ -39,11 +40,19 @@ function readMissionCorrectionAuthorization(database, missionId) {
   if (mission?.status !== 'finished') return false
   const finalized = readCurrentMissionFinalizationBoundary(database, { missionId })
   if (finalized === null) return false
-  const unlocked = database.prepare(`SELECT details_json
-    FROM mission_events
-    WHERE mission_id = ? AND event_type = 'mission_unlocked' AND rowid > ?
-    ORDER BY rowid DESC LIMIT 1`).get(missionId, finalized.eventRowid)
-  if (unlocked === undefined) return false
+  let unlockEventId
+  try {
+    unlockEventId = deriveArchiveLifecycleEventId(finalized.archiveId, 'mission-unlocked')
+  } catch {
+    return false
+  }
+  const unlocked = database.prepare(`SELECT rowid AS event_rowid, mission_id,
+      event_type, details_json
+    FROM mission_events WHERE id = ?`).get(unlockEventId)
+  const unlockEventRowid = Number(unlocked?.event_rowid)
+  if (unlocked?.mission_id !== missionId || unlocked.event_type !== 'mission_unlocked'
+    || !Number.isSafeInteger(unlockEventRowid)
+    || unlockEventRowid <= finalized.eventRowid) return false
   let details
   try {
     details = JSON.parse(unlocked.details_json ?? 'null')

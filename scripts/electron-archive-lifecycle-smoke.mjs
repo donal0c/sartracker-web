@@ -13,6 +13,7 @@ import {
   mkdir,
   mkdtemp,
   readdir,
+  rename,
   rm,
   writeFile,
 } from 'node:fs/promises'
@@ -80,27 +81,34 @@ async function main() {
   const sourceBefore = await readSourceState()
   assertExactCleanSource(sourceBefore, options.expectedHead, 'before')
   await prepareEvidenceDirectory(options.evidenceDir, [options.appPath, projectRoot])
-  const userDataDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-pr6-archive-smoke-'))
-
   const startedAtMs = Date.now()
-  const packagedApplicationArchivePath = resolvePackagedApplicationArchivePath(
-    options.appPath,
-    process.platform,
-  )
-  await requireRegularFileNoSymlink(
-    packagedApplicationArchivePath,
-    'Packaged application archive',
-  )
-  const packagedExecutableSha256 = await sha256File(options.appPath)
-  const packagedApplicationArchiveSha256 = await sha256File(packagedApplicationArchivePath)
   const observedLaunchExits = []
   const packagedBuildHeadMatches = []
-  passphrase = createEphemeralPassphrase()
+  let userDataDir = null
+  let packagedApplicationArchivePath
+  let packagedExecutableSha256
+  let packagedApplicationArchiveSha256
   let initialLaunch
   let restartedLaunch
   let mockServer
   let livenessProbe
+  let successEvidence = null
+  let successReportPath = null
+  let lifecycleFailure = null
+  let profileCleanupCompleted = false
   try {
+    userDataDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-pr6-archive-smoke-'))
+    packagedApplicationArchivePath = resolvePackagedApplicationArchivePath(
+      options.appPath,
+      process.platform,
+    )
+    await requireRegularFileNoSymlink(
+      packagedApplicationArchivePath,
+      'Packaged application archive',
+    )
+    packagedExecutableSha256 = await sha256File(options.appPath)
+    packagedApplicationArchiveSha256 = await sha256File(packagedApplicationArchivePath)
+    passphrase = createEphemeralPassphrase()
     mockServer = await startArchiveLifecycleLivenessMockTraccarServer()
     await seedLivenessRuntimeConfiguration(userDataDir, mockServer.baseUrl)
     initialLaunch = await launchPackagedApp(options, userDataDir, 1)
@@ -226,14 +234,14 @@ async function main() {
       selectedTime: reviewSelectedTime,
     }), secondReviewOperation)
     await livenessProbe.completePhaseOperation(secondReviewOperation)
+    await livenessProbe.detachLaunch(restartedLaunch)
+    const liveness = await livenessProbe.finish()
     const postCleanup = await assertPostCleanupState({
       page: restartedLaunch.page,
       missionId: seeded.missionId,
       archive: finalized.archive,
     })
     const cleanup = { ...cleanupResult, ...postCleanup }
-    await livenessProbe.detachLaunch(restartedLaunch)
-    const liveness = await livenessProbe.finish()
     const restartedExit = await stopLaunch(restartedLaunch)
     observedLaunchExits.push({ number: restartedLaunch.number, signal: restartedExit.signal })
     restartedLaunch = null
@@ -244,7 +252,6 @@ async function main() {
       [passphrase, recoveryCode],
     )
     const finalResidualEntries = await countArchiveLifecycleResidualEntries(userDataDir)
-    await removeDisposableProfile(userDataDir)
     const sourceAfter = await readSourceState()
     assertExactCleanSource(sourceAfter, options.expectedHead, 'after')
     if (await sha256File(options.appPath) !== packagedExecutableSha256) {
@@ -259,7 +266,7 @@ async function main() {
       throw new Error('Packaged application archive bytes changed during the lifecycle smoke.')
     }
     const finishedAtMs = Date.now()
-    const evidence = {
+    successEvidence = {
       schemaVersion: 2,
       proofKind: 'packaged-electron-archive-lifecycle-v2',
       source: {
@@ -332,30 +339,91 @@ async function main() {
       },
       verdict: { passed: true, failureReasons: [] },
     }
-    assertArchiveLifecycleSmokeEvidenceOmitsSecrets(evidence, [passphrase, recoveryCode])
-    const validation = validateArchiveLifecycleSmokeEvidence(evidence)
+    assertArchiveLifecycleSmokeEvidenceOmitsSecrets(successEvidence, [passphrase, recoveryCode])
+    const validation = validateArchiveLifecycleSmokeEvidence(successEvidence)
     if (!validation.passed) {
       throw new Error(`Packaged archive-lifecycle evidence failed ${validation.failureReasons.length} closed gate(s).`)
     }
-    const reportPath = path.join(
-      options.evidenceDir,
-      'electron-archive-lifecycle-smoke-report.json',
-    )
-    await writeFile(reportPath, `${JSON.stringify(evidence, null, 2)}\n`, {
-      encoding: 'utf8',
-      mode: 0o600,
-    })
-    console.log(`electron-archive-lifecycle-smoke: passed; report=${reportPath}`)
-    passphrase = ''
-    recoveryCode = ''
-  } finally {
-    await livenessProbe?.stop().catch(() => undefined)
-    await stopLaunch(restartedLaunch).catch(() => undefined)
-    await stopLaunch(initialLaunch).catch(() => undefined)
-    await mockServer?.close().catch(() => undefined)
-    activeLaunch = null
-    await removeDisposableProfile(userDataDir)
+  } catch (error) {
+    lifecycleFailure = error
   }
+
+  const cleanup = await cleanupArchiveLifecycleResources({
+    failure: lifecycleFailure,
+    profilePath: userDataDir,
+    removeProfile: removeDisposableProfile,
+    steps: [
+      { blocksProfileCleanup: false, run: () => livenessProbe?.stop() },
+      {
+        blocksProfileCleanup: true,
+        run: async () => {
+          try {
+            await stopLaunch(restartedLaunch)
+          } catch (error) {
+            activeLaunch = restartedLaunch ?? activeLaunch
+            throw error
+          }
+        },
+      },
+      {
+        blocksProfileCleanup: true,
+        run: async () => {
+          try {
+            await stopLaunch(initialLaunch)
+          } catch (error) {
+            activeLaunch = initialLaunch ?? activeLaunch
+            throw error
+          }
+        },
+      },
+      { blocksProfileCleanup: false, run: () => mockServer?.close() },
+    ],
+  })
+  lifecycleFailure = cleanup.failure
+  profileCleanupCompleted = cleanup.profileCleanupCompleted
+  if (cleanup.processCleanupCompleted) activeLaunch = null
+
+  if (lifecycleFailure === null && successEvidence === null) {
+    lifecycleFailure = new Error('Archive-lifecycle success evidence state is incomplete.')
+  }
+  if (lifecycleFailure === null) {
+    try {
+      successReportPath = await writeArchiveLifecycleSuccessReport({
+        evidence: successEvidence,
+        evidenceDir: options.evidenceDir,
+      })
+    } catch (error) {
+      lifecycleFailure = error
+    }
+  }
+  if (lifecycleFailure !== null) {
+    const secrets = [passphrase, recoveryCode].filter((value) => value !== '')
+    let failureReportPath
+    try {
+      failureReportPath = await writeArchiveLifecycleFailureReceipt({
+        evidenceDir: options.evidenceDir,
+        error: lifecycleFailure,
+        expectedHead: options.expectedHead,
+        observedLaunchCount: packagedBuildHeadMatches.length,
+        processCleanupCompleted: cleanup.processCleanupCompleted,
+        profileCleanupCompleted,
+        cleanupFailureCount: cleanup.cleanupFailureCount,
+        secrets,
+        sourceBefore,
+        startedAtMs,
+      })
+    } catch (publicationError) {
+      throw new AggregateError(
+        [lifecycleFailure, publicationError],
+        'Archive-lifecycle run failed and its terminal failure receipt could not be published.',
+      )
+    }
+    console.error(`electron-archive-lifecycle-smoke: failure-report=${failureReportPath}`)
+    throw lifecycleFailure
+  }
+  console.log(`electron-archive-lifecycle-smoke: passed; report=${successReportPath}`)
+  passphrase = ''
+  recoveryCode = ''
 }
 
 /** Creates a bounded mission and deterministic breadcrumb evidence through preload IPC. */
@@ -1231,6 +1299,8 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   const sourceByIdentity = new Map()
   const operationCheckpoints = new Map()
   const errors = new Set()
+  let currentFixContinuity = null
+  let currentFixTimeout = null
   let signalFailure
   const failureSignal = new Promise((resolve) => { signalFailure = resolve })
   const recordError = (kind) => {
@@ -1289,16 +1359,60 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       } else if (requestAgeMs >= LIVENESS_HARD_GATE_MS
         || sourceAgeMs >= LIVENESS_HARD_GATE_MS) {
         sourceByIdentity.delete(identity)
+        if (currentFixTimeout === null
+          || Math.max(requestAgeMs, sourceAgeMs)
+            >= Math.max(currentFixTimeout.requestAgeMs, currentFixTimeout.sourceAgeMs)) {
+          currentFixTimeout = Object.freeze({
+            phase: source.phase,
+            requestAgeMs,
+            sourceAgeMs,
+            requestStartedAtMs: source.requestStartedAtMs,
+            emittedAtMs: source.emittedAtMs,
+            auditedAtMs: currentTimeMs,
+          })
+        }
         recordError('current_fix_not_observed_before_gate')
       }
     }
   }
 
+  const buildFailureDiagnostics = () => {
+    const activeOperations = [...operationCheckpoints.values()]
+    return Object.freeze({
+      errorKinds: [...errors].sort(),
+      activePhase,
+      activeLaunchNumber: Number.isSafeInteger(activeLaunch?.number) ? activeLaunch.number : null,
+      currentFixContinuity,
+      currentFixTimeout,
+      operationCount: activeOperations.length,
+      operationOverflowCount: Math.max(0, activeOperations.length - LIVENESS_PHASES.length),
+      operations: activeOperations.slice(0, LIVENESS_PHASES.length)
+        .map((operation) => Object.freeze({
+          phase: operation.phase,
+          startedAtMs: operation.startedAtMs,
+          endedAtMs: operation.endedAtMs,
+          freshSampleCount: operation.freshSampleCount,
+        })),
+      phaseMetrics: Object.fromEntries(LIVENESS_PHASES.map((phase) => [phase, Object.freeze({
+        ...byPhase[phase],
+        mainSampleCount: channelCounts[phase].main,
+        rendererFrameSampleCount: channelCounts[phase].rendererFrame,
+      })])),
+    })
+  }
+
   const throwIfInstrumentationFailed = () => {
     if (errors.size > 0) {
-      throw new Error(
+      const failure = new Error(
         `Archive-lifecycle external watchdog recorded an instrumentation failure (${[...errors].sort().join(',')}).`,
       )
+      Object.defineProperty(failure, 'archiveLifecycleDiagnostics', {
+        configurable: false,
+        enumerable: false,
+        writable: false,
+        value: buildFailureDiagnostics(),
+      })
+      throw failure
     }
   }
 
@@ -1311,7 +1425,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     return currentTimeMs
   }
 
-  const recordCurrentFixGap = (phase, gapMs) => {
+  const recordCurrentFixGap = (phase, gapMs, timing = null) => {
     if (!LIVENESS_PHASES.includes(phase)
       || !Number.isFinite(gapMs) || gapMs < 0) {
       recordError('current_fix_clock_invalid')
@@ -1322,6 +1436,10 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       gapMs,
     )
     if (gapMs >= LIVENESS_HARD_GATE_MS) {
+      if (timing !== null && (currentFixContinuity === null
+        || gapMs >= currentFixContinuity.gapMs)) {
+        currentFixContinuity = Object.freeze({ phase, gapMs, ...timing })
+      }
       recordError('current_fix_continuity_gate_breached')
     }
   }
@@ -1333,7 +1451,11 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       ? currentTimeMs
       : Math.min(currentTimeMs, interval.endedAtMs)
     const previousTimeMs = interval.lastObservedAtMs ?? interval.startedAtMs
-    recordCurrentFixGap(interval.phase, Math.max(0, boundedTimeMs - previousTimeMs))
+    recordCurrentFixGap(interval.phase, Math.max(0, boundedTimeMs - previousTimeMs), {
+      intervalStartedAtMs: interval.startedAtMs,
+      previousObservedAtMs: previousTimeMs,
+      auditedAtMs: boundedTimeMs,
+    })
   }
 
   const beginContinuityInterval = (phase) => {
@@ -1370,7 +1492,11 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     if (operation.continuitySegmentStartedAtMs === null) return
     const previousTimeMs = operation.continuityLastObservedAtMs
       ?? operation.continuitySegmentStartedAtMs
-    recordCurrentFixGap(operation.phase, Math.max(0, endedAtMs - previousTimeMs))
+    recordCurrentFixGap(operation.phase, Math.max(0, endedAtMs - previousTimeMs), {
+      intervalStartedAtMs: operation.continuitySegmentStartedAtMs,
+      previousObservedAtMs: previousTimeMs,
+      auditedAtMs: endedAtMs,
+    })
     operation.continuitySegmentStartedAtMs = null
     operation.continuityLastObservedAtMs = null
   }
@@ -1382,13 +1508,37 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       return
     }
     const previousTimeMs = interval.lastObservedAtMs ?? interval.startedAtMs
-    recordCurrentFixGap(phase, Math.max(0, endedAtMs - previousTimeMs))
+    recordCurrentFixGap(phase, Math.max(0, endedAtMs - previousTimeMs), {
+      intervalStartedAtMs: interval.startedAtMs,
+      previousObservedAtMs: previousTimeMs,
+      auditedAtMs: endedAtMs,
+    })
     for (const operation of operationCheckpoints.values()) {
       if (operation.phase === phase && operation.endedAtMs === null) {
         closeOperationContinuitySegment(operation, endedAtMs)
       }
     }
     activeContinuityInterval = null
+  }
+
+  /** Preserves one exact-fix timeline while changing only phase attribution. */
+  const transitionActiveContinuityPhase = (previousPhase, nextPhase, switchedAtMs) => {
+    const interval = activeContinuityInterval
+    if (interval === null || interval.phase !== previousPhase || interval.endedAtMs !== null) {
+      recordError('current_fix_continuity_state_invalid')
+      return
+    }
+    for (const operation of operationCheckpoints.values()) {
+      if (operation.endedAtMs !== null) continue
+      if (operation.phase === previousPhase) {
+        closeOperationContinuitySegment(operation, switchedAtMs)
+      }
+      if (operation.phase === nextPhase) {
+        operation.continuitySegmentStartedAtMs = switchedAtMs
+        operation.continuityLastObservedAtMs = null
+      }
+    }
+    interval.phase = nextPhase
   }
 
   const rendererFrameTailIsValid = (frameTail) => frameTail === null || (
@@ -1469,10 +1619,6 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       const source = sourceByIdentity.get(observation.sourcePositionId)
       if (source === undefined) continue
       sourceByIdentity.delete(observation.sourcePositionId)
-      if (observation.phase !== source.phase) {
-        recordError('current_fix_phase_identity_mismatch')
-        continue
-      }
       if (observation.sourceTimestamp !== source.sourceTimestamp) {
         recordError('current_fix_timestamp_identity_mismatch')
         continue
@@ -1500,15 +1646,20 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         requestToRendererMs,
       )
       const interval = activeContinuityInterval
-      if (interval === null || interval.phase !== source.phase) {
+      if (interval === null) {
         recordError('current_fix_continuity_state_invalid')
       } else {
         const previousObservedAtMs = interval.lastObservedAtMs ?? interval.startedAtMs
-        recordCurrentFixGap(source.phase, observation.observedAtMs - previousObservedAtMs)
+        recordCurrentFixGap(source.phase, observation.observedAtMs - previousObservedAtMs, {
+          intervalStartedAtMs: interval.startedAtMs,
+          previousObservedAtMs,
+          auditedAtMs: observation.observedAtMs,
+        })
         interval.lastObservedAtMs = observation.observedAtMs
       }
       for (const operation of operationCheckpoints.values()) {
         if (operation.phase === source.phase
+          && operation.continuitySegmentStartedAtMs !== null
           && source.requestStartedAtMs >= operation.startedAtMs
           && (operation.endedAtMs === null || (
             source.emittedAtMs < operation.endedAtMs
@@ -1521,6 +1672,11 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
             recordCurrentFixGap(
               source.phase,
               observation.observedAtMs - previousObservedAtMs,
+              {
+                intervalStartedAtMs: operation.continuitySegmentStartedAtMs,
+                previousObservedAtMs,
+                auditedAtMs: observation.observedAtMs,
+              },
             )
             operation.continuityLastObservedAtMs = observation.observedAtMs
           }
@@ -1535,12 +1691,12 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     auditActiveContinuity()
   }
 
-  const recordMainGap = (phase, gapMs) => {
+  const recordMainGap = (phase, gapMs, countSample = true) => {
     if (!LIVENESS_PHASES.includes(phase) || !Number.isFinite(gapMs) || gapMs < 0) {
       recordError('main_watchdog_sample_invalid')
       return
     }
-    channelCounts[phase].main += 1
+    if (countSample) channelCounts[phase].main += 1
     byPhase[phase].mainWatchdogMaxGapMs = Math.max(
       byPhase[phase].mainWatchdogMaxGapMs,
       gapMs,
@@ -1602,17 +1758,29 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     const pausedAtMs = readExternalNow()
     if (pausedAtMs === null) throwIfInstrumentationFailed()
     markContinuityIntervalEnded(pausedPhase, pausedAtMs)
+    activeLaunch?.externalLivenessWatchdog?.setPhase?.(null)
     activePhase = null
     await settlePendingPhase(pausedPhase)
     closeContinuityInterval(pausedPhase, pausedAtMs)
+    if (activeLaunch !== null) {
+      let previousFrameTail
+      try {
+        previousFrameTail = await withTimeout(
+          setRendererPhase(activeLaunch.page, null),
+          LIVENESS_HARD_GATE_MS,
+          'Electron renderer liveness phase pause timed out.',
+        )
+      } catch {
+        recordError('renderer_cdp_watchdog_failed')
+        throwIfInstrumentationFailed()
+      }
+      recordRendererFrameTail(previousFrameTail)
+    }
     throwIfInstrumentationFailed()
     return pausedPhase
   }
 
   const resumePhase = async (phase) => {
-    beginContinuityInterval(phase)
-    throwIfInstrumentationFailed()
-    activePhase = phase
     if (activeLaunch !== null) {
       let previousFrameTail
       try {
@@ -1628,6 +1796,10 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       recordRendererFrameTail(previousFrameTail)
       throwIfInstrumentationFailed()
     }
+    beginContinuityInterval(phase)
+    throwIfInstrumentationFailed()
+    activePhase = phase
+    activeLaunch?.externalLivenessWatchdog?.setPhase?.(phase)
     auditActiveContinuity()
     throwIfInstrumentationFailed()
     await mockServer.setPhase(phase)
@@ -1638,8 +1810,36 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   const transitionToPhase = async (phase) => {
     requireLivenessPhase(phase)
     if (activePhase === phase) return
-    await pauseAndSettleActivePhase()
-    await resumePhase(phase)
+    if (activePhase === null) {
+      await resumePhase(phase)
+      return
+    }
+    const previousPhase = activePhase
+    await collectCurrentRendererSnapshot()
+    throwIfInstrumentationFailed()
+    if (activeLaunch !== null) {
+      let previousFrameTail
+      try {
+        previousFrameTail = await withTimeout(
+          setRendererPhase(activeLaunch.page, phase),
+          LIVENESS_HARD_GATE_MS,
+          'Electron renderer liveness phase transition timed out.',
+        )
+      } catch {
+        recordError('renderer_cdp_watchdog_failed')
+        throwIfInstrumentationFailed()
+      }
+      recordRendererFrameTail(previousFrameTail)
+      throwIfInstrumentationFailed()
+    }
+    await mockServer.setPhase(phase)
+    const switchedAtMs = readExternalNow()
+    if (switchedAtMs === null) throwIfInstrumentationFailed()
+    activePhase = phase
+    activeLaunch?.externalLivenessWatchdog?.setPhase?.(phase)
+    transitionActiveContinuityPhase(previousPhase, phase, switchedAtMs)
+    auditActiveContinuity()
+    throwIfInstrumentationFailed()
   }
 
   const attachLaunch = async (launch) => {
@@ -1700,9 +1900,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     }
     for (const phase of phases) requireLivenessPhase(phase)
     throwIfInstrumentationFailed()
-    const preservedPhase = activePhase
-    if (preservedPhase !== null) await pauseAndSettleActivePhase()
-    else await collectCurrentRendererSnapshot()
+    await collectCurrentRendererSnapshot()
     for (const phase of phases) {
       if ([...sourceByIdentity.values()].some((source) => source.phase === phase)) {
         recordError('source_identity_left_pending_at_operation_start')
@@ -1723,10 +1921,9 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       startedAtMs,
       endedAtMs: null,
       freshSampleCount: 0,
-      continuitySegmentStartedAtMs: null,
+      continuitySegmentStartedAtMs: activePhase === checkpoint.phase ? startedAtMs : null,
       continuityLastObservedAtMs: null,
     }))
-    if (preservedPhase !== null) await resumePhase(preservedPhase)
     return checkpoints
   })
 
@@ -1746,13 +1943,19 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       recordError('external_watchdog_clock_invalid')
       throwIfInstrumentationFailed()
     }
-    for (const operation of operations) {
-      closeOperationContinuitySegment(operation, endedAtMs)
-      operation.endedAtMs = endedAtMs
+    for (const operation of operations) operation.endedAtMs = endedAtMs
+    let collectionFailure
+    try {
+      await collectCurrentRendererSnapshot()
+    } catch (error) {
+      collectionFailure = error
+    } finally {
+      for (const operation of operations) {
+        closeOperationContinuitySegment(operation, endedAtMs)
+      }
+      auditActiveContinuity(endedAtMs)
     }
-    auditActiveContinuity(endedAtMs)
-    throwIfInstrumentationFailed()
-    await collectCurrentRendererSnapshot()
+    if (collectionFailure !== undefined) throw collectionFailure
     throwIfInstrumentationFailed()
   })
 
@@ -1764,19 +1967,14 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       throw new Error('Archive-lifecycle liveness operation checkpoint is invalid.')
     }
     const phase = checkpoint.phase
-    const preservedPhase = activePhase
-    if (preservedPhase === phase) {
-      await pauseAndSettleActivePhase()
-    } else {
-      await collectCurrentRendererSnapshot()
-      if ([...sourceByIdentity.values()].some((source) => source.phase === phase)) {
-        recordError('source_identity_left_pending_at_operation_end')
-      }
+    await collectCurrentRendererSnapshot()
+    if ([...sourceByIdentity.values()].some((source) => source.phase === phase
+      && source.requestStartedAtMs < operation.endedAtMs)) {
+      recordError('source_identity_left_pending_at_operation_end')
     }
     operationCheckpoints.delete(checkpoint)
     const advanced = byPhase[phase].sampleCount > checkpoint.sampleCount
       && operation.freshSampleCount > 0
-    if (preservedPhase === phase) await resumePhase(phase)
     throwIfInstrumentationFailed()
     if (!advanced) {
       throw new Error(
@@ -1907,14 +2105,31 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
 }
 
 /** Starts independent inspector and renderer-CDP watchdog loops for one launch. */
-function startExternalLaunchWatchdog(input) {
+export function startExternalLaunchWatchdog(input) {
   let stopped = false
   let stopPromise = null
+  let attributedPhase = input.readPhase()
+  let previousCompletedAt = performance.now()
+  /** Records the old phase tail without resetting cross-phase heartbeat continuity. */
+  const setPhase = (phase) => {
+    if (phase !== null && !LIVENESS_PHASES.includes(phase)) {
+      input.onError('main_watchdog_sample_invalid')
+      return
+    }
+    if (phase === attributedPhase) return
+    const switchedAt = performance.now()
+    const previousPhaseWasActive = LIVENESS_PHASES.includes(attributedPhase)
+    if (previousPhaseWasActive) {
+      input.onMainGap(attributedPhase, switchedAt - previousCompletedAt, false)
+    }
+    attributedPhase = phase
+    if (!previousPhaseWasActive && LIVENESS_PHASES.includes(phase)) {
+      previousCompletedAt = switchedAt
+    }
+  }
   const mainTask = (async () => {
-    let previousCompletedAt = performance.now()
     while (!stopped) {
       const cycleStartedAt = performance.now()
-      const phase = input.readPhase()
       try {
         await withTimeout(
           input.launch.mainInspector.evaluate('process.uptime()'),
@@ -1922,8 +2137,8 @@ function startExternalLaunchWatchdog(input) {
           'Electron main inspector watchdog timed out.',
         )
         const completedAt = performance.now()
-        if (LIVENESS_PHASES.includes(phase)) {
-          input.onMainGap(phase, completedAt - previousCompletedAt)
+        if (!stopped && LIVENESS_PHASES.includes(attributedPhase)) {
+          input.onMainGap(attributedPhase, completedAt - previousCompletedAt, true)
         }
         previousCompletedAt = completedAt
       } catch {
@@ -1937,11 +2152,12 @@ function startExternalLaunchWatchdog(input) {
     while (!stopped) {
       const cycleStartedAt = performance.now()
       try {
-        input.onRendererSnapshot(await withTimeout(
+        const snapshot = await withTimeout(
           collectRendererLivenessProbe(input.launch.page, false),
           LIVENESS_HARD_GATE_MS,
           'Electron renderer liveness watchdog timed out.',
-        ))
+        )
+        if (!stopped) input.onRendererSnapshot(snapshot)
       } catch {
         if (!stopped) input.onError('renderer_cdp_watchdog_failed')
       }
@@ -1951,8 +2167,10 @@ function startExternalLaunchWatchdog(input) {
   })()
 
   return {
+    setPhase,
     stop: () => {
       stopPromise ??= (async () => {
+        setPhase(null)
         stopped = true
         await Promise.all([mainTask, rendererTask])
         const finalSnapshot = await withTimeout(
@@ -2055,15 +2273,16 @@ export async function installRendererLivenessProbe(page, deviceId) {
 
     window.__SARTRACKER_ARCHIVE_LIVENESS__ = {
       setPhase: (nextPhase) => {
-        if (!allowedPhases.has(nextPhase)) {
+        if (nextPhase !== null && !allowedPhases.has(nextPhase)) {
           throw new Error('Renderer liveness phase is invalid.')
         }
         const switchedAt = performance.now()
         const previousFrameTail = allowedPhases.has(phase)
           ? { phase, gapMs: switchedAt - previousFrameAt }
           : null
+        const previousPhaseWasActive = allowedPhases.has(phase)
         phase = nextPhase
-        previousFrameAt = switchedAt
+        if (!previousPhaseWasActive) previousFrameAt = switchedAt
         return previousFrameTail
       },
       drain: () => {
@@ -2403,6 +2622,137 @@ async function prepareEvidenceDirectory(directory, protectedPaths) {
   await mkdir(resolved, { recursive: true, mode: 0o700 })
 }
 
+/**
+ * Settles owned runtime resources and removes the disposable profile only after
+ * every launch stop has been confirmed.
+ */
+export async function cleanupArchiveLifecycleResources(input) {
+  if (!Array.isArray(input?.steps)
+    || input.steps.some((step) => typeof step?.run !== 'function'
+      || typeof step.blocksProfileCleanup !== 'boolean')
+    || typeof input?.removeProfile !== 'function'
+    || (input.profilePath !== null && typeof input.profilePath !== 'string')) {
+    throw new Error('Archive-lifecycle cleanup inputs are invalid.')
+  }
+  let failure = input.failure
+  let processCleanupCompleted = true
+  let cleanupFailureCount = 0
+  for (const step of input.steps) {
+    try {
+      await step.run()
+    } catch (error) {
+      cleanupFailureCount += 1
+      if (failure === null || failure === undefined) failure = error
+      if (step.blocksProfileCleanup) processCleanupCompleted = false
+    }
+  }
+  let profileCleanupCompleted = input.profilePath === null && processCleanupCompleted
+  if (input.profilePath !== null && processCleanupCompleted) {
+    try {
+      await input.removeProfile(input.profilePath)
+      profileCleanupCompleted = true
+    } catch (error) {
+      cleanupFailureCount += 1
+      if (failure === null || failure === undefined) failure = error
+    }
+  }
+  return Object.freeze({
+    cleanupFailureCount,
+    failure: failure ?? null,
+    processCleanupCompleted,
+    profileCleanupCompleted,
+  })
+}
+
+/** Atomically publishes one success report and removes any opposite terminal receipt. */
+export async function writeArchiveLifecycleSuccessReport(input, dependencies = {}) {
+  return writeArchiveLifecycleTerminalArtifact({
+    contents: `${JSON.stringify(input.evidence, null, 2)}\n`,
+    evidenceDir: input.evidenceDir,
+    fileName: 'electron-archive-lifecycle-smoke-report.json',
+    oppositeFileName: 'electron-archive-lifecycle-smoke-failure.json',
+  }, dependencies)
+}
+
+/** Atomically writes one bounded, sanitized receipt for a non-passing lifecycle run. */
+export async function writeArchiveLifecycleFailureReceipt(input, dependencies = {}) {
+  if (!Array.isArray(input.secrets)
+    || input.secrets.some((secret) => typeof secret !== 'string' || secret.length < 1)) {
+    throw new Error('Archive-lifecycle failure receipt secret set is invalid.')
+  }
+  const failedAtMs = Date.now()
+  const diagnostics = input.error?.archiveLifecycleDiagnostics
+  const receipt = {
+    schemaVersion: 1,
+    proofKind: 'packaged-electron-archive-lifecycle-failure-v1',
+    source: {
+      expectedHead: input.expectedHead,
+      headBefore: input.sourceBefore.head,
+      treeBefore: input.sourceBefore.tree,
+      worktreeCleanBefore: input.sourceBefore.clean,
+    },
+    run: {
+      startedAt: new Date(input.startedAtMs).toISOString(),
+      failedAt: new Date(failedAtMs).toISOString(),
+      durationMs: Math.max(0, failedAtMs - input.startedAtMs),
+      platform: process.platform,
+      architecture: os.arch(),
+      nodeVersion: process.version,
+      observedLaunchCount: input.observedLaunchCount,
+    },
+    failure: {
+      classification: diagnostics === undefined
+        ? 'lifecycle_failure'
+        : 'external_liveness_gate_failure',
+      message: sanitizeFailureMessage(input.error, input.secrets),
+      archiveLifecycleDiagnostics: diagnostics ?? null,
+    },
+    cleanup: {
+      cleanupFailureCount: Number.isSafeInteger(input.cleanupFailureCount)
+        && input.cleanupFailureCount >= 0
+        ? input.cleanupFailureCount
+        : 0,
+      processCleanupCompleted: input.processCleanupCompleted === true,
+      profileCleanupCompleted: input.profileCleanupCompleted === true,
+    },
+    verdict: { passed: false },
+  }
+  if (input.secrets.length > 0) {
+    assertArchiveLifecycleSmokeEvidenceOmitsSecrets(receipt, input.secrets)
+  }
+  return writeArchiveLifecycleTerminalArtifact({
+    contents: `${JSON.stringify(receipt, null, 2)}\n`,
+    evidenceDir: input.evidenceDir,
+    fileName: 'electron-archive-lifecycle-smoke-failure.json',
+    oppositeFileName: 'electron-archive-lifecycle-smoke-report.json',
+  }, dependencies)
+}
+
+/** Writes one mode-0600 terminal artifact through an owned temporary file. */
+async function writeArchiveLifecycleTerminalArtifact(input, dependencies = {}) {
+  const writeTemporaryFile = dependencies.writeFile ?? writeFile
+  const renameTemporaryFile = dependencies.rename ?? rename
+  const removeOwnedPath = dependencies.rm ?? rm
+  const reportPath = path.join(input.evidenceDir, input.fileName)
+  const oppositePath = path.join(input.evidenceDir, input.oppositeFileName)
+  const temporaryPath = path.join(
+    input.evidenceDir,
+    `.${input.fileName}.${randomUUID()}.tmp`,
+  )
+  try {
+    await writeTemporaryFile(temporaryPath, input.contents, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    })
+    await renameTemporaryFile(temporaryPath, reportPath)
+    await removeOwnedPath(oppositePath, { force: true })
+  } finally {
+    await removeOwnedPath(temporaryPath, { force: true }).catch(() => undefined)
+  }
+  return reportPath
+}
+
 /** Sweeps only the disposable profile directory allocated by this smoke process. */
 async function removeDisposableProfile(directory) {
   const resolved = path.resolve(directory)
@@ -2599,13 +2949,16 @@ function delay(milliseconds) {
 }
 
 /** Removes custody-like values and local paths from one terminal failure message. */
-function sanitizeFailureMessage(error) {
+function sanitizeFailureMessage(error, secrets = [passphrase, recoveryCode]) {
   let source = error instanceof Error ? error.message : String(error)
-  for (const secret of [passphrase, recoveryCode]) {
+  for (const secret of secrets) {
     if (secret !== '') source = source.replaceAll(secret, '[REDACTED]')
   }
   return source
     .replaceAll(/(?:[0-9A-HJKMNP-TV-Z]{5}-){7}[0-9A-HJKMNP-TV-Z]{5}/gu, '[REDACTED]')
-    .replaceAll(/(?:\/[^\s:]+)+/gu, '[PATH]')
+    .replaceAll(/(['"`])(\/[^'"`\r\n]*)\1/gu, '$1[PATH]$1')
+    // An unquoted path containing spaces has no reliable closing delimiter, so
+    // fail closed by redacting from its absolute-path boundary through the line.
+    .replaceAll(/(^|[\s(=,:])\/[^\r\n]*/gu, '$1[PATH]')
     .slice(0, FAILURE_MESSAGE_LIMIT)
 }

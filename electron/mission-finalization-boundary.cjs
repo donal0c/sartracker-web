@@ -6,7 +6,11 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 
 /** Derives one stable UUID-shaped lifecycle event identity from an archive identity. */
 function deriveArchiveLifecycleEventId(archiveId, kind) {
-  if (!UUID_V4.test(archiveId ?? '') || typeof kind !== 'string' || kind.length < 1) {
+  if (typeof archiveId !== 'string' || archiveId.length < 1
+    || Buffer.byteLength(archiveId, 'utf8') > 200
+    || /[\u0000-\u001f\u007f]/u.test(archiveId)
+    || typeof kind !== 'string' || kind.length < 1 || kind.length > 100
+    || /[\u0000-\u001f\u007f]/u.test(kind)) {
     throw new Error('Archive lifecycle event identity input is invalid.')
   }
   const digest = createHash('sha256')

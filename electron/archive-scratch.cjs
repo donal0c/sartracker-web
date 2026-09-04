@@ -21,6 +21,7 @@ const {
 } = require('./archive-gpx-proof.cjs')
 const { computeMissionReplaySemanticProof } = require('./archive-replay-proof.cjs')
 const {
+  deriveArchiveLifecycleEventId,
   readCurrentMissionFinalizationBoundary,
 } = require('./mission-finalization-boundary.cjs')
 const {
@@ -528,6 +529,9 @@ function applyFinalizationProjection(scratch, input) {
         authority: projection.supplement.authority,
         reason: projection.supplement.reason,
         resulting_status: 'finalized',
+        unlock_event_id: projection.supplement.unlockEventId,
+        unlock_event_rowid: projection.supplement.unlockEventRowid,
+        unlocked_at: projection.supplement.unlockedAt,
       }),
       projection.recordedAt,
     )
@@ -595,7 +599,18 @@ function assertFinalizationProjection(input) {
     || supplement.reason.length < 1
     || supplement.reason.length > 2_000
     || input.previousArchiveId === null
-    || typeof input.previousArchiveId !== 'string') {
+    || typeof input.previousArchiveId !== 'string'
+    || input.previousArchiveId.length < 1
+    || Buffer.byteLength(input.previousArchiveId, 'utf8') > 200
+    || /[\u0000-\u001f\u007f]/u.test(input.previousArchiveId)
+    || supplement.unlockEventId
+      !== deriveArchiveLifecycleEventId(input.previousArchiveId, 'mission-unlocked')
+    || !Number.isSafeInteger(supplement.unlockEventRowid)
+    || supplement.unlockEventRowid < 1
+    || supplement.unlockEventRowid >= input.requestEventRowid
+    || typeof supplement.unlockedAt !== 'string'
+    || Number.isNaN(Date.parse(supplement.unlockedAt))
+    || new Date(supplement.unlockedAt).toISOString() !== supplement.unlockedAt) {
     throw new ArchiveScratchError(
       'ARCHIVE_SCOPE_INVALID',
       'Mission archive supplement projection identity is invalid.',

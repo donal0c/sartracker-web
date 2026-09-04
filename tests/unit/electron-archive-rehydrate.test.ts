@@ -35,6 +35,11 @@ const { rehydrateMissionFromSnapshot } = require('../../electron/archive-rehydra
 const { correctionJournalDirectory } = require('../../electron/archive-correction-custody.cjs') as {
   readonly correctionJournalDirectory: (databasePath: string) => string
 }
+const { deriveArchiveLifecycleEventId } = require(
+  '../../electron/mission-finalization-boundary.cjs',
+) as {
+  readonly deriveArchiveLifecycleEventId: (archiveId: string, kind: string) => string
+}
 
 const temporaryDirectories = new Set<string>()
 
@@ -49,6 +54,68 @@ function snapshotProof(snapshotPath: string) {
       sizeBytes: identity.size,
     },
   }
+}
+
+/** Installs one current recovery archive that protects an existing v2 finalization. */
+function installFinalizedRecoveryArchive(
+  database: InstanceType<typeof Database>,
+  input: Readonly<{
+    missionId: string
+    protectedArchiveId: string
+    recoveryArchiveId: string
+    requestedAt: string
+  }>,
+) {
+  const protectedEpoch = Number(database.prepare(`SELECT rowid FROM mission_events
+    WHERE mission_id = ? AND event_type = 'mission_finalized'
+    ORDER BY rowid DESC LIMIT 1`).get(input.missionId)?.rowid)
+  const requestEventId = randomUUID()
+  const operationId = randomUUID()
+  database.prepare(`INSERT INTO mission_events (
+    id, mission_id, event_type, timestamp, details_json,
+    recorded_at, recording_completeness
+  ) VALUES (?, ?, 'mission_archive_requested', ?, ?, ?, 'complete')`).run(
+    requestEventId,
+    input.missionId,
+    input.requestedAt,
+    JSON.stringify({
+      archive_id: input.recoveryArchiveId,
+      archive_kind: 'finalized_recovery',
+      archive_relative_path: `${input.recoveryArchiveId}.sararch`,
+      operation_id: operationId,
+      protected_finalization_epoch: protectedEpoch,
+      resulting_status: 'finalized',
+    }),
+    input.requestedAt,
+  )
+  const requestEventRowid = Number(database.prepare(
+    'SELECT rowid FROM mission_events WHERE id = ?',
+  ).get(requestEventId)?.rowid)
+  database.prepare(`INSERT INTO mission_archives (
+    id, mission_id, request_event_rowid, request_event_id,
+    creation_operation_id, protected_finalization_epoch, archive_kind,
+    container_version, relative_path, ciphertext_sha256, size_bytes, created_at,
+    sealed_event_id, frame_count, header_sha256, manifest_sha256, entry_count,
+    table_count, verified_at, verification_proof_json, previous_archive_id,
+    status, availability, availability_reason, last_reconciled_at,
+    last_observed_file_identity, slots_json, last_non_machine_unwrap_at,
+    legacy_event_rowid
+  ) SELECT ?, mission_id, ?, ?, ?, ?, 'finalized_recovery',
+    container_version, ?, ciphertext_sha256, size_bytes, ?, sealed_event_id,
+    frame_count, header_sha256, manifest_sha256, entry_count, table_count,
+    verified_at, verification_proof_json, NULL, 'verified', availability,
+    availability_reason, last_reconciled_at, last_observed_file_identity,
+    slots_json, last_non_machine_unwrap_at, NULL
+  FROM mission_archives WHERE id = ?`).run(
+    input.recoveryArchiveId,
+    requestEventRowid,
+    requestEventId,
+    operationId,
+    protectedEpoch,
+    `${input.recoveryArchiveId}.sararch`,
+    input.requestedAt,
+    input.protectedArchiveId,
+  )
 }
 
 afterEach(() => {
@@ -372,6 +439,609 @@ describe('archived mission correction rehydration', () => {
     }
   }, 60_000)
 
+  it('keeps live Review lineage through repeated re-finalize and ordinary-unlock cycles', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-refinalize-unlock-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const custody = {
+      passphrase: 'Lineage Restore 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Correction lineage after ordinary unlock' })
+      await store.finishMission(mission.id)
+      const firstFinalization = await store.finalizeMission(mission.id, custody)
+      const firstArchiveId = String(
+        (firstFinalization as { readonly archive: { readonly id: string } }).archive.id,
+      )
+      await store.syncBackup('correction-lineage-fixture')
+      const snapshotPath = path.join(userDataPath, 'correction-lineage-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId: firstArchiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '37373737-3737-4737-8737-373737373737',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: firstArchiveId,
+        snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
+        admin_name: 'Duty Admin',
+        reason: 'Restore this archived mission for a recorded correction.',
+      })).resolves.toMatchObject({ status: 'finished', storage_state: 'live' })
+
+      const restoredUnlock = new Database(path.join(userDataPath, 'mission-store.sqlite'), {
+        readonly: true,
+      })
+      let restoredUnlockProof
+      try {
+        restoredUnlockProof = restoredUnlock.prepare(`SELECT rowid AS event_rowid, id, timestamp
+          FROM mission_events WHERE id = ?`).get(
+          deriveArchiveLifecycleEventId(firstArchiveId, 'mission-unlocked'),
+        )
+        expect(restoredUnlockProof).toMatchObject({
+          id: deriveArchiveLifecycleEventId(firstArchiveId, 'mission-unlocked'),
+          event_rowid: expect.any(Number),
+          timestamp: expect.any(String),
+        })
+      } finally {
+        restoredUnlock.close()
+      }
+
+      const secondFinalization = await store.finalizeMission(mission.id, custody)
+      expect(secondFinalization).toMatchObject({
+        mission: { status: 'finalized', storage_state: 'live' },
+      })
+      const secondArchiveId = String(
+        (secondFinalization as { readonly archive: { readonly id: string } }).archive.id,
+      )
+      const firstSupplement = new Database(path.join(userDataPath, 'mission-store.sqlite'), {
+        readonly: true,
+      })
+      try {
+        const row = firstSupplement.prepare(`SELECT event.details_json
+          FROM mission_archive_supplements AS supplement
+          JOIN mission_events AS event ON event.id = supplement.audit_event_id
+          WHERE supplement.archive_id = ?`).get(secondArchiveId) as {
+            readonly details_json: string
+          }
+        expect(JSON.parse(row.details_json)).toMatchObject({
+          unlock_event_id: restoredUnlockProof.id,
+          unlock_event_rowid: restoredUnlockProof.event_rowid,
+          unlocked_at: restoredUnlockProof.timestamp,
+        })
+      } finally {
+        firstSupplement.close()
+      }
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Make one further ordinary correction after re-finalization.',
+      })).resolves.toMatchObject({ status: 'finished', storage_state: 'live' })
+      const ordinaryUnlock = new Database(path.join(userDataPath, 'mission-store.sqlite'), {
+        readonly: true,
+      })
+      try {
+        expect(ordinaryUnlock.prepare(`SELECT event_type FROM mission_events
+          WHERE id = ?`).get(
+          deriveArchiveLifecycleEventId(secondArchiveId, 'mission-unlocked'),
+        )).toEqual({ event_type: 'mission_unlocked' })
+      } finally {
+        ordinaryUnlock.close()
+      }
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finished',
+        storage_state: 'live',
+      })
+
+      await expect(store.finalizeMission(mission.id, custody)).resolves.toMatchObject({
+        mission: { status: 'finalized', storage_state: 'live' },
+      })
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Make a second ordinary correction after re-finalization.',
+      })).resolves.toMatchObject({ status: 'finished', storage_state: 'live' })
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finished',
+        storage_state: 'live',
+      })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('continues lineage when cleanup targets an already-supplemental archive revision', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-existing-supplement-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const custody = {
+      passphrase: 'Existing Supplement 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Cleanup after an earlier correction' })
+      await store.finishMission(mission.id)
+      const originalFinalization = await store.finalizeMission(mission.id, custody)
+      const originalArchiveId = String(
+        (originalFinalization as { readonly archive: { readonly id: string } }).archive.id,
+      )
+      await store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Create the correction revision that will later be cleaned up.',
+      })
+      const cleanupFinalization = await store.finalizeMission(mission.id, custody)
+      const cleanupArchiveId = String(
+        (cleanupFinalization as { readonly archive: { readonly id: string } }).archive.id,
+      )
+      await store.syncBackup('existing-supplement-lineage-fixture')
+      const snapshotPath = path.join(userDataPath, 'existing-supplement-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId: cleanupArchiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '40404040-4040-4040-8040-404040404040',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      await store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: cleanupArchiveId,
+        snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
+        admin_name: 'Duty Admin',
+        reason: 'Restore the existing supplemental revision for another correction.',
+      })
+      const nextFinalization = await store.finalizeMission(mission.id, custody)
+      const nextArchiveId = String(
+        (nextFinalization as { readonly archive: { readonly id: string } }).archive.id,
+      )
+      expect(nextFinalization).toMatchObject({
+        mission: { status: 'finalized', storage_state: 'live' },
+      })
+
+      const liveDatabase = new Database(path.join(userDataPath, 'mission-store.sqlite'), {
+        readonly: true,
+      })
+      try {
+        expect(liveDatabase.prepare(`SELECT archive_id, previous_archive_id,
+            supplement_sequence
+          FROM mission_archive_supplements WHERE mission_id = ?
+          ORDER BY supplement_sequence`).all(mission.id)).toEqual([
+          {
+            archive_id: cleanupArchiveId,
+            previous_archive_id: originalArchiveId,
+            supplement_sequence: 1,
+          },
+          {
+            archive_id: nextArchiveId,
+            previous_archive_id: cleanupArchiveId,
+            supplement_sequence: 2,
+          },
+        ])
+      } finally {
+        liveDatabase.close()
+      }
+
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Open the next ordinary correction after supplemental cleanup restore.',
+      })).resolves.toMatchObject({ status: 'finished', storage_state: 'live' })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('uses exact unlock point reads without building a mission-history index at startup', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-lineage-index-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({ userDataPath })
+    try {
+      await store.createMission({ name: 'Correction lineage query plan' })
+      const database = new Database(path.join(userDataPath, 'mission-store.sqlite'), {
+        readonly: true,
+      })
+      try {
+        expect(database.prepare(`SELECT name FROM sqlite_master
+          WHERE type = 'index' AND name = 'idx_mission_events_unlock_lineage'`).get())
+          .toBeUndefined()
+        const rowidPlan = database.prepare(`EXPLAIN QUERY PLAN
+          SELECT rowid AS event_rowid, id, timestamp, details_json
+          FROM mission_events WHERE rowid = ?`).all(1)
+        const idPlan = database.prepare(`EXPLAIN QUERY PLAN
+          SELECT rowid AS event_rowid, id, timestamp, details_json
+          FROM mission_events WHERE id = ?`).all(randomUUID())
+        const rowidDetail = rowidPlan
+          .map((step: { readonly detail: string }) => step.detail).join('\n')
+        const idDetail = idPlan
+          .map((step: { readonly detail: string }) => step.detail).join('\n')
+        expect(rowidDetail).toContain('USING INTEGER PRIMARY KEY (rowid=?)')
+        expect(idDetail).toContain('USING INDEX sqlite_autoindex_mission_events_1 (id=?)')
+        for (const detail of [rowidDetail, idDetail]) {
+          expect(detail).not.toContain('SCAN')
+          expect(detail).not.toContain('TEMP B-TREE')
+        }
+      } finally {
+        database.close()
+      }
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  })
+
+  it('keeps valid correction lineage live through a current finalized-recovery head', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-lineage-recovery-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const custody = {
+      passphrase: 'Lineage Recovery 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Correction lineage recovery head' })
+      await store.finishMission(mission.id)
+      const original = await store.finalizeMission(mission.id, custody)
+      const originalArchiveId = String(
+        (original as { readonly archive: { readonly id: string } }).archive.id,
+      )
+      await store.syncBackup('lineage-recovery-head-fixture')
+      const snapshotPath = path.join(userDataPath, 'lineage-recovery-head-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId: originalArchiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '41414141-4141-4141-8141-414141414141',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      await store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: originalArchiveId,
+        snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
+        admin_name: 'Duty Admin',
+        reason: 'Restore this archived mission before recovery-head validation.',
+      })
+      const refinalized = await store.finalizeMission(mission.id, custody)
+      const refinalizedArchiveId = String(
+        (refinalized as { readonly archive: { readonly id: string } }).archive.id,
+      )
+      const recoveryArchiveId = '42424242-4242-4242-8242-424242424242'
+      const liveDatabase = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+      try {
+        installFinalizedRecoveryArchive(liveDatabase, {
+          missionId: mission.id,
+          protectedArchiveId: refinalizedArchiveId,
+          recoveryArchiveId,
+          requestedAt: new Date(Date.now() + 1_000).toISOString(),
+        })
+      } finally {
+        liveDatabase.close()
+      }
+
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finalized',
+        storage_state: 'live',
+      })
+
+      const nextArchiveId = '43434343-4343-4343-8343-434343434343'
+      const nextOperationId = '44444444-4444-4444-8444-444444444444'
+      const ordinaryUnlockAt = new Date(Date.now() + 2_000).toISOString()
+      const nextRequestedAt = new Date(Date.now() + 3_000).toISOString()
+      const nextDatabase = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+      try {
+        nextDatabase.transaction(() => {
+          const protectedFinalization = nextDatabase.prepare(`SELECT details_json
+            FROM mission_events WHERE id = ?`).get(
+            deriveArchiveLifecycleEventId(refinalizedArchiveId, 'mission-finalized'),
+          ) as { readonly details_json: string }
+          const cleanupMembershipGeneration = Number(
+            JSON.parse(protectedFinalization.details_json).cleanup_membership_generation,
+          )
+          const recovery = nextDatabase.prepare(`SELECT ciphertext_sha256
+            FROM mission_archives WHERE id = ?`).get(recoveryArchiveId) as {
+            readonly ciphertext_sha256: string
+          }
+          nextDatabase.prepare("UPDATE missions SET status = 'finished' WHERE id = ?")
+            .run(mission.id)
+          const ordinaryUnlockEventId = deriveArchiveLifecycleEventId(
+            recoveryArchiveId,
+            'mission-unlocked',
+          )
+          nextDatabase.prepare(`INSERT INTO mission_events (
+              id, mission_id, event_type, timestamp, details_json, recorded_at,
+              recording_completeness
+            ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
+            ordinaryUnlockEventId,
+            mission.id,
+            ordinaryUnlockAt,
+            JSON.stringify({
+              admin_name: 'Duty Admin',
+              reason: 'Continue correction through the recovery archive predecessor.',
+              resulting_status: 'finished',
+            }),
+            ordinaryUnlockAt,
+          )
+          const ordinaryUnlockEventRowid = Number(nextDatabase.prepare(`SELECT rowid
+            FROM mission_events WHERE id = ?`).get(ordinaryUnlockEventId)?.rowid)
+          const requestEventId = randomUUID()
+          nextDatabase.prepare(`INSERT INTO mission_events (
+              id, mission_id, event_type, timestamp, details_json, recorded_at,
+              recording_completeness
+            ) VALUES (?, ?, 'mission_finalize_requested', ?, ?, ?, 'complete')`).run(
+            requestEventId,
+            mission.id,
+            nextRequestedAt,
+            JSON.stringify({
+              resulting_status: 'finished',
+              archive_id: nextArchiveId,
+              operation_id: nextOperationId,
+              archive_kind: 'finalized',
+              archive_relative_path: `${nextArchiveId}.sararch`,
+              cleanup_membership_generation: cleanupMembershipGeneration,
+              protected_finalization_epoch: null,
+              previous_archive_id: recoveryArchiveId,
+              previous_archive_sha256: recovery.ciphertext_sha256,
+            }),
+            nextRequestedAt,
+          )
+          const requestEventRowid = Number(nextDatabase.prepare(`SELECT rowid
+            FROM mission_events WHERE id = ?`).get(requestEventId)?.rowid)
+          nextDatabase.prepare(`INSERT INTO mission_archives (
+              id, mission_id, request_event_rowid, request_event_id,
+              creation_operation_id, protected_finalization_epoch, archive_kind,
+              container_version, relative_path, ciphertext_sha256, size_bytes, created_at,
+              sealed_event_id, frame_count, header_sha256, manifest_sha256, entry_count,
+              table_count, verified_at, verification_proof_json, previous_archive_id,
+              status, availability, availability_reason, last_reconciled_at,
+              last_observed_file_identity, slots_json, last_non_machine_unwrap_at,
+              legacy_event_rowid
+            ) SELECT ?, mission_id, ?, ?, ?, NULL, 'finalized', container_version, ?,
+              ciphertext_sha256, size_bytes, ?, sealed_event_id, frame_count, header_sha256,
+              manifest_sha256, entry_count, table_count, verified_at, verification_proof_json,
+              ?, 'verified', availability, availability_reason, last_reconciled_at,
+              last_observed_file_identity, slots_json, last_non_machine_unwrap_at, NULL
+            FROM mission_archives WHERE id = ?`).run(
+            nextArchiveId,
+            requestEventRowid,
+            requestEventId,
+            nextOperationId,
+            `${nextArchiveId}.sararch`,
+            nextRequestedAt,
+            recoveryArchiveId,
+            recoveryArchiveId,
+          )
+          const supplementEventId = deriveArchiveLifecycleEventId(nextArchiveId, 'supplement')
+          const supplementDetails = {
+            archive_id: nextArchiveId,
+            previous_archive_id: recoveryArchiveId,
+            supplement_sequence: 2,
+            authority: 'Duty Admin',
+            reason: 'Continue correction through the recovery archive predecessor.',
+            resulting_status: 'finalized',
+            unlock_event_id: ordinaryUnlockEventId,
+            unlock_event_rowid: ordinaryUnlockEventRowid,
+            unlocked_at: ordinaryUnlockAt,
+          }
+          nextDatabase.prepare(`INSERT INTO mission_events (
+              id, mission_id, event_type, timestamp, details_json, recorded_at,
+              recording_completeness
+            ) VALUES (?, ?, 'mission_archive_supplement_recorded', ?, ?, ?, 'complete')`).run(
+            supplementEventId,
+            mission.id,
+            nextRequestedAt,
+            JSON.stringify(supplementDetails),
+            nextRequestedAt,
+          )
+          nextDatabase.prepare(`INSERT INTO mission_archive_supplements (
+              id, mission_id, archive_id, previous_archive_id, supplement_sequence,
+              authority, reason, created_at, audit_event_id
+            ) VALUES (?, ?, ?, ?, 2, ?, ?, ?, ?)`).run(
+            randomUUID(),
+            mission.id,
+            nextArchiveId,
+            recoveryArchiveId,
+            supplementDetails.authority,
+            supplementDetails.reason,
+            nextRequestedAt,
+            supplementEventId,
+          )
+          nextDatabase.prepare("UPDATE mission_archives SET status = 'superseded' WHERE id = ?")
+            .run(recoveryArchiveId)
+          nextDatabase.prepare(`INSERT INTO mission_events (
+              id, mission_id, event_type, timestamp, details_json, recorded_at,
+              recording_completeness
+            ) VALUES (?, ?, 'mission_finalized', ?, ?, ?, 'complete')`).run(
+            deriveArchiveLifecycleEventId(nextArchiveId, 'mission-finalized'),
+            mission.id,
+            nextRequestedAt,
+            JSON.stringify({
+              resulting_status: 'finalized',
+              archive_id: nextArchiveId,
+              archive_path: path.join(userDataPath, 'archives', `${nextArchiveId}.sararch`),
+              archive_relative_path: `${nextArchiveId}.sararch`,
+              cleanup_membership_generation: cleanupMembershipGeneration,
+              container_version: 2,
+            }),
+            nextRequestedAt,
+          )
+          nextDatabase.prepare("UPDATE missions SET status = 'finalized' WHERE id = ?")
+            .run(mission.id)
+        }).immediate()
+
+        expect(nextDatabase.prepare(`SELECT id, status FROM mission_archives
+          WHERE id IN (?, ?, ?) ORDER BY request_event_rowid`).all(
+          refinalizedArchiveId,
+          recoveryArchiveId,
+          nextArchiveId,
+        )).toEqual([
+          { id: refinalizedArchiveId, status: 'verified' },
+          { id: recoveryArchiveId, status: 'superseded' },
+          { id: nextArchiveId, status: 'verified' },
+        ])
+      } finally {
+        nextDatabase.close()
+      }
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finalized',
+        storage_state: 'live',
+      })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('fails live Review closed when a correction archive ancestry link is corrupt', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-corrupt-lineage-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const custody = {
+      passphrase: 'Corrupt Lineage 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Corrupt correction archive lineage' })
+      await store.finishMission(mission.id)
+      const firstFinalization = await store.finalizeMission(mission.id, custody)
+      const firstArchiveId = String(
+        (firstFinalization as { readonly archive: { readonly id: string } }).archive.id,
+      )
+      await store.syncBackup('corrupt-lineage-fixture')
+      const snapshotPath = path.join(userDataPath, 'corrupt-lineage-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId: firstArchiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '38383838-3838-4838-8838-383838383838',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+      await store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: firstArchiveId,
+        snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
+        admin_name: 'Duty Admin',
+        reason: 'Restore this archived mission before testing its lineage guard.',
+      })
+      const refinalized = await store.finalizeMission(mission.id, custody)
+      const refinalizedArchiveId = String(
+        (refinalized as { readonly archive: { readonly id: string } }).archive.id,
+      )
+      await store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Open one ordinary correction epoch before corrupting its lineage.',
+      })
+
+      const liveDatabase = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+      let brokenPredecessorState
+      let mislinkedUnlockState
+      let misorderedSupplementState
+      let missingSupplementState
+      try {
+        const predecessor = liveDatabase.prepare(`SELECT previous_archive_id
+          FROM mission_archives WHERE id = ?`).get(refinalizedArchiveId)
+        expect(predecessor).toEqual({ previous_archive_id: firstArchiveId })
+        liveDatabase.prepare(`UPDATE mission_archives SET previous_archive_id = NULL
+          WHERE id = ?`).run(refinalizedArchiveId)
+        brokenPredecessorState = (await store.getMission(mission.id)).storage_state
+
+        liveDatabase.prepare(`UPDATE mission_archives SET previous_archive_id = ?
+          WHERE id = ?`).run(firstArchiveId, refinalizedArchiveId)
+        const supplementEvent = liveDatabase.prepare(`SELECT event.rowid AS event_rowid,
+            finalized.rowid AS finalization_rowid, event.id, event.details_json
+          FROM mission_archive_supplements AS supplement
+          JOIN mission_events AS event ON event.id = supplement.audit_event_id
+          JOIN mission_events AS finalized
+            ON finalized.id = ?
+          WHERE supplement.archive_id = ?`).get(
+          deriveArchiveLifecycleEventId(refinalizedArchiveId, 'mission-finalized'),
+          refinalizedArchiveId,
+        ) as {
+          readonly event_rowid: number
+          readonly finalization_rowid: number
+          readonly id: string
+          readonly details_json: string
+        }
+        const supplementDetails = JSON.parse(supplementEvent.details_json)
+        liveDatabase.prepare('UPDATE mission_events SET details_json = ? WHERE id = ?').run(
+          JSON.stringify({
+            ...supplementDetails,
+            unlock_event_rowid: Number(supplementDetails.unlock_event_rowid ?? 0) + 1,
+          }),
+          supplementEvent.id,
+        )
+        mislinkedUnlockState = (await store.getMission(mission.id)).storage_state
+        liveDatabase.prepare('UPDATE mission_events SET details_json = ? WHERE id = ?')
+          .run(supplementEvent.details_json, supplementEvent.id)
+
+        expect(supplementEvent.event_rowid).toBeLessThan(supplementEvent.finalization_rowid)
+        liveDatabase.prepare(`UPDATE mission_events
+          SET rowid = (SELECT MAX(rowid) + 100 FROM mission_events)
+          WHERE id = ?`).run(supplementEvent.id)
+        misorderedSupplementState = (await store.getMission(mission.id)).storage_state
+        liveDatabase.prepare('UPDATE mission_events SET rowid = ? WHERE id = ?')
+          .run(supplementEvent.event_rowid, supplementEvent.id)
+
+        const removedSupplement = liveDatabase.prepare(`DELETE FROM mission_archive_supplements
+          WHERE archive_id = ?`).run(refinalizedArchiveId)
+        expect(removedSupplement.changes).toBe(1)
+        missingSupplementState = (await store.getMission(mission.id)).storage_state
+      } finally {
+        liveDatabase.close()
+      }
+
+      expect({
+        brokenPredecessorState,
+        mislinkedUnlockState,
+        misorderedSupplementState,
+        missingSupplementState,
+      }).toEqual({
+        brokenPredecessorState: 'cleanup_in_progress',
+        mislinkedUnlockState: 'cleanup_in_progress',
+        misorderedSupplementState: 'cleanup_in_progress',
+        missingSupplementState: 'cleanup_in_progress',
+      })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
   it('rolls back restored rows when the atomic correction completion callback fails', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-rollback-'))
     temporaryDirectories.add(userDataPath)
@@ -544,7 +1214,7 @@ describe('archived mission correction rehydration', () => {
       database.prepare(`INSERT INTO mission_events (
         id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
       ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
-        'generic-post-commit-event',
+        deriveArchiveLifecycleEventId(String(input.archiveId), 'mission-unlocked'),
         input.missionId,
         timestamp,
         JSON.stringify({
@@ -642,7 +1312,7 @@ describe('archived mission correction rehydration', () => {
       database.prepare(`INSERT INTO mission_events (
         id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
       ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
-        'post-commit-cancel-event',
+        deriveArchiveLifecycleEventId(String(input.archiveId), 'mission-unlocked'),
         input.missionId,
         timestamp,
         JSON.stringify({
@@ -835,7 +1505,7 @@ describe('archived mission correction rehydration', () => {
       database.prepare(`INSERT INTO mission_events (
         id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
       ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
-        'writer-fence-post-commit-event',
+        deriveArchiveLifecycleEventId(String(input.archiveId), 'mission-unlocked'),
         input.missionId,
         timestamp,
         JSON.stringify({

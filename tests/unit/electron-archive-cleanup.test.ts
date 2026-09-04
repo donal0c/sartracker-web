@@ -1633,7 +1633,13 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
       const requestEventId = randomUUID()
       const sealedEventId = randomUUID()
       const finalizedEventId = deriveArchiveLifecycleEventId(archiveId, 'mission-finalized')
-      const restoreEventId = randomUUID()
+      const supplementEventId = deriveArchiveLifecycleEventId(archiveId, 'supplement')
+      const supplementId = randomUUID()
+      const archiveOperationId = randomUUID()
+      const restoreEventId = deriveArchiveLifecycleEventId(
+        fixture.archiveId,
+        'mission-unlocked',
+      )
       const correctionOperationId = randomUUID()
       const restoredAt = '2026-08-30T12:30:00.000Z'
       const createdAt = '2026-08-30T13:00:00.000Z'
@@ -1659,6 +1665,8 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
           JSON.stringify(restoreDetails),
           restoredAt,
         )
+        const restoreEventRowid = Number(fixture.db.prepare(`SELECT rowid
+          FROM mission_events WHERE id = ?`).get(restoreEventId)?.rowid)
         fixture.db.prepare(`INSERT INTO devices (
           id, mission_id, device_id, name, color, last_seen, status
         ) VALUES (?, ?, 'tracker-supplement', 'Supplement Tracker', '#ffffff', NULL, 'offline')`)
@@ -1666,8 +1674,25 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
         fixture.db.prepare(`INSERT INTO mission_events (
           id, mission_id, event_type, timestamp, details_json, recorded_at,
           recording_completeness
-        ) VALUES (?, ?, 'mission_finalize_requested', ?, '{}', ?, 'complete')`).run(
-          requestEventId, fixture.missionId, createdAt, createdAt,
+        ) VALUES (?, ?, 'mission_finalize_requested', ?, ?, ?, 'complete')`).run(
+          requestEventId,
+          fixture.missionId,
+          createdAt,
+          JSON.stringify({
+            resulting_status: 'finished',
+            archive_id: archiveId,
+            operation_id: archiveOperationId,
+            archive_kind: 'finalized',
+            archive_relative_path: `${archiveId}.sararch`,
+            cleanup_membership_generation: readArchiveCleanupMembershipGeneration(
+              fixture.db,
+              fixture.missionId,
+            ),
+            protected_finalization_epoch: null,
+            previous_archive_id: fixture.archiveId,
+            previous_archive_sha256: fixture.evidence.ciphertextSha256,
+          }),
+          createdAt,
         )
         const requestEventRowid = Number(fixture.db.prepare(
           'SELECT rowid FROM mission_events WHERE id = ?',
@@ -1693,7 +1718,7 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
           fixture.missionId,
           requestEventRowid,
           requestEventId,
-          randomUUID(),
+          archiveOperationId,
           `${archiveId}.sararch`,
           ciphertextSha256,
           createdAt,
@@ -1710,6 +1735,41 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
             { slotId: 'recovery-v1', slotType: 'recovery' },
           ]),
         )
+        fixture.db.prepare(`INSERT INTO mission_events (
+          id, mission_id, event_type, timestamp, details_json, recorded_at,
+          recording_completeness
+        ) VALUES (?, ?, 'mission_archive_supplement_recorded', ?, ?, ?, 'complete')`).run(
+          supplementEventId,
+          fixture.missionId,
+          createdAt,
+          JSON.stringify({
+            archive_id: archiveId,
+            previous_archive_id: fixture.archiveId,
+            supplement_sequence: 1,
+            authority: restoreDetails.admin_name,
+            reason: restoreDetails.reason,
+            resulting_status: 'finalized',
+            unlock_event_id: restoreEventId,
+            unlock_event_rowid: restoreEventRowid,
+            unlocked_at: restoredAt,
+          }),
+          createdAt,
+        )
+        fixture.db.prepare(`INSERT INTO mission_archive_supplements (
+          id, mission_id, archive_id, previous_archive_id, supplement_sequence,
+          authority, reason, created_at, audit_event_id
+        ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)`).run(
+          supplementId,
+          fixture.missionId,
+          archiveId,
+          fixture.archiveId,
+          restoreDetails.admin_name,
+          restoreDetails.reason,
+          createdAt,
+          supplementEventId,
+        )
+        fixture.db.prepare(`UPDATE mission_archives SET status = 'superseded'
+          WHERE id = ?`).run(fixture.archiveId)
         fixture.db.prepare(`INSERT INTO mission_events (
           id, mission_id, event_type, timestamp, details_json, recorded_at,
           recording_completeness
