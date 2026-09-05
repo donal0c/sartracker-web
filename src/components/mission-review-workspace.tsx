@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 import { openExternalPath } from '../infrastructure/file-launcher/tauri-file-launcher'
 import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
@@ -12,17 +12,42 @@ import {
 } from '../features/mission-review/mission-review-model'
 import { getMissionReviewSelectionClassName } from '../features/mission-review/mission-review-selection-style'
 import { useMissionReviewStore } from '../features/mission-review/mission-review-store'
+import type { MissionReviewController } from '../features/mission-review/start-mission-review-runtime'
 import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
+import { useMissionArchiveReviewStore } from '../features/mission-review/mission-archive-review-store'
+import { hasActiveMissionCorrectionAuthorization } from '../features/mission-review/mission-correction-authorization'
+import {
+  MissionArchiveReviewBanner,
+  MissionArchiveReviewControl,
+} from '../features/mission-review/mission-archive-review-operator-ui'
 import { useMissionStore } from '../features/mission/mission-store'
+import type {
+  ArchiveReviewAttachmentReference,
+} from '../infrastructure/archive-review/electron-archive-review-source'
+import type {
+  Mission,
+  MissionArchiveInfo,
+  ResumeMissionCleanupInput,
+  MissionCleanupResult,
+} from '../infrastructure/mission-store/tauri-mission-store'
 
 type ReviewTab = 'mission-details' | 'replay' | 'search-operations' | 'marker-log' | 'layer-console'
 
 const MISSION_REVIEW_WORKSPACE_TITLE_ID = 'mission-review-workspace-title'
+
 const MissionReplayTab = lazy(async () => ({
   default: (await import('./mission-evidence-replay-tabs')).MissionReplayTab,
 }))
 const SearchOperationsTab = lazy(async () => ({
   default: (await import('./mission-evidence-replay-tabs')).SearchOperationsTab,
+}))
+const MissionArchiveCleanupDialog = lazy(async () => ({
+  default: (await import('../features/mission/mission-archive-cleanup-dialog'))
+    .MissionArchiveCleanupDialog,
+}))
+const MissionArchiveVerificationDialog = lazy(async () => ({
+  default: (await import('../features/mission/mission-archive-verification-dialog'))
+    .MissionArchiveVerificationDialog,
 }))
 
 /**
@@ -32,15 +57,36 @@ export function MissionReviewWorkspace() {
   const open = useMissionReviewWorkspaceStore((state) => state.open)
   const closeWorkspace = useMissionReviewWorkspaceStore((state) => state.closeWorkspace)
   const missionPhase = useMissionStore((state) => state.phase)
+  const governanceController = useMissionStore((state) => state.governanceController)
   // While a mission is live, Review must not block the mission-control rail or
   // map (DON-176): render it as a non-blocking docked, read-only panel. When
   // there is no live mission (idle/recovery review), there are no live controls
   // to protect, so it stays a full-screen modal review surface.
   const docked = missionPhase === 'active' || missionPhase === 'paused'
   const controller = useMissionReviewStore((state) => state.controller)
+  const reviewSource = useMissionReviewStore((state) => state.source)
+  const archiveSession = useMissionReviewStore((state) => state.archiveSession)
+  const archiveReviewController = useMissionArchiveReviewStore((state) => state.controller)
+  const archiveReviewPhase = useMissionArchiveReviewStore((state) => state.phase)
+  const archiveReviewOperationId = useMissionArchiveReviewStore(
+    (state) => state.activeOperationId,
+  )
+  const archiveReviewError = useMissionArchiveReviewStore((state) => state.error)
+  const archiveTimeline = useMissionArchiveReviewStore((state) => state.timeline)
+  const archiveReviewSession = useMissionArchiveReviewStore((state) => state.activeSession)
+  const archiveReviewProgress = useMissionArchiveReviewStore((state) => state.progress)
+  const archiveReviewRecoveryRequired = useMissionArchiveReviewStore(
+    (state) => state.recoveryRequired,
+  )
+  const retainedArchiveSession = archiveReviewSession ?? archiveSession
+  const archiveReadOnlyBoundaryActive = reviewSource === 'archive'
+    || retainedArchiveSession !== null
+    || archiveReviewRecoveryRequired !== 'none'
   const missions = useMissionReviewStore((state) => state.missions)
   const selectedMissionId = useMissionReviewStore((state) => state.selectedMissionId)
   const snapshot = useMissionReviewStore((state) => state.snapshot)
+  const correctionAuthorizationActive = snapshot !== null
+    && hasActiveMissionCorrectionAuthorization(snapshot)
   const loading = useMissionReviewStore((state) => state.loading)
   const refreshing = useMissionReviewStore((state) => state.refreshing)
   const error = useMissionReviewStore((state) => state.error)
@@ -57,6 +103,24 @@ export function MissionReviewWorkspace() {
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null)
   const [pathFeedback, setPathFeedback] = useState<string | null>(null)
   const [pathError, setPathError] = useState<string | null>(null)
+  const [archiveAttachments, setArchiveAttachments] = useState<
+    readonly ArchiveReviewAttachmentReference[]
+  >([])
+  const [archiveAttachmentCursor, setArchiveAttachmentCursor] = useState<string | null>(null)
+  const [archiveAttachmentTotal, setArchiveAttachmentTotal] = useState(0)
+  const [archiveAttachmentLoading, setArchiveAttachmentLoading] = useState(false)
+  const [archiveAttachmentError, setArchiveAttachmentError] = useState<string | null>(null)
+  const [cleanupMission, setCleanupMission] = useState<Mission | null>(null)
+  const [verificationArchive, setVerificationArchive] = useState<MissionArchiveInfo | null>(null)
+  const preferredMissionIdRef = useRef<string | null>(selectedMissionId)
+  const lastAutomaticLoadRef = useRef<{
+    readonly controller: MissionReviewController
+    readonly missionPhase: typeof missionPhase
+  } | null>(null)
+
+  if (selectedMissionId !== null) {
+    preferredMissionIdRef.current = selectedMissionId
+  }
 
   const filteredMissions = useMemo(() => {
     const normalizedQuery = missionQuery.trim().toLowerCase()
@@ -82,11 +146,26 @@ export function MissionReviewWorkspace() {
 
   useEffect(() => {
     if (!open || controller === null) {
+      lastAutomaticLoadRef.current = null
       return
     }
 
-    void controller.load(selectedMissionId)
-  }, [controller, missionPhase, open, selectedMissionId])
+    const lastAutomaticLoad = lastAutomaticLoadRef.current
+    if (lastAutomaticLoad?.controller === controller
+      && lastAutomaticLoad.missionPhase === missionPhase) {
+      return
+    }
+    lastAutomaticLoadRef.current = { controller, missionPhase }
+    void controller.load(preferredMissionIdRef.current)
+  }, [controller, missionPhase, open])
+
+  useEffect(() => {
+    if (!open || archiveReviewController === null || docked) {
+      return
+    }
+
+    void archiveReviewController.refreshTimeline()
+  }, [archiveReviewController, docked, open])
 
   useEffect(() => {
     setSelectedMarkerId((current) =>
@@ -96,11 +175,39 @@ export function MissionReviewWorkspace() {
     )
   }, [filteredMarkers])
 
+  useEffect(() => {
+    if (!open || reviewSource !== 'archive' || controller === null) {
+      setArchiveAttachments([])
+      setArchiveAttachmentCursor(null)
+      setArchiveAttachmentTotal(0)
+      setArchiveAttachmentError(null)
+      return
+    }
+    let cancelled = false
+    setArchiveAttachmentLoading(true)
+    setArchiveAttachmentError(null)
+    void controller.listArchiveAttachmentPage({ cursor: null, limit: 25 })
+      .then((page) => {
+        if (cancelled) return
+        setArchiveAttachments(page.entries)
+        setArchiveAttachmentCursor(page.nextCursor)
+        setArchiveAttachmentTotal(page.totalCount)
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setArchiveAttachmentError(toErrorMessage(cause))
+      })
+      .finally(() => {
+        if (!cancelled) setArchiveAttachmentLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [archiveSession?.sessionId, controller, open, reviewSource])
+
   return (
+    <>
     <WorkspaceOverlay
       labelledBy={MISSION_REVIEW_WORKSPACE_TITLE_ID}
       open={open}
-      onClose={closeWorkspace}
+      onClose={() => void handleWorkspaceClose()}
       maxWidth={docked ? 'max-w-xl' : 'max-w-7xl'}
       docked={docked}
     >
@@ -108,19 +215,35 @@ export function MissionReviewWorkspace() {
         subtitle="Mission Review"
         titleId={MISSION_REVIEW_WORKSPACE_TITLE_ID}
         title="Audit Workspace"
-        onClose={closeWorkspace}
+        onClose={() => void handleWorkspaceClose()}
         actions={
           <button
             className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:opacity-50"
             data-testid="mission-review-refresh"
             disabled={controller === null || refreshing}
-            onClick={() => void controller?.refreshSelectedMission()}
+            onClick={() => {
+              if (controller === null) return
+              void Promise.all([
+                controller.refreshSelectedMission(),
+                archiveReviewController?.refreshTimeline() ?? Promise.resolve(),
+              ])
+            }}
             type="button"
           >
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         }
       />
+
+      {retainedArchiveSession !== null || archiveReviewRecoveryRequired !== 'none' ? (
+        <MissionArchiveReviewBanner
+          closing={archiveReviewPhase === 'closing'}
+          error={archiveReviewError}
+          onCloseArchiveReview={closeArchiveReview}
+          recoveryRequired={archiveReviewRecoveryRequired}
+          session={retainedArchiveSession}
+        />
+      ) : null}
 
       {docked ? (
         <p
@@ -185,6 +308,39 @@ export function MissionReviewWorkspace() {
                   <EmptyState message="No missions match the current filter." />
                 ) : null}
               </div>
+            </div>
+            <div className="mt-4">
+              <MissionArchiveReviewControl
+                activeSession={archiveReviewSession ?? archiveSession}
+                error={archiveReviewError}
+                onCloseArchiveReview={closeArchiveReview}
+                onOpenArchive={async (input) => {
+                  if (archiveReviewController === null) {
+                    throw new Error('Archive Review is unavailable in this runtime.')
+                  }
+                  await archiveReviewController.openArchive(input)
+                }}
+                onRequestVerification={setVerificationArchive}
+                onRequestCleanup={setCleanupMission}
+                onRestoreForCorrection={async (input) => {
+                  if (archiveReviewController === null) {
+                    throw new Error('Archive correction restore is unavailable.')
+                  }
+                  try {
+                    await archiveReviewController.restoreForCorrection(input)
+                  } finally {
+                    // Refresh governance even when the correction committed but
+                    // leaves a durable custody-recovery blocker visible.
+                    if (controller !== null) {
+                      await controller.refreshSelectedMission().catch(() => undefined)
+                    }
+                  }
+                }}
+                phase={archiveReviewPhase}
+                progress={archiveReviewProgress}
+                recoveryRequired={archiveReviewRecoveryRequired}
+                timeline={archiveTimeline}
+              />
             </div>
           </aside>
 
@@ -271,6 +427,7 @@ export function MissionReviewWorkspace() {
                     compact={docked}
                     events={snapshot.eventRows}
                     includeTelemetry={includeTelemetry}
+                    allowOpenPaths={!archiveReadOnlyBoundaryActive}
                     onOpenPath={(path) => void handleOpenPath(path)}
                     onToggleTelemetry={(next) => void controller?.setIncludeTelemetry(next)}
                     pathError={pathError}
@@ -291,34 +448,53 @@ export function MissionReviewWorkspace() {
                   <Suspense fallback={<EmptyState message="Loading search operations…" />}>
                     <SearchOperationsTab
                       controller={controller}
+                      hideMutationControls={archiveReadOnlyBoundaryActive}
                       key={snapshot.mission.id}
                       operations={searchOperations}
-                      readOnly={snapshot.mission.status === 'finished' || snapshot.mission.status === 'finalized'}
+                      readOnly={archiveReadOnlyBoundaryActive
+                        || (snapshot.mission.status === 'finished' && !correctionAuthorizationActive)
+                        || snapshot.mission.status === 'finalized'}
                       reviewBusy={loading || refreshing}
                       writeBlocked={error !== null}
                     />
                   </Suspense>
                 ) : activeTab === 'marker-log' ? (
-                  <MarkerLogTab
-                    compact={docked}
-                    markerQuery={markerQuery}
-                    markerType={markerType}
-                    markers={filteredMarkers}
-                    onMarkerQueryChange={setMarkerQuery}
-                    onMarkerTypeChange={setMarkerType}
-                    onOpenPath={(path) => void handleOpenPath(path)}
-                    onSelectMarker={setSelectedMarkerId}
-                    onZoomMarker={() => {
-                      if (
-                        selectedMarker === null ||
-                        !isValidWgs84(selectedMarker.lat, selectedMarker.lon)
-                      ) {
-                        return
-                      }
-                      queueTarget(selectedMarker.lat, selectedMarker.lon, selectedMarker.name)
-                    }}
-                    selectedMarker={selectedMarker}
-                  />
+                  <>
+                    <MarkerLogTab
+                      compact={docked}
+                      markerQuery={markerQuery}
+                      markerType={markerType}
+                      markers={filteredMarkers}
+                      onMarkerQueryChange={setMarkerQuery}
+                      onMarkerTypeChange={setMarkerType}
+                      onOpenPath={(path) => void handleOpenPath(path, selectedMarker === null ? null : {
+                        referenceKind: 'marker',
+                        referenceId: selectedMarker.id,
+                      })}
+                      onSelectMarker={setSelectedMarkerId}
+                      onZoomMarker={() => {
+                        if (
+                          selectedMarker === null ||
+                          !isValidWgs84(selectedMarker.lat, selectedMarker.lon)
+                        ) {
+                          return
+                        }
+                        queueTarget(selectedMarker.lat, selectedMarker.lon, selectedMarker.name)
+                      }}
+                      selectedMarker={selectedMarker}
+                    />
+                    {reviewSource === 'archive' ? (
+                      <ArchivedAttachmentLedger
+                        entries={archiveAttachments}
+                        error={archiveAttachmentError}
+                        hasMore={archiveAttachmentCursor !== null}
+                        loading={archiveAttachmentLoading}
+                        onLoadMore={() => void loadNextArchiveAttachments()}
+                        onOpen={(entry) => void handleOpenPath(entry.attachmentPath, entry)}
+                        totalCount={archiveAttachmentTotal}
+                      />
+                    ) : null}
+                  </>
                 ) : (
                   <LayerConsoleTab layerRoot={snapshot.layerRoot} />
                 )}
@@ -328,9 +504,102 @@ export function MissionReviewWorkspace() {
           </section>
         </div>
     </WorkspaceOverlay>
+    {cleanupMission !== null ? (
+      <Suspense fallback={<p role="status">Loading live-store archival controls…</p>}>
+        <MissionArchiveCleanupDialog
+          key={cleanupMission.id}
+          cancelOperation={async (operationId) => {
+            if (governanceController === null) {
+              throw new Error('Mission live-store archival cancellation is unavailable.')
+            }
+            return governanceController.cancelGovernanceArchiveOperation(operationId)
+          }}
+          loadState={async (missionId) => {
+            if (governanceController === null) {
+              throw new Error('Mission live-store archival is unavailable.')
+            }
+            return governanceController.readGovernanceCleanupState(missionId)
+          }}
+          mission={cleanupMission}
+          onClose={() => setCleanupMission(null)}
+          onCompleted={async () => {
+            if (archiveReviewController === null || controller === null) {
+              throw new Error('Saved-mission Review refresh is unavailable.')
+            }
+            await Promise.all([
+              archiveReviewController.refreshTimeline(),
+              controller.refreshSelectedMission(),
+            ])
+          }}
+          resumeCleanup={async (input: ResumeMissionCleanupInput) => {
+            if (governanceController === null) {
+              throw new Error('Mission live-store archival recovery is unavailable.')
+            }
+            const result: MissionCleanupResult = await governanceController.resumeGovernanceCleanup(input)
+            return result
+          }}
+          startCleanup={async (input) => {
+            if (governanceController === null) {
+              throw new Error('Mission live-store archival is unavailable.')
+            }
+            return governanceController.startGovernanceCleanup(input)
+          }}
+          subscribeProgress={(listener) =>
+            window.sartrackerElectron?.onMissionArchiveProgress?.(listener)
+              ?? (() => undefined)}
+        />
+      </Suspense>
+    ) : null}
+    {verificationArchive !== null ? (
+      <Suspense fallback={<p role="status">Loading archive verification controls…</p>}>
+        <MissionArchiveVerificationDialog
+          archive={verificationArchive}
+          cancelOperation={async (operationId) => {
+            if (archiveReviewController === null) {
+              throw new Error('Archive verification cancellation is unavailable.')
+            }
+            return archiveReviewController.cancelArchiveVerification(operationId)
+          }}
+          onClose={async (requiresTimelineRefresh) => {
+            if (requiresTimelineRefresh) {
+              if (archiveReviewController === null) {
+                throw new Error('Saved-mission archive refresh is unavailable.')
+              }
+              const published = await archiveReviewController.refreshTimeline()
+              if (!published) {
+                throw new Error('Saved-mission archive refresh was superseded.')
+              }
+            }
+            setVerificationArchive(null)
+          }}
+          onVerified={async () => {
+            if (archiveReviewController === null || controller === null) {
+              throw new Error('Saved-mission Review refresh is unavailable.')
+            }
+            await Promise.all([
+              archiveReviewController.refreshTimeline(),
+              controller.refreshSelectedMission(),
+            ])
+          }}
+          subscribeProgress={(listener) =>
+            window.sartrackerElectron?.onMissionArchiveProgress?.(listener)
+              ?? (() => undefined)}
+          verify={async (input) => {
+            if (archiveReviewController === null) {
+              throw new Error('Archive verification is unavailable.')
+            }
+            return archiveReviewController.verifyArchive(input)
+          }}
+        />
+      </Suspense>
+    ) : null}
+    </>
   )
 
-  async function handleOpenPath(path: string | null): Promise<void> {
+  async function handleOpenPath(path: string | null, reference: {
+    readonly referenceKind: string
+    readonly referenceId: string
+  } | null = null): Promise<void> {
     if (path === null) {
       setPathError('No path is available for this item yet.')
       setPathFeedback(null)
@@ -338,13 +607,68 @@ export function MissionReviewWorkspace() {
     }
 
     try {
-      await openExternalPath(path)
+      if (retainedArchiveSession !== null && reviewSource !== 'archive') {
+        throw new Error('Archive Review cleanup must complete before opening evidence paths.')
+      }
+      if (reviewSource === 'archive') {
+        if (controller === null || reference === null) {
+          throw new Error('Archived attachments open only through retained marker evidence.')
+        }
+        await controller.openAttachment({
+          attachmentPath: path,
+          referenceKind: reference.referenceKind,
+          referenceId: reference.referenceId,
+        })
+      } else {
+        await openExternalPath(path)
+      }
       setPathError(null)
-      setPathFeedback(`Opened ${path}`)
+      setPathFeedback(reviewSource === 'archive' ? 'Opened archived attachment.' : `Opened ${path}`)
     } catch (error) {
       setPathFeedback(null)
       setPathError(toErrorMessage(error))
     }
+  }
+
+  async function loadNextArchiveAttachments(): Promise<void> {
+    if (controller === null || reviewSource !== 'archive'
+      || archiveAttachmentCursor === null || archiveAttachmentLoading) return
+    setArchiveAttachmentLoading(true)
+    setArchiveAttachmentError(null)
+    try {
+      const page = await controller.listArchiveAttachmentPage({
+        cursor: archiveAttachmentCursor,
+        limit: 25,
+      })
+      setArchiveAttachments((current) => [...current, ...page.entries])
+      setArchiveAttachmentCursor(page.nextCursor)
+      setArchiveAttachmentTotal(page.totalCount)
+    } catch (cause) {
+      setArchiveAttachmentError(toErrorMessage(cause))
+    } finally {
+      setArchiveAttachmentLoading(false)
+    }
+  }
+
+  async function closeArchiveReview(): Promise<void> {
+    if (archiveReviewController === null) {
+      throw new Error('Archive Review close is unavailable.')
+    }
+    await archiveReviewController.closeArchiveReview()
+  }
+
+  async function handleWorkspaceClose(): Promise<void> {
+    if ((reviewSource === 'archive' && archiveSession !== null)
+      || archiveReviewSession !== null
+      || archiveReviewOperationId !== null
+      || archiveReviewRecoveryRequired !== 'none') {
+      try {
+        await closeArchiveReview()
+      } catch {
+        return
+      }
+    }
+    closeWorkspace()
   }
 }
 
@@ -355,6 +679,7 @@ function MissionDetailsTab(props: {
   readonly includeTelemetry: boolean
   readonly auditLogTruncated: boolean
   readonly compact: boolean
+  readonly allowOpenPaths: boolean
   readonly onToggleTelemetry: (includeTelemetry: boolean) => void
   readonly onOpenPath: (path: string | null) => void
   readonly pathFeedback: string | null
@@ -383,8 +708,12 @@ function MissionDetailsTab(props: {
             <DetailRow label="Started" value={props.summary.startedAtDisplay} />
             <DetailRow label="Finished" value={props.summary.finishedAtDisplay} />
             <DetailRow label="Paused Time" value={props.summary.pausedDurationDisplay} />
-            <DetailRow label="Database Path" value={props.summary.databasePath} />
-            <DetailRow label="Backup Path" value={props.summary.backupPath} />
+            {props.allowOpenPaths ? (
+              <>
+                <DetailRow label="Database Path" value={props.summary.databasePath} />
+                <DetailRow label="Backup Path" value={props.summary.backupPath} />
+              </>
+            ) : null}
             <DetailRow label="Layer Count" value={String(props.summary.layerCount)} />
             <DetailRow label="Feature Count" value={String(props.summary.featureCount)} />
             <DetailRow label="Drawing Count" value={String(props.summary.drawingCount)} />
@@ -445,7 +774,7 @@ function MissionDetailsTab(props: {
                 </div>
                 <p className="mt-2 text-sm leading-relaxed text-stone-300">{event.description}</p>
                 <div className="mt-3 flex gap-2">
-                  {resolveEventPath(event) !== null ? (
+                  {props.allowOpenPaths && resolveEventPath(event) !== null ? (
                     <button
                       className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-stone-300"
                       data-testid={`mission-review-open-path-${event.id}`}
@@ -630,6 +959,71 @@ function MarkerLogTab(props: {
         )}
       </aside>
     </div>
+  )
+}
+
+/** Lists every paged archive attachment reference, including retired and prior versions. */
+function ArchivedAttachmentLedger(props: {
+  readonly entries: readonly ArchiveReviewAttachmentReference[]
+  readonly error: string | null
+  readonly hasMore: boolean
+  readonly loading: boolean
+  readonly onLoadMore: () => void
+  readonly onOpen: (entry: ArchiveReviewAttachmentReference) => void
+  readonly totalCount: number
+}) {
+  return (
+    <section
+      className="mt-4 rounded-2xl border border-sky-400/30 bg-sky-400/5 p-4"
+      data-testid="mission-review-archived-attachment-ledger"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-sky-200">
+            Archived Attachment History
+          </p>
+          <p className="mt-1 text-sm text-stone-300">
+            Current, retired, replaced and audit-linked files remain available by their exact evidence reference.
+          </p>
+        </div>
+        <span className="font-mono text-xs text-stone-400">{props.totalCount}</span>
+      </div>
+      {props.error !== null ? (
+        <p className="mt-3 text-sm text-amber-200" role="alert">{props.error}</p>
+      ) : null}
+      {props.entries.length === 0 && !props.loading ? (
+        <p className="mt-3 text-sm text-stone-400">No archived attachments were recorded.</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {props.entries.map((entry) => (
+            <button
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-stone-700 bg-stone-900/60 px-3 py-3 text-left text-sm text-stone-100 disabled:opacity-50"
+              data-testid={`mission-review-archived-attachment-${entry.referenceId.replace(/[^A-Za-z0-9_-]/gu, '-')}`}
+              disabled={props.loading}
+              key={`${entry.attachmentPath}\u0000${entry.referenceKind}\u0000${entry.referenceId}`}
+              onClick={() => props.onOpen(entry)}
+              type="button"
+            >
+              <span className="break-all font-medium">{entry.attachmentPath}</span>
+              <span className="shrink-0 font-mono text-[11px] text-stone-400">
+                {entry.referenceKind.replaceAll('_', ' ')}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {props.hasMore ? (
+        <button
+          className="mt-3 rounded-lg border border-sky-300/50 bg-sky-300/10 px-3 py-2 text-xs font-semibold text-sky-100 disabled:opacity-50"
+          data-testid="mission-review-archived-attachment-next-page"
+          disabled={props.loading}
+          onClick={props.onLoadMore}
+          type="button"
+        >
+          {props.loading ? 'Loading…' : 'Show More Archived Attachments'}
+        </button>
+      ) : null}
+    </section>
   )
 }
 

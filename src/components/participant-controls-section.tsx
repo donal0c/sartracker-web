@@ -134,7 +134,12 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
         {activeParticipants.length === 0 ? (
           <p className="text-xs text-stone-300">No mission participants are currently selected.</p>
         ) : activeParticipants.map((participant) => (
-          <div className="sar-readout flex items-start justify-between gap-3 p-2" key={participant.id}>
+          <div
+            className="sar-readout flex items-start justify-between gap-3 p-2"
+            data-participant-kind={participant.kind}
+            data-traccar-device-id={participant.traccar_device_id ?? undefined}
+            key={participant.id}
+          >
             <div className="min-w-0">
               <p className="truncate text-xs font-semibold text-stone-100">
                 {participant.kind === 'group'

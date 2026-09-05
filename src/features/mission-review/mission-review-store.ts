@@ -9,7 +9,7 @@ import { createMissionReviewRuntimeState } from './start-mission-review-runtime'
 type MissionReviewStoreState = MissionReviewRuntimeState & {
   readonly controller: MissionReviewController | null
   readonly applyRuntime: (runtime: MissionReviewRuntimeState) => void
-  readonly applyController: (controller: MissionReviewController) => void
+  readonly applyController: (controller: MissionReviewController | null) => void
 }
 
 export const useMissionReviewStore = create<MissionReviewStoreState>((set) => ({
@@ -23,6 +23,6 @@ export function applyMissionReviewRuntime(runtime: MissionReviewRuntimeState): v
   useMissionReviewStore.setState(runtime)
 }
 
-export function applyMissionReviewController(controller: MissionReviewController): void {
+export function applyMissionReviewController(controller: MissionReviewController | null): void {
   useMissionReviewStore.setState({ controller })
 }

@@ -4,6 +4,8 @@ import { navigateToHarness, startMission } from './helpers/test-setup'
 import { captureElementAndRegister } from './helpers/verification-manifest'
 import { formatDublinDateTimeLocal } from '../../../src/features/mission-review/dublin-local-time'
 
+const SYNTHETIC_ARCHIVE_PASSPHRASE = 'Visual archive passphrase 2026!'
+
 test.describe('Visual: mission evidence and replay', () => {
   test('replay keeps Live context explicit and surfaces incomplete/static evidence', async ({ page }) => {
     await navigateToHarness(page)
@@ -133,8 +135,7 @@ Report PASS or FAIL for each item and overall.`,
     await page.getByTestId('outing-end-btn').click()
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
-    await page.getByTestId('mission-finalize-btn').click()
-    await page.getByTestId('mission-finalize-confirm').click()
+    await finalizeWithSyntheticArchiveCustody(page)
     await page.getByTestId('open-mission-review-workspace').click()
     await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
     await expect(page.getByTestId('search-operations-read-only')).toBeVisible()
@@ -164,4 +165,21 @@ Report PASS or FAIL for each item and overall.`,
 
 async function clickMap(page: import('@playwright/test').Page, x: number, y: number) {
   await page.locator('.maplibregl-canvas').first().click({ position: { x, y }, force: true })
+}
+
+async function finalizeWithSyntheticArchiveCustody(
+  page: import('@playwright/test').Page,
+): Promise<void> {
+  await page.getByTestId('mission-finalize-btn').click()
+  const dialog = page.getByTestId('mission-archive-custody-dialog')
+  await expect(dialog).toBeVisible()
+  await page.getByTestId('archive-passphrase').fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+  await page
+    .getByTestId('archive-passphrase-confirmation')
+    .fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+  await page.getByTestId('archive-issue-recovery-code').click()
+  const recoveryCode = (await page.getByTestId('archive-recovery-code').innerText()).trim()
+  await page.getByTestId('archive-recovery-code-confirmation').fill(recoveryCode)
+  await page.getByTestId('archive-finalize').click()
+  await expect(dialog).toBeHidden()
 }

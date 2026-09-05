@@ -5,6 +5,7 @@ import type {
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import type { MissionRuntimeState } from './mission-store'
+import { isMissionNameWithinBound, MAX_MISSION_NAME_BYTES } from '../../lib/mission-name'
 
 type StartMissionRuntimeDependencies = {
   readonly missionStore: Pick<
@@ -217,7 +218,9 @@ function toRuntimeState(
 }
 
 function assertMissionName(name: string): void {
-  if (name.trim() === '') {
-    throw new Error('Mission name is required.')
+  if (!isMissionNameWithinBound(name)) {
+    throw new Error(
+      `Mission name is required and must fit within ${MAX_MISSION_NAME_BYTES} UTF-8 bytes.`,
+    )
   }
 }

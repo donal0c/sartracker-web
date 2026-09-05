@@ -8,6 +8,7 @@ import breadcrumbsFixture from '../fixtures/traccar-breadcrumbs.json'
 import type { NormalizedTrackingDevice, NormalizedTrackingPosition } from '../../src/features/tracking/tracking-types'
 import {
   createPollingManager,
+  type TrackingMissionEvidenceTransfer,
   type TrackingPollerClient,
 } from '../../src/features/tracking/polling-manager'
 import {
@@ -113,6 +114,122 @@ describe('polling manager', () => {
     expect(onSnapshot).toHaveBeenCalledTimes(3)
 
     poller.stop()
+  })
+
+  it('keeps current transport cadence independent of durable settlement [DON-252]', async () => {
+    const missionObservationCompletions: ReturnType<typeof vi.fn>[] = []
+    let currentRequestCount = 0
+    let activeCurrentRequests = 0
+    let maximumActiveCurrentRequests = 0
+    const client = createClient({
+      getCurrentPositions: vi.fn(async () => {
+        currentRequestCount += 1
+        activeCurrentRequests += 1
+        maximumActiveCurrentRequests = Math.max(
+          maximumActiveCurrentRequests,
+          activeCurrentRequests,
+        )
+        if (currentRequestCount > 1) {
+          await new Promise((resolve) => setTimeout(resolve, 67))
+        }
+        activeCurrentRequests -= 1
+        return NORMALIZED_POSITIONS.map((position) => ({
+          ...position,
+          id: `${position.id}-${currentRequestCount}`,
+        }))
+      }),
+    })
+    const onCurrentSnapshot = vi.fn((
+      _snapshot: unknown,
+      _context: unknown,
+      observation: TrackingMissionEvidenceTransfer,
+    ) => {
+      observation.claim()
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 50,
+      minimumIntervalMs: 50,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onCurrentSnapshot,
+      onStatusChange: vi.fn(),
+      beginMissionEvidenceObservation: (missionId) => {
+        const complete = vi.fn()
+        missionObservationCompletions.push(complete)
+        return { missionId, complete }
+      },
+      getHistoryResetKey: () => 'mission-1',
+      now: () => new Date('2026-09-05T00:02:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
+    expect(onCurrentSnapshot).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(150)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    expect(onCurrentSnapshot).toHaveBeenCalledTimes(2)
+    expect(maximumActiveCurrentRequests).toBe(1)
+    expect(missionObservationCompletions[0]).not.toHaveBeenCalled()
+    await poller.stop()
+  })
+
+  it('does not reclaim mission evidence after synchronous ownership transfer [DON-252]', async () => {
+    const complete = vi.fn()
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 50,
+      minimumIntervalMs: 50,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onCurrentSnapshot: (_snapshot, _context, observation) => {
+        observation.claim()
+        throw new Error('renderer publication failed after evidence admission')
+      },
+      onStatusChange: vi.fn(),
+      beginMissionEvidenceObservation: (missionId) => ({ missionId, complete }),
+      getHistoryResetKey: () => 'mission-1',
+      now: () => new Date('2026-09-05T00:02:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(complete).not.toHaveBeenCalled()
+    expect(onSnapshot).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        historyResetKey: 'mission-1',
+        missionEvidenceId: null,
+      }),
+    )
+    await poller.stop()
+  })
+
+  it('fails the poll closed when current mission evidence is not claimed [DON-252]', async () => {
+    const complete = vi.fn()
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 50,
+      minimumIntervalMs: 50,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onCurrentSnapshot: vi.fn(),
+      onStatusChange,
+      beginMissionEvidenceObservation: (missionId) => ({ missionId, complete }),
+      getHistoryResetKey: () => 'mission-1',
+      now: () => new Date('2026-09-05T00:02:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(complete).toHaveBeenCalledOnce()
+    expect(onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      mode: 'offline',
+    }))
+    await poller.stop()
   })
 
   it('wakes an idle poller immediately when mission activation occurs', async () => {
@@ -894,7 +1011,10 @@ describe('polling manager', () => {
 
     const resetSnapshots = onSnapshot.mock.calls.slice(callsBeforeReset)
     expect(resetSnapshots).toHaveLength(1)
-    expect(resetSnapshots[0]?.[1]).toEqual({ historyResetKey: 'mission-b' })
+    expect(resetSnapshots[0]?.[1]).toEqual({
+      historyResetKey: 'mission-b',
+      missionEvidenceId: null,
+    })
     expect(resetSnapshots[0]?.[0].positions.map(
       (position: NormalizedTrackingPosition) => position.id,
     )).toEqual(NORMALIZED_POSITIONS.map((position) => position.id))

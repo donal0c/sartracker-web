@@ -17,6 +17,12 @@ const mocks = vi.hoisted(() => ({
   loadAppSettings: vi.fn(),
 }))
 
+const ARCHIVE_CUSTODY = {
+  operationId: '8b8fe5e4-1f0f-4b1b-87b2-36f7ff5c33a1',
+  passphrase: 'Archive-Custody-2026',
+  recoveryCode: '0123-4567-89AB-CDEF',
+} as const
+
 vi.mock('../../src/infrastructure/settings-store/tauri-settings-store', () => ({
   loadAppSettings: mocks.loadAppSettings,
 }))
@@ -191,11 +197,122 @@ describe('useMissionControlViewModel', () => {
     expect(getModel().unlockReason).toBe('')
   })
 
+  it('binds recovery issuance, cancellation, and finalization custody to governance', async () => {
+    const issuance = {
+      operationId: ARCHIVE_CUSTODY.operationId,
+      recoveryCode: ARCHIVE_CUSTODY.recoveryCode,
+      expiresAt: '2026-05-17T10:10:00.000Z',
+    }
+    const finalizedMission = createMission({ id: 'mission-finished', status: 'finalized' })
+    const finalizationResult = {
+      mission: finalizedMission,
+      archive: {
+        id: 'archive-1',
+        mission_id: finalizedMission.id,
+        protected_finalization_epoch: 1,
+        archive_kind: 'finalized' as const,
+        container_version: 2 as const,
+        archive_path: '/archives/mission-finished.sararch',
+        ciphertext_sha256: 'a'.repeat(64),
+        size_bytes: 1024,
+        created_at: '2026-05-17T10:00:00.000Z',
+        verified_at: '2026-05-17T10:01:00.000Z',
+        previous_archive_id: null,
+        status: 'verified' as const,
+        availability: 'present' as const,
+        availability_reason: null,
+        slots: [
+          { slotId: 'passphrase', slotType: 'passphrase' as const },
+          { slotId: 'recovery', slotType: 'recovery' as const },
+        ],
+        last_non_machine_unwrap_at: '2026-05-17T10:01:00.000Z',
+      },
+    }
+    const governanceController = {
+      refreshGovernanceMission: vi.fn().mockResolvedValue(undefined),
+      issueGovernanceArchiveRecoveryCode: vi.fn().mockResolvedValue(issuance),
+      cancelGovernanceArchiveOperation: vi.fn().mockResolvedValue(true),
+      finalizeGovernanceMission: vi.fn().mockResolvedValue(finalizationResult),
+      acknowledgeGovernanceEvidenceLoss: vi.fn(),
+      unlockGovernanceMission: vi.fn(),
+    }
+    useMissionStore.setState({
+      governanceController,
+      governanceMission: createMission({ id: 'mission-finished', status: 'finished' }),
+    })
+    const { getModel } = renderHook()
+
+    await act(async () => {
+      await expect(getModel().issueArchiveRecoveryCode('mission-finished')).resolves.toBe(issuance)
+      await expect(getModel().cancelArchiveOperation(ARCHIVE_CUSTODY.operationId)).resolves.toBe(true)
+      await expect(getModel().confirmFinalize(ARCHIVE_CUSTODY)).resolves.toBe(finalizationResult)
+    })
+
+    expect(governanceController.issueGovernanceArchiveRecoveryCode)
+      .toHaveBeenCalledWith('mission-finished')
+    expect(governanceController.cancelGovernanceArchiveOperation)
+      .toHaveBeenCalledWith(ARCHIVE_CUSTODY.operationId)
+    expect(governanceController.finalizeGovernanceMission)
+      .toHaveBeenCalledWith('mission-finished', ARCHIVE_CUSTODY)
+    expect(getModel().governanceFeedback).toContain('/archives/mission-finished.sararch')
+  })
+
+  it('binds cleanup checklist and completion to finalized mission governance', async () => {
+    const cleanupState = {
+      archive: { id: 'archive-1' },
+      eligibility: {
+        eligible: false,
+        blockers: ['fresh_non_machine_unlock_required'],
+        storageState: 'live',
+      },
+    }
+    const cleanupResult = {
+      missionId: 'mission-finalized',
+      archiveId: 'archive-1',
+      state: 'completed',
+      storageState: 'archived',
+      movedRows: 31,
+    }
+    const governanceController = {
+      refreshGovernanceMission: vi.fn().mockResolvedValue(undefined),
+      readGovernanceCleanupState: vi.fn().mockResolvedValue(cleanupState),
+      startGovernanceCleanup: vi.fn().mockResolvedValue(cleanupResult),
+    }
+    useMissionStore.setState({
+      governanceController: governanceController as never,
+      governanceMission: createMission({
+        id: 'mission-finalized',
+        name: 'Cleanup Mission',
+        status: 'finalized',
+        storage_state: 'live',
+      }),
+    })
+    const { getModel } = renderHook()
+
+    act(() => getModel().setShowCleanupDialog(true))
+    expect(getModel().showCleanupDialog).toBe(true)
+    await act(async () => {
+      await expect(getModel().loadCleanupState('mission-finalized')).resolves.toBe(cleanupState)
+      await expect(getModel().startCleanup({
+        missionId: 'mission-finalized',
+        archiveId: 'archive-1',
+        operationId: '11111111-1111-4111-8111-111111111111',
+        slotType: 'passphrase',
+        secret: 'Four calm words 2026!',
+        confirmation: 'Cleanup Mission',
+      })).resolves.toBe(cleanupResult)
+    })
+    expect(getModel().governanceFeedback).toMatch(/remains listed.*archive review/iu)
+  })
+
   it('turns a known evidence-health finalization block into an audited admin flow [DON-276]', async () => {
     const governanceController = {
       refreshGovernanceMission: vi.fn().mockResolvedValue(undefined),
       finalizeGovernanceMission: vi.fn().mockRejectedValue(
-        new Error('Degraded evidence health blocks finalization.'),
+        new Error(
+          'Error invoking remote method: Mission archive operation failed safely '
+          + '(ARCHIVE_EVIDENCE_HEALTH_BLOCKED).',
+        ),
       ),
       acknowledgeGovernanceEvidenceLoss: vi.fn().mockResolvedValue({
         state: 'critical',
@@ -243,7 +360,9 @@ describe('useMissionControlViewModel', () => {
     const { getModel } = renderHook()
 
     await act(async () => {
-      await getModel().confirmFinalize()
+      await expect(getModel().confirmFinalize(ARCHIVE_CUSTODY)).rejects.toThrow(
+        /ARCHIVE_EVIDENCE_HEALTH_BLOCKED/i,
+      )
       await Promise.resolve()
     })
 
@@ -301,7 +420,11 @@ describe('useMissionControlViewModel', () => {
     })
     const { getModel } = renderHook()
 
-    await act(async () => getModel().confirmFinalize())
+    await act(async () => {
+      await expect(getModel().confirmFinalize(ARCHIVE_CUSTODY)).rejects.toThrow(
+        /degraded evidence health blocks finalization/i,
+      )
+    })
 
     expect(getModel().showEvidenceLossDialog).toBe(false)
     expect(getModel().actionError).toMatch(/degraded evidence health blocks finalization/i)

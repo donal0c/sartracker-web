@@ -11,7 +11,13 @@ import type {
   ListAuditEventsOptions,
   Mission,
   MissionEvent,
+  MissionArchiveCustodyInput,
   MissionArchiveInfo,
+  MissionArchiveRecoveryIssuance,
+  MissionArchiveVerificationInput,
+  MissionCleanupBlocker,
+  MissionCleanupEligibility,
+  MissionCleanupResult,
   MissionReviewReadQuery,
   MissionReviewReadResult,
   MissionReplayReadInput,
@@ -34,6 +40,8 @@ import type {
   CoverageTileCatalog,
   RenameOutingInput,
   UnlockFinalizedMissionInput,
+  RestoreMissionForCorrectionInput,
+  RestoreMissionForCorrectionResult,
   UpsertDeviceInput,
   UpsertDrawingInput,
   UpsertGpxTrackImportInput,
@@ -44,6 +52,8 @@ import type {
   SearchPass,
   SearchOperationPage,
   SearchOperationPageKind,
+  StartMissionCleanupInput,
+  ResumeMissionCleanupInput,
   MissionReplayFilterPage,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type {
@@ -88,6 +98,12 @@ const MAX_REPLAY_CURSOR_OFFSET = 10_000_000
 const MAX_REPLAY_SELECTED_TIME_LENGTH = 64
 const REPLAY_TIMEZONE = 'Europe/Dublin'
 const MAX_GPX_PROJECTION_PAGE_LIMIT = 25
+const BROWSER_ARCHIVE_ISSUANCE_LIFETIME_MS = 10 * 60_000
+const BROWSER_ARCHIVE_OPERATION_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+const BROWSER_ARCHIVE_RECOVERY_CODE =
+  /^(?:[0-9A-HJKMNP-TV-Z]{5}-){7}[0-9A-HJKMNP-TV-Z]{5}$/u
+const BROWSER_ARCHIVE_RECOVERY_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 
 /**
  * Browser validation store for hosted/team-testing mode only.
@@ -115,10 +131,13 @@ type BrowserHarnessState = {
   readonly searchAssignments: readonly SearchAssignment[]
   readonly searchPasses: readonly SearchPass[]
   readonly missionEvents: readonly MissionEvent[]
+  readonly missionArchives: readonly MissionArchiveInfo[]
+  readonly archiveCredentialDigests: Readonly<Record<string, BrowserArchiveCredentialDigests>>
   readonly openedPaths: readonly string[]
   readonly currentMissionId: string | null
   readonly recoverableMissionId: string | null
   readonly evidenceLossByMission: BrowserEvidenceLossByMission
+  readonly archiveSnapshots: readonly BrowserArchiveMissionSnapshot[]
 }
 
 type BrowserGpxEvidencePoint = {
@@ -144,11 +163,49 @@ type BrowserMissionTeam = {
   readonly frozen_at: string
 }
 
+/** Immutable browser-validation projection captured at one sealed archive revision. */
+export type BrowserArchiveMissionSnapshot = {
+  readonly archiveId: string
+  readonly missionId: string
+  readonly mission: Mission
+  readonly devices: readonly Device[]
+  readonly positions: readonly Position[]
+  readonly outings: readonly Outing[]
+  readonly missionTeams: readonly BrowserMissionTeam[]
+  readonly missionParticipants: readonly MissionParticipant[]
+  readonly groupMembershipEvents: readonly GroupMembershipEvent[]
+  readonly participantBackfillCheckpoints: readonly ParticipantBackfillCheckpoint[]
+  readonly markers: readonly Marker[]
+  readonly drawings: readonly Drawing[]
+  readonly helicopters: readonly Helicopter[]
+  readonly gpxImports: readonly GpxTrackImport[]
+  readonly gpxEvidencePoints: readonly BrowserGpxEvidencePoint[]
+  readonly searchAreas: readonly SearchArea[]
+  readonly searchAssignments: readonly SearchAssignment[]
+  readonly searchPasses: readonly SearchPass[]
+  readonly missionEvents: readonly MissionEvent[]
+}
+
+type BrowserArchiveRecoveryIssuance = {
+  readonly missionId: string
+  readonly recoveryCodeDigest: string
+  readonly expiresAtMs: number
+}
+
+type BrowserArchiveCredentialDigests = {
+  readonly passphraseDigest: string
+  readonly recoveryCodeDigest: string
+}
+
+type BrowserCorrectionMission = Mission & {
+  readonly correction_authorized?: boolean
+}
+
 const BROWSER_HARNESS_STORAGE_KEY = 'sartracker:browser-harness'
 const MAX_PERSISTED_TRACKING_POSITIONS = 2_000
 const EMERGENCY_PERSISTED_TRACKING_POSITIONS = 500
 
-type BrowserHarnessStore = {
+export type BrowserHarnessStore = {
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
   readonly createOuting: (input: CreateOutingInput) => Promise<Outing>
   readonly endOuting: (input: EndOutingInput) => Promise<Outing>
@@ -207,7 +264,41 @@ type BrowserHarnessStore = {
   readonly pauseMission: (missionId: string) => Promise<Mission>
   readonly resumeMission: (missionId: string) => Promise<Mission>
   readonly finishMission: (missionId: string) => Promise<Mission>
-  readonly finalizeMission: (missionId: string) => Promise<FinalizeMissionResult>
+  readonly issueMissionArchiveRecoveryCode: (
+    missionId: string,
+  ) => Promise<MissionArchiveRecoveryIssuance>
+  readonly listMissionArchives: (missionId: string) => Promise<readonly MissionArchiveInfo[]>
+  /** Returns the immutable synthetic rows captured for one sealed archive revision. */
+  readonly readMissionArchiveSnapshot?: (
+    archiveId: string,
+  ) => Promise<BrowserArchiveMissionSnapshot>
+  /** Browser-only fixture hook for the sealed-but-unverified operator retry path. */
+  readonly prepareArchiveVerificationRetryFixture: (
+    archiveId: string,
+  ) => Promise<MissionArchiveInfo>
+  readonly validateMissionArchiveReviewCredential: (input: {
+    readonly archiveId: string
+    readonly slotType: 'passphrase' | 'recovery'
+    readonly secret: string
+  }) => Promise<MissionArchiveInfo>
+  readonly verifyMissionArchive: (
+    input: MissionArchiveVerificationInput,
+  ) => Promise<MissionArchiveInfo>
+  readonly getMissionCleanupEligibility: (input: {
+    readonly missionId: string
+    readonly archiveId: string
+  }) => Promise<MissionCleanupEligibility>
+  readonly startMissionCleanup: (
+    input: StartMissionCleanupInput,
+  ) => Promise<MissionCleanupResult>
+  readonly resumeMissionCleanup: (
+    input: ResumeMissionCleanupInput,
+  ) => Promise<MissionCleanupResult>
+  readonly cancelMissionArchiveOperation: (operationId: string) => Promise<boolean>
+  readonly finalizeMission: (
+    missionId: string,
+    custody: MissionArchiveCustodyInput,
+  ) => Promise<FinalizeMissionResult>
   readonly recordIngestEvidenceLoss: (input: {
     readonly mission_id: string
     readonly reason: IngestEvidenceLossReason
@@ -217,6 +308,9 @@ type BrowserHarnessStore = {
     input: AcknowledgeIngestEvidenceLossInput,
   ) => Promise<IngestEvidenceHealth>
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<Mission>
+  readonly restoreMissionForCorrection: (
+    input: RestoreMissionForCorrectionInput,
+  ) => Promise<RestoreMissionForCorrectionResult>
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
   readonly addPosition: (input: AddPositionInput) => Promise<Position>
@@ -327,6 +421,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
   }
 
   let state = readHarnessState()
+  const archiveRecoveryIssuances = new Map<string, BrowserArchiveRecoveryIssuance>()
 
   const save = () => {
     state = pruneTrackingPersistence(state, MAX_PERSISTED_TRACKING_POSITIONS)
@@ -373,6 +468,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         paused_seconds: 0,
         notes: input.notes ?? null,
         schema_version: 9,
+        storage_state: 'live',
       } satisfies Mission
 
       state = {
@@ -1138,27 +1234,382 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return readBrowserEvidenceHealth(state.evidenceLossByMission, input.mission_id)
     },
-    finalizeMission: async (missionId) => {
+    issueMissionArchiveRecoveryCode: async (missionId) => {
+      requireMission(missionId, state.missions)
+      sweepExpiredBrowserArchiveIssuances(archiveRecoveryIssuances)
+      for (const [operationId, issuance] of archiveRecoveryIssuances) {
+        if (issuance.missionId === missionId) archiveRecoveryIssuances.delete(operationId)
+      }
+      let operationId = createBrowserArchiveOperationId()
+      while (archiveRecoveryIssuances.has(operationId)) {
+        operationId = createBrowserArchiveOperationId()
+      }
+      const recoveryCode = createBrowserArchiveRecoveryCode(operationId)
+      const expiresAtMs = Date.now() + BROWSER_ARCHIVE_ISSUANCE_LIFETIME_MS
+      archiveRecoveryIssuances.set(operationId, {
+        missionId,
+        recoveryCodeDigest: createBrowserSyntheticSecretDigest(recoveryCode),
+        expiresAtMs,
+      })
+      return {
+        operationId,
+        recoveryCode,
+        expiresAt: new Date(expiresAtMs).toISOString(),
+      }
+    },
+    listMissionArchives: async (missionId) => {
+      requireMission(missionId, state.missions)
+      return state.missionArchives
+        .filter((archive) => archive.mission_id === missionId)
+        .toSorted((left, right) => left.created_at.localeCompare(right.created_at))
+    },
+    readMissionArchiveSnapshot: async (archiveId) => {
+      const snapshot = state.archiveSnapshots.find((candidate) => candidate.archiveId === archiveId)
+      if (snapshot === undefined) {
+        throw new Error('Mission archive revision is not available in browser validation mode.')
+      }
+      return snapshot
+    },
+    prepareArchiveVerificationRetryFixture: async (archiveId) => {
+      const archive = state.missionArchives.find((candidate) => candidate.id === archiveId)
+      if (archive === undefined
+        || archive.container_version !== 2
+        || archive.status !== 'verified'
+        || archive.verified_at === null
+        || archive.availability !== 'present'
+        || state.archiveCredentialDigests[archive.id] === undefined) {
+        throw new Error('Browser archive retry fixture requires one verified encrypted archive.')
+      }
+      const sealed: MissionArchiveInfo = {
+        ...archive,
+        status: 'sealed',
+        verified_at: null,
+        last_non_machine_unwrap_at: null,
+      }
+      state = {
+        ...state,
+        missionArchives: state.missionArchives.map((candidate) =>
+          candidate.id === archive.id ? sealed : candidate),
+        missionEvents: state.missionEvents.filter((event) => {
+          if (event.mission_id !== archive.mission_id
+            || event.event_type !== 'mission_archive_verified_v2') return true
+          try {
+            const details = JSON.parse(event.details_json ?? '{}') as {
+              readonly archive_id?: unknown
+            }
+            return details.archive_id !== archive.id
+          } catch {
+            return true
+          }
+        }),
+      }
+      save()
+      return sealed
+    },
+    getMissionCleanupEligibility: async (input) => {
+      const mission = requireMission(input.missionId, state.missions)
+      const archives = state.missionArchives
+        .filter((archive) => archive.mission_id === input.missionId)
+        .toSorted((left, right) => right.revision_sequence - left.revision_sequence
+          || right.created_at.localeCompare(left.created_at))
+      const archive = archives.find((candidate) => candidate.id === input.archiveId)
+      if (archive === undefined) {
+        throw new Error('Mission cleanup archive is unavailable in browser validation mode.')
+      }
+      if (mission.storage_state === 'archived') {
+        return {
+          eligible: false,
+          startableWithCredential: false,
+          blockers: ['cleanup_already_completed'],
+          storageState: 'archived',
+        }
+      }
+      const blockers: MissionCleanupBlocker[] = []
+      if (mission.status !== 'finalized') blockers.push('mission_not_finalized')
+      if (archives[0]?.id !== archive.id) blockers.push('current_finalization_epoch_mismatch')
+      if (archive.container_version !== 2 || archive.status !== 'verified'
+        || archive.verified_at === null) blockers.push('current_archive_not_verified')
+      if (archive.container_version !== 2 || archive.status !== 'verified'
+        || archive.verified_at === null) blockers.push('verification_proof_invalid')
+      if (archive.availability !== 'present' || archive.ciphertext_sha256 === null
+        || archive.size_bytes === null || archive.size_bytes < 1) {
+        blockers.push('archive_custody_mismatch')
+      }
+      const health = readBrowserEvidenceHealth(state.evidenceLossByMission, input.missionId)
+      if (health.state !== 'healthy' || health.pendingCount !== 0 || health.corruptCount !== 0) {
+        blockers.push('evidence_health_not_clean')
+      }
+      blockers.push('fresh_non_machine_unlock_required')
+      const uniqueBlockers = [...new Set(blockers)]
+      return {
+        eligible: false,
+        startableWithCredential: uniqueBlockers.length === 1
+          && uniqueBlockers[0] === 'fresh_non_machine_unlock_required',
+        blockers: uniqueBlockers,
+        storageState: 'live',
+      }
+    },
+    startMissionCleanup: async (input) => {
+      const operationId = normalizeBrowserArchiveOperationId(input.operationId)
+      const mission = requireMission(input.missionId, state.missions)
+      if (input.confirmation !== mission.name) {
+        throw new Error('Mission cleanup confirmation must match the exact mission name.')
+      }
+      const eligibility = await browserHarnessStore?.getMissionCleanupEligibility({
+        missionId: input.missionId,
+        archiveId: input.archiveId,
+      })
+      if (eligibility?.startableWithCredential !== true) {
+        throw browserCleanupError(
+          'ARCHIVE_CLEANUP_NOT_ELIGIBLE',
+          'Mission cleanup is not eligible in browser validation mode.',
+        )
+      }
+      const archive = state.missionArchives.find((candidate) => candidate.id === input.archiveId)
+      const normalizedSecret = input.slotType === 'passphrase'
+        ? normalizeBrowserArchivePassphrase(input.secret)
+        : normalizeBrowserArchiveRecoveryCode(input.secret)
+      const credentials = archive === undefined
+        ? undefined
+        : state.archiveCredentialDigests[archive.id]
+      const expectedDigest = input.slotType === 'passphrase'
+        ? credentials?.passphraseDigest
+        : credentials?.recoveryCodeDigest
+      if (archive === undefined || expectedDigest === undefined
+        || expectedDigest !== createBrowserSyntheticSecretDigest(normalizedSecret)) {
+        throw browserCleanupError(
+          'ARCHIVE_CLEANUP_WRONG_KEY',
+          'Mission cleanup credential is invalid in browser validation mode.',
+        )
+      }
+      const completedAt = new Date().toISOString()
+      const movedRows = countBrowserSyntheticMissionRows(state, mission.id)
+      const archivedMission: Mission = { ...mission, storage_state: 'archived' }
+      const updatedArchive: MissionArchiveInfo = {
+        ...archive,
+        last_non_machine_unwrap_at: completedAt,
+      }
+      state = replaceMission(state, archivedMission, null, null)
+      state = {
+        ...state,
+        missionArchives: state.missionArchives.map((candidate) =>
+          candidate.id === updatedArchive.id ? updatedArchive : candidate),
+        missionEvents: appendEvent(appendEvent(
+          state.missionEvents,
+          mission.id,
+          'mission_cleanup_started',
+          completedAt,
+          { archive_id: archive.id, operation_id: operationId, storage_state: 'live' },
+        ), mission.id, 'mission_cleanup_completed', completedAt, {
+          archive_id: archive.id,
+          operation_id: operationId,
+          moved_rows: movedRows,
+          storage_state: 'archived',
+          browser_validation_only: true,
+        }),
+      }
+      // Browser validation deliberately retains its synthetic fixture rows so
+      // post-cleanup archive-review UI remains exercisable. This is not desktop
+      // persistence, deletion, cryptography, or filesystem-cleanup proof.
+      save()
+      return {
+        missionId: mission.id,
+        archiveId: archive.id,
+        state: 'completed',
+        storageState: 'archived',
+        movedRows,
+      }
+    },
+    resumeMissionCleanup: async (input) => {
+      const operationId = normalizeBrowserArchiveOperationId(input.operationId)
+      const mission = requireMission(input.missionId, state.missions)
+      const archive = state.missionArchives.find((candidate) => candidate.id === input.archiveId)
+      if (archive?.mission_id !== mission.id) {
+        throw browserCleanupError(
+          'ARCHIVE_CLEANUP_NOT_ELIGIBLE',
+          'Mission cleanup archive is unavailable in browser validation mode.',
+        )
+      }
+      if (mission.storage_state === 'archived') {
+        return {
+          missionId: mission.id,
+          archiveId: archive.id,
+          state: 'completed',
+          storageState: 'archived',
+          movedRows: 0,
+        }
+      }
+      const completedAt = new Date().toISOString()
+      const movedRows = countBrowserSyntheticMissionRows(state, mission.id)
+      const archivedMission: Mission = { ...mission, storage_state: 'archived' }
+      const updatedArchive: MissionArchiveInfo = {
+        ...archive,
+        last_non_machine_unwrap_at: completedAt,
+      }
+      state = replaceMission(state, archivedMission, null, null)
+      state = {
+        ...state,
+        missionArchives: state.missionArchives.map((candidate) =>
+          candidate.id === updatedArchive.id ? updatedArchive : candidate),
+        missionEvents: appendEvent(state.missionEvents, mission.id, 'mission_cleanup_completed', completedAt, {
+          archive_id: archive.id,
+          operation_id: operationId,
+          moved_rows: movedRows,
+          storage_state: 'archived',
+          browser_validation_only: true,
+          resumed: true,
+        }),
+      }
+      save()
+      return {
+        missionId: mission.id,
+        archiveId: archive.id,
+        state: 'completed',
+        storageState: 'archived',
+        movedRows,
+      }
+    },
+    validateMissionArchiveReviewCredential: async (input) => {
+      const archive = state.missionArchives.find((candidate) => candidate.id === input.archiveId)
+      const normalizedSecret = input.slotType === 'passphrase'
+        ? normalizeBrowserArchivePassphrase(input.secret)
+        : normalizeBrowserArchiveRecoveryCode(input.secret)
+      const credentials = archive === undefined
+        ? undefined
+        : state.archiveCredentialDigests[archive.id]
+      const expectedDigest = input.slotType === 'passphrase'
+        ? credentials?.passphraseDigest
+        : credentials?.recoveryCodeDigest
+      if (archive === undefined
+        || archive.container_version !== 2
+        || !['verified', 'superseded'].includes(archive.status)
+        || archive.verified_at === null
+        || archive.availability !== 'present'
+        || !archive.slots.some((slot) => slot.slotType === input.slotType)
+        || expectedDigest === undefined
+        || expectedDigest !== createBrowserSyntheticSecretDigest(normalizedSecret)) {
+        throw new Error('Archive review credential is invalid in browser validation mode.')
+      }
+      return archive
+    },
+    verifyMissionArchive: async (input) => {
+      const operationId = normalizeBrowserArchiveOperationId(input.operationId)
+      const passphrase = normalizeBrowserArchivePassphrase(input.passphrase)
+      const recoveryCode = normalizeBrowserArchiveRecoveryCode(input.recoveryCode)
+      const archive = state.missionArchives.find((candidate) => candidate.id === input.archiveId)
+      if (archive === undefined) {
+        throw new Error('Mission archive is not available for browser validation.')
+      }
+      const credentials = state.archiveCredentialDigests[archive.id]
+      if (credentials === undefined
+        || credentials.passphraseDigest !== createBrowserSyntheticSecretDigest(passphrase)
+        || credentials.recoveryCodeDigest !== createBrowserSyntheticSecretDigest(recoveryCode)) {
+        throw new Error('Mission archive credentials are invalid.')
+      }
+      const verifiedAt = new Date().toISOString()
+      const verifiedArchive: MissionArchiveInfo = {
+        ...archive,
+        status: 'verified',
+        verified_at: verifiedAt,
+        availability: 'present',
+        availability_reason: null,
+        last_non_machine_unwrap_at: verifiedAt,
+      }
+      state = {
+        ...state,
+        missionArchives: state.missionArchives.map((candidate) =>
+          candidate.id === archive.id ? verifiedArchive : candidate),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          archive.mission_id,
+          'mission_archive_verified_v2',
+          verifiedAt,
+          {
+            archive_id: archive.id,
+            operation_id: operationId,
+            ciphertext_sha256: archive.ciphertext_sha256,
+            exhaustive: true,
+            resulting_status: requireMission(archive.mission_id, state.missions).status,
+          },
+        ),
+      }
+      save()
+      return verifiedArchive
+    },
+    cancelMissionArchiveOperation: async (operationId) => {
+      const normalizedOperationId = normalizeBrowserArchiveOperationId(operationId)
+      sweepExpiredBrowserArchiveIssuances(archiveRecoveryIssuances)
+      return archiveRecoveryIssuances.delete(normalizedOperationId)
+    },
+    finalizeMission: async (missionId, custody) => {
+      const operationId = normalizeBrowserArchiveOperationId(custody.operationId)
+      sweepExpiredBrowserArchiveIssuances(archiveRecoveryIssuances)
+      const issuance = archiveRecoveryIssuances.get(operationId)
+      if (issuance !== undefined) archiveRecoveryIssuances.delete(operationId)
+      const passphrase = normalizeBrowserArchivePassphrase(custody.passphrase)
+      const recoveryCode = normalizeBrowserArchiveRecoveryCode(custody.recoveryCode)
+      if (issuance === undefined
+        || issuance.missionId !== missionId
+        || issuance.expiresAtMs <= Date.now()
+        || issuance.recoveryCodeDigest !== createBrowserSyntheticSecretDigest(recoveryCode)) {
+        throw new Error(
+          'The per-archive recovery-code confirmation is no longer valid. Generate and confirm a new code.',
+        )
+      }
       const mission = requireMission(missionId, state.missions)
       if (mission.status !== 'finished') {
         throw new Error('Only finished missions can be finalized.')
       }
       if (hasUnacknowledgedBrowserEvidenceLoss(state.evidenceLossByMission, missionId)) {
-        throw new Error(
+        const error = new Error(
           'Degraded evidence health blocks finalization; resolve durable ingest evidence before continuing.',
         )
+        Object.assign(error, { code: 'ARCHIVE_EVIDENCE_HEALTH_BLOCKED' })
+        throw error
       }
 
       const finalizedMission = {
         ...mission,
         status: 'finalized' as const,
+        storage_state: 'live' as const,
       }
+      const createdAt = new Date().toISOString()
+      const archiveId = `archive-${operationId}`
+      const archivePath = `/tmp/browser-harness/archives/${missionId}-${operationId}.sararch`
+      const previousArchive = currentBrowserMissionArchive(state, missionId)
+      const revisionSequence = (previousArchive?.revision_sequence ?? 0) + 1
+      const supplement = previousArchive === undefined
+        ? null
+        : readBrowserArchiveSupplement(state, missionId, previousArchive)
       const archive = {
+        id: archiveId,
         mission_id: missionId,
-        archive_path: `/tmp/${missionId}-archive.zip`,
-        created_at: new Date().toISOString(),
+        protected_finalization_epoch: null,
+        archive_kind: 'finalized',
+        container_version: 2,
+        archive_path: archivePath,
+        ciphertext_sha256: createBrowserSyntheticArchiveDigest(
+          `${missionId}\u0000${operationId}\u0000${createdAt}`,
+        ),
+        size_bytes: createBrowserSyntheticArchiveSize(state, missionId),
+        created_at: createdAt,
+        verified_at: createdAt,
+        previous_archive_id: previousArchive?.id ?? null,
+        previous_archive_sha256: previousArchive?.ciphertext_sha256 ?? null,
+        revision_sequence: revisionSequence,
+        revision_count: Math.max(previousArchive?.revision_count ?? 0, revisionSequence),
+        supplement_authority: supplement?.authority ?? null,
+        supplement_reason: supplement?.reason ?? null,
+        supplement_created_at: supplement === null ? null : createdAt,
+        status: 'verified',
+        availability: 'present',
+        availability_reason: null,
+        slots: [
+          { slotId: 'passphrase-v1', slotType: 'passphrase' },
+          { slotId: 'recovery-v1', slotType: 'recovery' },
+        ],
+        last_non_machine_unwrap_at: createdAt,
       } satisfies MissionArchiveInfo
-
       state = replaceMission(
         {
           ...state,
@@ -1174,19 +1625,52 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       )
       state = {
         ...state,
-        missionEvents: appendEvent(
-          appendEvent(state.missionEvents, missionId, 'mission_archive_succeeded', archive.created_at, {
-            resulting_status: 'finished',
-            archive_path: archive.archive_path,
-          }),
+        archiveCredentialDigests: {
+          ...state.archiveCredentialDigests,
+          [archiveId]: {
+            passphraseDigest: createBrowserSyntheticSecretDigest(passphrase),
+            recoveryCodeDigest: createBrowserSyntheticSecretDigest(recoveryCode),
+          },
+        },
+        missionArchives: [
+          ...state.missionArchives.map((candidate) => candidate.mission_id !== missionId
+            ? candidate
+            : {
+                ...candidate,
+                revision_count: revisionSequence,
+                status: candidate.id === previousArchive?.id ? 'superseded' as const : candidate.status,
+              }),
+          archive,
+        ],
+        missionEvents: appendEvent(appendEvent(appendEvent(
+          state.missionEvents,
           missionId,
-          'mission_finalized',
+          'mission_archive_sealed_v2',
           archive.created_at,
           {
-            resulting_status: 'finalized',
+            archive_id: archive.id,
+            creation_operation_id: operationId,
             archive_path: archive.archive_path,
+            ciphertext_sha256: archive.ciphertext_sha256,
+            resulting_status: 'finalized',
           },
-        ),
+        ), missionId, 'mission_finalized', archive.created_at, {
+          archive_id: archive.id,
+          resulting_status: 'finalized',
+          archive_path: archive.archive_path,
+        }), missionId, 'mission_archive_verified_v2', archive.created_at, {
+          archive_id: archive.id,
+          ciphertext_sha256: archive.ciphertext_sha256,
+          exhaustive: true,
+          resulting_status: 'finalized',
+        }),
+      }
+      state = {
+        ...state,
+        archiveSnapshots: [
+          ...state.archiveSnapshots,
+          captureBrowserArchiveSnapshot(state, missionId, archiveId),
+        ],
       }
       save()
       return { mission: finalizedMission, archive }
@@ -1195,6 +1679,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const mission = requireMission(input.mission_id, state.missions)
       if (mission.status !== 'finalized') {
         throw new Error('Only finalized missions can be unlocked.')
+      }
+      if (mission.storage_state === 'archived') {
+        throw new Error('Archived missions remain read-only and cannot be unlocked.')
       }
 
       const settings = readBrowserSettings()
@@ -1227,7 +1714,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const unlockedMission = {
         ...mission,
         status: 'finished' as const,
-      }
+        storage_state: 'live' as const,
+        correction_authorized: true,
+      } satisfies BrowserCorrectionMission
       state = replaceMission(
         {
           ...state,
@@ -1251,6 +1740,55 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         null,
         null,
       )
+      save()
+      return unlockedMission
+    },
+    restoreMissionForCorrection: async (input) => {
+      const mission = requireMission(input.mission_id, state.missions)
+      if (mission.status !== 'finalized'
+        || !['live', 'archived'].includes(mission.storage_state ?? 'live')) {
+        throw new Error('Only archived finalized missions can be restored for correction.')
+      }
+      const archive = state.missionArchives.find((candidate) => candidate.id === input.archiveId)
+      const currentArchive = currentBrowserMissionArchive(state, mission.id)
+      if (archive?.mission_id !== mission.id || archive.status !== 'verified'
+        || archive.availability !== 'present' || currentArchive?.id !== archive.id) {
+        throw new Error('The selected verified archive is not the current correction predecessor.')
+      }
+      const settings = readBrowserSettings()
+      if (!settings.missionDefaults.adminRoster.includes(input.admin_name)) {
+        throw new Error('Selected admin is not authorized to restore archived missions.')
+      }
+      if (input.reason.trim() === '') throw new Error('Correction reason is required.')
+      const unlockedMission = {
+        ...mission,
+        status: 'finished' as const,
+        storage_state: 'live' as const,
+        correction_authorized: true,
+      } satisfies BrowserCorrectionMission
+      const requestedAt = new Date().toISOString()
+      state = replaceMission({
+        ...state,
+        missionEvents: appendEvent(
+          appendEvent(state.missionEvents, input.mission_id, 'mission_unlock_requested', requestedAt, {
+            admin_name: input.admin_name,
+            reason: input.reason,
+            resulting_status: 'finalized',
+            storage_state: 'archived',
+            archive_id: input.archiveId,
+          }),
+          input.mission_id,
+          'mission_unlocked',
+          new Date().toISOString(),
+          {
+            admin_name: input.admin_name,
+            reason: input.reason,
+            restored_from_archive_id: input.archiveId,
+            resulting_status: 'finished',
+            storage_state: 'live',
+          },
+        ),
+      }, unlockedMission, null, null)
       save()
       return unlockedMission
     },
@@ -2306,7 +2844,7 @@ function normalizeBrowserReplayInput(input: MissionReplayReadInput): {
 }
 
 /** Returns one bounded searchable Search Operations page with production-shaped projections. */
-function buildBrowserSearchOperationPage(
+export function buildBrowserSearchOperationPage(
   state: BrowserHarnessState,
   input: {
     readonly missionId: string
@@ -2487,7 +3025,7 @@ function readBrowserEligibleReplayOutingIds(
 }
 
 /** Reads one bounded searchable Replay outing-choice page in browser validation. */
-function buildBrowserReplayFilterPage(
+export function buildBrowserReplayFilterPage(
   state: BrowserHarnessState,
   input: MissionReplayReadInput & {
     readonly filterKind: 'outing'
@@ -2552,7 +3090,7 @@ function decodeBrowserReplayFilterCursor(
 }
 
 /** Uses the production replay port with explicit harness completeness limits. */
-async function buildBrowserReplay(
+export async function buildBrowserReplay(
   state: BrowserHarnessState,
   input: MissionReplayReadInput,
 ): Promise<MissionReplayReadResult> {
@@ -3436,6 +3974,9 @@ function readHarnessState(): BrowserHarnessState {
       searchAssignments: [],
       searchPasses: [],
       missionEvents: [],
+      missionArchives: [],
+      archiveCredentialDigests: {},
+      archiveSnapshots: [],
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
@@ -3463,6 +4004,9 @@ function readHarnessState(): BrowserHarnessState {
       searchAssignments: [],
       searchPasses: [],
       missionEvents: [],
+      missionArchives: [],
+      archiveCredentialDigests: {},
+      archiveSnapshots: [],
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
@@ -3473,7 +4017,12 @@ function readHarnessState(): BrowserHarnessState {
   try {
     const parsed = JSON.parse(stored) as Partial<BrowserHarnessState>
     return {
-      missions: Array.isArray(parsed.missions) ? parsed.missions : [],
+      missions: Array.isArray(parsed.missions)
+        ? parsed.missions.map((mission) => ({
+            ...mission,
+            storage_state: mission.storage_state === 'archived' ? 'archived' : 'live',
+          }))
+        : [],
       devices: Array.isArray(parsed.devices) ? parsed.devices : [],
       positions: Array.isArray(parsed.positions) ? parsed.positions : [],
       outings: Array.isArray(parsed.outings) ? parsed.outings : [],
@@ -3501,6 +4050,11 @@ function readHarnessState(): BrowserHarnessState {
       searchAssignments: Array.isArray(parsed.searchAssignments) ? parsed.searchAssignments : [],
       searchPasses: Array.isArray(parsed.searchPasses) ? parsed.searchPasses : [],
       missionEvents: Array.isArray(parsed.missionEvents) ? parsed.missionEvents : [],
+      missionArchives: Array.isArray(parsed.missionArchives) ? parsed.missionArchives : [],
+      archiveCredentialDigests: readBrowserArchiveCredentialDigests(
+        parsed.archiveCredentialDigests,
+      ),
+      archiveSnapshots: Array.isArray(parsed.archiveSnapshots) ? parsed.archiveSnapshots : [],
       openedPaths: Array.isArray(parsed.openedPaths) ? parsed.openedPaths : [],
       currentMissionId:
         typeof parsed.currentMissionId === 'string' ? parsed.currentMissionId : null,
@@ -3527,6 +4081,9 @@ function readHarnessState(): BrowserHarnessState {
       searchAssignments: [],
       searchPasses: [],
       missionEvents: [],
+      missionArchives: [],
+      archiveCredentialDigests: {},
+      archiveSnapshots: [],
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
@@ -3535,7 +4092,149 @@ function readHarnessState(): BrowserHarnessState {
   }
 }
 
+/** Retains only complete non-secret archive credential verifiers from browser session state. */
+function readBrowserArchiveCredentialDigests(
+  value: unknown,
+): Readonly<Record<string, BrowserArchiveCredentialDigests>> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {}
+  const digests: Record<string, BrowserArchiveCredentialDigests> = {}
+  for (const [archiveId, candidate] of Object.entries(value)) {
+    if (archiveId.length < 1 || archiveId.length > 200 || hasBrowserControlCharacter(archiveId)
+      || candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+    const verifier = candidate as Partial<BrowserArchiveCredentialDigests>
+    if (!/^[a-f0-9]{64}$/u.test(verifier.passphraseDigest ?? '')
+      || !/^[a-f0-9]{64}$/u.test(verifier.recoveryCodeDigest ?? '')) continue
+    digests[archiveId] = {
+      passphraseDigest: verifier.passphraseDigest as string,
+      recoveryCodeDigest: verifier.recoveryCodeDigest as string,
+    }
+  }
+  return digests
+}
+
+/** Detects ASCII control characters without embedding them in a regular expression. */
+function hasBrowserControlCharacter(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0)
+    return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)
+  })
+}
+
+/** Returns the highest retained archive revision for one browser mission. */
+function currentBrowserMissionArchive(
+  state: BrowserHarnessState,
+  missionId: string,
+): MissionArchiveInfo | undefined {
+  return state.missionArchives
+    .filter((archive) => archive.mission_id === missionId)
+    .toSorted((left, right) => right.revision_sequence - left.revision_sequence
+      || right.created_at.localeCompare(left.created_at))[0]
+}
+
+/** Reconstructs the active correction authority bound to one exact predecessor revision. */
+function readBrowserArchiveSupplement(
+  state: BrowserHarnessState,
+  missionId: string,
+  predecessor: MissionArchiveInfo,
+): Readonly<{ authority: string; reason: string }> {
+  const events = state.missionEvents.filter((event) => event.mission_id === missionId)
+  let finalizedIndex = -1
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index]?.event_type === 'mission_finalized') {
+      finalizedIndex = index
+      break
+    }
+  }
+  let unlocked: MissionEvent | undefined
+  for (let index = events.length - 1; index > finalizedIndex; index -= 1) {
+    if (events[index]?.event_type === 'mission_unlocked') {
+      unlocked = events[index]
+      break
+    }
+  }
+  let finalizedDetails: Record<string, unknown> = {}
+  let unlockDetails: Record<string, unknown> = {}
+  try {
+    finalizedDetails = JSON.parse(events[finalizedIndex]?.details_json ?? '{}') as Record<string, unknown>
+    unlockDetails = JSON.parse(unlocked?.details_json ?? '{}') as Record<string, unknown>
+  } catch {
+    throw new Error('Mission correction authorization audit is invalid.')
+  }
+  const authority = typeof unlockDetails.admin_name === 'string'
+    ? unlockDetails.admin_name.trim()
+    : ''
+  const reason = typeof unlockDetails.reason === 'string' ? unlockDetails.reason.trim() : ''
+  if (finalizedIndex < 0 || finalizedDetails.archive_id !== predecessor.id
+    || unlocked === undefined
+    || (typeof unlockDetails.restored_from_archive_id === 'string'
+      && unlockDetails.restored_from_archive_id !== predecessor.id)
+    || authority === '' || new TextEncoder().encode(authority).byteLength > 200
+    || reason === '' || new TextEncoder().encode(reason).byteLength > 4_000) {
+    throw new Error('Mission correction predecessor or authorization is invalid.')
+  }
+  return { authority, reason }
+}
+
 const MAX_AUDIT_EVENT_LIMIT = 5_000
+
+/** Captures every browser-harness row belonging to one finalized archive revision. */
+function captureBrowserArchiveSnapshot(
+  state: BrowserHarnessState,
+  missionId: string,
+  archiveId: string,
+): BrowserArchiveMissionSnapshot {
+  const importIds = new Set(
+    state.gpxImports.filter((entry) => entry.mission_id === missionId).map((entry) => entry.id),
+  )
+  return Object.freeze({
+    archiveId,
+    missionId,
+    mission: requireMission(missionId, state.missions),
+    devices: Object.freeze(state.devices.filter((entry) => entry.mission_id === missionId)),
+    positions: Object.freeze(state.positions.filter((entry) => entry.mission_id === missionId)),
+    outings: Object.freeze(state.outings.filter((entry) => entry.mission_id === missionId)),
+    missionTeams: Object.freeze(state.missionTeams.filter((entry) => entry.mission_id === missionId)),
+    missionParticipants: Object.freeze(state.missionParticipants.filter((entry) => entry.mission_id === missionId)),
+    groupMembershipEvents: Object.freeze(state.groupMembershipEvents.filter((entry) => entry.mission_id === missionId)),
+    participantBackfillCheckpoints: Object.freeze(state.participantBackfillCheckpoints.filter((entry) => entry.mission_id === missionId)),
+    markers: Object.freeze(state.markers.filter((entry) => entry.mission_id === missionId)),
+    drawings: Object.freeze(state.drawings.filter((entry) => entry.mission_id === missionId)),
+    helicopters: Object.freeze(state.helicopters.filter((entry) => entry.mission_id === missionId)),
+    gpxImports: Object.freeze(state.gpxImports.filter((entry) => entry.mission_id === missionId)),
+    gpxEvidencePoints: Object.freeze(state.gpxEvidencePoints.filter((entry) => importIds.has(entry.importId))),
+    searchAreas: Object.freeze(state.searchAreas.filter((entry) => entry.mission_id === missionId)),
+    searchAssignments: Object.freeze(state.searchAssignments.filter((entry) => entry.mission_id === missionId)),
+    searchPasses: Object.freeze(state.searchPasses.filter((entry) => entry.mission_id === missionId)),
+    missionEvents: Object.freeze(state.missionEvents.filter((entry) => entry.mission_id === missionId)),
+  })
+}
+
+/** Counts synthetic mission-scoped fixture rows without claiming desktop cleanup proof. */
+function countBrowserSyntheticMissionRows(
+  state: BrowserHarnessState,
+  missionId: string,
+): number {
+  const missionScopedCollections: readonly (readonly { readonly mission_id: string }[])[] = [
+    state.devices,
+    state.positions,
+    state.outings,
+    state.missionTeams,
+    state.missionParticipants,
+    state.groupMembershipEvents,
+    state.participantBackfillCheckpoints,
+    state.markers,
+    state.drawings,
+    state.helicopters,
+    state.gpxImports,
+    state.searchAreas,
+    state.searchAssignments,
+    state.searchPasses,
+  ]
+  return missionScopedCollections.reduce(
+    (total, rows) => total + rows.filter((row) => row.mission_id === missionId).length,
+    0,
+  )
+}
 
 /**
  * Clamps a requested audit-event limit to the bounded range, defaulting when unset.
@@ -3668,7 +4367,8 @@ function requireMission(missionId: string, missions: readonly Mission[]): Missio
 
 function ensureMissionMutable(missionId: string, missions: readonly Mission[]): Mission {
   const mission = requireMission(missionId, missions)
-  if (mission.status === 'finished' || mission.status === 'finalized') {
+  const correctionAuthorized = (mission as BrowserCorrectionMission).correction_authorized === true
+  if ((mission.status === 'finished' && !correctionAuthorized) || mission.status === 'finalized') {
     throw new Error(
       `Cannot write data to finished mission ${missionId}; resume the mission or unlock it first.`,
     )
@@ -3683,7 +4383,8 @@ function requireMutableParticipantMission(
   missions: readonly Mission[],
 ): Mission {
   const mission = requireMission(missionId, missions)
-  if (mission.status === 'finished' || mission.status === 'finalized') {
+  const correctionAuthorized = (mission as BrowserCorrectionMission).correction_authorized === true
+  if ((mission.status === 'finished' && !correctionAuthorized) || mission.status === 'finalized') {
     throw new Error('Finished and finalized missions are read-only for participant changes.')
   }
   return mission
@@ -4284,6 +4985,129 @@ function calculatePausedSeconds(pauseTime: string | null): number {
   }
 
   return Math.max(0, Math.floor((Date.now() - Date.parse(pauseTime)) / 1000))
+}
+
+let browserArchiveOperationSequence = 0
+
+/** Creates one UUID-shaped operation identity for the browser-only custody flow. */
+function createBrowserArchiveOperationId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  browserArchiveOperationSequence += 1
+  const seed = createBrowserSyntheticArchiveDigest(
+    `${Date.now()}\u0000${browserArchiveOperationSequence}`,
+  ).slice(0, 32)
+  return `${seed.slice(0, 8)}-${seed.slice(8, 12)}-4${seed.slice(13, 16)}`
+    + `-8${seed.slice(17, 20)}-${seed.slice(20, 32)}`
+}
+
+/** Renders one browser-only eight-by-five Crockford recovery-code stand-in. */
+function createBrowserArchiveRecoveryCode(operationId: string): string {
+  const seed = createBrowserSyntheticArchiveDigest(`recovery\u0000${operationId}`)
+  const characters = Array.from({ length: 40 }, (_unused, index) => {
+    const first = Number.parseInt(seed[(index * 2) % seed.length] ?? '0', 16)
+    const second = Number.parseInt(seed[(index * 2 + 1) % seed.length] ?? '0', 16)
+    return BROWSER_ARCHIVE_RECOVERY_ALPHABET[(first * 16 + second) % 32]
+  })
+  return Array.from({ length: 8 }, (_unused, index) =>
+    characters.slice(index * 5, index * 5 + 5).join('')).join('-')
+}
+
+/** Rejects an operation identity that does not match the desktop UUID envelope. */
+function normalizeBrowserArchiveOperationId(value: string): string {
+  if (typeof value !== 'string' || !BROWSER_ARCHIVE_OPERATION_ID.test(value)) {
+    throw new Error('Mission archive operation identity is invalid.')
+  }
+  return value
+}
+
+/** Mirrors one closed desktop cleanup failure without reflecting credentials. */
+function browserCleanupError(
+  code: 'ARCHIVE_CLEANUP_NOT_ELIGIBLE' | 'ARCHIVE_CLEANUP_WRONG_KEY',
+  message: string,
+): Error & { readonly code: typeof code } {
+  return Object.assign(new Error(message), { code })
+}
+
+/** Applies the desktop passphrase floor in browser validation mode. */
+function normalizeBrowserArchivePassphrase(value: string): string {
+  if (typeof value !== 'string') {
+    throw new Error('Archive passphrase is invalid.')
+  }
+  const encodedBytes = new TextEncoder().encode(value).byteLength
+  const classes = [/[a-z]/u, /[A-Z]/u, /[0-9]/u, /[^A-Za-z0-9]/u]
+    .filter((pattern) => pattern.test(value)).length
+  const containsControlCharacter = Array.from(value)
+    .some((character) => character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127)
+  if (value.length < 14 || encodedBytes > 1_024 || containsControlCharacter || classes < 3) {
+    throw new Error(
+      'Archive passphrase must contain at least 14 characters, combine three character classes, and fit the supported bound.',
+    )
+  }
+  return value
+}
+
+/** Requires the canonical per-archive recovery-code rendering. */
+function normalizeBrowserArchiveRecoveryCode(value: string): string {
+  if (typeof value !== 'string' || !BROWSER_ARCHIVE_RECOVERY_CODE.test(value)) {
+    throw new Error('Archive recovery code must be one exact eight-by-five Crockford code.')
+  }
+  return value
+}
+
+/** Drops expired browser-only recovery confirmations without persisting secrets. */
+function sweepExpiredBrowserArchiveIssuances(
+  issuances: Map<string, BrowserArchiveRecoveryIssuance>,
+): void {
+  const observedAt = Date.now()
+  for (const [operationId, issuance] of issuances) {
+    if (issuance.expiresAtMs <= observedAt) issuances.delete(operationId)
+  }
+}
+
+/** Produces a stable non-cryptographic browser fixture digest with SHA-256 field shape. */
+function createBrowserSyntheticArchiveDigest(value: string): string {
+  return Array.from({ length: 8 }, (_unused, blockIndex) => {
+    let hash = (0x811c9dc5 ^ blockIndex) >>> 0
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index) + blockIndex * 257
+      hash = Math.imul(hash, 0x01000193) >>> 0
+    }
+    return hash.toString(16).padStart(8, '0')
+  }).join('')
+}
+
+/** Digests one browser-only secret so session state never retains plaintext custody data. */
+function createBrowserSyntheticSecretDigest(value: string): string {
+  return createBrowserSyntheticArchiveDigest(`browser-secret\u0000${value}`)
+}
+
+/** Estimates a deterministic positive ciphertext size for one mission-scoped browser fixture. */
+function createBrowserSyntheticArchiveSize(
+  state: BrowserHarnessState,
+  missionId: string,
+): number {
+  const missionScopedRows = [
+    state.missions,
+    state.devices,
+    state.positions,
+    state.outings,
+    state.missionTeams,
+    state.missionParticipants,
+    state.groupMembershipEvents,
+    state.participantBackfillCheckpoints,
+    state.markers,
+    state.drawings,
+    state.helicopters,
+    state.gpxImports,
+    state.searchAreas,
+    state.searchAssignments,
+    state.searchPasses,
+    state.missionEvents,
+  ].reduce((count, entries) => count + entries.filter((entry) =>
+    'mission_id' in entry && entry.mission_id === missionId).length, 0)
+  return 4_096 + missionScopedRows * 512
 }
 
 function createId(prefix: string): string {

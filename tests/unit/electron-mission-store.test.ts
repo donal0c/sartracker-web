@@ -103,6 +103,7 @@ type ElectronMissionStore = {
   readonly runMarkerAttachmentIngest: (
     missionId: string,
     writeAttachment: () => Promise<string>,
+    cleanupAttachment?: (attachmentPath: string) => Promise<void>,
   ) => Promise<string>
   readonly info: () => Promise<{
     readonly schema_version: number
@@ -503,6 +504,12 @@ describe('electron mission store', () => {
     }
   })
 
+  it('rejects mission names that cannot be entered in the exact cleanup confirmation', async () => {
+    store = await createStore()
+
+    await expect(store.createMission({ name: 'é'.repeat(513) })).rejects.toThrow(/mission name|1,024|1024/iu)
+  })
+
   it('creates WAL-backed mission storage under userData and survives store restart', async () => {
     store = await createStore()
 
@@ -758,8 +765,28 @@ describe('electron mission store', () => {
     )
   })
 
+  it('does not inspect mission events when no finalization fence needs startup recovery', async () => {
+    const originalPrepare = Database.prototype.prepare
+    let unboundedFenceJoinCount = 0
+    Database.prototype.prepare = function prepareWithFenceObservation(sql: string) {
+      if (
+        sql.includes('FROM mission_finalization_fences AS fence')
+        && sql.includes('INNER JOIN mission_events AS event')
+      ) {
+        unboundedFenceJoinCount += 1
+      }
+      return originalPrepare.call(this, sql)
+    }
+    try {
+      store = await createStore()
+      expect(unboundedFenceJoinCount).toBe(0)
+    } finally {
+      Database.prototype.prepare = originalPrepare
+    }
+  })
+
   it('migrates a schema-6 store to the durable tracking-history checkpoint schema', async () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(12)
+    expect(CURRENT_SCHEMA_VERSION).toBe(13)
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-checkpoint-migration-'))
     const databasePath = path.join(userDataPath, 'mission-store.sqlite')
     const legacyDb = new Database(databasePath)
@@ -773,7 +800,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -788,7 +815,7 @@ describe('electron mission store', () => {
         migratedDb
           .prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
           .get(),
-      ).toEqual({ value: '12' })
+      ).toEqual({ value: '13' })
     } finally {
       migratedDb.close()
     }
@@ -830,7 +857,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -890,7 +917,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -1030,7 +1057,7 @@ describe('electron mission store', () => {
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM outings').get()).toEqual({ count: 0 })
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM devices').get()).toEqual({ count: 2 })
       expect(migratedDb.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
-        .toEqual({ value: '12' })
+        .toEqual({ value: '13' })
       expect(migratedDb.prepare(`SELECT name FROM sqlite_master
           WHERE type = 'index' AND name IN (
             'idx_mission_participants_active_device',
@@ -1393,9 +1420,10 @@ describe('electron mission store', () => {
       userDataPath,
       runMissionReviewReadQueryInWorker,
     })
+    const mission = await store.createMission({ name: 'Cancelable Mission Review' })
     const requestId = 'renderer-a:mission-review:request-1'
     const review = store.readMissionReview(
-      { missionId: 'mission-1', includeTelemetry: false, auditLimit: 501 },
+      { missionId: mission.id, includeTelemetry: false, auditLimit: 501 },
       requestId,
     )
     await vi.waitFor(() =>
@@ -1417,13 +1445,16 @@ describe('electron mission store', () => {
       completions.push(() => resolve({ auditEvents: [], breadcrumbCount: 0 }))
     }))
     store = await createStore({ runMissionReviewReadQueryInWorker })
+    const firstMission = await store.createMission({ name: 'First serialized Review' })
+    await store.finishMission(firstMission.id)
+    const secondMission = await store.createMission({ name: 'Second serialized Review' })
     const first = store.readMissionReview({
-      missionId: 'mission-1',
+      missionId: firstMission.id,
       includeTelemetry: false,
       auditLimit: 5,
     }, 'review-first')
     const second = store.readMissionReview({
-      missionId: 'mission-2',
+      missionId: secondMission.id,
       includeTelemetry: false,
       auditLimit: 5,
     }, 'review-second')
@@ -1534,6 +1565,7 @@ describe('electron mission store', () => {
       }, `oracle-${includeTelemetry}`)).resolves.toEqual({
         auditEvents: expectedAudit,
         breadcrumbCount: expectedCount,
+        correctionAuthorized: false,
       })
     }
   })
@@ -2390,6 +2422,58 @@ describe('electron mission store', () => {
     expect(JSON.parse(acknowledged?.details_json ?? '{}')).toMatchObject({
       admin_name: 'Duty Admin',
       reason: 'Runtime failed during the 22:14 tracking poll; incident log retained.',
+    })
+    const database = new Database(path.join(userDataPath!, 'mission-store.sqlite'), {
+      readonly: true,
+    })
+    try {
+      const projection = database.prepare(`SELECT key, value FROM metadata
+        WHERE key LIKE 'mission_evidence_loss_acknowledgement:%'`).get()
+      expect(projection?.key).toMatch(/^mission_evidence_loss_acknowledgement:[a-f0-9]{64}$/u)
+      expect(JSON.parse(String(projection?.value))).toMatchObject({
+        version: 1,
+        missionId: mission.id,
+        adminName: 'Duty Admin',
+        reason: 'Runtime failed during the 22:14 tracking poll; incident log retained.',
+        lossToken: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        eventId: expect.any(String),
+      })
+    } finally {
+      database.close()
+    }
+  })
+
+  it('uses the legacy audit fallback only when acknowledged loss still needs it [DON-276]', async () => {
+    store = await createStore({
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const mission = await store.createMission({ name: 'Legacy Acknowledged Evidence Gap' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+    await store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Legacy audit fallback remains fail-closed and exact.',
+    })
+    store.close()
+
+    const database = new Database(path.join(userDataPath!, 'mission-store.sqlite'))
+    try {
+      database.prepare(`DELETE FROM metadata
+        WHERE key LIKE 'mission_evidence_loss_acknowledgement:%'`).run()
+    } finally {
+      database.close()
+    }
+    store = createElectronMissionStore({
+      userDataPath: userDataPath!,
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+
+    await expect(store.finalizeMission(mission.id)).resolves.toMatchObject({
+      mission: { status: 'finalized' },
     })
   })
 
@@ -4083,6 +4167,29 @@ describe('electron mission store', () => {
     expect(
       archiveSucceededEvents.map((event) => JSON.parse(event.details_json ?? '{}').archive_path),
     ).toEqual([firstFinalize.archive.archive_path, secondFinalize.archive.archive_path])
+  })
+
+  it('rejects blank and oversized correction reasons before unlocking a finalized mission', async () => {
+    store = await createStore({ readAdminRoster: async () => ['Duty Admin'] })
+
+    for (const reason of ['', 'x'.repeat(4_001)]) {
+      const mission = await store.createMission({
+        name: `Invalid correction reason ${reason.length}`,
+      })
+      await store.finishMission(mission.id)
+      await store.finalizeMission(mission.id)
+
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason,
+      })).rejects.toThrow(/reason|correction authorization/iu)
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
+      const unlockEvents = (await store.listMissionEvents(mission.id)).filter(
+        (event) => event.event_type === 'mission_unlocked',
+      )
+      expect(unlockEvents).toHaveLength(0)
+    }
   })
 
   it('rejects a stale admin unlock after another unlock and re-finalization [DON-278]', async () => {

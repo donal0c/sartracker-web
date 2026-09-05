@@ -186,6 +186,7 @@ export function SearchOperationsTab(props: {
   readonly controller: MissionReviewController | null
   readonly operations: MissionReviewRuntimeState['searchOperations']
   readonly readOnly: boolean
+  readonly hideMutationControls: boolean
   readonly reviewBusy: boolean
   readonly writeBlocked: boolean
 }) {
@@ -279,7 +280,7 @@ export function SearchOperationsTab(props: {
     {props.reviewBusy ? <p className="text-xs text-stone-400" data-testid="search-operations-refreshing" role="status">Updating retained Search Operations evidence…</p> : null}
     {props.writeBlocked ? <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="search-operations-write-blocked">Evidence entry is disabled until Review refresh succeeds. Retained evidence search and paging remain available.</p> : null}
     {props.readOnly ? <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="search-operations-read-only">This finished or finalized mission is permanently read-only. Retained assignments and passes remain visible for evidence review; new records require an active mission.</p> : null}
-    {props.operations.areas.length > 0 ? <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="search-operation-entry">
+    {!props.hideMutationControls && props.operations.areas.length > 0 ? <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="search-operation-entry">
       <p className="mb-3 text-xs font-medium text-amber-200">Pass outcomes are coordinator-declared. Coverage remains advisory only and never declares an area searched.</p>
       <fieldset
         aria-disabled={props.readOnly || props.reviewBusy || props.writeBlocked}

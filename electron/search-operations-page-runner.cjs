@@ -7,10 +7,30 @@ const {
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'search-operations-page-worker.cjs')
 
+/** Creates one stable non-reflective cancellation failure. */
+function createAbortError() {
+  const error = new Error('Search Operations page worker was cancelled.')
+  error.name = 'AbortError'
+  error.code = 'SEARCH_OPERATIONS_PAGE_CANCELLED'
+  return error
+}
+
 /** Runs one bounded Search Operations page read outside Electron's main isolate. */
 function runSearchOperationPageInWorker(input) {
   const query = normalizeSearchOperationPageQuery(input.query)
   const workerExited = createDeferred()
+  if (input.signal !== undefined
+    && (typeof input.signal?.addEventListener !== 'function'
+      || typeof input.signal?.removeEventListener !== 'function')) {
+    throw new Error('Search Operations page worker signal is invalid.')
+  }
+  if (input.signal?.aborted === true) {
+    const rejected = Promise.reject(createAbortError())
+    void rejected.catch(() => undefined)
+    workerExited.resolve()
+    Object.defineProperty(rejected, 'workerExited', { value: workerExited.promise })
+    return rejected
+  }
   const result = new Promise((resolve, reject) => {
     let worker
     try {
@@ -28,7 +48,10 @@ function runSearchOperationPageInWorker(input) {
     const timeout = setTimeout(() => rejectAndTerminate(
       new Error('Search Operations page worker timed out.'),
     ), 30_000)
-    const cleanup = () => clearTimeout(timeout)
+    const cleanup = () => {
+      clearTimeout(timeout)
+      input.signal?.removeEventListener('abort', handleAbort)
+    }
     const rejectAndTerminate = (error) => {
       if (settled) return
       settled = true
@@ -36,6 +59,9 @@ function runSearchOperationPageInWorker(input) {
       reject(error)
       void worker.terminate().catch(() => undefined)
     }
+    const handleAbort = () => rejectAndTerminate(createAbortError())
+    input.signal?.addEventListener('abort', handleAbort, { once: true })
+    if (input.signal?.aborted === true) handleAbort()
     worker.once('message', (message) => {
       if (message?.type !== 'complete' || !Number.isInteger(message.workerThreadId)) {
         rejectAndTerminate(new Error(

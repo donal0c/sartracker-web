@@ -6,6 +6,7 @@ import { useGpxStore } from '../gpx/gpx-store'
 import { useMarkerStore } from '../markers/marker-store'
 import type {
   GpxImportIssue,
+  MissionArchiveInfo,
   UpsertDrawingInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
@@ -54,6 +55,10 @@ type BrowserHarnessApi = {
     readonly markers?: readonly UpsertMarkerInput[]
     readonly drawings?: readonly UpsertDrawingInput[]
   }) => Promise<void>
+  /** Browser-only setup for exercising the sealed verification-retry UI. */
+  readonly prepareArchiveVerificationRetryFixture: (
+    archiveId: string,
+  ) => Promise<MissionArchiveInfo>
   readonly readState: () => ReturnType<typeof readBrowserHarnessState>
   readonly reset: () => void
 }
@@ -214,6 +219,8 @@ export function installBrowserHarnessApi(): void {
       await useMarkerStore.getState().controller?.refreshMission(missionId)
       await useDrawingStore.getState().controller?.refreshMission(missionId)
     },
+    prepareArchiveVerificationRetryFixture: (archiveId) =>
+      getBrowserHarnessStore().prepareArchiveVerificationRetryFixture(archiveId),
     readState: () => readBrowserHarnessState(),
     reset: () => {
       operationalPositionRetention.reset()

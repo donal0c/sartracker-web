@@ -603,8 +603,8 @@ describe('mission evidence versioning [DON-277]', () => {
     db.close()
 
     store = createElectronMissionStore({ userDataPath })
-    expect(CURRENT_SCHEMA_VERSION).toBe(12)
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    expect(CURRENT_SCHEMA_VERSION).toBe(13)
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const inspection = openDatabase(path.join(userDataPath, 'mission-store.sqlite'))
       const count = Number(inspection.prepare(
@@ -1484,7 +1484,7 @@ describe('mission evidence versioning [DON-277]', () => {
     db.close()
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
     const migratedDb = openDatabase(databaseFile)
     expect(migratedDb.prepare(`SELECT name FROM sqlite_master
       WHERE type = 'index' AND name = 'idx_positions_replay_known_fix'`).get()).toBeUndefined()

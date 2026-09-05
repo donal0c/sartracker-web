@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
@@ -25,6 +26,7 @@ const { runMissionReviewReadQueryInWorker } = require(
   }) => Promise<{
     readonly auditEvents: readonly { readonly id: string }[]
     readonly breadcrumbCount: number
+    readonly correctionAuthorized: boolean
     readonly workerThreadId: number
   }> & { readonly workerExited?: Promise<void> }
 }
@@ -44,6 +46,9 @@ describe('Mission Review read worker boundary [DON-251]', () => {
     const databasePath = path.join(tempDirectory, 'mission-store.sqlite')
     const database = new Database(databasePath)
     database.exec(`
+      CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE missions (id TEXT PRIMARY KEY, status TEXT NOT NULL);
+      CREATE TABLE mission_cleanup_journal (mission_id TEXT PRIMARY KEY, state TEXT NOT NULL);
       CREATE TABLE positions (
         id TEXT PRIMARY KEY,
         mission_id TEXT NOT NULL,
@@ -57,6 +62,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
         timestamp TEXT NOT NULL,
         details_json TEXT
       );
+      INSERT INTO missions VALUES ('mission-1', 'active');
       INSERT INTO positions VALUES
         ('position-1', 'mission-1', 'device-1', '2026-08-20T08:00:00.000Z'),
         ('position-2', 'mission-1', 'device-1', '2026-08-20T08:01:00.000Z');
@@ -82,6 +88,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
     expect(Object.keys(result).sort()).toEqual([
       'auditEvents',
       'breadcrumbCount',
+      'correctionAuthorized',
       'workerThreadId',
     ])
   })
@@ -109,6 +116,85 @@ describe('Mission Review read worker boundary [DON-251]', () => {
     clearInterval(timer)
 
     expect(result.breadcrumbCount).toBe(0)
+    expect(Math.max(...timerGaps)).toBeLessThan(200)
+  })
+
+  it('rejects an over-8 MiB details payload inside the worker before structured clone', async () => {
+    tempDirectory = await mkdtemp(path.join(tmpdir(), 'sartracker-review-worker-output-bound-'))
+    const databasePath = path.join(tempDirectory, 'mission-store.sqlite')
+    const oversizedPostMessageSentinel = `${databasePath}.oversized-post-message`
+    const database = new Database(databasePath)
+    database.exec(`
+      CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE missions (id TEXT PRIMARY KEY, status TEXT NOT NULL);
+      CREATE TABLE mission_cleanup_journal (mission_id TEXT PRIMARY KEY, state TEXT NOT NULL);
+      CREATE TABLE positions (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL
+      );
+      CREATE TABLE mission_events (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        details_json TEXT
+      );
+      INSERT INTO missions VALUES ('mission-1', 'active');
+    `)
+    database.prepare(`INSERT INTO mission_events (
+      id, mission_id, event_type, timestamp, details_json
+    ) VALUES (?, ?, ?, ?, ?)`).run(
+      'oversized-details-event',
+      'mission-1',
+      'marker_created',
+      '2026-08-20T08:00:00.000Z',
+      JSON.stringify({ evidence: 'A'.repeat(8 * 1024 * 1024) }),
+    )
+    database.close()
+
+    const timerGaps: number[] = []
+    let lastTimerAt = performance.now()
+    const timer = setInterval(() => {
+      const now = performance.now()
+      timerGaps.push(now - lastTimerAt)
+      lastTimerAt = now
+    }, 5)
+    let workerFailure: unknown
+    try {
+      await runMissionReviewReadQueryInWorker({
+        databasePath,
+        query: {
+          missionId: 'mission-1',
+          includeTelemetry: false,
+          auditLimit: 1,
+        },
+        workerPath: path.resolve(
+          'tests/fixtures/mission-review-read-query-post-message-probe-worker.cjs',
+        ),
+      })
+    } catch (error) {
+      workerFailure = error
+    } finally {
+      clearInterval(timer)
+    }
+
+    let oversizedPostMessageObserved = true
+    try {
+      await access(oversizedPostMessageSentinel, constants.F_OK)
+    } catch (error) {
+      oversizedPostMessageObserved = (error as NodeJS.ErrnoException).code !== 'ENOENT'
+    }
+    expect.soft(
+      oversizedPostMessageObserved,
+      'the worker must reject before an oversized result reaches postMessage',
+    ).toBe(false)
+    expect.soft(workerFailure).toBeInstanceOf(Error)
+    expect.soft(String(workerFailure)).toMatch(
+      /8\s*MiB|8388608|result.*limit|payload.*limit|output.*limit/iu,
+    )
+    expect(timerGaps.length).toBeGreaterThan(0)
     expect(Math.max(...timerGaps)).toBeLessThan(200)
   })
 

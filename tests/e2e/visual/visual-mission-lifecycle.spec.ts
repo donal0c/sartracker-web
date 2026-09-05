@@ -12,7 +12,7 @@
  * LIFE-SAFETY CRITICAL: Mission timers drive search coordination. If the elapsed
  * or active search timers display incorrectly, teams may miscalculate search windows.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import {
   navigateToHarness,
   startMission,
@@ -21,6 +21,8 @@ import {
 import {
   captureElementAndRegister,
 } from './helpers/verification-manifest'
+
+const SYNTHETIC_ARCHIVE_PASSPHRASE = 'Synthetic!Archive123'
 
 test.describe('Visual: Mission Lifecycle', () => {
   test.beforeEach(async ({ page }) => {
@@ -282,6 +284,67 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('archive custody surface makes one-time recovery controls explicit', async ({ page }) => {
+    await startMission(page, 'Synthetic Archive Custody Visual')
+    await page.getByTestId('mission-finish-btn').click()
+    await page
+      .getByTestId('mission-finish-dialog')
+      .getByRole('button', { name: 'Confirm Finish' })
+      .click()
+    await page.getByTestId('mission-finalize-btn').click()
+
+    const custodyDialog = page.getByTestId('mission-archive-custody-dialog')
+    await expect(custodyDialog).toBeVisible()
+    await expect(page.getByTestId('archive-passphrase')).toHaveAttribute('type', 'password')
+    await expect(page.getByTestId('archive-passphrase-confirmation')).toHaveAttribute(
+      'type',
+      'password',
+    )
+    await page.getByTestId('archive-passphrase').fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+    await page
+      .getByTestId('archive-passphrase-confirmation')
+      .fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+    await page.getByTestId('archive-issue-recovery-code').click()
+
+    const recoveryCode = (await page.getByTestId('archive-recovery-code').innerText()).trim()
+    expect(recoveryCode).toMatch(/^[0-9A-HJKMNP-TV-Z]{5}(?:-[0-9A-HJKMNP-TV-Z]{5}){7}$/)
+    await page.getByTestId('archive-recovery-code-confirmation').fill(recoveryCode)
+    await expect(page.getByTestId('archive-recovery-code-confirmation')).toHaveAttribute(
+      'type',
+      'password',
+    )
+    await expect(page.getByTestId('archive-finalize')).toBeEnabled()
+    await expect(custodyDialog.getByRole('button', { name: /copy/i })).toHaveCount(0)
+    await expect(custodyDialog.getByText(/clipboard/i)).toHaveCount(0)
+
+    await captureElementAndRegister(page, 'mission-archive-custody-dialog', {
+      testId: 'mission-archive-custody-issued-code',
+      testName: 'Encrypted archive custody with one-time recovery code',
+      area: 'mission',
+      severity: 'critical',
+      verificationPrompt: `Verify only the visible facts in this element-scoped screenshot of the browser-validation archive custody card. The test credentials are synthetic; this image does not prove encryption:
+1. The card should be headed "ARCHIVE AND LOCK MISSION" under an "ENCRYPTED MISSION ARCHIVE" label.
+2. It should state that the live mission remains intact if archive creation or verification fails.
+3. A clearly visible hyphenated recovery code should be accompanied by wording that it is shown only for this archive attempt.
+4. The recovery-code confirmation field should visibly render masked characters rather than the typed code.
+5. The primary action should say "Create, seal, and verify archive".
+6. A cancellation action should be visible.
+7. No Copy, clipboard, delete, or cleanup action should be visible.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'archive custody dialog is visible',
+        'both passphrase fields are password inputs before issuance',
+        'recovery code has the browser-harness eight-by-five grouped shape',
+        'recovery confirmation is a password input',
+        'create, seal, and verify action is enabled after exact typed-back confirmation',
+        'no Copy or clipboard affordance exists in the custody dialog',
+      ],
+    })
+
+    await page.getByTestId('archive-cancel').click()
+    await expect(custodyDialog).toBeHidden()
+  })
+
   test('known evidence loss acknowledgement stays explicit and cannot imply Complete', async ({ page }) => {
     await page.evaluate(() => {
       window.localStorage.setItem(
@@ -304,8 +367,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await page.evaluate(async (id) => {
       await window.__SARTRACKER_BROWSER_HARNESS__?.injectEvidenceLoss(id)
     }, missionId!)
-    await page.getByTestId('mission-finalize-btn').click()
-    await page.getByTestId('mission-finalize-confirm').click()
+    await finalizeWithSyntheticArchiveCustody(page)
 
     await expect(page.getByTestId('mission-evidence-loss-dialog')).toBeVisible()
     await captureElementAndRegister(page, 'mission-evidence-loss-dialog', {
@@ -363,3 +425,17 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await page.getByRole('button', { name: 'Start Fresh' }).click()
   })
 })
+
+async function finalizeWithSyntheticArchiveCustody(page: Page): Promise<void> {
+  await page.getByTestId('mission-finalize-btn').click()
+  const dialog = page.getByTestId('mission-archive-custody-dialog')
+  await expect(dialog).toBeVisible()
+  await page.getByTestId('archive-passphrase').fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+  await page
+    .getByTestId('archive-passphrase-confirmation')
+    .fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+  await page.getByTestId('archive-issue-recovery-code').click()
+  const recoveryCode = (await page.getByTestId('archive-recovery-code').innerText()).trim()
+  await page.getByTestId('archive-recovery-code-confirmation').fill(recoveryCode)
+  await page.getByTestId('archive-finalize').click()
+}

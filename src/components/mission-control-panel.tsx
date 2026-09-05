@@ -9,11 +9,10 @@ import {
 } from './outing-controls-section'
 import { ParticipantControlsSection } from './participant-controls-section'
 import { InlineDecisionDialog } from './inline-decision-dialog'
+import { MAX_MISSION_NAME_BYTES } from '../lib/mission-name'
 
 const MISSION_NAME_INPUT_ID = 'mission-name-input'
 const MISSION_OFFSET_INPUT_ID = 'mission-offset-input'
-const MISSION_FINALIZE_TITLE_ID = 'mission-finalize-dialog-title'
-const MISSION_FINALIZE_DESCRIPTION_ID = 'mission-finalize-dialog-description'
 const MISSION_UNLOCK_TITLE_ID = 'mission-unlock-dialog-title'
 const MISSION_FINISH_TITLE_ID = 'mission-finish-dialog-title'
 const MISSION_FINISH_DESCRIPTION_ID = 'mission-finish-dialog-description'
@@ -21,6 +20,14 @@ const MAX_START_OFFSET_HOURS = 48
 const MissionEvidenceLossDialog = lazy(async () => {
   const module = await import('./mission-evidence-loss-dialog')
   return { default: module.MissionEvidenceLossDialog }
+})
+const MissionArchiveCustodyDialog = lazy(async () => {
+  const module = await import('../features/mission/mission-archive-custody-dialog')
+  return { default: module.MissionArchiveCustodyDialog }
+})
+const MissionArchiveCleanupDialog = lazy(async () => {
+  const module = await import('../features/mission/mission-archive-cleanup-dialog')
+  return { default: module.MissionArchiveCleanupDialog }
 })
 
 type MissionControlPanelProps = {
@@ -55,6 +62,8 @@ export function MissionControlPanel({
     setShowFinalizeDialog,
     showUnlockDialog,
     setShowUnlockDialog,
+    showCleanupDialog,
+    setShowCleanupDialog,
     showEvidenceLossDialog,
     setShowEvidenceLossDialog,
     governanceBusy,
@@ -77,7 +86,13 @@ export function MissionControlPanel({
     confirmFinish,
     resumeRecoverable,
     startFresh,
+    issueArchiveRecoveryCode,
+    cancelArchiveOperation,
+    subscribeArchiveProgress,
     confirmFinalize,
+    loadCleanupState,
+    startCleanup,
+    resumeCleanup,
     confirmEvidenceLossAcknowledgement,
     confirmUnlock,
   } = useMissionControlViewModel()
@@ -230,6 +245,7 @@ export function MissionControlPanel({
                 data-testid="mission-name-input"
                 disabled={!canStart}
                 id={MISSION_NAME_INPUT_ID}
+                maxLength={MAX_MISSION_NAME_BYTES}
                 onChange={(event) => setMissionName(event.target.value)}
                 placeholder="Search Operation Name"
                 value={missionName}
@@ -273,7 +289,7 @@ export function MissionControlPanel({
         <div className="empty:hidden">
           {startError !== null ? <p className="border border-rose-400/24 bg-rose-400/10 p-2 text-xs text-rose-400">{startError}</p> : null}
           {actionError !== null && !showFinishDialog && !showFinalizeDialog &&
-            !showUnlockDialog && !showEvidenceLossDialog
+            !showUnlockDialog && !showCleanupDialog && !showEvidenceLossDialog
             ? <MissionActionError message={actionError} />
             : null}
           {duplicateWarning !== null ? (
@@ -336,13 +352,23 @@ export function MissionControlPanel({
                 <p className="mt-1 text-[13px] text-stone-300">
                   Status: <span className="font-mono uppercase">{governanceMission.status}</span>
                 </p>
+                <p
+                  className="mt-1 text-[13px] text-stone-300"
+                  data-testid="mission-storage-state"
+                >
+                  Storage:{' '}
+                  <span className="font-mono uppercase">
+                    {governanceMission.storage_state ?? 'unknown - controls unavailable'}
+                  </span>
+                </p>
                 {governanceMission.finish_time ? (
                   <p className="mt-1 text-[13px] text-stone-300">
                     Finished: {new Date(governanceMission.finish_time).toLocaleString()}
                   </p>
                 ) : null}
               </div>
-              {governanceMission.status === 'finished' ? (
+              {governanceMission.status === 'finished'
+                && governanceMission.storage_state === 'live' ? (
                 <button
                   className="bg-sky-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
                   data-testid="mission-finalize-btn"
@@ -352,17 +378,45 @@ export function MissionControlPanel({
                 >
                   Archive & Lock
                 </button>
-              ) : (
+              ) : governanceMission.storage_state === 'live' ? (
+                <div className="flex flex-col gap-2">
+                  <button
+                    className="border border-stone-600 bg-stone-800 px-3 py-2 text-[12px] font-semibold text-stone-200 disabled:opacity-40 hover:bg-stone-700"
+                    data-testid="mission-unlock-btn"
+                    disabled={governanceBusy}
+                    onClick={() => setShowUnlockDialog(true)}
+                    type="button"
+                  >
+                    Admin Unlock
+                  </button>
+                  <button
+                    className="border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-[12px] font-semibold text-amber-100 disabled:opacity-40"
+                    data-testid="mission-cleanup-btn"
+                    disabled={governanceBusy}
+                    onClick={() => setShowCleanupDialog(true)}
+                    type="button"
+                  >
+                    Review Archive Cleanup
+                  </button>
+                </div>
+              ) : governanceMission.storage_state === 'cleanup_in_progress' ? (
                 <button
-                  className="border border-stone-600 bg-stone-800 px-3 py-2 text-[12px] font-semibold text-stone-200 disabled:opacity-40 hover:bg-stone-700"
-                  data-testid="mission-unlock-btn"
+                  className="border border-amber-300/60 bg-amber-300/10 px-3 py-2 text-[12px] font-semibold text-amber-100 disabled:opacity-40"
+                  data-testid="mission-cleanup-btn"
                   disabled={governanceBusy}
-                  onClick={() => setShowUnlockDialog(true)}
+                  onClick={() => setShowCleanupDialog(true)}
                   type="button"
                 >
-                  Admin Unlock
+                  Review Archive Cleanup
                 </button>
-              )}
+              ) : governanceMission.storage_state === 'recovery_required' ? (
+                <p
+                  className="max-w-xs text-right text-[12px] leading-relaxed text-amber-200"
+                  data-testid="mission-correction-recovery-required"
+                >
+                  Archive custody recovery is still running or needs operator review. Mission controls remain locked until it settles.
+                </p>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -406,46 +460,32 @@ export function MissionControlPanel({
       ) : null}
 
       {showFinalizeDialog && governanceMission !== null ? (
-        <InlineDecisionDialog
-          describedBy={MISSION_FINALIZE_DESCRIPTION_ID}
-          className="mt-4 border border-sky-500/30 bg-sky-950/50 p-4 shadow-xl"
-          data-testid="mission-finalize-dialog"
-          labelledBy={MISSION_FINALIZE_TITLE_ID}
-          onCancel={() => setShowFinalizeDialog(false)}
-        >
-          <p
-            className="font-semibold text-sky-300 uppercase text-[13px] tracking-wide"
-            id={MISSION_FINALIZE_TITLE_ID}
-          >
-            Archive & Lock?
-          </p>
-          <p
-            className="mt-2 text-[13px] leading-relaxed text-stone-300"
-            id={MISSION_FINALIZE_DESCRIPTION_ID}
-          >
-            This creates a validated archive and makes the mission read-only until an admin
-            explicitly unlocks it.
-          </p>
-          {actionError !== null ? <MissionActionError message={actionError} /> : null}
-          <div className="mt-4 flex gap-2">
-            <button
-              className="flex-1 bg-sky-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40 hover:bg-sky-500"
-              data-testid="mission-finalize-confirm"
-              disabled={governanceBusy}
-              onClick={() => void confirmFinalize()}
-              type="button"
-            >
-              {governanceBusy ? 'Finalizing…' : 'Confirm Archive & Lock'}
-            </button>
-            <button
-              className="flex-1 bg-stone-800 px-3 py-2 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
-              onClick={() => setShowFinalizeDialog(false)}
-              type="button"
-            >
-              Cancel
-            </button>
-          </div>
-        </InlineDecisionDialog>
+        <Suspense fallback={<p role="status">Loading archive custody controls…</p>}>
+          <MissionArchiveCustodyDialog
+            cancelOperation={cancelArchiveOperation}
+            finalize={confirmFinalize}
+            issueRecoveryCode={issueArchiveRecoveryCode}
+            missionId={governanceMission.id}
+            onClose={() => setShowFinalizeDialog(false)}
+            onVerified={() => setShowFinalizeDialog(false)}
+            subscribeProgress={subscribeArchiveProgress}
+          />
+        </Suspense>
+      ) : null}
+
+      {showCleanupDialog && governanceMission !== null ? (
+        <Suspense fallback={<p role="status">Loading live-store archival controls…</p>}>
+          <MissionArchiveCleanupDialog
+            cancelOperation={cancelArchiveOperation}
+            loadState={loadCleanupState}
+            mission={governanceMission}
+            onClose={() => setShowCleanupDialog(false)}
+            onCompleted={() => undefined}
+            resumeCleanup={resumeCleanup}
+            startCleanup={startCleanup}
+            subscribeProgress={subscribeArchiveProgress}
+          />
+        </Suspense>
       ) : null}
 
       {showUnlockDialog && governanceMission !== null ? (

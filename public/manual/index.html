@@ -667,15 +667,24 @@
           <p>
             Mission Control owns the mission lifecycle. A mission starts in <strong>idle</strong>, moves
             to <strong>active</strong>, can be <strong>paused</strong> and resumed, and can be
-            <strong>finished</strong>. Finished missions can be reviewed and, in the governance flow,
-            archived and locked. Finalizing a mission writes a standalone, immutable archive file
-            (a compressed snapshot of that mission's database, manifest, and any marker attachments)
-            into the app's <code>archives</code> folder; each mission keeps its own archive, and the
-            confirmation message reports the exact file path. Once finalized, a mission is locked: its
-            markers, drawings, helicopters, and GPX imports can no longer be edited or deleted until an
-            authorized admin unlocks it. Finalization closes and preserves the incident record; it is not
-            a claim that every breadcrumb was recovered.
+            <strong>finished</strong>. Finished missions can be archived and locked. Finalization asks for
+            a strong archive passphrase and generates one recovery code for that archive. Record the code
+            immediately under your organisation's approved procedure and type it back exactly. SAR Tracker
+            then creates one mission-only streamed encrypted archive, seals it, restores those sealed bytes
+            into permission-restricted scratch space, and independently checks the ciphertext, every declared
+            entry, table, row count and content digest, attachments, GPX evidence, and every Replay page at up
+            to five deterministic comparison times. Sealing finalizes and locks the mission read-only;
+            independent verification establishes archive completeness and Review eligibility. An archive
+            creation or verification failure is explicit and leaves operational live evidence intact. A
+            sealed-but-unverified archive stays locked, incomplete, and retryable with its original passphrase
+            and recovery code.
           </p>
+          <div class="warning">
+            <strong>Archive credentials:</strong> use a passphrase of at least 14 characters with at least
+            three of lowercase letters, uppercase letters, numbers, and symbols. Each archive has one recovery
+            code, shown only during confirmation. SAR Tracker cannot recover a lost code. Follow your
+            organisation's approved custody procedure; this manual does not assign a human holder.
+          </div>
           <table>
             <thead>
               <tr><th>Control</th><th>What It Does</th><th>Operator Check</th></tr>
@@ -685,11 +694,45 @@
               <tr><td>Start Offset</td><td>Backdates the mission start by up to 48 hours.</td><td>Use only when the search already began before logging in the app, or when hosted testing needs older tracker history.</td></tr>
               <tr><td>Pause / Resume</td><td>Stops or restarts active-search timing without ending the mission.</td><td>Elapsed time keeps running; active-search time pauses.</td></tr>
               <tr><td>Finish</td><td>Opens a confirmation before ending the mission.</td><td>Confirm only when operations are genuinely complete.</td></tr>
-              <tr><td>Review</td><td>Opens mission details, marker log, layer console, and audit records.</td><td>Use after or during operations to inspect saved mission state.</td></tr>
-              <tr><td>Archive &amp; Lock</td><td>Creates the retained archive and makes a finished mission read-only.</td><td>If known evidence loss blocks this action, use the admin acknowledgement only after reviewing and documenting the gap. Complete and 100% remain unavailable.</td></tr>
+              <tr><td>Review</td><td>Shows saved mission details and every retained archive revision. Verified v2 encrypted archives and supported v1 archives labelled Legacy unencrypted open read-only; v1 needs no credential.</td><td>An open Archive Review uses a visible, permission-restricted temporary plaintext working copy. Close Review when finished and act on any cleanup warning.</td></tr>
+              <tr><td>Archive &amp; Lock</td><td>Creates and seals one encrypted mission archive, which locks the mission read-only, then independently restores and verifies those bytes.</td><td>Do not treat sealed-only as verified. Retry a sealed incomplete archive with the original passphrase and recovery code.</td></tr>
+              <tr><td>Review Archive Cleanup</td><td>After a verified encrypted archive already exists, opens the safety checklist for optionally moving that mission's declared bulk rows out of the live store. Within the audit ledger, only high-volume device, position, and backup telemetry events are removed; operator, lifecycle, finalization, custody, cleanup, supplement, and other audit records remain with the compact mission/archive records. The complete encrypted archive remains unchanged and reviewable.</td><td>Resume is offered only when the checked cleanup journal proves an interrupted operation. Integrity failures and live rows changed after finalization remain blocked and require recovery review or re-finalization. Otherwise, re-enter this archive's original passphrase or recovery code for a fresh credential check and type the mission name. Ordinary live Review remains blocked until storage state is consistent. This is logical SQLite cleanup: freed pages may be reused, but the database file may not shrink immediately. It is not forensic erasure or physical compaction; do not run <code>VACUUM</code> during operations.</td></tr>
               <tr><td>Minimize / Expand</td><td>Collapses the active mission controls after setup to free right-rail space.</td><td>The control is not available while paused; expand before pausing, finishing, or changing lifecycle state.</td></tr>
             </tbody>
           </table>
+          <div class="note">
+            <strong>Saved Mission Archives:</strong> for an eligible encrypted v2 revision, select
+            Passphrase or Recovery code, enter that archive's original credential, and choose
+            <strong>Open Read-only Archive</strong>. A sealed-unverified v2 revision remains visible but
+            must first be retried with both original credentials. Supported older v1 archives remain
+            selectable without a credential and are labelled <strong>Legacy unencrypted</strong>. Opening
+            validates a legacy archive's existing identity and structure for read-only Review, but does not
+            upgrade it to v2 verified custody, encrypt it, or rewrite its source bytes. Corrections create a
+            visible supplemental revision with its reason, authority, time, and prior archive hash; earlier
+            archive bytes never change.
+          </div>
+          <div class="note">
+            <strong>Temporary Review plaintext:</strong> an open Archive Review uses an app-owned,
+            permission-restricted plaintext session. A successful close removes it. If cleanup fails, the
+            residual stays explicit with a retry action; startup retries interrupted app-owned cleanup. This
+            is not a forensic secure-erasure claim.
+          </div>
+          <figure class="screenshot">
+            <img src="assets/mission-archive-custody-issued-code.png" alt="Archive confirmation showing a synthetic one-time recovery code and exact re-entry field" />
+            <figcaption>Synthetic browser-validation UI example: record and confirm the one code for this archive. The displayed code is test data, not a real credential; this image is not desktop cryptographic or field proof.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/archive-sealed-verification-retry.png" alt="Sealed encrypted archive verification retry requiring the original passphrase and recovery code" />
+            <figcaption>Synthetic browser-validation UI example: a sealed incomplete v2 archive requires both original credentials before verification can be retried. This image is not desktop cryptographic or field proof.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/archive-review-read-only-residual-warning.png" alt="Read-only archived Mission Review with a visible temporary plaintext warning and Close Archive Review control" />
+            <figcaption>Synthetic browser-validation UI example: Archive Review is read-only and keeps its temporary plaintext warning and close control visible. This image is not desktop cryptographic or field proof.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/archive-cleanup-complete-preconditions.png" alt="Review Archive Cleanup dialog with the 15-item safety checklist, original credential check, and exact mission-name confirmation" />
+            <figcaption>Synthetic browser-validation UI example: live-row archival stays blocked until all 15 checks pass, including cleanup-journal integrity and an unchanged finalization-boundary membership, plus a fresh check of the archive's existing credential. This image is not desktop cryptographic or field proof.</figcaption>
+          </figure>
           <div class="note">
             <strong>Approved mission model:</strong> the mission participant and outing controls below are
             enabled by default in packaged and release builds that contain this PR-3 change. There is no
@@ -983,6 +1026,14 @@
             missing group member has left. Starting or adding a group is blocked until a complete roster is
             available; individual devices can still be selected explicitly. Once the mission is finished,
             participant changes are locked before archive finalization as well as afterward.
+          </div>
+          <div class="note">
+            <strong>Responsive fallback cache:</strong> current fixes do not wait for mission storage or
+            cache work. The desktop restart cache always keeps the latest current fixes and prepares at most
+            5,000 breadcrumb representatives in short bounded batches, shared across device trails where
+            capacity permits. On exceptionally broad histories, a trail may reappear only after Resume
+            reconstructs the complete accepted history from the mission database; cache truncation never
+            deletes mission evidence.
           </div>
           <div class="note">
             <strong>Tracking does not wait for basemap tiles:</strong> current positions and breadcrumbs
@@ -1699,7 +1750,10 @@
             press <strong>Esc</strong> to return the map to full width. When there is no active mission,
             Review opens full-screen with the mission selector for cross-mission audit.
             If Finish completes while Review remains open, Review refreshes the persisted mission state and
-            disables Search Operations entry immediately; it never leaves a finished mission editable.
+            disables Search Operations entry immediately; an ordinary finished mission remains read-only.
+            After a separately audited archive restore for correction, the explicit correction epoch is
+            shown as finished but its Search Operations entry is intentionally writable until the next
+            supplemental archive is finalized.
           </p>
           <p>
             Mission Review reads the selected mission only after the workspace is opened. While a large
@@ -1795,9 +1849,11 @@
             outing or assignment edits cannot silently move recorded pass evidence outside its original scope.
             The recorded pass displays its declared outcome, exact time window, revision and evidence-link counts;
             SAR Tracker never substitutes the first area or outing and never invents a zero-duration pass.
-            Finished and finalized missions keep these retained records visible but disable the Search Operations
-            entry form permanently. New assignments and passes require an active mission; unlocking a finalized
-            mission does not make its retained Search Operations records writable.
+            Ordinary finished and finalized missions keep these retained records visible but disable the Search
+            Operations entry form. New assignments and passes otherwise require an active mission. The one
+            explicit exception is an audited correction epoch opened by finalized-mission unlock or archive
+            restore: while that finished correction epoch is active, new correction records may be entered until
+            its supplemental archive is finalized.
           </p>
           <p>
             Search Operations reads retained areas, assignments, outings and passes in bounded pages of 25.
@@ -2015,8 +2071,8 @@ sh "$COLLECTOR" --screenshot</code></pre>
           <ul>
             <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can import, validate, remove, and serve local official MBTiles packages from app-owned storage, so the original USB or source disk can be unplugged after import. The map reports ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. The Maps menu includes a field-readiness checklist and Settings can export a readiness certificate.</li>
             <li><strong>Settings access:</strong> coordinator and admin rosters are currently local workflow/audit controls, not a strong authentication boundary. Treat Settings access as trusted-machine access until the privileged-settings guard and unlock-authority model are implemented.</li>
-            <li><strong>Replay scope:</strong> Mission Review reconstructs evidence known at the selected time; it intentionally does not reproduce historical screen layout, map camera, panel state, or operator cursor. Archive-backed replay and final release qualification remain part of the Breadcrumb Programme's archive/final stage.</li>
-            <li><strong>Shadow-use limit:</strong> the protocol keeps the existing primary operational process authoritative and defines stop/fallback/evidence rules. It is not an operational-safety claim. Archive/restore must not be relied upon until <code>DON-248</code>/<code>DON-252</code>/<code>DON-253</code> and exact-candidate restore qualification are complete.</li>
+            <li><strong>Replay scope:</strong> Mission Review reconstructs evidence known at the selected time; it intentionally does not reproduce historical screen layout, map camera, panel state, or operator cursor. Eligible verified v2 and supported legacy v1 archives now open read-only, but BCP-17 exact-candidate qualification and release/field acceptance remain separate.</li>
+            <li><strong>Shadow-use limit:</strong> the protocol keeps the existing primary operational process authoritative and defines stop/fallback/evidence rules. It is not an operational-safety claim. PR6 archive/restore evidence is pre-merge engineering qualification, not a published field capability; continue to use the primary process until BCP-17 and the separately authorized release are complete.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>
             <li><strong>Desktop beta distribution:</strong> current CI beta artifacts are Linux x86_64 AppImage and <code>.deb</code> packages. macOS artifacts are local/manual when needed, and Windows NSIS artifacts remain gated until the Windows official-map smoke passes. Developer ID signing, notarization, DMG packaging, and signed Windows installer behavior remain open release work.</li>
@@ -2041,7 +2097,7 @@ sh "$COLLECTOR" --screenshot</code></pre>
         <footer>
           SAR Tracker Operator Manual. DON-150 audit refreshed from current code, release notes,
           documentation, tests, Linear issue context, and Playwright browser-harness validation on
-          25 August 2026.
+          31 August 2026.
         </footer>
       </main>
     </div>

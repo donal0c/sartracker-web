@@ -64,6 +64,7 @@ import { startCoreFeatureRuntimes } from './start-core-feature-runtimes'
 import { useParticipantStore } from '../participants/participant-store'
 import { resolveParticipantMissionId } from '../participants/participant-mission-context'
 import { isMissionModelEnabled } from './mission-model-flag'
+import { setMissionReviewMissionStore } from '../mission-review/mission-review-runtime-context'
 
 type StartAppRuntimeDependencies = {
   readonly registerServiceWorker: () => Promise<void>
@@ -235,6 +236,7 @@ export async function startAppRuntime(
     startHelicopterRuntime: resolvedDependencies.startHelicopterRuntime,
     startGpxRuntime: resolvedDependencies.startGpxRuntime,
   })
+  setMissionReviewMissionStore(coreMissionStore)
   let stopExactBreadcrumbDots = (): void => undefined
   let stopCoverage = (): void => undefined
   try {
@@ -273,6 +275,7 @@ export async function startAppRuntime(
         activeServices = createNoopRuntimeServiceHandles()
         await stopRuntimeServices(previousServices)
         await rejectionEvidenceDelivery?.dispose()
+        setMissionReviewMissionStore(null)
         stopExactBreadcrumbDots()
         stopCoverage()
         coreFeatureRuntimes.dispose()
@@ -376,6 +379,7 @@ export async function startAppRuntime(
             ? {}
             : { persistHistoryChunks: hooks.persistHistoryChunks }),
           onSnapshot: hooks.onSnapshot,
+          onCurrentSnapshot: hooks.onCurrentSnapshot,
           onStatusChange: hooks.onStatusChange,
           onCurrentPositionRejections:
             rejectionEvidenceDelivery?.record ?? applyCurrentPositionRejections,

@@ -1,9 +1,20 @@
-import type { UnlockFinalizedMissionInput } from '../../infrastructure/mission-store/tauri-mission-store'
+import type {
+  MissionArchiveCustodyInput,
+  RestoreMissionForCorrectionInput,
+  RestoreMissionForCorrectionResult,
+  UnlockFinalizedMissionInput,
+} from '../../infrastructure/mission-store/tauri-mission-store'
 
 type FinalizableMissionStore = {
   readonly finishMission?: (missionId: string) => Promise<unknown>
-  readonly finalizeMission: (missionId: string) => Promise<unknown>
+  readonly finalizeMission: (
+    missionId: string,
+    custody: MissionArchiveCustodyInput,
+  ) => Promise<unknown>
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<unknown>
+  readonly restoreMissionForCorrection?: (
+    input: RestoreMissionForCorrectionInput,
+  ) => Promise<RestoreMissionForCorrectionResult>
 }
 
 type RendererEvidenceBoundary = {
@@ -39,13 +50,31 @@ export function createIngestEvidenceFinalizationBoundary<
             () => finishMission(missionId),
           ),
       }
+  const restoreMissionForCorrection = missionStore.restoreMissionForCorrection
+  const correctionBoundary = restoreMissionForCorrection === undefined
+    ? {}
+    : {
+        restoreMissionForCorrection: async (input: RestoreMissionForCorrectionInput) => {
+          const result = await restoreMissionForCorrection(input)
+          const correction = result?.correction
+          if (correction === undefined
+            || (correction.committed === true
+              && correction.cleanupComplete === true
+              && correction.failureCode === undefined)) {
+            evidence.reopenMissionEvidenceAfterUnlock(input.mission_id)
+          }
+          return result
+        },
+      }
   return {
     ...missionStore,
+    reopenMissionEvidenceAfterUnlock: evidence.reopenMissionEvidenceAfterUnlock,
     ...finishBoundary,
-    finalizeMission: async (missionId: string) =>
+    ...correctionBoundary,
+    finalizeMission: async (missionId: string, custody: MissionArchiveCustodyInput) =>
       evidence.runWithMissionFinalizationFence(
         missionId,
-        () => missionStore.finalizeMission(missionId),
+        () => missionStore.finalizeMission(missionId, custody),
       ),
     unlockFinalizedMission: async (
       input: Parameters<Store['unlockFinalizedMission']>[0],

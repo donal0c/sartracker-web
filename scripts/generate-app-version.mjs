@@ -13,8 +13,10 @@ const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
 const baseVersion = typeof packageJson.version === 'string' ? packageJson.version : '0.0.0'
 
 const runNumber = process.env.GITHUB_RUN_NUMBER ?? process.env.GITHUB_RUN_ID
-const envSha = process.env.GITHUB_SHA
-const gitSha = safeGitCommand('git rev-parse --short=12 HEAD')
+const envSha = process.env.EXPECTED_SOURCE_SHA ?? process.env.GITHUB_SHA
+// Keep the complete commit id in the operator-visible build tag. Packaged
+// archive proof must bind the running artifact to one exact source head.
+const gitSha = safeGitCommand('git rev-parse HEAD')
 const buildId = runNumber
   ? `run.${runNumber}.sha.${safeString(envSha, gitSha)}`
   : `sha.${safeString(envSha, gitSha)}`
@@ -30,7 +32,7 @@ if (!existsSync(generatedDir)) {
   mkdirSync(generatedDir, { recursive: true })
 }
 
-writeFileSync(generatedFilePath, `${generated}\n`, 'utf8')
+writeFileSync(generatedFilePath, generated, 'utf8')
 
 function safeGitCommand(command) {
   try {

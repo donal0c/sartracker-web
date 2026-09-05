@@ -13,6 +13,8 @@ import type {
   Outing,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { LayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
+import type { ArchiveReviewPublicSession } from '../../infrastructure/archive-review/archive-review-types'
+import type { ArchiveReviewAttachmentPage } from '../../infrastructure/archive-review/electron-archive-review-source'
 import { buildMissionReviewSnapshot, type MissionReviewSnapshot } from './mission-review-model'
 import { DEFAULT_AUDIT_EVENT_LIMIT } from './audit-events'
 
@@ -37,9 +39,23 @@ type MissionReviewStoreBoundary = Pick<
   | 'listOutings'
   | 'upsertSearchAssignment'
   | 'upsertSearchPass'
->
+> & {
+  readonly openAttachment?: (input: {
+    readonly missionId: string
+    readonly attachmentPath: string
+    readonly referenceKind: string
+    readonly referenceId: string
+  }) => Promise<boolean>
+  readonly listArchiveAttachmentPage?: (input: {
+    readonly missionId: string
+    readonly cursor: string | null
+    readonly limit: number
+  }) => Promise<ArchiveReviewAttachmentPage>
+}
 
 export type MissionReviewRuntimeState = {
+  readonly source: 'live' | 'archive'
+  readonly archiveSession: ArchiveReviewPublicSession | null
   readonly missions: readonly Mission[]
   readonly selectedMissionId: string | null
   readonly snapshot: MissionReviewSnapshot | null
@@ -223,15 +239,29 @@ export type MissionReviewController = {
     readonly clueIds: readonly string[]
     readonly trackEvidenceIds: readonly string[]
   }) => Promise<void>
+  readonly openAttachment: (input: {
+    readonly attachmentPath: string
+    readonly referenceKind: string
+    readonly referenceId: string
+  }) => Promise<boolean>
+  readonly listArchiveAttachmentPage: (input: {
+    readonly cursor: string | null
+    readonly limit: number
+  }) => Promise<ArchiveReviewAttachmentPage>
 }
 
-type StartMissionReviewRuntimeDependencies = {
+export type StartMissionReviewRuntimeDependencies = {
+  readonly source?: 'live' | 'archive'
+  readonly archiveSession?: ArchiveReviewPublicSession | null
   readonly missionStore: MissionReviewStoreBoundary
   readonly layerCatalogStore: Pick<LayerCatalogStore, 'listMetadata'>
+  readonly openLiveAttachment?: (attachmentPath: string) => Promise<void | boolean>
   readonly applyRuntime: (runtime: MissionReviewRuntimeState) => void
 }
 
 const EMPTY_RUNTIME: MissionReviewRuntimeState = {
+  source: 'live',
+  archiveSession: null,
   missions: [],
   selectedMissionId: null,
   snapshot: null,
@@ -262,7 +292,13 @@ const EMPTY_RUNTIME: MissionReviewRuntimeState = {
 export async function startMissionReviewRuntime(
   dependencies: StartMissionReviewRuntimeDependencies,
 ): Promise<MissionReviewController> {
-  let state: MissionReviewRuntimeState = EMPTY_RUNTIME
+  const source = dependencies.source ?? 'live'
+  const archiveSession = dependencies.archiveSession ?? null
+  if ((source === 'archive' && archiveSession === null)
+    || (source === 'live' && archiveSession !== null)) {
+    throw new Error('Mission Review source metadata is invalid.')
+  }
+  let state: MissionReviewRuntimeState = { ...EMPTY_RUNTIME, source, archiveSession }
   let refreshToken = 0
   let requestSequence = 0
   const requestNamespace = globalThis.crypto.randomUUID()
@@ -356,6 +392,9 @@ export async function startMissionReviewRuntime(
       await loadReplayOutingFilterPage(page.search, undefined, 1)
     },
     recordSearchAssignment: async (input) => {
+      if (state.source === 'archive') {
+        throw new Error('Archived mission review is read-only.')
+      }
       if (state.selectedMissionId === null || dependencies.missionStore.upsertSearchAssignment === undefined) {
         throw new Error('Search assignment recording is unavailable in this runtime.')
       }
@@ -371,6 +410,9 @@ export async function startMissionReviewRuntime(
       await loadMission(state.selectedMissionId, true)
     },
     recordSearchPass: async (input) => {
+      if (state.source === 'archive') {
+        throw new Error('Archived mission review is read-only.')
+      }
       if (state.selectedMissionId === null || dependencies.missionStore.upsertSearchPass === undefined) {
         throw new Error('Search pass recording is unavailable in this runtime.')
       }
@@ -388,6 +430,35 @@ export async function startMissionReviewRuntime(
         track_evidence_ids: input.trackEvidenceIds,
       })
       await loadMission(state.selectedMissionId, true)
+    },
+    openAttachment: async (input) => {
+      if (state.source === 'archive') {
+        if (state.archiveSession === null || dependencies.missionStore.openAttachment === undefined) {
+          throw new Error('Archived attachment review is unavailable.')
+        }
+        return await dependencies.missionStore.openAttachment({
+          missionId: state.archiveSession.missionId,
+          attachmentPath: input.attachmentPath,
+          referenceKind: input.referenceKind,
+          referenceId: input.referenceId,
+        })
+      }
+      if (dependencies.openLiveAttachment === undefined) {
+        throw new Error('Mission attachment opening is unavailable in this runtime.')
+      }
+      await dependencies.openLiveAttachment(input.attachmentPath)
+      return true
+    },
+    listArchiveAttachmentPage: async (input) => {
+      if (state.source !== 'archive' || state.archiveSession === null
+        || dependencies.missionStore.listArchiveAttachmentPage === undefined) {
+        throw new Error('Archived attachment history is unavailable.')
+      }
+      return await dependencies.missionStore.listArchiveAttachmentPage({
+        missionId: state.archiveSession.missionId,
+        cursor: input.cursor,
+        limit: input.limit,
+      })
     },
   }
 
@@ -449,6 +520,30 @@ export async function startMissionReviewRuntime(
         return
       }
 
+      const liveSourceUnavailable = source === 'live'
+        ? liveReviewUnavailableMessage(selectedMission)
+        : null
+      if (liveSourceUnavailable !== null) {
+        replayToken += 1
+        cancelActiveReplayRead()
+        resetReplayObjectPagination()
+        state = {
+          ...state,
+          missions,
+          selectedMissionId: selectedMission.id,
+          snapshot: null,
+          loading: false,
+          refreshing: false,
+          error: liveSourceUnavailable,
+          auditLogTruncated: false,
+          gpxImports: { ...EMPTY_RUNTIME.gpxImports },
+          replay: { ...EMPTY_RUNTIME.replay },
+          searchOperations: { ...EMPTY_RUNTIME.searchOperations },
+        }
+        publishRuntime()
+        return
+      }
+
       // Request one extra event so a full page signals there is more history than shown.
       const auditEventLimit = DEFAULT_AUDIT_EVENT_LIMIT
       const reviewRequestId = `mission-review-${requestNamespace}-${++requestSequence}`
@@ -500,6 +595,8 @@ export async function startMissionReviewRuntime(
         selectedMissionId: selectedMission.id,
         snapshot: buildMissionReviewSnapshot({
           mission: selectedMission,
+          correctionAuthorized: reviewRead.correctionAuthorized
+            ?? selectedMission.correction_authorized === true,
           info,
           events,
           markers,
@@ -930,6 +1027,18 @@ export async function startMissionReviewRuntime(
   function publishRuntime(): void {
     dependencies.applyRuntime(state)
   }
+}
+
+/** Explains why one mission must not fan out through the ordinary live-store Review facade. */
+function liveReviewUnavailableMessage(mission: Mission): string | null {
+  if (mission.storage_state === undefined || mission.storage_state === 'live') return null
+  if (mission.storage_state === 'recovery_required') {
+    return 'Archive custody recovery is still running or needs operator review. Ordinary live Review is unavailable until it settles.'
+  }
+  if (mission.storage_state === 'archived') {
+    return 'This mission is stored in its verified archive. Open it from Saved Mission Archives for read-only Review.'
+  }
+  return 'This mission has a blocked cleanup state. Open Review Archive Cleanup and resolve its checked state before opening ordinary live Review.'
 }
 
 /** Replaces page-local large-object disclosure without disturbing mission-wide limitations. */

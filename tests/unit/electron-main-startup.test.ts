@@ -32,6 +32,7 @@ describe('Electron main startup', () => {
     removeTestProcessListeners('unhandledRejection')
     rmSync(testUserDataPath, { force: true, recursive: true })
     delete process.env.SARTRACKER_ELECTRON_BLOCK_NETWORK
+    delete process.env.ELECTRON_RENDERER_URL
     delete require.cache[require.resolve('../../electron/main.cjs')]
   })
 
@@ -79,6 +80,28 @@ describe('Electron main startup', () => {
     const callback = vi.fn()
     handler({ url: 'https://tile.openstreetmap.org/1/1/1.png' }, callback)
     expect(callback).toHaveBeenCalledWith({ cancel: true })
+  })
+
+  it('rejects oversized mission creation payloads at the direct main IPC boundary', async () => {
+    process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const handler = electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:mission-store:create-mission',
+    )?.[1]
+    const sender = electronMock.BrowserWindow.mock.results[0]?.value.webContents
+    expect(handler).toBeTypeOf('function')
+
+    expect(() => handler({ sender, senderFrame: { url: 'http://localhost:5173/' } }, {
+      name: 'Bounded direct IPC mission',
+      notes: 'x'.repeat(64 * 1024 * 1024),
+    })).toThrow(/notes|invalid|bound/iu)
   })
 
   it('denies unexpected navigation and renderer-opened windows [DON-236]', async () => {
@@ -176,6 +199,337 @@ describe('Electron main startup', () => {
     expect(permittedUnloadEvent.preventDefault).toHaveBeenCalledOnce()
   })
 
+  it('revokes an unload grant when an allowed navigation replacement fails', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const sessionManager = archiveReviewSessionManagerStub()
+    const rendererTeardownCoordinator = rendererTeardownCoordinatorStub()
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
+      }
+      if (request === './archive-review-ipc.cjs') {
+        return { registerArchiveReviewIpcHandlers: vi.fn() }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: vi.fn(() => rendererTeardownCoordinator) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    createdWindow.webContents.getURL.mockReturnValue('http://localhost:5173/')
+    createdWindow.loadURL.mockRejectedValueOnce(new Error('replacement load failed'))
+    const navigationHandler = createdWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'will-navigate',
+    )?.[1]
+    navigationHandler({ preventDefault: vi.fn() }, 'http://localhost:5173/')
+    await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalled())
+
+    const unloadHandler = createdWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'will-prevent-unload',
+    )?.[1]
+    const laterUnload = { preventDefault: vi.fn() }
+    unloadHandler(laterUnload)
+
+    expect(laterUnload.preventDefault).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(sessionManager.closeForSender).toHaveBeenCalledTimes(2))
+  })
+
+  it('revokes an unload grant when the drained Electron reload call throws', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const sessionManager = archiveReviewSessionManagerStub()
+    const rendererTeardownCoordinator = rendererTeardownCoordinatorStub()
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
+      }
+      if (request === './archive-review-ipc.cjs') {
+        return { registerArchiveReviewIpcHandlers: vi.fn() }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: vi.fn(() => rendererTeardownCoordinator) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    createdWindow.webContents.reload.mockImplementationOnce(() => {
+      throw new Error('reload failed')
+    })
+    const unloadHandler = createdWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'will-prevent-unload',
+    )?.[1]
+    unloadHandler({ preventDefault: vi.fn() })
+    await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalled())
+
+    const laterUnload = { preventDefault: vi.fn() }
+    unloadHandler(laterUnload)
+
+    expect(laterUnload.preventDefault).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(sessionManager.closeForSender).toHaveBeenCalledTimes(2))
+  })
+
+  it('closes sender-owned archive review plaintext before allowed navigation replacement [DON-253]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    let releaseArchiveCleanup: (() => void) | undefined
+    const archiveCleanup = new Promise<void>((resolve) => {
+      releaseArchiveCleanup = resolve
+    })
+    const sessionManager = {
+      ...archiveReviewSessionManagerStub(),
+      closeForSender: vi.fn(() => archiveCleanup),
+    }
+    const rendererTeardownCoordinator = {
+      prepare: vi.fn(async () => undefined),
+      markRendererUnavailable: vi.fn(async () => undefined),
+      markRendererAvailable: vi.fn(async () => undefined),
+      ensureUnexpectedRendererLossFenced: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
+      }
+      if (request === './archive-review-ipc.cjs') {
+        return { registerArchiveReviewIpcHandlers: vi.fn() }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: vi.fn(() => rendererTeardownCoordinator) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    createdWindow.webContents.getURL.mockReturnValue('http://localhost:5173/')
+    const navigationHandler = createdWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'will-navigate',
+    )?.[1]
+    const navigationEvent = { preventDefault: vi.fn() }
+
+    navigationHandler(navigationEvent, 'http://localhost:5173/')
+
+    expect(navigationEvent.preventDefault).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(sessionManager.closeForSender).toHaveBeenCalledWith(1))
+    expect(createdWindow.loadURL).toHaveBeenCalledOnce()
+    expect(rendererTeardownCoordinator.markRendererAvailable).toHaveBeenCalledOnce()
+
+    releaseArchiveCleanup?.()
+    await vi.waitFor(() => expect(createdWindow.loadURL).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => {
+      expect(rendererTeardownCoordinator.markRendererAvailable).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('blocks and reports a renderer reload when sender archive cleanup fails [DON-253]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const sessionManager = {
+      ...archiveReviewSessionManagerStub(),
+      closeForSender: vi.fn().mockRejectedValue(Object.assign(
+        new Error('archive cleanup failed'),
+        { code: 'ARCHIVE_REVIEW_PLAINTEXT_CLEANUP_FAILED' },
+      )),
+    }
+    const rendererTeardownCoordinator = {
+      prepare: vi.fn(async () => undefined),
+      markRendererUnavailable: vi.fn(async () => undefined),
+      markRendererAvailable: vi.fn(async () => undefined),
+      ensureUnexpectedRendererLossFenced: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
+      }
+      if (request === './archive-review-ipc.cjs') {
+        return { registerArchiveReviewIpcHandlers: vi.fn() }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: vi.fn(() => rendererTeardownCoordinator) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    const unloadHandler = createdWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'will-prevent-unload',
+    )?.[1]
+
+    unloadHandler({ preventDefault: vi.fn() })
+
+    await vi.waitFor(() => expect(sessionManager.closeForSender).toHaveBeenCalledWith(1))
+    await vi.waitFor(() => {
+      expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+        'SAR Tracker could not close safely',
+        expect.stringMatching(/decrypted archive-review working copy.*may remain/iu),
+      )
+    })
+    expect(createdWindow.webContents.reload).not.toHaveBeenCalled()
+    expect(rendererTeardownCoordinator.markRendererAvailable).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a renderer-crash replacement unavailable until sender archive cleanup completes [DON-253]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    let releaseArchiveCleanup: (() => void) | undefined
+    const archiveCleanup = new Promise<void>((resolve) => {
+      releaseArchiveCleanup = resolve
+    })
+    const sessionManager = {
+      ...archiveReviewSessionManagerStub(),
+      closeForSender: vi.fn(() => archiveCleanup),
+    }
+    const rendererTeardownCoordinator = {
+      prepare: vi.fn(async () => undefined),
+      markRendererUnavailable: vi.fn(async () => undefined),
+      markRendererAvailable: vi.fn(async () => undefined),
+      ensureUnexpectedRendererLossFenced: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
+      }
+      if (request === './archive-review-ipc.cjs') {
+        return { registerArchiveReviewIpcHandlers: vi.fn() }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: vi.fn(() => rendererTeardownCoordinator) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    const rendererGoneHandler = createdWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'render-process-gone',
+    )?.[1]
+
+    rendererGoneHandler({}, { reason: 'oom', exitCode: 137 })
+    await vi.waitFor(() => expect(sessionManager.closeForSender).toHaveBeenCalledWith(1))
+    electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
+    const activateHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'activate',
+    )?.[1]
+    const activation = Promise.resolve(activateHandler())
+    await Promise.resolve()
+
+    expect(electronMock.BrowserWindow).toHaveBeenCalledOnce()
+    expect(rendererTeardownCoordinator.markRendererAvailable).toHaveBeenCalledOnce()
+
+    releaseArchiveCleanup?.()
+    await activation
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(2))
+    expect(rendererTeardownCoordinator.markRendererAvailable).toHaveBeenCalledTimes(2)
+  })
+
+  it('destroys a crashed WebContents before its same-window reload can outrun archive cleanup [DON-253]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    let releaseArchiveCleanup: (() => void) | undefined
+    const archiveCleanup = new Promise<void>((resolve) => {
+      releaseArchiveCleanup = resolve
+    })
+    const sessionManager = {
+      ...archiveReviewSessionManagerStub(),
+      closeForSender: vi.fn(() => archiveCleanup),
+    }
+    const rendererTeardownCoordinator = rendererTeardownCoordinatorStub()
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
+      }
+      if (request === './archive-review-ipc.cjs') {
+        return { registerArchiveReviewIpcHandlers: vi.fn() }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: vi.fn(() => rendererTeardownCoordinator) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    const rendererGoneHandler = createdWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'render-process-gone',
+    )?.[1]
+
+    rendererGoneHandler({}, { reason: 'oom', exitCode: 137 })
+
+    expect(createdWindow.destroy).toHaveBeenCalledOnce()
+    expect(createdWindow.loadURL).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(sessionManager.closeForSender).toHaveBeenCalledWith(1))
+    expect(createdWindow.webContents.reload).not.toHaveBeenCalled()
+    releaseArchiveCleanup?.()
+  })
+
+  it('retries transient archive cleanup after renderer crash before opening a replacement [DON-253]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const cleanupFailure = Object.assign(new Error('archive cleanup audit unavailable'), {
+      code: 'ARCHIVE_REVIEW_PLAINTEXT_CLEANUP_FAILED',
+    })
+    const sessionManager = {
+      ...archiveReviewSessionManagerStub(),
+      closeForSender: vi.fn()
+        .mockRejectedValueOnce(cleanupFailure)
+        .mockResolvedValueOnce(undefined),
+    }
+    const rendererTeardownCoordinator = {
+      prepare: vi.fn(async () => undefined),
+      markRendererUnavailable: vi.fn(async () => undefined),
+      markRendererAvailable: vi.fn(async () => undefined),
+      ensureUnexpectedRendererLossFenced: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
+      }
+      if (request === './archive-review-ipc.cjs') {
+        return { registerArchiveReviewIpcHandlers: vi.fn() }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: vi.fn(() => rendererTeardownCoordinator) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    const rendererGoneHandler = createdWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'render-process-gone',
+    )?.[1]
+    rendererGoneHandler({}, { reason: 'oom', exitCode: 137 })
+    await vi.waitFor(() => expect(sessionManager.closeForSender).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalled())
+
+    electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
+    const activateHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'activate',
+    )?.[1]
+    await activateHandler()
+
+    expect(sessionManager.closeForSender).toHaveBeenCalledTimes(2)
+    expect(sessionManager.closeForSender).toHaveBeenNthCalledWith(2, 1)
+    expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(2)
+    expect(rendererTeardownCoordinator.markRendererAvailable).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps the window open until the renderer drain is acknowledged without racing a reload', async () => {
     const electronMock = createElectronMock(vi.fn(), undefined, true)
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
@@ -234,6 +588,102 @@ describe('Electron main startup', () => {
     const channels = electronMock.ipcMain.handle.mock.calls.map(([channel]) => channel)
     expect(channels).toContain('sartracker:mission-store:read-mission-review')
     expect(channels).toContain('sartracker:mission-store:cancel-mission-review-read')
+  })
+
+  it('sweeps archive-review plaintext before opening the renderer and registers only explicit review channels [DON-252]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    let releaseStartupSweep: (() => void) | undefined
+    const startupSweep = new Promise<void>((resolve) => {
+      releaseStartupSweep = resolve
+    })
+    const sessionManager = {
+      ...archiveReviewSessionManagerStub(),
+      sweepStartup: vi.fn(() => startupSweep),
+    }
+    const createArchiveReviewSessionManager = vi.fn(() => sessionManager)
+    const registerArchiveReviewIpcHandlers = vi.fn()
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager }
+      }
+      if (request === './archive-review-ipc.cjs') {
+        return { registerArchiveReviewIpcHandlers }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+
+    await vi.waitFor(() => expect(createArchiveReviewSessionManager).toHaveBeenCalledOnce())
+    expect(sessionManager.sweepStartup).toHaveBeenCalledOnce()
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+
+    const managerOptions = createArchiveReviewSessionManager.mock.calls[0][0]
+    expect(managerOptions).toMatchObject({
+      archiveDirectory: path.join(testUserDataPath, 'archives'),
+      reviewRoot: path.join(testUserDataPath, 'archive-review'),
+      registry: {
+        issueReviewTicket: expect.any(Function),
+        recordReviewOpened: expect.any(Function),
+        recordReviewClosed: expect.any(Function),
+        recordReviewMutationDenied: expect.any(Function),
+      },
+      openRestoredAttachment: expect.any(Function),
+    })
+
+    releaseStartupSweep?.()
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    expect(registerArchiveReviewIpcHandlers).toHaveBeenCalledWith({
+      ipcMain: electronMock.ipcMain,
+      channels: {
+        open: 'sartracker:archive-review:open',
+        close: 'sartracker:archive-review:close',
+        cancel: 'sartracker:archive-review:cancel',
+        read: 'sartracker:archive-review:read',
+        mutationDenied: 'sartracker:archive-review:mutation-denied',
+      },
+      sessionManager,
+      validateIpcSender: expect.any(Function),
+    })
+  })
+
+  it('joins and sweeps archive-review sessions before a clean app exit [DON-252]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    let releaseReviewClose: (() => void) | undefined
+    const reviewClose = new Promise<void>((resolve) => {
+      releaseReviewClose = resolve
+    })
+    const sessionManager = {
+      ...archiveReviewSessionManagerStub(),
+      prepareClose: vi.fn(() => reviewClose),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
+      }
+      if (request === './archive-review-ipc.cjs') {
+        return { registerArchiveReviewIpcHandlers: vi.fn() }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
+    electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
+    const beforeQuitHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'before-quit',
+    )?.[1]
+
+    beforeQuitHandler({ preventDefault: vi.fn() })
+
+    await vi.waitFor(() => expect(sessionManager.prepareClose).toHaveBeenCalledOnce())
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+    releaseReviewClose?.()
+    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(0))
   })
 
   it('quits immediately when another Electron instance already owns the app lock', async () => {
@@ -698,6 +1148,48 @@ describe('Electron main startup', () => {
     })
   })
 
+  it('reserves interrupted cleanup before review IPC without waiting for row batches', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const order: string[] = []
+    const sessionManager = {
+      ...archiveReviewSessionManagerStub(),
+      sweepStartup: vi.fn(async () => { order.push('plaintext-sweep') }),
+    }
+    const cleanupCompletion = new Promise<void>(() => undefined)
+    const startInterruptedMissionCleanupRecovery = vi.fn(async () => {
+      order.push('cleanup-recovery-started')
+      return { started: true, count: 1, completion: cleanupCompletion }
+    })
+    const registerArchiveReviewIpcHandlers = vi.fn(() => {
+      order.push('review-ipc-registered')
+    })
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
+      }
+      if (request === './archive-cleanup-startup.cjs') {
+        return { startInterruptedMissionCleanupRecovery }
+      }
+      if (request === './archive-review-ipc.cjs') return { registerArchiveReviewIpcHandlers }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+
+    expect(startInterruptedMissionCleanupRecovery).toHaveBeenCalledWith(expect.objectContaining({
+      missionStore: expect.any(Object),
+      sessionManager,
+      onFailure: expect.any(Function),
+    }))
+    expect(order).toEqual([
+      'plaintext-sweep',
+      'cleanup-recovery-started',
+      'review-ipc-registered',
+    ])
+  })
+
   it('refuses an incompatible mission-store schema without entering a relaunch loop [DON-260]', async () => {
     const startupError = new Error(
       'Cannot open mission store created by newer mission store schema 6; this build supports schema 5.',
@@ -991,6 +1483,32 @@ function removeTestProcessListeners(
   }
 }
 
+/** Provides the closed archive-review manager shape used by main lifecycle tests. */
+function archiveReviewSessionManagerStub() {
+  return {
+    acquireCleanupLease: vi.fn(() => ({ missionId: 'mission-1', release: vi.fn() })),
+    cancel: vi.fn(),
+    close: vi.fn(),
+    closeForSender: vi.fn(async () => undefined),
+    open: vi.fn(),
+    hasReviewActivity: vi.fn(() => false),
+    prepareClose: vi.fn(),
+    read: vi.fn(),
+    sweepStartup: vi.fn(async () => undefined),
+  }
+}
+
+/** Provides an immediately acknowledged renderer-teardown coordinator. */
+function rendererTeardownCoordinatorStub() {
+  return {
+    prepare: vi.fn(async () => undefined),
+    markRendererUnavailable: vi.fn(async () => undefined),
+    markRendererAvailable: vi.fn(async () => undefined),
+    ensureUnexpectedRendererLossFenced: vi.fn(async () => undefined),
+    dispose: vi.fn(),
+  }
+}
+
 function createElectronMock(
   appendSwitch: ReturnType<typeof vi.fn>,
   session = {
@@ -1006,6 +1524,7 @@ function createElectronMock(
   const BrowserWindow = vi.fn(function MockBrowserWindow() {
     return {
       close: vi.fn(),
+      destroy: vi.fn(),
       loadURL: vi.fn(() => Promise.resolve()),
       on: vi.fn(),
       webContents: {

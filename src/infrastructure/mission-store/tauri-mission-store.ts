@@ -8,6 +8,7 @@ import type {
 export type { IngestEvidenceHealth } from '../../domain/tracking-ingest-evidence'
 
 export type MissionStatus = 'active' | 'paused' | 'finished' | 'finalized'
+export type MissionStorageState = 'live' | 'cleanup_in_progress' | 'archived' | 'recovery_required'
 
 export type Mission = {
   readonly id: string
@@ -19,6 +20,9 @@ export type Mission = {
   readonly paused_seconds: number
   readonly notes: string | null
   readonly schema_version: number
+  readonly storage_state?: MissionStorageState
+  /** Explicit browser-validation correction epoch when no desktop review signal exists. */
+  readonly correction_authorized?: boolean
 }
 
 export type Outing = {
@@ -688,13 +692,117 @@ export type MissionStoreInfo = {
 }
 
 export type MissionArchiveInfo = {
+  readonly id: string
   readonly mission_id: string
+  readonly protected_finalization_epoch: number | null
+  readonly archive_kind: 'direct' | 'finalized' | 'finalized_recovery'
+  readonly container_version: 1 | 2
   readonly archive_path: string
+  readonly ciphertext_sha256: string | null
+  readonly size_bytes: number | null
   readonly created_at: string
+  readonly verified_at: string | null
+  readonly previous_archive_id: string | null
+  readonly previous_archive_sha256: string | null
+  readonly revision_sequence: number
+  readonly revision_count: number
+  readonly supplement_authority: string | null
+  readonly supplement_reason: string | null
+  readonly supplement_created_at: string | null
+  readonly status: 'sealed' | 'superseded' | 'verified'
+  readonly availability: 'unknown' | 'present' | 'missing' | 'not_regular' | 'mismatched' | 'unreadable'
+  readonly availability_reason: string | null
+  readonly slots: readonly {
+    readonly slotId: string
+    readonly slotType: 'machine' | 'passphrase' | 'recovery'
+  }[]
+  readonly last_non_machine_unwrap_at: string | null
+}
+
+export type MissionArchiveCustodyInput = {
+  readonly operationId: string
+  readonly passphrase: string
+  readonly recoveryCode: string
+}
+
+export type MissionArchiveRecoveryIssuance = {
+  readonly operationId: string
+  readonly recoveryCode: string
+  readonly expiresAt: string
+}
+
+export type MissionArchiveVerificationInput = MissionArchiveCustodyInput & {
+  readonly archiveId: string
+}
+
+export type MissionArchiveProgress = {
+  readonly operationId: string
+  readonly missionId: string
+  readonly kind: 'create' | 'verify' | 'cleanup'
+  readonly sequence: number
+  readonly phase: 'preflight' | 'snapshot' | 'extract' | 'attachments' | 'digest'
+    | 'encrypt' | 'sync' | 'keys' | 'decrypt' | 'entries' | 'sqlite' | 'inventory'
+    | 'gpx' | 'replay' | 'plaintext_cleanup' | 'staged' | 'publish' | 'seal'
+    | 'proof' | 'verified' | 'cleanup'
+  readonly unit: 'bytes' | 'files' | 'phases' | 'rows' | 'tables'
+  readonly completed: number
+  readonly total: number | null
+  readonly detail: string
+}
+
+export type MissionCleanupBlocker =
+  | 'archive_custody_busy'
+  | 'archive_custody_mismatch'
+  | 'archive_review_active'
+  | 'cleanup_already_completed'
+  | 'cleanup_in_progress'
+  | 'cleanup_journal_invalid'
+  | 'cleanup_membership_changed'
+  | 'current_archive_not_verified'
+  | 'current_finalization_epoch_mismatch'
+  | 'evidence_health_not_clean'
+  | 'finalization_fence_active'
+  | 'fresh_non_machine_unlock_required'
+  | 'mission_not_finalized'
+  | 'operational_state_unsettled'
+  | 'verification_proof_invalid'
+
+export type MissionCleanupEligibility = {
+  readonly eligible: boolean
+  /** True only when every durable check passed and the same-call credential remains pending. */
+  readonly startableWithCredential: boolean
+  readonly blockers: readonly MissionCleanupBlocker[]
+  readonly storageState: MissionStorageState
+}
+
+export type StartMissionCleanupInput = {
+  readonly missionId: string
+  readonly archiveId: string
+  readonly operationId: string
+  readonly slotType: 'passphrase' | 'recovery'
+  readonly secret: string
+  readonly confirmation: string
+}
+
+export type ResumeMissionCleanupInput = {
+  readonly missionId: string
+  readonly archiveId: string
+  readonly operationId: string
+}
+
+export type MissionCleanupResult = {
+  readonly missionId: string
+  readonly archiveId: string
+  readonly state: 'completed'
+  readonly storageState: 'archived'
+  readonly movedRows: number
 }
 
 export type FinalizeMissionResult = {
-  readonly mission: Mission
+  readonly mission: {
+    readonly id: string
+    readonly status: 'finalized'
+  }
   readonly archive: MissionArchiveInfo
 }
 
@@ -702,6 +810,25 @@ export type UnlockFinalizedMissionInput = {
   readonly mission_id: string
   readonly admin_name: string
   readonly reason: string
+}
+
+export type RestoreMissionForCorrectionInput = {
+  readonly mission_id: string
+  readonly archiveId: string
+  readonly operationId: string
+  readonly sessionId: string
+  readonly admin_name: string
+  readonly reason: string
+}
+
+export type RestoreMissionForCorrectionResult = {
+  readonly id: string
+  readonly status: 'finished'
+  readonly correction?: {
+    readonly committed: boolean
+    readonly cleanupComplete: boolean
+    readonly failureCode?: string
+  }
 }
 
 export type MissionEvent = {
@@ -731,6 +858,8 @@ export type MissionReviewReadQuery = {
 export type MissionReviewReadResult = {
   readonly auditEvents: readonly MissionEvent[]
   readonly breadcrumbCount: number
+  /** Durable correction epoch, independent of the bounded audit-event page. */
+  readonly correctionAuthorized?: boolean
 }
 
 export type CreateMissionInput = {
@@ -857,7 +986,25 @@ export type UpsertDrawingInput = {
 export type MissionStore = {
   readonly info: () => Promise<MissionStoreInfo>
   readonly syncBackup: (trigger?: string) => Promise<string>
-  readonly createMissionArchive: (missionId: string) => Promise<MissionArchiveInfo>
+  readonly createMissionArchive?: (missionId: string) => Promise<MissionArchiveInfo>
+  readonly issueMissionArchiveRecoveryCode: (
+    missionId: string,
+  ) => Promise<MissionArchiveRecoveryIssuance>
+  readonly listMissionArchives: (missionId: string) => Promise<readonly MissionArchiveInfo[]>
+  readonly verifyMissionArchive: (
+    input: MissionArchiveVerificationInput,
+  ) => Promise<MissionArchiveInfo>
+  readonly getMissionCleanupEligibility?: (input: {
+    readonly missionId: string
+    readonly archiveId: string
+  }) => Promise<MissionCleanupEligibility>
+  readonly startMissionCleanup?: (
+    input: StartMissionCleanupInput,
+  ) => Promise<MissionCleanupResult>
+  readonly resumeMissionCleanup?: (
+    input: ResumeMissionCleanupInput,
+  ) => Promise<MissionCleanupResult>
+  readonly cancelMissionArchiveOperation: (operationId: string) => Promise<boolean>
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
   readonly createOuting?: (input: CreateOutingInput) => Promise<Outing>
   readonly endOuting?: (input: EndOutingInput) => Promise<Outing>
@@ -1134,8 +1281,17 @@ export type MissionStore = {
   readonly pauseMission: (missionId: string) => Promise<Mission>
   readonly resumeMission: (missionId: string) => Promise<Mission>
   readonly finishMission: (missionId: string) => Promise<Mission>
-  readonly finalizeMission: (missionId: string) => Promise<FinalizeMissionResult>
+  readonly finalizeMission: (
+    missionId: string,
+    custody: MissionArchiveCustodyInput,
+  ) => Promise<FinalizeMissionResult>
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<Mission>
+  /** Restores one verified archived snapshot into a new live correction epoch. */
+  readonly restoreMissionForCorrection?: (
+    input: RestoreMissionForCorrectionInput,
+  ) => Promise<RestoreMissionForCorrectionResult>
+  /** Renderer-only hook used after a correction cleanup retry is proven complete. */
+  readonly reopenMissionEvidenceAfterUnlock?: (missionId: string) => void
 }
 
 export function createTauriMissionStore(): MissionStore {
@@ -1144,6 +1300,25 @@ export function createTauriMissionStore(): MissionStore {
     syncBackup: () => invoke<string>('sync_mission_store_backup'),
     createMissionArchive: (missionId) =>
       invoke<MissionArchiveInfo>('create_mission_archive', { missionId }),
+    issueMissionArchiveRecoveryCode: async () => {
+      throw new Error('Encrypted archive custody is available only in the Electron application.')
+    },
+    listMissionArchives: async () => {
+      throw new Error('Encrypted archive review is available only in the Electron application.')
+    },
+    verifyMissionArchive: async () => {
+      throw new Error('Encrypted archive verification is available only in the Electron application.')
+    },
+    getMissionCleanupEligibility: async () => {
+      throw new Error('Mission live-store archival is available only in the Electron application.')
+    },
+    startMissionCleanup: async () => {
+      throw new Error('Mission live-store archival is available only in the Electron application.')
+    },
+    resumeMissionCleanup: async () => {
+      throw new Error('Mission live-store archival is available only in the Electron application.')
+    },
+    cancelMissionArchiveOperation: async () => false,
     createMission: (input) => invoke<Mission>('create_mission', { input }),
     upsertDevice: (input) => invoke<Device>('upsert_device', { input }),
     getDevice: (missionId, deviceId) => invoke<Device>('get_device', { missionId, deviceId }),
@@ -1207,9 +1382,12 @@ export function createTauriMissionStore(): MissionStore {
     pauseMission: (missionId) => invoke<Mission>('pause_mission', { missionId }),
     resumeMission: (missionId) => invoke<Mission>('resume_mission', { missionId }),
     finishMission: (missionId) => invoke<Mission>('finish_mission', { missionId }),
-    finalizeMission: (missionId) =>
-      invoke<FinalizeMissionResult>('finalize_mission', { missionId }),
+    finalizeMission: (missionId, custody) =>
+      invoke<FinalizeMissionResult>('finalize_mission', { missionId, custody }),
     unlockFinalizedMission: (input) =>
       invoke<Mission>('unlock_finalized_mission', { input }),
+    restoreMissionForCorrection: async () => {
+      throw new Error('Archived mission correction restore is available only in the Electron application.')
+    },
   }
 }

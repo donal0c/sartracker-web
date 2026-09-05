@@ -49,6 +49,19 @@ const { encodeReplayObjectCursor, encodeReplayTrackCursor } = require('../../ele
   ) => string
 }
 
+/** Finalizes one browser-harness mission through the encrypted archive custody contract. */
+async function finalizeBrowserHarnessMission(
+  store: ReturnType<typeof getBrowserHarnessStore>,
+  missionId: string,
+) {
+  const issuance = await store.issueMissionArchiveRecoveryCode(missionId)
+  return store.finalizeMission(missionId, {
+    operationId: issuance.operationId,
+    passphrase: 'Harness archive passphrase 2026',
+    recoveryCode: issuance.recoveryCode,
+  })
+}
+
 describe('browser harness position persistence', () => {
   beforeEach(() => {
     resetBrowserHarnessStore()
@@ -601,9 +614,10 @@ describe('browser harness store', () => {
     const mission = await store.createMission({ name: 'Governance Mission' })
     await store.finishMission(mission.id)
 
-    const finalized = await store.finalizeMission(mission.id)
+    const finalized = await finalizeBrowserHarnessMission(store, mission.id)
     expect(finalized.mission.status).toBe('finalized')
-    expect(finalized.archive.archive_path).toContain(`${mission.id}-archive.zip`)
+    expect(finalized.archive.archive_path).toMatch(/\.sararch$/u)
+    expect(finalized.archive.archive_path).not.toMatch(/\.zip$/u)
 
     await expect(
       store.upsertMarker({
@@ -632,6 +646,324 @@ describe('browser harness store', () => {
     )
   })
 
+  it('requires one-use typed-back recovery custody before sealing a browser archive', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-30T08:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Typed-back Custody Mission' })
+    await store.finishMission(mission.id)
+
+    const rejectedIssuance = await store.issueMissionArchiveRecoveryCode(mission.id)
+    expect(rejectedIssuance).toEqual({
+      operationId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+      ),
+      recoveryCode: expect.stringMatching(
+        /^[0-9A-HJKMNP-TV-Z]{5}(?:-[0-9A-HJKMNP-TV-Z]{5}){7}$/u,
+      ),
+      expiresAt: '2026-08-30T08:10:00.000Z',
+    })
+    expect(window.sessionStorage.getItem('sartracker:browser-harness')).not.toContain(
+      rejectedIssuance.recoveryCode,
+    )
+
+    await expect(store.finalizeMission(mission.id, {
+      operationId: rejectedIssuance.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: '00000-00000-00000-00000-00000-00000-00000-00000',
+    })).rejects.toThrow(/recovery-code confirmation is no longer valid/iu)
+    await expect(store.finalizeMission(mission.id, {
+      operationId: rejectedIssuance.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: rejectedIssuance.recoveryCode,
+    })).rejects.toThrow(/recovery-code confirmation is no longer valid/iu)
+
+    const acceptedIssuance = await store.issueMissionArchiveRecoveryCode(mission.id)
+    await expect(store.finalizeMission(mission.id, {
+      operationId: acceptedIssuance.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: acceptedIssuance.recoveryCode,
+    })).resolves.toMatchObject({ mission: { status: 'finalized' } })
+  })
+
+  it('invalidates the prior mission issuance and treats the exact expiry instant as expired', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-30T08:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Bounded Issuance Mission' })
+    await store.finishMission(mission.id)
+
+    const superseded = await store.issueMissionArchiveRecoveryCode(mission.id)
+    const expiring = await store.issueMissionArchiveRecoveryCode(mission.id)
+    await expect(store.finalizeMission(mission.id, {
+      operationId: superseded.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: superseded.recoveryCode,
+    })).rejects.toThrow(/recovery-code confirmation is no longer valid/iu)
+
+    vi.setSystemTime(new Date(expiring.expiresAt))
+    await expect(store.finalizeMission(mission.id, {
+      operationId: expiring.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: expiring.recoveryCode,
+    })).rejects.toThrow(/recovery-code confirmation is no longer valid/iu)
+
+    const fresh = await store.issueMissionArchiveRecoveryCode(mission.id)
+    await expect(store.finalizeMission(mission.id, {
+      operationId: fresh.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: fresh.recoveryCode,
+    })).resolves.toMatchObject({ mission: { status: 'finalized' } })
+  })
+
+  it('mirrors sealed and verified SARARCH2 archive lifecycle operations in browser validation', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-30T09:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'SARARCH2 Harness Mission' })
+    await store.finishMission(mission.id)
+    const issuance = await store.issueMissionArchiveRecoveryCode(mission.id)
+
+    const result = await store.finalizeMission(mission.id, {
+      operationId: issuance.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: issuance.recoveryCode,
+    })
+    expect(result.archive).toEqual({
+      id: `archive-${issuance.operationId}`,
+      mission_id: mission.id,
+      protected_finalization_epoch: null,
+      archive_kind: 'finalized',
+      container_version: 2,
+      archive_path: `/tmp/browser-harness/archives/${mission.id}-${issuance.operationId}.sararch`,
+      ciphertext_sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      size_bytes: expect.any(Number),
+      created_at: '2026-08-30T09:00:00.000Z',
+      verified_at: '2026-08-30T09:00:00.000Z',
+      previous_archive_id: null,
+      previous_archive_sha256: null,
+      revision_sequence: 1,
+      revision_count: 1,
+      supplement_authority: null,
+      supplement_reason: null,
+      supplement_created_at: null,
+      status: 'verified',
+      availability: 'present',
+      availability_reason: null,
+      slots: [
+        { slotId: 'passphrase-v1', slotType: 'passphrase' },
+        { slotId: 'recovery-v1', slotType: 'recovery' },
+      ],
+      last_non_machine_unwrap_at: '2026-08-30T09:00:00.000Z',
+    })
+    expect(result.archive.size_bytes).toBeGreaterThan(0)
+    expect(result.archive.archive_path).not.toContain('.zip')
+    await expect(store.listMissionArchives(mission.id)).resolves.toEqual([result.archive])
+
+    const sealedRetryFixture = await store.prepareArchiveVerificationRetryFixture(
+      result.archive.id,
+    )
+    expect(sealedRetryFixture).toMatchObject({
+      id: result.archive.id,
+      status: 'sealed',
+      verified_at: null,
+      last_non_machine_unwrap_at: null,
+    })
+    await expect(store.listMissionArchives(mission.id)).resolves.toEqual([
+      expect.objectContaining({ id: result.archive.id, status: 'sealed', verified_at: null }),
+    ])
+
+    vi.setSystemTime(new Date('2026-08-30T09:05:00.000Z'))
+    await expect(store.verifyMissionArchive({
+      archiveId: result.archive.id,
+      operationId: '22222222-2222-4222-8222-222222222222',
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: issuance.recoveryCode,
+    })).resolves.toMatchObject({
+      id: result.archive.id,
+      status: 'verified',
+      verified_at: '2026-08-30T09:05:00.000Z',
+      last_non_machine_unwrap_at: '2026-08-30T09:05:00.000Z',
+    })
+
+    expect((await store.listMissionEvents(mission.id)).map((event) => event.event_type)).toEqual(
+      expect.arrayContaining([
+        'mission_finalize_requested',
+        'mission_archive_sealed_v2',
+        'mission_finalized',
+        'mission_archive_verified_v2',
+      ]),
+    )
+    const archiveLifecycleEvents = (await store.listMissionEvents(mission.id))
+      .map((event) => event.event_type)
+      .filter((eventType) => eventType.startsWith('mission_archive_'))
+    expect(archiveLifecycleEvents).toEqual([
+      'mission_archive_sealed_v2',
+      'mission_archive_verified_v2',
+    ])
+
+    const cancellableMission = await store.createMission({ name: 'Cancelled Custody Mission' })
+    await store.finishMission(cancellableMission.id)
+    const cancellable = await store.issueMissionArchiveRecoveryCode(cancellableMission.id)
+    await expect(store.cancelMissionArchiveOperation(cancellable.operationId)).resolves.toBe(true)
+    await expect(store.cancelMissionArchiveOperation(cancellable.operationId)).resolves.toBe(false)
+    await expect(store.finalizeMission(cancellableMission.id, {
+      operationId: cancellable.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: cancellable.recoveryCode,
+    })).rejects.toThrow(/recovery-code confirmation is no longer valid/iu)
+  })
+
+  it('mirrors cleanup eligibility and archived timeline state as UI-only browser evidence', async () => {
+    window.localStorage.setItem(
+      'sartracker:browser-settings',
+      JSON.stringify({ missionDefaults: { adminRoster: ['Ops Lead'] } }),
+    )
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Browser Cleanup Mission' })
+    await store.finishMission(mission.id)
+    const finalized = await finalizeBrowserHarnessMission(store, mission.id)
+
+    await expect(store.getMissionCleanupEligibility({
+      missionId: mission.id,
+      archiveId: finalized.archive.id,
+    })).resolves.toEqual({
+      eligible: false,
+      startableWithCredential: true,
+      blockers: ['fresh_non_machine_unlock_required'],
+      storageState: 'live',
+    })
+    await expect(store.startMissionCleanup({
+      missionId: mission.id,
+      archiveId: finalized.archive.id,
+      operationId: '33333333-3333-4333-8333-333333333333',
+      slotType: 'passphrase',
+      secret: 'wrong browser credential 2026',
+      confirmation: mission.name,
+    })).rejects.toMatchObject({
+      code: 'ARCHIVE_CLEANUP_WRONG_KEY',
+      message: expect.stringMatching(/credential/iu),
+    })
+    await expect(store.startMissionCleanup({
+      missionId: mission.id,
+      archiveId: finalized.archive.id,
+      operationId: '44444444-4444-4444-8444-444444444444',
+      slotType: 'passphrase',
+      secret: 'Harness archive passphrase 2026',
+      confirmation: mission.name,
+    })).resolves.toMatchObject({
+      missionId: mission.id,
+      archiveId: finalized.archive.id,
+      state: 'completed',
+      storageState: 'archived',
+      movedRows: expect.any(Number),
+    })
+    await expect(store.listMissions()).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: mission.id, storage_state: 'archived' }),
+    ]))
+    await expect(store.listMissionArchives(mission.id)).resolves.toHaveLength(1)
+    await expect(store.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Ops Lead',
+      reason: 'Archived missions must stay read-only.',
+    })).rejects.toThrow(/archived.*read-only|read-only.*archived/iu)
+
+    resetBrowserHarnessStore(false)
+    await expect(getBrowserHarnessStore().listMissions()).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: mission.id, storage_state: 'archived' }),
+    ]))
+  })
+
+  it('retains immutable per-revision browser snapshots and chains correction archives', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-30T09:00:00.000Z'))
+    window.localStorage.setItem(
+      'sartracker:browser-settings',
+      JSON.stringify({ missionDefaults: { adminRoster: ['Duty Admin'] } }),
+    )
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Browser Correction Chain Mission' })
+    await store.finishMission(mission.id)
+    const firstIssuance = await store.issueMissionArchiveRecoveryCode(mission.id)
+    const first = await store.finalizeMission(mission.id, {
+      operationId: firstIssuance.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: firstIssuance.recoveryCode,
+    })
+    const firstSnapshot = await store.readMissionArchiveSnapshot?.(first.archive.id)
+    expect(firstSnapshot?.missionEvents.map((event) => event.event_type)).toContain('mission_finalized')
+
+    vi.setSystemTime(new Date('2026-08-30T10:00:00.000Z'))
+    await expect(store.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Correct the synthetic browser mission.',
+    })).resolves.toMatchObject({ status: 'finished' })
+    vi.setSystemTime(new Date('2026-08-30T11:00:00.000Z'))
+    const secondIssuance = await store.issueMissionArchiveRecoveryCode(mission.id)
+    const second = await store.finalizeMission(mission.id, {
+      operationId: secondIssuance.operationId,
+      passphrase: 'Harness archive passphrase 2026',
+      recoveryCode: secondIssuance.recoveryCode,
+    })
+
+    expect(second.archive).toMatchObject({
+      previous_archive_id: first.archive.id,
+      previous_archive_sha256: first.archive.ciphertext_sha256,
+      revision_sequence: 2,
+      revision_count: 2,
+      supplement_authority: 'Duty Admin',
+      supplement_reason: 'Correct the synthetic browser mission.',
+      supplement_created_at: '2026-08-30T11:00:00.000Z',
+    })
+    await expect(store.listMissionArchives(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        id: first.archive.id,
+        status: 'superseded',
+        revision_sequence: 1,
+        revision_count: 2,
+      }),
+      expect.objectContaining({
+        id: second.archive.id,
+        status: 'verified',
+        revision_sequence: 2,
+        revision_count: 2,
+      }),
+    ])
+    expect(firstSnapshot?.missionEvents.some((event) => {
+      if (event.event_type !== 'mission_archive_verified_v2') return false
+      return JSON.parse(event.details_json ?? '{}').archive_id === second.archive.id
+    })).toBe(false)
+    const secondSnapshot = await store.readMissionArchiveSnapshot?.(second.archive.id)
+    expect(secondSnapshot?.missionEvents.filter((event) => event.event_type === 'mission_finalized'))
+      .toHaveLength(2)
+
+    const persistedState = readBrowserHarnessState()
+    window.sessionStorage.setItem('sartracker:browser-harness', JSON.stringify({
+      ...persistedState,
+      missionArchives: persistedState.missionArchives.map((archive) =>
+        archive.id === first.archive.id ? { ...archive, status: 'verified' } : archive),
+    }))
+    resetBrowserHarnessStore(false)
+    const reloadedStore = getBrowserHarnessStore()
+    await reloadedStore.startMissionCleanup({
+      missionId: mission.id,
+      archiveId: second.archive.id,
+      operationId: '33333333-3333-4333-8333-333333333333',
+      slotType: 'passphrase',
+      secret: 'Harness archive passphrase 2026',
+      confirmation: mission.name,
+    })
+    await expect(reloadedStore.restoreMissionForCorrection({
+      mission_id: mission.id,
+      archiveId: first.archive.id,
+      operationId: '44444444-4444-4444-8444-444444444444',
+      sessionId: '55555555-5555-4555-8555-555555555555',
+      admin_name: 'Duty Admin',
+      reason: 'A stale predecessor must not authorize correction.',
+    })).rejects.toThrow(/current correction predecessor/iu)
+  })
+
   it('keeps a browser evidence gap critical while allowing audited closure [DON-276]', async () => {
     window.localStorage.setItem(
       'sartracker:browser-settings',
@@ -645,7 +977,7 @@ describe('browser harness store', () => {
     })
     await store.finishMission(mission.id)
 
-    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+    await expect(finalizeBrowserHarnessMission(store, mission.id)).rejects.toThrow(/evidence health/iu)
     await expect(store.acknowledgeIngestEvidenceLoss({
       mission_id: mission.id,
       admin_name: 'Ops Lead',
@@ -654,7 +986,7 @@ describe('browser harness store', () => {
       state: 'critical',
       acknowledgedLoss: { adminName: 'Ops Lead' },
     })
-    await expect(store.finalizeMission(mission.id)).resolves.toMatchObject({
+    await expect(finalizeBrowserHarnessMission(store, mission.id)).resolves.toMatchObject({
       mission: { status: 'finalized' },
     })
     await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
@@ -771,7 +1103,7 @@ describe('browser harness store', () => {
       state: 'finished', event_type: 'mission_finished',
     })
     vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
-    await store.finalizeMission(mission.id)
+    await finalizeBrowserHarnessMission(store, mission.id)
     await expect(readLifecycle()).resolves.toMatchObject({
       state: 'finalized', event_type: 'mission_finalized',
     })

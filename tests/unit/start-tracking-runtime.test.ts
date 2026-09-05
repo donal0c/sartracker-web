@@ -11,7 +11,11 @@ import {
   createIncomingPositionCacheKeys,
   startTrackingRuntime,
 } from '../../src/features/tracking/start-tracking-runtime'
-import type { TrackingHistoryChunkPersistenceInput } from '../../src/features/tracking/polling-manager'
+import type {
+  TrackingHistoryChunkPersistenceInput,
+  TrackingMissionEvidenceTransfer,
+  TrackingSnapshotContext,
+} from '../../src/features/tracking/polling-manager'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 import { createParticipationScope } from '../../src/features/participants/participation-scope'
@@ -697,8 +701,8 @@ describe('startTrackingRuntime', () => {
     }, { missionEvidenceId: 'mission-1' })
 
     expect(observations).toHaveLength(2)
-    expect(observations.every((observation) => observation.complete.mock.calls.length === 0))
-      .toBe(true)
+    expect(observations[0]?.complete).not.toHaveBeenCalled()
+    expect(observations[1]?.complete).toHaveBeenCalledOnce()
     await expect(settleMissionEvidence?.('mission-1')).rejects.toThrow(
       /participant scope.*retry Finish/iu,
     )
@@ -754,7 +758,57 @@ describe('startTrackingRuntime', () => {
 
     expect(recordMissionEvidenceLoss).toHaveBeenCalledWith(
       'mission-1',
-      'mission_persistence_failed',
+      'renderer_pending_evidence_lost',
+    )
+    expect(recordMissionEvidenceLoss.mock.invocationCallOrder[0])
+      .toBeLessThan(complete.mock.invocationCallOrder[0]!)
+  })
+
+  it('drains transferred current evidence before runtime stop releases its guardian [DON-252]', async () => {
+    const recordMissionEvidenceLoss = vi.fn().mockResolvedValue(undefined)
+    const complete = vi.fn()
+    const claim = vi.fn()
+    let pollerHooks: {
+      readonly onCurrentSnapshot: (
+        snapshot: TrackingSnapshot,
+        context: TrackingSnapshotContext,
+        observation: TrackingMissionEvidenceTransfer,
+      ) => void
+    } | undefined
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      readParticipationScope: () => createParticipationScope({
+        participants: [], membershipEvents: [],
+      }),
+      readParticipationScopeStatus: () => 'loading',
+      subscribeParticipationScope: () => () => undefined,
+      recordMissionEvidenceLoss,
+      writeCache: false,
+    })
+
+    pollerHooks!.onCurrentSnapshot(
+      { ...SNAPSHOT, rawBreadcrumbsForPersistence: [] },
+      { historyResetKey: 'mission-1', missionEvidenceId: 'mission-1' },
+      { missionId: 'mission-1', complete, claim },
+    )
+    expect(claim).toHaveBeenCalledOnce()
+    expect(complete).not.toHaveBeenCalled()
+
+    await stop()
+
+    expect(recordMissionEvidenceLoss).toHaveBeenCalledWith(
+      'mission-1',
+      'renderer_pending_evidence_lost',
     )
     expect(recordMissionEvidenceLoss.mock.invocationCallOrder[0])
       .toBeLessThan(complete.mock.invocationCallOrder[0]!)
@@ -1305,6 +1359,472 @@ describe('startTrackingRuntime', () => {
     expect(applySnapshot).toHaveBeenCalledWith(SNAPSHOT)
     rosterWrite.resolve()
     await publication
+  })
+
+  it('keeps current-fix rendering live while bounded mission persistence drains FIFO [DON-252]', async () => {
+    useMissionStore.setState({
+      phase: 'active',
+      currentMission: {
+        id: 'mission-1', name: 'Mission 1', status: 'active',
+        start_time: '2026-04-06T09:00:00.000Z', pause_time: null,
+        finish_time: null, paused_seconds: 0, notes: null, schema_version: 1,
+      },
+    })
+    const firstPersistence = createDeferred<unknown>()
+    const addPositionsBulk = vi.fn()
+      .mockReturnValueOnce(firstPersistence.promise)
+      .mockResolvedValue(undefined)
+    const applySnapshot = vi.fn()
+    const observations = Array.from({ length: 10 }, () => ({
+      missionId: 'mission-1',
+      complete: vi.fn(),
+      claim: vi.fn(),
+    })) satisfies TrackingMissionEvidenceTransfer[]
+    const recordMissionEvidenceLoss = vi.fn().mockResolvedValue(undefined)
+    let settleMissionEvidence: ((missionId: string) => Promise<void>) | undefined
+    let pollerHooks: {
+      readonly onCurrentSnapshot: (
+        snapshot: TrackingSnapshot,
+        context: TrackingSnapshotContext,
+        observation: TrackingMissionEvidenceTransfer,
+      ) => void
+    } | undefined
+
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPositionsBulk,
+      }),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      registerMissionEvidenceSettler: (settler) => {
+        settleMissionEvidence = settler
+        return () => undefined
+      },
+      recordMissionEvidenceLoss,
+      writeCache: false,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    const currentSnapshots = Array.from({ length: 10 }, (_, index) => ({
+      ...SNAPSHOT,
+      positions: [{
+        ...SNAPSHOT.positions[0]!,
+        id: index === 1 || index === 2
+          ? 'corrected-live-fix'
+          : `live-fix-${index + 1}`,
+        lat: SNAPSHOT.positions[0]!.lat + index / 1_000,
+        timestamp: `2026-04-06T10:35:0${index}.000Z`,
+      }],
+      // Current polling must not retain the rendered breadcrumb history while
+      // one durable write is slow.
+      rawBreadcrumbsForPersistence: [],
+    })) satisfies TrackingSnapshot[]
+
+    const publicationResults = currentSnapshots.map((snapshot, index) =>
+      pollerHooks!.onCurrentSnapshot(
+        snapshot,
+        { historyResetKey: 'mission-1', missionEvidenceId: 'mission-1' },
+        observations[index]!,
+      ))
+
+    expect(publicationResults).toEqual(currentSnapshots.map(() => undefined))
+    expect(applySnapshot.mock.calls.map(([snapshot]) => snapshot.positions[0]?.id))
+      .toEqual(currentSnapshots.map((snapshot) => snapshot.positions[0]?.id))
+    expect(observations[0]?.complete).not.toHaveBeenCalled()
+    expect(observations.slice(1).every(({ complete }) =>
+      complete.mock.calls.length === 1)).toBe(true)
+    expect(observations.every(({ claim }) => claim.mock.calls.length === 1)).toBe(true)
+    await vi.waitFor(() => expect(addPositionsBulk).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(recordMissionEvidenceLoss).toHaveBeenCalledOnce())
+    expect(recordMissionEvidenceLoss).toHaveBeenCalledWith(
+      'mission-1',
+      'renderer_pending_capacity_exhausted',
+    )
+
+    let finishSettled = false
+    const finishSettlement = settleMissionEvidence!('mission-1').then(() => {
+      finishSettled = true
+    })
+    await Promise.resolve()
+    expect(finishSettled).toBe(false)
+
+    firstPersistence.resolve(undefined)
+    await finishSettlement
+
+    expect(addPositionsBulk.mock.calls.map(([input]) => {
+      const position = input.positions[0] as {
+        readonly source_position_id: string
+        readonly lat: number
+      }
+      return [position.source_position_id, position.lat]
+    })).toEqual(currentSnapshots.slice(0, 8).map((snapshot) => [
+      snapshot.positions[0]!.id,
+      snapshot.positions[0]!.lat,
+    ]))
+    expect(addPositionsBulk).toHaveBeenCalledTimes(8)
+    expect(observations[0]?.complete).toHaveBeenCalledOnce()
+    await stop()
+  })
+
+  it('does not exhaust evidence capacity on non-durable health-only changes [DON-252]', async () => {
+    useMissionStore.setState({
+      phase: 'active',
+      currentMission: {
+        id: 'mission-1', name: 'Mission 1', status: 'active',
+        start_time: '2026-04-06T09:00:00.000Z', pause_time: null,
+        finish_time: null, paused_seconds: 0, notes: null, schema_version: 1,
+      },
+    })
+    const firstPersistence = createDeferred<unknown>()
+    const addPositionsBulk = vi.fn().mockReturnValue(firstPersistence.promise)
+    const recordMissionEvidenceLoss = vi.fn().mockResolvedValue(undefined)
+    const observations = Array.from({ length: 9 }, () => ({
+      missionId: 'mission-1', complete: vi.fn(), claim: vi.fn(),
+    })) satisfies TrackingMissionEvidenceTransfer[]
+    let pollerHooks: {
+      readonly onCurrentSnapshot: (
+        snapshot: TrackingSnapshot,
+        context: TrackingSnapshotContext,
+        observation: TrackingMissionEvidenceTransfer,
+      ) => void
+    } | undefined
+
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      recordMissionEvidenceLoss,
+      writeCache: false,
+    })
+
+    for (let index = 0; index < observations.length; index += 1) {
+      pollerHooks!.onCurrentSnapshot({
+        ...SNAPSHOT,
+        devices: [{
+          ...SNAPSHOT.devices[0]!,
+          category: index % 2 === 0 ? 'person' : 'vehicle',
+        }],
+        positions: [{
+          ...SNAPSHOT.positions[0]!,
+          cache_age_seconds: index,
+          device_cache_stale: index % 2 === 1,
+        }],
+        rawBreadcrumbsForPersistence: [],
+      }, {
+        historyResetKey: 'mission-1', missionEvidenceId: 'mission-1',
+      }, observations[index]!)
+    }
+
+    await vi.waitFor(() => expect(addPositionsBulk).toHaveBeenCalledOnce())
+    await Promise.resolve()
+    expect(recordMissionEvidenceLoss).not.toHaveBeenCalled()
+    expect(observations[0]?.complete).not.toHaveBeenCalled()
+    expect(observations.slice(1).every(({ complete }) =>
+      complete.mock.calls.length === 1)).toBe(true)
+
+    firstPersistence.resolve(undefined)
+    await vi.waitFor(() => expect(observations[0]?.complete).toHaveBeenCalledOnce())
+    await stop()
+    expect(addPositionsBulk).toHaveBeenCalledOnce()
+    expect(recordMissionEvidenceLoss).not.toHaveBeenCalled()
+  })
+
+  it('retains raw current fixes until participant hydration can scope them [DON-252]', async () => {
+    useMissionStore.setState({
+      phase: 'active',
+      currentMission: {
+        id: 'mission-1', name: 'Mission 1', status: 'active',
+        start_time: '2026-04-06T09:00:00.000Z', pause_time: null,
+        finish_time: null, paused_seconds: 0, notes: null, schema_version: 1,
+      },
+    })
+    const selectedDeviceId = SNAPSHOT.devices[0]!.device_id
+    const emptyScope = createParticipationScope({ participants: [], membershipEvents: [] })
+    const selectedScope = createParticipationScope({
+      participants: [{
+        id: 'participant-1', mission_id: 'mission-1', kind: 'device',
+        traccar_device_id: selectedDeviceId, mission_team_id: null,
+        traccar_group_id: null, team_name: null, provenance: 'explicit',
+        effective_from: '2026-04-06T09:00:00.000Z',
+        added_at: '2026-04-06T09:00:00.000Z', added_by: 'Coordinator',
+        removed_at: null, removed_by: null,
+      }],
+      membershipEvents: [],
+    })
+    let scopeStatus: 'loading' | 'ready' = 'loading'
+    let notifyScopeChanged = (): void => undefined
+    const addPositionsBulk = vi.fn().mockResolvedValue(undefined)
+    const complete = vi.fn()
+    const claim = vi.fn()
+    let pollerHooks: {
+      readonly onCurrentSnapshot: (
+        snapshot: TrackingSnapshot,
+        context: TrackingSnapshotContext,
+        observation: TrackingMissionEvidenceTransfer,
+      ) => void
+    } | undefined
+
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      readParticipationScopeStatus: () => scopeStatus,
+      readParticipationScope: () => scopeStatus === 'ready' ? selectedScope : emptyScope,
+      subscribeParticipationScope: (listener) => {
+        notifyScopeChanged = listener
+        return () => undefined
+      },
+      writeCache: false,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    pollerHooks!.onCurrentSnapshot(
+      { ...SNAPSHOT, rawBreadcrumbsForPersistence: [] },
+      { historyResetKey: 'mission-1', missionEvidenceId: 'mission-1' },
+      { missionId: 'mission-1', complete, claim },
+    )
+    expect(claim).toHaveBeenCalledOnce()
+    expect(addPositionsBulk).not.toHaveBeenCalled()
+    expect(complete).not.toHaveBeenCalled()
+
+    scopeStatus = 'ready'
+    notifyScopeChanged()
+    await vi.waitFor(() => expect(addPositionsBulk).toHaveBeenCalledOnce())
+    expect(addPositionsBulk.mock.calls[0]?.[0].positions).toEqual([
+      expect.objectContaining({
+        source_position_id: SNAPSHOT.positions[0]!.id,
+        device_id: selectedDeviceId,
+      }),
+    ])
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledOnce())
+    await stop()
+  })
+
+  it('bounds live tracking cache work to one active and one latest pending write [DON-252]', async () => {
+    const firstWrite = createDeferred<string>()
+    const finalWrite = createDeferred<string>()
+    const cacheWrite = vi.fn()
+      .mockReturnValueOnce(firstWrite.promise)
+      .mockReturnValueOnce(finalWrite.promise)
+    let pollerHooks: {
+      readonly onCurrentSnapshot: (
+        snapshot: TrackingSnapshot,
+        context: TrackingSnapshotContext,
+        observation: TrackingMissionEvidenceTransfer,
+      ) => void
+    } | undefined
+
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: cacheWrite },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    const serializedSnapshotIds: string[] = []
+    const snapshots = Array.from({ length: 50 }, (_, index) => {
+      const id = `cache-fix-${index + 1}`
+      return {
+        ...SNAPSHOT,
+        positions: [{
+          ...SNAPSHOT.positions[0]!,
+          id,
+          timestamp: `2026-04-06T10:${String(35 + index).padStart(2, '0')}:00.000Z`,
+          get cache_age_seconds() {
+            serializedSnapshotIds.push(id)
+            return null
+          },
+        }],
+        rawBreadcrumbsForPersistence: [],
+      }
+    }) satisfies TrackingSnapshot[]
+    const completed = vi.fn()
+
+    for (const snapshot of snapshots) {
+      pollerHooks!.onCurrentSnapshot(
+        snapshot,
+        { historyResetKey: null, missionEvidenceId: null },
+        { missionId: null, complete: completed, claim: vi.fn() },
+      )
+    }
+
+    expect(completed).not.toHaveBeenCalled()
+    expect(serializedSnapshotIds).toEqual([])
+    await vi.waitFor(() => expect(cacheWrite).toHaveBeenCalledOnce())
+    expect(serializedSnapshotIds).toEqual(['cache-fix-1'])
+    firstWrite.resolve('/tmp/first-cache.json')
+    await vi.waitFor(() => expect(cacheWrite).toHaveBeenCalledTimes(2))
+    expect(cacheWrite).toHaveBeenCalledTimes(2)
+    expect(serializedSnapshotIds).toEqual(['cache-fix-1', 'cache-fix-50'])
+    const latestPayload = JSON.parse(String(cacheWrite.mock.calls[1]?.[0])) as {
+      readonly positions: readonly { readonly id: string }[]
+    }
+    expect(latestPayload.positions[0]?.id).toBe('cache-fix-50')
+
+    let stopSettled = false
+    const stopPromise = stop().then(() => {
+      stopSettled = true
+    })
+    await Promise.resolve()
+    expect(stopSettled).toBe(false)
+    finalWrite.resolve('/tmp/final-cache.json')
+    await stopPromise
+    expect(cacheWrite).toHaveBeenCalledTimes(2)
+    expect(completed).not.toHaveBeenCalled()
+  })
+
+  it('timestamps a pending fallback-cache snapshot when it is observed [DON-252]', async () => {
+    const firstWrite = createDeferred<string>()
+    const cacheWrite = vi.fn()
+      .mockReturnValueOnce(firstWrite.promise)
+      .mockResolvedValue('/tmp/latest-cache.json')
+    let observedAt = new Date('2026-04-06T10:35:00.000Z')
+    let pollerHooks: {
+      readonly onCurrentSnapshot: (
+        snapshot: TrackingSnapshot,
+        context: TrackingSnapshotContext,
+        observation: TrackingMissionEvidenceTransfer,
+      ) => void
+    } | undefined
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: cacheWrite },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      now: () => observedAt,
+    })
+    const nullObservation = {
+      missionId: null,
+      complete: vi.fn(),
+      claim: vi.fn(),
+    } satisfies TrackingMissionEvidenceTransfer
+
+    pollerHooks!.onCurrentSnapshot(SNAPSHOT, {
+      historyResetKey: null, missionEvidenceId: null,
+    }, nullObservation)
+    await vi.waitFor(() => expect(cacheWrite).toHaveBeenCalledOnce())
+
+    observedAt = new Date('2026-04-06T10:36:00.000Z')
+    pollerHooks!.onCurrentSnapshot({
+      ...SNAPSHOT,
+      positions: [{ ...SNAPSHOT.positions[0]!, id: 'latest-fix' }],
+    }, {
+      historyResetKey: null, missionEvidenceId: null,
+    }, nullObservation)
+    observedAt = new Date('2026-04-06T11:36:00.000Z')
+    firstWrite.resolve('/tmp/first-cache.json')
+
+    await vi.waitFor(() => expect(cacheWrite).toHaveBeenCalledTimes(2))
+    const latestPayload = JSON.parse(String(cacheWrite.mock.calls[1]?.[0])) as {
+      readonly cached_at: string
+    }
+    expect(latestPayload.cached_at).toBe('2026-04-06T10:36:00.000Z')
+    await stop()
+  })
+
+  it('keeps fallback-cache breadcrumbs inside one global fair budget [DON-252]', async () => {
+    const cacheWrite = vi.fn().mockResolvedValue('/tmp/tracking-cache.json')
+    let pollerHooks: {
+      readonly onCurrentSnapshot: (
+        snapshot: TrackingSnapshot,
+        context: TrackingSnapshotContext,
+        observation: TrackingMissionEvidenceTransfer,
+      ) => void
+    } | undefined
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: cacheWrite },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+    const breadcrumbs = Array.from({ length: 6_000 }, (_, index) => ({
+      ...SNAPSHOT.positions[0]!,
+      id: `breadcrumb-${index}`,
+      device_id: String((index % 2) + 1),
+      timestamp: new Date(Date.UTC(2026, 3, 6, 8, 0, index)).toISOString(),
+    }))
+
+    pollerHooks!.onCurrentSnapshot({
+      ...SNAPSHOT,
+      breadcrumbs,
+      rawBreadcrumbsForPersistence: [],
+    }, {
+      historyResetKey: null,
+      missionEvidenceId: null,
+    }, {
+      missionId: null,
+      complete: vi.fn(),
+      claim: vi.fn(),
+    })
+
+    await vi.waitFor(() => expect(cacheWrite).toHaveBeenCalledOnce())
+    const cachedPayload = JSON.parse(String(cacheWrite.mock.calls[0]?.[0])) as {
+      readonly breadcrumbs: readonly {
+        readonly id: string
+        readonly device_id: string
+      }[]
+    }
+    expect(cachedPayload.breadcrumbs).toHaveLength(5_000)
+    expect(cachedPayload.breadcrumbs.filter(({ device_id }) => device_id === '1'))
+      .toHaveLength(2_500)
+    expect(cachedPayload.breadcrumbs.filter(({ device_id }) => device_id === '2'))
+      .toHaveLength(2_500)
+    expect(cachedPayload.breadcrumbs.map(({ id }) => id)).toEqual(
+      expect.arrayContaining(['breadcrumb-0', 'breadcrumb-1', 'breadcrumb-5998', 'breadcrumb-5999']),
+    )
+    await stop()
   })
 
   it('marks a partially normalized participant roster as non-authoritative', async () => {
@@ -3328,19 +3848,33 @@ describe('startTrackingRuntime', () => {
   })
 
   it('does not settle a failed accepted-fix observation when its loss marker is not durable', async () => {
+    useMissionStore.setState({
+      phase: 'active',
+      currentMission: {
+        id: 'mission-1', name: 'Mission 1', status: 'active',
+        start_time: '2026-04-06T09:00:00.000Z', pause_time: null,
+        finish_time: null, paused_seconds: 0, notes: null, schema_version: 1,
+      },
+    })
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot, context?: {
-            readonly missionEvidenceId?: string | null
-          }) => void | Promise<void>
+          onCurrentSnapshot: (
+            snapshot: TrackingSnapshot,
+            context: TrackingSnapshotContext,
+            observation: TrackingMissionEvidenceTransfer,
+          ) => void
         }
       | undefined
+    let settleMissionEvidence: ((missionId: string) => Promise<void>) | undefined
     const applySnapshot = vi.fn()
-    const recordMissionEvidenceLoss = vi.fn().mockRejectedValue(
-      new Error('loss marker unavailable'),
-    )
+    const complete = vi.fn()
+    const claim = vi.fn()
+    const recordMissionEvidenceLoss = vi.fn()
+      .mockRejectedValueOnce(new Error('loss marker unavailable'))
+      .mockRejectedValueOnce(new Error('loss marker retry unavailable'))
+      .mockResolvedValue(undefined)
 
-    await startTrackingRuntime({
+    const stop = await startTrackingRuntime({
       config: { baseUrl: 'http://test:8082' },
       createClient: vi.fn().mockReturnValue({}),
       createPoller: vi.fn().mockImplementation((_client, hooks) => {
@@ -3355,16 +3889,39 @@ describe('startTrackingRuntime', () => {
       applySnapshot,
       applyStatus: vi.fn(),
       recordMissionEvidenceLoss,
+      registerMissionEvidenceSettler: (settler) => {
+        settleMissionEvidence = settler
+        return () => undefined
+      },
+      logger: { warn: vi.fn() },
+      writeCache: false,
     })
 
-    await expect(pollerHooks?.onSnapshot(SNAPSHOT, {
-      missionEvidenceId: 'mission-1',
-    })).rejects.toThrow('loss marker unavailable')
-    expect(applySnapshot).toHaveBeenCalledWith(SNAPSHOT)
+    expect(pollerHooks?.onCurrentSnapshot(
+      { ...SNAPSHOT, rawBreadcrumbsForPersistence: [] },
+      { historyResetKey: 'mission-1', missionEvidenceId: 'mission-1' },
+      { missionId: 'mission-1', complete, claim },
+    )).toBeUndefined()
+    expect(applySnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      devices: SNAPSHOT.devices,
+      positions: SNAPSHOT.positions,
+    }))
+    expect(claim).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(recordMissionEvidenceLoss).toHaveBeenCalledOnce())
+    expect(complete).not.toHaveBeenCalled()
+
+    await expect(settleMissionEvidence?.('mission-1')).rejects.toThrow(
+      'loss marker retry unavailable',
+    )
+    expect(complete).not.toHaveBeenCalled()
+    await expect(settleMissionEvidence?.('mission-1')).resolves.toBeUndefined()
+    expect(complete).toHaveBeenCalledOnce()
     expect(recordMissionEvidenceLoss).toHaveBeenCalledWith(
       'mission-1',
       'mission_persistence_failed',
     )
+    expect(recordMissionEvidenceLoss).toHaveBeenCalledTimes(3)
+    await stop()
   })
 
   it('persists catch-up batches without serializing an intermediate tracking cache', async () => {

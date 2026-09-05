@@ -6,6 +6,7 @@ setTimeout(() => {
     workerThreadId: threadId,
     auditEvents: [],
     breadcrumbCount: 0,
+    correctionAuthorized: false,
   })
   parentPort?.close()
 }, 300)
