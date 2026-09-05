@@ -1361,6 +1361,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     rendererFrame: 0,
   }]))
   const sourceByIdentity = new Map()
+  const retiredSourceByIdentity = new Map()
   const operationCheckpoints = new Map()
   const errors = new Set()
   let currentFixContinuity = null
@@ -1388,6 +1389,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   let rendererCollectionFailure = null
   let sourceEntrySequenceHighWatermark = 0
   let sourceFenceHighWatermark = 0
+  let sourceAcknowledgementHighWatermark = 0
 
   const enqueue = (operation) => {
     const result = operationSerial.then(operation)
@@ -1432,12 +1434,59 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         || entry.emittedAtMs < entry.requestStartedAtMs
         || typeof entry.sourceTimestamp !== 'string'
         || entry.sourceTimestamp !== new Date(entry.emittedAtMs).toISOString()
-        || sourceByIdentity.has(entry.sourcePositionId)) {
+        || sourceByIdentity.has(entry.sourcePositionId)
+        || retiredSourceByIdentity.has(entry.sourcePositionId)) {
         recordError('source_ledger_entry_invalid')
         continue
       }
       sourceEntrySequenceHighWatermark = entry.sequence
       sourceByIdentity.set(entry.sourcePositionId, entry)
+    }
+  }
+
+  /** Audits one pending source against its immutable request and emission deadline. */
+  const auditPendingSourceAt = (source, auditedAtMs) => {
+    const requestAgeMs = auditedAtMs - source.requestStartedAtMs
+    const sourceAgeMs = auditedAtMs - source.emittedAtMs
+    if (requestAgeMs < 0 || sourceAgeMs < 0) {
+      recordError('current_fix_clock_invalid')
+      return 'invalid'
+    }
+    if (requestAgeMs < LIVENESS_HARD_GATE_MS
+      && sourceAgeMs < LIVENESS_HARD_GATE_MS) return 'within_gate'
+    if (currentFixTimeout === null
+      || Math.max(requestAgeMs, sourceAgeMs)
+        >= Math.max(currentFixTimeout.requestAgeMs, currentFixTimeout.sourceAgeMs)) {
+      currentFixTimeout = Object.freeze({
+        phase: source.phase,
+        requestAgeMs,
+        sourceAgeMs,
+        requestStartedAtMs: source.requestStartedAtMs,
+        emittedAtMs: source.emittedAtMs,
+        auditedAtMs,
+      })
+    }
+    recordError('current_fix_not_observed_before_gate')
+    return 'expired'
+  }
+
+  /** Retains a bounded tombstone so a later stale render fails closed. */
+  const rememberRetiredSource = (source) => {
+    retiredSourceByIdentity.set(source.sourcePositionId, source)
+    while (retiredSourceByIdentity.size > RENDERER_LIVENESS_LEDGER_CAPACITY) {
+      const oldestIdentity = retiredSourceByIdentity.keys().next().value
+      retiredSourceByIdentity.delete(oldestIdentity)
+    }
+  }
+
+  /** Retires only snapshots overtaken before their original strict deadline. */
+  const acknowledgeSourceSequence = (sequence, observedAtMs) => {
+    sourceAcknowledgementHighWatermark = sequence
+    for (const [identity, source] of sourceByIdentity) {
+      if (source.sequence > sequence) continue
+      const deadlineState = auditPendingSourceAt(source, observedAtMs)
+      sourceByIdentity.delete(identity)
+      if (deadlineState === 'within_gate') rememberRetiredSource(source)
     }
   }
 
@@ -1448,27 +1497,8 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       return
     }
     for (const [identity, source] of sourceByIdentity) {
-      const requestAgeMs = currentTimeMs - source.requestStartedAtMs
-      const sourceAgeMs = currentTimeMs - source.emittedAtMs
-      if (requestAgeMs < 0 || sourceAgeMs < 0) {
+      if (auditPendingSourceAt(source, currentTimeMs) !== 'within_gate') {
         sourceByIdentity.delete(identity)
-        recordError('current_fix_clock_invalid')
-      } else if (requestAgeMs >= LIVENESS_HARD_GATE_MS
-        || sourceAgeMs >= LIVENESS_HARD_GATE_MS) {
-        sourceByIdentity.delete(identity)
-        if (currentFixTimeout === null
-          || Math.max(requestAgeMs, sourceAgeMs)
-            >= Math.max(currentFixTimeout.requestAgeMs, currentFixTimeout.sourceAgeMs)) {
-          currentFixTimeout = Object.freeze({
-            phase: source.phase,
-            requestAgeMs,
-            sourceAgeMs,
-            requestStartedAtMs: source.requestStartedAtMs,
-            emittedAtMs: source.emittedAtMs,
-            auditedAtMs: currentTimeMs,
-          })
-        }
-        recordError('current_fix_not_observed_before_gate')
       }
     }
   }
@@ -1731,6 +1761,8 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     }
     for (const frame of snapshot.frameGaps) recordRendererFrameGap(frame, true)
     recordRendererFrameTail(snapshot.frameTail)
+    const correlations = []
+    let observedSequenceHighWatermark = sourceAcknowledgementHighWatermark
     for (const observation of snapshot.currentFixes) {
       if (observation === null || typeof observation !== 'object'
         || Array.isArray(observation)
@@ -1740,8 +1772,36 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         continue
       }
       const source = sourceByIdentity.get(observation.sourcePositionId)
-      if (source === undefined) continue
-      sourceByIdentity.delete(observation.sourcePositionId)
+      if (source === undefined) {
+        const retiredSource = retiredSourceByIdentity.get(
+          observation.sourcePositionId,
+        )
+        if (retiredSource === undefined) continue
+        retiredSourceByIdentity.delete(observation.sourcePositionId)
+        if (observation.sourceTimestamp !== retiredSource.sourceTimestamp) {
+          recordError('current_fix_timestamp_identity_mismatch')
+          continue
+        }
+        if (!Number.isSafeInteger(observation.observedAtMs)
+          || observation.observedAtMs < 0) {
+          recordError('renderer_current_fix_sample_invalid')
+          continue
+        }
+        const sourceToRendererMs = observation.observedAtMs - retiredSource.emittedAtMs
+        const requestToRendererMs = observation.observedAtMs
+          - retiredSource.requestStartedAtMs
+        if (!Number.isFinite(sourceToRendererMs) || sourceToRendererMs < 0
+          || !Number.isFinite(requestToRendererMs) || requestToRendererMs < 0) {
+          recordError('current_fix_clock_invalid')
+          continue
+        }
+        if (sourceToRendererMs >= LIVENESS_HARD_GATE_MS
+          || requestToRendererMs >= LIVENESS_HARD_GATE_MS) {
+          recordError('current_fix_gate_breached')
+        }
+        recordError('renderer_current_fix_sequence_regressed')
+        continue
+      }
       if (observation.sourceTimestamp !== source.sourceTimestamp) {
         recordError('current_fix_timestamp_identity_mismatch')
         continue
@@ -1758,6 +1818,25 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         recordError('current_fix_clock_invalid')
         continue
       }
+      if (source.sequence <= observedSequenceHighWatermark) {
+        recordError('renderer_current_fix_sequence_regressed')
+        continue
+      }
+      observedSequenceHighWatermark = source.sequence
+      correlations.push({
+        observation,
+        requestToRendererMs,
+        source,
+        sourceToRendererMs,
+      })
+    }
+    for (const {
+      observation,
+      requestToRendererMs,
+      source,
+      sourceToRendererMs,
+    } of correlations) {
+      sourceByIdentity.delete(observation.sourcePositionId)
       const phaseEvidence = byPhase[source.phase]
       phaseEvidence.sampleCount += 1
       phaseEvidence.sourceToRendererMaxMs = Math.max(
@@ -1813,6 +1892,9 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       if (sourceToRendererMs >= LIVENESS_HARD_GATE_MS
         || requestToRendererMs >= LIVENESS_HARD_GATE_MS) {
         recordError('current_fix_gate_breached')
+      } else {
+        acknowledgeSourceSequence(source.sequence, observation.observedAtMs)
+        rememberRetiredSource(source)
       }
     }
     expirePendingSources()

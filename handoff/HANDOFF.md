@@ -40,12 +40,23 @@
   join state must remain under its original 200 ms expiry and must not count as
   operation-fresh. The receipt also counted a secondary teardown expiry without
   identifying it; bounded sanitized cleanup attribution is required.
+- **Exact local head `6a72ae91720b0ce65a9274c2c462dcad484587f5` is
+  rejected.** Its exact package passed, then its one lifecycle attempt wrote a
+  complete 0600 failure receipt. One source emitted 45 ms before operation start
+  expired at 213 ms even though 17 later operation-fresh/19 total exact create
+  identities reached MapLibre; maxima were 54 ms continuity, 4 ms source/request
+  latency, 50.366 ms main, and 10.7 ms renderer frame. This is a latest-state
+  proof-model false negative, not product or host stall evidence: Zustand/React
+  may legitimately supersede an intermediate HTTP snapshot before MapLibre.
+  Exact successor acknowledgements now retire only older snapshots still below
+  their original deadline; no acknowledgement, invalid/late acknowledgement,
+  or sequence regression remains fail-closed at the unchanged `>=200 ms` gate.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
   sub-millisecond “current position” measurement was only an in-process map
   operation and did not prove the packaged renderer path.
-- **Replacement source work is locally green but not frozen.**
+- **Successor source work is locally green but not frozen.**
   It uses deterministic current-finalization lookups, lazy evidence-loss
   acknowledgement lookup with a durable
   projection, mission-scoped logical cleanup with a restart-safe rowid cursor
@@ -65,6 +76,10 @@
   sequence fences now separate global continuous-poll evidence from finite
   operation-fresh evidence, and renderer drain/correlation is serialized across
   explicit and watchdog collection without extending the strict 200 ms duty.
+  Exact renderer sequence acknowledgements model the latest-state UI boundary:
+  they may supersede older pending snapshots only before the older original
+  deadline, cannot refresh a deadline, cannot satisfy a different operation,
+  and fail closed if they regress within or across drains.
   Late timed-out drains are poisoned; drains finishing after watchdog stop
   cannot commit stale evidence. Genuinely new cleanup failures carry bounded,
   sanitized per-step receipt details, while nullish/hostile failure shapes
@@ -96,7 +111,7 @@
   correction-lineage repair on the existing PR branch.
 - Rerun package/lifecycle first on that exact clean head, then full static,
   browser, visual, physical SIGKILL, and Linux gates. Never rerun unchanged
-  rejected heads `49523dc8`, `81e47973`, or `74bdd95`.
+  rejected heads `49523dc8`, `81e47973`, `74bdd95`, or `6a72ae91`.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -120,9 +135,10 @@
 
 ## Verification Snapshot
 
-- Current causal-fence, watchdog-stop, and cleanup-receipt gates are green:
-  `4` files / `157` focused tests and `5` files / `196` expanded affected tests.
-  The full deterministic serial suite is `375` files / `3,737` tests green.
+- Current watermark regressions are green at `1` file / `50` tests and the
+  expanded affected gate is `5` files / `202` tests. Three focused audits are
+  clean. The full deterministic serial suite is `375` files / `3,743` tests
+  green.
 - Full ESLint, TypeScript/production build, bundle budgets, focused Node syntax,
   diff checks, and the backend (`58` passed / `1` platform-specific ignored)
   are green. These are pre-freeze local checks, not exact-head package proof.
@@ -132,7 +148,7 @@
 
 ## Next Actions
 
-1. Freeze a replacement commit locally and run exact-head package/lifecycle.
+1. Freeze the watermark successor locally and run exact-head package/lifecycle.
    If it is green, push the existing PR branch and run browser/visual,
    kill-matrix, Linux, and exactly four final-head review charters.
 2. If all remain clean, execute the single fresh Ubuntu field qualification and

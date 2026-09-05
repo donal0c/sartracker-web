@@ -74,6 +74,19 @@ is intermediate. Donal retains approval and merge authority.
 > not product- or host-stall evidence. Its unexplained cleanup count also exposed
 > that the receipt omitted secondary cleanup-failure attribution.
 >
+> Exact local head `6a72ae91720b0ce65a9274c2c462dcad484587f5` / tree
+> `c09dd5f7365283bd7fcfe4d83ca31ce038b04c80` is also rejected. Its exact
+> package passed, then its single lifecycle attempt wrote a complete 0600
+> failure receipt for `current_fix_not_observed_before_gate`. The timed-out
+> source was emitted 45 ms before the operation began and reached age 213 ms,
+> while 17 later operation-fresh identities and 19 total create identities
+> reached MapLibre with a 54 ms continuity maximum, 4 ms source/request latency,
+> 50.366 ms main maximum, and 10.7 ms renderer-frame maximum. The application
+> intentionally publishes latest tracking state through Zustand and a later
+> React effect, so an intermediate current snapshot can be superseded before it
+> reaches MapLibre. Requiring every HTTP snapshot identity to render was an
+> invalid proof-model assumption, not product- or host-stall evidence.
+>
 > A separate red-first regression preserves live Review after cleanup → archive
 > correction restore → re-finalization → ordinary Admin Unlock, including
 > repeated cycles and current/intermediate recovery archives. Unlocks now have
@@ -223,6 +236,57 @@ tests green, alongside full ESLint, TypeScript/production build, bundle budgets,
 focused Node syntax, diff checks, and the legacy backend (`58` passed / `1`
 platform-specific ignored). These remain pre-freeze local checks, not exact-head
 package, Linux, or field proof.
+
+## 2026-09-05 rejected `6a72ae91` latest-state measurement candidate
+
+The causal-fence and cleanup-receipt repair was committed locally at
+`6a72ae91720b0ce65a9274c2c462dcad484587f5` / tree
+`c09dd5f7365283bd7fcfe4d83ca31ce038b04c80`. Its exact clean macOS arm64
+package completed with executable SHA-256
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and ASAR SHA-256
+`6d1f74497abb20e79ffb9ca7671b5f2e03919f1b58e4880ffc3eded3d94b8de4`.
+The single packaged lifecycle attempt rejected after `6,837 ms` and wrote the
+only terminal artifact: a 0600 failure receipt with SHA-256
+`355c2455fc0f15965fcff9d4f8b7bd598592708a6c0068764de7073e0e71c4ec`.
+Process and profile cleanup both completed with zero attributed cleanup
+failures.
+
+The receipt recorded one source emitted at `1788564997984` and audited at age
+`213 ms`; the create/verify operations began 45 ms later at
+`1788564998029`. In the same interval, the create operation received 17 later
+fresh exact MapLibre identities and the phase received 19 total. Create maxima
+were `54 ms` current-fix continuity, `4 ms` source-to-renderer and
+request-to-renderer, `50.366 ms` main watchdog, and `10.7 ms` renderer frame.
+There was no continuity breach, process failure, cleanup failure, or host-stall
+signature.
+
+Source retrace showed that the mock assigns a unique identity to every current-
+positions HTTP snapshot, while the application deliberately publishes latest
+state: the polling manager replaces the current snapshot, Zustand replaces its
+store value, and React later commits that value to MapLibre. An intermediate
+snapshot can therefore be coalesced or intentionally discarded at a mission/
+runtime boundary while a later exact identity reaches the operator map. The
+old exhaustive per-HTTP-identity oracle was stronger than the product contract
+and produced a measurement false negative.
+
+The red-first successor treats an exact, timestamp-matched, clock-valid renderer
+observation at sequence N as a watermark acknowledgement for older current
+snapshots only when N and every overtaken source are still strictly below their
+original 200 ms deadlines. It never advances on source emission, operation
+boundaries, phase changes, invalid clocks, or a late renderer observation.
+Sequence regression fails closed within and across renderer drains. The oldest
+source not overtaken by a valid renderer acknowledgement still expires at its
+original `>=200 ms` deadline, and exact visible-fix continuity, observed
+source/request latency, main-isolate, and renderer-frame gates remain strict.
+Operation freshness still requires its own exact observation inside the causal
+exclusive-start/inclusive-end source fence; a superseded identity never counts.
+Focused red-to-green verification is `1` file / `50` tests and the expanded
+affected gate is `5` files / `202` tests. Three independent focused audits are
+clean. The full deterministic serial suite is `375` files / `3,743` tests
+green, alongside full ESLint, TypeScript/production build, bundle budgets,
+focused Node syntax, diff checks, and the legacy backend (`58` passed / `1`
+platform-specific ignored). Head `6a72ae91` will not be rerun unchanged.
 
 ## 2026-09-03 cancelled-cleanup fence remediation
 

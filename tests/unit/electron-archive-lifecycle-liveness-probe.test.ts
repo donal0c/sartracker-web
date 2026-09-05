@@ -340,6 +340,56 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     await expect(harness.probe.completePhaseOperation(operation)).resolves.toBeUndefined()
   })
 
+  it('retires a pre-operation current snapshot superseded by a newer exact render', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(false, undefined, undefined, 50)
+
+    const operation = await harness.probe.beginPhaseOperation('create')
+    harness.emitCurrentFix(true)
+    harness.advanceClock(140)
+    harness.publishWatchdogTick()
+
+    await expect(
+      harness.probe.guardOperation(Promise.resolve(), operation),
+    ).resolves.toBeUndefined()
+    await expect(harness.probe.completePhaseOperation(operation)).resolves.toBeUndefined()
+  })
+
+  it('does not block completion on an in-window snapshot superseded by a newer exact render', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('verify')
+    const operation = await harness.probe.beginPhaseOperation('verify')
+    harness.emitCurrentFix(false, undefined, undefined, 50)
+    harness.emitCurrentFix(true)
+
+    await expect(
+      harness.probe.guardOperation(Promise.resolve(), operation),
+    ).resolves.toBeUndefined()
+    await expect(harness.probe.completePhaseOperation(operation)).resolves.toBeUndefined()
+  })
+
+  it('does not let a later exact render forgive a superseded source at the 200 ms gate', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(false, undefined, undefined, 0)
+    harness.advanceClock(199)
+    harness.emitCurrentFix(true, undefined, undefined, 1)
+
+    const failure = await harness.probe.waitForPhaseSample('create', 100)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: {
+          readonly errorKinds?: readonly string[]
+        }
+      }
+    expect(failure.archiveLifecycleDiagnostics?.errorKinds).toContain(
+      'current_fix_not_observed_before_gate',
+    )
+  })
+
   it('does not count a same-millisecond pre-start source observed after the start fence', async () => {
     const harness = createProbeHarness()
     await harness.probe.attachLaunch(harness.launch)
@@ -503,6 +553,56 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
 
     await expect(harness.probe.guardOperation(Promise.resolve(), operation)).rejects.toThrow(
       /current_fix_timestamp_identity_mismatch/u,
+    )
+  })
+
+  it('fails closed when exact renderer acknowledgements regress within one drain', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    const first = harness.emitCurrentFix(false)
+    const second = harness.emitCurrentFix(false)
+    harness.publishRendererSnapshot({
+      currentFixes: [second, first].map((source) => ({
+        phase: 'restore' as const,
+        sourcePositionId: source.sourcePositionId,
+        sourceTimestamp: source.sourceTimestamp,
+        observedAtMs: 10_020,
+      })),
+      frameGaps: [],
+      frameTail: null,
+      currentFixOverflowCount: 0,
+      frameGapOverflowCount: 0,
+    })
+
+    await expect(harness.probe.waitForPhaseSample('restore', 100)).rejects.toThrow(
+      /renderer_current_fix_sequence_regressed/u,
+    )
+  })
+
+  it('fails closed when a superseded acknowledgement arrives in a later drain', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    const superseded = harness.emitCurrentFix(false)
+    harness.emitCurrentFix(true)
+    harness.publishRendererFix(superseded)
+
+    await expect(harness.probe.waitForPhaseSample('restore', 100)).rejects.toThrow(
+      /renderer_current_fix_sequence_regressed/u,
+    )
+  })
+
+  it('fails closed when an older exact acknowledgement repeats after a newer one', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    const first = harness.emitCurrentFix(true)
+    harness.emitCurrentFix(true)
+    harness.publishRendererFix(first)
+
+    await expect(harness.probe.waitForPhaseSample('restore', 100)).rejects.toThrow(
+      /renderer_current_fix_sequence_regressed/u,
     )
   })
 
