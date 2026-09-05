@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { access, lstat, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -13,6 +14,13 @@ import {
   writeArchiveLifecycleFailureReceipt,
   writeArchiveLifecycleSuccessReport,
 } from '../../scripts/electron-archive-lifecycle-smoke.mjs'
+
+const require = createRequire(import.meta.url)
+const { encodeCleanupFailureDiagnosticToken } = require(
+  '../../electron/archive-cleanup-failure.cjs',
+) as {
+  readonly encodeCleanupFailureDiagnosticToken: (diagnostic: unknown) => string
+}
 
 const runnerPath = path.resolve('scripts/electron-archive-lifecycle-smoke.mjs')
 const workflowPath = path.resolve('.github/workflows/electron-linux-validation.yml')
@@ -1247,6 +1255,49 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
       })
       expect(JSON.stringify(receipt)).not.toContain(secret)
       expect(JSON.stringify(receipt)).not.toContain(evidenceDir)
+    } finally {
+      await rm(evidenceDir, { recursive: true, force: true })
+    }
+  })
+
+  it('preserves the exact sanitized cleanup cause from an Electron-serialized failure', async () => {
+    const evidenceDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-cleanup-diagnostic-'))
+    const secret = 'Synthetic Cleanup Secret 2026!'
+    const diagnostic = Object.freeze({
+      substage: 'journal_initialize',
+      causeClass: 'sqlite_busy',
+      tableName: null,
+      cursor: null,
+      workerExit: Object.freeze({ observed: true, event: 'message', code: 0 }),
+    })
+    const token = encodeCleanupFailureDiagnosticToken(diagnostic)
+    const error = new Error(
+      `Error invoking remote method: Mission archive operation failed safely [${token}] `
+      + '(ARCHIVE_CLEANUP_FAILED).\n    at evaluate (:291:30)',
+    )
+    Object.defineProperty(error, 'privateCause', {
+      value: `${secret} /Users/private/mission.sqlite`,
+    })
+
+    try {
+      const reportPath = await writeArchiveLifecycleFailureReceipt(
+        createFailureReceiptInput(evidenceDir, {
+          error,
+          observedLaunchCount: 2,
+          secrets: [secret],
+        }),
+      )
+      const serialized = await readFile(reportPath, 'utf8')
+      const receipt = JSON.parse(serialized)
+
+      expect((await lstat(reportPath)).mode & 0o777).toBe(0o600)
+      expect(receipt.failure).toEqual({
+        classification: 'cleanup_failure',
+        message: error.message,
+        archiveLifecycleDiagnostics: null,
+        cleanupDiagnostic: diagnostic,
+      })
+      expect(serialized).not.toMatch(/Synthetic Cleanup|private|mission\.sqlite/iu)
     } finally {
       await rm(evidenceDir, { recursive: true, force: true })
     }

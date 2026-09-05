@@ -9,7 +9,7 @@ const Database = require('better-sqlite3')
 const { createArchiveCleanupCoordinator } = require('./archive-cleanup.cjs')
 const { withPinnedCustodyFileIdentity } = require('./archive-custody-file.cjs')
 const {
-  cleanupCauseClassForCode,
+  cleanupCauseClassForError,
   normalizeCleanupFailureDiagnostic,
 } = require('./archive-cleanup-failure.cjs')
 
@@ -116,7 +116,7 @@ async function runWorker() {
         ...(error?.cleanupDiagnostic ?? {}),
         substage: error?.cleanupDiagnostic?.substage ?? stage,
         causeClass: error?.cleanupDiagnostic?.causeClass
-          ?? cleanupCauseClassForCode(error?.code),
+          ?? cleanupCauseClassForError(error),
         workerExit: { observed: false, event: 'message', code: null },
       }),
     })
@@ -132,7 +132,7 @@ async function runWorker() {
           code: typeof error?.code === 'string' ? error.code : 'ARCHIVE_CLEANUP_FAILED',
           diagnostic: normalizeCleanupFailureDiagnostic({
             substage: 'worker_close',
-            causeClass: cleanupCauseClassForCode(error?.code),
+            causeClass: cleanupCauseClassForError(error),
             workerExit: { observed: false, event: 'message', code: null },
           }),
         })

@@ -8,7 +8,7 @@ const {
   reconcileArchiveInventory,
 } = require('./archive-inventory.cjs')
 const {
-  cleanupCauseClassForCode,
+  cleanupCauseClassForError,
   normalizeCleanupFailureDiagnostic,
 } = require('./archive-cleanup-failure.cjs')
 const {
@@ -316,7 +316,7 @@ function createArchiveCleanupCoordinator(options) {
       } catch (error) {
         attachCleanupFailureDiagnostic(error, normalizeCleanupFailureDiagnostic({
           ...initializationContext,
-          causeClass: cleanupCauseClassForCode(error?.code),
+          causeClass: cleanupCauseClassForError(error),
         }))
         if (!isRetryableSqliteBusy(error) || initializeBusyRetries >= CLEANUP_BUSY_RETRY_LIMIT) {
           throw error
@@ -428,7 +428,7 @@ function createArchiveCleanupCoordinator(options) {
     } catch (error) {
       const diagnostic = normalizeCleanupFailureDiagnostic({
         ...failureContext,
-        causeClass: cleanupCauseClassForCode(error?.code),
+        causeClass: cleanupCauseClassForError(error),
       })
       if (error?.preserveForRestart === true) {
         attachCleanupFailureDiagnostic(error, diagnostic)
@@ -453,7 +453,7 @@ function createArchiveCleanupCoordinator(options) {
         terminal.cause = new AggregateError([error, auditError])
         attachCleanupFailureDiagnostic(terminal, normalizeCleanupFailureDiagnostic({
           substage: 'record_failure',
-          causeClass: cleanupCauseClassForCode(auditError?.code),
+          causeClass: cleanupCauseClassForError(auditError),
           tableName: failureContext.tableName,
           cursor: failureContext.cursor,
         }))
@@ -707,7 +707,7 @@ function createArchiveCleanupCoordinator(options) {
       return outcome
     })
     return commitWithCustody(executionOptions, (assertCustodyUnchanged) =>
-      advance.deferred(assertCustodyUnchanged))
+      advance.immediate(assertCustodyUnchanged))
   }
 
   /** Retains the forward cursor and records only a stable bounded failure code. */
@@ -1825,7 +1825,7 @@ function assertNotCancelled(signal) {
 
 /** Identifies transient SQLite writer contention that is safe to retry at a boundary. */
 function isRetryableSqliteBusy(error) {
-  return typeof error?.code === 'string' && error.code.startsWith('SQLITE_BUSY')
+  return cleanupCauseClassForError(error) === 'sqlite_busy'
 }
 
 /** Produces one frozen, deduplicated eligibility result. */

@@ -59,8 +59,9 @@ type TestStore = {
 }
 
 type BetterSqliteDatabase = {
+  readonly inTransaction: boolean
   readonly exec: (sql: string) => unknown
-  readonly pragma: (sql: string) => unknown
+  readonly pragma: (sql: string, options?: { readonly simple?: boolean }) => unknown
   readonly close: () => void
   readonly prepare: (sql: string) => {
     readonly get: (...parameters: readonly unknown[]) => Record<string, unknown> | undefined
@@ -181,6 +182,12 @@ async function createFixture(input: {
   readonly yieldToMain?: (db: BetterSqliteDatabase, missionId: string, archiveId: string) => Promise<void>
   readonly yieldAfterBusyRetry?: () => Promise<void>
   readonly preparedSql?: string[]
+  readonly coordinatorDbFactory?: (input: {
+    readonly db: BetterSqliteDatabase
+    readonly databasePath: string
+    readonly missionId: string
+    readonly otherMissionId: string
+  }) => BetterSqliteDatabase
   readonly beforeFinalization?: (
     db: BetterSqliteDatabase,
     missionId: string,
@@ -314,16 +321,23 @@ async function createFixture(input: {
   }).immediate()
 
   let clock = Date.parse('2026-08-30T12:05:00.000Z')
-  const coordinatorDb = input.preparedSql === undefined
-    ? db
-    : {
+  const coordinatorDb = input.coordinatorDbFactory?.({
+    db,
+    databasePath,
+    missionId: mission.id,
+    otherMissionId: otherMission.id,
+  }) ?? (input.preparedSql === undefined ? db : {
+        get inTransaction() {
+          return db.inTransaction
+        },
         prepare: (sql: string) => {
           input.preparedSql?.push(sql)
           return db.prepare(sql)
         },
-        pragma: (sql: string) => db.pragma(sql),
+        pragma: (sql: string, options?: { readonly simple?: boolean }) =>
+          options === undefined ? db.pragma(sql) : db.pragma(sql, options),
         transaction: <T>(callback: () => T) => db.transaction(callback),
-      }
+      })
   const cleanupCoordinator = createArchiveCleanupCoordinator({
     db: coordinatorDb,
     schemaVersion: 13,
@@ -529,6 +543,131 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
       })
     } finally {
       await lockWorker?.terminate()
+      fixture.db.close()
+    }
+  }, 15_000)
+
+  it('owns the write snapshot before reads when another mission commits at every boundary', async () => {
+    let contender: InstanceType<typeof Database> | null = null
+    let contenderAttempts = 0
+    let contenderCommits = 0
+    let contenderBusy = 0
+    let contenderSequence = 0
+    const fixture = await createFixture({
+      yieldAfterBusyRetry: () => Promise.resolve(),
+      coordinatorDbFactory: ({ db, databasePath, otherMissionId }) => {
+        contender = new Database(databasePath)
+        contender.pragma('journal_mode = WAL')
+        contender.pragma('busy_timeout = 0')
+        let boundaryActive = false
+        let interleaved = false
+        const interleaveAfterRead = () => {
+          if (!boundaryActive || interleaved || contender === null) return
+          interleaved = true
+          contenderAttempts += 1
+          contenderSequence += 1
+          try {
+            contender.prepare(`UPDATE devices SET last_seen = ?
+              WHERE mission_id = ? AND device_id = 'tracker-other'`).run(
+              new Date(Date.parse('2026-08-30T12:10:00.000Z') + contenderSequence).toISOString(),
+              otherMissionId,
+            )
+            contenderCommits += 1
+          } catch (error) {
+            if (typeof (error as { readonly code?: unknown })?.code === 'string'
+              && String((error as { readonly code: string }).code).startsWith('SQLITE_BUSY')) {
+              contenderBusy += 1
+              return
+            }
+            throw error
+          }
+        }
+        return {
+          get inTransaction() {
+            return db.inTransaction
+          },
+          prepare: (sql: string) => {
+            const statement = db.prepare(sql)
+            return new Proxy(statement, {
+              get: (target, property) => {
+                const value = Reflect.get(target, property)
+                if (property === 'get' || property === 'all') {
+                  return (...parameters: readonly unknown[]) => {
+                    const result = Reflect.apply(value, target, parameters)
+                    interleaveAfterRead()
+                    return result
+                  }
+                }
+                return typeof value === 'function' ? value.bind(target) : value
+              },
+            })
+          },
+          pragma: (sql: string, options?: { readonly simple?: boolean }) =>
+            options === undefined ? db.pragma(sql) : db.pragma(sql, options),
+          close: () => undefined,
+          exec: (sql: string) => db.exec(sql),
+          transaction: <T>(callback: () => T) => {
+            const transaction = db.transaction(callback)
+            const runBoundary = (
+              mode: 'deferred' | 'immediate',
+              parameters: readonly unknown[],
+            ) => {
+              boundaryActive = true
+              interleaved = false
+              try {
+                return Reflect.apply(transaction[mode], transaction, parameters)
+              } finally {
+                boundaryActive = false
+              }
+            }
+            const projected = ((...parameters: readonly unknown[]) =>
+              Reflect.apply(transaction, undefined, parameters)) as (() => T) & {
+              deferred: () => T
+              immediate: () => T
+            }
+            projected.deferred = (...parameters: readonly unknown[]) =>
+              runBoundary('deferred', parameters)
+            projected.immediate = (...parameters: readonly unknown[]) =>
+              runBoundary('immediate', parameters)
+            return projected
+          },
+        }
+      },
+    })
+    try {
+      const outcome = await fixture.coordinator.start(fixture.evidence).catch(
+        (error: unknown) => error as Error & {
+          readonly code?: string
+          readonly cause?: { readonly code?: string }
+          readonly cleanupDiagnostic?: Readonly<Record<string, unknown>>
+        },
+      )
+      if (!('state' in outcome)) {
+        expect(outcome).toMatchObject({
+          code: 'ARCHIVE_CLEANUP_FAILED',
+          cause: {
+            code: 'ARCHIVE_CLEANUP_MEMBERSHIP_BYPASS_ACTIVE',
+            cause: { code: 'SQLITE_BUSY_SNAPSHOT' },
+          },
+          cleanupDiagnostic: { causeClass: 'sqlite_busy' },
+        })
+      }
+      expect(outcome).toMatchObject({ state: 'completed', storageState: 'archived' })
+      expect(contenderAttempts).toBeGreaterThan(0)
+      expect(contenderBusy).toBeGreaterThan(0)
+      expect(fixture.db.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?')
+        .get(fixture.missionId)).toEqual({ count: 0 })
+      contender?.prepare(`UPDATE devices SET last_seen = ?
+        WHERE mission_id = ? AND device_id = 'tracker-other'`).run(
+        '2026-08-30T12:20:00.000Z',
+        fixture.otherMissionId,
+      )
+      expect(fixture.db.prepare(`SELECT last_seen FROM devices
+        WHERE mission_id = ? AND device_id = 'tracker-other'`).get(fixture.otherMissionId))
+        .toEqual({ last_seen: '2026-08-30T12:20:00.000Z' })
+      expect(contenderCommits).toBe(0)
+    } finally {
+      contender?.close()
       fixture.db.close()
     }
   }, 15_000)

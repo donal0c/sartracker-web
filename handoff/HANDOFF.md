@@ -128,6 +128,17 @@
   reproduced a cumulative-phase-count race with a pre-operation in-flight fix.
   This is proof-boundary-indeterminate, not product-stall evidence, and b779
   will not be pushed or rerun unchanged.
+- **Exact local head `30061c2d93f20cdc7f48d6abb5b77bbd041abdd0` / tree
+  `a77a4a37689791f958158c9c43608251e8fbc972` is rejected.** Its exact package
+  completed, then its sole two-launch lifecycle attempt failed at cleanup start
+  after `9,937 ms` with `ARCHIVE_CLEANUP_FAILED`. The mode-0600 failure receipt
+  has SHA-256 `659aa9ed2cd155196d9b4d1f575c62433a0fd08cb1417be9e927901f44fafdc4`;
+  process/profile cleanup completed, but the old IPC boundary discarded the
+  worker diagnostic. A deterministic two-WAL-connection regression reproduced
+  the same immediate public failure: cleanup read in a deferred transaction, a
+  live-mission commit invalidated that snapshot, SQLite raised
+  `SQLITE_BUSY_SNAPSHOT`, and the membership wrapper hid it from the busy retry.
+  Ordinary worker-open WAL contention was directly disproved.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
@@ -194,6 +205,16 @@
   the rendered row. Public archive readiness is projected through the same pure
   CommonJS boundary as renderer IPC and fails closed unless the exact v2 archive
   is presently recoverable with unique passphrase and recovery slots.
+  The 30061 successor acquires the SQLite writer slot before each cleanup
+  boundary reads, so a concurrent other-mission commit cannot invalidate its
+  snapshot. The red-first regression proves cleanup completion, exact target-row
+  removal, bounded contender rejection, and immediate post-cleanup writability
+  for the active mission. Busy-family errors remain finitely retried and the
+  strict `<200 ms` liveness gate is unchanged. Cleanup failures now carry only a
+  versioned bounded enum/cursor/inventory-table diagnostic through worker,
+  runner, closed IPC, Playwright's first error line, and the mode-0600 receipt;
+  malformed, hostile, path-, text-, and identifier-shaped secret inputs fail
+  closed.
 
 ## Locked Safety Boundaries
 
@@ -217,11 +238,11 @@
 
 ## Active Work
 
-- Run package/lifecycle first on the frozen b779 operation-proof successor,
+- Freeze and run package/lifecycle first on the cleanup-snapshot successor,
   then full static,
   browser, visual, physical SIGKILL, and Linux gates. Never rerun unchanged
   rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, `23161300`,
-  `d91ec232`, `7e0d8ea3`, `b75f8689`, or `b7793753`.
+  `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`, or `30061c2d`.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -255,6 +276,14 @@
   diff checks are green. Its focused independent review found no runtime blocker.
 - The earlier evidence/runtime rechecks are clean. These are local source
   checks, not successor exact-head package proof.
+- The cleanup-snapshot successor passes the focused cleanup/runner/IPC/receipt
+  gate at `6` files / `110` tests, the wider archive slice at `20` files / `412`
+  tests, and the deterministic serial suite at `377` files / `3,806` tests.
+  Full ESLint, TypeScript/production build and bundle budgets, focused Node
+  syntax, diff checks, and backend `58` passed / `1` ignored are green. A focused
+  independent review is clean after correcting Playwright multiline decoding,
+  hostile cause access, and diagnostic table-name provenance. These remain
+  dirty-tree source checks, not exact-head package evidence.
 - Chromium `173/173`, visual Playwright `62/62`, uncached visual review `74/74`,
   and physical SIGKILL `32/32` are clean only at rejected head `b75f8689` and are
   prior-head evidence. Successor exact-head package/lifecycle, browser, visual,
@@ -262,7 +291,8 @@
 
 ## Next Actions
 
-1. Run exact-head package/lifecycle on the frozen successor.
+1. Commit and freeze the cleanup-snapshot successor, then run its one exact-head
+   package/lifecycle attempt.
    If it is green, push the existing PR branch and run browser/visual,
    kill-matrix, Linux, and exactly four final-head review charters.
 2. If all remain clean, execute the single fresh Ubuntu field qualification and
@@ -271,7 +301,8 @@
 ## Blockers
 
 - PR #10 is not ready. `caf9e5e8`, `49523dc8`, `81e47973`, `74bdd95`,
-  `6a72ae91`, `23161300`, `d91ec232`, `7e0d8ea3`, `b75f8689`, and `b7793753`
+  `6a72ae91`, `23161300`, `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`, and
+  `30061c2d`
   are rejected diagnostics;
   the replacement exact-head package/lifecycle gate must pass before Linux or
   field-scale qualification.

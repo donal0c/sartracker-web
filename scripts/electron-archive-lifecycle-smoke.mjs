@@ -18,6 +18,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import net from 'node:net'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -38,6 +39,10 @@ import {
   startArchiveLifecycleLivenessMockTraccarServer,
 } from '../build/electron-archive-lifecycle-liveness-mock-traccar.js'
 
+const require = createRequire(import.meta.url)
+const { readCleanupFailureDiagnosticFromMessage } = require(
+  '../electron/archive-cleanup-failure.cjs',
+)
 const execFileAsync = promisify(execFile)
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const MISSION_NAME = 'Packaged Archive Lifecycle Proof'
@@ -3723,6 +3728,9 @@ export async function writeArchiveLifecycleFailureReceipt(input, dependencies = 
   const cleanupFailureDetails = readConsistentCleanupFailureDetails(input)
   const failedAtMs = Date.now()
   const diagnostics = readProjectedArchiveLifecycleDiagnostics(input.error, input.secrets)
+  const cleanupDiagnostic = readCleanupFailureDiagnosticFromMessage(
+    readBoundedFailureMessage(input.error),
+  )
   const cleanupFailures = cleanupFailureDetails.map(({ step, error }) => {
     const cleanupDiagnostics = readProjectedArchiveLifecycleDiagnostics(error, input.secrets)
     return {
@@ -3754,10 +3762,11 @@ export async function writeArchiveLifecycleFailureReceipt(input, dependencies = 
     },
     failure: {
       classification: diagnostics === null
-        ? 'lifecycle_failure'
+        ? cleanupDiagnostic === null ? 'lifecycle_failure' : 'cleanup_failure'
         : 'external_liveness_gate_failure',
       message: sanitizeFailureMessage(input.error, input.secrets),
       archiveLifecycleDiagnostics: diagnostics,
+      ...(cleanupDiagnostic === null ? {} : { cleanupDiagnostic }),
     },
     cleanup: {
       cleanupFailureCount: input.cleanupFailureCount,

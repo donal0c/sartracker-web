@@ -17,6 +17,18 @@ const {
   readonly MISSION_ARCHIVE_PROGRESS_CHANNEL: string
   readonly registerMissionArchiveIpcHandlers: (input: Readonly<Record<string, unknown>>) => void
 }
+const { readCleanupFailureDiagnosticFromMessage } = require(
+  '../../electron/archive-cleanup-failure.cjs',
+) as {
+  readonly readCleanupFailureDiagnosticFromMessage: (message: unknown) => unknown
+}
+const { startArchiveCleanupWorker } = require(
+  '../../electron/archive-cleanup-runner.cjs',
+) as {
+  readonly startArchiveCleanupWorker: (
+    input: Readonly<Record<string, unknown>>,
+  ) => Promise<Readonly<Record<string, unknown>>>
+}
 
 const CHANNELS = Object.freeze({
   issueMissionArchiveRecoveryCode: 'sartracker:mission-store:issue-archive-recovery-code',
@@ -701,24 +713,93 @@ describe('mission archive IPC containment [DON-248]', () => {
     expect(denied.missionStore.startMissionCleanup).not.toHaveBeenCalled()
     expect(denied.archiveReviewSessionManager.acquireCleanupLease).not.toHaveBeenCalled()
 
-    const failure = Object.assign(new Error(`must not reflect ${PASSPHRASE}`), {
+    const failure = Object.assign(new Error(
+      `must not reflect ${PASSPHRASE} or /Users/private/mission.sqlite`,
+    ), {
       code: 'ARCHIVE_CLEANUP_FAILED',
+    })
+    Object.defineProperty(failure, 'cleanupDiagnostic', {
+      value: Object.freeze({
+        substage: 'worker_open',
+        causeClass: 'sqlite_busy',
+        tableName: null,
+        cursor: null,
+        workerExit: Object.freeze({ observed: true, event: 'message', code: 0 }),
+      }),
     })
     const failed = createMainHarness({}, {
       getMission: vi.fn(async () => ({ ...missionResult(), name: 'Exact Mission Name' })),
       startMissionCleanup: vi.fn(async () => { throw failure }),
     })
-    await expect(failed.handlers.get(CHANNELS.startMissionCleanup)?.(owner, {
+    const closedFailure = await failed.handlers.get(CHANNELS.startMissionCleanup)?.(owner, {
       missionId: 'mission-1',
       archiveId: archiveResult().id,
       operationId: SECOND_OPERATION_ID,
       slotType: 'passphrase',
       secret: PASSPHRASE,
       confirmation: 'Exact Mission Name',
-    })).rejects.toMatchObject({
+    }).catch((error: unknown) => error as Error & { readonly code?: string })
+    expect(closedFailure).toMatchObject({
       code: 'ARCHIVE_CLEANUP_FAILED',
-      message: 'Mission archive operation failed safely (ARCHIVE_CLEANUP_FAILED).',
     })
+    expect(closedFailure?.message).toMatch(/\[SARCD1\.[A-Za-z0-9_-]+\] \(ARCHIVE_CLEANUP_FAILED\)\.$/u)
+    expect(readCleanupFailureDiagnosticFromMessage(closedFailure?.message)).toEqual({
+      substage: 'worker_open',
+      causeClass: 'sqlite_busy',
+      tableName: null,
+      cursor: null,
+      workerExit: { observed: true, event: 'message', code: 0 },
+    })
+    expect(closedFailure?.message).not.toMatch(/Four calm|private|mission\.sqlite/iu)
+    expect(failed.cleanupLease.release).toHaveBeenCalledOnce()
+  })
+
+  it('preserves a real worker failure diagnostic through the closed IPC boundary', async () => {
+    const failed = createMainHarness({}, {
+      getMission: vi.fn(async () => ({ ...missionResult(), name: 'Exact Mission Name' })),
+      startMissionCleanup: vi.fn(() => startArchiveCleanupWorker({
+        databasePath: join(tmpdir(), 'sartracker-cleanup-diagnostic.sqlite'),
+        archiveDirectory: join(tmpdir(), 'sartracker-cleanup-diagnostic-archives'),
+        archiveRelativePath: 'archive.sararch',
+        expectedFileIdentity: Object.freeze({
+          device: '1',
+          inode: '2',
+          linkCount: 1,
+          sizeBytes: 4096,
+          changedTimeNanoseconds: '3',
+          modifiedTimeNanoseconds: '4',
+        }),
+        evidence: Object.freeze({ archiveId: 'archive-a', missionId: 'mission-a' }),
+        mode: 'start',
+        operationId: SECOND_OPERATION_ID,
+        workerPath: join(process.cwd(), 'tests/fixtures/archive-cleanup-failure-worker.cjs'),
+      })),
+    })
+    const owner = { sender: createSender(7) }
+
+    const closedFailure = await failed.handlers.get(CHANNELS.startMissionCleanup)?.(owner, {
+      missionId: 'mission-1',
+      archiveId: archiveResult().id,
+      operationId: SECOND_OPERATION_ID,
+      slotType: 'passphrase',
+      secret: PASSPHRASE,
+      confirmation: 'Exact Mission Name',
+    }).catch((error: unknown) => error as Error)
+
+    expect(readCleanupFailureDiagnosticFromMessage(closedFailure?.message)).toEqual({
+      substage: 'delete_page',
+      causeClass: 'sqlite_busy',
+      tableName: 'positions',
+      cursor: {
+        tableIndex: 1,
+        tableCount: 4,
+        tableBatch: 2,
+        deletedRows: 6,
+        totalDeletedRows: 6,
+      },
+      workerExit: { observed: true, event: 'message', code: 0 },
+    })
+    expect(closedFailure?.message).not.toMatch(/private|secret|mission\.sqlite/iu)
     expect(failed.cleanupLease.release).toHaveBeenCalledOnce()
   })
 

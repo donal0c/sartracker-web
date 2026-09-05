@@ -5,6 +5,7 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 
 const { generateRecoveryCode: generateArchiveRecoveryCode } = require('./archive-crypto.cjs')
+const { encodeCleanupFailureDiagnosticToken } = require('./archive-cleanup-failure.cjs')
 
 const MISSION_ARCHIVE_PROGRESS_CHANNEL = 'sartracker:mission-archive:progress'
 const RECOVERY_ISSUANCE_LIFETIME_MS = 10 * 60_000
@@ -369,7 +370,19 @@ function closeArchiveFailure(error, fallbackCode) {
     : typeof error?.code === 'string' && ARCHIVE_ERROR_CODE.test(error.code)
       ? error.code
       : fallbackCode
-  return archiveIpcError(code, `Mission archive operation failed safely (${code}).`)
+  let diagnosticSuffix = ''
+  try {
+    const diagnostic = error?.cleanupDiagnostic
+    if (diagnostic !== null && typeof diagnostic === 'object' && !Array.isArray(diagnostic)) {
+      diagnosticSuffix = ` [${encodeCleanupFailureDiagnosticToken(diagnostic)}]`
+    }
+  } catch {
+    diagnosticSuffix = ''
+  }
+  return archiveIpcError(
+    code,
+    `Mission archive operation failed safely${diagnosticSuffix} (${code}).`,
+  )
 }
 
 /** Projects one trusted worker progress update onto the closed renderer surface. */

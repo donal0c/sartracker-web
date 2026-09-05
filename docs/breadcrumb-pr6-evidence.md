@@ -582,6 +582,60 @@ diff checks are green. An independent focused review found no runtime blocker
 after tightening the seven workload-to-operation-kind mappings. These remain
 pre-freeze source checks, not exact-head package or lifecycle proof.
 
+## 2026-09-05 rejected `30061c2d` cleanup-snapshot candidate
+
+The named-operation proof repair was committed locally at
+`30061c2d93f20cdc7f48d6abb5b77bbd041abdd0` / tree
+`a77a4a37689791f958158c9c43608251e8fbc972`. Its exact clean macOS arm64
+package completed with executable SHA-256
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and ASAR SHA-256
+`84a6cd909633d18459d10f0c4a9419a639a786fb8f4d56ea6755d8eee7a53a6b`.
+The sole packaged lifecycle attempt rejected after `9,937 ms` at
+`start-mission-cleanup` with the renderer-visible closed code
+`ARCHIVE_CLEANUP_FAILED`. Its two-launch mode-0600 failure receipt has SHA-256
+`659aa9ed2cd155196d9b4d1f575c62433a0fd08cb1417be9e927901f44fafdc4`.
+Owned process/profile cleanup completed. The old IPC boundary retained neither
+the worker substage nor its cause, so the historical receipt alone cannot name
+the internal SQLite error and 30061 will not be rerun unchanged.
+
+The causal defect is reproduced by a focused red regression using the same WAL
+topology: finalized cleanup target A and independently writable live mission B.
+After cleanup's first read inside a deferred transaction, B commits a device
+update. SQLite then raises `SQLITE_BUSY_SNAPSHOT` on cleanup's first write; the
+membership bypass converts it to `ARCHIVE_CLEANUP_MEMBERSHIP_BYPASS_ACTIVE`,
+which the coordinator did not recognize as retryable and immediately collapsed
+to the exact public `ARCHIVE_CLEANUP_FAILED` envelope. That immediate path fits
+the packaged timing. Cleanup code is unchanged between passing b75 and failing
+30061; b779's independent 50 ms live-mission persistence is the relevant runtime
+delta. Direct probes separately disproved ordinary worker-open WAL contention.
+
+The smallest red-first repair changes each cleanup cursor boundary from
+`BEGIN DEFERRED` to non-blocking `BEGIN IMMEDIATE`, acquiring the writer slot
+before any boundary read can form a stale snapshot. The regression now proves
+that the contender sees bounded busy responses during those atomic boundaries,
+cleanup completes and removes only target A's rows, and mission B is writable
+immediately afterward. Existing finite 25 ms busy-family retry and yielding
+remain intact; no liveness threshold, batch size, custody check, cleanup scope,
+or failure gate changed.
+
+The attribution repair transports only a versioned bounded tuple of known
+substage/cause enums, finite cursor counts, worker-exit state, and an immutable
+archive-inventory table identity. It crosses a real worker, runner, closed IPC
+message, Playwright's bounded first error line, and the mode-0600 failure receipt
+while retaining the terminal archive code suffix used by the operator UI.
+Malformed/noncanonical tokens, deep or cyclic causes, throwing getters, revoked
+proxies, paths, error text, unknown fields, and identifier-shaped private values
+fail closed without replacing the original durable failure audit.
+
+Pre-freeze evidence is green at `6` focused files / `110` tests, `20` archive
+files / `412` tests, and the deterministic serial repository suite at `377`
+files / `3,806` tests. Full ESLint, TypeScript/production build and bundle
+budgets, focused Node syntax, diff checks, and backend `58` passed / `1` ignored
+are green. A focused independent review is clean after the three containment
+corrections above. These are dirty-tree source checks; the replacement exact
+head still requires one package/lifecycle attempt before any later gate.
+
 ## 2026-09-03 cancelled-cleanup fence remediation
 
 The exact-head broad, persistence and concurrency reviews at `b30ebeb2…`
@@ -837,6 +891,7 @@ the release gate.
 | Rejected field-diagnostic head | `caf9e5e480fcd02cc44d68c8397efcd6ae78f2cd` / tree `81a8ef3e3639f6e8e7cd048691a87b8488a4d998`; its failed receipt is diagnosis, not qualification |
 | Rejected cadence candidate (pushed) | `b75f8689304769438157cd5e018996cdafcdb328` / tree `3216b03286c8543dfbeaff42097528ca197cbd7e`; Linux run `33940959449` rejected the first pre-cleanup Review operation at `240 ms` current-fix continuity |
 | Rejected operation-proof candidate (local) | `b7793753ecfec7984214c07dfea21a3918a96c6d` / tree `b3f1251d19b9acb0af64f098bbc8f649fbd07217`; exact package passed, then the sole lifecycle attempt wrote proof-indeterminate receipt SHA-256 `2c93e138f10bafa24ba7a745ad730a786750cdd94be215aaa1f8acbe801392e1` |
+| Rejected cleanup-snapshot candidate (local) | `30061c2d93f20cdc7f48d6abb5b77bbd041abdd0` / tree `a77a4a37689791f958158c9c43608251e8fbc972`; exact package passed, then the sole lifecycle attempt failed at cleanup start with receipt SHA-256 `659aa9ed2cd155196d9b4d1f575c62433a0fd08cb1417be9e927901f44fafdc4` |
 | Recovery candidate and final proof | Pending. Once source is frozen and every gate completes, the exact immutable head/tree and results must be recorded in the PR #10 and Linear ledger |
 | Immutable final documentation/review head | Pending. It must be recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; any later repository mutation requires affected re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |
