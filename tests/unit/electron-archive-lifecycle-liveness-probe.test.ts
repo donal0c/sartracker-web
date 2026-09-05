@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { validateArchiveLifecycleSmokeEvidence } from '../../build/electron-archive-lifecycle-smoke-lib.js'
 import {
   createPackagedLivenessProbe,
   installRendererLivenessProbe,
   startExternalLaunchWatchdog,
 } from '../../scripts/electron-archive-lifecycle-smoke.mjs'
+import { createPackagedArchiveLifecycleV2Evidence } from '../fixtures/packaged-archive-lifecycle-v2'
 
 const PHASES = ['create', 'verify', 'restore', 'cleanup'] as const
 type Phase = typeof PHASES[number]
@@ -554,6 +556,28 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
         rendererFrameMaxGapMs: 16,
       })
     }
+  })
+
+  it('preserves a raw passing maximum below the strict gate in final evidence', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+
+    for (const phase of PHASES) {
+      await harness.probe.setPhase(phase)
+      if (phase === 'cleanup') {
+        harness.queueRendererFrameGap(phase, 199.9996)
+      }
+      harness.emitCurrentFix(true)
+      await harness.probe.waitForPhaseSample(phase, 100)
+    }
+
+    const liveness = JSON.parse(JSON.stringify(await harness.probe.finish()))
+    const evidence = createPackagedArchiveLifecycleV2Evidence()
+    evidence.liveness = liveness
+    const validation = validateArchiveLifecycleSmokeEvidence(evidence)
+
+    expect(liveness.byPhase.cleanup.rendererFrameMaxGapMs).toBe(199.9996)
+    expect(validation).toEqual({ valid: true, passed: true, failureReasons: [] })
   })
 
   it('starts behind continuous pre-operation polls without requiring the global source join to be empty', async () => {

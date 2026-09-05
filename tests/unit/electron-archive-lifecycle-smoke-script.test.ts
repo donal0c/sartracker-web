@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   cleanupArchiveLifecycleResources,
   closeRendererTransports,
+  createArchiveLifecycleEvidenceValidationFailure,
   isExactLivenessParticipantReady,
   readArchiveReviewContent,
   selectExactRendererTarget,
@@ -17,6 +18,7 @@ import {
   writeArchiveLifecycleFailureReceipt,
   writeArchiveLifecycleSuccessReport,
 } from '../../scripts/electron-archive-lifecycle-smoke.mjs'
+import { createPackagedArchiveLifecycleV2Evidence } from '../fixtures/packaged-archive-lifecycle-v2'
 
 const require = createRequire(import.meta.url)
 const { encodeCleanupFailureDiagnosticToken } = require(
@@ -630,6 +632,7 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
     expect(source).toContain('electron-archive-lifecycle-smoke-failure.json')
     expect(source).toContain('writeArchiveLifecycleFailureReceipt')
     expect(source).toContain('archiveLifecycleDiagnostics')
+    expect(source).toContain('closedGateFailures,')
     expect(lifecycleTry).toBeGreaterThan(protectedSetupStart)
     expect(profileAllocation).toBeGreaterThan(lifecycleTry)
     expect(packagedArchiveCheck).toBeGreaterThan(profileAllocation)
@@ -1365,6 +1368,157 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
         verdict: { passed: false },
       })
       expect((await readdir(evidenceDir)).filter((entry) => entry.startsWith('.'))).toEqual([])
+    } finally {
+      await rm(evidenceDir, { recursive: true, force: true })
+    }
+  })
+
+  it('retains bounded final evidence-validation reasons in the failure receipt', async () => {
+    const evidenceDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-validation-failure-'))
+    try {
+      const reportPath = await writeArchiveLifecycleFailureReceipt(createFailureReceiptInput(
+        evidenceDir,
+        {
+          closedGateFailures: [
+            'Cleanup renderer-frame maximum gap must be finite, non-negative, and less than 200 ms.',
+          ],
+        },
+      ))
+      const receipt = JSON.parse(await readFile(reportPath, 'utf8'))
+
+      expect(receipt.failure).toEqual({
+        classification: 'evidence_validation_failure',
+        message: 'Primary lifecycle failure.',
+        archiveLifecycleDiagnostics: null,
+        closedGateFailures: {
+          failureCount: 1,
+          reasons: [
+            'Cleanup renderer-frame maximum gap must be finite, non-negative, and less than 200 ms.',
+          ],
+        },
+      })
+    } finally {
+      await rm(evidenceDir, { recursive: true, force: true })
+    }
+  })
+
+  it('carries validator reasons through secondary cleanup failure into the receipt', async () => {
+    const evidenceDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-validation-flow-'))
+    const evidence = createPackagedArchiveLifecycleV2Evidence()
+    const cleanupLiveness = (
+      (evidence.liveness as Record<string, unknown>).byPhase as Record<string, unknown>
+    ).cleanup as Record<string, unknown>
+    cleanupLiveness.rendererFrameMaxGapMs = 200
+    const validationFailure = createArchiveLifecycleEvidenceValidationFailure(evidence)
+    expect(validationFailure).not.toBeNull()
+    const cleanupFailure = new Error('Secondary cleanup failure.')
+    try {
+      const cleanup = await cleanupArchiveLifecycleResources({
+        failure: validationFailure?.error,
+        profilePath: null,
+        removeProfile: async () => undefined,
+        steps: [{
+          name: 'restarted_launch_stop',
+          blocksProfileCleanup: true,
+          run: async () => { throw cleanupFailure },
+        }],
+      })
+      expect(cleanup.failure).toBe(validationFailure?.error)
+
+      const reportPath = await writeArchiveLifecycleFailureReceipt(createFailureReceiptInput(
+        evidenceDir,
+        {
+          error: cleanup.failure,
+          closedGateFailures: validationFailure?.closedGateFailures,
+          cleanupFailureCount: cleanup.cleanupFailureCount,
+          cleanupFailures: cleanup.cleanupFailures,
+          processCleanupCompleted: cleanup.processCleanupCompleted,
+          profileCleanupCompleted: cleanup.profileCleanupCompleted,
+        },
+      ))
+      const receipt = JSON.parse(await readFile(reportPath, 'utf8'))
+
+      expect(receipt.failure.closedGateFailures).toEqual({
+        failureCount: 1,
+        reasons: [
+          'Cleanup renderer-frame maximum gap must be finite, non-negative, and less than 200 ms.',
+        ],
+      })
+      expect(receipt.cleanup).toMatchObject({
+        cleanupFailureCount: 1,
+        processCleanupCompleted: false,
+        profileCleanupCompleted: false,
+      })
+    } finally {
+      await rm(evidenceDir, { recursive: true, force: true })
+    }
+  })
+
+  it('caps, redacts, and safely bounds retained final-validator reasons', async () => {
+    const evidenceDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-validation-bounds-'))
+    const secret = 'synthetic-custody-secret'
+    const reasons = Array.from({ length: 20 }, (_entry, index) => `Gate ${index} failed.`)
+    reasons[0] = `Gate ${secret} failed at "/tmp/private-archive.json".`
+    reasons[1] = 'x'.repeat(5_000)
+    try {
+      const reportPath = await writeArchiveLifecycleFailureReceipt(createFailureReceiptInput(
+        evidenceDir,
+        { closedGateFailures: reasons, secrets: [secret] },
+      ))
+      const receipt = JSON.parse(await readFile(reportPath, 'utf8'))
+      const serialized = JSON.stringify(receipt)
+
+      expect(receipt.failure.closedGateFailures).toEqual({
+        failureCount: 20,
+        reasons: [
+          'Gate [REDACTED] failed at "[PATH]".',
+          'Archive-lifecycle failure message exceeded the bounded evidence limit.',
+          ...reasons.slice(2, 16),
+        ],
+      })
+      expect(serialized).not.toContain(secret)
+      expect(serialized.length).toBeLessThan(8_000)
+    } finally {
+      await rm(evidenceDir, { recursive: true, force: true })
+    }
+  })
+
+  it('publishes a bounded sentinel for malformed final-validator reason collections', async () => {
+    const evidenceDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-validation-invalid-'))
+    const sentinel = 'Archive-lifecycle closed-gate failure details were unreadable.'
+    const throwingEntries = new Proxy(['Valid reason.'], {
+      get: (target, property, receiver) => {
+        if (property === '0') throw new Error('hostile reason getter')
+        return Reflect.get(target, property, receiver)
+      },
+    })
+    const revokedEntries = Proxy.revocable(['Valid reason.'], {})
+    revokedEntries.revoke()
+    const throwingInput = createFailureReceiptInput(evidenceDir)
+    Object.defineProperty(throwingInput, 'closedGateFailures', {
+      get: () => { throw new Error('hostile collection getter') },
+    })
+    try {
+      for (const [input, expectedFailureCount] of [
+        [createFailureReceiptInput(evidenceDir, { closedGateFailures: [] }), null],
+        [createFailureReceiptInput(evidenceDir, {
+          closedGateFailures: ['Valid reason.', 42],
+        }), 2],
+        [createFailureReceiptInput(evidenceDir, { closedGateFailures: throwingEntries }), 1],
+        [createFailureReceiptInput(evidenceDir, {
+          closedGateFailures: revokedEntries.proxy,
+        }), null],
+        [throwingInput, null],
+      ]) {
+        const reportPath = await writeArchiveLifecycleFailureReceipt(input)
+        const receipt = JSON.parse(await readFile(reportPath, 'utf8'))
+        expect(receipt.failure.classification).toBe('evidence_validation_metadata_failure')
+        expect(receipt.failure.closedGateFailures).toMatchObject({
+          failureCount: expectedFailureCount,
+          metadataReadable: false,
+        })
+        expect(receipt.failure.closedGateFailures.reasons).toContain(sentinel)
+      }
     } finally {
       await rm(evidenceDir, { recursive: true, force: true })
     }

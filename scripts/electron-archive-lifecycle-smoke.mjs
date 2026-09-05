@@ -70,11 +70,13 @@ const PROFILE_REMOVAL_STEP = 'profile_removal'
 const UNREADABLE_CLEANUP_DETAIL_STEP_PREFIX = 'cleanup_detail_unreadable_'
 const UNREADABLE_CLEANUP_DETAIL_MESSAGE = 'Archive-lifecycle cleanup failure detail was unreadable.'
 const DIAGNOSTIC_ARRAY_LIMIT = 16
+const CLOSED_GATE_FAILURE_LIMIT = 16
 const DIAGNOSTIC_ENTRY_LIMIT = 96
 const DIAGNOSTIC_DEPTH_LIMIT = 5
 const FAILURE_MESSAGE_INPUT_LIMIT = 4_096
 const UNSAFE_FAILURE_MESSAGE = 'Archive-lifecycle failure did not expose a safe message.'
 const OVERSIZED_FAILURE_MESSAGE = 'Archive-lifecycle failure message exceeded the bounded evidence limit.'
+const UNREADABLE_CLOSED_GATE_FAILURE = 'Archive-lifecycle closed-gate failure details were unreadable.'
 const OMITTED_DIAGNOSTIC_VALUE = Symbol('omitted_archive_lifecycle_diagnostic_value')
 const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
   'activeLaunchNumber',
@@ -173,6 +175,7 @@ async function main() {
   let successEvidence = null
   let successReportPath = null
   let lifecycleFailure = null
+  let closedGateFailures = null
   let profileCleanupCompleted = false
   try {
     userDataDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-pr6-archive-smoke-'))
@@ -447,9 +450,10 @@ async function main() {
       verdict: { passed: true, failureReasons: [] },
     }
     assertArchiveLifecycleSmokeEvidenceOmitsSecrets(successEvidence, [passphrase, recoveryCode])
-    const validation = validateArchiveLifecycleSmokeEvidence(successEvidence)
-    if (!validation.passed) {
-      throw new Error(`Packaged archive-lifecycle evidence failed ${validation.failureReasons.length} closed gate(s).`)
+    const validationFailure = createArchiveLifecycleEvidenceValidationFailure(successEvidence)
+    if (validationFailure !== null) {
+      closedGateFailures = validationFailure.closedGateFailures
+      throw validationFailure.error
     }
   } catch (error) {
     lifecycleFailure = error
@@ -526,6 +530,7 @@ async function main() {
         profileCleanupCompleted,
         cleanupFailureCount: cleanup.cleanupFailureCount,
         cleanupFailures: cleanup.cleanupFailures,
+        closedGateFailures,
         secrets,
         sourceBefore,
         startedAtMs,
@@ -542,6 +547,18 @@ async function main() {
   console.log(`electron-archive-lifecycle-smoke: passed; report=${successReportPath}`)
   passphrase = ''
   recoveryCode = ''
+}
+
+/** Converts one final evidence-validation rejection into stable receipt inputs. */
+export function createArchiveLifecycleEvidenceValidationFailure(evidence) {
+  const validation = validateArchiveLifecycleSmokeEvidence(evidence)
+  if (validation.passed) return null
+  return Object.freeze({
+    error: new Error(
+      `Packaged archive-lifecycle evidence failed ${validation.failureReasons.length} closed gate(s).`,
+    ),
+    closedGateFailures: Object.freeze([...validation.failureReasons]),
+  })
 }
 
 /** Creates a bounded mission and deterministic breadcrumb evidence through preload IPC. */
@@ -2893,11 +2910,11 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       },
       byPhase: Object.fromEntries(LIVENESS_PHASES.map((phase) => [phase, {
         sampleCount: byPhase[phase].sampleCount,
-        currentFixMaxGapMs: roundMilliseconds(byPhase[phase].currentFixMaxGapMs),
-        sourceToRendererMaxMs: roundMilliseconds(byPhase[phase].sourceToRendererMaxMs),
-        requestToRendererMaxMs: roundMilliseconds(byPhase[phase].requestToRendererMaxMs),
-        mainWatchdogMaxGapMs: roundMilliseconds(byPhase[phase].mainWatchdogMaxGapMs),
-        rendererFrameMaxGapMs: roundMilliseconds(byPhase[phase].rendererFrameMaxGapMs),
+        currentFixMaxGapMs: byPhase[phase].currentFixMaxGapMs,
+        sourceToRendererMaxMs: byPhase[phase].sourceToRendererMaxMs,
+        requestToRendererMaxMs: byPhase[phase].requestToRendererMaxMs,
+        mainWatchdogMaxGapMs: byPhase[phase].mainWatchdogMaxGapMs,
+        rendererFrameMaxGapMs: byPhase[phase].rendererFrameMaxGapMs,
       }])),
     }
   }
@@ -3181,11 +3198,6 @@ function requireLivenessPhase(phase) {
   if (!LIVENESS_PHASES.includes(phase)) {
     throw new Error('Archive-lifecycle liveness phase is invalid.')
   }
-}
-
-/** Retains deterministic sub-millisecond watchdog maxima in JSON evidence. */
-function roundMilliseconds(value) {
-  return Math.round(value * 1_000) / 1_000
 }
 
 /** Launches one packaged Electron main process and connects to its sandboxed renderer. */
@@ -3713,6 +3725,65 @@ function readProjectedArchiveLifecycleDiagnostics(error, secrets) {
   return projected === OMITTED_DIAGNOSTIC_VALUE ? null : projected
 }
 
+/** Returns one bounded marker without inventing an unreadable validator count. */
+function unreadableClosedGateFailures(failureCount = null) {
+  const boundedCount = Number.isSafeInteger(failureCount) && failureCount >= 1
+    ? failureCount
+    : null
+  return Object.freeze({
+    failureCount: boundedCount,
+    metadataReadable: false,
+    reasons: Object.freeze([UNREADABLE_CLOSED_GATE_FAILURE]),
+  })
+}
+
+/** Projects bounded final-validator reasons without suppressing the primary receipt. */
+function readClosedGateFailures(input, secrets) {
+  let failures
+  try {
+    failures = input.closedGateFailures
+  } catch {
+    return unreadableClosedGateFailures()
+  }
+  if (failures === null || failures === undefined) return null
+  if (safelyIsArray(failures) !== true) {
+    return unreadableClosedGateFailures()
+  }
+  let failureCount
+  try {
+    failureCount = failures.length
+  } catch {
+    return unreadableClosedGateFailures()
+  }
+  if (!Number.isSafeInteger(failureCount) || failureCount < 1) {
+    return unreadableClosedGateFailures()
+  }
+  const reasons = []
+  let metadataReadable = true
+  const retainedCount = Math.min(failureCount, CLOSED_GATE_FAILURE_LIMIT)
+  for (let index = 0; index < retainedCount; index += 1) {
+    let reason
+    try {
+      reason = failures[index]
+    } catch {
+      reasons.push(UNREADABLE_CLOSED_GATE_FAILURE)
+      metadataReadable = false
+      continue
+    }
+    if (typeof reason !== 'string' || reason.length < 1) {
+      reasons.push(UNREADABLE_CLOSED_GATE_FAILURE)
+      metadataReadable = false
+      continue
+    }
+    reasons.push(sanitizeFailureMessage(reason, secrets))
+  }
+  return Object.freeze({
+    failureCount,
+    ...(metadataReadable ? {} : { metadataReadable: false }),
+    reasons: Object.freeze(reasons),
+  })
+}
+
 /** Recursively copies one allow-listed diagnostic value within fixed bounds. */
 function projectArchiveLifecycleDiagnosticValue(value, secrets, seen, budget, depth) {
   if (budget.remaining <= 0) return OMITTED_DIAGNOSTIC_VALUE
@@ -3803,6 +3874,7 @@ export async function writeArchiveLifecycleFailureReceipt(input, dependencies = 
   const cleanupFailureDetails = readConsistentCleanupFailureDetails(input)
   const failedAtMs = Date.now()
   const diagnostics = readProjectedArchiveLifecycleDiagnostics(input.error, input.secrets)
+  const closedGateFailures = readClosedGateFailures(input, input.secrets)
   const cleanupDiagnostic = readCleanupFailureDiagnosticFromMessage(
     readBoundedFailureMessage(input.error),
   )
@@ -3836,11 +3908,16 @@ export async function writeArchiveLifecycleFailureReceipt(input, dependencies = 
       observedLaunchCount: input.observedLaunchCount,
     },
     failure: {
-      classification: diagnostics === null
-        ? cleanupDiagnostic === null ? 'lifecycle_failure' : 'cleanup_failure'
-        : 'external_liveness_gate_failure',
+      classification: closedGateFailures !== null
+        ? closedGateFailures.metadataReadable === false
+          ? 'evidence_validation_metadata_failure'
+          : 'evidence_validation_failure'
+        : diagnostics === null
+          ? cleanupDiagnostic === null ? 'lifecycle_failure' : 'cleanup_failure'
+          : 'external_liveness_gate_failure',
       message: sanitizeFailureMessage(input.error, input.secrets),
       archiveLifecycleDiagnostics: diagnostics,
+      ...(closedGateFailures === null ? {} : { closedGateFailures }),
       ...(cleanupDiagnostic === null ? {} : { cleanupDiagnostic }),
     },
     cleanup: {

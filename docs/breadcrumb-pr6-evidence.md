@@ -683,7 +683,54 @@ at `6` files / `186` tests; the deterministic serial suite passes `377` files /
 Node syntax, diff checks, and backend `58` passed / `1` ignored are green. Two
 independent focused reviews and a real Chromium dual-client target/close probe
 are clean. These are pre-freeze source checks; the successor's one exact
-package/lifecycle attempt remains pending.
+package/lifecycle attempt produced the rejection below.
+
+## 2026-09-05 rejected `ec258eba` final-validation candidate
+
+The renderer-CDP repair was committed locally at
+`ec258ebadafcabbe9ad8c513f35aa705566a3a70` / tree
+`ef09d6a401759b3aeba54b613ba14289bbbf841f`. Its exact macOS arm64 package was
+verified before later successor packaging replaced the local artifact, with
+executable SHA-256
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and ASAR SHA-256
+`90764b3c33b3560827a2a061e94a4a5ea8035e94261db76350fe66213947e700`.
+The sole real two-launch lifecycle attempt rejected after `10,956 ms` because
+the final evidence validator returned exactly one closed gate. Its sole
+mode-0600 failure receipt has SHA-256
+`e816a6055d5f9e4384cb70a18e667b88d8d90dbd15b096bd2dddfd6ef63b244e`.
+It recorded no liveness diagnostics or secondary cleanup failure, and process
+and profile cleanup completed. A preliminary relative-path invocation was
+rejected during CLI setup before Electron launch or evidence-directory creation;
+it was not a lifecycle attempt. Ec258eba is rejected and will not be rerun.
+
+The old receipt discarded `validation.failureReasons` and the disposable profile
+was removed, so the exact historical gate is irrecoverable. This is a final-
+evidence-validation-indeterminate harness rejection, not evidence of a product
+lifecycle or liveness failure. Source trace did confirm a separate producer/
+validator defect: raw liveness maxima were accepted only when finite,
+non-negative, and strictly below `200 ms`, then rounded to three decimals before
+the final validator applied the same strict gate. A raw `199.9996 ms` value
+therefore passed the producer, became `200`, and failed one final gate. That is
+the strongest deterministic explanation for the receipt shape, but it cannot be
+claimed as ec258eba's exact historical cause.
+
+The red-first successor preserves the already-validated raw finite maxima in
+JSON instead of rounding them. It does not clamp, floor, relax, or otherwise
+change the strict `<200 ms` contract. Final validator failures now retain total
+count plus at most 16 sanitized, 400-character reasons under the distinct
+`evidence_validation_failure` classification. Malformed metadata cannot suppress
+the primary receipt or masquerade as a confirmed gate: it uses bounded unreadable
+sentinels, a nullable unknown count, and
+`evidence_validation_metadata_failure`. The executed regression carries an exact
+validator reason through a secondary cleanup failure into the atomic receipt.
+Pre-freeze verification is green at `6` affected files / `250` tests and the
+full deterministic serial suite at `377` files / `3,818` tests. Full ESLint,
+TypeScript/production build and bundle budgets, Node syntax, diff checks, and
+backend `58` passed / `1` ignored are green. Two independent focused re-reviews
+are clean. This section records pre-freeze source evidence only; package and
+lifecycle outcomes are authoritative only in a terminal receipt bound to the
+exact executing head and the external PR/Linear ledger.
 
 ## 2026-09-03 cancelled-cleanup fence remediation
 
@@ -942,6 +989,7 @@ the release gate.
 | Rejected operation-proof candidate (local) | `b7793753ecfec7984214c07dfea21a3918a96c6d` / tree `b3f1251d19b9acb0af64f098bbc8f649fbd07217`; exact package passed, then the sole lifecycle attempt wrote proof-indeterminate receipt SHA-256 `2c93e138f10bafa24ba7a745ad730a786750cdd94be215aaa1f8acbe801392e1` |
 | Rejected cleanup-snapshot candidate (local) | `30061c2d93f20cdc7f48d6abb5b77bbd041abdd0` / tree `a77a4a37689791f958158c9c43608251e8fbc972`; exact package passed, then the sole lifecycle attempt failed at cleanup start with receipt SHA-256 `659aa9ed2cd155196d9b4d1f575c62433a0fd08cb1417be9e927901f44fafdc4` |
 | Rejected renderer-CDP candidate (local) | `e9584e94dbb7bc8403a62517657b6518e0a2627f` / tree `c45f2064231a4b533499a32d3fbf39c240c125fd`; exact package passed, then the sole lifecycle attempt failed during launch-2 `review_after_cleanup` with receipt SHA-256 `a7a2f9bd1e694e8aa77b6b9b971700261c41bc279cae7b7cfc34379fde0aa5d7` |
+| Rejected final-validation candidate (local) | `ec258ebadafcabbe9ad8c513f35aa705566a3a70` / tree `ef09d6a401759b3aeba54b613ba14289bbbf841f`; exact package passed, then the sole lifecycle attempt failed one irrecoverable final evidence gate with receipt SHA-256 `e816a6055d5f9e4384cb70a18e667b88d8d90dbd15b096bd2dddfd6ef63b244e` |
 | Recovery candidate and final proof | Pending. Once source is frozen and every gate completes, the exact immutable head/tree and results must be recorded in the PR #10 and Linear ledger |
 | Immutable final documentation/review head | Pending. It must be recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; any later repository mutation requires affected re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |

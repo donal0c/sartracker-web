@@ -150,6 +150,17 @@
   current-fix timeout or continuity fault. The old receipt cannot distinguish a
   CDP timeout from rejection, so this is instrumentation-indeterminate rather
   than product-stall evidence.
+- **Exact local head `ec258ebadafcabbe9ad8c513f35aa705566a3a70` / tree
+  `ef09d6a401759b3aeba54b613ba14289bbbf841f` is rejected.** Its exact package
+  completed, then its sole two-launch lifecycle attempt rejected after
+  `10,956 ms` on one final evidence gate. The mode-0600 receipt has SHA-256
+  `e816a6055d5f9e4384cb70a18e667b88d8d90dbd15b096bd2dddfd6ef63b244e`;
+  it retained no gate reason or liveness diagnostic, but recorded zero cleanup
+  failures and complete process/profile cleanup. The discarded reason is
+  irrecoverable, so this is final-validation-indeterminate rather than product-
+  failure evidence. A confirmed harness seam allowed a raw `199.9996 ms` value
+  to pass `<200`, round to `200`, and fail only the final validator; this is the
+  strongest explanation but is not proven as ec258eba's historical gate.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
@@ -232,7 +243,10 @@
   target identity fails closed, each transport close has an independent
   cleanup-only bound, and the first CDP failure retains bounded stage/cause
   attribution. Queue and liveness requests keep their separate strict 200 ms
-  bounds.
+  bounds. The ec258eba successor preserves raw already-validated timing values
+  in JSON and retains bounded, sanitized final-validator reasons without
+  weakening the gate. Malformed metadata publishes a distinct bounded unreadable
+  receipt instead of suppressing evidence or inventing a gate count.
 
 ## Locked Safety Boundaries
 
@@ -256,11 +270,12 @@
 
 ## Active Work
 
-- Freeze the renderer-CDP successor and spend its one exact-head
-  package/lifecycle attempt before browser, visual, physical
+- For any frozen final-validation successor without a terminal receipt, spend
+  no more than one exact-head package/lifecycle attempt before browser, visual, physical
   SIGKILL, or Linux gates. Never rerun unchanged
   rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, `23161300`,
-  `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`, `30061c2d`, or `e9584e94`.
+  `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`, `30061c2d`, `e9584e94`,
+  or `ec258eba`.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -302,7 +317,7 @@
   independent review is clean after correcting Playwright multiline decoding,
   hostile cause access, and diagnostic table-name provenance. These remain
   prior-head source checks, not successor package evidence.
-- The current renderer-CDP successor's affected gate passes `6` files / `186`
+- Ec258eba's renderer-CDP source gate passed `6` files / `186`
   tests and the full deterministic serial suite passes `377` files / `3,813`
   tests. Full ESLint, TypeScript, production build/bundle budgets, focused Node
   syntax, diff checks, and backend `58` passed / `1` ignored are green. Two
@@ -310,8 +325,14 @@
   bounded all-settled dual-transport teardown, production-callback Review
   tests, and neutral rejected-request attribution. A real Chromium micro-probe
   confirmed distinct clients, exact target selection, and independent close.
-  These are pre-freeze source checks; the one exact-head package/lifecycle
-  attempt remains pending.
+  These are prior-head source checks; ec258eba's exact package completed but its
+  sole lifecycle attempt rejected one irrecoverable final evidence gate.
+- The final-validation successor passes `6` affected files / `250` tests and the
+  full deterministic serial suite at `377` files / `3,818` tests. Full ESLint,
+  TypeScript/production build and bundle budgets, backend `58` passed / `1`
+  ignored, Node syntax, and diff checks are green. Two independent focused
+  re-reviews are clean. Source checks alone are not package/lifecycle proof; use
+  the exact head's terminal receipt as the authority.
 - Chromium `173/173`, visual Playwright `62/62`, uncached visual review `74/74`,
   and physical SIGKILL `32/32` are clean only at rejected head `b75f8689` and are
   prior-head evidence. Successor exact-head package/lifecycle, browser, visual,
@@ -319,9 +340,9 @@
 
 ## Next Actions
 
-1. Commit and freeze the renderer-CDP successor, then run its one exact-head
-   package/lifecycle attempt.
-   If it is green, push the existing PR branch and run browser/visual,
+1. If the frozen successor has no terminal receipt, run at most one exact-head
+   package/lifecycle attempt. If its receipt is green, push the existing PR
+   branch and run browser/visual,
    kill-matrix, Linux, and exactly four final-head review charters.
 2. If all remain clean, execute the single fresh Ubuntu field qualification and
    record the final ledger externally in PR #10 and the three Linear issues.
@@ -330,7 +351,7 @@
 
 - PR #10 is not ready. `caf9e5e8`, `49523dc8`, `81e47973`, `74bdd95`,
   `6a72ae91`, `23161300`, `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`,
-  `30061c2d`, and `e9584e94`
+  `30061c2d`, `e9584e94`, and `ec258eba`
   are rejected diagnostics;
   the replacement exact-head package/lifecycle gate must pass before Linux or
   field-scale qualification.
