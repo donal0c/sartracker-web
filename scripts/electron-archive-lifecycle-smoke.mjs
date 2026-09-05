@@ -1387,9 +1387,11 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   let operationSerial = Promise.resolve()
   let rendererCollectionSerial = Promise.resolve()
   let rendererCollectionFailure = null
+  let rendererPhaseTransitionActive = false
   let sourceEntrySequenceHighWatermark = 0
   let sourceFenceHighWatermark = 0
   let sourceAcknowledgementHighWatermark = 0
+  let rendererObservedThroughHighWatermark = 0
 
   const enqueue = (operation) => {
     const result = operationSerial.then(operation)
@@ -1490,14 +1492,12 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     }
   }
 
-  const expirePendingSources = () => {
-    const currentTimeMs = readNow()
-    if (!Number.isSafeInteger(currentTimeMs) || currentTimeMs < 0) {
-      recordError('external_watchdog_clock_invalid')
-      return
-    }
+  const expirePendingSources = (auditedThroughMs = readExternalNow()) => {
+    if (auditedThroughMs === null) return
     for (const [identity, source] of sourceByIdentity) {
-      if (auditPendingSourceAt(source, currentTimeMs) !== 'within_gate') {
+      if (source.requestStartedAtMs > auditedThroughMs
+        || source.emittedAtMs > auditedThroughMs) continue
+      if (auditPendingSourceAt(source, auditedThroughMs) !== 'within_gate') {
         sourceByIdentity.delete(identity)
       }
     }
@@ -1613,6 +1613,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     for (const operation of operationCheckpoints.values()) {
       if (operation.phase === phase && operation.endedAtMs === null) {
         operation.continuitySegmentStartedAtMs = startedAtMs
+        operation.continuitySegmentEndedAtMs = null
         operation.continuityLastObservedAtMs = null
       }
     }
@@ -1625,18 +1626,34 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       return
     }
     interval.endedAtMs = endedAtMs
+    for (const operation of operationCheckpoints.values()) {
+      if (operation.phase !== phase || operation.endedAtMs !== null
+        || operation.continuitySegmentStartedAtMs === null) continue
+      if (operation.continuitySegmentEndedAtMs !== null
+        || endedAtMs < operation.continuitySegmentStartedAtMs) {
+        recordError('current_fix_continuity_state_invalid')
+        continue
+      }
+      operation.continuitySegmentEndedAtMs = endedAtMs
+    }
   }
 
   const closeOperationContinuitySegment = (operation, endedAtMs) => {
     if (operation.continuitySegmentStartedAtMs === null) return
+    const segmentEndedAtMs = operation.continuitySegmentEndedAtMs ?? endedAtMs
+    if (operation.continuitySegmentEndedAtMs !== null
+      && operation.continuitySegmentEndedAtMs !== endedAtMs) {
+      recordError('current_fix_continuity_state_invalid')
+    }
     const previousTimeMs = operation.continuityLastObservedAtMs
       ?? operation.continuitySegmentStartedAtMs
-    recordCurrentFixGap(operation.phase, Math.max(0, endedAtMs - previousTimeMs), {
+    recordCurrentFixGap(operation.phase, segmentEndedAtMs - previousTimeMs, {
       intervalStartedAtMs: operation.continuitySegmentStartedAtMs,
       previousObservedAtMs: previousTimeMs,
-      auditedAtMs: endedAtMs,
+      auditedAtMs: segmentEndedAtMs,
     })
     operation.continuitySegmentStartedAtMs = null
+    operation.continuitySegmentEndedAtMs = null
     operation.continuityLastObservedAtMs = null
   }
 
@@ -1647,7 +1664,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       return
     }
     const previousTimeMs = interval.lastObservedAtMs ?? interval.startedAtMs
-    recordCurrentFixGap(phase, Math.max(0, endedAtMs - previousTimeMs), {
+    recordCurrentFixGap(phase, endedAtMs - previousTimeMs, {
       intervalStartedAtMs: interval.startedAtMs,
       previousObservedAtMs: previousTimeMs,
       auditedAtMs: endedAtMs,
@@ -1674,6 +1691,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       }
       if (operation.phase === nextPhase) {
         operation.continuitySegmentStartedAtMs = switchedAtMs
+        operation.continuitySegmentEndedAtMs = null
         operation.continuityLastObservedAtMs = null
       }
     }
@@ -1689,6 +1707,63 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     && Number.isFinite(frameTail.gapMs)
     && frameTail.gapMs >= 0
   )
+
+  const rendererSnapshotKeys = [
+    'currentFixOverflowCount',
+    'currentFixes',
+    'frameGapOverflowCount',
+    'frameGaps',
+    'frameTail',
+  ]
+
+  /** Validates the bounded renderer payload before any phase-boundary split. */
+  const rendererSnapshotIsValid = (snapshot) => (
+    snapshot !== null
+    && typeof snapshot === 'object'
+    && !Array.isArray(snapshot)
+    && JSON.stringify(Object.keys(snapshot).sort()) === JSON.stringify(rendererSnapshotKeys)
+    && Array.isArray(snapshot.currentFixes)
+    && snapshot.currentFixes.length <= RENDERER_LIVENESS_LEDGER_CAPACITY
+    && Array.isArray(snapshot.frameGaps)
+    && snapshot.frameGaps.length <= RENDERER_LIVENESS_LEDGER_CAPACITY
+    && Number.isSafeInteger(snapshot.currentFixOverflowCount)
+    && snapshot.currentFixOverflowCount >= 0
+    && Number.isSafeInteger(snapshot.frameGapOverflowCount)
+    && snapshot.frameGapOverflowCount >= 0
+    && rendererFrameTailIsValid(snapshot.frameTail)
+  )
+
+  /** Splits exact-fix observations around the external request-start watermark. */
+  const partitionRendererSnapshotAt = (snapshot, switchedAtMs) => {
+    if (!rendererSnapshotIsValid(snapshot)) return null
+    const previousCurrentFixes = []
+    const nextCurrentFixes = []
+    for (const observation of snapshot.currentFixes) {
+      if (!Number.isSafeInteger(observation?.observedAtMs)
+        || observation.observedAtMs < 0) return null
+      if (observation.observedAtMs < switchedAtMs) {
+        previousCurrentFixes.push(observation)
+      } else {
+        nextCurrentFixes.push(observation)
+      }
+    }
+    return {
+      previous: {
+        currentFixes: previousCurrentFixes,
+        frameGaps: snapshot.frameGaps,
+        frameTail: snapshot.frameTail,
+        currentFixOverflowCount: snapshot.currentFixOverflowCount,
+        frameGapOverflowCount: snapshot.frameGapOverflowCount,
+      },
+      next: {
+        currentFixes: nextCurrentFixes,
+        frameGaps: [],
+        frameTail: null,
+        currentFixOverflowCount: 0,
+        frameGapOverflowCount: 0,
+      },
+    }
+  }
 
   const recordRendererFrameGap = (frame, countFrame) => {
     if (!LIVENESS_PHASES.includes(frame?.phase)
@@ -1728,29 +1803,21 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     if (frameTail !== null) recordRendererFrameGap(frameTail, false)
   }
 
-  const recordRendererSnapshot = (snapshot) => {
+  const recordRendererSnapshot = (
+    snapshot,
+    observedThroughMs = readExternalNow(),
+  ) => {
+    if (observedThroughMs === null) return
+    if (observedThroughMs < rendererObservedThroughHighWatermark) {
+      recordError('external_watchdog_clock_invalid')
+      return
+    }
+    rendererObservedThroughHighWatermark = observedThroughMs
     ingestSourceLedger()
-    const rendererSnapshotKeys = [
-      'currentFixOverflowCount',
-      'currentFixes',
-      'frameGapOverflowCount',
-      'frameGaps',
-      'frameTail',
-    ]
-    if (snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot)
-      || JSON.stringify(Object.keys(snapshot).sort()) !== JSON.stringify(rendererSnapshotKeys)
-      || !Array.isArray(snapshot.currentFixes)
-      || snapshot.currentFixes.length > RENDERER_LIVENESS_LEDGER_CAPACITY
-      || !Array.isArray(snapshot.frameGaps)
-      || snapshot.frameGaps.length > RENDERER_LIVENESS_LEDGER_CAPACITY
-      || !Number.isSafeInteger(snapshot.currentFixOverflowCount)
-      || snapshot.currentFixOverflowCount < 0
-      || !Number.isSafeInteger(snapshot.frameGapOverflowCount)
-      || snapshot.frameGapOverflowCount < 0
-      || !rendererFrameTailIsValid(snapshot.frameTail)) {
+    if (!rendererSnapshotIsValid(snapshot)) {
       recordError('renderer_liveness_snapshot_invalid')
-      expirePendingSources()
-      auditActiveContinuity()
+      expirePendingSources(observedThroughMs)
+      auditActiveContinuity(observedThroughMs)
       return
     }
     if (snapshot.currentFixOverflowCount > 0) {
@@ -1850,7 +1917,10 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       const interval = activeContinuityInterval
       if (interval === null) {
         recordError('current_fix_continuity_state_invalid')
-      } else {
+      } else if (observation.observedAtMs < interval.startedAtMs) {
+        recordError('current_fix_clock_invalid')
+      } else if (interval.endedAtMs === null
+        || observation.observedAtMs < interval.endedAtMs) {
         const previousObservedAtMs = interval.lastObservedAtMs ?? interval.startedAtMs
         recordCurrentFixGap(source.phase, observation.observedAtMs - previousObservedAtMs, {
           intervalStartedAtMs: interval.startedAtMs,
@@ -1866,6 +1936,14 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
           && source.requestStartedAtMs >= operation.startedAtMs
           && source.emittedAtMs >= operation.startedAtMs
           && observation.observedAtMs >= operation.startedAtMs
+          && source.requestStartedAtMs >= operation.continuitySegmentStartedAtMs
+          && source.emittedAtMs >= operation.continuitySegmentStartedAtMs
+          && observation.observedAtMs >= operation.continuitySegmentStartedAtMs
+          && (operation.continuitySegmentEndedAtMs === null || (
+            source.requestStartedAtMs < operation.continuitySegmentEndedAtMs
+            && source.emittedAtMs < operation.continuitySegmentEndedAtMs
+            && observation.observedAtMs < operation.continuitySegmentEndedAtMs
+          ))
           && (operation.endedAtMs === null || (
             source.sequence <= operation.endSourceSequence
             && source.requestStartedAtMs < operation.endedAtMs
@@ -1897,8 +1975,8 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         rememberRetiredSource(source)
       }
     }
-    expirePendingSources()
-    auditActiveContinuity()
+    expirePendingSources(observedThroughMs)
+    auditActiveContinuity(observedThroughMs)
   }
 
   const recordMainGap = (phase, gapMs, countSample = true) => {
@@ -1912,50 +1990,126 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       gapMs,
     )
     if (gapMs >= LIVENESS_HARD_GATE_MS) recordError('main_watchdog_gate_breached')
-    auditActiveContinuity()
   }
 
-  /** Serializes each renderer drain together with source-ledger correlation. */
+  /** Reserves the renderer serial queue without imposing one timeout across every transition step. */
+  const runExclusiveRendererCollection = async (operation) => {
+    if (rendererCollectionFailure !== null) {
+      throwRendererCdpFailure(
+        rendererCollectionFailure,
+        'Archive-lifecycle renderer serialization failed.',
+      )
+    }
+    let started = false
+    let signalStarted
+    const startedSignal = new Promise((resolve) => { signalStarted = resolve })
+    const transaction = rendererCollectionSerial.then(async () => {
+      started = true
+      signalStarted()
+      if (rendererCollectionFailure !== null) {
+        throwRendererCdpFailure(
+          rendererCollectionFailure,
+          'Archive-lifecycle renderer serialization failed.',
+        )
+      }
+      return operation()
+    })
+    rendererCollectionSerial = transaction.catch(() => undefined)
+    try {
+      await withTimeout(
+        startedSignal,
+        LIVENESS_HARD_GATE_MS,
+        'Electron renderer liveness collection timed out.',
+      )
+    } catch (error) {
+      if (started) return transaction
+      rendererCollectionFailure = error
+      throwRendererCdpFailure(
+        error,
+        'Archive-lifecycle renderer serialization failed.',
+      )
+    }
+    return transaction
+  }
+
+  /** Collects one renderer snapshot while the caller owns the renderer serial queue. */
+  const collectRendererSnapshotExclusively = async (
+    launch,
+    cleanup,
+    recordSnapshot,
+  ) => {
+    if (rendererCollectionFailure !== null) throw rendererCollectionFailure
+    const observedThroughMs = readExternalNow()
+    if (observedThroughMs === null) throwIfInstrumentationFailed()
+    const directCollection = Promise.resolve().then(() =>
+      collectRenderer(launch.page, cleanup))
+    let collectionSettled = false
+    void directCollection.then(
+      () => { collectionSettled = true },
+      () => { collectionSettled = true },
+    )
+    try {
+      const snapshot = await withTimeout(
+        directCollection,
+        LIVENESS_HARD_GATE_MS,
+        cleanup
+          ? 'Electron renderer liveness teardown timed out.'
+          : 'Electron renderer liveness collection timed out.',
+      )
+      if (rendererCollectionFailure !== null) throw rendererCollectionFailure
+      recordSnapshot(snapshot, observedThroughMs)
+      return observedThroughMs
+    } catch (error) {
+      if (!collectionSettled) rendererCollectionFailure = error
+      throw error
+    }
+  }
+
+  /** Bounds renderer phase mutation and poisons evidence if an uncancelled request times out. */
+  const setRendererPhaseBounded = async (page, phase, timeoutMessage) => {
+    if (rendererCollectionFailure !== null) throw rendererCollectionFailure
+    const phaseRequest = Promise.resolve().then(() => setRendererPhase(page, phase))
+    let requestSettled = false
+    void phaseRequest.then(
+      () => { requestSettled = true },
+      () => { requestSettled = true },
+    )
+    try {
+      return await withTimeout(
+        phaseRequest,
+        LIVENESS_HARD_GATE_MS,
+        timeoutMessage,
+      )
+    } catch (error) {
+      if (!requestSettled) rendererCollectionFailure = error
+      throw error
+    }
+  }
+
+  /** Serializes each bounded renderer drain together with source-ledger correlation. */
   const collectAndRecordRendererSnapshot = (
     launch,
     cleanup = false,
     shouldRecord = () => true,
-  ) => {
-    if (rendererCollectionFailure !== null) {
-      return Promise.reject(rendererCollectionFailure)
-    }
-    const collection = rendererCollectionSerial.then(async () => {
-      if (rendererCollectionFailure !== null) throw rendererCollectionFailure
-      const snapshot = await collectRenderer(launch.page, cleanup)
-      if (rendererCollectionFailure !== null) throw rendererCollectionFailure
-      if (shouldRecord()) recordRendererSnapshot(snapshot)
-    })
-    rendererCollectionSerial = collection.catch(() => undefined)
-    let collectionSettled = false
-    void collection.then(
-      () => { collectionSettled = true },
-      () => { collectionSettled = true },
-    )
-    return withTimeout(
-      collection,
-      LIVENESS_HARD_GATE_MS,
-      cleanup
-        ? 'Electron renderer liveness teardown timed out.'
-        : 'Electron renderer liveness collection timed out.',
-    ).catch((error) => {
-      if (!collectionSettled) rendererCollectionFailure = error
-      throw error
-    })
-  }
+  ) => runExclusiveRendererCollection(() =>
+    collectRendererSnapshotExclusively(
+      launch,
+      cleanup,
+      (snapshot, observedThroughMs) => {
+        if (shouldRecord()) recordRendererSnapshot(snapshot, observedThroughMs)
+      },
+    ))
 
   const collectCurrentRendererSnapshot = async () => {
     if (activeLaunch === null) {
+      const observedThroughMs = readExternalNow()
+      if (observedThroughMs === null) throwIfInstrumentationFailed()
       ingestSourceLedger()
-      expirePendingSources()
-      return
+      expirePendingSources(observedThroughMs)
+      return observedThroughMs
     }
     try {
-      await collectAndRecordRendererSnapshot(activeLaunch, false)
+      return await collectAndRecordRendererSnapshot(activeLaunch, false)
     } catch (error) {
       throwRendererCdpFailure(
         error,
@@ -1987,7 +2141,12 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   }
 
   const pauseAndSettleActivePhase = async () => {
-    const pausedPhase = activePhase
+    const resumablePausedInterval = activePhase === null
+      && activeContinuityInterval !== null
+      && activeContinuityInterval.endedAtMs !== null
+      ? activeContinuityInterval
+      : null
+    const pausedPhase = activePhase ?? resumablePausedInterval?.phase ?? null
     await mockServer.setPhase(null)
     if (pausedPhase === null) {
       if (activeContinuityInterval !== null) {
@@ -1996,29 +2155,59 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       await settlePendingPhase(null)
       return null
     }
-    const pausedAtMs = readExternalNow()
-    if (pausedAtMs === null) throwIfInstrumentationFailed()
-    markContinuityIntervalEnded(pausedPhase, pausedAtMs)
+    let pausedAtMs = resumablePausedInterval?.endedAtMs ?? null
+    if (pausedAtMs === null) {
+      pausedAtMs = readExternalNow()
+      if (pausedAtMs === null) throwIfInstrumentationFailed()
+      markContinuityIntervalEnded(pausedPhase, pausedAtMs)
+    }
     activeLaunch?.externalLivenessWatchdog?.setPhase?.(null)
     activePhase = null
     await settlePendingPhase(pausedPhase)
-    closeContinuityInterval(pausedPhase, pausedAtMs)
     if (activeLaunch !== null) {
-      let previousFrameTail
+      const launch = activeLaunch
+      rendererPhaseTransitionActive = true
       try {
-        previousFrameTail = await withTimeout(
-          setRendererPhase(activeLaunch.page, null),
-          LIVENESS_HARD_GATE_MS,
-          'Electron renderer liveness phase pause timed out.',
-        )
-      } catch (error) {
-        throwRendererCdpFailure(
-          error,
-          'Archive-lifecycle renderer phase pause failed during liveness stop.',
-        )
+        await runExclusiveRendererCollection(async () => {
+          const collectPausedRendererSnapshot = async () => {
+            try {
+              await collectRendererSnapshotExclusively(
+                launch,
+                false,
+                recordRendererSnapshot,
+              )
+            } catch (error) {
+              throwRendererCdpFailure(
+                error,
+                'Archive-lifecycle renderer collection failed during liveness stop.',
+              )
+            }
+            throwIfInstrumentationFailed()
+          }
+          await collectPausedRendererSnapshot()
+          let previousFrameTail
+          try {
+            previousFrameTail = await setRendererPhaseBounded(
+              launch.page,
+              null,
+              'Electron renderer liveness phase pause timed out.',
+            )
+          } catch (error) {
+            throwRendererCdpFailure(
+              error,
+              'Archive-lifecycle renderer phase pause failed during liveness stop.',
+            )
+          }
+          recordRendererFrameTail(previousFrameTail)
+          throwIfInstrumentationFailed()
+          await collectPausedRendererSnapshot()
+        })
+      } finally {
+        rendererPhaseTransitionActive = false
       }
-      recordRendererFrameTail(previousFrameTail)
+      await settlePendingPhase(pausedPhase)
     }
+    closeContinuityInterval(pausedPhase, pausedAtMs)
     throwIfInstrumentationFailed()
     return pausedPhase
   }
@@ -2027,9 +2216,9 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     if (activeLaunch !== null) {
       let previousFrameTail
       try {
-        previousFrameTail = await withTimeout(
-          setRendererPhase(activeLaunch.page, phase),
-          LIVENESS_HARD_GATE_MS,
+        previousFrameTail = await setRendererPhaseBounded(
+          activeLaunch.page,
+          phase,
           'Electron renderer liveness phase transition timed out.',
         )
       } catch (error) {
@@ -2062,31 +2251,71 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     const previousPhase = activePhase
     await collectCurrentRendererSnapshot()
     throwIfInstrumentationFailed()
-    if (activeLaunch !== null) {
-      let previousFrameTail
-      try {
-        previousFrameTail = await withTimeout(
-          setRendererPhase(activeLaunch.page, phase),
-          LIVENESS_HARD_GATE_MS,
-          'Electron renderer liveness phase transition timed out.',
-        )
-      } catch (error) {
-        throwRendererCdpFailure(
-          error,
-          'Archive-lifecycle renderer phase transition failed.',
-        )
-      }
-      recordRendererFrameTail(previousFrameTail)
+    if (activeLaunch === null) {
+      await mockServer.setPhase(phase)
+      const switchedAtMs = readExternalNow()
+      if (switchedAtMs === null) throwIfInstrumentationFailed()
+      activePhase = phase
+      transitionActiveContinuityPhase(previousPhase, phase, switchedAtMs)
       throwIfInstrumentationFailed()
+      return
     }
-    await mockServer.setPhase(phase)
-    const switchedAtMs = readExternalNow()
-    if (switchedAtMs === null) throwIfInstrumentationFailed()
-    activePhase = phase
-    activeLaunch?.externalLivenessWatchdog?.setPhase?.(phase)
-    transitionActiveContinuityPhase(previousPhase, phase, switchedAtMs)
-    auditActiveContinuity()
-    throwIfInstrumentationFailed()
+    const launch = activeLaunch
+    rendererPhaseTransitionActive = true
+    try {
+      await runExclusiveRendererCollection(async () => {
+        let previousFrameTail
+        try {
+          previousFrameTail = await setRendererPhaseBounded(
+            launch.page,
+            phase,
+            'Electron renderer liveness phase transition timed out.',
+          )
+        } catch (error) {
+          throwRendererCdpFailure(
+            error,
+            'Archive-lifecycle renderer phase transition failed.',
+          )
+        }
+        recordRendererFrameTail(previousFrameTail)
+        throwIfInstrumentationFailed()
+        await mockServer.setPhase(phase)
+        let transitionCommitted = false
+        try {
+          await collectRendererSnapshotExclusively(
+            launch,
+            false,
+            (snapshot, switchedAtMs) => {
+              const partition = partitionRendererSnapshotAt(snapshot, switchedAtMs)
+              if (partition === null) {
+                recordRendererSnapshot(snapshot, switchedAtMs)
+                return
+              }
+              recordRendererSnapshot(partition.previous, switchedAtMs)
+              if (errors.size > 0) return
+              activePhase = phase
+              launch.externalLivenessWatchdog?.setPhase?.(phase)
+              transitionActiveContinuityPhase(previousPhase, phase, switchedAtMs)
+              if (errors.size > 0) return
+              recordRendererSnapshot(partition.next, switchedAtMs)
+              transitionCommitted = true
+            },
+          )
+        } catch (error) {
+          throwRendererCdpFailure(
+            error,
+            'Archive-lifecycle renderer collection failed during liveness stop.',
+          )
+        }
+        throwIfInstrumentationFailed()
+        if (!transitionCommitted) {
+          recordError('renderer_liveness_snapshot_invalid')
+          throwIfInstrumentationFailed()
+        }
+      })
+    } finally {
+      rendererPhaseTransitionActive = false
+    }
   }
 
   const attachLaunch = async (launch) => {
@@ -2104,12 +2333,27 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         readPhase: () => activePhase,
         onMainGap: recordMainGap,
         onRendererSnapshot: recordRendererSnapshot,
-        collectRendererSnapshot: (cleanup = false, shouldRecord = () => true) =>
-          collectAndRecordRendererSnapshot(launch, cleanup, shouldRecord),
+        collectRendererSnapshot: (cleanup = false, shouldRecord = () => true) => {
+          if (!cleanup && rendererPhaseTransitionActive) return Promise.resolve()
+          return collectAndRecordRendererSnapshot(launch, cleanup, shouldRecord)
+        },
         onError: recordError,
       })
       launch.externalLivenessWatchdog = watchdog
     })
+  }
+
+  /** Classifies final delegated renderer-drain failures at the probe boundary. */
+  const stopExternalWatchdog = async (launch) => {
+    if (launch.externalLivenessWatchdog === undefined) return
+    try {
+      await launch.externalLivenessWatchdog.stop()
+    } catch (error) {
+      throwRendererCdpFailure(
+        error,
+        'Archive-lifecycle renderer watchdog teardown failed.',
+      )
+    }
   }
 
   const detachLaunch = async (launch) => {
@@ -2119,7 +2363,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       }
       const preservedPhase = await pauseAndSettleActivePhase()
       if (launch.externalLivenessWatchdog !== undefined) {
-        await launch.externalLivenessWatchdog.stop()
+        await stopExternalWatchdog(launch)
         launch.externalLivenessWatchdog = undefined
       }
       ingestSourceLedger()
@@ -2169,6 +2413,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       endSourceSequence: null,
       freshSampleCount: 0,
       continuitySegmentStartedAtMs: activePhase === checkpoint.phase ? startedAtMs : null,
+      continuitySegmentEndedAtMs: null,
       continuityLastObservedAtMs: null,
     }))
     return checkpoints
@@ -2309,9 +2554,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
             launchStopFailure = error
           }
           try {
-            if (launch.externalLivenessWatchdog !== undefined) {
-              await launch.externalLivenessWatchdog.stop()
-            }
+            await stopExternalWatchdog(launch)
           } catch (error) {
             launchStopFailure = launchStopFailure === undefined
               ? error
@@ -2419,7 +2662,13 @@ export function startExternalLaunchWatchdog(input) {
       await input.collectRendererSnapshot(cleanup, () => cleanup || !stopped)
       return
     }
-    return collectRendererLivenessProbe(input.launch.page, cleanup)
+    return withTimeout(
+      collectRendererLivenessProbe(input.launch.page, cleanup),
+      LIVENESS_HARD_GATE_MS,
+      cleanup
+        ? 'Electron renderer liveness teardown timed out.'
+        : 'Electron renderer liveness watchdog timed out.',
+    )
   }
   /** Records the old phase tail without resetting cross-phase heartbeat continuity. */
   const setPhase = (phase) => {
@@ -2463,11 +2712,7 @@ export function startExternalLaunchWatchdog(input) {
     while (!stopped) {
       const cycleStartedAt = performance.now()
       try {
-        const snapshot = await withTimeout(
-          collectRendererSnapshot(false),
-          LIVENESS_HARD_GATE_MS,
-          'Electron renderer liveness watchdog timed out.',
-        )
+        const snapshot = await collectRendererSnapshot(false)
         if (!stopped && snapshot !== undefined) input.onRendererSnapshot(snapshot)
       } catch {
         if (!stopped) input.onError('renderer_cdp_watchdog_failed')
@@ -2484,11 +2729,7 @@ export function startExternalLaunchWatchdog(input) {
         setPhase(null)
         stopped = true
         await Promise.all([mainTask, rendererTask])
-        const finalSnapshot = await withTimeout(
-          collectRendererSnapshot(true),
-          LIVENESS_HARD_GATE_MS,
-          'Electron renderer liveness teardown timed out.',
-        )
+        const finalSnapshot = await collectRendererSnapshot(true)
         if (finalSnapshot !== undefined) input.onRendererSnapshot(finalSnapshot)
       })()
       return stopPromise

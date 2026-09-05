@@ -51,6 +51,18 @@
   Exact successor acknowledgements now retire only older snapshots still below
   their original deadline; no acknowledgement, invalid/late acknowledgement,
   or sequence regression remains fail-closed at the unchanged `>=200 ms` gate.
+- **Exact local head `2316130047fb1c69e966ac58956b1abc0b6a5792` is
+  rejected.** Its exact package passed, then its one lifecycle attempt wrote the
+  sole 0600 terminal artifact: a failure receipt with SHA-256
+  `36795e1f7512b982015f90c9b292f1f7b3445d6069dfc1ba474854f4a5fc3c31`.
+  Restore recorded 38 exact MapLibre samples and a 216 ms continuity trigger,
+  with 13 ms source/request latency, 153.65 ms main, and 16.9 ms renderer-frame
+  maxima; process/profile cleanup completed with no secondary failure. The
+  receipt is harness-indeterminate, not admissible product-stall proof: the main
+  watchdog could audit a stale externally drained renderer watermark while a
+  timely fix was already stamped in the renderer. Separately, source retrace
+  confirmed a real cadence risk: successful polling waited for durable snapshot
+  settlement and then added the full 50 ms validation interval.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
@@ -80,10 +92,20 @@
   they may supersede older pending snapshots only before the older original
   deadline, cannot refresh a deadline, cannot satisfy a different operation,
   and fail closed if they regress within or across drains.
-  Late timed-out drains are poisoned; drains finishing after watchdog stop
-  cannot commit stale evidence. Genuinely new cleanup failures carry bounded,
-  sanitized per-step receipt details, while nullish/hostile failure shapes
-  remain terminal and cannot suppress the receipt.
+  The current successor subtracts already-spent durable-settlement time from the
+  next successful poll interval without overlapping polls or releasing mission
+  evidence early. Current-fix absence is audited only through a serialized
+  renderer collection's request-start watermark; independent main ticks still
+  enforce the main gate but cannot overtake a renderer observation. The strict
+  `>=200 ms` current-fix and source deadlines remain unchanged.
+  Queue acquisition and CDP work each retain their own strict bound; late timed-
+  out drains are poisoned and cannot commit stale evidence. Exact phase handoff
+  partitions fixes at one renderer-owned watermark and operation segments carry
+  immutable lower/upper bounds. Pause owns pre-mutation and post-mutation drains,
+  freezes the original continuity bound, and resumes that partial state during
+  cleanup retry without crediting a post-pause fix. Genuinely new renderer or
+  cleanup failures carry bounded, sanitized attribution, while nullish/hostile
+  failure shapes remain terminal and cannot suppress the receipt.
 
 ## Locked Safety Boundaries
 
@@ -111,7 +133,7 @@
   correction-lineage repair on the existing PR branch.
 - Rerun package/lifecycle first on that exact clean head, then full static,
   browser, visual, physical SIGKILL, and Linux gates. Never rerun unchanged
-  rejected heads `49523dc8`, `81e47973`, `74bdd95`, or `6a72ae91`.
+  rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, or `23161300`.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -135,20 +157,21 @@
 
 ## Verification Snapshot
 
-- Current watermark regressions are green at `1` file / `50` tests and the
-  expanded affected gate is `5` files / `202` tests. Three focused audits are
-  clean. The full deterministic serial suite is `375` files / `3,743` tests
-  green.
+- Current cadence/liveness regressions are green at `2` files / `145` tests;
+  expanded affected is `10` files / `477` tests; and the full deterministic
+  serial suite is `375` files / `3,759` tests. Functional holistic, cleanup-
+  attribution, and operation-fence re-audits are clean.
 - Full ESLint, TypeScript/production build, bundle budgets, focused Node syntax,
   diff checks, and the backend (`58` passed / `1` platform-specific ignored)
-  are green. These are pre-freeze local checks, not exact-head package proof.
+  are green. These are pre-freeze dirty-tree checks, not exact-head package proof.
 - Chromium `173/173`, visual Playwright `62/62`, and the refreshed manual-frame
   review are prior-head evidence until rerun. Exact-head package/lifecycle,
   physical SIGKILL, Linux, four-review, and fresh field gates remain pending.
 
 ## Next Actions
 
-1. Freeze the watermark successor locally and run exact-head package/lifecycle.
+1. Finish the successor verification, freeze it locally, and run exact-head
+   package/lifecycle.
    If it is green, push the existing PR branch and run browser/visual,
    kill-matrix, Linux, and exactly four final-head review charters.
 2. If all remain clean, execute the single fresh Ubuntu field qualification and
@@ -156,8 +179,8 @@
 
 ## Blockers
 
-- PR #10 is not ready. `caf9e5e8`, `49523dc8`, `81e47973`, and `74bdd95` are
-  rejected diagnostics; the replacement exact-head package/lifecycle gate must
-  pass before Linux or field-scale qualification.
+- PR #10 is not ready. `caf9e5e8`, `49523dc8`, `81e47973`, `74bdd95`,
+  `6a72ae91`, and `23161300` are rejected diagnostics; the replacement exact-head
+  package/lifecycle gate must pass before Linux or field-scale qualification.
 
 Archived pre-recovery baton: `handoff/archive/HANDOFF-history-2026-09-04-pre-pr10-recovery.md`.

@@ -115,6 +115,43 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('does not add a full poll interval after durable snapshot settlement [DON-252]', async () => {
+    const firstSnapshotSettlement = createDeferred<void>()
+    const missionObservationCompletions: ReturnType<typeof vi.fn>[] = []
+    const client = createClient()
+    const onSnapshot = vi.fn()
+      .mockImplementationOnce(() => firstSnapshotSettlement.promise)
+      .mockResolvedValue(undefined)
+    const poller = createPollingManager(client, {
+      intervalMs: 50,
+      minimumIntervalMs: 50,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      beginMissionEvidenceObservation: (missionId) => {
+        const complete = vi.fn()
+        missionObservationCompletions.push(complete)
+        return { missionId, complete }
+      },
+      now: () => new Date('2026-09-05T00:02:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(153)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
+    expect(missionObservationCompletions[0]).not.toHaveBeenCalled()
+
+    firstSnapshotSettlement.resolve(undefined)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    expect(missionObservationCompletions[0]).toHaveBeenCalledTimes(1)
+    await poller.stop()
+  })
+
   it('wakes an idle poller immediately when mission activation occurs', async () => {
     const client = createClient()
     let pollingMode: 'active' | 'idle' = 'idle'

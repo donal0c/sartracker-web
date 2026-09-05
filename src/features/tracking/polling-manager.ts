@@ -133,6 +133,7 @@ type PollingManagerOptions = {
   readonly onPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly logger?: PollingManagerLogger
   readonly now?: () => Date
+  readonly monotonicNow?: () => number
   readonly setTimeout?: typeof window.setTimeout
   readonly clearTimeout?: typeof window.clearTimeout
 }
@@ -213,6 +214,7 @@ export function createPollingManager(
   options: PollingManagerOptions,
 ): PollingManager {
   const now = options.now ?? (() => new Date())
+  const monotonicNow = options.monotonicNow ?? (() => performance.now())
   const scheduleTimeout = options.setTimeout ?? window.setTimeout.bind(window)
   const clearScheduledTimeout = options.clearTimeout ?? window.clearTimeout.bind(window)
   const maxBackoffMs = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
@@ -1032,8 +1034,9 @@ export function createPollingManager(
         breadcrumbMetadata,
       }
       lastGoodSnapshot = currentSnapshot
+      let currentFixPublishedAtMs = monotonicNow()
       try {
-        await options.onSnapshot(
+        const snapshotSettlement = options.onSnapshot(
           annotateTrackingSnapshotHealth(currentSnapshot, {
             now: now(),
             deviceStaleThresholdMs: options.staleThresholdMs,
@@ -1046,6 +1049,8 @@ export function createPollingManager(
               : { participantRosterAuthoritative: false }),
           },
         )
+        currentFixPublishedAtMs = monotonicNow()
+        await snapshotSettlement
       } finally {
         publishCurrentPositionRejections(
           currentPositionResult.rejected,
@@ -1082,7 +1087,11 @@ export function createPollingManager(
         deviceCount: devices.length,
         currentPositionCount: acceptedPositions.length,
       })
-      scheduleNextPoll(pollIntervalMs)
+      scheduleNextPoll(calculateRemainingPollIntervalMs(
+        pollIntervalMs,
+        currentFixPublishedAtMs,
+        monotonicNow(),
+      ))
       requestHistoryRefresh({
         generation,
         currentPollSequence: pollSequence,
@@ -2021,6 +2030,20 @@ function unwrapPollPhaseError(
 
 function calculateDurationMs(startedAt: string, completedAt: string): number {
   return Math.max(0, Date.parse(completedAt) - Date.parse(startedAt))
+}
+
+/** Keeps successful polls on cadence without overlapping an unsettled poll. */
+function calculateRemainingPollIntervalMs(
+  intervalMs: number,
+  startedAtMs: number,
+  completedAtMs: number,
+): number {
+  if (!Number.isFinite(startedAtMs)
+    || !Number.isFinite(completedAtMs)
+    || completedAtMs < startedAtMs) {
+    return intervalMs
+  }
+  return Math.max(0, intervalMs - (completedAtMs - startedAtMs))
 }
 
 function createOverlappedFetchFrom(

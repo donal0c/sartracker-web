@@ -40,13 +40,22 @@ function createProbeHarness() {
   let activePhase: Phase | null = null
   let sourceEntries: SourceEntry[] = []
   let rendererPhaseDelayMs = 0
+  let rendererPhaseAction: (() => void) | null = null
+  let rendererPhaseGate: Promise<void> | null = null
+  let releaseRendererPhase: (() => void) | null = null
+  let rendererPhaseStarted: (() => void) | null = null
+  let appliedRendererPhase: Phase | null = null
   let rendererFrameTailDelayMs = 0
   let watchdogStopDelayMs = 0
+  let watchdogStopFailure: Error | null = null
   let watchdogStopCount = 0
   let watchdogStopSettled = false
   let rendererCollectionCount = 0
+  const rendererCollectionDelaysMs: number[] = []
   let rendererCollectionFailure: Error | null = null
   let rendererCollectionGate: Promise<void> | null = null
+  let rendererCollectionAction: (() => void) | null = null
+  let rendererCollectionAfterAction: (() => void) | null = null
   let releaseRendererCollection: (() => void) | null = null
   let rendererCollectionStarted: (() => void) | null = null
   let reportedSourceSequence: number | null = null
@@ -106,10 +115,17 @@ function createProbeHarness() {
             ...rendererSnapshot.frameTail,
             gapMs: rendererSnapshot.frameTail.gapMs + rendererFrameTailDelayMs,
           }
+      const phaseAction = rendererPhaseAction
+      rendererPhaseAction = null
+      phaseAction?.()
+      rendererPhaseStarted?.()
+      rendererPhaseStarted = null
+      if (rendererPhaseGate !== null) await rendererPhaseGate
       nowMs += rendererPhaseDelayMs
       rendererPhaseDelayMs = 0
       rendererFrameTailDelayMs = 0
       rendererSnapshot.frameTail = phase === null ? null : { phase, gapMs: 0 }
+      appliedRendererPhase = phase
       return delayedTail
     },
     collectRendererLivenessProbe: async () => {
@@ -119,10 +135,20 @@ function createProbeHarness() {
         rendererCollectionFailure = null
         throw failure
       }
+      const collectionAction = rendererCollectionAction
+      rendererCollectionAction = null
+      collectionAction?.()
       const snapshot = drainRenderer()
       rendererCollectionStarted?.()
       rendererCollectionStarted = null
+      const collectionDelayMs = rendererCollectionDelaysMs.shift() ?? 0
+      if (collectionDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, collectionDelayMs))
+      }
       if (rendererCollectionGate !== null) await rendererCollectionGate
+      const collectionAfterAction = rendererCollectionAfterAction
+      rendererCollectionAfterAction = null
+      collectionAfterAction?.()
       return snapshot
     },
     startExternalLaunchWatchdog: (input: typeof watchdogInput) => {
@@ -140,13 +166,14 @@ function createProbeHarness() {
           }
           input?.onRendererSnapshot(snapshot)
           watchdogStopSettled = true
+          if (watchdogStopFailure !== null) throw watchdogStopFailure
         },
       }
     },
   })
   const launch = { page: {}, externalLivenessWatchdog: undefined }
 
-  const publishRendererFix = (
+  const queueRendererFix = (
     source: Pick<SourceEntry, 'phase' | 'sourcePositionId' | 'sourceTimestamp'>,
     renderedTimestamp?: string,
     renderedPhase?: Phase,
@@ -159,6 +186,14 @@ function createProbeHarness() {
       observedAtMs: nowMs,
     })
     rendererSnapshot.frameGaps.push({ phase: source.phase, gapMs: 16 })
+  }
+
+  const publishRendererFix = (
+    source: Pick<SourceEntry, 'phase' | 'sourcePositionId' | 'sourceTimestamp'>,
+    renderedTimestamp?: string,
+    renderedPhase?: Phase,
+  ) => {
+    queueRendererFix(source, renderedTimestamp, renderedPhase)
     watchdogInput?.onMainGap(source.phase, 50)
     watchdogInput?.onRendererSnapshot(drainRenderer())
   }
@@ -220,6 +255,7 @@ function createProbeHarness() {
       nowMs += 1
       return source
     },
+    queueRendererFix,
     publishRendererFix,
     publishRendererSnapshot: (snapshot: unknown) => {
       watchdogInput?.onRendererSnapshot(snapshot as RendererSnapshot)
@@ -227,11 +263,18 @@ function createProbeHarness() {
     queueRendererFrameTail: (phase: Phase, gapMs: number) => {
       rendererSnapshot.frameTail = { phase, gapMs }
     },
+    queueRendererFrameGap: (phase: Phase, gapMs: number) => {
+      rendererSnapshot.frameGaps.push({ phase, gapMs })
+    },
     publishWatchdogTick: () => {
       if (activePhase === null) throw new Error('Test source phase is not active.')
       rendererSnapshot.frameGaps.push({ phase: activePhase, gapMs: 16 })
       watchdogInput?.onMainGap(activePhase, 50)
       watchdogInput?.onRendererSnapshot(drainRenderer())
+    },
+    publishMainWatchdogTick: () => {
+      if (activePhase === null) throw new Error('Test source phase is not active.')
+      watchdogInput?.onMainGap(activePhase, 50)
     },
     advanceClock: (milliseconds: number) => { nowMs += milliseconds },
     reportLedgerOverflow: () => { overflowCount += 1 },
@@ -239,8 +282,33 @@ function createProbeHarness() {
       rendererPhaseDelayMs = milliseconds
       rendererFrameTailDelayMs = frameTailMilliseconds
     },
+    duringNextRendererPhase: (action: () => void) => { rendererPhaseAction = action },
+    holdRendererPhaseChanges: () => {
+      rendererPhaseGate = new Promise<void>((resolve) => {
+        releaseRendererPhase = resolve
+      })
+      return new Promise<void>((resolve) => { rendererPhaseStarted = resolve })
+    },
+    releaseRendererPhaseChanges: () => {
+      rendererPhaseGate = null
+      releaseRendererPhase?.()
+      releaseRendererPhase = null
+    },
+    duringNextRendererCollection: (action: () => void) => {
+      rendererCollectionAction = action
+    },
+    afterNextRendererCollection: (action: () => void) => {
+      rendererCollectionAfterAction = action
+    },
     delayWatchdogStop: (milliseconds: number) => { watchdogStopDelayMs = milliseconds },
+    failWatchdogStop: (error: Error) => { watchdogStopFailure = error },
+    delayNextRendererCollections: (...milliseconds: number[]) => {
+      rendererCollectionDelaysMs.push(...milliseconds)
+    },
     failNextRendererCollection: (error: Error) => { rendererCollectionFailure = error },
+    observeNextRendererCollection: () => new Promise<void>((resolve) => {
+      rendererCollectionStarted = resolve
+    }),
     holdRendererCollections: () => {
       rendererCollectionGate = new Promise<void>((resolve) => {
         releaseRendererCollection = resolve
@@ -265,6 +333,7 @@ function createProbeHarness() {
     pendingSourceCount: () => sourceEntries.length,
     drainCount: () => drainCount,
     rendererCollectionCount: () => rendererCollectionCount,
+    appliedRendererPhase: () => appliedRendererPhase,
   }
 }
 
@@ -510,6 +579,33 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     expect(harness.probe.phaseSampleCount('verify')).toBe(0)
     expect(harness.drainCount()).toBe(sourceDrainCountBeforeTimeout)
     expect(harness.pendingSourceCount()).toBe(1)
+  })
+
+  it('poisons renderer evidence when a timed-out phase request settles late', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+    const phaseRequestStarted = harness.holdRendererPhaseChanges()
+    const transition = harness.probe.setPhase('verify')
+    await phaseRequestStarted
+
+    const failure = await transition.catch((error: unknown) => error) as Error & {
+      archiveLifecycleDiagnostics?: { readonly errorKinds?: readonly string[] }
+    }
+    expect(failure.archiveLifecycleDiagnostics?.errorKinds).toContain(
+      'renderer_cdp_watchdog_failed',
+    )
+    const collectionCountAtTimeout = harness.rendererCollectionCount()
+    harness.releaseRendererPhaseChanges()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(harness.appliedRendererPhase()).toBe('verify')
+
+    await expect(harness.probe.setPhase('restore')).rejects.toThrow(
+      /renderer_cdp_watchdog_failed/u,
+    )
+    expect(harness.rendererCollectionCount()).toBe(collectionCountAtTimeout)
   })
 
   it('fails closed when the external source sequence fence regresses', async () => {
@@ -807,6 +903,24 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     expect(replacementLaunch.externalLivenessWatchdog).toBeUndefined()
   })
 
+  it('classifies a watchdog teardown rejection as renderer CDP failure', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+    harness.failWatchdogStop(new Error('Final renderer cleanup failed.'))
+
+    const failure = await harness.probe.detachLaunch(harness.launch)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: { readonly errorKinds?: readonly string[] }
+      }
+
+    expect(failure.archiveLifecycleDiagnostics?.errorKinds).toContain(
+      'renderer_cdp_watchdog_failed',
+    )
+  })
+
   it('fails when exact-correlated current fixes stall for 200 ms after an initial sample', async () => {
     const harness = createProbeHarness()
     await harness.probe.attachLaunch(harness.launch)
@@ -819,6 +933,58 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
 
     await expect(harness.probe.waitForPhaseSample('create', 100)).rejects.toThrow(
       /current_fix_continuity_gate_breached/u,
+    )
+  })
+
+  it('does not let a main-watchdog tick overtake an already stamped renderer fix', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('restore', 100)
+
+    harness.advanceClock(188)
+    const rendererCollectionStarted = harness.holdRendererCollections()
+    harness.queueCorrelatedCurrentFix()
+    const rendererCollection = harness.startWatchdogRendererCollection()
+    await rendererCollectionStarted
+    harness.advanceClock(18)
+    harness.publishMainWatchdogTick()
+    harness.releaseRendererCollections()
+    await rendererCollection
+
+    await expect(
+      harness.probe.waitForPhaseSample('restore', 100, 2),
+    ).resolves.toBeUndefined()
+  })
+
+  it('fails at the exact 200 ms boundary observed through a serialized renderer drain', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('restore', 100)
+
+    harness.advanceClock(200)
+    await harness.startWatchdogRendererCollection()
+
+    await expect(harness.probe.waitForPhaseSample('restore', 100)).rejects.toThrow(
+      /current_fix_continuity_gate_breached/u,
+    )
+  })
+
+  it('fails closed when renderer request-start watermarks regress', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('restore', 100)
+
+    harness.advanceClock(-1)
+    await harness.startWatchdogRendererCollection()
+
+    await expect(harness.probe.waitForPhaseSample('restore', 100)).rejects.toThrow(
+      /external_watchdog_clock_invalid/u,
     )
   })
 
@@ -939,6 +1105,67 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     await expect(harness.probe.detachLaunch(harness.launch)).resolves.toBeUndefined()
   })
 
+  it('does not credit an operation for a fix observed after its phase was paused', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('restore', 100)
+    const operation = await harness.probe.beginPhaseOperation('restore')
+    const pendingSource = harness.emitCurrentFix(false)
+    harness.afterNextDelay(() => { harness.publishRendererFix(pendingSource) })
+
+    await harness.probe.detachLaunch(harness.launch)
+    await harness.probe.guardOperation(Promise.resolve(), operation)
+
+    await expect(harness.probe.completePhaseOperation(operation)).rejects.toThrow(
+      /restore operation completed without a fresh MapLibre current fix/u,
+    )
+  })
+
+  it('does not extend a paused continuity interval with a later settled fix', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('restore', 100)
+    harness.advanceClock(180)
+    const pendingSource = harness.emitCurrentFix(false, undefined, undefined, 1)
+    harness.afterNextDelay(() => {
+      harness.advanceClock(10)
+      harness.publishRendererFix(pendingSource)
+    })
+
+    await expect(harness.probe.detachLaunch(harness.launch)).resolves.toBeUndefined()
+  })
+
+  it('retains a strict frame-gap breach drained while the renderer is paused', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('restore', 100)
+    let periodicCollection: Promise<unknown> | undefined
+    harness.duringNextRendererPhase(() => {
+      harness.queueRendererFrameGap('restore', 200)
+      harness.delayNextRendererCollections(120)
+      periodicCollection = harness.startWatchdogRendererCollection().catch((error) => error)
+    })
+
+    const failure = await harness.probe.detachLaunch(harness.launch)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: { readonly errorKinds?: readonly string[] }
+      }
+    await periodicCollection
+
+    expect(failure.archiveLifecycleDiagnostics?.errorKinds).toContain(
+      'renderer_frame_gate_breached',
+    )
+    await expect(harness.probe.stop(failure)).resolves.toBeUndefined()
+    expect(harness.watchdogStopSettled()).toBe(true)
+    expect(harness.launch.externalLivenessWatchdog).toBeUndefined()
+  })
+
   it('keeps phase continuity active while switching the renderer observer', async () => {
     const harness = createProbeHarness()
     await harness.probe.attachLaunch(harness.launch)
@@ -966,6 +1193,147 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     await expect(harness.probe.waitForPhaseSample('verify', 100)).rejects.toThrow(
       /current_fix_continuity_gate_breached/u,
     )
+  })
+
+  it('does not let phase handoff overtake an already stamped renderer fix', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+
+    harness.advanceClock(178)
+    harness.duringNextRendererPhase(() => { harness.queueCorrelatedCurrentFix() })
+    harness.delayNextRendererPhase(30, 0)
+
+    await expect(harness.probe.setPhase('verify')).resolves.toBeUndefined()
+  })
+
+  it('times a queued phase-fence drain from acquisition rather than enqueue', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+    harness.delayNextRendererCollections(120, 120)
+    const firstCollectionStarted = harness.observeNextRendererCollection()
+    const periodicCollection = harness.startWatchdogRendererCollection()
+    await firstCollectionStarted
+
+    const transition = harness.probe.setPhase('verify')
+
+    await periodicCollection
+    await expect(transition).resolves.toBeUndefined()
+  })
+
+  it('coalesces a periodic drain queued during the exclusive phase fence', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+    let queuedCollection: Promise<void> | undefined
+    let queuedCollectionSettled = false
+    let signalTransitionCollectionStarted: (() => void) | undefined
+    const transitionCollectionStarted = new Promise<void>((resolve) => {
+      signalTransitionCollectionStarted = resolve
+    })
+    harness.duringNextRendererPhase(() => {
+      const collectionStarted = harness.holdRendererCollections()
+      void collectionStarted.then(() => signalTransitionCollectionStarted?.())
+      queuedCollection = harness.startWatchdogRendererCollection()
+      void queuedCollection.then(() => { queuedCollectionSettled = true })
+    })
+
+    const transition = harness.probe.setPhase('verify')
+    await transitionCollectionStarted
+    await Promise.resolve()
+    const settledBeforeTransitionCollection = queuedCollectionSettled
+    harness.releaseRendererCollections()
+    await transition
+    if (queuedCollection === undefined) {
+      throw new Error('Periodic renderer collection was not queued.')
+    }
+    await queuedCollection
+
+    expect(settledBeforeTransitionCollection).toBe(true)
+  })
+
+  it('classifies a blocked renderer-queue acquisition as watchdog failure', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+    let blockedCollection: Promise<unknown> | undefined
+    let signalBlockedCollectionStarted: (() => void) | undefined
+    const blockedCollectionStarted = new Promise<void>((resolve) => {
+      signalBlockedCollectionStarted = resolve
+    })
+    harness.afterNextRendererCollection(() => {
+      const collectionStarted = harness.holdRendererCollections()
+      void collectionStarted.then(() => signalBlockedCollectionStarted?.())
+      blockedCollection = harness.startWatchdogRendererCollection().catch((error) => error)
+    })
+    const startedAt = performance.now()
+
+    const transition = harness.probe.setPhase('verify')
+    await blockedCollectionStarted
+    const failure = await transition.catch((error: unknown) => error) as Error & {
+      archiveLifecycleDiagnostics?: { readonly errorKinds?: readonly string[] }
+    }
+
+    expect(performance.now() - startedAt).toBeLessThan(1_000)
+    expect(failure.archiveLifecycleDiagnostics?.errorKinds).toContain(
+      'renderer_cdp_watchdog_failed',
+    )
+    harness.releaseRendererCollections()
+    await blockedCollection
+  })
+
+  it('does not credit an old-phase operation for a fix observed after the phase watermark', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+    const operation = await harness.probe.beginPhaseOperation('create')
+
+    harness.duringNextRendererPhase(() => {
+      const oldPhaseSource = harness.emitCurrentFix(false)
+      harness.duringNextRendererCollection(() => {
+        harness.advanceClock(1)
+        harness.queueRendererFix(oldPhaseSource)
+      })
+    })
+
+    await harness.probe.setPhase('verify')
+    await harness.probe.guardOperation(Promise.resolve(), operation)
+
+    await expect(harness.probe.completePhaseOperation(operation)).rejects.toThrow(
+      /create operation completed without a fresh MapLibre current fix/u,
+    )
+  })
+
+  it('credits a pre-existing new-phase operation for a fix observed after the phase watermark', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('create', 100)
+    const operation = await harness.probe.beginPhaseOperation('verify')
+
+    harness.duringNextRendererPhase(() => {
+      harness.duringNextRendererCollection(() => {
+        harness.advanceClock(1)
+        harness.queueCorrelatedCurrentFix()
+      })
+    })
+
+    await harness.probe.setPhase('verify')
+    await harness.probe.guardOperation(Promise.resolve(), operation)
+
+    await expect(harness.probe.completePhaseOperation(operation)).resolves.toBeUndefined()
   })
 
   it('fails when the atomic renderer phase switch exposes a strict 200 ms old-phase tail', async () => {
@@ -1170,6 +1538,45 @@ describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
     expect(committedModes).toEqual([true])
     expect(pageEvaluate).not.toHaveBeenCalled()
     expect(onRendererSnapshot).not.toHaveBeenCalled()
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('does not add a total watchdog timeout around independently bounded delegated work', async () => {
+    let markFirstCollectionStarted: (() => void) | undefined
+    let markFirstCollectionCompleted: (() => void) | undefined
+    const firstCollectionStarted = new Promise<void>((resolve) => {
+      markFirstCollectionStarted = resolve
+    })
+    const firstCollectionCompleted = new Promise<void>((resolve) => {
+      markFirstCollectionCompleted = resolve
+    })
+    let periodicCollectionCount = 0
+    const onError = vi.fn()
+    const watchdog = startExternalLaunchWatchdog({
+      launch: {
+        mainInspector: { evaluate: () => Promise.resolve(1) },
+        page: {},
+      },
+      readPhase: () => 'create',
+      onMainGap: vi.fn(),
+      onRendererSnapshot: vi.fn(),
+      collectRendererSnapshot: async (cleanup = false) => {
+        if (cleanup) return
+        periodicCollectionCount += 1
+        if (periodicCollectionCount !== 1) return
+        markFirstCollectionStarted?.()
+        await new Promise((resolve) => setTimeout(resolve, 110))
+        await new Promise((resolve) => setTimeout(resolve, 110))
+        markFirstCollectionCompleted?.()
+      },
+      onError,
+    })
+
+    await firstCollectionStarted
+    await firstCollectionCompleted
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await watchdog.stop()
+
     expect(onError).not.toHaveBeenCalled()
   })
 

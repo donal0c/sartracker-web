@@ -288,6 +288,78 @@ green, alongside full ESLint, TypeScript/production build, bundle budgets,
 focused Node syntax, diff checks, and the legacy backend (`58` passed / `1`
 platform-specific ignored). Head `6a72ae91` will not be rerun unchanged.
 
+## 2026-09-05 rejected `23161300` renderer-watermark candidate
+
+The latest-state acknowledgement repair was committed locally at
+`2316130047fb1c69e966ac58956b1abc0b6a5792` / tree
+`8b96ad6e17887b60dcbbfadd0472b62cc2f5c768`. Its exact clean macOS arm64
+package completed with executable SHA-256
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and ASAR SHA-256
+`11aac487cf767983788ac29224349cf4067b5cc238f11df1c5a6c5575e1a457d`.
+The single packaged lifecycle attempt rejected after `7,727 ms` and wrote the
+only terminal artifact: a 0600 failure receipt with SHA-256
+`36795e1f7512b982015f90c9b292f1f7b3445d6069dfc1ba474854f4a5fc3c31`.
+Process and profile cleanup both completed with zero attributed cleanup
+failures.
+
+The receipt recorded `current_fix_continuity_gate_breached` during the first
+restore launch. Restore had 38 exact MapLibre samples, including 36 fresh for
+the active operation; maxima were `216 ms` current-fix continuity, `13 ms`
+source-to-renderer and request-to-renderer, `153.650041 ms` main watchdog, and
+`16.9 ms` renderer frame. There was no pending-source timeout. The last
+externally collected exact fix was stamped at `1788566532281`; an independent
+main-watchdog callback audited the stale external watermark at
+`1788566532497`.
+
+That receipt cannot distinguish a genuine no-fix interval from a timely fix
+already stamped at MapLibre but not yet returned by the independent CDP drain.
+The main and renderer watchdog loops ran independently, while the main callback
+audited current-fix continuity without first joining the serialized renderer
+collection. A red-first deterministic reproduction proved that this ordering
+could permanently record a `>=200 ms` failure even when the queued renderer fix
+itself was stamped below 200 ms. Head `23161300` is therefore rejected and the
+receipt is harness-indeterminate rather than admissible evidence of a product or
+host stall.
+
+Source retrace also found a separate real product-path risk consistent with the
+same timing shape. The renderer applies a current snapshot synchronously, but
+the poller awaited its mission-persistence and cache settlement before arming a
+new full 50 ms validation interval. A 153 ms settlement plus that extra interval
+and the measured 13 ms transport/render path can cross 200 ms even though no
+individual main or renderer heartbeat does. The red-first successor timestamps
+the synchronous publication and subtracts already-spent settlement time from
+the next success interval. It keeps one poll in flight, holds mission evidence
+until settlement, and leaves failure backoff unchanged.
+
+The proof repair removes current-fix auditing from unrelated main-watchdog
+ticks. Each serialized renderer collection instead captures a conservative
+request-start wall-clock watermark before draining, correlates all observations,
+and audits current-fix continuity and pending-source expiry only through that
+watermark. A timely renderer fix can no longer be overtaken by the main loop;
+an empty renderer drain at exactly 200 ms still fails. Queue acquisition and the
+actual CDP drain are each independently bounded by the strict gate, and a timed-
+out drain poisons the channel so no late completion can commit evidence.
+
+Phase handoff partitions the collected exact fixes at one renderer-owned
+watermark and applies immutable lower/upper operation bounds, preventing either
+phase from borrowing freshness across the fence. Pause similarly owns the
+renderer queue, drains before and after the bounded phase-null mutation, freezes
+the continuity/operation upper bound, and preserves that original bound through
+an idempotent cleanup retry after a primary probe failure. This retains any
+terminal frame-gap evidence and prevents post-pause fixes from repairing an
+ended interval. Final watchdog teardown failures remain classified as renderer
+CDP failures with bounded sanitized cleanup attribution.
+
+The strict `>=200 ms` continuity, source, main, renderer-frame, and CDP gates are
+unchanged. Current pre-freeze verification is green: focused cadence/liveness
+`2` files / `145` tests; expanded affected `10` files / `477` tests; full serial
+`375` files / `3,759` tests; full ESLint; TypeScript/production build and bundle
+budgets; Node syntax and diff checks; and backend `58` passed / `1` platform-
+specific ignored. Independent holistic, cleanup-attribution, and operation-fence
+re-audits are functionally clean. These remain dirty-tree local checks, not
+exact-head package proof. Head `23161300` will not be rerun unchanged.
+
 ## 2026-09-03 cancelled-cleanup fence remediation
 
 The exact-head broad, persistence and concurrency reviews at `b30ebeb2…`
