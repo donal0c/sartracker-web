@@ -7,6 +7,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   cleanupArchiveLifecycleResources,
+  isExactLivenessParticipantReady,
+  waitForExactLivenessParticipant,
   writeArchiveLifecycleFailureReceipt,
   writeArchiveLifecycleSuccessReport,
 } from '../../scripts/electron-archive-lifecycle-smoke.mjs'
@@ -40,6 +42,86 @@ function createFailureReceiptInput(
 }
 
 describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 / BCP-15]', () => {
+  it('does not arm liveness from the participant empty-state placeholder', () => {
+    const exactParticipant = {
+      kind: 'device',
+      removed_at: null,
+      traccar_device_id: '991',
+    }
+
+    expect(isExactLivenessParticipantReady({
+      activeRowCount: 0,
+      participants: [exactParticipant],
+    }, 991)).toBe(false)
+    expect(isExactLivenessParticipantReady({
+      activeRowCount: 1,
+      participants: [exactParticipant],
+    }, 991)).toBe(true)
+    for (const participants of [
+      [{ ...exactParticipant, traccar_device_id: '992' }],
+      [{ ...exactParticipant, removed_at: '2026-09-05T01:40:35.000Z' }],
+      [{ ...exactParticipant, kind: 'group', traccar_device_id: null }],
+      [exactParticipant, { ...exactParticipant }],
+    ]) {
+      expect(isExactLivenessParticipantReady({
+        activeRowCount: 1,
+        participants,
+      }, 991)).toBe(false)
+    }
+
+    const source = readFileSync(runnerPath, 'utf8')
+    const participantWait = source.slice(
+      source.indexOf('async function waitForExactLivenessParticipant('),
+      source.indexOf('/** Waits until the backend and renderer agree', source.indexOf(
+        'async function waitForExactLivenessParticipant(',
+      )),
+    )
+    expect(participantWait).toContain("querySelectorAll(':scope > .sar-readout')")
+    expect(participantWait).toContain('.listMissionParticipants?.(expectedMissionId)')
+    expect(participantWait).toContain('isExactLivenessParticipantReady(')
+    expect(participantWait).not.toContain('.children.length')
+  })
+
+  it('fails closed when the participant readiness IPC read never settles', async () => {
+    vi.useFakeTimers()
+    try {
+      const page = {
+        evaluate: vi.fn(() => new Promise(() => undefined)),
+      }
+      const readiness = waitForExactLivenessParticipant(
+        page,
+        '00000000-0000-4000-8000-000000000001',
+        991,
+        30,
+      )
+      const rejection = expect(readiness).rejects.toThrow(
+        'Archive-lifecycle liveness participant readiness read timed out.',
+      )
+
+      await vi.advanceTimersByTimeAsync(31)
+      await rejection
+      expect(page.evaluate).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hydrates the recovered participant before launch-two liveness attachment', () => {
+    const source = readFileSync(runnerPath, 'utf8')
+    const restartStart = source.indexOf('restartedLaunch = await launchPackagedApp')
+    const resume = source.indexOf('await resumeLivenessMission(', restartStart)
+    const attach = source.indexOf('await livenessProbe.attachLaunch(restartedLaunch)', restartStart)
+    const restoredOperation = source.indexOf(
+      "await livenessProbe.beginPhaseOperation('restore')",
+      restartStart,
+    )
+
+    expect(restartStart).toBeGreaterThan(0)
+    expect(resume).toBeGreaterThan(restartStart)
+    expect(attach).toBeGreaterThan(resume)
+    expect(restoredOperation).toBeGreaterThan(attach)
+  })
+
   it('uses the real packaged tracking and MapLibre path under two external watchdogs', () => {
     const source = readFileSync(runnerPath, 'utf8')
 

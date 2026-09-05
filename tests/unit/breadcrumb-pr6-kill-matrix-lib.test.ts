@@ -12,13 +12,23 @@ import {
   ARCHIVE_LIFECYCLE_PHASES,
   buildBreadcrumbPr6KillMatrixReport,
   captureArchiveKillMatrixBaseline,
+  findArchiveCreatedByOperation,
   parseBreadcrumbPr6KillMatrixArgs,
+  requireArchiveInPublicProjection,
   resolveArchiveKillMatrixSelection,
   runArchiveKillCase,
 } from '../../build/breadcrumb-pr6-kill-matrix-lib.js'
 import * as killMatrix from '../../build/breadcrumb-pr6-kill-matrix-lib.js'
 
 const require = createRequire(import.meta.url)
+type TestDatabase = {
+  readonly close: () => void
+  readonly exec: (sql: string) => void
+  readonly prepare: (sql: string) => {
+    readonly run: (...parameters: readonly unknown[]) => unknown
+  }
+}
+const Database = require('better-sqlite3') as new (filename: string) => TestDatabase
 const { listArchiveInventoryForSchema } = require('../../electron/archive-inventory.cjs') as {
   readonly listArchiveInventoryForSchema: (
     schemaVersion: number,
@@ -93,7 +103,9 @@ function parentFacts(
     custody: {
       applicable: true,
       archiveIdMatched: true,
+      creationOperationIdMatched: null,
       missionIdMatched: true,
+      publicProjectionMatched: true,
       status: 'verified',
       availability: 'present',
       registryCiphertextSha256: 'a'.repeat(64),
@@ -322,6 +334,143 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
         },
       }),
     })).toThrow(/custody|file identity/iu)
+  })
+
+  it('requires the exact operation-bound archive to exist in the public projection', () => {
+    const missionId = '10000000-0000-4000-8000-000000000001'
+    const archiveId = '20000000-0000-4000-8000-000000000001'
+    const expected = { id: archiveId, mission_id: missionId, status: 'sealed' }
+
+    expect(requireArchiveInPublicProjection([expected], missionId, archiveId)).toBe(expected)
+    expect(() => requireArchiveInPublicProjection([], missionId, archiveId))
+      .toThrow(/public archive projection/iu)
+    expect(() => requireArchiveInPublicProjection([expected, { ...expected }], missionId, archiveId))
+      .toThrow(/public archive projection/iu)
+    expect(() => requireArchiveInPublicProjection([
+      { ...expected, mission_id: '10000000-0000-4000-8000-000000000002' },
+    ], missionId, archiveId)).toThrow(/public archive projection/iu)
+  })
+
+  it('correlates the exact private operation across decoys and rejects ambiguous identities', () => {
+    const workRoot = mkdtempSync(path.join(tmpdir(), 'sartracker-pr6-operation-identity-'))
+    temporaryDirectories.add(workRoot)
+    const databasePath = path.join(workRoot, 'identity.sqlite')
+    const database = new Database(databasePath)
+    const missionId = '10000000-0000-4000-8000-000000000001'
+    const otherMissionId = '10000000-0000-4000-8000-000000000002'
+    const operationId = '70000000-0000-4000-8000-00000000000e'
+    const otherOperationId = '70000000-0000-4000-8000-00000000000f'
+    const archiveId = '20000000-0000-4000-8000-000000000001'
+    database.exec(`CREATE TABLE mission_archives (
+      id TEXT NOT NULL,
+      mission_id TEXT NOT NULL,
+      creation_operation_id TEXT
+    )`)
+    const insert = database.prepare(`INSERT INTO mission_archives (
+      id, mission_id, creation_operation_id
+    ) VALUES (?, ?, ?)`)
+    insert.run('20000000-0000-4000-8000-000000000002', otherMissionId, operationId)
+    insert.run('20000000-0000-4000-8000-000000000003', missionId, otherOperationId)
+    insert.run(archiveId, missionId, operationId)
+    database.close()
+
+    expect(findArchiveCreatedByOperation(databasePath, missionId, operationId)).toEqual({
+      archiveId,
+      creationOperationIdMatched: true,
+      missionIdMatched: true,
+    })
+
+    const duplicate = new Database(databasePath)
+    duplicate.prepare(`INSERT INTO mission_archives (
+      id, mission_id, creation_operation_id
+    ) VALUES (?, ?, ?)`).run(
+      '20000000-0000-4000-8000-000000000004',
+      missionId,
+      operationId,
+    )
+    duplicate.close()
+    expect(() => findArchiveCreatedByOperation(databasePath, missionId, operationId))
+      .toThrow(/duplicate operation custody/iu)
+
+    const malformedRoot = mkdtempSync(path.join(tmpdir(), 'sartracker-pr6-malformed-identity-'))
+    temporaryDirectories.add(malformedRoot)
+    const malformedPath = path.join(malformedRoot, 'identity.sqlite')
+    const malformed = new Database(malformedPath)
+    malformed.exec(`CREATE TABLE mission_archives (
+      id TEXT NOT NULL,
+      mission_id TEXT NOT NULL,
+      creation_operation_id TEXT
+    )`)
+    malformed.prepare(`INSERT INTO mission_archives (
+      id, mission_id, creation_operation_id
+    ) VALUES (?, ?, ?)`).run('not-a-uuid', missionId, operationId)
+    malformed.close()
+    expect(() => findArchiveCreatedByOperation(malformedPath, missionId, operationId))
+      .toThrow(/invalid custody identity/iu)
+  })
+
+  it('fails the central verdict when public or final operation identity is unproven', () => {
+    const derive = Reflect.get(killMatrix, 'deriveArchiveKillCaseVerdict') as (
+      input: Readonly<Record<string, unknown>>,
+    ) => Readonly<Record<string, unknown>>
+    const definition = ARCHIVE_KILL_MATRIX_CASES.find((entry) => entry.id === 'create.seal')
+    const createFacts = parentFacts({
+      custody: {
+        ...(parentFacts().custody as Readonly<Record<string, unknown>>),
+        baselineArchiveCount: 0,
+        creationOperationIdMatched: true,
+        status: 'sealed',
+        verificationProofFileIdentityMatched: null,
+      },
+      mission: {
+        ...(parentFacts().mission as Readonly<Record<string, unknown>>),
+        status: 'finished',
+      },
+      review: {
+        attempted: false,
+        openedAuditCount: 0,
+        readMethod: null,
+        readMissionMatched: false,
+        closedAuditCount: 0,
+      },
+      cleanupEligibility: {
+        eligible: false,
+        blockers: ['current_archive_not_verified'],
+        storageState: 'live',
+      },
+    })
+
+    for (const field of [
+      'archiveIdMatched',
+      'creationOperationIdMatched',
+      'missionIdMatched',
+      'publicProjectionMatched',
+    ]) {
+      expect(() => derive({
+        definition,
+        childFacts: { action: 'startup_custody_reconciliation', outcome: 'completed' },
+        parentFacts: {
+          ...createFacts,
+          custody: {
+            ...(createFacts.custody as Readonly<Record<string, unknown>>),
+            [field]: false,
+          },
+        },
+      })).toThrow(/custody|identity|projection|operation/iu)
+    }
+
+    expect(() => derive({
+      definition,
+      childFacts: { action: 'startup_custody_reconciliation', outcome: 'completed' },
+      parentFacts: {
+        ...createFacts,
+        custody: {
+          ...(createFacts.custody as Readonly<Record<string, unknown>>),
+          applicable: false,
+          status: null,
+        },
+      },
+    })).toThrow(/seal.*custody|custody.*seal/iu)
   })
 
   it('binds the whole pre-kill custody set while allowing retained predecessors and supplements', () => {
@@ -815,6 +964,65 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
       },
     })
     expect(evidence.phaseEvidence.completed).toBeGreaterThan(0)
+  }, 60_000)
+
+  it('rediscovers a newly sealed archive by its authoritative operation identity [DON-252]', async () => {
+    if (process.platform === 'win32') return
+    const workRoot = mkdtempSync(path.join(tmpdir(), 'sartracker-pr6-kill-seal-'))
+    temporaryDirectories.add(workRoot)
+    const childPath = path.resolve('tests/fixtures/breadcrumb-pr6-kill-child.cjs')
+    const selected = resolveArchiveKillMatrixSelection(['create.seal'])
+    const definition = selected[0]
+    const preparation = spawnSync(process.execPath, [
+      childPath,
+      '--action', 'prepare',
+      '--root', workRoot,
+      '--cases', definition.id,
+    ], { cwd: path.resolve('.'), encoding: 'utf8', timeout: 30_000 })
+    expect(preparation.status, preparation.stderr).toBe(0)
+    const baseline = captureArchiveKillMatrixBaseline({ root: workRoot, selectedCases: selected })
+    const common = ['--case', definition.id, '--root', workRoot]
+
+    const evidence = await runArchiveKillCase({
+      caseDefinition: definition,
+      childPath,
+      cwd: path.resolve('.'),
+      runArgs: [
+        '--action', 'run', ...common, '--operation-id', definition.operationId,
+      ],
+      reconcileArgs: [
+        '--action', 'reconcile', ...common, '--operation-id', definition.operationId,
+      ],
+      baseline: baseline.cases[definition.id],
+      timeoutMs: 30_000,
+    })
+
+    expect(evidence).toMatchObject({
+      caseId: 'create.seal',
+      kill: { observedSignal: 'SIGKILL' },
+      restart: {
+        parentFacts: {
+          custody: {
+            applicable: true,
+            status: 'sealed',
+            archiveIdMatched: true,
+            creationOperationIdMatched: true,
+            missionIdMatched: true,
+            publicProjectionMatched: true,
+            baselineArchiveCount: 0,
+            baselineArchivesPreserved: true,
+            allRegisteredArchivesMatched: true,
+            registeredArchiveCount: 1,
+            diskArchiveCount: 1,
+            unregisteredArchiveCount: 0,
+          },
+        },
+        verdict: {
+          archiveCustodyReconciled: true,
+          cleanupVerificationGateProven: true,
+        },
+      },
+    })
   }, 60_000)
 
   it('fails closed when a restart child tries to inject its own safety assertions', async () => {

@@ -173,7 +173,10 @@ async function main() {
     )
     livenessProbe = createPackagedLivenessProbe(mockServer)
     await livenessProbe.attachLaunch(initialLaunch)
-    await startLivenessMission(initialLaunch.page, mockServer.deviceId)
+    const livenessMission = await startLivenessMission(
+      initialLaunch.page,
+      mockServer.deviceId,
+    )
     await livenessProbe.setPhase('create')
     await livenessProbe.waitForPhaseSample('create', options.timeoutMs)
     const [createOperation, verifyOperation] = await livenessProbe.beginPhaseOperations([
@@ -234,11 +237,15 @@ async function main() {
     restartedLaunch = await launchPackagedApp(options, userDataDir, 2)
     packagedBuildHeadMatches.push(restartedLaunch.packagedBuildHeadMatched)
     activeLaunch = restartedLaunch
+    await resumeLivenessMission(
+      restartedLaunch.page,
+      mockServer.deviceId,
+      livenessMission.participantScopeRequired,
+    )
     await livenessProbe.attachLaunch(restartedLaunch)
     await livenessProbe.setPhase('restore')
     const resumedRestoreOperation = await livenessProbe.beginPhaseOperation('restore')
     await livenessProbe.guardOperation((async () => {
-      await resumeLivenessMission(restartedLaunch.page)
       await livenessProbe.waitForPhaseSample(
         'restore',
         options.timeoutMs,
@@ -1295,22 +1302,83 @@ async function startLivenessMission(page, expectedDeviceId) {
   await page.getByTestId('mission-start-btn').click({ force: true })
   const mission = await waitForActiveMission(page, LIVENESS_MISSION_NAME, 30_000)
   if (missionModelEnabled) {
-    await page.waitForFunction((deviceId) => {
-      const active = document.querySelector('[data-testid="participant-active-list"]')
-      return active?.textContent?.includes(String(deviceId)) === true
-        || active?.children.length === 1
-    }, expectedDeviceId, { timeout: 30_000 })
+    await waitForExactLivenessParticipant(
+      page,
+      mission.id,
+      expectedDeviceId,
+      30_000,
+    )
   }
-  return mission
+  return { mission, participantScopeRequired: missionModelEnabled }
 }
 
 /** Resumes the live probe mission after the deliberate restore SIGKILL. */
-async function resumeLivenessMission(page) {
+async function resumeLivenessMission(page, expectedDeviceId, participantScopeRequired) {
   const recoveryDialog = page.getByTestId('mission-recovery-dialog')
   await recoveryDialog.waitFor({ state: 'visible', timeout: 30_000 })
   await recoveryDialog.getByRole('button', { name: 'Resume' }).click({ force: true })
   await recoveryDialog.waitFor({ state: 'hidden', timeout: 30_000 })
-  return waitForActiveMission(page, LIVENESS_MISSION_NAME, 30_000)
+  const mission = await waitForActiveMission(page, LIVENESS_MISSION_NAME, 30_000)
+  if (participantScopeRequired) {
+    await waitForExactLivenessParticipant(
+      page,
+      mission.id,
+      expectedDeviceId,
+      30_000,
+    )
+  }
+  return mission
+}
+
+/** Accepts only one rendered and durable active participant for the probe device. */
+export function isExactLivenessParticipantReady(snapshot, expectedDeviceId) {
+  if (snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot)
+    || !Number.isSafeInteger(snapshot.activeRowCount) || snapshot.activeRowCount < 0
+    || !Array.isArray(snapshot.participants)) return false
+  const expectedId = String(expectedDeviceId)
+  if (!/^[1-9][0-9]*$/u.test(expectedId)) return false
+  const active = snapshot.participants.filter((participant) =>
+    participant !== null
+    && typeof participant === 'object'
+    && !Array.isArray(participant)
+    && participant.removed_at === null)
+  return snapshot.activeRowCount === 1
+    && active.length === 1
+    && active[0].kind === 'device'
+    && active[0].traccar_device_id === expectedId
+}
+
+/** Waits for participant persistence and the rendered scope before arming liveness. */
+export async function waitForExactLivenessParticipant(
+  page,
+  missionId,
+  expectedDeviceId,
+  timeoutMs,
+) {
+  const deadline = performance.now() + timeoutMs
+  while (performance.now() < deadline) {
+    const remainingMs = Math.max(1, deadline - performance.now())
+    const snapshot = await withTimeout(page.evaluate(async (expectedMissionId) => {
+      const activeList = document.querySelector('[data-testid="participant-active-list"]')
+      const participants = await window.sartrackerElectron?.missionStore
+        .listMissionParticipants?.(expectedMissionId)
+      return {
+        activeRowCount: activeList?.querySelectorAll(':scope > .sar-readout').length ?? 0,
+        participants: Array.isArray(participants)
+          ? participants.map((participant) => ({
+              kind: participant.kind,
+              removed_at: participant.removed_at,
+              traccar_device_id: participant.traccar_device_id,
+            }))
+          : null,
+      }
+    }, missionId), remainingMs,
+    'Archive-lifecycle liveness participant readiness read timed out.')
+    if (isExactLivenessParticipantReady(snapshot, expectedDeviceId)) return
+    const remainingAfterReadMs = deadline - performance.now()
+    if (remainingAfterReadMs > 0) await delay(Math.min(25, remainingAfterReadMs))
+  }
+  throw new Error('Archive-lifecycle liveness participant scope did not become ready.')
 }
 
 /** Waits until the backend and renderer agree on one active probe mission. */

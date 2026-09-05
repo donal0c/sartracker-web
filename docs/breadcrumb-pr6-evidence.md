@@ -352,13 +352,100 @@ ended interval. Final watchdog teardown failures remain classified as renderer
 CDP failures with bounded sanitized cleanup attribution.
 
 The strict `>=200 ms` continuity, source, main, renderer-frame, and CDP gates are
-unchanged. Current pre-freeze verification is green: focused cadence/liveness
+unchanged. For that rejected candidate, pre-freeze verification was green:
+focused cadence/liveness
 `2` files / `145` tests; expanded affected `10` files / `477` tests; full serial
 `375` files / `3,759` tests; full ESLint; TypeScript/production build and bundle
 budgets; Node syntax and diff checks; and backend `58` passed / `1` platform-
 specific ignored. Independent holistic, cleanup-attribution, and operation-fence
 re-audits are functionally clean. These remain dirty-tree local checks, not
 exact-head package proof. Head `23161300` will not be rerun unchanged.
+
+## 2026-09-05 rejected `d91ec232` kill-oracle candidate
+
+The cadence/renderer successor was committed and pushed at
+`d91ec23252afa118cc6323ed840554bb109043b2` / tree
+`560b3dc6f3eb573f499ee8f74b6924ad7dc00076`. Its exact clean macOS arm64
+package passed with executable SHA-256
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and ASAR SHA-256
+`cdd430e0a6869688c88b1ecc1f9255c7fdb7ee7bcab82a3a7920e7ddcace2e39`.
+The head's sole macOS packaged lifecycle attempt passed in `10,400 ms`; its
+0600 report SHA-256 is
+`beefb7fb13e1085f9db2986d66eac4999636d9c61e338728fdf0817b80fb0b64`.
+The report validator returned `valid: true`, `passed: true`, and no failure
+reasons. It bound the exact stable head/tree and packaged build, two fully
+observed launches, exhaustive archive verification/review before and after
+cleanup, a real decrypt-phase `SIGKILL` with restart plaintext sweep, 5,516
+cleaned rows, zero remaining breadcrumbs, zero secret matches across 63 files,
+and zero terminal plaintext residue. Strict liveness maxima remained below 200
+ms in every phase; the largest was restore main-watchdog `177.752 ms`, followed
+by restore current-fix continuity `168 ms` and cleanup continuity `151 ms`.
+
+Exact-head Chromium passed `173/173`, visual Playwright passed `62/62`, and an
+uncached independent visual review passed `74/74`. The physical 32-case
+SIGKILL matrix then rejected without publishing a report. Non-authoritative
+diagnostic subsets isolated the failure to `create.seal`; the other 13 create
+phases passed in bounded subsets. The sealed archive itself existed and matched
+its registry ciphertext digest, size, file identity, operation ID, and cleanup
+verification gate, with one registered/disk archive and no orphan.
+
+Source retrace proved a kill-oracle false negative. After a `create.seal` kill,
+the parent tried to rediscover the new archive by filtering the public
+`listMissionArchives()` projection on `creation_operation_id`; that private
+registry field is deliberately absent from the projection, so the parent did
+not exclude the new row from the pre-existing custody-set comparison and
+misreported baseline damage. A real-process regression reproduced the failure.
+The first minimum successor queried the authoritative private registry read-only
+by both mission and exact creation operation and retained the two-row duplicate
+check. Independent operation-fence review correctly rejected that as incomplete:
+it could still skip operator-facing Review if the public archive projection
+were stale, and its final post-close snapshot did not revalidate creation
+operation identity. The red-to-green correction now validates UUIDv4 identity,
+requires the exact mission-bound ID once in a fresh public projection, requires
+recoverable custody at `create.seal`, and revalidates mission plus creation
+operation in the final independent disk/registry snapshot. It reports only
+booleans, never the private operation field.
+
+Linux run `33935825755` was also bound to exact head `d91ec232`. It passed source
+binding, dependency/static/unit/build gates, Linux artifact inspection, replay,
+llvmpipe, and packaged tracking soak. Its packaged archive lifecycle then failed
+after `9,922 ms` and wrote a cleanup-complete receipt. The primary failure was
+`current_fix_continuity_gate_breached` in `create` before any archive operation:
+the interval began at `1788572435703`, the first source request/emission was
+`1788572435736`, and an empty renderer drain audited the interval at
+`1788572435929` (`226 ms`). During stop, the same source reached `209 ms` and
+added `current_fix_not_observed_before_gate`. Main-isolate maximum was
+`56.89306199999919 ms`; renderer-frame maximum was `132 ms`.
+
+Source retrace classifies this receipt as a second harness false negative, not
+admissible product- or host-stall evidence. `startLivenessMission()` accepted
+`participant-active-list.children.length === 1`, but the real zero-participant
+placeholder is itself one child. The harness armed `create` while asynchronous
+participant hydration was still loading; the product correctly defers current
+fixes from the operational map until that safety scope is trustworthy. The
+successor now requires one real rendered `.sar-readout` and exactly one active
+device participant matching the mock ID through the public preload store before
+arming liveness. After the deliberate restart it resumes and proves the same
+readiness before attaching the probe, so preserved `restore` attribution cannot
+start during recovery hydration. Each readiness IPC read is bounded by the
+remaining monotonic readiness budget, so a wedged renderer fails into the
+existing terminal cleanup and receipt path. No clock, source deadline,
+acknowledgement, or
+strict `>=200 ms` gate changed.
+
+Head `d91ec232` is rejected for final qualification and will not be rerun
+unchanged; its passing package, lifecycle, browser, and visual evidence is
+prior-head evidence only, and its Linux receipt is retained as rejected
+diagnostic evidence.
+
+The dirty successor's red-to-green focused gate passes `5` files / `275` tests,
+and its fresh full serial suite passes `375` files / `3,766` tests. Full ESLint,
+TypeScript/production build and bundle budgets, focused Node syntax, diff checks,
+and backend `58` passed / `1` platform-specific ignored are green. Independent
+operation-fence, Linux-readiness, and holistic re-audits are clean after the
+accepted findings. These remain pre-freeze local checks, not exact-head package
+or qualification proof.
 
 ## 2026-09-03 cancelled-cleanup fence remediation
 

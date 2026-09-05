@@ -41,6 +41,7 @@ const SCAN_CHUNK_BYTES = 1024 * 1024
 const CASE_ID = /^(?:create|verify|restore|cleanup)\.[a-z_]+$/u
 const SHA256 = /^[0-9a-f]{64}$/u
 const GIT_OBJECT_ID = /^[0-9a-f]{40,64}$/u
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const RECOVERY_CODE = /^(?:[0-9A-HJKMNP-TV-Z]{5}-){7}[0-9A-HJKMNP-TV-Z]{5}$/u
 const SAFE_DETAIL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u
 const SENSITIVE_DETAIL = /passphrase|recovery.?code|^recovery$|secret/iu
@@ -486,6 +487,10 @@ export function deriveArchiveKillCaseVerdict(input) {
   if (definition.lifecycle !== 'create' && custody?.applicable === false) {
     throw new Error('Archive custody disappeared after SIGKILL.')
   }
+  if (definition.lifecycle === 'create' && definition.phase === 'seal'
+    && custody?.applicable === false) {
+    throw new Error('Archive seal completed without recoverable custody.')
+  }
   const expectedRegisteredArchiveCount = custody?.baselineArchiveCount
     + (definition.lifecycle === 'create' && custody?.applicable === true ? 1 : 0)
   if (!Number.isSafeInteger(expectedRegisteredArchiveCount)
@@ -495,7 +500,12 @@ export function deriveArchiveKillCaseVerdict(input) {
     throw new Error('Archive restart left registry/disk drift or unregistered archive bytes.')
   }
   if (custody?.applicable !== false) {
-    if (custody?.archiveIdMatched !== true || custody?.missionIdMatched !== true
+    if (custody?.archiveIdMatched !== true
+      || custody?.missionIdMatched !== true
+      || custody?.publicProjectionMatched !== true
+      || (definition.lifecycle === 'create'
+        ? custody?.creationOperationIdMatched !== true
+        : custody?.creationOperationIdMatched !== null)
       || custody?.availability !== 'present'
       || custody?.registryCiphertextSha256 !== custody?.diskCiphertextSha256
       || custody?.registrySizeBytes !== custody?.diskSizeBytes
@@ -735,20 +745,21 @@ async function observeArchiveKillCase({ definition, baseline }) {
     closedAuditCount: 0,
   })
   let cleanupEligibility = null
+  let publicProjectionMatched = false
   try {
     await manager.sweepStartup()
-    const archives = await store.listMissionArchives(baseline.missionId)
     if (archiveId === null) {
-      const created = archives.filter((entry) =>
-        entry.creation_operation_id === definition.operationId)
-      if (created.length > 1) {
-        throw new Error('Archive creation restart produced duplicate operation custody.')
-      }
-      archiveId = created[0]?.id ?? null
+      archiveId = findArchiveCreatedByOperation(
+        baseline.databasePath,
+        baseline.missionId,
+        definition.operationId,
+      )?.archiveId ?? null
     }
+    const archives = await store.listMissionArchives(baseline.missionId)
     const archive = archiveId === null
       ? null
-      : archives.find((entry) => entry.id === archiveId) ?? null
+      : requireArchiveInPublicProjection(archives, baseline.missionId, archiveId)
+    publicProjectionMatched = archive !== null
     if (archive?.status === 'verified') {
       const senderId = 9_001
       const publicSession = await manager.open({
@@ -802,9 +813,56 @@ async function observeArchiveKillCase({ definition, baseline }) {
     archiveId,
     cleanupEligibility,
     postCleanupProof,
+    publicProjectionMatched,
     review,
   })
   return Object.freeze(raw)
+}
+
+/** Finds one newly created archive from the authoritative private registry identity. */
+export function findArchiveCreatedByOperation(databasePath, missionId, operationId) {
+  if (typeof missionId !== 'string' || !UUID_V4.test(missionId)
+    || typeof operationId !== 'string' || !UUID_V4.test(operationId)) {
+    throw new Error('Archive creation restart operation scope is invalid.')
+  }
+  const db = new Database(databasePath, { readonly: true, fileMustExist: true })
+  try {
+    const rows = db.prepare(`SELECT id, mission_id, creation_operation_id
+      FROM mission_archives
+      WHERE mission_id = ? AND creation_operation_id = ?
+      ORDER BY id LIMIT 2`).all(missionId, operationId)
+    if (rows.length > 1) {
+      throw new Error('Archive creation restart produced duplicate operation custody.')
+    }
+    const row = rows[0] ?? null
+    if (row === null) return null
+    if (!UUID_V4.test(row.id)
+      || row.mission_id !== missionId
+      || row.creation_operation_id !== operationId) {
+      throw new Error('Archive creation restart produced an invalid custody identity.')
+    }
+    return Object.freeze({
+      archiveId: row.id,
+      missionIdMatched: true,
+      creationOperationIdMatched: true,
+    })
+  } finally {
+    db.close()
+  }
+}
+
+/** Requires one exact archive to remain visible through the operator-facing projection. */
+export function requireArchiveInPublicProjection(archives, missionId, archiveId) {
+  if (!Array.isArray(archives)
+    || typeof missionId !== 'string' || !UUID_V4.test(missionId)
+    || typeof archiveId !== 'string' || !UUID_V4.test(archiveId)) {
+    throw new Error('Archive restart public archive projection is invalid.')
+  }
+  const sameId = archives.filter((entry) => entry?.id === archiveId)
+  if (sameId.length !== 1 || sameId[0]?.mission_id !== missionId) {
+    throw new Error('Archive restart public archive projection did not contain one exact archive.')
+  }
+  return sameId[0]
 }
 
 /** Reads all durable post-close state and exact disk identity from the parent process. */
@@ -814,6 +872,7 @@ function inspectRestartDatabase({
   archiveId,
   cleanupEligibility,
   postCleanupProof,
+  publicProjectionMatched,
   review,
 }) {
   const db = new Database(baseline.databasePath, { readonly: true, fileMustExist: true })
@@ -827,7 +886,8 @@ function inspectRestartDatabase({
     archive = archiveId === null
       ? null
       : db.prepare(`SELECT id, mission_id, relative_path, ciphertext_sha256, size_bytes,
-          status, availability, last_observed_file_identity, verification_proof_json
+          status, availability, creation_operation_id, last_observed_file_identity,
+          verification_proof_json
         FROM mission_archives WHERE id = ?`).get(archiveId) ?? null
     activeOperation = readMetadataFromDb(db, 'archive_custody_active_operation')
     blockingConflict = readMetadataFromDb(db, 'archive_custody_blocking_conflict')
@@ -899,6 +959,8 @@ function inspectRestartDatabase({
       archive,
       activeOperation,
       blockingConflict,
+      expectedArchiveId: archiveId,
+      publicProjectionMatched,
     }),
     inventory: Object.freeze({
       declarationCount: inventory.declarationCount,
@@ -926,6 +988,8 @@ function inspectCustody({
   archive,
   activeOperation,
   blockingConflict,
+  expectedArchiveId,
+  publicProjectionMatched,
 }) {
   const custodySet = captureArchiveCustodySet(
     baseline.databasePath,
@@ -967,8 +1031,12 @@ function inspectCustody({
   const verificationProof = parseBoundedJson(archive.verification_proof_json)
   return Object.freeze({
     applicable: true,
-    archiveIdMatched: archive.id === (baseline.archiveId ?? archive.id),
+    archiveIdMatched: archive.id === expectedArchiveId,
+    creationOperationIdMatched: definition.lifecycle === 'create'
+      ? archive.creation_operation_id === definition.operationId
+      : null,
     missionIdMatched: archive.mission_id === baseline.missionId,
+    publicProjectionMatched,
     status: ['sealed', 'verified'].includes(archive.status) ? archive.status : null,
     availability: archive.availability,
     registryCiphertextSha256: archive.ciphertext_sha256,
@@ -1860,11 +1928,13 @@ function normalizeParentFactsForReport(input) {
         'baselineArchiveCount',
         'baselineArchivesPreserved',
         'blockingConflictPresent',
+        'creationOperationIdMatched',
         'diskCiphertextSha256',
         'diskArchiveCount',
         'diskSizeBytes',
         'inspectionErrorCode',
         'missionIdMatched',
+        'publicProjectionMatched',
         'registryCiphertextSha256',
         'registeredArchiveCount',
         'registryFileIdentityMatched',
@@ -1891,7 +1961,10 @@ function normalizeParentFactsForReport(input) {
   if (input.custody.applicable !== false && (
     input.custody.applicable !== true
     || typeof input.custody.archiveIdMatched !== 'boolean'
+    || (input.custody.creationOperationIdMatched !== null
+      && typeof input.custody.creationOperationIdMatched !== 'boolean')
     || typeof input.custody.missionIdMatched !== 'boolean'
+    || typeof input.custody.publicProjectionMatched !== 'boolean'
     || !['sealed', 'verified', null].includes(input.custody.status)
     || typeof input.custody.registryFileIdentityMatched !== 'boolean'
     || (input.custody.verificationProofFileIdentityMatched !== null

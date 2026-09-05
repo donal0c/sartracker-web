@@ -63,6 +63,30 @@
   timely fix was already stamped in the renderer. Separately, source retrace
   confirmed a real cadence risk: successful polling waited for durable snapshot
   settlement and then added the full 50 ms validation interval.
+- **Exact pushed head `d91ec23252afa118cc6323ed840554bb109043b2` is
+  rejected for final qualification.** Its exact macOS package and sole macOS
+  packaged lifecycle attempt passed, bound to tree `560b3dc6…`, ASAR
+  `cdd430e0…`, and a
+  0600 report with SHA-256 `beefb7fb…`; all phase liveness maxima were strictly
+  below 200 ms. Chromium `173/173`, visual Playwright `62/62`, and the fresh
+  uncached visual review `74/74` also passed. The physical kill matrix then
+  failed with no report. Diagnostic subsets isolated `create.seal`: ciphertext,
+  registry digest/size/file identity, operation ID, and cleanup gate were intact,
+  but the parent oracle searched the public archive projection for the private
+  `creation_operation_id` field that projection deliberately omits. The resulting
+  baseline-custody failure is a harness false negative, not archive loss. A real-
+  process red regression now requires authoritative operation-bound rediscovery.
+  Exact-head Linux run `33935825755` passed lint, units, build, artifact
+  inspection, replay, llvmpipe, and packaged tracking soak, then wrote a
+  cleanup-complete archive-lifecycle failure receipt before any archive
+  operation. The readiness predicate had accepted the participant list's single
+  empty-state paragraph as one hydrated participant. A mock fix was therefore
+  attributed to `create` while the application correctly withheld it from
+  MapLibre during participant-scope loading. The successor requires the exact
+  active device in both the public participant store and a rendered
+  `.sar-readout` before arming liveness, including after restart. Each readiness
+  IPC read is bounded by the remaining monotonic readiness budget so a wedged
+  renderer fails into terminal cleanup and receipt publication.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
@@ -105,7 +129,11 @@
   freezes the original continuity bound, and resumes that partial state during
   cleanup retry without crediting a post-pause fix. Genuinely new renderer or
   cleanup failures carry bounded, sanitized attribution, while nullish/hostile
-  failure shapes remain terminal and cannot suppress the receipt.
+  failure shapes remain terminal and cannot suppress the receipt. The physical-
+  kill oracle now uses private operation identity only to correlate the recovered
+  archive ID, then requires that ID exactly once in a fresh public projection and
+  revalidates UUID, mission, and creation-operation identity in the final post-
+  close custody snapshot.
 
 ## Locked Safety Boundaries
 
@@ -129,11 +157,12 @@
 
 ## Active Work
 
-- Freeze and commit the red-first liveness-accounting, failure-receipt, and
-  correction-lineage repair on the existing PR branch.
+- Freeze and commit the red-first liveness-accounting, failure-receipt,
+  correction-lineage, and kill-oracle repair on the existing PR branch.
 - Rerun package/lifecycle first on that exact clean head, then full static,
   browser, visual, physical SIGKILL, and Linux gates. Never rerun unchanged
-  rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, or `23161300`.
+  rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, `23161300`, or
+  `d91ec232`.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -157,15 +186,21 @@
 
 ## Verification Snapshot
 
-- Current cadence/liveness regressions are green at `2` files / `145` tests;
-  expanded affected is `10` files / `477` tests; and the full deterministic
-  serial suite is `375` files / `3,759` tests. Functional holistic, cleanup-
-  attribution, and operation-fence re-audits are clean.
-- Full ESLint, TypeScript/production build, bundle budgets, focused Node syntax,
-  diff checks, and the backend (`58` passed / `1` platform-specific ignored)
-  are green. These are pre-freeze dirty-tree checks, not exact-head package proof.
-- Chromium `173/173`, visual Playwright `62/62`, and the refreshed manual-frame
-  review are prior-head evidence until rerun. Exact-head package/lifecycle,
+- Current successor-focused verification is green at `5` files / `275` tests,
+  and the fresh full serial suite is green at `375` files / `3,766` tests. The
+  first operation-fence audit found missing
+  public-projection and final-operation proof; those findings now have red-to-
+  green gates and a clean re-audit.
+- Full ESLint, TypeScript/production build and bundle budgets, focused Node
+  syntax, diff checks, and the backend (`58` passed / `1` platform-specific
+  ignored) are green. These are pre-freeze dirty-tree checks, not exact-head
+  package proof.
+- The `create.seal`, public-projection, final-operation, and participant-
+  readiness and wedged-readiness regressions are red-to-green on the dirty
+  successor.
+- Chromium `173/173`, visual Playwright `62/62`, and uncached visual review
+  `74/74` are clean at rejected head `d91ec232` and become prior-head evidence.
+  Exact-head package/lifecycle,
   physical SIGKILL, Linux, four-review, and fresh field gates remain pending.
 
 ## Next Actions
