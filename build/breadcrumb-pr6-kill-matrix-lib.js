@@ -26,6 +26,7 @@ const { inspectArchiveCustodyFile } = require('../electron/archive-custody-file.
 const {
   createArchiveReviewSessionManager,
 } = require('../electron/archive-review-sessions.cjs')
+const { projectArchiveResult } = require('../electron/mission-archive-ipc.cjs')
 const { createElectronMissionStore } = require('../electron/mission-store.cjs')
 
 const PROTOCOL_VERSION = 2
@@ -761,14 +762,18 @@ async function observeArchiveKillCase({ definition, baseline }) {
       : requireArchiveInPublicProjection(archives, baseline.missionId, archiveId)
     publicProjectionMatched = archive !== null
     if (archive?.status === 'verified') {
+      const recoverySlot = archive.slots.find((slot) => slot.slotType === 'recovery')
+      if (recoverySlot === undefined) {
+        throw new Error('Archive restart public projection was not operator-recoverable.')
+      }
       const senderId = 9_001
       const publicSession = await manager.open({
         senderId,
         request: {
           archiveId,
-          containerVersion: 2,
+          containerVersion: archive.container_version,
           operationId: reviewOperationId(definition.operationId),
-          slotType: 'recovery',
+          slotType: recoverySlot.slotType,
         },
         secret: baseline.recoveryCode,
       })
@@ -854,15 +859,47 @@ export function findArchiveCreatedByOperation(databasePath, missionId, operation
 /** Requires one exact archive to remain visible through the operator-facing projection. */
 export function requireArchiveInPublicProjection(archives, missionId, archiveId) {
   if (!Array.isArray(archives)
+    || archives.length > 10_000
     || typeof missionId !== 'string' || !UUID_V4.test(missionId)
     || typeof archiveId !== 'string' || !UUID_V4.test(archiveId)) {
     throw new Error('Archive restart public archive projection is invalid.')
   }
-  const sameId = archives.filter((entry) => entry?.id === archiveId)
-  if (sameId.length !== 1 || sameId[0]?.mission_id !== missionId) {
+  let projected
+  try {
+    projected = archives.map((entry) => projectArchiveResult(entry))
+  } catch {
+    throw new Error('Archive restart public archive projection is invalid.')
+  }
+  if (projected.some((entry) => entry.mission_id !== missionId)) {
+    throw new Error('Archive restart public archive projection is invalid.')
+  }
+  const sameId = projected.filter((entry) => entry.id === archiveId)
+  if (sameId.length !== 1) {
     throw new Error('Archive restart public archive projection did not contain one exact archive.')
   }
+  requireOperatorRecoverableArchiveProjection(sameId[0])
   return sameId[0]
+}
+
+/** Requires a projected v2 archive that the operator can verify or review by recovery code. */
+function requireOperatorRecoverableArchiveProjection(archive) {
+  const slots = archive.slots
+  const slotTypes = slots.map((slot) => slot.slotType).toSorted()
+  const slotIds = new Set(slots.map((slot) => slot.slotId))
+  const hasExactRecoverySlots = slots.length === 2
+    && slotIds.size === 2
+    && slotTypes[0] === 'passphrase'
+    && slotTypes[1] === 'recovery'
+  const lifecycleStateIsRecoverable = archive.status === 'sealed'
+    ? archive.verified_at === null
+    : archive.status === 'verified' && archive.verified_at !== null
+  if (archive.container_version !== 2
+    || archive.availability !== 'present'
+    || archive.ciphertext_sha256 === null || !SHA256.test(archive.ciphertext_sha256)
+    || !hasExactRecoverySlots
+    || !lifecycleStateIsRecoverable) {
+    throw new Error('Archive restart public projection was not operator-recoverable.')
+  }
 }
 
 /** Reads all durable post-close state and exact disk identity from the parent process. */
@@ -2147,7 +2184,7 @@ function normalizeRepositoryState(input) {
   if (!GIT_OBJECT_ID.test(input.headSha) || !GIT_OBJECT_ID.test(input.treeSha)
     || !SHA256.test(input.statusSha256) || !SHA256.test(input.workspaceSha256)
     || typeof input.clean !== 'boolean' || !Array.isArray(input.harnessFiles)
-    || input.harnessFiles.length !== 4) {
+    || input.harnessFiles.length !== 5) {
     throw new Error('Archive kill-matrix repository state is invalid.')
   }
   const harnessFiles = input.harnessFiles.map((entry) => {
@@ -2275,9 +2312,9 @@ function runGitBuffer(projectRoot, args) {
   })
 }
 
-/** Validates and sorts the exact four harness paths that determine qualification semantics. */
+/** Validates and sorts the exact five harness paths that determine qualification semantics. */
 function normalizeHarnessPaths(input) {
-  if (!Array.isArray(input) || input.length !== 4
+  if (!Array.isArray(input) || input.length !== 5
     || new Set(input).size !== input.length
     || input.some((entry) => typeof entry !== 'string'
       || path.isAbsolute(entry) || entry.includes('\\')

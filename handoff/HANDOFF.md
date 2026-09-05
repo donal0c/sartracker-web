@@ -87,6 +87,23 @@
   `.sar-readout` before arming liveness, including after restart. Each readiness
   IPC read is bounded by the remaining monotonic readiness budget so a wedged
   renderer fails into terminal cleanup and receipt publication.
+- **Exact pushed head `7e0d8ea3407aeecd298fd25cc16130c132ae9dc8` is
+  rejected for final qualification.** Its exact macOS arm64 package and sole
+  packaged lifecycle attempt passed: tree `a036132e…`, ASAR `76f311ef…`, 0600
+  lifecycle report SHA-256 `23112d9d…`, two launches, 5,516 cleaned rows, zero
+  secret/plaintext residue, and every phase maximum strictly below 200 ms.
+  Chromium passed `173/173`, visual Playwright `62/62`, fresh uncached visual
+  review `74/74`, and the exact physical SIGKILL matrix qualified `32/32` with
+  report SHA-256 `fea482fc…`. Linux run `33938682590` was deliberately cancelled
+  after final review found an accepted P2 and is not evidence. Broad and
+  concurrency reviews were clean; persistence found same-name mission recovery
+  was not bound to the original UUID, and renderer review found rendered
+  participant readiness was not bound to device identity and sealed archive
+  presence did not prove operator recovery readiness. Those three findings are
+  repaired red-first in the current successor. The archive oracle now reuses
+  the production IPC projector, requires exact v2 passphrase/recovery slots and
+  sealed/verified recovery semantics, derives Review inputs from that projection,
+  and includes the projector in its five-file evidence-identity manifest.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
@@ -133,7 +150,11 @@
   kill oracle now uses private operation identity only to correlate the recovered
   archive ID, then requires that ID exactly once in a fresh public projection and
   revalidates UUID, mission, and creation-operation identity in the final post-
-  close custody snapshot.
+  close custody snapshot. Restart readiness also binds the original mission UUID
+  and requires one exact device identity in both durable participant state and
+  the rendered row. Public archive readiness is projected through the same pure
+  CommonJS boundary as renderer IPC and fails closed unless the exact v2 archive
+  is presently recoverable with unique passphrase and recovery slots.
 
 ## Locked Safety Boundaries
 
@@ -162,7 +183,7 @@
 - Rerun package/lifecycle first on that exact clean head, then full static,
   browser, visual, physical SIGKILL, and Linux gates. Never rerun unchanged
   rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, `23161300`, or
-  `d91ec232`.
+  `d91ec232` or `7e0d8ea3`.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -186,11 +207,10 @@
 
 ## Verification Snapshot
 
-- Current successor-focused verification is green at `5` files / `275` tests,
-  and the fresh full serial suite is green at `375` files / `3,766` tests. The
-  first operation-fence audit found missing
-  public-projection and final-operation proof; those findings now have red-to-
-  green gates and a clean re-audit.
+- Current successor-focused verification is green at `4` files / `97` tests,
+  and the fresh full serial suite is green at `375` files / `3,770` tests. The
+  accepted mission-ID, rendered-device, public archive recoverability, and
+  harness-identity findings have red-to-green gates and clean bounded re-audits.
 - Full ESLint, TypeScript/production build and bundle budgets, focused Node
   syntax, diff checks, and the backend (`58` passed / `1` platform-specific
   ignored) are green. These are pre-freeze dirty-tree checks, not exact-head
@@ -198,9 +218,9 @@
 - The `create.seal`, public-projection, final-operation, and participant-
   readiness and wedged-readiness regressions are red-to-green on the dirty
   successor.
-- Chromium `173/173`, visual Playwright `62/62`, and uncached visual review
-  `74/74` are clean at rejected head `d91ec232` and become prior-head evidence.
-  Exact-head package/lifecycle,
+- Chromium `173/173`, visual Playwright `62/62`, uncached visual review `74/74`,
+  and physical SIGKILL `32/32` are clean at rejected head `7e0d8ea3` and are now
+  prior-head evidence. Exact-head package/lifecycle,
   physical SIGKILL, Linux, four-review, and fresh field gates remain pending.
 
 ## Next Actions
@@ -215,7 +235,8 @@
 ## Blockers
 
 - PR #10 is not ready. `caf9e5e8`, `49523dc8`, `81e47973`, `74bdd95`,
-  `6a72ae91`, and `23161300` are rejected diagnostics; the replacement exact-head
-  package/lifecycle gate must pass before Linux or field-scale qualification.
+  `6a72ae91`, `23161300`, `d91ec232`, and `7e0d8ea3` are rejected diagnostics;
+  the replacement exact-head package/lifecycle gate must pass before Linux or
+  field-scale qualification.
 
 Archived pre-recovery baton: `handoff/archive/HANDOFF-history-2026-09-04-pre-pr10-recovery.md`.

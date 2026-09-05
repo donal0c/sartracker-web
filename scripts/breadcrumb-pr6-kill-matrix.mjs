@@ -33,6 +33,7 @@ const OWNERSHIP_MARKER = '.breadcrumb-pr6-kill-matrix-owned'
 const MAX_PREPARE_OUTPUT_BYTES = 64 * 1024
 const HARNESS_FILES = Object.freeze([
   'build/breadcrumb-pr6-kill-matrix-lib.js',
+  'electron/mission-archive-ipc.cjs',
   'scripts/breadcrumb-pr6-kill-matrix.mjs',
   'tests/fixtures/breadcrumb-pr6-kill-child.cjs',
   'tests/unit/breadcrumb-pr6-kill-matrix-lib.test.ts',

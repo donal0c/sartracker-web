@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   cleanupArchiveLifecycleResources,
   isExactLivenessParticipantReady,
+  waitForActiveMission,
   waitForExactLivenessParticipant,
   writeArchiveLifecycleFailureReceipt,
   writeArchiveLifecycleSuccessReport,
@@ -48,25 +49,50 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
       removed_at: null,
       traccar_device_id: '991',
     }
+    const exactRenderedParticipant = {
+      kind: 'device',
+      traccarDeviceId: '991',
+    }
 
     expect(isExactLivenessParticipantReady({
-      activeRowCount: 0,
+      renderedParticipants: [],
       participants: [exactParticipant],
     }, 991)).toBe(false)
     expect(isExactLivenessParticipantReady({
-      activeRowCount: 1,
+      renderedParticipants: [exactRenderedParticipant],
       participants: [exactParticipant],
     }, 991)).toBe(true)
-    for (const participants of [
-      [{ ...exactParticipant, traccar_device_id: '992' }],
-      [{ ...exactParticipant, removed_at: '2026-09-05T01:40:35.000Z' }],
-      [{ ...exactParticipant, kind: 'group', traccar_device_id: null }],
-      [exactParticipant, { ...exactParticipant }],
+    for (const snapshot of [
+      {
+        renderedParticipants: [{ ...exactRenderedParticipant, traccarDeviceId: '992' }],
+        participants: [exactParticipant],
+      },
+      {
+        renderedParticipants: [{ kind: 'group', traccarDeviceId: null }],
+        participants: [exactParticipant],
+      },
+      {
+        renderedParticipants: [exactRenderedParticipant, exactRenderedParticipant],
+        participants: [exactParticipant],
+      },
+      {
+        renderedParticipants: [exactRenderedParticipant],
+        participants: [{ ...exactParticipant, traccar_device_id: '992' }],
+      },
+      {
+        renderedParticipants: [exactRenderedParticipant],
+        participants: [{ ...exactParticipant, removed_at: '2026-09-05T01:40:35.000Z' }],
+      },
+      {
+        renderedParticipants: [exactRenderedParticipant],
+        participants: [{ ...exactParticipant, kind: 'group', traccar_device_id: null }],
+      },
+      {
+        renderedParticipants: [exactRenderedParticipant],
+        participants: [exactParticipant, { ...exactParticipant }],
+      },
     ]) {
-      expect(isExactLivenessParticipantReady({
-        activeRowCount: 1,
-        participants,
-      }, 991)).toBe(false)
+      expect(isExactLivenessParticipantReady(snapshot, 991)).toBe(false)
     }
 
     const source = readFileSync(runnerPath, 'utf8')
@@ -77,6 +103,8 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
       )),
     )
     expect(participantWait).toContain("querySelectorAll(':scope > .sar-readout')")
+    expect(participantWait).toContain("getAttribute('data-participant-kind')")
+    expect(participantWait).toContain("getAttribute('data-traccar-device-id')")
     expect(participantWait).toContain('.listMissionParticipants?.(expectedMissionId)')
     expect(participantWait).toContain('isExactLivenessParticipantReady(')
     expect(participantWait).not.toContain('.children.length')
@@ -118,8 +146,52 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
 
     expect(restartStart).toBeGreaterThan(0)
     expect(resume).toBeGreaterThan(restartStart)
+    expect(source.slice(resume, attach)).toContain('livenessMission.mission.id')
     expect(attach).toBeGreaterThan(resume)
     expect(restoredOperation).toBeGreaterThan(attach)
+  })
+
+  it('rejects a same-name active mission decoy after restart', async () => {
+    const expectedMissionId = '00000000-0000-4000-8000-000000000001'
+    const page = {
+      waitForFunction: vi.fn(async () => undefined),
+      evaluate: vi.fn(async () => ({
+        id: '00000000-0000-4000-8000-000000000002',
+        name: 'Packaged Archive Liveness Probe',
+        status: 'active',
+      })),
+    }
+
+    await expect(waitForActiveMission(
+      page,
+      'Packaged Archive Liveness Probe',
+      30_000,
+      expectedMissionId,
+    )).rejects.toThrow('exact expected identity')
+    expect(page.waitForFunction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { name: 'Packaged Archive Liveness Probe', id: expectedMissionId },
+      { timeout: 30_000 },
+    )
+  })
+
+  it('accepts the exact active mission identity after restart', async () => {
+    const expectedMission = {
+      id: '00000000-0000-4000-8000-000000000001',
+      name: 'Packaged Archive Liveness Probe',
+      status: 'active',
+    }
+    const page = {
+      waitForFunction: vi.fn(async () => undefined),
+      evaluate: vi.fn(async () => expectedMission),
+    }
+
+    await expect(waitForActiveMission(
+      page,
+      expectedMission.name,
+      30_000,
+      expectedMission.id,
+    )).resolves.toEqual(expectedMission)
   })
 
   it('uses the real packaged tracking and MapLibre path under two external watchdogs', () => {

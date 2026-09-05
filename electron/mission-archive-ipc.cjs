@@ -1190,5 +1190,6 @@ function senderIdentity(sender) {
 
 module.exports = {
   MISSION_ARCHIVE_PROGRESS_CHANNEL,
+  projectArchiveResult,
   registerMissionArchiveIpcHandlers,
 }

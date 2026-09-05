@@ -439,13 +439,61 @@ unchanged; its passing package, lifecycle, browser, and visual evidence is
 prior-head evidence only, and its Linux receipt is retained as rejected
 diagnostic evidence.
 
-The dirty successor's red-to-green focused gate passes `5` files / `275` tests,
-and its fresh full serial suite passes `375` files / `3,766` tests. Full ESLint,
-TypeScript/production build and bundle budgets, focused Node syntax, diff checks,
-and backend `58` passed / `1` platform-specific ignored are green. Independent
-operation-fence, Linux-readiness, and holistic re-audits are clean after the
-accepted findings. These remain pre-freeze local checks, not exact-head package
-or qualification proof.
+## 2026-09-05 rejected `7e0d8ea3` final-review candidate
+
+The first combined oracle successor was committed and pushed at
+`7e0d8ea3407aeecd298fd25cc16130c132ae9dc8` / tree
+`a036132e7780a4e9aff084c64a30288a830d313d`. Its exact clean macOS arm64
+package passed with executable SHA-256
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and ASAR SHA-256
+`76f311ef3ddc1aaabd2f81c247f7d5789ed94a358c6a4fe4768b036fea3a8d74`.
+The head's sole macOS packaged lifecycle attempt passed in `10,548 ms`; its
+0600 report SHA-256 is
+`23112d9dd0389f457295f13e860a7938b51726071dcddd4097d4d5846537307c`.
+It covered two launches, archive creation/verification/Review, a real
+decrypt-phase `SIGKILL`, restart sweep, restore, cleanup of 5,516 rows, and
+post-cleanup Review with zero secret or plaintext residue. Every liveness gate
+remained strictly below 200 ms; the largest phase observations were restore
+main-watchdog `171.844 ms`, restore current-fix continuity `157 ms`, and cleanup
+continuity `142 ms`.
+
+Exact-head Chromium passed `173/173`, visual Playwright passed `62/62`, and the
+fresh uncached independent visual review passed `74/74` with the medium-severity
+gate enabled. The physical process matrix then qualified all `32/32` canonical
+SIGKILL cases. Its 0600 report SHA-256 is
+`fea482fce2564ef66fa28e9e836cc976f37c4d4d4d0efe38bd501859acdaddc5`;
+`create.seal` proved exact private operation identity, fresh public identity,
+final post-close mission/operation custody, registry/disk digest and size,
+file identity, one registered file, no orphan, and the expected cleanup blocker.
+
+That evidence does not qualify the head. Final broad and concurrency reviews
+were clean, but persistence review found restart recovery still accepted a
+same-name active mission with a different UUID. Renderer/input review found two
+additional P2 oracle gaps: the rendered participant count was not bound to the
+expected Traccar device, and a sealed archive could satisfy public-presence
+proof without the v2 slot inventory required for operator verification retry.
+Linux run `33938682590` was cancelled as soon as the accepted finding arrived;
+it is not Linux proof and no field-scale qualifier was started.
+
+The current red-first successor carries the original mission UUID across the
+restart, requires exactly device `991` in both durable participant state and
+the rendered row, and rejects decoy, group, removed, duplicate, and stale rows.
+The physical-kill oracle now runs every store row through the same pure
+`projectArchiveResult` boundary used by main-process IPC, strips private fields,
+requires one exact mission-bound v2 archive with present custody, a lower-case
+SHA-256, unique passphrase/recovery slots, and coherent sealed or verified
+state, then derives the Review container and recovery-slot inputs from that
+projection. The projector is the fifth explicit kill-harness identity input so
+future projection changes alter the evidence digest. No liveness deadline or
+strict `>=200 ms` failure gate changed.
+
+The current dirty successor's red-to-green focused gate passes `4` files / `97`
+tests, and its fresh full serial suite passes `375` files / `3,770` tests. Full
+ESLint, TypeScript/production build and bundle budgets, focused Node syntax,
+diff checks, and backend `58` passed / `1` platform-specific ignored are green.
+Bounded persistence, renderer, and evidence-lineage re-audits are clean. These
+remain pre-freeze local checks, not exact-head package or qualification proof.
 
 ## 2026-09-03 cancelled-cleanup fence remediation
 

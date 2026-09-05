@@ -162,6 +162,42 @@ function parentFacts(
   }
 }
 
+/** Builds one complete raw store row for the operator archive projection oracle. */
+function archiveProjectionRow(
+  overrides: Readonly<Record<string, unknown>> = {},
+): Readonly<Record<string, unknown>> {
+  return {
+    id: '20000000-0000-4000-8000-000000000001',
+    mission_id: '10000000-0000-4000-8000-000000000001',
+    protected_finalization_epoch: null,
+    archive_kind: 'finalized',
+    container_version: 2,
+    archive_path: 'mission-archive.sararch',
+    ciphertext_sha256: 'a'.repeat(64),
+    size_bytes: 4_096,
+    created_at: '2026-09-05T02:00:00.000Z',
+    verified_at: null,
+    previous_archive_id: null,
+    previous_archive_sha256: null,
+    revision_sequence: 1,
+    revision_count: 1,
+    supplement_authority: null,
+    supplement_reason: null,
+    supplement_created_at: null,
+    status: 'sealed',
+    availability: 'present',
+    availability_reason: null,
+    slots: [
+      { slotId: 'passphrase-v1', slotType: 'passphrase' },
+      { slotId: 'recovery-v1', slotType: 'recovery' },
+    ],
+    last_non_machine_unwrap_at: null,
+    creation_operation_id: '70000000-0000-4000-8000-00000000000e',
+    private_wrapped_key: 'must-not-cross-the-projection',
+    ...overrides,
+  }
+}
+
 /** Builds a completed cleanup fact set with explicit retained-event accounting. */
 function completedCleanupFacts(
   overrides: Readonly<{
@@ -261,6 +297,7 @@ function repositoryState(clean = true): Readonly<Record<string, unknown>> {
     workspaceSha256: '4'.repeat(64),
     harnessFiles: [
       'build/breadcrumb-pr6-kill-matrix-lib.js',
+      'electron/mission-archive-ipc.cjs',
       'scripts/breadcrumb-pr6-kill-matrix.mjs',
       'tests/fixtures/breadcrumb-pr6-kill-child.cjs',
       'tests/unit/breadcrumb-pr6-kill-matrix-lib.test.ts',
@@ -336,12 +373,22 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
     })).toThrow(/custody|file identity/iu)
   })
 
-  it('requires the exact operation-bound archive to exist in the public projection', () => {
+  it('requires an exact operator-recoverable sealed archive in the shared IPC projection', () => {
     const missionId = '10000000-0000-4000-8000-000000000001'
     const archiveId = '20000000-0000-4000-8000-000000000001'
-    const expected = { id: archiveId, mission_id: missionId, status: 'sealed' }
+    const expected = archiveProjectionRow()
 
-    expect(requireArchiveInPublicProjection([expected], missionId, archiveId)).toBe(expected)
+    const projected = requireArchiveInPublicProjection([expected], missionId, archiveId)
+    expect(projected).toMatchObject({
+      id: archiveId,
+      mission_id: missionId,
+      container_version: 2,
+      status: 'sealed',
+      availability: 'present',
+      verified_at: null,
+    })
+    expect(Object.hasOwn(projected, 'creation_operation_id')).toBe(false)
+    expect(Object.hasOwn(projected, 'private_wrapped_key')).toBe(false)
     expect(() => requireArchiveInPublicProjection([], missionId, archiveId))
       .toThrow(/public archive projection/iu)
     expect(() => requireArchiveInPublicProjection([expected, { ...expected }], missionId, archiveId))
@@ -349,6 +396,71 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
     expect(() => requireArchiveInPublicProjection([
       { ...expected, mission_id: '10000000-0000-4000-8000-000000000002' },
     ], missionId, archiveId)).toThrow(/public archive projection/iu)
+
+    for (const overrides of [
+      { slots: [] },
+      { slots: [{ slotId: 'passphrase-v1', slotType: 'passphrase' }] },
+      { slots: [
+        { slotId: 'same-slot', slotType: 'passphrase' },
+        { slotId: 'same-slot', slotType: 'recovery' },
+      ] },
+      { slots: [
+        { slotId: 'passphrase-v1', slotType: 'passphrase' },
+        { slotId: 'passphrase-v2', slotType: 'passphrase' },
+      ] },
+      { slots: [
+        { slotId: 'passphrase-v1', slotType: 'passphrase' },
+        { slotId: 'machine-v1', slotType: 'machine' },
+      ] },
+      { slots: [
+        { slotId: 'passphrase-v1', slotType: 'passphrase' },
+        { slotId: 'unknown-v1', slotType: 'unknown' },
+      ] },
+      { container_version: 1 },
+      { availability: 'missing' },
+      { verified_at: '2026-09-05T02:01:00.000Z' },
+      { ciphertext_sha256: 'A'.repeat(64) },
+    ]) {
+      expect(() => requireArchiveInPublicProjection([
+        archiveProjectionRow(overrides),
+      ], missionId, archiveId)).toThrow(/projection|recoverable/iu)
+    }
+  })
+
+  it('requires a projected recovery slot before Review and uses its projected request values', () => {
+    const missionId = '10000000-0000-4000-8000-000000000001'
+    const archiveId = '20000000-0000-4000-8000-000000000001'
+    const verified = archiveProjectionRow({
+      status: 'verified',
+      verified_at: '2026-09-05T02:01:00.000Z',
+    })
+
+    expect(requireArchiveInPublicProjection([verified], missionId, archiveId)).toMatchObject({
+      container_version: 2,
+      status: 'verified',
+      slots: expect.arrayContaining([{ slotId: 'recovery-v1', slotType: 'recovery' }]),
+    })
+    expect(() => requireArchiveInPublicProjection([
+      archiveProjectionRow({
+        status: 'verified',
+        verified_at: '2026-09-05T02:01:00.000Z',
+        slots: [{ slotId: 'passphrase-v1', slotType: 'passphrase' }],
+      }),
+    ], missionId, archiveId)).toThrow(/recoverable/iu)
+    expect(() => requireArchiveInPublicProjection([
+      archiveProjectionRow({
+        status: 'verified',
+        verified_at: 'not-a-canonical-timestamp',
+      }),
+    ], missionId, archiveId)).toThrow(/projection/iu)
+
+    const source = readFileSync(path.resolve('build/breadcrumb-pr6-kill-matrix-lib.js'), 'utf8')
+    const reviewStart = source.indexOf("if (archive?.status === 'verified')")
+    const reviewEnd = source.indexOf('const missions = await manager.read', reviewStart)
+    const reviewOpen = source.slice(reviewStart, reviewEnd)
+    expect(reviewOpen).toContain('containerVersion: archive.container_version')
+    expect(reviewOpen).toContain('slotType: recoverySlot.slotType')
+    expect(reviewOpen).not.toContain("slotType: 'recovery'")
   })
 
   it('correlates the exact private operation across decoys and rejects ambiguous identities', () => {
@@ -1226,6 +1338,13 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
     })
     expect(first.structuralDigestSha256).toMatch(/^[0-9a-f]{64}$/u)
     expect(first.structuralDigestSha256).toBe(second.structuralDigestSha256)
+    expect(first.repository.harnessFiles.map((entry) => entry.relativePath)).toEqual([
+      'build/breadcrumb-pr6-kill-matrix-lib.js',
+      'electron/mission-archive-ipc.cjs',
+      'scripts/breadcrumb-pr6-kill-matrix.mjs',
+      'tests/fixtures/breadcrumb-pr6-kill-child.cjs',
+      'tests/unit/breadcrumb-pr6-kill-matrix-lib.test.ts',
+    ])
     const structuralCases = first.cases.map((entry) => ({
       caseId: entry.caseId,
       lifecycle: entry.lifecycle,

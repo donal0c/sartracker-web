@@ -239,6 +239,7 @@ async function main() {
     activeLaunch = restartedLaunch
     await resumeLivenessMission(
       restartedLaunch.page,
+      livenessMission.mission.id,
       mockServer.deviceId,
       livenessMission.participantScopeRequired,
     )
@@ -1313,12 +1314,22 @@ async function startLivenessMission(page, expectedDeviceId) {
 }
 
 /** Resumes the live probe mission after the deliberate restore SIGKILL. */
-async function resumeLivenessMission(page, expectedDeviceId, participantScopeRequired) {
+async function resumeLivenessMission(
+  page,
+  expectedMissionId,
+  expectedDeviceId,
+  participantScopeRequired,
+) {
   const recoveryDialog = page.getByTestId('mission-recovery-dialog')
   await recoveryDialog.waitFor({ state: 'visible', timeout: 30_000 })
   await recoveryDialog.getByRole('button', { name: 'Resume' }).click({ force: true })
   await recoveryDialog.waitFor({ state: 'hidden', timeout: 30_000 })
-  const mission = await waitForActiveMission(page, LIVENESS_MISSION_NAME, 30_000)
+  const mission = await waitForActiveMission(
+    page,
+    LIVENESS_MISSION_NAME,
+    30_000,
+    expectedMissionId,
+  )
   if (participantScopeRequired) {
     await waitForExactLivenessParticipant(
       page,
@@ -1333,16 +1344,22 @@ async function resumeLivenessMission(page, expectedDeviceId, participantScopeReq
 /** Accepts only one rendered and durable active participant for the probe device. */
 export function isExactLivenessParticipantReady(snapshot, expectedDeviceId) {
   if (snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot)
-    || !Number.isSafeInteger(snapshot.activeRowCount) || snapshot.activeRowCount < 0
+    || !Array.isArray(snapshot.renderedParticipants)
     || !Array.isArray(snapshot.participants)) return false
   const expectedId = String(expectedDeviceId)
   if (!/^[1-9][0-9]*$/u.test(expectedId)) return false
+  const rendered = snapshot.renderedParticipants
   const active = snapshot.participants.filter((participant) =>
     participant !== null
     && typeof participant === 'object'
     && !Array.isArray(participant)
     && participant.removed_at === null)
-  return snapshot.activeRowCount === 1
+  return rendered.length === 1
+    && rendered[0] !== null
+    && typeof rendered[0] === 'object'
+    && !Array.isArray(rendered[0])
+    && rendered[0].kind === 'device'
+    && rendered[0].traccarDeviceId === expectedId
     && active.length === 1
     && active[0].kind === 'device'
     && active[0].traccar_device_id === expectedId
@@ -1363,7 +1380,13 @@ export async function waitForExactLivenessParticipant(
       const participants = await window.sartrackerElectron?.missionStore
         .listMissionParticipants?.(expectedMissionId)
       return {
-        activeRowCount: activeList?.querySelectorAll(':scope > .sar-readout').length ?? 0,
+        renderedParticipants: Array.from(
+          activeList?.querySelectorAll(':scope > .sar-readout') ?? [],
+          (row) => ({
+            kind: row.getAttribute('data-participant-kind'),
+            traccarDeviceId: row.getAttribute('data-traccar-device-id'),
+          }),
+        ),
         participants: Array.isArray(participants)
           ? participants.map((participant) => ({
               kind: participant.kind,
@@ -1382,15 +1405,25 @@ export async function waitForExactLivenessParticipant(
 }
 
 /** Waits until the backend and renderer agree on one active probe mission. */
-async function waitForActiveMission(page, expectedName, timeoutMs) {
-  await page.waitForFunction(async (missionName) => {
+export async function waitForActiveMission(
+  page,
+  expectedName,
+  timeoutMs,
+  expectedMissionId = null,
+) {
+  await page.waitForFunction(async (expected) => {
     const mission = await window.sartrackerElectron?.missionStore.getActiveMission()
-    return mission?.status === 'active' && mission.name === missionName
-  }, expectedName, { timeout: timeoutMs })
+    return mission?.status === 'active'
+      && mission.name === expected.name
+      && (expected.id === null || mission.id === expected.id)
+  }, { name: expectedName, id: expectedMissionId }, { timeout: timeoutMs })
   const mission = await page.evaluate(async () =>
     window.sartrackerElectron?.missionStore.getActiveMission())
-  if (mission?.status !== 'active' || mission.name !== expectedName) {
-    throw new Error('Archive-lifecycle liveness mission was not active.')
+  if (mission?.status !== 'active' || mission.name !== expectedName
+    || (expectedMissionId !== null && mission.id !== expectedMissionId)) {
+    throw new Error(
+      'Archive-lifecycle liveness mission did not match the exact expected identity.',
+    )
   }
   return mission
 }
