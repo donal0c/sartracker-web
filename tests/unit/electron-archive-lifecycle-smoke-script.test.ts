@@ -143,12 +143,22 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
       'const resumedRestoreOperation = await livenessProbe.beginPhaseOperation(',
       restartStart,
     )
+    const restoredOperationCompleted = source.indexOf(
+      'completePhaseOperation(resumedRestoreOperation)',
+      restoredOperation,
+    )
+    const restoredOperationFlow = source.slice(restoredOperation, restoredOperationCompleted)
 
     expect(restartStart).toBeGreaterThan(0)
     expect(resume).toBeGreaterThan(restartStart)
     expect(source.slice(resume, attach)).toContain('livenessMission.mission.id')
     expect(attach).toBeGreaterThan(resume)
     expect(restoredOperation).toBeGreaterThan(attach)
+    expect(restoredOperationCompleted).toBeGreaterThan(restoredOperation)
+    expect(restoredOperationFlow).toContain('waitForOperationFreshSample(')
+    expect(restoredOperationFlow).toContain('resumedRestoreOperation,')
+    expect(restoredOperationFlow).toContain('options.timeoutMs,')
+    expect(restoredOperationFlow).not.toContain('waitForPhaseSample(')
   })
 
   it('rejects a same-name active mission decoy after restart', async () => {
@@ -266,14 +276,81 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
       source.lastIndexOf("await livenessProbe.setPhase('cleanup')", reviewStart),
       reviewEnd,
     )
+    const restoreBaselineRead = reviewFlow.indexOf(
+      'const restoreSamplesBeforePostCleanupReview =',
+    )
+    const restorePhaseStart = reviewFlow.indexOf("await livenessProbe.setPhase('restore')")
+    const restoreBaselineWait = reviewFlow.indexOf(
+      'restoreSamplesBeforePostCleanupReview + 1',
+    )
+    const reviewOperationStart = reviewFlow.indexOf('const secondReviewOperation =')
 
     expect(reviewStart).toBeGreaterThan(0)
     expect(reviewEnd).toBeGreaterThan(reviewStart)
-    expect(reviewFlow).toContain("await livenessProbe.setPhase('restore')")
+    expect(restoreBaselineRead).toBeGreaterThan(0)
+    expect(restorePhaseStart).toBeGreaterThan(restoreBaselineRead)
+    expect(restoreBaselineWait).toBeGreaterThan(restorePhaseStart)
+    expect(reviewOperationStart).toBeGreaterThan(restoreBaselineWait)
     expect(reviewFlow).toContain('const secondReviewOperation = await livenessProbe.beginPhaseOperation(')
     expect(reviewFlow).toContain("'review_after_cleanup'")
     expect(reviewFlow).toContain('), secondReviewOperation)')
     expect(reviewFlow).toContain('completePhaseOperation(secondReviewOperation)')
+  })
+
+  it('binds every archive workload to its fixed diagnostic operation kind', () => {
+    const source = readFileSync(runnerPath, 'utf8')
+    const finalizeStart = source.indexOf('const [createOperation, verifyOperation] =')
+    const finalizeEnd = source.indexOf('completePhaseOperation(verifyOperation)', finalizeStart)
+    const finalizeFlow = source.slice(finalizeStart, finalizeEnd)
+    expect(finalizeStart).toBeGreaterThan(0)
+    expect(finalizeEnd).toBeGreaterThan(finalizeStart)
+    expect(finalizeFlow).toMatch(/\[\s*'create',\s*'verify',?\s*\]/su)
+    expect(finalizeFlow).toMatch(/\[\s*'finalize_archive',\s*'verify_archive',?\s*\]/su)
+    expect(finalizeFlow).toContain('guardOperation(finalizeAndVerifyArchive(')
+
+    for (const binding of [
+      {
+        variable: 'firstReviewOperation',
+        phase: 'restore',
+        kind: 'review_before_cleanup',
+        workload: 'guardOperation(runReadOnlyReview(',
+      },
+      {
+        variable: 'interruptedRestoreOperation',
+        phase: 'restore',
+        kind: 'interrupt_decrypt',
+        workload: 'guardOperation(interruptRestoreAtDecrypt(',
+      },
+      {
+        variable: 'resumedRestoreOperation',
+        phase: 'restore',
+        kind: 'resume_interrupted_restore',
+        workload: 'guardOperation(',
+      },
+      {
+        variable: 'cleanupOperation',
+        phase: 'cleanup',
+        kind: 'cleanup_pending_restore',
+        workload: 'guardOperation(runCleanup(',
+      },
+      {
+        variable: 'secondReviewOperation',
+        phase: 'restore',
+        kind: 'review_after_cleanup',
+        workload: 'guardOperation(runReadOnlyReview(',
+      },
+    ]) {
+      const start = source.indexOf(`const ${binding.variable} =`)
+      const end = source.indexOf(`completePhaseOperation(${binding.variable})`, start)
+      const flow = source.slice(start, end)
+      expect(start).toBeGreaterThan(0)
+      expect(end).toBeGreaterThan(start)
+      expect(flow).toMatch(new RegExp(
+        `beginPhaseOperation\\(\\s*'${binding.phase}',\\s*'${binding.kind}',?\\s*\\)`,
+        'su',
+      ))
+      expect(flow).toContain(binding.workload)
+    }
   })
 
   it('ends terminal liveness monitoring before unrelated post-cleanup inspection', () => {
@@ -1065,7 +1142,7 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
     const error = new Error(`Gate failed for ${secret} at ${evidenceDir}/private-profile`)
     Object.defineProperty(error, 'archiveLifecycleDiagnostics', {
       value: Object.freeze({
-        errorKinds: ['renderer_frame_sample_invalid'],
+        errorKinds: ['operation_fresh_current_fix_missing'],
         activePhase: 'create',
         activeLaunchNumber: 2,
         currentFixContinuity: null,
@@ -1097,7 +1174,11 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
           phase: 'restore',
           kind: 'review_before_cleanup',
           startedAtMs: 1_010,
-          endedAtMs: null,
+          endedAtMs: 1_090,
+          startSourceSequence: 12,
+          endSourceSequence: 13,
+          phaseSampleCountAtStart: 4,
+          phaseSampleDelta: 1,
           freshSampleCount: 0,
         })]),
         phaseMetrics: Object.freeze({}),
@@ -1130,7 +1211,7 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
         failure: {
           classification: 'external_liveness_gate_failure',
           archiveLifecycleDiagnostics: {
-            errorKinds: ['renderer_frame_sample_invalid'],
+            errorKinds: ['operation_fresh_current_fix_missing'],
             activePhase: 'create',
             invalidRendererFrame: {
               phase: 'create',
@@ -1152,7 +1233,11 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
               phase: 'restore',
               kind: 'review_before_cleanup',
               startedAtMs: 1_010,
-              endedAtMs: null,
+              endedAtMs: 1_090,
+              startSourceSequence: 12,
+              endSourceSequence: 13,
+              phaseSampleCountAtStart: 4,
+              phaseSampleDelta: 1,
               freshSampleCount: 0,
             }],
           },

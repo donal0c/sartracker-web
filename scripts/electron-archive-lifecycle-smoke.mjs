@@ -104,6 +104,8 @@ const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
   'pendingCount',
   'phase',
   'phaseMetrics',
+  'phaseSampleCountAtStart',
+  'phaseSampleDelta',
   'previousObservedAtMs',
   'rendererFrameMaxGapMs',
   'rendererFrameSampleCount',
@@ -115,8 +117,10 @@ const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
   'sampleCount',
   'sourceAgeMs',
   'sourceCadence',
+  'startSourceSequence',
   'sourceToRendererMaxMs',
   'startedAtMs',
+  'endSourceSequence',
   'verify',
 ])
 
@@ -268,13 +272,13 @@ async function main() {
       'restore',
       'resume_interrupted_restore',
     )
-    await livenessProbe.guardOperation((async () => {
-      await livenessProbe.waitForPhaseSample(
-        'restore',
+    await livenessProbe.guardOperation(
+      livenessProbe.waitForOperationFreshSample(
+        resumedRestoreOperation,
         options.timeoutMs,
-        resumedRestoreOperation.sampleCount + 1,
-      )
-    })(), resumedRestoreOperation)
+      ),
+      resumedRestoreOperation,
+    )
     await livenessProbe.completePhaseOperation(resumedRestoreOperation)
     if (livenessProbe.phaseSampleCount('restore') <= restoreSamplesBeforeRestart) {
       throw new Error('Archive-lifecycle restore liveness did not resume after restart.')
@@ -304,7 +308,13 @@ async function main() {
       secret: passphrase,
     }), cleanupOperation)
     await livenessProbe.completePhaseOperation(cleanupOperation)
+    const restoreSamplesBeforePostCleanupReview = livenessProbe.phaseSampleCount('restore')
     await livenessProbe.setPhase('restore')
+    await livenessProbe.waitForPhaseSample(
+      'restore',
+      options.timeoutMs,
+      restoreSamplesBeforePostCleanupReview + 1,
+    )
     const secondReviewOperation = await livenessProbe.beginPhaseOperation(
       'restore',
       'review_after_cleanup',
@@ -1670,10 +1680,12 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     }
   }
 
-  const buildFailureDiagnostics = () => {
+  const buildFailureDiagnostics = (additionalErrorKinds = []) => {
     const activeOperations = [...operationCheckpoints.values()]
+    const errorKinds = new Set(errors)
+    for (const kind of additionalErrorKinds) errorKinds.add(kind)
     return Object.freeze({
-      errorKinds: [...errors].sort(),
+      errorKinds: [...errorKinds].sort(),
       activePhase,
       activeLaunchNumber: Number.isSafeInteger(activeLaunch?.number) ? activeLaunch.number : null,
       currentFixContinuity,
@@ -1689,6 +1701,13 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
           kind: operation.kind,
           startedAtMs: operation.startedAtMs,
           endedAtMs: operation.endedAtMs,
+          startSourceSequence: operation.startSourceSequence,
+          endSourceSequence: operation.endSourceSequence,
+          phaseSampleCountAtStart: operation.phaseSampleCountAtStart,
+          phaseSampleDelta: Math.max(
+            0,
+            byPhase[operation.phase].sampleCount - operation.phaseSampleCountAtStart,
+          ),
           freshSampleCount: operation.freshSampleCount,
         })),
       phaseMetrics: Object.fromEntries(LIVENESS_PHASES.map((phase) => [phase, Object.freeze({
@@ -2602,6 +2621,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       endedAtMs: null,
       startSourceSequence,
       endSourceSequence: null,
+      phaseSampleCountAtStart: checkpoint.sampleCount,
       freshSampleCount: 0,
       continuitySegmentStartedAtMs: activePhase === checkpoint.phase ? startedAtMs : null,
       continuitySegmentEndedAtMs: null,
@@ -2672,22 +2692,66 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     }
   }
 
+  /** Creates one attributable failure without poisoning unrelated probe state. */
+  const createOperationFreshFixFailure = (operation) => {
+    const error = new Error(
+      `Archive-lifecycle ${operation.phase} operation completed without a fresh MapLibre current fix (${operation.kind}; operation_fresh_current_fix_missing).`,
+    )
+    Object.defineProperty(error, 'archiveLifecycleDiagnostics', {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: buildFailureDiagnostics(['operation_fresh_current_fix_missing']),
+    })
+    return error
+  }
+
+  /** Waits inside an open operation fence for its own exact MapLibre fix. */
+  const waitForOperationFreshSample = async (checkpoint, timeoutMs) => {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
+      throw new Error('Archive-lifecycle liveness operation sample timeout is invalid.')
+    }
+    const startedWaitingAtMs = readNow()
+    const deadline = startedWaitingAtMs + timeoutMs
+    if (!Number.isSafeInteger(startedWaitingAtMs) || startedWaitingAtMs < 0
+      || !Number.isSafeInteger(deadline) || deadline < startedWaitingAtMs) {
+      recordError('external_watchdog_clock_invalid')
+      throwIfInstrumentationFailed()
+    }
+    while (true) {
+      const operation = operationCheckpoints.get(checkpoint)
+      if (operation === undefined || operation.endedAtMs !== null) {
+        throw new Error('Archive-lifecycle liveness operation checkpoint is invalid.')
+      }
+      if (activePhase !== operation.phase
+        || operation.continuitySegmentStartedAtMs === null
+        || operation.continuitySegmentEndedAtMs !== null) {
+        throw createOperationFreshFixFailure(operation)
+      }
+      await collectCurrentRendererSnapshot()
+      throwIfInstrumentationFailed()
+      if (byPhase[operation.phase].sampleCount > checkpoint.sampleCount
+        && operation.freshSampleCount > 0) return
+      if (readNow() >= deadline) throw createOperationFreshFixFailure(operation)
+      await wait(10)
+    }
+  }
+
   const completePhaseOperation = async (checkpoint) => enqueue(async () => {
     const operation = operationCheckpoints.get(checkpoint)
     if (operation === undefined || operation.endedAtMs === null) {
       throw new Error('Archive-lifecycle liveness operation checkpoint is invalid.')
     }
     const phase = checkpoint.phase
-    await collectCurrentRendererSnapshot()
-    await settlePendingOperationSources(operation)
-    operationCheckpoints.delete(checkpoint)
-    const advanced = byPhase[phase].sampleCount > checkpoint.sampleCount
-      && operation.freshSampleCount > 0
-    throwIfInstrumentationFailed()
-    if (!advanced) {
-      throw new Error(
-        `Archive-lifecycle ${phase} operation completed without a fresh MapLibre current fix.`,
-      )
+    try {
+      await collectCurrentRendererSnapshot()
+      await settlePendingOperationSources(operation)
+      const advanced = byPhase[phase].sampleCount > checkpoint.sampleCount
+        && operation.freshSampleCount > 0
+      throwIfInstrumentationFailed()
+      if (!advanced) throw createOperationFreshFixFailure(operation)
+    } finally {
+      operationCheckpoints.delete(checkpoint)
     }
   })
 
@@ -2837,6 +2901,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     setPhase,
     setPhaseFromRenderer,
     stop,
+    waitForOperationFreshSample,
     waitForPhaseSample,
     phaseSampleCount: (phase) => byPhase[phase]?.sampleCount ?? 0,
   }

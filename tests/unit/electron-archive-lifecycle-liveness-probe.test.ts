@@ -357,6 +357,91 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     await expect(harness.probe.waitForPhaseSample('create', 100)).resolves.toBeUndefined()
   })
 
+  it('does not let a pre-start in-flight phase sample discharge an exact operation waiter', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    const preStartSource = harness.emitCurrentFix(false)
+    const operation = await harness.probe.beginPhaseOperation(
+      'restore',
+      'resume_interrupted_restore',
+    )
+    harness.publishRendererFix(preStartSource)
+    await expect(
+      harness.probe.waitForPhaseSample('restore', 100, operation.sampleCount + 1),
+    ).resolves.toBeUndefined()
+    harness.afterNextDelay(() => { harness.emitCurrentFix(true) })
+
+    await expect(
+      harness.probe.waitForOperationFreshSample(operation, 100),
+    ).resolves.toBeUndefined()
+    await harness.probe.guardOperation(Promise.resolve(), operation)
+    await expect(harness.probe.completePhaseOperation(operation)).resolves.toBeUndefined()
+  })
+
+  it('keeps the unchanged strict continuity deadline while an exact operation waiter runs', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    const operation = await harness.probe.beginPhaseOperation(
+      'restore',
+      'resume_interrupted_restore',
+    )
+    harness.advanceClock(200)
+
+    const failure = await harness.probe.waitForOperationFreshSample(operation, 1_000)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: {
+          readonly errorKinds?: readonly string[]
+          readonly operations?: ReadonlyArray<{ readonly kind?: string }>
+        }
+      }
+
+    expect(failure.archiveLifecycleDiagnostics?.errorKinds).toContain(
+      'current_fix_continuity_gate_breached',
+    )
+    expect(failure.archiveLifecycleDiagnostics?.operations).toContainEqual(
+      expect.objectContaining({ kind: 'resume_interrupted_restore' }),
+    )
+  })
+
+  it('names and preserves bounded diagnostics when an operation phase ends without a fresh fix', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    const operation = await harness.probe.beginPhaseOperation(
+      'restore',
+      'review_after_cleanup',
+    )
+    await harness.probe.setPhase('cleanup')
+
+    await harness.probe.guardOperation(Promise.resolve(), operation)
+    const failure = await harness.probe.completePhaseOperation(operation)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: {
+          readonly errorKinds?: readonly string[]
+          readonly operations?: ReadonlyArray<{
+            readonly phase?: string
+            readonly kind?: string
+            readonly freshSampleCount?: number
+          }>
+        }
+      }
+
+    expect(failure.message).toContain('review_after_cleanup')
+    expect(failure.message).toContain('operation_fresh_current_fix_missing')
+    expect(failure.archiveLifecycleDiagnostics?.errorKinds).toContain(
+      'operation_fresh_current_fix_missing',
+    )
+    expect(failure.archiveLifecycleDiagnostics?.operations).toContainEqual(
+      expect.objectContaining({
+        phase: 'restore',
+        kind: 'review_after_cleanup',
+        freshSampleCount: 0,
+      }),
+    )
+  })
+
   it('rejects a pre-operation sample and requires a fresh MapLibre fix in every phase', async () => {
     const harness = createProbeHarness()
     await harness.probe.attachLaunch(harness.launch)

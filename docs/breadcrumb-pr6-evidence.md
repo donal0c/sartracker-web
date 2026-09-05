@@ -539,6 +539,49 @@ diff checks, and backend `58` passed / `1` platform-specific ignored are green.
 No successor exact-head package/lifecycle, browser,
 visual, physical SIGKILL, Linux, final-review, or greater-than-2-GiB proof exists.
 
+## 2026-09-05 rejected `b7793753` operation-proof candidate
+
+The cadence successor was committed locally at
+`b7793753ecfec7984214c07dfea21a3918a96c6d` / tree
+`b3f1251d19b9acb0af64f098bbc8f649fbd07217`. Its exact clean macOS arm64
+package completed with executable SHA-256
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and ASAR SHA-256
+`9523e29ea37e8ddf4696645f0f68f2e15492b7198f5ed93f7b0804ede73a7cf3`.
+The sole packaged lifecycle attempt then rejected after `9,779 ms` and wrote a
+mode-0600 failure receipt with SHA-256
+`2c93e138f10bafa24ba7a745ad730a786750cdd94be215aaa1f8acbe801392e1`.
+The receipt binds the exact clean head/tree and two launches; process and
+profile cleanup completed with zero secondary failures.
+
+The receipt records only `lifecycle_failure`: restore completed without a
+fresh operation fix, with no `>=200 ms` gate kind or source/renderer
+diagnostics. Two launches narrow the failure to `resume_interrupted_restore`
+or `review_after_cleanup`, but the old completion path deleted the named
+checkpoint before throwing a plain error, so the exact operation is
+irretrievable. This is proof-boundary-indeterminate, not admissible evidence of
+a product cadence stall, and b779 will not be rerun unchanged.
+
+Source retrace reproduced the restart race. An in-flight fix requested before
+the named operation can reach MapLibre afterward and advance the cumulative
+restore count while remaining correctly excluded by the operation's source,
+request, emission, and observation fences. The cumulative phase waiter could
+therefore return and freeze the operation before the next 50 ms poll. The
+red-first successor waits for `resume_interrupted_restore`'s own exact fix
+inside its existing work fence and requires a genuinely new restore baseline
+before opening the post-cleanup Review operation. It does not admit post-work
+fixes or change any source, continuity, main, renderer-frame, CDP, or strict
+`>=200 ms` deadline. Missing-fresh failures now snapshot the validated
+operation kind, causal fences, phase delta, source cadence, and phase metrics
+before checkpoint removal, producing attributable sanitized terminal evidence.
+The successor's pre-freeze gates pass the four lifecycle files at `191/191`,
+the wider affected set at `10` files / `399` tests, and the full deterministic
+serial suite at `375` files / `3,795` tests. Full ESLint, production build/bundle
+budgets, backend `58` passed / `1` platform-specific ignored, Node syntax, and
+diff checks are green. An independent focused review found no runtime blocker
+after tightening the seven workload-to-operation-kind mappings. These remain
+pre-freeze source checks, not exact-head package or lifecycle proof.
+
 ## 2026-09-03 cancelled-cleanup fence remediation
 
 The exact-head broad, persistence and concurrency reviews at `b30ebeb2…`
@@ -793,6 +836,7 @@ the release gate.
 | Prior-head packaged macOS archive-lifecycle smoke (superseded) | `0f0723d4…`; report SHA-256 `e30b9c9d3a12b2ae02a36193b3c64e1c2a046a268cb37c28d4c4bbcddf191bbe`; passed its then-current gates but predates the recovery and is not final-head proof |
 | Rejected field-diagnostic head | `caf9e5e480fcd02cc44d68c8397efcd6ae78f2cd` / tree `81a8ef3e3639f6e8e7cd048691a87b8488a4d998`; its failed receipt is diagnosis, not qualification |
 | Rejected cadence candidate (pushed) | `b75f8689304769438157cd5e018996cdafcdb328` / tree `3216b03286c8543dfbeaff42097528ca197cbd7e`; Linux run `33940959449` rejected the first pre-cleanup Review operation at `240 ms` current-fix continuity |
+| Rejected operation-proof candidate (local) | `b7793753ecfec7984214c07dfea21a3918a96c6d` / tree `b3f1251d19b9acb0af64f098bbc8f649fbd07217`; exact package passed, then the sole lifecycle attempt wrote proof-indeterminate receipt SHA-256 `2c93e138f10bafa24ba7a745ad730a786750cdd94be215aaa1f8acbe801392e1` |
 | Recovery candidate and final proof | Pending. Once source is frozen and every gate completes, the exact immutable head/tree and results must be recorded in the PR #10 and Linear ledger |
 | Immutable final documentation/review head | Pending. It must be recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; any later repository mutation requires affected re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |

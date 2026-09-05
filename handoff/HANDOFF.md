@@ -117,12 +117,23 @@
   not a harness false negative. Persistence/concurrency review also found that
   two post-predicate renderer confirmation reads could outlive their monotonic
   readiness budget. This head will not be rerun unchanged.
+- **Exact local head `b7793753ecfec7984214c07dfea21a3918a96c6d` / tree
+  `b3f1251d19b9acb0af64f098bbc8f649fbd07217` is rejected.** Its exact clean
+  macOS arm64 package completed, but its sole lifecycle attempt rejected after
+  two launches and wrote a cleanup-complete mode-0600 failure receipt with
+  SHA-256 `2c93e138f10bafa24ba7a745ad730a786750cdd94be215aaa1f8acbe801392e1`.
+  The receipt contains no `>=200 ms` failure or source/renderer diagnostics;
+  the old path deleted the named checkpoint before throwing, so it cannot
+  distinguish resumed restore from post-cleanup Review. Source retrace
+  reproduced a cumulative-phase-count race with a pre-operation in-flight fix.
+  This is proof-boundary-indeterminate, not product-stall evidence, and b779
+  will not be pushed or rerun unchanged.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
   sub-millisecond “current position” measurement was only an in-process map
   operation and did not prove the packaged renderer path.
-- **Successor source work is locally green but not frozen.**
+- **The successor source work below passed its pre-freeze gates.**
   It uses deterministic current-finalization lookups, lazy evidence-loss
   acknowledgement lookup with a durable
   projection, mission-scoped logical cleanup with a restart-safe rowid cursor
@@ -142,6 +153,12 @@
   sequence fences now separate global continuous-poll evidence from finite
   operation-fresh evidence, and renderer drain/correlation is serialized across
   explicit and watchdog collection without extending the strict 200 ms duty.
+  The b779 proof repair keeps that end-at-work fence: resumed restore waits for
+  its own exact checkpoint-fresh fix inside the operation, while post-cleanup
+  Review establishes a new restore-phase baseline before its named operation.
+  Pre-start and post-end fixes remain ineligible. A missing-fresh failure now
+  snapshots its validated operation kind, causal fences, phase delta, source
+  cadence, and phase metrics before checkpoint removal.
   Exact renderer sequence acknowledgements model the latest-state UI boundary:
   they may supersede older pending snapshots only before the older original
   deadline, cannot refresh a deadline, cannot satisfy a different operation,
@@ -200,13 +217,11 @@
 
 ## Active Work
 
-- Finish verification and freeze the red-first synchronous-current publication,
-  bounded evidence/cache settlement, and deadline-bounded lifecycle confirmation
-  repair on the existing PR branch.
-- Rerun package/lifecycle first on that exact clean head, then full static,
+- Run package/lifecycle first on the frozen b779 operation-proof successor,
+  then full static,
   browser, visual, physical SIGKILL, and Linux gates. Never rerun unchanged
   rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, `23161300`,
-  `d91ec232`, `7e0d8ea3`, or `b75f8689`.
+  `d91ec232`, `7e0d8ea3`, `b75f8689`, or `b7793753`.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -230,14 +245,16 @@
 
 ## Verification Snapshot
 
-- Current successor-focused verification is green at `8` files / `307` tests;
-  the final cache/runtime slice is green at `2` files / `91` tests. TypeScript,
-  affected ESLint, and diff checks pass. The fresh full serial suite passes
-  `375` files / `3,791` tests. Full ESLint, production build and bundle budgets,
-  focused Node syntax, and the backend (`58` passed / `1` platform-specific
-  ignored) are also green.
-- The evidence and runtime affected rechecks are clean. These are pre-freeze
-  dirty-tree checks, not exact-head package proof.
+- Exact b779 source verification passed `8` files / `307` focused tests, the
+  final cache/runtime slice at `2` files / `91`, full serial `375` files /
+  `3,791`, full ESLint, production build/budgets, Node/diff checks, and backend
+  `58` passed / `1` ignored. The proof successor's pre-freeze gates pass the
+  four archive-lifecycle files at `191/191`, the wider affected set at `10`
+  files / `399` tests, and full serial `375` files / `3,795` tests. Full ESLint,
+  production build/budgets, backend `58` passed / `1` ignored, Node syntax, and
+  diff checks are green. Its focused independent review found no runtime blocker.
+- The earlier evidence/runtime rechecks are clean. These are local source
+  checks, not successor exact-head package proof.
 - Chromium `173/173`, visual Playwright `62/62`, uncached visual review `74/74`,
   and physical SIGKILL `32/32` are clean only at rejected head `b75f8689` and are
   prior-head evidence. Successor exact-head package/lifecycle, browser, visual,
@@ -245,8 +262,7 @@
 
 ## Next Actions
 
-1. Finish the successor verification, freeze it locally, and run exact-head
-   package/lifecycle.
+1. Run exact-head package/lifecycle on the frozen successor.
    If it is green, push the existing PR branch and run browser/visual,
    kill-matrix, Linux, and exactly four final-head review charters.
 2. If all remain clean, execute the single fresh Ubuntu field qualification and
@@ -255,7 +271,8 @@
 ## Blockers
 
 - PR #10 is not ready. `caf9e5e8`, `49523dc8`, `81e47973`, `74bdd95`,
-  `6a72ae91`, `23161300`, `d91ec232`, `7e0d8ea3`, and `b75f8689` are rejected diagnostics;
+  `6a72ae91`, `23161300`, `d91ec232`, `7e0d8ea3`, `b75f8689`, and `b7793753`
+  are rejected diagnostics;
   the replacement exact-head package/lifecycle gate must pass before Linux or
   field-scale qualification.
 
