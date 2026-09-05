@@ -12,7 +12,10 @@ import {
   recordTrackingPollLedgerEntry,
   type TrackingPollLedgerEntry,
 } from '../diagnostics/tracking-poll-ledger'
-import type { TrackingSnapshotContext } from '../tracking/polling-manager'
+import type {
+  TrackingMissionEvidenceTransfer,
+  TrackingSnapshotContext,
+} from '../tracking/polling-manager'
 
 const NOOP_STOP = () => undefined
 const NOOP_ASYNC_STOP = async () => undefined
@@ -59,6 +62,11 @@ type CreateManagedRuntimeServicesDependencies = {
           snapshot: import('../tracking/tracking-types').TrackingSnapshot,
           context?: TrackingSnapshotContext,
         ) => Promise<void>
+        readonly onCurrentSnapshot: (
+          snapshot: import('../tracking/tracking-types').TrackingSnapshot,
+          context: TrackingSnapshotContext,
+          observation: TrackingMissionEvidenceTransfer,
+        ) => void
         readonly onStatusChange: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
         readonly getInitialBreadcrumbs: () => Promise<readonly import('../tracking/tracking-types').NormalizedTrackingPosition[]>
         readonly getInitialBreadcrumbTotals: () => Promise<Readonly<Record<string, number>>>
@@ -132,6 +140,11 @@ type CreateManagedRuntimeServicesDependencies = {
         snapshot: import('../tracking/tracking-types').TrackingSnapshot,
         context?: TrackingSnapshotContext,
       ) => Promise<void>
+      readonly onCurrentSnapshot: (
+        snapshot: import('../tracking/tracking-types').TrackingSnapshot,
+        context: TrackingSnapshotContext,
+        observation: TrackingMissionEvidenceTransfer,
+      ) => void
       readonly onStatusChange: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
       readonly getInitialBreadcrumbs: () => Promise<readonly import('../tracking/tracking-types').NormalizedTrackingPosition[]>
       readonly getInitialBreadcrumbTotals: () => Promise<Readonly<Record<string, number>>>

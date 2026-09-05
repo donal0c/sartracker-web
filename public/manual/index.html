@@ -1028,6 +1028,14 @@
             participant changes are locked before archive finalization as well as afterward.
           </div>
           <div class="note">
+            <strong>Responsive fallback cache:</strong> current fixes do not wait for mission storage or
+            cache work. The desktop restart cache always keeps the latest current fixes and prepares at most
+            5,000 breadcrumb representatives in short bounded batches, shared across device trails where
+            capacity permits. On exceptionally broad histories, a trail may reappear only after Resume
+            reconstructs the complete accepted history from the mission database; cache truncation never
+            deletes mission evidence.
+          </div>
+          <div class="note">
             <strong>Tracking does not wait for basemap tiles:</strong> current positions and breadcrumbs
             remain available while the selected raster map is still loading or reports degraded tile
             coverage. Treat the map-health warning separately: the tracking overlay may be current even

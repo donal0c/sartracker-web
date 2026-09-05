@@ -379,6 +379,7 @@ export async function startAppRuntime(
             ? {}
             : { persistHistoryChunks: hooks.persistHistoryChunks }),
           onSnapshot: hooks.onSnapshot,
+          onCurrentSnapshot: hooks.onCurrentSnapshot,
           onStatusChange: hooks.onStatusChange,
           onCurrentPositionRejections:
             rejectionEvidenceDelivery?.record ?? applyCurrentPositionRejections,

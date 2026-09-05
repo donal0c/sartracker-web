@@ -48,6 +48,7 @@ const REPLAY_OBJECT_COUNT = REPLAY_MARKER_COUNT + REPLAY_OUTING_COUNT
 const GPX_IMPORT_BATCH_SIZE = 100
 const FAILURE_MESSAGE_LIMIT = 400
 const LIVENESS_PHASES = Object.freeze(['create', 'verify', 'restore', 'cleanup'])
+const LIVENESS_OPERATION_KIND_PATTERN = /^[a-z][a-z0-9_]{0,47}$/u
 const LIVENESS_HARD_GATE_MS = 200
 const LIVENESS_POLL_INTERVAL_MS = 50
 const RENDERER_LIVENESS_LEDGER_CAPACITY = 256
@@ -86,22 +87,34 @@ const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
   'gapType',
   'intervalStartedAtMs',
   'invalidRendererFrame',
+  'kind',
+  'latestAcknowledgedSequence',
+  'latestEmittedAtMs',
+  'latestReceivedSequence',
+  'latestRequestAgeMs',
+  'latestRequestStartedAtMs',
+  'latestSourceAgeMs',
   'mainSampleCount',
   'mainWatchdogMaxGapMs',
   'operationCount',
   'operationOverflowCount',
   'operations',
+  'oldestPendingRequestAgeMs',
+  'oldestPendingSourceAgeMs',
+  'pendingCount',
   'phase',
   'phaseMetrics',
   'previousObservedAtMs',
   'rendererFrameMaxGapMs',
   'rendererFrameSampleCount',
+  'rendererCurrentFixMonotonicTail',
   'requestAgeMs',
   'requestStartedAtMs',
   'requestToRendererMaxMs',
   'restore',
   'sampleCount',
   'sourceAgeMs',
+  'sourceCadence',
   'sourceToRendererMaxMs',
   'startedAtMs',
   'verify',
@@ -179,10 +192,10 @@ async function main() {
     )
     await livenessProbe.setPhase('create')
     await livenessProbe.waitForPhaseSample('create', options.timeoutMs)
-    const [createOperation, verifyOperation] = await livenessProbe.beginPhaseOperations([
-      'create',
-      'verify',
-    ])
+    const [createOperation, verifyOperation] = await livenessProbe.beginPhaseOperations(
+      ['create', 'verify'],
+      ['finalize_archive', 'verify_archive'],
+    )
     const finalized = await livenessProbe.guardOperation(finalizeAndVerifyArchive(
       initialLaunch.page,
       seeded.missionId,
@@ -202,7 +215,10 @@ async function main() {
     recoveryCode = finalized.recoveryCode
     await livenessProbe.setPhase('restore')
     await livenessProbe.waitForPhaseSample('restore', options.timeoutMs)
-    const firstReviewOperation = await livenessProbe.beginPhaseOperation('restore')
+    const firstReviewOperation = await livenessProbe.beginPhaseOperation(
+      'restore',
+      'review_before_cleanup',
+    )
     const firstReview = await livenessProbe.guardOperation(runReadOnlyReview({
       page: initialLaunch.page,
       archive: finalized.archive,
@@ -216,7 +232,10 @@ async function main() {
       selectedTime: reviewSelectedTime,
     }), firstReviewOperation)
     await livenessProbe.completePhaseOperation(firstReviewOperation)
-    const interruptedRestoreOperation = await livenessProbe.beginPhaseOperation('restore')
+    const interruptedRestoreOperation = await livenessProbe.beginPhaseOperation(
+      'restore',
+      'interrupt_decrypt',
+    )
     const interruption = await livenessProbe.guardOperation(interruptRestoreAtDecrypt({
       launch: initialLaunch,
       archive: finalized.archive,
@@ -245,7 +264,10 @@ async function main() {
     )
     await livenessProbe.attachLaunch(restartedLaunch)
     await livenessProbe.setPhase('restore')
-    const resumedRestoreOperation = await livenessProbe.beginPhaseOperation('restore')
+    const resumedRestoreOperation = await livenessProbe.beginPhaseOperation(
+      'restore',
+      'resume_interrupted_restore',
+    )
     await livenessProbe.guardOperation((async () => {
       await livenessProbe.waitForPhaseSample(
         'restore',
@@ -270,7 +292,10 @@ async function main() {
     )
     await livenessProbe.setPhase('cleanup')
     await livenessProbe.waitForPhaseSample('cleanup', options.timeoutMs)
-    const cleanupOperation = await livenessProbe.beginPhaseOperation('cleanup')
+    const cleanupOperation = await livenessProbe.beginPhaseOperation(
+      'cleanup',
+      'cleanup_pending_restore',
+    )
     const cleanupResult = await livenessProbe.guardOperation(runCleanup({
       page: restartedLaunch.page,
       missionId: seeded.missionId,
@@ -280,7 +305,10 @@ async function main() {
     }), cleanupOperation)
     await livenessProbe.completePhaseOperation(cleanupOperation)
     await livenessProbe.setPhase('restore')
-    const secondReviewOperation = await livenessProbe.beginPhaseOperation('restore')
+    const secondReviewOperation = await livenessProbe.beginPhaseOperation(
+      'restore',
+      'review_after_cleanup',
+    )
     const secondReview = await livenessProbe.guardOperation(runReadOnlyReview({
       page: restartedLaunch.page,
       archive: retainedAfterRestart,
@@ -1411,14 +1439,20 @@ export async function waitForActiveMission(
   timeoutMs,
   expectedMissionId = null,
 ) {
+  const deadline = performance.now() + timeoutMs
   await page.waitForFunction(async (expected) => {
     const mission = await window.sartrackerElectron?.missionStore.getActiveMission()
     return mission?.status === 'active'
       && mission.name === expected.name
       && (expected.id === null || mission.id === expected.id)
-  }, { name: expectedName, id: expectedMissionId }, { timeout: timeoutMs })
-  const mission = await page.evaluate(async () =>
-    window.sartrackerElectron?.missionStore.getActiveMission())
+  }, { name: expectedName, id: expectedMissionId }, {
+    timeout: Math.max(1, deadline - performance.now()),
+  })
+  const mission = await withTimeout(
+    page.evaluate(async () => window.sartrackerElectron?.missionStore.getActiveMission()),
+    Math.max(1, deadline - performance.now()),
+    'Archive-lifecycle liveness mission confirmation read timed out.',
+  )
   if (mission?.status !== 'active' || mission.name !== expectedName
     || (expectedMissionId !== null && mission.id !== expectedMissionId)) {
     throw new Error(
@@ -1467,6 +1501,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   const errors = new Set()
   let currentFixContinuity = null
   let currentFixTimeout = null
+  let rendererCurrentFixMonotonicTail = null
   let invalidRendererFrame = null
   // Keep the causal snapshot stable while the error-kind set is unchanged so
   // cleanup can recognize a replay; a genuinely new kind invalidates it.
@@ -1493,6 +1528,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   let sourceFenceHighWatermark = 0
   let sourceAcknowledgementHighWatermark = 0
   let rendererObservedThroughHighWatermark = 0
+  let latestSourceEntry = null
 
   const enqueue = (operation) => {
     const result = operationSerial.then(operation)
@@ -1543,8 +1579,38 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         continue
       }
       sourceEntrySequenceHighWatermark = entry.sequence
+      latestSourceEntry = Object.freeze({ ...entry })
       sourceByIdentity.set(entry.sourcePositionId, entry)
     }
+  }
+
+  /** Captures a bounded source/request tail at the instant failure evidence is frozen. */
+  const buildSourceCadenceDiagnostics = () => {
+    const auditedAtMs = readNow()
+    if (!Number.isSafeInteger(auditedAtMs) || auditedAtMs < 0) return null
+    const pendingSources = [...sourceByIdentity.values()]
+    const oldestPending = pendingSources.reduce((oldest, source) => (
+      oldest === null || source.requestStartedAtMs < oldest.requestStartedAtMs
+        ? source
+        : oldest
+    ), null)
+    const finiteAge = (startedAtMs) => {
+      if (!Number.isSafeInteger(startedAtMs) || startedAtMs < 0) return null
+      const ageMs = auditedAtMs - startedAtMs
+      return Number.isSafeInteger(ageMs) && ageMs >= 0 ? ageMs : null
+    }
+    return Object.freeze({
+      latestReceivedSequence: sourceEntrySequenceHighWatermark,
+      latestAcknowledgedSequence: sourceAcknowledgementHighWatermark,
+      pendingCount: pendingSources.length,
+      latestRequestStartedAtMs: latestSourceEntry?.requestStartedAtMs ?? null,
+      latestEmittedAtMs: latestSourceEntry?.emittedAtMs ?? null,
+      latestRequestAgeMs: finiteAge(latestSourceEntry?.requestStartedAtMs),
+      latestSourceAgeMs: finiteAge(latestSourceEntry?.emittedAtMs),
+      oldestPendingRequestAgeMs: finiteAge(oldestPending?.requestStartedAtMs),
+      oldestPendingSourceAgeMs: finiteAge(oldestPending?.emittedAtMs),
+      auditedAtMs,
+    })
   }
 
   /** Audits one pending source against its immutable request and emission deadline. */
@@ -1612,12 +1678,15 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       activeLaunchNumber: Number.isSafeInteger(activeLaunch?.number) ? activeLaunch.number : null,
       currentFixContinuity,
       currentFixTimeout,
+      rendererCurrentFixMonotonicTail,
+      sourceCadence: buildSourceCadenceDiagnostics(),
       invalidRendererFrame,
       operationCount: activeOperations.length,
       operationOverflowCount: Math.max(0, activeOperations.length - LIVENESS_PHASES.length),
       operations: activeOperations.slice(0, LIVENESS_PHASES.length)
         .map((operation) => Object.freeze({
           phase: operation.phase,
+          kind: operation.kind,
           startedAtMs: operation.startedAtMs,
           endedAtMs: operation.endedAtMs,
           freshSampleCount: operation.freshSampleCount,
@@ -1811,6 +1880,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
 
   const rendererSnapshotKeys = [
     'currentFixOverflowCount',
+    'currentFixTail',
     'currentFixes',
     'frameGapOverflowCount',
     'frameGaps',
@@ -1831,6 +1901,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     && snapshot.currentFixOverflowCount >= 0
     && Number.isSafeInteger(snapshot.frameGapOverflowCount)
     && snapshot.frameGapOverflowCount >= 0
+    && rendererFrameTailIsValid(snapshot.currentFixTail)
     && rendererFrameTailIsValid(snapshot.frameTail)
   )
 
@@ -1851,6 +1922,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     return {
       previous: {
         currentFixes: previousCurrentFixes,
+        currentFixTail: snapshot.currentFixTail,
         frameGaps: snapshot.frameGaps,
         frameTail: snapshot.frameTail,
         currentFixOverflowCount: snapshot.currentFixOverflowCount,
@@ -1858,6 +1930,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       },
       next: {
         currentFixes: nextCurrentFixes,
+        currentFixTail: null,
         frameGaps: [],
         frameTail: null,
         currentFixOverflowCount: 0,
@@ -1926,6 +1999,12 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     }
     if (snapshot.frameGapOverflowCount > 0) {
       recordError('renderer_frame_gap_ledger_overflow')
+    }
+    if (snapshot.currentFixTail !== null && (
+      rendererCurrentFixMonotonicTail === null ||
+      snapshot.currentFixTail.gapMs >= rendererCurrentFixMonotonicTail.gapMs
+    )) {
+      rendererCurrentFixMonotonicTail = Object.freeze({ ...snapshot.currentFixTail })
     }
     for (const frame of snapshot.frameGaps) recordRendererFrameGap(frame, true)
     recordRendererFrameTail(snapshot.frameTail)
@@ -2487,9 +2566,18 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     return setPhase(phase)
   }
 
-  const beginPhaseOperations = async (phases) => enqueue(async () => {
+  const beginPhaseOperations = async (
+    phases,
+    kinds,
+  ) => enqueue(async () => {
+    const resolvedKinds = kinds === undefined && Array.isArray(phases)
+      ? phases.map(() => 'unspecified')
+      : kinds
     if (!Array.isArray(phases) || phases.length < 1
-      || new Set(phases).size !== phases.length) {
+      || new Set(phases).size !== phases.length
+      || !Array.isArray(resolvedKinds) || resolvedKinds.length !== phases.length
+      || Array.from(resolvedKinds).some((kind) => typeof kind !== 'string'
+        || !LIVENESS_OPERATION_KIND_PATTERN.test(kind))) {
       throw new Error('Archive-lifecycle liveness operation phases are invalid.')
     }
     for (const phase of phases) requireLivenessPhase(phase)
@@ -2502,12 +2590,14 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       recordError('external_watchdog_clock_invalid')
       throwIfInstrumentationFailed()
     }
-    const checkpoints = phases.map((phase) => Object.freeze({
+    const checkpoints = phases.map((phase, index) => Object.freeze({
       phase,
+      kind: resolvedKinds[index],
       sampleCount: byPhase[phase].sampleCount,
     }))
     checkpoints.forEach((checkpoint) => operationCheckpoints.set(checkpoint, {
       phase: checkpoint.phase,
+      kind: checkpoint.kind,
       startedAtMs,
       endedAtMs: null,
       startSourceSequence,
@@ -2520,8 +2610,8 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     return checkpoints
   })
 
-  const beginPhaseOperation = async (phase) => {
-    const [checkpoint] = await beginPhaseOperations([phase])
+  const beginPhaseOperation = async (phase, kind = 'unspecified') => {
+    const [checkpoint] = await beginPhaseOperations([phase], [kind])
     return checkpoint
   }
 
@@ -2839,14 +2929,15 @@ export function startExternalLaunchWatchdog(input) {
 }
 
 /** Installs the MapLibre identity observer and frame-gap recorder via renderer CDP. */
-export async function installRendererLivenessProbe(page, deviceId) {
+export async function installRendererLivenessProbe(page, deviceId, timeoutMs = 60_000) {
+  const deadline = performance.now() + timeoutMs
   await page.waitForFunction(() => {
     const source = window.__SARTRACKER_MAP__?.getSource('tracking')
     return source !== undefined
       && typeof source.setData === 'function'
       && typeof source.updateData === 'function'
-  }, undefined, { timeout: 60_000 })
-  await page.evaluate(({ expectedDeviceId, ledgerCapacity, phases }) => {
+  }, undefined, { timeout: Math.max(1, deadline - performance.now()) })
+  await withTimeout(page.evaluate(({ expectedDeviceId, ledgerCapacity, phases }) => {
     window.__SARTRACKER_ARCHIVE_LIVENESS__?.cleanup()
     const source = window.__SARTRACKER_MAP__?.getSource('tracking')
     if (source === undefined
@@ -2864,6 +2955,8 @@ export async function installRendererLivenessProbe(page, deviceId) {
     let frameId = null
     let stopped = false
     let latestSourcePositionId = null
+    let latestCurrentFixMonotonicAt = null
+    let latestCurrentFixPhase = null
     let currentFixOverflowCount = 0
     let frameGapOverflowCount = 0
 
@@ -2891,6 +2984,8 @@ export async function installRendererLivenessProbe(page, deviceId) {
         || typeof sourceTimestamp !== 'string' || sourceTimestamp === ''
         || sourcePositionId === latestSourcePositionId) return
       latestSourcePositionId = sourcePositionId
+      latestCurrentFixMonotonicAt = performance.now()
+      latestCurrentFixPhase = phase
       appendBounded(currentFixes, {
         phase,
         sourcePositionId,
@@ -2936,12 +3031,19 @@ export async function installRendererLivenessProbe(page, deviceId) {
           : null
         const previousPhaseWasActive = allowedPhases.has(phase)
         phase = nextPhase
+        latestCurrentFixMonotonicAt = null
+        latestCurrentFixPhase = null
         if (!previousPhaseWasActive) previousFrameAt = switchedAt
         return previousFrameTail
       },
       drain: () => {
         const snapshot = {
           currentFixes: currentFixes.splice(0, currentFixes.length),
+          currentFixTail: allowedPhases.has(phase)
+            && latestCurrentFixPhase === phase
+            && latestCurrentFixMonotonicAt !== null
+            ? { phase, gapMs: performance.now() - latestCurrentFixMonotonicAt }
+            : null,
           frameGaps: frameGaps.splice(0, frameGaps.length),
           frameTail: allowedPhases.has(phase)
             ? { phase, gapMs: performance.now() - previousFrameAt }
@@ -2965,7 +3067,8 @@ export async function installRendererLivenessProbe(page, deviceId) {
     expectedDeviceId: deviceId,
     ledgerCapacity: RENDERER_LIVENESS_LEDGER_CAPACITY,
     phases: LIVENESS_PHASES,
-  })
+  }), Math.max(1, deadline - performance.now()),
+  'Archive-lifecycle renderer liveness probe installation timed out.')
 }
 
 /** Changes the renderer-frame and MapLibre observer phase before source emission. */

@@ -143,6 +143,19 @@ ship or ask testers for whole Electron profile zips.
    exact device identity in durable and rendered state, and the production IPC
    archive projection plus recoverable v2 slot semantics. Its five-file harness
    identity includes that shared projector; strict liveness gates are unchanged.
+   **2026-09-05 cadence rejection:** successor `b75f8689` passed its sole exact
+   macOS package/lifecycle, Chromium `173/173`, visual `62/62`, uncached visual
+   review `74/74`, and physical SIGKILL `32/32`. Linux run `33940959449` passed
+   every earlier gate through packaged tracking soak, then the first pre-cleanup
+   Review operation breached the unchanged current-fix gate at `240 ms`; this is
+   valid cadence-failure evidence and b75 will not be rerun. The current red-first
+   successor publishes current fixes without awaiting durable mission/cache work,
+   transfers evidence into a globally capacity-bounded per-mission FIFO with durable loss accounting,
+   bounds fallback-cache preparation to one active plus one latest state and
+   5,000 cooperatively selected breadcrumb representatives, and bounds both
+   renderer confirmation reads by their remaining monotonic deadline. All
+   successor exact-head package/browser/visual/SIGKILL/Linux/review gates and the
+   single fresh greater-than-2-GiB qualifier remain pending.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.

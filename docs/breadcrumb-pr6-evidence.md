@@ -495,6 +495,50 @@ diff checks, and backend `58` passed / `1` platform-specific ignored are green.
 Bounded persistence, renderer, and evidence-lineage re-audits are clean. These
 remain pre-freeze local checks, not exact-head package or qualification proof.
 
+## 2026-09-05 rejected `b75f8689` cadence candidate
+
+The next pushed candidate was
+`b75f8689304769438157cd5e018996cdafcdb328` / tree
+`3216b03286c8543dfbeaff42097528ca197cbd7e`. Its sole exact macOS packaged
+lifecycle, Chromium `173/173`, visual Playwright `62/62`, fresh uncached visual
+review `74/74`, and physical SIGKILL `32/32` passed. Those results are now
+prior-head evidence only.
+
+Linux run `33940959449` passed source binding, lint, `3,770` deterministic
+tests, build/package, 960k Replay, artifact/native-SQLite inspection, llvmpipe,
+and packaged tracking soak. The first `review_before_cleanup` operation then
+failed at `240 ms` current-fix continuity; main-isolate maximum was `59.142 ms`,
+renderer-frame maximum was `118.1 ms`, and both source-to-renderer and
+request-to-renderer maxima were `67 ms`. No package was uploaded. This is valid
+product-cadence failure evidence, not proof-oracle noise, and b75 will not be
+rerun unchanged.
+
+Source retrace showed that current-snapshot publication still awaited durable
+mission/cache settlement before the next poll was scheduled. The red-first
+successor publishes the accepted current snapshot synchronously, transfers its
+evidence into a globally capacity-bounded eight-payload queue with per-mission
+FIFO and one mission guardian,
+exact persisted-payload coalescing, and sticky durable loss/overflow evidence,
+and drains or retries that ownership at Finish and stop. It retains raw
+canonical evidence before participant hydration and applies participant scope
+only at persistence. The separate cache lane keeps one active plus one latest
+pending state, captures `cached_at` on observation, retains every current fix
+plus at most 5,000 cross-device breadcrumb representatives, and cooperatively
+yields throughout large selection work. Both post-predicate renderer reads now
+share their remaining monotonic readiness deadline. The strict `>=200 ms` gate
+is unchanged.
+
+The b75 broad and renderer/input formal source reviews were clean. Persistence
+and concurrency/finalization review both found the unbounded renderer
+confirmation reads; the affected evidence and runtime rechecks are now clean.
+Current successor checks are still dirty-tree and pre-freeze: the focused gate
+passes `8` files / `307` tests, the final cache/runtime slice passes `2` files /
+`91` tests, the fresh full serial suite passes `375` files / `3,791` tests, and
+TypeScript, full ESLint, production build/bundle budgets, focused Node syntax,
+diff checks, and backend `58` passed / `1` platform-specific ignored are green.
+No successor exact-head package/lifecycle, browser,
+visual, physical SIGKILL, Linux, final-review, or greater-than-2-GiB proof exists.
+
 ## 2026-09-03 cancelled-cleanup fence remediation
 
 The exact-head broad, persistence and concurrency reviews at `b30ebeb2…`
@@ -748,6 +792,7 @@ the release gate.
 | Superseded pre-recovery packaged candidate | `0f0723d4b1ec7e78d4f6c166abad049188660ca6` / tree `b53474dc93069930a0c284ed6507510bd6a87d94` |
 | Prior-head packaged macOS archive-lifecycle smoke (superseded) | `0f0723d4…`; report SHA-256 `e30b9c9d3a12b2ae02a36193b3c64e1c2a046a268cb37c28d4c4bbcddf191bbe`; passed its then-current gates but predates the recovery and is not final-head proof |
 | Rejected field-diagnostic head | `caf9e5e480fcd02cc44d68c8397efcd6ae78f2cd` / tree `81a8ef3e3639f6e8e7cd048691a87b8488a4d998`; its failed receipt is diagnosis, not qualification |
+| Rejected cadence candidate (pushed) | `b75f8689304769438157cd5e018996cdafcdb328` / tree `3216b03286c8543dfbeaff42097528ca197cbd7e`; Linux run `33940959449` rejected the first pre-cleanup Review operation at `240 ms` current-fix continuity |
 | Recovery candidate and final proof | Pending. Once source is frozen and every gate completes, the exact immutable head/tree and results must be recorded in the PR #10 and Linear ledger |
 | Immutable final documentation/review head | Pending. It must be recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; any later repository mutation requires affected re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |

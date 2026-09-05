@@ -140,7 +140,7 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
     const resume = source.indexOf('await resumeLivenessMission(', restartStart)
     const attach = source.indexOf('await livenessProbe.attachLaunch(restartedLaunch)', restartStart)
     const restoredOperation = source.indexOf(
-      "await livenessProbe.beginPhaseOperation('restore')",
+      'const resumedRestoreOperation = await livenessProbe.beginPhaseOperation(',
       restartStart,
     )
 
@@ -171,8 +171,11 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
     expect(page.waitForFunction).toHaveBeenCalledWith(
       expect.any(Function),
       { name: 'Packaged Archive Liveness Probe', id: expectedMissionId },
-      { timeout: 30_000 },
+      { timeout: expect.any(Number) },
     )
+    const timeout = page.waitForFunction.mock.calls[0]?.[2]?.timeout
+    expect(timeout).toBeGreaterThan(0)
+    expect(timeout).toBeLessThanOrEqual(30_000)
   })
 
   it('accepts the exact active mission identity after restart', async () => {
@@ -192,6 +195,32 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
       30_000,
       expectedMission.id,
     )).resolves.toEqual(expectedMission)
+  })
+
+  it('fails closed when the active mission confirmation IPC read never settles', async () => {
+    vi.useFakeTimers()
+    try {
+      const page = {
+        waitForFunction: vi.fn(async () => undefined),
+        evaluate: vi.fn(() => new Promise(() => undefined)),
+      }
+      const readiness = waitForActiveMission(
+        page,
+        'Packaged Archive Liveness Probe',
+        30,
+        '00000000-0000-4000-8000-000000000001',
+      )
+      const rejection = expect(readiness).rejects.toThrow(
+        'Archive-lifecycle liveness mission confirmation read timed out.',
+      )
+
+      await vi.advanceTimersByTimeAsync(31)
+      await rejection
+      expect(page.waitForFunction).toHaveBeenCalledTimes(1)
+      expect(page.evaluate).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('uses the real packaged tracking and MapLibre path under two external watchdogs', () => {
@@ -241,7 +270,8 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
     expect(reviewStart).toBeGreaterThan(0)
     expect(reviewEnd).toBeGreaterThan(reviewStart)
     expect(reviewFlow).toContain("await livenessProbe.setPhase('restore')")
-    expect(reviewFlow).toContain("beginPhaseOperation('restore')")
+    expect(reviewFlow).toContain('const secondReviewOperation = await livenessProbe.beginPhaseOperation(')
+    expect(reviewFlow).toContain("'review_after_cleanup'")
     expect(reviewFlow).toContain('), secondReviewOperation)')
     expect(reviewFlow).toContain('completePhaseOperation(secondReviewOperation)')
   })
@@ -1045,9 +1075,31 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
           gapMs: -0.625,
           gapType: 'negative',
         }),
-        operationCount: 0,
+        rendererCurrentFixMonotonicTail: Object.freeze({
+          phase: 'restore',
+          gapMs: 240,
+        }),
+        sourceCadence: Object.freeze({
+          latestReceivedSequence: 13,
+          latestAcknowledgedSequence: 13,
+          pendingCount: 0,
+          latestRequestStartedAtMs: 1_000,
+          latestEmittedAtMs: 1_001,
+          latestRequestAgeMs: 240,
+          latestSourceAgeMs: 239,
+          oldestPendingRequestAgeMs: null,
+          oldestPendingSourceAgeMs: null,
+          auditedAtMs: 1_240,
+        }),
+        operationCount: 1,
         operationOverflowCount: 0,
-        operations: Object.freeze([]),
+        operations: Object.freeze([Object.freeze({
+          phase: 'restore',
+          kind: 'review_before_cleanup',
+          startedAtMs: 1_010,
+          endedAtMs: null,
+          freshSampleCount: 0,
+        })]),
         phaseMetrics: Object.freeze({}),
       }),
     })
@@ -1085,6 +1137,24 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
               gapMs: -0.625,
               gapType: 'negative',
             },
+            rendererCurrentFixMonotonicTail: {
+              phase: 'restore',
+              gapMs: 240,
+            },
+            sourceCadence: {
+              latestReceivedSequence: 13,
+              latestAcknowledgedSequence: 13,
+              pendingCount: 0,
+              latestRequestAgeMs: 240,
+              latestSourceAgeMs: 239,
+            },
+            operations: [{
+              phase: 'restore',
+              kind: 'review_before_cleanup',
+              startedAtMs: 1_010,
+              endedAtMs: null,
+              freshSampleCount: 0,
+            }],
           },
         },
         cleanup: { profileCleanupCompleted: true },

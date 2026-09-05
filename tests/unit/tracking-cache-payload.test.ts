@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import devicesFixture from '../fixtures/traccar-devices.json'
 import positionsFixture from '../fixtures/traccar-positions.json'
 import {
+  limitTrackingCacheBreadcrumbs,
   parseTrackingCachePayload,
   serializeTrackingCachePayload,
 } from '../../src/features/tracking/tracking-cache-payload'
@@ -12,6 +13,61 @@ import {
 } from '../../src/features/tracking/traccar-normalization'
 
 describe('tracking cache payload', () => {
+  it('shares the global breadcrumb cache budget with cooperative bounded work [DON-252]', async () => {
+    const basePosition = normalizeTraccarPosition(positionsFixture[0], 'live')
+    const shortTrail = Array.from({ length: 100 }, (_, index) => ({
+      ...basePosition,
+      id: `short-${index}`,
+      device_id: 'short-device',
+    }))
+    const longTrail = Array.from({ length: 5_000 }, (_, index) => ({
+      ...basePosition,
+      id: `long-${index}`,
+      device_id: 'long-device',
+    }))
+
+    const yieldControl = vi.fn().mockResolvedValue(undefined)
+    const retained = await limitTrackingCacheBreadcrumbs(
+      [...shortTrail, ...longTrail],
+      { yieldControl },
+    )
+
+    expect(yieldControl).toHaveBeenCalled()
+    expect(retained).toHaveLength(5_000)
+    expect(retained.filter(({ device_id }) => device_id === 'short-device'))
+      .toHaveLength(100)
+    expect(retained.filter(({ device_id }) => device_id === 'long-device'))
+      .toHaveLength(4_900)
+    expect(retained.map(({ id }) => id)).toEqual(expect.arrayContaining([
+      'short-0',
+      'short-99',
+      'long-0',
+      'long-4999',
+    ]))
+  })
+
+  it('yields through bookkeeping for more device trails than the cache can retain [DON-252]', async () => {
+    const basePosition = normalizeTraccarPosition(positionsFixture[0], 'live')
+    const breadcrumbs = Array.from({ length: 6_001 }, (_, index) => ({
+      ...basePosition,
+      id: `position-${index}`,
+      device_id: `device-${index}`,
+    }))
+    const yieldControl = vi.fn().mockResolvedValue(undefined)
+
+    const retained = await limitTrackingCacheBreadcrumbs(
+      breadcrumbs,
+      { yieldControl },
+    )
+
+    expect(retained).toHaveLength(5_000)
+    expect(retained[0]?.device_id).toBe('device-0')
+    expect(retained.at(-1)?.device_id).toBe('device-4999')
+    // All four potentially large passes must yield: count, allocation,
+    // retained-ordinal construction, and final selection.
+    expect(yieldControl.mock.calls.length).toBeGreaterThanOrEqual(19)
+  })
+
   it('serializes and parses a normalized tracking snapshot', () => {
     const devices = devicesFixture.map((device, index) =>
       normalizeTraccarDevice({ ...device, groupId: index + 101 }))

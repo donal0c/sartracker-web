@@ -1,5 +1,9 @@
 import { createDeviceColor } from './tracking-color'
-import { parseTrackingCachePayload, serializeTrackingCachePayload } from './tracking-cache-payload'
+import {
+  limitTrackingCacheBreadcrumbs,
+  parseTrackingCachePayload,
+  serializeTrackingCachePayload,
+} from './tracking-cache-payload'
 import {
   annotateTrackingSnapshotHealth,
   calculateCacheAgeMs,
@@ -25,6 +29,7 @@ import type {
   CanonicalBreadcrumbSeed,
   TrackingHistoryChunkPersistenceInput,
   TrackingHistoryChunkPersistenceResult,
+  TrackingMissionEvidenceTransfer,
   TrackingSnapshotContext,
 } from './polling-manager'
 import type { BreadcrumbSelectionMetadata } from './breadcrumb-accumulator'
@@ -78,6 +83,11 @@ type TrackingRuntimePollerFactory = (
       snapshot: TrackingSnapshot,
       context?: TrackingSnapshotContext,
     ) => Promise<void>
+    readonly onCurrentSnapshot: (
+      snapshot: TrackingSnapshot,
+      context: TrackingSnapshotContext,
+      observation: TrackingMissionEvidenceTransfer,
+    ) => void
     readonly onStatusChange: (status: TrackingConnectionStatus) => void
     readonly getInitialBreadcrumbs: (
       signal?: AbortSignal,
@@ -367,9 +377,6 @@ export async function startTrackingRuntime(
   const logger = dependencies.logger ?? DEFAULT_TRACKING_RUNTIME_LOGGER
   const writeCache = dependencies.writeCache ?? true
   let persistedPositionKeyCache: PersistedPositionKeyCache | null = null
-  let lastTrackingCacheDataKey: string | null = null
-  let latestQueuedTrackingCacheDataKey: string | null = null
-  let latestTrackingCacheRequestSequence = 0
   let latestTrackingStatus: TrackingConnectionStatus | null = null
   let trackingCacheWarningActive = false
   let missionPersistenceWarningActive = false
@@ -435,13 +442,53 @@ export async function startTrackingRuntime(
         missionId,
       )
     },
-    markEvidenceLoss: async (missionId) => {
-      await applyMissionPersistenceResult({
-        status: 'rejected',
-        reason: new Error(
+    markEvidenceLoss: async (missionId, reason) => {
+      await retainMissionEvidenceLoss(
+        missionId,
+        reason,
+        new Error(
           'Accepted tracking evidence could not be participation-scoped before release.',
         ),
-      }, missionId)
+      )
+    },
+    payloadKey: createMissionEvidencePayloadKey,
+  })
+  const trackingCacheWriteLane = createLatestTrackingCacheWriteLane({
+    write: (contents) => enqueueTrackingCacheWrite(
+      runtimeGeneration,
+      dependencies.cache,
+      contents,
+    ),
+    onFailure: (error) => {
+      logger.warn('Tracking cache update failed.', error)
+      if (
+        runtimeGeneration === activeTrackingRuntimeGeneration &&
+        !trackingCacheWarningActive
+      ) {
+        trackingCacheWarningActive = true
+        refreshTrackingStatus()
+        void dependencies.recordDiagnosticEvent?.({
+          level: 'warn',
+          category: 'tracking',
+          event: 'tracking_cache_write_failed',
+          fields: {},
+        })
+      }
+    },
+    onSuccess: () => {
+      if (
+        runtimeGeneration === activeTrackingRuntimeGeneration &&
+        trackingCacheWarningActive
+      ) {
+        trackingCacheWarningActive = false
+        refreshTrackingStatus()
+        void dependencies.recordDiagnosticEvent?.({
+          level: 'info',
+          category: 'tracking',
+          event: 'tracking_cache_write_recovered',
+          fields: {},
+        })
+      }
     },
   })
 
@@ -760,6 +807,45 @@ export async function startTrackingRuntime(
         throw error
       }
     },
+    onCurrentSnapshot: (snapshot, context, observation) => {
+      applyParticipantRosterWithoutBlocking(snapshot.devices, context)
+      const missionEvidenceId = context.missionEvidenceId === undefined
+        ? context.historyResetKey
+        : context.missionEvidenceId
+      if (missionEvidenceId !== null) {
+        const admitted = deferredMissionEvidence.enqueueOwned(
+          missionEvidenceId,
+          createCurrentMissionEvidenceSnapshot(snapshot),
+          observation,
+        )
+        if (!admitted) {
+          throw new Error(
+            'Current tracking evidence observation did not match its accepting mission.',
+          )
+        }
+        observation.claim()
+        if (readParticipationScopeStatus() !== 'loading') {
+          deferredMissionEvidence.requestFlushMission(missionEvidenceId)
+        }
+      }
+
+      const operationalSnapshot = filterOperationalSnapshot(
+        snapshot,
+        context.historyResetKey ?? currentOperationalContextKey(),
+      )
+      if (operationalSnapshot === null) {
+        deferredOperationalSnapshot = {
+          snapshot,
+          historyResetKey: context.historyResetKey,
+        }
+        refreshTrackingStatus()
+      } else {
+        publishOperationalSnapshot(operationalSnapshot)
+      }
+      if (writeCache && context.suppressTrackingCache !== true) {
+        void queueTrackingCacheWrite(snapshot)
+      }
+    },
     onSnapshot: async (snapshot, context) => {
       applyParticipantRosterWithoutBlocking(snapshot.devices, context)
       const missionEvidenceId = context?.missionEvidenceId === undefined
@@ -795,14 +881,7 @@ export async function startTrackingRuntime(
         refreshTrackingStatus()
       } else {
         deferredOperationalSnapshot = null
-        dependencies.applySnapshot(operationalSnapshot)
-        scheduleParticipantBackfill()
-        void dependencies.recordDiagnosticEvent?.({
-          level: 'info',
-          category: 'tracking',
-          event: 'tracking_snapshot_applied',
-          fields: buildTrackingSnapshotDiagnosticFields(operationalSnapshot),
-        })
+        publishOperationalSnapshot(operationalSnapshot)
         if (missionEvidenceAccepted) {
           const missionEvidenceSnapshot = filterMissionEvidenceSnapshot(snapshot)
           missionPersistenceResultIndex = sideEffects.length
@@ -815,82 +894,14 @@ export async function startTrackingRuntime(
           ))
         }
       }
-      let trackingCacheDataKey: string | null = null
-      let trackingCacheRequestSequence: number | null = null
-      let trackingCacheResultIndex: number | null = null
       const shouldWriteTrackingCache =
         writeCache && context?.suppressTrackingCache !== true
 
       if (shouldWriteTrackingCache) {
-        trackingCacheDataKey = createTrackingCacheDataKey(snapshot)
-        trackingCacheResultIndex = sideEffects.length
-        if (trackingCacheDataKey !== latestQueuedTrackingCacheDataKey) {
-          latestTrackingCacheRequestSequence += 1
-          trackingCacheRequestSequence = latestTrackingCacheRequestSequence
-          latestQueuedTrackingCacheDataKey = trackingCacheDataKey
-          sideEffects.push(
-            enqueueTrackingCacheWrite(
-              runtimeGeneration,
-              dependencies.cache,
-              serializeTrackingCachePayload({
-                cached_at: now().toISOString(),
-                devices: snapshot.devices,
-                positions: snapshot.positions,
-                breadcrumbs: snapshot.breadcrumbs,
-              }),
-            ),
-          )
-        } else {
-          sideEffects.push(Promise.resolve(null))
-        }
+        sideEffects.push(queueTrackingCacheWrite(snapshot))
       }
 
       await Promise.allSettled(sideEffects).then(async (results) => {
-        if (trackingCacheResultIndex !== null) {
-          const cacheWriteResult = results[trackingCacheResultIndex]
-          if (cacheWriteResult !== undefined && cacheWriteResult.status === 'rejected') {
-            logger.warn('Tracking cache update failed.', cacheWriteResult.reason)
-            if (
-              runtimeGeneration === activeTrackingRuntimeGeneration &&
-              trackingCacheRequestSequence === latestTrackingCacheRequestSequence
-            ) {
-              latestQueuedTrackingCacheDataKey = lastTrackingCacheDataKey
-            }
-            if (
-              runtimeGeneration === activeTrackingRuntimeGeneration &&
-              !trackingCacheWarningActive
-            ) {
-              trackingCacheWarningActive = true
-              refreshTrackingStatus()
-              void dependencies.recordDiagnosticEvent?.({
-                level: 'warn',
-                category: 'tracking',
-                event: 'tracking_cache_write_failed',
-                fields: {},
-              })
-            }
-          } else if (
-            runtimeGeneration === activeTrackingRuntimeGeneration &&
-            trackingCacheDataKey !== null &&
-            (trackingCacheRequestSequence !== null ||
-              trackingCacheDataKey === lastTrackingCacheDataKey)
-          ) {
-            if (trackingCacheRequestSequence !== null) {
-              lastTrackingCacheDataKey = trackingCacheDataKey
-            }
-            if (trackingCacheWarningActive) {
-              trackingCacheWarningActive = false
-              refreshTrackingStatus()
-              void dependencies.recordDiagnosticEvent?.({
-                level: 'info',
-                category: 'tracking',
-                event: 'tracking_cache_write_recovered',
-                fields: {},
-              })
-            }
-          }
-        }
-
         const missionPersistenceResult = missionPersistenceResultIndex === null
           ? undefined
           : results[missionPersistenceResultIndex]
@@ -993,11 +1004,52 @@ export async function startTrackingRuntime(
     await deferredMissionEvidence.settleForStop((missionId) =>
       readParticipationScopeStatus() === 'ready' &&
       useMissionStore.getState().currentMission?.id === missionId)
+    await trackingCacheWriteLane.settle()
     if (participantBackfillTask !== null) {
       await participantBackfillTask
     }
     participantBackfillAbortController.abort()
     invalidateTrackingRuntimeGeneration(runtimeGeneration)
+  }
+
+  /** Publishes one participant-scoped map snapshot without awaiting durable work. */
+  function publishOperationalSnapshot(snapshot: TrackingSnapshot): void {
+    deferredOperationalSnapshot = null
+    dependencies.applySnapshot(snapshot)
+    scheduleParticipantBackfill()
+    void dependencies.recordDiagnosticEvent?.({
+      level: 'info',
+      category: 'tracking',
+      event: 'tracking_snapshot_applied',
+      fields: buildTrackingSnapshotDiagnosticFields(snapshot),
+    })
+  }
+
+  /** Admits one latest-state cache update to the bounded cache writer. */
+  function queueTrackingCacheWrite(snapshot: TrackingSnapshot): Promise<void> {
+    const cachedAt = now().toISOString()
+    return trackingCacheWriteLane.enqueue(
+      createTrackingCacheDataKey(snapshot),
+      async () => serializeTrackingCachePayload({
+        cached_at: cachedAt,
+        devices: snapshot.devices,
+        positions: snapshot.positions,
+        breadcrumbs: await limitTrackingCacheBreadcrumbs(snapshot.breadcrumbs),
+      }),
+    )
+  }
+
+  /** Retains only current evidence fields while durable persistence is pending. */
+  function createCurrentMissionEvidenceSnapshot(
+    snapshot: TrackingSnapshot,
+  ): TrackingSnapshot {
+    const evidenceSnapshot = filterCanonicalFixTimeEvidenceSnapshot(snapshot)
+    return {
+      devices: evidenceSnapshot.devices,
+      positions: evidenceSnapshot.positions,
+      breadcrumbs: [],
+      rawBreadcrumbsForPersistence: [],
+    }
   }
 
   function scheduleParticipantBackfill(): void {
@@ -1220,6 +1272,25 @@ export async function startTrackingRuntime(
     missionId: string | null,
     message: string,
   ): Promise<void> {
+    if (missionId === null) {
+      logger.warn(message, error)
+      throw new Error('Evidence marker unavailable.')
+    }
+    await retainMissionEvidenceLoss(
+      missionId,
+      'mission_persistence_failed',
+      error,
+      message,
+    )
+  }
+
+  /** Makes one accepted-evidence loss durable before releasing queue ownership. */
+  async function retainMissionEvidenceLoss(
+    missionId: string,
+    reason: IngestEvidenceLossReason,
+    error: unknown,
+    message = 'Mission evidence could not be retained.',
+  ): Promise<void> {
     logger.warn(message, error)
     if (
       runtimeGeneration === activeTrackingRuntimeGeneration &&
@@ -1234,12 +1305,12 @@ export async function startTrackingRuntime(
         fields: {},
       })
     }
-    if (missionId === null || dependencies.recordMissionEvidenceLoss === undefined) {
+    if (dependencies.recordMissionEvidenceLoss === undefined) {
       throw new Error('Evidence marker unavailable.')
     }
     await dependencies.recordMissionEvidenceLoss(
       missionId,
-      'mission_persistence_failed',
+      reason,
     )
   }
 
@@ -1495,6 +1566,136 @@ function enqueueTrackingCacheWrite(
   )
   trackingCacheWriteTail = run.catch(() => undefined)
   return run
+}
+
+type TrackingCacheWriteLaneEntry = {
+  readonly key: string
+  readonly serialize: () => string | Promise<string>
+  readonly completion: Promise<void>
+  readonly resolve: () => void
+}
+
+type LatestTrackingCacheWriteLane = {
+  readonly enqueue: (key: string, serialize: () => string | Promise<string>) => Promise<void>
+  readonly settle: () => Promise<void>
+}
+
+/**
+ * Bounds latest-state cache work to one active write and one replaceable
+ * pending payload. Superseded cache states need no loss marker because the
+ * cache is recovery state, not the mission evidence ledger.
+ */
+function createLatestTrackingCacheWriteLane(dependencies: {
+  readonly write: (contents: string) => Promise<unknown>
+  readonly onFailure: (error: unknown) => void
+  readonly onSuccess: () => void
+}): LatestTrackingCacheWriteLane {
+  let activeEntry: TrackingCacheWriteLaneEntry | null = null
+  let pendingEntry: TrackingCacheWriteLaneEntry | null = null
+  let lastDurableKey: string | null = null
+  let accepting = true
+
+  /** Creates one externally awaitable lane entry without a rejecting promise. */
+  function createEntry(
+    key: string,
+    serialize: () => string | Promise<string>,
+  ): TrackingCacheWriteLaneEntry {
+    let resolve = (): void => undefined
+    const completion = new Promise<void>((settle) => {
+      resolve = settle
+    })
+    return { key, serialize, completion, resolve }
+  }
+
+  /** Runs one write and advances directly to the single latest pending value. */
+  async function runEntry(entry: TrackingCacheWriteLaneEntry): Promise<void> {
+    try {
+      const contents = await Promise.resolve().then(entry.serialize)
+      await dependencies.write(contents)
+      lastDurableKey = entry.key
+      dependencies.onSuccess()
+    } catch (error) {
+      dependencies.onFailure(error)
+    } finally {
+      if (activeEntry === entry) {
+        activeEntry = null
+        const nextEntry = pendingEntry
+        pendingEntry = null
+        if (nextEntry !== null) startEntry(nextEntry)
+      }
+      entry.resolve()
+    }
+  }
+
+  /** Starts one entry without exposing its contained rejection. */
+  function startEntry(entry: TrackingCacheWriteLaneEntry): void {
+    activeEntry = entry
+    void runEntry(entry)
+  }
+
+  return {
+    enqueue: (key, serialize) => {
+      if (!accepting) return Promise.resolve()
+      if (pendingEntry?.key === key) return pendingEntry.completion
+      if (activeEntry?.key === key && pendingEntry === null) {
+        return activeEntry.completion
+      }
+      if (activeEntry === null && key === lastDurableKey) {
+        return Promise.resolve()
+      }
+
+      const entry = createEntry(key, serialize)
+      if (activeEntry === null) {
+        startEntry(entry)
+      } else {
+        pendingEntry?.resolve()
+        pendingEntry = entry
+      }
+      return entry.completion
+    },
+    settle: async () => {
+      accepting = false
+      while (activeEntry !== null || pendingEntry !== null) {
+        const currentCompletion = activeEntry?.completion
+        if (currentCompletion !== undefined) {
+          await currentCompletion
+        }
+      }
+    },
+  }
+}
+
+/** Creates an exact semantic identity for one bounded persistence payload. */
+function createMissionEvidencePayloadKey(snapshot: TrackingSnapshot): string {
+  const canonicalSnapshot = filterCanonicalFixTimeEvidenceSnapshot(snapshot)
+  /** Projects only fields that can change durable position state. */
+  const projectPosition = (position: NormalizedTrackingPosition) => ({
+    source_position_id: position.id,
+    device_id: position.device_id,
+    lat: position.lat,
+    lon: position.lon,
+    altitude: position.altitude,
+    speed: position.speed,
+    battery: position.battery,
+    accuracy: position.accuracy,
+    source: position.source,
+    timestamp: position.timestamp,
+    timestamp_source: 'fix' as const,
+    data_origin: position.data_origin,
+  })
+  return JSON.stringify({
+    devices: canonicalSnapshot.devices.map((device) => ({
+      device_id: device.device_id,
+      name: device.name,
+      status: device.status,
+      last_seen: device.last_seen,
+      group_id: device.group_id ?? null,
+      unique_id: device.unique_id,
+    })),
+    positions: canonicalSnapshot.positions.map(projectPosition),
+    breadcrumbs: getBreadcrumbsForMissionPersistence(canonicalSnapshot)
+      .map(projectPosition),
+  })
 }
 
 function createTrackingCacheDataKey(snapshot: TrackingSnapshot): string {

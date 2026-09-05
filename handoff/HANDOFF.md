@@ -104,6 +104,19 @@
   the production IPC projector, requires exact v2 passphrase/recovery slots and
   sealed/verified recovery semantics, derives Review inputs from that projection,
   and includes the projector in its five-file evidence-identity manifest.
+- **Exact pushed head `b75f8689304769438157cd5e018996cdafcdb328` / tree
+  `3216b03286c8543dfbeaff42097528ca197cbd7e` is rejected.** Its sole exact
+  macOS packaged lifecycle, Chromium `173/173`, visual Playwright `62/62`, fresh
+  uncached visual review `74/74`, and physical SIGKILL `32/32` passed. Linux run
+  `33940959449` passed source binding, lint, `3,770` deterministic tests,
+  build/package, 960k Replay, artifact/native-SQLite inspection, llvmpipe, and
+  packaged tracking soak. The first pre-cleanup Review operation then failed the
+  unchanged strict liveness gate at `240 ms` current-fix continuity (`59.142 ms`
+  main, `118.1 ms` renderer frame, and `67 ms` source/request-to-renderer
+  maxima); packages were not uploaded. This is accepted cadence-failure evidence,
+  not a harness false negative. Persistence/concurrency review also found that
+  two post-predicate renderer confirmation reads could outlive their monotonic
+  readiness budget. This head will not be rerun unchanged.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
@@ -133,11 +146,20 @@
   they may supersede older pending snapshots only before the older original
   deadline, cannot refresh a deadline, cannot satisfy a different operation,
   and fail closed if they regress within or across drains.
-  The current successor subtracts already-spent durable-settlement time from the
-  next successful poll interval without overlapping polls or releasing mission
-  evidence early. Current-fix absence is audited only through a serialized
-  renderer collection's request-start watermark; independent main ticks still
-  enforce the main gate but cannot overtake a renderer observation. The strict
+  The b75 successor publishes each accepted current snapshot synchronously and
+  schedules its next poll without waiting for mission persistence or cache
+  preparation/write. Accepted evidence transfers into a globally capacity-bounded
+  queue (eight payloads) with per-mission FIFO, one guardian per mission, exact persisted-payload
+  coalescing, and sticky durable overflow/loss evidence; Finish and stop
+  drain/retry before releasing ownership. Raw canonical evidence is retained
+  before participant hydration and participant-scoped only at persistence.
+  Cache work has one active plus one latest pending write, captures `cached_at`
+  at observation time, retains all current fixes plus at most 5,000 cross-device
+  breadcrumb representatives, and yields throughout large selection work. Both
+  lifecycle renderer confirmation reads now share the remaining monotonic
+  deadline. Current-fix absence is audited only through a serialized renderer
+  collection's request-start watermark; independent main ticks still enforce
+  the main gate but cannot overtake a renderer observation. The strict
   `>=200 ms` current-fix and source deadlines remain unchanged.
   Queue acquisition and CDP work each retain their own strict bound; late timed-
   out drains are poisoned and cannot commit stale evidence. Exact phase handoff
@@ -178,12 +200,13 @@
 
 ## Active Work
 
-- Freeze and commit the red-first liveness-accounting, failure-receipt,
-  correction-lineage, and kill-oracle repair on the existing PR branch.
+- Finish verification and freeze the red-first synchronous-current publication,
+  bounded evidence/cache settlement, and deadline-bounded lifecycle confirmation
+  repair on the existing PR branch.
 - Rerun package/lifecycle first on that exact clean head, then full static,
   browser, visual, physical SIGKILL, and Linux gates. Never rerun unchanged
-  rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, `23161300`, or
-  `d91ec232` or `7e0d8ea3`.
+  rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, `23161300`,
+  `d91ec232`, `7e0d8ea3`, or `b75f8689`.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -207,20 +230,17 @@
 
 ## Verification Snapshot
 
-- Current successor-focused verification is green at `4` files / `97` tests,
-  and the fresh full serial suite is green at `375` files / `3,770` tests. The
-  accepted mission-ID, rendered-device, public archive recoverability, and
-  harness-identity findings have red-to-green gates and clean bounded re-audits.
-- Full ESLint, TypeScript/production build and bundle budgets, focused Node
-  syntax, diff checks, and the backend (`58` passed / `1` platform-specific
-  ignored) are green. These are pre-freeze dirty-tree checks, not exact-head
-  package proof.
-- The `create.seal`, public-projection, final-operation, and participant-
-  readiness and wedged-readiness regressions are red-to-green on the dirty
-  successor.
+- Current successor-focused verification is green at `8` files / `307` tests;
+  the final cache/runtime slice is green at `2` files / `91` tests. TypeScript,
+  affected ESLint, and diff checks pass. The fresh full serial suite passes
+  `375` files / `3,791` tests. Full ESLint, production build and bundle budgets,
+  focused Node syntax, and the backend (`58` passed / `1` platform-specific
+  ignored) are also green.
+- The evidence and runtime affected rechecks are clean. These are pre-freeze
+  dirty-tree checks, not exact-head package proof.
 - Chromium `173/173`, visual Playwright `62/62`, uncached visual review `74/74`,
-  and physical SIGKILL `32/32` are clean at rejected head `7e0d8ea3` and are now
-  prior-head evidence. Exact-head package/lifecycle,
+  and physical SIGKILL `32/32` are clean only at rejected head `b75f8689` and are
+  prior-head evidence. Successor exact-head package/lifecycle, browser, visual,
   physical SIGKILL, Linux, four-review, and fresh field gates remain pending.
 
 ## Next Actions
@@ -235,7 +255,7 @@
 ## Blockers
 
 - PR #10 is not ready. `caf9e5e8`, `49523dc8`, `81e47973`, `74bdd95`,
-  `6a72ae91`, `23161300`, `d91ec232`, and `7e0d8ea3` are rejected diagnostics;
+  `6a72ae91`, `23161300`, `d91ec232`, `7e0d8ea3`, and `b75f8689` are rejected diagnostics;
   the replacement exact-head package/lifecycle gate must pass before Linux or
   field-scale qualification.
 

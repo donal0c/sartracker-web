@@ -27,6 +27,7 @@ interface RendererSnapshot {
   }>
   frameGaps: Array<{ phase: Phase; gapMs: number }>
   frameTail: { phase: Phase; gapMs: number } | null
+  currentFixTail: { phase: Phase; gapMs: number } | null
   currentFixOverflowCount: number
   frameGapOverflowCount: number
 }
@@ -64,6 +65,7 @@ function createProbeHarness() {
     currentFixes: [],
     frameGaps: [],
     frameTail: null,
+    currentFixTail: null,
     currentFixOverflowCount: 0,
     frameGapOverflowCount: 0,
   }
@@ -94,6 +96,7 @@ function createProbeHarness() {
       currentFixes: [],
       frameGaps: [],
       frameTail: snapshot.frameTail,
+      currentFixTail: snapshot.currentFixTail,
       currentFixOverflowCount: 0,
       frameGapOverflowCount: 0,
     }
@@ -125,6 +128,7 @@ function createProbeHarness() {
       rendererPhaseDelayMs = 0
       rendererFrameTailDelayMs = 0
       rendererSnapshot.frameTail = phase === null ? null : { phase, gapMs: 0 }
+      rendererSnapshot.currentFixTail = null
       appliedRendererPhase = phase
       return delayedTail
     },
@@ -185,6 +189,7 @@ function createProbeHarness() {
       sourceTimestamp: renderedTimestamp ?? source.sourceTimestamp,
       observedAtMs: nowMs,
     })
+    rendererSnapshot.currentFixTail = { phase: source.phase, gapMs: 0 }
     rendererSnapshot.frameGaps.push({ phase: source.phase, gapMs: 16 })
   }
 
@@ -251,6 +256,7 @@ function createProbeHarness() {
         sourceTimestamp,
         observedAtMs: nowMs,
       })
+      rendererSnapshot.currentFixTail = { phase: activePhase, gapMs: 0 }
       rendererSnapshot.frameGaps.push({ phase: activePhase, gapMs: 16 })
       nowMs += 1
       return source
@@ -262,6 +268,9 @@ function createProbeHarness() {
     },
     queueRendererFrameTail: (phase: Phase, gapMs: number) => {
       rendererSnapshot.frameTail = { phase, gapMs }
+    },
+    queueRendererCurrentFixTail: (phase: Phase, gapMs: number) => {
+      rendererSnapshot.currentFixTail = { phase, gapMs }
     },
     queueRendererFrameGap: (phase: Phase, gapMs: number) => {
       rendererSnapshot.frameGaps.push({ phase, gapMs })
@@ -667,6 +676,7 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
       })),
       frameGaps: [],
       frameTail: null,
+      currentFixTail: null,
       currentFixOverflowCount: 0,
       frameGapOverflowCount: 0,
     })
@@ -768,6 +778,7 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
       currentFixes: [],
       frameGaps: [],
       frameTail: { phase: 'cleanup', gapMs: 0 },
+      currentFixTail: null,
       ...overflow,
     })
 
@@ -813,6 +824,7 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
       currentFixes: [],
       frameGaps: [{ phase: 'create', gapMs: -0.625 }],
       frameTail: { phase: 'create', gapMs: 0 },
+      currentFixTail: null,
       currentFixOverflowCount: 0,
       frameGapOverflowCount: 0,
     })
@@ -840,6 +852,7 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
       currentFixes: [],
       frameGaps: [{ phase: 'create', gapMs: -0.625 }],
       frameTail: { phase: 'create', gapMs: 0 },
+      currentFixTail: null,
       currentFixOverflowCount: 0,
       frameGapOverflowCount: 0,
     })
@@ -857,6 +870,7 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
       currentFixes: [],
       frameGaps: [{ phase: 'create', gapMs: -0.625 }],
       frameTail: { phase: 'create', gapMs: 0 },
+      currentFixTail: null,
       currentFixOverflowCount: 0,
       frameGapOverflowCount: 0,
     })
@@ -995,6 +1009,7 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     harness.emitCurrentFix(true)
     await harness.probe.waitForPhaseSample('create', 100)
     harness.advanceClock(200)
+    harness.queueRendererCurrentFixTail('create', 200)
     harness.publishWatchdogTick()
 
     const failure = await harness.probe.waitForPhaseSample('create', 100)
@@ -1010,6 +1025,10 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
         intervalStartedAtMs: expect.any(Number),
         previousObservedAtMs: expect.any(Number),
         auditedAtMs: expect.any(Number),
+      },
+      rendererCurrentFixMonotonicTail: {
+        phase: 'create',
+        gapMs: 200,
       },
       operations: [],
     })
@@ -1039,8 +1058,56 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
         sourceAgeMs: 200,
         auditedAtMs: expect.any(Number),
       },
+      sourceCadence: {
+        latestReceivedSequence: 1,
+        latestAcknowledgedSequence: 0,
+        pendingCount: 0,
+        latestRequestAgeMs: 200,
+        latestSourceAgeMs: 200,
+        oldestPendingRequestAgeMs: null,
+        oldestPendingSourceAgeMs: null,
+      },
       operations: [],
     })
+  })
+
+  it('names the exact active archive operation in failure diagnostics', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    const operation = await harness.probe.beginPhaseOperation(
+      'restore',
+      'review_before_cleanup',
+    )
+    harness.advanceClock(200)
+    harness.publishWatchdogTick()
+
+    const failure = await harness.probe.guardOperation(
+      Promise.resolve(),
+      operation,
+    ).catch((error: unknown) => error) as Error & {
+      archiveLifecycleDiagnostics?: Readonly<Record<string, unknown>>
+    }
+    expect(failure.archiveLifecycleDiagnostics).toMatchObject({
+      operations: [{
+        phase: 'restore',
+        kind: 'review_before_cleanup',
+        startedAtMs: expect.any(Number),
+      }],
+    })
+  })
+
+  it('rejects sparse operation-kind arrays before opening a checkpoint', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('create')
+
+    await expect(harness.probe.beginPhaseOperations(
+      ['create'],
+      new Array<string>(1),
+    )).rejects.toThrow('operation phases are invalid')
+
+    await harness.probe.stop()
   })
 
   it('fails when a phase has no first exact-correlated fix within 200 ms', async () => {
@@ -1408,6 +1475,27 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
 })
 
 describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
+  it('fails closed when renderer-probe installation wedges after readiness', async () => {
+    vi.useFakeTimers()
+    try {
+      const page = {
+        waitForFunction: vi.fn(async () => undefined),
+        evaluate: vi.fn(() => new Promise(() => undefined)),
+      }
+      const installation = installRendererLivenessProbe(page, 991, 30)
+      const rejection = expect(installation).rejects.toThrow(
+        'Archive-lifecycle renderer liveness probe installation timed out.',
+      )
+
+      await vi.advanceTimersByTimeAsync(31)
+      await rejection
+      expect(page.waitForFunction).toHaveBeenCalledTimes(1)
+      expect(page.evaluate).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('forwards watchdog cancellation into the production probe collector', async () => {
     let activePhase: Phase | null = null
     let sourceSequence = 0
@@ -1752,6 +1840,7 @@ describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
       expect(first?.frameGaps).toHaveLength(256)
       expect(fakeWindow.__SARTRACKER_ARCHIVE_LIVENESS__?.drain()).toEqual({
         currentFixes: [],
+        currentFixTail: { phase: 'create', gapMs: 16 },
         frameGaps: [],
         frameTail: { phase: 'create', gapMs: 0 },
         currentFixOverflowCount: 0,

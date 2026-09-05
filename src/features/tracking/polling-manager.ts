@@ -65,6 +65,16 @@ type PollingManagerLogger = {
   readonly warn: (message: string, context: Record<string, unknown>) => void
 }
 
+export type TrackingMissionEvidenceObservation = {
+  readonly missionId: string | null
+  readonly complete: () => void
+}
+
+export type TrackingMissionEvidenceTransfer = TrackingMissionEvidenceObservation & {
+  /** Transfers completion authority away from the polling transport exactly once. */
+  readonly claim: () => void
+}
+
 type PollingManagerOptions = {
   readonly intervalMs: number
   readonly minimumIntervalMs?: number
@@ -115,6 +125,15 @@ type PollingManagerOptions = {
     snapshot: TrackingSnapshot,
     context: TrackingSnapshotContext,
   ) => void | Promise<void>
+  /**
+   * Synchronously hands one current poll to the visible publisher and a
+   * bounded evidence owner, which must claim the observation before returning.
+   */
+  readonly onCurrentSnapshot?: (
+    snapshot: TrackingSnapshot,
+    context: TrackingSnapshotContext,
+    observation: TrackingMissionEvidenceTransfer,
+  ) => void
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
   readonly onCurrentPositionRejections?: (
     rejections: readonly CurrentPositionRejection[],
@@ -949,6 +968,13 @@ export function createPollingManager(
         missionId: pollHistoryResetKey,
         complete: () => undefined,
       }
+      let missionEvidenceTransferred = false
+      const missionEvidenceTransfer: TrackingMissionEvidenceTransfer = {
+        ...missionObservation,
+        claim: () => {
+          missionEvidenceTransferred = true
+        },
+      }
       let resolveCurrentPositionObservation = (): void => undefined
       let currentPositionObservationCompleted = false
       const currentPositionObservation = new Promise<void>((resolve) => {
@@ -960,15 +986,18 @@ export function createPollingManager(
       })
       settleCurrentPositionForStop = settleRosterGrace
       currentPositionObservationInFlight = currentPositionObservation
-      completeCurrentPositionObservation = () => {
+      const settleCurrentPositionObservation = (completeMissionEvidence: boolean): void => {
         if (currentPositionObservationCompleted) return
         currentPositionObservationCompleted = true
-        missionObservation.complete()
+        if (completeMissionEvidence) missionObservation.complete()
         resolveCurrentPositionObservation()
         if (currentPositionObservationInFlight === currentPositionObservation) {
           currentPositionObservationInFlight = null
         }
         settleCurrentPositionForStop = null
+      }
+      completeCurrentPositionObservation = () => {
+        settleCurrentPositionObservation(!missionEvidenceTransferred)
       }
       const currentPositionResult = await fetchRosterAndCurrentPositions({
         getDevices: () => getRosterRefresh().then((result) => result.accepted),
@@ -1034,29 +1063,53 @@ export function createPollingManager(
         breadcrumbMetadata,
       }
       lastGoodSnapshot = currentSnapshot
+      const publishedSnapshot = annotateTrackingSnapshotHealth(currentSnapshot, {
+        now: now(),
+        deviceStaleThresholdMs: options.staleThresholdMs,
+      })
+      const snapshotContext = {
+        historyResetKey: pollHistoryResetKey,
+        missionEvidenceId: missionObservation.missionId,
+        ...(currentPositionResult.rosterComplete
+          ? {}
+          : { participantRosterAuthoritative: false as const }),
+      }
       let currentFixPublishedAtMs = monotonicNow()
-      try {
-        const snapshotSettlement = options.onSnapshot(
-          annotateTrackingSnapshotHealth(currentSnapshot, {
-            now: now(),
-            deviceStaleThresholdMs: options.staleThresholdMs,
-          }),
-          {
-            historyResetKey: pollHistoryResetKey,
-            missionEvidenceId: missionObservation.missionId,
-            ...(currentPositionResult.rosterComplete
-              ? {}
-              : { participantRosterAuthoritative: false }),
-          },
-        )
-        currentFixPublishedAtMs = monotonicNow()
-        await snapshotSettlement
-      } finally {
+      if (options.onCurrentSnapshot === undefined) {
+        try {
+          const snapshotSettlement = options.onSnapshot(
+            publishedSnapshot,
+            snapshotContext,
+          )
+          currentFixPublishedAtMs = monotonicNow()
+          await snapshotSettlement
+        } finally {
+          publishCurrentPositionRejections(
+            currentPositionResult.rejected,
+            missionObservation.missionId,
+          )
+          completeCurrentPositionObservation()
+        }
+      } else {
         publishCurrentPositionRejections(
           currentPositionResult.rejected,
           missionObservation.missionId,
         )
-        completeCurrentPositionObservation()
+        options.onCurrentSnapshot(
+          publishedSnapshot,
+          snapshotContext,
+          missionEvidenceTransfer,
+        )
+        currentFixPublishedAtMs = monotonicNow()
+        if (
+          missionObservation.missionId !== null &&
+          !missionEvidenceTransferred
+        ) {
+          throw new Error(
+            'Current mission evidence publication returned without claiming its observation.',
+          )
+        }
+        settleCurrentPositionObservation(!missionEvidenceTransferred)
       }
       publishStatus({
         mode: 'online',
@@ -1114,18 +1167,29 @@ export function createPollingManager(
       }
 
       if (lastGoodSnapshot !== null) {
-        options.onSnapshot(
-          annotateTrackingSnapshotHealth(lastGoodSnapshot, {
-            now: now(),
-            deviceStaleThresholdMs: options.staleThresholdMs,
-          }),
-          {
-            historyResetKey: pollHistoryResetKey,
-            ...(latestParticipantRosterAuthoritative
-              ? {}
-              : { participantRosterAuthoritative: false }),
-          },
-        )
+        try {
+          void Promise.resolve(options.onSnapshot(
+            annotateTrackingSnapshotHealth(lastGoodSnapshot, {
+              now: now(),
+              deviceStaleThresholdMs: options.staleThresholdMs,
+            }),
+            {
+              historyResetKey: pollHistoryResetKey,
+              missionEvidenceId: null,
+              ...(latestParticipantRosterAuthoritative
+                ? {}
+                : { participantRosterAuthoritative: false }),
+            },
+          )).catch((fallbackError) => {
+            logger.warn('Tracking fallback snapshot publication failed.', {
+              failureKind: classifyTrackingFailure(fallbackError),
+            })
+          })
+        } catch (fallbackError) {
+          logger.warn('Tracking fallback snapshot publication failed.', {
+            failureKind: classifyTrackingFailure(fallbackError),
+          })
+        }
       }
 
       publishStatus({

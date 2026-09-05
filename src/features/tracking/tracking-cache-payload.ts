@@ -25,6 +25,117 @@ type TrackingCacheParseOptions = {
   readonly onDroppedEntries?: (summary: TrackingCacheDroppedEntries) => void
 }
 
+const MAX_TRACKING_CACHE_BREADCRUMBS = 5_000
+const TRACKING_CACHE_SELECTION_WORK_CHUNK = 1_024
+
+type TrackingCacheBreadcrumbLimitOptions = {
+  readonly yieldControl?: () => Promise<void>
+}
+
+/** Yields cache-only projection work so current-position timers can run. */
+function yieldTrackingCacheSelection(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/**
+ * Keeps restart cache serialization globally bounded while sharing the budget
+ * across device trails where capacity permits. A one-row quota keeps the
+ * latest breadcrumb; trails beyond the global budget receive no breadcrumb.
+ * Current positions are retained separately by the cache payload.
+ */
+export async function limitTrackingCacheBreadcrumbs(
+  breadcrumbs: readonly NormalizedTrackingPosition[],
+  options: TrackingCacheBreadcrumbLimitOptions = {},
+): Promise<readonly NormalizedTrackingPosition[]> {
+  if (breadcrumbs.length <= MAX_TRACKING_CACHE_BREADCRUMBS) return breadcrumbs
+
+  const yieldControl = options.yieldControl ?? yieldTrackingCacheSelection
+  const deviceIndexById = new Map<string, number>()
+  const positionCountByDevice: number[] = []
+  const quotas: number[] = []
+  const nextOrdinalByDevice: number[] = []
+  for (let index = 0; index < breadcrumbs.length; index += 1) {
+    const deviceId = breadcrumbs[index]!.device_id
+    let deviceIndex = deviceIndexById.get(deviceId)
+    if (deviceIndex === undefined) {
+      deviceIndex = positionCountByDevice.length
+      deviceIndexById.set(deviceId, deviceIndex)
+      positionCountByDevice.push(0)
+      quotas.push(0)
+      nextOrdinalByDevice.push(0)
+    }
+    positionCountByDevice[deviceIndex]! += 1
+    if ((index + 1) % TRACKING_CACHE_SELECTION_WORK_CHUNK === 0) {
+      await yieldControl()
+    }
+  }
+
+  let remaining = MAX_TRACKING_CACHE_BREADCRUMBS
+  let allocationWork = 0
+  while (remaining > 0) {
+    let progressed = false
+    for (
+      let index = 0;
+      index < positionCountByDevice.length && remaining > 0;
+      index += 1
+    ) {
+      if (quotas[index]! < positionCountByDevice[index]!) {
+        quotas[index]! += 1
+        remaining -= 1
+        progressed = true
+      }
+      allocationWork += 1
+      if (allocationWork % TRACKING_CACHE_SELECTION_WORK_CHUNK === 0) {
+        await yieldControl()
+      }
+    }
+    if (!progressed) break
+  }
+
+  const retainedOrdinalsByDevice: Array<Set<number> | null> = []
+  let targetWork = 0
+  for (let deviceIndex = 0; deviceIndex < quotas.length; deviceIndex += 1) {
+    targetWork += 1
+    if (targetWork % TRACKING_CACHE_SELECTION_WORK_CHUNK === 0) {
+      await yieldControl()
+    }
+    const quota = quotas[deviceIndex]!
+    const positionCount = positionCountByDevice[deviceIndex]!
+    if (quota === 1) {
+      retainedOrdinalsByDevice.push(new Set([positionCount - 1]))
+    } else if (quota > 1) {
+      const retainedOrdinals = new Set<number>()
+      for (let index = 0; index < quota; index += 1) {
+        retainedOrdinals.add(Math.round(
+          (index * (positionCount - 1)) / (quota - 1),
+        ))
+        targetWork += 1
+        if (targetWork % TRACKING_CACHE_SELECTION_WORK_CHUNK === 0) {
+          await yieldControl()
+        }
+      }
+      retainedOrdinalsByDevice.push(retainedOrdinals)
+    } else {
+      retainedOrdinalsByDevice.push(null)
+    }
+  }
+
+  const retained: NormalizedTrackingPosition[] = []
+  for (let index = 0; index < breadcrumbs.length; index += 1) {
+    const position = breadcrumbs[index]!
+    const deviceIndex = deviceIndexById.get(position.device_id)!
+    const ordinal = nextOrdinalByDevice[deviceIndex]!
+    nextOrdinalByDevice[deviceIndex]! += 1
+    if (retainedOrdinalsByDevice[deviceIndex]?.has(ordinal) === true) {
+      retained.push(position)
+    }
+    if ((index + 1) % TRACKING_CACHE_SELECTION_WORK_CHUNK === 0) {
+      await yieldControl()
+    }
+  }
+  return retained
+}
+
 /**
  * Parses persisted tracking cache JSON while dropping malformed entries individually.
  */
