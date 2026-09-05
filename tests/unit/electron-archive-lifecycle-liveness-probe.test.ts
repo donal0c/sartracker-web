@@ -175,7 +175,11 @@ function createProbeHarness() {
       }
     },
   })
-  const launch = { page: {}, externalLivenessWatchdog: undefined }
+  const launch = {
+    page: {},
+    livenessPage: {},
+    externalLivenessWatchdog: undefined,
+  }
 
   const queueRendererFix = (
     source: Pick<SourceEntry, 'phase' | 'sourcePositionId' | 'sourceTimestamp'>,
@@ -347,6 +351,75 @@ function createProbeHarness() {
 }
 
 describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]', () => {
+  it('keeps every renderer probe call on the dedicated CDP transport', async () => {
+    const workflowPage = Object.freeze({ channel: 'workflow' })
+    const livenessPage = Object.freeze({ channel: 'liveness' })
+    const installedPages: unknown[] = []
+    const phasedPages: unknown[] = []
+    const collectedPages: unknown[] = []
+    let watchdogInput: {
+      readonly collectRendererSnapshot?: (cleanup?: boolean) => Promise<void>
+    } | null = null
+    const emptySnapshot = {
+      currentFixes: [],
+      frameGaps: [],
+      frameTail: null,
+      currentFixTail: null,
+      currentFixOverflowCount: 0,
+      frameGapOverflowCount: 0,
+    }
+    const probe = createPackagedLivenessProbe({
+      deviceId: 991,
+      setPhase: async () => undefined,
+      readCurrentFixSequence: () => 0,
+      drainCurrentFixLedger: () => ({ entries: [], overflowCount: 0 }),
+    }, {
+      installRendererLivenessProbe: async (page: unknown) => {
+        installedPages.push(page)
+      },
+      setRendererLivenessPhase: async (page: unknown) => {
+        phasedPages.push(page)
+        return null
+      },
+      collectRendererLivenessProbe: async (page: unknown) => {
+        collectedPages.push(page)
+        return emptySnapshot
+      },
+      startExternalLaunchWatchdog: (input: typeof watchdogInput) => {
+        watchdogInput = input
+        return { stop: async () => undefined }
+      },
+    })
+    const launch = { page: workflowPage, livenessPage }
+
+    await probe.attachLaunch(launch)
+    await probe.setPhase('restore')
+    await watchdogInput?.collectRendererSnapshot?.(false)
+
+    expect(installedPages).toEqual([livenessPage])
+    expect(phasedPages).toEqual([livenessPage])
+    expect(collectedPages.length).toBeGreaterThan(0)
+    expect(collectedPages.every((page) => page === livenessPage)).toBe(true)
+    expect([...installedPages, ...phasedPages, ...collectedPages]).not.toContain(workflowPage)
+  })
+
+  it('fails closed instead of sharing the workflow CDP transport', async () => {
+    const page = Object.freeze({ channel: 'shared' })
+    const probe = createPackagedLivenessProbe({
+      deviceId: 991,
+      setPhase: async () => undefined,
+      readCurrentFixSequence: () => 0,
+      drainCurrentFixLedger: () => ({ entries: [], overflowCount: 0 }),
+    })
+
+    await expect(probe.attachLaunch({ page, livenessPage: page })).rejects.toThrow(
+      /independent renderer liveness transport/iu,
+    )
+    await expect(probe.attachLaunch({ page })).rejects.toThrow(
+      /independent renderer liveness transport/iu,
+    )
+  })
+
   it('starts current-fix continuity after the initial renderer observer is armed', async () => {
     const harness = createProbeHarness()
     await harness.probe.attachLaunch(harness.launch)
@@ -661,7 +734,17 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     const operation = harness.probe.beginPhaseOperation('verify')
     await collectionStarted
 
-    await expect(operation).rejects.toThrow(/renderer_cdp_watchdog_failed/u)
+    const failure = await operation.catch((error: unknown) => error) as Error & {
+      archiveLifecycleDiagnostics?: {
+        readonly errorKinds?: readonly string[]
+        readonly rendererCdpFailure?: Readonly<Record<string, unknown>>
+      }
+    }
+    expect(failure.message).toMatch(/renderer_cdp_watchdog_failed/u)
+    expect(failure.archiveLifecycleDiagnostics?.rendererCdpFailure).toEqual({
+      stage: 'snapshot_collection',
+      causeClass: 'deadline_exceeded',
+    })
     expect(performance.now() - startedAt).toBeLessThan(1_000)
     expect(harness.rendererCollectionCount()).toBe(rendererCollectionCountBeforeTimeout + 1)
     await expect(harness.probe.beginPhaseOperation('verify')).rejects.toThrow(
@@ -686,11 +769,18 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     await phaseRequestStarted
 
     const failure = await transition.catch((error: unknown) => error) as Error & {
-      archiveLifecycleDiagnostics?: { readonly errorKinds?: readonly string[] }
+      archiveLifecycleDiagnostics?: {
+        readonly errorKinds?: readonly string[]
+        readonly rendererCdpFailure?: Readonly<Record<string, unknown>>
+      }
     }
     expect(failure.archiveLifecycleDiagnostics?.errorKinds).toContain(
       'renderer_cdp_watchdog_failed',
     )
+    expect(failure.archiveLifecycleDiagnostics?.rendererCdpFailure).toEqual({
+      stage: 'phase_transition',
+      causeClass: 'deadline_exceeded',
+    })
     const collectionCountAtTimeout = harness.rendererCollectionCount()
     harness.releaseRendererPhaseChanges()
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -981,7 +1071,15 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     await harness.probe.setPhase('create')
     harness.failNextRendererCollection(new Error('Initial renderer CDP failure.'))
     const primaryFailure = await harness.probe.waitForPhaseSample('create', 100)
-      .catch((error: unknown) => error)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: {
+          readonly rendererCdpFailure?: Readonly<Record<string, unknown>>
+        }
+      }
+    expect(primaryFailure.archiveLifecycleDiagnostics?.rendererCdpFailure).toEqual({
+      stage: 'snapshot_collection',
+      causeClass: 'request_rejected',
+    })
     harness.failNextRendererCollection(new Error('New stop-time renderer CDP failure.'))
 
     const stopFailure = await harness.probe.stop(primaryFailure)
@@ -995,7 +1093,11 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     expect(harness.watchdogStopSettled()).toBe(true)
     expect(harness.launch.externalLivenessWatchdog).toBeUndefined()
 
-    const replacementLaunch = { page: {}, externalLivenessWatchdog: undefined }
+    const replacementLaunch = {
+      page: {},
+      livenessPage: {},
+      externalLivenessWatchdog: undefined,
+    }
     await expect(harness.probe.attachLaunch(replacementLaunch)).resolves.toBeUndefined()
     await expect(harness.probe.stop(primaryFailure)).resolves.toBeUndefined()
     expect(harness.watchdogStopCount()).toBe(2)
@@ -1638,10 +1740,12 @@ describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
     })
     const launch: {
       page: Record<string, never>
+      livenessPage: Record<string, never>
       mainInspector: { evaluate: () => Promise<number> }
       externalLivenessWatchdog?: { stop: () => Promise<void> }
     } = {
       page: {},
+      livenessPage: {},
       mainInspector: { evaluate: () => Promise.resolve(1) },
     }
 
@@ -1687,6 +1791,7 @@ describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
       launch: {
         mainInspector: { evaluate: () => Promise.resolve(1) },
         page: { evaluate: pageEvaluate },
+        livenessPage: { evaluate: pageEvaluate },
       },
       readPhase: () => 'create',
       onMainGap: vi.fn(),
@@ -1729,6 +1834,7 @@ describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
       launch: {
         mainInspector: { evaluate: () => Promise.resolve(1) },
         page: {},
+        livenessPage: {},
       },
       readPhase: () => 'create',
       onMainGap: vi.fn(),
@@ -1778,7 +1884,8 @@ describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
             return new Promise(() => undefined)
           },
         },
-        page: { evaluate: () => Promise.resolve(emptySnapshot) },
+        page: { evaluate: () => Promise.reject(new Error('workflow transport used')) },
+        livenessPage: { evaluate: () => Promise.resolve(emptySnapshot) },
       },
       readPhase: () => 'restore',
       onMainGap: (phase: Phase, gapMs: number, countSample = true) => {
@@ -1820,7 +1927,8 @@ describe('packaged renderer liveness ledger bounds [DON-252 / BCP-15]', () => {
         mainInspector: {
           evaluate: () => new Promise((resolve) => { resolveMain = resolve }),
         },
-        page: {
+        page: { evaluate: () => Promise.reject(new Error('workflow transport used')) },
+        livenessPage: {
           evaluate: () => {
             rendererCollectionCount += 1
             if (rendererCollectionCount === 1) {

@@ -139,6 +139,17 @@
   live-mission commit invalidated that snapshot, SQLite raised
   `SQLITE_BUSY_SNAPSHOT`, and the membership wrapper hid it from the busy retry.
   Ordinary worker-open WAL contention was directly disproved.
+- **Exact local head `e9584e94dbb7bc8403a62517657b6518e0a2627f` / tree
+  `c45f2064231a4b533499a32d3fbf39c240c125fd` is rejected.** Its exact package
+  completed, then its sole two-launch lifecycle attempt rejected after
+  `11,287 ms` during restore-phase `review_after_cleanup` with
+  `renderer_cdp_watchdog_failed`. The mode-0600 receipt has SHA-256
+  `a7a2f9bd1e694e8aa77b6b9b971700261c41bc279cae7b7cfc34379fde0aa5d7`;
+  process/profile cleanup completed. It retained 63 fresh operation samples,
+  a 64-sample phase delta, every reported restore maximum below 120 ms, and no
+  current-fix timeout or continuity fault. The old receipt cannot distinguish a
+  CDP timeout from rejection, so this is instrumentation-indeterminate rather
+  than product-stall evidence.
 - **The recovery cause is understood.** The field fixture retained roughly 9.7
   million high-volume telemetry `mission_events`, and archive paths repeatedly
   scanned mission history for finalization and acknowledgement state. The old
@@ -215,6 +226,13 @@
   runner, closed IPC, Playwright's first error line, and the mode-0600 receipt;
   malformed, hostile, path-, text-, and identifier-shaped secret inputs fail
   closed.
+  The e958 successor moves Review aggregation out of one large renderer return
+  into sequential bounded-size transfers and reserves a second CDP connection
+  to the exact same renderer target for liveness only. Missing or ambiguous
+  target identity fails closed, each transport close has an independent
+  cleanup-only bound, and the first CDP failure retains bounded stage/cause
+  attribution. Queue and liveness requests keep their separate strict 200 ms
+  bounds.
 
 ## Locked Safety Boundaries
 
@@ -238,11 +256,11 @@
 
 ## Active Work
 
-- Freeze and run package/lifecycle first on the cleanup-snapshot successor,
-  then full static,
-  browser, visual, physical SIGKILL, and Linux gates. Never rerun unchanged
+- Freeze the renderer-CDP successor and spend its one exact-head
+  package/lifecycle attempt before browser, visual, physical
+  SIGKILL, or Linux gates. Never rerun unchanged
   rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, `23161300`,
-  `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`, or `30061c2d`.
+  `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`, `30061c2d`, or `e9584e94`.
 - Run four independent exact-head reviews: broad life-safety/end-to-end,
   persistence/completeness, concurrency/finalization/liveness, and renderer/
   input-containment/operator surface. Source-retrace every finding; any accepted
@@ -283,7 +301,17 @@
   syntax, diff checks, and backend `58` passed / `1` ignored are green. A focused
   independent review is clean after correcting Playwright multiline decoding,
   hostile cause access, and diagnostic table-name provenance. These remain
-  dirty-tree source checks, not exact-head package evidence.
+  prior-head source checks, not successor package evidence.
+- The current renderer-CDP successor's affected gate passes `6` files / `186`
+  tests and the full deterministic serial suite passes `377` files / `3,813`
+  tests. Full ESLint, TypeScript, production build/bundle budgets, focused Node
+  syntax, diff checks, and backend `58` passed / `1` ignored are green. Two
+  independent focused reviews are clean after exact target-ID selection,
+  bounded all-settled dual-transport teardown, production-callback Review
+  tests, and neutral rejected-request attribution. A real Chromium micro-probe
+  confirmed distinct clients, exact target selection, and independent close.
+  These are pre-freeze source checks; the one exact-head package/lifecycle
+  attempt remains pending.
 - Chromium `173/173`, visual Playwright `62/62`, uncached visual review `74/74`,
   and physical SIGKILL `32/32` are clean only at rejected head `b75f8689` and are
   prior-head evidence. Successor exact-head package/lifecycle, browser, visual,
@@ -291,7 +319,7 @@
 
 ## Next Actions
 
-1. Commit and freeze the cleanup-snapshot successor, then run its one exact-head
+1. Commit and freeze the renderer-CDP successor, then run its one exact-head
    package/lifecycle attempt.
    If it is green, push the existing PR branch and run browser/visual,
    kill-matrix, Linux, and exactly four final-head review charters.
@@ -301,8 +329,8 @@
 ## Blockers
 
 - PR #10 is not ready. `caf9e5e8`, `49523dc8`, `81e47973`, `74bdd95`,
-  `6a72ae91`, `23161300`, `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`, and
-  `30061c2d`
+  `6a72ae91`, `23161300`, `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`,
+  `30061c2d`, and `e9584e94`
   are rejected diagnostics;
   the replacement exact-head package/lifecycle gate must pass before Linux or
   field-scale qualification.

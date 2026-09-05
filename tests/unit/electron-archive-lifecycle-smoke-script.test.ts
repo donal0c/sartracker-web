@@ -8,7 +8,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   cleanupArchiveLifecycleResources,
+  closeRendererTransports,
   isExactLivenessParticipantReady,
+  readArchiveReviewContent,
+  selectExactRendererTarget,
   waitForActiveMission,
   waitForExactLivenessParticipant,
   writeArchiveLifecycleFailureReceipt,
@@ -51,6 +54,239 @@ function createFailureReceiptInput(
 }
 
 describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 / BCP-15]', () => {
+  it('streams Review reads as bounded renderer transfers instead of one aggregate response', async () => {
+    const requests: Array<{ readonly method: string; readonly requestId: string }> = []
+    let activeTransfers = 0
+    let maximumActiveTransfers = 0
+    const responses: Record<string, unknown[]> = {
+      readMissionReview: [{ breadcrumbCount: 2, auditEvents: [] }],
+      readMissionReplay: [{
+        totalTrackCount: 2,
+        totalObjectCount: 2,
+        availableOutingTotalCount: 2,
+        replayGeneration: 7,
+        tracks: [{ id: 'track-1' }],
+        objects: [{ id: 'object-1' }],
+        availableOutingIds: ['outing-1'],
+        nextCursor: 'track-next',
+        nextObjectCursor: 'object-next',
+        availableOutingNextCursor: 'outing-next',
+      }],
+      readMissionReplayTrackChunk: [{
+        tracks: [{ id: 'track-2' }],
+        nextCursor: null,
+      }],
+      readMissionReplayObjectChunk: [{
+        objects: [{ id: 'object-2' }],
+        nextObjectCursor: null,
+      }],
+      readMissionReplayFilterPage: [{
+        entries: [{ id: 'outing-2' }],
+        nextCursor: null,
+      }],
+      listMissions: [[{ id: 'mission-1' }]],
+      recordMutationDenied: [true],
+    }
+    const previousBridge = Object.getOwnPropertyDescriptor(window, 'sartrackerElectron')
+    const archiveRead = vi.fn(async (
+      request: { readonly method: string; readonly requestId: string },
+    ) => {
+      requests.push(request)
+      if (request.method === 'upsertMarker') {
+        throw new Error('Archive Review is read-only.')
+      }
+      return responses[request.method]?.shift()
+    })
+    Object.defineProperty(window, 'sartrackerElectron', {
+      configurable: true,
+      value: { archiveReview: { read: archiveRead } },
+    })
+    const page = {
+      evaluate: vi.fn(async (
+        operation: (request: unknown) => Promise<unknown>,
+        request: { readonly method: string; readonly requestId: string },
+      ) => {
+        activeTransfers += 1
+        maximumActiveTransfers = Math.max(maximumActiveTransfers, activeTransfers)
+        try {
+          await Promise.resolve()
+          return await operation(request)
+        } finally {
+          activeTransfers -= 1
+        }
+      }),
+    }
+
+    let review
+    try {
+      review = await readArchiveReviewContent(page, {
+        sessionId: 'session-1',
+        missionId: 'mission-1',
+        selectedTime: '2026-08-29T08:00:00.000Z',
+      })
+    } finally {
+      if (previousBridge === undefined) {
+        Reflect.deleteProperty(window, 'sartrackerElectron')
+      } else {
+        Object.defineProperty(window, 'sartrackerElectron', previousBridge)
+      }
+    }
+
+    expect(maximumActiveTransfers).toBe(1)
+    expect(requests.map((request) => request.method)).toEqual([
+      'readMissionReview',
+      'readMissionReplay',
+      'readMissionReplayTrackChunk',
+      'readMissionReplayObjectChunk',
+      'readMissionReplayFilterPage',
+      'listMissions',
+      'upsertMarker',
+      'recordMutationDenied',
+    ])
+    expect(new Set(requests.map((request) => request.requestId)).size).toBe(requests.length)
+    expect(review).toEqual({
+      reviewResult: { breadcrumbCount: 2, auditEvents: [] },
+      replayResult: {
+        query: {
+          missionId: 'mission-1',
+          selectedTime: '2026-08-29T08:00:00.000Z',
+          timezone: 'Europe/Dublin',
+          trackLimit: 1_000,
+          objectLimit: 100,
+        },
+        initial: {
+          totalTrackCount: 2,
+          totalObjectCount: 2,
+          availableOutingTotalCount: 2,
+          replayGeneration: 7,
+          tracks: [{ id: 'track-1' }],
+          objects: [{ id: 'object-1' }],
+          availableOutingIds: ['outing-1'],
+          nextCursor: 'track-next',
+          nextObjectCursor: 'object-next',
+          availableOutingNextCursor: 'outing-next',
+        },
+        trackPages: [{
+          request: {
+            missionId: 'mission-1',
+            selectedTime: '2026-08-29T08:00:00.000Z',
+            timezone: 'Europe/Dublin',
+            trackLimit: 1_000,
+            objectLimit: 100,
+            cursor: 'track-next',
+          },
+          result: { tracks: [{ id: 'track-2' }], nextCursor: null },
+        }],
+        objectPages: [{
+          request: {
+            missionId: 'mission-1',
+            selectedTime: '2026-08-29T08:00:00.000Z',
+            timezone: 'Europe/Dublin',
+            trackLimit: 1_000,
+            objectLimit: 100,
+            objectCursor: 'object-next',
+            replayGeneration: 7,
+          },
+          result: { objects: [{ id: 'object-2' }], nextObjectCursor: null },
+        }],
+        outingFilterPages: [{
+          request: {
+            missionId: 'mission-1',
+            selectedTime: '2026-08-29T08:00:00.000Z',
+            timezone: 'Europe/Dublin',
+            trackLimit: 1_000,
+            objectLimit: 100,
+            filterKind: 'outing',
+            filterCursor: 'outing-next',
+            filterLimit: 100,
+            filterSearch: '',
+          },
+          result: { entries: [{ id: 'outing-2' }], nextCursor: null },
+        }],
+      },
+      missions: [{ id: 'mission-1' }],
+      mutationDenied: true,
+      denialAudited: true,
+    })
+  })
+
+  it('settles both independent renderer transports when either close rejects', async () => {
+    const workflowClose = vi.fn().mockRejectedValue(new Error('workflow close failed'))
+    const livenessClose = vi.fn().mockRejectedValue(new Error('liveness close failed'))
+
+    await expect(closeRendererTransports({
+      browser: { close: workflowClose },
+      livenessBrowser: { close: livenessClose },
+    })).resolves.toBeUndefined()
+
+    expect(workflowClose).toHaveBeenCalledOnce()
+    expect(livenessClose).toHaveBeenCalledOnce()
+  })
+
+  it('bounds each renderer transport close before process cleanup continues', async () => {
+    vi.useFakeTimers()
+    try {
+      const workflowClose = vi.fn(async () => undefined)
+      const livenessClose = vi.fn(() => new Promise<void>(() => undefined))
+      let settled = false
+      const closing = closeRendererTransports({
+        browser: { close: workflowClose },
+        livenessBrowser: { close: livenessClose },
+      }, { timeoutMs: 25 }).then(() => { settled = true })
+
+      await Promise.resolve()
+      expect(workflowClose).toHaveBeenCalledOnce()
+      expect(livenessClose).toHaveBeenCalledOnce()
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(25)
+      await closing
+      expect(settled).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('selects the same exact renderer target across independent CDP clients', async () => {
+    const workflowPage = { name: 'workflow', targetId: 'target-2' }
+    const wrongPage = { name: 'wrong', targetId: 'target-1' }
+    const exactPage = { name: 'exact', targetId: 'target-2' }
+    const context = (pages: Array<{ readonly targetId: string }>) => ({
+      pages: () => pages,
+      newCDPSession: async (page: { readonly targetId: string }) => ({
+        send: async () => ({ targetInfo: { targetId: page.targetId } }),
+        detach: async () => undefined,
+      }),
+    })
+
+    await expect(selectExactRendererTarget(
+      context([workflowPage]),
+      workflowPage,
+      context([wrongPage, exactPage]),
+    )).resolves.toBe(exactPage)
+  })
+
+  it('fails closed when the exact renderer target is missing or ambiguous', async () => {
+    const workflowPage = { targetId: 'target-2' }
+    const context = (pages: Array<{ readonly targetId: string }>) => ({
+      pages: () => pages,
+      newCDPSession: async (page: { readonly targetId: string }) => ({
+        send: async () => ({ targetInfo: { targetId: page.targetId } }),
+        detach: async () => undefined,
+      }),
+    })
+
+    await expect(selectExactRendererTarget(
+      context([workflowPage]),
+      workflowPage,
+      context([{ targetId: 'target-1' }]),
+    )).rejects.toThrow(/exact renderer target/iu)
+    await expect(selectExactRendererTarget(
+      context([workflowPage]),
+      workflowPage,
+      context([{ targetId: 'target-2' }, { targetId: 'target-2' }]),
+    )).rejects.toThrow(/exact renderer target/iu)
+  })
+
   it('does not arm liveness from the participant empty-state placeholder', () => {
     const exactParticipant = {
       kind: 'device',
@@ -640,6 +876,10 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
       value: Object.freeze({
         errorKinds: ['renderer_cdp_watchdog_failed'],
         activePhase: 'create',
+        rendererCdpFailure: {
+          stage: 'snapshot_collection',
+          causeClass: 'deadline_exceeded',
+        },
       }),
     })
     const evolvedFailure = new Error('Liveness finalization recorded another gate.')
@@ -650,6 +890,10 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
           'renderer_cdp_watchdog_failed',
         ],
         activePhase: 'create',
+        rendererCdpFailure: {
+          stage: 'snapshot_collection',
+          causeClass: 'deadline_exceeded',
+        },
       }),
     })
     const cleanup = await cleanupArchiveLifecycleResources({
@@ -698,6 +942,10 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
                 'renderer_cdp_watchdog_failed',
               ],
               activePhase: 'create',
+              rendererCdpFailure: {
+                stage: 'snapshot_collection',
+                causeClass: 'deadline_exceeded',
+              },
             },
           },
         ],

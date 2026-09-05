@@ -56,6 +56,7 @@ const LIVENESS_PHASES = Object.freeze(['create', 'verify', 'restore', 'cleanup']
 const LIVENESS_OPERATION_KIND_PATTERN = /^[a-z][a-z0-9_]{0,47}$/u
 const LIVENESS_HARD_GATE_MS = 200
 const LIVENESS_POLL_INTERVAL_MS = 50
+const RENDERER_TRANSPORT_CLOSE_TIMEOUT_MS = 1_000
 const RENDERER_LIVENESS_LEDGER_CAPACITY = 256
 const LIVENESS_MISSION_NAME = 'Packaged Archive Liveness Probe'
 const LIVENESS_EMAIL = 'archive-liveness@example.invalid'
@@ -84,6 +85,7 @@ const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
   'currentFixContinuity',
   'currentFixMaxGapMs',
   'currentFixTimeout',
+  'causeClass',
   'emittedAtMs',
   'endedAtMs',
   'errorKinds',
@@ -114,6 +116,7 @@ const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
   'previousObservedAtMs',
   'rendererFrameMaxGapMs',
   'rendererFrameSampleCount',
+  'rendererCdpFailure',
   'rendererCurrentFixMonotonicTail',
   'requestAgeMs',
   'requestStartedAtMs',
@@ -125,6 +128,7 @@ const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
   'startSourceSequence',
   'sourceToRendererMaxMs',
   'startedAtMs',
+  'stage',
   'endSourceSequence',
   'verify',
 ])
@@ -848,173 +852,10 @@ async function runReadOnlyReview(input) {
   let review
   let closed = false
   try {
-    review = await input.page.evaluate(async (request) => {
-      const archiveReview = window.sartrackerElectron?.archiveReview
-      if (archiveReview === undefined) {
-        throw new Error('Archive-review preload bridge is unavailable.')
-      }
-      const reviewResult = await archiveReview.read({
-        sessionId: request.sessionId,
-        requestId: request.readRequestId,
-        method: 'readMissionReview',
-        input: {
-          missionId: request.missionId,
-          includeTelemetry: false,
-          auditLimit: 5_001,
-        },
-      })
-      const replayQuery = {
-        missionId: request.missionId,
-        selectedTime: request.selectedTime,
-        timezone: 'Europe/Dublin',
-        trackLimit: 1_000,
-        objectLimit: 100,
-      }
-      const initialReplayResult = await archiveReview.read({
-        sessionId: request.sessionId,
-        requestId: request.replayRequestId,
-        method: 'readMissionReplay',
-        input: replayQuery,
-      })
-      if (!Number.isSafeInteger(initialReplayResult?.totalTrackCount)
-        || initialReplayResult.totalTrackCount < 0
-        || !Number.isSafeInteger(initialReplayResult?.totalObjectCount)
-        || initialReplayResult.totalObjectCount < 0
-        || !Number.isSafeInteger(initialReplayResult?.availableOutingTotalCount)
-        || initialReplayResult.availableOutingTotalCount < 0) {
-        throw new Error('Packaged Replay initial declared totals are invalid.')
-      }
-      const maximumTrackPages = initialReplayResult.totalTrackCount + 1
-      const maximumObjectPages = initialReplayResult.totalObjectCount + 1
-      const maximumOutingFilterPages = initialReplayResult.availableOutingTotalCount + 1
-      const trackPages = []
-      const seenTrackCursors = new Set()
-      let trackCursor = initialReplayResult?.nextCursor
-      while (trackCursor !== null) {
-        if (typeof trackCursor !== 'string' || trackCursor.length < 1
-          || seenTrackCursors.has(trackCursor) || trackPages.length >= maximumTrackPages) {
-          throw new Error('Packaged Replay track paging is cyclic or unbounded.')
-        }
-        seenTrackCursors.add(trackCursor)
-        const pageRequest = { ...replayQuery, cursor: trackCursor }
-        const result = await archiveReview.read({
-          sessionId: request.sessionId,
-          requestId: crypto.randomUUID(),
-          method: 'readMissionReplayTrackChunk',
-          input: pageRequest,
-        })
-        trackPages.push({ request: pageRequest, result })
-        if (!Array.isArray(result?.tracks)
-          || (result.tracks.length === 0 && result.nextCursor !== null)) {
-          throw new Error('Packaged Replay track paging returned an empty nonterminal page.')
-        }
-        trackCursor = result.nextCursor
-      }
-      const objectPages = []
-      const seenObjectCursors = new Set()
-      let objectCursor = initialReplayResult?.nextObjectCursor
-      while (objectCursor !== null) {
-        if (typeof objectCursor !== 'string' || objectCursor.length < 1
-          || seenObjectCursors.has(objectCursor) || objectPages.length >= maximumObjectPages) {
-          throw new Error('Packaged Replay object paging is cyclic or unbounded.')
-        }
-        seenObjectCursors.add(objectCursor)
-        const pageRequest = {
-          ...replayQuery,
-          objectCursor,
-          replayGeneration: initialReplayResult.replayGeneration,
-        }
-        const result = await archiveReview.read({
-          sessionId: request.sessionId,
-          requestId: crypto.randomUUID(),
-          method: 'readMissionReplayObjectChunk',
-          input: pageRequest,
-        })
-        objectPages.push({ request: pageRequest, result })
-        if (!Array.isArray(result?.objects)
-          || (result.objects.length === 0 && result.nextObjectCursor !== null)) {
-          throw new Error('Packaged Replay object paging returned an empty nonterminal page.')
-        }
-        objectCursor = result.nextObjectCursor
-      }
-      const outingFilterPages = []
-      const seenOutingFilterCursors = new Set()
-      let outingFilterCursor = initialReplayResult?.availableOutingNextCursor
-      while (outingFilterCursor !== null) {
-        if (typeof outingFilterCursor !== 'string' || outingFilterCursor.length < 1
-          || seenOutingFilterCursors.has(outingFilterCursor)
-          || outingFilterPages.length >= maximumOutingFilterPages) {
-          throw new Error('Packaged Replay outing-filter paging is cyclic or unbounded.')
-        }
-        seenOutingFilterCursors.add(outingFilterCursor)
-        const pageRequest = {
-          ...replayQuery,
-          filterKind: 'outing',
-          filterCursor: outingFilterCursor,
-          filterLimit: 100,
-          filterSearch: '',
-        }
-        const result = await archiveReview.read({
-          sessionId: request.sessionId,
-          requestId: crypto.randomUUID(),
-          method: 'readMissionReplayFilterPage',
-          input: pageRequest,
-        })
-        outingFilterPages.push({ request: pageRequest, result })
-        if (!Array.isArray(result?.entries)
-          || (result.entries.length === 0 && result.nextCursor !== null)) {
-          throw new Error('Packaged Replay outing-filter paging returned an empty nonterminal page.')
-        }
-        outingFilterCursor = result.nextCursor
-      }
-      const replayResult = {
-        query: replayQuery,
-        initial: initialReplayResult,
-        trackPages,
-        objectPages,
-        outingFilterPages,
-      }
-      const missions = await archiveReview.read({
-        sessionId: request.sessionId,
-        requestId: request.listRequestId,
-        method: 'listMissions',
-        input: {},
-      })
-      let mutationDenied = false
-      try {
-        await archiveReview.read({
-          sessionId: request.sessionId,
-          requestId: request.mutationRequestId,
-          method: 'upsertMarker',
-          input: {},
-        })
-      } catch (error) {
-        mutationDenied = error instanceof Error
-          && /read-only|unavailable/iu.test(error.message)
-      }
-      const denialAudited = await archiveReview.read({
-        sessionId: request.sessionId,
-        requestId: request.denialRequestId,
-        method: 'recordMutationDenied',
-        input: { attemptedMethod: 'upsertMarker' },
-      })
-      return {
-        reviewResult,
-        replayResult,
-        missions,
-        mutationDenied,
-        denialAudited,
-      }
-    }, {
+    review = await readArchiveReviewContent(input.page, {
       sessionId: opened.sessionId,
       missionId: input.missionId,
       selectedTime,
-      expectedBreadcrumbCount: input.expectedBreadcrumbCount,
-      readRequestId: randomUUID(),
-      replayRequestId: randomUUID(),
-      listRequestId: randomUUID(),
-      mutationRequestId: randomUUID(),
-      denialRequestId: randomUUID(),
     })
   } finally {
     closed = await input.page.evaluate(async (sessionId) => {
@@ -1082,6 +923,149 @@ async function runReadOnlyReview(input) {
     denialAudited: true,
     closed: true,
     residualEntriesAfterClose,
+  }
+}
+
+/**
+ * Streams one closed Review through individually bounded renderer transfers.
+ * The harness intentionally never assembles the full replay tree in the
+ * renderer because that would contend with its independent liveness probe.
+ */
+export async function readArchiveReviewContent(page, input) {
+  const read = (method, readInput) => page.evaluate(async (request) => {
+    const archiveReview = window.sartrackerElectron?.archiveReview
+    if (archiveReview === undefined) {
+      throw new Error('Archive-review preload bridge is unavailable.')
+    }
+    return archiveReview.read(request)
+  }, {
+    sessionId: input.sessionId,
+    requestId: randomUUID(),
+    method,
+    input: readInput,
+  })
+  const reviewResult = await read('readMissionReview', {
+    missionId: input.missionId,
+    includeTelemetry: false,
+    auditLimit: 5_001,
+  })
+  const replayQuery = {
+    missionId: input.missionId,
+    selectedTime: input.selectedTime,
+    timezone: 'Europe/Dublin',
+    trackLimit: 1_000,
+    objectLimit: 100,
+  }
+  const initialReplayResult = await read('readMissionReplay', replayQuery)
+  if (!Number.isSafeInteger(initialReplayResult?.totalTrackCount)
+    || initialReplayResult.totalTrackCount < 0
+    || !Number.isSafeInteger(initialReplayResult?.totalObjectCount)
+    || initialReplayResult.totalObjectCount < 0
+    || !Number.isSafeInteger(initialReplayResult?.availableOutingTotalCount)
+    || initialReplayResult.availableOutingTotalCount < 0) {
+    throw new Error('Packaged Replay initial declared totals are invalid.')
+  }
+  const maximumTrackPages = initialReplayResult.totalTrackCount + 1
+  const maximumObjectPages = initialReplayResult.totalObjectCount + 1
+  const maximumOutingFilterPages = initialReplayResult.availableOutingTotalCount + 1
+  const trackPages = []
+  const seenTrackCursors = new Set()
+  let trackCursor = initialReplayResult.nextCursor
+  while (trackCursor !== null) {
+    if (typeof trackCursor !== 'string' || trackCursor.length < 1
+      || seenTrackCursors.has(trackCursor) || trackPages.length >= maximumTrackPages) {
+      throw new Error('Packaged Replay track paging is cyclic or unbounded.')
+    }
+    seenTrackCursors.add(trackCursor)
+    const pageRequest = { ...replayQuery, cursor: trackCursor }
+    const result = await read('readMissionReplayTrackChunk', pageRequest)
+    trackPages.push({ request: pageRequest, result })
+    if (!Array.isArray(result?.tracks)
+      || (result.tracks.length === 0 && result.nextCursor !== null)) {
+      throw new Error('Packaged Replay track paging returned an empty nonterminal page.')
+    }
+    trackCursor = result.nextCursor
+  }
+  const objectPages = []
+  const seenObjectCursors = new Set()
+  let objectCursor = initialReplayResult.nextObjectCursor
+  while (objectCursor !== null) {
+    if (typeof objectCursor !== 'string' || objectCursor.length < 1
+      || seenObjectCursors.has(objectCursor) || objectPages.length >= maximumObjectPages) {
+      throw new Error('Packaged Replay object paging is cyclic or unbounded.')
+    }
+    seenObjectCursors.add(objectCursor)
+    const pageRequest = {
+      ...replayQuery,
+      objectCursor,
+      replayGeneration: initialReplayResult.replayGeneration,
+    }
+    const result = await read('readMissionReplayObjectChunk', pageRequest)
+    objectPages.push({ request: pageRequest, result })
+    if (!Array.isArray(result?.objects)
+      || (result.objects.length === 0 && result.nextObjectCursor !== null)) {
+      throw new Error('Packaged Replay object paging returned an empty nonterminal page.')
+    }
+    objectCursor = result.nextObjectCursor
+  }
+  const outingFilterPages = []
+  const seenOutingFilterCursors = new Set()
+  let outingFilterCursor = initialReplayResult.availableOutingNextCursor
+  while (outingFilterCursor !== null) {
+    if (typeof outingFilterCursor !== 'string' || outingFilterCursor.length < 1
+      || seenOutingFilterCursors.has(outingFilterCursor)
+      || outingFilterPages.length >= maximumOutingFilterPages) {
+      throw new Error('Packaged Replay outing-filter paging is cyclic or unbounded.')
+    }
+    seenOutingFilterCursors.add(outingFilterCursor)
+    const pageRequest = {
+      ...replayQuery,
+      filterKind: 'outing',
+      filterCursor: outingFilterCursor,
+      filterLimit: 100,
+      filterSearch: '',
+    }
+    const result = await read('readMissionReplayFilterPage', pageRequest)
+    outingFilterPages.push({ request: pageRequest, result })
+    if (!Array.isArray(result?.entries)
+      || (result.entries.length === 0 && result.nextCursor !== null)) {
+      throw new Error('Packaged Replay outing-filter paging returned an empty nonterminal page.')
+    }
+    outingFilterCursor = result.nextCursor
+  }
+  const missions = await read('listMissions', {})
+  const mutationDenied = await page.evaluate(async (request) => {
+    const archiveReview = window.sartrackerElectron?.archiveReview
+    if (archiveReview === undefined) {
+      throw new Error('Archive-review preload bridge is unavailable.')
+    }
+    try {
+      await archiveReview.read(request)
+      return false
+    } catch (error) {
+      return error instanceof Error && /read-only|unavailable/iu.test(error.message)
+    }
+  }, {
+    sessionId: input.sessionId,
+    requestId: randomUUID(),
+    method: 'upsertMarker',
+    input: {},
+  })
+  const denialAudited = await read('recordMutationDenied', {
+    attemptedMethod: 'upsertMarker',
+  })
+  return {
+    reviewResult,
+    replayResult: {
+      query: replayQuery,
+      initial: initialReplayResult,
+      trackPages,
+      objectPages,
+      outingFilterPages,
+    },
+    missions,
+    mutationDenied,
+    denialAudited,
   }
 }
 
@@ -1165,7 +1149,7 @@ async function interruptRestoreAtDecrypt(input) {
     'Timed out waiting for the SIGKILLed Electron process to exit.',
   )
   input.launch.mainInspector.close()
-  await input.launch.browser.close().catch(() => undefined)
+  await closeRendererTransports(input.launch)
   input.launch.exitResult = exit
   input.launch.closed = true
   if (exit.signal !== 'SIGKILL') {
@@ -1531,6 +1515,12 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     instrumentationFailure = null
     signalFailure(kind)
   }
+  let rendererCdpFailure = null
+  /** Retains only fixed enums for the first renderer-CDP failure cause. */
+  const recordRendererCdpFailure = (stage, causeClass) => {
+    if (rendererCdpFailure !== null) return
+    rendererCdpFailure = Object.freeze({ stage, causeClass })
+  }
   let activePhase = null
   let activeContinuityInterval = null
   let activeLaunch = null
@@ -1695,6 +1685,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       activeLaunchNumber: Number.isSafeInteger(activeLaunch?.number) ? activeLaunch.number : null,
       currentFixContinuity,
       currentFixTimeout,
+      rendererCdpFailure,
       rendererCurrentFixMonotonicTail,
       sourceCadence: buildSourceCadenceDiagnostics(),
       invalidRendererFrame,
@@ -1741,7 +1732,13 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     }
   }
 
-  const throwRendererCdpFailure = (error, stopMessage) => {
+  const throwRendererCdpFailure = (
+    error,
+    stopMessage,
+    stage = 'watchdog_teardown',
+    causeClass = 'request_rejected',
+  ) => {
+    recordRendererCdpFailure(stage, causeClass)
     recordError('renderer_cdp_watchdog_failed')
     if (preserveStopFailureCause) {
       throw new Error(stopMessage, { cause: error })
@@ -2228,9 +2225,12 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     } catch (error) {
       if (started) return transaction
       rendererCollectionFailure = error
+      recordRendererCdpFailure('queue_acquisition', 'deadline_exceeded')
       throwRendererCdpFailure(
         error,
         'Archive-lifecycle renderer serialization failed.',
+        'queue_acquisition',
+        'deadline_exceeded',
       )
     }
     return transaction
@@ -2246,7 +2246,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     const observedThroughMs = readExternalNow()
     if (observedThroughMs === null) throwIfInstrumentationFailed()
     const directCollection = Promise.resolve().then(() =>
-      collectRenderer(launch.page, cleanup))
+      collectRenderer(launch.livenessPage, cleanup))
     let collectionSettled = false
     void directCollection.then(
       () => { collectionSettled = true },
@@ -2264,6 +2264,8 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       recordSnapshot(snapshot, observedThroughMs)
       return observedThroughMs
     } catch (error) {
+      const causeClass = collectionSettled ? 'request_rejected' : 'deadline_exceeded'
+      recordRendererCdpFailure('snapshot_collection', causeClass)
       if (!collectionSettled) rendererCollectionFailure = error
       throw error
     }
@@ -2285,6 +2287,8 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         timeoutMessage,
       )
     } catch (error) {
+      const causeClass = requestSettled ? 'request_rejected' : 'deadline_exceeded'
+      recordRendererCdpFailure('phase_transition', causeClass)
       if (!requestSettled) rendererCollectionFailure = error
       throw error
     }
@@ -2392,7 +2396,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
           let previousFrameTail
           try {
             previousFrameTail = await setRendererPhaseBounded(
-              launch.page,
+              launch.livenessPage,
               null,
               'Electron renderer liveness phase pause timed out.',
             )
@@ -2421,7 +2425,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       let previousFrameTail
       try {
         previousFrameTail = await setRendererPhaseBounded(
-          activeLaunch.page,
+          activeLaunch.livenessPage,
           phase,
           'Electron renderer liveness phase transition timed out.',
         )
@@ -2471,7 +2475,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         let previousFrameTail
         try {
           previousFrameTail = await setRendererPhaseBounded(
-            launch.page,
+            launch.livenessPage,
             phase,
             'Electron renderer liveness phase transition timed out.',
           )
@@ -2527,7 +2531,11 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       if (finished || activeLaunch !== null) {
         throw new Error('Archive-lifecycle liveness launch attachment is invalid.')
       }
-      await installRenderer(launch.page, mockServer.deviceId)
+      if (launch?.page === undefined || launch.livenessPage === undefined
+        || launch.page === launch.livenessPage) {
+        throw new Error('Archive-lifecycle requires an independent renderer liveness transport.')
+      }
+      await installRenderer(launch.livenessPage, mockServer.deviceId)
       const preservedPhase = activePhase
       activePhase = null
       activeLaunch = launch
@@ -2914,6 +2922,10 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
 
 /** Starts independent inspector and renderer-CDP watchdog loops for one launch. */
 export function startExternalLaunchWatchdog(input) {
+  if (input?.launch?.page === undefined || input.launch.livenessPage === undefined
+    || input.launch.page === input.launch.livenessPage) {
+    throw new Error('Archive-lifecycle requires an independent renderer liveness transport.')
+  }
   let stopped = false
   let stopPromise = null
   let attributedPhase = input.readPhase()
@@ -2924,7 +2936,7 @@ export function startExternalLaunchWatchdog(input) {
       return
     }
     return withTimeout(
-      collectRendererLivenessProbe(input.launch.page, cleanup),
+      collectRendererLivenessProbe(input.launch.livenessPage, cleanup),
       LIVENESS_HARD_GATE_MS,
       cleanup
         ? 'Electron renderer liveness teardown timed out.'
@@ -3206,11 +3218,13 @@ async function launchPackagedApp(options, userDataDir, number) {
     appProcess.once('exit', (code, signal) => resolve({ code, signal }))
   })
   let browser
+  let livenessBrowser
   let mainInspector
   try {
     await waitForCdp(remoteDebuggingPort, appProcess, () => launchError)
     mainInspector = await connectMainInspector(inspectorPort, appProcess)
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${remoteDebuggingPort}`)
+    const rendererEndpoint = `http://127.0.0.1:${remoteDebuggingPort}`
+    browser = await chromium.connectOverCDP(rendererEndpoint)
     const context = browser.contexts()[0]
     const page = context.pages()[0] ?? await context.waitForEvent('page')
     await page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
@@ -3229,11 +3243,20 @@ async function launchPackagedApp(options, userDataDir, number) {
       undefined,
       { timeout: 60_000 },
     )
+    livenessBrowser = await chromium.connectOverCDP(rendererEndpoint)
+    const livenessContext = livenessBrowser.contexts()[0]
+    if (livenessBrowser === browser || livenessContext === undefined) {
+      throw new Error('Packaged Electron did not expose an independent renderer liveness client.')
+    }
+    const livenessPage = await selectExactRendererTarget(context, page, livenessContext)
+    await livenessPage.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
     return {
       number,
       appProcess,
       browser,
       page,
+      livenessBrowser,
+      livenessPage,
       mainInspector,
       exit,
       exitResult: null,
@@ -3242,13 +3265,65 @@ async function launchPackagedApp(options, userDataDir, number) {
     }
   } catch (error) {
     mainInspector?.close()
-    await browser?.close().catch(() => undefined)
+    await closeRendererTransports({ browser, livenessBrowser })
     if (appProcess.exitCode === null && appProcess.signalCode === null) {
       appProcess.kill('SIGKILL')
     }
     await withTimeout(exit, 10_000, 'Electron launch cleanup timed out.').catch(() => undefined)
     throw error
   }
+}
+
+/** Reads one page's stable browser-global CDP target identity. */
+async function readRendererTargetId(context, page) {
+  let session
+  try {
+    session = await context.newCDPSession(page)
+    const response = await session.send('Target.getTargetInfo')
+    const targetId = response?.targetInfo?.targetId
+    if (typeof targetId !== 'string' || targetId === '') {
+      throw new Error('Packaged Electron renderer target identity is invalid.')
+    }
+    return targetId
+  } finally {
+    await withTimeout(
+      Promise.resolve().then(() => session?.detach()),
+      RENDERER_TRANSPORT_CLOSE_TIMEOUT_MS,
+      'Packaged Electron renderer target inspector detach timed out.',
+    ).catch(() => undefined)
+  }
+}
+
+/** Selects exactly the workflow renderer target on the independent CDP client. */
+export async function selectExactRendererTarget(workflowContext, workflowPage, livenessContext) {
+  const workflowTargetId = await readRendererTargetId(workflowContext, workflowPage)
+  const matches = []
+  for (const candidate of livenessContext.pages()) {
+    if (await readRendererTargetId(livenessContext, candidate) === workflowTargetId) {
+      matches.push(candidate)
+    }
+  }
+  if (matches.length !== 1) {
+    throw new Error('Packaged Electron did not expose one exact renderer target for liveness.')
+  }
+  return matches[0]
+}
+
+/** Settles both separately owned renderer CDP connections within a cleanup-only bound. */
+export async function closeRendererTransports(launch, dependencies = {}) {
+  const timeoutMs = dependencies.timeoutMs ?? RENDERER_TRANSPORT_CLOSE_TIMEOUT_MS
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
+    throw new Error('Renderer transport close timeout is invalid.')
+  }
+  const transports = [launch?.livenessBrowser, launch?.browser]
+    .filter((transport, index, values) => transport !== undefined
+      && values.indexOf(transport) === index
+      && typeof transport.close === 'function')
+  await Promise.allSettled(transports.map((transport) => withTimeout(
+    Promise.resolve().then(() => transport.close()),
+    timeoutMs,
+    'Renderer transport close timed out.',
+  )))
 }
 
 /** Stops one owned packaged process without touching unrelated Electron instances. */
@@ -3263,7 +3338,7 @@ async function stopLaunch(launch) {
   }
   await launch.externalLivenessWatchdog?.stop().catch(() => undefined)
   launch.mainInspector?.close()
-  await launch.browser?.close().catch(() => undefined)
+  await closeRendererTransports(launch)
   if (launch.appProcess.exitCode === null && launch.appProcess.signalCode === null) {
     launch.appProcess.kill('SIGTERM')
     const terminated = await Promise.race([

@@ -633,8 +633,57 @@ files / `412` tests, and the deterministic serial repository suite at `377`
 files / `3,806` tests. Full ESLint, TypeScript/production build and bundle
 budgets, focused Node syntax, diff checks, and backend `58` passed / `1` ignored
 are green. A focused independent review is clean after the three containment
-corrections above. These are dirty-tree source checks; the replacement exact
-head still requires one package/lifecycle attempt before any later gate.
+corrections above. These were pre-freeze source checks for exact successor
+`e9584e94`; its exact package completed, but the lifecycle attempt below
+rejected that head before any later gate.
+
+## 2026-09-05 rejected `e9584e94` renderer-CDP candidate
+
+The cleanup-snapshot repair was committed locally at
+`e9584e94dbb7bc8403a62517657b6518e0a2627f` / tree
+`c45f2064231a4b533499a32d3fbf39c240c125fd`. Its exact clean macOS arm64
+package completed with executable SHA-256
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and ASAR SHA-256
+`7692a05e4c0c1e5560afae83b44158c8fcb83a426ad661422126fdc5b7a605e3`.
+The sole two-launch lifecycle attempt rejected after `11,287 ms` with
+`external_liveness_gate_failure` / `renderer_cdp_watchdog_failed`. Its
+mode-0600 failure receipt has SHA-256
+`a7a2f9bd1e694e8aa77b6b9b971700261c41bc279cae7b7cfc34379fde0aa5d7`.
+Process and profile cleanup completed; teardown retained one secondary
+`liveness_probe_stop` aggregate. This head advanced through the cleanup that
+rejected 30061 and will not be rerun unchanged.
+
+The failure occurred on launch 2 in restore phase during the named
+`review_after_cleanup` operation after `63` operation-fresh samples and a
+`64`-sample phase delta. No current-fix continuity or timeout diagnostic was
+recorded. Restore maxima remained below the strict gate: current fix `72 ms`,
+main watchdog `119.533 ms`, renderer frame `63.4 ms`, and source/request to
+renderer `70 ms`. The historical receipt did not preserve whether the renderer
+CDP request timed out or rejected, so it cannot prove the exact mechanism and
+is not admissible evidence of a product stall.
+
+Source trace found that the old harness returned the entire paged Review tree
+through one large by-value renderer evaluation on the same Playwright/CDP
+client used for liveness drains. A real Chromium micro-probe confirmed that
+large by-value responses can delay unrelated requests on a shared client past
+the 200 ms boundary. This supports a shared-transport instrumentation failure,
+but does not retroactively turn the e958 receipt into causal proof.
+
+The red-first successor assembles Review in Node through sequential bounded-
+size renderer transfers and reserves a second CDP connection/page exclusively
+for the liveness observer. It binds that page by the exact browser-global target
+ID, fails closed on a missing or ambiguous match, settles both transports under
+independent cleanup-only bounds, and preserves the first renderer-CDP failure as
+bounded `stage` / `causeClass` enums. Queue acquisition and each liveness CDP
+request retain their separate strict `200 ms` bounds; no liveness, source,
+continuity, cleanup, or custody gate changed. The focused affected gate is green
+at `6` files / `186` tests; the deterministic serial suite passes `377` files /
+`3,813` tests. Full ESLint, TypeScript, production build/bundle budgets, focused
+Node syntax, diff checks, and backend `58` passed / `1` ignored are green. Two
+independent focused reviews and a real Chromium dual-client target/close probe
+are clean. These are pre-freeze source checks; the successor's one exact
+package/lifecycle attempt remains pending.
 
 ## 2026-09-03 cancelled-cleanup fence remediation
 
@@ -892,6 +941,7 @@ the release gate.
 | Rejected cadence candidate (pushed) | `b75f8689304769438157cd5e018996cdafcdb328` / tree `3216b03286c8543dfbeaff42097528ca197cbd7e`; Linux run `33940959449` rejected the first pre-cleanup Review operation at `240 ms` current-fix continuity |
 | Rejected operation-proof candidate (local) | `b7793753ecfec7984214c07dfea21a3918a96c6d` / tree `b3f1251d19b9acb0af64f098bbc8f649fbd07217`; exact package passed, then the sole lifecycle attempt wrote proof-indeterminate receipt SHA-256 `2c93e138f10bafa24ba7a745ad730a786750cdd94be215aaa1f8acbe801392e1` |
 | Rejected cleanup-snapshot candidate (local) | `30061c2d93f20cdc7f48d6abb5b77bbd041abdd0` / tree `a77a4a37689791f958158c9c43608251e8fbc972`; exact package passed, then the sole lifecycle attempt failed at cleanup start with receipt SHA-256 `659aa9ed2cd155196d9b4d1f575c62433a0fd08cb1417be9e927901f44fafdc4` |
+| Rejected renderer-CDP candidate (local) | `e9584e94dbb7bc8403a62517657b6518e0a2627f` / tree `c45f2064231a4b533499a32d3fbf39c240c125fd`; exact package passed, then the sole lifecycle attempt failed during launch-2 `review_after_cleanup` with receipt SHA-256 `a7a2f9bd1e694e8aa77b6b9b971700261c41bc279cae7b7cfc34379fde0aa5d7` |
 | Recovery candidate and final proof | Pending. Once source is frozen and every gate completes, the exact immutable head/tree and results must be recorded in the PR #10 and Linear ledger |
 | Immutable final documentation/review head | Pending. It must be recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; any later repository mutation requires affected re-review |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |
