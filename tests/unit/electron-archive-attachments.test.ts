@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -8,6 +16,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
+const {
+  correctionAttachmentPeerName,
+} = require('../../electron/archive-correction-custody.cjs') as {
+  readonly correctionAttachmentPeerName: (targetName: string) => string
+}
 const {
   enumerateArchiveAttachments,
   readArchiveAttachmentReferenceLedger,
@@ -88,6 +101,34 @@ function createFixture() {
   return { userDataPath, missionId, databasePath, attachmentRoot, db }
 }
 
+/** Adds one current marker reference to a fixture attachment. */
+function referenceAttachment(
+  fixture: ReturnType<typeof createFixture>,
+  attachmentPath: string,
+) {
+  fixture.db.prepare(`INSERT INTO markers VALUES (?, ?, ?, 0, ?)`)
+    .run('marker-a', fixture.missionId, attachmentPath, '2026-08-29T10:00:00.000Z')
+}
+
+/** Returns a representative operation-owned correction attachment basename. */
+function correctionTargetName() {
+  return 'correction-0123456789abcdef-0000-field-photo-fedcba9876543210.jpg'
+}
+
+/** Creates the exact retained two-link topology for a correction attachment. */
+function createCorrectionPair(fixture: ReturnType<typeof createFixture>, bytes = 'corrected evidence') {
+  const targetName = correctionTargetName()
+  const targetPath = path.join(fixture.attachmentRoot, targetName)
+  const peerPath = path.join(
+    fixture.attachmentRoot,
+    correctionAttachmentPeerName(targetName),
+  )
+  writeFileSync(targetPath, bytes, { mode: 0o600 })
+  chmodSync(targetPath, 0o600)
+  linkSync(targetPath, peerPath)
+  return { targetPath, peerPath }
+}
+
 /** Consumes one bounded attachment stream and returns exact bytes. */
 async function consume(stream: AsyncIterable<Buffer>) {
   const chunks: Buffer[] = []
@@ -96,6 +137,76 @@ async function consume(stream: AsyncIterable<Buffer>) {
 }
 
 describe('archive attachment custody', () => {
+  it('accepts and streams an exact mode-0600 correction hardlink pair', async () => {
+    const fixture = createFixture()
+    const { targetPath } = createCorrectionPair(fixture)
+    referenceAttachment(fixture, targetPath)
+
+    const descriptor = enumerateArchiveAttachments(fixture)[0]
+
+    expect(descriptor.sourcePath).toBe(targetPath)
+    await expect(consume(streamArchiveAttachment(descriptor)))
+      .resolves.toEqual(Buffer.from('corrected evidence'))
+    fixture.db.close()
+  })
+
+  it('rejects a two-link attachment whose public name is not correction-owned', () => {
+    const fixture = createFixture()
+    const targetPath = path.join(fixture.attachmentRoot, 'ordinary-evidence.jpg')
+    writeFileSync(targetPath, 'ordinary evidence', { mode: 0o600 })
+    chmodSync(targetPath, 0o600)
+    linkSync(targetPath, path.join(fixture.attachmentRoot, '.ordinary-evidence.custody'))
+    referenceAttachment(fixture, targetPath)
+
+    expect(() => enumerateArchiveAttachments(fixture)).toThrow(/regular owner-contained file/iu)
+    fixture.db.close()
+  })
+
+  it('rejects correction attachments with a third hardlink', () => {
+    const fixture = createFixture()
+    const { targetPath } = createCorrectionPair(fixture)
+    linkSync(targetPath, path.join(fixture.attachmentRoot, '.unexpected-third-link'))
+    referenceAttachment(fixture, targetPath)
+
+    expect(() => enumerateArchiveAttachments(fixture)).toThrow(/regular owner-contained file/iu)
+    fixture.db.close()
+  })
+
+  it.each(['missing', 'wrong'] as const)(
+    'rejects a correction attachment whose exact custody peer is %s',
+    (peerState) => {
+      const fixture = createFixture()
+      const targetName = correctionTargetName()
+      const targetPath = path.join(fixture.attachmentRoot, targetName)
+      const exactPeerPath = path.join(
+        fixture.attachmentRoot,
+        correctionAttachmentPeerName(targetName),
+      )
+      writeFileSync(targetPath, 'corrected evidence', { mode: 0o600 })
+      chmodSync(targetPath, 0o600)
+      linkSync(targetPath, path.join(fixture.attachmentRoot, '.wrong-custody-peer'))
+      if (peerState === 'wrong') {
+        writeFileSync(exactPeerPath, 'corrected evidence', { mode: 0o600 })
+        chmodSync(exactPeerPath, 0o600)
+        linkSync(exactPeerPath, path.join(fixture.attachmentRoot, '.wrong-peer-owner'))
+      }
+      referenceAttachment(fixture, targetPath)
+
+      expect(() => enumerateArchiveAttachments(fixture)).toThrow(/regular owner-contained file/iu)
+      fixture.db.close()
+    },
+  )
+
+  it('rejects a correction hardlink pair that is not mode 0600', () => {
+    const fixture = createFixture()
+    const { targetPath } = createCorrectionPair(fixture)
+    chmodSync(targetPath, 0o640)
+    referenceAttachment(fixture, targetPath)
+
+    expect(() => enumerateArchiveAttachments(fixture)).toThrow(/regular owner-contained file/iu)
+    fixture.db.close()
+  })
+
   it('unions current, version and custody references with deterministic manifest identities', () => {
     const fixture = createFixture()
     const firstPath = path.join(fixture.attachmentRoot, '11111111-photo.jpg')

@@ -715,7 +715,13 @@
             <strong>Temporary Review plaintext:</strong> an open Archive Review uses an app-owned,
             permission-restricted plaintext session. A successful close removes it. If cleanup fails, the
             residual stays explicit with a retry action; startup retries interrupted app-owned cleanup. This
-            is not a forensic secure-erasure claim.
+            is not a forensic secure-erasure claim. If a correction commits but attachment custody recovery
+            is still required, SAR Tracker keeps the Review workspace and warning visible and keeps mission
+            evidence locked. Choose <strong>Retry Live Review</strong> to retry recovery; plaintext cleanup
+            alone does not clear the warning, and the workspace closes only after a fresh saved-mission state
+            confirms safe live custody. If the correction committed but the renderer could not reopen mission
+            evidence, the same retry action reattempts that evidence transition without running the correction
+            again.
           </div>
           <figure class="screenshot">
             <img src="assets/mission-archive-custody-issued-code.png" alt="Archive confirmation showing a synthetic one-time recovery code and exact re-entry field" />

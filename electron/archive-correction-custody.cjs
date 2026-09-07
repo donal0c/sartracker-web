@@ -1,257 +1,388 @@
 'use strict'
 
-const fs = require('node:fs')
-const fsp = require('node:fs/promises')
-const path = require('node:path')
 const { createHash } = require('node:crypto')
+const path = require('node:path')
 
-const JOURNAL_DIRECTORY_NAME = 'correction-attachment-journals'
-const JOURNAL_NAME = /^[A-Za-z0-9_-]{1,200}\.json(?:\.tmp)?$/u
-const SHA256 = /^[0-9a-f]{64}$/u
+const {
+  deriveArchiveLifecycleEventId,
+  readCurrentMissionFinalizationBoundary,
+} = require('./mission-finalization-boundary.cjs')
+
+const CORRECTION_ATTACHMENT_CUSTODY_KEY = 'archive_correction_attachment_custody_v2'
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+const MAX_CUSTODY_BYTES = 4 * 1024 * 1024
+const MAX_CUSTODY_ENTRIES = 4_096
+const IDENTIFIER = /^[A-Za-z0-9_-]{1,200}$/u
+const SHA256 = /^[0-9a-f]{64}$/u
 
-/** Returns the app-owned directory containing correction attachment journals. */
-function correctionJournalDirectory(databasePath) {
-  return path.join(path.dirname(databasePath), JOURNAL_DIRECTORY_NAME)
-}
-
-/** Writes one durable attachment-custody plan before any canonical byte is created. */
-async function writeCorrectionAttachmentJournal(input) {
-  const directory = correctionJournalDirectory(input.databasePath)
-  const directoryExisted = fs.existsSync(directory)
-  await fsp.mkdir(directory, { recursive: true, mode: 0o700 })
-  if (!directoryExisted) await syncDirectory(path.dirname(directory))
-  const journalPath = path.join(directory, `${input.operationId}.json`)
-  const document = JSON.stringify({
-    version: 1,
-    missionId: input.missionId,
-    archiveId: input.archiveId,
-    operationId: input.operationId,
-    targetRoot: input.targetRoot,
-    entries: input.entries,
+/** Builds one bounded SQLite-backed custody plan before any attachment bytes exist. */
+function createCorrectionAttachmentCustodyPlan(input) {
+  if (!Array.isArray(input?.mappings)
+    || input.mappings.length < 1 || input.mappings.length > MAX_CUSTODY_ENTRIES) {
+    throw new Error('Correction attachment custody mappings are invalid or unbounded.')
+  }
+  const operationToken = createHash('sha256').update(String(input.operationId)).digest('hex').slice(0, 16)
+  const entries = input.mappings.map((mapping, index) => {
+    const extension = boundedPortableExtension(mapping?.sourceRelativePath)
+    const displayStem = boundedPortableDisplayStem(mapping?.sourceRelativePath)
+    const targetName = `correction-${operationToken}-${index.toString(16).padStart(4, '0')}-${displayStem}-${String(mapping?.sha256).slice(0, 16)}${extension}`
+    return Object.freeze({
+      entryName: mapping?.entryName,
+      sourceRelativePath: mapping?.sourceRelativePath,
+      targetName,
+      peerName: `.${targetName}.custody`,
+      sha256: mapping?.sha256,
+      sizeBytes: mapping?.sizeBytes,
+    })
   })
-  const temporaryPath = `${journalPath}.tmp`
-  const file = await fsp.open(temporaryPath, 'w', 0o600)
-  try {
-    await file.writeFile(document, 'utf8')
-    await file.sync()
-  } finally {
-    await file.close()
-  }
-  await fsp.rename(temporaryPath, journalPath)
-  await syncDirectory(directory)
-  return journalPath
+  const plan = Object.freeze({
+    version: 2,
+    missionId: input?.missionId,
+    archiveId: input?.archiveId,
+    operationId: input?.operationId,
+    finalizedEpoch: input?.finalizedEpoch,
+    targetIdentity: Object.freeze({ ...input?.targetIdentity }),
+    entries: Object.freeze(entries),
+  })
+  validateCorrectionAttachmentCustodyPlan(plan)
+  return plan
 }
 
-/** Removes one durable custody journal only after its recovery decision is complete. */
-async function removeCorrectionAttachmentJournal(journalPath, options = {}) {
-  const sync = options.syncDirectory ?? syncDirectory
-  const backup = await fsp.readFile(journalPath).catch(() => null)
-  await fsp.rm(journalPath, { force: true })
+/** Persists exactly one globally admitted correction attachment plan in SQLite. */
+function writeCorrectionAttachmentCustody(db, plan) {
+  validateDatabase(db)
+  validateCorrectionAttachmentCustodyPlan(plan)
+  const document = JSON.stringify(plan)
+  const size = Buffer.byteLength(document, 'utf8')
+  if (size < 1 || size > MAX_CUSTODY_BYTES) {
+    throw new Error('Correction attachment custody record is unbounded.')
+  }
   try {
-    await sync(path.dirname(journalPath))
+    db.prepare('INSERT INTO metadata (key, value) VALUES (?, ?)')
+      .run(CORRECTION_ATTACHMENT_CUSTODY_KEY, document)
   } catch (error) {
-    if (backup !== null) {
-      await fsp.writeFile(journalPath, backup, { mode: 0o600 }).catch(() => undefined)
-    }
-    throw error
+    const failure = new Error('Another correction attachment custody record is already active.')
+    failure.cause = error
+    throw failure
   }
 }
 
-/** Recovers pending attachment custody after an interrupted correction worker. */
-function recoverCorrectionAttachmentJournals(input) {
-  const directory = correctionJournalDirectory(input.databasePath)
-  if (!fs.existsSync(directory)) return Object.freeze({ recovered: 0 })
-  const throwIfCancelled = () => {
-    if (input.isCancelled?.() === true) {
-      const error = new Error('Archive correction attachment custody recovery was cancelled.')
-      error.code = 'ARCHIVE_CANCELLED'
-      throw error
-    }
+/** Reads and validates the sole durable correction attachment plan. */
+function readCorrectionAttachmentCustody(db) {
+  validateDatabase(db)
+  const row = db.prepare('SELECT value FROM metadata WHERE key = ?')
+    .get(CORRECTION_ATTACHMENT_CUSTODY_KEY)
+  if (row === undefined) return null
+  if (typeof row.value !== 'string') {
+    throw new Error('Correction attachment custody record is invalid.')
   }
-  const names = fs.readdirSync(directory)
-  let recovered = 0
-  for (const name of names) {
-    throwIfCancelled()
-    if (!JOURNAL_NAME.test(name)) {
-      throw new Error('Correction attachment custody journal directory contains an invalid entry.')
-    }
-    const journalPath = path.join(directory, name)
-    if (name.endsWith('.json.tmp')) {
-      // The publish rename happens before any canonical attachment byte is
-      // created, so a leftover temporary record is always incomplete custody.
-      fs.rmSync(journalPath, { force: true })
-      recovered += 1
-      continue
-    }
-    let journal
-    try {
-      journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'))
-    } catch (error) {
-      throw error
-    }
-    validateJournal(journal, input.databasePath)
-    const mission = input.db.prepare(
-      'SELECT status FROM missions WHERE id = ?',
-    ).get(journal.missionId)
-    const unlockEvents = input.db.prepare(`SELECT details_json FROM mission_events
-      WHERE mission_id = ? AND event_type = 'mission_unlocked'`).all(journal.missionId)
-    const hasMatchingCorrectionUnlock = unlockEvents.some((event) => {
-      try {
-        const details = JSON.parse(event.details_json)
-        return details !== null && typeof details === 'object'
-          && details.restored_from_archive_id === journal.archiveId
-          && details.archive_correction_operation_id === journal.operationId
-      } catch {
-        return false
-      }
-    })
-    const hasOtherCorrectionUnlock = unlockEvents.some((event) => {
-      try {
-        const details = JSON.parse(event.details_json)
-        return details !== null && typeof details === 'object'
-          && typeof details.archive_correction_operation_id === 'string'
-          && details.archive_correction_operation_id !== journal.operationId
-      } catch {
-        return false
-      }
-    })
-    if (mission?.status === 'finished' && !hasMatchingCorrectionUnlock) {
-      throw new Error('Finished correction custody has no matching durable unlock evidence.')
-    }
-    if (!hasMatchingCorrectionUnlock && hasOtherCorrectionUnlock) {
-      throw new Error('Correction attachment custody is owned by a newer correction.')
-    }
-    const committed = hasMatchingCorrectionUnlock
-    if (!fs.existsSync(journal.targetRoot)) {
-      throw new Error(committed
-        ? 'Committed correction attachment custody is missing its canonical root.'
-        : 'Correction attachment custody root disappeared before recovery.')
-    }
-    if (committed) {
-      for (const entry of journal.entries) {
-        const proof = digestAttachment(entry.targetPath, throwIfCancelled)
-        if (proof.sizeBytes !== entry.sizeBytes || proof.sha256 !== entry.sha256) {
-          throw new Error('Committed correction attachment custody does not match its journaled bytes.')
-        }
-      }
-    } else {
-      for (const entry of journal.entries) {
-        if (entry.preexisting === false) fs.rmSync(entry.targetPath, { force: true })
-        const prefix = `.${entry.sourceRelativePath}.restore-`
-        for (const target of fs.readdirSync(journal.targetRoot, { withFileTypes: true })) {
-          if (target.name.startsWith(prefix)) {
-            fs.rmSync(path.join(journal.targetRoot, target.name), { force: true })
-          }
-        }
-      }
-      syncDirectorySync(journal.targetRoot)
-    }
-    fs.rmSync(journalPath, { force: true })
-    recovered += 1
+  const size = Buffer.byteLength(row.value, 'utf8')
+  if (size < 1 || size > MAX_CUSTODY_BYTES) {
+    throw new Error('Correction attachment custody record is invalid or unbounded.')
   }
-  syncDirectorySync(directory)
-  // Persist completion before the final journal directory removal. If the
-  // worker exits after this point, startup can distinguish completed custody
-  // from an unresolved journal rather than leaving a false pending marker.
-  input.beforeDirectoryRemoval?.()
+  let plan
   try {
-    fs.rmdirSync(directory)
+    plan = JSON.parse(row.value)
   } catch (error) {
-    if (error?.code !== 'ENOENT') throw error
+    const failure = new Error('Correction attachment custody record is invalid.')
+    failure.cause = error
+    throw failure
   }
-  return Object.freeze({ recovered })
+  validateCorrectionAttachmentCustodyPlan(plan)
+  return deepFreezePlan(plan)
 }
 
-/** Validates one recovery journal without accepting paths outside its mission custody root. */
-function validateJournal(value, databasePath) {
+/** Clears only the exact active correction record; callers may include this in unlock commit. */
+function clearCorrectionAttachmentCustody(db, operationId) {
+  validateDatabase(db)
+  const plan = readCorrectionAttachmentCustody(db)
+  if (plan === null || plan.operationId !== operationId) {
+    throw new Error('Correction attachment custody operation identity changed before clear.')
+  }
+  const result = db.prepare('DELETE FROM metadata WHERE key = ? AND value = ?')
+    .run(CORRECTION_ATTACHMENT_CUSTODY_KEY, JSON.stringify(plan))
+  if (result?.changes !== 1) {
+    throw new Error('Correction attachment custody record changed before clear.')
+  }
+}
+
+/** Reports whether startup or a failed correction still owns a durable custody record. */
+function hasCorrectionAttachmentCustody(db) {
+  validateDatabase(db)
+  return db.prepare('SELECT 1 FROM metadata WHERE key = ?').get(
+    CORRECTION_ATTACHMENT_CUSTODY_KEY,
+  ) !== undefined
+}
+
+/** Computes full attachment proofs without owning a SQLite writer transaction. */
+function prepareCorrectionAttachmentCustodyReconciliation(input) {
+  validateDatabase(input?.db)
+  validateCorrectionAttachmentCustodyPlan(input?.plan)
+  if (typeof input.inspectEntry !== 'function') {
+    throw new Error('Correction attachment custody reconciliation requires a safe entry inspector.')
+  }
+  const plan = readCorrectionAttachmentCustody(input.db)
+  if (plan === null || JSON.stringify(plan) !== JSON.stringify(input.plan)) {
+    throw new Error('Correction attachment custody record changed before inspection.')
+  }
+  const entries = plan.entries.map((entry) => {
+    if (input.db.inTransaction === true) {
+      throw new Error('Correction attachment custody full inspection cannot hold a writer transaction.')
+    }
+    const observation = input.inspectEntry(entry)
+    const state = correctionAttachmentResidueState(observation)
+    return Object.freeze({
+      targetName: entry.targetName,
+      peerName: entry.peerName,
+      state,
+      observation,
+    })
+  })
+  return Object.freeze({
+    version: 1,
+    operationId: plan.operationId,
+    planDocument: JSON.stringify(plan),
+    entries: Object.freeze(entries),
+  })
+}
+
+/** Revalidates cheap topology and clears an exact proven plan in one short transaction. */
+function reconcileCorrectionAttachmentCustody(input) {
+  validateDatabase(input?.db)
+  const inspection = input?.inspection
+  if (inspection === null || typeof inspection !== 'object' || Array.isArray(inspection)
+    || Object.keys(inspection).sort().join(',')
+      !== 'entries,operationId,planDocument,version'
+    || inspection.version !== 1
+    || !IDENTIFIER.test(inspection.operationId ?? '')
+    || typeof inspection.planDocument !== 'string'
+    || Buffer.byteLength(inspection.planDocument, 'utf8') < 1
+    || Buffer.byteLength(inspection.planDocument, 'utf8') > MAX_CUSTODY_BYTES
+    || !Array.isArray(inspection.entries)
+    || typeof input.revalidateEntry !== 'function') {
+    throw new Error('Correction attachment custody reconciliation proof is invalid.')
+  }
+  const plan = readCorrectionAttachmentCustody(input.db)
+  if (plan === null || JSON.stringify(plan) !== inspection.planDocument
+    || plan.operationId !== inspection.operationId
+    || inspection.entries.length !== plan.entries.length) {
+    throw new Error('Correction attachment custody record changed before clear.')
+  }
+  const mission = input.db.prepare('SELECT status FROM missions WHERE id = ?').get(plan.missionId)
+  const unlockEventId = deriveArchiveLifecycleEventId(plan.archiveId, 'mission-unlocked')
+  const unlockEvent = input.db.prepare(`SELECT id, mission_id, event_type, details_json
+    FROM mission_events WHERE id = ?`).get(unlockEventId)
+  const correctionOperationId = readCorrectionOperationId(unlockEvent, plan)
+  const committed = correctionOperationId === plan.operationId
+  if (correctionOperationId !== null && !committed) {
+    throw new Error('Correction attachment custody is owned by a different correction.')
+  }
+  if (mission?.status === 'finished' && !committed) {
+    throw new Error('Finished correction custody has no matching durable unlock evidence.')
+  }
+  if (committed && mission?.status !== 'finished') {
+    throw new Error('Correction attachment custody unlock evidence is not reflected by mission state.')
+  }
+  if (!committed) {
+    const boundary = readCurrentMissionFinalizationBoundary(input.db, {
+      missionId: plan.missionId,
+      archiveId: plan.archiveId,
+    })
+    if (boundary?.archiveId !== plan.archiveId
+      || boundary?.eventRowid !== plan.finalizedEpoch) {
+      throw new Error('Correction attachment custody finalization boundary changed before reconciliation.')
+    }
+  }
+  for (const [index, entry] of plan.entries.entries()) {
+    const inspected = inspection.entries[index]
+    if (inspected === null || typeof inspected !== 'object' || Array.isArray(inspected)
+      || Object.keys(inspected).sort().join(',')
+        !== 'observation,peerName,state,targetName'
+      || inspected.targetName !== entry.targetName
+      || inspected.peerName !== entry.peerName
+      || correctionAttachmentResidueState(inspected.state) !== inspected.state) {
+      throw new Error('Correction attachment custody reconciliation proof changed.')
+    }
+    const state = correctionAttachmentResidueState(
+      input.revalidateEntry(entry, inspected.observation),
+    )
+    if (state !== inspected.state) {
+      throw new Error('Correction attachment custody residue changed before clear.')
+    }
+    if (committed && state !== 'pair') {
+      throw new Error('Committed correction attachment custody is incomplete.')
+    }
+  }
+  clearCorrectionAttachmentCustody(input.db, plan.operationId)
+  return Object.freeze({ recovered: 1, committed })
+}
+
+/** Extracts the sole valid residue state from an inspector observation. */
+function correctionAttachmentResidueState(value) {
+  const state = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value.state
+    : value
+  if (!['absent', 'peer', 'pair'].includes(state)) {
+    throw new Error('Correction attachment custody residue is invalid.')
+  }
+  return state
+}
+
+/** Validates one closed custody plan containing no authority-bearing filesystem paths. */
+function validateCorrectionAttachmentCustodyPlan(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)
-    || value.version !== 1 || typeof value.missionId !== 'string'
-    || typeof value.archiveId !== 'string' || typeof value.operationId !== 'string'
-    || typeof value.targetRoot !== 'string' || !Array.isArray(value.entries)
-    || value.targetRoot !== path.join(path.dirname(databasePath), 'missions', value.missionId, 'attachments')) {
-    throw new Error('Correction attachment custody journal is invalid.')
+    || Object.keys(value).sort().join(',')
+      !== 'archiveId,entries,finalizedEpoch,missionId,operationId,targetIdentity,version'
+    || value.version !== 2
+    || !IDENTIFIER.test(value.missionId ?? '')
+    || !IDENTIFIER.test(value.archiveId ?? '')
+    || !IDENTIFIER.test(value.operationId ?? '')
+    || !Number.isSafeInteger(value.finalizedEpoch) || value.finalizedEpoch < 1
+    || !validDirectoryIdentity(value.targetIdentity)
+    || !Array.isArray(value.entries)
+    || value.entries.length < 1 || value.entries.length > MAX_CUSTODY_ENTRIES) {
+    throw new Error('Correction attachment custody record is invalid.')
   }
-  for (const entry of value.entries) {
-    if (entry === null || typeof entry !== 'object'
-      || typeof entry.targetPath !== 'string'
-      || path.dirname(entry.targetPath) !== value.targetRoot
+  const operationToken = createHash('sha256').update(value.operationId).digest('hex').slice(0, 16)
+  const names = new Set()
+  value.entries.forEach((entry, index) => {
+    const extension = boundedPortableExtension(entry?.sourceRelativePath)
+    const displayStem = boundedPortableDisplayStem(entry?.sourceRelativePath)
+    const targetName = `correction-${operationToken}-${index.toString(16).padStart(4, '0')}-${displayStem}-${String(entry?.sha256).slice(0, 16)}${extension}`
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)
+      || Object.keys(entry).sort().join(',')
+        !== 'entryName,peerName,sha256,sizeBytes,sourceRelativePath,targetName'
+      || typeof entry.entryName !== 'string'
+      || !entry.entryName.startsWith('attachments/')
+      || path.posix.dirname(entry.entryName) !== 'attachments'
+      || entry.entryName.split('/').length !== 2
       || typeof entry.sourceRelativePath !== 'string'
       || path.basename(entry.sourceRelativePath) !== entry.sourceRelativePath
       || ['.', '..'].includes(entry.sourceRelativePath)
-      || typeof entry.preexisting !== 'boolean'
+      || entry.sourceRelativePath.length < 1
+      || Buffer.byteLength(entry.sourceRelativePath, 'utf8') > 255
+      || /[\\/\u0000-\u001f\u007f:]/u.test(entry.sourceRelativePath)
+      || !SHA256.test(entry.sha256 ?? '')
       || !Number.isSafeInteger(entry.sizeBytes)
       || entry.sizeBytes < 1 || entry.sizeBytes > MAX_ATTACHMENT_BYTES
-      || !SHA256.test(entry.sha256 ?? '')) {
-      throw new Error('Correction attachment custody journal entry is invalid.')
+      || entry.targetName !== targetName
+      || entry.peerName !== `.${targetName}.custody`
+      || !isCorrectionAttachmentTargetName(entry.targetName)
+      || !isPortableLeaf(entry.peerName)
+      || names.has(entry.targetName) || names.has(entry.peerName)) {
+      throw new Error('Correction attachment custody entry is invalid.')
     }
+    names.add(entry.targetName)
+    names.add(entry.peerName)
+  })
+  const size = Buffer.byteLength(JSON.stringify(value), 'utf8')
+  if (size < 1 || size > MAX_CUSTODY_BYTES) {
+    throw new Error('Correction attachment custody record is invalid or unbounded.')
+  }
+  return true
+}
+
+/** Recognizes a bounded operation-owned public correction attachment name. */
+function isCorrectionAttachmentTargetName(value) {
+  return typeof value === 'string'
+    && /^correction-[0-9a-f]{16}-[0-9a-f]{4}-[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?-[0-9a-f]{16}(?:\.[a-z0-9]{1,10})?$/u.test(value)
+}
+
+/** Returns the exact retained peer for an operation-owned target name. */
+function correctionAttachmentPeerName(targetName) {
+  if (!isCorrectionAttachmentTargetName(targetName)) {
+    throw new Error('Correction attachment target name is invalid.')
+  }
+  return `.${targetName}.custody`
+}
+
+/** Extracts a matching correction operation from the deterministic unlock event. */
+function readCorrectionOperationId(event, plan) {
+  if (event === undefined) return null
+  let details
+  try {
+    details = JSON.parse(event.details_json)
+  } catch {
+    throw new Error('Correction attachment custody has invalid durable unlock evidence.')
+  }
+  if (event.id !== deriveArchiveLifecycleEventId(plan.archiveId, 'mission-unlocked')
+    || event.mission_id !== plan.missionId || event.event_type !== 'mission_unlocked'
+    || details === null || typeof details !== 'object' || Array.isArray(details)
+    || details.restored_from_archive_id !== plan.archiveId
+    || details.resulting_status !== 'finished'
+    || details.storage_state !== 'live'
+    || !IDENTIFIER.test(details.archive_correction_operation_id ?? '')) {
+    throw new Error('Correction attachment custody has invalid durable unlock evidence.')
+  }
+  return details.archive_correction_operation_id
+}
+
+/** Reduces a display filename to a bounded, portable extension only. */
+function boundedPortableExtension(value) {
+  if (typeof value !== 'string') return ''
+  const dot = value.lastIndexOf('.')
+  const extension = dot > 0 ? value.slice(dot).toLowerCase() : ''
+  return /^\.[a-z0-9]{1,10}$/u.test(extension) ? extension : ''
+}
+
+/** Retains a recognisable, non-authoritative original stem in generated names. */
+function boundedPortableDisplayStem(value) {
+  if (typeof value !== 'string') return 'attachment'
+  const extension = boundedPortableExtension(value)
+  const stem = extension.length > 0 ? value.slice(0, -extension.length) : value
+  const portable = stem.normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, '-')
+    .replace(/^-+|-+$/gu, '')
+    .slice(0, 48)
+    .replace(/-+$/gu, '')
+  return portable.length > 0 ? portable : 'attachment'
+}
+
+/** Rejects separators, dot traversal, Windows streams, and reserved path syntax. */
+function isPortableLeaf(value) {
+  return typeof value === 'string' && value.length > 0
+    && Buffer.byteLength(value, 'utf8') <= 180
+    && path.basename(value) === value
+    && !['.', '..'].includes(value)
+    && !/[\\/:\u0000-\u001f\u007f]/u.test(value)
+}
+
+/** Validates a bigint-derived directory identity serialized without precision loss. */
+function validDirectoryIdentity(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).sort().join(',') === 'dev,ino'
+    && /^(?:0|[1-9][0-9]{0,39})$/u.test(value.dev ?? '')
+    && /^[1-9][0-9]{0,39}$/u.test(value.ino ?? '')
+}
+
+/** Requires the minimal synchronous SQLite interface used by custody. */
+function validateDatabase(db) {
+  if (!db || typeof db.prepare !== 'function') {
+    throw new Error('Correction attachment custody requires a pinned database.')
   }
 }
 
-/** Hashes one canonical attachment through a bounded descriptor for recovery proof. */
-function digestAttachment(filePath, throwIfCancelled = () => undefined) {
-  let descriptor
-  try {
-    descriptor = fs.openSync(
-      filePath,
-      fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
-    )
-    const identity = fs.fstatSync(descriptor)
-    if (!identity.isFile() || identity.nlink !== 1
-      || identity.size < 1 || identity.size > MAX_ATTACHMENT_BYTES) {
-      throw new Error('Correction attachment custody target is not a bounded regular file.')
-    }
-    const hash = createHash('sha256')
-    const chunk = Buffer.allocUnsafe(64 * 1024)
-    let offset = 0
-    while (offset < identity.size) {
-      throwIfCancelled()
-      const read = fs.readSync(
-        descriptor,
-        chunk,
-        0,
-        Math.min(chunk.length, identity.size - offset),
-        offset,
-      )
-      if (read < 1) throw new Error('Correction attachment custody target ended early.')
-      hash.update(chunk.subarray(0, read))
-      offset += read
-    }
-    return { sizeBytes: identity.size, sha256: hash.digest('hex') }
-  } finally {
-    if (descriptor !== undefined) fs.closeSync(descriptor)
-  }
-}
-
-/** Flushes one directory on hosts that support directory synchronization. */
-async function syncDirectory(directory) {
-  if (process.platform === 'win32') return
-  const handle = await fsp.open(directory, fs.constants.O_RDONLY | (fs.constants.O_DIRECTORY ?? 0))
-  try {
-    await handle.sync()
-  } finally {
-    await handle.close()
-  }
-}
-
-/** Flushes one directory synchronously during startup recovery on supported hosts. */
-function syncDirectorySync(directory) {
-  if (process.platform === 'win32') return
-  const descriptor = fs.openSync(
-    directory,
-    fs.constants.O_RDONLY | (fs.constants.O_DIRECTORY ?? 0),
-  )
-  try {
-    fs.fsyncSync(descriptor)
-  } finally {
-    fs.closeSync(descriptor)
-  }
+/** Freezes a parsed record before it crosses a recovery boundary. */
+function deepFreezePlan(value) {
+  return Object.freeze({
+    ...value,
+    targetIdentity: Object.freeze({ ...value.targetIdentity }),
+    entries: Object.freeze(value.entries.map((entry) => Object.freeze({ ...entry }))),
+  })
 }
 
 module.exports = {
-  correctionJournalDirectory,
-  recoverCorrectionAttachmentJournals,
-  removeCorrectionAttachmentJournal,
-  writeCorrectionAttachmentJournal,
-  syncDirectory,
+  CORRECTION_ATTACHMENT_CUSTODY_KEY,
+  clearCorrectionAttachmentCustody,
+  correctionAttachmentPeerName,
+  createCorrectionAttachmentCustodyPlan,
+  hasCorrectionAttachmentCustody,
+  isCorrectionAttachmentTargetName,
+  prepareCorrectionAttachmentCustodyReconciliation,
+  readCorrectionAttachmentCustody,
+  reconcileCorrectionAttachmentCustody,
+  validateCorrectionAttachmentCustodyPlan,
+  writeCorrectionAttachmentCustody,
 }

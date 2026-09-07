@@ -7,6 +7,7 @@ const {
   safeStorage,
   session,
   shell,
+  utilityProcess,
 } = require('electron')
 const path = require('node:path')
 const { monitorEventLoopDelay } = require('node:perf_hooks')
@@ -86,6 +87,16 @@ const ARCHIVE_REVIEW_CHANNELS = Object.freeze({
   read: 'sartracker:archive-review:read',
   mutationDenied: 'sartracker:archive-review:mutation-denied',
 })
+
+/** Creates the sole production process primitive authorized for archive correction. */
+function createArchiveCorrectionUtilityProcess(input) {
+  return utilityProcess.fork(input.modulePath, [], {
+    cwd: input.cwd,
+    serviceName: input.serviceName,
+    stdio: 'ignore',
+    allowLoadingUnsignedLibraries: false,
+  })
+}
 
 const MISSION_STORE_CHANNELS = {
   info: 'sartracker:mission-store:info',
@@ -1264,6 +1275,7 @@ async function startElectronApp() {
   })
   const missionStore = createElectronMissionStore({
     userDataPath: app.getPath('userData'),
+    createArchiveCorrectionUtilityProcess,
     storageDiagnostics,
     readAdminRoster: async () => {
       const settings = await settingsStore.loadAppSettings()

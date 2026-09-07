@@ -1570,6 +1570,8 @@ describe('electron mission store', () => {
     }
   })
 
+  // This 25,000-row case guards the acknowledgement shape and durable result;
+  // packaged liveness has separate strict gates, so allow parallel-suite SQLite contention.
   it('acknowledges a large tracking batch without returning or materializing changed rows', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Tracking Ack Mission' })
@@ -1634,7 +1636,7 @@ describe('electron mission store', () => {
         reconciled_until: '2026-08-09T02:00:00.000Z',
       },
     ])
-  })
+  }, 15_000)
 
   it('accumulates paused seconds when a mission resumes [DON-231]', async () => {
     vi.useFakeTimers()

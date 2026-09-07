@@ -35,7 +35,7 @@ interface RendererSnapshot {
 }
 
 /** Creates a deterministic external-source and renderer-CDP boundary. */
-function createProbeHarness() {
+function createProbeHarness(operationTimeoutMs?: number) {
   let nowMs = 10_000
   let sequence = 0
   let drainCount = 0
@@ -176,6 +176,7 @@ function createProbeHarness() {
         },
       }
     },
+    ...(operationTimeoutMs === undefined ? {} : { operationTimeoutMs }),
   })
   const launch = {
     page: {},
@@ -846,6 +847,40 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     expect(operation).toMatchObject({ phase: 'create' })
     expect(harness.pendingSourceCount()).toBe(0)
     expect(harness.drainCount()).toBeGreaterThan(0)
+  })
+
+  it('fails a never-settling workflow operation on its independent bounded deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const harness = createProbeHarness(25)
+      await harness.probe.attachLaunch(harness.launch)
+      await harness.probe.setPhase('restore')
+      const operation = await harness.probe.beginPhaseOperation('restore')
+      harness.emitCurrentFix(true)
+      const guarded = harness.probe.guardOperation(new Promise<never>(() => undefined), operation)
+      let settled = false
+      void guarded.finally(() => { settled = true }).catch(() => undefined)
+
+      await vi.advanceTimersByTimeAsync(24)
+      harness.publishWatchdogTick()
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+      const failure = await guarded.catch((error: unknown) => error as Error & {
+        readonly code?: string
+        readonly archiveLifecycleDiagnostics?: {
+          readonly errorKinds?: readonly string[]
+        }
+      })
+      expect(failure.message).toMatch(/operation_deadline_exceeded/u)
+      expect(failure.code).toBe('ARCHIVE_LIFECYCLE_WORKLOAD_TIMEOUT')
+      expect(failure.archiveLifecycleDiagnostics?.errorKinds).toContain(
+        'operation_deadline_exceeded',
+      )
+      expect(harness.pendingSourceCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('rejects a MapLibre identity whose propagated source timestamp changed', async () => {

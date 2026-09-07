@@ -77,6 +77,8 @@ const REVIEW_DIRECTORY_NAME = 'archive-review'
 const MINIMUM_FREE_BYTES = 20 * 1024 * 1024 * 1024
 const MAINTENANCE_NO_PROGRESS_TIMEOUT_MS = 120 * 1_000
 const MAINTENANCE_POLL_INTERVAL_MS = 1_000
+const QUALIFICATION_CLEANUP_NO_PROGRESS_TIMEOUT_MS = 30 * 60_000
+const MAX_QUALIFICATION_CLEANUP_NO_PROGRESS_TIMEOUT_MS = 60 * 60_000
 const HEARTBEAT_INTERVAL_MS = 50
 const SYNTHETIC_PUBLICATION_INTERVAL_MS = 5_000
 const SCAN_CHUNK_BYTES = 64 * 1024
@@ -105,11 +107,48 @@ const FAILURE_METADATA_KEYS = Object.freeze([
 export function createQualificationRunId() {
   return `q-${randomUUID()}`
 }
+
+/** Reads the exact parent-minted run identity passed only to the private child. */
+function readQualificationSupervisorRunBinding(environment = process.env) {
+  const runId = environment?.[QUALIFICATION_SUPERVISOR_RUN_ID_ENV]
+  const startedAt = environment?.[QUALIFICATION_SUPERVISOR_STARTED_AT_ENV]
+  let startedAtMs = Number.NaN
+  try {
+    startedAtMs = new Date(startedAt).toISOString() === startedAt
+      ? Date.parse(startedAt)
+      : Number.NaN
+  } catch {
+    startedAtMs = Number.NaN
+  }
+  if (!QUALIFICATION_SUPERVISOR_RUN_ID.test(runId ?? '')
+    || !Number.isFinite(startedAtMs) || startedAtMs > Date.now()) {
+    throw new Error('Qualification child parent-run binding is invalid.')
+  }
+  return Object.freeze({ runId, startedAt, startedAtMs })
+}
+
+/** Snapshots the local runtime repeated in success and failure terminal evidence. */
+function qualificationRuntimeIdentity() {
+  return Object.freeze({
+    hostname: os.hostname(),
+    platform: process.platform,
+    release: os.release(),
+    architecture: os.arch(),
+    cpuCount: os.cpus().length,
+    totalMemoryBytes: os.totalmem(),
+    nodeVersion: process.version,
+  })
+}
 const SHA256 = /^[0-9a-f]{64}$/u
 const SAFE_TABLE = /^[A-Za-z_][A-Za-z0-9_]*$/u
 const SAFE_DIAGNOSTIC_TOKEN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u
 const SAFE_DIAGNOSTIC_GATE = /^[A-Za-z][A-Za-z0-9:_-]{0,63}$/u
 const GIT_SHA = /^[0-9a-f]{40}$/u
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+const QUALIFICATION_SUPERVISOR_RUN_ID =
+  /^q-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+const QUALIFICATION_SUPERVISOR_RUN_ID_ENV = 'SARTRACKER_PR6_QUALIFICATION_RUN_ID'
+const QUALIFICATION_SUPERVISOR_STARTED_AT_ENV = 'SARTRACKER_PR6_QUALIFICATION_STARTED_AT'
 const FAILURE_RECEIPT_SCHEMA = 'sartracker-breadcrumb-pr6-qualification-failure-v2'
 const FAILURE_RECEIPT_SUFFIX = '.failure.json'
 const DIAGNOSTIC_PROGRESS_KINDS = new Set(['create', 'verify', 'restore', 'cleanup'])
@@ -120,6 +159,23 @@ const DIAGNOSTIC_DURABLE_FAILURE_CODES = new Set([
   'DURABLE_WORKER_EXIT',
   'DURABLE_SETTLEMENT_TIMEOUT',
   'DURABLE_INGEST_INCOMPLETE',
+])
+const DIAGNOSTIC_CLEANUP_CAUSE_CODES = Object.freeze({
+  cancelled: 'ARCHIVE_CLEANUP_CANCELLED',
+  custody_mismatch: 'ARCHIVE_CLEANUP_CUSTODY_MISMATCH',
+  input_invalid: 'ARCHIVE_CLEANUP_INPUT_INVALID',
+  journal_mismatch: 'ARCHIVE_CLEANUP_JOURNAL_MISMATCH',
+  sqlite_busy: 'SQLITE_BUSY',
+  simulated_kill: 'ARCHIVE_CLEANUP_SIMULATED_KILL',
+  worker_error: 'ARCHIVE_CLEANUP_FAILED',
+  worker_exit: 'ARCHIVE_CLEANUP_FAILED',
+  protocol_invalid: 'ARCHIVE_CLEANUP_FAILED',
+  internal_failure: 'ARCHIVE_CLEANUP_FAILED',
+})
+const DIAGNOSTIC_DIRECT_CLEANUP_FAILURE_CODES = new Set([
+  'ARCHIVE_CLEANUP_FAILED',
+  'ARCHIVE_CLEANUP_AUDIT_FAILED',
+  'SQLITE_BUSY',
 ])
 const DIAGNOSTIC_ARCHIVE_FAILURE_CODES = new Set([
   'ARCHIVE_CANCELLED',
@@ -392,10 +448,15 @@ export function classifyQualificationFailure(error, stage = null) {
   if (cleanupDiagnostic !== null) {
     return Object.freeze({
       topLevelCode: 'CLEANUP_GATE_FAILED',
-      causeCode: code === '' ? 'ARCHIVE_CLEANUP_FAILED' : code,
+      causeCode: DIAGNOSTIC_DIRECT_CLEANUP_FAILURE_CODES.has(code)
+        ? code
+        : DIAGNOSTIC_CLEANUP_CAUSE_CODES[cleanupDiagnostic.causeClass],
     })
   }
   if (code === 'ARCHIVE_CLEANUP_FAILED' || code === 'ARCHIVE_CLEANUP_AUDIT_FAILED') {
+    return Object.freeze({ topLevelCode: 'CLEANUP_GATE_FAILED', causeCode: code })
+  }
+  if (code === 'CLEANUP_NO_PROGRESS_TIMEOUT') {
     return Object.freeze({ topLevelCode: 'CLEANUP_GATE_FAILED', causeCode: code })
   }
   if (code === 'LIVENESS_GATE_FAILED') {
@@ -489,12 +550,24 @@ export function createQualificationFailureReceipt({
   expectedRepositoryTree,
   observedRepositoryTree,
   profileCleanupCompleted,
+  runStartedAt,
 }) {
   if (diagnostics === null || typeof diagnostics?.snapshot !== 'function') {
     throw new Error('Qualification diagnostics are unavailable.')
   }
   if (!SAFE_DIAGNOSTIC_TOKEN.test(diagnostics.runId ?? '')) {
     throw new Error('Qualification failure receipt run identity is invalid.')
+  }
+  let runStartedAtMs = Number.NaN
+  try {
+    runStartedAtMs = new Date(runStartedAt).toISOString() === runStartedAt
+      ? Date.parse(runStartedAt)
+      : Number.NaN
+  } catch {
+    runStartedAtMs = Number.NaN
+  }
+  if (!Number.isFinite(runStartedAtMs) || runStartedAtMs > Date.now()) {
+    throw new Error('Qualification failure receipt start time is invalid.')
   }
   const identity = {
     expectedRepositoryHead: GIT_SHA.test(expectedRepositoryHead ?? '') ? expectedRepositoryHead : null,
@@ -512,11 +585,14 @@ export function createQualificationFailureReceipt({
         topLevelCode: diagnosticSnapshot.primaryFailure.topLevelCode,
         causeCode: diagnosticSnapshot.primaryFailure.causeCode,
       })
+  const recordedAtMs = Math.max(Date.now(), runStartedAtMs)
   return Object.freeze({
     schema: FAILURE_RECEIPT_SCHEMA,
     run: Object.freeze({
       runId: diagnostics.runId,
-      recordedAt: new Date().toISOString(),
+      startedAt: runStartedAt,
+      recordedAt: new Date(recordedAtMs).toISOString(),
+      runtime: qualificationRuntimeIdentity(),
     }),
     source: Object.freeze(identity),
     failure: summarizedFailure,
@@ -669,9 +745,126 @@ export async function readPackagedLifecyclePrerequisite({
   })
 }
 
+/** Projects one trusted cleanup update into the monotonic cursor used by the watchdog. */
+function qualificationCleanupCursor(progress) {
+  if (progress === null || typeof progress !== 'object' || Array.isArray(progress)
+    || typeof progress.tableName !== 'string' || !SAFE_TABLE.test(progress.tableName)
+    || !Number.isSafeInteger(progress.tableIndex) || progress.tableIndex < 0
+    || !Number.isSafeInteger(progress.tableCount) || progress.tableCount < 1
+    || progress.tableIndex > progress.tableCount
+    || !Number.isSafeInteger(progress.tableBatch) || progress.tableBatch < 0
+    || !Number.isSafeInteger(progress.deletedRows) || progress.deletedRows < 0
+    || !Number.isSafeInteger(progress.totalDeletedRows) || progress.totalDeletedRows < 0
+    || progress.deletedRows > progress.totalDeletedRows) {
+    return null
+  }
+  return Object.freeze({
+    tableName: progress.tableName,
+    tableIndex: progress.tableIndex,
+    tableCount: progress.tableCount,
+    tableBatch: progress.tableBatch,
+    deletedRows: progress.deletedRows,
+    totalDeletedRows: progress.totalDeletedRows,
+  })
+}
+
+/** Returns whether a cleanup journal cursor made one exact durable transition. */
+function qualificationCleanupCursorAdvanced(current, previous) {
+  if (current === null) return false
+  if (previous === null) return true
+  if (current.tableCount !== previous.tableCount) return false
+  const cumulativeTotal = previous.totalDeletedRows + current.deletedRows
+  const advancesCurrentTable = current.tableIndex === previous.tableIndex
+    && current.tableIndex < current.tableCount
+    && current.tableBatch === previous.tableBatch + 1
+    && Number.isSafeInteger(cumulativeTotal)
+    && current.totalDeletedRows === cumulativeTotal
+  const advancesToNextTable = current.tableIndex === previous.tableIndex + 1
+    && current.tableBatch === 0
+    && current.deletedRows === 0
+    && current.totalDeletedRows === previous.totalDeletedRows
+  return advancesCurrentTable || advancesToNextTable
+}
+
+/**
+ * Cancels one exact qualifier cleanup after bounded lack of durable progress,
+ * then joins the store-owned terminal and physical worker settlement.
+ */
+export async function runQualificationCleanupWithNoProgressFence(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || !UUID_V4.test(input.operationId ?? '')
+    || !Number.isFinite(input.noProgressTimeoutMs)
+    || !Number.isInteger(input.noProgressTimeoutMs)
+    || input.noProgressTimeoutMs < 1
+    || input.noProgressTimeoutMs > MAX_QUALIFICATION_CLEANUP_NO_PROGRESS_TIMEOUT_MS
+    || typeof input.startOperation !== 'function'
+    || typeof input.cancelOperation !== 'function') {
+    throw createCodedQualificationError(
+      'CLEANUP_NO_PROGRESS_FENCE_INVALID',
+      'Qualification cleanup no-progress ownership is invalid.',
+    )
+  }
+  let deadlineTimer = null
+  let deadlineReached = false
+  let resolveDeadline = () => undefined
+  let lastCursor = null
+  const deadline = new Promise((resolve) => { resolveDeadline = resolve })
+  /** Arms one fresh deadline only while the cleanup still owns forward progress. */
+  const armDeadline = () => {
+    if (deadlineReached) return
+    if (deadlineTimer !== null) clearTimeout(deadlineTimer)
+    deadlineTimer = setTimeout(() => {
+      deadlineReached = true
+      resolveDeadline(Object.freeze({ status: 'timeout' }))
+    }, input.noProgressTimeoutMs)
+  }
+  /** Renews the deadline only for a strictly advancing durable cleanup cursor. */
+  const onProgress = (progress) => {
+    const cursor = qualificationCleanupCursor(progress)
+    if (!qualificationCleanupCursorAdvanced(cursor, lastCursor)) return
+    lastCursor = cursor
+    armDeadline()
+  }
+  armDeadline()
+  let operation
+  try {
+    operation = Promise.resolve(input.startOperation({
+      operationId: input.operationId,
+      onProgress,
+    }))
+  } catch (error) {
+    if (deadlineTimer !== null) clearTimeout(deadlineTimer)
+    throw error
+  }
+  const terminal = operation.then(
+    (value) => Object.freeze({ status: 'fulfilled', value }),
+    (error) => Object.freeze({ status: 'rejected', error }),
+  )
+  const outcome = await Promise.race([terminal, deadline])
+  if (outcome.status === 'fulfilled') {
+    if (deadlineTimer !== null) clearTimeout(deadlineTimer)
+    return outcome.value
+  }
+  if (outcome.status === 'rejected') {
+    if (deadlineTimer !== null) clearTimeout(deadlineTimer)
+    throw outcome.error
+  }
+  try {
+    await input.cancelOperation(input.operationId)
+  } catch {
+    // The original operation remains the physical-settlement authority.
+  }
+  await operation.catch(() => undefined)
+  throw createCodedQualificationError(
+    'CLEANUP_NO_PROGRESS_TIMEOUT',
+    'Qualification cleanup stopped making bounded durable progress.',
+  )
+}
+
 /** Runs one exact-head Linux reference-host archive lifecycle qualification. */
 async function main() {
   const options = parseBreadcrumbPr6QualificationArgs(process.argv.slice(2))
+  const supervisorBinding = readQualificationSupervisorRunBinding()
   if (process.platform !== 'linux') {
     throw new Error('The PR6 scale qualifier requires the Linux reference host.')
   }
@@ -680,8 +873,8 @@ async function main() {
 
   const sourceBefore = await readRepositorySourceState()
   assertExactSourceState(sourceBefore, options.expectedRepositoryHead)
-  const runStartedAtMs = Date.now()
-  const runId = createQualificationRunId()
+  const runStartedAtMs = supervisorBinding.startedAtMs
+  const runId = supervisorBinding.runId
   const profileRoot = await createOwnedProfileRoot()
   const copiedDatabasePath = path.join(profileRoot, DATABASE_FILE_NAME)
   const archiveDirectory = path.join(profileRoot, ARCHIVE_DIRECTORY_NAME)
@@ -869,18 +1062,26 @@ async function main() {
       diagnostics.markGate('cleanup:start')
       contentionProbeController.setPhase('cleanup')
       const cleanupStartedAt = performance.now()
-      cleanupResult = await store.startMissionCleanup({
-        missionId: targetMission.id,
-        archiveId: stored.archive.archiveId,
-        slotType: 'recovery',
-        secret: recoveryCode,
-      }, {
-        operationId: randomUUID(),
-        onProgress: (update) => {
-          diagnostics.recordCleanupProgress(update)
-          if (update?.tableName) diagnostics.markGate(`cleanup:${update.tableName}`)
-        },
-        reviewActivity: false,
+      const cleanupOperationId = randomUUID()
+      cleanupResult = await runQualificationCleanupWithNoProgressFence({
+        operationId: cleanupOperationId,
+        noProgressTimeoutMs: QUALIFICATION_CLEANUP_NO_PROGRESS_TIMEOUT_MS,
+        startOperation: ({ operationId, onProgress }) => store.startMissionCleanup({
+          missionId: targetMission.id,
+          archiveId: stored.archive.archiveId,
+          slotType: 'recovery',
+          secret: recoveryCode,
+        }, {
+          operationId,
+          onProgress: (update) => {
+            onProgress(update)
+            diagnostics.recordCleanupProgress(update)
+            if (update?.tableName) diagnostics.markGate(`cleanup:${update.tableName}`)
+          },
+          reviewActivity: false,
+        }),
+        cancelOperation: (operationId) =>
+          store.cancelMissionArchiveOperation(operationId),
       })
       phaseDurationsMs.cleanup = performance.now() - cleanupStartedAt
     } finally {
@@ -995,15 +1196,7 @@ async function main() {
     diagnostics.markGate('resources:complete')
     pendingEvidence = {
       schema: 'sartracker-breadcrumb-pr6-qualification-v2',
-      machine: {
-        hostname: os.hostname(),
-        platform: process.platform,
-        release: os.release(),
-        architecture: os.arch(),
-        cpuCount: os.cpus().length,
-        totalMemoryBytes: os.totalmem(),
-        nodeVersion: process.version,
-      },
+      machine: qualificationRuntimeIdentity(),
       flags: {
         fixtureBasename: path.basename(options.fixturePath),
         missionId: options.missionId,
@@ -1179,7 +1372,7 @@ async function main() {
         ...pendingEvidence,
         run: {
           runId,
-          startedAt: new Date(runStartedAtMs).toISOString(),
+          startedAt: supervisorBinding.startedAt,
           completedAt: new Date(runCompletedAtMs).toISOString(),
           durationMs: runCompletedAtMs - runStartedAtMs,
           phaseDurationsMs,
@@ -1239,6 +1432,7 @@ async function main() {
         expectedRepositoryTree: sourceBefore.tree,
         observedRepositoryTree: sourceAfter?.tree,
         profileCleanupCompleted,
+        runStartedAt: supervisorBinding.startedAt,
       })
       await writeQualificationFailureReceipt(options.evidencePath, receipt)
     } catch {
@@ -1895,7 +2089,7 @@ async function publishNewQualificationArtifact({
   validate()
   const temporaryPath = path.join(
     parent,
-    `.${path.basename(artifactPath)}.tmp-${process.pid}-${randomUUID()}`,
+    `.breadcrumb-pr6-artifact-${process.pid}-${randomUUID()}.tmp`,
   )
   let handle = null
   let temporaryPresent = false

@@ -1,8 +1,6 @@
 'use strict'
 
 const { createHash, randomUUID: cryptoRandomUUID, timingSafeEqual } = require('node:crypto')
-const fs = require('node:fs/promises')
-const path = require('node:path')
 
 const { generateRecoveryCode: generateArchiveRecoveryCode } = require('./archive-crypto.cjs')
 const { encodeCleanupFailureDiagnosticToken } = require('./archive-cleanup-failure.cjs')
@@ -416,9 +414,12 @@ function normalizeProgress(progress, identity) {
 /** Delivers non-authoritative progress without letting renderer teardown change durable work. */
 function sendArchiveProgressBestEffort(sender, projectProgress) {
   try {
-    if (sender?.isDestroyed?.() === true) return
+    if (sender?.isDestroyed?.() === true) return false
     sender.send(MISSION_ARCHIVE_PROGRESS_CHANNEL, projectProgress())
-  } catch {}
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Projects the current fail-closed cleanup checklist without trusting unknown store fields. */
@@ -483,12 +484,15 @@ function normalizeCleanupProgress(progress, identity, sequence) {
     || typeof progress.tableName !== 'string'
     || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(progress.tableName)
     || Buffer.byteLength(progress.tableName, 'utf8') > 100
-    || !Number.isSafeInteger(progress.deletedRows) || progress.deletedRows < 1
+    || !Number.isSafeInteger(progress.deletedRows) || progress.deletedRows < 0
     || !Number.isSafeInteger(progress.totalDeletedRows)
     || progress.totalDeletedRows < progress.deletedRows
+    || !Number.isSafeInteger(progress.tableBatch) || progress.tableBatch < 0
     || !Number.isSafeInteger(progress.tableIndex) || progress.tableIndex < 0
     || !Number.isSafeInteger(progress.tableCount) || progress.tableCount < 1
-    || progress.tableIndex > progress.tableCount) {
+    || progress.tableIndex > progress.tableCount
+    || (progress.tableIndex === progress.tableCount
+      && (progress.tableBatch !== 0 || progress.deletedRows !== 0))) {
     throw archiveIpcError('ARCHIVE_IPC_INVALID_PROGRESS', 'Mission cleanup progress is invalid.')
   }
   return normalizeProgress({
@@ -497,12 +501,49 @@ function normalizeCleanupProgress(progress, identity, sequence) {
     unit: 'rows',
     completed: progress.totalDeletedRows,
     total: null,
-    detail: `Moved live rows: ${progress.tableName}`,
+    detail: progress.deletedRows === 0
+      ? `Advanced live-store cleanup cursor: ${progress.tableName}`
+      : `Removed archived rows from live store: ${progress.tableName}`,
   }, {
     operationId: identity.operationId,
     missionId: identity.missionId,
     kind: 'cleanup',
   })
+}
+
+/** Validates every durable cleanup boundary while sequencing successful renderer sends. */
+function createCleanupProgressForwarder(sender, identity) {
+  let sequence = 0
+  let lastValidCursor = null
+  return (progress) => {
+    let projected
+    try {
+      projected = normalizeCleanupProgress(progress, identity, sequence + 1)
+    } catch {
+      return
+    }
+    const nextCursor = Object.freeze({
+      tableBatch: progress.tableBatch,
+      tableIndex: progress.tableIndex,
+      tableCount: progress.tableCount,
+      totalDeletedRows: progress.totalDeletedRows,
+    })
+    if (lastValidCursor !== null) {
+      const advancesCurrentTable = nextCursor.tableIndex === lastValidCursor.tableIndex
+        && nextCursor.tableBatch === lastValidCursor.tableBatch + 1
+      const advancesToNextTable = nextCursor.tableIndex === lastValidCursor.tableIndex + 1
+        && nextCursor.tableBatch === 0
+        && progress.deletedRows === 0
+      if (nextCursor.tableCount !== lastValidCursor.tableCount
+        || nextCursor.totalDeletedRows
+          !== lastValidCursor.totalDeletedRows + progress.deletedRows
+        || (!advancesCurrentTable && !advancesToNextTable)) return
+    }
+    lastValidCursor = nextCursor
+    if (sendArchiveProgressBestEffort(sender, () => projected)) {
+      sequence += 1
+    }
+  }
 }
 
 /** Projects only the terminal archived-state acknowledgement needed by the renderer. */
@@ -534,8 +575,8 @@ function registerMissionArchiveIpcHandlers(input) {
     || typeof input.validateIpcSender !== 'function'
     || typeof input.archiveReviewSessionManager?.hasReviewActivity !== 'function'
     || typeof input.archiveReviewSessionManager?.acquireCleanupLease !== 'function'
-    || (input.removeCorrectionSnapshot !== undefined
-      && typeof input.removeCorrectionSnapshot !== 'function')) {
+    || typeof input.archiveReviewSessionManager?.beginCorrectionSnapshotUse !== 'function'
+    || typeof input.archiveReviewSessionManager?.completeCorrectionSnapshot !== 'function') {
     throw new TypeError('Mission archive IPC registration is invalid.')
   }
   const channels = input.channels
@@ -543,9 +584,6 @@ function registerMissionArchiveIpcHandlers(input) {
   const generateRecoveryCode = input.generateRecoveryCode ?? generateArchiveRecoveryCode
   const randomUUID = input.randomUUID ?? cryptoRandomUUID
   const nowMs = input.nowMs ?? Date.now
-  const removeCorrectionSnapshot = input.removeCorrectionSnapshot ?? (
-    (directory) => fs.rm(directory, { recursive: true, force: true })
-  )
   const issuances = input.issuanceLedger ?? new Map()
   if (!(issuances instanceof Map)) {
     throw new TypeError('Mission archive recovery issuance ledger is invalid.')
@@ -785,116 +823,121 @@ function registerMissionArchiveIpcHandlers(input) {
       cancel: () => controller.abort(),
     }))
     let snapshot = null
+    let correctionSnapshotLease = null
     let result = null
     let operationFailure = null
     try {
-      if (typeof input.archiveReviewSessionManager.snapshotForCorrection !== 'function') {
-        throw archiveIpcError(
-          'ARCHIVE_REHYDRATE_UNAVAILABLE',
-          'Archive correction restore is unavailable in this runtime.',
-        )
-      }
-      snapshot = await input.archiveReviewSessionManager.snapshotForCorrection({
-        senderId,
-        sessionId,
-        operationId,
-        archiveId,
-        signal: controller.signal,
-      })
-      result = await missionStore.unlockFinalizedMission({
-        mission_id: missionId,
-        archive_id: snapshot.archiveId,
-        operation_id: operationId,
-        snapshot_path: snapshot.snapshotPath,
-        snapshot_database_identity: snapshot.databaseIdentity,
-        snapshot_database_sha256: snapshot.databaseSha256,
-        ...(snapshot.attachmentDirectory === undefined
-          ? {}
-          : { attachment_directory: snapshot.attachmentDirectory }),
-        ...(snapshot.attachmentMappings === undefined
-          ? {}
-          : { attachment_mappings: snapshot.attachmentMappings }),
-        signal: controller.signal,
-        admin_name: adminName,
-        reason,
-      })
-    } catch (error) {
-      operationFailure = error
-    }
-    activeOperations.delete(operationId)
-    let committedCorrectionFailure = false
-    if (operationFailure !== null) {
       try {
-        const committedMission = await missionStore.getMission(missionId)
-        committedCorrectionFailure = committedMission?.status === 'finished'
-          && ['live', 'recovery_required'].includes(committedMission?.storage_state)
-        if (committedCorrectionFailure) result = committedMission
-      } catch {
-        committedCorrectionFailure = false
+        const correctionSnapshotUse = input.archiveReviewSessionManager.beginCorrectionSnapshotUse({
+          senderId,
+          sessionId,
+          operationId,
+          archiveId,
+          signal: controller.signal,
+          cancel: () => controller.abort(),
+        })
+        correctionSnapshotLease = correctionSnapshotUse.lease
+        snapshot = await correctionSnapshotUse.snapshotPromise
+        result = await missionStore.unlockFinalizedMission({
+          mission_id: missionId,
+          archive_id: snapshot.archiveId,
+          operation_id: operationId,
+          snapshot_path: snapshot.snapshotPath,
+          snapshot_database_identity: snapshot.databaseIdentity,
+          snapshot_database_sha256: snapshot.databaseSha256,
+          ...(snapshot.attachmentDirectory === undefined
+            ? {}
+            : { attachment_directory: snapshot.attachmentDirectory }),
+          ...(snapshot.attachmentMappings === undefined
+            ? {}
+            : { attachment_mappings: snapshot.attachmentMappings }),
+          signal: controller.signal,
+          admin_name: adminName,
+          reason,
+        })
+      } catch (error) {
+        operationFailure = error
       }
-      if (!committedCorrectionFailure) throw operationFailure
-    }
-    if (snapshot !== null) {
-      try {
-        if (typeof input.archiveReviewSessionManager.completeCorrectionSnapshot === 'function') {
+      let committedCorrectionFailure = false
+      if (operationFailure !== null) {
+        try {
+          const committedMission = await missionStore.getCommittedArchiveCorrection({
+            missionId,
+            archiveId,
+            operationId,
+          })
+          committedCorrectionFailure = committedMission !== null
+          if (committedCorrectionFailure) result = committedMission
+        } catch {
+          committedCorrectionFailure = false
+        }
+        if (!committedCorrectionFailure) throw operationFailure
+      }
+      if (snapshot !== null) {
+        try {
           await input.archiveReviewSessionManager.completeCorrectionSnapshot({
             senderId,
             sessionId,
             operationId,
             archiveId,
+            lease: correctionSnapshotLease,
           })
-        } else {
-          await removeCorrectionSnapshot(path.dirname(snapshot.snapshotPath))
+        } catch (error) {
+          const failure = archiveIpcError(
+            'ARCHIVE_REHYDRATE_CLEANUP_FAILED',
+            'Mission archive correction restore completed with unresolved plaintext cleanup.',
+          )
+          // Electron serializes thrown errors without custom properties. Return
+          // a shape-closed status envelope so the renderer can distinguish a
+          // committed correction from a pre-commit failure across the real IPC
+          // boundary and retain the correct recovery path.
+          if (result !== null) {
+            return Object.freeze({
+              ...projectUnlockedMissionResult(result, missionId),
+              correction: Object.freeze({
+                committed: true,
+                cleanupComplete: false,
+                failureCode: committedCorrectionFailure
+                  ? (operationFailure?.code ?? failure.code)
+                  : failure.code,
+              }),
+            })
+          }
+          failure.cause = error
+          throw failure
         }
-      } catch (error) {
-        const failure = archiveIpcError(
-          'ARCHIVE_REHYDRATE_CLEANUP_FAILED',
-          'Mission archive correction restore completed with unresolved plaintext cleanup.',
-        )
-        // Electron serializes thrown errors without custom properties. Return
-        // a shape-closed status envelope so the renderer can distinguish a
-        // committed correction from a pre-commit failure across the real IPC
-        // boundary and retain the correct recovery path.
-        if (result !== null) {
-          return Object.freeze({
-            ...projectUnlockedMissionResult(result, missionId),
-            correction: Object.freeze({
-              committed: true,
-              cleanupComplete: false,
-              failureCode: committedCorrectionFailure
-                ? (operationFailure?.code ?? failure.code)
-                : failure.code,
-            }),
-          })
-        }
-        failure.cause = error
-        throw failure
       }
-    }
-    if (committedCorrectionFailure) {
-      const custodyRecoveryRequired = result?.storage_state === 'recovery_required'
+      if (committedCorrectionFailure) {
+        const custodyRecoveryRequired = result?.storage_state === 'recovery_required'
+        return Object.freeze({
+          ...projectUnlockedMissionResult(result, missionId),
+          correction: Object.freeze({
+            committed: true,
+            // The correction snapshot/session has been swept successfully. The
+            // separate failure code records only a durable attachment-custody
+            // fence; a clean live result is a successful correction despite the
+            // worker's terminal exit status.
+            cleanupComplete: true,
+            ...(custodyRecoveryRequired
+              ? { failureCode: operationFailure?.code ?? 'ARCHIVE_REHYDRATE_FAILED' }
+              : {}),
+          }),
+        })
+      }
       return Object.freeze({
         ...projectUnlockedMissionResult(result, missionId),
         correction: Object.freeze({
           committed: true,
-          // The correction snapshot/session has been swept successfully. The
-          // separate failure code records only a durable attachment-custody
-          // fence; a clean live result is a successful correction despite the
-          // worker's terminal exit status.
           cleanupComplete: true,
-          ...(custodyRecoveryRequired
-            ? { failureCode: operationFailure?.code ?? 'ARCHIVE_REHYDRATE_FAILED' }
-            : {}),
         }),
       })
+    } finally {
+      activeOperations.delete(operationId)
+      // MissionStore does not settle until its correction worker has physically
+      // exited. Completion normally releases synchronously before joining close;
+      // this idempotent fallback covers every pre-commit and validation failure.
+      correctionSnapshotLease?.release()
     }
-    return Object.freeze({
-      ...projectUnlockedMissionResult(result, missionId),
-      correction: Object.freeze({
-        committed: true,
-        cleanupComplete: true,
-      }),
-    })
   })
 
   input.ipcMain.handle(channels.listMissionArchives, async (event, missionId) => {
@@ -1059,7 +1102,10 @@ function registerMissionArchiveIpcHandlers(input) {
       }
       cleanupLease = input.archiveReviewSessionManager.acquireCleanupLease(missionId)
       activeOperations.set(operationId, Object.freeze({ senderId, missionId, kind: 'cleanup' }))
-      let cleanupSequence = 0
+      const forwardCleanupProgress = createCleanupProgressForwarder(
+        event.sender,
+        { operationId, missionId, archiveId },
+      )
       let cleanupOperation
       try {
         cleanupOperation = missionStore.startMissionCleanup(
@@ -1067,14 +1113,7 @@ function registerMissionArchiveIpcHandlers(input) {
           {
             operationId,
             reviewActivity: false,
-            onProgress: (progress) => {
-              cleanupSequence += 1
-              sendArchiveProgressBestEffort(event.sender, () => normalizeCleanupProgress(
-                progress,
-                { operationId, missionId, archiveId },
-                cleanupSequence,
-              ))
-            },
+            onProgress: forwardCleanupProgress,
           },
         )
       } finally {
@@ -1135,20 +1174,16 @@ function registerMissionArchiveIpcHandlers(input) {
       }
       cleanupLease = input.archiveReviewSessionManager.acquireCleanupLease(missionId)
       activeOperations.set(operationId, Object.freeze({ senderId, missionId, kind: 'cleanup' }))
-      let cleanupSequence = 0
+      const forwardCleanupProgress = createCleanupProgressForwarder(
+        event.sender,
+        { operationId, missionId, archiveId },
+      )
       const cleanupOperation = missionStore.resumeMissionCleanup(
         { missionId, archiveId },
         {
           operationId,
           reviewActivity: false,
-          onProgress: (progress) => {
-            cleanupSequence += 1
-            sendArchiveProgressBestEffort(event.sender, () => normalizeCleanupProgress(
-              progress,
-              { operationId, missionId, archiveId },
-              cleanupSequence,
-            ))
-          },
+          onProgress: forwardCleanupProgress,
         },
       )
       const result = await cleanupOperation

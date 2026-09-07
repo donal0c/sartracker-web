@@ -1,4 +1,5 @@
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { fork } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -8,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
-const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require(
+const { createElectronMissionStore: createElectronMissionStoreWithoutUtility, CURRENT_SCHEMA_VERSION } = require(
   '../../electron/mission-store.cjs',
 ) as {
   readonly createElectronMissionStore: (input: Readonly<Record<string, unknown>>) => {
@@ -32,8 +33,16 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require(
 const { rehydrateMissionFromSnapshot } = require('../../electron/archive-rehydrate.cjs') as {
   readonly rehydrateMissionFromSnapshot: (input: Readonly<Record<string, unknown>>) => Readonly<Record<string, string>>
 }
-const { correctionJournalDirectory } = require('../../electron/archive-correction-custody.cjs') as {
-  readonly correctionJournalDirectory: (databasePath: string) => string
+const {
+  CORRECTION_ATTACHMENT_CUSTODY_KEY,
+  correctionAttachmentPeerName,
+  createCorrectionAttachmentCustodyPlan,
+  writeCorrectionAttachmentCustody,
+} = require('../../electron/archive-correction-custody.cjs') as {
+  readonly CORRECTION_ATTACHMENT_CUSTODY_KEY: string
+  readonly correctionAttachmentPeerName: (targetName: string) => string
+  readonly createCorrectionAttachmentCustodyPlan: (input: Readonly<Record<string, unknown>>) => unknown
+  readonly writeCorrectionAttachmentCustody: (database: InstanceType<typeof Database>, plan: unknown) => void
 }
 const { deriveArchiveLifecycleEventId } = require(
   '../../electron/mission-finalization-boundary.cjs',
@@ -42,6 +51,34 @@ const { deriveArchiveLifecycleEventId } = require(
 }
 
 const temporaryDirectories = new Set<string>()
+
+/** Uses the real correction utility modules through a test-only Node IPC adapter. */
+function createElectronMissionStore(input: Readonly<Record<string, unknown>>) {
+  return createElectronMissionStoreWithoutUtility({
+    ...input,
+    createArchiveCorrectionUtilityProcess: createNodeUtilityProcess,
+  })
+}
+
+/** Emulates Electron UtilityProcess without adding a production child-process fallback. */
+function createNodeUtilityProcess(input: {
+  readonly modulePath: string
+  readonly cwd: string
+}) {
+  const fixturePath = path.join(
+    process.cwd(),
+    'tests/fixtures/electron-utility-process-child.cjs',
+  )
+  const child = fork(fixturePath, [input.modulePath], {
+    cwd: input.cwd,
+    serialization: 'advanced',
+    silent: true,
+  }) as ReturnType<typeof fork> & { postMessage: (message: unknown) => void }
+  child.postMessage = (message: unknown) => {
+    child.send(message)
+  }
+  return child
+}
 
 /** Returns the authenticated proof carried with one correction snapshot path. */
 function snapshotProof(snapshotPath: string) {
@@ -53,6 +90,71 @@ function snapshotProof(snapshotPath: string) {
       ino: identity.ino,
       sizeBytes: identity.size,
     },
+  }
+}
+
+/** Seeds the sole SQLite custody row for simulated post-commit worker failures. */
+function seedCorrectionCustody(
+  database: InstanceType<typeof Database>,
+  input: Readonly<Record<string, unknown>>,
+): void {
+  const targetRoot = path.join(
+    path.dirname(String(input.databasePath)),
+    'missions',
+    String(input.missionId),
+    'attachments',
+  )
+  mkdirSync(targetRoot, { recursive: true })
+  const identity = statSync(targetRoot, { bigint: true })
+  writeCorrectionAttachmentCustody(database, createCorrectionAttachmentCustodyPlan({
+    missionId: input.missionId,
+    archiveId: input.archiveId,
+    operationId: input.operationId,
+    finalizedEpoch: input.finalizedEpoch,
+    targetIdentity: { dev: identity.dev.toString(), ino: identity.ino.toString() },
+    mappings: [{
+      entryName: 'attachments/retained.bin',
+      sourceRelativePath: 'Retained Evidence.bin',
+      sha256: 'a'.repeat(64),
+      sizeBytes: 1,
+      references: [{ referenceId: 'marker-1', referenceKind: 'marker' }],
+    }],
+  }))
+}
+
+/** Mirrors the archive manifest's exhaustive references for one fixture attachment. */
+function attachmentReferences(
+  databasePath: string,
+  missionId: string,
+  markerId: string,
+) {
+  const database = new Database(databasePath, { readonly: true })
+  try {
+    const references: { referenceId: string; referenceKind: string }[] = [{
+      referenceId: markerId,
+      referenceKind: 'marker',
+    }]
+    for (const row of database.prepare(`SELECT id FROM mission_object_versions
+      WHERE mission_id = ? AND object_type = 'marker' AND object_id = ?`).all(
+      missionId,
+      markerId,
+    )) {
+      references.push({ referenceId: row.id, referenceKind: 'marker_version' })
+    }
+    for (const row of database.prepare(`SELECT id, event_type FROM mission_events
+      WHERE mission_id = ? AND event_type IN (
+        'marker_attachment_ingested', 'marker_created', 'marker_updated', 'marker_deleted'
+      )`).all(missionId)) {
+      const details = database.prepare('SELECT details_json FROM mission_events WHERE id = ?')
+        .get(row.id)
+      if (typeof details?.details_json === 'string'
+        && JSON.parse(details.details_json).attachment_path !== undefined) {
+        references.push({ referenceId: row.id, referenceKind: row.event_type })
+      }
+    }
+    return references
+  } finally {
+    database.close()
   }
 }
 
@@ -1203,11 +1305,7 @@ describe('archived mission correction rehydration', () => {
     })
     const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
       const database = new Database(String(input.databasePath))
-      mkdirSync(correctionJournalDirectory(String(input.databasePath)), { recursive: true })
-      writeFileSync(path.join(
-        correctionJournalDirectory(String(input.databasePath)),
-        'pending.json',
-      ), '{}', { mode: 0o600 })
+      seedCorrectionCustody(database, input)
       const timestamp = '2026-09-03T10:00:00.000Z'
       database.prepare('UPDATE missions SET status = ? WHERE id = ?')
         .run('finished', input.missionId)
@@ -1301,11 +1399,7 @@ describe('archived mission correction rehydration', () => {
     temporaryDirectories.add(userDataPath)
     const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
       const database = new Database(String(input.databasePath))
-      mkdirSync(correctionJournalDirectory(String(input.databasePath)), { recursive: true })
-      writeFileSync(path.join(
-        correctionJournalDirectory(String(input.databasePath)),
-        'pending.json',
-      ), '{}', { mode: 0o600 })
+      seedCorrectionCustody(database, input)
       const timestamp = '2026-09-03T11:00:00.000Z'
       database.prepare('UPDATE missions SET status = ? WHERE id = ?')
         .run('finished', input.missionId)
@@ -1381,16 +1475,15 @@ describe('archived mission correction rehydration', () => {
     }
   }, 60_000)
 
-  it('does not create a global fence when forced pre-commit cancellation leaves no attachment journal', async () => {
+  it('does not create a global fence when forced pre-commit cancellation leaves no SQLite custody', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-precommit-fence-'))
     temporaryDirectories.add(userDataPath)
     const cleanupFailure = Object.assign(new Error('forced cancellation interrupted custody rollback'), {
       code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
     })
     const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
-      // Simulate a stale empty journal directory left by an earlier completed
-      // correction; no journal record remains to justify a global fence.
-      mkdirSync(correctionJournalDirectory(String(input.databasePath)), { recursive: true })
+      // No custody record exists, so a forced failure cannot justify a global fence.
+      expect(input.databasePath).toBe(path.join(userDataPath, 'mission-store.sqlite'))
       const completion = Promise.reject(cleanupFailure)
       Object.defineProperty(completion, 'workerExited', { value: Promise.resolve() })
       return completion
@@ -1441,6 +1534,156 @@ describe('archived mission correction rehydration', () => {
         code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
       })
       expect(correctionRunner).toHaveBeenCalledTimes(2)
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('rejects a nominal worker success without the exact durable correction commit', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-unverified-commit-'))
+    temporaryDirectories.add(userDataPath)
+    const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
+      const completion = Promise.resolve({
+        missionId: input.missionId,
+        archiveId: input.archiveId,
+      })
+      Object.defineProperty(completion, 'workerExited', { value: Promise.resolve() })
+      Object.defineProperty(completion, 'cancel', { value: vi.fn() })
+      return completion
+    })
+    const store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+      startArchiveCorrectionWorker: correctionRunner,
+    })
+    const custody = {
+      passphrase: 'Commit Binding 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Exact correction commit binding' })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, custody)
+      const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
+      await store.syncBackup('correction-fixture')
+      const snapshotPath = path.join(userDataPath, 'unverified-commit-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '27272727-2727-4727-8727-272727272727',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: archiveId,
+        operation_id: '28282828-2828-4828-8828-282828282828',
+        snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
+        admin_name: 'Duty Admin',
+        reason: 'Require exact durable commit evidence.',
+      })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED' })
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finalized',
+        storage_state: 'archived',
+      })
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  }, 60_000)
+
+  it('durably fences a rejected worker that left a different correction operation live', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-wrong-commit-'))
+    temporaryDirectories.add(userDataPath)
+    const correctionRunner = vi.fn((input: Readonly<Record<string, unknown>>) => {
+      const database = new Database(String(input.databasePath))
+      const timestamp = '2026-09-07T12:00:00.000Z'
+      database.prepare('UPDATE missions SET status = ? WHERE id = ?')
+        .run('finished', input.missionId)
+      database.prepare(`INSERT INTO mission_events (
+        id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
+      ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
+        deriveArchiveLifecycleEventId(String(input.archiveId), 'mission-unlocked'),
+        input.missionId,
+        timestamp,
+        JSON.stringify({
+          admin_name: input.adminName,
+          reason: input.reason,
+          restored_from_archive_id: input.archiveId,
+          archive_correction_operation_id: 'wrong-operation',
+          resulting_status: 'finished',
+          storage_state: 'live',
+        }),
+        timestamp,
+      )
+      database.close()
+      const completion = Promise.reject(Object.assign(
+        new Error('worker rejected after a different operation changed durable state'),
+        { code: 'ARCHIVE_REHYDRATE_FAILED' },
+      ))
+      Object.defineProperty(completion, 'workerExited', { value: Promise.resolve() })
+      Object.defineProperty(completion, 'cancel', { value: vi.fn() })
+      return completion
+    })
+    let store = createElectronMissionStore({
+      userDataPath,
+      readAdminRoster: async () => ['Duty Admin'],
+      startArchiveCorrectionWorker: correctionRunner,
+    })
+    const custody = {
+      passphrase: 'Wrong Commit Fence 2026!',
+      recoveryCode: 'AB234-CD567-EF789-GH234-JK567-MN789-PR234-ST567',
+    }
+    try {
+      const mission = await store.createMission({ name: 'Wrong correction commit fence' })
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id, custody)
+      const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
+      await store.syncBackup('correction-fixture')
+      const snapshotPath = path.join(userDataPath, 'wrong-commit-snapshot.sqlite')
+      copyFileSync(path.join(userDataPath, 'mission-store.backup.sqlite'), snapshotPath)
+      await store.startMissionCleanup({
+        missionId: mission.id,
+        archiveId,
+        slotType: 'passphrase',
+        secret: custody.passphrase,
+      }, {
+        operationId: '29292929-2929-4929-8929-292929292929',
+        reviewActivity: false,
+        onProgress: () => undefined,
+      })
+
+      await expect(store.unlockFinalizedMission({
+        mission_id: mission.id,
+        archive_id: archiveId,
+        operation_id: '30303030-3030-4030-8030-303030303030',
+        snapshot_path: snapshotPath,
+        ...snapshotProof(snapshotPath),
+        admin_name: 'Duty Admin',
+        reason: 'Fence a mismatched durable correction operation.',
+      })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED' })
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finished',
+        storage_state: 'recovery_required',
+      })
+      await store.prepareClose()
+      store.close()
+
+      store = createElectronMissionStore({
+        userDataPath,
+        readAdminRoster: async () => ['Duty Admin'],
+      })
+      await expect(store.getMission(mission.id)).resolves.toMatchObject({
+        status: 'finished',
+        storage_state: 'recovery_required',
+      })
     } finally {
       await store.prepareClose()
       store.close()
@@ -1618,6 +1861,11 @@ describe('archived mission correction rehydration', () => {
         writeFileSync(attachmentPath, attachmentBytes, { mode: 0o600 })
         return attachmentPath
       })
+      const references = attachmentReferences(
+        path.join(userDataPath, 'mission-store.sqlite'),
+        mission.id,
+        String(marker.id),
+      )
       await store.finishMission(mission.id)
       const finalized = await store.finalizeMission(mission.id, custody)
       const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
@@ -1644,7 +1892,7 @@ describe('archived mission correction rehydration', () => {
         sourceRelativePath: 'field.jpg',
         sha256: createHash('sha256').update(attachmentBytes).digest('hex'),
         sizeBytes: attachmentBytes.length,
-        references: [{ referenceId: marker.id, referenceKind: 'marker' }],
+        references,
       }
       await expect(store.unlockFinalizedMission({
         mission_id: mission.id,
@@ -1656,12 +1904,29 @@ describe('archived mission correction rehydration', () => {
         admin_name: 'Duty Admin',
         reason: 'Restore attachment custody for a correction.',
       })).resolves.toMatchObject({ status: 'finished', storage_state: 'live' })
-      expect(readFileSync(attachmentPath)).toEqual(attachmentBytes)
       const info = await store.info()
       const liveDb = new Database(info.database_path)
       try {
-        expect(liveDb.prepare('SELECT attachment_path FROM markers WHERE id = ?').get(marker.id))
-          .toEqual({ attachment_path: attachmentPath })
+        const restored = liveDb.prepare('SELECT attachment_path FROM markers WHERE id = ?')
+          .get(marker.id)
+        expect(restored.attachment_path).not.toBe(attachmentPath)
+        expect(path.basename(restored.attachment_path))
+          .toMatch(/^correction-[0-9a-f-]+-field-[0-9a-f]+\.jpg$/u)
+        expect(readFileSync(restored.attachment_path)).toEqual(attachmentBytes)
+        const peerPath = path.join(
+          path.dirname(restored.attachment_path),
+          correctionAttachmentPeerName(path.basename(restored.attachment_path)),
+        )
+        const target = statSync(restored.attachment_path)
+        const peer = statSync(peerPath)
+        expect(target.ino).toBe(peer.ino)
+        expect(target.nlink).toBe(2)
+        expect(liveDb.prepare('SELECT value FROM metadata WHERE key = ?')
+          .get(CORRECTION_ATTACHMENT_CUSTODY_KEY)).toBeUndefined()
+        for (const version of liveDb.prepare(`SELECT state_json FROM mission_object_versions
+          WHERE mission_id = ? AND object_type = 'marker'`).all(mission.id)) {
+          expect(JSON.parse(version.state_json).attachment_path).toBe(restored.attachment_path)
+        }
       } finally {
         liveDb.close()
       }
@@ -1671,7 +1936,7 @@ describe('archived mission correction rehydration', () => {
     }
   }, 60_000)
 
-  it('fences later archive work when post-commit attachment journal removal cannot be proven', async () => {
+  it('rolls back unlock and fences later archive work when atomic custody clear fails', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-post-commit-cleanup-'))
     temporaryDirectories.add(userDataPath)
     const store = createElectronMissionStore({
@@ -1704,6 +1969,11 @@ describe('archived mission correction rehydration', () => {
         writeFileSync(attachmentPath, attachmentBytes, { mode: 0o600 })
         return attachmentPath
       })
+      const references = attachmentReferences(
+        path.join(userDataPath, 'mission-store.sqlite'),
+        mission.id,
+        String(marker.id),
+      )
       await store.finishMission(mission.id)
       const finalized = await store.finalizeMission(mission.id, custody)
       const archiveId = String((finalized as { readonly archive: { readonly id: string } }).archive.id)
@@ -1729,7 +1999,7 @@ describe('archived mission correction rehydration', () => {
         sourceRelativePath: 'field.jpg',
         sha256: createHash('sha256').update(attachmentBytes).digest('hex'),
         sizeBytes: attachmentBytes.length,
-        references: [{ referenceId: marker.id, referenceKind: 'marker' }],
+        references,
       }
       await expect(store.unlockFinalizedMission({
         mission_id: mission.id,
@@ -1742,9 +2012,29 @@ describe('archived mission correction rehydration', () => {
         reason: 'Prove the post-commit custody fence.',
       })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED' })
       await expect(store.getMission(mission.id)).resolves.toMatchObject({
-        status: 'finished',
+        status: 'finalized',
         storage_state: 'recovery_required',
       })
+      const fenced = new Database(path.join(userDataPath, 'mission-store.sqlite'))
+      try {
+        const custodyRow = fenced.prepare('SELECT value FROM metadata WHERE key = ?')
+          .get(CORRECTION_ATTACHMENT_CUSTODY_KEY)
+        expect(custodyRow).toBeDefined()
+        const plan = JSON.parse(custodyRow.value)
+        const [entry] = plan.entries
+        const targetPath = path.join(
+          userDataPath,
+          'missions',
+          mission.id,
+          'attachments',
+          entry.targetName,
+        )
+        const peerPath = path.join(path.dirname(targetPath), entry.peerName)
+        expect(statSync(targetPath).ino).toBe(statSync(peerPath).ino)
+        expect(statSync(targetPath).nlink).toBe(2)
+      } finally {
+        fenced.close()
+      }
       await expect(store.unlockFinalizedMission({
         mission_id: mission.id,
         archive_id: archiveId,

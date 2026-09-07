@@ -775,6 +775,7 @@ describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON
       expectedHead: HEAD,
       seedPositionRows: 2_048,
       timeoutMs: 240_000,
+      preparedEvidence: false,
       extraArgs: ['--no-sandbox'],
     })
 
@@ -796,6 +797,14 @@ describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON
       '--app', '/tmp/app', '--evidence', '/tmp/e', '--expected-head', HEAD,
       '--', '--archive-secret=must-never-be-forwarded',
     ])).toThrow(/secret|credential|custody/iu)
+    expect(parseArchiveLifecycleSmokeArgs([
+      '--app', '/tmp/app', '--evidence', '/tmp/e', '--expected-head', HEAD,
+      '--prepared-evidence',
+    ])).toMatchObject({ preparedEvidence: true })
+    expect(() => parseArchiveLifecycleSmokeArgs([
+      '--app', '/tmp/app', '--evidence', '/tmp/e', '--expected-head', HEAD,
+      '--prepared-evidence', '--prepared-evidence',
+    ])).toThrow(/only once|prepared/iu)
   })
 
   it('builds a deterministic exact-head CI invocation and Linux-only renderer environment', () => {
@@ -821,6 +830,23 @@ describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',
+    ])
+    expect(buildArchiveLifecycleSmokeCiRunnerArgs({
+      appPath: '/tmp/sartracker-web',
+      evidenceDir: '/repo/tmp/.archive-child-run',
+      expectedHead: HEAD,
+      platform: 'darwin',
+      preparedEvidence: true,
+      projectRoot: '/repo',
+    })).toEqual([
+      '/repo/scripts/electron-archive-lifecycle-smoke.mjs',
+      '--app',
+      '/tmp/sartracker-web',
+      '--evidence',
+      '/repo/tmp/.archive-child-run',
+      '--expected-head',
+      HEAD,
+      '--prepared-evidence',
     ])
     expect(buildArchiveLifecycleSmokeCiEnvironment({
       environment: { DISPLAY: ':99', EXISTING: 'preserved' },

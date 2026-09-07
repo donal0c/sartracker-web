@@ -61,7 +61,7 @@ const {
   createArchiveCustodyJournal,
 } = require('./archive-custody-journal.cjs')
 const {
-  correctionJournalDirectory,
+  hasCorrectionAttachmentCustody,
 } = require('./archive-correction-custody.cjs')
 const {
   startArchiveCorrectionAttachmentRecovery,
@@ -163,6 +163,11 @@ const MAX_ADMITTED_GPX_IMPORT_BATCHES = 4
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
+const ARCHIVE_CORRECTION_RECOVERY_METADATA_KEY =
+  'archive_correction_attachment_recovery_failure'
+const ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED =
+  'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+const ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED = 'ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED'
 const INGEST_ANOMALY_OUTBOX_DIRECTORY_NAME = 'ingest-anomaly-outbox'
 const COVERAGE_TILE_CACHE_DIRECTORY_NAME = 'coverage-renderer-cache'
 const ARCHIVE_VERSION = 1
@@ -469,6 +474,7 @@ function createElectronMissionStore(options) {
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
   const archiveLifecycleFaultInjection = options.archiveLifecycleFaultInjection ?? {}
   const archiveCorrectionFaultInjection = options.archiveCorrectionFaultInjection ?? {}
+  const createArchiveCorrectionUtilityProcess = options.createArchiveCorrectionUtilityProcess
   const readArchiveFile = options.readArchiveFile ?? fs.readFile
   const storageDiagnostics = options.storageDiagnostics ?? null
   const coverageLedgerFaultInjection = options.coverageLedgerFaultInjection ?? {}
@@ -535,21 +541,34 @@ function createElectronMissionStore(options) {
   let archiveCorrectionAttachmentRecoveryFailure = null
   let archiveCorrectionAttachmentRecoveryShutdownRequested = false
   let archiveCorrectionAttachmentRecoveryPromise = Promise.resolve()
-  if (fsSync.existsSync(correctionJournalDirectory(databasePath))) {
+  const existingCorrectionRecoveryFailure = db.prepare(
+    'SELECT value FROM metadata WHERE key = ?',
+  ).get(ARCHIVE_CORRECTION_RECOVERY_METADATA_KEY)
+  if (existingCorrectionRecoveryFailure?.value === ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED) {
+    archiveCorrectionAttachmentRecoveryFailure = ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED
+  } else if (hasCorrectionAttachmentCustody(db)) {
     try {
-      db.prepare(`INSERT INTO metadata (key, value) VALUES (
-        'archive_correction_attachment_recovery_failure', 'pending'
-      ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run()
-      const operation = archiveCorrectionAttachmentRecoveryRunner({ databasePath })
+      db.prepare(`INSERT INTO metadata (key, value) VALUES (?, 'pending')
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+        ARCHIVE_CORRECTION_RECOVERY_METADATA_KEY,
+      )
+      const operation = archiveCorrectionAttachmentRecoveryRunner({
+        databasePath,
+        createUtilityProcess: createArchiveCorrectionUtilityProcess,
+      })
       activeArchiveWorkerOperations.add(operation)
       archiveCorrectionAttachmentRecoveryPromise = (async () => {
         try {
           await operation
           await Promise.resolve(operation.workerExited ?? operation)
+          if (hasCorrectionAttachmentCustody(db)) {
+            throw new Error('Archive correction recovery exited before clearing custody.')
+          }
           archiveCorrectionAttachmentRecoveryFailure = null
           if (!storeClosed) {
-            db.prepare(`DELETE FROM metadata
-              WHERE key = 'archive_correction_attachment_recovery_failure'`).run()
+            db.prepare('DELETE FROM metadata WHERE key = ?').run(
+              ARCHIVE_CORRECTION_RECOVERY_METADATA_KEY,
+            )
           }
         } catch (error) {
           if (archiveCorrectionAttachmentRecoveryShutdownRequested
@@ -566,20 +585,13 @@ function createElectronMissionStore(options) {
       markArchiveCorrectionAttachmentRecoveryRequired()
     }
   } else {
-    // A missing journal directory is not proof that attachment custody
-    // recovery completed. Preserve any durable blocker and fail closed until
-    // an operator explicitly resolves the custody state.
-    const recoveryMarker = db.prepare(`SELECT value FROM metadata
-      WHERE key = 'archive_correction_attachment_recovery_failure'`).get()
-    if (recoveryMarker?.value === 'completed') {
-      // The recovery worker records completion before removing its final
-      // journal directory. A restart after that point can safely clear the
-      // marker even though there is no directory left to scan.
-      db.prepare(`DELETE FROM metadata
-        WHERE key = 'archive_correction_attachment_recovery_failure'`).run()
-    } else if (recoveryMarker !== undefined) {
-      archiveCorrectionAttachmentRecoveryFailure =
-        'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+    // A cleared SQLite custody record is the durable completion point. A
+    // leftover marker means the utility committed reconciliation before main
+    // could clear its renderer-facing blocker during the previous shutdown.
+    if (existingCorrectionRecoveryFailure !== undefined) {
+      db.prepare('DELETE FROM metadata WHERE key = ?').run(
+        ARCHIVE_CORRECTION_RECOVERY_METADATA_KEY,
+      )
     }
   }
   const archiveRegistry = createArchiveRegistry({
@@ -1202,27 +1214,32 @@ function createElectronMissionStore(options) {
     throw error
   }
 
-  /** Reports whether correction attachment custody left a journal to recover. */
-  function hasCorrectionAttachmentRecoveryResidue(databasePath) {
-    const directory = correctionJournalDirectory(databasePath)
+  /** Reports whether correction attachment custody remains durably admitted. */
+  function hasCorrectionAttachmentRecoveryResidue() {
     try {
-      return fsSync.readdirSync(directory).length > 0
-    } catch (error) {
-      if (error?.code === 'ENOENT') return false
-      // An unreadable custody directory is itself unresolved custody state;
-      // fail closed rather than silently treating it as an empty directory.
+      return hasCorrectionAttachmentCustody(db)
+    } catch {
       return true
     }
   }
 
   /** Retains an unresolved correction journal as a durable archive-lane blocker. */
   function markArchiveCorrectionAttachmentRecoveryRequired() {
-    archiveCorrectionAttachmentRecoveryFailure =
-      'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED'
+    markArchiveCorrectionRecoveryRequired(ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED)
+  }
+
+  /** Retains an exact-operation commit ambiguity across restart. */
+  function markArchiveCorrectionCommitUnverified() {
+    markArchiveCorrectionRecoveryRequired(ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED)
+  }
+
+  /** Persists one closed correction recovery failure code. */
+  function markArchiveCorrectionRecoveryRequired(code) {
+    archiveCorrectionAttachmentRecoveryFailure = code
     if (storeClosed) return
-    db.prepare(`INSERT INTO metadata (key, value) VALUES (
-      'archive_correction_attachment_recovery_failure', ?
-    ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+    db.prepare(`INSERT INTO metadata (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+      ARCHIVE_CORRECTION_RECOVERY_METADATA_KEY,
       archiveCorrectionAttachmentRecoveryFailure,
     )
   }
@@ -2897,6 +2914,7 @@ function createElectronMissionStore(options) {
     upsertLayerCatalogMetadata: async (input) => upsertLayerCatalogMetadata(db, input),
     clearLayerCatalogMetadata: async (missionId) => clearLayerCatalogMetadata(db, missionId),
     getMission: async (missionId) => getMission(db, missionId),
+    getCommittedArchiveCorrection: async (input) => readCommittedArchiveCorrection(input),
     listMissions: async () => all(db, 'SELECT * FROM missions ORDER BY start_time DESC')
       .map((mission) => projectMissionStorageState(db, mission)),
     listMissionIdsAwaitingEvidenceClosure: async () => all(
@@ -2977,20 +2995,56 @@ function createElectronMissionStore(options) {
               attachmentMappings: rehydrationInput.attachmentMappings,
               signal: rehydrationInput.signal,
               faultInjection: archiveCorrectionFaultInjection,
+              createUtilityProcess: createArchiveCorrectionUtilityProcess,
             })
             admission.cancel = typeof operation?.cancel === 'function'
               ? operation.cancel
               : null
             admission.workerExited = Promise.resolve(operation?.workerExited ?? operation)
-            return await awaitArchiveWorker(operation)
+            const terminal = await awaitArchiveWorker(operation)
+            if (!isCommittedArchiveCorrection(
+              db,
+              rehydrationInput.missionId,
+              rehydrationInput.archiveId,
+              rehydrationInput.operationId,
+            )) {
+              const currentMission = getMission(db, rehydrationInput.missionId)
+              if (currentMission.status === 'finished'
+                || hasCorrectionAttachmentRecoveryResidue()) {
+                markArchiveCorrectionCommitUnverified()
+              }
+              const failure = new Error(
+                'Archive correction utility success did not match the exact durable commit.',
+              )
+              failure.code = ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED
+              throw failure
+            }
+            return terminal
           } catch (error) {
+            if (hasCorrectionAttachmentRecoveryResidue()
+              && archiveCorrectionAttachmentRecoveryFailure
+                !== ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED) {
+              markArchiveCorrectionAttachmentRecoveryRequired()
+            }
             const committedCorrection = isCommittedArchiveCorrection(
               db,
               rehydrationInput.missionId,
               rehydrationInput.archiveId,
+              rehydrationInput.operationId,
             )
+            if (!committedCorrection
+              && getMission(db, rehydrationInput.missionId).status === 'finished') {
+              markArchiveCorrectionCommitUnverified()
+              if (error?.code === ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED) throw error
+              const failure = new Error(
+                'Archive correction durable state does not identify the exact operation.',
+              )
+              failure.code = ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED
+              failure.cause = error
+              throw failure
+            }
             if (committedCorrection) {
-              if (hasCorrectionAttachmentRecoveryResidue(databasePath)) {
+              if (hasCorrectionAttachmentRecoveryResidue()) {
                 markArchiveCorrectionAttachmentRecoveryRequired()
               }
               if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') throw error
@@ -3002,7 +3056,7 @@ function createElectronMissionStore(options) {
               throw failure
             }
             if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED') {
-              if (hasCorrectionAttachmentRecoveryResidue(databasePath)) {
+              if (hasCorrectionAttachmentRecoveryResidue()) {
                 markArchiveCorrectionAttachmentRecoveryRequired()
               }
               throw error
@@ -3016,11 +3070,41 @@ function createElectronMissionStore(options) {
     ),
   }
 
+  /** Returns a projected mission only for an exact durable correction commit. */
+  function readCommittedArchiveCorrection(input) {
+    if (input === null || typeof input !== 'object' || Array.isArray(input)
+      || Object.keys(input).sort().join(',') !== 'archiveId,missionId,operationId') {
+      throw new Error('Archive correction commit identity is invalid.')
+    }
+    const missionId = normalizeBoundedRequiredText(
+      input.missionId,
+      'Archive correction commit mission identity',
+      200,
+    )
+    const archiveId = normalizeBoundedRequiredText(
+      input.archiveId,
+      'Archive correction commit archive identity',
+      200,
+    )
+    const operationId = normalizeBoundedRequiredText(
+      input.operationId,
+      'Archive correction commit operation identity',
+      200,
+    )
+    return isCommittedArchiveCorrection(db, missionId, archiveId, operationId)
+      ? getMission(db, missionId)
+      : null
+  }
+
   /** Reconciles a worker death that occurred after the durable correction transaction committed. */
-  function isCommittedArchiveCorrection(database, missionId, archiveId) {
+  function isCommittedArchiveCorrection(database, missionId, archiveId, operationId) {
     const mission = database.prepare('SELECT status FROM missions WHERE id = ?')
       .get(missionId)
-    if (mission?.status !== 'finished' || readMissionLiveReviewStorageState(database, missionId) !== 'live') return false
+    const storageState = mission?.status === 'finished'
+      ? readMissionLiveReviewStorageState(database, missionId)
+      : null
+    if (mission?.status !== 'finished'
+      || !['live', 'recovery_required'].includes(storageState)) return false
     let unlockEventId
     try {
       unlockEventId = deriveArchiveLifecycleEventId(archiveId, 'mission-unlocked')
@@ -3032,6 +3116,9 @@ function createElectronMissionStore(options) {
     const details = readEventDetails(event?.details_json)
     return event?.mission_id === missionId && event.event_type === 'mission_unlocked'
       && details.restored_from_archive_id === archiveId
+      && details.archive_correction_operation_id === operationId
+      && details.resulting_status === 'finished'
+      && details.storage_state === 'live'
   }
 
   /** Orders asynchronous attachment custody and Finish for one mission. */

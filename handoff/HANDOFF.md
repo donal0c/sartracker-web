@@ -1,359 +1,131 @@
 # HANDOFF.md — Live Baton
 
-> Read this after `CLAUDE.md`. Keep this file short and operational. Historical
-> detail lives in `handoff/archive/`, the two-track workplan, Linear, and commits.
+> Read this after `CLAUDE.md`. Historical detail and exact prior receipts live
+> in `docs/breadcrumb-pr6-evidence.md` and the archived baton.
 
 ## Current State
 
-- **PR #10 recovery is active on the existing
+- PR #10 recovery remains active on the existing
   `codex/breadcrumb-pr6-archive-lifecycle` branch for `DON-248`, `DON-252`, and
-  `DON-253`.** Donal retains approval, merge, release, and team-contact authority.
-  Final immutable head/tree, proof receipts, and reviewer verdicts belong in the
-  PR/Linear ledger so recording them does not create a different source head.
-- **Exact head `caf9e5e480fcd02cc44d68c8397efcd6ae78f2cd` is rejected.** Its Ubuntu
-  qualifier created and verified a 5,243,848,931-byte archive, but the receipt
-  ended `UNCLASSIFIED_INTERNAL_FAILURE` at `teardown:incomplete`. Profile cleanup
-  did complete. An unbounded `Math.max(...samples)` diagnostics aggregation
-  caused the misleading teardown classification; constant-space aggregation is
-  the repair. Independent measurements also showed real multi-second create,
-  restore, cleanup, and durable-write stalls.
-- **Exact recovery head `49523dc8b460a2080c5fbbd3bc11c961296f481d` is
-  rejected.** Linux run `33908771732` passed through packaged tracking soak,
-  then the archive lifecycle failed `current_fix_continuity_gate_breached`.
-  A faithful macOS package reproduced a second generic
-  `current_fix_not_observed_before_gate` failure. The runner wrote no failure
-  receipt, so those labels did not identify a phase or prove a product stall.
-- **Exact local head `81e47973714ff5cbbd908329559009c281b352fe` is also
-  rejected.** Its clean macOS package emitted the new 0600 failure receipt and
-  stopped in `create` before any archive operation (`operationCount: 0`) on
-  `renderer_frame_sample_invalid`. The first queued animation-frame timestamp
-  predated the `performance.now()` phase arm. The narrow red-first repair uses
-  one clock for both endpoints and distinguishes a repeated primary probe fault
-  from a genuinely new stop failure. It also settles the external watchdog and
-  releases launch ownership before propagating that fresh stop failure; the
-  strict `<200 ms` gate is unchanged.
-- **Exact local head `74bdd95ca3bbd09f775ba111d53f6313e76769d6` is
-  rejected.** Its clean package produced one exact create sample with every gap
-  below 34 ms, then failed `source_identity_left_pending_at_operation_start`
-  before an archive operation began. Continuous polling emitted a source fix
-  between the non-atomic renderer and source ledger cuts. That normal in-flight
-  join state must remain under its original 200 ms expiry and must not count as
-  operation-fresh. The receipt also counted a secondary teardown expiry without
-  identifying it; bounded sanitized cleanup attribution is required.
-- **Exact local head `6a72ae91720b0ce65a9274c2c462dcad484587f5` is
-  rejected.** Its exact package passed, then its one lifecycle attempt wrote a
-  complete 0600 failure receipt. One source emitted 45 ms before operation start
-  expired at 213 ms even though 17 later operation-fresh/19 total exact create
-  identities reached MapLibre; maxima were 54 ms continuity, 4 ms source/request
-  latency, 50.366 ms main, and 10.7 ms renderer frame. This is a latest-state
-  proof-model false negative, not product or host stall evidence: Zustand/React
-  may legitimately supersede an intermediate HTTP snapshot before MapLibre.
-  Exact successor acknowledgements now retire only older snapshots still below
-  their original deadline; no acknowledgement, invalid/late acknowledgement,
-  or sequence regression remains fail-closed at the unchanged `>=200 ms` gate.
-- **Exact local head `2316130047fb1c69e966ac58956b1abc0b6a5792` is
-  rejected.** Its exact package passed, then its one lifecycle attempt wrote the
-  sole 0600 terminal artifact: a failure receipt with SHA-256
-  `36795e1f7512b982015f90c9b292f1f7b3445d6069dfc1ba474854f4a5fc3c31`.
-  Restore recorded 38 exact MapLibre samples and a 216 ms continuity trigger,
-  with 13 ms source/request latency, 153.65 ms main, and 16.9 ms renderer-frame
-  maxima; process/profile cleanup completed with no secondary failure. The
-  receipt is harness-indeterminate, not admissible product-stall proof: the main
-  watchdog could audit a stale externally drained renderer watermark while a
-  timely fix was already stamped in the renderer. Separately, source retrace
-  confirmed a real cadence risk: successful polling waited for durable snapshot
-  settlement and then added the full 50 ms validation interval.
-- **Exact pushed head `d91ec23252afa118cc6323ed840554bb109043b2` is
-  rejected for final qualification.** Its exact macOS package and sole macOS
-  packaged lifecycle attempt passed, bound to tree `560b3dc6…`, ASAR
-  `cdd430e0…`, and a
-  0600 report with SHA-256 `beefb7fb…`; all phase liveness maxima were strictly
-  below 200 ms. Chromium `173/173`, visual Playwright `62/62`, and the fresh
-  uncached visual review `74/74` also passed. The physical kill matrix then
-  failed with no report. Diagnostic subsets isolated `create.seal`: ciphertext,
-  registry digest/size/file identity, operation ID, and cleanup gate were intact,
-  but the parent oracle searched the public archive projection for the private
-  `creation_operation_id` field that projection deliberately omits. The resulting
-  baseline-custody failure is a harness false negative, not archive loss. A real-
-  process red regression now requires authoritative operation-bound rediscovery.
-  Exact-head Linux run `33935825755` passed lint, units, build, artifact
-  inspection, replay, llvmpipe, and packaged tracking soak, then wrote a
-  cleanup-complete archive-lifecycle failure receipt before any archive
-  operation. The readiness predicate had accepted the participant list's single
-  empty-state paragraph as one hydrated participant. A mock fix was therefore
-  attributed to `create` while the application correctly withheld it from
-  MapLibre during participant-scope loading. The successor requires the exact
-  active device in both the public participant store and a rendered
-  `.sar-readout` before arming liveness, including after restart. Each readiness
-  IPC read is bounded by the remaining monotonic readiness budget so a wedged
-  renderer fails into terminal cleanup and receipt publication.
-- **Exact pushed head `7e0d8ea3407aeecd298fd25cc16130c132ae9dc8` is
-  rejected for final qualification.** Its exact macOS arm64 package and sole
-  packaged lifecycle attempt passed: tree `a036132e…`, ASAR `76f311ef…`, 0600
-  lifecycle report SHA-256 `23112d9d…`, two launches, 5,516 cleaned rows, zero
-  secret/plaintext residue, and every phase maximum strictly below 200 ms.
-  Chromium passed `173/173`, visual Playwright `62/62`, fresh uncached visual
-  review `74/74`, and the exact physical SIGKILL matrix qualified `32/32` with
-  report SHA-256 `fea482fc…`. Linux run `33938682590` was deliberately cancelled
-  after final review found an accepted P2 and is not evidence. Broad and
-  concurrency reviews were clean; persistence found same-name mission recovery
-  was not bound to the original UUID, and renderer review found rendered
-  participant readiness was not bound to device identity and sealed archive
-  presence did not prove operator recovery readiness. Those three findings are
-  repaired red-first in the current successor. The archive oracle now reuses
-  the production IPC projector, requires exact v2 passphrase/recovery slots and
-  sealed/verified recovery semantics, derives Review inputs from that projection,
-  and includes the projector in its five-file evidence-identity manifest.
-- **Exact pushed head `b75f8689304769438157cd5e018996cdafcdb328` / tree
-  `3216b03286c8543dfbeaff42097528ca197cbd7e` is rejected.** Its sole exact
-  macOS packaged lifecycle, Chromium `173/173`, visual Playwright `62/62`, fresh
-  uncached visual review `74/74`, and physical SIGKILL `32/32` passed. Linux run
-  `33940959449` passed source binding, lint, `3,770` deterministic tests,
-  build/package, 960k Replay, artifact/native-SQLite inspection, llvmpipe, and
-  packaged tracking soak. The first pre-cleanup Review operation then failed the
-  unchanged strict liveness gate at `240 ms` current-fix continuity (`59.142 ms`
-  main, `118.1 ms` renderer frame, and `67 ms` source/request-to-renderer
-  maxima); packages were not uploaded. This is accepted cadence-failure evidence,
-  not a harness false negative. Persistence/concurrency review also found that
-  two post-predicate renderer confirmation reads could outlive their monotonic
-  readiness budget. This head will not be rerun unchanged.
-- **Exact local head `b7793753ecfec7984214c07dfea21a3918a96c6d` / tree
-  `b3f1251d19b9acb0af64f098bbc8f649fbd07217` is rejected.** Its exact clean
-  macOS arm64 package completed, but its sole lifecycle attempt rejected after
-  two launches and wrote a cleanup-complete mode-0600 failure receipt with
-  SHA-256 `2c93e138f10bafa24ba7a745ad730a786750cdd94be215aaa1f8acbe801392e1`.
-  The receipt contains no `>=200 ms` failure or source/renderer diagnostics;
-  the old path deleted the named checkpoint before throwing, so it cannot
-  distinguish resumed restore from post-cleanup Review. Source retrace
-  reproduced a cumulative-phase-count race with a pre-operation in-flight fix.
-  This is proof-boundary-indeterminate, not product-stall evidence, and b779
-  will not be pushed or rerun unchanged.
-- **Exact local head `30061c2d93f20cdc7f48d6abb5b77bbd041abdd0` / tree
-  `a77a4a37689791f958158c9c43608251e8fbc972` is rejected.** Its exact package
-  completed, then its sole two-launch lifecycle attempt failed at cleanup start
-  after `9,937 ms` with `ARCHIVE_CLEANUP_FAILED`. The mode-0600 failure receipt
-  has SHA-256 `659aa9ed2cd155196d9b4d1f575c62433a0fd08cb1417be9e927901f44fafdc4`;
-  process/profile cleanup completed, but the old IPC boundary discarded the
-  worker diagnostic. A deterministic two-WAL-connection regression reproduced
-  the same immediate public failure: cleanup read in a deferred transaction, a
-  live-mission commit invalidated that snapshot, SQLite raised
-  `SQLITE_BUSY_SNAPSHOT`, and the membership wrapper hid it from the busy retry.
-  Ordinary worker-open WAL contention was directly disproved.
-- **Exact local head `e9584e94dbb7bc8403a62517657b6518e0a2627f` / tree
-  `c45f2064231a4b533499a32d3fbf39c240c125fd` is rejected.** Its exact package
-  completed, then its sole two-launch lifecycle attempt rejected after
-  `11,287 ms` during restore-phase `review_after_cleanup` with
-  `renderer_cdp_watchdog_failed`. The mode-0600 receipt has SHA-256
-  `a7a2f9bd1e694e8aa77b6b9b971700261c41bc279cae7b7cfc34379fde0aa5d7`;
-  process/profile cleanup completed. It retained 63 fresh operation samples,
-  a 64-sample phase delta, every reported restore maximum below 120 ms, and no
-  current-fix timeout or continuity fault. The old receipt cannot distinguish a
-  CDP timeout from rejection, so this is instrumentation-indeterminate rather
-  than product-stall evidence.
-- **Exact local head `ec258ebadafcabbe9ad8c513f35aa705566a3a70` / tree
-  `ef09d6a401759b3aeba54b613ba14289bbbf841f` is rejected.** Its exact package
-  completed, then its sole two-launch lifecycle attempt rejected after
-  `10,956 ms` on one final evidence gate. The mode-0600 receipt has SHA-256
-  `e816a6055d5f9e4384cb70a18e667b88d8d90dbd15b096bd2dddfd6ef63b244e`;
-  it retained no gate reason or liveness diagnostic, but recorded zero cleanup
-  failures and complete process/profile cleanup. The discarded reason is
-  irrecoverable, so this is final-validation-indeterminate rather than product-
-  failure evidence. A confirmed harness seam allowed a raw `199.9996 ms` value
-  to pass `<200`, round to `200`, and fail only the final validator; this is the
-  strongest explanation but is not proven as ec258eba's historical gate.
-- **The recovery cause is understood.** The field fixture retained roughly 9.7
-  million high-volume telemetry `mission_events`, and archive paths repeatedly
-  scanned mission history for finalization and acknowledgement state. The old
-  sub-millisecond “current position” measurement was only an in-process map
-  operation and did not prove the packaged renderer path.
-- **The successor source work below passed its pre-freeze gates.**
-  It uses deterministic current-finalization lookups, lazy evidence-loss
-  acknowledgement lookup with a durable
-  projection, mission-scoped logical cleanup with a restart-safe rowid cursor
-  and telemetry-only `mission_events` deletion, constant-space diagnostics, and
-  a packaged Electron external watchdog that correlates exact synthetic Traccar
-  fixes through main/preload, React, and the MapLibre source. Every liveness
-  dimension is a strict `<200 ms` gate; ledger overflow and missing continuity
-  fail closed. The liveness repair now starts after instrumentation is armed,
-  preserves exact-fix, main, and renderer continuity across phase handoffs,
-  drains the final operation ledger, ends before unrelated terminal closeout,
-  pauses renderer attribution before teardown, keeps profiles when an owned
-  process may survive, and enforces one atomic sanitized terminal artifact. A
-  valid repeated-correction lineage now remains live after re-finalization and
-  ordinary Admin Unlock. Its deterministic archive-owned unlock IDs and linked
-  rowid/time proofs require only existing unique-id and rowid point reads: no
-  startup index, migration, history scan, or sort was added. Causal source-
-  sequence fences now separate global continuous-poll evidence from finite
-  operation-fresh evidence, and renderer drain/correlation is serialized across
-  explicit and watchdog collection without extending the strict 200 ms duty.
-  The b779 proof repair keeps that end-at-work fence: resumed restore waits for
-  its own exact checkpoint-fresh fix inside the operation, while post-cleanup
-  Review establishes a new restore-phase baseline before its named operation.
-  Pre-start and post-end fixes remain ineligible. A missing-fresh failure now
-  snapshots its validated operation kind, causal fences, phase delta, source
-  cadence, and phase metrics before checkpoint removal.
-  Exact renderer sequence acknowledgements model the latest-state UI boundary:
-  they may supersede older pending snapshots only before the older original
-  deadline, cannot refresh a deadline, cannot satisfy a different operation,
-  and fail closed if they regress within or across drains.
-  The b75 successor publishes each accepted current snapshot synchronously and
-  schedules its next poll without waiting for mission persistence or cache
-  preparation/write. Accepted evidence transfers into a globally capacity-bounded
-  queue (eight payloads) with per-mission FIFO, one guardian per mission, exact persisted-payload
-  coalescing, and sticky durable overflow/loss evidence; Finish and stop
-  drain/retry before releasing ownership. Raw canonical evidence is retained
-  before participant hydration and participant-scoped only at persistence.
-  Cache work has one active plus one latest pending write, captures `cached_at`
-  at observation time, retains all current fixes plus at most 5,000 cross-device
-  breadcrumb representatives, and yields throughout large selection work. Both
-  lifecycle renderer confirmation reads now share the remaining monotonic
-  deadline. Current-fix absence is audited only through a serialized renderer
-  collection's request-start watermark; independent main ticks still enforce
-  the main gate but cannot overtake a renderer observation. The strict
-  `>=200 ms` current-fix and source deadlines remain unchanged.
-  Queue acquisition and CDP work each retain their own strict bound; late timed-
-  out drains are poisoned and cannot commit stale evidence. Exact phase handoff
-  partitions fixes at one renderer-owned watermark and operation segments carry
-  immutable lower/upper bounds. Pause owns pre-mutation and post-mutation drains,
-  freezes the original continuity bound, and resumes that partial state during
-  cleanup retry without crediting a post-pause fix. Genuinely new renderer or
-  cleanup failures carry bounded, sanitized attribution, while nullish/hostile
-  failure shapes remain terminal and cannot suppress the receipt. The physical-
-  kill oracle now uses private operation identity only to correlate the recovered
-  archive ID, then requires that ID exactly once in a fresh public projection and
-  revalidates UUID, mission, and creation-operation identity in the final post-
-  close custody snapshot. Restart readiness also binds the original mission UUID
-  and requires one exact device identity in both durable participant state and
-  the rendered row. Public archive readiness is projected through the same pure
-  CommonJS boundary as renderer IPC and fails closed unless the exact v2 archive
-  is presently recoverable with unique passphrase and recovery slots.
-  The 30061 successor acquires the SQLite writer slot before each cleanup
-  boundary reads, so a concurrent other-mission commit cannot invalidate its
-  snapshot. The red-first regression proves cleanup completion, exact target-row
-  removal, bounded contender rejection, and immediate post-cleanup writability
-  for the active mission. Busy-family errors remain finitely retried and the
-  strict `<200 ms` liveness gate is unchanged. Cleanup failures now carry only a
-  versioned bounded enum/cursor/inventory-table diagnostic through worker,
-  runner, closed IPC, Playwright's first error line, and the mode-0600 receipt;
-  malformed, hostile, path-, text-, and identifier-shaped secret inputs fail
-  closed.
-  The e958 successor moves Review aggregation out of one large renderer return
-  into sequential bounded-size transfers and reserves a second CDP connection
-  to the exact same renderer target for liveness only. Missing or ambiguous
-  target identity fails closed, each transport close has an independent
-  cleanup-only bound, and the first CDP failure retains bounded stage/cause
-  attribution. Queue and liveness requests keep their separate strict 200 ms
-  bounds. The ec258eba successor preserves raw already-validated timing values
-  in JSON and retains bounded, sanitized final-validator reasons without
-  weakening the gate. Malformed metadata publishes a distinct bounded unreadable
-  receipt instead of suppressing evidence or inventing a gate count.
+  `DON-253`. Donal retains approval, merge, release, and team-contact authority.
+- Pushed head `20486b6c` / tree `131da068` is rejected. Its package, browser,
+  visual, and kill evidence is prior-head only; later review found correction-
+  custody races and Linux run `33954733857` was cancelled.
+- The next source tree `840947d5fcacb66c64597f85f6a434753de621a9`
+  was rejected pre-package for a correction pathname-rebind race and a lifecycle
+  terminal-consumption race.
+- Reviewed tree `91f8f3ed` was rejected pre-commit by two fixed 50 ms test waits
+  across lazy dialogs (`3,958/3,960` passed); product behavior was not implicated.
+- Its reviewed descendant `969bf644` was rejected pre-commit when the unchanged
+  25,000-row acknowledgement test exceeded Vitest's generic 5-second ceiling
+  under suite contention (`3,959/3,960` passed). At each freeze, no package or
+  deferred platform gate had run.
+- Behavioral tree `d5727b82` passed two clean bounded delta reviews and its one
+  full non-browser source cycle. Production sources and strict liveness gates
+  remain unchanged; any final status-only descendant must preserve every non-doc
+  blob from that reviewed and tested tree.
+
+## Active Work
+
+- Correction attachment mutation runs only in a cwd-bound Electron
+  `utilityProcess` authenticated by exact database-directory identity. One
+  SQLite custody plan precedes bytes; each restored attachment is an exact
+  operation-owned mode-0600 two-link pair revalidated around archive reads.
+- Correction unlock and plan removal commit atomically. Cancellation, crash,
+  failed correction, and startup recovery do not delete or rename attachment
+  residue. Reconciliation computes full byte proofs outside SQLite's writer
+  transaction, then revalidates the exact plan, mission/unlock state, directory
+  identity, and unchanged pair topology before clearing custody.
+- UtilityProcess messages are V8-cloneable and cancellation uses message plus
+  bounded termination. Completion and fallback require the same exact correction
+  operation in the terminal and durable unlock event. Any ambiguous commit or
+  residual custody is durably fenced across restart, and physical helper exit is
+  joined before correction ownership is released.
+- Lifecycle supervision now separates a short preparation gate, durable active
+  lease, parent-prepared child staging, canonical terminal inode, and durable
+  consumed record. Only the exact active lease owner may touch a terminal
+  boundary. Success is exposed only after settled child cleanup, then read back
+  and consumed before return.
+- Same-head lifecycle reuse remains forbidden. A dead consumed lease is
+  reclaimable only for a different head after its prior terminal is proved.
+  Emitted and already-observed POSIX wrapper exits must prove the complete
+  process group empty; residual groups are boundedly terminated/reaped, while
+  unproved settlement fails closed and retains child staging.
+- The Saved Mission Archives workspace tests now wait for the exact cleanup and
+  verification split modules inside React `act`; the focused file passes `14/14`
+  without arbitrary sleeps or React warnings.
+- The 25,000-row acknowledgement test retains its full semantic workload and
+  assertions with a test-local 15-second ceiling; focused green is `1/1` in
+  `1,643 ms`. Packaged liveness remains a separate strict `<200 ms` gate.
 
 ## Locked Safety Boundaries
 
 - Finalized missions remain read-only. Archive revisions and supplements remain
   immutable and indefinitely retained.
-- Cleanup requires the existing verified encrypted archive and custody gates.
-  It may remove archived mission rows other than the retained mission stub,
-  rebuildable derived projections, four explicitly settled operational tables,
-  and—within `mission_events` only—the `device_updated`, `position_recorded`,
-  and `mission_backup_synced` telemetry event types. It retains the mission
-  stub, archive and supplement records, and all non-telemetry mission audit
-  records, including operational, finalization, custody, cleanup, supplement,
-  and unknown future event types.
-- Cleanup is logical SQLite deletion. Freed pages may be reused, but the file may
-  not shrink. Physical compaction and oversized-store recovery remain with
-  `DON-250` / `DON-251`; no in-process multi-GB `VACUUM` is authorized.
+- Cleanup is logical SQLite deletion only. It retains the mission stub, archive
+  and supplement records, non-telemetry audit events, and unknown future event
+  types. Physical compaction remains `DON-250` / `DON-251`; no operational
+  `VACUUM` is authorized.
+- Every liveness dimension remains strictly `<200 ms`; `200 ms` fails.
 - The 50 ms packaged polling profile is time-compressed validation, not a
-  production cadence. The separate greater-than-2-GiB qualifier measures
-  Node/SQLite scale contention; it is not packaged-renderer proof. Both exact-
-  head receipts are required and their evidence limits must stay explicit.
+  production cadence. The Ubuntu greater-than-2-GiB qualifier is a separate
+  Node/SQLite scale gate, not packaged-renderer proof.
+- One packaged lifecycle attempt is permitted per frozen exact head. Rejected
+  candidates are never rerun unchanged.
 
-## Active Work
-
-- For any frozen final-validation successor without a terminal receipt, spend
-  no more than one exact-head package/lifecycle attempt before browser, visual, physical
-  SIGKILL, or Linux gates. Never rerun unchanged
-  rejected heads `49523dc8`, `81e47973`, `74bdd95`, `6a72ae91`, `23161300`,
-  `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`, `30061c2d`, `e9584e94`,
-  or `ec258eba`.
-- Run four independent exact-head reviews: broad life-safety/end-to-end,
-  persistence/completeness, concurrency/finalization/liveness, and renderer/
-  input-containment/operator surface. Source-retrace every finding; any accepted
-  P1/P2 requires red-first repair and affected re-review.
-- After every cheap prerequisite is green, run exactly one fresh controlled
-  Ubuntu greater-than-2-GiB qualification, bound to the exact Linux packaged
-  liveness report and source head/tree.
-
-## Open Issues That Matter Now
+## Relevant Linear Issues
 
 - `DON-248` — archive encryption, authenticity, custody, and emergency access.
 - `DON-252` — streamed encrypted archive plus exhaustive restore/verification.
 - `DON-253` — archive-backed read-only Review, revisions, and logical cleanup.
-- `DON-250` / `DON-251` — deferred oversized-store recovery, physical
-  compaction, retention, and measured indexing.
-- `DON-254` / `DON-255` — programme-wide qualification and the later single
-  team-facing release; neither is part of PR #10 recovery.
-- `DON-247` — original field-machine beta.12 confirmation remains separate.
-- `DON-264` — persistent overlay-sync diagnostics remains a non-blocking backlog
-  item.
+- `DON-250` / `DON-251` — deferred oversized-store recovery and compaction.
+- `DON-254` / `DON-255` — later programme qualification/release; not this cycle.
+- `DON-247` and `DON-264` remain separate reliability work.
 
 ## Verification Snapshot
 
-- Exact b779 source verification passed `8` files / `307` focused tests, the
-  final cache/runtime slice at `2` files / `91`, full serial `375` files /
-  `3,791`, full ESLint, production build/budgets, Node/diff checks, and backend
-  `58` passed / `1` ignored. The proof successor's pre-freeze gates pass the
-  four archive-lifecycle files at `191/191`, the wider affected set at `10`
-  files / `399` tests, and full serial `375` files / `3,795` tests. Full ESLint,
-  production build/budgets, backend `58` passed / `1` ignored, Node syntax, and
-  diff checks are green. Its focused independent review found no runtime blocker.
-- The earlier evidence/runtime rechecks are clean. These are local source
-  checks, not successor exact-head package proof.
-- The cleanup-snapshot successor passes the focused cleanup/runner/IPC/receipt
-  gate at `6` files / `110` tests, the wider archive slice at `20` files / `412`
-  tests, and the deterministic serial suite at `377` files / `3,806` tests.
-  Full ESLint, TypeScript/production build and bundle budgets, focused Node
-  syntax, diff checks, and backend `58` passed / `1` ignored are green. A focused
-  independent review is clean after correcting Playwright multiline decoding,
-  hostile cause access, and diagnostic table-name provenance. These remain
-  prior-head source checks, not successor package evidence.
-- Ec258eba's renderer-CDP source gate passed `6` files / `186`
-  tests and the full deterministic serial suite passes `377` files / `3,813`
-  tests. Full ESLint, TypeScript, production build/bundle budgets, focused Node
-  syntax, diff checks, and backend `58` passed / `1` ignored are green. Two
-  independent focused reviews are clean after exact target-ID selection,
-  bounded all-settled dual-transport teardown, production-callback Review
-  tests, and neutral rejected-request attribution. A real Chromium micro-probe
-  confirmed distinct clients, exact target selection, and independent close.
-  These are prior-head source checks; ec258eba's exact package completed but its
-  sole lifecycle attempt rejected one irrecoverable final evidence gate.
-- The final-validation successor passes `6` affected files / `250` tests and the
-  full deterministic serial suite at `377` files / `3,818` tests. Full ESLint,
-  TypeScript/production build and bundle budgets, backend `58` passed / `1`
-  ignored, Node syntax, and diff checks are green. Two independent focused
-  re-reviews are clean. Source checks alone are not package/lifecycle proof; use
-  the exact head's terminal receipt as the authority.
-- Chromium `173/173`, visual Playwright `62/62`, uncached visual review `74/74`,
-  and physical SIGKILL `32/32` are clean only at rejected head `b75f8689` and are
-  prior-head evidence. Successor exact-head package/lifecycle, browser, visual,
-  physical SIGKILL, Linux, four-review, and fresh field gates remain pending.
+- Correction passes `8/102`; independent integration and custody/protocol audits
+  are clean at `8/137` and `7/99`, including real utility children, exact-
+  operation attribution, restart fences, exit joins, plan drift, and ABA swaps.
+- Maximum 4,096-entry committed and near-4-MiB uncommitted reconciliation held
+  the SQLite writer for `59.9-94.7 ms` across measured variants; every concurrent
+  WAL writer succeeded. Full hashing occurred outside the writer transaction.
+- The expanded matrix passes `20/628`; it caught and closed one test-only
+  UtilityProcess injection gap without a production fallback or orphan helper.
+- Lifecycle supervision passes `3/259`; its independent exact-owner/process-group
+  re-audit is clean. Earlier repair evidence is in `docs/breadcrumb-pr6-evidence.md`.
+- Tree `91f8f3ed` passed the three-model council, renderer/operator review, and
+  an independent persistence review from a separate Git archive, all with no
+  deterministic P1/P2. Its full source cycle then rejected it on the two
+  load-sensitive test waits above. The repaired focused file passes `14/14`.
+- Reviewed descendant `969bf644` then exposed only the unrelated generic timeout
+  above; its product code and tracking persistence path were unchanged.
+- Behavioral tree `d5727b82` then passed `380/380` unit files and `3,960/3,960`
+  tests in `84.33 s`, full ESLint, production build and bundle budgets, changed-
+  script Node syntax, `git diff --check`, and backend `58` passed / `1` ignored.
+  Two independent exact-tree delta reviews are clean. This is local source
+  evidence, not package, lifecycle, platform, or field proof.
 
 ## Next Actions
 
-1. If the frozen successor has no terminal receipt, run at most one exact-head
-   package/lifecycle attempt. If its receipt is green, push the existing PR
-   branch and run browser/visual,
-   kill-matrix, Linux, and exactly four final-head review charters.
-2. If all remain clean, execute the single fresh Ubuntu field qualification and
-   record the final ledger externally in PR #10 and the three Linear issues.
+1. Commit and explicitly fast-forward only a final docs-only closure whose
+   non-doc blobs exactly match reviewed and tested tree `d5727b82` and whose
+   status delta has passed bounded independent review.
+2. Package once with `EXPECTED_SOURCE_SHA` set to the new commit, restore the
+   generated-version source blob without rebuilding, verify a clean checkout,
+   run the sole packaged lifecycle once, and validate exactly one terminal
+   success or failure artifact.
+3. Stop and report. Browser/visual, physical-kill, Linux CI, and the fresh Ubuntu
+   greater-than-2-GiB qualifier remain pending. A lifecycle pass is not merge,
+   release, field, or production qualification.
 
 ## Blockers
 
-- PR #10 is not ready. `caf9e5e8`, `49523dc8`, `81e47973`, `74bdd95`,
-  `6a72ae91`, `23161300`, `d91ec232`, `7e0d8ea3`, `b75f8689`, `b7793753`,
-  `30061c2d`, `e9584e94`, and `ec258eba`
-  are rejected diagnostics;
-  the replacement exact-head package/lifecycle gate must pass before Linux or
-  field-scale qualification.
+- PR #10 is not ready to merge or release. The replacement exact-head package
+  and lifecycle terminal have not yet been produced, and all deferred gates
+  remain outstanding.
+- The Ubuntu host was previously reachable as `Linux 7.0.0-28-generic x86_64`,
+  but no current qualifier has started.
 
-Archived pre-recovery baton: `handoff/archive/HANDOFF-history-2026-09-04-pre-pr10-recovery.md`.
+Archived pre-recovery baton:
+`handoff/archive/HANDOFF-history-2026-09-04-pre-pr10-recovery.md`.

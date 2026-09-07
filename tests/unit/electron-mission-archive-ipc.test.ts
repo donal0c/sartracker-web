@@ -53,6 +53,14 @@ function createSender(id: number) {
   return Object.assign(new EventEmitter(), { id, send: vi.fn() })
 }
 
+/** Wraps one staged snapshot in the synchronous consumer-lease handoff shape. */
+function correctionSnapshotUse(snapshot: Readonly<Record<string, unknown>>) {
+  return Object.freeze({
+    snapshotPromise: Promise.resolve(snapshot),
+    lease: Object.freeze({ release: vi.fn() }),
+  })
+}
+
 /** Creates one complete mission-shaped terminal result. */
 function missionResult(missionId = 'mission-1') {
   return {
@@ -123,6 +131,7 @@ function createMainHarness(
       id: request.mission_id,
       status: 'finished',
     })),
+    getCommittedArchiveCorrection: vi.fn(async () => null),
     listMissionArchives: vi.fn(async () => []),
     verifyMissionArchive: vi.fn(async () => archiveResult()),
     getMission: vi.fn(async (missionId: string) => missionResult(missionId)),
@@ -150,13 +159,17 @@ function createMainHarness(
     ...missionStoreOverrides,
   }
   const cleanupLease = { missionId: 'mission-1', release: vi.fn() }
-  const archiveReviewSessionManager = (overrides.archiveReviewSessionManager ?? {
+  const archiveReviewSessionManager = ({
     hasReviewActivity: vi.fn(() => false),
     acquireCleanupLease: vi.fn(() => cleanupLease),
+    beginCorrectionSnapshotUse: vi.fn(),
+    completeCorrectionSnapshot: vi.fn(async () => undefined),
+    ...((overrides.archiveReviewSessionManager ?? {}) as Readonly<Record<string, unknown>>),
   }) as {
     readonly hasReviewActivity: ReturnType<typeof vi.fn>
     readonly acquireCleanupLease: ReturnType<typeof vi.fn>
-    readonly snapshotForCorrection?: ReturnType<typeof vi.fn>
+    readonly beginCorrectionSnapshotUse: ReturnType<typeof vi.fn>
+    readonly completeCorrectionSnapshot: ReturnType<typeof vi.fn>
   }
   const issuanceLedger = new Map()
   registerMissionArchiveIpcHandlers({
@@ -172,8 +185,8 @@ function createMainHarness(
     randomUUID: () => '11111111-1111-4111-8111-111111111111',
     nowMs: () => Date.parse('2026-08-29T20:00:00.000Z'),
     issuanceLedger,
-    archiveReviewSessionManager,
     ...overrides,
+    archiveReviewSessionManager,
   })
   return {
     handlers,
@@ -198,18 +211,23 @@ describe('mission archive IPC containment [DON-248]', () => {
     const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
     await mkdir(stagingDirectory)
     const snapshotPath = join(stagingDirectory, 'mission-store.sqlite')
-    const snapshotForCorrection = vi.fn(async () => ({
+    const correctionUse = correctionSnapshotUse({
       missionId: 'mission-1',
       archiveId: 'archive-1',
       snapshotPath,
       databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
       databaseSha256: 'a'.repeat(64),
-    }))
+    })
+    const beginCorrectionSnapshotUse = vi.fn(() => correctionUse)
+    const completeCorrectionSnapshot = vi.fn(async () => {
+      await rm(stagingDirectory, { recursive: true, force: true })
+    })
     const { handlers, missionStore } = createMainHarness({
       archiveReviewSessionManager: {
         hasReviewActivity: vi.fn(() => true),
         acquireCleanupLease: vi.fn(),
-        snapshotForCorrection,
+        beginCorrectionSnapshotUse,
+        completeCorrectionSnapshot,
       },
     })
     const event = { sender: createSender(8) }
@@ -229,12 +247,13 @@ describe('mission archive IPC containment [DON-248]', () => {
         cleanupComplete: true,
       },
     })
-    expect(snapshotForCorrection).toHaveBeenCalledWith({
+    expect(beginCorrectionSnapshotUse).toHaveBeenCalledWith({
       senderId: 8,
       sessionId: '44444444-4444-4444-8444-444444444444',
       operationId: OPERATION_ID,
       archiveId: 'archive-1',
       signal: expect.any(AbortSignal),
+      cancel: expect.any(Function),
     })
     expect(missionStore.unlockFinalizedMission).toHaveBeenCalledWith({
       mission_id: 'mission-1',
@@ -254,21 +273,22 @@ describe('mission archive IPC containment [DON-248]', () => {
   it('cancels a sender-owned correction restore while the mission store is still running', async () => {
     let releaseUnlock: ((value: unknown) => void) | undefined
     const unlock = new Promise((resolve) => { releaseUnlock = resolve })
-    const snapshotForCorrection = vi.fn(async () => ({
+    const correctionUse = correctionSnapshotUse({
       missionId: 'mission-1',
       archiveId: 'archive-1',
       snapshotPath: '/safe/correction/mission-store.sqlite',
       databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
       databaseSha256: 'a'.repeat(64),
-    }))
+    })
+    const beginCorrectionSnapshotUse = vi.fn(() => correctionUse)
     const { handlers, missionStore } = createMainHarness({
       archiveReviewSessionManager: {
         hasReviewActivity: vi.fn(() => true),
         acquireCleanupLease: vi.fn(),
-        snapshotForCorrection,
+        beginCorrectionSnapshotUse,
       },
     }, {
-      unlockFinalizedMission: vi.fn(async () => unlock),
+      unlockFinalizedMission: vi.fn(() => unlock),
     })
     const sender = createSender(8)
     const event = { sender }
@@ -282,11 +302,74 @@ describe('mission archive IPC containment [DON-248]', () => {
     })
 
     await vi.waitFor(() => expect(missionStore.unlockFinalizedMission).toHaveBeenCalledOnce())
+    expect(beginCorrectionSnapshotUse).toHaveBeenCalledWith({
+      senderId: 8,
+      sessionId: '44444444-4444-4444-8444-444444444444',
+      operationId: OPERATION_ID,
+      archiveId: 'archive-1',
+      signal: expect.any(AbortSignal),
+      cancel: expect.any(Function),
+    })
+    expect(beginCorrectionSnapshotUse.mock.invocationCallOrder[0])
+      .toBeLessThan(missionStore.unlockFinalizedMission.mock.invocationCallOrder[0] as number)
     await expect(handlers.get(CHANNELS.cancelMissionArchiveOperation)?.(event, OPERATION_ID))
       .resolves.toBe(true)
     expect(missionStore.cancelMissionArchiveOperation).toHaveBeenCalledWith(OPERATION_ID)
     releaseUnlock?.({ id: 'mission-1', status: 'finished' })
     await expect(pending).resolves.toMatchObject({ id: 'mission-1', status: 'finished' })
+    expect(correctionUse.lease.release).toHaveBeenCalledOnce()
+  })
+
+  it('releases correction staging after a destroyed sender cancels a rejected unlock', async () => {
+    let rejectUnlock: ((error: Error) => void) | undefined
+    const unlock = new Promise((_, reject) => { rejectUnlock = reject })
+    let observedSignal: AbortSignal | undefined
+    const correctionUse = correctionSnapshotUse({
+      missionId: 'mission-1',
+      archiveId: 'archive-1',
+      snapshotPath: '/safe/correction/mission-store.sqlite',
+      databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
+      databaseSha256: 'a'.repeat(64),
+    })
+    const beginCorrectionSnapshotUse = vi.fn(() => correctionUse)
+    const completeCorrectionSnapshot = vi.fn(async () => undefined)
+    const unlockFinalizedMission = vi.fn((request: Readonly<Record<string, unknown>>) => {
+      observedSignal = request.signal as AbortSignal
+      return unlock
+    })
+    const { handlers, missionStore } = createMainHarness({
+      archiveReviewSessionManager: {
+        hasReviewActivity: vi.fn(() => true),
+        acquireCleanupLease: vi.fn(),
+        beginCorrectionSnapshotUse,
+        completeCorrectionSnapshot,
+      },
+    }, { unlockFinalizedMission })
+    const sender = createSender(8)
+    const pending = handlers.get(CHANNELS.restoreMissionForCorrection)?.({ sender }, {
+      mission_id: 'mission-1',
+      archiveId: 'archive-1',
+      operationId: OPERATION_ID,
+      sessionId: '44444444-4444-4444-8444-444444444444',
+      admin_name: 'Duty Admin',
+      reason: 'Correct a recorded clue.',
+    })
+
+    await vi.waitFor(() => expect(unlockFinalizedMission).toHaveBeenCalledOnce())
+    expect(observedSignal?.aborted).toBe(false)
+    sender.emit('destroyed')
+    expect(observedSignal?.aborted).toBe(true)
+    await vi.waitFor(() => {
+      expect(missionStore.cancelMissionArchiveOperation).toHaveBeenCalledWith(OPERATION_ID)
+    })
+    const failure = Object.assign(new Error('Correction worker cancelled.'), {
+      code: 'ARCHIVE_CANCELLED',
+    })
+    rejectUnlock?.(failure)
+
+    await expect(pending).rejects.toMatchObject({ code: 'ARCHIVE_CANCELLED' })
+    expect(completeCorrectionSnapshot).not.toHaveBeenCalled()
+    expect(correctionUse.lease.release).toHaveBeenCalledOnce()
   })
 
   it('returns committed correction status when snapshot cleanup remains unresolved', async () => {
@@ -294,21 +377,21 @@ describe('mission archive IPC containment [DON-248]', () => {
     const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
     await mkdir(stagingDirectory)
     const snapshotPath = join(stagingDirectory, 'mission-store.sqlite')
-    const snapshotForCorrection = vi.fn(async () => ({
+    const correctionUse = correctionSnapshotUse({
       missionId: 'mission-1',
       archiveId: 'archive-1',
       snapshotPath,
       databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
       databaseSha256: 'a'.repeat(64),
-    }))
+    })
     try {
       const { handlers } = createMainHarness({
         archiveReviewSessionManager: {
           hasReviewActivity: vi.fn(() => true),
           acquireCleanupLease: vi.fn(),
-          snapshotForCorrection,
+          beginCorrectionSnapshotUse: vi.fn(() => correctionUse),
+          completeCorrectionSnapshot: vi.fn(async () => { throw new Error('disk full') }),
         },
-        removeCorrectionSnapshot: vi.fn(async () => { throw new Error('disk full') }),
       })
       await expect(handlers.get(CHANNELS.restoreMissionForCorrection)?.({ sender: createSender(8) }, {
         mission_id: 'mission-1',
@@ -336,13 +419,13 @@ describe('mission archive IPC containment [DON-248]', () => {
     const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
     await mkdir(stagingDirectory)
     const snapshotPath = join(stagingDirectory, 'mission-store.sqlite')
-    const snapshotForCorrection = vi.fn(async () => ({
+    const correctionUse = correctionSnapshotUse({
       missionId: 'mission-1',
       archiveId: 'archive-1',
       snapshotPath,
       databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
       databaseSha256: 'a'.repeat(64),
-    }))
+    })
     const custodyFailure = Object.assign(new Error('custody cleanup requires recovery'), {
       code: 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
     })
@@ -351,12 +434,17 @@ describe('mission archive IPC containment [DON-248]', () => {
         archiveReviewSessionManager: {
           hasReviewActivity: vi.fn(() => true),
           acquireCleanupLease: vi.fn(),
-          snapshotForCorrection,
+          beginCorrectionSnapshotUse: vi.fn(() => correctionUse),
           completeCorrectionSnapshot: vi.fn(async () => true),
         },
       }, {
         unlockFinalizedMission: vi.fn(async () => { throw custodyFailure }),
         getMission: vi.fn(async () => ({
+          id: 'mission-1',
+          status: 'finished',
+          storage_state: 'recovery_required',
+        })),
+        getCommittedArchiveCorrection: vi.fn(async () => ({
           id: 'mission-1',
           status: 'finished',
           storage_state: 'recovery_required',
@@ -388,19 +476,19 @@ describe('mission archive IPC containment [DON-248]', () => {
     const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
     await mkdir(stagingDirectory)
     const snapshotPath = join(stagingDirectory, 'mission-store.sqlite')
-    const snapshotForCorrection = vi.fn(async () => ({
+    const correctionUse = correctionSnapshotUse({
       missionId: 'mission-1',
       archiveId: 'archive-1',
       snapshotPath,
       databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
       databaseSha256: 'a'.repeat(64),
-    }))
+    })
     try {
       const { handlers } = createMainHarness({
         archiveReviewSessionManager: {
           hasReviewActivity: vi.fn(() => true),
           acquireCleanupLease: vi.fn(),
-          snapshotForCorrection,
+          beginCorrectionSnapshotUse: vi.fn(() => correctionUse),
           completeCorrectionSnapshot: vi.fn(async () => true),
         },
       }, {
@@ -410,6 +498,11 @@ describe('mission archive IPC containment [DON-248]', () => {
           })
         }),
         getMission: vi.fn(async () => ({
+          id: 'mission-1',
+          status: 'finished',
+          storage_state: 'live',
+        })),
+        getCommittedArchiveCorrection: vi.fn(async () => ({
           id: 'mission-1',
           status: 'finished',
           storage_state: 'live',
@@ -435,6 +528,59 @@ describe('mission archive IPC containment [DON-248]', () => {
     }
   })
 
+  it('does not infer an exact correction commit from finished live status alone', async () => {
+    const stagingRoot = await mkdtemp(join(tmpdir(), 'sartracker-correction-wrong-operation-'))
+    const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
+    await mkdir(stagingDirectory)
+    const snapshotPath = join(stagingDirectory, 'mission-store.sqlite')
+    const correctionUse = correctionSnapshotUse({
+      missionId: 'mission-1',
+      archiveId: 'archive-1',
+      snapshotPath,
+      databaseIdentity: { dev: 1, ino: 1, sizeBytes: 1 },
+      databaseSha256: 'a'.repeat(64),
+    })
+    const workerFailure = Object.assign(new Error('wrong correction operation committed'), {
+      code: 'ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED',
+    })
+    try {
+      const { handlers, missionStore } = createMainHarness({
+        archiveReviewSessionManager: {
+          hasReviewActivity: vi.fn(() => true),
+          acquireCleanupLease: vi.fn(),
+          beginCorrectionSnapshotUse: vi.fn(() => correctionUse),
+          completeCorrectionSnapshot: vi.fn(async () => true),
+        },
+      }, {
+        unlockFinalizedMission: vi.fn(async () => { throw workerFailure }),
+        getMission: vi.fn(async () => ({
+          id: 'mission-1',
+          status: 'finished',
+          storage_state: 'live',
+        })),
+        getCommittedArchiveCorrection: vi.fn(async () => null),
+      })
+
+      await expect(handlers.get(CHANNELS.restoreMissionForCorrection)?.({
+        sender: createSender(8),
+      }, {
+        mission_id: 'mission-1',
+        archiveId: 'archive-1',
+        operationId: OPERATION_ID,
+        sessionId: '44444444-4444-4444-8444-444444444444',
+        admin_name: 'Duty Admin',
+        reason: 'Reject a different correction operation.',
+      })).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_COMMIT_UNVERIFIED' })
+      expect(missionStore.getCommittedArchiveCorrection).toHaveBeenCalledWith({
+        missionId: 'mission-1',
+        archiveId: 'archive-1',
+        operationId: OPERATION_ID,
+      })
+    } finally {
+      await rm(stagingRoot, { recursive: true, force: true })
+    }
+  })
+
   it('rejects an oversized correction reason before reaching the mission store', async () => {
     const { handlers, missionStore } = createMainHarness()
     const event = { sender: createSender(8) }
@@ -448,12 +594,12 @@ describe('mission archive IPC containment [DON-248]', () => {
   })
 
   it('rejects hostile correction input before invoking IPC collaborators', async () => {
-    const snapshotForCorrection = vi.fn()
+    const beginCorrectionSnapshotUse = vi.fn()
     const { handlers, missionStore } = createMainHarness({
       archiveReviewSessionManager: {
         hasReviewActivity: vi.fn(() => true),
         acquireCleanupLease: vi.fn(),
-        snapshotForCorrection,
+        beginCorrectionSnapshotUse,
       },
     })
     const event = { sender: createSender(8) }
@@ -474,7 +620,7 @@ describe('mission archive IPC containment [DON-248]', () => {
       reason: 'Correct a clue.',
       unknown: true,
     })).rejects.toMatchObject({ code: 'ARCHIVE_IPC_INVALID_INPUT' })
-    expect(snapshotForCorrection).not.toHaveBeenCalled()
+    expect(beginCorrectionSnapshotUse).not.toHaveBeenCalled()
     expect(missionStore.restoreMissionForCorrection).not.toHaveBeenCalled()
   })
 
@@ -655,6 +801,7 @@ describe('mission archive IPC containment [DON-248]', () => {
       tableName: 'positions',
       deletedRows: 10,
       totalDeletedRows: 10,
+      tableBatch: 1,
       tableIndex: 4,
       tableCount: 49,
     })
@@ -667,7 +814,7 @@ describe('mission archive IPC containment [DON-248]', () => {
       unit: 'rows',
       completed: 10,
       total: null,
-      detail: 'Moved live rows: positions',
+      detail: 'Removed archived rows from live store: positions',
     })
     completeCleanup?.({
       missionId: 'mission-1',
@@ -695,6 +842,390 @@ describe('mission archive IPC containment [DON-248]', () => {
       onProgress: expect.any(Function),
     }))
     expect(cleanupLease.release).toHaveBeenCalledOnce()
+  })
+
+  it('delivers zero-delete durable cleanup cursor advances with contiguous sequences', async () => {
+    const sender = createSender(7)
+    const { handlers } = createMainHarness({}, {
+      getMission: vi.fn(async () => ({ ...missionResult(), name: 'Glen Rescue 42' })),
+      startMissionCleanup: vi.fn(async (
+        _input: unknown,
+        context: { readonly onProgress: (value: Readonly<Record<string, unknown>>) => void },
+      ) => {
+        context.onProgress({
+          kind: 'cleanup',
+          missionId: 'mission-1',
+          archiveId: archiveResult().id,
+          phase: 'cleanup',
+          tableName: 'mission_events',
+          deletedRows: 0,
+          totalDeletedRows: 10,
+          tableBatch: 9,
+          tableIndex: 4,
+          tableCount: 49,
+        })
+        context.onProgress({
+          kind: 'cleanup',
+          missionId: 'mission-1',
+          archiveId: archiveResult().id,
+          phase: 'cleanup',
+          tableName: 'mission_events',
+          deletedRows: 0,
+          totalDeletedRows: 10,
+          tableBatch: -1,
+          tableIndex: 4,
+          tableCount: 49,
+        })
+        context.onProgress({
+          kind: 'cleanup',
+          missionId: 'mission-1',
+          archiveId: archiveResult().id,
+          phase: 'cleanup',
+          tableName: 'mission_events',
+          deletedRows: 5,
+          totalDeletedRows: 15,
+          tableBatch: 10,
+          tableIndex: 4,
+          tableCount: 49,
+        })
+        return {
+          missionId: 'mission-1',
+          archiveId: archiveResult().id,
+          state: 'completed',
+          storageState: 'archived',
+          deletedRows: 15,
+        }
+      }),
+    })
+
+    await expect(handlers.get(CHANNELS.startMissionCleanup)?.({ sender }, {
+      missionId: 'mission-1',
+      archiveId: archiveResult().id,
+      operationId: SECOND_OPERATION_ID,
+      slotType: 'passphrase',
+      secret: PASSPHRASE,
+      confirmation: 'Glen Rescue 42',
+    })).resolves.toMatchObject({ state: 'completed', movedRows: 15 })
+
+    expect(sender.send).toHaveBeenCalledTimes(2)
+    expect(sender.send).toHaveBeenNthCalledWith(1, MISSION_ARCHIVE_PROGRESS_CHANNEL, {
+      operationId: SECOND_OPERATION_ID,
+      missionId: 'mission-1',
+      kind: 'cleanup',
+      sequence: 1,
+      phase: 'cleanup',
+      unit: 'rows',
+      completed: 10,
+      total: null,
+      detail: 'Advanced live-store cleanup cursor: mission_events',
+    })
+    expect(sender.send).toHaveBeenNthCalledWith(2, MISSION_ARCHIVE_PROGRESS_CHANNEL, {
+      operationId: SECOND_OPERATION_ID,
+      missionId: 'mission-1',
+      kind: 'cleanup',
+      sequence: 2,
+      phase: 'cleanup',
+      unit: 'rows',
+      completed: 15,
+      total: null,
+      detail: 'Removed archived rows from live store: mission_events',
+    })
+  })
+
+  it.each([
+    ['start', CHANNELS.startMissionCleanup],
+    ['resume', CHANNELS.resumeMissionCleanup],
+  ] as const)('keeps %s cleanup cumulative totals exact across rejected durable events', async (
+    mode,
+    channel,
+  ) => {
+    const sender = createSender(7)
+    const cleanupOperation = vi.fn(async (
+      _input: unknown,
+      context: { readonly onProgress: (value: Readonly<Record<string, unknown>>) => void },
+    ) => {
+      const progress = {
+        kind: 'cleanup',
+        missionId: 'mission-1',
+        archiveId: archiveResult().id,
+        phase: 'cleanup',
+        tableName: 'mission_events',
+        tableCount: 5,
+      }
+      context.onProgress({
+        ...progress,
+        deletedRows: 0,
+        totalDeletedRows: 10,
+        tableBatch: 9,
+        tableIndex: 4,
+      })
+      context.onProgress({
+        ...progress,
+        deletedRows: 0,
+        totalDeletedRows: 999,
+        tableBatch: 10,
+        tableIndex: 4,
+      })
+      context.onProgress({
+        ...progress,
+        deletedRows: 0,
+        totalDeletedRows: 9,
+        tableBatch: 10,
+        tableIndex: 4,
+      })
+      context.onProgress({
+        ...progress,
+        deletedRows: 1,
+        totalDeletedRows: 11,
+        tableBatch: 0,
+        tableIndex: 5,
+      })
+      context.onProgress({
+        ...progress,
+        deletedRows: 0,
+        totalDeletedRows: 10,
+        tableBatch: 1,
+        tableIndex: 5,
+      })
+      context.onProgress({
+        ...progress,
+        deletedRows: 1,
+        totalDeletedRows: 11,
+        tableBatch: 10,
+        tableIndex: 4,
+      })
+      context.onProgress({
+        ...progress,
+        deletedRows: 0,
+        totalDeletedRows: 11,
+        tableBatch: 0,
+        tableIndex: 5,
+      })
+      return {
+        missionId: 'mission-1',
+        archiveId: archiveResult().id,
+        state: 'completed',
+        storageState: 'archived',
+        deletedRows: 11,
+      }
+    })
+    const { handlers } = createMainHarness({}, {
+      getMission: vi.fn(async () => ({ ...missionResult(), name: 'Glen Rescue 42' })),
+      [mode === 'start' ? 'startMissionCleanup' : 'resumeMissionCleanup']: cleanupOperation,
+    })
+    const request = mode === 'start'
+      ? {
+          missionId: 'mission-1',
+          archiveId: archiveResult().id,
+          operationId: SECOND_OPERATION_ID,
+          slotType: 'passphrase',
+          secret: PASSPHRASE,
+          confirmation: 'Glen Rescue 42',
+        }
+      : {
+          missionId: 'mission-1',
+          archiveId: archiveResult().id,
+          operationId: SECOND_OPERATION_ID,
+        }
+
+    await expect(handlers.get(channel)?.({ sender }, request))
+      .resolves.toMatchObject({ state: 'completed', movedRows: 11 })
+
+    expect(sender.send).toHaveBeenCalledTimes(3)
+    expect(sender.send).toHaveBeenNthCalledWith(1, MISSION_ARCHIVE_PROGRESS_CHANNEL, {
+      operationId: SECOND_OPERATION_ID,
+      missionId: 'mission-1',
+      kind: 'cleanup',
+      sequence: 1,
+      phase: 'cleanup',
+      unit: 'rows',
+      completed: 10,
+      total: null,
+      detail: 'Advanced live-store cleanup cursor: mission_events',
+    })
+    expect(sender.send).toHaveBeenNthCalledWith(2, MISSION_ARCHIVE_PROGRESS_CHANNEL, {
+      operationId: SECOND_OPERATION_ID,
+      missionId: 'mission-1',
+      kind: 'cleanup',
+      sequence: 2,
+      phase: 'cleanup',
+      unit: 'rows',
+      completed: 11,
+      total: null,
+      detail: 'Removed archived rows from live store: mission_events',
+    })
+    expect(sender.send).toHaveBeenNthCalledWith(3, MISSION_ARCHIVE_PROGRESS_CHANNEL, {
+      operationId: SECOND_OPERATION_ID,
+      missionId: 'mission-1',
+      kind: 'cleanup',
+      sequence: 3,
+      phase: 'cleanup',
+      unit: 'rows',
+      completed: 11,
+      total: null,
+      detail: 'Advanced live-store cleanup cursor: mission_events',
+    })
+  })
+
+  it.each([
+    ['start', CHANNELS.startMissionCleanup],
+    ['resume', CHANNELS.resumeMissionCleanup],
+  ] as const)('rejects non-consecutive %s cleanup cursors without poisoning progress', async (
+    mode,
+    channel,
+  ) => {
+    const sender = createSender(7)
+    const cleanupOperation = vi.fn(async (
+      _input: unknown,
+      context: { readonly onProgress: (value: Readonly<Record<string, unknown>>) => void },
+    ) => {
+      const progress = {
+        kind: 'cleanup',
+        missionId: 'mission-1',
+        archiveId: archiveResult().id,
+        phase: 'cleanup',
+        tableName: 'mission_events',
+        tableCount: 49,
+      }
+      context.onProgress({
+        ...progress,
+        deletedRows: 0,
+        totalDeletedRows: 10,
+        tableBatch: 9,
+        tableIndex: 4,
+      })
+      context.onProgress({
+        ...progress,
+        deletedRows: 0,
+        totalDeletedRows: 10,
+        tableBatch: 11,
+        tableIndex: 4,
+      })
+      context.onProgress({
+        ...progress,
+        deletedRows: 0,
+        totalDeletedRows: 10,
+        tableBatch: 99,
+        tableIndex: 48,
+      })
+      context.onProgress({
+        ...progress,
+        deletedRows: 1,
+        totalDeletedRows: 11,
+        tableBatch: 10,
+        tableIndex: 4,
+      })
+      return {
+        missionId: 'mission-1',
+        archiveId: archiveResult().id,
+        state: 'completed',
+        storageState: 'archived',
+        deletedRows: 11,
+      }
+    })
+    const { handlers } = createMainHarness({}, {
+      getMission: vi.fn(async () => ({ ...missionResult(), name: 'Glen Rescue 42' })),
+      [mode === 'start' ? 'startMissionCleanup' : 'resumeMissionCleanup']: cleanupOperation,
+    })
+    const request = mode === 'start'
+      ? {
+          missionId: 'mission-1',
+          archiveId: archiveResult().id,
+          operationId: SECOND_OPERATION_ID,
+          slotType: 'passphrase',
+          secret: PASSPHRASE,
+          confirmation: 'Glen Rescue 42',
+        }
+      : {
+          missionId: 'mission-1',
+          archiveId: archiveResult().id,
+          operationId: SECOND_OPERATION_ID,
+        }
+
+    await expect(handlers.get(channel)?.({ sender }, request))
+      .resolves.toMatchObject({ state: 'completed', movedRows: 11 })
+
+    expect(sender.send).toHaveBeenCalledTimes(2)
+    expect(sender.send).toHaveBeenNthCalledWith(1, MISSION_ARCHIVE_PROGRESS_CHANNEL,
+      expect.objectContaining({ sequence: 1, completed: 10 }))
+    expect(sender.send).toHaveBeenNthCalledWith(2, MISSION_ARCHIVE_PROGRESS_CHANNEL,
+      expect.objectContaining({ sequence: 2, completed: 11 }))
+  })
+
+  it('keeps durable cleanup validation state when one renderer send fails', async () => {
+    const sender = createSender(7)
+    const delivered: unknown[] = []
+    sender.send
+      .mockImplementationOnce(() => {
+        throw new Error('simulated renderer send failure')
+      })
+      .mockImplementation((channel, progress) => {
+        delivered.push([channel, progress])
+      })
+    const { handlers } = createMainHarness({}, {
+      getMission: vi.fn(async () => ({ ...missionResult(), name: 'Glen Rescue 42' })),
+      startMissionCleanup: vi.fn(async (
+        _input: unknown,
+        context: { readonly onProgress: (value: Readonly<Record<string, unknown>>) => void },
+      ) => {
+        const progress = {
+          kind: 'cleanup',
+          missionId: 'mission-1',
+          archiveId: archiveResult().id,
+          phase: 'cleanup',
+          tableName: 'positions',
+          tableIndex: 4,
+          tableCount: 49,
+        }
+        context.onProgress({
+          ...progress,
+          deletedRows: 0,
+          totalDeletedRows: 10,
+          tableBatch: 9,
+        })
+        context.onProgress({
+          ...progress,
+          deletedRows: 0,
+          totalDeletedRows: 999,
+          tableBatch: 10,
+        })
+        context.onProgress({
+          ...progress,
+          deletedRows: 1,
+          totalDeletedRows: 11,
+          tableBatch: 10,
+        })
+        return {
+          missionId: 'mission-1',
+          archiveId: archiveResult().id,
+          state: 'completed',
+          storageState: 'archived',
+          deletedRows: 11,
+        }
+      }),
+    })
+
+    await expect(handlers.get(CHANNELS.startMissionCleanup)?.({ sender }, {
+      missionId: 'mission-1',
+      archiveId: archiveResult().id,
+      operationId: SECOND_OPERATION_ID,
+      slotType: 'passphrase',
+      secret: PASSPHRASE,
+      confirmation: 'Glen Rescue 42',
+    })).resolves.toMatchObject({ state: 'completed', movedRows: 11 })
+
+    expect(sender.send).toHaveBeenCalledTimes(2)
+    expect(delivered).toEqual([[MISSION_ARCHIVE_PROGRESS_CHANNEL, {
+      operationId: SECOND_OPERATION_ID,
+      missionId: 'mission-1',
+      kind: 'cleanup',
+      sequence: 1,
+      phase: 'cleanup',
+      unit: 'rows',
+      completed: 11,
+      total: null,
+      detail: 'Removed archived rows from live store: positions',
+    }]])
   })
 
   it('denies wrong cleanup confirmation and releases the review lease on store failure', async () => {
@@ -1414,8 +1945,8 @@ describe('mission archive IPC containment [DON-248]', () => {
       ) => {
         context.onProgress({
           kind: 'cleanup', missionId: 'mission-1', archiveId: archiveResult().id,
-          phase: 'cleanup', tableName: 'positions', deletedRows: 17,
-          totalDeletedRows: 17, tableIndex: 49, tableCount: 49,
+          phase: 'cleanup', tableName: 'positions', deletedRows: 0,
+          totalDeletedRows: 17, tableBatch: 0, tableIndex: 49, tableCount: 49,
         })
         return {
           missionId: 'mission-1', archiveId: archiveResult().id,

@@ -392,26 +392,27 @@ function createArchiveCleanupCoordinator(options) {
         if (outcome.completed) return outcome.result
         if (outcome.deletedRows > 0) {
           committedDeletionBatches += 1
-          executionOptions.onProgress?.(Object.freeze({
-            missionId: evidence.missionId,
-            archiveId: evidence.archiveId,
-            phase: 'cleanup',
-            tableName: outcome.tableName,
-            deletedRows: outcome.deletedRows,
-            totalDeletedRows: outcome.totalDeletedRows,
-            tableBatch: outcome.tableBatch,
-            tableIndex: outcome.tableIndex,
-            tableCount: outcome.tableCount,
-          }))
-          if (executionOptions.faultInjection?.simulateKillAfterCommittedBatch
+        }
+        executionOptions.onProgress?.(Object.freeze({
+          missionId: evidence.missionId,
+          archiveId: evidence.archiveId,
+          phase: 'cleanup',
+          tableName: outcome.tableName,
+          deletedRows: outcome.deletedRows,
+          totalDeletedRows: outcome.totalDeletedRows,
+          tableBatch: outcome.tableBatch,
+          tableIndex: outcome.tableIndex,
+          tableCount: outcome.tableCount,
+        }))
+        if (outcome.deletedRows > 0
+          && executionOptions.faultInjection?.simulateKillAfterCommittedBatch
             === committedDeletionBatches) {
-            const error = new ArchiveCleanupError(
-              'ARCHIVE_CLEANUP_SIMULATED_KILL',
-              'Archive cleanup stopped after a simulated process kill.',
-            )
-            error.preserveForRestart = true
-            throw error
-          }
+          const error = new ArchiveCleanupError(
+            'ARCHIVE_CLEANUP_SIMULATED_KILL',
+            'Archive cleanup stopped after a simulated process kill.',
+          )
+          error.preserveForRestart = true
+          throw error
         }
         const tableKill = executionOptions.faultInjection?.simulateKillAfterTableBatch
         if (tableKill?.tableName === outcome.tableName
@@ -547,6 +548,7 @@ function createArchiveCleanupCoordinator(options) {
             deletedRows: 0,
             totalDeletedRows: next.deletedRows,
             tableName,
+            tableBatch: next.tableBatch,
             tableIndex: next.tableIndex,
             tableCount: next.tables.length,
           })
@@ -646,6 +648,7 @@ function createArchiveCleanupCoordinator(options) {
           deletedRows: 0,
           totalDeletedRows: next.deletedRows,
           tableName,
+          tableBatch: next.tableBatch,
           tableIndex: next.tableIndex,
           tableCount: next.tables.length,
         })

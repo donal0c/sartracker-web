@@ -82,6 +82,46 @@ describe('Electron main startup', () => {
     expect(callback).toHaveBeenCalledWith({ cancel: true })
   })
 
+  it('injects a cwd-bound Electron utility-process factory into the mission store', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const utility = { pid: 42 }
+    electronMock.utilityProcess.fork.mockReturnValue(utility)
+    let missionStoreInput: Record<string, unknown> | undefined
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './mission-store.cjs') {
+        return {
+          createElectronMissionStore: vi.fn((input: Record<string, unknown>) => {
+            missionStoreInput = input
+            throw new Error('stop after archive correction utility injection')
+          }),
+        }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(missionStoreInput).toBeDefined())
+    const createUtilityProcess = missionStoreInput?.createArchiveCorrectionUtilityProcess as
+      ((input: Readonly<Record<string, string>>) => unknown)
+
+    expect(createUtilityProcess({
+      modulePath: '/app/electron/archive-correction-worker.cjs',
+      cwd: '/profile/database',
+      serviceName: 'SAR Tracker archive correction',
+    })).toBe(utility)
+    expect(electronMock.utilityProcess.fork).toHaveBeenCalledWith(
+      '/app/electron/archive-correction-worker.cjs',
+      [],
+      {
+        cwd: '/profile/database',
+        serviceName: 'SAR Tracker archive correction',
+        stdio: 'ignore',
+        allowLoadingUnsignedLibraries: false,
+      },
+    )
+  })
+
   it('rejects oversized mission creation payloads at the direct main IPC boundary', async () => {
     process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
     const electronMock = createElectronMock(vi.fn(), undefined, true)
@@ -1487,9 +1527,11 @@ function removeTestProcessListeners(
 function archiveReviewSessionManagerStub() {
   return {
     acquireCleanupLease: vi.fn(() => ({ missionId: 'mission-1', release: vi.fn() })),
+    beginCorrectionSnapshotUse: vi.fn(),
     cancel: vi.fn(),
     close: vi.fn(),
     closeForSender: vi.fn(async () => undefined),
+    completeCorrectionSnapshot: vi.fn(),
     open: vi.fn(),
     hasReviewActivity: vi.fn(() => false),
     prepareClose: vi.fn(),
@@ -1572,6 +1614,9 @@ function createElectronMock(
     shell: {
       openExternal: vi.fn(),
       openPath: vi.fn(),
+    },
+    utilityProcess: {
+      fork: vi.fn(),
     },
   }
 }

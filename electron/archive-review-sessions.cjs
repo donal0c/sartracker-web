@@ -977,6 +977,16 @@ function createArchiveReviewSessionManager(options) {
         try { pendingCorrectionSnapshot.snapshotOperation?.cancel?.() } catch {}
         await pendingCorrectionSnapshot.setupPromise.catch(() => undefined)
       }
+      const correctionLease = pendingCorrectionSnapshot?.session === session
+        ? pendingCorrectionSnapshot.consumerLease
+        : null
+      if (correctionLease !== null && !correctionLease.released) {
+        if (closeState.reason !== 'correction_restore' && !correctionLease.cancelRequested) {
+          correctionLease.cancelRequested = true
+          try { correctionLease.cancel() } catch {}
+        }
+        await correctionLease.releasePromise
+      }
       if (!closeState.sourceClosed) {
         await session.source.close()
         closeState.sourceClosed = true
@@ -1261,13 +1271,14 @@ function createArchiveReviewSessionManager(options) {
       await closeActiveSession(activeSession, 'explicit_close')
     },
 
-    /** Copies one authenticated v2 review snapshot into a sweep-owned correction staging area. */
-    async snapshotForCorrection(input) {
+    /** Reserves and starts one authenticated correction snapshot before any async handoff. */
+    beginCorrectionSnapshotUse(input) {
       const senderId = normalizeSenderId(input?.senderId)
       if (!UUID_V4.test(input?.sessionId ?? '')
         || !UUID_V4.test(input?.operationId ?? '')
         || typeof input?.archiveId !== 'string'
-        || input.archiveId.length < 1) {
+        || input.archiveId.length < 1
+        || typeof input?.cancel !== 'function') {
         throw new ArchiveReviewSessionError(
           'ARCHIVE_REVIEW_INPUT_INVALID',
           'Archive correction session identity is invalid.',
@@ -1295,6 +1306,12 @@ function createArchiveReviewSessionManager(options) {
         throw new ArchiveReviewSessionError(
           'ARCHIVE_REVIEW_SESSION_OWNER_MISMATCH',
           'Archive correction snapshot does not belong to this sender or verified session.',
+        )
+      }
+      if (activeClose !== null) {
+        throw new ArchiveReviewSessionError(
+          'ARCHIVE_REVIEW_SESSION_ACTIVE',
+          'Archive correction is unavailable while this review session is closing.',
         )
       }
       const sourcePath = activeSession.internal.databasePath
@@ -1332,7 +1349,27 @@ function createArchiveReviewSessionManager(options) {
         ready: false,
         setupPromise: null,
         snapshotOperation: null,
+        consumerLease: null,
       }
+      let resolveRelease = () => undefined
+      const releasePromise = new Promise((resolve) => { resolveRelease = resolve })
+      const leaseState = {
+        cancel: input.cancel,
+        cancelRequested: false,
+        released: false,
+        releasePromise,
+        handle: null,
+      }
+      const lease = Object.freeze({
+        /** Releases staging only after the correction worker is physically quiescent. */
+        release() {
+          if (leaseState.released) return
+          leaseState.released = true
+          resolveRelease()
+        },
+      })
+      leaseState.handle = lease
+      pending.consumerLease = leaseState
       pendingCorrectionSnapshot = pending
       const setup = (async () => {
         let snapshotOperation = null
@@ -1386,7 +1423,7 @@ function createArchiveReviewSessionManager(options) {
         }
       })()
       pending.setupPromise = setup
-      return setup
+      return Object.freeze({ snapshotPromise: setup, lease })
     },
 
     /** Commits ownership of a correction staging tree to the close/sweep retry path. */
@@ -1401,12 +1438,14 @@ function createArchiveReviewSessionManager(options) {
         || activeSession.request.operationId !== input.operationId
         || activeSession.ticket.archiveId !== input.archiveId
         || pendingCorrectionSnapshot?.session !== activeSession
-        || pendingCorrectionSnapshot.ready !== true) {
+        || pendingCorrectionSnapshot.ready !== true
+        || pendingCorrectionSnapshot.consumerLease?.handle !== input?.lease) {
         throw new ArchiveReviewSessionError(
           'ARCHIVE_REVIEW_SESSION_OWNER_MISMATCH',
           'Archive correction completion does not belong to this sender or session.',
         )
       }
+      pendingCorrectionSnapshot.consumerLease.handle.release()
       await closeActiveSession(activeSession, 'correction_restore')
     },
 

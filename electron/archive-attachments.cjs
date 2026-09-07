@@ -3,10 +3,15 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
+const {
+  correctionAttachmentPeerName,
+  isCorrectionAttachmentTargetName,
+} = require('./archive-correction-custody.cjs')
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const MAX_REFERENCE_JSON_BYTES = 2 * 1024 * 1024
 const READ_CHUNK_BYTES = 64 * 1024
+const FILE_ACCESS_MODE_MASK = 0o7777n
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const SHA256 = /^[0-9a-f]{64}$/u
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u
@@ -292,13 +297,53 @@ function verifyArchiveAttachmentEntryProofs(input) {
   })
 }
 
-/** Ensures a file and trusted root are regular, direct, non-linked custody paths. */
+/**
+ * Allows a hardlinked attachment only for the exact retained correction custody pair.
+ *
+ * The link count proves there are no other names for the inode, while the deterministic
+ * public and peer names prove that both permitted names remain inside the trusted root.
+ */
+function requireSupportedAttachmentTopology(
+  attachmentPath,
+  attachmentRoot,
+  fileStat,
+  failureCode,
+  failureMessage,
+) {
+  if (fileStat.nlink === 1n) return null
+  const targetName = path.basename(attachmentPath)
+  if (fileStat.nlink !== 2n || !isCorrectionAttachmentTargetName(targetName)) {
+    throw new ArchiveAttachmentError(failureCode, failureMessage)
+  }
+  const peerPath = path.join(attachmentRoot, correctionAttachmentPeerName(targetName))
+  let peerStat
+  try {
+    peerStat = fs.lstatSync(peerPath, { bigint: true })
+  } catch {
+    throw new ArchiveAttachmentError(failureCode, failureMessage)
+  }
+  if (
+    !peerStat.isFile()
+    || peerStat.isSymbolicLink()
+    || peerStat.nlink !== 2n
+    || peerStat.dev !== fileStat.dev
+    || peerStat.ino !== fileStat.ino
+    || peerStat.size !== fileStat.size
+    || (fileStat.mode & FILE_ACCESS_MODE_MASK) !== 0o600n
+    || (peerStat.mode & FILE_ACCESS_MODE_MASK) !== 0o600n
+  ) {
+    throw new ArchiveAttachmentError(failureCode, failureMessage)
+  }
+  return peerPath
+}
+
+/** Ensures a file and trusted root have a supported owner-contained custody topology. */
 function openValidatedAttachment(attachmentPath, attachmentRoot) {
   let rootStat
   let fileStat
   try {
-    rootStat = fs.lstatSync(attachmentRoot)
-    fileStat = fs.lstatSync(attachmentPath)
+    rootStat = fs.lstatSync(attachmentRoot, { bigint: true })
+    fileStat = fs.lstatSync(attachmentPath, { bigint: true })
   } catch {
     throw new ArchiveAttachmentError(
       'ARCHIVE_ATTACHMENT_MISSING',
@@ -306,13 +351,20 @@ function openValidatedAttachment(attachmentPath, attachmentRoot) {
     )
   }
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()
-    || !fileStat.isFile() || fileStat.isSymbolicLink() || fileStat.nlink !== 1) {
+    || !fileStat.isFile() || fileStat.isSymbolicLink()) {
     throw new ArchiveAttachmentError(
       'ARCHIVE_ATTACHMENT_INVALID',
       'Mission archive attachment is not a regular owner-contained file.',
     )
   }
-  if (fileStat.size < 1 || fileStat.size > MAX_ATTACHMENT_BYTES) {
+  const correctionPeerPath = requireSupportedAttachmentTopology(
+    attachmentPath,
+    attachmentRoot,
+    fileStat,
+    'ARCHIVE_ATTACHMENT_INVALID',
+    'Mission archive attachment is not a regular owner-contained file.',
+  )
+  if (fileStat.size < 1n || fileStat.size > BigInt(MAX_ATTACHMENT_BYTES)) {
     throw new ArchiveAttachmentError(
       'ARCHIVE_ATTACHMENT_INVALID',
       'Mission archive attachment size is outside the supported custody bound.',
@@ -347,20 +399,45 @@ function openValidatedAttachment(attachmentPath, attachmentRoot) {
       'Mission archive attachment could not be opened safely.',
     )
   }
-  const openedStat = fs.fstatSync(descriptor)
-  if (
-    !openedStat.isFile()
-    || openedStat.dev !== fileStat.dev
-    || openedStat.ino !== fileStat.ino
-    || openedStat.size !== fileStat.size
-  ) {
-    fs.closeSync(descriptor)
-    throw new ArchiveAttachmentError(
+  let openedStat
+  let openedPeerPath
+  try {
+    openedStat = fs.fstatSync(descriptor, { bigint: true })
+    if (
+      !openedStat.isFile()
+      || openedStat.dev !== fileStat.dev
+      || openedStat.ino !== fileStat.ino
+      || openedStat.size !== fileStat.size
+      || openedStat.mode !== fileStat.mode
+      || openedStat.nlink !== fileStat.nlink
+    ) {
+      throw new ArchiveAttachmentError(
+        'ARCHIVE_ATTACHMENT_CHANGED',
+        'Mission archive attachment changed while it was opened.',
+      )
+    }
+    openedPeerPath = requireSupportedAttachmentTopology(
+      attachmentPath,
+      attachmentRoot,
+      openedStat,
       'ARCHIVE_ATTACHMENT_CHANGED',
-      'Mission archive attachment changed while it was opened.',
+      'Mission archive attachment custody topology changed while it was opened.',
     )
+    if (openedPeerPath !== correctionPeerPath) {
+      throw new ArchiveAttachmentError(
+        'ARCHIVE_ATTACHMENT_CHANGED',
+        'Mission archive attachment custody topology changed while it was opened.',
+      )
+    }
+  } catch (error) {
+    try {
+      fs.closeSync(descriptor)
+    } catch {
+      // Preserve the typed custody failure that forced the descriptor closed.
+    }
+    throw error
   }
-  return { descriptor, stat: openedStat }
+  return { descriptor, stat: openedStat, correctionPeerPath }
 }
 
 /** Reads and hashes one open descriptor without loading the whole file. */
@@ -385,11 +462,18 @@ function hashOpenAttachment(descriptor, expectedSize) {
 }
 
 /** Rechecks an opened file and its current path after one complete read. */
-function assertAttachmentUnchanged(attachmentPath, descriptor, before, measured) {
-  const after = fs.fstatSync(descriptor)
+function assertAttachmentUnchanged(
+  attachmentPath,
+  attachmentRoot,
+  correctionPeerPath,
+  descriptor,
+  before,
+  measured,
+) {
+  const after = fs.fstatSync(descriptor, { bigint: true })
   let pathAfter
   try {
-    pathAfter = fs.lstatSync(attachmentPath)
+    pathAfter = fs.lstatSync(attachmentPath, { bigint: true })
   } catch {
     throw new ArchiveAttachmentError(
       'ARCHIVE_ATTACHMENT_CHANGED',
@@ -397,19 +481,38 @@ function assertAttachmentUnchanged(attachmentPath, descriptor, before, measured)
     )
   }
   if (
-    measured.sizeBytes !== before.size
+    BigInt(measured.sizeBytes) !== before.size
     || after.dev !== before.dev
     || after.ino !== before.ino
     || after.size !== before.size
-    || after.mtimeMs !== before.mtimeMs
+    || after.mode !== before.mode
+    || after.nlink !== before.nlink
+    || after.mtimeNs !== before.mtimeNs
+    || after.ctimeNs !== before.ctimeNs
     || pathAfter.dev !== before.dev
     || pathAfter.ino !== before.ino
     || pathAfter.size !== before.size
-    || pathAfter.mtimeMs !== before.mtimeMs
+    || pathAfter.mode !== before.mode
+    || pathAfter.nlink !== before.nlink
+    || pathAfter.mtimeNs !== before.mtimeNs
+    || pathAfter.ctimeNs !== before.ctimeNs
   ) {
     throw new ArchiveAttachmentError(
       'ARCHIVE_ATTACHMENT_CHANGED',
       'Mission archive attachment changed during reading.',
+    )
+  }
+  const peerPathAfter = requireSupportedAttachmentTopology(
+    attachmentPath,
+    attachmentRoot,
+    pathAfter,
+    'ARCHIVE_ATTACHMENT_CHANGED',
+    'Mission archive attachment custody topology changed during reading.',
+  )
+  if (peerPathAfter !== correctionPeerPath) {
+    throw new ArchiveAttachmentError(
+      'ARCHIVE_ATTACHMENT_CHANGED',
+      'Mission archive attachment custody topology changed during reading.',
     )
   }
 }
@@ -418,8 +521,15 @@ function assertAttachmentUnchanged(attachmentPath, descriptor, before, measured)
 function prehashAttachment(attachmentPath, attachmentRoot) {
   const opened = openValidatedAttachment(attachmentPath, attachmentRoot)
   try {
-    const measured = hashOpenAttachment(opened.descriptor, opened.stat.size)
-    assertAttachmentUnchanged(attachmentPath, opened.descriptor, opened.stat, measured)
+    const measured = hashOpenAttachment(opened.descriptor, Number(opened.stat.size))
+    assertAttachmentUnchanged(
+      attachmentPath,
+      attachmentRoot,
+      opened.correctionPeerPath,
+      opened.descriptor,
+      opened.stat,
+      measured,
+    )
     return measured
   } finally {
     fs.closeSync(opened.descriptor)
@@ -484,8 +594,9 @@ async function* streamArchiveAttachment(descriptor) {
   const hash = createHash('sha256')
   let total = 0
   try {
-    while (total < opened.stat.size) {
-      const chunk = Buffer.allocUnsafe(Math.min(READ_CHUNK_BYTES, opened.stat.size - total))
+    const expectedSize = Number(opened.stat.size)
+    while (total < expectedSize) {
+      const chunk = Buffer.allocUnsafe(Math.min(READ_CHUNK_BYTES, expectedSize - total))
       const bytesRead = fs.readSync(opened.descriptor, chunk, 0, chunk.length, null)
       if (bytesRead === 0) break
       const output = bytesRead === chunk.length ? chunk : Buffer.from(chunk.subarray(0, bytesRead))
@@ -495,7 +606,14 @@ async function* streamArchiveAttachment(descriptor) {
       yield output
     }
     const measured = { sizeBytes: total, sha256: hash.digest('hex') }
-    assertAttachmentUnchanged(descriptor.sourcePath, opened.descriptor, opened.stat, measured)
+    assertAttachmentUnchanged(
+      descriptor.sourcePath,
+      attachmentRoot,
+      opened.correctionPeerPath,
+      opened.descriptor,
+      opened.stat,
+      measured,
+    )
     if (measured.sizeBytes !== descriptor.sizeBytes || measured.sha256 !== descriptor.sha256) {
       throw new ArchiveAttachmentError(
         'ARCHIVE_ATTACHMENT_CHANGED',

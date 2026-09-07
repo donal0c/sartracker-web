@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -7,8 +7,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as new (databasePath: string) => {
+  exec: (sql: string) => void
   prepare: (sql: string) => { run: (...parameters: readonly unknown[]) => unknown; get: (...parameters: readonly unknown[]) => unknown }
   close: () => void
+}
+const {
+  CORRECTION_ATTACHMENT_CUSTODY_KEY,
+  createCorrectionAttachmentCustodyPlan,
+  writeCorrectionAttachmentCustody,
+} = require('../../electron/archive-correction-custody.cjs') as {
+  readonly CORRECTION_ATTACHMENT_CUSTODY_KEY: string
+  readonly createCorrectionAttachmentCustodyPlan: (input: Readonly<Record<string, unknown>>) => unknown
+  readonly writeCorrectionAttachmentCustody: (db: unknown, plan: unknown) => void
 }
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (input: Readonly<Record<string, unknown>>) => {
@@ -40,7 +50,7 @@ describe('startup correction custody renderer state', () => {
   it('does not project a finished mission as ordinary live state while attachment recovery is pending', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-recovery-state-'))
     roots.push(root)
-    await mkdir(path.join(root, 'correction-attachment-journals'))
+    seedPendingCustody(root)
     let release!: (value: Readonly<Record<string, unknown>>) => void
     const operation = Object.assign(new Promise((resolve) => { release = resolve }), {
       workerExited: Promise.resolve(),
@@ -58,7 +68,8 @@ describe('startup correction custody renderer state', () => {
         storage_state: 'recovery_required',
       })
     } finally {
-      release({ recovered: 0 })
+      clearPendingCustody(root)
+      release({ recovered: 1 })
       await operation
       await store.prepareClose()
       store.close()
@@ -68,7 +79,7 @@ describe('startup correction custody renderer state', () => {
   it('blocks direct archive finalization after custody recovery fails at startup', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-recovery-finalize-'))
     roots.push(root)
-    await mkdir(path.join(root, 'correction-attachment-journals'))
+    seedPendingCustody(root)
     const operation = Object.assign(Promise.reject(new Error('recovery failed')), {
       workerExited: Promise.resolve(),
     })
@@ -98,7 +109,7 @@ describe('startup correction custody renderer state', () => {
   it('blocks outing and evidence-loss mutations while durable attachment recovery is required', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-recovery-writes-'))
     roots.push(root)
-    await mkdir(path.join(root, 'correction-attachment-journals'))
+    seedPendingCustody(root)
     const operation = Object.assign(Promise.reject(new Error('recovery failed')), {
       workerExited: Promise.resolve(),
     })
@@ -146,7 +157,7 @@ describe('startup correction custody renderer state', () => {
   it('blocks every renderer evidence mutation after custody recovery becomes required', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-recovery-evidence-'))
     roots.push(root)
-    await mkdir(path.join(root, 'correction-attachment-journals'))
+    seedPendingCustody(root)
     const operation = Object.assign(Promise.reject(new Error('recovery failed')), {
       workerExited: Promise.resolve(),
     })
@@ -211,11 +222,10 @@ describe('startup correction custody renderer state', () => {
     }
   })
 
-  it('keeps the correction recovery blocker after its journal directory disappears before restart', async () => {
+  it('clears a stale renderer blocker after the SQLite custody record was reconciled', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-recovery-missing-journal-'))
     roots.push(root)
-    const journalDirectory = path.join(root, 'correction-attachment-journals')
-    await mkdir(journalDirectory)
+    seedPendingCustody(root)
     const operation = Object.assign(Promise.reject(new Error('recovery failed')), {
       workerExited: Promise.resolve(),
     })
@@ -232,16 +242,13 @@ describe('startup correction custody renderer state', () => {
     })
     await firstStore.prepareClose()
     firstStore.close()
-    await rm(journalDirectory, { recursive: true, force: true })
+    clearPendingCustody(root)
 
     const secondStore = createElectronMissionStore({ userDataPath: root })
     try {
       await expect(secondStore.getMission(mission.id)).resolves.toMatchObject({
         status: 'finished',
-        storage_state: 'recovery_required',
-      })
-      await expect(secondStore.finalizeMission(mission.id)).rejects.toMatchObject({
-        code: 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED',
+        storage_state: 'live',
       })
     } finally {
       await secondStore.prepareClose()
@@ -249,7 +256,7 @@ describe('startup correction custody renderer state', () => {
     }
   })
 
-  it('clears a worker-recorded completion marker when its journal directory is gone', async () => {
+  it('clears a stale recovery marker when no SQLite custody record remains', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sartracker-correction-recovery-complete-'))
     roots.push(root)
     const firstStore = createElectronMissionStore({ userDataPath: root })
@@ -281,3 +288,31 @@ describe('startup correction custody renderer state', () => {
     reopened.close()
   })
 })
+
+function seedPendingCustody(root: string): void {
+  const database = new Database(path.join(root, 'mission-store.sqlite'))
+  database.exec('CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+  const plan = createCorrectionAttachmentCustodyPlan({
+    missionId: '11111111-1111-4111-8111-111111111111',
+    archiveId: '22222222-2222-4222-8222-222222222222',
+    operationId: '33333333-3333-4333-8333-333333333333',
+    finalizedEpoch: 1,
+    targetIdentity: { dev: '1', ino: '2' },
+    mappings: [{
+      entryName: 'attachments/field.jpg',
+      sourceRelativePath: 'Field.jpg',
+      sha256: 'a'.repeat(64),
+      sizeBytes: 5,
+      references: [{ referenceId: 'marker-1', referenceKind: 'marker' }],
+    }],
+  })
+  writeCorrectionAttachmentCustody(database, plan)
+  database.close()
+}
+
+function clearPendingCustody(root: string): void {
+  const database = new Database(path.join(root, 'mission-store.sqlite'))
+  database.prepare('DELETE FROM metadata WHERE key = ?')
+    .run(CORRECTION_ATTACHMENT_CUSTODY_KEY)
+  database.close()
+}

@@ -62,6 +62,23 @@ interface ArchiveReviewSessionManager {
     readonly operationId: string
   }) => Promise<boolean>
   readonly closeForSender: (senderId: number) => Promise<void>
+  readonly beginCorrectionSnapshotUse: (input: {
+    readonly senderId: number
+    readonly sessionId: string
+    readonly operationId: string
+    readonly archiveId: string
+    readonly cancel: () => void
+  }) => {
+    readonly snapshotPromise: Promise<Readonly<Record<string, unknown>>>
+    readonly lease: { readonly release: () => void }
+  }
+  readonly completeCorrectionSnapshot: (input: {
+    readonly senderId: number
+    readonly sessionId: string
+    readonly operationId: string
+    readonly archiveId: string
+    readonly lease: { readonly release: () => void }
+  }) => Promise<void>
   readonly read: (input: {
     readonly senderId: number
     readonly sessionId: string
@@ -743,6 +760,47 @@ describe('archive review session manager', () => {
     expect(await readdir(harness.reviewRoot)).toEqual([])
   })
 
+  it('rejects correction staging after session close has begun', async () => {
+    const sourceCloseGate = deferred<void>()
+    const sourceClose = vi.fn(async () => sourceCloseGate.promise)
+    const snapshotCompletion = deferred<Readonly<Record<string, unknown>>>()
+    const startSnapshot = vi.fn(() => decorateRestoreOperation(snapshotCompletion.promise))
+    const harness = await createHarness({
+      createSource: () => ({ close: sourceClose }),
+      startRestoreFactory: (reviewRoot) => async (restoreInput) => {
+        const request = restoreInput.request as Readonly<Record<string, unknown>>
+        const sessionDirectory = path.join(reviewRoot, request.sessionId as string)
+        const databasePath = path.join(sessionDirectory, 'mission-store.sqlite')
+        await mkdir(sessionDirectory, { recursive: false, mode: 0o700 })
+        await writeFile(databasePath, 'RESTORED-PLAINTEXT', { mode: 0o600 })
+        const identity = await stat(databasePath)
+        return internalRestoreResult(reviewRoot, {
+          sessionDirectory,
+          databasePath,
+          databaseIdentity: { dev: identity.dev, ino: identity.ino, sizeBytes: identity.size },
+        })
+      },
+      startSnapshot,
+    })
+    await openSession(harness)
+
+    const close = harness.manager.close({ senderId: SENDER_ID, sessionId: SESSION_ID })
+    await vi.waitFor(() => expect(sourceClose).toHaveBeenCalledOnce())
+    try {
+      expect(() => harness.manager.beginCorrectionSnapshotUse({
+        senderId: SENDER_ID,
+        sessionId: SESSION_ID,
+        operationId: OPERATION_ID,
+        archiveId: ARCHIVE_ID,
+        cancel: vi.fn(),
+      })).toThrow(expect.objectContaining({ code: 'ARCHIVE_REVIEW_SESSION_ACTIVE' }))
+      expect(startSnapshot).not.toHaveBeenCalled()
+    } finally {
+      sourceCloseGate.resolve()
+      await close
+    }
+  })
+
   it('retains correction staging ownership when its sweep fails, then retries the exact staging tree', async () => {
     const startReviewSweep = vi.fn()
       .mockImplementationOnce(async () => { throw new Error('staging sweep unavailable') })
@@ -766,18 +824,21 @@ describe('archive review session manager', () => {
       },
     })
     await openSession(harness)
-    const snapshot = await harness.manager.snapshotForCorrection({
+    const correctionUse = harness.manager.beginCorrectionSnapshotUse({
       senderId: SENDER_ID,
       sessionId: SESSION_ID,
       operationId: OPERATION_ID,
       archiveId: ARCHIVE_ID,
+      cancel: vi.fn(),
     })
+    const snapshot = await correctionUse.snapshotPromise
     expect(snapshot.snapshotPath).toContain('.sweep-')
     await expect(harness.manager.completeCorrectionSnapshot({
       senderId: SENDER_ID,
       sessionId: SESSION_ID,
       operationId: OPERATION_ID,
       archiveId: ARCHIVE_ID,
+      lease: correctionUse.lease,
     })).rejects.toThrow(/cleanup|sweep/iu)
     expect(await harness.manager.hasReviewActivity()).toBe(true)
     await expect(harness.manager.close({
@@ -809,12 +870,17 @@ describe('archive review session manager', () => {
     await openSession(harness)
     const databasePath = path.join(harness.reviewRoot, SESSION_ID, 'mission-store.sqlite')
     fsSync.writeFileSync(databasePath, 'RESTORED-PLAINTEXY', { mode: 0o600 })
-    await expect(harness.manager.snapshotForCorrection({
+    const correctionUse = harness.manager.beginCorrectionSnapshotUse({
       senderId: SENDER_ID,
       sessionId: SESSION_ID,
       operationId: OPERATION_ID,
       archiveId: ARCHIVE_ID,
-    })).rejects.toMatchObject({ code: 'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED' })
+      cancel: vi.fn(),
+    })
+    await expect(correctionUse.snapshotPromise).rejects.toMatchObject({
+      code: 'ARCHIVE_REVIEW_RESTORE_SUBSTITUTED',
+    })
+    correctionUse.lease.release()
     await expect(harness.manager.close({
       senderId: SENDER_ID,
       sessionId: SESSION_ID,
@@ -841,31 +907,34 @@ describe('archive review session manager', () => {
       },
     })
     await openSession(harness)
-    const first = harness.manager.snapshotForCorrection({
+    const first = harness.manager.beginCorrectionSnapshotUse({
       senderId: SENDER_ID,
       sessionId: SESSION_ID,
       operationId: OPERATION_ID,
       archiveId: ARCHIVE_ID,
+      cancel: vi.fn(),
     })
-    await expect(harness.manager.snapshotForCorrection({
+    expect(() => harness.manager.beginCorrectionSnapshotUse({
       senderId: SENDER_ID,
       sessionId: SESSION_ID,
       operationId: OPERATION_ID,
       archiveId: ARCHIVE_ID,
-    })).rejects.toMatchObject({ code: 'ARCHIVE_REVIEW_SESSION_ACTIVE' })
-    await expect(first).resolves.toMatchObject({ archiveId: ARCHIVE_ID })
+      cancel: vi.fn(),
+    })).toThrow(expect.objectContaining({ code: 'ARCHIVE_REVIEW_SESSION_ACTIVE' }))
+    await expect(first.snapshotPromise).resolves.toMatchObject({ archiveId: ARCHIVE_ID })
     await expect(harness.manager.completeCorrectionSnapshot({
       senderId: SENDER_ID,
       sessionId: SESSION_ID,
       operationId: OPERATION_ID,
       archiveId: ARCHIVE_ID,
+      lease: first.lease,
     })).resolves.toBeUndefined()
   })
 
   it('cancels an in-progress correction snapshot when the session closes', async () => {
     const completion = deferred<Readonly<Record<string, unknown>>>()
     const workerExited = deferred<void>()
-    const cancel = vi.fn(() => {
+    const snapshotCancel = vi.fn(() => {
       completion.resolve({
         snapshotPath: path.join(harness.reviewRoot, `.sweep-${SESSION_ID}`, 'mission-store.sqlite'),
         attachmentDirectory: path.join(harness.reviewRoot, `.sweep-${SESSION_ID}`, 'attachments'),
@@ -896,26 +965,85 @@ describe('archive review session manager', () => {
             await mkdir(stagingDirectory, { recursive: false, mode: 0o700 })
             return completion.promise
           })(),
-          { cancel, workerExited: workerExited.promise },
+          { cancel: snapshotCancel, workerExited: workerExited.promise },
         )
       },
     })
     await openSession(harness)
-    const snapshot = harness.manager.snapshotForCorrection({
+    const consumerCancel = vi.fn()
+    const correctionUse = harness.manager.beginCorrectionSnapshotUse({
       senderId: SENDER_ID,
       sessionId: SESSION_ID,
       operationId: OPERATION_ID,
       archiveId: ARCHIVE_ID,
+      cancel: consumerCancel,
     })
     const close = harness.manager.close({
       senderId: SENDER_ID,
       sessionId: SESSION_ID,
     })
-    await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(snapshotCancel).toHaveBeenCalledOnce())
+    await expect(correctionUse.snapshotPromise).resolves.toMatchObject({ archiveId: ARCHIVE_ID })
+    await vi.waitFor(() => expect(consumerCancel).toHaveBeenCalledOnce())
+    correctionUse.lease.release()
     await expect(close).resolves.toBeUndefined()
-    await expect(snapshot).resolves.toMatchObject({ archiveId: ARCHIVE_ID })
-    expect(cancel).toHaveBeenCalledOnce()
+    expect(snapshotCancel).toHaveBeenCalledOnce()
+    expect(consumerCancel).toHaveBeenCalledOnce()
   })
+
+  it.each(['explicit_close', 'renderer_destroyed'] as const)(
+    'does not sweep a ready correction snapshot on %s until its consumer is quiescent',
+    async (closeKind) => {
+      const harness = await createHarness({
+        startRestoreFactory: (reviewRoot) => async (restoreInput) => {
+          const request = restoreInput.request as Readonly<Record<string, unknown>>
+          const sessionDirectory = path.join(reviewRoot, request.sessionId as string)
+          const databasePath = path.join(sessionDirectory, 'mission-store.sqlite')
+          await mkdir(sessionDirectory, { recursive: false, mode: 0o700 })
+          await writeFile(databasePath, 'RESTORED-PLAINTEXT', { mode: 0o600 })
+          const identity = await stat(databasePath)
+          return internalRestoreResult(reviewRoot, {
+            sessionDirectory,
+            databasePath,
+            databaseIdentity: { dev: identity.dev, ino: identity.ino, sizeBytes: identity.size },
+          })
+        },
+      })
+      const cancel = vi.fn()
+      await openSession(harness)
+      const correctionUse = harness.manager.beginCorrectionSnapshotUse({
+        senderId: SENDER_ID,
+        sessionId: SESSION_ID,
+        operationId: OPERATION_ID,
+        archiveId: ARCHIVE_ID,
+        cancel,
+      })
+      const snapshot = await correctionUse.snapshotPromise
+      const stagingDirectory = path.dirname(snapshot.snapshotPath as string)
+
+      let closeSettled = false
+      const close = closeKind === 'explicit_close'
+        ? harness.manager.close({ senderId: SENDER_ID, sessionId: SESSION_ID })
+        : harness.manager.closeForSender(SENDER_ID)
+      void close.finally(() => { closeSettled = true })
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+
+      expect(fsSync.existsSync(stagingDirectory)).toBe(true)
+      expect(harness.registry.recordReviewClosed).not.toHaveBeenCalled()
+      expect(closeSettled).toBe(false)
+
+      const completion = harness.manager.completeCorrectionSnapshot({
+        senderId: SENDER_ID,
+        sessionId: SESSION_ID,
+        operationId: OPERATION_ID,
+        archiveId: ARCHIVE_ID,
+        lease: correctionUse.lease,
+      })
+      await expect(Promise.all([close, completion])).resolves.toBeDefined()
+      expect(fsSync.existsSync(stagingDirectory)).toBe(false)
+      expect(harness.registry.recordReviewClosed).toHaveBeenCalledOnce()
+    },
+  )
 
   it('retains retryable manager ownership when the close audit fails after a confirmed sweep', async () => {
     const sourceClose = vi.fn(async () => undefined)

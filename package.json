@@ -27,7 +27,7 @@
     "coverage:bench": "node scripts/coverage-bench.mjs",
     "mission-store:seed": "node scripts/seed-mission-store.mjs",
     "breadcrumb-pr5:qualify": "node scripts/breadcrumb-pr5-qualification.mjs",
-    "breadcrumb-pr6:qualify": "node scripts/breadcrumb-pr6-qualification.mjs",
+    "breadcrumb-pr6:qualify": "node scripts/breadcrumb-pr6-qualification-ci.mjs",
     "breadcrumb-pr6:kill-matrix": "node scripts/breadcrumb-pr6-kill-matrix.mjs",
     "lint": "eslint .",
     "preview": "vite preview",

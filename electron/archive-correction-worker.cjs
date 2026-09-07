@@ -1,9 +1,6 @@
 'use strict'
 
-const { isMainThread, parentPort, threadId, workerData } = require('node:worker_threads')
-const fs = require('node:fs/promises')
 const path = require('node:path')
-const { createHash, randomUUID: cryptoRandomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
 const { rehydrateMissionFromSnapshot } = require('./archive-rehydrate.cjs')
@@ -11,281 +8,290 @@ const {
   deriveArchiveLifecycleEventId,
   readCurrentMissionFinalizationBoundary,
 } = require('./mission-finalization-boundary.cjs')
-const { copyVerifiedAttachment } = require('./archive-correction-attachment-copy.cjs')
 const {
-  removeCorrectionAttachmentJournal,
-  syncDirectory,
-  writeCorrectionAttachmentJournal,
+  clearCorrectionAttachmentCustody,
+  createCorrectionAttachmentCustodyPlan,
+  prepareCorrectionAttachmentCustodyReconciliation,
+  reconcileCorrectionAttachmentCustody,
+  writeCorrectionAttachmentCustody,
 } = require('./archive-correction-custody.cjs')
-
-if (isMainThread || parentPort === null) {
-  throw new Error('Archive correction worker must run outside the Electron main isolate.')
-}
+const {
+  assertCorrectionDirectoryIdentity,
+  captureCorrectionDirectoryIdentity,
+  createCorrectionAttachmentPair,
+  enterCorrectionAttachmentRoot,
+  proveCorrectionAttachmentResidue,
+  revalidateCorrectionAttachmentResidue,
+} = require('./archive-correction-directory-capability.cjs')
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+const MAX_MAPPING_BYTES = 4 * 1024 * 1024
+const IDENTIFIER = /^[A-Za-z0-9_-]{1,200}$/u
 const SHA256 = /^[0-9a-f]{64}$/u
+const parentPort = process.parentPort
 
-/** Returns a stable invalid-mapping failure before any custody journal is published. */
-function invalidAttachmentMappingError() {
-  const error = new Error('Archive correction attachment mapping is invalid.')
-  error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-  return error
+if (parentPort === undefined || parentPort === null
+  || typeof parentPort.on !== 'function' || typeof parentPort.postMessage !== 'function') {
+  throw new Error('Archive correction worker requires an Electron utility-process parent.')
 }
 
-/** Validates one archive-authenticated attachment mapping before filesystem work. */
-function isValidAttachmentMapping(mapping) {
-  return mapping !== null && typeof mapping === 'object' && !Array.isArray(mapping)
-    && typeof mapping.entryName === 'string'
-    && mapping.entryName.startsWith('attachments/') === true
-    && path.posix.dirname(mapping.entryName) === 'attachments'
-    && mapping.entryName.split('/').length === 2
-    && typeof mapping.sourceRelativePath === 'string'
-    && path.basename(mapping.sourceRelativePath) === mapping.sourceRelativePath
-    && ['.', '..'].includes(mapping.sourceRelativePath) === false
-    && mapping.sourceRelativePath.length > 0
-    && SHA256.test(mapping.sha256 ?? '')
-    && Number.isSafeInteger(mapping.sizeBytes)
-    && mapping.sizeBytes >= 1 && mapping.sizeBytes <= MAX_ATTACHMENT_BYTES
-    && Array.isArray(mapping.references)
+const initialDirectory = path.resolve(process.cwd())
+const readyIdentity = captureCorrectionDirectoryIdentity('.')
+let started = false
+let cancelled = false
+
+/** Observes cancellation delivered over the utility-process parent channel. */
+function isCancelled() {
+  return cancelled
 }
 
-/** Hashes one bounded attachment file while proving its byte length. */
-async function hashAttachment(filePath) {
-  let handle
-  try {
-    handle = await fs.open(
-      filePath,
-      fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
-    )
-    const stat = await handle.stat()
-    if (!stat.isFile() || stat.nlink !== 1
-      || stat.size < 1 || stat.size > MAX_ATTACHMENT_BYTES) {
-      const error = new Error('Archive correction attachment size is outside the supported bound.')
-      error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-      throw error
-    }
-    const hash = createHash('sha256')
-    const chunk = Buffer.allocUnsafe(64 * 1024)
-    let sizeBytes = 0
-    while (sizeBytes < stat.size) {
-      const result = await handle.read(
-        chunk,
-        0,
-        Math.min(chunk.length, stat.size - sizeBytes),
-        sizeBytes,
-      )
-      if (result.bytesRead < 1) {
-        const error = new Error('Archive correction attachment ended before its pinned size.')
-        error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-        throw error
-      }
-      hash.update(chunk.subarray(0, result.bytesRead))
-      sizeBytes += result.bytesRead
-    }
-    return Object.freeze({ sizeBytes, sha256: hash.digest('hex') })
-  } finally {
-    await handle?.close().catch(() => undefined)
-  }
+/** Throws the stable cancellation failure at a safe operation boundary. */
+function throwIfCancelled() {
+  if (!isCancelled()) return
+  throw correctionError('ARCHIVE_CANCELLED', 'Archive correction restore was cancelled.')
 }
 
-/** Copies verified archived attachment bytes into canonical mission custody. */
-async function restoreAttachmentCustody() {
-  const mappings = workerData.attachmentMappings
-  if (!Array.isArray(mappings) || mappings.length === 0) return { created: [], references: new Map() }
-  const cancellationFlag = new Int32Array(workerData.cancellationBuffer)
-  const throwIfCancelled = () => {
-    if (Atomics.load(cancellationFlag, 0) !== 0) {
-      const error = new Error('Archive correction restore was cancelled.')
-      error.code = 'ARCHIVE_CANCELLED'
-      throw error
-    }
-  }
-  if (!/^[A-Za-z0-9_-]{1,200}$/u.test(workerData.missionId)) {
-    const error = new Error('Archive correction mission attachment identity is invalid.')
-    error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-    throw error
-  }
-  const sourceRoot = workerData.attachmentDirectory
-  const targetRoot = path.join(path.dirname(workerData.databasePath), 'missions', workerData.missionId, 'attachments')
-  const targetRootExisted = await fs.lstat(targetRoot).then(() => true).catch((error) => {
-    if (error?.code === 'ENOENT') return false
-    throw error
-  })
-  await fs.mkdir(targetRoot, { recursive: true, mode: 0o700 })
-  if (!targetRootExisted) {
-    await syncDirectory(path.dirname(targetRoot))
-    await syncDirectory(targetRoot)
-  }
-  const created = []
-  const references = new Map()
-  const journalEntries = []
-  let journalPath
-  try {
-    for (const mapping of mappings) {
-      if (!isValidAttachmentMapping(mapping)) throw invalidAttachmentMappingError()
-      const targetPath = path.join(targetRoot, mapping.sourceRelativePath)
-      const preexisting = await fs.lstat(targetPath).then(() => true).catch((error) => {
-        if (error?.code === 'ENOENT') return false
-        throw error
-      })
-      journalEntries.push(Object.freeze({
-        sourceRelativePath: mapping.sourceRelativePath,
-        targetPath,
-        preexisting,
-        sha256: mapping.sha256,
-        sizeBytes: mapping.sizeBytes,
-      }))
-    }
-    if (journalEntries.length > 0) {
-      journalPath = await writeCorrectionAttachmentJournal({
-        databasePath: workerData.databasePath,
-        missionId: workerData.missionId,
-        archiveId: workerData.archiveId,
-        operationId: workerData.operationId,
-        targetRoot,
-        entries: journalEntries,
-      })
-    }
-    for (const mapping of mappings) {
-      throwIfCancelled()
-      if (!isValidAttachmentMapping(mapping)) throw invalidAttachmentMappingError()
-      const sourcePath = path.join(sourceRoot, mapping.entryName.slice('attachments/'.length))
-      if (path.dirname(sourcePath) !== sourceRoot) {
-        const error = new Error('Archive correction attachment source escaped its staging directory.')
-        error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-        throw error
-      }
-      const sourceStat = await fs.lstat(sourcePath)
-      if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
-        const error = new Error('Archive correction attachment source is not a regular file.')
-        error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-        throw error
-      }
-      const targetPath = path.join(targetRoot, mapping.sourceRelativePath)
-      const targetExists = await fs.lstat(targetPath).then(() => true).catch((error) => {
-        if (error?.code === 'ENOENT') return false
-        throw error
-      })
-      if (targetExists) {
-        const targetStat = await fs.lstat(targetPath)
-        if (!targetStat.isFile() || targetStat.isSymbolicLink()) {
-          const error = new Error('Canonical mission attachment custody is not a regular file.')
-          error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-          throw error
-        }
-        const targetProof = await hashAttachment(targetPath)
-        if (targetProof.sizeBytes !== mapping.sizeBytes || targetProof.sha256 !== mapping.sha256) {
-          const error = new Error('Canonical mission attachment custody conflicts with the archived bytes.')
-          error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-          throw error
-        }
-      } else {
-        const temporaryPath = path.join(targetRoot, `.${mapping.sourceRelativePath}.restore-${cryptoRandomUUID()}`)
-        try {
-          await copyVerifiedAttachment({
-            sourcePath,
-            temporaryPath,
-            expected: mapping,
-          })
-          throwIfCancelled()
-          throwIfCancelled()
-          await fs.rename(temporaryPath, targetPath)
-          if (process.platform !== 'win32') {
-            const directory = await fs.open(targetRoot, fs.constants.O_RDONLY | (fs.constants.O_DIRECTORY ?? 0))
-            try { await directory.sync() } finally { await directory.close() }
-          }
-        } finally {
-          try {
-            await fs.rm(temporaryPath, { force: true })
-            await syncDirectory(targetRoot)
-          } catch (cleanupError) {
-            const failure = new Error('Archive correction temporary attachment cleanup requires recovery.')
-            failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
-            failure.cause = cleanupError
-            throw failure
-          }
-        }
-        created.push(targetPath)
-      }
-      throwIfCancelled()
-      for (const reference of mapping.references) {
-        if (reference === null || typeof reference !== 'object'
-          || typeof reference.referenceId !== 'string'
-          || typeof reference.referenceKind !== 'string') {
-          const error = new Error('Archive correction attachment reference is invalid.')
-          error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-          throw error
-        }
-        const key = `${reference.referenceKind}\0${reference.referenceId}`
-        if (references.has(key)) {
-          const error = new Error('Archive correction attachment reference is ambiguous.')
-          error.code = 'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID'
-          throw error
-        }
-        references.set(key, targetPath)
-      }
-    }
-    return { created, references, journalPath }
-  } catch (error) {
-    await cleanupAttachmentCustody({
-      created,
-      journalPath,
-      preserveJournal: error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
-      faultInjection: workerData.faultInjection,
-    })
-    throw error
-  }
-}
-
-/** Rolls back newly-created canonical files before releasing their custody journal. */
-async function cleanupAttachmentCustody(input) {
-  if (input.faultInjection?.failAttachmentCleanup === true) {
-    const failure = new Error('Archive correction attachment cleanup requires recovery.')
-    failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
-    throw failure
-  }
-  let cleanupError = null
-  for (const filePath of input.created) {
-    try {
-      await fs.rm(filePath, { force: true })
-      await fs.lstat(filePath).then(() => {
-        throw new Error('Canonical attachment remained after rollback.')
-      }).catch((error) => {
-        if (error?.code !== 'ENOENT') throw error
-      })
-    } catch (error) {
-      cleanupError ??= error
-    }
-  }
-  for (const directory of new Set(input.created.map((filePath) => path.dirname(filePath)))) {
-    try {
-      await syncDirectory(directory)
-    } catch (error) {
-      cleanupError ??= error
-    }
-  }
-  if (cleanupError !== null || input.preserveJournal === true) {
-    if (cleanupError !== null) {
-      const failure = new Error('Archive correction attachment cleanup requires recovery.')
-      failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
-      failure.cause = cleanupError
-      throw failure
-    }
+/** Handles the closed READY/start/cancel protocol from Electron main. */
+function onParentMessage(event) {
+  const message = event?.data
+  if (message?.type === 'cancel' && Object.keys(message).length === 1) {
+    cancelled = true
     return
   }
-  if (input.journalPath !== undefined) {
-    try {
-      await removeCorrectionAttachmentJournal(input.journalPath)
-    } catch (error) {
-      const failure = new Error('Archive correction attachment cleanup requires recovery.')
-      failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
-      failure.cause = error
-      throw failure
+  if (started) {
+    finishWithError(correctionError(
+      'ARCHIVE_REHYDRATE_REQUEST_INVALID',
+      'Archive correction utility received more than one start request.',
+    ))
+    return
+  }
+  started = true
+  try {
+    validateStartEnvelope(message)
+    assertCorrectionDirectoryIdentity(message.directoryIdentity)
+  } catch (error) {
+    finishWithError(error)
+    return
+  }
+  void runCorrection(message.request)
+    .then(() => {
+      parentPort.postMessage({
+        type: 'complete',
+        missionId: message.request.missionId,
+        archiveId: message.request.archiveId,
+        operationId: message.request.operationId,
+      })
+      finish(0)
+    })
+    .catch(finishWithError)
+}
+
+/** Runs attachment custody, row restoration, and unlock with one worker-owned database. */
+async function runCorrection(request) {
+  validateCorrectionRequest(request)
+  throwIfCancelled()
+  let database
+  const custodyState = { plan: null, targetRoot: null }
+  let transactionCommitted = false
+  try {
+    assertCorrectionDirectoryIdentity(readyIdentity)
+    database = new Database(request.databaseName)
+    database.pragma('journal_mode = WAL')
+    database.pragma('synchronous = FULL')
+    database.pragma('foreign_keys = ON')
+    const attachmentCustody = await restoreAttachmentCustody(
+      database,
+      request,
+      custodyState,
+    )
+    assertBoundAttachmentRoot(custodyState)
+    rehydrateMissionFromSnapshot({
+      db: database,
+      snapshotPath: request.snapshotPath,
+      missionId: request.missionId,
+      archiveId: request.archiveId,
+      finalizedEpoch: request.finalizedEpoch,
+      schemaVersion: 13,
+      expectedSha256: request.expectedSha256,
+      expectedIdentity: request.expectedIdentity,
+      onRestored: () => {
+        assertBoundAttachmentRoot(custodyState)
+        rewriteAttachmentReferences(
+          database,
+          request.missionId,
+          attachmentCustody.references,
+        )
+        const operational = database.prepare(
+          "SELECT 1 FROM missions WHERE status IN ('active', 'paused') LIMIT 1",
+        ).get()
+        if (operational !== undefined) {
+          throw correctionError(
+            'ARCHIVE_REHYDRATE_LIVE_ACTIVITY',
+            'An operational mission is active; archive correction restore is deferred.',
+          )
+        }
+        throwIfCancelled()
+        const mission = database.prepare('SELECT status FROM missions WHERE id = ?')
+          .get(request.missionId)
+        const cleanup = database.prepare(`SELECT state FROM mission_cleanup_journal
+          WHERE mission_id = ?`).get(request.missionId)
+        const finalizationBoundary = readCurrentMissionFinalizationBoundary(database, {
+          missionId: request.missionId,
+          archiveId: request.archiveId,
+        })
+        if (mission?.status !== 'finalized' || cleanup?.state !== 'completed'
+          || finalizationBoundary?.eventRowid !== request.finalizedEpoch) {
+          throw correctionError(
+            'ARCHIVE_REHYDRATE_EPOCH_CHANGED',
+            'Mission finalization or archive storage changed before correction unlock could commit.',
+          )
+        }
+        if (request.faultInjection.afterRehydrateBeforeUnlock === true) {
+          throw correctionError(
+            'ARCHIVE_REHYDRATE_FAILED',
+            'Archive correction restore was interrupted before unlock.',
+          )
+        }
+        const timestamp = new Date().toISOString()
+        database.prepare('UPDATE missions SET status = ? WHERE id = ?')
+          .run('finished', request.missionId)
+        database.prepare(`INSERT INTO mission_events (
+          id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
+        ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
+          deriveArchiveLifecycleEventId(request.archiveId, 'mission-unlocked'),
+          request.missionId,
+          timestamp,
+          JSON.stringify({
+            admin_name: request.adminName,
+            reason: request.reason,
+            restored_from_archive_id: request.archiveId,
+            archive_correction_operation_id: request.operationId,
+            resulting_status: 'finished',
+            storage_state: 'live',
+          }),
+          timestamp,
+        )
+        database.prepare(`INSERT INTO mission_replay_generations (mission_id, generation)
+          VALUES (?, 1) ON CONFLICT(mission_id) DO UPDATE SET generation = generation + 1`)
+          .run(request.missionId)
+        if (custodyState.plan !== null) {
+          if (request.faultInjection.failAttachmentJournalRemoval === true) {
+            throw correctionError(
+              'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+              'Archive correction custody clear was interrupted before unlock commit.',
+            )
+          }
+          clearCorrectionAttachmentCustody(database, request.operationId)
+        }
+      },
+    })
+    transactionCommitted = true
+  } catch (error) {
+    if (!transactionCommitted && custodyState.plan !== null) {
+      try {
+        if (error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
+          || request.faultInjection.failAttachmentCleanup === true) {
+          throw correctionError(
+            'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+            'Archive correction attachment custody requires startup reconciliation.',
+          )
+        }
+        assertBoundAttachmentRoot(custodyState)
+        const inspection = prepareCorrectionAttachmentCustodyReconciliation({
+          db: database,
+          plan: custodyState.plan,
+          inspectEntry: (entry) => proveCorrectionAttachmentResidue({
+            sourcePath: path.join(
+              request.attachmentDirectory,
+              entry.entryName.slice('attachments/'.length),
+            ),
+            targetName: entry.targetName,
+            peerName: entry.peerName,
+            expected: entry,
+          }),
+        })
+        database.transaction(() => reconcileCorrectionAttachmentCustody({
+          db: database,
+          inspection,
+          revalidateEntry: (entry, observation) => {
+            assertBoundAttachmentRoot(custodyState)
+            return revalidateCorrectionAttachmentResidue({
+              sourcePath: path.join(
+                request.attachmentDirectory,
+                entry.entryName.slice('attachments/'.length),
+              ),
+              targetName: entry.targetName,
+              peerName: entry.peerName,
+              expected: entry,
+            }, observation)
+          },
+        })).immediate()
+      } catch (recoveryError) {
+        const failure = correctionError(
+          'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+          'Archive correction attachment custody requires startup reconciliation.',
+        )
+        failure.cause = recoveryError
+        throw failure
+      }
     }
+    throw error
+  } finally {
+    database?.close()
   }
 }
 
-/** Rewrites restored evidence references to canonical mission attachment custody. */
+/** Creates operation-owned attachment pairs relative to the pinned cwd. */
+async function restoreAttachmentCustody(database, request, custodyState) {
+  if (request.attachmentMappings.length === 0) {
+    return Object.freeze({ references: new Map() })
+  }
+  const targetIdentity = enterCorrectionAttachmentRoot(request.missionId)
+  custodyState.targetRoot = path.join(
+    initialDirectory,
+    'missions',
+    request.missionId,
+    'attachments',
+  )
+  const plan = createCorrectionAttachmentCustodyPlan({
+    missionId: request.missionId,
+    archiveId: request.archiveId,
+    operationId: request.operationId,
+    finalizedEpoch: request.finalizedEpoch,
+    targetIdentity,
+    mappings: request.attachmentMappings,
+  })
+  writeCorrectionAttachmentCustody(database, plan)
+  custodyState.plan = plan
+  const references = new Map()
+  for (const [index, mapping] of request.attachmentMappings.entries()) {
+    throwIfCancelled()
+    const entry = plan.entries[index]
+    const sourcePath = path.join(
+      request.attachmentDirectory,
+      mapping.entryName.slice('attachments/'.length),
+    )
+    if (path.dirname(sourcePath) !== request.attachmentDirectory) {
+      throw invalidAttachmentMappingError()
+    }
+    await createCorrectionAttachmentPair({
+      sourcePath,
+      targetName: entry.targetName,
+      peerName: entry.peerName,
+      expected: entry,
+      isCancelled,
+    })
+    for (const reference of mapping.references) {
+      const key = `${reference.referenceKind}\0${reference.referenceId}`
+      if (references.has(key)) throw invalidAttachmentMappingError()
+      references.set(key, path.join(custodyState.targetRoot, entry.targetName))
+    }
+  }
+  throwIfCancelled()
+  return Object.freeze({ references })
+}
+
+/** Rewrites restored references while preserving v2 display-name custody evidence. */
 function rewriteAttachmentReferences(database, missionId, references) {
   for (const [key, targetPath] of references) {
     const separator = key.indexOf('\0')
@@ -295,159 +301,201 @@ function rewriteAttachmentReferences(database, missionId, references) {
       database.prepare('UPDATE markers SET attachment_path = ? WHERE id = ? AND mission_id = ?')
         .run(targetPath, referenceId, missionId)
     } else if (kind === 'marker_version') {
-      const row = database.prepare('SELECT state_json FROM mission_object_versions WHERE id = ? AND mission_id = ?')
-        .get(referenceId, missionId)
+      const row = database.prepare(
+        'SELECT state_json FROM mission_object_versions WHERE id = ? AND mission_id = ?',
+      ).get(referenceId, missionId)
       if (row !== undefined) {
-        const state = JSON.parse(row.state_json)
+        const state = parsePlainJson(stateJson(row))
         state.attachment_path = targetPath
-        database.prepare('UPDATE mission_object_versions SET state_json = ? WHERE id = ? AND mission_id = ?')
-          .run(JSON.stringify(state), referenceId, missionId)
+        database.prepare(
+          'UPDATE mission_object_versions SET state_json = ? WHERE id = ? AND mission_id = ?',
+        ).run(JSON.stringify(state), referenceId, missionId)
       }
     } else {
-      const event = database.prepare('SELECT details_json FROM mission_events WHERE id = ? AND mission_id = ?')
-        .get(referenceId, missionId)
+      const event = database.prepare(
+        'SELECT details_json FROM mission_events WHERE id = ? AND mission_id = ?',
+      ).get(referenceId, missionId)
       if (event !== undefined) {
-        const details = JSON.parse(event.details_json)
+        const details = parsePlainJson(event.details_json)
         details.attachment_path = targetPath
-        database.prepare('UPDATE mission_events SET details_json = ? WHERE id = ? AND mission_id = ?')
-          .run(JSON.stringify(details), referenceId, missionId)
+        if (details.custody_version === 2) {
+          details.relative_path = `missions/${missionId}/attachments/${path.basename(targetPath)}`
+        }
+        database.prepare(
+          'UPDATE mission_events SET details_json = ? WHERE id = ? AND mission_id = ?',
+        ).run(JSON.stringify(details), referenceId, missionId)
       }
     }
   }
 }
 
-/** Performs one archive correction restore and its final unlock in one transaction. */
-async function run() {
-  let database
-  let attachmentCustody = null
-  let transactionCommitted = false
+/** Returns one state JSON value while keeping malformed rows fail-closed. */
+function stateJson(row) {
+  if (typeof row?.state_json !== 'string') throw invalidAttachmentMappingError()
+  return row.state_json
+}
+
+/** Parses one attachment-bearing row as a plain JSON object. */
+function parsePlainJson(value) {
+  let parsed
+  try { parsed = JSON.parse(value) } catch { throw invalidAttachmentMappingError() }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw invalidAttachmentMappingError()
+  }
+  return parsed
+}
+
+/** Proves the utility still occupies the exact attachment inode and pathname. */
+function assertBoundAttachmentRoot(custodyState) {
+  if (custodyState.plan === null) {
+    assertCorrectionDirectoryIdentity(readyIdentity)
+    return
+  }
+  assertCorrectionDirectoryIdentity(custodyState.plan.targetIdentity)
+  let current
+  try { current = path.resolve(process.cwd()) } catch {
+    throw correctionError(
+      'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+      'Archive correction attachment directory lost its bound pathname.',
+    )
+  }
+  if (path.relative(custodyState.targetRoot, current) !== '') {
+    throw correctionError(
+      'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+      'Archive correction attachment directory pathname changed before commit.',
+    )
+  }
+}
+
+/** Validates the READY response before any request or database authority is accepted. */
+function validateStartEnvelope(message) {
+  if (message === null || typeof message !== 'object' || Array.isArray(message)
+    || Object.keys(message).sort().join(',')
+      !== 'directoryIdentity,request,type'
+    || message.type !== 'start'
+    || message.directoryIdentity === null || typeof message.directoryIdentity !== 'object'
+    || Array.isArray(message.directoryIdentity)
+    || Object.keys(message.directoryIdentity).sort().join(',') !== 'dev,ino') {
+    throw correctionError(
+      'ARCHIVE_REHYDRATE_REQUEST_INVALID',
+      'Archive correction utility start request is invalid.',
+    )
+  }
+}
+
+/** Validates all archive-provided mapping data before creating any directory or bytes. */
+function validateCorrectionRequest(request) {
+  const keys = [
+    'adminName', 'archiveId', 'attachmentDirectory', 'attachmentMappings', 'databaseName',
+    'expectedIdentity', 'expectedSha256', 'faultInjection', 'finalizedEpoch', 'missionId',
+    'operationId', 'reason', 'snapshotPath',
+  ]
+  if (request === null || typeof request !== 'object' || Array.isArray(request)
+    || Object.keys(request).sort().join(',') !== keys.sort().join(',')
+    || typeof request.databaseName !== 'string'
+    || path.basename(request.databaseName) !== request.databaseName
+    || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/u.test(request.databaseName)
+    || !path.isAbsolute(request.snapshotPath)
+    || path.resolve(request.snapshotPath) !== request.snapshotPath
+    || !path.isAbsolute(request.attachmentDirectory)
+    || path.resolve(request.attachmentDirectory) !== request.attachmentDirectory
+    || !IDENTIFIER.test(request.missionId ?? '')
+    || !IDENTIFIER.test(request.archiveId ?? '')
+    || !IDENTIFIER.test(request.operationId ?? '')
+    || typeof request.adminName !== 'string' || request.adminName.length < 1
+    || typeof request.reason !== 'string' || request.reason.length < 1
+    || !SHA256.test(request.expectedSha256 ?? '')
+    || !validSnapshotIdentity(request.expectedIdentity)
+    || !Number.isSafeInteger(request.finalizedEpoch) || request.finalizedEpoch < 1
+    || request.faultInjection === null || typeof request.faultInjection !== 'object'
+    || Array.isArray(request.faultInjection)
+    || !Array.isArray(request.attachmentMappings)
+    || Buffer.byteLength(JSON.stringify(request.attachmentMappings), 'utf8') > MAX_MAPPING_BYTES
+    || request.attachmentMappings.some((mapping) => !isValidAttachmentMapping(mapping))) {
+    throw correctionError(
+      'ARCHIVE_REHYDRATE_REQUEST_INVALID',
+      'Archive correction utility request is invalid.',
+    )
+  }
+}
+
+/** Validates one archive-authenticated attachment mapping and its references. */
+function isValidAttachmentMapping(mapping) {
+  return mapping !== null && typeof mapping === 'object' && !Array.isArray(mapping)
+    && Object.keys(mapping).sort().join(',')
+      === 'entryName,references,sha256,sizeBytes,sourceRelativePath'
+    && typeof mapping.entryName === 'string'
+    && path.posix.dirname(mapping.entryName) === 'attachments'
+    && mapping.entryName.split('/').length === 2
+    && typeof mapping.sourceRelativePath === 'string'
+    && path.basename(mapping.sourceRelativePath) === mapping.sourceRelativePath
+    && !['.', '..'].includes(mapping.sourceRelativePath)
+    && Buffer.byteLength(mapping.sourceRelativePath, 'utf8') >= 1
+    && Buffer.byteLength(mapping.sourceRelativePath, 'utf8') <= 255
+    && !/[\\/\u0000-\u001f\u007f:]/u.test(mapping.sourceRelativePath)
+    && SHA256.test(mapping.sha256 ?? '')
+    && Number.isSafeInteger(mapping.sizeBytes)
+    && mapping.sizeBytes >= 1 && mapping.sizeBytes <= MAX_ATTACHMENT_BYTES
+    && Array.isArray(mapping.references)
+    && mapping.references.length >= 1 && mapping.references.length <= 10_000
+    && mapping.references.every((reference) => isValidAttachmentReference(reference))
+}
+
+/** Validates one bounded reference without interpreting its database table yet. */
+function isValidAttachmentReference(reference) {
+  return reference !== null && typeof reference === 'object' && !Array.isArray(reference)
+    && Object.keys(reference).sort().join(',') === 'referenceId,referenceKind'
+    && typeof reference.referenceId === 'string'
+    && Buffer.byteLength(reference.referenceId, 'utf8') >= 1
+    && Buffer.byteLength(reference.referenceId, 'utf8') <= 200
+    && typeof reference.referenceKind === 'string'
+    && Buffer.byteLength(reference.referenceKind, 'utf8') >= 1
+    && Buffer.byteLength(reference.referenceKind, 'utf8') <= 100
+    && !/[\u0000-\u001f\u007f]/u.test(reference.referenceId)
+    && !/[\u0000-\u001f\u007f]/u.test(reference.referenceKind)
+}
+
+/** Validates the already-pinned snapshot identity envelope. */
+function validSnapshotIdentity(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).sort().join(',') === 'dev,ino,sizeBytes'
+    && Number.isSafeInteger(value.dev) && value.dev >= 0
+    && Number.isSafeInteger(value.ino) && value.ino >= 1
+    && Number.isSafeInteger(value.sizeBytes) && value.sizeBytes >= 1
+}
+
+/** Returns a stable invalid-mapping failure. */
+function invalidAttachmentMappingError() {
+  return correctionError(
+    'ARCHIVE_REHYDRATE_ATTACHMENT_INVALID',
+    'Archive correction attachment mapping is invalid.',
+  )
+}
+
+/** Returns one typed correction failure. */
+function correctionError(code, message) {
+  const error = new Error(message)
+  error.code = code
+  return error
+}
+
+/** Reports a closed error envelope and releases all utility-process listeners. */
+function finishWithError(error) {
   try {
-    const cancellationFlag = new Int32Array(workerData.cancellationBuffer)
-    database = new Database(workerData.databasePath)
-    database.pragma('journal_mode = WAL')
-    database.pragma('synchronous = FULL')
-    database.pragma('foreign_keys = ON')
-    // File custody is prepared before the SQLite transaction; await it here so
-    // the transaction callback remains synchronous and all-or-nothing for rows.
-    attachmentCustody = await restoreAttachmentCustody()
-    rehydrateMissionFromSnapshot({
-      db: database,
-      snapshotPath: workerData.snapshotPath,
-      missionId: workerData.missionId,
-      archiveId: workerData.archiveId,
-      finalizedEpoch: workerData.finalizedEpoch,
-      schemaVersion: 13,
-      expectedSha256: workerData.expectedSha256,
-      expectedIdentity: workerData.expectedIdentity,
-      onRestored: () => {
-        rewriteAttachmentReferences(database, workerData.missionId, attachmentCustody.references)
-        const operational = database.prepare(
-          "SELECT 1 FROM missions WHERE status IN ('active', 'paused') LIMIT 1",
-        ).get()
-        if (operational !== undefined) {
-          const error = new Error('An operational mission is active; archive correction restore is deferred.')
-          error.code = 'ARCHIVE_REHYDRATE_LIVE_ACTIVITY'
-          throw error
-        }
-        if (Atomics.load(cancellationFlag, 0) !== 0) {
-          const error = new Error('Archive correction restore was cancelled.')
-          error.code = 'ARCHIVE_CANCELLED'
-          throw error
-        }
-        const mission = database.prepare('SELECT status FROM missions WHERE id = ?')
-          .get(workerData.missionId)
-        const cleanup = database.prepare(`SELECT state FROM mission_cleanup_journal
-          WHERE mission_id = ?`).get(workerData.missionId)
-        const finalizationBoundary = readCurrentMissionFinalizationBoundary(database, {
-          missionId: workerData.missionId,
-          archiveId: workerData.archiveId,
-        })
-        if (mission?.status !== 'finalized' || cleanup?.state !== 'completed'
-          || finalizationBoundary?.eventRowid !== workerData.finalizedEpoch) {
-          const error = new Error('Mission finalization or archive storage changed before correction unlock could commit.')
-          error.code = 'ARCHIVE_REHYDRATE_EPOCH_CHANGED'
-          throw error
-        }
-        if (workerData.faultInjection?.afterRehydrateBeforeUnlock === true) {
-          const error = new Error('Archive correction restore was interrupted before unlock.')
-          error.code = 'ARCHIVE_REHYDRATE_FAILED'
-          throw error
-        }
-        const timestamp = new Date().toISOString()
-        database.prepare('UPDATE missions SET status = ? WHERE id = ?')
-          .run('finished', workerData.missionId)
-        database.prepare(`INSERT INTO mission_events (
-          id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
-        ) VALUES (?, ?, 'mission_unlocked', ?, ?, ?, 'complete')`).run(
-          deriveArchiveLifecycleEventId(workerData.archiveId, 'mission-unlocked'),
-          workerData.missionId,
-          timestamp,
-          JSON.stringify({
-            admin_name: workerData.adminName,
-            reason: workerData.reason,
-            restored_from_archive_id: workerData.archiveId,
-            archive_correction_operation_id: workerData.operationId,
-            resulting_status: 'finished',
-            storage_state: 'live',
-          }),
-          timestamp,
-        )
-        database.prepare(`INSERT INTO mission_replay_generations (mission_id, generation)
-          VALUES (?, 1) ON CONFLICT(mission_id) DO UPDATE SET generation = generation + 1`)
-          .run(workerData.missionId)
-      },
-    })
-    transactionCommitted = true
-    if (attachmentCustody.journalPath !== undefined) {
-      try {
-        await removeCorrectionAttachmentJournal(attachmentCustody.journalPath, {
-          ...(workerData.faultInjection?.failAttachmentJournalRemoval === true
-            ? {
-                syncDirectory: async () => {
-                  throw new Error('Injected post-commit attachment journal fsync failure.')
-                },
-              }
-            : {}),
-        })
-      } catch (error) {
-        const failure = new Error('Archive correction attachment cleanup requires recovery.')
-        failure.code = 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
-        failure.cause = error
-        throw failure
-      }
-    }
-    parentPort.postMessage({
-      type: 'complete',
-      missionId: workerData.missionId,
-      archiveId: workerData.archiveId,
-    })
-  } catch (error) {
-    if (!transactionCommitted && attachmentCustody !== null) {
-      try {
-        await cleanupAttachmentCustody({
-          created: attachmentCustody.created,
-          journalPath: attachmentCustody.journalPath,
-          preserveJournal: error?.code === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
-          faultInjection: workerData.faultInjection,
-        })
-      } catch (cleanupError) {
-        error = cleanupError
-      }
-    }
     parentPort.postMessage({
       type: 'error',
       code: typeof error?.code === 'string' ? error.code : 'ARCHIVE_REHYDRATE_FAILED',
     })
   } finally {
-    database?.close()
-    parentPort.close()
+    finish(1)
   }
 }
 
-parentPort.on('message', (message) => {
-  if (message?.type === 'cancel') return
-})
+/** Lets the utility process exit only after its durable work and terminal envelope. */
+function finish(exitCode) {
+  parentPort.removeListener('message', onParentMessage)
+  process.exitCode = exitCode
+}
 
-void run()
-
-module.exports = { threadId }
+parentPort.on('message', onParentMessage)
+parentPort.postMessage({ type: 'ready', directoryIdentity: readyIdentity })

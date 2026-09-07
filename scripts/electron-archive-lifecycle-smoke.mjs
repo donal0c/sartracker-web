@@ -13,6 +13,7 @@ import {
   mkdir,
   mkdtemp,
   readdir,
+  realpath,
   rename,
   rm,
   writeFile,
@@ -56,6 +57,8 @@ const LIVENESS_PHASES = Object.freeze(['create', 'verify', 'restore', 'cleanup']
 const LIVENESS_OPERATION_KIND_PATTERN = /^[a-z][a-z0-9_]{0,47}$/u
 const LIVENESS_HARD_GATE_MS = 200
 const LIVENESS_POLL_INTERVAL_MS = 50
+const OPERATION_WORKLOAD_TIMEOUT_MS = 10 * 60_000
+const ARCHIVE_LIFECYCLE_WORKLOAD_TIMEOUT_CODE = 'ARCHIVE_LIFECYCLE_WORKLOAD_TIMEOUT'
 const RENDERER_TRANSPORT_CLOSE_TIMEOUT_MS = 1_000
 const RENDERER_LIVENESS_LEDGER_CAPACITY = 256
 const LIVENESS_MISSION_NAME = 'Packaged Archive Liveness Probe'
@@ -160,7 +163,11 @@ async function main() {
   await access(options.appPath)
   const sourceBefore = await readSourceState()
   assertExactCleanSource(sourceBefore, options.expectedHead, 'before')
-  await prepareEvidenceDirectory(options.evidenceDir, [options.appPath, projectRoot])
+  await prepareArchiveLifecycleEvidenceDirectory(
+    options.evidenceDir,
+    [options.appPath, projectRoot],
+    { prepared: options.preparedEvidence },
+  )
   const startedAtMs = Date.now()
   const observedLaunchExits = []
   const packagedBuildHeadMatches = []
@@ -195,11 +202,11 @@ async function main() {
     initialLaunch = await launchPackagedApp(options, userDataDir, 1)
     packagedBuildHeadMatches.push(initialLaunch.packagedBuildHeadMatched)
     activeLaunch = initialLaunch
-    const seeded = await seedAndFinishMission(
+    const seeded = await withArchiveLifecycleWorkloadTimeout(seedAndFinishMission(
       initialLaunch.page,
       options.seedPositionRows,
       path.join(userDataDir, 'archive-lifecycle-input-fixtures'),
-    )
+    ), OPERATION_WORKLOAD_TIMEOUT_MS, 'Archive-lifecycle mission seeding timed out.')
     livenessProbe = createPackagedLivenessProbe(mockServer)
     await livenessProbe.attachLaunch(initialLaunch)
     const livenessMission = await startLivenessMission(
@@ -301,11 +308,11 @@ async function main() {
     if (residualEntriesAfterRestart !== 0) {
       throw new Error('Startup did not sweep the interrupted archive-review residual.')
     }
-    const retainedAfterRestart = await readRetainedArchive(
+    const retainedAfterRestart = await livenessProbe.guardOperation(readRetainedArchive(
       restartedLaunch.page,
       seeded.missionId,
       finalized.archive,
-    )
+    ))
     await livenessProbe.setPhase('cleanup')
     await livenessProbe.waitForPhaseSample('cleanup', options.timeoutMs)
     const cleanupOperation = await livenessProbe.beginPhaseOperation(
@@ -346,11 +353,11 @@ async function main() {
     await livenessProbe.completePhaseOperation(secondReviewOperation)
     await livenessProbe.detachLaunch(restartedLaunch)
     const liveness = await livenessProbe.finish()
-    const postCleanup = await assertPostCleanupState({
+    const postCleanup = await withArchiveLifecycleWorkloadTimeout(assertPostCleanupState({
       page: restartedLaunch.page,
       missionId: seeded.missionId,
       archive: finalized.archive,
-    })
+    }), OPERATION_WORKLOAD_TIMEOUT_MS, 'Archive-lifecycle post-cleanup inspection timed out.')
     const cleanup = { ...cleanupResult, ...postCleanup }
     const restartedExit = await stopLaunch(restartedLaunch)
     observedLaunchExits.push({ number: restartedLaunch.number, signal: restartedExit.signal })
@@ -1498,6 +1505,12 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     || typeof mockServer.readCurrentFixSequence !== 'function'
     || typeof mockServer.drainCurrentFixLedger !== 'function') {
     throw new Error('Archive-lifecycle liveness source ledger is not drainable.')
+  }
+  const operationTimeoutMs = dependencies.operationTimeoutMs ?? OPERATION_WORKLOAD_TIMEOUT_MS
+  if (!Number.isSafeInteger(operationTimeoutMs)
+    || operationTimeoutMs < 1
+    || operationTimeoutMs > 30 * 60_000) {
+    throw new Error('Archive-lifecycle operation workload timeout is invalid.')
   }
   const byPhase = Object.fromEntries(LIVENESS_PHASES.map((phase) => [phase, {
     sampleCount: 0,
@@ -2794,10 +2807,28 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
         throw new Error('Archive-lifecycle liveness operation checkpoint is invalid.')
       }
     }
-    const result = await Promise.race([
-      Promise.resolve(operationPromise),
-      failureSignal.then(() => throwIfInstrumentationFailed()),
-    ])
+    let deadlineTimer
+    const deadlineSignal = new Promise((resolve, reject) => {
+      deadlineTimer = setTimeout(() => {
+        recordError('operation_deadline_exceeded')
+        try {
+          throwIfInstrumentationFailed()
+          resolve(undefined)
+        } catch (error) {
+          reject(markArchiveLifecycleWorkloadTimeout(error))
+        }
+      }, operationTimeoutMs)
+    })
+    let result
+    try {
+      result = await Promise.race([
+        Promise.resolve(operationPromise),
+        failureSignal.then(() => throwIfInstrumentationFailed()),
+        deadlineSignal,
+      ])
+    } finally {
+      clearTimeout(deadlineTimer)
+    }
     if (boundedCheckpoints.length > 0) await endPhaseOperations(boundedCheckpoints)
     return result
   }
@@ -3520,8 +3551,18 @@ function assertExactCleanSource(source, expectedHead, phase) {
   }
 }
 
-/** Recreates only the explicit bounded evidence directory. */
-async function prepareEvidenceDirectory(directory, protectedPaths) {
+/** Recreates an owned evidence boundary or validates supervisor-prepared private staging. */
+export async function prepareArchiveLifecycleEvidenceDirectory(
+  directory,
+  protectedPaths,
+  options = {},
+) {
+  if (!Array.isArray(protectedPaths)
+    || protectedPaths.some((protectedPath) => typeof protectedPath !== 'string')
+    || options === null || typeof options !== 'object' || Array.isArray(options)
+    || typeof options.prepared !== 'boolean') {
+    throw new Error('Archive-lifecycle evidence preparation input is invalid.')
+  }
   const resolved = path.resolve(directory)
   const root = path.parse(resolved).root
   const containsProtectedPath = protectedPaths.some((protectedPath) => {
@@ -3532,8 +3573,23 @@ async function prepareEvidenceDirectory(directory, protectedPaths) {
     || resolved === path.resolve(os.tmpdir()) || containsProtectedPath) {
     throw new Error('Archive-lifecycle evidence directory is too broad to recreate safely.')
   }
+  if (resolved !== directory) {
+    throw new Error('Archive-lifecycle evidence directory path is not canonical.')
+  }
+  if (options.prepared) {
+    const identity = await lstat(resolved)
+    if (!identity.isDirectory() || identity.isSymbolicLink()
+      || (identity.mode & 0o777) !== 0o700
+      || await realpath(resolved) !== resolved
+      || (await readdir(resolved)).length !== 0) {
+      throw new Error('Archive-lifecycle prepared evidence directory is not empty and private.')
+    }
+    return Object.freeze({ dev: identity.dev, ino: identity.ino, realPath: resolved })
+  }
   await rm(resolved, { recursive: true, force: true })
   await mkdir(resolved, { recursive: true, mode: 0o700 })
+  const identity = await lstat(resolved)
+  return Object.freeze({ dev: identity.dev, ino: identity.ino, realPath: resolved })
 }
 
 /** Accepts one fixed, non-sensitive cleanup stage identifier. */
@@ -3882,9 +3938,11 @@ export async function writeArchiveLifecycleFailureReceipt(input, dependencies = 
     const cleanupDiagnostics = readProjectedArchiveLifecycleDiagnostics(error, input.secrets)
     return {
       step,
-      classification: cleanupDiagnostics === null
-        ? 'cleanup_failure'
-        : 'external_liveness_gate_failure',
+      classification: isArchiveLifecycleWorkloadTimeout(error)
+        ? 'workload_timeout'
+        : cleanupDiagnostics === null
+          ? 'cleanup_failure'
+          : 'external_liveness_gate_failure',
       message: sanitizeFailureMessage(error, input.secrets),
       archiveLifecycleDiagnostics: cleanupDiagnostics,
     }
@@ -3912,9 +3970,11 @@ export async function writeArchiveLifecycleFailureReceipt(input, dependencies = 
         ? closedGateFailures.metadataReadable === false
           ? 'evidence_validation_metadata_failure'
           : 'evidence_validation_failure'
-        : diagnostics === null
-          ? cleanupDiagnostic === null ? 'lifecycle_failure' : 'cleanup_failure'
-          : 'external_liveness_gate_failure',
+        : isArchiveLifecycleWorkloadTimeout(input.error)
+          ? 'workload_timeout'
+          : diagnostics === null
+            ? cleanupDiagnostic === null ? 'lifecycle_failure' : 'cleanup_failure'
+            : 'external_liveness_gate_failure',
       message: sanitizeFailureMessage(input.error, input.secrets),
       archiveLifecycleDiagnostics: diagnostics,
       ...(closedGateFailures === null ? {} : { closedGateFailures }),
@@ -4139,14 +4199,57 @@ function sortedUnique(values) {
   return [...new Set(values)].sort()
 }
 
+/** Marks one owned timeout without discarding attached liveness diagnostics. */
+function markArchiveLifecycleWorkloadTimeout(error) {
+  const timeoutError = error instanceof Error
+    ? error
+    : new Error('Archive-lifecycle workload timed out.')
+  Object.defineProperty(timeoutError, 'code', {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: ARCHIVE_LIFECYCLE_WORKLOAD_TIMEOUT_CODE,
+  })
+  return timeoutError
+}
+
+/** Identifies only the exact internal marker used for bounded workload expiry. */
+function isArchiveLifecycleWorkloadTimeout(error) {
+  if ((typeof error !== 'object' || error === null) && typeof error !== 'function') return false
+  try {
+    return Reflect.get(error, 'code') === ARCHIVE_LIFECYCLE_WORKLOAD_TIMEOUT_CODE
+  } catch {
+    return false
+  }
+}
+
+/** Applies the lifecycle workload deadline independently of strict liveness gates. */
+export async function withArchiveLifecycleWorkloadTimeout(
+  promise,
+  timeoutMs = OPERATION_WORKLOAD_TIMEOUT_MS,
+  message = 'Archive-lifecycle workload timed out.',
+) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30 * 60_000
+    || typeof message !== 'string' || message.length < 1
+    || message.length > FAILURE_MESSAGE_LIMIT) {
+    throw new Error('Archive-lifecycle workload timeout configuration is invalid.')
+  }
+  return withTimeout(
+    promise,
+    timeoutMs,
+    message,
+    () => markArchiveLifecycleWorkloadTimeout(new Error(message)),
+  )
+}
+
 /** Applies one rejecting timeout without blocking the event loop. */
-async function withTimeout(promise, timeoutMs, message) {
+async function withTimeout(promise, timeoutMs, message, createTimeoutError = () => new Error(message)) {
   let timer
   try {
     return await Promise.race([
       promise,
       new Promise((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), timeoutMs)
+        timer = setTimeout(() => reject(createTimeoutError()), timeoutMs)
       }),
     ])
   } finally {
@@ -4183,6 +4286,7 @@ function readBoundedFailureMessage(error) {
   } else {
     return UNSAFE_FAILURE_MESSAGE
   }
+  if (source.length < 1) return UNSAFE_FAILURE_MESSAGE
   if (source.length > FAILURE_MESSAGE_INPUT_LIMIT) return OVERSIZED_FAILURE_MESSAGE
   return source
 }

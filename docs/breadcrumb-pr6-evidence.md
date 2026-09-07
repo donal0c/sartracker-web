@@ -96,11 +96,13 @@ is intermediate. Donal retains approval and merge authority.
 > or sorts no mission history. Broken ancestry, identity, chronology, or status
 > fails closed.
 >
-> For the replacement candidate, cheap exact-head gates, four reviews, the Linux
-> packaged liveness report, and exactly one fresh controlled Ubuntu
-> greater-than-2-GiB qualification remain pending. No merge, release, field
-> acceptance, or final review result is claimed here. Donal retains approval
-> and merge authority.
+> The recovery's source reviews and full local non-browser source cycle are now
+> complete at the named trees below. Exact commit/push, one macOS package, and
+> the sole packaged lifecycle terminal remain in this bounded cycle. Browser,
+> visual, physical-kill, Linux, and exactly one fresh controlled Ubuntu greater-
+> than-2-GiB qualification remain deliberately downstream. No merge, release,
+> platform, or field acceptance is claimed here. Donal retains approval and
+> merge authority.
 
 ## 2026-09-04 superseded first-candidate pre-freeze verification
 
@@ -488,7 +490,7 @@ projection. The projector is the fifth explicit kill-harness identity input so
 future projection changes alter the evidence digest. No liveness deadline or
 strict `>=200 ms` failure gate changed.
 
-The current dirty successor's red-to-green focused gate passes `4` files / `97`
+That red-first successor's focused gate passed `4` files / `97`
 tests, and its fresh full serial suite passes `375` files / `3,770` tests. Full
 ESLint, TypeScript/production build and bundle budgets, focused Node syntax,
 diff checks, and backend `58` passed / `1` platform-specific ignored are green.
@@ -531,12 +533,12 @@ is unchanged.
 The b75 broad and renderer/input formal source reviews were clean. Persistence
 and concurrency/finalization review both found the unbounded renderer
 confirmation reads; the affected evidence and runtime rechecks are now clean.
-Current successor checks are still dirty-tree and pre-freeze: the focused gate
+At that point, successor checks were still dirty-tree and pre-freeze: the focused gate
 passes `8` files / `307` tests, the final cache/runtime slice passes `2` files /
 `91` tests, the fresh full serial suite passes `375` files / `3,791` tests, and
 TypeScript, full ESLint, production build/bundle budgets, focused Node syntax,
 diff checks, and backend `58` passed / `1` platform-specific ignored are green.
-No successor exact-head package/lifecycle, browser,
+At that point no successor exact-head package/lifecycle, browser,
 visual, physical SIGKILL, Linux, final-review, or greater-than-2-GiB proof exists.
 
 ## 2026-09-05 rejected `b7793753` operation-proof candidate
@@ -990,8 +992,10 @@ the release gate.
 | Rejected cleanup-snapshot candidate (local) | `30061c2d93f20cdc7f48d6abb5b77bbd041abdd0` / tree `a77a4a37689791f958158c9c43608251e8fbc972`; exact package passed, then the sole lifecycle attempt failed at cleanup start with receipt SHA-256 `659aa9ed2cd155196d9b4d1f575c62433a0fd08cb1417be9e927901f44fafdc4` |
 | Rejected renderer-CDP candidate (local) | `e9584e94dbb7bc8403a62517657b6518e0a2627f` / tree `c45f2064231a4b533499a32d3fbf39c240c125fd`; exact package passed, then the sole lifecycle attempt failed during launch-2 `review_after_cleanup` with receipt SHA-256 `a7a2f9bd1e694e8aa77b6b9b971700261c41bc279cae7b7cfc34379fde0aa5d7` |
 | Rejected final-validation candidate (local) | `ec258ebadafcabbe9ad8c513f35aa705566a3a70` / tree `ef09d6a401759b3aeba54b613ba14289bbbf841f`; exact package passed, then the sole lifecycle attempt failed one irrecoverable final evidence gate with receipt SHA-256 `e816a6055d5f9e4384cb70a18e667b88d8d90dbd15b096bd2dddfd6ef63b244e` |
-| Recovery candidate and final proof | Pending. Once source is frozen and every gate completes, the exact immutable head/tree and results must be recorded in the PR #10 and Linear ledger |
-| Immutable final documentation/review head | Pending. It must be recorded after this evidence freeze in the [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10) and Linear; any later repository mutation requires affected re-review |
+| Rejected correction-custody candidate (pushed) | `20486b6ceaf86060a64892f43c07cd303e2a8548` / tree `131da068cc3ec973c1e8ce20edc59a606ca60f71`; its sole lifecycle, Chromium, visual, uncached visual review, and physical-kill matrix passed, but final review found correction-consumer and custody/plaintext-cleanup races; Linux run `33954733857` was cancelled and the head will not be rerun |
+| Rejected pre-freeze successor tree | `840947d5fcacb66c64597f85f6a434753de621a9`; post-repair audit reproduced a correction pathname-rebind race that could redirect rollback deletion outside custody and a lifecycle race that released staging ownership before terminal consumption. It was rejected before packaging and will not be rerun unchanged. |
+| Current recovery successor | Frozen test/docs-only descendant of reviewed tree `91f8f3ed`. Production blobs retain the red-first correction and lifecycle repairs: correction `8/102`, independent audits `8/137` and `7/99`, maximum 4,096-entry writer ownership `59.9-94.7 ms`, changed matrix `20/628`, and lifecycle `3/259` with a clean re-audit. `91f8f3ed` passed the council and exact-tree specialist reviews, then its first source cycle exposed two load-sensitive fixed waits (`3,958/3,960`); the deterministic lazy-import test repair passes `14/14`. At freeze, no package or deferred platform gate had run. |
+| Recovery candidate and final proof | Pending. Once the current frozen source completes the approved gates through the sole packaged lifecycle, record the exact pushed head/tree and terminal result in the PR #10 and Linear ledger; browser/visual, physical-kill, Linux, and Ubuntu proof remain downstream |
 | Scope | one PR6 containing all three internal strict-TDD checkpoints |
 
 Historical carry-forward note: before the `caf9e5e…` field run, a read-only
@@ -1723,16 +1727,172 @@ receipts are required as complementary evidence. Even if they pass, they do not
 prove live Traccar, the original field machine, production, or a packaged
 renderer running the multi-GiB workload itself.
 
+### 2026-09-05 rejected 20486 run and finite-boundary successor
+
+Exact pushed head `20486b6ceaf86060a64892f43c07cd303e2a8548` / tree
+`131da068cc3ec973c1e8ce20edc59a606ca60f71` is rejected and must not be
+rerun. Its one packaged lifecycle passed in `11,471 ms` with two clean
+launches/exits, `5,516` rows removed, zero plaintext or secret residue, and
+every liveness maximum strictly below `200 ms`; the report SHA-256 is
+`359b79196c398a7ba5fc2b5ab77b1c03dc2d1ec786c74a50a42c2c691bdf449d`.
+Chromium `173/173`, visual Playwright `62/62`, uncached visual review `74/74`,
+and the physical `SIGKILL` matrix `32/32` also passed. Those are prior-head
+proof only. Final review found correction-consumer and combined custody /
+plaintext-cleanup races, so Linux run `33954733857` was cancelled before field
+qualification.
+
+The first repaired successor was frozen as tree
+`840947d5fcacb66c64597f85f6a434753de621a9`, then rejected before packaging.
+Fresh audit reproduced two further blockers: correction rollback could be
+redirected outside the attachment root by rebinding an ordinary directory
+pathname between validation and deletion, and a second lifecycle invocation
+could replace the first run's successful evidence after child staging was
+released but before the first supervisor returned. That tree will not be rerun.
+
+The successor prepared after that rejection removes both vulnerable structures. Correction
+attachment mutation now runs only in an Electron `utilityProcess` whose cwd is
+bound to the database directory and authenticated by an exact READY dev/inode
+handshake. The utility descends one validated path component at a time, records
+one bounded custody plan in SQLite before writing bytes, and creates a
+recognisable operation-owned public name plus its exact private hardlink peer.
+Both names must be regular mode-0600 files on one lossless bigint inode with
+exactly two links. Unlock and plan removal commit in one SQLite transaction;
+startup reconciliation validates committed or uncommitted state without any
+filesystem delete, rename, or rollback.
+
+Two independent pre-freeze audits then reproduced four additional deterministic
+integration defects. `SharedArrayBuffer` could not be cloned across Electron's
+UtilityProcess boundary; post-terminal and post-error shutdown could strand a
+live helper; a nominal or fallback result was not bound through IPC to the exact
+correction operation; and both startup and failed-correction reconciliation
+hashed up to 4,096 attachments while holding SQLite's immediate writer lock.
+All four were repaired red-first. The protocols now use cloneable message
+cancellation plus bounded termination and join physical exit. Completion carries
+the exact operation identity, the store verifies the matching durable unlock
+event on every outcome, and wrong-operation or residual custody state is
+persistently fenced across restart. Reconciliation now computes full digest
+proofs before the writer transaction, then re-reads the exact plan, mission and
+unlock state and revalidates unchanged file identities/topology before clearing
+custody in the short transaction.
+
+The corrected focused slice passes `8` files / `102` tests. Independent
+integration and custody/protocol audits are clean at `8` files / `137` tests and
+`7` files / `99` tests respectively, including real utility children, durable
+failure fences, exact-operation attribution, plan drift, ABA hardlink replacement
+and worker-exit ownership. At the maximum 4,096-entry bound, committed-pair
+transactions held the writer for `67.6-79.2 ms`; a valid 4,186,365-byte
+uncommitted plan held it for `81.2-93.6 ms`. Concurrent WAL writers succeeded in
+all measured runs within `59.9-94.7 ms`. The corrected changed-test matrix passes
+`20` files / `628` tests. Its initial run caught one obsolete test-only store
+harness that omitted the required UtilityProcess injection; the exact real
+correction flow was red at the 120-second teardown timeout, received only the
+test IPC adapter, then passed in `2.34 s`. Production retains no child-process
+fallback. These remain pre-freeze source results, not packaged proof.
+
+Lifecycle supervision now separates the short-lived preparation gate, durable
+active lease, private child staging, and canonical terminal evidence. The child
+uses a parent-prepared mode-0700 directory without replacing its pinned inode.
+Only the exact immutable active lease owner may read, publish, conceal, clean,
+or consume terminal evidence. Success remains hidden through child cleanup,
+then is exposed, read back, and bound to a durable consumed record before the
+supervisor returns. Same-head reuse remains forbidden; a dead consumed lease
+may be reclaimed only for a different head after its prior terminal is proved.
+All wrapper exit paths, including an already-observed exit, now prove the POSIX
+process group empty or perform bounded residual-group termination and reap;
+unproved settlement retains staging and fails closed. The lifecycle slice
+passes `3` files / `259` tests and an independent P1/P2 re-audit is clean.
+
+The first fully reviewed successor was frozen as tree
+`91f8f3edb2efc1e367f8d00ab94cbe52453860e3`. The three-model council,
+renderer/operator review, and an independent persistence review of a separate
+`git archive` extraction found no deterministic P1/P2. Its first full non-
+browser source cycle nevertheless rejected the tree before lint, build,
+backend, commit, or package: `2` of `3,960` tests failed because two workspace
+tests used a fixed 50 ms sleep across `React.lazy` cleanup and verification
+dialog imports. Under full-suite transform contention neither dialog had
+mounted, so the product paths were not invoked. The harness now waits for each
+exact split module inside React `act`, matching the repository's established
+Suspense pattern. The focused file passes `14/14` without warnings. This is a
+test-synchronization repair only. Its test-only successor then required bounded
+delta review and a full source cycle; `91f8f3ed` will not be rerun unchanged.
+
+That replacement was frozen as tree `969bf644bba64256c40ab323e68c0189764db874`
+after two clean delta reviews, then its first full source cycle was also rejected
+before lint, build, backend, commit, or package. This time `3,959/3,960` tests
+passed; Vitest reported the unchanged 25,000-row tracking acknowledgement test
+at `6,815 ms` after it hit the generic 5-second timeout under parallel-suite
+contention. Its persistence path and test blob were
+unchanged from `20486b6c`, and the exact focused case passed in `1,695 ms` before
+the repair and `1,643 ms` after it. The test asserts compact acknowledgement,
+durable count, conflict, and checkpoint semantics—not latency. The replacement
+therefore retains all 25,000 rows and assertions and adds only the same test-local
+15-second harness ceiling used by other large-data tests. Packaged liveness keeps
+its separate strict `<200 ms` gates unchanged; `969bf644` is not rerun unchanged.
+
+The resulting behavioral tree was frozen as
+`d5727b82ff2febaba6b77cbd3d52f2592c4f7d7a`. Two bounded independent delta
+reviews were clean. Its one full non-browser source cycle passed `380/380` unit
+files and `3,960/3,960` tests in `84.33 s`, full ESLint, production build and
+bundle budgets, changed-script Node syntax, `git diff --check`, and the legacy
+backend at `58` passed / `1` ignored. Any final status-only descendant must keep
+every non-documentation blob identical to this reviewed and tested tree. This is
+local source evidence only, not exact-head package or platform qualification.
+
+Earlier finite-boundary repairs remain: authenticated post-commit correction
+evidence, exact cleanup cursor continuity, cross-archive custody, bounded
+no-progress cancellation, and qualification terminal ownership. None of these
+changes alters the strict `<200 ms` liveness gate. No package, packaged
+lifecycle, browser/visual, physical-kill, Linux, or Ubuntu gate has run for the
+current successor. A read-only probe previously confirmed the recorded Ubuntu
+host was reachable as `Linux 7.0.0-28-generic x86_64`; the qualifier remains
+deliberately deferred.
+
+### 2026-09-07 approved bounded closeout order
+
+Donal approved the following finite order for this recovery. It does not lower
+the life-safety bar or the strict `<200 ms` liveness gate:
+
+1. repair only the confirmed blockers red-first and pass their focused gates;
+2. finish the evidence, handoff, workplan, and operator-manual wording;
+3. normalize the tracked generated-version file to the current pre-commit HEAD,
+   freeze one candidate content tree and intended-file manifest, and defer non-
+   safety P3 work;
+4. complete the missing renderer/operator charter plus fresh broad and affected
+   persistence and concurrency/liveness reviews against that frozen tree;
+5. verify that the tree is unchanged, then run exactly one full local source
+   cycle: deterministic unit/integration tests, full ESLint, production build,
+   backend tests, affected Node syntax, and `git diff --check`—not `test:all`,
+   because browser work is downstream;
+6. verify the intended files and unchanged remote PR branch, commit and push an
+   explicit fast-forward, then prove the committed and pushed tree is exactly
+   the frozen reviewed tree;
+7. build one validation package with `EXPECTED_SOURCE_SHA` set to the new final
+   commit, bind executable and ASAR hashes to that exact head/tree, then restore
+   the tracked generated-version file to its committed blob without rebuilding
+   and verify the source tree is clean before running the sole packaged
+   lifecycle attempt and validating exactly one terminal success or failure
+   artifact; and
+8. stop and report before any remaining browser/visual, physical-kill, Linux CI,
+   or final Ubuntu greater-than-2-GiB qualification.
+
+A failed lifecycle rejects that exact head and returns to causal diagnosis; it
+is never rerun unchanged. Passing the stop point means only that the candidate
+may proceed to the deliberately deferred gates. It is not shippable, mergeable,
+released, field-qualified, or production-proven at that point.
+
 ## Independent review gate
 
-All code, tests, documentation and proof claims freeze on one immutable final
-head before review. Recording a verdict in this file afterward would create a
-new unreviewed head, so the exact SHA/tree, four verdicts, central source
-retrace and any remediation/rechecks must be recorded externally in the
+All code, tests, generated version content, documentation, and proof claims
+freeze first on one immutable candidate tree plus intended-file manifest. Final
+reviews bind to that tree, and no content edit is allowed while they run. The
+later commit is admissible only when its Git tree exactly equals the reviewed
+candidate tree; commit metadata and the push may change the commit identity but
+not its content identity. Any tree change invalidates the affected review and
+gate evidence. The pushed SHA/tree, four verdicts, central source retrace and
+any remediation/rechecks must then be recorded externally in the
 [PR #10 exact-head ledger](https://github.com/donal0c/sartracker-web/pull/10)
-and the three Linear issues. PR #10 must remain draft until every required row
-is clean; a later repository mutation invalidates that ledger and requires the
-affected review procedure again.
+and the three Linear issues so the record itself does not create a new source
+head. PR #10 must remain draft until every required row is clean.
 
 | Independent charter | Required immutable verdict record |
 | --- | --- |

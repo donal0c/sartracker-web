@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { fork } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -14,7 +15,7 @@ const Database = require('better-sqlite3') as new (
 ) => TestDatabase
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (
-    options: { readonly userDataPath: string },
+    options: Readonly<Record<string, unknown>>,
   ) => MissionStore
 }
 const { createArchiveReviewSessionManager } = require(
@@ -197,25 +198,30 @@ type ArchiveReviewSessionManager = {
     readonly args: readonly unknown[]
   }) => Promise<unknown>
   readonly close: (input: { readonly senderId: number; readonly sessionId: string }) => Promise<void>
-  readonly snapshotForCorrection: (input: {
+  readonly beginCorrectionSnapshotUse: (input: {
     readonly senderId: number
     readonly sessionId: string
     readonly operationId: string
     readonly archiveId: string
     readonly signal?: AbortSignal
-  }) => Promise<{
-    readonly snapshotPath: string
-    readonly attachmentDirectory: string
-    readonly attachmentMappings: readonly Readonly<Record<string, unknown>>[]
-    readonly databaseIdentity: Readonly<Record<string, unknown>>
-    readonly databaseSha256: string
-    readonly archiveId: string
-  }>
+    readonly cancel: () => void
+  }) => {
+    readonly snapshotPromise: Promise<{
+      readonly snapshotPath: string
+      readonly attachmentDirectory: string
+      readonly attachmentMappings: readonly Readonly<Record<string, unknown>>[]
+      readonly databaseIdentity: Readonly<Record<string, unknown>>
+      readonly databaseSha256: string
+      readonly archiveId: string
+    }>
+    readonly lease: { readonly release: () => void }
+  }
   readonly completeCorrectionSnapshot: (input: {
     readonly senderId: number
     readonly sessionId: string
     readonly operationId: string
     readonly archiveId: string
+    readonly lease: { readonly release: () => void }
   }) => Promise<unknown>
   readonly hasReviewActivity: () => boolean
   readonly prepareClose: () => Promise<void>
@@ -278,6 +284,36 @@ const EVIDENCE_TABLES = Object.freeze([
   'positions',
   'search_areas',
 ])
+
+/** Uses the real correction utility module through a test-only Node IPC adapter. */
+function createElectronMissionStoreWithCorrectionUtility(
+  input: Readonly<Record<string, unknown>>,
+): MissionStore {
+  return createElectronMissionStore({
+    ...input,
+    createArchiveCorrectionUtilityProcess: createNodeUtilityProcess,
+  })
+}
+
+/** Emulates Electron UtilityProcess without adding a production child-process fallback. */
+function createNodeUtilityProcess(input: {
+  readonly modulePath: string
+  readonly cwd: string
+}) {
+  const fixturePath = path.join(
+    process.cwd(),
+    'tests/fixtures/electron-utility-process-child.cjs',
+  )
+  const child = fork(fixturePath, [input.modulePath], {
+    cwd: input.cwd,
+    serialization: 'advanced',
+    silent: true,
+  }) as ReturnType<typeof fork> & { postMessage: (message: unknown) => void }
+  child.postMessage = (message: unknown) => {
+    child.send(message)
+  }
+  return child
+}
 
 afterEach(async () => {
   await Promise.all([...temporaryDirectories].map(async (directory) => {
@@ -825,7 +861,7 @@ describe('verified SARARCH2 archive-backed review integration [DON-252 / BCP-15]
     temporaryDirectories.add(userDataPath)
     const reviewRoot = path.join(userDataPath, 'archive-review')
     const archiveDirectory = path.join(userDataPath, 'archives')
-    const store = createElectronMissionStore({
+    const store = createElectronMissionStoreWithCorrectionUtility({
       userDataPath,
       readAdminRoster: async () => ['Duty Admin'],
     })
@@ -880,12 +916,14 @@ describe('verified SARARCH2 archive-backed review integration [DON-252 / BCP-15]
         },
         secret: PASSPHRASE,
       })
-      const snapshot = await manager.snapshotForCorrection({
+      const correctionUse = manager.beginCorrectionSnapshotUse({
         senderId: SENDER_ID,
         sessionId: session.sessionId,
         operationId: REBOUND_RESTORE_OPERATION_ID,
         archiveId: finalized.archive.id,
+        cancel: vi.fn(),
       })
+      const snapshot = await correctionUse.snapshotPromise
       const restored = await store.unlockFinalizedMission({
         mission_id: mission.id,
         archive_id: finalized.archive.id,
@@ -904,6 +942,7 @@ describe('verified SARARCH2 archive-backed review integration [DON-252 / BCP-15]
         sessionId: session.sessionId,
         operationId: REBOUND_RESTORE_OPERATION_ID,
         archiveId: finalized.archive.id,
+        lease: correctionUse.lease,
       })).resolves.toBeUndefined()
       expect(manager.hasReviewActivity()).toBe(false)
       const database = new Database((await store.info()).database_path, {

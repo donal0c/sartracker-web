@@ -623,6 +623,12 @@ export function parseArchiveLifecycleSmokeArgs(argv) {
       case '--timeout-ms':
         parsed.timeoutMs = Number(nextValue())
         break
+      case '--prepared-evidence':
+        if (parsed.preparedEvidence === true) {
+          throw new Error('--prepared-evidence may be supplied only once.')
+        }
+        parsed.preparedEvidence = true
+        break
       case '--':
         parsed.extraArgs.push(...argv.slice(index + 1))
         index = argv.length
@@ -664,6 +670,7 @@ export function parseArchiveLifecycleSmokeArgs(argv) {
     expectedHead: parsed.expectedHead,
     seedPositionRows,
     timeoutMs,
+    preparedEvidence: parsed.preparedEvidence === true,
     extraArgs: Object.freeze([...parsed.extraArgs]),
   })
 }
@@ -672,6 +679,9 @@ export function parseArchiveLifecycleSmokeArgs(argv) {
 export function buildArchiveLifecycleSmokeCiRunnerArgs(input) {
   if (typeof input?.projectRoot !== 'string' || !path.isAbsolute(input.projectRoot)
     || typeof input?.appPath !== 'string' || !path.isAbsolute(input.appPath)
+    || (input.evidenceDir !== undefined
+      && (typeof input.evidenceDir !== 'string' || !path.isAbsolute(input.evidenceDir)))
+    || (input.preparedEvidence !== undefined && typeof input.preparedEvidence !== 'boolean')
     || typeof input?.expectedHead !== 'string' || !SHA1.test(input.expectedHead)
     || !['darwin', 'linux'].includes(input.platform)) {
     throw new Error('Archive-lifecycle smoke CI inputs are invalid.')
@@ -681,10 +691,12 @@ export function buildArchiveLifecycleSmokeCiRunnerArgs(input) {
     '--app',
     input.appPath,
     '--evidence',
-    path.join(input.projectRoot, 'tmp', 'breadcrumb-pr6-packaged-archive-smoke'),
+    input.evidenceDir
+      ?? path.join(input.projectRoot, 'tmp', 'breadcrumb-pr6-packaged-archive-smoke'),
     '--expected-head',
     input.expectedHead,
   ]
+  if (input.preparedEvidence === true) args.push('--prepared-evidence')
   if (input.platform === 'linux') {
     args.push(
       '--',

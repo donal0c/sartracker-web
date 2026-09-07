@@ -16,6 +16,7 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import * as qualificationScript from '../../scripts/breadcrumb-pr6-qualification.mjs'
 import {
   MAX_EVIDENCE_PATH_SAMPLES,
   assertFieldScaleFixture,
@@ -49,8 +50,35 @@ import {
 } from '../fixtures/packaged-archive-lifecycle-v2'
 
 const temporaryRoots: string[] = []
+const CLEANUP_OPERATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+
+type CleanupProgress = Readonly<{
+  tableName: string
+  tableIndex: number
+  tableCount: number
+  tableBatch: number
+  deletedRows: number
+  totalDeletedRows: number
+}>
+
+type RunQualificationCleanupWithNoProgressFence = <Result>(input: Readonly<{
+  operationId: string
+  noProgressTimeoutMs: number
+  startOperation: (input: Readonly<{
+    operationId: string
+    onProgress: (progress: CleanupProgress) => void
+  }>) => Promise<Result>
+  cancelOperation: (operationId: string) => Promise<boolean>
+}>) => Promise<Result>
+
+const runQualificationCleanupWithNoProgressFence = (
+  qualificationScript as unknown as Readonly<{
+    runQualificationCleanupWithNoProgressFence?: RunQualificationCleanupWithNoProgressFence
+  }>
+).runQualificationCleanupWithNoProgressFence
 
 afterEach(async () => {
+  vi.useRealTimers()
   await Promise.all(temporaryRoots.splice(0).map((root) =>
     rm(root, { recursive: true, force: true })))
 })
@@ -335,6 +363,164 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       expect(() => assertCompletedCleanupEligibility(value))
         .toThrow(/terminal|cleanup|archived/iu)
     }
+  })
+
+  it('cancels the exact cleanup operation at its no-progress deadline and joins physical settlement', async () => {
+    expect(runQualificationCleanupWithNoProgressFence).toBeTypeOf('function')
+    if (runQualificationCleanupWithNoProgressFence === undefined) {
+      throw new Error('The qualification cleanup no-progress fence is missing.')
+    }
+    vi.useFakeTimers()
+    const events: string[] = []
+    let settleOperation: (() => void) | undefined
+    const operation = new Promise<never>((_resolve, reject) => {
+      settleOperation = () => {
+        events.push('operation-physically-settled')
+        reject(Object.assign(new Error('cleanup cancelled'), {
+          code: 'ARCHIVE_CLEANUP_CANCELLED',
+        }))
+      }
+    })
+    const startOperation = vi.fn(() => operation)
+    const cancelOperation = vi.fn(async (operationId: string) => {
+      events.push(`cancel:${operationId}`)
+      return true
+    })
+
+    let returned = false
+    const result = runQualificationCleanupWithNoProgressFence({
+      operationId: CLEANUP_OPERATION_ID,
+      noProgressTimeoutMs: 1_000,
+      startOperation,
+      cancelOperation,
+    }).then(
+      (value) => ({ status: 'fulfilled' as const, value }),
+      (error: unknown) => ({ status: 'rejected' as const, error }),
+    ).finally(() => {
+      returned = true
+      events.push('fence-returned')
+    })
+
+    await vi.advanceTimersByTimeAsync(999)
+    expect(cancelOperation).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(startOperation).toHaveBeenCalledWith({
+      operationId: CLEANUP_OPERATION_ID,
+      onProgress: expect.any(Function),
+    })
+    expect(cancelOperation).toHaveBeenCalledTimes(1)
+    expect(cancelOperation).toHaveBeenCalledWith(CLEANUP_OPERATION_ID)
+    expect(returned).toBe(false)
+
+    settleOperation?.()
+    await expect(result).resolves.toMatchObject({
+      status: 'rejected',
+      error: { code: 'CLEANUP_NO_PROGRESS_TIMEOUT' },
+    })
+    expect(events).toEqual([
+      `cancel:${CLEANUP_OPERATION_ID}`,
+      'operation-physically-settled',
+      'fence-returned',
+    ])
+  })
+
+  it('extends the cleanup deadline only for semantic progress and keeps timeout distinct from liveness', async () => {
+    expect(runQualificationCleanupWithNoProgressFence).toBeTypeOf('function')
+    if (runQualificationCleanupWithNoProgressFence === undefined) {
+      throw new Error('The qualification cleanup no-progress fence is missing.')
+    }
+    vi.useFakeTimers()
+    let reportProgress: ((progress: CleanupProgress) => void) | undefined
+    let settleOperation: (() => void) | undefined
+    const operation = new Promise<never>((_resolve, reject) => {
+      settleOperation = () => reject(Object.assign(new Error('cleanup cancelled'), {
+        code: 'ARCHIVE_CLEANUP_CANCELLED',
+      }))
+    })
+    const cancelOperation = vi.fn(async () => true)
+    const result = runQualificationCleanupWithNoProgressFence({
+      operationId: CLEANUP_OPERATION_ID,
+      noProgressTimeoutMs: 1_000,
+      startOperation: ({ onProgress }) => {
+        reportProgress = onProgress
+        return operation
+      },
+      cancelOperation,
+    }).catch((error: unknown) => error)
+
+    await vi.advanceTimersByTimeAsync(900)
+    reportProgress?.({
+      tableName: 'mission_events',
+      tableIndex: 4,
+      tableCount: 5,
+      tableBatch: 10,
+      deletedRows: 1_000,
+      totalDeletedRows: 10_000,
+    })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(cancelOperation).not.toHaveBeenCalled()
+
+    // Replayed, skipped, reordered, count-changing, and arithmetically invalid
+    // cursors are not durable progress and must not buy another window.
+    for (const invalidProgress of [
+      {
+        tableName: 'mission_events',
+        tableIndex: 4,
+        tableCount: 5,
+        tableBatch: 10,
+        deletedRows: 1_000,
+        totalDeletedRows: 10_000,
+      },
+      {
+        tableName: 'mission_events',
+        tableIndex: 4,
+        tableCount: 5,
+        tableBatch: 12,
+        deletedRows: 1,
+        totalDeletedRows: 10_001,
+      },
+      {
+        tableName: 'mission_events',
+        tableIndex: 6,
+        tableCount: 7,
+        tableBatch: 0,
+        deletedRows: 0,
+        totalDeletedRows: 10_000,
+      },
+      {
+        tableName: 'mission_events',
+        tableIndex: 5,
+        tableCount: 5,
+        tableBatch: 0,
+        deletedRows: 0,
+        totalDeletedRows: 9_999,
+      },
+      {
+        tableName: 'mission_events',
+        tableIndex: 4,
+        tableCount: 5,
+        tableBatch: 11,
+        deletedRows: 1,
+        totalDeletedRows: 10_000,
+      },
+    ]) reportProgress?.(invalidProgress)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(cancelOperation).toHaveBeenCalledTimes(1)
+    expect(cancelOperation).toHaveBeenCalledWith(CLEANUP_OPERATION_ID)
+
+    settleOperation?.()
+    const timeout = await result
+    expect(timeout).toMatchObject({ code: 'CLEANUP_NO_PROGRESS_TIMEOUT' })
+    expect(classifyQualificationFailure(timeout, 'cleanup')).toEqual({
+      topLevelCode: 'CLEANUP_GATE_FAILED',
+      causeCode: 'CLEANUP_NO_PROGRESS_TIMEOUT',
+    })
+    expect(classifyQualificationFailure(Object.assign(new Error('strict gate'), {
+      code: 'LIVENESS_GATE_FAILED',
+    }), 'cleanup')).toEqual({
+      topLevelCode: 'LIVENESS_GATE_FAILED',
+      causeCode: 'LIVENESS_GATE_FAILED',
+    })
   })
 
   it('tracks hundreds of thousands of timing observations in constant space', () => {
@@ -1491,6 +1677,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       expectedRepositoryTree: 'b'.repeat(40),
       observedRepositoryTree: 'b'.repeat(40),
       profileCleanupCompleted: true,
+      runStartedAt: new Date().toISOString(),
     })
 
     expect(receipt).toMatchObject({
@@ -1526,6 +1713,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       expectedRepositoryTree: 'b'.repeat(40),
       observedRepositoryTree: 'b'.repeat(40),
       profileCleanupCompleted: false,
+      runStartedAt: new Date().toISOString(),
     })
 
     expect(receipt).toMatchObject({

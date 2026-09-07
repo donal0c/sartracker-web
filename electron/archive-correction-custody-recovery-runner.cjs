@@ -1,77 +1,121 @@
 'use strict'
 
 const path = require('node:path')
-const { Worker } = require('node:worker_threads')
+
+const {
+  captureCorrectionDirectoryIdentity,
+} = require('./archive-correction-directory-capability.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'archive-correction-custody-recovery-worker.cjs')
 const CANCEL_GRACE_MS = 2_000
+const READY_TIMEOUT_MS = 5_000
 
-/** Starts worker-owned startup recovery for correction attachment custody. */
+/** Starts utility-process startup reconciliation for correction attachment custody. */
 function startArchiveCorrectionAttachmentRecovery(input) {
   const request = normalizeRequest(input)
   const workerExited = createDeferred()
-  let worker
+  let utility
+  let ready = false
   let terminal = null
   let settled = false
+  let completionTerminationRequested = false
   let cancelOperation = () => undefined
   let terminationTimer = null
-  const cancellationBuffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
-  const cancellationFlag = new Int32Array(cancellationBuffer)
+  let readyTimer = null
+  let exitListenerInstalled = false
   const completion = new Promise((resolve, reject) => {
-    try {
-      const workerInput = {
-        workerPath: request.workerPath,
-        workerData: { databasePath: request.databasePath, cancellationBuffer },
-      }
-      worker = request.createWorker?.(workerInput)
-        ?? new Worker(workerInput.workerPath, { workerData: workerInput.workerData })
-    } catch {
-      workerExited.resolve()
-      reject(createFailure())
-      return
-    }
-
     const rejectOnce = (error) => {
       if (settled) return
       settled = true
       reject(error)
     }
-    const cancel = () => {
-      if (settled || terminal !== null) return
-      Atomics.store(cancellationFlag, 0, 1)
-      try { worker.postMessage({ type: 'cancel' }) } catch {}
-      rejectOnce(createFailure('ARCHIVE_CANCELLED'))
-      if (terminationTimer === null) {
-        terminationTimer = setTimeout(() => {
-          try { void Promise.resolve(worker.terminate()).catch(() => undefined) } catch {}
-        }, CANCEL_GRACE_MS)
+    try {
+      const databaseDirectory = path.dirname(request.databasePath)
+      const directoryIdentity = captureCorrectionDirectoryIdentity(databaseDirectory)
+      utility = request.createUtilityProcess?.({
+        modulePath: request.workerPath,
+        cwd: databaseDirectory,
+        serviceName: 'SAR Tracker archive correction recovery',
+      })
+      assertUtilityProcess(utility)
+      const kill = () => {
+        try { utility.kill() } catch {}
       }
-    }
-    cancelOperation = cancel
-    worker.on('message', (message) => {
-      if (settled || terminal !== null) return
-      if (message?.type === 'complete' && isComplete(message)) {
-        terminal = Object.freeze({ recovered: message.recovered })
-        return
+      const cancel = () => {
+        if (terminal !== null) {
+          completionTerminationRequested = true
+          kill()
+          return
+        }
+        if (settled) {
+          kill()
+          return
+        }
+        try { utility.postMessage({ type: 'cancel' }) } catch {}
+        rejectOnce(createFailure('ARCHIVE_CANCELLED'))
+        if (terminationTimer === null) {
+          terminationTimer = setTimeout(kill, CANCEL_GRACE_MS)
+        }
       }
-      if (message?.type === 'error'
-        && message.code === 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED') {
+      cancelOperation = cancel
+      utility.on('message', (message) => {
+        if (settled || terminal !== null) return
+        if (!ready) {
+          if (!isReady(message, directoryIdentity)) {
+            rejectOnce(createFailure())
+            kill()
+            return
+          }
+          ready = true
+          if (readyTimer !== null) clearTimeout(readyTimer)
+          try {
+            utility.postMessage({
+              type: 'start',
+              directoryIdentity,
+              request: { databaseName: path.basename(request.databasePath) },
+            })
+          } catch {
+            rejectOnce(createFailure())
+            kill()
+          }
+          return
+        }
+        if (message?.type === 'complete' && isComplete(message)) {
+          terminal = Object.freeze({ recovered: message.recovered })
+          return
+        }
+        if (message?.type === 'error'
+          && message.code === 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED') {
+          rejectOnce(createFailure())
+          return
+        }
         rejectOnce(createFailure())
-        return
+        kill()
+      })
+      utility.once('error', () => rejectOnce(createFailure()))
+      utility.once('exit', (code) => {
+        if (terminationTimer !== null) clearTimeout(terminationTimer)
+        if (readyTimer !== null) clearTimeout(readyTimer)
+        workerExited.resolve()
+        if (settled) return
+        settled = true
+        if (terminal !== null && (code === 0 || completionTerminationRequested)) resolve(terminal)
+        else reject(createFailure())
+      })
+      exitListenerInstalled = true
+      readyTimer = setTimeout(() => {
+        rejectOnce(createFailure())
+        kill()
+      }, READY_TIMEOUT_MS)
+      readyTimer.unref?.()
+    } catch {
+      if (readyTimer !== null) clearTimeout(readyTimer)
+      if (!exitListenerInstalled) workerExited.resolve()
+      else {
+        try { utility.kill?.() } catch {}
       }
       rejectOnce(createFailure())
-    })
-    worker.once('error', () => {
-      if (terminal === null) rejectOnce(createFailure())
-    })
-    worker.once('exit', (code) => {
-      if (terminationTimer !== null) clearTimeout(terminationTimer)
-      workerExited.resolve()
-      if (settled) return
-      settled = true
-      if (terminal !== null && code === 0) resolve(terminal)
-      else reject(createFailure())
-    })
+    }
   })
   Object.defineProperty(completion, 'workerExited', { value: workerExited.promise })
   Object.defineProperty(completion, 'cancel', { value: () => cancelOperation() })
@@ -81,6 +125,9 @@ function startArchiveCorrectionAttachmentRecovery(input) {
 /** Validates the bounded startup recovery request. */
 function normalizeRequest(input) {
   if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || Object.keys(input).some((key) => ![
+      'databasePath', 'workerPath', 'createUtilityProcess',
+    ].includes(key))
     || typeof input.databasePath !== 'string'
     || !path.isAbsolute(input.databasePath)
     || path.resolve(input.databasePath) !== input.databasePath
@@ -91,14 +138,35 @@ function normalizeRequest(input) {
       || path.resolve(input.workerPath) !== input.workerPath
       || Buffer.byteLength(input.workerPath, 'utf8') > 8_192
     ))
-    || (input.createWorker !== undefined && typeof input.createWorker !== 'function')) {
+    || (input.createUtilityProcess !== undefined
+      && typeof input.createUtilityProcess !== 'function')) {
     throw createFailure()
   }
   return Object.freeze({
     databasePath: input.databasePath,
     workerPath: input.workerPath ?? DEFAULT_WORKER_PATH,
-    createWorker: input.createWorker,
+    createUtilityProcess: input.createUtilityProcess,
   })
+}
+
+/** Requires the Electron utility-process surface used by recovery. */
+function assertUtilityProcess(value) {
+  if (!value || typeof value.on !== 'function' || typeof value.once !== 'function'
+    || typeof value.postMessage !== 'function' || typeof value.kill !== 'function') {
+    throw new Error('Archive correction recovery requires an Electron utility process.')
+  }
+}
+
+/** Validates the recovery utility's cwd identity before sending database authority. */
+function isReady(message, expectedIdentity) {
+  return message !== null && typeof message === 'object' && !Array.isArray(message)
+    && Object.keys(message).sort().join(',') === 'directoryIdentity,type'
+    && message.type === 'ready'
+    && message.directoryIdentity !== null && typeof message.directoryIdentity === 'object'
+    && !Array.isArray(message.directoryIdentity)
+    && Object.keys(message.directoryIdentity).sort().join(',') === 'dev,ino'
+    && message.directoryIdentity.dev === expectedIdentity.dev
+    && message.directoryIdentity.ino === expectedIdentity.ino
 }
 
 /** Returns one closed recovery failure. */
@@ -112,13 +180,13 @@ function createFailure(code = 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED')
   return error
 }
 
-/** Validates the closed worker completion envelope. */
+/** Validates the closed utility completion envelope. */
 function isComplete(message) {
   return Object.keys(message).sort().join(',') === 'recovered,type'
     && Number.isSafeInteger(message.recovered) && message.recovered >= 0
 }
 
-/** Creates one externally-resolvable worker-exit promise. */
+/** Creates one externally-resolvable utility-exit promise. */
 function createDeferred() {
   let resolve
   const promise = new Promise((settle) => { resolve = settle })

@@ -10,6 +10,7 @@ import type {
   MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { sameMissionArchiveImmutableIdentity } from '../mission/mission-archive-identity'
+import { readMissionCorrectionEvidenceRecoveryFailure } from '../tracking/ingest-evidence-finalization-boundary'
 
 export type MissionArchiveReviewSession = ArchiveReviewPublicSession
 export type MissionArchiveReviewProgress = ArchiveReviewProgress
@@ -80,11 +81,18 @@ export type MissionArchiveReviewController = {
   readonly dispose: () => Promise<void>
 }
 
+type PendingCorrectionRecovery = {
+  readonly missionId: string
+  readonly custodyProofRequired: boolean
+  readonly evidenceReopenPending: boolean
+}
+
 const SAFE_OPEN_FAILURE = 'Archive Review failed safely before opening.'
 const SAFE_CLOSE_FAILURE = 'Archive review plaintext cleanup failed safely.'
 const SAFE_AUDIT_RETRY_FAILURE = 'Archive Review plaintext was removed; mutation-denial audit completion is pending.'
 const SAFE_LIVE_RESUME_FAILURE = 'Live mission review failed to resume after archive cleanup.'
 const SAFE_CUSTODY_RECOVERY_FAILURE = 'Archive correction committed; attachment custody recovery is required.'
+const SAFE_EVIDENCE_RECOVERY_FAILURE = 'Archive correction committed; renderer evidence recovery is required.'
 const INVALID_VERIFICATION_RESULT = 'ARCHIVE_VERIFICATION_RESULT_INVALID'
 const VERIFICATION_STATUS_UNKNOWN = 'ARCHIVE_VERIFICATION_STATUS_UNKNOWN'
 const VERIFICATION_RETRYABLE = 'ARCHIVE_VERIFICATION_RETRYABLE'
@@ -285,8 +293,12 @@ export async function startMissionArchiveReviewRuntime(
   let latestProgressSequence = 0
   let operationGeneration = 0
   let openingTerminal: Promise<void> | null = null
+  let correctionTerminal: Promise<void> | null = null
+  let activeCorrectionOperationId: string | null = null
   let closePromise: Promise<void> | null = null
+  let disposePromise: Promise<void> | null = null
   let pendingAuditSessionId: string | null = null
+  let pendingCorrectionRecovery: PendingCorrectionRecovery | null = null
   let activeVerificationOperationId: string | null = null
   let verificationTerminal: Promise<MissionArchiveInfo> | null = null
   const sessionOperationIds = new WeakMap<object, string>()
@@ -324,6 +336,53 @@ export async function startMissionArchiveReviewRuntime(
       }))),
     })
     return true
+  }
+
+  /** Completes one pending renderer-evidence transition without losing it on callback failure. */
+  const correctionRecoveryRemains = (): boolean => {
+    const recovery = pendingCorrectionRecovery
+    if (recovery === null) return false
+    if (recovery.custodyProofRequired) {
+      const mission = state.timeline.find(
+        (entry) => entry.mission.id === recovery.missionId,
+      )?.mission
+      if (mission?.storage_state !== 'live') return true
+      if (mission.status === 'finalized') {
+        pendingCorrectionRecovery = null
+        return false
+      }
+      if (mission.status !== 'finished') return true
+    }
+    if (recovery.evidenceReopenPending) {
+      try {
+        dependencies.reopenMissionEvidenceAfterUnlock?.(recovery.missionId)
+      } catch {
+        return true
+      }
+    }
+    pendingCorrectionRecovery = null
+    return false
+  }
+
+  /** Requires fresh durable custody proof, when needed, before correction recovery can clear. */
+  const confirmCorrectionRecovery = async (): Promise<boolean> => {
+    if (pendingCorrectionRecovery?.custodyProofRequired === true) {
+      try {
+        if (!await refreshTimeline()) return false
+      } catch {
+        return false
+      }
+    }
+    return !correctionRecoveryRemains()
+  }
+
+  /** Returns the operator-safe reason why pending correction recovery still cannot clear. */
+  const pendingCorrectionRecoveryFailure = async (): Promise<string | null> => {
+    const recovery = pendingCorrectionRecovery
+    if (recovery === null || await confirmCorrectionRecovery()) return null
+    return recovery.custodyProofRequired
+      ? SAFE_CUSTODY_RECOVERY_FAILURE
+      : SAFE_EVIDENCE_RECOVERY_FAILURE
   }
 
   /** Re-runs exhaustive verification without changing sealed archive bytes. */
@@ -428,6 +487,19 @@ export async function startMissionArchiveReviewRuntime(
     if (disposed) return
     if (closePromise !== null) return closePromise
     const attempt = (async (): Promise<void> => {
+      const pendingCorrection = correctionTerminal
+      if (pendingCorrection !== null) {
+        const operationId = activeCorrectionOperationId
+        apply({ phase: 'closing', progress: null, error: null })
+        if (operationId !== null) {
+          try {
+            await dependencies.missionStore.cancelMissionArchiveOperation(operationId)
+          } catch {
+            // Joining the terminal remains authoritative when cancellation races completion.
+          }
+        }
+        await pendingCorrection
+      }
       if (state.recoveryRequired === 'audit_retry') {
         const sessionId = pendingAuditSessionId
         if (sessionId === null) throw new Error(SAFE_CLOSE_FAILURE)
@@ -459,6 +531,15 @@ export async function startMissionArchiveReviewRuntime(
           })
           throw new Error(SAFE_CLOSE_FAILURE)
         }
+        const correctionRecoveryFailure = await pendingCorrectionRecoveryFailure()
+        if (correctionRecoveryFailure !== null) {
+          apply({
+            phase: 'error', activeOperationId: null, activeArchiveId: null,
+            activeSession: null, progress: null, recoveryRequired: 'live_source_resume',
+            error: correctionRecoveryFailure,
+          })
+          throw new Error(correctionRecoveryFailure)
+        }
         apply({
           phase: 'idle', activeSession: null, activeOperationId: null,
           activeArchiveId: null, progress: null, recoveryRequired: 'none', error: null,
@@ -475,6 +556,15 @@ export async function startMissionArchiveReviewRuntime(
             error: SAFE_LIVE_RESUME_FAILURE,
           })
           throw new Error(SAFE_CLOSE_FAILURE)
+        }
+        const correctionRecoveryFailure = await pendingCorrectionRecoveryFailure()
+        if (correctionRecoveryFailure !== null) {
+          apply({
+            phase: 'error', activeOperationId: null, activeArchiveId: null,
+            activeSession: null, progress: null, recoveryRequired: 'live_source_resume',
+            error: correctionRecoveryFailure,
+          })
+          throw new Error(correctionRecoveryFailure)
         }
         apply({
           phase: 'idle', activeOperationId: null, activeArchiveId: null,
@@ -560,6 +650,15 @@ export async function startMissionArchiveReviewRuntime(
         })
         throw new Error(SAFE_CLOSE_FAILURE)
       }
+      const correctionRecoveryFailure = await pendingCorrectionRecoveryFailure()
+      if (correctionRecoveryFailure !== null) {
+        apply({
+          phase: 'error', activeSession: null, activeOperationId: null,
+          activeArchiveId: session.archiveId, progress: null,
+          recoveryRequired: 'live_source_resume', error: correctionRecoveryFailure,
+        })
+        throw new Error(correctionRecoveryFailure)
+      }
       apply({
         phase: 'idle', activeSession: null, activeOperationId: null,
         activeArchiveId: null, progress: null, recoveryRequired: 'none', error: null,
@@ -579,6 +678,9 @@ export async function startMissionArchiveReviewRuntime(
     readonly reason: string
   }): Promise<void> => {
     if (disposed || disposing) throw new Error('Archive review runtime is closed.')
+    if (correctionTerminal !== null || closePromise !== null || state.phase !== 'open') {
+      throw new Error('Archive correction restore cannot start while Review has active work.')
+    }
     const session = state.activeSession
     const operationId = session === null ? null : sessionOperationIds.get(session) ?? null
     if (session === null || operationId === null) {
@@ -600,71 +702,156 @@ export async function startMissionArchiveReviewRuntime(
       || typeof input?.reason !== 'string' || input.reason.trim() === '') {
       throw new Error('Correction authority and reason are required.')
     }
-    apply({ phase: 'closing', error: null, progress: null })
-    let correctionCommitted = false
-    let correctionCleanupComplete = false
+    let resolveCorrectionTerminal: () => void = () => undefined
+    const terminal = new Promise<void>((resolve) => { resolveCorrectionTerminal = resolve })
+    correctionTerminal = terminal
+    activeCorrectionOperationId = operationId
     try {
-      const restoreResult = await dependencies.missionStore.restoreMissionForCorrection({
-        mission_id: session.missionId,
-        archiveId: session.archiveId,
-        operationId,
-        sessionId: session.sessionId,
-        admin_name: input.admin_name.trim(),
-        reason: input.reason.trim(),
-      })
-      const correctionStatus = restoreResult.correction
-      correctionCleanupComplete = correctionStatus?.committed === true
-        && correctionStatus.cleanupComplete === true
-      if (correctionStatus?.committed === true && correctionStatus.cleanupComplete === false) {
-        correctionCommitted = true
-        const cleanupFailure = new Error('Archive correction committed but plaintext cleanup remains unresolved.')
-        Object.defineProperty(cleanupFailure, 'archiveCorrectionCommitted', { value: true })
-        throw cleanupFailure
-      }
-      if (correctionStatus?.committed === true && correctionStatus.failureCode !== undefined) {
-        correctionCommitted = true
-        const custodyFailure = new Error(SAFE_CUSTODY_RECOVERY_FAILURE)
-        Object.defineProperty(custodyFailure, 'archiveCorrectionCommitted', { value: true })
-        Object.defineProperty(custodyFailure, 'archiveCorrectionCustodyFailure', { value: true })
-        throw custodyFailure
-      }
-      correctionCommitted = true
-      // Electron closes the session while taking its correction snapshot; the
-      // browser harness may still own it, so both paths are intentionally
-      // idempotent here.
-      if (!correctionCleanupComplete) {
-        await dependencies.archiveReview.close({ sessionId: session.sessionId }).catch(() => false)
-      }
-      apply({
-        activeSession: null,
-        activeOperationId: null,
-        activeArchiveId: null,
-        recoveryRequired: 'live_source_resume',
-      })
-      await dependencies.switchMissionReviewSource({ source: 'live' })
-      await refreshTimeline()
-      apply({
-        phase: 'idle',
-        activeSession: null,
-        activeOperationId: null,
-        activeArchiveId: null,
-        progress: null,
-        recoveryRequired: 'none',
-        error: null,
-      })
-    } catch (error) {
-      const committedAfterIpc = error !== null && typeof error === 'object'
-        && (error as { readonly archiveCorrectionCommitted?: unknown }).archiveCorrectionCommitted === true
-      const custodyRecoveryAfterIpc = error !== null && typeof error === 'object'
-        && (error as { readonly archiveCorrectionCustodyFailure?: unknown }).archiveCorrectionCustodyFailure === true
-      if (correctionCommitted || committedAfterIpc) {
-        let plaintextClosed = correctionCleanupComplete
-        if (!plaintextClosed) {
-          try {
-            plaintextClosed = await dependencies.archiveReview.close({ sessionId: session.sessionId }) === true
-          } catch {
-            plaintextClosed = false
+      apply({ phase: 'closing', error: null, progress: null })
+      let correctionCommitted = false
+      let correctionCleanupComplete = false
+      let custodyRecoveryAfterIpc = false
+      try {
+        const restoreResult = await dependencies.missionStore.restoreMissionForCorrection({
+          mission_id: session.missionId,
+          archiveId: session.archiveId,
+          operationId,
+          sessionId: session.sessionId,
+          admin_name: input.admin_name.trim(),
+          reason: input.reason.trim(),
+        })
+        const correctionStatus = restoreResult.correction
+        correctionCleanupComplete = correctionStatus?.committed === true
+          && correctionStatus.cleanupComplete === true
+        const custodyRecoveryRequired = correctionStatus?.committed === true
+          && correctionStatus.failureCode === 'ARCHIVE_REHYDRATE_CLEANUP_REQUIRED'
+        if (correctionStatus?.committed === true && correctionStatus.cleanupComplete === false) {
+          correctionCommitted = true
+          custodyRecoveryAfterIpc = custodyRecoveryRequired
+          pendingCorrectionRecovery = {
+            missionId: session.missionId,
+            custodyProofRequired: custodyRecoveryRequired,
+            evidenceReopenPending: true,
           }
+          const cleanupFailure = new Error('Archive correction committed but plaintext cleanup remains unresolved.')
+          throw cleanupFailure
+        }
+        if (correctionStatus?.committed === true && correctionStatus.failureCode !== undefined) {
+          correctionCommitted = true
+          custodyRecoveryAfterIpc = true
+          pendingCorrectionRecovery = {
+            missionId: session.missionId,
+            custodyProofRequired: true,
+            evidenceReopenPending: true,
+          }
+          const custodyFailure = new Error(SAFE_CUSTODY_RECOVERY_FAILURE)
+          throw custodyFailure
+        }
+        correctionCommitted = true
+        pendingCorrectionRecovery = null
+        // Electron closes the session while taking its correction snapshot; the
+        // browser harness may still own it, so both paths are intentionally
+        // idempotent here.
+        if (!correctionCleanupComplete) {
+          await dependencies.archiveReview.close({ sessionId: session.sessionId }).catch(() => false)
+        }
+        apply({
+          activeSession: null,
+          activeOperationId: null,
+          activeArchiveId: null,
+          recoveryRequired: 'live_source_resume',
+        })
+        await dependencies.switchMissionReviewSource({ source: 'live' })
+        await refreshTimeline()
+        apply({
+          phase: 'idle',
+          activeSession: null,
+          activeOperationId: null,
+          activeArchiveId: null,
+          progress: null,
+          recoveryRequired: 'none',
+          error: null,
+        })
+      } catch (error) {
+        const evidenceRecoveryFacts = readMissionCorrectionEvidenceRecoveryFailure(error)
+        const committedAfterIpc = evidenceRecoveryFacts?.committed === true
+        const cleanupCompleteAfterIpc = evidenceRecoveryFacts?.cleanupComplete === true
+        const evidenceReopenFailedAfterIpc = evidenceRecoveryFacts?.evidenceReopenFailed === true
+        if (evidenceReopenFailedAfterIpc) {
+          pendingCorrectionRecovery = {
+            missionId: session.missionId,
+            custodyProofRequired: false,
+            evidenceReopenPending: true,
+          }
+        }
+        if (correctionCommitted || committedAfterIpc) {
+          let plaintextClosed = correctionCleanupComplete || cleanupCompleteAfterIpc
+          if (!plaintextClosed) {
+            try {
+              plaintextClosed = await dependencies.archiveReview.close({ sessionId: session.sessionId }) === true
+            } catch {
+              plaintextClosed = false
+            }
+          }
+          if (!plaintextClosed) {
+            apply({
+              phase: 'error',
+              activeSession: session,
+              activeOperationId: null,
+              activeArchiveId: session.archiveId,
+              recoveryRequired: 'plaintext_cleanup',
+              error: SAFE_CLOSE_FAILURE,
+            })
+            throw new Error(SAFE_CLOSE_FAILURE)
+          }
+          if (!custodyRecoveryAfterIpc && !evidenceReopenFailedAfterIpc) {
+            const correctionRecoveryFailure = await pendingCorrectionRecoveryFailure()
+            if (correctionRecoveryFailure !== null) {
+              apply({
+                phase: 'error', activeSession: null, activeOperationId: null,
+                activeArchiveId: session.archiveId, progress: null,
+                recoveryRequired: 'live_source_resume', error: correctionRecoveryFailure,
+              })
+              throw new Error(correctionRecoveryFailure)
+            }
+          }
+          if (custodyRecoveryAfterIpc || evidenceReopenFailedAfterIpc) {
+            try {
+              await dependencies.switchMissionReviewSource({ source: 'live' })
+            } catch {
+              // The explicit live-source recovery state remains visible.
+            }
+          }
+          try {
+            await refreshTimeline()
+          } catch {
+            // Preserve the explicit recovery state when timeline refresh is unavailable.
+          }
+          let recoveryFailure = SAFE_LIVE_RESUME_FAILURE
+          let surfacedFailure = SAFE_CLOSE_FAILURE
+          if (evidenceReopenFailedAfterIpc) {
+            recoveryFailure = SAFE_EVIDENCE_RECOVERY_FAILURE
+            surfacedFailure = SAFE_EVIDENCE_RECOVERY_FAILURE
+          }
+          if (custodyRecoveryAfterIpc) {
+            recoveryFailure = SAFE_CUSTODY_RECOVERY_FAILURE
+            surfacedFailure = SAFE_CUSTODY_RECOVERY_FAILURE
+          }
+          apply({
+            phase: 'error',
+            activeSession: null,
+            activeOperationId: null,
+            activeArchiveId: session.archiveId,
+            recoveryRequired: 'live_source_resume',
+            error: recoveryFailure,
+          })
+          throw new Error(surfacedFailure)
+        }
+        let plaintextClosed = false
+        try {
+          plaintextClosed = await dependencies.archiveReview.close({ sessionId: session.sessionId }) === true
+        } catch {
+          plaintextClosed = false
         }
         if (!plaintextClosed) {
           apply({
@@ -675,73 +862,34 @@ export async function startMissionArchiveReviewRuntime(
             recoveryRequired: 'plaintext_cleanup',
             error: SAFE_CLOSE_FAILURE,
           })
-          throw new Error(SAFE_CLOSE_FAILURE)
-        }
-        if (!custodyRecoveryAfterIpc) {
-          dependencies.reopenMissionEvidenceAfterUnlock?.(session.missionId)
-        }
-        if (custodyRecoveryAfterIpc) {
+        } else {
+          apply({
+            phase: 'error',
+            activeSession: null,
+            activeOperationId: null,
+            activeArchiveId: session.archiveId,
+            recoveryRequired: 'live_source_resume',
+            error: 'Archive correction restore failed safely. Live Mission Review may need to be resumed.',
+          })
           try {
             await dependencies.switchMissionReviewSource({ source: 'live' })
           } catch {
-            // The explicit live-source recovery state remains visible.
+            // The explicit recovery state remains visible for the operator.
           }
         }
-        try {
-          await refreshTimeline()
-        } catch {
-          // Preserve the explicit recovery state when timeline refresh is unavailable.
-        }
-        apply({
-          phase: 'error',
-          activeSession: null,
-          activeOperationId: null,
-          activeArchiveId: session.archiveId,
-          recoveryRequired: 'live_source_resume',
-          error: custodyRecoveryAfterIpc
-            ? SAFE_CUSTODY_RECOVERY_FAILURE
-            : SAFE_LIVE_RESUME_FAILURE,
-        })
-        throw new Error(custodyRecoveryAfterIpc
-          ? SAFE_CUSTODY_RECOVERY_FAILURE
-          : SAFE_CLOSE_FAILURE)
+        throw new Error('Archive correction restore failed safely.')
       }
-      let plaintextClosed = false
-      try {
-        plaintextClosed = await dependencies.archiveReview.close({ sessionId: session.sessionId }) === true
-      } catch {
-        plaintextClosed = false
-      }
-      if (!plaintextClosed) {
-        apply({
-          phase: 'error',
-          activeSession: session,
-          activeOperationId: null,
-          activeArchiveId: session.archiveId,
-          recoveryRequired: 'plaintext_cleanup',
-          error: SAFE_CLOSE_FAILURE,
-        })
-      } else {
-        apply({
-          phase: 'error',
-          activeSession: null,
-          activeOperationId: null,
-          activeArchiveId: session.archiveId,
-          recoveryRequired: 'live_source_resume',
-          error: 'Archive correction restore failed safely. Live Mission Review may need to be resumed.',
-        })
-        try {
-          await dependencies.switchMissionReviewSource({ source: 'live' })
-        } catch {
-          // The explicit recovery state remains visible for the operator.
-        }
-      }
-      throw new Error('Archive correction restore failed safely.')
+    } finally {
+      activeCorrectionOperationId = null
+      resolveCorrectionTerminal()
+      if (correctionTerminal === terminal) correctionTerminal = null
     }
   }
 
   const openArchive = async (input: MissionArchiveReviewOpenInput): Promise<void> => {
-    if (disposed || state.activeOperationId !== null || state.activeSession !== null
+    if (disposed || disposing) throw new Error('Archive review runtime is closed.')
+    if (closePromise !== null || openingTerminal !== null || correctionTerminal !== null
+      || state.activeOperationId !== null || state.activeSession !== null
       || state.recoveryRequired !== 'none'
       || activeVerificationOperationId !== null
       || verificationTerminal !== null) {
@@ -937,35 +1085,43 @@ export async function startMissionArchiveReviewRuntime(
     }
   }
 
-  const dispose = async (): Promise<void> => {
-    if (disposed || disposing) return
+  const dispose = (): Promise<void> => {
+    if (disposed) return Promise.resolve()
+    if (disposePromise !== null) return disposePromise
     disposing = true
-    const pendingVerificationOperationId = activeVerificationOperationId
-    const pendingVerification = verificationTerminal
-    if (pendingVerificationOperationId !== null) {
-      await dependencies.missionStore.cancelMissionArchiveOperation(
-        pendingVerificationOperationId,
-      ).catch(() => false)
-    }
-    if (pendingVerification !== null) {
-      await pendingVerification.catch(() => undefined)
-    }
-    timelineGeneration += 1
-    try {
-      await closeArchiveReview()
-    } catch (error) {
+    const attempt = (async (): Promise<void> => {
+      const pendingVerificationOperationId = activeVerificationOperationId
+      const pendingVerification = verificationTerminal
+      if (pendingVerificationOperationId !== null) {
+        await dependencies.missionStore.cancelMissionArchiveOperation(
+          pendingVerificationOperationId,
+        ).catch(() => false)
+      }
+      if (pendingVerification !== null) {
+        await pendingVerification.catch(() => undefined)
+      }
+      timelineGeneration += 1
+      try {
+        await closeArchiveReview()
+      } catch (error) {
+        disposing = false
+        throw error
+      }
+      disposed = true
       disposing = false
-      throw error
-    }
-    disposed = true
-    disposing = false
-    unsubscribeProgress()
-    state = {
-      ...state,
-      phase: 'idle', activeOperationId: null, activeArchiveId: null,
-      activeSession: null, progress: null, recoveryRequired: 'none', error: null,
-    }
-    publishState(dependencies.applyRuntime, state)
+      unsubscribeProgress()
+      state = {
+        ...state,
+        phase: 'idle', activeOperationId: null, activeArchiveId: null,
+        activeSession: null, progress: null, recoveryRequired: 'none', error: null,
+      }
+      publishState(dependencies.applyRuntime, state)
+    })()
+    disposePromise = attempt
+    void attempt.catch(() => {
+      if (disposePromise === attempt) disposePromise = null
+    })
+    return attempt
   }
 
   try {

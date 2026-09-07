@@ -812,8 +812,16 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
         blockers: ['cleanup_already_completed'],
         storageState: 'archived',
       })
-      expect(progress.filter((update) => update.tableName === 'positions'))
-        .toHaveLength(3)
+      const positionProgress = progress.filter((update) => update.tableName === 'positions')
+      expect(positionProgress.map((update) => Number(update.deletedRows)))
+        .toEqual([3, 3, 1, 0])
+      expect(positionProgress.at(-1)).toMatchObject({
+        tableName: 'positions',
+        deletedRows: 0,
+        tableBatch: 0,
+      })
+      expect(Number(positionProgress.at(-1)?.tableIndex))
+        .toBe(Number(positionProgress.at(-2)?.tableIndex) + 1)
       expect(progress.every((update) => Number(update.deletedRows) <= 3)).toBe(true)
       expect(JSON.stringify(progress)).not.toMatch(/delete evidence/iu)
       const guardRow = fixture.db.prepare(`SELECT key, value FROM metadata
@@ -910,6 +918,58 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
         tableCursor: null,
         missionEventsTargetRowid: expect.any(Number),
       })
+    } finally {
+      fixture.db.close()
+    }
+  })
+
+  it('reports a durable mission-event cursor advance even when its page deletes zero rows', async () => {
+    const fixture = await createFixture({
+      beforeFinalization: (db, missionId) => {
+        const insert = db.prepare(`INSERT INTO mission_events (
+          id, mission_id, event_type, timestamp, details_json, recorded_at,
+          recording_completeness
+        ) VALUES (?, ?, 'future_operator_custody_event', ?, NULL, ?, 'complete')`)
+        for (let index = 0; index < 5; index += 1) {
+          const timestamp = `2026-08-30T11:59:${String(index).padStart(2, '0')}.000Z`
+          insert.run(randomUUID(), missionId, timestamp, timestamp)
+        }
+      },
+    })
+    const zeroDeletionAdvances: Array<{
+      readonly update: Readonly<Record<string, unknown>>
+      readonly durable: Readonly<Record<string, unknown>>
+    }> = []
+    try {
+      await fixture.coordinator.start(fixture.evidence, {
+        onProgress: (update) => {
+          if (update.tableName !== 'mission_events' || update.deletedRows !== 0) return
+          const row = fixture.db.prepare(`SELECT progress_json
+            FROM mission_cleanup_journal WHERE mission_id = ?`).get(fixture.missionId)
+          zeroDeletionAdvances.push({
+            update,
+            durable: JSON.parse(String(row?.progress_json)) as Readonly<Record<string, unknown>>,
+          })
+        },
+      })
+
+      expect(zeroDeletionAdvances).not.toHaveLength(0)
+      expect(zeroDeletionAdvances[0]).toMatchObject({
+        update: {
+          tableName: 'mission_events',
+          deletedRows: 0,
+          tableBatch: expect.any(Number),
+          tableIndex: expect.any(Number),
+          tableCount: expect.any(Number),
+          totalDeletedRows: expect.any(Number),
+        },
+        durable: {
+          tableCursor: expect.any(Number),
+          tableBatch: zeroDeletionAdvances[0]?.update.tableBatch,
+          tableIndex: zeroDeletionAdvances[0]?.update.tableIndex,
+        },
+      })
+      expect(Number(zeroDeletionAdvances[0]?.durable.tableCursor)).toBeGreaterThan(0)
     } finally {
       fixture.db.close()
     }

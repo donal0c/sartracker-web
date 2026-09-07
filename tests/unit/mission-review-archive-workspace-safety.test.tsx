@@ -279,10 +279,11 @@ describe('archive-backed Mission Review workspace safety [DON-253 / BCP-16]', ()
       `[data-testid="archive-cleanup-open-${FINALIZED_LIVE_MISSION.id}"]`,
     )
     expect(openCleanup).not.toBeNull()
-    await act(async () => {
+    act(() => {
       openCleanup?.click()
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      await Promise.resolve()
+    })
+    await act(async () => {
+      await import('../../src/features/mission/mission-archive-cleanup-dialog')
     })
 
     expect(readGovernanceCleanupState).toHaveBeenCalledWith(FINALIZED_LIVE_MISSION.id)
@@ -338,11 +339,13 @@ describe('archive-backed Mission Review workspace safety [DON-253 / BCP-16]', ()
       root.render(createElement(MissionReviewWorkspace))
       await Promise.resolve()
     })
-    await act(async () => {
+    act(() => {
       host.querySelector<HTMLButtonElement>(
         `[data-testid="archive-verify-retry-${SEALED_UNVERIFIED_ARCHIVE.id}"]`,
       )?.click()
-      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    await act(async () => {
+      await import('../../src/features/mission/mission-archive-verification-dialog')
     })
     expect(host.querySelector('[data-testid="mission-archive-verification-dialog"]'))
       .not.toBeNull()
@@ -485,6 +488,54 @@ describe('archive-backed Mission Review workspace safety [DON-253 / BCP-16]', ()
     expect(closeArchiveReview).toHaveBeenCalledOnce()
     expect(remainedVisibleWhileCleanupPending).toBe(true)
     expect(useMissionReviewWorkspaceStore.getState().open).toBe(false)
+  })
+
+  it('keeps the workspace and custody warning visible when Close cannot clear recovery', async () => {
+    const closeTerminal = deferred<void>()
+    const closeArchiveReview = vi.fn(() => closeTerminal.promise)
+    installArchiveReviewState()
+    useMissionReviewStore.setState({ source: 'live', archiveSession: null } as never)
+    useMissionArchiveReviewStore.setState({
+      controller: {
+        refreshTimeline: vi.fn().mockResolvedValue(undefined),
+        openArchive: vi.fn().mockResolvedValue(undefined),
+        closeArchiveReview,
+        dispose: vi.fn().mockResolvedValue(undefined),
+      },
+      timeline: [],
+      phase: 'error',
+      activeOperationId: null,
+      activeArchiveId: ARCHIVE_SESSION.archiveId,
+      activeSession: null,
+      progress: null,
+      recoveryRequired: 'live_source_resume',
+      error: 'Attachment custody recovery is still required.',
+    })
+    await act(async () => {
+      root.render(createElement(MissionReviewWorkspace))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="workspace-close-btn"]')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(closeArchiveReview).toHaveBeenCalledOnce()
+    expect(useMissionReviewWorkspaceStore.getState().open).toBe(true)
+    closeTerminal.reject(new Error('Attachment custody recovery is still required.'))
+    await act(async () => {
+      await closeTerminal.promise.catch(() => undefined)
+      await Promise.resolve()
+    })
+    expect(useMissionReviewWorkspaceStore.getState().open).toBe(true)
+    const banner = host.querySelector<HTMLElement>(
+      '[data-testid="mission-review-archive-banner"]',
+    )
+    expect(banner).not.toBeNull()
+    expect(banner?.textContent ?? '').toMatch(/custody.*recovery|recovery.*custody/iu)
   })
 
   it.each([
