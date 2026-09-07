@@ -8,6 +8,81 @@ is intermediate. Donal retains approval and merge authority.
 
 ## 2026-09-07 Astra recovery of b3fb01fa
 
+### c14529e8 rejection and canonical publication race
+
+Harness export repair was pushed as `c14529e884b635e1115daded4229bdac726b0220`,
+tree `b86074081221e7f32b7ba18305c582316bac17d8`. Mac packaged lifecycle passes
+all four phases in 12,828 ms/two launches: main 60.297 ms, frame 20.8 ms,
+current fix 25 ms. Receipt `tmp/pr6-macos-c14529e8-report.json` has SHA-256
+`0c4cfd208b5b4a1f9d750470030b04a2a0e78eb523d8ca58eca7b8ff5426387e`;
+ASAR `497c15475c47d3b9a784ed0a33ba0e6baa11b4c447425f15201fb0e9ea887df4`.
+
+Reference Ubuntu packaged lifecycle rejects c145 after 47,292 ms, on launch
+two during `cleanup_pending_restore`, with a renderer snapshot deadline.
+First Review and interrupted-restore restart passed. Earlier cleanup samples
+peak at main 57.496 ms, frame 55.7 ms, current fix 76 ms; the final pending
+source age is 262 ms. Earlier successful samples do not cover the lost final
+interval. Process/profile cleanup completed. Receipt
+`tmp/pr6-reference-c14529e8-failure.json` has SHA-256
+`d7a8bcceab58cb3ea22061c6820e1b69d66512bdee0aa15194ac39b9892bd33e`.
+
+A bounded second-launch CPU/timing diagnostic completed cleanup in 2,037 ms,
+watchdog 24.24 ms and driver heartbeat 12.74 ms, without reproducing the
+timeout. Tracking diagnostics history consumes substantial renderer time.
+A separate 60-second tracking-only probe also did not reproduce it: watchdog
+84.53 ms, driver 14.66 ms; 10,632 diagnostic storage writes took 20.837 seconds
+in total, with a 7.6 ms maximum individual write. These diagnostics explicitly
+terminate without qualification. They show overhead, not the historical
+timeout cause. No app storage change or unchanged qualification retry followed.
+
+Linux CI `34160547847` failed earlier: 3,980/3,981 tests passed in 820.04
+seconds; the existing opposite-canonical-publisher test rejected a changed
+owner link count during its pinned read. Packaging did not run. A deterministic
+regression reproduces the actual interleaving: one publisher creates the
+verdict hardlink while another reads the owner (`nlink` 2 becomes 3).
+
+The bounded repair discards that interrupted read and rechecks ownership in
+one finite loop. It retains the first inode/size/mode anchor, handles mixed
+parallel stat observations only by re-observing, counts every retry/name
+creation against the same budget, and verifies all four aliases after reading.
+It never accepts changing-read bytes or an unexplained extra link. Ten
+controlled filesystem cases cover legitimate link growth, mixed scans,
+anchored disappearance, same-count verdict replacement, exhausted settlement,
+unknown links, opposite verdicts, and inode/mode/size changes. The original
+c145 reader fails five of these cases; the candidate passes all ten. Native
+filesystem forwarding hooks install before native module imports, target only
+the owned fixture paths, assert the controlled interleaving occurred, and
+restore after testing. Five further cases cover scans spanning both owner and
+verdict publication and final observations of subsequently restored aliases,
+names, modes and sizes. Three fail before the final correction; all five pass
+afterward. Observed substitutions/disappearances reject immediately; only a
+pending success gaining its anchored name may settle. The focused independent
+review is clean on script blob `2c347e8b51bdb9b97220422ef94bc20be8a55343` and
+test blob `792a8f42213a14a104732e21aedf1f021d1a05b3`.
+
+All 122 affected tests and the full serial source gate pass: 3,996 tests across
+382 files in 399.97 seconds, with TypeScript, ESLint, production build/bundle
+budgets, Node syntax/diff checks and backend 58 pass/1 existing ignore. An
+accidental parallel full run failed startup teardown (`ENOTEMPTY`), the next
+handler assertion and the legacy inventory heartbeat (259.876 ms). Both
+affected files then passed 111 tests in isolation; the serial run passes
+without threshold changes. Its legacy-event heartbeat maximum is 46.746 ms.
+
+Trace-only diagnosis without CPU profilers catches a 943.993 ms Electron main
+task using 3.302 ms CPU; driver heartbeat stays below 14 ms and a renderer
+drain stalls ~940 ms. This establishes a waiting/descheduling category, not
+the exact cause or attribution of historical CI failures. A main-only native
+operation timing probe and a main-only syscall probe do not reproduce the
+stall: maximum observed SQL call 16.275 ms and fsync 15.169 ms respectively.
+No SQLite busy-lock sleep is observed in that syscall sample; unrelated futex
+`EAGAIN` is not database contention. The main connection's synchronous
+tracking writes remain a suspect requiring controlled evidence. Probe files
+are `tmp/pr6-cleanup-{trace-only,main-blocking,syscalls}-loader.mjs` and the
+matching `tmp/sartracker-pr6-astra-cleanup-*` timing/native evidence. Every
+diagnostic ends explicitly without qualification; no product change follows
+from these unproven hypotheses.
+No >2 GiB run has started; PR #10 remains unqualified.
+
 ### f49a1621 diagnostic candidate and restore rejection
 
 Pushed head `f49a16218e983994104cdbc3801ce766f653720e`, tree

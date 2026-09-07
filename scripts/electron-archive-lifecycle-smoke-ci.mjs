@@ -1470,139 +1470,158 @@ export async function publishArchiveLifecycleSupervisorCanonicalArtifact(input, 
   }
 }
 
-/** Reads or crash-recovers the sole canonical name from its shared owner inode. */
+/** Reads or crash-recovers one canonical name within a single bounded settlement loop. */
 async function readArchiveLifecycleCanonicalTerminalArtifact(terminalRun, options = {}) {
   assertArchiveLifecycleSupervisorTerminalRun(terminalRun)
-  if (options.requireExactActiveOwner !== false) {
-    await assertArchiveLifecycleSupervisorActiveLeaseOwner(terminalRun)
-  } else {
-    await assertArchiveLifecycleSupervisorLeaseDirectory(terminalRun)
+  const paths = archiveLifecycleSupervisorTerminalPaths(terminalRun.evidenceDir, terminalRun.runId)
+  let anchor = null
+  let observedOwner = false
+  let observedVerdict = null
+  for (let attempt = 0; attempt <= 20; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 5))
+    if (options.requireExactActiveOwner !== false) {
+      await assertArchiveLifecycleSupervisorActiveLeaseOwner(terminalRun)
+    } else {
+      await assertArchiveLifecycleSupervisorLeaseDirectory(terminalRun)
+    }
+    await assertArchiveLifecycleSupervisorEvidenceDirectory(terminalRun)
+    const identities = await readCanonicalTerminalIdentities(paths)
+    const [ownerIdentity, runOwnerIdentity, successIdentity, failureIdentity] = identities
+    if (successIdentity !== null && failureIdentity !== null) {
+      throw new Error('Archive lifecycle must retain exactly one terminal evidence artifact.')
+    }
+    if (ownerIdentity === null && runOwnerIdentity === null) {
+      if (anchor !== null) {
+        throw new Error('Archive lifecycle canonical ownership disappeared during settlement.')
+      }
+      if (successIdentity !== null || failureIdentity !== null) {
+        throw new Error('Archive lifecycle canonical artifact has no terminal ownership inode.')
+      }
+      return Object.freeze({ kind: null, path: null, published: false })
+    }
+    if (runOwnerIdentity === null) {
+      throw new Error('Archive lifecycle canonical artifact has no invocation ownership inode.')
+    }
+    anchor ??= runOwnerIdentity
+    if (!sameArchiveLifecycleSupervisorArtifactContentIdentity(runOwnerIdentity, anchor)) {
+      throw new Error('Archive lifecycle canonical ownership changed during settlement.')
+    }
+    if (ownerIdentity !== null
+      && !sameArchiveLifecycleSupervisorArtifactContentIdentity(ownerIdentity, anchor)) {
+      throw new Error('Archive lifecycle canonical artifact belongs to another supervisor invocation ownership inode.')
+    }
+    if ([successIdentity, failureIdentity].some((identity) => identity !== null
+      && !sameArchiveLifecycleSupervisorArtifactContentIdentity(identity, anchor))) {
+      throw new Error('Archive lifecycle canonical artifact does not share terminal ownership.')
+    }
+    if (observedOwner && ownerIdentity === null
+      || observedVerdict === 'success' && successIdentity === null
+      || observedVerdict === 'failure' && failureIdentity === null) {
+      throw new Error('Archive lifecycle canonical publication names disappeared during settlement.')
+    }
+    observedOwner ||= ownerIdentity !== null
+    observedVerdict ??= successIdentity !== null ? 'success' : failureIdentity !== null ? 'failure' : null
+    const present = identities.filter((identity) => identity !== null)
+    const exactLinks = present.length
+    if (present.some((identity) => identity.nlink !== exactLinks)) {
+      // Parallel stats may straddle creation of a known owner/verdict name.
+      // Never mutate or accept that mixed scan; every re-observation spends
+      // the same finite budget and remains anchored to the first inode.
+      const legalPrefixMayBeSettling = options.allowOwnerClaimSettlement === true
+        && present.every((identity) => identity.nlink >= 1 && identity.nlink <= 3)
+      if (legalPrefixMayBeSettling) continue
+      throw new Error('Archive lifecycle canonical ownership has unexpected filesystem links.')
+    }
+    if (ownerIdentity === null) {
+      if (options.requireExactActiveOwner !== false) {
+        await assertArchiveLifecycleSupervisorActiveLeaseOwner(terminalRun)
+        await assertArchiveLifecycleSupervisorEvidenceDirectory(terminalRun)
+      }
+      try {
+        await link(paths.runOwnerPath, paths.ownerPath)
+      } catch (error) {
+        if (error?.code !== 'EEXIST') throw error
+      }
+      await syncArchiveLifecycleSupervisorDirectory(terminalRun.evidenceDir)
+      continue
+    }
+    let contents
+    try {
+      contents = await readArchiveLifecycleSupervisorPinnedArtifact(paths.ownerPath, ownerIdentity)
+    } catch (error) {
+      if (options.allowOwnerClaimSettlement !== true
+        || error?.code !== 'ARCHIVE_LIFECYCLE_OWNER_LINK_SETTLING') throw error
+      // Discard bytes read across a link transition. Only a fresh strict read
+      // after a complete topology scan may supply accepted terminal evidence.
+      continue
+    }
+    const ownerKind = validateArchiveLifecycleSupervisorTerminalContents(contents, terminalRun, options)
+    const artifactPath = ownerKind === 'success' ? paths.successPath : paths.failurePath
+    const artifactIdentity = ownerKind === 'success' ? successIdentity : failureIdentity
+    const oppositeIdentity = ownerKind === 'success' ? failureIdentity : successIdentity
+    if (oppositeIdentity !== null) {
+      throw new Error('Archive lifecycle canonical verdict does not match its filename.')
+    }
+    const pending = artifactIdentity === null && ownerKind === 'success' && options.recoverSuccess === false
+    if (artifactIdentity === null && !pending) {
+      if (options.requireExactActiveOwner !== false) {
+        await assertArchiveLifecycleSupervisorActiveLeaseOwner(terminalRun)
+        await assertArchiveLifecycleSupervisorEvidenceDirectory(terminalRun)
+      }
+      try {
+        await link(paths.ownerPath, artifactPath)
+      } catch (error) {
+        if (error?.code !== 'EEXIST') throw error
+      }
+      await syncArchiveLifecycleSupervisorDirectory(terminalRun.evidenceDir)
+      continue
+    }
+    // A same-count alias substitution must not hide behind a pinned owner.
+    const finalIdentities = await readCanonicalTerminalIdentities(paths)
+    const unchanged = identities.every((identity, index) => identity === null
+      ? finalIdentities[index] === null
+      : finalIdentities[index] !== null
+        && sameArchiveLifecycleSupervisorArtifactIdentity(identity, finalIdentities[index]))
+    if (!unchanged) {
+      // A complete three-name publication cannot grow further. The only
+      // permitted change is a pending success gaining its same-inode name.
+      // Reject every observed substitution or disappearance immediately, even
+      // if another writer could restore the original name before a retry.
+      const pendingSuccessMayBePublishing = pending
+        && options.allowOwnerClaimSettlement === true
+        && finalIdentities[0] !== null && finalIdentities[1] !== null
+        && finalIdentities[3] === null
+        && finalIdentities.every((identity) => identity === null
+          || sameArchiveLifecycleSupervisorArtifactContentIdentity(identity, anchor)
+            && (identity.nlink === 2 || identity.nlink === 3))
+      if (pendingSuccessMayBePublishing) {
+        if (finalIdentities[2] !== null) observedVerdict = 'success'
+        continue
+      }
+      throw new Error('Archive lifecycle canonical publication names changed during its read.')
+    }
+    if (options.requireExactActiveOwner !== false) {
+      await assertArchiveLifecycleSupervisorActiveLeaseOwner(terminalRun)
+    } else {
+      await assertArchiveLifecycleSupervisorLeaseDirectory(terminalRun)
+    }
+    await assertArchiveLifecycleSupervisorEvidenceDirectory(terminalRun)
+    return Object.freeze({
+      kind: ownerKind, path: pending ? paths.ownerPath : artifactPath,
+      published: false, ...(pending ? { pending: true } : {}),
+    })
   }
-  await assertArchiveLifecycleSupervisorEvidenceDirectory(terminalRun)
-  const paths = archiveLifecycleSupervisorTerminalPaths(
-    terminalRun.evidenceDir,
-    terminalRun.runId,
-  )
-  const [ownerIdentity, runOwnerIdentity, successIdentity, failureIdentity] = await Promise.all([
+  throw new Error('Archive lifecycle canonical ownership did not settle within its bounded budget.')
+}
+
+/** Samples all permitted canonical aliases; callers require one coherent anchored topology. */
+async function readCanonicalTerminalIdentities(paths) {
+  return Promise.all([
     readArchiveLifecycleSupervisorArtifactIdentity(paths.ownerPath),
     readArchiveLifecycleSupervisorArtifactIdentity(paths.runOwnerPath),
     readArchiveLifecycleSupervisorArtifactIdentity(paths.successPath),
     readArchiveLifecycleSupervisorArtifactIdentity(paths.failurePath),
   ])
-  if (successIdentity !== null && failureIdentity !== null) {
-    throw new Error('Archive lifecycle must retain exactly one terminal evidence artifact.')
-  }
-  if (ownerIdentity === null && runOwnerIdentity === null) {
-    if (successIdentity !== null || failureIdentity !== null) {
-      throw new Error('Archive lifecycle canonical artifact has no terminal ownership inode.')
-    }
-    return Object.freeze({ kind: null, path: null, published: false })
-  }
-  if (runOwnerIdentity === null) {
-    throw new Error('Archive lifecycle canonical artifact has no invocation ownership inode.')
-  }
-  const sharesRunOwner = (identity) => identity === null
-    || identity.dev === runOwnerIdentity.dev && identity.ino === runOwnerIdentity.ino
-  if (!sharesRunOwner(ownerIdentity)) {
-    throw new Error(
-      'Archive lifecycle canonical artifact belongs to another supervisor invocation ownership inode.',
-    )
-  }
-  if (!sharesRunOwner(successIdentity) || !sharesRunOwner(failureIdentity)) {
-    throw new Error('Archive lifecycle canonical artifact does not share terminal ownership.')
-  }
-  const expectedExistingLinks = 1
-    + Number(ownerIdentity !== null)
-    + Number(successIdentity !== null)
-    + Number(failureIdentity !== null)
-  const terminalIdentities = [
-    runOwnerIdentity,
-    ownerIdentity,
-    successIdentity,
-    failureIdentity,
-  ].filter((identity) => identity !== null)
-  if (terminalIdentities.some((identity) => identity.nlink !== expectedExistingLinks)) {
-    const settlementAttempt = options.ownerClaimSettlementAttempt ?? 0
-    const ownerClaimMayBeSettling = options.allowOwnerClaimSettlement === true
-      && Number.isSafeInteger(settlementAttempt)
-      && settlementAttempt >= 0
-      && settlementAttempt < 20
-      && ownerIdentity === null
-      && successIdentity === null
-      && failureIdentity === null
-      && runOwnerIdentity.nlink === 2
-    if (ownerClaimMayBeSettling) {
-      await new Promise((resolve) => setTimeout(resolve, 5))
-      return readArchiveLifecycleCanonicalTerminalArtifact(terminalRun, {
-        ...options,
-        ownerClaimSettlementAttempt: settlementAttempt + 1,
-      })
-    }
-    throw new Error('Archive lifecycle canonical ownership has unexpected filesystem links.')
-  }
-  if (ownerIdentity === null) {
-    try {
-      if (options.requireExactActiveOwner !== false) {
-        await assertArchiveLifecycleSupervisorActiveLeaseOwner(terminalRun)
-        await assertArchiveLifecycleSupervisorEvidenceDirectory(terminalRun)
-      }
-      await link(paths.runOwnerPath, paths.ownerPath)
-      await syncArchiveLifecycleSupervisorDirectory(terminalRun.evidenceDir)
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error
-    }
-    return readArchiveLifecycleCanonicalTerminalArtifact(
-      terminalRun,
-      options,
-    )
-  }
-
-  const contents = await readArchiveLifecycleSupervisorPinnedArtifact(
-    paths.ownerPath,
-    ownerIdentity,
-  )
-  const ownerKind = validateArchiveLifecycleSupervisorTerminalContents(
-    contents,
-    terminalRun,
-    options,
-  )
-  const artifactPath = ownerKind === 'success' ? paths.successPath : paths.failurePath
-  const artifactIdentity = ownerKind === 'success' ? successIdentity : failureIdentity
-  const oppositeIdentity = ownerKind === 'success' ? failureIdentity : successIdentity
-  if (oppositeIdentity !== null) {
-    throw new Error('Archive lifecycle canonical verdict does not match its filename.')
-  }
-  if (artifactIdentity === null) {
-    if (ownerKind === 'success' && options.recoverSuccess === false) {
-      return Object.freeze({
-        kind: 'success',
-        path: paths.ownerPath,
-        published: false,
-        pending: true,
-      })
-    }
-    try {
-      if (options.requireExactActiveOwner !== false) {
-        await assertArchiveLifecycleSupervisorActiveLeaseOwner(terminalRun)
-        await assertArchiveLifecycleSupervisorEvidenceDirectory(terminalRun)
-      }
-      await link(paths.ownerPath, artifactPath)
-      await syncArchiveLifecycleSupervisorDirectory(terminalRun.evidenceDir)
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error
-    }
-    return readArchiveLifecycleCanonicalTerminalArtifact(
-      terminalRun,
-      options,
-    )
-  }
-  if (options.requireExactActiveOwner !== false) {
-    await assertArchiveLifecycleSupervisorActiveLeaseOwner(terminalRun)
-  } else {
-    await assertArchiveLifecycleSupervisorLeaseDirectory(terminalRun)
-  }
-  await assertArchiveLifecycleSupervisorEvidenceDirectory(terminalRun)
-  return Object.freeze({ kind: ownerKind, path: artifactPath, published: false })
 }
 
 /** Parses only bounded current-source success/failure evidence suitable for publication. */
@@ -2140,11 +2159,28 @@ async function readArchiveLifecycleSupervisorArtifactIdentity(candidatePath) {
 
 /** Returns whether two terminal-file observations retain one exact inode topology. */
 function sameArchiveLifecycleSupervisorArtifactIdentity(left, right) {
+  return sameArchiveLifecycleSupervisorArtifactContentIdentity(left, right)
+    && left.nlink === right.nlink
+}
+
+/** Pins immutable terminal contents while separately checking publication links. */
+function sameArchiveLifecycleSupervisorArtifactContentIdentity(left, right) {
   return left.dev === right.dev
     && left.ino === right.ino
-    && left.nlink === right.nlink
     && left.size === right.size
     && left.mode === right.mode
+}
+
+/** Classifies only one owner-to-verdict link addition; callers still reject the read. */
+function terminalArtifactReadChanged(message, expected, observations) {
+  const error = new Error(message)
+  if (expected.nlink === 2 && observations.every((identity) => identity !== null
+    && sameArchiveLifecycleSupervisorArtifactContentIdentity(identity, expected)
+    && (identity.nlink === 2 || identity.nlink === 3))
+    && observations.some((identity) => identity.nlink === 3)) {
+    error.code = 'ARCHIVE_LIFECYCLE_OWNER_LINK_SETTLING'
+  }
+  return error
 }
 
 /** Reads a terminal file through a descriptor pinned to its validated path identity. */
@@ -2156,7 +2192,10 @@ async function readArchiveLifecycleSupervisorPinnedArtifact(candidatePath, expec
   try {
     const openedIdentity = await handle.stat()
     if (!sameArchiveLifecycleSupervisorArtifactIdentity(openedIdentity, expectedIdentity)) {
-      throw new Error('Archive-lifecycle terminal evidence changed before it could be read.')
+      throw terminalArtifactReadChanged(
+        'Archive-lifecycle terminal evidence changed before it could be read.',
+        expectedIdentity, [openedIdentity],
+      )
     }
     const contents = await handle.readFile('utf8')
     const [afterReadIdentity, namedIdentity] = await Promise.all([
@@ -2166,7 +2205,10 @@ async function readArchiveLifecycleSupervisorPinnedArtifact(candidatePath, expec
     if (namedIdentity === null
       || !sameArchiveLifecycleSupervisorArtifactIdentity(afterReadIdentity, expectedIdentity)
       || !sameArchiveLifecycleSupervisorArtifactIdentity(namedIdentity, expectedIdentity)) {
-      throw new Error('Archive-lifecycle terminal evidence changed while it was read.')
+      throw terminalArtifactReadChanged(
+        'Archive-lifecycle terminal evidence changed while it was read.',
+        expectedIdentity, [afterReadIdentity, namedIdentity],
+      )
     }
     return contents
   } finally {

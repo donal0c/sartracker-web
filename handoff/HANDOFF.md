@@ -17,10 +17,14 @@
   `0d0caa8de7331fdd172bad634507eb190ad12a10`, passed macOS packaged lifecycle,
   browser/visual and physical-kill gates, but Linux CI `34153646204` rejected
   it on a `213.5 ms` renderer-frame gap during create. No scale run started.
-- Latest pushed head `f49a16218e983994104cdbc3801ce766f653720e`, tree
+- Earlier head `f49a16218e983994104cdbc3801ce766f653720e`, tree
   `858483dca3498acdaca2a4f4304b891d6e3905b2`, is also rejected: Linux run
   `34157502958` passed create/verify but timed out collecting a renderer
   snapshot during restore / `review_before_cleanup`. Cleanup completed.
+- Latest pushed head `c14529e884b635e1115daded4229bdac726b0220`, tree
+  `b86074081221e7f32b7ba18305c582316bac17d8`, is rejected. Mac packaged
+  lifecycle passes; reference Ubuntu times out during second-launch cleanup.
+  Linux CI `34160547847` separately fails the canonical publisher race test.
 - Work is in `/Users/donalocallaghan/.codex/worktrees/a27a/sartracker-web`.
   The old `44b1` checkout is evidence only and its task remains retired.
 
@@ -65,17 +69,26 @@
   object-export overhead: watchdog 184.18 ms and export 160.6 ms. Full JSON
   page transfer with strict invalid-value rejection reduces these to 96.24 ms
   and 43.9 ms, preserving product calls, rows and semantic checks. The bounded
-  harness repair is red-first with fidelity regressions; focused re-review is
-  clean and full source gates pass. Commit/push the four intended files, then
-  run fresh exact-head packaged/Linux qualification. Historical
-  failures remain unattributed. No scale run has started.
+  harness repair is committed in c145 with source gates and mac lifecycle
+  passing. It does not resolve the later reference cleanup timeout.
+- Canonical publication repair is local: one finite settlement loop, original
+  inode/size/mode anchor, strict reads, final alias checks, and immediate
+  rejection of observed substitutions. Fifteen controlled interleavings and
+  the original race pass; the focused independent review and serial source
+  gates are clean. Commit/push this bounded repair, then continue diagnosis.
+- Trace-only cleanup diagnosis catches a 943.993 ms main-thread task using
+  only 3.302 ms CPU; driver heartbeat remains below 14 ms. Main synchronous
+  SQLite tracking writes are a source-backed suspect, not yet the proven
+  wait. Native-operation/syscall probes did not reproduce the stall (SQL
+  max 16.275 ms, fsync max 15.169 ms, no SQLite busy sleep in that sample).
+  No product persistence changes or >2 GiB run have started.
 - Fresh read-only Ubuntu probe passed: `Linux 7.0.0-28-generic x86_64`, about
   29 GB available RAM and 127 GB free disk. Recheck immediately before scale
   work; no scale run has started in this task.
 
 ## Verification Limit
 
-Latest full serial local source gate passes: 382 files / 3,981 tests in 394.72 seconds,
+c145 full serial local source gate passes: 382 files / 3,981 tests in 394.72 seconds,
 full ESLint, production build/bundle budgets, affected Node syntax, diff check,
 and backend 58 passed / 1 existing ignore. Local legacy-event max is 66.581 ms.
 The prior f49 Linux run passes 3,974 tests; its
@@ -86,3 +99,11 @@ review `74/74` carry from byte-identical application/tests at c2. Linux Replay,
 native SQLite/graphics and tracking pass; lifecycle fails as above. >2 GiB
 remains unstarted. PR #10 is not ready to merge or release. The old stop-after-package instruction is superseded
 by Donal's fresh-task authorization to carry through merge readiness.
+
+Local ownership repair: affected 122 tests and all 3,996 serial tests across
+382 files pass (399.97s), TypeScript/ESLint/build/budgets/syntax/diff pass,
+backend 58 pass/1 existing ignore. An accidental parallel full run fails three
+tests (startup teardown/next handler and a 259.876 ms legacy inventory gap);
+both affected files pass all 111 tests in isolation and the full serial gate
+passes without threshold changes. Application/manual/browser-test blobs
+remain unchanged; current ownership repair has no packaged qualification yet.

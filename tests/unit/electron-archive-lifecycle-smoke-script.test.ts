@@ -1,17 +1,19 @@
 import { spawn } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import {
+import { readFileSync, unlinkSync } from 'node:fs'
+import fsPromises, {
   access,
   chmod,
   link,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   realpath,
   rename,
   rm,
+  unlink,
   writeFile,
 } from 'node:fs/promises'
 import { EventEmitter, once } from 'node:events'
@@ -20,7 +22,34 @@ import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+
+const fileSystemOverrides = await vi.hoisted(async () => {
+  const native = (await import('node:fs/promises')).default
+  const { syncBuiltinESMExports } = await import('node:module')
+  const originalLstat = native.lstat
+  const originalLink = native.link
+  const overrides = {
+    lstat: undefined as typeof native.lstat | undefined,
+    link: undefined as typeof native.link | undefined,
+    originalLstat,
+    originalLink,
+    restore: () => {
+      native.lstat = originalLstat
+      native.link = originalLink
+      syncBuiltinESMExports()
+    },
+  }
+  // Native .mjs imports capture these forwarding functions before the test
+  // controls individual filesystem boundaries. All unselected calls stay real.
+  native.lstat = ((...args: Parameters<typeof originalLstat>) =>
+    (overrides.lstat ?? originalLstat)(...args)) as typeof originalLstat
+  native.link = (...args: Parameters<typeof originalLink>) => (overrides.link ?? originalLink)(...args)
+  syncBuiltinESMExports()
+  return overrides
+})
+
+afterAll(() => fileSystemOverrides.restore())
 
 import {
   cleanupArchiveLifecycleResources,
@@ -1772,6 +1801,210 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
       }
     }
   })
+
+  it.each(['expected-verdict', 'mixed-scan', 'anchor-disappears', 'alias-swap', 'name-never-settles', 'unknown-link', 'opposite-verdict', 'replacement', 'mode', 'size'] as const)(
+    'revalidates the complete topology after a mid-read change: %s', async (change) => {
+    const evidenceDir = await createSupervisorTestDirectory('sartracker-lifecycle-link-settlement-')
+    const source = {
+      expectedHead: 'a'.repeat(40), expectedTree: 'b'.repeat(40),
+      observedHead: 'a'.repeat(40), observedTree: 'b'.repeat(40), worktreeClean: true,
+    }
+    let observer: Awaited<ReturnType<typeof open>> | null = null
+    let restoreRead = () => undefined
+    let restoreStat = () => undefined
+    let restoreLink = () => undefined
+    let linkAttempts = 0
+    let anchorRemoved = false
+    try {
+      const terminalRun = await prepareArchiveLifecycleSupervisorTerminalRun({
+        evidenceDir, source, startedAtMs: Date.now() - 25,
+      })
+      const contents = `${JSON.stringify(createSupervisorSuccessEvidence(terminalRun))}\n`
+      await publishArchiveLifecycleSupervisorCanonicalArtifact({
+        contents, kind: 'success', terminalRun, deferSuccessName: change !== 'alias-swap',
+      })
+      const ownerPath = path.join(evidenceDir, '.electron-archive-lifecycle-terminal-owner.json')
+      const canonicalPath = path.join(evidenceDir, 'electron-archive-lifecycle-smoke-report.json')
+      const runOwnerPath = path.join(evidenceDir, `.electron-archive-lifecycle-terminal-run-owner-${terminalRun.runId}.json`)
+      const ownerIdentity = await lstat(ownerPath)
+      expect(ownerIdentity.nlink).toBe(change === 'alias-swap' ? 3 : 2)
+      observer = await open(ownerPath, 'r')
+      const prototype = Object.getPrototypeOf(observer) as Pick<typeof observer, 'readFile'>
+      const original = prototype.readFile
+      let linked = false
+      const spy = vi.spyOn(prototype, 'readFile').mockImplementation(async function (
+        this: NonNullable<typeof observer>, ...args: Parameters<typeof original>
+      ) {
+        const result = await original.apply(this, args)
+        const identity = await this.stat()
+        if (!linked && change !== 'mixed-scan' && change !== 'name-never-settles'
+          && identity.dev === ownerIdentity.dev && identity.ino === ownerIdentity.ino) {
+          linked = true
+          if (change === 'expected-verdict' || change === 'anchor-disappears') await link(ownerPath, canonicalPath)
+          else if (change === 'alias-swap') {
+            await unlink(canonicalPath)
+            await link(ownerPath, path.join(evidenceDir, 'unknown-alias.json'))
+            await writeFile(canonicalPath, contents, { mode: 0o600 })
+          }
+          else if (change === 'unknown-link') await link(ownerPath, path.join(evidenceDir, 'unknown-alias.json'))
+          else if (change === 'opposite-verdict') {
+            await link(ownerPath, path.join(evidenceDir, 'electron-archive-lifecycle-smoke-failure.json'))
+          } else if (change === 'replacement') {
+            await unlink(ownerPath)
+            await writeFile(ownerPath, contents, { mode: 0o600 })
+          } else if (change === 'mode') await chmod(ownerPath, 0o400)
+          else await writeFile(ownerPath, `${contents}\n`, { mode: 0o600 })
+        }
+        return result
+      })
+      restoreRead = () => { spy.mockRestore() }
+      if (change === 'mixed-scan' || change === 'anchor-disappears') {
+        const originalStat = fileSystemOverrides.originalLstat
+        let ownerReads = 0
+        let finishScan = () => undefined
+        const scanReady = new Promise<void>((resolve) => { finishScan = resolve })
+        fileSystemOverrides.lstat = (async (...args: Parameters<typeof originalStat>) => {
+          const name = String(args[0])
+          if (name === ownerPath) {
+            ownerReads += 1
+            if (change === 'anchor-disappears' && ownerReads === 3) {
+              for (const alias of [ownerPath, runOwnerPath, canonicalPath]) unlinkSync(alias)
+              anchorRemoved = true
+            }
+            const result = await originalStat.apply(fsPromises, args)
+            if (change === 'mixed-scan' && ownerReads === 1) {
+              await link(ownerPath, canonicalPath)
+              linked = true
+              finishScan()
+            }
+            return result
+          }
+          if (change === 'mixed-scan' && [runOwnerPath, canonicalPath,
+            path.join(evidenceDir, 'electron-archive-lifecycle-smoke-failure.json')].includes(name)) {
+            await scanReady
+          }
+          return originalStat.apply(fsPromises, args)
+        }) as typeof originalStat
+        restoreStat = () => { fileSystemOverrides.lstat = undefined }
+      }
+      if (change === 'name-never-settles') {
+        const originalLink = fileSystemOverrides.originalLink
+        fileSystemOverrides.link = async (...args: Parameters<typeof originalLink>) => {
+          if (String(args[1]) === canonicalPath) {
+            linkAttempts += 1
+            if (linkAttempts > 25) throw new Error('Synthetic test stopped unbounded publication.')
+            await originalLink(...args)
+            await unlink(canonicalPath)
+            linked = true
+            return
+          }
+          return originalLink(...args)
+        }
+        restoreLink = () => { fileSystemOverrides.link = undefined }
+      }
+      const publication = publishArchiveLifecycleSupervisorCanonicalArtifact({
+        contents, kind: 'success', terminalRun,
+      })
+      if (change === 'expected-verdict' || change === 'mixed-scan') {
+        await expect(publication).resolves.toMatchObject({ kind: 'success', path: canonicalPath })
+        expect((await lstat(canonicalPath)).nlink).toBe(3)
+      } else {
+        await expect(publication).rejects.toThrow(change === 'name-never-settles' ? /bounded budget/ : undefined)
+        if (change === 'name-never-settles') expect(linkAttempts).toBeLessThanOrEqual(21)
+        if (change !== 'alias-swap') await expect(access(canonicalPath)).rejects.toThrow()
+      }
+      expect(linked).toBe(true)
+      if (change === 'anchor-disappears') expect(anchorRemoved).toBe(true)
+    } finally {
+      restoreRead()
+      restoreStat()
+      restoreLink()
+      await observer?.close()
+      await rm(evidenceDir, { recursive: true, force: true })
+    }
+  })
+
+  it.each(['owner-and-verdict-added', 'restored-alias', 'restored-mode', 'restored-size', 'restored-name'] as const)(
+    'does not forget an observed topology transition: %s', async (change) => {
+      const evidenceDir = await createSupervisorTestDirectory('sartracker-lifecycle-observed-transition-')
+      const source = {
+        expectedHead: 'a'.repeat(40), expectedTree: 'b'.repeat(40),
+        observedHead: 'a'.repeat(40), observedTree: 'b'.repeat(40), worktreeClean: true,
+      }
+      let injected = false
+      try {
+        const terminalRun = await prepareArchiveLifecycleSupervisorTerminalRun({
+          evidenceDir, source, startedAtMs: Date.now() - 25,
+        })
+        const contents = `${JSON.stringify(createSupervisorSuccessEvidence(terminalRun))}\n`
+        await publishArchiveLifecycleSupervisorCanonicalArtifact({ contents, kind: 'success', terminalRun })
+        const ownerPath = path.join(evidenceDir, '.electron-archive-lifecycle-terminal-owner.json')
+        const canonicalPath = path.join(evidenceDir, 'electron-archive-lifecycle-smoke-report.json')
+        const runOwnerPath = path.join(evidenceDir, `.electron-archive-lifecycle-terminal-run-owner-${terminalRun.runId}.json`)
+        const originalStat = fileSystemOverrides.originalLstat
+        let canonicalReads = 0
+        let finishScan = () => undefined
+        const scanReady = new Promise<void>((resolve) => { finishScan = resolve })
+        if (change === 'owner-and-verdict-added') {
+          await unlink(ownerPath)
+          await unlink(canonicalPath)
+        }
+        fileSystemOverrides.lstat = (async (...args: Parameters<typeof originalStat>) => {
+          const name = String(args[0])
+          if (change === 'owner-and-verdict-added' && !injected && name === ownerPath) {
+            const missing = await originalStat(...args).catch((error: unknown) => error)
+            await link(runOwnerPath, ownerPath)
+            await link(ownerPath, canonicalPath)
+            injected = true
+            finishScan()
+            throw missing
+          }
+          if (change === 'owner-and-verdict-added' && name !== ownerPath
+            && [runOwnerPath, canonicalPath, path.join(evidenceDir, 'electron-archive-lifecycle-smoke-failure.json')].includes(name)) {
+            await scanReady
+          }
+          if (name === canonicalPath && ++canonicalReads === 2 && change !== 'owner-and-verdict-added') {
+            injected = true
+            if (change === 'restored-mode') {
+              await chmod(canonicalPath, 0o400)
+              const changed = await originalStat(...args)
+              await chmod(canonicalPath, 0o600)
+              return changed
+            }
+            if (change === 'restored-size') {
+              await writeFile(canonicalPath, `${contents}\n`)
+              const changed = await originalStat(...args)
+              await writeFile(canonicalPath, contents)
+              return changed
+            }
+            const saved = path.join(evidenceDir, 'saved-alias.json')
+            await rename(canonicalPath, saved)
+            if (change === 'restored-alias') {
+              await writeFile(canonicalPath, contents, { mode: 0o600 })
+              const changed = await originalStat(...args)
+              await unlink(canonicalPath)
+              await rename(saved, canonicalPath)
+              return changed
+            }
+            const missing = await originalStat(...args).catch((error: unknown) => error)
+            await rename(saved, canonicalPath)
+            throw missing
+          }
+          return originalStat(...args)
+        }) as typeof originalStat
+        const publication = publishArchiveLifecycleSupervisorCanonicalArtifact({ contents, kind: 'success', terminalRun })
+        if (change === 'owner-and-verdict-added') {
+          await expect(publication).resolves.toMatchObject({ kind: 'success', path: canonicalPath })
+        } else {
+          await expect(publication).rejects.toThrow()
+        }
+        expect(injected).toBe(true)
+      } finally {
+        fileSystemOverrides.lstat = undefined
+        await rm(evidenceDir, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('serializes opposite canonical publishers through one ownership inode', async () => {
     const evidenceDir = await createSupervisorTestDirectory('sartracker-lifecycle-owner-race-')
