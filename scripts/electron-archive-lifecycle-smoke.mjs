@@ -980,20 +980,34 @@ async function runReadOnlyReview(input) {
  * Streams one closed Review through individually bounded renderer transfers.
  * The harness intentionally never assembles the full replay tree in the
  * renderer because that would contend with its independent liveness probe.
+ * Export each complete page as JSON text to avoid Playwright recursively
+ * re-encoding every field while the watchdog observes the same renderer.
+ * Reject values JSON would drop or normalize before closed-shape validation.
  */
 export async function readArchiveReviewContent(page, input) {
-  const read = (method, readInput) => page.evaluate(async (request) => {
+  const read = async (method, readInput) => JSON.parse(await page.evaluate(async (request) => {
     const archiveReview = window.sartrackerElectron?.archiveReview
     if (archiveReview === undefined) {
       throw new Error('Archive-review preload bridge is unavailable.')
     }
-    return archiveReview.read(request)
+    return JSON.stringify(await archiveReview.read(request), /** Rejects lossy evidence conversion. */ function encodeEvidence(key, value) {
+      const original = this[key]
+      const type = typeof original
+      if (original !== value || original === undefined || type === 'bigint' || type === 'function'
+        || type === 'symbol' || type === 'number' && !Number.isFinite(original)
+        || original !== null && type === 'object' && !Array.isArray(original)
+          && Object.getPrototypeOf(original) !== Object.prototype
+          && Object.getPrototypeOf(original) !== null) {
+        throw new Error('Archive Review evidence contains a non-JSON value.')
+      }
+      return value
+    })
   }, {
     sessionId: input.sessionId,
     requestId: randomUUID(),
     method,
     input: readInput,
-  })
+  }))
   const reviewResult = await read('readMissionReview', {
     missionId: input.missionId,
     includeTelemetry: false,

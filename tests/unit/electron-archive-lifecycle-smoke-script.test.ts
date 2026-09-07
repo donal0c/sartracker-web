@@ -2818,12 +2818,46 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
     }
   })
 
+  it.each([
+    { invalid: undefined },
+    { invalid: Number.NaN },
+    { invalid: Number.POSITIVE_INFINITY },
+    { invalid: 1n },
+    { invalid: new Date('2026-09-07T00:00:00.000Z') },
+    { invalid: new Map([['key', 'value']]) },
+    { invalid: { toJSON: () => null } },
+  ])('rejects values JSON would silently drop or change during Review export: $invalid', async ({ invalid }) => {
+    const previousBridge = Object.getOwnPropertyDescriptor(window, 'sartrackerElectron')
+    Object.defineProperty(window, 'sartrackerElectron', {
+      configurable: true,
+      value: { archiveReview: { read: async () => ({ breadcrumbCount: 2, invalid }) } },
+    })
+    const page = {
+      evaluate: async (operation: (request: unknown) => Promise<unknown>, request: unknown) => operation(request),
+    }
+    try {
+      await expect(readArchiveReviewContent(page, {
+        sessionId: 'session-1',
+        missionId: 'mission-1',
+        selectedTime: '2026-09-07T00:00:00.000Z',
+      })).rejects.toThrow('Archive Review evidence contains a non-JSON value.')
+    } finally {
+      if (previousBridge === undefined) Reflect.deleteProperty(window, 'sartrackerElectron')
+      else Object.defineProperty(window, 'sartrackerElectron', previousBridge)
+    }
+  })
+
   it('streams Review reads as bounded renderer transfers instead of one aggregate response', async () => {
     const requests: Array<{ readonly method: string; readonly requestId: string }> = []
+    const transferredValues: unknown[] = []
     let activeTransfers = 0
     let maximumActiveTransfers = 0
+    const auditEvents = [{
+      id: 'audit-1',
+      details: { text: 'Dún "test"\nline', optional: null, active: false, count: 0 },
+    }]
     const responses: Record<string, unknown[]> = {
-      readMissionReview: [{ breadcrumbCount: 2, auditEvents: [] }],
+      readMissionReview: [{ breadcrumbCount: 2, auditEvents }],
       readMissionReplay: [{
         totalTrackCount: 2,
         totalObjectCount: 2,
@@ -2874,7 +2908,9 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
         maximumActiveTransfers = Math.max(maximumActiveTransfers, activeTransfers)
         try {
           await Promise.resolve()
-          return await operation(request)
+          const transferred = await operation(request)
+          transferredValues.push(transferred)
+          return transferred
         } finally {
           activeTransfers -= 1
         }
@@ -2897,6 +2933,11 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
     }
 
     expect(maximumActiveTransfers).toBe(1)
+    // Full JSON-safe pages must cross CDP as primitives so Playwright does not
+    // recursively re-encode thousands of row fields on the observed renderer.
+    expect(transferredValues.map((value) => typeof value)).toEqual([
+      'string', 'string', 'string', 'string', 'string', 'string', 'boolean', 'string',
+    ])
     expect(requests.map((request) => request.method)).toEqual([
       'readMissionReview',
       'readMissionReplay',
@@ -2909,7 +2950,7 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
     ])
     expect(new Set(requests.map((request) => request.requestId)).size).toBe(requests.length)
     expect(review).toEqual({
-      reviewResult: { breadcrumbCount: 2, auditEvents: [] },
+      reviewResult: { breadcrumbCount: 2, auditEvents },
       replayResult: {
         query: {
           missionId: 'mission-1',

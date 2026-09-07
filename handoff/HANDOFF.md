@@ -17,6 +17,10 @@
   `0d0caa8de7331fdd172bad634507eb190ad12a10`, passed macOS packaged lifecycle,
   browser/visual and physical-kill gates, but Linux CI `34153646204` rejected
   it on a `213.5 ms` renderer-frame gap during create. No scale run started.
+- Latest pushed head `f49a16218e983994104cdbc3801ce766f653720e`, tree
+  `858483dca3498acdaca2a4f4304b891d6e3905b2`, is also rejected: Linux run
+  `34157502958` passed create/verify but timed out collecting a renderer
+  snapshot during restore / `review_before_cleanup`. Cleanup completed.
 - Work is in `/Users/donalocallaghan/.codex/worktrees/a27a/sartracker-web`.
   The old `44b1` checkout is evidence only and its task remains retired.
 
@@ -47,35 +51,38 @@
 - `DON-248`, `DON-252`, `DON-253`: PR6 implementation/qualification, In Progress.
 - `DON-278`: prior Replay completion does not qualify PR6's failed
   legacy-provenance responsiveness observation.
-- Diagnose the renderer breach before qualification/scale. Reference-host
-  stress on one physical core produced pre-operation frame starvation with a
-  `368.29 ms` graphics task. Four distinct cores passed create/verify at
-  `90.8 ms`. CI had four CPUs and a different OS/Mesa stack; its cause remains
-  unattributed. Receipt details and diagnostic limits are in the evidence doc.
-- Participant readiness checks sidebar/database state, not actual map content.
-  A diagnostic map-render prerequisite did not demonstrate a fix: setup CDP
-  timed out on the constrained host. No product or gate change is justified yet.
-- Opt-in CI trace diagnostics are prepared, not a performance fix. Sidecars
-  retain only bounded numeric timings/closed names, preserve failure-window
-  overlap and markers, and report loss/truncation. Failure freezes capture
-  before cleanup; healthy measurement is not interrupted by trace draining.
-  Optional setup failures remain diagnostic-only, including late CDP cleanup.
-  Nine tests pass and real-CDP injected-failure capture/teardown passes; bounded
-  independent re-review is clean. Full source gate now passes: 382 files /
-  3,974 tests, lint/build/budgets, backend 58/1 existing ignore, syntax/diff.
-  Commit/push this diagnostic candidate to obtain actual-CI timing evidence.
+- Historical frame/snapshot failures remain unattributed. Reference graphics
+  stress and actual CI trace details are in the evidence doc. CI has two
+  physical cores/four SMT threads; a four-distinct-core pass is not equivalent.
+  No product readiness or graphics change is justified by those comparisons.
+- Opt-in trace diagnostics are pushed and reviewed, with nine tests and a
+  real-CDP injected-failure check. Bounded sanitized timings report loss and
+  truncation; failure capture freezes before cleanup. They do not alter the
+  lifecycle verdict or healthy measurement/intentional-kill timing.
+- Actual-CI failure trace retains ~679 ms: one renderer task took 116.929 ms
+  (108.314 ms CPU); no completed task exceeds 200 ms. This does not explain
+  the full snapshot delay. Matched CPU topology diagnostics isolate harness
+  object-export overhead: watchdog 184.18 ms and export 160.6 ms. Full JSON
+  page transfer with strict invalid-value rejection reduces these to 96.24 ms
+  and 43.9 ms, preserving product calls, rows and semantic checks. The bounded
+  harness repair is red-first with fidelity regressions; focused re-review is
+  clean and full source gates pass. Commit/push the four intended files, then
+  run fresh exact-head packaged/Linux qualification. Historical
+  failures remain unattributed. No scale run has started.
 - Fresh read-only Ubuntu probe passed: `Linux 7.0.0-28-generic x86_64`, about
   29 GB available RAM and 127 GB free disk. Recheck immediately before scale
   work; no scale run has started in this task.
 
 ## Verification Limit
 
-Full serial local source gate passes: 381 files / 3,965 tests in 376.36 seconds,
+Latest full serial local source gate passes: 382 files / 3,981 tests in 394.72 seconds,
 full ESLint, production build/bundle budgets, affected Node syntax, diff check,
-and backend 58 passed / 1 existing ignore. Linux also passes 3,965 tests; the
-legacy-event maximum is `21.358 ms`, SQL poll `3.350 ms`, overlapping GC none.
-Mac packaged lifecycle passes (main max `76.219 ms`), browser `235/235`, Opus
-visual review `74/74`, Ubuntu physical SIGKILL matrix `32/32`. Linux Replay,
+and backend 58 passed / 1 existing ignore. Local legacy-event max is 66.581 ms.
+The prior f49 Linux run passes 3,974 tests; its
+legacy-event maximum is `134.374 ms`, SQL poll `3.184 ms`, overlapping GC none.
+Exact f49 mac packaged lifecycle passes (main max `81.284 ms`) and Ubuntu
+physical SIGKILL matrix passes `32/32`. Browser `235/235` and Opus visual
+review `74/74` carry from byte-identical application/tests at c2. Linux Replay,
 native SQLite/graphics and tracking pass; lifecycle fails as above. >2 GiB
 remains unstarted. PR #10 is not ready to merge or release. The old stop-after-package instruction is superseded
 by Donal's fresh-task authorization to carry through merge readiness.

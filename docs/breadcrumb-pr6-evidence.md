@@ -8,6 +8,83 @@ is intermediate. Donal retains approval and merge authority.
 
 ## 2026-09-07 Astra recovery of b3fb01fa
 
+### f49a1621 diagnostic candidate and restore rejection
+
+Pushed head `f49a16218e983994104cdbc3801ce766f653720e`, tree
+`858483dca3498acdaca2a4f4304b891d6e3905b2`, contains the reviewed trace
+diagnostics described below. Full local source gate passes 382 files/3,974
+tests, lint/build/budgets, backend 58/1 existing ignore, syntax and diff checks.
+Application, dependencies, manual and browser/visual test blobs are unchanged
+from c2; the 235 browser and 74 visual passes are carried evidence, not reruns.
+
+Exact-head macOS package/lifecycle passes in 11,468 ms across two launches:
+main maximum 81.284 ms, frame maximum 26 ms, current-fix maximum 37 ms.
+Receipt SHA-256 `23f892d3073cf3577fa63b9462605f2051a16677c4b221c1021b64f920d6e981`;
+ASAR `16ec0ffa3febca7721db4c8a42bec2e0c5923754a9c0481e93dd417b8e29e887`.
+Ubuntu actual SIGKILL matrix passes 32/32 on clean stable head/tree in 176,509 ms;
+receipt `b6f59e84084f8e8ae850b8f0ca114076716d6f1297c679b08b004c49b11fc197`,
+with recomputed matching structural digest.
+
+Linux CI `34157502958` passes source/build, Replay and tracking, then rejects
+the packaged lifecycle during restore / `review_before_cleanup` with
+`renderer_cdp_watchdog_failed`, `snapshot_collection`, `deadline_exceeded`.
+Create/verify passed. Restore retained maxima are main 85.792 ms, frame 117 ms,
+current fix 140 ms; a pending source age reached 304 ms at the final audit.
+Both process and profile cleanup completed. Failure receipt SHA-256:
+`052c4ff35922bda5c16e75e6bbe066285cb7ce47039640fa5817ae6e40830ee0`.
+Legacy-event diagnostics peak at 134.374 ms, SQL 3.184 ms, process CPU over
+the largest gap 103.661 ms, with no overlapping main GC. Earlier historical
+latency failures remain unexplained.
+
+The sanitized trace captured without browser buffer loss and explicitly
+truncated to 4,096 events (~679 ms ending at first failure). A renderer task
+took 116.929 ms with 108.314 ms CPU, including 9.101 ms minor GC; graphics
+tasks lasted 50–60 ms. No retained completed task exceeds 200 ms. This proves
+renderer computation occurred, but does not identify the read or explain the
+whole CDP deadline. Trace SHA-256:
+`319aea002546196dbd597d61318e5a40a6d10c3c659744752b31601b796b68a2`.
+Local evidence is under `tmp/pr6-linux-f49a1621/`; durable CI artifacts belong
+to the linked run. Its CPU metadata identifies AMD EPYC 9V74 with two physical
+cores/four SMT threads, Ubuntu 22.04/Mesa 23.2.1. The previous reference run
+used four distinct cores; it is not a matched topology comparison.
+
+The bounded reference diagnostic used CPUs 0/1/2/3 (two physical cores/four
+SMT threads), the exact f49 Linux package, default 4,096-row fixture, unchanged
+1,000-row Replay pages, software graphics and strict liveness gate. Timings
+separated renderer bridge completion from CDP receipt and retained driver CPU
+profiles/heartbeats. The original object transfer completed first Review but
+spent up to 160.6 ms after bridge completion exporting one page; watchdog
+collection reached 184.18 ms and driver heartbeat 63.90 ms. Driver profiles
+show Playwright recursive protocol validation/serialization during this work.
+
+A paired JSON-text transfer retained every product IPC call, validation and
+page. Export fell to 34.4 ms, watchdog 70.12 ms and driver heartbeat 23.50 ms.
+The bounded independent review caught a fidelity risk: ordinary JSON drops
+undefined properties and normalizes nonfinite numbers. The candidate now
+rejects non-JSON values and transformed `toJSON` values before export, using
+fixed safe errors. Seven rejection regressions and the primitive-transfer
+regression were observed red first; the latter also verifies complete nested
+page content including Unicode, null, false and zero. The strict-replacer
+real-package diagnostic completed first Review with export maximum 43.9 ms,
+watchdog 96.24 ms and driver heartbeat 31.79 ms. The final `toJSON` identity
+guard is unit-covered; that guard was added after the real-package diagnostic.
+
+All three diagnostic runs explicitly terminate as non-qualifying after first
+Review and clean up; they are not full lifecycle passes. Timings/CPU profiles
+are retained under `tmp/sartracker-pr6-astra-review-{matched,json,strict}-*`.
+The repair changes only harness export, preserving full semantic validation,
+page sizes and the independent watchdog. It removes measured harness overhead;
+it does not prove the exact historical CI failure cause. No >2 GiB run started.
+
+The final harness repair passes the full serial source gate: 382 files/3,981
+tests in 394.72 seconds, full ESLint, production build/bundle budgets, backend
+58 passed/1 existing ignore, syntax and diff checks. Legacy-event heartbeat
+maximum is 66.581 ms, SQL poll 2.072 ms, overlapping main GC none. Bounded
+independent re-review is clean on script blob
+`0e1efe05036faf17ba11a6ddd1bc878e4f64b126` and test blob
+`c09683b63fc6da22f24d5c7864225065978e3951`, unchanged through the gate.
+Next is the existing-PR push and fresh exact-head packaged/Linux qualification.
+
 ### c2c04dca gate results and Linux renderer diagnosis
 
 The bounded collector/heartbeat-diagnostic correction was pushed as
