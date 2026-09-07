@@ -8,6 +8,97 @@ is intermediate. Donal retains approval and merge authority.
 
 ## 2026-09-07 Astra recovery of b3fb01fa
 
+### e6b6e3e0 gates and controlled cleanup/live-write correction
+
+The canonical publication repair is pushed as
+`e6b6e3e02a80dfb6fd223fd8a36e90a6a6a1e471`, tree
+`535c71e046ae673984cad26baa111bfc7f2a7609`. Exact-head macOS lifecycle passes
+in 11,768 ms/two launches (main 52.649 ms, frame 17.6 ms, current fix 22 ms).
+Receipt `tmp/pr6-macos-e6b6e3e0-report.json` SHA-256:
+`efad191b2a4cbf96106bd61b29b97fa842579f0917ac461d315a00f0f65466b1`;
+ASAR `232ddbb8df802d0ef515a4e87bd42a79df66004bf9b70dd8dd11667b0decdc54`.
+Linux CI `34163950630` passes source, build, Replay, tracking and packaged
+lifecycle. Its canonical report validates the clean exact head/tree and two
+launches in 45,683 ms (main 108.333 ms, frame 174.9 ms, current fix 152 ms).
+Receipt under `tmp/pr6-linux-e6b6e3e0/` SHA-256:
+`22e1118b0b6eed85d852e969d005bd0171ea6652cd4657c5f66f1972451311ca`;
+ASAR `5c493aac8bf24499d246310b460d63d3c8b5a64bba074e61255a21eeddb5d19e`.
+These passes do not qualify the subsequently reproduced product defect below.
+
+Three further bounded main-only syscall samples did not reproduce the stall;
+that diagnostic loop is stopped. A different controlled test holds the real
+cleanup worker's acquired IMMEDIATE transaction for 700 ms, with release owned
+by the worker so a frozen main thread cannot prolong it. During cleanup of one
+finalized mission, another active mission's real device and tracking writes
+fail immediately with SQLITE_BUSY; its coverage catalog publication blocks the
+main heartbeat for 789.192 ms (812.043 ms total). Diagnostic source/result:
+`tmp/pr6-cleanup-writer-overlap.cjs` / `.json`. This proves a reachable product
+defect; it does not attribute the earlier 943.993 ms trace or every CI timeout.
+
+Confirmed cause: SQLite has one writer. The cleanup worker releases/retries
+its own transactions, but the main connection's coverage UPDATE can sleep
+synchronously in its default 5,000 ms busy timeout. Other live APIs can fail
+while promoting their transactions. Prior tests did not hold the actual
+cleanup transaction across these concurrent live API calls.
+
+The correction introduces one FIFO owner for synchronous device/position/
+history and existing coverage-affecting mutations, and all five derived
+coverage publication boundaries. Each attempt owns an outer IMMEDIATE
+transaction with SQLite busy timeout zero; the previous configuration is
+restored before yielding. Only fully rolled-back SQLITE_BUSY attempts retry,
+with a finite 240-by-25-ms delay budget and request/store cancellation.
+Permissions and relevant inventory/revision checks repeat after waiting.
+Finished live-source coverage remains readable. Shutdown aborts and joins
+all coverage requests, including requests without renderer IDs, before close.
+Schema, coordinate rules, archive bytes/custody and cleanup semantics are unchanged.
+
+Red-first evidence: initial three real-lock tests reproduce two immediate BUSY
+errors and a 774.922 ms coverage heartbeat. Five of six added alternate-API
+cases fail before extending the common boundary; the already-covered page
+publication passes. All 15 final integration variants pass, including FIFO,
+mission finalization during the wait, stale coverage, cancellation, shutdown,
+and durable rejected-observation evidence. The unnumbered coverage shutdown
+regression separately fails before request ownership is added; all 24 coverage
+tests pass afterward. Six writer tests cover rollback, configuration restore,
+ordering, cancellation, shutdown, retry exhaustion and invalid async callbacks.
+
+The wider store suite caught an introduced rollback of the intentional
+cross-device ingest-anomaly record. A private outcome now carries only that
+audited rejection through commit before the public API throws its original
+error. Ambiguous adoption and ordinary validation/SQLite errors still roll
+back. All 101 store tests pass, and the contended conflict case verifies one
+anomaly, unchanged position ownership/coordinates and unchanged incoming-device
+contact state. The initial async-callback unit assertion also needed correction:
+a mock wrapping an async function has a normal Function constructor; the final
+test uses an actual async function for the pre-invocation guard and separately
+checks a synchronous callback returning a thenable rolls back.
+
+Focused independent final review is clean on helper
+`f20f6b624d0f46202c0666fd4bff146347541e6b`, store
+`8c65fb0194ac2d2477773f7cd60d0fcf3bc3b51c`, writer tests
+`ecd892dcb59af133bd5b70b9302f3ccd67b8203f`, contention tests
+`4d6b52a94737bda0a433a595e58d43cb5257dc26`, coverage tests
+`40a11d2f633ca77abb010e6fc68cc21537e5699c`.
+Logs: `tmp/pr6-live-write-contention-red.log`,
+`tmp/pr6-live-write-related-api-red.log`, `tmp/pr6-coverage-shutdown-red.log`,
+`tmp/pr6-responsive-affected.log`, `tmp/pr6-responsive-store-green.log`,
+`tmp/pr6-responsive-final-focused.log`, `tmp/pr6-responsive-module-final.log`.
+Full serial source passes 4,018 tests across 384 files in 419.91 seconds;
+legacy-event heartbeat maximum 71.340 ms. Full ESLint, production build
+(including TypeScript), bundle budgets, Node syntax/diff checks and backend
+58 pass/1 existing ignore pass. Fresh browser validation passes all 235 tests
+in 5.0 minutes. Logs: `tmp/pr6-responsive-{full-serial,lint,build,backend,browser}.log`.
+The operator manual now describes temporary live-save/coverage waits during
+cleanup and continued attention to save/freshness warnings. Its actual rendered
+note was checked in the inbuilt browser at
+`http://127.0.0.1:1420/manual/index.html`; the initial `/manual/` URL instead
+reaches Vite's application fallback, so it is not the manual verification URL.
+Independent Opus screenshot review passes 74/74, zero failures/errors:
+`test-results/visual-verification/reports/visual-review-2026-09-07T22-30-21Z.json`
+and `tmp/pr6-responsive-visual-review.log`. Exact-head packaged qualification
+remains pending; >2 GiB remains unstarted. Donal requires work to stop at the first of
+15% remaining account usage or 01:00 Dublin on 8 September (00:00 UTC).
+
 ### c14529e8 rejection and canonical publication race
 
 Harness export repair was pushed as `c14529e884b635e1115daded4229bdac726b0220`,

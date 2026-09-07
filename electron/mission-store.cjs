@@ -115,6 +115,7 @@ const {
   readLegacyEventProvenanceBackfillPending,
 } = require('./mission-event-provenance-backfill.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
+const { createResponsiveMissionWriter } = require('./responsive-mission-writer.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
 const {
@@ -514,6 +515,8 @@ function createElectronMissionStore(options) {
   const missionReplayQueryControllersByRequestId = new Map()
   const outingFixSummaryControllersByRequestId = new Map()
   const coverageQueryControllersByRequestId = new Map()
+  const activeCoverageRequests = new Set()
+  let coverageShutdownRequested = false
   const coverageTileControllersByRequestId = new Map()
   const activeGpxEvidenceImports = new Set()
   const activeSearchOperationPageReads = new Set()
@@ -537,6 +540,7 @@ function createElectronMissionStore(options) {
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   const migrationState = migrate(db, archiveDirectory)
+  const responsiveWriter = createResponsiveMissionWriter(db)
   let storeClosed = false
   let archiveCorrectionAttachmentRecoveryFailure = null
   let archiveCorrectionAttachmentRecoveryShutdownRequested = false
@@ -1867,6 +1871,8 @@ function createElectronMissionStore(options) {
 
   return {
     prepareClose: async () => {
+      coverageShutdownRequested = true
+      const responsiveWritesSettled = responsiveWriter.close()
       archiveCorrectionAttachmentRecoveryShutdownRequested = true
       archiveRegistryReconciliationShutdownRequested = true
       if (archiveRegistryReconciliationTimer !== null) {
@@ -1882,6 +1888,11 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
       }
       const shutdownTasks = active.map((entry) => entry.quiesced)
+      shutdownTasks.push(responsiveWritesSettled)
+      for (const activeQuery of activeCoverageRequests) {
+        activeQuery.controller.abort()
+        shutdownTasks.push(activeQuery.completion)
+      }
       shutdownTasks.push(ingestAnomalyOutbox.dispose())
       shutdownTasks.push(archiveCorrectionAttachmentRecoveryPromise.catch(() => undefined))
       shutdownTasks.push(...activeSearchOperationPageReads)
@@ -1941,6 +1952,12 @@ function createElectronMissionStore(options) {
       }
     },
     close: () => {
+      if (activeCoverageRequests.size > 0) {
+        throw new Error('Cannot close the mission store while coverage requests are active; call prepareClose first.')
+      }
+      if (responsiveWriter.pendingCount > 0) {
+        throw new Error('Cannot close the mission store while database writes are pending; call prepareClose first.')
+      }
       if (activeGpxEvidenceImports.size > 0) {
         throw new Error('Cannot close the mission store while GPX evidence imports are active; call prepareClose first.')
       }
@@ -1966,6 +1983,7 @@ function createElectronMissionStore(options) {
         throw new Error('Cannot close the mission store while archive custody recovery is active; call prepareClose first.')
       }
       storeClosed = true
+      void responsiveWriter.close()
       archiveRegistryReconciliationController?.abort()
       if (gpxReceiptRecoveryTimer !== null) {
         clearTimeout(gpxReceiptRecoveryTimer)
@@ -2175,11 +2193,14 @@ function createElectronMissionStore(options) {
           recordCoveragePerformance(missionId, {
             lastEnumerationDurationMs: performance.now() - enumerationStartedAt,
           })
-          applyCoverageEnumeration(db, {
-            missionId,
-            expectedChangeSeq: enumeration.changeSeq,
-            chunks: enumeration.chunks,
-            updatedAt: now(),
+          await runCoveragePublication(missionId, signal, () => {
+            assertCoverageResultInventory(db, missionId, enumeration.chunks, (chunk) => chunk, 'enumeration')
+            return applyCoverageEnumeration(db, {
+              missionId,
+              expectedChangeSeq: enumeration.changeSeq,
+              chunks: enumeration.chunks,
+              updatedAt: now(),
+            })
           })
         }
         await drainCoverageInvalidations(missionId, signal)
@@ -2194,11 +2215,15 @@ function createElectronMissionStore(options) {
           'manifest',
         )
         assertCoverageManifestOutings(db, missionId, manifest.outings)
-        const inserted = applyCoverageManifestInventory(db, {
-          missionId,
-          expectedChangeSeq: manifest.changeSeq,
-          chunks: manifest.chunks,
-          updatedAt: now(),
+        const inserted = await runCoveragePublication(missionId, signal, () => {
+          assertCoverageResultInventory(db, missionId, manifest.chunks, (chunk) => chunk.key, 'manifest')
+          assertCoverageManifestOutings(db, missionId, manifest.outings)
+          return applyCoverageManifestInventory(db, {
+            missionId,
+            expectedChangeSeq: manifest.changeSeq,
+            chunks: manifest.chunks,
+            updatedAt: now(),
+          })
         })
         const currentManifest = inserted === 0
           ? manifest
@@ -2233,17 +2258,19 @@ function createElectronMissionStore(options) {
             key: normalizedInput.key,
             expectedContentRev: normalizedInput.expectedContentRev,
           }, signal, true)
-          const applied = applyCoverageChunkBuild(db, {
-            missionId: normalizedInput.missionId,
-            deviceId: normalizedInput.key.device_id,
-            periodKind: normalizedInput.key.period_kind,
-            periodId: normalizedInput.key.period_id,
-            expectedContentRev: normalizedInput.expectedContentRev,
-            fixCount: summary.fix_count,
-            fixDigest: summary.fix_digest,
-            minTs: summary.min_ts,
-            maxTs: summary.max_ts,
-            updatedAt: now(),
+          const applied = await runCoveragePublication(normalizedInput.missionId, signal, () => {
+            return applyCoverageChunkBuild(db, {
+              missionId: normalizedInput.missionId,
+              deviceId: normalizedInput.key.device_id,
+              periodKind: normalizedInput.key.period_kind,
+              periodId: normalizedInput.key.period_id,
+              expectedContentRev: normalizedInput.expectedContentRev,
+              fixCount: summary.fix_count,
+              fixDigest: summary.fix_digest,
+              minTs: summary.min_ts,
+              maxTs: summary.max_ts,
+              updatedAt: now(),
+            })
           })
           if (!applied) {
             const error = new Error('chunk-stale: coverage chunk revision changed')
@@ -2347,10 +2374,12 @@ function createElectronMissionStore(options) {
         }
         let appliedBuilds
         try {
-          appliedBuilds = applyCoverageChunkBuilds(db, {
-            missionId: normalizedInput.missionId,
-            builds: result.builds,
-            updatedAt: now(),
+          appliedBuilds = await runCoveragePublication(normalizedInput.missionId, signal, () => {
+            return applyCoverageChunkBuilds(db, {
+              missionId: normalizedInput.missionId,
+              builds: result.builds,
+              updatedAt: now(),
+            })
           })
         } catch (error) {
           await coverageTileRunner.discardCatalog({ stageId: result.stageId })
@@ -2396,13 +2425,18 @@ function createElectronMissionStore(options) {
       return true
     },
     upsertDevice: async (input) => {
-      assertArchiveCorrectionWriterIdle(input.mission_id)
-      return upsertDevice(db, input)
+      return responsiveWriter.run(() => {
+        assertArchiveCorrectionWriterIdle(input.mission_id)
+        return upsertDevice(db, input)
+      })
     },
     upsertDevicesBulk: async (input) => {
       assertArchiveCorrectionWriterIdle(input.mission_id)
       const startedAtMs = performance.now()
-      const result = upsertDevicesBulk(db, input)
+      const result = await responsiveWriter.run(() => {
+        assertArchiveCorrectionWriterIdle(input.mission_id)
+        return upsertDevicesBulk(db, input)
+      })
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordTrackingBatch({
           durationMs: performance.now() - startedAtMs,
@@ -2418,10 +2452,16 @@ function createElectronMissionStore(options) {
       missionId,
       () => all(db, 'SELECT * FROM devices WHERE mission_id = ? ORDER BY name ASC', missionId),
     ),
-    addPosition: async (input) => runCoverageMutation(
-      input.mission_id,
-      () => addPosition(db, input, coverageLedgerFaultInjection),
-    ),
+    addPosition: async (input) => {
+      const result = await runCoverageMutation(
+        input.mission_id,
+        () => addPosition(db, input, coverageLedgerFaultInjection),
+      )
+      // A rejected observation may deliberately commit anomaly evidence.
+      // Surface that rejection only after the owning transaction commits it.
+      if (result instanceof RetainedPositionRejection) throw result.error
+      return result
+    },
     addPositionsBulk: async (input) => {
       const startedAtMs = performance.now()
       const result = await runCoverageMutation(
@@ -3268,6 +3308,7 @@ function createElectronMissionStore(options) {
 
   /** Runs one renderer-owned coverage operation with cancellation and ID reuse fencing. */
   function executeCoverageRequest(requestId, execute) {
+    if (coverageShutdownRequested || storeClosed) throw createCoverageRequestAbortError()
     const normalizedRequestId = normalizeCoverageQueryRequestId(requestId, false)
     if (
       normalizedRequestId !== null &&
@@ -3280,10 +3321,12 @@ function createElectronMissionStore(options) {
       controller,
       completion: Promise.resolve().then(() => execute(controller.signal)),
     }
+    activeCoverageRequests.add(activeQuery)
     if (normalizedRequestId !== null) {
       coverageQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
     }
     return activeQuery.completion.finally(() => {
+      activeCoverageRequests.delete(activeQuery)
       if (
         normalizedRequestId !== null &&
         coverageQueryControllersByRequestId.get(normalizedRequestId) === activeQuery
@@ -3322,13 +3365,25 @@ function createElectronMissionStore(options) {
 
   /** Publishes only a sequence that moved in the just-committed mutation. */
   async function runCoverageMutation(missionId, execute) {
-    assertArchiveCorrectionWriterIdle(missionId)
-    assertMissionArchiveCorrectionWritable(db, missionId)
-    const before = readCoverageChangeSequence(missionId)
-    const result = await execute()
-    const after = readCoverageChangeSequence(missionId)
+    const { result, before, after } = await responsiveWriter.run(() => {
+      assertArchiveCorrectionWriterIdle(missionId)
+      assertMissionArchiveCorrectionWritable(db, missionId)
+      const before = readCoverageChangeSequence(missionId)
+      const result = execute()
+      const after = readCoverageChangeSequence(missionId)
+      return { result, before, after }
+    })
     if (after > before) onCoverageChanged(missionId, after)
     return result
+  }
+
+  /** Rechecks live storage ownership without imposing editable-mission rules on derived coverage. */
+  function runCoveragePublication(missionId, signal, publish) {
+    return responsiveWriter.run(() => {
+      assertArchiveCorrectionWriterIdle(missionId)
+      assertStoreLiveMissionReviewAvailable(missionId)
+      return publish()
+    }, { signal })
   }
 
   /** Reads one coordinate-free scalar without creating coverage state. */
@@ -3348,11 +3403,11 @@ function createElectronMissionStore(options) {
         signal,
         false,
       )
-      applyCoverageInvalidationDrain(db, {
+      await runCoveragePublication(missionId, signal, () => applyCoverageInvalidationDrain(db, {
         invalidationId: row.id,
         affectedKeys: normalizeCoverageInvalidationDrain(db, row.id, analysis),
         drainedAt: now(),
-      })
+      }))
     }
   }
 
@@ -7807,6 +7862,15 @@ function getDevice(db, missionId, deviceId) {
   return device
 }
 
+/** Carries a deliberate observation rejection past the commit of its retained anomaly evidence. */
+class RetainedPositionRejection {
+  /** Retains the original public error without treating its audited outcome as a rollback. */
+  constructor(error) {
+    this.error = error
+    Object.freeze(this)
+  }
+}
+
 function addPosition(db, input, coverageFaultInjection = {}) {
   ensureWritableMission(db, input.mission_id)
   validateLatLon(input.lat, input.lon, 'Position')
@@ -7854,10 +7918,10 @@ function addPosition(db, input, coverageFaultInjection = {}) {
         }
       })()
       if (existing.device_id !== input.device_id) {
-        throw new Error(
+        return new RetainedPositionRejection(new Error(
           `Source position ${sourcePositionId} is owned by device ${existing.device_id}; ` +
           `the conflicting observation from ${input.device_id} was retained without changing position truth.`,
-        )
+        ))
       }
       return getById(db, 'positions', existing.id, 'Position')
     }

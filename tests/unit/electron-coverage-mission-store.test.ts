@@ -62,6 +62,7 @@ type CoverageKey = {
 }
 
 type CoverageMissionStore = {
+  readonly prepareClose: () => Promise<void>
   readonly close: () => void
   readonly createMission: (input: { readonly name: string; readonly start_time: string }) => Promise<{ readonly id: string }>
   readonly upsertDevice: (input: {
@@ -204,6 +205,41 @@ afterEach(async () => {
 })
 
 describe('Electron coverage mission-store orchestration', () => {
+  it('joins an unnumbered staged coverage request before database shutdown', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-shutdown-'))
+    let finishBuild: ((value: unknown) => void) | undefined
+    let requestSignal: AbortSignal | undefined
+    const syncCatalog = vi.fn((_input: unknown, options: { signal: AbortSignal }) => {
+      requestSignal = options.signal
+      return new Promise(resolve => { finishBuild = resolve })
+    })
+    const discardCatalog = vi.fn().mockResolvedValue(true)
+    store = createElectronMissionStore({ userDataPath: directory, coverageTileRunner: {
+      syncCatalog, discardCatalog,
+      readTile: vi.fn().mockResolvedValue(null), close: vi.fn().mockResolvedValue(undefined),
+    } })
+    const mission = await seedMission(store)
+    const request = store.syncCoverageTileCatalog({ missionId: mission.id, chunks: [] })
+    const observed = request.then(() => null, (error: unknown) => error)
+    let closing: Promise<void> | undefined
+    try {
+      await vi.waitFor(() => expect(syncCatalog).toHaveBeenCalledOnce())
+      let closed = false
+      closing = store.prepareClose().then(() => { closed = true })
+      expect(requestSignal?.aborted).toBe(true)
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(closed).toBe(false)
+      finishBuild?.({ stageId: 'coverage-stage-00000000-0000-4000-8000-000000000003-1', periods: [], delivered: [], builds: [] })
+      await expect(observed).resolves.toMatchObject({ name: 'AbortError' })
+      await closing
+      expect(discardCatalog).toHaveBeenCalledOnce()
+    } finally {
+      finishBuild?.({ stageId: 'coverage-stage-00000000-0000-4000-8000-000000000003-1', periods: [], delivered: [], builds: [] })
+      await observed
+      await closing
+    }
+  })
+
   it('attests staged and active tiles through the real store and worker across rebuilds', async () => {
     store = await createStore()
     const mission = await seedMission(store)
