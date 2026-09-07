@@ -39,6 +39,7 @@ import {
 import {
   startArchiveLifecycleLivenessMockTraccarServer,
 } from '../build/electron-archive-lifecycle-liveness-mock-traccar.js'
+import { startRenderTraceDiagnostics } from '../build/electron-render-trace-diagnostics.js'
 
 const require = createRequire(import.meta.url)
 const { readCleanupFailureDiagnosticFromMessage } = require(
@@ -200,6 +201,7 @@ async function main() {
     mockServer = await startArchiveLifecycleLivenessMockTraccarServer()
     await seedLivenessRuntimeConfiguration(userDataDir, mockServer.baseUrl)
     initialLaunch = await launchPackagedApp(options, userDataDir, 1)
+    await attachRenderTraceDiagnostic(initialLaunch, options.expectedHead)
     packagedBuildHeadMatches.push(initialLaunch.packagedBuildHeadMatched)
     activeLaunch = initialLaunch
     const seeded = await withArchiveLifecycleWorkloadTimeout(seedAndFinishMission(
@@ -219,12 +221,14 @@ async function main() {
       ['create', 'verify'],
       ['finalize_archive', 'verify_archive'],
     )
+    await markRenderTraceDiagnostic(initialLaunch, 'sartracker-archive-finalize-start')
     const finalized = await livenessProbe.guardOperation(finalizeAndVerifyArchive(
       initialLaunch.page,
       seeded.missionId,
       passphrase,
       (phase) => livenessProbe.setPhaseFromRenderer(phase),
     ), [createOperation, verifyOperation])
+    await markRenderTraceDiagnostic(initialLaunch, 'sartracker-archive-finalize-end')
     await livenessProbe.setPhase('verify')
     await livenessProbe.completePhaseOperation(createOperation)
     await livenessProbe.completePhaseOperation(verifyOperation)
@@ -272,11 +276,13 @@ async function main() {
       },
     }))
     const restoreSamplesBeforeRestart = livenessProbe.phaseSampleCount('restore')
+    await publishRenderTraceDiagnostic(initialLaunch)
     observedLaunchExits.push({ number: initialLaunch.number, signal: interruption.exitSignal })
     initialLaunch = null
     activeLaunch = null
 
     restartedLaunch = await launchPackagedApp(options, userDataDir, 2)
+    await attachRenderTraceDiagnostic(restartedLaunch, options.expectedHead)
     packagedBuildHeadMatches.push(restartedLaunch.packagedBuildHeadMatched)
     activeLaunch = restartedLaunch
     await resumeLivenessMission(
@@ -464,6 +470,9 @@ async function main() {
     }
   } catch (error) {
     lifecycleFailure = error
+    await markRenderTraceDiagnostic(activeLaunch, 'sartracker-archive-first-failure')
+    // The primary verdict is already fixed. Freeze timing before cleanup can replace the failure window.
+    void activeLaunch?.rendererTrace?.end()
   }
 
   const cleanup = await cleanupArchiveLifecycleResources({
@@ -3397,6 +3406,7 @@ async function stopLaunch(launch) {
     )
   }
   await launch.externalLivenessWatchdog?.stop().catch(() => undefined)
+  await publishRenderTraceDiagnostic(launch)
   launch.mainInspector?.close()
   await closeRendererTransports(launch)
   if (launch.appProcess.exitCode === null && launch.appProcess.signalCode === null) {
@@ -3414,6 +3424,63 @@ async function stopLaunch(launch) {
   launch.exitResult = exitResult
   launch.closed = true
   return exitResult
+}
+
+/** Starts opt-in diagnostics on a transport independent from the liveness collector. */
+export async function attachRenderTraceDiagnostic(launch, expectedHead) {
+  if (process.env.SARTRACKER_ARCHIVE_RENDER_TRACE !== '1') return
+  launch.rendererTraceHead = expectedHead
+  let setupAbandoned = false
+  const pendingSession = Promise.resolve().then(() => launch.browser.contexts()[0].newCDPSession(launch.page))
+    .then(async session => {
+      if (setupAbandoned) {
+        await withTimeout(session.detach(), 1000, 'Late diagnostic detach timed out.').catch(() => undefined)
+        return null
+      }
+      return session
+    })
+  try {
+    const session = await withTimeout(pendingSession, 10000, 'Render diagnostic transport setup timed out.')
+    launch.rendererTrace = await startRenderTraceDiagnostics(session)
+  } catch {
+    setupAbandoned = true
+    launch.rendererTrace = {
+      end: async () => undefined,
+      stop: async () => ({ status: 'incomplete', startedAtMs: Date.now(), events: [], markers: [] }),
+    }
+    console.error('Archive rendering diagnostic setup was unavailable; lifecycle measurement is unchanged.')
+  }
+}
+
+/** Adds only a closed diagnostic marker; failure cannot replace the primary lifecycle verdict. */
+async function markRenderTraceDiagnostic(launch, name) {
+  if (!launch?.rendererTrace) return
+  try {
+    await withTimeout(launch.page.evaluate(marker => performance.mark(marker), name),
+      200, 'Render diagnostic marker timed out.')
+  } catch { console.error('Archive rendering diagnostic marker was unavailable.') }
+}
+
+/** Publishes sanitized diagnostic timing separately from authoritative terminal evidence. */
+async function publishRenderTraceDiagnostic(launch) {
+  if (!launch?.rendererTrace) return
+  launch.rendererTraceReportPromise ??= (async () => {
+    const trace = await launch.rendererTrace.stop()
+    const directory = path.join(projectRoot, 'tmp', 'electron-validation-evidence')
+    await mkdir(directory, { recursive: true })
+    const basename = `archive-render-trace-${launch.rendererTraceHead}-${launch.number}-${trace.startedAtMs}.json`
+    await writeFile(path.join(directory, basename), JSON.stringify({
+      schema: 'sartracker-archive-render-diagnostic-v1',
+      proofTier: 'diagnostic-only',
+      expectedHead: launch.rendererTraceHead,
+      launchNumber: launch.number,
+      trace,
+    }), { flag: 'wx', mode: 0o600 })
+    console.log(`Archive rendering diagnostic: ${basename}; status=${trace.status}`)
+  })().catch(() => {
+    console.error('Archive rendering diagnostic could not be published; attribution is incomplete.')
+  })
+  await launch.rendererTraceReportPromise
 }
 
 /** Polls the local renderer debugging endpoint while asserting the child is alive. */

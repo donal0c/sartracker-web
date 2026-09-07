@@ -207,8 +207,14 @@ jobs:
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
+          # Temporary diagnostic lane for the unexplained c2c04dca frame breach.
+          # Sanitized sidecar timings never replace the authoritative 200 ms gate.
+          SARTRACKER_ARCHIVE_RENDER_TRACE: '1'
         run: |
           set -euo pipefail
+          lscpu --json > tmp/electron-validation-evidence/cpu-topology.json
+          dpkg-query -W libgl1-mesa-dri libglx-mesa0 xvfb \
+            > tmp/electron-validation-evidence/graphics-package-versions.txt
           xvfb-run -a --server-args='-screen 0 1440x900x24' \
             npm run electron:smoke:archive-lifecycle:ci
 

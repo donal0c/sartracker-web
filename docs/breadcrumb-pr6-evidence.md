@@ -8,6 +8,72 @@ is intermediate. Donal retains approval and merge authority.
 
 ## 2026-09-07 Astra recovery of b3fb01fa
 
+### c2c04dca gate results and Linux renderer diagnosis
+
+The bounded collector/heartbeat-diagnostic correction was pushed as
+`c2c04dca1457c8aa9c1904125829ae646679270c`, tree
+`0d0caa8de7331fdd172bad634507eb190ad12a10`. It is rejected by Linux packaged
+lifecycle, not merge-ready. No >2 GiB attempt has started in this task.
+
+- macOS arm64 exact-head package/lifecycle passes: two launches, 11,994 ms,
+  verified archive 5,788,420 bytes, terminal verify progress retained, all
+  liveness dimensions below 200 ms; main maximum 76.219 ms and current fix
+  maximum 34 ms. Receipt SHA-256
+  `e0b2341a8d5de513b35855557a9ae9d8e78460d915b4cc5e9824c0ef77e25f47`.
+- Browser suite passes 235/235; independent Opus visual review passes all 74
+  entries, zero failures/errors. Archive Review/cleanup screenshots personally
+  inspected. An initial incorrect global mission-model environment flag was
+  removed from the browser invocation; it had overridden the per-test URL
+  fixtures. No source change was needed for that invocation error.
+- Ubuntu actual SIGKILL matrix qualifies all 32 required cases on clean stable
+  c2c04dca. Report SHA-256
+  `1d5313aab3a4c145c662de5e0c58451310797c3aa8117fb10e6acc696eeaa733`.
+  Its structural digest was recomputed and matches. Default Linux `/tmp` was
+  safely rejected as too broad before preparation; a supported explicit narrow
+  `--work-root` passed without weakening the guard or changing workload timeout.
+- Linux run `34153646204` passes 381 files/3,965 tests, lint/build/package,
+  960k Replay, native SQLite/llvmpipe, and packaged tracking. The legacy-event
+  scenario peaks at 21.358 ms; SQL polling 3.350 ms, overlapping main GC none.
+  The historical 200.669968 ms unit breach remains unattributed.
+- Linux lifecycle fails during create with `renderer_frame_gate_breached`:
+  213.5 ms, four frame samples, main 58.507 ms, current fix 79 ms, request/source
+  delivery 44 ms. Process/profile teardown completed. Receipt SHA-256
+  `207b4225d72677f91521e89c8918e4ad2985f88093b9258c71163faa600f418c`.
+  AppImage launch and package upload were correctly skipped after this failure.
+
+Personal source retrace and a bounded independent check found no stale startup
+clock folded into the measured frame. The finalization dialog is closed: this
+harness calls preload while a separate live mission occupies the map. A traced
+reference-host stress run reproduced frame starvation before archive operations
+began: a 368.29 ms GPU scheduler task overlapped the gap while timers continued.
+That diagnostic used CPUs 0/1, which inspection subsequently showed are siblings
+on one physical core. Its map-readiness variation still failed during setup.
+The original diagnostic repeated on four distinct cores completed create/verify
+with a 90.8 ms frame maximum and no post-arm long renderer task. CI's preserved
+Replay metadata identifies four CPUs; CI is Ubuntu 22.04, the reference host
+Ubuntu 24.04/Mesa 25.2. These comparisons do not establish the historical CI
+cause and do not authorize a performance fix, timing relaxation, or scale retry.
+
+The next bounded change is opt-in CI rendering diagnostics, not a product fix.
+It projects only finite timings, closed task/thread names and explicit markers
+into bounded sidecars; arbitrary arguments, URLs, and payloads never enter the
+record. Browser-side loss and retention truncation are explicit. Failure freezes
+capture before cleanup can replace the relevant interval, and retention uses
+task end time so a long overlapping task is preserved. Healthy measurement and
+deliberate-kill timing are unchanged; first-launch trace loss at the intentional
+SIGKILL is reported as incomplete. Optional setup/transport failure does not
+replace the lifecycle verdict, and late sessions are detached. Nine focused
+tests pass; real-CDP injected-failure capture and teardown pass. Independent
+bounded re-review is clean. Its full serial source gate passes 382 files /
+3,974 tests in 370.69 seconds, full lint, production build/bundle budgets,
+backend 58 passed/1 existing ignore, syntax and diff checks. The legacy-event
+heartbeat peaks at 101.009 ms, SQL polling 1.919 ms, overlapping main GC none.
+Generated version output was restored to its committed blob. Application,
+shared/persistence, package dependencies and manual blobs remain identical to
+c2c04dca. Actual-CI diagnostic observation is still required.
+
+### Original b3fb01fa blockers
+
 Starting head `b3fb01fac43f7e3dff0a2ea8edd171ac11e4491f`, tree
 `66b6db82fee6929e73ca2ad49d8fe7a23bacf35f`, is rejected. Its macOS failure
 receipt SHA-256 is `e084ba9017ebeed4ed3da168196c523c3123e9a4bc4c2cbb6176735632201fa1`:
