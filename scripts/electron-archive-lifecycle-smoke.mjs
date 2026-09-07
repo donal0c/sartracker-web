@@ -770,7 +770,7 @@ async function seedReplayContinuationEvidence(input) {
 }
 
 /** Finalizes through the independent verifier integrated into the public preload lifecycle. */
-async function finalizeAndVerifyArchive(page, missionId, secret, onPhase) {
+export async function finalizeAndVerifyArchive(page, missionId, secret, onPhase) {
   const issuance = await page.evaluate(async (selectedMissionId) => {
     const store = window.sartrackerElectron?.missionStore
     if (store === undefined) throw new Error('Mission-store preload bridge is unavailable.')
@@ -789,10 +789,16 @@ async function finalizeAndVerifyArchive(page, missionId, secret, onPhase) {
     }
     const progressEntries = []
     const livenessTransitions = []
+    let resolveVerifiedProgress
+    const verifiedProgress = new Promise((resolve) => { resolveVerifiedProgress = resolve })
+    let progressTimeout = null
     let latestLivenessPhase = null
     const unsubscribe = bridge.onMissionArchiveProgress((progress) => {
-      if (progress.operationId === input.operationId) {
+      if (progress.operationId === input.operationId && progress.missionId === input.missionId) {
         progressEntries.push({ kind: progress.kind, phase: progress.phase })
+        if (progress.kind === 'verify' && progress.phase === 'verified') {
+          resolveVerifiedProgress()
+        }
         if ((progress.kind === 'create' || progress.kind === 'verify')
           && progress.kind !== latestLivenessPhase) {
           latestLivenessPhase = progress.kind
@@ -806,9 +812,20 @@ async function finalizeAndVerifyArchive(page, missionId, secret, onPhase) {
         passphrase: input.passphrase,
         recoveryCode: input.recoveryCode,
       })
+      // Invoke replies and progress messages use independent renderer delivery
+      // paths. Keep the subscription until the exact committed terminal arrives.
+      await Promise.race([
+        verifiedProgress,
+        new Promise((_resolve, reject) => {
+          progressTimeout = setTimeout(() => reject(new Error(
+            'Packaged independent verification returned a result without terminal verified progress within 5000 ms.',
+          )), 5_000)
+        }),
+      ])
       await Promise.all(livenessTransitions)
       return { result, progressEntries }
     } finally {
+      if (progressTimeout !== null) clearTimeout(progressTimeout)
       unsubscribe()
     }
   }, {

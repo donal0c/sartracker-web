@@ -1,131 +1,74 @@
 # HANDOFF.md — Live Baton
 
-> Read this after `CLAUDE.md`. Historical detail and exact prior receipts live
-> in `docs/breadcrumb-pr6-evidence.md` and the archived baton.
+> Read after `CLAUDE.md`. Prior evidence is retained in
+> `docs/breadcrumb-pr6-evidence.md`; older history is in `handoff/archive/`.
 
 ## Current State
 
-- PR #10 recovery remains active on the existing
-  `codex/breadcrumb-pr6-archive-lifecycle` branch for `DON-248`, `DON-252`, and
-  `DON-253`. Donal retains approval, merge, release, and team-contact authority.
-- Pushed head `20486b6c` / tree `131da068` is rejected. Its package, browser,
-  visual, and kill evidence is prior-head only; later review found correction-
-  custody races and Linux run `33954733857` was cancelled.
-- The next source tree `840947d5fcacb66c64597f85f6a434753de621a9`
-  was rejected pre-package for a correction pathname-rebind race and a lifecycle
-  terminal-consumption race.
-- Reviewed tree `91f8f3ed` was rejected pre-commit by two fixed 50 ms test waits
-  across lazy dialogs (`3,958/3,960` passed); product behavior was not implicated.
-- Its reviewed descendant `969bf644` was rejected pre-commit when the unchanged
-  25,000-row acknowledgement test exceeded Vitest's generic 5-second ceiling
-  under suite contention (`3,959/3,960` passed). At each freeze, no package or
-  deferred platform gate had run.
-- Behavioral tree `d5727b82` passed two clean bounded delta reviews and its one
-  full non-browser source cycle. Production sources and strict liveness gates
-  remain unchanged; any final status-only descendant must preserve every non-doc
-  blob from that reviewed and tested tree.
+- Existing PR #10 (`codex/breadcrumb-pr6-archive-lifecycle`, programme PR6)
+  remains open and unqualified. Fresh Astra task owns diagnosis, bounded
+  corrections, existing-PR push, and merge-readiness evidence. Donal retains
+  approval, merge, beta publication, and team-contact authority.
+- Starting/live head `b3fb01fac43f7e3dff0a2ea8edd171ac11e4491f`, tree
+  `66b6db82fee6929e73ca2ad49d8fe7a23bacf35f`, is rejected: macOS lifecycle
+  missed terminal verification progress; Linux CI `34148723233` failed the
+  legacy-event heartbeat at `200.669968 ms` (3,959/3,960 passed).
+- Work is in `/Users/donalocallaghan/.codex/worktrees/a27a/sartracker-web`.
+  The old `44b1` checkout is evidence only and its task remains retired.
 
 ## Active Work
 
-- Correction attachment mutation runs only in a cwd-bound Electron
-  `utilityProcess` authenticated by exact database-directory identity. One
-  SQLite custody plan precedes bytes; each restored attachment is an exact
-  operation-owned mode-0600 two-link pair revalidated around archive reads.
-- Correction unlock and plan removal commit atomically. Cancellation, crash,
-  failed correction, and startup recovery do not delete or rename attachment
-  residue. Reconciliation computes full byte proofs outside SQLite's writer
-  transaction, then revalidates the exact plan, mission/unlock state, directory
-  identity, and unchanged pair topology before clearing custody.
-- UtilityProcess messages are V8-cloneable and cancellation uses message plus
-  bounded termination. Completion and fallback require the same exact correction
-  operation in the terminal and durable unlock event. Any ambiguous commit or
-  residual custody is durably fenced across restart, and physical helper exit is
-  joined before correction ownership is released.
-- Lifecycle supervision now separates a short preparation gate, durable active
-  lease, parent-prepared child staging, canonical terminal inode, and durable
-  consumed record. Only the exact active lease owner may touch a terminal
-  boundary. Success is exposed only after settled child cleanup, then read back
-  and consumed before return.
-- Same-head lifecycle reuse remains forbidden. A dead consumed lease is
-  reclaimable only for a different head after its prior terminal is proved.
-  Emitted and already-observed POSIX wrapper exits must prove the complete
-  process group empty; residual groups are boundedly terminated/reaped, while
-  unproved settlement fails closed and retains child staging.
-- The Saved Mission Archives workspace tests now wait for the exact cleanup and
-  verification split modules inside React `act`; the focused file passes `14/14`
-  without arbitrary sleeps or React warnings.
-- The 25,000-row acknowledgement test retains its full semantic workload and
-  assertions with a test-local 15-second ceiling; focused green is `1/1` in
-  `1,643 ms`. Packaged liveness remains a separate strict `<200 ms` gate.
+- The real packaged collector reproducibly loses `verify:verified` when that
+  progress message arrives after the verified invoke result. A focused 25 ms
+  delivery-delay diagnostic reproduced the original closed gate; a passive
+  listener received the event later. Fix retains the exact mission/operation
+  subscription until terminal delivery, with a fail-closed 5-second timeout.
+  Product archive, verification, custody, and migration code are unchanged.
+- Five collector regressions pass, including both delivery orders, unrelated
+  identities, missing terminal, and operation failure. Focused independent
+  review is clean; real packaged delayed-delivery diagnostic passes with the
+  corrected collector. The historical receipt alone cannot identify its race.
+- Linux heartbeat cause remains unresolved. Baseline focused macOS and Ubuntu
+  tests passed; Ubuntu constrained to two CPUs peaked at `46.129 ms`, including
+  `30.671 ms` main-thread GC. The full affected file passed `73/73`; its event
+  scenario peaked at `29.141 ms`. These do not explain the historical breach.
+- The unchanged 500,000-event test now retains SQL-poll timing, process CPU,
+  and largest-gap GC diagnostics for the next CI observation. Its workload,
+  10 ms heartbeat, 5 ms polling, and strict `<200 ms` assertion remain intact.
+  Focused instrumentation review is clean.
 
-## Locked Safety Boundaries
+## Locked Boundaries
 
-- Finalized missions remain read-only. Archive revisions and supplements remain
-  immutable and indefinitely retained.
-- Cleanup is logical SQLite deletion only. It retains the mission stub, archive
-  and supplement records, non-telemetry audit events, and unknown future event
-  types. Physical compaction remains `DON-250` / `DON-251`; no operational
-  `VACUUM` is authorized.
-- Every liveness dimension remains strictly `<200 ms`; `200 ms` fails.
-- The 50 ms packaged polling profile is time-compressed validation, not a
-  production cadence. The Ubuntu greater-than-2-GiB qualifier is a separate
-  Node/SQLite scale gate, not packaged-renderer proof.
-- One packaged lifecycle attempt is permitted per frozen exact head. Rejected
-  candidates are never rerun unchanged.
+- Preserve the existing PR implementation and accepted correction/custody,
+  transaction-contention, bounded-history, and lifecycle-ownership repairs.
+- Finalized evidence and archive revisions remain immutable and retained.
+  Cleanup remains logical deletion; no operational VACUUM or erasure.
+- Every liveness dimension remains strictly `<200 ms`. A qualification
+  timeout does not change that requirement. A diagnostic pass is not release
+  or field proof; an unexplained historical failure is not harmless noise.
+- Do not retry expensive qualification blindly. Diagnostic repeats must test
+  an explicit hypothesis; the >2 GiB gate remains last after cheaper proof.
 
-## Relevant Linear Issues
+## Issues And Next Actions
 
-- `DON-248` — archive encryption, authenticity, custody, and emergency access.
-- `DON-252` — streamed encrypted archive plus exhaustive restore/verification.
-- `DON-253` — archive-backed read-only Review, revisions, and logical cleanup.
-- `DON-250` / `DON-251` — deferred oversized-store recovery and compaction.
-- `DON-254` / `DON-255` — later programme qualification/release; not this cycle.
-- `DON-247` and `DON-264` remain separate reliability work.
+- `DON-248`, `DON-252`, `DON-253`: PR6 implementation/qualification, In Progress.
+- `DON-278`: prior Replay completion does not qualify PR6's failed
+  legacy-provenance responsiveness observation.
+- Local source gates are green; Linear records are current. Commit the bounded
+  collector/diagnostic correction and fast-forward the existing PR only.
+- Bind the resulting exact head/artifact to package, Linux, browser/visual,
+  physical-kill, and finally Ubuntu >2 GiB qualification. Retain actual failure
+  observations and stop for causal investigation on a gate breach.
+- Fresh read-only Ubuntu probe passed: `Linux 7.0.0-28-generic x86_64`, about
+  29 GB available RAM and 127 GB free disk. Recheck immediately before scale
+  work; no scale run has started in this task.
 
-## Verification Snapshot
+## Verification Limit
 
-- Correction passes `8/102`; independent integration and custody/protocol audits
-  are clean at `8/137` and `7/99`, including real utility children, exact-
-  operation attribution, restart fences, exit joins, plan drift, and ABA swaps.
-- Maximum 4,096-entry committed and near-4-MiB uncommitted reconciliation held
-  the SQLite writer for `59.9-94.7 ms` across measured variants; every concurrent
-  WAL writer succeeded. Full hashing occurred outside the writer transaction.
-- The expanded matrix passes `20/628`; it caught and closed one test-only
-  UtilityProcess injection gap without a production fallback or orphan helper.
-- Lifecycle supervision passes `3/259`; its independent exact-owner/process-group
-  re-audit is clean. Earlier repair evidence is in `docs/breadcrumb-pr6-evidence.md`.
-- Tree `91f8f3ed` passed the three-model council, renderer/operator review, and
-  an independent persistence review from a separate Git archive, all with no
-  deterministic P1/P2. Its full source cycle then rejected it on the two
-  load-sensitive test waits above. The repaired focused file passes `14/14`.
-- Reviewed descendant `969bf644` then exposed only the unrelated generic timeout
-  above; its product code and tracking persistence path were unchanged.
-- Behavioral tree `d5727b82` then passed `380/380` unit files and `3,960/3,960`
-  tests in `84.33 s`, full ESLint, production build and bundle budgets, changed-
-  script Node syntax, `git diff --check`, and backend `58` passed / `1` ignored.
-  Two independent exact-tree delta reviews are clean. This is local source
-  evidence, not package, lifecycle, platform, or field proof.
-
-## Next Actions
-
-1. Commit and explicitly fast-forward only a final docs-only closure whose
-   non-doc blobs exactly match reviewed and tested tree `d5727b82` and whose
-   status delta has passed bounded independent review.
-2. Package once with `EXPECTED_SOURCE_SHA` set to the new commit, restore the
-   generated-version source blob without rebuilding, verify a clean checkout,
-   run the sole packaged lifecycle once, and validate exactly one terminal
-   success or failure artifact.
-3. Stop and report. Browser/visual, physical-kill, Linux CI, and the fresh Ubuntu
-   greater-than-2-GiB qualifier remain pending. A lifecycle pass is not merge,
-   release, field, or production qualification.
-
-## Blockers
-
-- PR #10 is not ready to merge or release. The replacement exact-head package
-  and lifecycle terminal have not yet been produced, and all deferred gates
-  remain outstanding.
-- The Ubuntu host was previously reachable as `Linux 7.0.0-28-generic x86_64`,
-  but no current qualifier has started.
-
-Archived pre-recovery baton:
-`handoff/archive/HANDOFF-history-2026-09-04-pre-pr10-recovery.md`.
+Full serial local source gate passes: 381 files / 3,965 tests in 376.36 seconds,
+full ESLint, production build/bundle budgets, affected Node syntax, diff check,
+and backend 58 passed / 1 existing ignore. The heartbeat scenario reached
+19.817 ms within that full suite. Exact-head CI, authoritative packaged
+lifecycle, browser/visual, physical-kill, and >2 GiB results remain pending. PR #10 is not
+ready to merge or release. The old stop-after-package instruction is superseded
+by Donal's fresh-task authorization to carry through merge readiness.

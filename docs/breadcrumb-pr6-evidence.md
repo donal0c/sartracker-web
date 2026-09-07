@@ -6,6 +6,63 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
+## 2026-09-07 Astra recovery of b3fb01fa
+
+Starting head `b3fb01fac43f7e3dff0a2ea8edd171ac11e4491f`, tree
+`66b6db82fee6929e73ca2ad49d8fe7a23bacf35f`, is rejected. Its macOS failure
+receipt SHA-256 is `e084ba9017ebeed4ed3da168196c523c3123e9a4bc4c2cbb6176735632201fa1`:
+two launches, 11,679 ms, only `Independent verify progress did not prove
+verified.`, complete profile/process teardown. Linux run `34148723233` failed
+only the DON-278 legacy-event heartbeat at `200.669968 ms` (3,959/3,960 tests).
+
+Finite blocker diagnosis:
+
+1. **Terminal progress collection.** The store independently verifies, commits
+   verified custody, emits `verify:verified`, and returns a verified result.
+   IPC projects the same operation/mission identity; preload accepts the phase.
+   The smoke collector unsubscribed when the invoke result and earlier liveness
+   transitions resolved, without proving terminal progress consumption. A
+   focused diagnostic on the actual packaged b3fb01fa app used the original
+   2,048-position/101-marker/101-outing seed and original collector. Delaying
+   only terminal delivery by 25 ms reproduced missing `verified` while the
+   returned archive was verified and a passive listener received the event
+   later. This establishes a collector defect; the historical receipt lacks
+   raw events proving its particular scheduling interleaving. The correction
+   waits for exact mission/operation terminal progress with a bounded timeout.
+   Five deterministic tests cover both orders, unrelated identities, missing
+   progress, and operation failure. The delayed real-package diagnostic passes
+   with the corrected collector; independent focused review is clean.
+2. **Legacy-event responsiveness.** Reconstruction runs in a worker. The
+   measured main thread polls a two-row backfill-state table every 5 ms around
+   a 10 ms heartbeat. Focused baseline macOS/Ubuntu runs pass. A two-CPU Ubuntu
+   run peaks at 46.129 ms with overlapping 30.671 ms main-thread GC; the whole
+   affected file passes 73/73, with 29.141 ms in this scenario. Instrumentation
+   did not reproduce the original 200.67 ms excursion. Its cause remains
+   unresolved, not harmless scheduling noise. The original 500,000-row fixture,
+   cadence, SQL, and `<200 ms` gate remain; diagnostics now retain polling
+   duration, process-wide CPU, and GC overlapping the largest heartbeat gap.
+   Independent review checked asynchronous GC drainage, retention, clock
+   alignment, and resource cleanup. Further CI evidence must retain attribution.
+
+No production archive, custody, or migration module changed. There is no
+operator-visible change, so manual content remains applicable. Full source and
+authoritative candidate qualification are pending. Ubuntu availability was
+confirmed read-only; no multi-GB run started. Donal's fresh-task instruction
+supersedes the historical stop-after-package sequence below and authorizes
+finishing this existing PR through truthful merge readiness, without merge or
+beta publication. A new diagnostic observation is not a retry-to-green waiver.
+
+The corrected code passed its full serial local source gate: 381 files /
+3,965 tests in 376.36 seconds, full ESLint, production build and bundle budgets,
+affected Node syntax, diff checks, and backend 58 passed / 1 existing ignore.
+The heartbeat scenario reached 19.817 ms in that suite. Verified source blobs:
+collector `9d6feb23e31dcf95ab2fa89d2793f9b966034735`, collector regressions
+`3f43e1c75755607613a475878d29aaf20792c0f0`, evidence-versioning test
+`2dc7535c4091900f4ab4e20c324b7ff584388678`. Product source blobs remain identical
+to b3fb01fa and to the previously reviewed `d5727b82` tree. Generated version
+output was restored to its committed blob after the build. Candidate package,
+CI, browser/visual, physical-kill, and >2 GiB proof remain outstanding.
+
 > This document is part of the PR #10 recovery candidate. Once source is frozen
 > and the pending gates complete, its exact final commit/tree, post-freeze gate
 > results, four independent review verdicts, Linux packaged report, and field
