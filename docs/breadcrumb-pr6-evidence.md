@@ -8,7 +8,46 @@ is intermediate. Donal retains approval and merge authority.
 
 ## 2026-09-07 Astra recovery of b3fb01fa
 
-### e6b6e3e0 gates and controlled cleanup/live-write correction
+### d392181b cleanup/live-write correction and e6b6e3e0 baseline
+
+The responsive-writer correction below is pushed as
+`d392181b3958c21948e926a6785358be91da1926`, tree
+`a1a48582881ed1caa2cf626f06ed172ebc9b901c`. Exact-head macOS lifecycle passes
+two launches in 11,060 ms: main 52.723 ms/frame 18.3 ms/current fix 27 ms.
+Canonical receipt `tmp/pr6-macos-d392181b-report.json` validates clean stable
+head/tree; SHA-256 `bae76a307bc4266f4595f8afc4027fe0cc1f8be4a9197f0837b72ad1633d73bc`,
+ASAR `006bbb73ff6fb6f3787496dca4f17815cbb58e0b706f57cd9acc7bfc1917a55a`.
+Reference Ubuntu x64, constrained to CPUs 0,1,2,3 (two physical cores/four
+SMT threads), passes two launches in 37,108 ms: main 82.513 ms/frame 123.4 ms/
+current fix 107 ms. Canonical receipt `tmp/pr6-reference-d392181b-report.json`
+validates clean stable head/tree; SHA-256
+`163009415d6a89adc1212d44752fc95175fb1af6652ab84fc15e1bbb8f0204bd`,
+ASAR `c9ca2fc756d92237efe72334aff893e2e7f11ac0e02fc4c291b1ea00038c9d55`.
+
+The same clean reference source passes the physical SIGKILL recovery matrix:
+32/32 required cases in 175,772 ms, not protocol self-test. Eligibility,
+interrupted-cleanup resume and archive-lifecycle observations pass; the
+structural digest recomputed independently matches. Receipt
+`tmp/pr6-kill-d392181b.json`, SHA-256
+`d4f7b278d1ef42325526590dcdf0b4120c42114d2e93fe73ab066a96c562206b`.
+Linux CI `34166963970` passes: all 4,018 tests/384 files in 865.36 seconds
+(legacy-event heartbeat 38.880 ms), build, 960k Replay, native SQLite/graphics,
+tracking soak, archive lifecycle, terminal evidence and launch/artifact checks.
+Its canonical lifecycle receipt validates clean exact head/tree, two launches
+in 47,010 ms (main 84.485 ms/frame 154 ms/current fix 133 ms). Receipt under
+`tmp/pr6-linux-d392181b/breadcrumb-pr6-packaged-archive-smoke/` SHA-256:
+`ec5a5315fcf845be7d008c00b2d71500456a9af20e7e5be7bfbc48200b50647d`;
+ASAR `383732bf3ca219c8dd62f242d3f4f75f2fda7c0814f4e87d46f5dd79397de31f`.
+The exact CI log is `tmp/pr6-linux-d392181b-ci.log`. The downloaded evidence
+artifact ID is `10034860114`; source gates and every required workflow step
+pass. This checkpoint changes only evidence and handoff; application/tests
+remain byte-identical to the reviewed d392 implementation. Any descendant's
+exact-head qualification receipts are recorded externally in PR #10/Linear
+after commit, avoiding a recursive documentation-head update.
+>2 GiB remains unstarted; no sound
+timing evidence places that potentially multi-hour run inside Donal's 01:00
+Dublin stop boundary. All local/reference jobs have finished. These are
+synthetic named-platform checks, not release or field proof.
 
 The canonical publication repair is pushed as
 `e6b6e3e02a80dfb6fd223fd8a36e90a6a6a1e471`, tree
@@ -95,8 +134,9 @@ note was checked in the inbuilt browser at
 reaches Vite's application fallback, so it is not the manual verification URL.
 Independent Opus screenshot review passes 74/74, zero failures/errors:
 `test-results/visual-verification/reports/visual-review-2026-09-07T22-30-21Z.json`
-and `tmp/pr6-responsive-visual-review.log`. Exact-head packaged qualification
-remains pending; >2 GiB remains unstarted. Donal requires work to stop at the first of
+and `tmp/pr6-responsive-visual-review.log`. Exact-head macOS/reference package
+and physical-kill results are recorded above; Linux CI passes and >2 GiB
+remains unstarted. Donal requires work to stop at the first of
 15% remaining account usage or 01:00 Dublin on 8 September (00:00 UTC).
 
 ### c14529e8 rejection and canonical publication race
