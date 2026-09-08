@@ -38,7 +38,7 @@ Pending means not yet resolved or verified, not an acceptance of the proposed fi
 | M-1 | Key unwrap conflates authentication and provider failures | Implemented; provider/setup errors remain distinct from authentication failure; authentication failure uses neutral credential-or-damage wording. |
 | M-2 | Credential strings outlive their necessary use | Implemented for archive creation; long-lived runner/result validation retains only non-secret identity after transfer. Managed JavaScript strings cannot be guaranteed zeroed. |
 | M-3 | Temporary key/random buffers are not cleared | Implemented; random-provider and temporary plaintext key buffers are cleared. |
-| M-4 | Remaining poll delay may bypass the minimum interval | Implemented; the configured minimum delay still applies after a slow poll or capacity wait. |
+| M-4 | Remaining poll delay may bypass the minimum interval | Reassessed: the minimum belongs to the whole cadence, not an additional cooldown after elapsed work. The normalized interval remains clamped; elapsed capacity waiting counts toward it. A deterministic 40 ms wait / 50 ms cadence regression prevents double-charging that wait. |
 | M-5 | Restart trail decimation is undocumented | Documented; restart trail caps are display limits and do not delete mission fixes. |
 | M-6 | Cleanup traverses unrelated global rowid pages | Retained deliberately; global rowid pages cap each transaction even on legacy stores without an index. Mission-scoped sorting/index construction could reintroduce long native work. Existing cursor/zero-delete regressions cover this trade-off; optimization is not required for correctness. |
 | M-7 | Completed cleanup is reprojected from mutable eligibility blockers | Implemented; completed cleanup projects from its durable proof and residue rather than current availability/credential eligibility. |
@@ -95,3 +95,22 @@ changed invariant requires it; record the reason and result here.
   All visible findings are addressed or explicitly dispositioned. The five
   omitted Medium entries remain unassessed; remote CI must also finish on the
   pushed candidate before author-side verification is called complete.
+
+### Linux continuity follow-up
+
+CI `34284048832` on `cb6e28a2` passed the full source suite, production build,
+Linux packaging, normal 960k Replay and packaged tracking. Its archive smoke
+failed during pre-cleanup Review restore on a 207 ms external current-fix gap
+(limit 200 ms). Main/frame maxima in that phase were 63.560/126.1 ms; profile
+and process cleanup completed. Preserve the rejection:
+`docs/evidence/pr6/review-remediation-cb6e28a2-linux-failure.json`.
+
+Investigation found a deterministic scheduling defect in the initial M-4 remedy:
+after a 40 ms capacity wait in a 50 ms cadence it scheduled another full 50 ms,
+delaying the next request until 90 ms. The minimum was already applied when
+normalizing the whole interval. The correction retains that minimum and counts
+elapsed waiting toward the deadline. It resumes an overdue poll without overlap
+and then returns to the normal cadence. The regression failed before correction.
+Earlier cadence tests did not exercise elapsed post-publication capacity waits.
+This is a plausible contributor to the CI gap; a new exact-candidate Linux smoke
+must pass before the CI failure is considered cleared. No gate has been relaxed.

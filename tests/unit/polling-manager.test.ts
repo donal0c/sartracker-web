@@ -3025,6 +3025,27 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('counts elapsed capacity waiting toward the minimum polling cadence [DON-252]', async () => {
+    const client = createClient()
+    const poller = createPollingManager(client, {
+      intervalMs: 50,
+      minimumIntervalMs: 50,
+      staleThresholdMs: 60_000,
+      onSnapshot: vi.fn(),
+      onCurrentSnapshot: vi.fn(),
+      waitForCurrentEvidenceCapacity: vi.fn().mockResolvedValueOnce(undefined)
+        .mockImplementationOnce(() => new Promise<void>((resolve) => setTimeout(resolve, 40)))
+        .mockResolvedValue(undefined),
+      onStatusChange: vi.fn(),
+    })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(49)
+    expect(client.getCurrentPositions).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    await poller.stop()
+  })
+
   it('publishes the current fix but waits for evidence capacity before fetching another', async () => {
     const client = createClient()
     const published = vi.fn()
@@ -3044,8 +3065,12 @@ describe('polling manager', () => {
     await vi.advanceTimersByTimeAsync(20_000)
     expect(client.getCurrentPositions).toHaveBeenCalledOnce()
     release()
-    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.advanceTimersByTimeAsync(0)
     expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(3)
     await poller.stop()
   })
 

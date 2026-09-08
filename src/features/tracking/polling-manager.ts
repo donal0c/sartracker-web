@@ -1170,7 +1170,6 @@ export function createPollingManager(
         pollIntervalMs,
         currentFixPublishedAtMs,
         monotonicNow(),
-        normalizePollingIntervalMs(1, options.minimumIntervalMs),
       ))
       requestHistoryRefresh({
         generation,
@@ -2125,19 +2124,20 @@ function calculateDurationMs(startedAt: string, completedAt: string): number {
   return Math.max(0, Date.parse(completedAt) - Date.parse(startedAt))
 }
 
-/** Keeps successful polls on cadence without overlapping an unsettled poll. */
+/** Keeps the already-clamped cadence, counting elapsed settlement without overlapping polls. */
 function calculateRemainingPollIntervalMs(
   intervalMs: number,
   startedAtMs: number,
   completedAtMs: number,
-  minimumDelayMs: number,
 ): number {
   if (!Number.isFinite(startedAtMs)
     || !Number.isFinite(completedAtMs)
     || completedAtMs < startedAtMs) {
     return intervalMs
   }
-  return Math.max(minimumDelayMs, intervalMs - (completedAtMs - startedAtMs))
+  // intervalMs already includes the configured minimum. Reapplying that minimum
+  // to the remaining delay would charge elapsed work twice and slow fresh fixes.
+  return Math.max(0, intervalMs - (completedAtMs - startedAtMs))
 }
 
 function createOverlappedFetchFrom(

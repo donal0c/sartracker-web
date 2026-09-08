@@ -85,3 +85,10 @@
   proof and limits. Push the source/evidence commits to the existing PR, then
   check CI. Visible findings are addressed/dispositioned; the five omitted
   Medium entries still require the source ledger. No merge or release.
+- Linux CI `34284048832` on pushed `cb6e28a2` passed source/build/960k/tracking,
+  but archive Review restore exceeded current-fix continuity by 7 ms (207/200).
+  The failure receipt is preserved in `docs/evidence/pr6/` and the remediation
+  ledger. A deterministic follow-up corrects M-4's extra cooldown: elapsed
+  capacity waiting counts toward the already-clamped interval. All 197 affected
+  tests, build and lint pass. Commit and smoke the corrected candidate, then
+  rerun the ordinary pushed-head CI; do not treat the rejected run as green.
