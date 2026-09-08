@@ -16,6 +16,8 @@ const { startArchiveCleanupWorker } = require(
     readonly mode: 'start' | 'resume'
     readonly operationId: string
     readonly workerPath?: string
+    readonly foregroundWriterBuffer?: SharedArrayBuffer
+    readonly onProgress?: (progress: Readonly<Record<string, unknown>>) => void
   }) => Promise<Readonly<Record<string, unknown>>>
 }
 
@@ -40,6 +42,27 @@ const request = Object.freeze({
 })
 
 describe('off-main archive cleanup worker [DON-253]', () => {
+  it('shares foreground admission with the actual worker instead of copying a stale count', async () => {
+    const foregroundWriterBuffer = new SharedArrayBuffer(4)
+    const pending = new Int32Array(foregroundWriterBuffer)
+    Atomics.store(pending, 0, 1)
+    let notifyWaiting: () => void = () => undefined
+    const waiting = new Promise<void>((resolve) => { notifyWaiting = resolve })
+    let completed = false
+    const operation = startArchiveCleanupWorker({
+      ...request,
+      foregroundWriterBuffer,
+      workerPath: path.resolve('tests/fixtures/archive-cleanup-priority-worker.cjs'),
+      onProgress: () => notifyWaiting(),
+    }).then((result) => { completed = true; return result })
+    try {
+      await waiting
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(completed).toBe(false)
+    } finally { Atomics.store(pending, 0, 0) }
+    await expect(operation).resolves.toEqual({ state: 'completed' })
+  })
+
   it('keeps the main heartbeat alive while one worker-owned transaction is busy', async () => {
     let heartbeatTicks = 0
     const heartbeat = setInterval(() => { heartbeatTicks += 1 }, 25)

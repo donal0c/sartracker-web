@@ -7,7 +7,8 @@ const BUSY_RETRY_DELAY_MS = 25
 function createResponsiveMissionWriter(database) {
   let closing = false
   let tail = Promise.resolve()
-  let pendingCount = 0
+  const pendingBuffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
+  const pending = new Int32Array(pendingBuffer)
   let fault = null
 
   /** Executes only one fully rolled-back synchronous transaction per attempt. */
@@ -65,9 +66,9 @@ function createResponsiveMissionWriter(database) {
       }
       if (closing || signal?.aborted) return Promise.reject(createCancellation())
       if (fault !== null) return Promise.reject(fault)
-      pendingCount += 1
+      Atomics.add(pending, 0, 1)
       const operation = tail.then(() => execute(callback, signal))
-      const completion = operation.finally(() => { pendingCount -= 1 })
+      const completion = operation.finally(() => { Atomics.sub(pending, 0, 1) })
       tail = completion.catch(() => undefined)
       return completion
     },
@@ -77,7 +78,9 @@ function createResponsiveMissionWriter(database) {
       return tail
     },
     /** Includes queued work so the database cannot close underneath an admitted write. */
-    get pendingCount() { return pendingCount },
+    get pendingCount() { return Atomics.load(pending, 0) },
+    /** Shared only with trusted background workers, never with the renderer. */
+    pendingBuffer,
   })
 }
 

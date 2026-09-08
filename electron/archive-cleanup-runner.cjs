@@ -14,6 +14,12 @@ const OPERATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0
 /** Starts one archive cleanup operation on a worker-owned SQLite connection. */
 function startArchiveCleanupWorker(input) {
   const request = normalizeRequest(input)
+  const foregroundWriterBuffer = input.foregroundWriterBuffer
+    ?? new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
+  if (!(foregroundWriterBuffer instanceof SharedArrayBuffer)
+    || foregroundWriterBuffer.byteLength !== Int32Array.BYTES_PER_ELEMENT) {
+    throw createFailure('ARCHIVE_CLEANUP_INPUT_INVALID')
+  }
   const workerExited = createDeferred()
   if (input.signal?.aborted === true) {
     const rejected = Promise.reject(createFailure('ARCHIVE_CLEANUP_CANCELLED'))
@@ -33,9 +39,9 @@ function startArchiveCleanupWorker(input) {
     try {
       worker = input.createWorker?.({
         workerPath: input.workerPath ?? DEFAULT_WORKER_PATH,
-        workerData: Object.freeze({ request, cancellationBuffer }),
+        workerData: Object.freeze({ request, cancellationBuffer, foregroundWriterBuffer }),
       }) ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
-        workerData: Object.freeze({ request, cancellationBuffer }),
+        workerData: Object.freeze({ request, cancellationBuffer, foregroundWriterBuffer }),
       })
     } catch {
       workerExited.resolve()

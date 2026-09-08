@@ -8,9 +8,30 @@ const { createResponsiveMissionWriter } = require('../../electron/responsive-mis
     run: <T>(callback: () => T, options?: { signal?: AbortSignal }) => Promise<T>
     close: () => Promise<void>
     readonly pendingCount: number
+    readonly pendingBuffer: SharedArrayBuffer
   }
 }
 afterEach(() => vi.useRealTimers())
+
+it('publishes admitted writes to background workers until commit or failure settles', async () => {
+  const db = new Database(':memory:')
+  const writer = createResponsiveMissionWriter(db)
+  try {
+    expect(writer.pendingBuffer).toBeInstanceOf(SharedArrayBuffer)
+    const pending = new Int32Array(writer.pendingBuffer)
+    const first = writer.run(() => {
+      expect(Atomics.load(pending, 0)).toBe(2)
+      return 'committed'
+    })
+    const second = writer.run(() => { throw new Error('failed write') })
+    const rejected = expect(second).rejects.toThrow('failed write')
+    expect(Atomics.load(pending, 0)).toBe(2)
+    await expect(first).resolves.toBe('committed')
+    await rejected
+    expect(Atomics.load(pending, 0)).toBe(0)
+    expect(writer.pendingCount).toBe(0)
+  } finally { await writer.close(); db.close() }
+})
 
 it('rolls back an owned transaction left open by a failing transaction wrapper', async () => {
   const db = new Database(':memory:')

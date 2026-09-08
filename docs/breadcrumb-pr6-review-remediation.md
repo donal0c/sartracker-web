@@ -122,3 +122,53 @@ in 10.373 s, including forced interruption/restart and matching archived Review.
 Main/current/frame maxima are 52.315/112/18.101 ms. Receipt:
 `docs/evidence/pr6/review-remediation-4b9d2ceb-20260908.json`.
 Check the current PR's Linux CI for the final remote outcome.
+
+CI `34286926496` on `d60cbc2a` again passed source/build, Linux packaging,
+960k Replay and tracking, but rejected a 200 ms archive current-fix gap. Its
+receipt is `docs/evidence/pr6/review-remediation-d60cbc2a-linux-failure.json`.
+Further full CI retries were paused for a focused four-logical-CPU reference
+diagnostic using a disposable small fixture, without opening the original
+large mission store.
+
+The bounded timing probe on diagnostic-only `e0ec1ecc` reproduced a 222 ms
+gap without render tracing: all eight evidence slots were occupied and polling
+waited for persistence. The main/frame probes remained responsive. A second
+stage probe (`78943bad`) measured median device/position database work of
+11.61/11.55 ms and diagnostic I/O of 5.23/4.29 ms. Diagnostics alone were not
+the cause. It also exposed repeated complete snapshot persistence between
+current evidence acknowledgments. The intervening `bd4fbd3` probe conflicted
+with frozen IPC properties and is invalid; none of these probes constitutes
+qualification or a production change.
+
+Source inspection and a red regression confirmed that already-acknowledged
+initial history, canonical history and restart seeds were being republished
+without an explicit non-evidence scope. The runtime therefore persisted their
+current device/fix snapshot again. Those render-only publications now carry
+`missionEvidenceId: null`, as do inactive history publications. Unpersisted
+history still retains its observation scope, and the bounded live queue still
+waits for durable acknowledgment. The two affected suites pass (165 tests).
+Focused packaged verification is pending; no responsiveness gate was relaxed.
+
+The render-only correction reduced the early-phase maxima, but the second
+launch exposed a separate cleanup writer wait: one position write took
+1,074.4 ms awaiting/performing its database work, versus 1.44 ms for diagnostics;
+main/frame gaps remained 59.9/57.7 ms. The background cleanup worker could
+reacquire SQLite between pages while the live writer was waiting to retry.
+The foreground writer now shares its admitted-write count with the trusted
+cleanup worker. Cleanup waits outside a transaction before initialization,
+each page and retries whenever that count is nonzero. Cancellation does not
+depend on the foreground queue emptying. This changes scheduling only: the
+verify/delete/commit order, page bounds and live evidence queue are unchanged.
+Unit tests cover count release on success/failure and cancellation; a real
+worker test proves the count is shared, and the genuine cleanup coordinator
+checks every boundary is offered outside a transaction. Packaged proof remains
+pending. No best-effort diagnostic durability change was needed.
+
+The same four-logical-CPU diagnostic with both corrections (`53c2946c`)
+completed both launches and the entire lifecycle without a liveness rejection.
+Maximum position-write database duration fell from 1,074.4 to 48.35 ms;
+maximum device-write database duration was 38.61 ms. The driver intentionally
+rejects diagnostic builds before generating qualification evidence. This is
+causal before/after support, not a replacement for the clean packaged smoke.
+The affected polling/runtime suites pass 165 tests; cleanup/priority/writer
+and store/runner suites pass 152 distinct tests. Build and lint pass.

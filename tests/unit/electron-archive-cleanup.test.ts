@@ -180,6 +180,7 @@ function appendCleanupEvent(
 /** Creates a genuine v13 store with two missions and one current verified archive identity. */
 async function createFixture(input: {
   readonly yieldToMain?: (db: BetterSqliteDatabase, missionId: string, archiveId: string) => Promise<void>
+  readonly yieldForForegroundWrites?: (db: BetterSqliteDatabase) => Promise<void>
   readonly yieldAfterBusyRetry?: () => Promise<void>
   readonly preparedSql?: string[]
   readonly coordinatorDbFactory?: (input: {
@@ -343,6 +344,9 @@ async function createFixture(input: {
     schemaVersion: 13,
     now: () => new Date(clock++).toISOString(),
     yieldToMain: () => input.yieldToMain?.(db, mission.id, archiveId) ?? Promise.resolve(),
+    ...(input.yieldForForegroundWrites === undefined ? {} : {
+      yieldForForegroundWrites: () => input.yieldForForegroundWrites!(db),
+    }),
     ...(input.yieldAfterBusyRetry === undefined
       ? {}
       : { yieldAfterBusyRetry: input.yieldAfterBusyRetry }),
@@ -399,6 +403,27 @@ async function createFixture(input: {
 }
 
 describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
+  it('offers foreground admission before initialization and every deletion boundary outside a transaction', async () => {
+    let admissionCount = 0
+    let progressCount = 0
+    const fixture = await createFixture({
+      yieldForForegroundWrites: async (db) => {
+        expect(db.inTransaction).toBe(false)
+        admissionCount += 1
+        // One admission initializes the journal; each subsequent admission
+        // precedes exactly one progress boundary or the final completion.
+        expect(admissionCount).toBeLessThanOrEqual(progressCount + 2)
+      },
+    })
+    try {
+      await fixture.coordinator.start(fixture.evidence, {
+        onProgress: () => { progressCount += 1 },
+      })
+      expect(progressCount).toBeGreaterThan(0)
+      expect(admissionCount).toBe(progressCount + 2)
+    } finally { fixture.db.close() }
+  })
+
   it('previews exactly the eligible live rows while excluding retained and other-mission records', async () => {
     const fixture = await createFixture()
     const { readCleanupPreview } = require('../../electron/archive-cleanup-preview.cjs') as {

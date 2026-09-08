@@ -1880,6 +1880,16 @@ describe('polling manager', () => {
       ),
     ).toEqual(expect.arrayContaining(historyPositions.map((position) => position.id)))
 
+    const persistedHistoryPublications = onSnapshot.mock.calls.filter(
+      ([snapshot]) => snapshot.breadcrumbs.some(
+        (position: { readonly id: string }) => position.id === historyPositions[0]!.id,
+      ) && snapshot.rawBreadcrumbsForPersistence.length === 0,
+    )
+    expect(persistedHistoryPublications.length).toBeGreaterThan(0)
+    for (const [, context] of persistedHistoryPublications) {
+      expect(context.missionEvidenceId).toBeNull()
+    }
+
     poller.stop()
   })
 
@@ -2123,6 +2133,7 @@ describe('polling manager', () => {
 
     const settled = onSnapshot.mock.calls.at(-1)?.[0]
     expect(settled.rawBreadcrumbsForPersistence).toEqual([])
+    expect(onSnapshot.mock.calls.at(-1)?.[1].missionEvidenceId).toBeNull()
     expect(settled.breadcrumbs.map((position: NormalizedTrackingPosition) => position.id)).toEqual(
       canonicalPositions.map((position) => position.id),
     )
@@ -3183,7 +3194,7 @@ describe('polling manager', () => {
         breadcrumbs: [],
         rawBreadcrumbsForPersistence: [],
       },
-      { historyResetKey: null, participantRosterAuthoritative: false },
+      { historyResetKey: null, missionEvidenceId: null, participantRosterAuthoritative: false },
     )
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({

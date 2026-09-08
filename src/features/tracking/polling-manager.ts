@@ -599,6 +599,7 @@ export function createPollingManager(
         }),
         {
           historyResetKey,
+          missionEvidenceId: null,
           ...(latestParticipantRosterAuthoritative
             ? {}
             : { participantRosterAuthoritative: false }),
@@ -690,9 +691,10 @@ export function createPollingManager(
     const context: TrackingSnapshotContext = {
       historyResetKey: activeHistoryResetKey,
       suppressTrackingCache: !writeTrackingCache,
-      ...(historyObservation === null
-        ? {}
-        : { missionEvidenceId: historyObservation.missionId }),
+      // Already-acknowledged history is a display update, not a fresh current fix.
+      missionEvidenceId: rawBreadcrumbsForPersistence.length === 0
+        ? null
+        : historyObservation === null ? activeHistoryResetKey : historyObservation.missionId,
       ...(latestParticipantRosterAuthoritative
         ? {}
         : { participantRosterAuthoritative: false }),
@@ -1339,6 +1341,7 @@ export function createPollingManager(
         }),
         {
           historyResetKey: request.historyResetKey,
+          missionEvidenceId: null,
           ...(latestParticipantRosterAuthoritative
             ? {}
             : { participantRosterAuthoritative: false }),
@@ -1546,6 +1549,7 @@ export function createPollingManager(
         }),
         {
           historyResetKey: activeHistoryResetKey,
+          missionEvidenceId: null,
           ...(latestParticipantRosterAuthoritative
             ? {}
             : { participantRosterAuthoritative: false }),
@@ -1554,6 +1558,7 @@ export function createPollingManager(
     } else if (pollingMode === 'idle') {
       options.onSnapshot(EMPTY_TRACKING_SNAPSHOT, {
         historyResetKey: activeHistoryResetKey,
+        missionEvidenceId: null,
         participantRosterAuthoritative: false,
       })
     }

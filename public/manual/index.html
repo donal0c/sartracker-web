@@ -703,7 +703,9 @@
           <div class="note">
             <strong>Live updates during archive cleanup:</strong> tracking saves and coverage updates
             for another mission may briefly wait for local storage while cleanup writes. The app keeps
-            processing the screen during that wait. A save that cannot complete still reports an error;
+            processing the screen during that wait. Between deletion batches, cleanup gives pending
+            live writes priority, so cleanup may take longer during sustained activity.
+            A save that cannot complete still reports an error;
             check tracking and storage warnings rather than treating an old displayed fix as a new save.
           </div>
           <p>

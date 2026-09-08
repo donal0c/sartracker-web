@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "proofKind": "packaged-electron-archive-lifecycle-failure-v1",
+  "source": {
+    "expectedHead": "d60cbc2a7fc5c1a1de5e8114e22eb8a494f4f804",
+    "headBefore": "d60cbc2a7fc5c1a1de5e8114e22eb8a494f4f804",
+    "treeBefore": "58af90f736b20ced0c849245623b80567b0f8126",
+    "worktreeCleanBefore": true
+  },
+  "run": {
+    "startedAt": "2026-09-08T23:00:37.964Z",
+    "failedAt": "2026-09-08T23:01:12.868Z",
+    "durationMs": 34904,
+    "platform": "linux",
+    "architecture": "x64",
+    "nodeVersion": "v22.23.2",
+    "observedLaunchCount": 1
+  },
+  "failure": {
+    "classification": "external_liveness_gate_failure",
+    "message": "Archive-lifecycle external watchdog recorded an instrumentation failure (current_fix_continuity_gate_breached).",
+    "archiveLifecycleDiagnostics": {
+      "activeLaunchNumber": 1,
+      "activePhase": "restore",
+      "currentFixContinuity": {
+        "auditedAtMs": 1788908465481,
+        "gapMs": 200,
+        "intervalStartedAtMs": 1788908463026,
+        "phase": "restore",
+        "previousObservedAtMs": 1788908465281
+      },
+      "currentFixTimeout": null,
+      "errorKinds": [
+        "current_fix_continuity_gate_breached"
+      ],
+      "invalidRendererFrame": null,
+      "operationCount": 1,
+      "operationOverflowCount": 0,
+      "operations": [
+        {
+          "endedAtMs": null,
+          "freshSampleCount": 19,
+          "kind": "review_before_cleanup",
+          "phase": "restore",
+          "phaseSampleCountAtStart": 1,
+          "phaseSampleDelta": 19,
+          "startSourceSequence": 188,
+          "startedAtMs": 1788908463026,
+          "endSourceSequence": null
+        }
+      ],
+      "phaseMetrics": {
+        "cleanup": {
+          "currentFixMaxGapMs": 0,
+          "mainSampleCount": 0,
+          "mainWatchdogMaxGapMs": 0,
+          "rendererFrameMaxGapMs": 0,
+          "rendererFrameSampleCount": 0,
+          "requestToRendererMaxMs": 0,
+          "sampleCount": 0,
+          "sourceToRendererMaxMs": 0
+        },
+        "create": {
+          "currentFixMaxGapMs": 158,
+          "mainSampleCount": 170,
+          "mainWatchdogMaxGapMs": 96.23834299999726,
+          "rendererFrameMaxGapMs": 169.5,
+          "rendererFrameSampleCount": 142,
+          "requestToRendererMaxMs": 47,
+          "sampleCount": 112,
+          "sourceToRendererMaxMs": 47
+        },
+        "restore": {
+          "currentFixMaxGapMs": 200,
+          "mainSampleCount": 51,
+          "mainWatchdogMaxGapMs": 68.93127699999968,
+          "rendererFrameMaxGapMs": 113.5,
+          "rendererFrameSampleCount": 35,
+          "requestToRendererMaxMs": 70,
+          "sampleCount": 20,
+          "sourceToRendererMaxMs": 70
+        },
+        "verify": {
+          "currentFixMaxGapMs": 173,
+          "mainSampleCount": 121,
+          "mainWatchdogMaxGapMs": 76.16408700000102,
+          "rendererFrameMaxGapMs": 98.30000000004657,
+          "rendererFrameSampleCount": 103,
+          "requestToRendererMaxMs": 101,
+          "sampleCount": 64,
+          "sourceToRendererMaxMs": 101
+        }
+      },
+      "rendererCdpFailure": null,
+      "rendererCurrentFixMonotonicTail": {
+        "gapMs": 154.5,
+        "phase": "restore"
+      },
+      "sourceCadence": {
+        "auditedAtMs": 1788908465493,
+        "latestAcknowledgedSequence": 207,
+        "latestEmittedAtMs": 1788908465411,
+        "latestReceivedSequence": 207,
+        "latestRequestAgeMs": 82,
+        "latestRequestStartedAtMs": 1788908465411,
+        "latestSourceAgeMs": 82,
+        "oldestPendingRequestAgeMs": null,
+        "oldestPendingSourceAgeMs": null,
+        "pendingCount": 0
+      }
+    }
+  },
+  "cleanup": {
+    "cleanupFailureCount": 0,
+    "failures": [],
+    "processCleanupCompleted": true,
+    "profileCleanupCompleted": true
+  },
+  "verdict": {
+    "passed": false
+  }
+}

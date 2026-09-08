@@ -7,6 +7,7 @@ const { parentPort, workerData, isMainThread } = require('node:worker_threads')
 const Database = require('better-sqlite3')
 
 const { createArchiveCleanupCoordinator } = require('./archive-cleanup.cjs')
+const { waitForForegroundWrites } = require('./foreground-write-priority.cjs')
 const { withPinnedCustodyFileIdentity } = require('./archive-custody-file.cjs')
 const {
   cleanupCauseClassForError,
@@ -83,6 +84,9 @@ async function runWorker() {
       schemaVersion: 13,
       now: () => new Date().toISOString(),
       yieldToMain: () => new Promise((resolve) => setImmediate(resolve)),
+      yieldForForegroundWrites: () => waitForForegroundWrites(
+        workerData.foregroundWriterBuffer, cancellationController.signal,
+      ),
       appendEvent: (missionId, eventType, timestamp, details) =>
         appendEvent(db, missionId, eventType, timestamp, details),
       ...(request.batchLimits === undefined ? {} : { batchLimits: request.batchLimits }),

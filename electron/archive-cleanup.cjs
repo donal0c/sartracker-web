@@ -103,6 +103,8 @@ function createArchiveCleanupCoordinator(options) {
     || !Number.isSafeInteger(options.schemaVersion) || options.schemaVersion < 1
     || typeof options.now !== 'function'
     || typeof options.yieldToMain !== 'function'
+    || (options.yieldForForegroundWrites !== undefined
+      && typeof options.yieldForForegroundWrites !== 'function')
     || (options.yieldAfterBusyRetry !== undefined
       && typeof options.yieldAfterBusyRetry !== 'function')
     || typeof options.appendEvent !== 'function') {
@@ -308,6 +310,7 @@ function createArchiveCleanupCoordinator(options) {
     })
     let initializeBusyRetries = 0
     while (true) {
+      await options.yieldForForegroundWrites?.()
       assertNotCancelled(execution.signal)
       try {
         withBusyTimeoutDisabled(db, () => commitWithCustody(execution, (assertCustodyUnchanged) =>
@@ -367,6 +370,7 @@ function createArchiveCleanupCoordinator(options) {
     }
     try {
       while (true) {
+        await options.yieldForForegroundWrites?.()
         assertNotCancelled(executionOptions.signal)
         let outcome
         try {

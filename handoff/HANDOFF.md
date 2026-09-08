@@ -95,3 +95,19 @@
   main/current/frame 52.315/112/18.101 ms). Receipt is in `docs/evidence/pr6/`.
   The ordinary pushed-head Linux CI remains the remote gate; do not treat the
   rejected `cb6e28a2` run as green.
+- CI `34286926496` (`d60cbc2a`) also rejected archive continuity at 200 ms;
+  source/build/960k/tracking passed. Focused reference probes confirmed a full
+  evidence queue waiting for persistence. A red regression then exposed
+  redundant current-fix writes from already-persisted history render updates.
+  Those publications now explicitly decline new evidence ownership; fresh
+  history and the live queue retain durable acknowledgment. The 165 affected
+  tests, build and lint pass. Focused packaged proof is pending. Diagnostic
+  builds are not qualification; the discarded frozen-Proxy probe is invalid.
+  Detailed timings and preserved failures are in the remediation ledger.
+- The remaining cleanup lock wait was 1,074.4 ms. Foreground admissions now
+  share a counter with cleanup, which waits outside transactions before taking
+  another boundary. Same-workload diagnostic `53c2946c` completes both launches
+  without a liveness failure; worst position-write DB duration is 48.35 ms.
+  The 317 distinct affected tests, build and lint pass. Manual explains that
+  busy live writes can slow cleanup. Clean packaged proof and PR CI are next;
+  the diagnostic run is deliberately not qualification.

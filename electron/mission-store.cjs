@@ -1753,6 +1753,7 @@ function createElectronMissionStore(options) {
       const execute = async () => {
         const operation = archiveCleanupWorkerRunner({
           databasePath,
+          foregroundWriterBuffer: responsiveWriter.pendingBuffer,
           archiveDirectory,
           archiveRelativePath: ticket.archiveRelativePath,
           expectedFileIdentity: cleanupFileIdentity,
