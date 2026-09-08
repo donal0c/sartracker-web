@@ -82,6 +82,16 @@ changed invariant requires it; record the reason and result here.
   (115 tests); the final complete run uses CI's existing `--no-file-parallelism`
   setting, preserving the 200 ms assertion. **All 4,105 tests / 394 files pass**
   in 443.06 s; the previously failing provenance heartbeat is 90.793 ms.
-- A packaged lifecycle smoke is pending because application Worker heap admission
-  changed. The previous large-fixture/physical-interruption qualification remains
+- Exact clean source `8839da776bf72fa8197c40e33b570518f92ade9c`, tree
+  `d88124ded3cb7acf4099cc8431676be1868106f2`, passes the packaged macOS arm64
+  lifecycle validator: two launches, 4,096 fixes, 202 replay objects, 101 outing
+  choices, matching Review content before/after 5,516 live-row removals, forced
+  restore interruption and clean restart recovery. Main heartbeat max 53.051 ms,
+  current-fix gap max 60 ms, renderer frame max 15.201 ms; all below 200 ms.
+  No secret matches or final plaintext residue. Receipt:
+  `docs/evidence/pr6/review-remediation-8839da77-20260908.json`.
+- The previous large-fixture/whole interruption-matrix qualification remains
   historical; this remediation does not claim fresh full-scale qualification.
+  All visible findings are addressed or explicitly dispositioned. The five
+  omitted Medium entries remain unassessed; remote CI must also finish on the
+  pushed candidate before author-side verification is called complete.

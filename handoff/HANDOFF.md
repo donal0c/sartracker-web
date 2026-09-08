@@ -76,7 +76,12 @@
   operator flows pass; all four screenshot reviews pass. Manual image updated.
 - Full source uses CI's `--no-file-parallelism`: **4,105 tests / 394 files pass**
   in 443.06 s. The unchanged 200 ms provenance timing assertion passes at
-  90.793 ms. Exact-candidate packaged lifecycle smoke remains pending.
+  90.793 ms. Exact candidate `8839da77` also passes the macOS packaged lifecycle
+  validator: two launches, 4,096 fixes, matching Review before/after cleanup,
+  forced restore interruption/restart recovery, no final plaintext residue.
+  Main/current/frame maxima 53.051/60/15.201 ms remain below 200 ms. Receipt:
+  `docs/evidence/pr6/review-remediation-8839da77-20260908.json`.
 - DON-252 remediation comment `c97ee3e6-7422-451e-b4b5-750cd40d8f1b` records current
-  proof and limits. Commit the verified source candidate, then record its
-  packaged smoke before calling visible work complete and pushing the PR update.
+  proof and limits. Push the source/evidence commits to the existing PR, then
+  check CI. Visible findings are addressed/dispositioned; the five omitted
+  Medium entries still require the source ledger. No merge or release.
