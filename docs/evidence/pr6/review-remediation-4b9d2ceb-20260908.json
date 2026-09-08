@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 2,
+  "proofKind": "packaged-electron-archive-lifecycle-v2",
+  "source": {
+    "expectedHead": "4b9d2ceb36c1c4d9d490baea2f0f49a8c985f527",
+    "headBefore": "4b9d2ceb36c1c4d9d490baea2f0f49a8c985f527",
+    "headAfter": "4b9d2ceb36c1c4d9d490baea2f0f49a8c985f527",
+    "treeBefore": "9370603032faa1b4cadd317cc70c9ce08688b036",
+    "treeAfter": "9370603032faa1b4cadd317cc70c9ce08688b036",
+    "worktreeCleanBefore": true,
+    "worktreeCleanAfter": true,
+    "packagedExecutableSha256": "f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf",
+    "packagedApplicationArchiveSha256": "4000329d0373b40ef5e950958395ba6e2ebc6d8f864c7e7c8db7c65d22a46429",
+    "packagedBuildHeadMatched": true
+  },
+  "run": {
+    "startedAt": "2026-09-08T22:37:02.414Z",
+    "finishedAt": "2026-09-08T22:37:12.787Z",
+    "durationMs": 10373,
+    "platform": "darwin",
+    "architecture": "arm64",
+    "nodeVersion": "v22.22.3",
+    "launchCount": 2,
+    "observedLaunchExitCount": 2
+  },
+  "mission": {
+    "missionId": "aca4394c-e749-49a4-b418-64701250e6cf",
+    "missionNameSha256": "19838c80b6e3fc71cddf8d34e4b8a21fb15563196bce4d33067e269449fd4978",
+    "createdStatus": "active",
+    "finishedStatus": "finished",
+    "finalizedStatus": "finalized",
+    "seededOutingChoices": 101,
+    "seededPositionRows": 4096,
+    "seededReplayObjectRows": 202
+  },
+  "archive": {
+    "archiveId": "61e78b2c-17f8-47dd-bd81-c20184d2a226",
+    "containerVersion": 2,
+    "statusAfterFinalize": "verified",
+    "statusAfterIndependentVerify": "verified",
+    "availability": "present",
+    "ciphertextSha256": "470a57e4c73a989e95072e2b2e9335f887ae05ddbddef4478401094377179025",
+    "sizeBytes": 5808900,
+    "createProgressPhases": [
+      "attachments",
+      "digest",
+      "encrypt",
+      "extract",
+      "plaintext_cleanup",
+      "preflight",
+      "proof",
+      "publish",
+      "seal",
+      "snapshot",
+      "sqlite",
+      "staged",
+      "sync"
+    ],
+    "verifyProgressPhases": [
+      "attachments",
+      "decrypt",
+      "entries",
+      "gpx",
+      "inventory",
+      "keys",
+      "plaintext_cleanup",
+      "preflight",
+      "proof",
+      "replay",
+      "sqlite",
+      "verified"
+    ]
+  },
+  "reviewBeforeCleanup": {
+    "opened": true,
+    "immutable": true,
+    "verified": true,
+    "plaintextResidual": "permission_restricted_session_open",
+    "contentSha256": "02d4bc2ab27bc64f9303d1554b8ca847617a0976db29608873458e6929f5296d",
+    "archiveIdMatched": true,
+    "readMissionIdMatched": true,
+    "breadcrumbCount": 4096,
+    "replayObjectCount": 202,
+    "replayOutingFilterCount": 101,
+    "replayTrackCount": 4096,
+    "openResidualFileCount": 1,
+    "openDirectoriesOwnerOnly": true,
+    "openFilesOwnerOnly": true,
+    "openPrivacyCanaryDetected": true,
+    "mutationAttempt": "upsertMarker",
+    "mutationBoundary": "preload_read_only",
+    "mutationDenied": true,
+    "denialAudited": true,
+    "closed": true,
+    "residualEntriesAfterClose": 0
+  },
+  "interruptedRestore": {
+    "supported": true,
+    "progressTriggered": true,
+    "triggerPhase": "decrypt",
+    "killSignalRequested": "SIGKILL",
+    "exitSignal": "SIGKILL",
+    "residualEntriesBeforeRestart": 2,
+    "plaintextFileObservedBeforeRestart": true,
+    "privacyCanaryDetectedBeforeRestart": true,
+    "restartSweepCompleted": true,
+    "residualEntriesAfterRestart": 0
+  },
+  "cleanup": {
+    "eligibilityChecked": true,
+    "eligibleBeforeCredential": false,
+    "freshCredentialOnlyBlocker": true,
+    "completed": true,
+    "storageState": "archived",
+    "movedRows": 5516,
+    "remainingBreadcrumbRows": 0
+  },
+  "reviewAfterCleanup": {
+    "opened": true,
+    "immutable": true,
+    "verified": true,
+    "plaintextResidual": "permission_restricted_session_open",
+    "contentSha256": "02d4bc2ab27bc64f9303d1554b8ca847617a0976db29608873458e6929f5296d",
+    "archiveIdMatched": true,
+    "readMissionIdMatched": true,
+    "breadcrumbCount": 4096,
+    "replayObjectCount": 202,
+    "replayOutingFilterCount": 101,
+    "replayTrackCount": 4096,
+    "openResidualFileCount": 1,
+    "openDirectoriesOwnerOnly": true,
+    "openFilesOwnerOnly": true,
+    "openPrivacyCanaryDetected": true,
+    "mutationAttempt": "upsertMarker",
+    "mutationBoundary": "preload_read_only",
+    "mutationDenied": true,
+    "denialAudited": true,
+    "closed": true,
+    "residualEntriesAfterClose": 0
+  },
+  "liveness": {
+    "provenance": "packaged-electron-external-watchdog-v1",
+    "hardGateMs": 200,
+    "pollProfile": {
+      "mode": "time-compressed-validation",
+      "intervalMs": 50
+    },
+    "byPhase": {
+      "create": {
+        "sampleCount": 202,
+        "currentFixMaxGapMs": 26,
+        "sourceToRendererMaxMs": 9,
+        "requestToRendererMaxMs": 9,
+        "mainWatchdogMaxGapMs": 51.572791999999936,
+        "rendererFrameMaxGapMs": 13.199999928474426
+      },
+      "verify": {
+        "sampleCount": 104,
+        "currentFixMaxGapMs": 19,
+        "sourceToRendererMaxMs": 11,
+        "requestToRendererMaxMs": 11,
+        "mainWatchdogMaxGapMs": 51.87762500000008,
+        "rendererFrameMaxGapMs": 14.100000023841858
+      },
+      "restore": {
+        "sampleCount": 164,
+        "currentFixMaxGapMs": 112,
+        "sourceToRendererMaxMs": 15,
+        "requestToRendererMaxMs": 15,
+        "mainWatchdogMaxGapMs": 52.31474999999955,
+        "rendererFrameMaxGapMs": 18.100000023841858
+      },
+      "cleanup": {
+        "sampleCount": 68,
+        "currentFixMaxGapMs": 95,
+        "sourceToRendererMaxMs": 6,
+        "requestToRendererMaxMs": 6,
+        "mainWatchdogMaxGapMs": 51.6456249999992,
+        "rendererFrameMaxGapMs": 12.899999976158142
+      }
+    }
+  },
+  "privacy": {
+    "secretsProvidedOnlyViaPreload": true,
+    "secretsAbsentFromProcessArguments": true,
+    "secretsAbsentFromEvidence": true,
+    "exactSecretScanFiles": 63,
+    "exactSecretMatches": 0,
+    "plaintextResidueEntriesAtEnd": 0
+  },
+  "verdict": {
+    "passed": true,
+    "failureReasons": []
+  }
+}

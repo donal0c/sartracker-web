@@ -82,13 +82,16 @@
   Main/current/frame maxima 53.051/60/15.201 ms remain below 200 ms. Receipt:
   `docs/evidence/pr6/review-remediation-8839da77-20260908.json`.
 - DON-252 remediation comment `c97ee3e6-7422-451e-b4b5-750cd40d8f1b` records current
-  proof and limits. Push the source/evidence commits to the existing PR, then
-  check CI. Visible findings are addressed/dispositioned; the five omitted
+  proof and limits. Check CI against the current PR head before claiming remote
+  verification. Visible findings are addressed/dispositioned; the five omitted
   Medium entries still require the source ledger. No merge or release.
 - Linux CI `34284048832` on pushed `cb6e28a2` passed source/build/960k/tracking,
   but archive Review restore exceeded current-fix continuity by 7 ms (207/200).
   The failure receipt is preserved in `docs/evidence/pr6/` and the remediation
   ledger. A deterministic follow-up corrects M-4's extra cooldown: elapsed
   capacity waiting counts toward the already-clamped interval. All 197 affected
-  tests, build and lint pass. Commit and smoke the corrected candidate, then
-  rerun the ordinary pushed-head CI; do not treat the rejected run as green.
+  tests, build and lint pass. Corrected source `4b9d2ceb` passes its exact macOS
+  package smoke (two launches, forced interruption/restart, matching Review;
+  main/current/frame 52.315/112/18.101 ms). Receipt is in `docs/evidence/pr6/`.
+  The ordinary pushed-head Linux CI remains the remote gate; do not treat the
+  rejected `cb6e28a2` run as green.

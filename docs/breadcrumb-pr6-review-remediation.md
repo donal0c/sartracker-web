@@ -114,3 +114,11 @@ and then returns to the normal cadence. The regression failed before correction.
 Earlier cadence tests did not exercise elapsed post-publication capacity waits.
 This is a plausible contributor to the CI gap; a new exact-candidate Linux smoke
 must pass before the CI failure is considered cleared. No gate has been relaxed.
+
+The correction is commit `4b9d2ceb36c1c4d9d490baea2f0f49a8c985f527`, tree
+`9370603032faa1b4cadd317cc70c9ce08688b036`. All 197 affected tests, build and lint
+pass. Its exact clean macOS package passes the same two-launch lifecycle smoke
+in 10.373 s, including forced interruption/restart and matching archived Review.
+Main/current/frame maxima are 52.315/112/18.101 ms. Receipt:
+`docs/evidence/pr6/review-remediation-4b9d2ceb-20260908.json`.
+Check the current PR's Linux CI for the final remote outcome.
