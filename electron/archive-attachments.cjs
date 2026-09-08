@@ -10,6 +10,8 @@ const {
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const MAX_REFERENCE_JSON_BYTES = 2 * 1024 * 1024
+const MAX_REFERENCE_LEDGER_BYTES = 4 * 1024 * 1024
+const MAX_REFERENCE_COUNT = 100_000
 const READ_CHUNK_BYTES = 64 * 1024
 const FILE_ACCESS_MODE_MASK = 0o7777n
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
@@ -128,13 +130,21 @@ function normalizeRestoredAttachmentPath(value, missionId) {
 }
 
 /** Adds one evidence reference while retaining its independent provenance. */
-function addReference(records, input) {
+function addReference(records, input, budget) {
   if (input.path === null || input.path === undefined || input.path === '') return
-  if (typeof input.path !== 'string') {
+  if (typeof input.path !== 'string' || Buffer.byteLength(input.path, 'utf8') > 4096
+    || typeof input.referenceId !== 'string' || Buffer.byteLength(input.referenceId, 'utf8') > 200) {
     throw new ArchiveAttachmentError(
       'ARCHIVE_ATTACHMENT_INVALID',
       'Mission archive attachment reference has an invalid path.',
     )
+  }
+  budget.count += 1
+  budget.bytes += Buffer.byteLength(input.referenceId, 'utf8') + 128
+    + (records.has(input.path) ? 0 : Buffer.byteLength(input.path, 'utf8'))
+    + (input.custody === undefined ? 0 : 512)
+  if (budget.count > MAX_REFERENCE_COUNT || budget.bytes > MAX_REFERENCE_LEDGER_BYTES) {
+    throw new ArchiveAttachmentError('ARCHIVE_ATTACHMENT_REFERENCE_LIMIT', 'Mission archive attachment references exceed the bounded custody ledger limit.')
   }
   const record = records.get(input.path) ?? { path: input.path, references: [], custody: [] }
   record.references.push(Object.freeze({
@@ -177,30 +187,34 @@ function readCustodyV2(details, missionId, attachmentPath) {
 /** Enumerates every current, immutable-version and audit attachment reference. */
 function enumerateReferences(db, missionId) {
   const records = new Map()
-  const markers = db.prepare(`SELECT id, attachment_path FROM markers
+  const budget = { count: 0, bytes: 0 }
+  const markers = db.prepare(`SELECT CASE WHEN length(CAST(id AS BLOB)) <= 200 THEN id ELSE NULL END AS id,
+    CASE WHEN length(CAST(attachment_path AS BLOB)) <= 4096 THEN attachment_path ELSE 0 END AS attachment_path FROM markers
     WHERE mission_id = ? AND attachment_path IS NOT NULL AND attachment_path != ''
-    ORDER BY id`).all(missionId)
+    ORDER BY id`).iterate(missionId)
   for (const marker of markers) {
     addReference(records, {
       path: marker.attachment_path,
       referenceKind: 'marker',
       referenceId: marker.id,
-    })
+    }, budget)
   }
-  const versions = db.prepare(`SELECT id, state_json FROM mission_object_versions
+  const versions = db.prepare(`SELECT CASE WHEN length(CAST(id AS BLOB)) <= 200 THEN id ELSE NULL END AS id,
+    CASE WHEN length(CAST(state_json AS BLOB)) <= ${MAX_REFERENCE_JSON_BYTES} THEN state_json ELSE NULL END AS state_json FROM mission_object_versions
     WHERE mission_id = ? AND object_type = 'marker'
-    ORDER BY object_id, version_sequence, id`).all(missionId)
+    ORDER BY object_id, version_sequence, id`).iterate(missionId)
   for (const version of versions) {
     const state = parseReferenceJson(version.state_json, 'marker-version evidence')
     addReference(records, {
       path: state.attachment_path,
       referenceKind: 'marker_version',
       referenceId: version.id,
-    })
+    }, budget)
   }
-  const events = db.prepare(`SELECT id, event_type, details_json FROM mission_events
+  const events = db.prepare(`SELECT CASE WHEN length(CAST(id AS BLOB)) <= 200 THEN id ELSE NULL END AS id, event_type,
+    CASE WHEN length(CAST(details_json AS BLOB)) <= ${MAX_REFERENCE_JSON_BYTES} THEN details_json ELSE NULL END AS details_json FROM mission_events
     WHERE mission_id = ? AND event_type IN (?, ?, ?, ?)
-    ORDER BY timestamp, rowid`).all(missionId, ...ATTACHMENT_EVENT_TYPES)
+    ORDER BY timestamp, rowid`).iterate(missionId, ...ATTACHMENT_EVENT_TYPES)
   for (const event of events) {
     const details = parseReferenceJson(event.details_json, 'attachment audit evidence')
     if (event.event_type === 'marker_attachment_ingested'
@@ -219,7 +233,7 @@ function enumerateReferences(db, missionId) {
       referenceKind: event.event_type,
       referenceId: event.id,
       custody,
-    })
+    }, budget)
   }
   return records
 }

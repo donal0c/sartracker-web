@@ -298,6 +298,25 @@ describe('archive restore runner', () => {
     }
   })
 
+  it('propagates unresolved descriptor ownership through physical-exit completion', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'archive-close-fault-'))
+    const actualHandle = await open(path.join(root, 'private.sqlite'), 'w+')
+    let fd = actualHandle.fd
+    databaseFileHandle = { get fd() { return fd }, close: vi.fn(async () => {
+      fd = -1
+      throw new Error('detached close failure')
+    }) }
+    try {
+      const operation = startArchiveRestore({ request: restoreRequest(), secret: SECRET,
+        cancelGraceMs: 30_000, WorkerClass: FakeWorker })
+      worker().emit('message', restoreComplete({ extra: 'invalid' }))
+      await expect(operation).rejects.toMatchObject({ code: 'ARCHIVE_RESTORE_FAILED' })
+      worker().emit('exit', 1)
+      await expect(operation.workerExited).rejects.toMatchObject({ code: 'ARCHIVE_REVIEW_DESCRIPTOR_CLEANUP_FAILED' })
+      expect((await actualHandle.stat()).isFile()).toBe(true)
+    } finally { await actualHandle.close(); await rm(root, { recursive: true, force: true }) }
+  })
+
   it('rejects substituted operation, archive, session, mission, path, and attachment envelopes', async () => {
     const substitutions = [
       { operationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },

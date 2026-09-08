@@ -149,7 +149,7 @@ describe('archive correction custody recovery runner', () => {
     await expect(operation.workerExited).resolves.toBeUndefined()
   })
 
-  it('reconciles SQLite custody without deleting an uncommitted exact pair', async () => {
+  it.each(['pair', 'peer', 'absent'])('reclaims uncommitted %s residue before clearing its durable custody plan', async (residue) => {
     const root = mkdtempSync(path.join(tmpdir(), 'sartracker-correction-recovery-utility-'))
     roots.push(root)
     const missionId = '11111111-1111-4111-8111-111111111111'
@@ -217,8 +217,8 @@ describe('archive correction custody recovery runner', () => {
     const [entry] = plan.entries
     const peerPath = path.join(attachmentRoot, entry.peerName)
     const targetPath = path.join(attachmentRoot, entry.targetName)
-    writeFileSync(peerPath, bytes, { mode: 0o600 })
-    linkSync(peerPath, targetPath)
+    if (residue !== 'absent') writeFileSync(peerPath, bytes, { mode: 0o600 })
+    if (residue === 'pair') linkSync(peerPath, targetPath)
     writeCorrectionAttachmentCustody(database, plan)
     database.close()
 
@@ -232,8 +232,8 @@ describe('archive correction custody recovery runner', () => {
     const reopened = new Database(databasePath)
     expect(readCorrectionAttachmentCustody(reopened)).toBeNull()
     reopened.close()
-    expect(lstatSync(targetPath).nlink).toBe(2)
-    expect(lstatSync(peerPath).ino).toBe(lstatSync(targetPath).ino)
+    expect(() => lstatSync(targetPath)).toThrow(/ENOENT/)
+    expect(() => lstatSync(peerPath)).toThrow(/ENOENT/)
   })
 })
 

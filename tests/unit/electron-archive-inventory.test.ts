@@ -80,6 +80,7 @@ type ArchiveInventoryModule = {
     db: BetterSqliteDatabase,
     input: {
       readonly tableName: string
+      readonly missionId?: string
       readonly schemaVersion?: number
       readonly declarations?: readonly ArchiveInventoryEntry[]
       readonly isCancelled?: () => boolean
@@ -560,6 +561,29 @@ describe('deterministic table content digest', () => {
     } finally {
       fixture.close()
     }
+  })
+
+  it('rejects foreign and excluded rows while verifying an otherwise digestible archived table', () => {
+    const fixture = createMigratedV12Database()
+    try {
+      fixture.db.exec('CREATE TABLE scope_probe (id INTEGER PRIMARY KEY, mission_id TEXT, value TEXT)')
+      fixture.db.prepare('INSERT INTO scope_probe VALUES (?, ?, ?)').run(1, 'mission-a', 'allowed')
+      const input = {
+        tableName: 'scope_probe', schemaVersion: 12,
+        declarations: [...ARCHIVE_TABLE_INVENTORY, createProbeDeclaration('scope_probe')],
+      }
+      const baseline = computeArchivedTableContentDigest(fixture.db, input)
+      expect(computeArchivedTableContentDigest(fixture.db, { ...input, missionId: 'mission-a' })).toEqual(baseline)
+      fixture.db.prepare('INSERT INTO scope_probe VALUES (?, ?, ?)').run(2, 'mission-b', 'foreign')
+      expect(() => computeArchivedTableContentDigest(fixture.db, { ...input, missionId: 'mission-a' }))
+        .toThrow(/scope/iu)
+      expect(() => computeArchivedTableContentDigest(fixture.db, {
+        ...input, missionId: 'mission-a', declarations: [...ARCHIVE_TABLE_INVENTORY, {
+          tableName: 'scope_probe', decision: 'operational_excluded', sinceSchemaVersion: 12,
+          reason: 'Test excluded state', retentionPath: 'Live database only',
+        }],
+      })).toThrow(/scope/iu)
+    } finally { fixture.close() }
   })
 
   it('is stable, exhaustive, mission-scoped and changes for mutation or deletion', () => {

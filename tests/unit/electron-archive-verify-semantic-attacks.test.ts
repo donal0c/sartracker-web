@@ -532,6 +532,35 @@ describe('mission archive semantic substitution attacks', () => {
     )
   }, 90_000)
 
+  it.each(['metadata', 'legacy_gpx_backfill_state'])(
+    'rejects self-consistent encrypted out-of-scope content in %s', async (tableName) => {
+      const fixture = await createArchiveFixture()
+      const { entries, header } = await readFixtureEntries(fixture)
+      const sqliteEntry = entries.find((entry) => entry.name === 'mission-store.sqlite')!
+      const manifestEntry = entries.find((entry) => entry.name === 'manifest.json')!
+      const databasePath = path.join(fixture.userDataPath, 'scope-attack.sqlite')
+      writeFileSync(databasePath, sqliteEntry.bytes)
+      const db = new Database(databasePath)
+      if (tableName === 'metadata') db.prepare('INSERT INTO metadata VALUES (?, ?)').run('foreign-private-state', 'private')
+      else db.exec("INSERT INTO legacy_gpx_backfill_state VALUES (1, 0, 0, '2026-08-29T19:00:00.000Z')")
+      const { computeArchivedTableContentDigest } = require('../../electron/archive-inventory.cjs')
+      const digest = computeArchivedTableContentDigest(db, { tableName, schemaVersion: 13 })
+      db.close()
+      const bytes = readFileSync(databasePath)
+      const manifest = parseCanonicalJson(manifestEntry.bytes, 'test manifest') as ArchiveManifest
+      const changed = { ...manifest,
+        tables: (manifest.tables as readonly Record<string, unknown>[]).map((table) => table.table_name === tableName
+          ? { ...table, row_count: digest.rowCount, content_sha256: digest.contentSha256 } : table),
+        entries: manifest.entries.map((entry) => entry.name === 'mission-store.sqlite'
+          ? { ...entry, sha256: createHash('sha256').update(bytes).digest('hex'), size_bytes: bytes.length } : entry),
+      }
+      const attacked = await writeReencryptedAttack(fixture, header, `scope-${tableName}`, entries.map((entry) =>
+        entry.name === 'mission-store.sqlite' ? { ...entry, bytes }
+          : entry.name === 'manifest.json' ? { ...entry, bytes: Buffer.from(canonicalJson(changed)) } : entry))
+      await expectRejectedWithoutPlaintext(fixture, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attacked, 'ARCHIVE_VERIFY_SCOPE_MISMATCH')
+    }, 90_000)
+
   it('rejects a validly encrypted extra logical entry outside the closed manifest inventory', async () => {
     const fixture = await createArchiveFixture()
     const { entries, header } = await readFixtureEntries(fixture)

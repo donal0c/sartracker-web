@@ -103,7 +103,8 @@ describe('archive-backed Mission Review workspace safety [DON-253 / BCP-16]', ()
   let host: HTMLDivElement
   let root: Root
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await import('../../src/features/mission-review/mission-archive-review-operator-ui')
     globalThis.IS_REACT_ACT_ENVIRONMENT = true
     host = document.createElement('div')
     document.body.append(host)
@@ -232,6 +233,8 @@ describe('archive-backed Mission Review workspace safety [DON-253 / BCP-16]', ()
       eligibility: {
         eligible: false,
         startableWithCredential: true,
+        preview: { missionId: FINALIZED_LIVE_MISSION.id, totalRows: 12,
+          tables: [{ tableName: 'positions', rowCount: 12 }] },
         blockers: ['fresh_non_machine_unlock_required'],
         storageState: 'live',
       },

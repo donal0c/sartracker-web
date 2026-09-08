@@ -1345,6 +1345,8 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         eligible: false,
         startableWithCredential: uniqueBlockers.length === 1
           && uniqueBlockers[0] === 'fresh_non_machine_unlock_required',
+        preview: { missionId: input.missionId, totalRows: countBrowserSyntheticMissionRows(state, input.missionId),
+          tables: readBrowserSyntheticMissionRowCounts(state, input.missionId) },
         blockers: uniqueBlockers,
         storageState: 'live',
       }
@@ -4214,26 +4216,23 @@ function countBrowserSyntheticMissionRows(
   state: BrowserHarnessState,
   missionId: string,
 ): number {
-  const missionScopedCollections: readonly (readonly { readonly mission_id: string }[])[] = [
-    state.devices,
-    state.positions,
-    state.outings,
-    state.missionTeams,
-    state.missionParticipants,
-    state.groupMembershipEvents,
-    state.participantBackfillCheckpoints,
-    state.markers,
-    state.drawings,
-    state.helicopters,
-    state.gpxImports,
-    state.searchAreas,
-    state.searchAssignments,
-    state.searchPasses,
-  ]
-  return missionScopedCollections.reduce(
-    (total, rows) => total + rows.filter((row) => row.mission_id === missionId).length,
-    0,
-  )
+  return readBrowserSyntheticMissionRowCounts(state, missionId)
+    .reduce((total, entry) => total + entry.rowCount, 0)
+}
+
+/** Mirrors the synthetic cleanup's mission-scoped collections for its confirmation preview. */
+function readBrowserSyntheticMissionRowCounts(state: BrowserHarnessState, missionId: string) {
+  const collections: Readonly<Record<string, readonly { readonly mission_id: string }[]>> = {
+    devices: state.devices, positions: state.positions, outings: state.outings,
+    mission_teams: state.missionTeams, mission_participants: state.missionParticipants,
+    mission_group_membership_events: state.groupMembershipEvents,
+    participant_backfill_checkpoints: state.participantBackfillCheckpoints,
+    markers: state.markers, drawings: state.drawings, helicopters: state.helicopters,
+    gpx_track_imports: state.gpxImports, search_areas: state.searchAreas,
+    search_assignments: state.searchAssignments, search_passes: state.searchPasses,
+  }
+  return Object.entries(collections).map(([tableName, rows]) => ({ tableName,
+    rowCount: rows.filter((row) => row.mission_id === missionId).length }))
 }
 
 /**

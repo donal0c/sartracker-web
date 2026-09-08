@@ -16,6 +16,28 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
+
+it('streams and bounds untrusted attachment references before retaining the full ledger', () => {
+  let rowsRead = 0
+  const db = {
+    exec: () => undefined,
+    close: () => undefined,
+    prepare: (sql: string) => ({
+      run: () => undefined,
+      all: () => { throw new Error('Unbounded reference allocation attempted') },
+      *iterate() {
+        if (!sql.includes('FROM markers')) return
+        for (let index = 0; index < 100_000; index += 1) {
+          rowsRead += 1
+          yield { id: `marker-${index}`, attachment_path: `/missions/mission-a/attachments/${'x'.repeat(3900)}-${index}.jpg` }
+        }
+      },
+    }),
+  }
+  expect(() => readArchiveAttachmentReferenceLedger({ db, databasePath: '/scratch/mission.sqlite', missionId: 'mission-a', restored: true }))
+    .toThrow(expect.objectContaining({ code: 'ARCHIVE_ATTACHMENT_REFERENCE_LIMIT' }))
+  expect(rowsRead).toBeLessThan(2000)
+})
 const {
   correctionAttachmentPeerName,
 } = require('../../electron/archive-correction-custody.cjs') as {

@@ -25,6 +25,7 @@ const SWEEP_DIRECTORY = /^\.sweep-([0-9a-f-]{36})$/u
 const SWEEP_LINK_A = /^\.sweep-link-a-([0-9a-f-]{36})$/u
 const SWEEP_LINK_B = /^\.sweep-link-b-([0-9a-f-]{36})$/u
 const MAX_PENDING_MUTATION_DENIALS = 128
+const MAX_SESSION_MUTATION_DENIALS = 32
 
 /** Stable main-isolate archive review session failure. */
 class ArchiveReviewSessionError extends Error {
@@ -208,6 +209,8 @@ function normalizeReviewTicket(ticket, request) {
   if (request.containerVersion === 1) {
     if (ticket?.archiveId !== request.archiveId
       || ticket.containerVersion !== 1
+      || typeof ticket.expectedArchiveSha256 !== 'string' || !SHA256.test(ticket.expectedArchiveSha256)
+      || !Number.isSafeInteger(ticket.expectedArchiveSizeBytes) || ticket.expectedArchiveSizeBytes < 1
       || !['sealed', 'superseded'].includes(ticket.status)
       || ticket.availability !== 'present'
       || typeof ticket.archiveRelativePath !== 'string'
@@ -877,6 +880,12 @@ function createArchiveReviewSessionManager(options) {
 
   /** Durably audits one denied mutation without losing any earlier unaudited denial. */
   function auditMutationDenied(session, senderId, attemptedMethod, boundary) {
+    if (session.mutationDenialCount >= MAX_SESSION_MUTATION_DENIALS) {
+      throw new ArchiveReviewSessionError(
+        'ARCHIVE_REVIEW_MUTATION_AUDIT_LIMIT',
+        'Archive Review refused further mutation requests after its session audit limit. Close and reopen Review to start a new session.',
+      )
+    }
     if (session.pendingMutationDenials.length >= MAX_PENDING_MUTATION_DENIALS) {
       flushPendingMutationDenials(session)
     }
@@ -886,6 +895,7 @@ function createArchiveReviewSessionManager(options) {
         'Archive review mutation audit backlog is full and blocks further review.',
       )
     }
+    session.mutationDenialCount += 1
     session.pendingMutationDenials.push(Object.freeze({
       senderId,
       sessionId: session.internal.sessionId,
@@ -939,7 +949,6 @@ function createArchiveReviewSessionManager(options) {
     const attempt = (async () => {
       await Promise.resolve(opening.operation).catch(() => undefined)
       await Promise.resolve(opening.operation.workerExited ?? opening.operation)
-        .catch(() => undefined)
       await cleanupOpening(opening)
     })()
     opening.cancelPromise = attempt
@@ -1079,6 +1088,10 @@ function createArchiveReviewSessionManager(options) {
 
     /** Authenticates, restores and opens one path-free sender-owned read session. */
     async open(input) {
+      if (process.platform !== 'darwin' && process.platform !== 'linux') {
+        throw new ArchiveReviewSessionError('ARCHIVE_REVIEW_PLATFORM_UNSUPPORTED',
+          'Archive Review is not available on this platform.')
+      }
       assertOpenAllowed()
       assertArchiveReviewCustodySeparationSync(
         reviewRoot,
@@ -1134,6 +1147,8 @@ function createArchiveReviewSessionManager(options) {
               archivePath: path.join(archiveDirectory, ticket.archiveRelativePath),
               sessionDirectory: expectedSessionDirectory,
               expectedMissionId: ticket.missionId,
+              expectedArchiveSha256: ticket.expectedArchiveSha256,
+              expectedArchiveSizeBytes: ticket.expectedArchiveSizeBytes,
             },
             ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
           })
@@ -1224,6 +1239,7 @@ function createArchiveReviewSessionManager(options) {
           internal,
           source,
           pendingMutationDenials: [],
+          mutationDenialCount: 0,
         }
         opening.cleanupSource = null
         clearOpening = true
@@ -1247,7 +1263,7 @@ function createArchiveReviewSessionManager(options) {
         })
       } catch (error) {
         if (opening.cancelled || closing) throw error
-        await Promise.resolve(operation.workerExited ?? operation).catch(() => undefined)
+        await Promise.resolve(operation.workerExited ?? operation)
         await cleanupOpening(opening)
         clearOpening = true
         throw error
@@ -1548,6 +1564,16 @@ function createArchiveReviewSessionManager(options) {
         )
         await assertReviewRootSafe(reviewRoot, reviewRootIdentity)
         const entryPath = path.join(reviewRoot, entry.name)
+        // Finder can create this ordinary metadata file when an operator inspects
+        // the app-owned directory. Remove only this exact file, never follow links.
+        if (entry.name === '.DS_Store') {
+          const metadata = fsSync.lstatSync(entryPath)
+          if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
+            throw createPlaintextCleanupFailure()
+          }
+          fsSync.unlinkSync(entryPath)
+          continue
+        }
         const sweepMatch = SWEEP_DIRECTORY.exec(entry.name)
         const sweepLinkMatch = SWEEP_LINK_A.exec(entry.name) ?? SWEEP_LINK_B.exec(entry.name)
         const supportedSessionName = UUID_V4.test(entry.name)

@@ -22,7 +22,7 @@ const OPERATION_ID = '11111111-1111-4111-8111-111111111111'
 const MISSION_NAME = 'Glen Rescue 42'
 const PASSPHRASE = 'Four calm words 2026!'
 const RECOVERY_CODE = '01234-56789-ABCDE-FGHJK-MNPQR-STVWX-YZ012-34567'
-const WARNING = 'bulk evidence rows for this mission move out of the live database; the mission remains listed and reviewable from its verified encrypted archive; nothing is deleted from the archive; this is not an evidence-deletion feature.'
+const WARNING = 'Cleanup deletes eligible live database rows after re-verifying their encrypted archive.'
 
 describe('MissionArchiveCleanupDialog [DON-253]', () => {
   let root: Root | null = null
@@ -359,6 +359,7 @@ function createProps(
       eligibility: {
         eligible: false,
         startableWithCredential: true,
+        preview: { missionId: MISSION_ID, totalRows: 12, tables: [{ tableName: 'positions', rowCount: 12 }] },
         blockers: ['fresh_non_machine_unlock_required'],
         storageState: 'live',
       },

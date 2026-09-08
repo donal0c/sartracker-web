@@ -81,6 +81,7 @@ function createElectronSettingsStore(options) {
   const fetchFn = options.fetchFn ?? fetch
   const platform = options.platform ?? process.platform
   const now = options.now ?? (() => new Date())
+  let saveTail = Promise.resolve()
 
   return {
     loadAppSettings,
@@ -94,7 +95,15 @@ function createElectronSettingsStore(options) {
     return toView(persisted, await hasSecret(persisted.dataSource.authMode))
   }
 
-  async function saveAppSettings(input) {
+  /** Serializes atomic settings replacements so roster history cannot be lost by concurrent saves. */
+  function saveAppSettings(input) {
+    const operation = saveTail.then(() => persistAppSettings(input))
+    saveTail = operation.catch(() => undefined)
+    return operation
+  }
+
+  /** Persists a settings revision and its local roster provenance in the same atomic file. */
+  async function persistAppSettings(input) {
     const existingSecretPresent = await hasSecret(input.dataSource.authMode)
     validateSettingsDraft(input, existingSecretPresent)
     const previous = await readSettings(settingsPath)
@@ -105,6 +114,13 @@ function createElectronSettingsStore(options) {
       officialMaps: await normalizeOfficialMaps(input.officialMaps, now),
       weather: normalizeWeather(input.weather),
     }
+    const history = [...previous.adminRosterHistory]
+    if (JSON.stringify(previous.missionDefaults.adminRoster) !== JSON.stringify(next.missionDefaults.adminRoster)) {
+      if (history.length >= 10_000) throw new Error('Administrator roster history is full. Contact support before changing it.')
+      history.push({ recordedAt: now().toISOString(), authority: 'trusted_local_settings',
+        previous: previous.missionDefaults.adminRoster, next: next.missionDefaults.adminRoster })
+    }
+    if (history.length > 0) next.adminRosterHistory = history
 
     await updateSecrets(input.dataSource)
     await writeJsonAtomically(settingsPath, next)
@@ -329,6 +345,7 @@ function createElectronSettingsStore(options) {
 async function readSettings(settingsPath) {
   const parsed = await readJson(settingsPath, {})
   return {
+    adminRosterHistory: readAdminRosterHistory(parsed.adminRosterHistory),
     missionDefaults: normalizeMissionDefaults({
       ...DEFAULT_APP_SETTINGS.missionDefaults,
       ...readObject(parsed.missionDefaults),
@@ -345,6 +362,19 @@ async function readSettings(settingsPath) {
       links: normalizeWeatherLinks(parsed.weather?.links),
     },
   }
+}
+
+/** Retains local configuration provenance without presenting it as authenticated user identity. */
+function readAdminRosterHistory(value) {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 10_000 || value.some((entry) =>
+    entry === null || typeof entry !== 'object' || entry.authority !== 'trusted_local_settings'
+    || typeof entry.recordedAt !== 'string' || Number.isNaN(Date.parse(entry.recordedAt))
+    || !Array.isArray(entry.previous) || !Array.isArray(entry.next)
+    || [...entry.previous, ...entry.next].some((name) => typeof name !== 'string'))) {
+    throw new Error('Administrator roster history is invalid. Contact support before saving settings.')
+  }
+  return value
 }
 
 /**

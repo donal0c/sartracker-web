@@ -51,6 +51,7 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
     let exposedBridge: Record<string, unknown> | undefined
 
     expect(() => runInNewContext(preload, {
+      process: { platform: 'linux' },
       TextEncoder,
       require: (specifier: string) => {
         if (specifier !== 'electron') {

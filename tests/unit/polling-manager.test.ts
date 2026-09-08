@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { createDeferredMissionEvidenceQueue } from '../../src/features/tracking/deferred-mission-evidence'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -3017,8 +3018,85 @@ describe('polling manager', () => {
     expect(onSnapshot.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({ rawBreadcrumbsForPersistence: [] }),
     )
+    expect(onSnapshot.mock.calls.at(-1)?.[1]).toEqual(
+      expect.objectContaining({ missionEvidenceId: null }),
+    )
 
     poller.stop()
+  })
+
+  it('publishes the current fix but waits for evidence capacity before fetching another', async () => {
+    const client = createClient()
+    const published = vi.fn()
+    let release = (): void => undefined
+    const capacity = new Promise<void>((resolve) => { release = resolve })
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60_000,
+      onSnapshot: vi.fn(),
+      onCurrentSnapshot: published,
+      waitForCurrentEvidenceCapacity: vi.fn().mockResolvedValueOnce(undefined).mockImplementation(() => capacity),
+      onStatusChange: vi.fn(),
+    })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(published).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(client.getCurrentPositions).toHaveBeenCalledOnce()
+    release()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    await poller.stop()
+  })
+
+  it('persists every displayed observation when the real evidence queue saturates', async () => {
+    let release = (): void => undefined
+    const blockedWrite = new Promise<void>((resolve) => { release = resolve })
+    const persisted: number[] = []
+    const markEvidenceLoss = vi.fn()
+    const queue = createDeferredMissionEvidenceQueue<number>({ capacity: 8,
+      beginObservation: (missionId) => ({ missionId, complete: () => undefined }),
+      persist: async (_missionId, value) => { await blockedWrite; persisted.push(value) },
+      markEvidenceLoss })
+    let displayed = 0
+    const client = createClient()
+    const poller = createPollingManager(client, { intervalMs: 5000, staleThresholdMs: 60000,
+      onSnapshot: vi.fn(), onStatusChange: vi.fn(),
+      onCurrentSnapshot: () => {
+        expect(queue.enqueue('mission-a', ++displayed)).toBe(true)
+        queue.requestFlushMission('mission-a')
+      },
+      waitForCurrentEvidenceCapacity: (signal) => queue.waitForCapacity(signal) })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(100_000)
+    expect(displayed).toBe(8)
+    expect(queue.pendingCount()).toBe(8)
+    expect(persisted).toEqual([])
+    release()
+    await vi.advanceTimersByTimeAsync(10_000)
+    await poller.stop()
+    await queue.settleForStop(() => true)
+    expect(displayed).toBeGreaterThan(8)
+    expect(persisted).toEqual(Array.from({ length: displayed }, (_, index) => index + 1))
+    expect(markEvidenceLoss).not.toHaveBeenCalled()
+  })
+
+  it('does not fetch when a previous mission still owns the full evidence queue', async () => {
+    const client = createClient()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60_000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      waitForCurrentEvidenceCapacity: (signal) => new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => resolve(), { once: true })
+      }),
+    })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(client.getCurrentPositions).not.toHaveBeenCalled()
+    await poller.stop()
+    expect(client.getCurrentPositions).not.toHaveBeenCalled()
   })
 
   it('stays idle without authenticating before a mission starts', async () => {

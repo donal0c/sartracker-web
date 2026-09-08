@@ -49,6 +49,7 @@ type CustodyModule = {
   }) => Readonly<Record<string, unknown>>
   readonly readCorrectionAttachmentCustody: (db: TestDatabase) => CustodyPlan | null
   readonly reconcileCorrectionAttachmentCustody: (input: {
+    readonly removeUncommittedEntry?: (...args: readonly unknown[]) => string
     readonly db: TestDatabase
     readonly inspection: Readonly<Record<string, unknown>>
     readonly revalidateEntry: (
@@ -96,6 +97,7 @@ describe('SQLite archive correction attachment custody reconciliation', () => {
     fixture.db.transaction(() => reconcileCorrectionAttachmentCustody({
       db: fixture.db,
       inspection,
+      removeUncommittedEntry: () => 'absent',
       revalidateEntry: (_entry: unknown, observation: unknown) => {
         expect(fixture.db.inTransaction).toBe(true)
         expect(observation).toEqual({ state: 'pair', proof: 'full-digest-proof' })
@@ -107,7 +109,7 @@ describe('SQLite archive correction attachment custody reconciliation', () => {
   })
 
   it.each(['absent', 'peer', 'pair'])(
-    'clears an uncommitted %s residue plan without requesting deletion',
+    'clears an uncommitted %s residue plan after confirmed reclamation',
     (state) => {
       const fixture = createFixture('finalized')
       const inspected: string[] = []
@@ -238,6 +240,7 @@ function reconcileFixture(
     db: fixture.db,
     inspection,
     revalidateEntry: () => state,
+    removeUncommittedEntry: () => 'absent',
   })).immediate()
 }
 

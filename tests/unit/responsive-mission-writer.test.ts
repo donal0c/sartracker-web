@@ -12,6 +12,49 @@ const { createResponsiveMissionWriter } = require('../../electron/responsive-mis
 }
 afterEach(() => vi.useRealTimers())
 
+it('rolls back an owned transaction left open by a failing transaction wrapper', async () => {
+  const db = new Database(':memory:')
+  db.exec('CREATE TABLE evidence (value TEXT)')
+  const failure = new Error('transaction wrapper rollback failed')
+  let first = true
+  const adapter = {
+    get inTransaction() { return db.inTransaction },
+    pragma: db.pragma.bind(db),
+    exec: db.exec.bind(db),
+    transaction: (callback: () => unknown) => ({ immediate: () => {
+      if (!first) return db.transaction(callback).immediate()
+      first = false
+      db.exec("BEGIN IMMEDIATE; INSERT INTO evidence VALUES ('partial')")
+      throw failure
+    } }),
+  }
+  const writer = createResponsiveMissionWriter(adapter)
+  try {
+    await expect(writer.run(() => undefined)).rejects.toBe(failure)
+    expect(db.inTransaction).toBe(false)
+    expect(db.prepare('SELECT * FROM evidence').all()).toEqual([])
+    await expect(writer.run(() => 42)).resolves.toBe(42)
+  } finally { await writer.close(); db.close() }
+})
+
+it('quarantines its writer when an owned transaction cannot be rolled back', async () => {
+  let inTransaction = false
+  const callback = vi.fn()
+  const writer = createResponsiveMissionWriter({
+    get inTransaction() { return inTransaction },
+    pragma: () => 5000,
+    exec: () => { throw new Error('I/O failure') },
+    transaction: () => ({ immediate: () => {
+      inTransaction = true
+      throw new Error('write failed')
+    } }),
+  })
+  await expect(writer.run(callback)).rejects.toMatchObject({ code: 'MISSION_WRITER_FAULTED' })
+  await expect(writer.run(callback)).rejects.toMatchObject({ code: 'MISSION_WRITER_FAULTED' })
+  expect(callback).not.toHaveBeenCalled()
+  await writer.close()
+})
+
 it('rolls back the complete attempt, restores SQLite configuration and preserves admitted write order', async () => {
   vi.useFakeTimers()
   const db = new Database(':memory:')
@@ -44,7 +87,7 @@ it('rolls back the complete attempt, restores SQLite configuration and preserves
   } finally { await writer.close(); db.close() }
 })
 
-it.each(['cancel', 'close'] as const)('stops a sleeping attempt on %s and never admits a later stale callback', async (action) => {
+it('stops an explicitly cancelled sleeping attempt', async () => {
   vi.useFakeTimers()
   const db = new Database(':memory:')
   const writer = createResponsiveMissionWriter(db)
@@ -54,14 +97,40 @@ it.each(['cancel', 'close'] as const)('stops a sleeping attempt on %s and never 
     const pending = writer.run(callback, { signal: controller.signal })
     const rejection = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     await vi.advanceTimersByTimeAsync(0)
-    if (action === 'cancel') controller.abort()
-    else await writer.close()
+    controller.abort()
     await rejection
     await vi.runAllTimersAsync()
     expect(callback).toHaveBeenCalledTimes(1)
     expect(db.inTransaction).toBe(false)
     expect(db.pragma('busy_timeout', { simple: true })).toBe(5000)
-    if (action === 'close') await expect(writer.run(() => 1)).rejects.toMatchObject({ name: 'AbortError' })
+  } finally { await writer.close(); db.close() }
+})
+
+it('drains admitted writes through contention on close and rejects new admissions', async () => {
+  vi.useFakeTimers()
+  const db = new Database(':memory:')
+  db.exec('CREATE TABLE edits (value TEXT)')
+  const writer = createResponsiveMissionWriter(db)
+  let attempts = 0
+  try {
+    const first = writer.run(() => {
+      db.prepare('INSERT INTO edits VALUES (?)').run('participant')
+      if (++attempts === 1) throw Object.assign(new Error('busy'), { code: 'SQLITE_BUSY' })
+    })
+    const second = writer.run(() => db.prepare('INSERT INTO edits VALUES (?)').run('outing'))
+    // Observe both outcomes immediately, including on the broken implementation.
+    const outcomes = Promise.allSettled([first, second])
+    await vi.advanceTimersByTimeAsync(0)
+    const closing = writer.close()
+    await expect(writer.run(() => 1)).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.runAllTimersAsync()
+    await closing
+    expect((await outcomes).map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled'])
+    expect(db.prepare('SELECT value FROM edits ORDER BY rowid').all()).toEqual([
+      { value: 'participant' }, { value: 'outing' },
+    ])
+    expect(writer.pendingCount).toBe(0)
+    expect(db.inTransaction).toBe(false)
   } finally { await writer.close(); db.close() }
 })
 

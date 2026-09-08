@@ -773,6 +773,11 @@ function createArchiveRegistry({
     issueReviewTicket(archiveId) {
       const archive = getArchiveRow(db, archiveId)
       if (archive.container_version === 1) {
+        const contentPin = readLegacyContentPin(db, archive.id)
+        if (contentPin === null) {
+          throw new ArchiveRegistryError('ARCHIVE_REGISTRY_REVIEW_UNAVAILABLE',
+            'Legacy archive content baseline is pending. Refresh Saved Archives before reviewing.')
+        }
         if (!['sealed', 'superseded'].includes(archive.status)
           || archive.availability !== 'present'
           || archive.verified_at !== null
@@ -792,6 +797,8 @@ function createArchiveRegistry({
           archiveRelativePath: archive.relative_path,
           missionId: archive.mission_id,
           containerVersion: 1,
+          expectedArchiveSha256: contentPin.sha256,
+          expectedArchiveSizeBytes: contentPin.sizeBytes,
           status: archive.status,
           availability: archive.availability,
           createdAt: archive.created_at,
@@ -1186,6 +1193,7 @@ function createArchiveRegistry({
           }))
       const unavailable = []
       for (const row of rows) {
+        const legacyPin = row.container_version === 1 ? readLegacyContentPin(db, row.id) : null
         const ticket = Object.freeze({
           operationId: randomUUID(),
           registryRowid: Number(row.registry_rowid),
@@ -1193,8 +1201,8 @@ function createArchiveRegistry({
           containerVersion: Number(row.container_version),
           archiveDirectory: custodyDirectory,
           archiveRelativePath: normalizeRelativePath(row.relative_path),
-          expectedSizeBytes: row.size_bytes === null ? null : Number(row.size_bytes),
-          expectedCiphertextSha256: row.ciphertext_sha256,
+          expectedSizeBytes: legacyPin?.sizeBytes ?? (row.size_bytes === null ? null : Number(row.size_bytes)),
+          expectedCiphertextSha256: legacyPin?.sha256 ?? row.ciphertext_sha256,
         })
         const operation = startCustodyReconciliation({
           ticket,
@@ -1227,26 +1235,32 @@ function createArchiveRegistry({
         } else if (observation.outcome === 'changed') {
           availability = 'mismatched'
           reason = 'Archive custody file changed during its identity check.'
-        } else if (row.size_bytes !== null
-          && observation.observedSizeBytes !== Number(row.size_bytes)) {
+        } else if (ticket.expectedSizeBytes !== null
+          && observation.observedSizeBytes !== ticket.expectedSizeBytes) {
           availability = 'mismatched'
           reason = 'Archive file size does not match the registered custody record.'
-        } else if (row.ciphertext_sha256 !== null
-          && observation.observedCiphertextSha256 !== row.ciphertext_sha256) {
+        } else if (ticket.expectedCiphertextSha256 !== null
+          && observation.observedCiphertextSha256 !== ticket.expectedCiphertextSha256) {
           availability = 'mismatched'
           reason = 'Archive ciphertext SHA-256 does not match the registered custody record.'
         }
         const applyObservation = db.transaction(() => {
           const current = db.prepare(`SELECT rowid AS registry_rowid, * FROM mission_archives
             WHERE id = ?`).get(row.id)
+          const currentPin = row.container_version === 1 ? readLegacyContentPin(db, row.id) : null
+          const sameConcurrentBaseline = ticket.containerVersion === 1
+            && ticket.expectedCiphertextSha256 === null && currentPin !== null
+            && currentPin.sha256 === observation.observedCiphertextSha256
+            && currentPin.sizeBytes === observation.observedSizeBytes
           if (current === undefined
             || Number(current.registry_rowid) !== ticket.registryRowid
             || current.id !== ticket.archiveId
             || Number(current.container_version) !== ticket.containerVersion
             || current.relative_path !== ticket.archiveRelativePath
-            || (current.size_bytes === null ? null : Number(current.size_bytes))
-              !== ticket.expectedSizeBytes
-            || current.ciphertext_sha256 !== ticket.expectedCiphertextSha256) {
+            || (!sameConcurrentBaseline && (
+              (currentPin?.sizeBytes ?? (current.size_bytes === null ? null : Number(current.size_bytes)))
+                !== ticket.expectedSizeBytes
+              || (currentPin?.sha256 ?? current.ciphertext_sha256) !== ticket.expectedCiphertextSha256))) {
             throw new ArchiveRegistryError(
               'ARCHIVE_REGISTRY_IDENTITY_CHANGED',
               'Archive registry identity changed while custody was inspected.',
@@ -1262,6 +1276,13 @@ function createArchiveRegistry({
               ? Date.parse(latestObservedAt) + 1
               : 0,
           )).toISOString()
+          if (current.container_version === 1 && currentPin === null && availability === 'present') {
+            db.prepare('INSERT INTO metadata (key, value) VALUES (?, ?)').run(
+              `legacy_archive_content_pin_v1:${current.id}`,
+              JSON.stringify({ sha256: observation.observedCiphertextSha256,
+                sizeBytes: observation.observedSizeBytes, firstObservedAt: observedAt }),
+            )
+          }
           if (availability !== current.availability) {
             const resultingStatus = readResultingMissionStatus(current.mission_id)
             if (availability === 'present'
@@ -1318,6 +1339,22 @@ function legacyArchiveId(eventRowid, archivePath) {
     .update('\0', 'ascii')
     .update(archivePath, 'utf8')
     .digest('hex')}`
+}
+
+/** Reads a first-observation baseline; it is not a retroactive historical authenticity proof. */
+function readLegacyContentPin(db, archiveId) {
+  const row = db.prepare('SELECT value FROM metadata WHERE key = ?')
+    .get(`legacy_archive_content_pin_v1:${archiveId}`)
+  if (row === undefined) return null
+  let pin
+  try { pin = JSON.parse(row.value) } catch { pin = null }
+  if (pin === null || typeof pin !== 'object' || !/^[0-9a-f]{64}$/u.test(pin.sha256)
+    || !Number.isSafeInteger(pin.sizeBytes) || pin.sizeBytes < 1
+    || typeof pin.firstObservedAt !== 'string' || Number.isNaN(Date.parse(pin.firstObservedAt))) {
+    throw new ArchiveRegistryError('ARCHIVE_REGISTRY_REVIEW_UNAVAILABLE',
+      'Legacy archive content baseline is invalid.')
+  }
+  return pin
 }
 
 /** Reads one durable legacy archive backfill boundary without scanning mission evidence. */

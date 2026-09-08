@@ -3848,6 +3848,8 @@ describe('startTrackingRuntime', () => {
   })
 
   it('does not settle a failed accepted-fix observation when its loss marker is not durable', async () => {
+    const recordDiagnosticEvent = vi.fn()
+    const persistenceFailure = Object.assign(new Error('position write failed /private/operator'), { code: 'SQLITE_FULL' })
     useMissionStore.setState({
       phase: 'active',
       currentMission: {
@@ -3884,11 +3886,12 @@ describe('startTrackingRuntime', () => {
       cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
       missionStore: createMissionStoreStub({
         getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
-        upsertDevice: vi.fn().mockRejectedValue(new Error('position write failed')),
+        upsertDevice: vi.fn().mockRejectedValue(persistenceFailure),
       }),
       applySnapshot,
       applyStatus: vi.fn(),
       recordMissionEvidenceLoss,
+      recordDiagnosticEvent,
       registerMissionEvidenceSettler: (settler) => {
         settleMissionEvidence = settler
         return () => undefined
@@ -3908,6 +3911,11 @@ describe('startTrackingRuntime', () => {
     }))
     expect(claim).toHaveBeenCalledOnce()
     await vi.waitFor(() => expect(recordMissionEvidenceLoss).toHaveBeenCalledOnce())
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
+      level: 'warn', category: 'tracking', event: 'tracking_deferred_persistence_failure',
+      fields: { failureCode: 'SQLITE_FULL' },
+    })
+    expect(JSON.stringify(recordDiagnosticEvent.mock.calls)).not.toContain('/private/operator')
     expect(complete).not.toHaveBeenCalled()
 
     await expect(settleMissionEvidence?.('mission-1')).rejects.toThrow(

@@ -62,6 +62,7 @@ export type ArchiveReviewProgress = {
 }
 
 export type ArchiveReviewBridge = {
+  readonly supported?: boolean
   readonly open: (input: ArchiveReviewOpenInput) => Promise<
     ArchiveReviewPublicSession & { readonly operationId: string }
   >

@@ -2,6 +2,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { createArchiveReviewWorkQueue } = require('./archive-review-work-queue.cjs')
 
 const {
   runArchiveReviewProjectionInWorker,
@@ -14,6 +15,7 @@ const { runSearchOperationPageInWorker } = require('./search-operations-page-run
 
 const MAX_ID_BYTES = 200
 const MAX_REQUEST_ID_BYTES = 200
+const MAX_OPEN_ATTACHMENT_LEASES = 8
 const MAX_SCRUB_DEPTH = 32
 const MAX_SCRUB_NODES = 1_000_000
 
@@ -64,19 +66,18 @@ function isPortableEvidencePathKey(key) {
 
 /** Removes private paths from one JSON-encoded archive evidence envelope. */
 function scrubJsonEnvelope(value, sessionDirectory, context, depth) {
+  let parsed
   try {
-    const parsed = JSON.parse(value)
-    if (parsed === null || typeof parsed !== 'object') return null
-    return JSON.stringify(scrubSessionPaths(
-      parsed,
-      sessionDirectory,
-      null,
-      context,
-      depth + 1,
-    ))
+    parsed = JSON.parse(value)
   } catch {
-    return null
+    throw new ArchiveReviewSourceError('ARCHIVE_REVIEW_RESULT_INVALID', 'Archived evidence contains an invalid JSON envelope.')
   }
+  return JSON.stringify(scrubSessionPaths(parsed, sessionDirectory, null, context, depth + 1))
+}
+
+/** Refuses partial evidence when the privacy projection exceeds its structural budget. */
+function resultProjectionLimit() {
+  return new ArchiveReviewSourceError('ARCHIVE_REVIEW_RESULT_LIMIT', 'Archived evidence exceeds the safe Review projection limit; no partial result was displayed.')
 }
 
 /** Removes any private or app-owned restored-session path from a result projection. */
@@ -87,7 +88,7 @@ function scrubSessionPaths(
   context = { remainingNodes: MAX_SCRUB_NODES, seen: new WeakSet() },
   depth = 0,
 ) {
-  if (depth > MAX_SCRUB_DEPTH || context.remainingNodes < 1) return null
+  if (depth > MAX_SCRUB_DEPTH || context.remainingNodes < 1) throw resultProjectionLimit()
   context.remainingNodes -= 1
   if (typeof value === 'string') {
     if (typeof key === 'string' && (key.endsWith('_json') || key.endsWith('Json'))) {
@@ -102,7 +103,7 @@ function scrubSessionPaths(
     return value
   }
   if (Array.isArray(value)) {
-    if (value.length > context.remainingNodes) return null
+    if (value.length > context.remainingNodes) throw resultProjectionLimit()
     return value.map((entry) => scrubSessionPaths(
       entry,
       sessionDirectory,
@@ -112,14 +113,16 @@ function scrubSessionPaths(
     ))
   }
   if (value !== null && typeof value === 'object') {
-    if (context.seen.has(value)) return null
+    if (context.seen.has(value)) throw resultProjectionLimit()
     context.seen.add(value)
     const entries = Object.entries(value)
-    if (entries.length > context.remainingNodes) return null
-    return Object.fromEntries(entries.map(([childKey, child]) => [
+    if (entries.length > context.remainingNodes) throw resultProjectionLimit()
+    const result = Object.fromEntries(entries.map(([childKey, child]) => [
       childKey,
       scrubSessionPaths(child, sessionDirectory, childKey, context, depth + 1),
     ]))
+    context.seen.delete(value)
+    return result
   }
   return value
 }
@@ -355,6 +358,7 @@ function createArchiveReviewSource(options) {
   const activeProjections = new Set()
   const activeAttachments = new Set()
   const openAttachmentLeases = new Set()
+  const workQueue = createArchiveReviewWorkQueue()
 
   /** Rejects use after the session owner has closed the source. */
   function assertOpen() {
@@ -373,7 +377,8 @@ function createArchiveReviewSource(options) {
   }
 
   /** Tracks worker physical exit so close can join every source-owned read. */
-  function trackOperation(operation) {
+  function trackOperation(factory, signal) {
+    const operation = workQueue.run(factory, signal)
     const exited = Promise.resolve(operation?.workerExited ?? operation).catch(() => undefined)
     activeOperations.add(exited)
     void exited.finally(() => activeOperations.delete(exited))
@@ -393,7 +398,7 @@ function createArchiveReviewSource(options) {
       )
     }
     const controller = new AbortController()
-    const operation = trackOperation(factory(controller.signal))
+    const operation = trackOperation(factory, controller.signal)
     const active = { controller, completion: Promise.resolve(operation) }
     if (normalizedRequestId !== null) map.set(normalizedRequestId, active)
     try {
@@ -424,12 +429,12 @@ function createArchiveReviewSource(options) {
   async function runSimpleProjection(method, input) {
     assertOpen()
     const controller = new AbortController()
-    const operation = trackOperation(runProjection({
+    const operation = trackOperation((signal) => runProjection({
       databasePath: pinnedDatabasePath,
       method,
       ...input,
-      signal: controller.signal,
-    }))
+      signal,
+    }), controller.signal)
     const active = { controller, completion: Promise.resolve(operation) }
     activeProjections.add(active)
     try {
@@ -528,11 +533,11 @@ function createArchiveReviewSource(options) {
     async listSearchOperationPage(input) {
       assertMission(input?.missionId)
       const controller = new AbortController()
-      const operation = trackOperation(runSearch({
+      const operation = trackOperation((signal) => runSearch({
         databasePath: pinnedDatabasePath,
         query: input,
-        signal: controller.signal,
-      }))
+        signal,
+      }), controller.signal)
       const active = { controller, completion: Promise.resolve(operation) }
       activeProjections.add(active)
       try {
@@ -579,6 +584,12 @@ function createArchiveReviewSource(options) {
     },
     async openAttachment(input) {
       assertMission(input?.missionId)
+      if (openAttachmentLeases.size >= MAX_OPEN_ATTACHMENT_LEASES) {
+        throw new ArchiveReviewSourceError(
+          'ARCHIVE_REVIEW_ATTACHMENT_LIMIT',
+          'Review has reached its eight attachment-viewer limit. Close and reopen Review before opening another attachment.',
+        )
+      }
       if (activeAttachments.size > 0) {
         throw new ArchiveReviewSourceError(
           'ARCHIVE_REVIEW_ATTACHMENT_BUSY',
@@ -619,14 +630,14 @@ function createArchiveReviewSource(options) {
         )
       }
       const controller = new AbortController()
-      const operation = trackOperation((async () => {
+      const operation = trackOperation(async (signal) => {
         assertOpen()
         let opened
         try {
           opened = await openAttachmentAction(Object.freeze({
             ...restoredAttachment,
             sessionDirectory,
-            signal: controller.signal,
+            signal,
           }))
         } catch (error) {
           const cleanupLease = error?.cleanupLease
@@ -659,7 +670,7 @@ function createArchiveReviewSource(options) {
           return true
         }
         return opened === true
-      })())
+      }, controller.signal)
       const active = { controller, completion: Promise.resolve(operation) }
       activeAttachments.add(active)
       try {
@@ -671,6 +682,7 @@ function createArchiveReviewSource(options) {
     close() {
       if (closePromise !== null) return closePromise
       closed = true
+      const queueClosed = workQueue.close()
       const attempt = (async () => {
         for (const active of [...activeReview.values(), ...activeReplay.values()]) {
           active.controller.abort()
@@ -678,6 +690,7 @@ function createArchiveReviewSource(options) {
         for (const active of activeProjections) active.controller.abort()
         for (const active of activeAttachments) active.controller.abort()
         await Promise.allSettled([
+          queueClosed,
           ...[...activeReview.values(), ...activeReplay.values()]
             .map((active) => active.completion),
           ...[...activeProjections].map((active) => active.completion),

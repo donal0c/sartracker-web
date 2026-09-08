@@ -1,7 +1,7 @@
 'use strict'
 
 const path = require('node:path')
-const { Worker } = require('node:worker_threads')
+const { Worker } = require('./mission-worker.cjs')
 
 const { normalizeRestoreRequest } = require('./archive-restore.cjs')
 const {
@@ -109,7 +109,7 @@ function startArchiveRestore(input) {
       if (handleClosures.has(handle)) return
       const closing = closeTransferredFileHandle(handle)
       handleClosures.set(handle, closing)
-      void closing.finally(() => handleClosures.delete(handle))
+      void closing.then(() => handleClosures.delete(handle), () => undefined)
     }
 
     /** Clears lifecycle listeners only after physical worker exit. */
@@ -205,7 +205,13 @@ function startArchiveRestore(input) {
           closeDatabaseHandle(terminal)
           terminal = null
         }
-        await Promise.allSettled([...handleClosures.values()])
+        try {
+          await Promise.all([...handleClosures.values()])
+        } catch (error) {
+          workerExited.reject(error)
+          if (!settled) { settled = true; reject(error) }
+          return
+        }
         workerExited.resolve()
         if (settled) return
         settled = true
@@ -355,8 +361,10 @@ function decorate(completion, workerExited, cancel) {
 /** Creates a single-settlement deferred. */
 function createDeferred() {
   let resolve
-  const promise = new Promise((settle) => { resolve = settle })
-  return { promise, resolve }
+  let reject
+  const promise = new Promise((settle, fail) => { resolve = settle; reject = fail })
+  void promise.catch(() => undefined)
+  return { promise, resolve, reject }
 }
 
 module.exports = { startArchiveRestore }

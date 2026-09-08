@@ -768,6 +768,11 @@ export type MissionCleanupBlocker =
   | 'verification_proof_invalid'
 
 export type MissionCleanupEligibility = {
+  readonly preview?: {
+    readonly missionId: string
+    readonly totalRows: number
+    readonly tables: readonly { readonly tableName: string; readonly rowCount: number }[]
+  }
   readonly eligible: boolean
   /** True only when every durable check passed and the same-call credential remains pending. */
   readonly startableWithCredential: boolean

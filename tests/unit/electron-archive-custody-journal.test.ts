@@ -283,6 +283,23 @@ function insertCompleteRegistryWitness(
 }
 
 describe('archive custody metadata journal', () => {
+  it('rolls back standalone terminal settlement when removing the active record fails', () => {
+    const db = createDatabase()
+    try {
+      const journal = createArchiveCustodyJournal({ db, archiveDirectory, now: () => timestamp })
+      journal.planBuildingWithinTransaction(buildingInput())
+      journal.recordPublishPrepared({ operationId, expectedRevision: 1, receipt: creationReceipt(), observedAt: timestamp })
+      insertCompleteRegistryWitness(db)
+      db.exec("CREATE TRIGGER reject_journal_delete BEFORE DELETE ON metadata BEGIN SELECT RAISE(ABORT, 'injected delete failure'); END")
+      const complete = () => journal.completeRegisteredWithinTransaction({ operationId, expectedRevision: 2, registeredAt: timestamp })
+      expect(complete).toThrow('injected delete failure')
+      expect(journal.readTerminal(operationId)).toBeNull()
+      expect(journal.readActive()).toMatchObject({ state: 'publish_prepared' })
+      db.exec('DROP TRIGGER reject_journal_delete')
+      expect(complete()).toMatchObject({ state: 'registered' })
+    } finally { db.close() }
+  })
+
   it('durably plans exact staging and final paths before create and admits only one active lane', () => {
     const db = createDatabase()
     try {

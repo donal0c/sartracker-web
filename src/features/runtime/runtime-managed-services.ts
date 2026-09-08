@@ -67,6 +67,7 @@ type CreateManagedRuntimeServicesDependencies = {
           context: TrackingSnapshotContext,
           observation: TrackingMissionEvidenceTransfer,
         ) => void
+        readonly waitForCurrentEvidenceCapacity: (signal: AbortSignal) => Promise<void>
         readonly onStatusChange: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
         readonly getInitialBreadcrumbs: () => Promise<readonly import('../tracking/tracking-types').NormalizedTrackingPosition[]>
         readonly getInitialBreadcrumbTotals: () => Promise<Readonly<Record<string, number>>>
@@ -145,6 +146,7 @@ type CreateManagedRuntimeServicesDependencies = {
         context: TrackingSnapshotContext,
         observation: TrackingMissionEvidenceTransfer,
       ) => void
+      readonly waitForCurrentEvidenceCapacity: (signal: AbortSignal) => Promise<void>
       readonly onStatusChange: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
       readonly getInitialBreadcrumbs: () => Promise<readonly import('../tracking/tracking-types').NormalizedTrackingPosition[]>
       readonly getInitialBreadcrumbTotals: () => Promise<Readonly<Record<string, number>>>

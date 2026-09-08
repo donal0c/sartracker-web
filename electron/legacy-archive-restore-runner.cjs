@@ -1,7 +1,7 @@
 'use strict'
 
 const path = require('node:path')
-const { Worker } = require('node:worker_threads')
+const { Worker } = require('./mission-worker.cjs')
 const {
   closeTransferredFileHandle,
 } = require('./transferred-file-handle-cleanup.cjs')
@@ -65,8 +65,12 @@ function createAbortError() {
 /** Requires an exact immutable request before any worker or filesystem action. */
 function normalizeLegacyRestoreRequest(input) {
   if (input === null || typeof input !== 'object' || Array.isArray(input)
-    || Object.keys(input).sort().join(',')
-      !== 'archivePath,expectedMissionId,operationId,sessionDirectory,sessionId'
+    || !['archivePath,expectedMissionId,operationId,sessionDirectory,sessionId',
+      'archivePath,expectedArchiveSha256,expectedArchiveSizeBytes,expectedMissionId,operationId,sessionDirectory,sessionId']
+      .includes(Object.keys(input).sort().join(','))
+    || ((input.expectedArchiveSha256 !== undefined || input.expectedArchiveSizeBytes !== undefined)
+      && (typeof input.expectedArchiveSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(input.expectedArchiveSha256)
+        || !Number.isSafeInteger(input.expectedArchiveSizeBytes) || input.expectedArchiveSizeBytes < 1))
     || !UUID_V4.test(input.operationId)
     || !UUID_V4.test(input.sessionId)
     || typeof input.archivePath !== 'string'
@@ -94,6 +98,10 @@ function normalizeLegacyRestoreRequest(input) {
     archivePath: input.archivePath,
     sessionDirectory: input.sessionDirectory,
     expectedMissionId: input.expectedMissionId,
+    ...(input.expectedArchiveSha256 === undefined ? {} : {
+      expectedArchiveSha256: input.expectedArchiveSha256,
+      expectedArchiveSizeBytes: input.expectedArchiveSizeBytes,
+    }),
   })
 }
 
@@ -313,8 +321,10 @@ function normalizeResult(message, request) {
 /** Creates a single-settlement deferred. */
 function createDeferred() {
   let resolve
-  const promise = new Promise((settle) => { resolve = settle })
-  return { promise, resolve }
+  let reject
+  const promise = new Promise((settle, fail) => { resolve = settle; reject = fail })
+  void promise.catch(() => undefined)
+  return { promise, resolve, reject }
 }
 
 /** Decorates completion with cancellation, physical-exit, and shutdown ownership. */
@@ -396,7 +406,7 @@ function startLegacyArchiveRestore(input) {
       if (handleClosures.has(handle)) return
       const closing = closeTransferredFileHandle(handle)
       handleClosures.set(handle, closing)
-      void closing.finally(() => handleClosures.delete(handle))
+      void closing.then(() => handleClosures.delete(handle), () => undefined)
     }
 
     /** Clears timers and external cancellation only after physical exit. */
@@ -493,7 +503,13 @@ function startLegacyArchiveRestore(input) {
           closeDatabaseHandle(terminal)
           terminal = null
         }
-        await Promise.allSettled([...handleClosures.values()])
+        try {
+          await Promise.all([...handleClosures.values()])
+        } catch (error) {
+          workerExited.reject(error)
+          if (!settled) { settled = true; reject(error) }
+          return
+        }
         workerExited.resolve()
         if (settled) return
         settled = true

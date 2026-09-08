@@ -1,4 +1,6 @@
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
+import { runInNewContext } from 'node:vm'
 
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -182,13 +184,15 @@ describe('SARARCH2 strict scrypt profile', () => {
 describe('SARARCH2 mission archive keys and recovery codes', () => {
   it('generates exactly one 256-bit mission archive key from the supplied CSPRNG', () => {
     const requestedSizes: number[] = []
+    const randomSourceBuffer = Buffer.alloc(32, 0x5a)
     const key = generateMissionArchiveKey((size) => {
       requestedSizes.push(size)
-      return Buffer.alloc(size, 0x5a)
+      return randomSourceBuffer
     })
 
     expect(requestedSizes).toEqual([32])
     expect(key).toEqual(Buffer.alloc(32, 0x5a))
+    expect(randomSourceBuffer).toEqual(Buffer.alloc(32))
   })
 
   it('rejects a random source that returns the wrong number of bytes', () => {
@@ -249,6 +253,37 @@ describe('SARARCH2 key slots', () => {
       headerDigest: FIXED_HEADER_DIGEST,
       randomBytes: fixedSlotRandomBytes,
     })
+  })
+
+  it('clears unauthenticated candidate key bytes when authentication fails', async () => {
+    const candidate = Buffer.alloc(32, 0x7a)
+    const loaded = { exports: {} as ArchiveCryptoModule }
+    runInNewContext(readFileSync(require.resolve('../../electron/archive-crypto.cjs'), 'utf8'), {
+      Buffer, module: loaded,
+      require: () => ({
+        ...require('node:crypto'),
+        createDecipheriv: () => ({
+          setAAD: vi.fn(), setAuthTag: vi.fn(), update: () => candidate,
+          final: () => { throw new Error('authentication failed') },
+        }),
+      }),
+    })
+    await expect(loaded.exports.unwrapMissionArchiveKey({
+      slot: passphraseSlot, secret: 'correct horse battery staple', headerDigest: FIXED_HEADER_DIGEST,
+    })).rejects.toMatchObject({ code: 'ARCHIVE_WRONG_KEY' })
+    expect(candidate).toEqual(Buffer.alloc(32))
+  })
+
+  it('does not misclassify a crypto provider setup failure as a wrong credential', async () => {
+    const failure = new Error('crypto provider unavailable')
+    const loaded = { exports: {} as ArchiveCryptoModule }
+    runInNewContext(readFileSync(require.resolve('../../electron/archive-crypto.cjs'), 'utf8'), {
+      Buffer, module: loaded,
+      require: () => ({ ...require('node:crypto'), createDecipheriv: () => { throw failure } }),
+    })
+    await expect(loaded.exports.unwrapMissionArchiveKey({
+      slot: passphraseSlot, secret: 'correct horse battery staple', headerDigest: FIXED_HEADER_DIGEST,
+    })).rejects.toBe(failure)
   })
 
   it('serializes an explicit authenticated profile and round-trips the MAK', async () => {

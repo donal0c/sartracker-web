@@ -293,13 +293,14 @@ function normalizeProtectedFinalizationEpoch(value, archiveKind, code) {
 }
 
 /** Validates the exact serializable request sent to the create worker. */
-function normalizeArchiveCreateRequest(input) {
+function normalizeArchiveCreateRequest(input, includeCredentials = true) {
   const code = 'ARCHIVE_ENVELOPE_INVALID_REQUEST'
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
     throw new ArchiveEnvelopeError(code, 'Archive create request must be an object.')
   }
   const actualKeys = Object.keys(input).sort()
-  const requiredKeys = [...CREATE_REQUEST_KEYS].sort()
+  const requiredKeys = CREATE_REQUEST_KEYS.filter((key) => includeCredentials
+    || (key !== 'passphrase' && key !== 'recoveryCode')).sort()
   const allowedKeys = new Set([...requiredKeys, ...OPTIONAL_CREATE_REQUEST_KEYS])
   if (requiredKeys.some((key) => !actualKeys.includes(key))
     || actualKeys.some((key) => !allowedKeys.has(key))) {
@@ -364,7 +365,7 @@ function normalizeArchiveCreateRequest(input) {
       input.archiveKind,
       code,
     ),
-    passphrase: normalizePassphrase(input.passphrase),
+    ...(includeCredentials ? { passphrase: normalizePassphrase(input.passphrase),
     recoveryCode: (() => {
       if (typeof input.recoveryCode !== 'string' || input.recoveryCode.length > 64) {
         throw new ArchiveEnvelopeError(
@@ -381,7 +382,7 @@ function normalizeArchiveCreateRequest(input) {
           { cause: error instanceof Error ? error.name : 'Error' },
         )
       }
-    })(),
+    })() } : {}),
   })
 }
 
@@ -405,7 +406,8 @@ function normalizeRelativePath(value, label, code) {
 /** Validates the secret-bearing completion once, before main commits custody. */
 function normalizeArchiveCreateResult(input, expectedInput) {
   const code = 'ARCHIVE_ENVELOPE_INVALID_RESULT'
-  const expected = normalizeArchiveCreateRequest(expectedInput)
+  const expected = normalizeArchiveCreateRequest(expectedInput,
+    Object.hasOwn(expectedInput ?? {}, 'passphrase') || Object.hasOwn(expectedInput ?? {}, 'recoveryCode'))
   requireExactRecord(input, CREATE_RESULT_KEYS, code, 'Archive create result')
   if (
     input.type !== 'complete'
@@ -817,13 +819,23 @@ function normalizeArchiveVerificationProofForIdentity(input, expectedInput) {
   }
   const attachments = normalizeMatchedLayer(
     input.layers.attachments,
-    ['count', 'exhaustive', 'matched'],
+    ['count', 'exhaustive', 'matched',
+      ...(Object.hasOwn(input.layers.attachments ?? {}, 'legacyPathOnlyCount')
+        ? ['digestCustodyCount', 'legacyPathOnlyCount', 'historicalDigestCustodyComplete'] : [])].sort(),
     'Archive attachment layer',
     code,
   )
   normalizeProofCount(attachments.count, 'Archive attachment count', code)
   if (attachments.count !== entries.count - 4) {
     throw new ArchiveEnvelopeError(code, 'Archive attachment and entry proofs are inconsistent.')
+  }
+  if (Object.hasOwn(attachments, 'legacyPathOnlyCount')) {
+    const legacy = normalizeProofCount(attachments.legacyPathOnlyCount, 'Legacy attachment count', code)
+    const digested = normalizeProofCount(attachments.digestCustodyCount, 'Digest attachment count', code)
+    if (legacy + digested !== attachments.count
+      || attachments.historicalDigestCustodyComplete !== (legacy === 0)) {
+      throw new ArchiveEnvelopeError(code, 'Archive attachment custody tiers are inconsistent.')
+    }
   }
   const gpxSourceBytes = normalizeMatchedLayer(
     input.layers.gpxSourceBytes,

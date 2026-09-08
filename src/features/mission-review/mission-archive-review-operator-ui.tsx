@@ -11,6 +11,7 @@ import {
 } from './start-mission-archive-review-runtime'
 
 export type MissionArchiveReviewControlProps = {
+  readonly supported?: boolean
   readonly timeline: readonly MissionArchiveReviewTimelineEntry[]
   readonly phase: 'idle' | 'opening' | 'open' | 'closing' | 'error'
   readonly activeSession: MissionArchiveReviewSession | null
@@ -388,7 +389,10 @@ export function MissionArchiveReviewControl(props: MissionArchiveReviewControlPr
         ))}
       </div>
 
-      {selectedArchive !== null ? (
+      {props.supported === false ? <p role="status" className="mt-3 text-sm text-amber-200">
+        Archive Review is not available on this platform. Use a supported macOS or Linux build.
+      </p> : null}
+      {selectedArchive !== null && props.supported !== false ? (
         <div className="mt-4 rounded-xl border border-amber-300/30 bg-amber-300/5 p-3">
           <p className="text-xs font-bold text-amber-100">{archiveLabel(selectedArchive)}</p>
           {selectedArchive.container_version === 2 ? (

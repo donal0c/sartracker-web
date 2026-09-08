@@ -909,7 +909,7 @@ function normalizeNonMachineUnwrap(input) {
 }
 
 /** Returns the mutable-state blockers except the same-call non-machine credential. */
-function readStaticBlockers(db, evidence) {
+function readStaticBlockers(db, evidence, completed = false) {
   const blockers = []
   const mission = db.prepare('SELECT status FROM missions WHERE id = ?').get(evidence.missionId)
   if (mission?.status !== 'finalized') blockers.push('mission_not_finalized')
@@ -943,28 +943,27 @@ function readStaticBlockers(db, evidence) {
     || archive?.verification_proof_json === null) {
     blockers.push('current_archive_not_verified')
   }
-  if (!evidence.verificationProofValidated) blockers.push('verification_proof_invalid')
-  if (!evidence.custodyReconciled
-    || archive?.availability !== 'present'
+  if (!completed && !evidence.verificationProofValidated) blockers.push('verification_proof_invalid')
+  if ((!completed && (!evidence.custodyReconciled || archive?.availability !== 'present'))
     || archive?.ciphertext_sha256 !== evidence.ciphertextSha256
     || Number(archive?.size_bytes) !== evidence.sizeBytes) {
     blockers.push('archive_custody_mismatch')
   }
   if (db.prepare('SELECT 1 FROM mission_finalization_fences WHERE mission_id = ? LIMIT 1')
     .get(evidence.missionId) !== undefined) blockers.push('finalization_fence_active')
-  if (!evidence.archiveCustodyIdle) blockers.push('archive_custody_busy')
-  if (db.prepare(`SELECT 1 FROM metadata
+  if (!completed && !evidence.archiveCustodyIdle) blockers.push('archive_custody_busy')
+  if (!completed && db.prepare(`SELECT 1 FROM metadata
     WHERE key IN ('archive_custody_active_operation', 'archive_custody_recovery_failure')
     LIMIT 1`).get() !== undefined) blockers.push('archive_custody_busy')
-  if (evidence.evidenceHealth.state !== 'healthy'
+  if (!completed && (evidence.evidenceHealth.state !== 'healthy'
     || evidence.evidenceHealth.pendingCount !== 0
-    || evidence.evidenceHealth.corruptCount !== 0) {
+    || evidence.evidenceHealth.corruptCount !== 0)) {
     blockers.push('evidence_health_not_clean')
   }
   if (db.prepare(`SELECT 1 FROM gpx_import_source_receipts
     WHERE mission_id = ? AND status IN ('pending', 'retained') LIMIT 1`)
     .get(evidence.missionId) !== undefined) blockers.push('operational_state_unsettled')
-  if (evidence.reviewActivity) blockers.push('archive_review_active')
+  if (!completed && evidence.reviewActivity) blockers.push('archive_review_active')
   return [...new Set(blockers)]
 }
 
@@ -1491,7 +1490,7 @@ function normalizeProgress(input) {
 }
 
 /** Rechecks epoch, identity and the declarative table plan before every delete. */
-function assertProgressStillCurrent(db, evidence, guardedJournal, currentTables) {
+function assertProgressStillCurrent(db, evidence, guardedJournal, currentTables, completed = false) {
   const progress = guardedJournal.progress
   const finalizationBoundary = requireCurrentFinalizationBoundary(db, evidence)
   if (progress.archiveId !== evidence.archiveId
@@ -1506,7 +1505,7 @@ function assertProgressStillCurrent(db, evidence, guardedJournal, currentTables)
       'Mission finalization or verified archive identity changed during cleanup.',
     )
   }
-  const blockers = readStaticBlockers(db, evidence)
+  const blockers = readStaticBlockers(db, evidence, completed)
   if (blockers.length > 0) {
     const error = new ArchiveCleanupError(
       'ARCHIVE_CLEANUP_PRECONDITION_CHANGED',
@@ -1515,7 +1514,7 @@ function assertProgressStillCurrent(db, evidence, guardedJournal, currentTables)
     error.blockers = Object.freeze(blockers)
     throw error
   }
-  const archiveBoundary = readVerifiedArchiveBoundary(db, evidence)
+  const archiveBoundary = readVerifiedArchiveBoundary(db, evidence, completed)
   if (archiveBoundary.verificationProofSha256 !== progress.verificationProofSha256) {
     throw new ArchiveCleanupError(
       'ARCHIVE_CLEANUP_PRECONDITION_CHANGED',
@@ -1538,7 +1537,7 @@ function assertCompletedJournalCurrent(
   currentTables,
   schemaVersion,
 ) {
-  assertProgressStillCurrent(db, evidence, guardedJournal, currentTables)
+  assertProgressStillCurrent(db, evidence, guardedJournal, currentTables, true)
   if (guardedJournal.journal.state !== 'completed'
     || guardedJournal.progress.tableIndex !== guardedJournal.progress.tables.length
     || guardedJournal.progress.tableCursor !== null) {
@@ -1556,13 +1555,13 @@ function assertCompletedJournalCurrent(
 }
 
 /** Binds every cleanup batch to the same validated stored verification proof bytes. */
-function readVerifiedArchiveBoundary(db, evidence) {
+function readVerifiedArchiveBoundary(db, evidence, completed = false) {
   const archive = db.prepare(`SELECT mission_id, status, availability, verified_at,
       verification_proof_json, ciphertext_sha256, size_bytes
     FROM mission_archives WHERE id = ?`).get(evidence.archiveId)
   if (archive?.mission_id !== evidence.missionId
     || archive.status !== 'verified'
-    || archive.availability !== 'present'
+    || (!completed && archive.availability !== 'present')
     || archive.verified_at === null
     || typeof archive.verification_proof_json !== 'string'
     || archive.verification_proof_json.length < 1
@@ -1864,6 +1863,8 @@ function createEligibilityError(blockers) {
 }
 
 module.exports = {
+  buildArchiveCleanupPlan,
+  createCleanupSelection,
   ArchiveCleanupError,
   CLEANABLE_MISSION_EVENT_TYPES,
   createArchiveCleanupCoordinator,

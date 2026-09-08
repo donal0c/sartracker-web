@@ -20,6 +20,7 @@ const OPENED_AT = '2026-08-30T09:00:00.000Z'
 const CIPHERTEXT_SHA256 = 'a'.repeat(64)
 
 interface ArchiveReviewBridge {
+  readonly supported: boolean
   readonly open: (input: unknown) => Promise<Readonly<Record<string, unknown>>>
   readonly close: (input: unknown) => Promise<boolean>
   readonly cancel: (input: unknown) => Promise<boolean>
@@ -28,7 +29,7 @@ interface ArchiveReviewBridge {
 }
 
 /** Runs the real sandbox preload and captures the projected renderer bridge. */
-function createHarness() {
+function createHarness(platform = 'linux') {
   const preload = readFileSync('electron/preload.cjs', 'utf8')
   const invoke = vi.fn().mockResolvedValue(undefined)
   const sendSync = vi.fn(() => ({ ok: true }))
@@ -36,6 +37,7 @@ function createHarness() {
   const removeListener = vi.fn()
   let exposedBridge: Readonly<Record<string, unknown>> | undefined
   expect(() => runInNewContext(preload, {
+    process: { platform },
     TextEncoder,
     require: (specifier: string) => {
       if (specifier !== 'electron') throw new Error(`Unexpected preload require: ${specifier}`)
@@ -90,10 +92,18 @@ describe('archive review sandbox preload containment [DON-253]', () => {
       'onProgress',
       'open',
       'read',
+      'supported',
     ])
     expect(archiveReview).not.toHaveProperty('invoke')
     expect(archiveReview).not.toHaveProperty('call')
     expect(archiveReview).not.toHaveProperty('write')
+  })
+
+  it('rejects unsupported platforms before sending any credential to main', async () => {
+    const { archiveReview, invoke } = createHarness('win32')
+    expect(archiveReview?.supported).toBe(false)
+    await expect(archiveReview?.open({ secret: SECRET })).rejects.toThrow(/not available on this platform/)
+    expect(invoke).not.toHaveBeenCalled()
   })
 
   it('durably records a session-bound facade denial synchronously before returning', async () => {

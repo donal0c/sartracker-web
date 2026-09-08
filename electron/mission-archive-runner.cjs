@@ -1,5 +1,5 @@
 const path = require('node:path')
-const { Worker } = require('node:worker_threads')
+const { Worker } = require('./mission-worker.cjs')
 
 const {
   normalizeArchiveCreateRequest,
@@ -57,7 +57,7 @@ function projectNonSecretRequest(request) {
 
 /** Starts one mission-scoped archive worker without putting credentials in workerData. */
 function startMissionArchiveCreateWorker(input) {
-  const request = normalizeArchiveCreateRequest(input?.request)
+  let request = normalizeArchiveCreateRequest(input?.request)
   const workerExited = createDeferred()
   if (input.signal?.aborted === true) {
     const rejected = Promise.reject(createAbortError())
@@ -243,6 +243,11 @@ function startMissionArchiveCreateWorker(input) {
     zeroIfAttached(recoveryCodeBytes)
   })
 
+  // Long-lived listeners need only identity after the synchronous credential transfer.
+  // Managed strings cannot be zeroed, so release our references rather than retaining
+  // credentials solely to validate the worker's eventual completion.
+  request = projectNonSecretRequest(request)
+  input = { ...input, request: undefined }
   return decorateOperation(completion, workerExited.promise, () => cancel())
 }
 

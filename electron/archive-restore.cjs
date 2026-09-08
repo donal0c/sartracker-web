@@ -51,7 +51,8 @@ function normalizeAbsoluteDirectory(value, label) {
 }
 
 /** Hashes one restored database through a pinned descriptor without buffering the file. */
-function digestRestoredDatabase(databasePath, expectedIdentity) {
+function digestRestoredDatabase(databasePath, expectedIdentity, cancellationFlag) {
+  assertNotCancelled(cancellationFlag)
   let descriptor
   try {
     descriptor = fs.openSync(
@@ -72,6 +73,7 @@ function digestRestoredDatabase(databasePath, expectedIdentity) {
     const chunk = Buffer.allocUnsafe(FILE_DIGEST_CHUNK_BYTES)
     let offset = 0
     while (offset < identity.size) {
+      assertNotCancelled(cancellationFlag)
       const read = fs.readSync(descriptor, chunk, 0, Math.min(chunk.length, identity.size - offset), offset)
       if (read < 1) {
         throw new ArchiveRestoreError(
@@ -82,6 +84,7 @@ function digestRestoredDatabase(databasePath, expectedIdentity) {
       hash.update(chunk.subarray(0, read))
       offset += read
     }
+    assertNotCancelled(cancellationFlag)
     return hash.digest('hex')
   } finally {
     if (descriptor !== undefined) fs.closeSync(descriptor)
@@ -402,7 +405,7 @@ async function restoreMissionArchiveForReview(input) {
       databaseIdentity.sizeBytes,
       emit,
     )
-    const databaseSha256 = digestRestoredDatabase(inspected.databasePath, databaseIdentity)
+    const databaseSha256 = digestRestoredDatabase(inspected.databasePath, databaseIdentity, cancellationFlag)
     assertPinnedCustodyFileUnchanged(archive)
     const validatedDatabaseIdentity = getRestoredDatabaseIdentity(extracted)
     if (validatedDatabaseIdentity.dev !== databaseIdentity.dev
@@ -477,6 +480,7 @@ async function restoreMissionArchiveForReview(input) {
 
 module.exports = {
   ArchiveRestoreError,
+  digestRestoredDatabase,
   normalizeRestoreRequest,
   restoreMissionArchiveForReview,
 }

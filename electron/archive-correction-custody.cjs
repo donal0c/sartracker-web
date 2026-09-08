@@ -212,6 +212,12 @@ function reconcileCorrectionAttachmentCustody(input) {
     if (committed && state !== 'pair') {
       throw new Error('Committed correction attachment custody is incomplete.')
     }
+    if (!committed && state !== 'absent') {
+      if (typeof input.removeUncommittedEntry !== 'function'
+        || input.removeUncommittedEntry(entry, inspected.observation) !== 'absent') {
+        throw new Error('Uncommitted correction attachment removal is not confirmed.')
+      }
+    }
   }
   clearCorrectionAttachmentCustody(input.db, plan.operationId)
   return Object.freeze({ recovered: 1, committed })

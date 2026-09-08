@@ -830,6 +830,7 @@ describe('browser harness store', () => {
     })).resolves.toEqual({
       eligible: false,
       startableWithCredential: true,
+      preview: { missionId: mission.id, totalRows: expect.any(Number), tables: expect.any(Array) },
       blockers: ['fresh_non_machine_unlock_required'],
       storageState: 'live',
     })

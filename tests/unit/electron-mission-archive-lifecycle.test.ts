@@ -800,6 +800,11 @@ describe('encrypted mission archive lifecycle integration', () => {
         eligible: false,
         blockers: ['fresh_non_machine_unlock_required'],
         storageState: 'live',
+        preview: {
+          missionId: mission.id,
+          totalRows: expect.any(Number),
+          tables: expect.any(Array),
+        },
       })
 
       await expect(store.getMissionCleanupEligibility(

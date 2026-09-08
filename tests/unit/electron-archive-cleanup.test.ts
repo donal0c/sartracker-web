@@ -399,6 +399,18 @@ async function createFixture(input: {
 }
 
 describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
+  it('previews exactly the eligible live rows while excluding retained and other-mission records', async () => {
+    const fixture = await createFixture()
+    const { readCleanupPreview } = require('../../electron/archive-cleanup-preview.cjs') as {
+      readCleanupPreview: (db: BetterSqliteDatabase, missionId: string) => { totalRows: number }
+    }
+    try {
+      const preview = readCleanupPreview(fixture.db, fixture.missionId)
+      const result = await fixture.coordinator.start(fixture.evidence)
+      expect(preview.totalRows).toBe(result.deletedRows)
+      expect(readCleanupPreview(fixture.db, fixture.missionId).totalRows).toBe(0)
+    } finally { fixture.db.close() }
+  })
   it('keeps the initial cleanup journal transaction non-blocking under a concurrent WAL writer', async () => {
     const fixture = await createFixture()
     let lockWorker: Worker | null = null
@@ -762,6 +774,18 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
     } finally {
       fixture.db.close()
     }
+  })
+
+  it('keeps completed cleanup archived when archive availability later changes', async () => {
+    const fixture = await createFixture()
+    try {
+      await fixture.coordinator.start(fixture.evidence)
+      fixture.db.prepare("UPDATE mission_archives SET availability = 'missing' WHERE id = ?").run(fixture.archiveId)
+      expect(fixture.coordinator.getEligibility(fixture.evidence)).toEqual({
+        eligible: false, blockers: ['cleanup_already_completed'], storageState: 'archived',
+      })
+      expect(readMissionLiveReviewStorageState(fixture.db, fixture.missionId)).toBe('archived')
+    } finally { fixture.db.close() }
   })
 
   it('deletes only inventoried bulk mission rows in bounded transactions and retains the reviewable custody stub', async () => {

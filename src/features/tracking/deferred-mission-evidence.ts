@@ -9,6 +9,7 @@ type DeferredMissionEvidenceQueueDependencies<Payload> = {
   readonly capacity: number
   readonly beginObservation: (missionId: string) => MissionEvidenceObservation
   readonly persist: (missionId: string, payload: Payload) => Promise<unknown>
+  readonly onPersistenceFailure?: (missionId: string, error: unknown) => void
   readonly markEvidenceLoss: (
     missionId: string,
     reason: IngestEvidenceLossReason,
@@ -41,6 +42,7 @@ export type DeferredMissionEvidenceQueue<Payload> = {
     observation: MissionEvidenceObservation,
   ) => boolean
   readonly requestFlushMission: (missionId: string) => void
+  readonly waitForCapacity: (signal?: AbortSignal) => Promise<void>
   readonly flushMission: (missionId: string) => Promise<void>
   readonly settleMissionForFinish: (
     missionId: string,
@@ -66,6 +68,7 @@ export function createDeferredMissionEvidenceQueue<Payload>(
 
   const statesByMission = new Map<string, MissionSettlementState>()
   const queuedEntries: DeferredMissionEvidenceEntry<Payload>[] = []
+  const capacityWaiters = new Set<() => void>()
   let activeEntry: DeferredMissionEvidenceEntry<Payload> | null = null
   let pumpInFlight: Promise<void> | null = null
   let accepting = true
@@ -73,9 +76,27 @@ export function createDeferredMissionEvidenceQueue<Payload>(
 
   /** Wakes explicit Finish and stop drains after one ownership transition. */
   function notifyState(state: MissionSettlementState): void {
+    for (const resolve of [...capacityWaiters]) resolve()
     const waiters = [...state.waiters]
     state.waiters.clear()
     for (const resolve of waiters) resolve()
+  }
+
+  /** Backpressures the producer without retaining another payload or cancelling accepted writes. */
+  async function waitForCapacity(signal?: AbortSignal): Promise<void> {
+    while (accepting && !signal?.aborted && retainedCount() >= dependencies.capacity) {
+      await new Promise<void>((resolve) => {
+        /** Releases this waiter on either capacity change or producer shutdown. */
+        const wake = (): void => {
+          capacityWaiters.delete(wake)
+          signal?.removeEventListener('abort', wake)
+          resolve()
+        }
+        capacityWaiters.add(wake)
+        signal?.addEventListener('abort', wake, { once: true })
+        if (signal?.aborted) wake()
+      })
+    }
   }
 
   /** Waits without adding a polling timer to the evidence boundary. */
@@ -165,10 +186,11 @@ export function createDeferredMissionEvidenceQueue<Payload>(
       const state = statesByMission.get(entry.missionId)
       try {
         await dependencies.persist(entry.missionId, entry.payload)
-      } catch {
+      } catch (error: unknown) {
         if (state !== undefined) {
           requireEvidenceLoss(state, 'mission_persistence_failed')
         }
+        dependencies.onPersistenceFailure?.(entry.missionId, error)
       } finally {
         activeEntry = null
         if (state !== undefined) {
@@ -271,6 +293,7 @@ export function createDeferredMissionEvidenceQueue<Payload>(
       return enqueueOwned(missionId, payload, observation)
     },
     enqueueOwned,
+    waitForCapacity,
     requestFlushMission: (missionId) => {
       const state = statesByMission.get(missionId)
       if (state === undefined) return
@@ -288,6 +311,7 @@ export function createDeferredMissionEvidenceQueue<Payload>(
     },
     settleForStop: async (canPersistMission) => {
       accepting = false
+      for (const resolve of [...capacityWaiters]) resolve()
       const settledStates = new Set<MissionSettlementState>()
       const settlementErrors: unknown[] = []
       while (true) {

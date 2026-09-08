@@ -1217,6 +1217,7 @@ function verifyRestoredEvidence(input) {
       assertNotCancelled(input.cancellationFlag)
       const observed = computeArchivedTableContentDigest(restored, {
         tableName: expected.table_name,
+        missionId: input.request.missionId,
         schemaVersion: input.request.schemaVersion,
         isCancelled: () => Atomics.load(input.cancellationFlag, 0) !== 0,
         onProgress: forwardInventoryRows(expected.table_name),
@@ -1298,6 +1299,9 @@ function verifyRestoredEvidence(input) {
       tables: Object.freeze(tableProofs),
       gpxProof,
       attachmentCount,
+      legacyPathOnlyAttachmentCount: input.manifest.attachments.filter(
+        (attachment) => attachment.custody_class === 'legacy_path_only',
+      ).length,
       replayProof: restoredReplay,
     }
   } finally {
@@ -1476,6 +1480,9 @@ async function verifyMissionArchiveFile(input) {
           exhaustive: true,
           matched: true,
           count: evidence.attachmentCount,
+          digestCustodyCount: evidence.attachmentCount - evidence.legacyPathOnlyAttachmentCount,
+          legacyPathOnlyCount: evidence.legacyPathOnlyAttachmentCount,
+          historicalDigestCustodyComplete: evidence.legacyPathOnlyAttachmentCount === 0,
         },
       },
       replaySemantic: {

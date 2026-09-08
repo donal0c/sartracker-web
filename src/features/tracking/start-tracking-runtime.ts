@@ -88,6 +88,7 @@ type TrackingRuntimePollerFactory = (
       context: TrackingSnapshotContext,
       observation: TrackingMissionEvidenceTransfer,
     ) => void
+    readonly waitForCurrentEvidenceCapacity: (signal: AbortSignal) => Promise<void>
     readonly onStatusChange: (status: TrackingConnectionStatus) => void
     readonly getInitialBreadcrumbs: (
       signal?: AbortSignal,
@@ -441,6 +442,17 @@ export async function startTrackingRuntime(
         { status: 'fulfilled', value: undefined },
         missionId,
       )
+    },
+    onPersistenceFailure: (_missionId, error) => {
+      logger.warn('Deferred mission persistence failed.', error)
+      const code = error !== null && typeof error === 'object' && 'code' in error ? error.code : null
+      const failureCode = typeof code === 'string' && /^(?:SQLITE_[A-Z_]{1,48}|E[A-Z]{1,24})$/u.test(code)
+        ? code
+        : error instanceof Error && error.name === 'AbortError' ? 'ABORTED' : 'PERSISTENCE_FAILED'
+      void Promise.resolve(dependencies.recordDiagnosticEvent?.({
+        level: 'warn', category: 'tracking', event: 'tracking_deferred_persistence_failure',
+        fields: { failureCode },
+      })).catch((diagnosticError: unknown) => logger.warn('Persistence failure diagnostic could not be recorded.', diagnosticError))
     },
     markEvidenceLoss: async (missionId, reason) => {
       await retainMissionEvidenceLoss(
@@ -807,6 +819,7 @@ export async function startTrackingRuntime(
         throw error
       }
     },
+    waitForCurrentEvidenceCapacity: (signal) => deferredMissionEvidence.waitForCapacity(signal),
     onCurrentSnapshot: (snapshot, context, observation) => {
       applyParticipantRosterWithoutBlocking(snapshot.devices, context)
       const missionEvidenceId = context.missionEvidenceId === undefined

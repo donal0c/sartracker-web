@@ -91,6 +91,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not interpret t
     ).toHaveCount(15)
     await expect(dialog).toContainText('Passed: Cleanup recovery journal integrity is valid')
     await expect(dialog).toContainText('Passed: Live rows still match the finalization boundary')
+    await expect(dialog.getByTestId('archive-cleanup-row-preview')).toContainText('live rows are eligible for removal')
+    await expect(dialog).toContainText('recovery of these rows depends on them')
     await page.getByTestId('archive-cleanup-secret').fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
     await page.getByTestId('archive-cleanup-confirmation').fill(MISSION_NAME)
     await expect(page.getByTestId('archive-cleanup-start')).toBeEnabled()
@@ -101,9 +103,9 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not interpret t
       area: 'mission-review',
       severity: 'critical',
       verificationPrompt: `This is browser-validation evidence of the rendered operator flow only; it does not prove desktop deletion, encryption, archive-byte identity, or operating-system cleanup. Verify the visible live-store archival dialog:
-1. The heading must say "Archive live mission rows" and the scope text must say only bulk live-database evidence rows move.
-2. It must explicitly say the mission remains listed and reviewable from its verified encrypted archive.
-3. It must explicitly say nothing is deleted from the archive and this is not an evidence-deletion feature.
+1. The heading must say "Archive live mission rows" and the scope text must explicitly say cleanup deletes eligible live database rows after re-verifying the encrypted archive.
+2. It must explicitly say the mission remains listed and reviewable from that archive.
+3. It must warn the operator to keep the archive and passphrase or recovery code because recovery depends on them; a live-row removal count must be visible.
 4. A fixed safety checklist must visibly enumerate every precondition with text status, not colour alone; all immutable checks should pass and a fresh credential should remain pending.
 5. The checklist must explicitly show that cleanup recovery-journal integrity is valid.
 6. The checklist must explicitly show that live rows still match the finalization boundary.
@@ -187,7 +189,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not infer deskt
       severity: 'critical',
       verificationPrompt: `This is browser-validation evidence of the rendered operator route only; it does not prove cryptography, restored contents, or operating-system cleanup. Verify the visible archive-verification dialog:
 1. The heading must say "Retry archive verification" and visibly state that the archive is sealed but not verified.
-2. It must require both the original archive passphrase and the original archive recovery code, using two visibly masked inputs.
+2. It must visibly require both the original archive passphrase and the original archive recovery code, with two empty credential fields. Password input types are checked separately by Playwright; empty fields cannot demonstrate masking in a screenshot.
 3. It must say existing archive bytes do not change.
 4. It must explain that verification restores and compares every required item and uses permission-restricted scratch space that is swept automatically.
 5. The Restore and verify action must be visibly disabled while both credentials are empty.

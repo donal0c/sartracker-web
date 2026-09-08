@@ -1,4 +1,5 @@
 const fs = require('node:fs/promises')
+const fsSync = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const {
@@ -17,13 +18,18 @@ const OFFICIAL_MAP_PACKAGE_DIRECTORY = 'official-map-packages'
 function createElectronFileSystem(options) {
   const allowedFiles = new Set()
   const allowedDirectories = new Set([normalizeResolvedPath(options.userDataPath)])
+  const externalFiles = new Set()
+  const externalDirectories = new Set()
+  const privateRoot = fsSync.realpathSync(options.userDataPath)
 
   function allowFile(inputPath) {
     allowedFiles.add(normalizeResolvedPath(inputPath))
+    try { externalFiles.add(fsSync.realpathSync(inputPath)) } catch { /* Opening still requires an existing selected file. */ }
   }
 
   function allowDirectory(inputPath) {
     allowedDirectories.add(normalizeResolvedPath(inputPath))
+    try { externalDirectories.add(fsSync.realpathSync(inputPath)) } catch { /* Opening still requires an existing selected directory. */ }
   }
 
   function assertAllowedPath(inputPath, label) {
@@ -189,11 +195,19 @@ function createElectronFileSystem(options) {
     },
     openExternalPath: async (inputPath) => {
       const normalizedPath = normalizeRequiredPath(inputPath, 'Path')
-      assertAllowedPath(normalizedPath, 'Path')
-      await fs.access(normalizedPath).catch(() => {
-        throw new Error(`Path does not exist: ${normalizedPath}`)
-      })
-      const errorMessage = await options.shell.openPath(normalizedPath)
+      const stat = await fs.lstat(normalizedPath)
+      if (stat.isSymbolicLink()) throw new Error('Symbolic links are not allowed for external opening.')
+      const resolved = await fs.realpath(normalizedPath)
+      if (isPathInsideDirectory(resolved, privateRoot)) {
+        const parts = path.relative(privateRoot, resolved).split(path.sep)
+        if (!stat.isFile() || parts.length !== 4 || parts[0] !== 'missions' || parts[2] !== 'attachments') {
+          throw new Error('Protected application files cannot be opened through the external file launcher.')
+        }
+      } else if (!externalFiles.has(resolved)
+        && ![...externalDirectories].some((directory) => isPathInsideDirectory(resolved, directory))) {
+        throw new Error('Path is not an allowed live attachment or operator-selected file.')
+      }
+      const errorMessage = await options.shell.openPath(resolved)
       if (errorMessage !== '') {
         throw new Error(`Failed to open path with default application: ${errorMessage}`)
       }

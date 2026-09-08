@@ -1322,7 +1322,11 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
     ipcRenderer.send(RENDERER_TEARDOWN_READY_CHANNEL, input)
   },
   archiveReview: Object.freeze({
+    supported: process.platform === 'darwin' || process.platform === 'linux',
     open(input) {
+      if (process.platform !== 'darwin' && process.platform !== 'linux') {
+        return Promise.reject(new Error('Archive Review is not available on this platform.'))
+      }
       const request = projectArchiveReviewOpenForIpc(input)
       return ipcRenderer.invoke(ARCHIVE_REVIEW_CHANNELS.open, request)
         .then((result) => projectArchiveReviewSessionForRenderer(result, request))

@@ -45,6 +45,8 @@ const {
       readonly archivePath: string
       readonly sessionDirectory: string
       readonly expectedMissionId: string
+      readonly expectedArchiveSha256?: string
+      readonly expectedArchiveSizeBytes?: number
       readonly onProgress?: (progress: {
         readonly phase: string
         readonly completed: number
@@ -411,6 +413,17 @@ async function expectFailedWithMainOwnedResidue(
 }
 
 describe('legacy plaintext archive streaming restore', () => {
+  it('rejects a valid ZIP whose bytes differ from the registry content baseline', async () => {
+    const fixture = await createFixture()
+    await expect(restoreTrackedLegacyMissionArchive({
+      archivePath: fixture.archivePath,
+      sessionDirectory: path.join(rootDirectory, 'substitution-session'),
+      expectedMissionId: fixture.missionId,
+      expectedArchiveSha256: '0'.repeat(64),
+      expectedArchiveSizeBytes: (await stat(fixture.archivePath)).size,
+    })).rejects.toMatchObject({ code: 'LEGACY_ARCHIVE_IDENTITY_CHANGED' })
+  })
+
   it('restores the fixed legacy payload with permission-restricted files and bounded metadata', async () => {
     const fixture = await createFixture()
     const sourceHashBefore = sha256(await readFile(fixture.archivePath))

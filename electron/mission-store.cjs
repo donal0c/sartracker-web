@@ -81,6 +81,7 @@ const {
   startArchiveCleanupCredentialCheck,
 } = require('./archive-cleanup-credential-runner.cjs')
 const { createArchiveCleanupCoordinator } = require('./archive-cleanup.cjs')
+const { startCleanupPreview } = require('./archive-cleanup-preview.cjs')
 const {
   assertArchiveCleanupMembershipGeneration,
   installArchiveCleanupMembershipTriggers,
@@ -1642,7 +1643,12 @@ function createElectronMissionStore(options) {
           custodyReconciled: true,
           nonMachineUnwrap: null,
         })
-        return archiveCleanupCoordinator.getEligibility(evidence)
+        const eligibility = archiveCleanupCoordinator.getEligibility(evidence)
+        if (eligibility.storageState !== 'live'
+          || eligibility.blockers.some((blocker) => blocker !== 'fresh_non_machine_unlock_required')) return eligibility
+        const preview = await startCleanupPreview({ databasePath,
+          missionId: normalizedInput.missionId, signal: controller.signal })
+        return Object.freeze({ ...archiveCleanupCoordinator.getEligibility(evidence), preview })
       } catch (error) {
         if (controller.signal.aborted) throw createArchiveCancellationError()
         return buildUnavailableArchiveCleanupEligibility({
@@ -2175,7 +2181,7 @@ function createElectronMissionStore(options) {
     readCoverageManifest: async (missionId, requestId) => executeCoverageRequest(
       requestId,
       async (signal) => {
-        getMission(db, missionId)
+        assertCoveragePublicationAvailable(missionId)
         const coverageMission = db.prepare(`SELECT change_seq, enumerated
           FROM coverage_missions WHERE mission_id = ?`).get(missionId)
         if (coverageMission?.enumerated !== 1) {
@@ -3379,11 +3385,22 @@ function createElectronMissionStore(options) {
     return result
   }
 
-  /** Rechecks live storage ownership without imposing editable-mission rules on derived coverage. */
+  /** Preserves the immutable finalized archive membership, including derived coverage rows. */
+  function assertCoveragePublicationAvailable(missionId) {
+    assertArchiveCorrectionWriterIdle(missionId)
+    assertStoreLiveMissionReviewAvailable(missionId)
+    if (getMission(db, missionId).status === 'finalized') {
+      const error = new Error('Coverage rebuilding is unavailable for finalized missions. Use Mission Review to inspect retained evidence, or unlock a correction before rebuilding coverage.')
+      error.code = 'MISSION_COVERAGE_FINALIZED'
+      throw error
+    }
+    assertMissionFinalizationNotInProgress(db, missionId)
+  }
+
+  /** Rechecks finalization and live storage ownership inside the publication transaction. */
   function runCoveragePublication(missionId, signal, publish) {
     return responsiveWriter.run(() => {
-      assertArchiveCorrectionWriterIdle(missionId)
-      assertStoreLiveMissionReviewAvailable(missionId)
+      assertCoveragePublicationAvailable(missionId)
       return publish()
     }, { signal })
   }

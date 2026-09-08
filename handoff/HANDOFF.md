@@ -6,18 +6,19 @@
 ## Current State
 
 - Existing PR #10 / programme PR6, branch `codex/breadcrumb-pr6-archive-lifecycle`.
-  **Implementation qualification is complete.** External review remains.
+  **External review requests changes; remediation is active.** The previous
+  implementation qualification below is historical, not proof of new fixes.
+  See `docs/breadcrumb-pr6-review-remediation.md` for every visible finding.
 - Qualified implementation: `23f90f087e90d0aa145130d9c65b17815a630109`, tree
-  `9e783fd843373ab53cd27093769cf1f67c959034`. This closeout changes documentation
-  and evidence only. Runtime proof stays bound to that implementation; verify
-  unchanged application/test/build/dependency/workflow/script blobs on descendants.
+  `9e783fd843373ab53cd27093769cf1f67c959034`. Runtime remediation now changes that
+  implementation. Do not apply its historical qualification to the uncommitted fixes.
 - Workspace: `/Users/donalocallaghan/.codex/worktrees/a27a/sartracker-web`.
   Preserve the existing PR. No replacement PR, merge, release or reviewer dispatch.
 - Donal authorized finishing all author-side work through review readiness and
   approved reference disposable tests/Linear updates. Old time/usage limits were
   lifted; no reset credit was used or authorized.
 
-## Verified Result
+## Historical Verified Result (before external-review remediation)
 
 - Source **4,034 tests / 385 files pass**, 217.99 s. Build/TypeScript/bundle budgets
   and lint pass; four archive operator browser flows pass in 13.6 s.
@@ -40,7 +41,7 @@
   recovery, and requires fresh bounded reads before/inside the atomic custody
   transaction. Red-first coverage now spans admission, complete sealing and restart.
   No transaction crosses a yield; custody, membership, predecessor and fence guards
-  remain intact. No operator controls/wording/workflow changed; manual is current.
+  remain intact in that historical candidate. New dialog changes require fresh browser evidence.
 
 ## Evidence Safety And Limits
 
@@ -57,8 +58,25 @@
 
 - DON-248/252/253 remain In Progress pending external review/merge. DON-252 retains
   Bug/Regression/Performance; its comments and the evidence ledger record provenance.
-- Finish the documentation-only push, verify latest branch CI, and mark the existing
-  PR ready for external review. Record final head/CI in PR/Linear rather than making
-  another documentation commit just to record its own SHA.
-- Do not repeat expensive runtime qualification for this documentation-only closeout.
-  External review and Donal's approval/merge are the next human steps.
+- Address the external ledger against reviewed head `c69b0c23`, with regressions
+  and proportionate smokes. Donal explicitly requested avoiding automatic full
+  qualification repeats. Five omitted Medium findings have been requested;
+  their absence does not block work on the visible findings.
+
+## Current Remediation Snapshot
+
+- All visible items have an implementation or explicit retained-design rationale
+  in `docs/breadcrumb-pr6-review-remediation.md`. Global event pages and atomic
+  correction restore remain deliberate; no cleanup baseline is rewritten.
+- New behavior includes tracking backpressure, independent archive scope checks,
+  first-observed legacy content pins, Worker/read bounds, correction provenance
+  and orphan recovery, descriptor ownership, row-count confirmation and pending
+  cancellation dismissal. Finalized coverage rebuilding requires correction unlock.
+- Build/TypeScript/bundle budgets and lint pass. Four Chromium plus three visual
+  operator flows pass; all four screenshot reviews pass. Manual image updated.
+- Full source uses CI's `--no-file-parallelism`: **4,105 tests / 394 files pass**
+  in 443.06 s. The unchanged 200 ms provenance timing assertion passes at
+  90.793 ms. Exact-candidate packaged lifecycle smoke remains pending.
+- DON-252 remediation comment `c97ee3e6-7422-451e-b4b5-750cd40d8f1b` records current
+  proof and limits. Commit the verified source candidate, then record its
+  packaged smoke before calling visible work complete and pushing the PR update.

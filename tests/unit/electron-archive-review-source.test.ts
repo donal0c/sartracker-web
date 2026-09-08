@@ -464,7 +464,7 @@ describe('archive-backed Mission Review source [DON-252 / BCP-15]', () => {
     const fixture = await createV13Fixture()
     const overflow = { child: null as unknown }
     let cursor = overflow
-    for (let depth = 0; depth < 80; depth += 1) {
+    for (let depth = 0; depth < 8; depth += 1) {
       const child = { child: null as unknown }
       cursor.child = child
       cursor = child
@@ -527,11 +527,25 @@ describe('archive-backed Mission Review source [DON-252 / BCP-15]', () => {
       expect(serialized).not.toContain('/Users/private-operator')
       expect(serialized).not.toContain('C:\\\\Users')
       expect(serialized).not.toContain('private-custody')
-      expect(serialized).not.toContain('deep.sararch')
+      expect(serialized).toContain('deep.sararch')
       expect(readObjectDepth(details.overflow)).toBeLessThanOrEqual(32)
     } finally {
       await source.close()
     }
+  })
+
+  it.each(['malformed', 'over-depth'] as const)('rejects %s evidence instead of silently replacing it with null', async (mode) => {
+    const fixture = await createV13Fixture()
+    let nested: unknown = { evidence: 'retained' }
+    for (let index = 0; index < 40; index += 1) nested = { child: nested }
+    const source = createSource(fixture, {
+      runProjectionRead: async () => [{ state_json: mode === 'malformed' ? '{broken' : JSON.stringify(nested) }],
+    })
+    try {
+      await expect(source.listMarkers(fixture.missionId)).rejects.toMatchObject({
+        code: mode === 'malformed' ? 'ARCHIVE_REVIEW_RESULT_INVALID' : 'ARCHIVE_REVIEW_RESULT_LIMIT',
+      })
+    } finally { await source.close() }
   })
 
   it('preserves path-shaped free-text while scrubbing only path-bearing fields', async () => {
@@ -1017,6 +1031,30 @@ describe('archive-backed Mission Review source [DON-252 / BCP-15]', () => {
     } finally {
       await source.close()
     }
+  })
+
+  it('bounds retained attachment viewer leases until Review closes', async () => {
+    const fixture = await createV13Fixture()
+    const leases: Array<{ opened: true; close: ReturnType<typeof vi.fn> }> = []
+    const source = createSource(fixture, {
+      attachmentMappings: [{
+        entryName: 'attachments/00000001-briefing.pdf', sourceRelativePath: 'briefing.pdf',
+        sha256: 'a'.repeat(64), sizeBytes: 10,
+        references: [{ referenceKind: 'marker', referenceId: fixture.markerId }],
+      }],
+      openRestoredAttachment: async () => {
+        const lease = { opened: true as const, close: vi.fn(async () => undefined) }
+        leases.push(lease)
+        return lease
+      },
+    })
+    const request = { missionId: fixture.missionId, attachmentPath: 'briefing.pdf', referenceKind: 'marker', referenceId: fixture.markerId }
+    try {
+      for (let index = 0; index < 8; index += 1) await source.openAttachment(request)
+      await expect(source.openAttachment(request)).rejects.toMatchObject({ code: 'ARCHIVE_REVIEW_ATTACHMENT_LIMIT' })
+      expect(leases).toHaveLength(8)
+    } finally { await source.close() }
+    for (const lease of leases) expect(lease.close).toHaveBeenCalledOnce()
   })
 
   it('retains failed-opener descriptor cleanup ownership until source close succeeds', async () => {

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MissionArchiveVerificationDialog } from '../../src/features/mission/mission-archive-verification-dialog'
 import type {
   MissionArchiveInfo,
+  MissionArchiveProgress,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 const OPERATION_ID = '44c0b79d-f4ad-45db-ac2d-1360c9adf8fd'
@@ -30,6 +31,28 @@ describe('sealed mission archive verification retry dialog [DON-252 / BCP-15]', 
     act(() => root.unmount())
     host.remove()
     vi.restoreAllMocks()
+  })
+
+  it('accepts operation-bound verification progress with the main boundary empty mission identity', async () => {
+    const terminal = deferred<MissionArchiveInfo>()
+    let listener: (progress: MissionArchiveProgress) => void = () => undefined
+    render({
+      verify: () => terminal.promise,
+      subscribeProgress: (callback) => { listener = callback; return () => undefined },
+    })
+    setInput('archive-verification-passphrase', PASSPHRASE)
+    setInput('archive-verification-recovery-code', RECOVERY_CODE)
+    await clickAndFlush('archive-verification-start')
+    const progress: MissionArchiveProgress = {
+      operationId: OPERATION_ID, missionId: '', kind: 'verify', sequence: 1,
+      phase: 'inventory', unit: 'tables', completed: 2, total: 49, detail: 'Checking archived table content',
+    }
+    act(() => listener({ ...progress, operationId: SECOND_OPERATION_ID, detail: 'Unrelated operation' }))
+    expect(text()).not.toContain('Unrelated operation')
+    act(() => listener(progress))
+    expect(text()).toContain(progress.detail)
+    act(() => listener({ ...progress, detail: 'Stale progress' }))
+    expect(text()).not.toContain('Stale progress')
   })
 
   it('requires both original credentials, masks and bounds them, then scrubs them before exhaustive verification settles', async () => {
@@ -191,6 +214,20 @@ describe('sealed mission archive verification retry dialog [DON-252 / BCP-15]', 
       await terminal.promise.catch(() => undefined)
       await Promise.resolve()
     })
+  })
+
+  it('allows returning to the mission while cancellation remains owned and unconfirmed', async () => {
+    const terminal = deferred<MissionArchiveInfo>()
+    const onClose = vi.fn().mockResolvedValue(undefined)
+    render({ verify: vi.fn(() => terminal.promise), onClose })
+    setInput('archive-verification-passphrase', PASSPHRASE)
+    setInput('archive-verification-recovery-code', RECOVERY_CODE)
+    await clickAndFlush('archive-verification-start')
+    await clickAndFlush('archive-verification-cancel')
+    expect(text()).toMatch(/cancellation is not yet confirmed/iu)
+    await clickAndFlush('archive-pending-dismiss')
+    expect(onClose).toHaveBeenCalledWith(true)
+    expect(text()).not.toMatch(/cancelled safely/iu)
   })
 
   it('does not turn cancellation into a sealed claim when reconciliation cannot establish status', async () => {

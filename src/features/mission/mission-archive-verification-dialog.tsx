@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { DialogOverlay } from '../../components/dialog-overlay'
+import { ArchiveCancellationPending } from './archive-cancellation-pending'
 import type {
   MissionArchiveInfo,
   MissionArchiveProgress,
@@ -97,7 +98,9 @@ export function MissionArchiveVerificationDialog({
       if (operationId === null
         || cancellationRequestedRef.current
         || nextProgress.operationId !== operationId
-        || nextProgress.missionId !== archive.mission_id
+        // Verification is bound to this attempt's operation ID; main deliberately
+        // leaves missionId empty until the archived mission has been verified.
+        || (nextProgress.missionId !== '' && nextProgress.missionId !== archive.mission_id)
         || nextProgress.kind !== 'verify'
         || nextProgress.sequence <= latestProgressSequenceRef.current) return
       latestProgressSequenceRef.current = nextProgress.sequence
@@ -359,6 +362,8 @@ export function MissionArchiveVerificationDialog({
           </div>
         ) : null}
 
+        {dialogState === 'cancellation-requested'
+          ? <ArchiveCancellationPending onDismiss={() => onClose(true)} /> : null}
         <div className="mt-5 flex justify-end">
           <button
             className="sar-button px-4 py-2 text-sm font-semibold disabled:opacity-40"

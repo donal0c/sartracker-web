@@ -247,6 +247,28 @@ function requireSafeInertPeer(identity) {
   }
 }
 
+/** Reclaims only a revalidated unpublished pair, in restart-safe pair -> peer -> absent order. */
+function removeUncommittedCorrectionAttachment(input, observation) {
+  const state = revalidateCorrectionAttachmentResidue(input, observation)
+  if (state === 'absent') return 'absent'
+  if (state === 'pair') {
+    fs.unlinkSync(input.targetName)
+    syncCurrentDirectory()
+  }
+  const peer = safeLeafStat(input.peerName)
+  requireSafeInertPeer(peer)
+  if (peer.dev.toString() !== observation.peer.dev
+    || peer.ino.toString() !== observation.peer.ino) {
+    throw new Error('Correction attachment peer changed during removal.')
+  }
+  fs.unlinkSync(input.peerName)
+  syncCurrentDirectory()
+  if (safeLeafStat(input.targetName) !== null || safeLeafStat(input.peerName) !== null) {
+    throw new Error('Correction attachment removal is incomplete.')
+  }
+  return 'absent'
+}
+
 /** Proves the public name and retained peer are the sole links to expected bytes. */
 function verifyCorrectionAttachmentPair(input) {
   const observation = proveCorrectionAttachmentResidue(input)
@@ -430,6 +452,7 @@ async function syncCurrentDirectoryAsync() {
 }
 
 module.exports = {
+  removeUncommittedCorrectionAttachment,
   assertCorrectionDirectoryIdentity,
   captureCorrectionDirectoryIdentity,
   createCorrectionAttachmentPair,

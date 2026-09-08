@@ -4,7 +4,6 @@ const { isMainThread, parentPort, workerData } = require('node:worker_threads')
 
 const {
   inspectArchiveCustodyFile,
-  readArchiveCustodyFileIdentity,
 } = require('./archive-custody-file.cjs')
 const {
   normalizeArchiveCustodyReconcileTicket,
@@ -52,17 +51,7 @@ function runArchiveCustodyReconcileWorker() {
     expectedCiphertextSha256: ticket.expectedCiphertextSha256,
   }
   try {
-    const identityOnly = ticket.containerVersion === 1
-      && ticket.expectedCiphertextSha256 === null
-    const observed = identityOnly
-      ? {
-          fileIdentity: readArchiveCustodyFileIdentity({
-            archiveDirectory: ticket.archiveDirectory,
-            archiveRelativePath: ticket.archiveRelativePath,
-          }),
-          ciphertextSha256: null,
-        }
-      : inspectArchiveCustodyFile({
+    const observed = inspectArchiveCustodyFile({
           archiveDirectory: ticket.archiveDirectory,
           archiveRelativePath: ticket.archiveRelativePath,
           cancellationFlag,

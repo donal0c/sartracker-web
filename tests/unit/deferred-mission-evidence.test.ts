@@ -16,6 +16,57 @@ function createDeferred<T>(): {
 }
 
 describe('deferred mission evidence queue [DON-276]', () => {
+  it('holds the producer at capacity until a retained write settles and permits cancellation of the wait', async () => {
+    const write = createDeferred<void>()
+    const queue = createDeferredMissionEvidenceQueue<string>({
+      capacity: 1,
+      beginObservation: (missionId) => ({ missionId, complete: vi.fn() }),
+      persist: () => write.promise,
+      markEvidenceLoss: vi.fn(),
+    })
+    queue.enqueue('mission-1', 'fix-a')
+    queue.requestFlushMission('mission-1')
+    const controller = new AbortController()
+    const cancelled = vi.fn()
+    const available = vi.fn()
+    const cancelledWait = queue.waitForCapacity(controller.signal).then(cancelled)
+    const capacityWait = queue.waitForCapacity().then(available)
+    await Promise.resolve()
+    expect(available).not.toHaveBeenCalled()
+    controller.abort()
+    await cancelledWait
+    expect(cancelled).toHaveBeenCalledOnce()
+    expect(queue.pendingCount()).toBe(1)
+    expect(available).not.toHaveBeenCalled()
+    write.resolve()
+    await capacityWait
+    expect(queue.pendingCount()).toBe(0)
+    expect(available).toHaveBeenCalledOnce()
+  })
+
+  it('reports each original persistence failure even when its durable loss marker is coalesced', async () => {
+    const failures = [
+      Object.assign(new Error('disk full'), { code: 'SQLITE_FULL' }),
+      Object.assign(new Error('writer busy'), { code: 'SQLITE_BUSY' }),
+    ]
+    const report = vi.fn()
+    const marker = vi.fn().mockResolvedValue(undefined)
+    const queue = createDeferredMissionEvidenceQueue<string>({
+      capacity: 8,
+      beginObservation: (missionId) => ({ missionId, complete: vi.fn() }),
+      persist: vi.fn().mockRejectedValueOnce(failures[0]).mockRejectedValueOnce(failures[1]),
+      markEvidenceLoss: marker,
+      onPersistenceFailure: report,
+    })
+    queue.enqueue('mission-1', 'fix-a')
+    queue.enqueue('mission-1', 'fix-b')
+    await queue.flushMission('mission-1')
+    expect(report.mock.calls).toEqual([
+      ['mission-1', failures[0]], ['mission-1', failures[1]],
+    ])
+    expect(marker).toHaveBeenCalledOnce()
+  })
+
   it('uses one guardian observation for every retained mission payload', async () => {
     const observations: Array<{ missionId: string | null; complete: ReturnType<typeof vi.fn> }> = []
     const persist = vi.fn(async (_missionId: string, payload: string) => payload)

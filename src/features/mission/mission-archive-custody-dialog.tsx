@@ -6,6 +6,7 @@ import {
 } from 'react'
 
 import { DialogOverlay } from '../../components/dialog-overlay'
+import { ArchiveCancellationPending } from './archive-cancellation-pending'
 import type {
   FinalizeMissionResult,
   MissionArchiveCustodyInput,
@@ -489,6 +490,8 @@ export function MissionArchiveCustodyDialog({
           </div>
         ) : null}
 
+        {dialogState === 'cancellation-requested'
+          ? <ArchiveCancellationPending onDismiss={onClose} /> : null}
         <div className="mt-5 flex justify-end">
           <button
             className="sar-button px-4 py-2 text-sm font-semibold disabled:opacity-40"

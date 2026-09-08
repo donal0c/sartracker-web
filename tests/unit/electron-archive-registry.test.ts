@@ -389,10 +389,7 @@ function completedCustodyOperation(
         expectedCiphertextSha256: ticket.expectedCiphertextSha256,
         outcome,
         observedSizeBytes,
-        observedCiphertextSha256: ticket.containerVersion === 1
-          && ticket.expectedCiphertextSha256 === null
-          ? null
-          : ticket.expectedCiphertextSha256 ?? 'a'.repeat(64),
+        observedCiphertextSha256: ticket.expectedCiphertextSha256 ?? 'a'.repeat(64),
         fileIdentity: {
           changedTimeNanoseconds: '2',
           device: '3',
@@ -872,10 +869,15 @@ describe('legacy v1 registry backfill', () => {
         appendAuditEvent: createSameDatabaseAuditAdapter(fixture.db, observed),
       })
 
+      expect(() => registry.issueReviewTicket(archiveId)).toThrow(/content baseline/)
+      await Promise.all([registry.reconcileArchiveAvailability({ archiveId }),
+        registry.reconcileArchiveAvailability({ archiveId })])
       expect(registry.issueReviewTicket(archiveId)).toEqual({
         archiveId,
         archiveKind: 'direct',
         archiveRelativePath: 'legacy-review-ticket.zip',
+        expectedArchiveSha256: createHash('sha256').update('LEGACY-PLAINTEXT-ZIP-BYTES').digest('hex'),
+        expectedArchiveSizeBytes: Buffer.byteLength('LEGACY-PLAINTEXT-ZIP-BYTES'),
         missionId,
         containerVersion: 1,
         status: 'sealed',
@@ -913,6 +915,15 @@ describe('legacy v1 registry backfill', () => {
         },
       })
 
+      await writeFile(archivePath, 'SUBSTITUTED-ZIP-BYTES')
+      await registry.reconcileArchiveAvailability({ archiveId })
+      expect(registry.getArchive(archiveId).availability).toBe('mismatched')
+      expect(() => registry.issueReviewTicket(archiveId)).toThrow()
+      await writeFile(archivePath, 'LEGACY-PLAINTEXT-ZIP-BYTES')
+      await registry.reconcileArchiveAvailability({ archiveId })
+      expect(registry.issueReviewTicket(archiveId)).toMatchObject({
+        expectedArchiveSha256: createHash('sha256').update('LEGACY-PLAINTEXT-ZIP-BYTES').digest('hex'),
+      })
       fixture.db.prepare(`UPDATE mission_archives SET availability = 'missing'
         WHERE id = ?`).run(archiveId)
       expect(() => registry.issueReviewTicket(archiveId)).toThrowError(

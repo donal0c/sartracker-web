@@ -706,6 +706,18 @@
             processing the screen during that wait. A save that cannot complete still reports an error;
             check tracking and storage warnings rather than treating an old displayed fix as a new save.
           </div>
+          <p>
+            Cleanup shows a live-row count and table breakdown before confirmation. It deletes those
+            eligible live copies only after proving their encrypted archive. Keep the archive file and
+            its passphrase or recovery code: recovery of the removed rows depends on them. Counts are
+            a preview; the application checks eligibility again before deletion.
+          </p>
+          <p>
+            If cancellation takes time, <strong>Return to mission</strong> dismisses the waiting dialog.
+            Cancellation remains unconfirmed and the application retains the operation until safe cleanup
+            settles. Refresh Saved Archives before relying on its status or retrying. Restart the
+            application if it remains busy. Dismissing the dialog does not confirm successful cancellation.
+          </p>
           <div class="note">
             <strong>Saved Mission Archives:</strong> for an eligible encrypted v2 revision, select
             Passphrase or Recovery code, enter that archive's original credential, and choose
@@ -717,6 +729,16 @@
             visible supplemental revision with its reason, authority, time, and prior archive hash; earlier
             archive bytes never change.
           </div>
+          <p>
+            The first custody check records a content baseline for a legacy archive. Subsequent checks
+            and opening Review reject changed bytes at the same path. This baseline detects later changes;
+            it does not prove the archive's history before that check. Attachment verification also
+            distinguishes older path-only custody from attachments with a recorded historical digest.
+          </p>
+          <p>
+            Archive Review retains at most eight attachment viewer copies per session. Close and reopen
+            Review before opening more attachments; successful Review close releases the retained copies.
+          </p>
           <div class="note">
             <strong>Temporary Review plaintext:</strong> an open Archive Review uses an app-owned,
             permission-restricted plaintext session. A successful close removes it. If cleanup fails, the
@@ -742,7 +764,7 @@
             <figcaption>Synthetic browser-validation UI example: Archive Review is read-only and keeps its temporary plaintext warning and close control visible. This image is not desktop cryptographic or field proof.</figcaption>
           </figure>
           <figure class="screenshot">
-            <img src="assets/archive-cleanup-complete-preconditions.png" alt="Review Archive Cleanup dialog with the 15-item safety checklist, original credential check, and exact mission-name confirmation" />
+            <img src="assets/archive-cleanup-complete-preconditions.png" alt="Archive cleanup dialog with the live-row removal count, archive and credential recovery warning, 15-item safety checklist, and exact mission-name confirmation" />
             <figcaption>Synthetic browser-validation UI example: live-row archival stays blocked until all 15 checks pass, including cleanup-journal integrity and an unchanged finalization-boundary membership, plus a fresh check of the archive's existing credential. This image is not desktop cryptographic or field proof.</figcaption>
           </figure>
           <div class="note">
@@ -1363,6 +1385,9 @@
             but accepted history might not survive a restart.
             <strong>TRACKING FALLBACK CACHE UPDATE FAILED</strong> means the current mission database
             remains authoritative, but the last-known offline view after a restart may be out of date.
+            The initial restart trail is a reduced display of at most 5,000 breadcrumbs per device;
+            the fallback tracking cache holds at most 5,000 breadcrumbs in total. These display limits
+            do not delete saved mission fixes. Use Mission History and exact-fix inspection for retained evidence.
             If restart reconstruction ignores unreadable stored fixes, SAR Tracker reports the count
             instead of silently stopping the remaining valid trail. Record the exact warning and export
             diagnostics before restarting when operationally safe.
@@ -1463,6 +1488,11 @@
             evidence. GPX evidence, replay, search-pass analysis, archive/custody workflows, and timeline
             reconstruction are later programme work and are not added by this view.
           </div>
+          <p>
+            Coverage rebuilding stops when a mission is finalized so its archived evidence remains
+            unchanged and eligible for live-store cleanup. Use <strong>Mission Review</strong> to inspect
+            retained evidence. Rebuilding coverage requires an authorized correction unlock first.
+          </p>
         </section>
 
         <section id="layers">
@@ -2082,7 +2112,7 @@ sh "$COLLECTOR" --screenshot</code></pre>
           </p>
           <ul>
             <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can import, validate, remove, and serve local official MBTiles packages from app-owned storage, so the original USB or source disk can be unplugged after import. The map reports ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. The Maps menu includes a field-readiness checklist and Settings can export a readiness certificate.</li>
-            <li><strong>Settings access:</strong> coordinator and admin rosters are currently local workflow/audit controls, not a strong authentication boundary. Treat Settings access as trusted-machine access until the privileged-settings guard and unlock-authority model are implemented.</li>
+            <li><strong>Settings access:</strong> coordinator and admin rosters are currently local workflow/audit controls, not a strong authentication boundary. Administrator roster changes retain their time and previous/new roster atomically in local settings history. This records configuration changes, not authenticated user identity. Treat Settings access as trusted-machine access until the privileged-settings guard and unlock-authority model are implemented.</li>
             <li><strong>Replay scope:</strong> Mission Review reconstructs evidence known at the selected time; it intentionally does not reproduce historical screen layout, map camera, panel state, or operator cursor. Eligible verified v2 and supported legacy v1 archives now open read-only, but BCP-17 exact-candidate qualification and release/field acceptance remain separate.</li>
             <li><strong>Shadow-use limit:</strong> the protocol keeps the existing primary operational process authoritative and defines stop/fallback/evidence rules. It is not an operational-safety claim. PR6 archive/restore evidence is pre-merge engineering qualification, not a published field capability; continue to use the primary process until BCP-17 and the separately authorized release are complete.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>

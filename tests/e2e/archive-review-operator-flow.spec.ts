@@ -79,8 +79,10 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
     const dialog = page.getByTestId('mission-archive-cleanup-dialog')
     await expect(dialog).toBeVisible()
     await expect(dialog).toContainText(
-      'bulk evidence rows for this mission move out of the live database; the mission remains listed and reviewable from its verified encrypted archive; nothing is deleted from the archive; this is not an evidence-deletion feature.',
+      'Cleanup deletes eligible live database rows after re-verifying their encrypted archive.',
     )
+    await expect(dialog).toContainText('recovery of these rows depends on them')
+    await expect(dialog.getByTestId('archive-cleanup-row-preview')).toContainText('live rows are eligible for removal')
     const checks = dialog
       .locator('section[aria-label="Cleanup safety checklist"]')
       .getByRole('listitem')

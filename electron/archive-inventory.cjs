@@ -744,6 +744,7 @@ function computeDigestForSelection(db, input) {
       const columnName = `archive_row.${quoteIdentifier(column.name)}`
       return [`typeof(${columnName})`, columnName]
     }),
+    ...(input.scopeSelection === undefined ? [] : [`(${input.scopeSelection.sql}) IS TRUE`]),
   ]
   const orderTerms = schema.orderColumns.map((columnName) => {
     if (columnName === '_rowid_') {
@@ -783,11 +784,20 @@ function computeDigestForSelection(db, input) {
   let rowCount = 0
   let lastProgressRows = 0
   const rowStatement = statement.safeIntegers(true).raw(true)
-  for (const row of rowStatement.iterate(...selection.parameters)) {
+  for (const row of rowStatement.iterate(
+    ...(input.scopeSelection?.parameters ?? []), ...selection.parameters,
+  )) {
     if (input.isCancelled?.()) {
       throw new ArchiveInventoryError(
         'ARCHIVE_CANCELLED',
         'Mission archive table digest was cancelled.',
+      )
+    }
+    if (input.scopeSelection !== undefined && row.pop() !== 1n) {
+      throw new ArchiveInventoryError(
+        'ARCHIVE_VERIFY_SCOPE_MISMATCH',
+        `Mission archive table ${declaration.tableName} contains a row outside its declared archive scope.`,
+        { tableName: declaration.tableName, decision: declaration.decision },
       )
     }
     hash.update(Buffer.from([0x52]))
@@ -861,7 +871,8 @@ function computeTableContentDigest(db, input) {
 
 /**
  * Digests every row in one table of a completed single-mission archive scratch database.
- * The caller must first enforce mission scope and empty operational-table invariants.
+ * With missionId, independently checks each row's declared scope in the same streaming
+ * pass. Without it, the caller owns scope enforcement (used when comparing scratch bytes).
  */
 function computeArchivedTableContentDigest(db, input) {
   const { declaration, schemaVersion } = findDigestDeclaration(db, input)
@@ -869,6 +880,15 @@ function computeArchivedTableContentDigest(db, input) {
     declaration,
     schemaVersion,
     selection: { sql: '1 = 1', parameters: [] },
+    ...(input.missionId === undefined ? {} : {
+      scopeSelection: declaration.decision === 'mission_rows' || declaration.decision === 'global_rows'
+        ? buildSelection(declaration.predicate, input.missionId)
+        : declaration.decision === 'derived_excluded'
+          // Insert triggers may rebuild mission-local counters in scratch. They
+          // remain scoped, but unlike operational state need not remain empty.
+          ? buildSelection({ kind: 'mission_column', column: 'mission_id' }, input.missionId)
+          : { sql: '0', parameters: [] },
+    }),
     isCancelled: input.isCancelled,
     onProgress: input.onProgress,
   })

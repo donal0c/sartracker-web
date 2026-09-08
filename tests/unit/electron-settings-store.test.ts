@@ -102,6 +102,23 @@ describe('electron settings store', () => {
     await expect(access(path.join(userDataPath!, 'secrets.json'))).rejects.toThrow()
   })
 
+  it('atomically retains administrator roster changes across concurrent settings saves', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const first = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    const second = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    first.missionDefaults.adminRoster = ['Alice']
+    second.missionDefaults.adminRoster = ['Bob']
+    await Promise.all([store.saveAppSettings(first), store.saveAppSettings(second)])
+    const persisted = JSON.parse(await readFile(path.join(userDataPath!, 'settings.json'), 'utf8'))
+    expect(persisted.adminRosterHistory).toEqual([
+      { recordedAt: expect.any(String), authority: 'trusted_local_settings', previous: [], next: ['Alice'] },
+      { recordedAt: expect.any(String), authority: 'trusted_local_settings', previous: ['Alice'], next: ['Bob'] },
+    ])
+    await store.saveAppSettings(second)
+    expect(JSON.parse(await readFile(path.join(userDataPath!, 'settings.json'), 'utf8'))
+      .adminRosterHistory).toHaveLength(2)
+  })
+
   it('persists the Traccar secret with restrictive file permissions where supported', async () => {
     const store = await createStore({ backend: 'gnome_libsecret' })
     const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)

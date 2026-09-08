@@ -205,6 +205,22 @@ afterEach(async () => {
 })
 
 describe('Electron coverage mission-store orchestration', () => {
+  it('refuses derived coverage publication after finalization without changing archived membership', async () => {
+    store = await createStore()
+    const mission = await seedMission(store)
+    const database = new Database(path.join(directory!, 'mission-store.sqlite'))
+    try {
+      database.prepare("UPDATE missions SET status = 'finalized' WHERE id = ?").run(mission.id)
+      const before = ['coverage_missions', 'coverage_chunks', 'coverage_invalidations'].map((table) =>
+        database.prepare(`SELECT * FROM ${table} WHERE mission_id = ? ORDER BY rowid`).all(mission.id))
+      await expect(store.readCoverageManifest(mission.id, 'finalized-coverage'))
+        .rejects.toMatchObject({ code: 'MISSION_COVERAGE_FINALIZED' })
+      const after = ['coverage_missions', 'coverage_chunks', 'coverage_invalidations'].map((table) =>
+        database.prepare(`SELECT * FROM ${table} WHERE mission_id = ? ORDER BY rowid`).all(mission.id))
+      expect(after).toEqual(before)
+    } finally { database.close() }
+  })
+
   it('joins an unnumbered staged coverage request before database shutdown', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-shutdown-'))
     let finishBuild: ((value: unknown) => void) | undefined

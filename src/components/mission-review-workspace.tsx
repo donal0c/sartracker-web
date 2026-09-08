@@ -16,10 +16,6 @@ import type { MissionReviewController } from '../features/mission-review/start-m
 import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
 import { useMissionArchiveReviewStore } from '../features/mission-review/mission-archive-review-store'
 import { hasActiveMissionCorrectionAuthorization } from '../features/mission-review/mission-correction-authorization'
-import {
-  MissionArchiveReviewBanner,
-  MissionArchiveReviewControl,
-} from '../features/mission-review/mission-archive-review-operator-ui'
 import { useMissionStore } from '../features/mission/mission-store'
 import type {
   ArchiveReviewAttachmentReference,
@@ -35,6 +31,14 @@ type ReviewTab = 'mission-details' | 'replay' | 'search-operations' | 'marker-lo
 
 const MISSION_REVIEW_WORKSPACE_TITLE_ID = 'mission-review-workspace-title'
 
+const MissionArchiveReviewBanner = lazy(async () => ({
+  default: (await import('../features/mission-review/mission-archive-review-operator-ui'))
+    .MissionArchiveReviewBanner,
+}))
+const MissionArchiveReviewControl = lazy(async () => ({
+  default: (await import('../features/mission-review/mission-archive-review-operator-ui'))
+    .MissionArchiveReviewControl,
+}))
 const MissionReplayTab = lazy(async () => ({
   default: (await import('./mission-evidence-replay-tabs')).MissionReplayTab,
 }))
@@ -236,6 +240,7 @@ export function MissionReviewWorkspace() {
       />
 
       {retainedArchiveSession !== null || archiveReviewRecoveryRequired !== 'none' ? (
+        <Suspense fallback={<p role="status">Read-only archive session retained. Loading archive status…</p>}>
         <MissionArchiveReviewBanner
           closing={archiveReviewPhase === 'closing'}
           error={archiveReviewError}
@@ -243,6 +248,7 @@ export function MissionReviewWorkspace() {
           recoveryRequired={archiveReviewRecoveryRequired}
           session={retainedArchiveSession}
         />
+        </Suspense>
       ) : null}
 
       {docked ? (
@@ -310,7 +316,9 @@ export function MissionReviewWorkspace() {
               </div>
             </div>
             <div className="mt-4">
+              <Suspense fallback={<p role="status">Loading Saved Archives…</p>}>
               <MissionArchiveReviewControl
+                supported={window.sartrackerElectron?.archiveReview.supported !== false}
                 activeSession={archiveReviewSession ?? archiveSession}
                 error={archiveReviewError}
                 onCloseArchiveReview={closeArchiveReview}
@@ -341,6 +349,7 @@ export function MissionReviewWorkspace() {
                 recoveryRequired={archiveReviewRecoveryRequired}
                 timeline={archiveTimeline}
               />
+              </Suspense>
             </div>
           </aside>
 

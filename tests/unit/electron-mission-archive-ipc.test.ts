@@ -372,6 +372,20 @@ describe('mission archive IPC containment [DON-248]', () => {
     expect(correctionUse.lease.release).toHaveBeenCalledOnce()
   })
 
+  it('closes correction snapshot failures before returning them to the renderer', async () => {
+    const { handlers } = createMainHarness({
+      archiveReviewSessionManager: {
+        beginCorrectionSnapshotUse: () => { throw new Error('/private/operator-secret/mission-store.sqlite failed') },
+      },
+    })
+    const result = handlers.get(CHANNELS.restoreMissionForCorrection)?.({ sender: createSender(8) }, {
+      mission_id: 'mission-1', archiveId: 'archive-1', operationId: OPERATION_ID,
+      sessionId: '44444444-4444-4444-8444-444444444444', admin_name: 'Duty Admin', reason: 'Correct clue.',
+    })
+    await expect(result).rejects.toMatchObject({ code: 'ARCHIVE_REHYDRATE_FAILED' })
+    await expect(result).rejects.not.toThrow('/private/operator-secret')
+  })
+
   it('returns committed correction status when snapshot cleanup remains unresolved', async () => {
     const stagingRoot = await mkdtemp(join(tmpdir(), 'sartracker-correction-cleanup-'))
     const stagingDirectory = join(stagingRoot, '.sweep-11111111-1111-4111-8111-111111111111')
@@ -697,6 +711,28 @@ describe('mission archive IPC containment [DON-248]', () => {
       blockers: ['cleanup_in_progress'],
       storageState: 'cleanup_in_progress',
     })
+  })
+
+  it.each([
+    ['start', CHANNELS.startMissionCleanup],
+    ['resume', CHANNELS.resumeMissionCleanup],
+  ] as const)('reserves %s cleanup identity before asynchronous mission lookup', async (mode, channel) => {
+    let resolveMission: (mission: ReturnType<typeof missionResult>) => void = () => undefined
+    const lookup = new Promise<ReturnType<typeof missionResult>>((resolve) => { resolveMission = resolve })
+    const { handlers, missionStore } = createMainHarness({}, { getMission: vi.fn(() => lookup) })
+    const sender = createSender(7)
+    const request = {
+      missionId: 'mission-1', archiveId: archiveResult().id, operationId: OPERATION_ID,
+      ...(mode === 'start' ? { slotType: 'passphrase', secret: PASSPHRASE, confirmation: 'Mission result' } : {}),
+    }
+    const first = handlers.get(channel)?.({ sender }, { ...request }) as Promise<unknown>
+    const duplicate = handlers.get(channel)?.({ sender }, { ...request }) as Promise<unknown>
+    const outcomes = Promise.allSettled([first, duplicate])
+    resolveMission(missionResult())
+    const settled = await outcomes
+    expect(missionStore.getMission).toHaveBeenCalledOnce()
+    expect(settled[0]?.status).toBe('fulfilled')
+    expect(settled[1]?.status).toBe('rejected')
   })
 
   it.each([
@@ -1983,6 +2019,7 @@ describe('mission archive IPC containment [DON-248]', () => {
     let exposedBridge: Record<string, unknown> | undefined
     const listeners = new Map<string, (_event: unknown, input: unknown) => void>()
     expect(() => runInNewContext(preload, {
+      process: { platform: 'linux' },
       TextEncoder,
       require: (specifier: string) => {
         if (specifier !== 'electron') throw new Error(`Unexpected preload require: ${specifier}`)
@@ -2125,6 +2162,7 @@ describe('mission archive IPC containment [DON-248]', () => {
     const listeners = new Map<string, (_event: unknown, input: unknown) => void>()
     const removeListener = vi.fn()
     runInNewContext(preload, {
+      process: { platform: 'linux' },
       TextEncoder,
       require: () => ({
         contextBridge: { exposeInMainWorld: (_name: string, bridge: Record<string, unknown>) => { exposedBridge = bridge } },

@@ -4,6 +4,7 @@ const path = require('node:path')
 
 const Database = require('better-sqlite3')
 const { rehydrateMissionFromSnapshot } = require('./archive-rehydrate.cjs')
+const { rewriteAttachmentReferences } = require('./archive-correction-attachment-references.cjs')
 const {
   deriveArchiveLifecycleEventId,
   readCurrentMissionFinalizationBoundary,
@@ -116,7 +117,7 @@ async function runCorrection(request) {
       expectedIdentity: request.expectedIdentity,
       onRestored: () => {
         assertBoundAttachmentRoot(custodyState)
-        rewriteAttachmentReferences(
+        const attachmentReferenceRelocations = rewriteAttachmentReferences(
           database,
           request.missionId,
           attachmentCustody.references,
@@ -166,6 +167,7 @@ async function runCorrection(request) {
             reason: request.reason,
             restored_from_archive_id: request.archiveId,
             archive_correction_operation_id: request.operationId,
+            attachment_reference_relocations: attachmentReferenceRelocations,
             resulting_status: 'finished',
             storage_state: 'live',
           }),
@@ -291,59 +293,6 @@ async function restoreAttachmentCustody(database, request, custodyState) {
   return Object.freeze({ references })
 }
 
-/** Rewrites restored references while preserving v2 display-name custody evidence. */
-function rewriteAttachmentReferences(database, missionId, references) {
-  for (const [key, targetPath] of references) {
-    const separator = key.indexOf('\0')
-    const kind = key.slice(0, separator)
-    const referenceId = key.slice(separator + 1)
-    if (kind === 'marker') {
-      database.prepare('UPDATE markers SET attachment_path = ? WHERE id = ? AND mission_id = ?')
-        .run(targetPath, referenceId, missionId)
-    } else if (kind === 'marker_version') {
-      const row = database.prepare(
-        'SELECT state_json FROM mission_object_versions WHERE id = ? AND mission_id = ?',
-      ).get(referenceId, missionId)
-      if (row !== undefined) {
-        const state = parsePlainJson(stateJson(row))
-        state.attachment_path = targetPath
-        database.prepare(
-          'UPDATE mission_object_versions SET state_json = ? WHERE id = ? AND mission_id = ?',
-        ).run(JSON.stringify(state), referenceId, missionId)
-      }
-    } else {
-      const event = database.prepare(
-        'SELECT details_json FROM mission_events WHERE id = ? AND mission_id = ?',
-      ).get(referenceId, missionId)
-      if (event !== undefined) {
-        const details = parsePlainJson(event.details_json)
-        details.attachment_path = targetPath
-        if (details.custody_version === 2) {
-          details.relative_path = `missions/${missionId}/attachments/${path.basename(targetPath)}`
-        }
-        database.prepare(
-          'UPDATE mission_events SET details_json = ? WHERE id = ? AND mission_id = ?',
-        ).run(JSON.stringify(details), referenceId, missionId)
-      }
-    }
-  }
-}
-
-/** Returns one state JSON value while keeping malformed rows fail-closed. */
-function stateJson(row) {
-  if (typeof row?.state_json !== 'string') throw invalidAttachmentMappingError()
-  return row.state_json
-}
-
-/** Parses one attachment-bearing row as a plain JSON object. */
-function parsePlainJson(value) {
-  let parsed
-  try { parsed = JSON.parse(value) } catch { throw invalidAttachmentMappingError() }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw invalidAttachmentMappingError()
-  }
-  return parsed
-}
 
 /** Proves the utility still occupies the exact attachment inode and pathname. */
 function assertBoundAttachmentRoot(custodyState) {

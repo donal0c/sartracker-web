@@ -904,6 +904,9 @@ function createArchiveCustodyJournal({
 
   /** Moves the active record to immutable terminal history in the current transaction. */
   function terminalize(active, state, settledAt, lastErrorCode = null) {
+    if (!db.inTransaction) {
+      throw new ArchiveCustodyJournalError('ARCHIVE_CUSTODY_TRANSACTION_REQUIRED', 'Archive custody settlement requires an atomic transaction.')
+    }
     if (!TERMINAL_STATES.has(state)) {
       throw new ArchiveCustodyJournalError(
         'ARCHIVE_CUSTODY_JOURNAL_INVALID_STATE',
@@ -1038,6 +1041,7 @@ function createArchiveCustodyJournal({
   const api = {
     /** Commits the exact staging/final plan before a create worker can touch disk. */
     planBuildingWithinTransaction(input) {
+      if (!db.inTransaction) return db.transaction(() => api.planBuildingWithinTransaction(input)).immediate()
       if (db.prepare('SELECT 1 FROM metadata WHERE key = ?')
         .get(ARCHIVE_CUSTODY_BLOCKING_CONFLICT_KEY) !== undefined) {
         throw new ArchiveCustodyJournalError(
@@ -1154,6 +1158,7 @@ function createArchiveCustodyJournal({
 
     /** Settles the journal only inside the caller's registry+seal transaction. */
     completeRegisteredWithinTransaction(input) {
+      if (!db.inTransaction) return db.transaction(() => api.completeRegisteredWithinTransaction(input)).immediate()
       requireExactRecord(
         input,
         ['expectedRevision', 'operationId', 'registeredAt'],

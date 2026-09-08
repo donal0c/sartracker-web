@@ -48,6 +48,8 @@ async function runWorker() {
       archivePath: request.archivePath,
       sessionDirectory: request.sessionDirectory,
       expectedMissionId: request.expectedMissionId,
+      expectedArchiveSha256: request.expectedArchiveSha256,
+      expectedArchiveSizeBytes: request.expectedArchiveSizeBytes,
       cancellationFlag,
       onProgress: emitProgress,
     })

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { DialogOverlay } from '../../components/dialog-overlay'
+import { ArchiveCancellationPending } from './archive-cancellation-pending'
 import type {
   Mission,
   MissionArchiveInfo,
@@ -21,7 +22,7 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const RESOLVED_DURING_START = new Set<MissionCleanupBlocker>([
   'fresh_non_machine_unlock_required',
 ])
-const CLEANUP_SCOPE_WARNING = 'bulk evidence rows for this mission move out of the live database; the mission remains listed and reviewable from its verified encrypted archive; nothing is deleted from the archive; this is not an evidence-deletion feature.'
+const CLEANUP_SCOPE_WARNING = 'Cleanup deletes eligible live database rows after re-verifying their encrypted archive. The mission remains listed and reviewable from that archive. Keep the archive file and its passphrase or recovery code: recovery of these rows depends on them.'
 const MAX_RENDERER_INPUT_CODE_UNITS = MAX_MISSION_NAME_BYTES
 
 type CleanupDialogState =
@@ -101,6 +102,7 @@ export function MissionArchiveCleanupDialog({
     && archive !== null
     && eligibility?.startableWithCredential === true
     && hardBlockers.length === 0
+    && eligibility?.preview?.missionId === mission.id
     && secretValid
     && confirmation === mission.name
 
@@ -388,6 +390,16 @@ export function MissionArchiveCleanupDialog({
         {dialogState === 'ready' && eligibility?.startableWithCredential === true
           && hardBlockers.length === 0 ? (
           <div className="mt-5 space-y-4">
+            {eligibility.preview?.missionId === mission.id ? (
+              <div className="sar-readout p-3 text-sm" data-testid="archive-cleanup-row-preview">
+                <p>{eligibility.preview.totalRows.toLocaleString()} live rows are eligible for removal.</p>
+                <p className="mt-1 text-xs">Counts are a preview; safety checks run again before deletion.</p>
+                <details className="mt-2"><summary>Rows by table</summary>
+                  <ul>{eligibility.preview.tables.filter((entry) => entry.rowCount > 0).map((entry) =>
+                    <li key={entry.tableName}>{entry.tableName}: {entry.rowCount.toLocaleString()}</li>)}</ul>
+                </details>
+              </div>
+            ) : <p role="alert">Live-row counts are unavailable. Close and refresh before confirming cleanup.</p>}
             <label className="block space-y-2">
               <span className="text-xs font-semibold text-stone-200">Fresh archive credential</span>
               <select
@@ -513,6 +525,8 @@ export function MissionArchiveCleanupDialog({
           </button>
         ) : null}
 
+        {dialogState === 'cancellation-requested'
+          ? <ArchiveCancellationPending onDismiss={onClose} /> : null}
         {dialogState !== 'loading' ? (
           <div className="mt-5 flex gap-2">
             {(dialogState === 'running' || dialogState === 'cancellation-requested') ? (

@@ -14,6 +14,7 @@ const {
   enterExistingCorrectionAttachmentRoot,
   proveCorrectionAttachmentResidue,
   revalidateCorrectionAttachmentResidue,
+  removeUncommittedCorrectionAttachment,
 } = require('./archive-correction-directory-capability.cjs')
 
 const parentPort = process.parentPort
@@ -63,7 +64,7 @@ function onParentMessage(event) {
   }
 }
 
-/** Reconciles the one SQLite custody plan without removing filesystem state. */
+/** Reclaims unpublished copies before clearing custody; committed attachment pairs remain intact. */
 function recover(request) {
   validateRequest(request)
   throwIfCancelled()
@@ -105,6 +106,14 @@ function recover(request) {
     return database.transaction(() => reconcileCorrectionAttachmentCustody({
       db: database,
       inspection,
+      removeUncommittedEntry: (entry, observation) => {
+        throwIfCancelled()
+        assertRecoveryTargetRoot(plan, targetRoot)
+        return removeUncommittedCorrectionAttachment({
+          sourcePath: path.join(initialDirectory, entry.sourceRelativePath),
+          targetName: entry.targetName, peerName: entry.peerName, expected: entry,
+        }, observation)
+      },
       revalidateEntry: (entry, observation) => {
         throwIfCancelled()
         assertRecoveryTargetRoot(plan, targetRoot)

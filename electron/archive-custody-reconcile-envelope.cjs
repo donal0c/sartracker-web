@@ -142,9 +142,7 @@ function normalizeArchiveCustodyReconcileResult(input, expectedInput) {
         typeof input.observedCiphertextSha256 !== 'string'
         || !SHA256.test(input.observedCiphertextSha256)
       )
-      || expected.containerVersion === 1 && expected.expectedCiphertextSha256 === null
-        && input.observedCiphertextSha256 !== null
-      || expected.containerVersion === 1 && expected.expectedCiphertextSha256 !== null
+      || expected.containerVersion === 1
         && (typeof input.observedCiphertextSha256 !== 'string'
           || !SHA256.test(input.observedCiphertextSha256))) {
       throw new ArchiveCustodyReconcileEnvelopeError(

@@ -134,6 +134,8 @@ type PollingManagerOptions = {
     context: TrackingSnapshotContext,
     observation: TrackingMissionEvidenceTransfer,
   ) => void
+  /** Stops further fetching at the evidence owner's memory bound, after visible publication. */
+  readonly waitForCurrentEvidenceCapacity?: (signal: AbortSignal) => Promise<void>
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
   readonly onCurrentPositionRejections?: (
     rejections: readonly CurrentPositionRejection[],
@@ -246,6 +248,7 @@ export function createPollingManager(
   let authenticated = false
   let running = false
   let pollInFlight = false
+  let evidenceCapacityWait: AbortController | null = null
   let currentPollSequence = 0
   let immediatePollRequested = false
   const activeHistoryTasksByMission = new Map<string | null, HistoryRefreshTask>()
@@ -932,6 +935,7 @@ export function createPollingManager(
             }),
             {
               historyResetKey: pollHistoryResetKey,
+              missionEvidenceId: null,
               ...(latestParticipantRosterAuthoritative
                 ? {}
                 : { participantRosterAuthoritative: false }),
@@ -955,6 +959,18 @@ export function createPollingManager(
         return
       }
 
+      // A mission switch may interrupt the previous producer's capacity wait.
+      // Reserve room before observing another fix, even on the first new poll.
+      if (options.waitForCurrentEvidenceCapacity !== undefined) {
+        const controller = new AbortController()
+        evidenceCapacityWait = controller
+        try {
+          await options.waitForCurrentEvidenceCapacity(controller.signal)
+        } finally {
+          if (evidenceCapacityWait === controller) evidenceCapacityWait = null
+        }
+        if (stopping || discardSupersededPoll(generation, pollHistoryResetKey)) return
+      }
       await withPollPhase('authentication', authenticateIfNeeded())
       if (discardSupersededPoll(generation, pollHistoryResetKey)) {
         return
@@ -1140,10 +1156,21 @@ export function createPollingManager(
         deviceCount: devices.length,
         currentPositionCount: acceptedPositions.length,
       })
+      if (options.waitForCurrentEvidenceCapacity !== undefined) {
+        const controller = new AbortController()
+        evidenceCapacityWait = controller
+        try {
+          await options.waitForCurrentEvidenceCapacity(controller.signal)
+        } finally {
+          if (evidenceCapacityWait === controller) evidenceCapacityWait = null
+        }
+        if (stopping || discardSupersededPoll(generation, pollHistoryResetKey)) return
+      }
       scheduleNextPoll(calculateRemainingPollIntervalMs(
         pollIntervalMs,
         currentFixPublishedAtMs,
         monotonicNow(),
+        normalizePollingIntervalMs(1, options.minimumIntervalMs),
       ))
       requestHistoryRefresh({
         generation,
@@ -1563,6 +1590,7 @@ export function createPollingManager(
         (options.getHistoryResetKey?.() ?? null) !== activeHistoryResetKey ||
         (options.getPollingMode?.() ?? 'active') !== 'active'
       ) {
+        evidenceCapacityWait?.abort()
         initialSeedAbortController?.abort()
       }
       if (timer !== null) {
@@ -1581,6 +1609,7 @@ export function createPollingManager(
   async function stopPolling(): Promise<void> {
     flushHistorySnapshot(false)
     stopping = true
+    evidenceCapacityWait?.abort()
     immediatePollRequested = false
     pendingHistoryRefreshByMission.clear()
     if (timer !== null) {
@@ -2101,13 +2130,14 @@ function calculateRemainingPollIntervalMs(
   intervalMs: number,
   startedAtMs: number,
   completedAtMs: number,
+  minimumDelayMs: number,
 ): number {
   if (!Number.isFinite(startedAtMs)
     || !Number.isFinite(completedAtMs)
     || completedAtMs < startedAtMs) {
     return intervalMs
   }
-  return Math.max(0, intervalMs - (completedAtMs - startedAtMs))
+  return Math.max(minimumDelayMs, intervalMs - (completedAtMs - startedAtMs))
 }
 
 function createOverlappedFetchFrom(

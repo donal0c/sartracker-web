@@ -1913,6 +1913,14 @@ describe('archived mission correction rehydration', () => {
         expect(path.basename(restored.attachment_path))
           .toMatch(/^correction-[0-9a-f-]+-field-[0-9a-f]+\.jpg$/u)
         expect(readFileSync(restored.attachment_path)).toEqual(attachmentBytes)
+        const unlock = liveDb.prepare("SELECT details_json FROM mission_events WHERE mission_id = ? AND event_type = 'mission_unlocked' ORDER BY rowid DESC LIMIT 1").get(mission.id)
+        const relocations = JSON.parse(unlock.details_json).attachment_reference_relocations
+        expect(relocations).toHaveLength(references.length)
+        expect(relocations).toContainEqual(expect.objectContaining({
+          referenceKind: 'marker', referenceId: marker.id,
+          previous: { attachment_path: attachmentPath },
+          replacement: { attachment_path: restored.attachment_path },
+        }))
         const peerPath = path.join(
           path.dirname(restored.attachment_path),
           correctionAttachmentPeerName(path.basename(restored.attachment_path)),

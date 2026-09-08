@@ -442,6 +442,19 @@ function openLegacySession(
 }
 
 describe('archive review session manager', () => {
+  it('retains quarantine when restore descriptor cleanup cannot be confirmed', async () => {
+    const removeSessionDirectory = vi.fn().mockResolvedValue(undefined)
+    const failure = Object.assign(new Error('unresolved descriptor ownership'),
+      { code: 'ARCHIVE_REVIEW_DESCRIPTOR_CLEANUP_FAILED' })
+    const harness = await createHarness({ removeSessionDirectory, startRestore: () => {
+      const workerExited = Promise.reject(failure)
+      void workerExited.catch(() => undefined)
+      return decorateRestoreOperation(Promise.reject(new Error('invalid restore')), { workerExited })
+    } })
+    await expect(openSession(harness)).rejects.toBe(failure)
+    expect(removeSessionDirectory).not.toHaveBeenCalled()
+    expect(harness.manager.hasReviewActivity()).toBe(true)
+  })
   it('makes archive review and live-store cleanup mutually exclusive across every session phase', async () => {
     const harness = await createHarness()
     expect(harness.manager.hasReviewActivity()).toBe(false)
@@ -580,6 +593,8 @@ describe('archive review session manager', () => {
         archiveId: ARCHIVE_ID,
         archiveKind: 'finalized',
         archiveRelativePath: 'legacy-review.zip',
+        expectedArchiveSha256: 'a'.repeat(64),
+        expectedArchiveSizeBytes: 100,
         missionId: MISSION_ID,
         containerVersion: 1,
         status: 'sealed',
@@ -614,6 +629,8 @@ describe('archive review session manager', () => {
         archivePath: path.join(harness.archiveDirectory, 'legacy-review.zip'),
         sessionDirectory: path.join(harness.reviewRoot, SESSION_ID),
         expectedMissionId: MISSION_ID,
+        expectedArchiveSha256: 'a'.repeat(64),
+        expectedArchiveSizeBytes: 100,
       },
     })
     expect(JSON.stringify(harness.restoreLegacy.mock.calls)).not.toContain(SECRET)
@@ -1178,6 +1195,21 @@ describe('archive review session manager', () => {
     expect(order.at(-1)).toBe('audit-retry-passed')
   })
 
+  it('bounds mutation-denial audit writes for one read-only session', async () => {
+    const recordMutationDenied = vi.fn()
+    const harness = await createHarness({ recordMutationDenied })
+    await openSession(harness)
+    for (let index = 0; index < 32; index += 1) {
+      await expect(harness.manager.read({ senderId: SENDER_ID, sessionId: SESSION_ID, method: 'deleteMission', args: [] }))
+        .rejects.toMatchObject({ code: 'ARCHIVE_REVIEW_READ_ONLY' })
+    }
+    for (let index = 0; index < 100; index += 1) {
+      await expect(harness.manager.read({ senderId: SENDER_ID, sessionId: SESSION_ID, method: 'deleteMission', args: [] }))
+        .rejects.toMatchObject({ code: 'ARCHIVE_REVIEW_MUTATION_AUDIT_LIMIT' })
+    }
+    expect(recordMutationDenied).toHaveBeenCalledTimes(32)
+  })
+
   it('queues every unaudited mutation denial in order with its original timestamp', async () => {
     const auditFailure = Object.assign(new Error('audit storage unavailable'), {
       code: 'SQLITE_FULL',
@@ -1236,6 +1268,7 @@ describe('archive review session manager', () => {
     await mkdir(outsideDirectory, { recursive: true, mode: 0o700 })
     await writeFile(path.join(outsideDirectory, 'keep.txt'), 'KEEP', { mode: 0o600 })
     await symlink(outsideDirectory, hostileLink)
+    await writeFile(path.join(harness.reviewRoot, '.DS_Store'), 'Finder folder metadata', { mode: 0o600 })
 
     await harness.manager.sweepStartup()
 

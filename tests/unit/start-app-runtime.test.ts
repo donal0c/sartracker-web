@@ -410,11 +410,13 @@ describe('app runtime startup', () => {
       stop: vi.fn(),
     })
     const onCurrentSnapshot = vi.fn()
+    const waitForCurrentEvidenceCapacity = vi.fn()
     const persistHistoryChunks = vi.fn().mockResolvedValue(undefined)
     const startTrackingRuntime = vi.fn().mockImplementation(async (input) => {
       input.createPoller({}, {
         onSnapshot: vi.fn(),
         onCurrentSnapshot,
+        waitForCurrentEvidenceCapacity,
         onStatusChange: vi.fn(),
         getInitialBreadcrumbs: vi.fn().mockResolvedValue([]),
         getInitialBreadcrumbTotals: vi.fn().mockResolvedValue({}),
@@ -474,8 +476,10 @@ describe('app runtime startup', () => {
       readonly persistHistoryChunk?: (input: unknown) => Promise<void>
       readonly persistHistoryChunks?: (inputs: readonly unknown[]) => Promise<void>
       readonly onCurrentSnapshot?: unknown
+      readonly waitForCurrentEvidenceCapacity?: unknown
     }
     expect(pollingOptions.onCurrentSnapshot).toBe(onCurrentSnapshot)
+    expect(pollingOptions.waitForCurrentEvidenceCapacity).toBe(waitForCurrentEvidenceCapacity)
     expect(pollingOptions.getBreadcrumbDeviceIds?.()).toEqual(['2', '7'])
     expect(pollingOptions.getParticipantDeviceIds?.()).toEqual(['7'])
     await expect(pollingOptions.getInitialHistoryCheckpoints?.()).resolves.toEqual({

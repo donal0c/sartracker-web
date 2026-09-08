@@ -390,7 +390,7 @@ describe('archive custody reconciliation worker runner', () => {
     }
   })
 
-  it('checks a legacy null-hash archive by pinned identity without a full-file read', async () => {
+  it('hashes a legacy archive to establish its first content baseline', async () => {
     const archiveDirectory = mkdtempSync(path.join(tmpdir(), 'sartracker-reconcile-v1-'))
     temporaryDirectories.add(archiveDirectory)
     const archiveRelativePath = 'legacy-mission.zip'
@@ -418,10 +418,10 @@ describe('archive custody reconciliation worker runner', () => {
     await expect(operation).resolves.toMatchObject({
       outcome: 'available',
       observedSizeBytes: bytes.byteLength,
-      observedCiphertextSha256: null,
+      observedCiphertextSha256: createHash('sha256').update(bytes).digest('hex'),
       fileIdentity: { linkCount: 1, sizeBytes: bytes.byteLength },
     })
     await expect(operation.workerExited).resolves.toBeUndefined()
-    expect(rawProgress).toEqual([])
+    expect(rawProgress.length).toBeGreaterThan(0)
   })
 })

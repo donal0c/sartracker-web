@@ -285,6 +285,10 @@ describe('archive worker envelope', () => {
       kdfDurationMs: 250,
     }
     const normalized = normalizeArchiveCreateResult(result, createRequest())
+    const identity = { ...createRequest() } as Record<string, unknown>
+    delete identity.passphrase
+    delete identity.recoveryCode
+    expect(normalizeArchiveCreateResult(result, identity)).toEqual(normalized)
     expect(normalized).toEqual(result)
     expect(Object.isFrozen(normalized)).toBe(true)
 
@@ -369,6 +373,22 @@ describe('archive worker envelope', () => {
         verificationIdentity({ archiveRelativePath }),
       )).toThrow(ArchiveEnvelopeError)
     }
+  })
+
+  it('distinguishes path-only attachment custody without upgrading historical proofs', () => {
+    const base = verificationProof()
+    const layers = base.layers as Record<string, unknown>
+    const attachments = { exhaustive: true, matched: true, count: 1,
+      digestCustodyCount: 0, legacyPathOnlyCount: 1, historicalDigestCustodyComplete: false }
+    const proof = verificationProof({ layers: { ...layers,
+      entries: { exhaustive: true, matched: true, count: 5 }, attachments } })
+    expect(normalizeArchiveVerificationProofForIdentity(proof,
+      verificationIdentity({ entryCount: 5 }))).toEqual(proof)
+    expect(() => normalizeArchiveVerificationProofForIdentity(verificationProof({ layers: {
+      ...layers, entries: { exhaustive: true, matched: true, count: 5 },
+      attachments: { ...attachments, historicalDigestCustodyComplete: true },
+    } }), verificationIdentity({ entryCount: 5 }))).toThrow(ArchiveEnvelopeError)
+    expect(normalizeArchiveVerificationProofForIdentity(base, verificationIdentity())).toEqual(base)
   })
 
   it('rejects internally contradictory or structurally incomplete completeness proofs', () => {

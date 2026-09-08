@@ -52,7 +52,7 @@ class ArchiveWrongKeyError extends Error {
    * @param {string} [message] Safe operator-facing failure detail.
    */
   constructor(
-    message = 'The archive key slot could not be unlocked with the supplied credential.',
+    message = 'The archive key slot could not be authenticated. The credential may be incorrect or the archive may be damaged.',
   ) {
     super(message)
     this.name = 'ArchiveWrongKeyError'
@@ -120,7 +120,12 @@ function obtainRandomBytes(source, size, label) {
   if (typeof provider !== 'function') {
     throw new TypeError('The random-byte source must be a function.')
   }
-  return copyBytes(provider(size), label, size)
+  const generated = provider(size)
+  try {
+    return copyBytes(generated, label, size)
+  } finally {
+    if (Buffer.isBuffer(generated) || generated instanceof Uint8Array) zeroBuffer(generated)
+  }
 }
 
 /**
@@ -731,21 +736,27 @@ async function unwrapMissionArchiveKey({ slot, secret, headerDigest }) {
       salt: validatedSlot.salt,
       nonce: validatedSlot.nonce,
     })
-    try {
-      const decipher = createDecipheriv(
+    const decipher = createDecipheriv(
         'aes-256-gcm',
         wrappingKey,
         validatedSlot.nonce,
         { authTagLength: AUTH_TAG_BYTES },
-      )
-      decipher.setAAD(aad)
-      decipher.setAuthTag(validatedSlot.authTag)
-      return Buffer.concat([
-        decipher.update(validatedSlot.ciphertext),
-        decipher.final(),
-      ])
-    } catch {
-      throw new ArchiveWrongKeyError()
+    )
+    decipher.setAAD(aad)
+    decipher.setAuthTag(validatedSlot.authTag)
+    let candidate
+    let finalBytes
+    try {
+      candidate = decipher.update(validatedSlot.ciphertext)
+      try {
+        finalBytes = decipher.final()
+      } catch {
+        throw new ArchiveWrongKeyError()
+      }
+      return Buffer.concat([candidate, finalBytes])
+    } finally {
+      if (candidate !== undefined) zeroBuffer(candidate)
+      if (finalBytes !== undefined) zeroBuffer(finalBytes)
     }
   } finally {
     if (header !== undefined) zeroBuffer(header)

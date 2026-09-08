@@ -423,7 +423,7 @@ function sendArchiveProgressBestEffort(sender, projectProgress) {
 }
 
 /** Projects the current fail-closed cleanup checklist without trusting unknown store fields. */
-function projectCleanupEligibility(input) {
+function projectCleanupEligibility(input, missionId) {
   const blockers = Array.isArray(input?.blockers) ? input.blockers : []
   const cleanupInProgress = blockers.includes('cleanup_in_progress')
   const cleanupJournalInvalid = blockers.includes('cleanup_journal_invalid')
@@ -457,6 +457,9 @@ function projectCleanupEligibility(input) {
     startableWithCredential,
     blockers: Object.freeze([...input.blockers]),
     storageState: input.storageState,
+    ...(input.preview === undefined ? {} : {
+      preview: require('./archive-cleanup-preview.cjs').normalizeCleanupPreview(input.preview, missionId),
+    }),
   })
 }
 
@@ -931,6 +934,8 @@ function registerMissionArchiveIpcHandlers(input) {
           cleanupComplete: true,
         }),
       })
+    } catch (error) {
+      throw closeArchiveFailure(error, 'ARCHIVE_REHYDRATE_FAILED')
     } finally {
       activeOperations.delete(operationId)
       // MissionStore does not settle until its correction worker has physically
@@ -1042,7 +1047,7 @@ function registerMissionArchiveIpcHandlers(input) {
         { missionId, archiveId },
         { reviewActivity: input.archiveReviewSessionManager.hasReviewActivity() },
       )
-      return projectCleanupEligibility(result)
+      return projectCleanupEligibility(result, missionId)
     } catch (error) {
       throw closeArchiveFailure(error, 'ARCHIVE_CLEANUP_ELIGIBILITY_FAILED')
     }
@@ -1091,9 +1096,15 @@ function registerMissionArchiveIpcHandlers(input) {
       throw archiveIpcError('ARCHIVE_OPERATION_ACTIVE', 'Mission archive operation is already active.')
     }
     let cleanupLease = null
+    const controller = new AbortController()
+    const registration = Object.freeze({ senderId, missionId, kind: 'cleanup', cancel: () => controller.abort() })
+    activeOperations.set(operationId, registration)
     try {
       const mission = await missionStore.getMission(missionId)
       requireCleanupMissionConfirmation(mission, missionId, confirmation)
+      if (controller.signal.aborted) {
+        throw archiveIpcError('ARCHIVE_CLEANUP_CANCELLED', 'Mission cleanup was cancelled before it started.')
+      }
       if (event.sender?.isDestroyed?.() === true) {
         throw archiveIpcError(
           'ARCHIVE_CLEANUP_RENDERER_CLOSED',
@@ -1101,7 +1112,6 @@ function registerMissionArchiveIpcHandlers(input) {
         )
       }
       cleanupLease = input.archiveReviewSessionManager.acquireCleanupLease(missionId)
-      activeOperations.set(operationId, Object.freeze({ senderId, missionId, kind: 'cleanup' }))
       const forwardCleanupProgress = createCleanupProgressForwarder(
         event.sender,
         { operationId, missionId, archiveId },
@@ -1127,7 +1137,7 @@ function registerMissionArchiveIpcHandlers(input) {
     } finally {
       secret = ''
       try { request.secret = '' } catch {}
-      activeOperations.delete(operationId)
+      if (activeOperations.get(operationId) === registration) activeOperations.delete(operationId)
       cleanupLease?.release()
     }
   })
@@ -1164,8 +1174,14 @@ function registerMissionArchiveIpcHandlers(input) {
       )
     }
     let cleanupLease = null
+    const controller = new AbortController()
+    const registration = Object.freeze({ senderId, missionId, kind: 'cleanup', cancel: () => controller.abort() })
+    activeOperations.set(operationId, registration)
     try {
       const mission = await missionStore.getMission(missionId)
+      if (controller.signal.aborted) {
+        throw archiveIpcError('ARCHIVE_CLEANUP_CANCELLED', 'Mission cleanup recovery was cancelled before it started.')
+      }
       if (event.sender?.isDestroyed?.() === true) {
         throw archiveIpcError(
           'ARCHIVE_CLEANUP_RENDERER_CLOSED',
@@ -1173,7 +1189,6 @@ function registerMissionArchiveIpcHandlers(input) {
         )
       }
       cleanupLease = input.archiveReviewSessionManager.acquireCleanupLease(missionId)
-      activeOperations.set(operationId, Object.freeze({ senderId, missionId, kind: 'cleanup' }))
       const forwardCleanupProgress = createCleanupProgressForwarder(
         event.sender,
         { operationId, missionId, archiveId },
@@ -1191,7 +1206,7 @@ function registerMissionArchiveIpcHandlers(input) {
     } catch (error) {
       throw closeArchiveFailure(error, 'ARCHIVE_CLEANUP_FAILED')
     } finally {
-      activeOperations.delete(operationId)
+      if (activeOperations.get(operationId) === registration) activeOperations.delete(operationId)
       cleanupLease?.release()
     }
   })

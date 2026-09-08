@@ -184,6 +184,13 @@ describe('Mission archive review operator UI [DON-253 / BCP-16]', () => {
     expect(buttonLabels()).not.toMatch(/delete|purge|remove evidence|edit|unlock|re-finali[sz]e/iu)
   })
 
+  it('explains an unsupported Review platform before offering credentials', () => {
+    renderControl(createControlProps({ supported: false }))
+    expect(text()).toMatch(/archive review is not available on this platform/iu)
+    expect(query('[data-testid="archive-review-secret"]')).toBeNull()
+    expect(query('[data-testid="archive-review-open"]')).toBeNull()
+  })
+
   it('shows explicit storage state and targets cleanup only to the selected finalized-live mission', () => {
     const onRequestCleanup = vi.fn()
     renderControl(createControlProps({ onRequestCleanup }))

@@ -168,6 +168,12 @@ function validateRestoreInput(input) {
   if (input.onProgress !== undefined && typeof input.onProgress !== 'function') {
     rejectArchive('LEGACY_ARCHIVE_INVALID_REQUEST', 'Legacy archive progress observer is invalid.')
   }
+  if ((input.expectedArchiveSha256 !== undefined || input.expectedArchiveSizeBytes !== undefined)
+    && (typeof input.expectedArchiveSha256 !== 'string'
+      || !/^[0-9a-f]{64}$/u.test(input.expectedArchiveSha256)
+      || !Number.isSafeInteger(input.expectedArchiveSizeBytes) || input.expectedArchiveSizeBytes < 1)) {
+    rejectArchive('LEGACY_ARCHIVE_INVALID_REQUEST', 'Legacy archive content baseline is invalid.')
+  }
   if (input.cancellationFlag !== undefined
     && (!(input.cancellationFlag instanceof Int32Array)
       || input.cancellationFlag.length !== 1
@@ -186,6 +192,8 @@ function validateRestoreInput(input) {
     archivePath,
     cancellationFlag: input.cancellationFlag,
     expectedMissionId: input.expectedMissionId,
+    expectedArchiveSha256: input.expectedArchiveSha256,
+    expectedArchiveSizeBytes: input.expectedArchiveSizeBytes,
     onProgress: input.onProgress,
     sessionDirectory,
   }
@@ -1286,6 +1294,26 @@ async function restoreLegacyMissionArchive(input, dependencies = {}) {
       total: 5,
       detail: 'archive-pinned',
     })
+
+    if (request.expectedArchiveSha256 !== undefined) {
+      if (initialStat.size !== request.expectedArchiveSizeBytes) {
+        rejectArchive('LEGACY_ARCHIVE_IDENTITY_CHANGED', 'Legacy archive differs from its content baseline.')
+      }
+      const hash = createHash('sha256')
+      const chunk = Buffer.allocUnsafe(1024 * 1024)
+      for (let offset = 0; offset < initialStat.size;) {
+        assertRestoreActive(request)
+        const { bytesRead } = await archiveHandle.read(chunk, 0,
+          Math.min(chunk.length, initialStat.size - offset), offset)
+        if (bytesRead < 1) rejectArchive('LEGACY_ARCHIVE_IDENTITY_CHANGED', 'Legacy archive content ended early.')
+        hash.update(chunk.subarray(0, bytesRead))
+        offset += bytesRead
+      }
+      assertRestoreActive(request)
+      if (hash.digest('hex') !== request.expectedArchiveSha256) {
+        rejectArchive('LEGACY_ARCHIVE_IDENTITY_CHANGED', 'Legacy archive differs from its content baseline.')
+      }
+    }
 
     const endRecord = await readEndOfCentralDirectory(archiveHandle, initialStat.size)
     const entries = await readCentralDirectory(archiveHandle, endRecord)
