@@ -172,3 +172,17 @@ rejects diagnostic builds before generating qualification evidence. This is
 causal before/after support, not a replacement for the clean packaged smoke.
 The affected polling/runtime suites pass 165 tests; cleanup/priority/writer
 and store/runner suites pass 152 distinct tests. Build and lint pass.
+
+Clean implementation `25bcd3326ecccc7a6a23358b1ea52ea7a4f95807`, tree
+`a760898cd70697050faa57348e34a9462e32ccc5`, passes the unchanged packaged
+lifecycle validator on macOS arm64 and reference Linux x64 (four logical CPUs,
+llvmpipe). Both receipts bind clean before/after source and the packaged archive,
+cover two launches, matching Review before/after cleanup and forced
+interruption/restart, and contain zero exact secret matches or final plaintext
+residue. Maximum main/current/frame gaps are 51.218/63/15.800 ms on macOS and
+72.733/154/106.601 ms on Linux. Their canonical validators both return
+`valid: true, passed: true`. Receipts:
+`docs/evidence/pr6/review-remediation-25bcd332-macos-20260909.json` and
+`docs/evidence/pr6/review-remediation-25bcd332-linux-20260909.json`.
+These are focused small-fixture checks, not a new full large-fixture or 32-case
+interruption qualification. Ordinary pushed-head CI remains the remote check.

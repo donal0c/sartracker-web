@@ -109,5 +109,9 @@
   another boundary. Same-workload diagnostic `53c2946c` completes both launches
   without a liveness failure; worst position-write DB duration is 48.35 ms.
   The 317 distinct affected tests, build and lint pass. Manual explains that
-  busy live writes can slow cleanup. Clean packaged proof and PR CI are next;
-  the diagnostic run is deliberately not qualification.
+  busy live writes can slow cleanup. Clean implementation `25bcd332` passes
+  unchanged macOS and reference four-CPU Linux packaged lifecycle validators;
+  main/current/frame maxima 51.218/63/15.800 and 72.733/154/106.601 ms. Both
+  cover two launches, matching Review, cleanup and interruption/restart with
+  zero secret matches/final plaintext residue. Receipts are in `docs/evidence/pr6/`.
+  Ordinary pushed-head CI is next; no fresh full-scale qualification is claimed.
