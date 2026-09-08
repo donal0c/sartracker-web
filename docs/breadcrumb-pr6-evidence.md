@@ -6,7 +6,79 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
-## 8 September 13:05 UTC: scale result and bounded sealing correction
+## 8 September 15:09 UTC: implementation qualification complete
+
+Implementation **`23f90f087e90d0aa145130d9c65b17815a630109`**, tree
+`9e783fd843373ab53cd27093769cf1f67c959034`, passes all author-side qualification.
+This closes the remaining scale gate without relaxing thresholds. External review
+and Donal's subsequent approval/merge remain separate. Any documentation-only
+descendant carries these runtime results only while application, test, build,
+dependency, workflow and qualification-script blobs remain unchanged; final branch
+CI is checked separately in the PR, without creating another documentation loop.
+
+The full canonical [large-fixture receipt](evidence/pr6/fieldscale-23f90f08-20260908.json)
+is checked in byte-for-byte, SHA256
+`3eeaf9635c444bf1e9286c1059c19da25c895f25745ac5efb41d27fae7fde0bb`.
+`validateBreadcrumbPr6QualificationEvidence(receipt, '23f90f087e90d0aa145130d9c65b17815a630109')`
+passes independently after retrieval. Run `q-f708e5ad-4e5f-44b6-a0a1-e1442a2fde5a`
+ran 13:27:50.662–15:09:34.925 UTC (1 h 41 m 44 s), with clean identical source
+head/tree before and after. Both child and supervisor exited zero; monitor ended.
+
+- **Streaming/integrity:** 5,244,082,405-byte encrypted archive; exhaustive proof
+  covers 49 tables and five Replay semantic samples. Ciphertext SHA256
+  `c2a146f8ea3e3b95df6905ef88888bc4df2028c8492101577120deee2bfb1e41` is unchanged
+  after cleanup. Restored read-only Review succeeds before and after cleanup,
+  rejects mutation with durable audit, and returns identical Replay digests.
+- **Responsiveness:** create/verify/restore/cleanup coordinator heartbeat maxima
+  **52.810/58.184/66.044/52.059 ms**, all below 200 ms. Create falls from the rejected
+  candidate's 1849.141 ms to 52.810 ms on the same fixture and reference host.
+- **Tracking contention:** all **1,181** writes become durably visible, none lost;
+  40 bounded busy retries, maximum durable latency 3546.543 ms, final settlement
+  5.291 ms. Durable latency is a separate bounded-settlement dimension, not the
+  200 ms coordinator/renderer responsiveness metric.
+- **Memory:** conservative whole-process peak **385,138,688 bytes (367.3 MiB)**,
+  below 512 MiB. No >2 GiB Buffer or whole-archive mmap path is needed.
+- **Cleanup/residue:** completed archived storage transition, no deleted-table
+  rows remain, mission stub/registry retained. All owners joined, profile cleanup
+  completed, no app-addressable plaintext or secret/privacy matches remain.
+  This does not claim forensic secure erasure.
+- **Fixture protection:** original/copy/post-run hashes all match
+  `53fd13f87775529b46346a83519b823c50b22bd20297c489e0165d52ff3abcb6`;
+  original size 4,159,836,160 bytes, no WAL/SHM, copied before opening.
+
+Other exact implementation checks:
+
+| Gate | Passing evidence |
+| --- | --- |
+| Local source | 4,034 tests / 385 files, 217.99 s; `tmp/pr6-seal-full-source-permitted.log` |
+| Build and static checks | Build, TypeScript, bundle budgets and lint pass |
+| Operator browser flows | Archive Review/cleanup/retry/correction 4/4, 13.6 s |
+| macOS package | Two launches, 11.419 s; main/frame/current 50.983/17.3/25 ms |
+| Reference Ubuntu package | Two launches, 38.687 s; main/frame/current 68.614/45.2/67 ms |
+| Physical interruption/recovery | 32/32 qualified, not protocol self-test |
+| Linux CI | [34231604598](https://github.com/donal0c/sartracker-web/actions/runs/34231604598), every step passes |
+| CI packaged lifecycle | Two launches, 50.198 s; main/frame/current 82.826/193/157 ms |
+
+All three lifecycle reports independently pass their canonical validator with
+clean exact implementation head/tree and packaged build identity matched. CI also
+passes normal 960k Replay, native SQLite inspection, Mesa attestation, tracking
+soak and AppImage launch. Its rendered screenshot shows the ready shell and map.
+CI evidence artifact: `10059045513`; binaries: `10059043573`.
+Receipt SHA256 bindings:
+
+- macOS: `b9c974d1a19301804b164a0afb5253b5a42f9a9a5597d56edd75b02f622fdce4`.
+- Reference Ubuntu: `74a0939682601485d28193891b83e590be5670cee91d2fccab44fd800e3ec8eb`.
+- Kill matrix: `eca9a1b26403075636f0e1dbe3b8f67dbdf3779f8d36ce4a42138ea2a0796fd4`.
+- CI lifecycle: `a26915c6cdd398eed7d9635bfb33e2b6a8dfc8ac00f5055b88fd455f34854598`.
+
+The earlier 0f09 and 611 failures below remain rejected historical evidence.
+The escape was an admission-only regression missing later sealing reads; the
+durable regression now spans complete finalization and restart recovery. No UI
+control/wording/workflow changed, so the existing operator manual remains current.
+Earlier full browser/visual/backend evidence retains its explicitly recorded scope;
+these scale results are pre-merge engineering proof, not field or beta release acceptance.
+
+## 8 September 13:05 UTC: rejected scale result and bounded sealing correction
 
 Candidate `0f09f3615dfb810758b8ad1dee545ebb90a70a7a`, tree
 `0af1525d674455bc952d72c846ffaadc992de6f9`, committed the preceding local

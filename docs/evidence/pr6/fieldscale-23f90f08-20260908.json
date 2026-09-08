@@ -1,0 +1,807 @@
+{
+  "schema": "sartracker-breadcrumb-pr6-qualification-v2",
+  "machine": {
+    "hostname": "donal-Precision-5570",
+    "platform": "linux",
+    "release": "7.0.0-28-generic",
+    "architecture": "x64",
+    "cpuCount": 20,
+    "totalMemoryBytes": 33303212032,
+    "nodeVersion": "v22.22.2"
+  },
+  "flags": {
+    "fixtureBasename": "mission-store-v12-closed.sqlite",
+    "missionId": "fixture-mission-000000000001",
+    "timezone": "Europe/Dublin",
+    "coordinatorHeartbeatHardGateMs": 200,
+    "syntheticPublicationCadenceHardGateMs": 200,
+    "rssLimitBytes": 536870912
+  },
+  "fixture": {
+    "copiedBeforeOpen": true,
+    "sourceWasRegularFile": true,
+    "sourceWasSymlink": false,
+    "sourceWalBytes": 0,
+    "sourceShmBytes": 0,
+    "sourceSha256Before": "53fd13f87775529b46346a83519b823c50b22bd20297c489e0165d52ff3abcb6",
+    "sourceSha256After": "53fd13f87775529b46346a83519b823c50b22bd20297c489e0165d52ff3abcb6",
+    "copiedSha256": "53fd13f87775529b46346a83519b823c50b22bd20297c489e0165d52ff3abcb6",
+    "sourceBytes": 4159836160,
+    "copiedBytes": 4159836160
+  },
+  "migration": {
+    "schemaVersion": 13,
+    "durationMs": 142174.794637,
+    "heartbeatMaxGapMs": 74.19625399999859,
+    "backfillsSettled": true,
+    "failureMarkers": []
+  },
+  "archive": {
+    "archiveId": "a4e9dda4-44a4-4515-b2ee-fd0aa45ed666",
+    "archiveKind": "finalized",
+    "archiveRelativePath": "a4e9dda4-44a4-4515-b2ee-fd0aa45ed666.sararch",
+    "missionId": "fixture-mission-000000000001",
+    "requestEventRowid": 9717163,
+    "requestEventId": "c9b26f23-4b7a-43ad-ba1a-8d0a70db5da3",
+    "creationOperationId": "419d51bb-5267-432e-aa58-0f435e7c11c4",
+    "protectedFinalizationEpoch": null,
+    "createdAt": "2026-09-08T13:30:22.287Z",
+    "previousArchiveSha256": null,
+    "containerVersion": 2,
+    "schemaVersion": 13,
+    "inventoryVersion": 1,
+    "ciphertextSha256": "c2a146f8ea3e3b95df6905ef88888bc4df2028c8492101577120deee2bfb1e41",
+    "sizeBytes": 5244082405,
+    "frameCount": 627,
+    "headerSha256": "5321a963f8321a89258016e3e82824b4c29e330a4d08c86542c6050b2c09df6e",
+    "manifestSha256": "eba53e0da696632bf1a259a5b4e78c55c13e9c1bea0f3ceae568adf8b6114b28",
+    "inventorySha256": "9b9db79b97d2653ba4b660cf3b5bd5861c8395f7f2f4b323f417bb1eac8faf49",
+    "entryCount": 4,
+    "tableCount": 49,
+    "status": "verified",
+    "availability": "present"
+  },
+  "completeness": {
+    "verificationProofSha256": "4df46d7a5c030e14e3260b680363cd70242a688c6380c143b738a03a8f22e0a3",
+    "verificationProof": {
+      "proofVersion": 1,
+      "exhaustive": true,
+      "archiveId": "a4e9dda4-44a4-4515-b2ee-fd0aa45ed666",
+      "archiveKind": "finalized",
+      "archiveRelativePath": "a4e9dda4-44a4-4515-b2ee-fd0aa45ed666.sararch",
+      "missionId": "fixture-mission-000000000001",
+      "requestEventRowid": 9717163,
+      "requestEventId": "c9b26f23-4b7a-43ad-ba1a-8d0a70db5da3",
+      "creationOperationId": "419d51bb-5267-432e-aa58-0f435e7c11c4",
+      "protectedFinalizationEpoch": null,
+      "createdAt": "2026-09-08T13:30:22.287Z",
+      "previousArchiveSha256": null,
+      "containerVersion": 2,
+      "schemaVersion": 13,
+      "inventoryVersion": 1,
+      "ciphertextSha256": "c2a146f8ea3e3b95df6905ef88888bc4df2028c8492101577120deee2bfb1e41",
+      "sizeBytes": 5244082405,
+      "frameCount": 627,
+      "headerSha256": "5321a963f8321a89258016e3e82824b4c29e330a4d08c86542c6050b2c09df6e",
+      "manifestSha256": "eba53e0da696632bf1a259a5b4e78c55c13e9c1bea0f3ceae568adf8b6114b28",
+      "custodyFileIdentity": {
+        "changedTimeNanoseconds": "1788879706485760328",
+        "device": "66306",
+        "inode": "22041492",
+        "linkCount": 1,
+        "modifiedTimeNanoseconds": "1788879700498945134",
+        "sizeBytes": 5244082405
+      },
+      "layers": {
+        "ciphertext": {
+          "exhaustive": true,
+          "matched": true
+        },
+        "authenticatedFrames": {
+          "exhaustive": true,
+          "matched": true
+        },
+        "entries": {
+          "exhaustive": true,
+          "matched": true,
+          "count": 4
+        },
+        "inventory": {
+          "exhaustive": true,
+          "matched": true,
+          "tableCount": 49
+        },
+        "gpxSourceBytes": {
+          "exhaustive": true,
+          "matched": true,
+          "recordCount": 0,
+          "exactBytesCount": 0,
+          "legacyHashOnlyCount": 0,
+          "legacyUnavailableCount": 0,
+          "failureUnavailableCount": 0,
+          "exactSourceCustodyComplete": true
+        },
+        "attachments": {
+          "exhaustive": true,
+          "matched": true,
+          "count": 0
+        }
+      },
+      "replaySemantic": {
+        "sampled": true,
+        "matched": true,
+        "sampleCount": 5,
+        "sampleStrategy": "mission-start-finish-fence-midpoints-exhaustive-pages-and-outing-filters-v3",
+        "baselineSha256": "2b5d9f3e10b712943b4ef6e39a66d90959ee571dc53dc000472f3bb08ffeea94",
+        "samples": [
+          {
+            "selectedTime": "2026-01-01T00:00:00.000Z",
+            "semanticSha256": "89ccd2effbafcd41c6a3d3e64857236d2cb5d5be0014ec5aca10020432111c5b",
+            "sampledOutingFilterCount": 0,
+            "totalOutingFilterCount": 0,
+            "sampledObjectCount": 0,
+            "totalObjectCount": 0,
+            "sampledTrackCount": 0,
+            "totalTrackCount": 0
+          },
+          {
+            "selectedTime": "2026-05-06T06:45:11.121Z",
+            "semanticSha256": "ad94d0b9a53b926f8aa011b1ee30595c9cf0e0fce41a2520e6a23d1f9332d1a4",
+            "sampledOutingFilterCount": 0,
+            "totalOutingFilterCount": 0,
+            "sampledObjectCount": 0,
+            "totalObjectCount": 0,
+            "sampledTrackCount": 0,
+            "totalTrackCount": 0
+          },
+          {
+            "selectedTime": "2026-09-08T13:30:22.242Z",
+            "semanticSha256": "abab1c4f9d03ecee5af6b028e9d209378f7fb2fdf0f0b62d41874d5589ee0827",
+            "sampledOutingFilterCount": 0,
+            "totalOutingFilterCount": 0,
+            "sampledObjectCount": 0,
+            "totalObjectCount": 0,
+            "sampledTrackCount": 0,
+            "totalTrackCount": 0
+          },
+          {
+            "selectedTime": "2026-09-08T13:30:22.264Z",
+            "semanticSha256": "fcce52865ab93bfb02f006de060a90fa42edf15337a05aad4f3d2fc23f023bd4",
+            "sampledOutingFilterCount": 0,
+            "totalOutingFilterCount": 0,
+            "sampledObjectCount": 0,
+            "totalObjectCount": 0,
+            "sampledTrackCount": 0,
+            "totalTrackCount": 0
+          },
+          {
+            "selectedTime": "2026-09-08T13:30:22.287Z",
+            "semanticSha256": "5223baeb7e279e8e56ae1b7003d9cd96c5db13fca14235efbc5f8a755777dd60",
+            "sampledOutingFilterCount": 0,
+            "totalOutingFilterCount": 0,
+            "sampledObjectCount": 0,
+            "totalObjectCount": 0,
+            "sampledTrackCount": 0,
+            "totalTrackCount": 0
+          }
+        ]
+      },
+      "tables": [
+        {
+          "tableName": "coverage_chunks",
+          "rowCount": 0,
+          "contentSha256": "29e34213ebb6b0d416084299ce4279c390abf1654c18be99ccd0f82b98af6a4b"
+        },
+        {
+          "tableName": "coverage_invalidations",
+          "rowCount": 0,
+          "contentSha256": "8bfa3618060be43d6a846ca1eeb44e3f496bfaf07d2d2a3a805e6a0aac430cf6"
+        },
+        {
+          "tableName": "coverage_missions",
+          "rowCount": 0,
+          "contentSha256": "426bf74da50a54a0e24c6ba4dfd751b6b54f587049f7b5ccf35bafac42957979"
+        },
+        {
+          "tableName": "devices",
+          "rowCount": 32,
+          "contentSha256": "7e06315a6d5cfa3475d6dcdeff41e344ae54f8e36b15e4ed217ef21c7a964ba8"
+        },
+        {
+          "tableName": "drawings",
+          "rowCount": 0,
+          "contentSha256": "68c3d7f028cef70725a592facce78edec91647b92daba8787470f4aa2a27a51f"
+        },
+        {
+          "tableName": "gpx_evidence_points",
+          "rowCount": 0,
+          "contentSha256": "d9838d495b6a6079ccbc8fac2bc6cc306ef555356ebf853a673f3ab5c954396e"
+        },
+        {
+          "tableName": "gpx_evidence_rejections",
+          "rowCount": 0,
+          "contentSha256": "75c5c010cc72b4fec23c85c40c9efc7c493f7c2c80553a8e4d26d76f3e194497"
+        },
+        {
+          "tableName": "gpx_import_aliases",
+          "rowCount": 0,
+          "contentSha256": "c4f42463f2582c9e5698e2bbd373c455e6c49c0c4cd4517ad168e05a57cd1301"
+        },
+        {
+          "tableName": "gpx_import_batches",
+          "rowCount": 0,
+          "contentSha256": "b0be986e05d5e90af6cb242e048b4f0efbce1ea1cb3029f1f177366605415b9a"
+        },
+        {
+          "tableName": "gpx_import_failures",
+          "rowCount": 0,
+          "contentSha256": "b7dfd98df9342568379b8d0115c4094ee13db83e61bf3e5915848bb22d3261de"
+        },
+        {
+          "tableName": "gpx_import_revisions",
+          "rowCount": 0,
+          "contentSha256": "e861c19f21bf9d1049d36c52b4118dba0c7e62020dd72637fa217b6e400b0f80"
+        },
+        {
+          "tableName": "gpx_import_source_receipts",
+          "rowCount": 0,
+          "contentSha256": "3d7ff2983a15ab0d77aeaae2bd1addcfdf8da0d6c5a7624ad3836c67d4659a9b"
+        },
+        {
+          "tableName": "gpx_track_imports",
+          "rowCount": 0,
+          "contentSha256": "549e21c22d2a9b7e8b22bcfc4cc40a3b1d5feb547a5b81dd3c891426ed1e207d"
+        },
+        {
+          "tableName": "helicopters",
+          "rowCount": 0,
+          "contentSha256": "08081e825c5e94baf45395cc54d50814ef431960e64ea2dfcb87eb2356c89a1d"
+        },
+        {
+          "tableName": "ingest_anomalies",
+          "rowCount": 0,
+          "contentSha256": "eb63db1d8d55b98d13188b209352a4a9fa3e32eb4837378cbb466ed7d8b93444"
+        },
+        {
+          "tableName": "ingest_anomaly_deliveries",
+          "rowCount": 0,
+          "contentSha256": "f4c554dc35aec2109a5b75a012e5641d67eba28f95ae5f2b1c8c8f2ee9dd6370"
+        },
+        {
+          "tableName": "ingest_anomaly_devices",
+          "rowCount": 0,
+          "contentSha256": "764a05371680952db9036de933891bae641935d286abae55b087528cfb5e31d7"
+        },
+        {
+          "tableName": "ingest_anomaly_mission_health",
+          "rowCount": 0,
+          "contentSha256": "befae6f0a7eacf533db40a43f022ec2a7e92fc660a2b44d08cd6521a102a1417"
+        },
+        {
+          "tableName": "layer_catalog_entries",
+          "rowCount": 0,
+          "contentSha256": "1d8b412d58714fde99495316d0e3f278ac776550f1c350356aec753feed19551"
+        },
+        {
+          "tableName": "legacy_event_provenance_backfill_state",
+          "rowCount": 0,
+          "contentSha256": "cd008f6930d74e9784bcf82cd999a823b832da01cf2d38b1cc368f9294638640"
+        },
+        {
+          "tableName": "legacy_event_provenance_quarantine",
+          "rowCount": 0,
+          "contentSha256": "f9064060861292b3178a4b2c7421fb46922a1f2400dbc21e6ce7c573a5be7179"
+        },
+        {
+          "tableName": "legacy_event_provenance_quarantine_missions",
+          "rowCount": 0,
+          "contentSha256": "f65b33513fd5a35e779f30c41d2bdd4524b5fe1cd18e150603972cb63fefb0b4"
+        },
+        {
+          "tableName": "legacy_gpx_backfill_quarantine",
+          "rowCount": 0,
+          "contentSha256": "d86b86cae2b2c5c8d32c83610f6c20adb4a253950320f5d832e0a33226bf27e9"
+        },
+        {
+          "tableName": "legacy_gpx_backfill_state",
+          "rowCount": 0,
+          "contentSha256": "3dcc8ceb41c6f8c2e5d5db528c0748a7af9cbe10bdd0dfdaf6ca9314d44321d6"
+        },
+        {
+          "tableName": "legacy_gpx_rowid_scan_state",
+          "rowCount": 0,
+          "contentSha256": "b2b90a2b588d3f1826c23ea68f229f61d54f4039b151b1a18d03e5430dc62e41"
+        },
+        {
+          "tableName": "legacy_mission_object_backfill_state",
+          "rowCount": 0,
+          "contentSha256": "ba9748023f941d62a9542541788cc0970596a78df3fb05e6fbe5d7156aeb5d9d"
+        },
+        {
+          "tableName": "markers",
+          "rowCount": 0,
+          "contentSha256": "64281dbbe4cef43d902755f4b40d1f6c84dde86382d68cbac0e68570cb7d4418"
+        },
+        {
+          "tableName": "metadata",
+          "rowCount": 1,
+          "contentSha256": "82d067eeb7bdba119a33532c5528299c44c924afe782ce2550220d522f5d077f"
+        },
+        {
+          "tableName": "mission_archive_supplements",
+          "rowCount": 0,
+          "contentSha256": "3df85d83d7ea6fe9f9cfaeb4821024f32d684f1c77c8edec0d4a3899956f864d"
+        },
+        {
+          "tableName": "mission_archives",
+          "rowCount": 0,
+          "contentSha256": "7cc349dee6ee38d5391a8004b33084fdd4e505c08f7f5660ea4e7fcd8912732c"
+        },
+        {
+          "tableName": "mission_cleanup_journal",
+          "rowCount": 0,
+          "contentSha256": "30c16e51929e7723ecdacd1e487742dd498213501ccea280bcebd7e291b46cd8"
+        },
+        {
+          "tableName": "mission_events",
+          "rowCount": 9717162,
+          "contentSha256": "b837ca69b1d13745245d8c4608a39279cb4b73207221e57436c906e3a3be624c"
+        },
+        {
+          "tableName": "mission_finalization_fences",
+          "rowCount": 0,
+          "contentSha256": "e1d2fb3d79e57c40bcbd4677f7e7d1e1854faec7c74c4953adb38c3f56ad88ec"
+        },
+        {
+          "tableName": "mission_group_membership_events",
+          "rowCount": 0,
+          "contentSha256": "6a424ab4d239032e7b615b3635aacea4a5f4692adb9df4d0f9231b148d794ec3"
+        },
+        {
+          "tableName": "mission_object_versions",
+          "rowCount": 0,
+          "contentSha256": "428c43d06433eb0f00646a544bc24a046b7961e14b2ac423f8386c5d77557899"
+        },
+        {
+          "tableName": "mission_participants",
+          "rowCount": 32,
+          "contentSha256": "a1a3d86db5c5adf712157ec58974dfb63696298396c1399840e67114645cb713"
+        },
+        {
+          "tableName": "mission_replay_generations",
+          "rowCount": 1,
+          "contentSha256": "5e1fe9c8642e41931400d01423587efe028e98f2c21cf07053713359c0ed8332"
+        },
+        {
+          "tableName": "mission_replay_position_day_counts",
+          "rowCount": 0,
+          "contentSha256": "774bca9bb6f71aa2de8955d9ffcb72fda4e3bd8b9ab5b8edeeed6dae3f1f5eab"
+        },
+        {
+          "tableName": "mission_teams",
+          "rowCount": 0,
+          "contentSha256": "c74fba38c20cd1f56c84e18c9331e331387f68b4640322da322b6a6895e7c467"
+        },
+        {
+          "tableName": "missions",
+          "rowCount": 1,
+          "contentSha256": "77481737017ae2fdd51d8a758a1344ae03ee50ca1c24ddb4a89dd6404275785d"
+        },
+        {
+          "tableName": "outings",
+          "rowCount": 0,
+          "contentSha256": "0b014385a5469fc3239cd6dccd6dbfee70b43da6eefcda2769c6199693d533f7"
+        },
+        {
+          "tableName": "participant_backfill_checkpoints",
+          "rowCount": 0,
+          "contentSha256": "3cc224942ca05dc1cc8aab4746b16492e1f17de0421cb25e02a403fad6c91419"
+        },
+        {
+          "tableName": "position_revisions",
+          "rowCount": 0,
+          "contentSha256": "f9f152cc312dddf2efc3e72299c66ad36df402d79a8f2cc3e9a324f92afbff14"
+        },
+        {
+          "tableName": "positions",
+          "rowCount": 1935360,
+          "contentSha256": "10e3587468e6171e202b8ee75b4e1149e3fa73747d38cee409281f253eb7f483"
+        },
+        {
+          "tableName": "search_areas",
+          "rowCount": 0,
+          "contentSha256": "49da8ecdfb5fa2f7476ef96f0e0d97b26c0d992a0031d137910fbbe1bdbf6d46"
+        },
+        {
+          "tableName": "search_assignments",
+          "rowCount": 0,
+          "contentSha256": "9974c92872ccda63113aaa1d91caf7cf4afedf5701ce23d144068650c2fd0d25"
+        },
+        {
+          "tableName": "search_pass_evidence_links",
+          "rowCount": 0,
+          "contentSha256": "ce2839dc0324936c0750fa755114ed2441e7d7771dae5a391275fe6b2dbed19d"
+        },
+        {
+          "tableName": "search_passes",
+          "rowCount": 0,
+          "contentSha256": "b16fa9a63fce4445f42de6d3ca4bd51b2674b074894bbd6f9da57ca4ebab5959"
+        },
+        {
+          "tableName": "tracking_history_checkpoints",
+          "rowCount": 0,
+          "contentSha256": "35cbc2890399977e741633d5b7a96bb4157bba20770002bb88036fcc1f206d27"
+        }
+      ],
+      "tableLedgerSha256": "e232d51f9d55508ce58169fc4f22abfaecafc41747ff76d4ef3acd781af700ca",
+      "durationMs": 159629.8607130004,
+      "plaintextSweepConfirmed": true
+    }
+  },
+  "cleanup": {
+    "state": "completed",
+    "storageState": "archived",
+    "journalIdentityBound": true,
+    "membershipGeneration": 0,
+    "cleanableMissionEventTypes": [
+      "device_updated",
+      "mission_backup_synced",
+      "position_recorded"
+    ],
+    "guardRevision": 13628,
+    "finalizationEpoch": 9717165,
+    "finalizationEventId": "40d0ed41-44d9-4a4d-a229-b47a2b947833",
+    "cleanupStartedEventId": "5191e547-85aa-4ef9-bc21-a19e7bf81022",
+    "cleanupCompletedEventId": "4b1fbd68-d5ad-4afa-afa8-f5653d1e7fa0",
+    "preCredentialBlockers": [
+      "fresh_non_machine_unlock_required"
+    ],
+    "reviewLeaseHeld": true,
+    "deletedTableRowsRemain": 0,
+    "retainedMissionStub": true,
+    "retainedArchiveRegistry": true,
+    "archiveSha256After": "c2a146f8ea3e3b95df6905ef88888bc4df2028c8492101577120deee2bfb1e41",
+    "terminalEligibility": {
+      "eligible": false,
+      "blockers": [
+        "cleanup_already_completed"
+      ],
+      "storageState": "archived"
+    }
+  },
+  "reviewBeforeCleanup": {
+    "opened": true,
+    "readOnly": true,
+    "mutationDenied": true,
+    "replayPageCount": 1,
+    "replayDigest": "e0037958095ecd1e9f5a081047387bff4d2ce3efe56a6f9f2028c7e6fec6d634",
+    "openResidualFileCount": 1,
+    "openPrivacyCanaryDetected": true,
+    "closed": true,
+    "plaintextSweptAfterClose": true
+  },
+  "reviewAfterCleanup": {
+    "opened": true,
+    "readOnly": true,
+    "mutationDenied": true,
+    "replayPageCount": 1,
+    "replayDigest": "e0037958095ecd1e9f5a081047387bff4d2ce3efe56a6f9f2028c7e6fec6d634",
+    "openResidualFileCount": 1,
+    "openPrivacyCanaryDetected": true,
+    "closed": true,
+    "plaintextSweptAfterClose": true
+  },
+  "packagedLifecycle": {
+    "rawFileSha256": "74a0939682601485d28193891b83e590be5670cee91d2fccab44fd800e3ec8eb",
+    "canonicalEvidenceSha256": "95ab65c313ee1dd5dc155c48a2747bf56fa27968bce41718a2b5632056d81080",
+    "evidence": {
+      "schemaVersion": 2,
+      "proofKind": "packaged-electron-archive-lifecycle-v2",
+      "source": {
+        "expectedHead": "23f90f087e90d0aa145130d9c65b17815a630109",
+        "headBefore": "23f90f087e90d0aa145130d9c65b17815a630109",
+        "headAfter": "23f90f087e90d0aa145130d9c65b17815a630109",
+        "treeBefore": "9e783fd843373ab53cd27093769cf1f67c959034",
+        "treeAfter": "9e783fd843373ab53cd27093769cf1f67c959034",
+        "worktreeCleanBefore": true,
+        "worktreeCleanAfter": true,
+        "packagedExecutableSha256": "6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8",
+        "packagedApplicationArchiveSha256": "9075a3514240cdb625dae9949916019f4ad11c31c717f29ff10da99b39b8eeeb",
+        "packagedBuildHeadMatched": true
+      },
+      "run": {
+        "startedAt": "2026-09-08T13:26:05.832Z",
+        "finishedAt": "2026-09-08T13:26:44.519Z",
+        "durationMs": 38687,
+        "platform": "linux",
+        "architecture": "x64",
+        "nodeVersion": "v22.22.2",
+        "launchCount": 2,
+        "observedLaunchExitCount": 2
+      },
+      "mission": {
+        "missionId": "a3e99774-20e8-4017-85be-e0521025e6a8",
+        "missionNameSha256": "19838c80b6e3fc71cddf8d34e4b8a21fb15563196bce4d33067e269449fd4978",
+        "createdStatus": "active",
+        "finishedStatus": "finished",
+        "finalizedStatus": "finalized",
+        "seededOutingChoices": 101,
+        "seededPositionRows": 4096,
+        "seededReplayObjectRows": 202
+      },
+      "archive": {
+        "archiveId": "57437479-4f5c-4239-b475-78d41c5b6336",
+        "containerVersion": 2,
+        "statusAfterFinalize": "verified",
+        "statusAfterIndependentVerify": "verified",
+        "availability": "present",
+        "ciphertextSha256": "53e5b6740d102db1d0d673588e81b10a56f8e6c8622decafa49b20d30ec6a5e7",
+        "sizeBytes": 5784324,
+        "createProgressPhases": [
+          "attachments",
+          "digest",
+          "encrypt",
+          "extract",
+          "plaintext_cleanup",
+          "preflight",
+          "proof",
+          "publish",
+          "seal",
+          "snapshot",
+          "sqlite",
+          "staged",
+          "sync"
+        ],
+        "verifyProgressPhases": [
+          "attachments",
+          "decrypt",
+          "entries",
+          "gpx",
+          "inventory",
+          "keys",
+          "plaintext_cleanup",
+          "preflight",
+          "proof",
+          "replay",
+          "sqlite",
+          "verified"
+        ]
+      },
+      "reviewBeforeCleanup": {
+        "opened": true,
+        "immutable": true,
+        "verified": true,
+        "plaintextResidual": "permission_restricted_session_open",
+        "contentSha256": "0cbd3c4e8a6e7541bee5e98fae3d0f4630e248cb2194b8524737d1cfeb2a58c3",
+        "archiveIdMatched": true,
+        "readMissionIdMatched": true,
+        "breadcrumbCount": 4096,
+        "replayObjectCount": 202,
+        "replayOutingFilterCount": 101,
+        "replayTrackCount": 4096,
+        "openResidualFileCount": 1,
+        "openDirectoriesOwnerOnly": true,
+        "openFilesOwnerOnly": true,
+        "openPrivacyCanaryDetected": true,
+        "mutationAttempt": "upsertMarker",
+        "mutationBoundary": "preload_read_only",
+        "mutationDenied": true,
+        "denialAudited": true,
+        "closed": true,
+        "residualEntriesAfterClose": 0
+      },
+      "interruptedRestore": {
+        "supported": true,
+        "progressTriggered": true,
+        "triggerPhase": "decrypt",
+        "killSignalRequested": "SIGKILL",
+        "exitSignal": "SIGKILL",
+        "residualEntriesBeforeRestart": 2,
+        "plaintextFileObservedBeforeRestart": true,
+        "privacyCanaryDetectedBeforeRestart": true,
+        "restartSweepCompleted": true,
+        "residualEntriesAfterRestart": 0
+      },
+      "cleanup": {
+        "eligibilityChecked": true,
+        "eligibleBeforeCredential": false,
+        "freshCredentialOnlyBlocker": true,
+        "completed": true,
+        "storageState": "archived",
+        "movedRows": 5516,
+        "remainingBreadcrumbRows": 0
+      },
+      "reviewAfterCleanup": {
+        "opened": true,
+        "immutable": true,
+        "verified": true,
+        "plaintextResidual": "permission_restricted_session_open",
+        "contentSha256": "0cbd3c4e8a6e7541bee5e98fae3d0f4630e248cb2194b8524737d1cfeb2a58c3",
+        "archiveIdMatched": true,
+        "readMissionIdMatched": true,
+        "breadcrumbCount": 4096,
+        "replayObjectCount": 202,
+        "replayOutingFilterCount": 101,
+        "replayTrackCount": 4096,
+        "openResidualFileCount": 1,
+        "openDirectoriesOwnerOnly": true,
+        "openFilesOwnerOnly": true,
+        "openPrivacyCanaryDetected": true,
+        "mutationAttempt": "upsertMarker",
+        "mutationBoundary": "preload_read_only",
+        "mutationDenied": true,
+        "denialAudited": true,
+        "closed": true,
+        "residualEntriesAfterClose": 0
+      },
+      "liveness": {
+        "provenance": "packaged-electron-external-watchdog-v1",
+        "hardGateMs": 200,
+        "pollProfile": {
+          "mode": "time-compressed-validation",
+          "intervalMs": 50
+        },
+        "byPhase": {
+          "create": {
+            "sampleCount": 548,
+            "currentFixMaxGapMs": 48,
+            "sourceToRendererMaxMs": 44,
+            "requestToRendererMaxMs": 44,
+            "mainWatchdogMaxGapMs": 68.61362000000008,
+            "rendererFrameMaxGapMs": 40.799999952316284
+          },
+          "verify": {
+            "sampleCount": 102,
+            "currentFixMaxGapMs": 46,
+            "sourceToRendererMaxMs": 44,
+            "requestToRendererMaxMs": 44,
+            "mainWatchdogMaxGapMs": 57.91822200000024,
+            "rendererFrameMaxGapMs": 41.60000002384186
+          },
+          "restore": {
+            "sampleCount": 172,
+            "currentFixMaxGapMs": 67,
+            "sourceToRendererMaxMs": 48,
+            "requestToRendererMaxMs": 48,
+            "mainWatchdogMaxGapMs": 64.2206010000009,
+            "rendererFrameMaxGapMs": 45.19999998807907
+          },
+          "cleanup": {
+            "sampleCount": 119,
+            "currentFixMaxGapMs": 53,
+            "sourceToRendererMaxMs": 31,
+            "requestToRendererMaxMs": 31,
+            "mainWatchdogMaxGapMs": 56.07123699999647,
+            "rendererFrameMaxGapMs": 35.90000003576279
+          }
+        }
+      },
+      "privacy": {
+        "secretsProvidedOnlyViaPreload": true,
+        "secretsAbsentFromProcessArguments": true,
+        "secretsAbsentFromEvidence": true,
+        "exactSecretScanFiles": 74,
+        "exactSecretMatches": 0,
+        "plaintextResidueEntriesAtEnd": 0
+      },
+      "verdict": {
+        "passed": true,
+        "failureReasons": []
+      }
+    }
+  },
+  "contentionProbe": {
+    "provenance": "node-qualification-coordinator-contention-v1",
+    "proofScope": "field-scale-archive-contention-not-packaged-renderer-liveness",
+    "coordinatorHeartbeatMaxGapMs": 66.04438900016248,
+    "syntheticPublicationMaxCadenceMs": 0.15753099974244833,
+    "durableMaxLatencyMs": 3546.5434089992195,
+    "durableWriteCount": 1181,
+    "durableVisibleWrites": 1181,
+    "durableBusyRetries": 40,
+    "durableSettlementMs": 5.291228000074625,
+    "byPhase": {
+      "create": {
+        "coordinatorHeartbeatMaxGapMs": 52.81010999996215,
+        "syntheticPublicationMaxCadenceMs": 0.15753099974244833,
+        "durableMaxLatencyMs": 60.65525500010699,
+        "durableWriteCount": 1097,
+        "durableVisibleWrites": 1097,
+        "durableBusyRetries": 0,
+        "syntheticPublicationCount": 1097,
+        "inProcessVisiblePublicationCount": 1097
+      },
+      "verify": {
+        "coordinatorHeartbeatMaxGapMs": 58.18445400055498,
+        "syntheticPublicationMaxCadenceMs": 0.033692000433802605,
+        "durableMaxLatencyMs": 25.83905000053346,
+        "durableWriteCount": 33,
+        "durableVisibleWrites": 33,
+        "durableBusyRetries": 0,
+        "syntheticPublicationCount": 33,
+        "inProcessVisiblePublicationCount": 33
+      },
+      "restore": {
+        "coordinatorHeartbeatMaxGapMs": 66.04438900016248,
+        "syntheticPublicationMaxCadenceMs": 0.035671000368893147,
+        "durableMaxLatencyMs": 203.74350399989635,
+        "durableWriteCount": 9,
+        "durableVisibleWrites": 9,
+        "durableBusyRetries": 0,
+        "syntheticPublicationCount": 9,
+        "inProcessVisiblePublicationCount": 9
+      },
+      "cleanup": {
+        "coordinatorHeartbeatMaxGapMs": 52.05916799977422,
+        "syntheticPublicationMaxCadenceMs": 0.038107000291347504,
+        "durableMaxLatencyMs": 3546.5434089992195,
+        "durableWriteCount": 42,
+        "durableVisibleWrites": 42,
+        "durableBusyRetries": 40,
+        "syntheticPublicationCount": 42,
+        "inProcessVisiblePublicationCount": 42
+      }
+    }
+  },
+  "resources": {
+    "measurement": "whole_process_rss_conservative_worker_upper_bound",
+    "baselineProcessRssBytes": 65953792,
+    "peakProcessRssBytes": 385138688,
+    "peakDeltaBytes": 319184896,
+    "linuxVmHwmBytes": 385138688,
+    "sampleCount": 120889
+  },
+  "residue": {
+    "rootsChecked": [
+      "archive-staging",
+      "verification-scratch",
+      "archive-review-sessions"
+    ],
+    "filesScanned": 3,
+    "bytesScanned": 9405016299,
+    "unreadableFiles": [],
+    "appAddressablePlaintextFiles": [],
+    "secretMatches": [],
+    "privacyMatches": [],
+    "claimsForensicSecureErasure": false
+  },
+  "kdf": {
+    "measuredOnHost": true,
+    "profile": {
+      "version": 1,
+      "N": 131072,
+      "r": 8,
+      "p": 1,
+      "keyLength": 32,
+      "saltBytes": 32,
+      "maxmem": 268435456
+    },
+    "durationMs": 254.03584500029683
+  },
+  "run": {
+    "runId": "q-f708e5ad-4e5f-44b6-a0a1-e1442a2fde5a",
+    "startedAt": "2026-09-08T13:27:50.662Z",
+    "completedAt": "2026-09-08T15:09:34.925Z",
+    "durationMs": 6104263,
+    "phaseDurationsMs": {
+      "migration": 142174.794637,
+      "create": 5485502.754071,
+      "verify": 159811.2631099997,
+      "restore": 39716.478073999286,
+      "cleanup": 208171.1597450003
+    }
+  },
+  "teardown": {
+    "status": "complete",
+    "ownersJoined": true,
+    "profileCleanupCompleted": true
+  },
+  "source": {
+    "repositoryHead": "23f90f087e90d0aa145130d9c65b17815a630109",
+    "repositoryHeadAfterRun": "23f90f087e90d0aa145130d9c65b17815a630109",
+    "repositoryTree": "9e783fd843373ab53cd27093769cf1f67c959034",
+    "repositoryTreeAfterRun": "9e783fd843373ab53cd27093769cf1f67c959034",
+    "repositoryDirtyBefore": false,
+    "repositoryDirtyAfter": false
+  }
+}
