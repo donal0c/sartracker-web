@@ -318,12 +318,15 @@ afterEach(() => {
 })
 
 describe('encrypted mission archive lifecycle integration', () => {
-  it('admits first finalization without an unbounded main-thread legacy scan [DON-252]', async () => {
+  it.each(['admission', 'complete', 'restart'])('keeps first finalization history reads bounded through %s [DON-252]', async (boundary) => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-prepared-finalization-'))
     temporaryDirectories.add(userDataPath)
-    const store = createElectronMissionStore({
+    let store = createElectronMissionStore({
       userDataPath,
-      archiveLifecycleFaultInjection: { afterRequestBeforeWorker: true },
+      archiveLifecycleFaultInjection: {
+        afterRequestBeforeWorker: boundary === 'admission',
+        afterPublishBeforeSeal: boundary === 'restart',
+      },
     })
     const mission = await store.createMission({ name: 'First finalization' })
     await store.finishMission(mission.id)
@@ -336,16 +339,29 @@ describe('encrypted mission archive lifecycle integration', () => {
       return original.call(this, statement)
     })
     try {
-      await expect(store.finalizeMission(mission.id, custody, {
+      const finalization = store.finalizeMission(mission.id, custody, {
         operationId: '22222222-2222-4222-8222-222222222222',
         onProgress: () => undefined,
-      })).rejects.toMatchObject({ code: 'ARCHIVE_SIMULATED_INTERRUPTION' })
+      })
+      if (boundary !== 'complete') {
+        await expect(finalization).rejects.toMatchObject({ code: 'ARCHIVE_SIMULATED_INTERRUPTION' })
+        if (boundary === 'restart') {
+          await store.prepareClose()
+          store.close()
+          store = createElectronMissionStore({ userDataPath })
+          await vi.waitFor(async () => {
+            await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
+          })
+        }
+      } else {
+        await expect(finalization).resolves.toMatchObject({ archive: { status: 'verified' } })
+      }
       const historyReads = sql.filter(({ query }) => query.includes('event_rowid')
         && query.includes('FROM mission_events'))
       expect(historyReads.length).toBeGreaterThan(0)
       expect(historyReads.filter(({ query }) => !/WHERE\s+(?:(?:rowid|id)\s*=\s*\?|rowid\s*>=?\s*\?\s+AND\s+rowid\s*<=\s*\?)/iu.test(query)))
         .toEqual([])
-    } finally { spy.mockRestore(); store.close() }
+    } finally { spy.mockRestore(); await store.prepareClose(); store.close() }
   })
 
   it('blocks correction unlock when a verified v2 predecessor is unavailable', async () => {

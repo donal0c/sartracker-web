@@ -6,7 +6,76 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
-## 8 September continuation to external-review readiness
+## 8 September 13:05 UTC: scale result and bounded sealing correction
+
+Candidate `0f09f3615dfb810758b8ad1dee545ebb90a70a7a`, tree
+`0af1525d674455bc952d72c846ffaadc992de6f9`, committed the preceding local
+corrections. Its macOS and reference Ubuntu packaged lifecycle validators pass,
+the physical kill matrix passes 32/32, and Linux CI
+[`34218858249`](https://github.com/donal0c/sartracker-web/actions/runs/34218858249)
+passes every step. CI main/frame/current maxima are 88.391/180.8/165 ms;
+reference 60.742/40/65 ms; macOS 50.711/19.9/25 ms. All are below 200 ms.
+Canonical lifecycle report SHA256 values respectively:
+
+- CI: `1e6ac18612c884e04fcbacb9aa2507d35c7fc7b79e691a379d6712e50ff5a231`.
+- Reference: `752635b51dd07523a3dbcfb48b6d9b495edc86182ae9514a7999e33869ce9a28`.
+- macOS: `58fad5feeafd73209c0e969862ec9847f3e1f31e502fa8e5eebe14c4c10b225c`.
+- Kill matrix: `dea6a60127f42ba05420244a3237285983d6649df8de42fe93a8e0ad76891d79`.
+
+The large run nevertheless **fails** `LIVENESS_GATE_FAILED`. Run
+`q-e06fa31d-97cc-41a5-896b-48612f9ae49a` ran 11:30:30.720–13:05:44.039 UTC.
+Its final failure receipt is `tmp/pr6-0f09f361-fieldscale.failure.json`, SHA256
+`d4d4d4de982f21ef067698f5be3ba6a6adca7cd57b82e5a604163ac5ddcaa93f`.
+Remote canonical failure: `/tmp/pr6-scale-diagnosis-20260908.UBHDZo/fieldscale-0f09f361-20260908.json.failure.json`.
+Retain disposable profile `/tmp/sartracker-breadcrumb-pr6-qualification-1pBO3u`.
+All owned child/supervisor/monitor processes have exited. No failed receipt is
+relabeled, and the original fixture was never opened by the diagnostic.
+
+- Archive verified, 5,244,082,405 bytes, SHA256
+  `95da47c30ac1e4f066ffcfcfceeb8aa69193f8407ab2dd9ab32eb7d75ee20405`.
+- Cleanup completed 11,652,544 logical row deletions. Durable writer:
+  1,119 queued / 1,119 acknowledged / zero rejected / zero pending, 54 busy retries,
+  maximum settlement 3,708.066 ms, exit zero.
+- Whole-process RSS 375,525,376 bytes (358.129 MiB), below 512 MiB, versus the
+  prior 2,376,781,824-byte failure. This full-run observation supports the memory fix.
+- Create heartbeat **1849.141 ms fails**. Migration/verify/restore/cleanup maxima
+  68.426/56.378/76.518/51.632 ms pass. No threshold is relaxed.
+- The accumulated liveness failure surfaced when stopping the contention probe
+  after cleanup. Post-cleanup Review/final proof were not reached; teardown remains
+  incomplete and disposable profile cleanup is false. This is not qualification.
+
+The admission-only regression had stopped before the later sealing transition.
+Extending it through real encrypted finalization reproduces exactly two main-thread
+unbounded `mission_events` finalization lookups. Both come from sealing's supplement
+checks after the previously prepared SQLite revision has changed during creation.
+The new local correction prepares again before sealing and requires fresh prepared
+reads both before and inside its immediate custody transaction. Recovery prepares
+its supplement resolution and sealing too. No transaction crosses a yield; custody,
+membership, predecessor, exact fence and journal checks remain intact. Retrying
+stale preparation never reruns creation/publication or a committed seal.
+
+Red-first evidence: `tmp/pr6-seal-bounded-red.log`; normal admission and complete
+sealing pass after the fix (`tmp/pr6-seal-bounded-green.log`). The expanded
+admission/complete/restart query regression passes 3/3
+(`tmp/pr6-seal-restart-green.log`); 68 lifecycle, boundary, scan and custody attack
+tests pass (`tmp/pr6-seal-focused.log`). Full source passes **4,034 tests / 385
+files** in 217.99 seconds (`tmp/pr6-seal-full-source-permitted.log`), with no
+overlapping validation workload. Lint, build, TypeScript and bundle budgets pass;
+archive browser flows pass **4/4 in 13.6 seconds** (`tmp/pr6-seal-browser.log`).
+The earlier sandboxed full attempt retains 16 failures caused by denied localhost
+listeners (`EPERM listen 127.0.0.1`), reproduced with a direct Node listener. The
+permitted run fixes the harness environment without any product or threshold
+change. Packaged/CI/large-fixture qualification remains pending for this correction.
+
+The existing disposable diagnostic copy provides a separate paired read-only
+comparison (`tmp/pr6-seal-scan-comparison.cjs` / `.jsonl`): the two legacy reads
+take 36,576.569 ms and cause a 36,586.537 ms heartbeat gap with mmap disabled;
+cooperative preparation takes 1,254.666 ms including the two 0.021 ms reads,
+maximum heartbeat 51.087 ms. Both return no previous finalization. This isolates
+the same query defect, with a different cache regime from the full run; it is not
+an exact attribution of the full run's 1849.141 ms interval or full custody proof.
+
+## 8 September continuation to external-review readiness (preceding local stage)
 
 Donal explicitly authorized continuing until PR #10 is ready for external review,
 with all other work complete. The former few-hours boundary no longer ends this

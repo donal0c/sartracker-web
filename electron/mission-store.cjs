@@ -6498,7 +6498,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
       throw interruption
     }
     progress.emit('create', 'seal', 'files', 0, 1, 'sealing-archive-custody')
-    sealPublishedArchiveFromJournal({
+    await sealPublishedArchiveFromJournal({
       db,
       archiveDirectory,
       archiveRegistry,
@@ -6507,6 +6507,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
       expectedRevision: 2,
       publishResult,
       resolvedSupplement: requestIdentity.supplement,
+      signal,
     })
     registered = true
     progress.emit('create', 'seal', 'files', 1, 1, 'archive-custody-sealed')
@@ -6691,14 +6692,18 @@ async function recoverInterruptedArchiveCustody(input) {
   if (active.state === 'publish_prepared') {
     try {
       const resolvedSupplement = active.archiveKind === 'finalized'
-        ? await resolveArchiveSupplementContext({
+        ? await withPreparedMissionFinalizationRead(input.db, {
+            missionId: active.missionId,
+            signal: input.signal,
+          }, () => resolveArchiveSupplementContext({
             db: input.db,
             archiveRegistry: input.archiveRegistry,
             missionId: active.missionId,
             archiveDirectory: input.archiveDirectory,
             archiveLegacyPredecessorHashRunner: input.archiveLegacyPredecessorHashRunner,
             signal: input.signal,
-          })
+            requirePreparedLegacyRead: true,
+          }))
         : null
       if ((resolvedSupplement?.previousArchiveId ?? null) !== active.previousArchiveId
         || (resolvedSupplement?.previousArchiveSha256 ?? null)
@@ -6714,7 +6719,7 @@ async function recoverInterruptedArchiveCustody(input) {
         operationId: active.operationId,
         signal: input.signal,
       })
-      return sealPublishedArchiveFromJournal({
+      return await sealPublishedArchiveFromJournal({
         db: input.db,
         archiveDirectory: input.archiveDirectory,
         archiveRegistry: input.archiveRegistry,
@@ -6723,6 +6728,7 @@ async function recoverInterruptedArchiveCustody(input) {
         expectedRevision: active.revision,
         publishResult,
         resolvedSupplement,
+        signal: input.signal,
       })
     } catch (error) {
       if (input.signal?.aborted === true || error?.code === 'ARCHIVE_CANCELLED') throw error
@@ -6786,7 +6792,17 @@ function recordInterruptedArchiveFailure(db, active, settlement, cause) {
 }
 
 /** Commits one published archive, lifecycle transition, exact fence removal, and journal settlement. */
-function sealPublishedArchiveFromJournal(input) {
+async function sealPublishedArchiveFromJournal(input) {
+  const active = input.archiveCustodyJournal.readActive()
+  if (active === null) throw new Error('Mission archive custody journal disappeared before sealing.')
+  return withPreparedMissionFinalizationRead(input.db, {
+    missionId: active.missionId,
+    signal: input.signal,
+  }, () => sealPublishedArchiveFromPreparedJournal(input))
+}
+
+/** Seals custody synchronously only while its prepared history remains current. */
+function sealPublishedArchiveFromPreparedJournal(input) {
   const active = input.archiveCustodyJournal.readActive()
   if (active?.operationId !== input.operationId
     || active.revision !== input.expectedRevision
@@ -6826,6 +6842,7 @@ function sealPublishedArchiveFromJournal(input) {
         input.archiveRegistry,
         active.missionId,
         resolvedSupplement,
+        true,
       )
     : null
   if ((resolvedSupplement?.previousArchiveId ?? null) !== active.previousArchiveId
@@ -6860,6 +6877,7 @@ function sealPublishedArchiveFromJournal(input) {
       input.archiveRegistry,
       active.missionId,
       resolvedSupplement,
+      true,
     )
     const cleanupMembershipGeneration = assertEncryptedArchiveRequestStillCurrent(input.db, {
       missionId: active.missionId,
