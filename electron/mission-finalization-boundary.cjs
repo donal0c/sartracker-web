@@ -1,6 +1,11 @@
 'use strict'
 
 const { createHash } = require('node:crypto')
+const { setImmediate: yieldToEventLoop } = require('node:timers/promises')
+const {
+  prepareLegacyFinalizationRead,
+  readLegacyFinalizationRow,
+} = require('./mission-finalization-scan.cjs')
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 
@@ -155,10 +160,7 @@ function readCurrentMissionFinalizationBoundary(db, input) {
   if (input.archiveId !== undefined && currentArchive?.id !== input.archiveId) return null
   if (currentArchive === undefined) {
     if (input.archiveId !== undefined) return null
-    const legacy = db.prepare(`SELECT rowid AS event_rowid, id, mission_id, event_type,
-        details_json FROM mission_events
-      WHERE mission_id = ? AND event_type = 'mission_finalized'
-      ORDER BY rowid DESC LIMIT 1`).get(input.missionId)
+    const legacy = readLegacyFinalizationRow(db, input.missionId, input.requirePreparedLegacyRead === true)
     if (legacy === undefined) return null
     return projectBoundary(legacy, {
       id: parseFinalizationDetails(legacy.details_json)?.archive_id ?? '',
@@ -183,11 +185,34 @@ function readCurrentMissionFinalizationBoundary(db, input) {
     return projectBoundary(row, currentArchive, false)
   }
 
-  const legacy = db.prepare(`SELECT rowid AS event_rowid, id, mission_id, event_type,
-      details_json FROM mission_events
-    WHERE mission_id = ? AND event_type = 'mission_finalized'
-    ORDER BY rowid DESC LIMIT 1`).get(input.missionId)
+  const legacy = readLegacyFinalizationRow(db, input.missionId, input.requirePreparedLegacyRead === true)
   return legacy === undefined ? null : projectBoundary(legacy, currentArchive, true)
+}
+
+/** Prepares only the legacy scan; registry-bound v2/recovery lookups are already indexed. */
+async function prepareCurrentMissionFinalizationRead(db, input) {
+  const archive = readCurrentArchive(db, input.missionId)
+  if (archive?.archive_kind === 'finalized_recovery'
+    || (Number(archive?.container_version) === 2 && archive?.archive_kind === 'finalized')) return
+  await prepareLegacyFinalizationRead(db, input.missionId, { signal: input.signal })
+}
+
+/** Retries stale preparation before durable admission, never an already-started archive lifecycle. */
+async function withPreparedMissionFinalizationRead(db, input, admit) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (input.signal?.aborted) {
+      const error = new Error('Mission finalization preparation was cancelled.')
+      error.name = 'AbortError'
+      throw error
+    }
+    try {
+      await prepareCurrentMissionFinalizationRead(db, input)
+      return await admit()
+    } catch (error) {
+      if (error?.code !== 'MISSION_FINALIZATION_READ_CHANGED' || attempt === 7) throw error
+      await yieldToEventLoop()
+    }
+  }
 }
 
 module.exports = {
@@ -195,4 +220,6 @@ module.exports = {
   readCurrentMissionFinalizationBoundary,
   readMissionFinalizationBoundaryByEpoch,
   readV2MissionFinalizationBoundaryByArchiveId,
+  prepareCurrentMissionFinalizationRead,
+  withPreparedMissionFinalizationRead,
 }

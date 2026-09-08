@@ -685,6 +685,7 @@ describe('archive-backed Mission Review source [DON-252 / BCP-15]', () => {
       for (const [input] of replayRunner.mock.calls) {
         expect(input).toMatchObject({
           databasePath: pinnedDatabasePathMatcher(),
+          archiveReview: true,
           query: expect.objectContaining({ missionId: fixture.missionId }),
           signal: expect.any(AbortSignal),
         })

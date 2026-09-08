@@ -1583,6 +1583,30 @@ describe('kill-safe archive-backed live-store cleanup [DON-253]', () => {
     }
   })
 
+  it('selects and deletes bounded position pages without sorting the whole mission [DON-252]', async () => {
+    const preparedSql: string[] = []
+    const fixture = await createFixture({ preparedSql })
+    try {
+      await fixture.coordinator.start(fixture.evidence)
+      const pageStatements = [...new Set(preparedSql.filter((sql) =>
+        /FROM\s+"positions"\s+AS\s+archive_row/iu.test(sql) && /ORDER BY/iu.test(sql)))]
+      expect(pageStatements.some((sql) => /^\s*SELECT/iu.test(sql))).toBe(true)
+      expect(pageStatements.some((sql) => /^\s*DELETE/iu.test(sql))).toBe(true)
+      for (const sql of pageStatements) {
+        const plan = fixture.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(fixture.missionId, 3)
+        const details = plan.map((row) => String(row.detail)).join('\n')
+        expect(details).toContain('idx_positions_mission_device_timestamp')
+        expect(details).not.toMatch(/TEMP B-TREE|SCAN archive_row/iu)
+      }
+      expect(fixture.db.prepare('SELECT COUNT(*) AS total FROM positions WHERE mission_id = ?')
+        .get(fixture.missionId)?.total).toBe(0)
+      expect(fixture.db.prepare('SELECT COUNT(*) AS total FROM positions WHERE mission_id = ?')
+        .get(fixture.otherMissionId)?.total).toBe(1)
+    } finally {
+      fixture.db.close()
+    }
+  })
+
   it('resolves the current finalization by indexed archive-event identity without a mission history scan', async () => {
     const preparedSql: string[] = []
     const fixture = await createFixture({ preparedSql })

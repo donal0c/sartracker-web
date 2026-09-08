@@ -464,6 +464,7 @@ function createArchiveReviewSource(options) {
         databasePath: pinnedDatabasePath,
         query: input,
         kind: 'state',
+        archiveReview: true,
         signal,
       }))
     },
@@ -473,6 +474,7 @@ function createArchiveReviewSource(options) {
         databasePath: pinnedDatabasePath,
         query: input,
         kind: 'chunk',
+        archiveReview: true,
         signal,
       }))
     },
@@ -482,6 +484,7 @@ function createArchiveReviewSource(options) {
         databasePath: pinnedDatabasePath,
         query: input,
         kind: 'objects',
+        archiveReview: true,
         signal,
       }))
     },
@@ -491,6 +494,7 @@ function createArchiveReviewSource(options) {
         databasePath: pinnedDatabasePath,
         query: input,
         kind: 'filters',
+        archiveReview: true,
         signal,
       }))
     },

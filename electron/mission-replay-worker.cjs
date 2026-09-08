@@ -15,7 +15,9 @@ if (parentPort === null) throw new Error('Mission replay worker requires a paren
 function run() {
   let database
   try {
-    database = openMissionReplayDatabase(workerData.databasePath)
+    database = openMissionReplayDatabase(workerData.databasePath, {
+      archiveReview: workerData.archiveReview === true,
+    })
     const result = workerData.kind === 'chunk'
       ? readMissionReplayTrackChunk(database, workerData.query)
       : workerData.kind === 'objects'

@@ -3054,11 +3054,7 @@ async function runReviewProof({
     })
     const replayDigest = createHash('sha256')
       .update(canonicalJson(replay), 'utf8').digest('hex')
-    const auditBefore = countMissionEvent(
-      databasePath,
-      missionId,
-      'mission_archive_review_mutation_denied',
-    )
+    const auditBoundary = withReadonlyDatabase(databasePath, readReviewAuditBoundary)
     let mutationDenied = false
     try {
       await manager.read({
@@ -3071,12 +3067,9 @@ async function runReviewProof({
       mutationDenied = error?.code === 'ARCHIVE_REVIEW_READ_ONLY'
         && error?.denialAudited === true
     }
-    const auditAfter = countMissionEvent(
-      databasePath,
-      missionId,
-      'mission_archive_review_mutation_denied',
-    )
-    if (!mutationDenied || auditAfter !== auditBefore + 1) {
+    const appendedDenials = withReadonlyDatabase(databasePath, (db) =>
+      readReviewDenialAuditCount(db, { missionId, afterRowid: auditBoundary }))
+    if (!mutationDenied || appendedDenials !== 1) {
       throw new Error('Archive Review mutation denial was not durably audited.')
     }
     await manager.close({ senderId, sessionId: session.sessionId })
@@ -3143,13 +3136,24 @@ async function walkPermissionRestricted(directoryPath) {
   }
 }
 
-/** Counts one exact retained review-audit type from a query-only connection. */
-function countMissionEvent(databasePath, missionId, eventType) {
-  return withReadonlyDatabase(databasePath, (db) => Number(db.prepare(`SELECT COUNT(*) AS count
-    FROM mission_events WHERE mission_id = ? AND event_type = ?`).get(
-    missionId,
-    eventType,
-  ).count))
+/** Pins the append boundary before the qualifier's deliberate denied mutation. */
+export function readReviewAuditBoundary(database) {
+  const boundary = Number(database.prepare(`SELECT rowid AS boundary FROM mission_events
+    ORDER BY rowid DESC LIMIT 1`).get()?.boundary ?? 0)
+  if (!Number.isSafeInteger(boundary) || boundary < 0) {
+    throw new Error('Archive Review audit boundary is invalid.')
+  }
+  return boundary
+}
+
+/** Verifies the new denial without recounting millions of unrelated historical rows. */
+export function readReviewDenialAuditCount(database, { missionId, afterRowid }) {
+  if (!Number.isSafeInteger(afterRowid) || afterRowid < 0) {
+    throw new Error('Archive Review audit boundary is invalid.')
+  }
+  return Number(database.prepare(`SELECT COUNT(*) AS count FROM mission_events
+    WHERE rowid > ? AND mission_id = ?
+      AND event_type = 'mission_archive_review_mutation_denied'`).get(afterRowid, missionId).count)
 }
 
 /** Proves every terminal journal-planned mission selection is empty after cleanup. */

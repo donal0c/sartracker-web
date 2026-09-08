@@ -623,6 +623,12 @@ function createArchiveCleanupCoordinator(options) {
       const keyColumns = readTableKeyColumns(db, tableName)
       const selectedKeys = keyColumns.map((column) =>
         column === 'rowid' ? 'archive_row.rowid' : `archive_row.${quoteIdentifier(column)}`)
+      // Positions already have a mission/device/time index with rowid as its
+      // stable tie-breaker. Ordering by the UUID key sorts the entire mission
+      // twice per batch while holding the WAL writer lock.
+      const pageOrder = tableName === 'positions'
+        ? 'archive_row.device_id, archive_row.timestamp, archive_row.rowid'
+        : selectedKeys.join(', ')
       failureContext.substage = 'select_page'
       if (faultInjection?.failBeforeSelectForTable === tableName) {
         throw new Error('Injected cleanup failure before select page.')
@@ -630,7 +636,7 @@ function createArchiveCleanupCoordinator(options) {
       const selected = db.prepare(`SELECT ${selectedKeys.join(', ')}
         FROM ${quoteIdentifier(tableName)} AS archive_row
         WHERE ${selection.whereSql}
-        ORDER BY ${selectedKeys.join(', ')} LIMIT ?`).all(
+        ORDER BY ${pageOrder} LIMIT ?`).all(
         ...selection.parameters,
         limit,
       )
@@ -676,7 +682,7 @@ function createArchiveCleanupCoordinator(options) {
             SELECT ${selectedKeys.join(', ')}
             FROM ${quoteIdentifier(tableName)} AS archive_row
             WHERE ${selection.whereSql}
-            ORDER BY ${selectedKeys.join(', ')} LIMIT ?
+            ORDER BY ${pageOrder} LIMIT ?
           )`).run(...selection.parameters, limit))
       assertArchiveCleanupMembershipGeneration(db, {
         missionId: evidence.missionId,

@@ -84,6 +84,43 @@ afterEach(async () => {
 })
 
 describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', () => {
+  it('checks newly appended denial audits through a rowid boundary instead of rescanning retained history', () => {
+    const { readReviewAuditBoundary, readReviewDenialAuditCount } = qualificationScript as unknown as {
+      readReviewAuditBoundary: (db: Database.Database) => number
+      readReviewDenialAuditCount: (db: Database.Database, input: {
+        missionId: string; afterRowid: number
+      }) => number
+    }
+    const db = new Database(':memory:')
+    try {
+      db.exec('CREATE TABLE mission_events (mission_id TEXT, event_type TEXT)')
+      expect(readReviewAuditBoundary(db)).toBe(0)
+      const append = db.prepare('INSERT INTO mission_events VALUES (?, ?)')
+      db.transaction(() => {
+        for (let index = 0; index < 10_000; index += 1) {
+          append.run('mission', 'mission_archive_review_mutation_denied')
+        }
+      })()
+      const boundary = readReviewAuditBoundary(db)
+      expect(boundary).toBe(10_000)
+      append.run('other', 'mission_archive_review_mutation_denied')
+      append.run('mission', 'unrelated_event')
+      append.run('mission', 'mission_archive_review_mutation_denied')
+      const prepared: string[] = []
+      const observed = { prepare(sql: string) { prepared.push(sql); return db.prepare(sql) } }
+      expect(readReviewDenialAuditCount(observed as unknown as Database.Database, {
+        missionId: 'mission', afterRowid: boundary,
+      })).toBe(1)
+      const plan = db.prepare(`EXPLAIN QUERY PLAN ${prepared[0]}`).all(boundary, 'mission')
+      expect(JSON.stringify(plan)).toMatch(/INTEGER PRIMARY KEY/u)
+      expect(JSON.stringify(plan)).not.toMatch(/SCAN mission_events/u)
+      append.run('mission', 'mission_archive_review_mutation_denied')
+      expect(readReviewDenialAuditCount(db, { missionId: 'mission', afterRowid: boundary })).toBe(2)
+      expect(() => readReviewDenialAuditCount(db, { missionId: 'mission', afterRowid: -1 }))
+        .toThrow(/boundary/iu)
+    } finally { db.close() }
+  })
+
   it('generates a diagnostics-safe run identity regardless of UUID prefix', () => {
     expect(createQualificationRunId()).toMatch(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/u)
   })

@@ -1498,6 +1498,12 @@ describe('Electron main startup', () => {
       'SAR Tracker could not restore safely',
       expect.stringContaining('kept the replacement window closed'),
     )
+    // The refusal schedules its diagnostic asynchronously. Observe that write
+    // before teardown removes the profile that owns it.
+    await vi.waitFor(() => {
+      expect(readFileSync(path.join(testUserDataPath, 'logs', 'runtime.log'), 'utf8'))
+        .toContain('renderer_restore_blocked')
+    })
   })
 })
 

@@ -89,6 +89,8 @@ const {
 const {
   deriveArchiveLifecycleEventId,
   readCurrentMissionFinalizationBoundary,
+  prepareCurrentMissionFinalizationRead,
+  withPreparedMissionFinalizationRead,
 } = require('./mission-finalization-boundary.cjs')
 const {
   assertMissionLiveReviewAvailable: assertMissionLiveReviewSnapshotAvailable,
@@ -5906,8 +5908,8 @@ function validateArchiveFile(archiveBuffer, missionId) {
  * Reads the one still-open post-finalization correction authorization. A normal
  * first Finish has no such authorization and therefore remains read-only.
  */
-function readActiveMissionCorrectionAuthorization(db, missionId) {
-  const finalized = readCurrentMissionFinalizationBoundary(db, { missionId })
+function readActiveMissionCorrectionAuthorization(db, missionId, requirePreparedLegacyRead = false) {
+  const finalized = readCurrentMissionFinalizationBoundary(db, { missionId, requirePreparedLegacyRead })
   if (finalized === null) return null
   let unlockEventId
   try {
@@ -5960,8 +5962,8 @@ function readObservedArchiveFileIdentity(value) {
 }
 
 /** Binds one re-finalization candidate to the exact archive protected by the active unlock. */
-function readActiveArchiveSupplementCandidate(db, archiveRegistry, missionId) {
-  const authorization = readActiveMissionCorrectionAuthorization(db, missionId)
+function readActiveArchiveSupplementCandidate(db, archiveRegistry, missionId, requirePreparedLegacyRead = false) {
+  const authorization = readActiveMissionCorrectionAuthorization(db, missionId, requirePreparedLegacyRead)
   if (authorization === null) return null
   const missionArchives = archiveRegistry.listMissionArchives(missionId)
   const previous = authorization.previousArchiveId === null
@@ -6024,8 +6026,8 @@ function sameArchiveSupplementCandidate(left, right) {
 }
 
 /** Rechecks the exact correction authority and predecessor after asynchronous work. */
-function assertArchiveSupplementCandidateCurrent(db, archiveRegistry, missionId, expected) {
-  const current = readActiveArchiveSupplementCandidate(db, archiveRegistry, missionId)
+function assertArchiveSupplementCandidateCurrent(db, archiveRegistry, missionId, expected, requirePreparedLegacyRead = false) {
+  const current = readActiveArchiveSupplementCandidate(db, archiveRegistry, missionId, requirePreparedLegacyRead)
   if (!sameArchiveSupplementCandidate(current, expected)) {
     const error = new Error(
       'Mission correction predecessor or authorization changed during archive work.',
@@ -6051,6 +6053,7 @@ async function resolveArchiveSupplementContext(input) {
     input.db,
     input.archiveRegistry,
     input.missionId,
+    input.requirePreparedLegacyRead === true,
   )
   if (candidate === null) return candidate
   if (candidate.previousArchiveContainerVersion === 2) {
@@ -6062,6 +6065,7 @@ async function resolveArchiveSupplementContext(input) {
       input.db,
       input.archiveRegistry,
       input.missionId,
+      input.requirePreparedLegacyRead === true,
     )
     if (candidate === null || candidate.previousArchiveContainerVersion !== 2) {
       const error = new Error(
@@ -6086,11 +6090,18 @@ async function resolveArchiveSupplementContext(input) {
   const proof = input.awaitArchiveWorker === undefined
     ? await awaitOwnedArchiveOperation(operation)
     : await input.awaitArchiveWorker(operation)
+  if (input.requirePreparedLegacyRead === true) {
+    await prepareCurrentMissionFinalizationRead(input.db, {
+      missionId: input.missionId,
+      signal: input.signal,
+    })
+  }
   assertArchiveSupplementCandidateCurrent(
     input.db,
     input.archiveRegistry,
     input.missionId,
     candidate,
+    input.requirePreparedLegacyRead === true,
   )
   return Object.freeze({
     ...candidate,
@@ -6290,92 +6301,96 @@ async function finalizeMissionWithEncryptedArchive(input) {
   const finalRelativePath = `${archiveId}.sararch`
   const temporaryRelativePath = `.staging/${operationId}/${archiveId}.sararch.tmp`
   const progress = createArchiveLifecycleProgressEmitter(input.onProgress)
-  const resolvedSupplement = await resolveArchiveSupplementContext({
-    db,
-    archiveRegistry,
-    missionId,
-    archiveDirectory,
-    archiveLegacyPredecessorHashRunner,
-    awaitArchiveWorker,
-    signal,
-  })
-
-  const requestIdentity = db.transaction(() => {
-    const mission = getMission(db, missionId)
-    if (mission.status !== 'finished') {
-      throw new Error('Only finished missions can be finalized.')
-    }
-    assertMissionFinalizationStorageLive(mission)
-    assertLegacyMissionObjectBackfillSettled(db)
-    assertLegacyEventProvenanceReady(db, missionId)
-    assertNoUnsettledGpxImportState(db, missionId)
-    assertMissionFinalizationNotInProgress(db, missionId)
-    const supplement = assertArchiveSupplementCandidateCurrent(
+  const requestIdentity = await withPreparedMissionFinalizationRead(db, { missionId, signal }, async () => {
+    const resolvedSupplement = await resolveArchiveSupplementContext({
       db,
       archiveRegistry,
       missionId,
-      resolvedSupplement,
-    )
-    const requestSupplement = supplement === null
-      ? null
-      : Object.freeze({
-          ...resolvedSupplement,
-          ...supplement,
-          previousArchiveSha256: resolvedSupplement.previousArchiveSha256,
-          previousArchiveFileIdentity: resolvedSupplement.previousArchiveFileIdentity,
-        })
-    const supplementSequence = requestSupplement === null
-      ? null
-      : Number(db.prepare(`SELECT COALESCE(MAX(supplement_sequence), 0) + 1 AS next_sequence
-        FROM mission_archive_supplements WHERE mission_id = ?`).get(missionId).next_sequence)
-    const cleanupMembershipGeneration = readArchiveCleanupMembershipGeneration(db, missionId)
-    db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
-      VALUES (?, ?)`).run(missionId, requestedAt)
-    const requestEventId = insertEvent(
-      db,
-      missionId,
-      'mission_finalize_requested',
-      requestedAt,
-      {
-        resulting_status: 'finished',
-        archive_id: archiveId,
-        operation_id: operationId,
-        archive_kind: 'finalized',
-        archive_relative_path: finalRelativePath,
-        cleanup_membership_generation: cleanupMembershipGeneration,
-        protected_finalization_epoch: null,
-        previous_archive_id: requestSupplement?.previousArchiveId ?? null,
-        previous_archive_sha256: requestSupplement?.previousArchiveSha256 ?? null,
-      },
-    )
-    const requestEventRowid = Number(db.prepare(`SELECT rowid FROM mission_events
-      WHERE id = ?`).get(requestEventId)?.rowid)
-    if (!Number.isSafeInteger(requestEventRowid) || requestEventRowid < 1) {
-      throw new Error('Mission archive request event could not be pinned safely.')
-    }
-    archiveCustodyJournal.planBuildingWithinTransaction({
-      archiveId,
-      archiveKind: 'finalized',
-      createdAt: requestedAt,
-      fenceRequestedAt: requestedAt,
-      finalRelativePath,
-      missionId,
-      operationId,
-      previousArchiveId: requestSupplement?.previousArchiveId ?? null,
-      previousArchiveSha256: requestSupplement?.previousArchiveSha256 ?? null,
-      protectedFinalizationEpoch: null,
-      requestEventId,
-      requestEventRowid,
-      temporaryRelativePath,
+      archiveDirectory,
+      archiveLegacyPredecessorHashRunner,
+      awaitArchiveWorker,
+      signal,
+      requirePreparedLegacyRead: true,
     })
-    return Object.freeze({
-      requestEventId,
-      requestEventRowid,
-      cleanupMembershipGeneration,
-      supplement: requestSupplement,
-      supplementSequence,
-    })
-  }).immediate()
+
+    return db.transaction(() => {
+      const mission = getMission(db, missionId)
+      if (mission.status !== 'finished') {
+        throw new Error('Only finished missions can be finalized.')
+      }
+      assertMissionFinalizationStorageLive(mission)
+      assertLegacyMissionObjectBackfillSettled(db)
+      assertLegacyEventProvenanceReady(db, missionId)
+      assertNoUnsettledGpxImportState(db, missionId)
+      assertMissionFinalizationNotInProgress(db, missionId)
+      const supplement = assertArchiveSupplementCandidateCurrent(
+        db,
+        archiveRegistry,
+        missionId,
+        resolvedSupplement,
+        true,
+      )
+      const requestSupplement = supplement === null
+        ? null
+        : Object.freeze({
+            ...resolvedSupplement,
+            ...supplement,
+            previousArchiveSha256: resolvedSupplement.previousArchiveSha256,
+            previousArchiveFileIdentity: resolvedSupplement.previousArchiveFileIdentity,
+          })
+      const supplementSequence = requestSupplement === null
+        ? null
+        : Number(db.prepare(`SELECT COALESCE(MAX(supplement_sequence), 0) + 1 AS next_sequence
+          FROM mission_archive_supplements WHERE mission_id = ?`).get(missionId).next_sequence)
+      const cleanupMembershipGeneration = readArchiveCleanupMembershipGeneration(db, missionId)
+      db.prepare(`INSERT INTO mission_finalization_fences (mission_id, requested_at)
+        VALUES (?, ?)`).run(missionId, requestedAt)
+      const requestEventId = insertEvent(
+        db,
+        missionId,
+        'mission_finalize_requested',
+        requestedAt,
+        {
+          resulting_status: 'finished',
+          archive_id: archiveId,
+          operation_id: operationId,
+          archive_kind: 'finalized',
+          archive_relative_path: finalRelativePath,
+          cleanup_membership_generation: cleanupMembershipGeneration,
+          protected_finalization_epoch: null,
+          previous_archive_id: requestSupplement?.previousArchiveId ?? null,
+          previous_archive_sha256: requestSupplement?.previousArchiveSha256 ?? null,
+        },
+      )
+      const requestEventRowid = Number(db.prepare(`SELECT rowid FROM mission_events
+        WHERE id = ?`).get(requestEventId)?.rowid)
+      if (!Number.isSafeInteger(requestEventRowid) || requestEventRowid < 1) {
+        throw new Error('Mission archive request event could not be pinned safely.')
+      }
+      archiveCustodyJournal.planBuildingWithinTransaction({
+        archiveId,
+        archiveKind: 'finalized',
+        createdAt: requestedAt,
+        fenceRequestedAt: requestedAt,
+        finalRelativePath,
+        missionId,
+        operationId,
+        previousArchiveId: requestSupplement?.previousArchiveId ?? null,
+        previousArchiveSha256: requestSupplement?.previousArchiveSha256 ?? null,
+        protectedFinalizationEpoch: null,
+        requestEventId,
+        requestEventRowid,
+        temporaryRelativePath,
+      })
+      return Object.freeze({
+        requestEventId,
+        requestEventRowid,
+        cleanupMembershipGeneration,
+        supplement: requestSupplement,
+        supplementSequence,
+      })
+    }).immediate()
+  })
 
   if (faultInjection.afterRequestBeforeWorker === true) {
     const interruption = new Error('Simulated archive interruption after durable request.')

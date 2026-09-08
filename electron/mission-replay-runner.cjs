@@ -15,7 +15,12 @@ function runMissionReplayInWorker(input) {
     let worker
     try {
       const workerOptions = {
-        workerData: { databasePath: input.databasePath, query: normalizedQuery, kind: input.kind },
+        workerData: {
+          databasePath: input.databasePath,
+          query: normalizedQuery,
+          kind: input.kind,
+          ...(input.archiveReview === true ? { archiveReview: true } : {}),
+        },
       }
       worker = input.createWorker?.(workerOptions)
         ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, workerOptions)

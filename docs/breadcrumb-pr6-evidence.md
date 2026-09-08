@@ -6,9 +6,307 @@ production, release, live-Traccar, original-field-machine, SAR-team custody-
 tabletop or forensic-erasure proof. Opening a PR or reaching a candidate head
 is intermediate. Donal retains approval and merge authority.
 
+## 8 September continuation to external-review readiness
+
+Donal explicitly authorized continuing until PR #10 is ready for external review,
+with all other work complete. The former few-hours boundary no longer ends this
+run. The following changes remain local above `6118026c`; they are not a new
+qualified candidate or permission to merge/release.
+
+- `mission-finalization-scan.cjs` prepares legacy finalization history in
+  1,024-row rowid pages, yielding without a transaction held across yields.
+  The existing durable mission Replay generation detects target-mission evidence
+  changes while permitting another mission to track. Schemas without that counter
+  retain conservative whole-database invalidation. Existing main-store event writes,
+  correction/cleanup worker generation updates and archive-family serialization
+  were inspected; no new schema/index or evidence mutation protocol is introduced.
+- Admission rechecks SQLite `data_version` and `total_changes()` inside the
+  immediate transaction before its first write. A stale result is never replaced
+  by a synchronous historical scan. Preparation/admission retry is finite and
+  does not repeat an admitted archive lifecycle. Cancellation discards partial work.
+  Tests cover absence, sparse rowids, same-connection writes, other WAL connections,
+  unrelated live writes, stale authority, cancellation and the real admission path.
+- Qualification's deliberate Review denial captures the maximum event rowid
+  beforehand and requires exactly one new matching denial afterward. Its regression
+  covers older denials, other missions/events, duplicate new denials and the indexed
+  rowid query plan. It preserves durable denial proof without full-history counts.
+- The first full run exposed an asynchronous diagnostic-write/test-teardown race
+  and an overly narrow new SQL assertion. The refusal test now observes its actual
+  `renderer_restore_blocked` log before deleting the profile; the query assertion
+  accepts both inclusive and exclusive lower bounds only with an upper row bound.
+  A second overlapping browser/source run breached an existing timing gate. These
+  failures remain in `tmp/pr6-readiness-full-source{,-diagnostic}.log`.
+- Final complete source: **4,032 tests / 385 files pass**,
+  `npm run test -- --maxWorkers=2`, 216.64 s, no overlapping validation workload.
+  Strict legacy-provenance heartbeat: 170.501 ms, maximum inspection query 4.516 ms.
+  Receipt: `tmp/pr6-readiness-full-source-final.log`. Build/TypeScript/bundle budgets
+  and lint pass. Archive operator browser flows pass **4/4**, 15.6 s, receipt
+  `tmp/pr6-readiness-archive-browser.log`. These are local checks, not package proof.
+
+Current source hashes are captured in `tmp/pr6-readiness-source-sha256.txt`:
+finalization scan `585a9a0ccb632accbe9128e4d8a813d7fa4166554f854bc2d32197c96d67cf94`,
+boundary `ea21ba1d6c97aa6345ebe0536bb529349534d0c9035a70ae5f89095efaa6e536`,
+mission store `dfcf0485e2fa854b054f27993b2838d94347d4779eba0a3b0f56419469105e14`,
+qualifier `67ad6c51dc4e38a1888b3d7fbfdb4a6734442bab70ab9cb8c8210dc8e25a59c9`.
+The earlier memory/cleanup source hashes below remain unchanged.
+
+Automatic approval review initially rejected transfer of the new helper beyond
+the earlier memory-test permission. Donal subsequently approved both the updated
+reference code transfer and the exact Linear status directly in chat. Both succeeded;
+DON-252 comment `10151e08-61b8-480d-bbcd-f56c80cb733c` records local passes and pending
+qualification. No rejected action was bypassed. The read-only large-copy preparation
+diagnostic takes 1229.707 ms overall with maximum heartbeat gap 50.611 ms, admission
+read 0.046 ms, audit boundary/count 0.029 ms and maximum RSS 77,436 KiB. It proves
+cooperative read responsiveness, not full lifecycle qualification. Corrected-candidate
+packaged qualification, Linux CI and >2 GiB qualification remain outstanding.
+Live GitHub inspection still shows draft PR #10 at 6118026c and failed CI 34168363973.
+
+The full large-copy admission diagnostic also passes after v13 maintenance settles:
+1230.929 ms admission, maximum heartbeat 50.155 ms, **13 queued / 13 acknowledged**
+positions through the actual separate SQLite worker. It reaches the intended
+`afterRequestBeforeWorker` fault and physically joins the writer before closing.
+Receipt `tmp/pr6-scale-admission-diagnostic-b.jsonl`; retained disposable profile
+`/tmp/pr6-scale-diagnosis-20260908.UBHDZo/admission-BIbQgw`. The first diagnostic
+incorrectly requested a complete four-phase report from an admission-only run and
+was rejected for missing verify evidence; that diagnostic error is retained in
+`tmp/pr6-scale-admission-diagnostic.jsonl`, not counted as qualification.
+This completes the local correction chunk and targeted reference checks. Freeze
+the source for its remaining exact-candidate qualification; the PR stays draft.
+
 ## 2026-09-07 Astra recovery of b3fb01fa
 
+### 8 September bounded finish investigation
+
+Donal approved freezing scope, one bounded investigation of the frame delay,
+then the remaining large-data evidence and an acceptance decision. He explicitly
+lifted the previous night's time/usage limits. No threshold is relaxed and the
+failed CI receipt is retained. Documentation-only changes do not justify another
+full suite or package cycle; reused evidence must retain its exact applicability.
+
+Reference host remained clean at 6118026c with the existing package. Diagnostic
+loader `tmp/pr6-frame-pipeline-loader.mjs` retains every liveness gate, stops
+after create/verify with an intentional nonqualification error, and expands
+only sanitized frame-pipeline timings. Runs use separate disposable profiles
+and evidence directories `/home/donal/pr6-frame-pipeline-{a,b,c,d,e,f,g}-20260908`.
+No application, test, workflow or dependency source changed.
+
+- Two physical cores/four SMT threads: baseline create/verify completes with
+  frame maxima 117.3/94.6 ms, main 68.94/68.73 ms, current fix 102/86 ms.
+  Expanded tracing was incomplete; the numeric liveness summary is separate.
+- Same CPU allocation with `LP_NUM_THREADS=2`: create/verify completes with
+  frame 93.5/110.4 ms, main 67.50/64.09 ms, current fix 75/80 ms. Trace completes.
+  Both pass, so this does not establish a corrective thread setting.
+- One physical core/two siblings reproduces setup CDP starvation with default
+  software rendering. With `LP_NUM_THREADS=1`, it reproduces a 226.1 ms frame
+  breach while main is 56.81 ms and current fix 61 ms. The captured trace shows
+  a 237.629 ms completed-frame gap, graphics scheduler occupied for 237.304 ms,
+  and a new compositor main-frame request only after swap completion. The gap
+  starts 138.523 ms before finalization; an earlier 227.094 ms gap also precedes
+  finalization. This establishes graphics-pipeline starvation in this constrained
+  reproduction, not the exact cause of the historical CI event.
+- Disabling GPU page rasterization on that constrained setup still fails the
+  setup CDP deadline. Disabling optional tracing still fails the frame gate.
+  Neither is justified as a fix. All diagnostic application processes finish;
+  process/profile cleanup completes. Default one-core setup failure also records
+  liveness-probe-stop failure, which is retained rather than called fully green.
+
+Local trace `tmp/pr6-frame-pipeline-e-trace.json` SHA-256
+`beef9cac32372f7d2df20c66bab90a0b3c4a5d752b250eaa4a3dbbb6c41fb087`
+is captured with no transport data loss, 4,096 events and 173 dropped. Numeric
+analysis is reproducible with `tmp/pr6-frame-pipeline-analyse.mjs`.
+This finite investigation found no demonstrated archive-code defect and no
+supported threshold or configuration change. The historical CI acceptance
+question remains open; a reference-host pass cannot relabel that CI failure.
+
+A subsequent read-only examination of the **original failed CI trace's entire
+retained tail**, rather than only its finalize interval, finds an earlier
+264.036 ms completed-frame gap at 2204985877–2205249913 microseconds. It ends
+96.128 ms before the finalize-start marker, and graphics Scheduler::RunTask
+intervals occupy 263.466 ms of that gap. Swap finishes shortly before the next
+frame callback. Thus the slow rendering signature demonstrably predates archive
+invocation in the actual rejected CI run, not only on a different host. This
+supports triaging a startup/rendering performance finding rather than guessing
+an archive-operation correction. It does not establish the introducing commit,
+explain every scheduling wait, or waive the measured 202.4 ms gate failure.
+Reproduction: `tmp/pr6-frame-pipeline-analyse.mjs` on the original trace;
+result `tmp/pr6-frame-original-whole-tail-analysis.json`, original hash unchanged.
+
+Scale preflight confirms the native Node SQLite runtime works and the preserved
+6118026c reference packaged-lifecycle receipt validates as passed with clean
+matching head/tree. Original v12 fixture remains 4,159,836,160 bytes, inode
+9570324, one link, mode 0600 and no sidecars. No source database was opened.
+Fresh source SHA-256 is unchanged:
+`53fd13f87775529b46346a83519b823c50b22bd20297c489e0165d52ff3abcb6`.
+The first preflight correctly rejects the canonical lifecycle report's hard
+links before fixture staging (`PREFLIGHT_INTERNAL_FAILURE` at packaged-liveness;
+direct read-only prerequisite invocation exposes the single-link requirement).
+A separate single-link copy preserves report SHA-256
+`0d54ef2659452dcc81083a4b999428e078c60f42671fb71149b31a888f151c4d`.
+Run `pr6-fieldscale-6118026c-20260908-b` **failed**, 06:46:04.487–09:12:26.366 UTC
+(2 h 26 m). Exact-head failure receipt is retained remotely at
+`/home/donal/pr6-fieldscale-6118026c-20260908-b.json.failure.json` and locally at
+`tmp/pr6-fieldscale-6118026c-20260908-b.failure.json`; run ID
+`q-585c69fe-7216-4edb-9171-105ed929bd1c`.
+
+- Created and independently verified a 5,244,082,405-byte encrypted archive,
+  SHA-256 `50e6fc92aae28db1cf539c50d683d658b0cc0b5caba056dce379cbc21982352d`.
+  Registry proof contains 1,935,360 positions and 9,717,162 mission events.
+  Initial restored Review/replay passed. Logical cleanup completed 11,652,544
+  row deletions, then contention-probe shutdown surfaced a retained error.
+- Primary failure `CLEANUP_GATE_FAILED / SQLITE_BUSY` at `cleanup:complete`.
+  Synthetic durable worker queued 1,006, acknowledged 993, rejected 13, pending
+  zero; maximum acknowledged latency 52.018 ms, reported successful-write
+  retries zero. This worker uses its own raw SQLite connection, not the fixed
+  application writer; do not infer loss of real operator positions from it.
+- Create/restore coordinator gaps 1810.433/1796.623 ms; migration/verify/cleanup
+  maxima 65.277/51.144/51.088 ms. Whole-process peak RSS/VmHWM 2,376,781,824
+  bytes breaches the 512 MiB gate. These are material failures, not marginal
+  rendering noise. Replay's 2 GiB mmap policy and synchronous event scans are
+  initial source leads requiring controlled reproduction before changes.
+- Post-cleanup Review, final residue proof and normal terminal validation were
+  not reached. Failure receipt correctly says teardown incomplete and profile
+  cleanup false. Disposable profile `/tmp/sartracker-breadcrumb-pr6-qualification-xzV0e2`
+  is retained intentionally for diagnosis. Supervisor 115048 and child/group
+  115060 have ended; SSH session returned exit 1. A fresh external checksum
+  verifies the closed original fixture unchanged, with identical inode, size,
+  link count and mode. Reference source remains clean at 6118026c.
+
+No unchanged long rerun is authorized by this result; bounded causal diagnosis
+comes next. No source correction or acceptance claim has been made.
+
+Linear update delivery after the initial approved-plan comment was rejected by
+automatic approval review, first for internal paths/process details and then
+for the reduced project-status payload. Specific approval for the exact minimal
+status text has been requested; the full record remains local meanwhile.
+
+### 8 September causal scale corrections (local, not yet qualified)
+
+The original remained closed. A private single-link 0600 diagnostic copy at
+`/tmp/pr6-scale-diagnosis-20260908.UBHDZo/mission-store.sqlite` matched its
+SHA-256 before opening. These short controlled probes are separate from the
+failed lifecycle and do not turn it into a pass.
+
+**Archived Replay memory:** the actual Replay query in a fresh process, with
+no earlier diagnostic scans, reaches 2,224,377,856 bytes RSS under the existing
+2 GiB mmap policy (4,795.871 ms). Disabling mmap gives the identical result
+digest in 5,918.516 ms at 77,094,912 bytes RSS. A 64 MiB mapping trial gives
+no useful latency improvement over zero mapping. This fixture/query returns
+zero exact tracks at the selected time; it still exercises the legacy history
+scans. It is not a complete restored-archive Replay equality proof.
+
+The local correction applies only to archived Replay, across state/track/object/
+filter workers. Its trusted source flag travels outside the renderer query;
+live Replay retains the existing policy. The database remains query-only.
+Red-first tests fail on the old 2 GiB setting and missing source/worker policy;
+all 32 focused tests then pass. Lint and TypeScript pass. The actual changed
+worker on the reference diagnostic copy returns the same digest with Linux
+VmHWM 87,148 KiB (about 85.1 MiB), in 6,004.846 ms, and physically exits.
+Digest across all comparisons:
+`a94b39829b89ac36d9643430f57ab67aae51e1220ff5486f219e92906766f2d2`.
+Receipts: `tmp/pr6-scale-replay-only-mmap{2g,0}.jsonl`,
+`tmp/pr6-scale-worker-memory.jsonl`, `tmp/pr6-archive-memory-{red,green,lint,typecheck}.log`.
+Browser harness Archive Review/Replay/cleanup/correction flows pass 4/4 in
+13.7 s (`tmp/pr6-archive-memory-browser.log`); this is not packaged scale proof.
+
+Automatic approval initially rejected the source transfer as private code to
+a remote host. Donal explicitly authorized that exact diagnostic transfer;
+it then succeeded. The clean reference checkout and failed lifecycle evidence
+were not modified. The independent Linear update rejection remains unresolved.
+
+**Cleanup position page ordering:** actual SQL plans on the 1,935,360-position
+copy show both the select and delete subquery using a temporary B-tree to sort
+the whole mission by UUID for each 500-row page. Read-only selection takes
+879.937 ms. Ordering by the existing `(mission_id, device_id, timestamp)` index
+and its rowid tie-breaker removes that sort and takes 1.099 ms.
+
+A second controlled probe holds a real immediate transaction, selects/deletes
+500 rows, and always rolls it back. Existing order: select 875.477 ms, delete
+888.233 ms, transaction work 1763.712 ms. Index order: select 1.098 ms, delete
+1.517 ms, transaction work 2.616 ms. All 1,935,360 positions remain after each
+rollback. This demonstrates the long writer-lock interval and repeated sort;
+it does not alone prove all causes of the earlier synthetic-worker rejection.
+Receipts: `tmp/pr6-scale-cleanup-query-plan-comparison.jsonl` and
+`tmp/pr6-scale-cleanup-rollback-diagnostic.jsonl`.
+
+The local correction changes only position-page ordering, identically for
+selection and deletion in the same transaction. It retains mission selection,
+row limits, primary-key deletion, custody/membership guards and durable progress.
+No index, migration or journal format changes. A regression using the actual
+coordinator's prepared select/delete plans fails on the old temporary sort,
+then passes with the existing index; all 46 cleanup/runner/membership/startup
+tests pass. Logs: `tmp/pr6-cleanup-order-{red,green,lint}.log`.
+
+**Still unresolved:** first-finalization legacy-boundary absence scans and the
+qualifier's full-history denial-audit counts each take about 0.9 s on this copy.
+They remain synchronous coordinator work; no compatibility guard was bypassed
+to suppress them. The original CI frame rejection also remains open. No new
+full lifecycle run, commit, push, merge or release follows these local results.
+Combined full source passes all 4,021 tests in 384 files (419.38 s), including
+existing cleanup/live-write contention and recovery cases. Build, TypeScript
+and bundle budgets pass. Logs: `tmp/pr6-scale-fixes-full-source.log` and
+`tmp/pr6-scale-fixes-build.log`. The generated version-file side effect was
+restored to its pre-build content; no application version bump is part of this
+change. Legacy backend passes 58 with one existing ignore after granting its
+HTTP mock server local loopback permission; log `tmp/pr6-scale-fixes-backend.log`.
+All owned verification and diagnostic processes have ended. Original fixture
+and diagnostic copy were both rehashed after the rolled-back deletion probes
+and remain byte-identical; reference checkout remains clean. The earlier memory-only
+full-suite attempt was interrupted when the cleanup defect was established;
+it also encountered sandbox-restricted mock-server failures and is not a pass.
+
+Verified local source SHA-256 (not a committed candidate):
+
+| File under `electron/` | SHA-256 |
+| --- | --- |
+| `archive-cleanup.cjs` | `7b1f257de0ce018b098f44d03aa360a89d66058bee7ffd8ddfdb99d651f61c4a` |
+| `archive-review-source.cjs` | `9ffccfc532c7e86e2fc8291e70447e9ad724439492277bcd9856444ae74b5cca` |
+| `mission-replay-database.cjs` | `e12bf41e87a5087db984df994fb090ae88ec60831ef0bcd3fd07c23a63bfb31d` |
+| `mission-replay-runner.cjs` | `170a35f604337b9ba07928962f866a1750715aa5a95b0260cf1d925e676e66d8` |
+| `mission-replay-worker.cjs` | `281a43f73bcaafddb9cb813eedbdd4edd5e9449b989770b21c139ec8c0bb6b32` |
+
 ### d392181b cleanup/live-write correction and e6b6e3e0 baseline
+
+**Latest 6118026c checkpoint is rejected by CI `34168363973`.** Its exact
+diff from d392 changes only this evidence file and the handoff; application,
+tests, build scripts, manual, dependencies and workflow source are identical.
+Source still passes all 4,018/384 tests in 892.45 s (legacy-event heartbeat
+110.435 ms), plus build, 960k Replay, native/graphics and tracking soak.
+Archive lifecycle fails on launch one in create, after 18,730 ms, with
+`renderer_frame_gate_breached`: frame 202.4 ms/main 53.081 ms/current fix 67 ms.
+There are no pending source requests; process and profile cleanup complete.
+The strict 200 ms gate is unchanged and this failure is not dismissed by the
+prior green CI on byte-identical application source.
+
+Failure receipt under `tmp/pr6-linux-6118026c/breadcrumb-pr6-packaged-archive-smoke/`
+SHA-256 `0e11879fc138e8204715bf729816f5f9a9177da12e30eacec2be2c2ea8998c43`.
+Trace under `tmp/pr6-linux-6118026c/electron-validation-evidence/`, basename
+`archive-render-trace-6118026c67a46e8428aeff316ccf607f61f7a840-1-1788823132290.json`,
+SHA-256 `4da9976ff1f53834b22af2405b1c9e1b8745ec37091e485c889d6c6928e8486f`.
+Artifact ID `10035270728`; full/failed CI logs and the reproducible read-only
+analysis `tmp/pr6-6118026c-frame-analysis.mjs` / `.json` are retained locally.
+The trace retains 4,096 events, drops 25,052 earlier events and explicitly
+reports truncation, tracing completion and no transport data loss. Within the
+325.753 ms finalize-start/first-failure interval, completed frame events show
+a 200.265 ms gap. Inside that gap, 132 renderer RunTasks complete, totaling
+43.058 ms wall/28.435 ms CPU, longest 11.619 ms. A GPU raster RunTask overlaps
+for 97.377 ms with 14.265 ms CPU; no retained renderer task spans 200 ms.
+This confirms delayed frame callbacks while renderer work continues. It does
+not identify the causal pipeline or justify a relaxed threshold. Source
+retrace confirms the smoke calls archive finalization directly through the
+desktop bridge; no archive modal render occurs in that measured operation.
+The next experiment must distinguish frame scheduling, software graphics
+backpressure and app rendering under matched conditions, preserving the gate.
+No product change or unchanged qualification retry follows from this trace.
+
+6118026c separately passes fresh exact-head macOS lifecycle (10.850 s;
+main 51.091/frame 18.2/current fix 22 ms), reference Ubuntu lifecycle
+(37.341 s; main 79.503/frame 109.7/current fix 112 ms) and 32/32 physical
+SIGKILL cases (176.581 s, clean/stable identity, matched structural digest).
+Their receipt hashes are in DON-252 comment `8f6c4f67-40af-40fd-a3a9-c315ee4506af`.
+Those passes remain valid named-platform evidence but do not override the
+actual CI rejection. >2 GiB remains unstarted. All jobs have finished. These
+failure notes are left uncommitted while the candidate is rejected; the
+external PR/Linear ledger records the failure without spawning another CI run.
 
 The responsive-writer correction below is pushed as
 `d392181b3958c21948e926a6785358be91da1926`, tree

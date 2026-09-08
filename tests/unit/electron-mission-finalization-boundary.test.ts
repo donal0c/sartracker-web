@@ -13,7 +13,7 @@ const {
   readonly deriveArchiveLifecycleEventId: (archiveId: string, kind: string) => string
   readonly readCurrentMissionFinalizationBoundary: (
     db: BetterSqliteDatabase,
-    input: { readonly missionId: string; readonly archiveId?: string },
+    input: { readonly missionId: string; readonly archiveId?: string; readonly requirePreparedLegacyRead?: boolean },
   ) => null | {
     readonly archiveId: string
     readonly archiveKind: 'finalized' | 'finalized_recovery'
@@ -96,6 +96,39 @@ function createDatabase(): BetterSqliteDatabase {
 }
 
 describe('current mission finalization boundary [DON-253]', () => {
+  it('requires a fresh prepared legacy result at finalization admission [DON-252]', async () => {
+    const { prepareLegacyFinalizationRead } = require('../../electron/mission-finalization-scan.cjs')
+    const db = createDatabase()
+    const input = { missionId: 'mission', requirePreparedLegacyRead: true }
+    expect(() => readCurrentMissionFinalizationBoundary(db, input)).toThrow(/changed|prepared/iu)
+    await prepareLegacyFinalizationRead(db, input.missionId)
+    expect(readCurrentMissionFinalizationBoundary(db, input)).toBeNull()
+    db.exec("INSERT INTO mission_events VALUES ('new', 'mission', 'mission_finalized', '2026-09-08T10:00:00Z', '{}')")
+    expect(() => readCurrentMissionFinalizationBoundary(db, input)).toThrow(/changed/iu)
+  })
+
+  it('reprepares a changed admission before retrying, with a finite contention budget [DON-252]', async () => {
+    const { withPreparedMissionFinalizationRead } = require('../../electron/mission-finalization-boundary.cjs')
+    const db = createDatabase()
+    let admissions = 0
+    const input = { missionId: 'mission', requirePreparedLegacyRead: true }
+    await withPreparedMissionFinalizationRead(db, input, () => {
+      admissions += 1
+      if (admissions === 1) {
+        db.exec("INSERT INTO mission_events VALUES ('new', 'other', 'note', '2026-09-08T10:00:00Z', '{}')")
+      }
+      return readCurrentMissionFinalizationBoundary(db, input)
+    })
+    expect(admissions).toBe(2)
+    admissions = 0
+    await expect(withPreparedMissionFinalizationRead(db, input, () => {
+      admissions += 1
+      db.exec("UPDATE mission_events SET timestamp = timestamp WHERE id = 'new'")
+      return readCurrentMissionFinalizationBoundary(db, input)
+    })).rejects.toMatchObject({ code: 'MISSION_FINALIZATION_READ_CHANGED' })
+    expect(admissions).toBe(8)
+  })
+
   it('resolves an archive-embedded v2 projection by deterministic event ID without a registry row', () => {
     const db = createDatabase()
     const missionId = randomUUID()

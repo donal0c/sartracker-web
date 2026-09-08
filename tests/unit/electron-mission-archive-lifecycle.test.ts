@@ -318,6 +318,36 @@ afterEach(() => {
 })
 
 describe('encrypted mission archive lifecycle integration', () => {
+  it('admits first finalization without an unbounded main-thread legacy scan [DON-252]', async () => {
+    const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-prepared-finalization-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({
+      userDataPath,
+      archiveLifecycleFaultInjection: { afterRequestBeforeWorker: true },
+    })
+    const mission = await store.createMission({ name: 'First finalization' })
+    await store.finishMission(mission.id)
+    const sql: { database: string; query: string }[] = []
+    const original = Database.prototype.prepare
+    const spy = vi.spyOn(Database.prototype, 'prepare').mockImplementation(function (
+      this: InstanceType<typeof Database>, statement: string,
+    ) {
+      sql.push({ database: this.name, query: statement })
+      return original.call(this, statement)
+    })
+    try {
+      await expect(store.finalizeMission(mission.id, custody, {
+        operationId: '22222222-2222-4222-8222-222222222222',
+        onProgress: () => undefined,
+      })).rejects.toMatchObject({ code: 'ARCHIVE_SIMULATED_INTERRUPTION' })
+      const historyReads = sql.filter(({ query }) => query.includes('event_rowid')
+        && query.includes('FROM mission_events'))
+      expect(historyReads.length).toBeGreaterThan(0)
+      expect(historyReads.filter(({ query }) => !/WHERE\s+(?:(?:rowid|id)\s*=\s*\?|rowid\s*>=?\s*\?\s+AND\s+rowid\s*<=\s*\?)/iu.test(query)))
+        .toEqual([])
+    } finally { spy.mockRestore(); store.close() }
+  })
+
   it('blocks correction unlock when a verified v2 predecessor is unavailable', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-unavailable-predecessor-'))
     temporaryDirectories.add(userDataPath)
