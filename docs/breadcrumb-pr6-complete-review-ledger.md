@@ -23,7 +23,16 @@ and proportionate smokes.
 - Four Chromium operator flows and three visual flows pass (39.0 seconds).
   All four screenshot reviews pass, with no failures/errors. The cleanup image
   is byte-identical to the current operator manual image.
-- Clean packaged smoke and final CI receipts are still pending.
+- Clean implementation `76ef77c145aa7fcc8cb013d6830177135ae87e50`, tree
+  `43dc3fbab5930a1976c23c838473f886c6a4b215`, passes the macOS arm64 packaged
+  lifecycle smoke: two launches, 4,096 fixes, matching Review before/after 5,516
+  live-row removals, interrupted restore/restart recovery, and complete teardown.
+  Main/current/frame maxima are 51.407/59/18.5 ms against the unchanged 200 ms
+  gate. Zero exact secret matches and final plaintext residue. Canonical receipt
+  validation returns valid/passed true:
+  `docs/evidence/pr6/expanded-review-76ef77c1-macos-20260909.json`.
+- Final-head ordinary Linux CI is still pending. Prior full field-scale and
+  32-case interruption results remain historical; no fresh claim is made here.
 
 ## High and Medium-High
 

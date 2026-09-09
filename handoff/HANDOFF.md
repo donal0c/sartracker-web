@@ -10,9 +10,10 @@
   Updated external ledger now contains all 95 findings (15 High, 4 Medium-High,
   55 Medium, 21 Low). All have a current disposition; expanded fixes are in
   progress. All 4,137 source tests and seven archive browser flows pass;
-  all four screenshot reviews pass. Packaged/CI validation remains pending.
-- Last verified implementation: `10f399138004db3db2a2aff5772746acd7025196`, tree
-  `e65cc117e0339b2383194bbc65211839a07683df`. Subsequent receipts are documentation.
+  all four screenshot reviews and clean macOS packaged smoke pass. Final Linux
+  CI remains pending.
+- Latest implementation: `76ef77c145aa7fcc8cb013d6830177135ae87e50`, tree
+  `43dc3fbab5930a1976c23c838473f886c6a4b215`. Subsequent receipts are documentation.
 - Workspace: `/Users/donalocallaghan/.codex/worktrees/a27a/sartracker-web`.
   Preserve this PR. No merge, release, replacement PR or reviewer dispatch.
 - Donal authorized author-side completion, reference disposable tests and Linear
@@ -26,7 +27,12 @@
   and retry. Full serial suite passes 4,137 tests / 396 files (462.10 s);
   production build, TypeScript, bundle budgets and lint pass. Four Chromium and
   three visual archive flows pass (39.0 s); current cleanup screenshot matches
-  the manual; all four screenshot reviews pass. Clean packaged smoke is pending.
+  the manual; all four screenshot reviews pass.
+- Clean `76ef77c1` macOS arm64 packaged lifecycle passes two launches, 4,096 fixes,
+  matching Review before/after 5,516 live-row removals, forced restore interruption
+  and recovery, and full teardown. Main/current/frame maxima 51.407/59/18.5 ms;
+  no exact secret matches or final plaintext residue. Canonical validator passes.
+  Receipt: `docs/evidence/pr6/expanded-review-76ef77c1-macos-20260909.json`.
 - Remaining limits are explicit in the complete ledger and manual; all 95
   entries are available. Temporary plaintext can survive a crash until restart;
   no managed-string zeroing or forensic erasure guarantee is made.
@@ -41,8 +47,8 @@
 
 ## Next Actions And Issues
 
-- Finish clean packaged smoke, then push this PR and
-  check ordinary Linux CI. Source/build/lint and affected browser flows pass.
+- Push this PR and check ordinary final-head Linux CI. Local source/build/lint,
+  affected browser/visual flows and clean macOS packaged smoke pass.
   Baseline CI `34293902077` passed 4,113 tests before these new changes.
   The earlier `cb6e28a2` and `d60cbc2a` CI failures remain preserved.
   Run `34292650418` on `4e7061c5` was cancelled to finish M-2, not rejected.
