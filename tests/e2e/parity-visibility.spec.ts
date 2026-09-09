@@ -369,6 +369,62 @@ async function seedVisibilityTestData(page: Page, retries = 2): Promise<void> {
 }
 
 test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => {
+  test('batch 2 global-off selected-on preserves independent current visibility', async ({ page }) => {
+    await page.getByTestId('layer-expand-all-btn').click()
+    const breadcrumbs = page.getByTestId('layer-visibility-layer-tracking-breadcrumbs')
+    await breadcrumbs.uncheck()
+    await page.getByTestId('layer-visibility-feature-tracking-breadcrumb-alpha').check()
+    await expect.poll(async () => (await readVisibilityState(page)).hiddenBreadcrumbDeviceIds).toEqual(['bravo'])
+    await expect.poll(async () => (await readVisibilityState(page)).breadcrumbsVisible).toBe(true)
+    expect((await readVisibilityState(page)).hiddenDeviceIds).toEqual([])
+    await page.getByTestId('layer-visibility-feature-tracking-breadcrumb-alpha').uncheck()
+    await expect.poll(async () => (await readVisibilityState(page)).hiddenBreadcrumbDeviceIds.slice().sort()).toEqual(['alpha', 'bravo'])
+    await breadcrumbs.check()
+    await page.getByTestId('layer-visibility-feature-tracking-breadcrumb-bravo').uncheck()
+    await expect.poll(async () => (await readVisibilityState(page)).hiddenBreadcrumbDeviceIds).toEqual(['bravo'])
+    await page.getByTestId('layer-visibility-layer-tracking-devices').uncheck()
+    await page.getByTestId('layer-visibility-feature-device-alpha').check()
+    await expect.poll(async () => (await readVisibilityState(page)).hiddenDeviceIds).toEqual(['bravo'])
+    await expect(page.getByTestId('persistent-tracking-health')).toContainText('Current-location display disabled for 1 device')
+    await page.getByTestId('mission-control-collapse-btn').click()
+    await page.screenshot({ path: 'tmp/batch2-visibility.png', fullPage: true })
+    await page.getByTestId('compact-mission-restore').click()
+    await page.reload()
+    await waitForShell(page)
+    await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
+    await page.getByRole('button', { name: 'Resume', exact: true }).click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await seedVisibilityTestData(page)
+    await page.getByTestId('sidebar-tab-layers').click()
+    await page.getByTestId('layer-expand-all-btn').click()
+    await expect(page.getByTestId('layer-visibility-feature-device-alpha')).toBeChecked()
+    await expect(page.getByTestId('layer-visibility-feature-device-bravo')).not.toBeChecked()
+    await expect(page.getByTestId('layer-visibility-feature-tracking-breadcrumb-bravo')).not.toBeChecked()
+    await page.evaluate(async () => {
+      const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
+      const snapshot = useTrackingStore.getState().snapshot
+      useTrackingStore.getState().applySnapshot({ ...snapshot, devices: [...snapshot.devices,
+        { ...snapshot.devices[0]!, device_id: 'new-without-fix', name: 'New device without position' }],
+      })
+    })
+    await expect(page.getByTestId('layer-visibility-feature-device-new-without-fix')).not.toBeChecked()
+    await expect(page.getByTestId('layer-visibility-feature-tracking-breadcrumb-new-without-fix')).toBeChecked()
+    expect(await page.evaluate(async () => {
+      const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
+      return useTrackingStore.getState().snapshot.positions.some((position) => position.device_id === 'new-without-fix')
+    })).toBe(false)
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
+    await page.getByTestId('mission-name-input').fill('Separate visibility mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await resyncTrackingSnapshot(page)
+    await page.getByTestId('sidebar-tab-layers').click()
+    await page.getByTestId('layer-expand-all-btn').click()
+    await expect(page.getByTestId('layer-visibility-feature-device-bravo')).toBeChecked()
+    await expect(page.getByTestId('layer-visibility-feature-tracking-breadcrumb-bravo')).toBeChecked()
+  })
   test.setTimeout(45_000)
 
   test.beforeEach(async ({ page }) => {
@@ -552,6 +608,35 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     expect(after.hiddenMarkerIds).toContain('marker-clue-1')
     // Hazard marker must NOT be hidden
     expect(after.hiddenMarkerIds).not.toContain('marker-hazard-1')
+
+    // AUD-07: the real rendered hit vanishes, and the fallback must not reopen it.
+    await page.evaluate(async () => {
+      const { useMarkerStore } = await import('/src/features/markers/marker-store.ts')
+      const state = useMarkerStore.getState()
+      await state.controller!.refreshMission(state.activeMissionId)
+    })
+    await page.evaluate(() => window.__SARTRACKER_MAP__!.jumpTo({ center: [-9.85, 51.95], zoom: 15 }))
+    await expect.poll(() => page.evaluate(() => {
+      const map = window.__SARTRACKER_MAP__!
+      return map.queryRenderedFeatures(map.project([-9.85, 51.95]), { layers: ['mission-markers-hitbox'] })
+        .filter((feature) => feature.properties?.markerId === 'marker-clue-1').length
+    })).toBe(0)
+    const point = await page.evaluate(() => {
+      const map = window.__SARTRACKER_MAP__!
+      const bounds = map.getCanvas().getBoundingClientRect()
+      const projected = map.project([-9.85, 51.95])
+      return { x: bounds.x + projected.x, y: bounds.y + projected.y }
+    })
+    await page.mouse.click(point.x, point.y)
+    await expect.poll(() => page.evaluate(async () => {
+      const { useMarkerStore } = await import('/src/features/markers/marker-store.ts')
+      return useMarkerStore.getState().dialog?.mode ?? null
+    })).not.toBe('edit')
+    if (await page.getByTestId('marker-close-btn').isVisible()) await page.getByTestId('marker-close-btn').click()
+    await markerToggle.click()
+    await expect(markerToggle).toBeChecked()
+    await page.mouse.click(point.x, point.y)
+    await expect(page.getByTestId('marker-name-input')).toHaveValue('Boot Print')
   })
 
   test('LPV-243: drawing-type visibility toggle propagates to visibility store', async ({

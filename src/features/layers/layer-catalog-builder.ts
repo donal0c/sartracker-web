@@ -443,7 +443,11 @@ function createFeatureItem(args: {
     alias: metadata?.alias ?? null,
     displayLabel: metadata?.alias?.trim() ? metadata.alias : args.label,
     isFavorite: metadata?.isFavorite ?? false,
-    isVisible: metadata?.isVisible ?? true,
+    isVisible: metadata?.isVisible ?? (
+      args.parentId === TRACKING_DEVICES_LAYER_NODE_ID || args.parentId === TRACKING_BREADCRUMBS_LAYER_NODE_ID
+        ? args.metadataIndex.get(args.parentId)?.isVisible ?? true
+        : true
+    ),
     displayOrder: metadata?.displayOrder ?? args.fallbackOrder,
     parentId: args.parentId,
     entity: args.entity,

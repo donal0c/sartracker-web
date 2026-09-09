@@ -4,6 +4,23 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
 
 ## Where we are
 
+- Team Feedback Batch 2 is locally verified in `codex/team-ui-feedback-batch-2`,
+  pinned to fetched master `c51e4b3537c4b026f7079dd40193a894cedcdd9f`.
+  DON-215 and the workplan contain the contract. The implementation
+  includes independent category/device visibility, a read-only replay map and
+  the approved bounded native object-detail read (no schema/archive-format change).
+  AUD-07/AUD-14 were added by central triage: hidden-hit selection and truthful
+  history-failure wording both have current-code red/green regressions; the clue
+  hide/show browser control and joined poller/database warning proof pass.
+  Final source: 407 files / 4,179 tests passed. Affected browser: 37 passed;
+  drawings: 14 passed; final visibility recheck and independent capture review pass.
+  Five replay/search visual captures cleared independent review after rechecks.
+  Packaged macOS live/archive geometry proof passes; measured frame maximum
+  34.6 ms against the unchanged 200 ms gate. Both focused reviews cleared their
+  findings. Final-SHA attestations and exact-head CI remain required before
+  review-ready closeout. See [evidence](../docs/ui-feedback-batch-2-evidence.md).
+  No merge, release or deployment is authorized.
+
 - [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, now
   integrates master `9c73c62d` at Donal's request. Its audit/package inventory
   remains pinned to `3cdf555d`; newer integration CI is recorded on the PR.

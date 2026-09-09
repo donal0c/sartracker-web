@@ -50,7 +50,7 @@ describe('mission replay Dublin overlap selection [DON-278]', () => {
       expect(offset?.value).toBe(scenario.offset)
       expect(seek?.disabled).toBe(false)
       await act(async () => seek?.click())
-      expect(seekReplay).toHaveBeenCalledWith(scenario.instant, {})
+      expect(seekReplay).toHaveBeenCalledWith(scenario.instant, {}, true)
       await act(async () => root.unmount())
     })
   }

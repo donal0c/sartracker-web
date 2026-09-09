@@ -1072,6 +1072,11 @@
             Each section lists the active team members, so a coordinator can show a device's current
             position with or without its trail, show a trail without the current-location dot, or show both.
             Turning off the whole Tracking group hides both surfaces.
+            Within either category, switch all devices off and then enable just the devices you need,
+            or switch all on and omit individual devices. A global action resets that category's choices;
+            new devices inherit its latest global default. Choices are retained with the mission.
+            Hidden evidence remains saved but cannot be selected on the map. A persistent warning
+            identifies explicitly hidden current locations even when the side panels are collapsed.
           </p>
           <div class="note">
             <strong>Participant visibility:</strong> with the mission model enabled, only selected
@@ -1831,6 +1836,23 @@
             audit page. Closing Review does not change mission evidence or current-position truth.
           </p>
           <h3>Mission Evidence Replay</h3>
+          <p>
+            A history-retrieval or breadcrumb warning prevents the coverage panel from claiming that all mission history is
+            shown. Loaded saved evidence remains available while history retrieval recovers; saved-fix
+            progress measures saved evidence and map delivery, not an invented provider total.
+          </p>
+          <p>
+            Replay includes a separate read-only map. Orange dots show exact dated breadcrumbs,
+            blue dots show the last known Traccar position at the selected time, and purple dots
+            show dated GPX evidence. Retained markers and drawings appear with their recorded
+            geometry. Click a feature to inspect its identity and time. The map loads all selected
+            pages before presenting its result; missing evidence or failed reads produce explicit
+            limitations or errors. Category checkboxes affect only this review map.
+          </p>
+          <figure>
+            <img src="assets/batch-2-replay-map.png" alt="Read-only replay map showing a retained search area and its inspection popup" loading="lazy" />
+            <figcaption>Desktop replay with a retained search area. This example deliberately has no network access, so the basemap warning remains visible.</figcaption>
+          </figure>
           <p>
             Open the <strong>Replay</strong> tab and choose a local Europe/Dublin time to reconstruct the mission
             evidence that was known at that time. Replay is read-only: it does not reproduce the coordinator's

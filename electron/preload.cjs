@@ -318,6 +318,7 @@ function projectReplayQueryForIpc(input, kind) {
   } else if (kind === 'objects') {
     copyReplayString(input, projected, 'objectCursor')
     copyReplayInteger(input, projected, 'replayGeneration')
+    if (input.objectDetails !== undefined) projected.objectDetails = projectReplayObjectDetails(input.objectDetails)
   } else if (kind === 'filters') {
     copyPr5String(input, projected, 'filterKind', 'Replay filter', 20)
     copyPr5String(input, projected, 'filterSearch', 'Replay filter', 120)
@@ -325,6 +326,17 @@ function projectReplayQueryForIpc(input, kind) {
     copyPr5Integer(input, projected, 'filterLimit', 'Replay filter')
   }
   return projected
+}
+
+/** Copies only bounded retained-object fragment request fields. */
+function projectReplayObjectDetails(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)
+    || !['marker', 'drawing', 'search_area', 'helicopter'].includes(input.objectType)
+    || typeof input.objectId !== 'string' || input.objectId.length < 1 || input.objectId.length > 200
+    || !Number.isSafeInteger(input.offset) || input.offset < 0) {
+    throw new Error('Mission replay object detail request is invalid.')
+  }
+  return { objectType: input.objectType, objectId: input.objectId, offset: input.offset }
 }
 
 /** Projects one GPX/Search Operations object through a closed allowlist. */
@@ -1090,6 +1102,7 @@ function projectArchiveReviewMethodInput(method, input) {
       addArchiveReviewOptional(result, input, 'cursor', (value) =>
         projectArchiveReviewCursor(value, 'track cursor'))
     } else if (method === 'readMissionReplayObjectChunk') {
+      if (input.objectDetails !== undefined) result.objectDetails = projectReplayObjectDetails(input.objectDetails)
       addArchiveReviewOptional(result, input, 'objectCursor', (value) =>
         projectArchiveReviewCursor(value, 'object cursor'))
       result.replayGeneration = projectArchiveReviewInteger(

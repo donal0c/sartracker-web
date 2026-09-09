@@ -1,4 +1,5 @@
 import type maplibregl from 'maplibre-gl'
+import { isDrawingVisible, isMarkerVisible, type LayerVisibilityState } from '../layers/layer-visibility-store'
 
 import { findNearestDrawingId } from '../drawings/drawing-hit-testing'
 import { findNearestGpxImportId } from '../gpx/gpx-hit-testing'
@@ -40,6 +41,7 @@ export type MapClickTarget = {
 }
 
 type ResolveClickedMapTargetArgs = {
+  readonly visibility?: LayerVisibilityState
   readonly map: maplibregl.Map
   readonly point: { readonly x: number; readonly y: number }
   readonly markers: readonly Marker[]
@@ -55,6 +57,14 @@ type ResolveClickedMapTargetArgs = {
  * signal is `null` rather than undefined.
  */
 export function resolveClickedMapTarget(args: ResolveClickedMapTargetArgs): MapClickTarget {
+  if (args.visibility !== undefined) {
+    const visibility = args.visibility
+    args = { ...args,
+      markers: visibility.groupVisibility.mapTools ? args.markers.filter((marker) => isMarkerVisible(visibility.markerTypeVisibility, visibility.hiddenMarkerIds, marker)) : [],
+      drawings: visibility.groupVisibility.mapTools ? args.drawings.filter((drawing) => isDrawingVisible(visibility.drawingTypeVisibility, visibility.hiddenDrawingIds, drawing)) : [],
+      gpxImports: visibility.groupVisibility.gpxTracks ? args.gpxImports.filter((item) => !visibility.hiddenGpxImportIds.includes(item.id)) : [],
+    }
+  }
   const markerId = pickMarkerId(args)
   const gpxNearbyImportId = pickGpxNearbyImportId(args)
 
@@ -81,7 +91,7 @@ function pickMarkerId(args: ResolveClickedMapTargetArgs): string | null {
       : readMarkerIdFromRenderedFeatures(args.map, args.point, interactiveMarkerLayers)
 
   return resolveClickedMarkerId(
-    renderedMarkerId,
+    args.visibility === undefined || args.markers.some((marker) => marker.id === renderedMarkerId) ? renderedMarkerId : null,
     findNearestMarkerId(args.map, args.point, args.markers),
   )
 }
@@ -97,7 +107,7 @@ function pickDrawingId(args: ResolveClickedMapTargetArgs): string | null {
       : readDrawingIdFromRenderedFeatures(args.map, args.point, interactiveDrawingLayers)
 
   const renderedId = resolveClickedDrawingId(renderedDrawingId)
-  if (renderedId !== null) {
+  if (renderedId !== null && (args.visibility === undefined || args.drawings.some((drawing) => drawing.id === renderedId))) {
     return renderedId
   }
 

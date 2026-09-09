@@ -16,6 +16,8 @@ import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracki
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { useCoverageStore } from '../tracking/coverage-store'
+import { useLayerCatalogStore } from '../layers/layer-catalog-store'
+import { resolveCatalogBreadcrumbOmissions } from '../layers/breadcrumb-coverage-visibility'
 import {
   isCoverageOverlayAttached,
   syncCoverageOverlay,
@@ -59,6 +61,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const exactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
   const coverageState = useCoverageStore((state) => state.state)
+  const layerRoot = useLayerCatalogStore((state) => state.root)
   const coverageController = useCoverageStore((state) => state.controller)
   const omittedCoverageDeviceIds = useCoverageFilterStore((state) => state.omittedDeviceIds)
   const omittedCoveragePeriodKeys = useCoverageFilterStore((state) => state.omittedPeriodKeys)
@@ -107,6 +110,12 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     if (map === null) return
     const synchronizeOverlay = async (signal: AbortSignal) => {
       const catalog = selectCoverageCatalogForMission(coverageState, missionId)
+      const manifest = coverageState.status !== 'inactive' && coverageState.missionId === missionId
+        ? coverageState.manifest : null
+      const effectiveOmissions = resolveCatalogBreadcrumbOmissions(layerRoot,
+        [...new Set(manifest?.chunks.map((chunk) => chunk.key.device_id) ?? [])],
+        omittedCoverageDeviceIds,
+      )
       let activation: Awaited<ReturnType<typeof syncCoverageOverlay>> | null = null
       try {
         if (
@@ -117,15 +126,11 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
           coverageController.notifyRendererDetached(catalog)
         }
         activation = await syncCoverageOverlay(map, catalog, {
-          omittedDeviceIds: omittedCoverageDeviceIds,
+          omittedDeviceIds: effectiveOmissions,
           omittedPeriodKeys: omittedCoveragePeriodKeys,
         }, signal)
-        const manifest = coverageState.status !== 'inactive' &&
-          coverageState.missionId === missionId
-          ? coverageState.manifest
-          : null
         await coverageController?.notifySelectionApplied(selectCoverageChunkKeys(manifest, {
-          omittedDeviceIds: omittedCoverageDeviceIds,
+          omittedDeviceIds: effectiveOmissions,
           omittedPeriodKeys: omittedCoveragePeriodKeys,
         }))
         if (catalog === null || coverageController === null) {
@@ -159,6 +164,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     })
   }, [
     coverageState,
+    layerRoot,
     coverageController,
     omittedCoverageDeviceIds,
     omittedCoveragePeriodKeys,

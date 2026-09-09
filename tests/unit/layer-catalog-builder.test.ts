@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildLayerCatalogTree } from '../../src/features/layers/layer-catalog-builder'
+import { useLayerVisibilityStore } from '../../src/features/layers/layer-visibility-store'
 import type { LayerCatalogMetadataEntry } from '../../src/features/layers/layer-catalog-types'
 import type {
   Device,
@@ -11,6 +12,26 @@ import type {
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 describe('layer catalog builder', () => {
+  it('inherits category defaults for new devices while preserving explicit individual overrides [DON-215]', () => {
+    const root = buildLayerCatalogTree({
+      missionId: 'mission-1',
+      devices: [createDevice('alpha', 'Alpha'), createDevice('new', 'New participant')],
+      markers: [], drawings: [], gpxImports: [],
+      metadataEntries: [
+        { missionId: 'mission-1', nodeId: 'layer:tracking:breadcrumbs', parentNodeId: 'group:tracking', nodeKind: 'layer', alias: null, isFavorite: false, isVisible: false, displayOrder: 0, metadataJson: null },
+        { missionId: 'mission-1', nodeId: 'feature:tracking-breadcrumb:alpha', parentNodeId: 'layer:tracking:breadcrumbs', nodeKind: 'feature_item', alias: null, isFavorite: false, isVisible: true, displayOrder: 0, metadataJson: null },
+      ],
+    })
+    const layers = root.children.flatMap((group) => group.children)
+    const breadcrumbs = layers.find((layer) => layer.id === 'layer:tracking:breadcrumbs')
+    expect(breadcrumbs?.children.map((child) => [child.entity?.type === 'device' ? child.entity.device.device_id : null, child.isVisible]))
+      .toEqual([['alpha', true], ['new', false]])
+    expect(layers.find((layer) => layer.id === 'layer:tracking:devices')?.children.every((child) => child.isVisible)).toBe(true)
+    useLayerVisibilityStore.getState().hydrateCatalogVisibility('mission-1', root)
+    expect(useLayerVisibilityStore.getState().hiddenBreadcrumbDeviceIds).toEqual(['new'])
+    expect(useLayerVisibilityStore.getState().breadcrumbsVisible).toBe(true)
+  })
+
   it('adds renderer-only mission-history device and period rows including Outside outings', () => {
     const root = buildLayerCatalogTree({
       missionId: 'mission-1',

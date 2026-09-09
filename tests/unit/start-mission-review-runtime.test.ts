@@ -16,6 +16,28 @@ import {
 } from '../../src/features/mission-review/start-mission-review-runtime'
 
 describe('startMissionReviewRuntime', () => {
+  it('keeps map continuation ownership separate from interactive table pagination', async () => {
+    const first = { ...replayResult('2026-04-10T08:20:00.000Z', 'first'), totalTrackCount: 2, nextCursor: 'next' }
+    let resolveMap!: (value: typeof first) => void
+    const pendingMap = new Promise<typeof first>((resolve) => { resolveMap = resolve })
+    const readMissionReplayTrackChunk = vi.fn().mockReturnValueOnce(pendingMap).mockResolvedValueOnce({ ...first, nextCursor: null })
+    const cancelMissionReplay = vi.fn().mockResolvedValue(true)
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({ missionStore: createMissionReviewStoreStub({
+      readMissionReplay: vi.fn().mockResolvedValue(first), readMissionReplayTrackChunk, cancelMissionReplay,
+    }), layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) }, applyRuntime })
+    await runtime.load(FIRST_MISSION.id)
+    const seek = runtime.seekReplay(first.selectedTime, {}, true)
+    await vi.waitFor(() => expect(readMissionReplayTrackChunk).toHaveBeenCalledOnce())
+    const mapRequest = readMissionReplayTrackChunk.mock.calls[0]![1]
+    await runtime.loadNextReplayChunk()
+    expect(cancelMissionReplay).not.toHaveBeenCalledWith(mapRequest)
+    expect(applyRuntime.mock.calls.at(-1)![0].replay.loadingMore).toBe(false)
+    runtime.returnToLive()
+    expect(cancelMissionReplay).toHaveBeenCalledWith(mapRequest)
+    resolveMap(first)
+    await seek
+  })
   it('loads the preferred mission review snapshot', async () => {
     const applyRuntime = vi.fn()
     const runtime = await startMissionReviewRuntime({

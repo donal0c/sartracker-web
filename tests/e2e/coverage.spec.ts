@@ -2,6 +2,25 @@ import { expect, test, type Page } from '@playwright/test'
 import { seedCoverageMission } from './helpers/coverage-test-setup'
 
 test.describe('complete mission-history coverage [DON-275]', () => {
+  test('AUD-14 withholds completion during known history failure and restores it after recovery', async ({ page }) => {
+    await seedCoverageMission(page)
+    const panel = page.getByTestId('coverage-status-panel')
+    await expect(panel).toContainText('All mission history shown')
+    await page.evaluate(async () => {
+      const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
+      const state = useTrackingStore.getState()
+      state.applyStatus({ ...state.status, warning: 'Breadcrumb history incomplete for Alpha; retrying while current fixes remain live.' })
+    })
+    await expect(panel).toContainText('history incomplete for Alpha')
+    await expect(panel).not.toContainText('All mission history shown')
+    await expect(page.getByTestId('tracking-counters')).toContainText('2')
+    await page.evaluate(async () => {
+      const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
+      const state = useTrackingStore.getState()
+      state.applyStatus({ ...state.status, warning: null })
+    })
+    await expect(panel).toContainText('All mission history shown')
+  })
   test('shows all mission history by default and keeps live positions independent of omissions', async ({ page }) => {
     await seedCoverageMission(page)
 

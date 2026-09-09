@@ -572,6 +572,7 @@ export type MissionReplayTrackRecord = {
 }
 
 export type MissionReplayReadInput = {
+  readonly objectDetails?: { readonly objectType: string; readonly objectId: string; readonly offset: number }
   readonly missionId: string
   readonly selectedTime: string
   readonly trackLimit: number
@@ -682,6 +683,15 @@ export type MissionReplayObjectChunkResult = Pick<
 > & {
   /** Number of objects whose state was bounded to a summary on this page. */
   readonly summarizedObjectCount: number
+  readonly objectDetails?: {
+    readonly objectType: string
+    readonly objectId: string
+    readonly offset: number
+    readonly versionSequence: number
+    readonly fragment: string
+    readonly totalCharacters: number
+    readonly nextOffset: number | null
+  }
 }
 
 export type MissionStoreInfo = {

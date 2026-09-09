@@ -404,7 +404,7 @@ describe('layer visibility store', () => {
     expect(useLayerVisibilityStore.getState().hiddenGpxImportIds).toEqual(['import-1'])
   })
 
-  it('hides all devices when the entire device layer is hidden', () => {
+  it('honors explicit device visibility after the category default is hidden [DON-215]', () => {
     useLayerVisibilityStore.setState(useLayerVisibilityStore.getInitialState())
     const state = useLayerVisibilityStore.getState()
 
@@ -497,7 +497,7 @@ describe('layer visibility store', () => {
       ],
     })
 
-    expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual(['alpha', 'bravo'])
+    expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual([])
   })
 
   it('rehydrates when the mission changes', () => {

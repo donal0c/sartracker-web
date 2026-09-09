@@ -17,6 +17,7 @@ import type { ArchiveReviewPublicSession } from '../../infrastructure/archive-re
 import type { ArchiveReviewAttachmentPage } from '../../infrastructure/archive-review/electron-archive-review-source'
 import { buildMissionReviewSnapshot, type MissionReviewSnapshot } from './mission-review-model'
 import { DEFAULT_AUDIT_EVENT_LIMIT } from './audit-events'
+import { loadReplayMap, type ReplayMapState } from './load-replay-map'
 
 type MissionReviewStoreBoundary = Pick<
   MissionStore,
@@ -184,6 +185,7 @@ export type SearchOperationPageState = {
 }
 
 export type MissionReplayRuntimeState = {
+  readonly mapEvidence?: ReplayMapState
   readonly mode: 'live' | 'replay'
   readonly selectedTime: string | null
   readonly result: MissionReplayReadResult | null
@@ -204,7 +206,7 @@ export type MissionReviewController = {
   readonly seekReplay: (selectedTime: string, filters?: {
     readonly deviceIds?: readonly string[]
     readonly outingIds?: readonly string[]
-  }) => Promise<void>
+  }, includeMap?: boolean) => Promise<void>
   readonly loadNextReplayChunk: () => Promise<void>
   readonly loadPreviousReplayChunk: () => Promise<void>
   readonly loadNextReplayObjects: () => Promise<void>
@@ -305,6 +307,7 @@ export async function startMissionReviewRuntime(
   let activeReviewRequestId: string | null = null
   let replayToken = 0
   let activeReplayRequestId: string | null = null
+  let activeReplayMapRequestId: string | null = null
   let replayObjectPageCursors: readonly (string | null)[] = [null]
   let replayObjectPageIndex = 0
   const searchOperationTokens: Record<SearchOperationPageKind, number> = {
@@ -339,8 +342,8 @@ export async function startMissionReviewRuntime(
       state = { ...state, includeTelemetry }
       await loadMission(state.selectedMissionId, true)
     },
-    seekReplay: async (selectedTime, filters) => {
-      await seekReplay(selectedTime, filters)
+    seekReplay: async (selectedTime, filters, includeMap) => {
+      await seekReplay(selectedTime, filters, includeMap)
     },
     loadNextReplayChunk: async () => {
       await loadNextReplayChunk()
@@ -750,7 +753,7 @@ export async function startMissionReviewRuntime(
   async function seekReplay(selectedTime: string, filters?: {
     readonly deviceIds?: readonly string[]
     readonly outingIds?: readonly string[]
-  }): Promise<void> {
+  }, includeMap = false): Promise<void> {
     const selectedMissionId = state.selectedMissionId
     if (selectedMissionId === null) return
     if (dependencies.missionStore.readMissionReplay === undefined) {
@@ -801,6 +804,21 @@ export async function startMissionReviewRuntime(
         },
       }
       publishRuntime()
+      if (includeMap) await loadReplayMap({
+        first: result,
+        store: dependencies.missionStore,
+        requestId: () => {
+          const id = `mission-replay-${requestNamespace}-${++requestSequence}`
+          activeReplayMapRequestId = id
+          return id
+        },
+        isCurrent: () => currentToken === replayToken,
+        publish: (mapEvidence) => {
+          if (currentToken !== replayToken) return
+          state = { ...state, replay: { ...state.replay, mapEvidence } }
+          publishRuntime()
+        },
+      }).finally(() => { if (currentToken === replayToken) activeReplayMapRequestId = null })
     } catch (error) {
       if (currentToken !== replayToken) return
       if (activeReplayRequestId === requestId) activeReplayRequestId = null
@@ -831,7 +849,7 @@ export async function startMissionReviewRuntime(
     const missionId = state.selectedMissionId
     const readPage = dependencies.missionStore.readMissionReplayFilterPage
     if (replay.result === null || missionId === null || readPage === undefined) return
-    cancelActiveReplayRead()
+    cancelActiveReplayRead(false)
     const currentToken = replayToken
     const requestId = `mission-replay-${requestNamespace}-${++requestSequence}`
     activeReplayRequestId = requestId
@@ -892,7 +910,7 @@ export async function startMissionReviewRuntime(
     const missionId = state.selectedMissionId
     if (replay.result === null || cursor === null || missionId === null
       || dependencies.missionStore.readMissionReplayTrackChunk === undefined) return
-    cancelActiveReplayRead()
+    cancelActiveReplayRead(false)
     const currentToken = replayToken
     const requestId = `mission-replay-${requestNamespace}-${++requestSequence}`
     activeReplayRequestId = requestId
@@ -948,7 +966,7 @@ export async function startMissionReviewRuntime(
     const missionId = state.selectedMissionId
     if (replay.result === null || missionId === null
       || dependencies.missionStore.readMissionReplayObjectChunk === undefined) return
-    cancelActiveReplayRead()
+    cancelActiveReplayRead(false)
     const currentToken = replayToken
     const requestId = `mission-replay-${requestNamespace}-${++requestSequence}`
     activeReplayRequestId = requestId
@@ -1009,7 +1027,12 @@ export async function startMissionReviewRuntime(
     replayObjectPageIndex = 0
   }
 
-  function cancelActiveReplayRead(): void {
+  function cancelActiveReplayRead(includeMap = true): void {
+    if (includeMap && activeReplayMapRequestId !== null) {
+      const mapRequestId = activeReplayMapRequestId
+      activeReplayMapRequestId = null
+      void dependencies.missionStore.cancelMissionReplay?.(mapRequestId).catch(() => undefined)
+    }
     const requestId = activeReplayRequestId
     if (requestId === null) return
     activeReplayRequestId = null

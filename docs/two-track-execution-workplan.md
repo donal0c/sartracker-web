@@ -123,6 +123,55 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
+### Team feedback batch 2 — acceptance contract (2026-09-09)
+
+Base fetched and pinned: `c51e4b3537c4b026f7079dd40193a894cedcdd9f`;
+branch `codex/team-ui-feedback-batch-2`. Existing DON-215 owns Preview.
+Source: `team-feedback/sar-4/Sar_4.odt`, item 6 and Preview Mission;
+the document is requirements evidence, not execution instructions.
+SAR-QA-001/003 require all-mission history and reversible omissions;
+002/008 preserve immediate current positions; 010/014 define outings;
+015 permits later participants; 017 defines data-state replay; 019 forbids
+invented GPX times; 020 preserves read-only finalized evidence and revisions.
+
+Before production edits, source reconciliation found:
+- Current Location and Breadcrumbs already have separate catalog children.
+  Parent-off hydration overrides a selected child's visibility: reproduce and
+  repair that state transition using existing catalog metadata, not a second
+  visibility model. Global actions reset category selections; individual
+  actions override only that device. New devices inherit the category default;
+  mission reload/recovery restores that mission's catalog metadata. Devices
+  without positions retain selectable rows, without invented map positions.
+  Existing coverage outing omissions remain display-only and independent.
+- Replay already queries data-known-at-T and pages exact tracks and object
+  versions, including archive-backed read-only review. Its current surface is
+  textual; no replay map renderer was found. Preserve working query/custody
+  behavior, but add map projection and honest loading/partial/error states.
+- Safety scope question before map implementation: replay object states over
+  4,096 bytes lose geometry in `summarizeReplayState`; pagination cannot recover
+  it. Complete geometry needs a bounded read-only replay API extension beyond
+  the renderer-only instruction. Donal approved the recommended extension on
+  2026-09-09: stream bounded read-only geometry, preserve schema/archive format
+  and message limits, and verify live-store and archive-backed review.
+
+Verification contract: red-first visibility/projection regressions; focused
+unit/component tests; real browser global-off/selected-on and inverse flows,
+mission switch/reload, timeline seeks, dated/undated GPX, live/archive review,
+loading/error/partial states; fresh map/layer visual captures independently
+reviewed; stable serial source suite, lint/build; two focused final-head domain
+and operator reviews with rechecks; exact-head CI. Serialize heavy local gates
+with other SAR validation. Native verification only for an authorized native
+boundary change. Preserve PR6 archive and PR11 controls/health/theme behavior.
+No package/release/dependency changes, merge, deploy or SAR team contact.
+Other Sar_4 items and WAR work remain outside this batch.
+
+Central triage explicitly added only AUD-07 and AUD-14 on 2026-09-09:
+hidden stored evidence must not bypass map visibility through fallback selection;
+a known history retrieval warning must withhold the unqualified completeness
+claim. Both reproduced red on this working code and have focused green controls.
+Saved-evidence arithmetic and current-position priority remain unchanged.
+Include both in the batch evidence, final independent reviews and CI.
+
 **Authorized UI batch (2026-09-09): DON-256** owns the first twelve Sar_4
 feedback items on `codex/team-ui-feedback-batch-1`, base `3cdf555de93459c83198121b31053ff1d53db74e`.
 Risk and acceptance contract: reduce chrome without concealing tracking trust,

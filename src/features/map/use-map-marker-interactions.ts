@@ -2,6 +2,7 @@ import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
 import { useDrawingStore } from '../drawings/drawing-store'
+import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import { useGpxStore } from '../gpx/gpx-store'
 import { useMissionStore } from '../mission/mission-store'
 import { useMarkerStore } from '../markers/marker-store'
@@ -107,6 +108,7 @@ export function useMapMarkerInteractions(
       }
 
       const target = resolveClickedMapTarget({
+        visibility: useLayerVisibilityStore.getState(),
         map,
         point,
         markers: markerState,

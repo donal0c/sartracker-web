@@ -220,6 +220,9 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-replay-reconstructed-state')).toContainText(
       'Known by 28/08/2026, 12:00:00',
     )
+    await expect(page.getByTestId('mission-replay-map')).toBeVisible()
+    await expect(page.getByTestId('mission-replay-map')).toContainText('Historical evidence only')
+    await expect(page.getByTestId('mission-replay-map').locator('canvas')).toBeVisible()
   })
 
   test('DON-278: replay is explicitly data-known-at-T while live controls remain operable', async ({ page }) => {

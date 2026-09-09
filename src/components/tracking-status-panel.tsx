@@ -1,5 +1,7 @@
 import { useTrackingStore } from '../features/tracking/tracking-store'
-import { isCriticalTrackingTrustWarning } from '../features/tracking/tracking-trust-warning'
+import { useLayerCatalogStore } from '../features/layers/layer-catalog-store'
+import { resolveCatalogBreadcrumbOmissions } from '../features/layers/breadcrumb-coverage-visibility'
+import { historyCompletenessWarning, isCriticalTrackingTrustWarning } from '../features/tracking/tracking-trust-warning'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
 import { useExactBreadcrumbDotStore } from '../features/tracking/exact-breadcrumb-dot-store'
 import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcrumb-dot-controller'
@@ -40,9 +42,10 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   )
   const missionCoverageState = selectCoverageStateForMission(coverageState, missionId)
   const coverageController = useCoverageStore((state) => state.controller)
-  const omittedCoverageDeviceCount = useCoverageFilterStore(
-    (state) => state.omittedDeviceIds.length,
-  )
+  const layerRoot = useLayerCatalogStore((state) => state.root)
+  const omittedDeviceIds = useCoverageFilterStore((state) => state.omittedDeviceIds)
+  const omittedCoverageDeviceCount = resolveCatalogBreadcrumbOmissions(layerRoot,
+    [...new Set(missionCoverageState.status === 'inactive' ? [] : missionCoverageState.manifest?.chunks.map((chunk) => chunk.key.device_id) ?? [])], omittedDeviceIds).length
   const omittedCoverageOutingCount = useCoverageFilterStore(
     (state) => state.omittedPeriodKeys.filter((key) => key.startsWith('outing\u0000')).length,
   )
@@ -208,6 +211,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
       )}
 
       <CoverageStatusPanel
+        retrievalWarning={historyCompletenessWarning(status.warning)}
         state={missionCoverageState}
         omittedDeviceCount={omittedCoverageDeviceCount}
         omittedOutingCount={omittedCoverageOutingCount}

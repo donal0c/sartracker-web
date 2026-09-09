@@ -13,6 +13,7 @@ import {
 } from './map-drawing-interactions'
 import { createOperationalCrosshairCursor } from './map-cursors'
 import { resolveClickedMapTarget } from './map-click-target-resolver'
+import { isDrawingVisible, useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import {
   createTextLabelDragState,
   resolveDraggableTextLabelId,
@@ -152,8 +153,9 @@ export function useMapDrawingInteractions(
       // begins a drag-to-move. The map's own drag-pan is suspended so the label
       // follows the pointer instead of panning the map.
       if (activeTool === 'select' && interactionMode === 'idle') {
+        const visibility = useLayerVisibilityStore.getState()
         const labelId = resolveDraggableTextLabelId({
-          drawings,
+          drawings: visibility.groupVisibility.mapTools ? drawings.filter((drawing) => isDrawingVisible(visibility.drawingTypeVisibility, visibility.hiddenDrawingIds, drawing)) : [],
           point: resolved.point,
           project: (coordinate) => map.project(coordinate),
           renderedLabelDrawingIds: readRenderedTextLabelDrawingIds(map, resolved.point),
@@ -225,6 +227,7 @@ export function useMapDrawingInteractions(
 
       if (activeTool === 'select') {
         const target = resolveClickedMapTarget({
+          visibility: useLayerVisibilityStore.getState(),
           map,
           point,
           markers,

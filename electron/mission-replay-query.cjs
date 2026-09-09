@@ -240,6 +240,9 @@ function readMissionReplayObjectChunkWithinSnapshot(database, input) {
     throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
   }
   const normalized = { ...baseInput, replayGeneration: currentGeneration }
+  if (input.objectDetails !== undefined) {
+    return readReplayObjectDetails(database, normalized, input.objectDetails)
+  }
   const cursor = normalizeReplayObjectCursor(input.objectCursor)
   const offset = cursor?.offset ?? 0
   const result = readObjectRows(database, normalized, offset)
@@ -978,6 +981,7 @@ function normalizeReplayWorkerQuery(input, kind) {
     return {
       ...normalized,
       replayGeneration: input.replayGeneration,
+      ...(input.objectDetails === undefined ? {} : { objectDetails: normalizeObjectDetails(input.objectDetails) }),
       ...(input.objectCursor === undefined || input.objectCursor === null || input.objectCursor === ''
         ? {}
         : { objectCursor: input.objectCursor }),
@@ -1003,6 +1007,43 @@ function normalizeReplayWorkerQuery(input, kind) {
     }
   }
   throw new Error('Mission replay worker query kind is invalid.')
+}
+
+/** Validates the bounded identity and character offset for a retained object read. */
+function normalizeObjectDetails(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || !['marker', 'drawing', 'search_area', 'helicopter'].includes(value.objectType)
+    || typeof value.objectId !== 'string' || value.objectId.length < 1 || value.objectId.length > 200
+    || !Number.isSafeInteger(value.offset) || value.offset < 0) {
+    throw new Error('Mission replay object detail request is invalid.')
+  }
+  return { objectType: value.objectType, objectId: value.objectId, offset: value.offset }
+}
+
+/** Streams a selected-time version without relaxing the worker message ceiling. */
+function readReplayObjectDetails(database, input, details) {
+  const query = normalizeObjectDetails(details)
+  const row = database.prepare(`SELECT state_json, version_sequence FROM mission_object_versions
+    WHERE mission_id = ? AND object_type = ? AND object_id = ?
+      AND recorded_at <= ? AND effective_at <= ?
+    ORDER BY recorded_at DESC, version_sequence DESC, id DESC LIMIT 1`).get(
+    input.missionId, query.objectType, query.objectId, input.selectedTime, input.selectedTime,
+  )
+  if (row === undefined || query.offset > row.state_json.length) {
+    throw new Error('Mission replay object details are unavailable at the selected time.')
+  }
+  const end = Math.min(row.state_json.length, query.offset + 16_384)
+  return {
+    missionId: input.missionId, selectedTime: input.selectedTime,
+    objects: [], totalObjectCount: 1, objectCursor: '0', nextObjectCursor: null,
+    progress: end / row.state_json.length, summarizedObjectCount: 0,
+    objectDetails: {
+      ...query, versionSequence: row.version_sequence,
+      fragment: row.state_json.slice(query.offset, end),
+      totalCharacters: row.state_json.length,
+      nextOffset: end < row.state_json.length ? end : null,
+    },
+  }
 }
 
 /** Validates one bounded display-only evidence-source filter. */

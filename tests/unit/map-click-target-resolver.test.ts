@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { resolveClickedMapTarget } from '../../src/features/map/map-click-target-resolver'
+import { useLayerVisibilityStore } from '../../src/features/layers/layer-visibility-store'
 import type { Drawing, GpxTrackImport, Marker } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 const projectingMap = {
@@ -13,6 +14,16 @@ const projectingMap = {
 } as never
 
 describe('resolveClickedMapTarget — priority and outcomes', () => {
+  it('AUD-07 excludes hidden stored evidence from fallback selection without deleting it', () => {
+    const markers = [createMarker('hidden-clue', 5, 5)]
+    const drawings = [createPolygonDrawing('hidden-area')]
+    const visibility = { ...useLayerVisibilityStore.getState(), hiddenMarkerIds: ['hidden-clue'], hiddenDrawingIds: ['hidden-area'] }
+    const args = { map: projectingMap, point: { x: 50, y: 50 }, markers, drawings, gpxImports: [], visibility }
+    expect(resolveClickedMapTarget(args).kind).toBe('empty')
+    expect(markers).toHaveLength(1)
+    expect(drawings).toHaveLength(1)
+    expect(resolveClickedMapTarget({ ...args, visibility: useLayerVisibilityStore.getState() }).id).toBe('hidden-clue')
+  })
   it('returns "empty" when no marker, drawing, or GPX track is near the click', () => {
     const result = resolveClickedMapTarget({
       map: projectingMap,

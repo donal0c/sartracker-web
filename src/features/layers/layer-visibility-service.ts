@@ -130,6 +130,7 @@ export function applyVisibilityForNodeIds(
       if (featureNode.entityType === 'device') {
         toggleByHiddenList(featureNode.entityId, visible, store.hiddenDeviceIds, store.toggleDeviceVisibility)
       } else if (featureNode.entityType === 'tracking-breadcrumb') {
+        if (visible) store.setBreadcrumbsVisible(true)
         toggleByHiddenList(
           featureNode.entityId,
           visible,

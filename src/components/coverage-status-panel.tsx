@@ -1,6 +1,7 @@
 import type { CoverageState } from '../features/tracking/coverage-controller'
 
 type CoverageStatusPanelProps = {
+  readonly retrievalWarning?: string | null
   readonly state: CoverageState
   readonly omittedDeviceCount: number
   readonly omittedOutingCount: number
@@ -25,7 +26,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
   const rendererDetached = blockers.has('renderer_detached')
   const rendererFilterPending = blockers.has('renderer_filter_pending')
   const evidenceBlocked = degraded || rendererEvidencePending || rendererEvidenceDegraded
-  const progressUntrusted = evidenceBlocked || rendererDetached || rendererFilterPending ||
+  const progressUntrusted = Boolean(props.retrievalWarning) || evidenceBlocked || rendererDetached || rendererFilterPending ||
     reorganizing || backfill
   const completenessUnverified = props.state.status !== 'complete' &&
     props.state.deliveredFixCount >= props.state.totalFixCount
@@ -71,6 +72,11 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
           ) : degraded ? (
             <p className="mt-1" data-testid="coverage-degraded">
               Evidence health is degraded. History cannot be called complete until storage recovers.
+            </p>
+          ) : props.retrievalWarning ? (
+            <p className="mt-1" data-testid="coverage-retrieval-warning">
+              Mission history completeness is not verified. {props.retrievalWarning}
+              {' '}Loaded saved evidence remains shown; current positions remain live.
             </p>
           ) : props.state.status === 'complete' ? (
             <CompleteSummary

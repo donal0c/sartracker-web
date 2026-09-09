@@ -8,6 +8,14 @@ import {
 import type { LayerCatalogRootNode } from '../../src/features/layers/layer-catalog-types'
 
 describe('layer visibility service', () => {
+  it('opens breadcrumb rendering for an individual override without showing everyone [DON-215]', () => {
+    const store = createStoreAdapter({ hiddenBreadcrumbDeviceIds: ['alpha', 'bravo'] })
+    applyVisibilityForNodeIds(createRoot(), [getBreadcrumbDeviceFeatureNodeId('alpha')], true, store)
+    expect(store.setBreadcrumbsVisible).toHaveBeenCalledWith(true)
+    expect(store.toggleBreadcrumbDeviceVisibility).toHaveBeenCalledWith('alpha')
+    expect(store.showAllBreadcrumbDevices).not.toHaveBeenCalled()
+    expect(store.showAllDevices).not.toHaveBeenCalled()
+  })
   it('collects subtree ids for branch nodes', () => {
     const root = createRoot()
     expect(collectSubtreeNodeIds(root, 'layer:tracking:devices')).toEqual([
