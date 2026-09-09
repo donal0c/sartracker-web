@@ -436,6 +436,15 @@ When adding a new subsystem, prefer a layout that makes future growth obvious. A
 It is acceptable for the repo to grow into this structure gradually, but new work should move it toward cleaner boundaries, not away from them.
 
 ### Testing Strategy
+
+Use [Testing and review cadence](docs/testing-and-review-cadence.md), recorded
+at Donal's request on 2026-09-09, for check selection, failure diagnosis and
+evidence reuse. Behaviour changes retain red/green regressions and a full stable
+source cycle; choose browser and packaged checks by the changed risk. For a
+documentation-only change, verify facts/links/diff and unchanged code/test trees
+instead of rerunning unchanged runtime suites. This clarifies the finish rules
+above; it does not relax safety thresholds or beta publication gates.
+
 - Unit tests for pure logic, transforms, validators, and domain rules
 - Integration tests for module boundaries such as MissionStore, Traccar polling, and layer-state shaping
 - Playwright E2E tests for genuine operator workflows

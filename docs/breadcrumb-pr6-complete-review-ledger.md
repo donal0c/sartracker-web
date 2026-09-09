@@ -7,8 +7,8 @@ Read 2026-09-09. Review source c69b0c23; reconciliation starts at a3d3b596
 superseded. Prior IDs refer to breadcrumb-pr6-review-remediation.md.
 
 Prior IDs link to the earlier source assessments. Every expanded claim now has
-a disposition below. No merge or release is authorized. Use focused regressions
-and proportionate smokes.
+a disposition below. PR #10 merged on 2026-09-09 at `e0ead68852b10606551302b5104e409634c962e1`.
+This ledger records pre-merge engineering evidence, not release acceptance.
 
 ## Verification snapshot
 
@@ -31,9 +31,14 @@ and proportionate smokes.
   gate. Zero exact secret matches and final plaintext residue. Canonical receipt
   validation returns valid/passed true:
   `docs/evidence/pr6/expanded-review-76ef77c1-macos-20260909.json`.
-- Final-head ordinary Linux CI must be green before author-side completion;
-  its live result and downloaded-receipt validation are maintained in PR #10
-  and DON-252/253. Prior full field-scale and 32-case interruption results remain
+- Final PR-head [Linux CI 34324371898](https://github.com/donal0c/sartracker-web/actions/runs/34324371898)
+  passed at `1b1f86ee2abb3b0ef2949a710b549e7e0079ef2e`: 4,137 tests / 396 files,
+  lint/build, 960k replay, packaged tracking, archive lifecycle and AppImage launch.
+  Downloaded archive receipt passes the canonical validator: matching clean
+  source heads/trees before and after, full teardown, zero exact secret matches
+  and final plaintext residue. Main/current/frame maxima: 89.263/173/198.1 ms
+  (strictly below 200 ms; frame headroom is narrow). GPX write/heartbeat maxima:
+  51.224/26.976 ms. Prior full field-scale and 32-case interruption results remain
   historical; no fresh claim is made here.
 
 ## CI follow-up
@@ -58,7 +63,7 @@ and event-loop heartbeat diagnostics for a future failure. Both affected suites
 pass locally (86 tests; GPX write 84.679 ms, heartbeat 23.819 ms) and on the
 reference Linux host (86 tests; GPX write 89.122 ms, heartbeat 42.211 ms). No production
 change is attributed to the unreplicated timing outlier, and the rejected run is
-not erased or promoted to passing proof. Final-head CI remains the completion gate.
+not erased or promoted to passing proof. The final PR-head CI passed as recorded above; the outlier cause remains unestablished.
 
 ## High and Medium-High
 

@@ -153,7 +153,15 @@ the bounded remediation topology to PR-3 as well:
   persistence/completeness, concurrency/finalization, and renderer/input-
   containment rechecks. Do not restart five full reviews after each fix.
 
-For PR-4 onward:
+**2026-09-09 cadence update:** Donal requested that the final PR6 approach be
+carried forward into new work. Use [Testing and review cadence](testing-and-review-cadence.md)
+for proportional remediation, evidence reuse and review rechecks. The fixed
+review-wave topology below records the earlier programme allocation; it is not
+an automatic requirement to restart a broad review after each correction.
+Retain the safety stop conditions below and escalate when changed contracts or
+repeated defects invalidate prior evidence. Release gates remain unchanged.
+
+Earlier allocation for PR-4 onward:
 
 - retain four independent reviewers for a 10/10 PR, run in parallel on one
   final code-and-documentation head;
