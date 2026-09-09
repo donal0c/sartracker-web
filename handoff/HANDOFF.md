@@ -4,28 +4,25 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, now
-  integrates master `9c73c62d` at Donal's request. Its audit/package inventory
-  remains pinned to `3cdf555d`; newer integration CI is recorded on the PR.
-  IPC-003/macOS corrections and all three resolved review threads remain intact.
-  [Report](../docs/assurance/findings/WAR-04B.md) retains evidence limits;
-  release HOLD remains. Only handoff conflicted; product code matches upstream.
-  CI rejected restore/current continuity at 226 ms and initial frames at
-  219.5 ms with profiling disabled. Paired current-fix diagnostics are retained.
-  A controlled cold-Mesa-cache reproduction supports CPU page rasterization
-  for the Linux smoke: full local lifecycle passes at 16 and 4 CPUs, unchanged
-  200 ms gates. The CI argument regression is red/green; 216 affected tests
-  pass. All 400 source files / 4,157 tests pass, with five loopback-server
-  suites rerun outside the local sandbox; lint/build and packaged visuals pass.
-  An unrelated Chrome APT index mismatch was fixed by selecting Ubuntu's main
-  package sources, retaining integrity checks. Normal Linux CI `34386382652`
-  passes on `03b09a7e`: 400 files / 4,158 tests and all packaged gates.
-  Downloaded receipt independently validates; frame maximum 117.5 ms,
-  current-fix maximum 172 ms. PR is open, merge-ready and not merged.
-  This documentation closeout reuses that byte-identical executable/test/
-  workflow evidence; no new runtime run is claimed. See the
-  [investigation](../docs/archive-ci-rendering-investigation.md); historical
-  failures remain recorded and release HOLD is unchanged.
+- WAR-11A is the active unmerged builder slice, based on master `c51e4b35`.
+  Builder/app-builder-lib 26.0.12 → 26.16.1; Electron/SQLite/application code
+  and the 200 ms gates are unchanged. The new package gate inspects actual
+  AppRun paths, all installer/ASAR contents, payload identity and native SQLite.
+  Local source: 402 files / 4,186 tests, lint/build; later inspection corrections
+  have focused red/green checks. Local emulated Linux package inspection passes;
+  native macOS archive receipt independently passes all phases and recovery.
+  These are different disposable snapshots, not final PR-head/Linux proof.
+  [WAR-11A](../docs/assurance/findings/WAR-11A.md) holds hashes and limits.
+  Next: final-head Ubuntu CI/downloaded receipt validation and two independent
+  reviews, recorded on the PR. Keep unmerged; no release authority is granted.
+  DON-146 owns this slice; DON-254/DON-255 retain final qualification/publication.
+
+- [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, merged
+  at `c51e4b35`. Final executable evidence is CI `34386382652` on `03b09a7e`:
+  400 files / 4,158 tests and all packaged gates; downloaded receipt validates.
+  Cold-Mesa/source corrections remain. Historical 203/226 ms current-fix and
+  219.5 ms frame failures remain in the [report](../docs/assurance/findings/WAR-04B.md)
+  and [investigation](../docs/archive-ci-rendering-investigation.md).
 
 - DON-256's first twelve-item Sar_4 UI batch merged as
   [PR #11](https://github.com/donal0c/sartracker-web/pull/11) at `9c73c62d`.
@@ -42,8 +39,9 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   fixes or explicit dispositions in the [complete ledger](../docs/breadcrumb-pr6-complete-review-ledger.md).
 - Documentation cleanup records the final testing approach below. Start new work
   from current `master`; the archive PR does not need another review cycle.
-- Next programme steps: WAR-04B's narrow merged-head refresh, then BCP-17 final
-  candidate qualification before DON-255 publication. Use the
+- Next programme steps: complete WAR-11A review, independently qualify native
+  dependency/runtime upgrades, then BCP-17 final candidate qualification before
+  DON-255 publication. Use the
   [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear
   issues for scope. Merge is complete; release/field acceptance is not established.
   DON-247 and DON-264 remain separate reliability work.

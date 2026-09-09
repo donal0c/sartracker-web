@@ -1,5 +1,15 @@
 # WAR-04B — post-PR6 release-integrity refresh
 
+**WAR-11A remediation overlay (2026-09-09, unmerged):** the
+[builder remediation](WAR-11A.md) pins builder/app-builder-lib 26.16.1 and adds
+an actual-output launcher and package gate. This addresses C01 for newly
+inspected outputs, not historical installers. The full audit now has 16 records;
+C02 runtime EOL, C03 audit policy, remaining C04 extraction exposure, C05–C08 and
+C10 controls remain. C09 gains named private-category/ASAR scanning, without an
+arbitrary embedded-secret or minimal-dependency guarantee. The original findings
+and contrary timing evidence below remain historical evidence. Release HOLD
+continues through independent native/runtime and final-candidate qualification.
+
 ## Verdict
 
 **HOLD.** This 2026-09-09 investigation is pinned to fetched `origin/master`

@@ -142,6 +142,15 @@ Historical PR5 receipts retain their original proof limits.
 
 ## 11. Dependency and release integrity
 
+**WAR-11A overlay:** REL-002 now has a pinned 26.16.1 builder and output-level
+launcher/native/payload gate; the prior 26.0.12 evidence in its row is historical.
+The fresh full audit has 16 records and the production MapLibre record remains.
+PKG-002 gains named private-category scanning through physical and logical ASAR
+contents. [WAR-11A](findings/WAR-11A.md) binds local package/native evidence and
+its limitations; final-head CI/reviews are recorded on the PR. Neither hazard is
+closed: Electron EOL, remaining dependencies, platform qualification and release
+controls retain HOLD. Historical 203 ms and subsequent timing failures remain.
+
 | ID / hazard | Consequence and safety/operator impact | Authority and exact invariant | Controlling production boundary | Existing tests opened and inspected | Existing evidence and proof limit | Existing Linear owner | Gap | Residual risk, detection/fallback, prerequisite/follow-up |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `REL-001` — published bytes differ from reviewed/smoked bytes | Testers can receive an unqualified or altered installer. | Beta Release Safety Protocol. **Invariant:** tag, version, gated commit/checkout, draft body, installer identities, `SHA256SUMS`, GitHub asset metadata, and fresh downloads agree; mutation/extra assets block publication; after publication the tag/assets must be technically immutable. | `.github/workflows/electron-release.yml`; `scripts/electron-release-publish.mjs`; `build/electron-release-lib.js`; `scripts/beta-verify.mjs`; `docs/assurance/findings/WAR-04B.md` | `tests/unit/electron-release-safety.test.ts`; `tests/unit/beta-verify-lib.test.ts` | `T4`: beta.12.11's tag/run/body/assets/API digests and one freshly inspected `.deb` agreed on 2026-08-30, and the publisher's double-observation guards are fail-closed. Fresh 2026-09-09 API metadata agrees with the historical asset digests; no installer was re-downloaded. Live release state is `immutable:false`, no tag ruleset exists, the tag is unsigned, and the publisher is not a server-enforced only-path. This is no evidence of historical mutation and no current release qualification; the local exact-master package was inspected but rejected lifecycle. | [DON-254](https://linear.app/donal-oc/issue/DON-254), [DON-255](https://linear.app/donal-oc/issue/DON-255) | `unenforced-invariant` | Keep releases draft and retain the prior artifact if identity diverges. Before the next publication, enable immutable releases and a compatible tag rule, retain the guarded publisher, and qualify the exact final candidate under DON-254/DON-255. |

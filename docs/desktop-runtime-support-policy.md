@@ -62,8 +62,9 @@ Electron's bundled Chromium, the app has two defenses:
 > release workflow builds Linux x86-64 AppImage and `.deb` only. No Windows
 > build/launch job or `enable_windows` gate exists there; local macOS `--dir`
 > packaging is engineering evidence, not a CI-supported release lane. Electron
-> 40.10.0 is EOL and the AppImage builder is affected; the current decision is
-> **HOLD**. See [WAR-04B](assurance/findings/WAR-04B.md). A dependency declared
+> 40.10.0 is EOL. [WAR-11A](assurance/findings/WAR-11A.md) upgrades the affected
+> AppImage builder and gates newly built outputs; the decision remains **HOLD**.
+> See [WAR-04B](assurance/findings/WAR-04B.md). A dependency declared
 > `dev` may still be the shipped runtime or generate shipped launcher code;
 > upgrade priority must follow actual reachability, not npm classification.
 
@@ -132,7 +133,22 @@ builder configuration alone does not provide a distribution lane.
 | Electron | ^40.10.0 (resolved: 40.10.0) | `package.json` (caret range; `package-lock.json` is the true pin) |
 | Chromium (bundled) | 144.0.7559.236 | Determined by Electron version |
 | Node.js (bundled) | 24.15.0 | Determined by Electron version |
-| electron-builder | ^26.0.12 (resolved: 26.0.12) | `package.json` (caret range; lockfile is the true pin) |
+| electron-builder | 26.16.1 (exact) | `package.json` and `package-lock.json`; WAR-11A builder-only remediation |
+
+WAR-11A selects the maintained upstream `v26` backport release 26.16.1, above
+GHSA-7g7r-gx96-252g's 26.15.0 fixed boundary. Local build Node must be at least
+22.12.0 for the updated native rebuild toolchain. Electron 40.10.0 and
+better-sqlite3 12.10.0 remain unchanged; this does not resolve runtime EOL or
+qualify a release. See [WAR-11A evidence](assurance/findings/WAR-11A.md).
+
+Every Linux distribution command now extracts both installers and requires
+`scripts/verify-linux-package.mjs` before it can succeed. It checks generated
+AppRun search-path exports with unset, empty and populated inherited values,
+inspects ASAR/unpacked/extra resources and the entire Debian payload for named
+private-data categories, binds application payloads to the unpacked smoke target,
+and loads target-native SQLite through the packaged Electron runtime. Its
+`package-safety.json` receipt records hashes and explicit proof limits; it is
+separate from lifecycle receipts, checksums and final candidate qualification.
 
 **Note:** The caret ranges in `package.json` allow minor/patch updates, but
 `package-lock.json` is committed and authoritative. `npm ci` in CI ensures

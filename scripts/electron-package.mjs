@@ -41,10 +41,17 @@ class CommandFailure extends Error {
 let exitCode = 0
 
 try {
+  if (process.argv.includes('--linux') && !process.argv.includes('--dir')) {
+    rmSync(path.join(projectRoot, 'tmp/electron-validation-evidence/package-safety.json'), { force: true })
+  }
   runRequired('npm', ['run', 'build'])
   removeElectronRebuildMarkers()
   runRequired('npm', ['exec', '--', 'electron-builder', '--config', 'electron-builder.json', ...process.argv.slice(2)])
+  if (process.argv.includes('--linux') && !process.argv.includes('--dir')) {
+    runRequired(process.execPath, ['scripts/verify-linux-package.mjs'])
+  }
 } catch (error) {
+  console.error(`Electron packaging failed: ${error instanceof Error ? error.message : String(error)}`)
   exitCode = error instanceof CommandFailure ? error.exitCode : 1
 } finally {
   const restore = runOptional('npm', ['rebuild', 'better-sqlite3'])
