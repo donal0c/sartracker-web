@@ -10,7 +10,10 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   inventory. Local lifecycle rejects 203 ms current continuity; cleanup passes,
   cause unknown, same-head retry refused. Independent Linux `34338004244` passes
   all gates; downloaded executable/ASAR match its receipt. Final reviews and
-  PR-head CI binding are recorded on the review PR. Release HOLD; no remediation/publication.
+  PR-head CI binding are recorded on the review PR. Review follow-up corrects
+  IPC-003's stale archive cross-reference and labels macOS unqualified; prose
+  is rewrapped. Source facts, links and unchanged code/test/config were checked;
+  prior runtime evidence remains ancestor-specific. Release HOLD unchanged.
 
 - [PR #10](https://github.com/donal0c/sartracker-web/pull/10), programme PR6
   archive lifecycle, merged to `master` at `e0ead68852b10606551302b5104e409634c962e1`.

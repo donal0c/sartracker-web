@@ -22,14 +22,14 @@ long-soak, or field evidence.
 
 ### Merged PR5 reconciliation
 
-GitHub PR #5 merged as
-`eec92812b783a795c093f37268b295dd2179a3af` from final source head
-`f5ba8647131950dde457e50ce36fe0b8ded7337d`. WAR-01 re-opened the landed schema
-v12 migration, GPX source/worker/receipt/revision boundaries, immutable versions
-of mutable mission objects, data-known-at-time Replay queries and IPC, stable search-area /
-assignment / pass records, attachment custody and archive inclusion, renderer
-projections, browser parity, and their relevant tests. The affected register
-rows now describe those merged controls and their remaining proof limits.
+GitHub PR #5 merged as `eec92812b783a795c093f37268b295dd2179a3af` from final
+source head `f5ba8647131950dde457e50ce36fe0b8ded7337d`. WAR-01 re-opened the
+landed schema v12 migration, GPX source/worker/receipt/revision boundaries,
+immutable versions of mutable mission objects, data-known-at-time Replay
+queries and IPC, stable search-area / assignment / pass records, attachment
+custody and archive inclusion, renderer projections, browser parity, and
+their relevant tests. The affected register rows now describe those merged
+controls and their remaining proof limits.
 
 The proof boundary is exact. The accepted four-review PR5 wave applies to its
 recorded earlier heads, including `c1ad54b8` for persistence/concurrency and
@@ -50,14 +50,17 @@ field, archive-security, or restore-and-replay behavior.
 
 Programme PR6 / GitHub PR #10 merged at
 `e0ead68852b10606551302b5104e409634c962e1` from tested head `1b1f86ee`.
-[WAR-04B](findings/WAR-04B.md) refreshes only the directly affected archive and
-release/package rows against master `3cdf555de93459c83198121b31053ff1d53db74e`.
-The streamed encrypted archive, verification, restore, recovery and read-only
-Review implementation has landed; RPL-004 is now an `evidence-tier-gap`, not
-an unimplemented rewrite. Historical PR6 scale/interruption evidence retains
-its exact earlier heads. Local exact-master native/package inspection passed,
-but its lifecycle rejected 203 ms current continuity; Linux CI `34338004244` passes the exact-master synthetic lifecycle and package gates. The local failure remains unresolved. This neither advances unrelated application rows nor qualifies a
-release. Release verdict remains HOLD.
+[WAR-04B](findings/WAR-04B.md) refreshes only the directly affected archive
+and release/package rows against master
+`3cdf555de93459c83198121b31053ff1d53db74e`. The streamed encrypted archive,
+verification, restore, recovery and read-only Review implementation has
+landed; RPL-004 is now an `evidence-tier-gap`, not an unimplemented rewrite.
+Historical PR6 scale/interruption evidence retains its exact earlier heads.
+Local exact-master native/package inspection passed, but its lifecycle
+rejected 203 ms current continuity; Linux CI `34338004244` passes the
+exact-master synthetic lifecycle and package gates. The local failure
+remains unresolved. This neither advances unrelated application rows nor
+qualifies a release. Release verdict remains HOLD.
 
 ## Assurance objective
 
@@ -174,8 +177,9 @@ the landed code and opened tests. Reclassification records a control only where
 the merged path and inspected test justify it; it does not inherit an assurance
 claim merely because PR5 merged.
 
-The targeted post-PR6 archive/package/release refresh is recorded in WAR-04B.
-Remaining exact-candidate platform, interruption, custody and field acceptance
-belongs to DON-254/DON-255; the local timing rejection is not erased by historical
-PR6 passes. The broader WAR-01 snapshot remains unchanged outside that overlay.
-The refresh requires its two independent final-head reviews and normal CI.
+The targeted post-PR6 archive/package/release refresh is recorded in
+WAR-04B. Remaining exact-candidate platform, interruption, custody and field
+acceptance belongs to DON-254/DON-255; the local timing rejection is not
+erased by historical PR6 passes. The broader WAR-01 snapshot remains
+unchanged outside that overlay. The refresh requires its two independent
+final-head reviews and normal CI.

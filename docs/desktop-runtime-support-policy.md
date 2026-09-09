@@ -82,8 +82,8 @@ Electron's bundled Chromium, the app has two defenses:
 
 | Tier | Version | Packaging | Evidence |
 | --- | --- | --- | --- |
-| Tier 1 (tested, supported) | macOS arm64 (Apple Silicon) | `.app` zip | Development machine, DON-107 offline maps |
-| Tier 2 (expected compatible) | macOS Intel | `.app` zip (separate build) | Not yet validated |
+| Local engineering evidence, unqualified | macOS arm64 (Apple Silicon) | Local `.app` (`--dir`) | Historical DON-107 offline-map evidence; current native/inventory checks pass, but local lifecycle rejects 203 ms continuity. No current release qualification; see WAR-04B. |
+| Unqualified | macOS Intel | Separate local build required | Not validated; no current CI release lane |
 | Not CI-built | — | — | Deferred from CI per billing (10x cost); built locally via Path B |
 
 ### Windows

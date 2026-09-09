@@ -5,18 +5,21 @@
 **HOLD.** This 2026-09-09 investigation is pinned to fetched `origin/master`
 `3cdf555de93459c83198121b31053ff1d53db74e`, tree
 `c10d71a340ec2722e50a97a8605a1f99cee3d629`. No production, dependency, lock,
-workflow, setting, tag, release or product behavior changed. No field/release
-readiness is claimed. The unchanged Electron 40 runtime is end-of-life and the
-AppImage builder remains affected. Production audit is now **1 critical**, not
-zero: MapLibre's affected sanitizer ships, but its required untrusted-attribution
-input is absent from the inspected application path. No application exploit was
-demonstrated. Local packaged lifecycle rejected a 203 ms continuity interval;
-cause remains uncertain. Independent exact-master Linux validation passed; this does not resolve the local failure.
+workflow, setting, tag, release or product behavior changed. No
+field/release readiness is claimed. The unchanged Electron 40 runtime is
+end-of-life and the AppImage builder remains affected. Production audit is
+now **1 critical**, not zero: MapLibre's affected sanitizer ships, but its
+required untrusted-attribution input is absent from the inspected
+application path. No application exploit was demonstrated. Local packaged
+lifecycle rejected a 203 ms continuity interval; cause remains uncertain.
+Independent exact-master Linux validation passed; this does not resolve the
+local failure.
 
-The [observations](../../evidence/war04b/post-pr6-20260909.json) retain graph,
-advisory, package, native, GitHub and failure records. Hashes identify observed
-bytes, not approved/frozen release bytes. The immutable
-[original report](https://github.com/donal0c/sartracker-web/blob/3cdf555de93459c83198121b31053ff1d53db74e/docs/assurance/findings/WAR-04B.md)
+The [observations](../../evidence/war04b/post-pr6-20260909.json) retain
+graph, advisory, package, native, GitHub and failure records. Hashes
+identify observed bytes, not approved/frozen release bytes. The immutable
+[original
+report](https://github.com/donal0c/sartracker-web/blob/3cdf555de93459c83198121b31053ff1d53db74e/docs/assurance/findings/WAR-04B.md)
 preserves the 2026-08-30 findings and contrary historical evidence. Current
 statements below supersede its pre-merge/zero-production-audit assertions.
 
@@ -33,11 +36,12 @@ documentation files, including CLAUDE.md. Their executable, dependency, test,
 build and workflow blobs match; the recorded 4,137-test cycle remains reusable.
 Fresh CI nevertheless executes its complete mandatory source/package gates.
 
-Full interactive beta verification, tag publication, >2 GiB/32-case interruption,
-multi-day, live-provider, original-machine and field matrices remain
-DON-254/DON-255 work. No filtered beta run is called a no-skip pass. The local
-feature-enabled qualification package is not a tag-release artifact: the release
-workflow intentionally omits that feature flag until programme qualification.
+Full interactive beta verification, tag publication, >2 GiB/32-case
+interruption, multi-day, live-provider, original-machine and field matrices
+remain DON-254/DON-255 work. No filtered beta run is called a no-skip pass.
+The local feature-enabled qualification package is not a tag-release
+artifact: the release workflow intentionally omits that feature flag until
+programme qualification.
 
 ## Exact post-programme-PR-6 refresh checklist
 
@@ -60,22 +64,24 @@ documentation/testing-cadence handover.
 
 ## Dependency support and reachability
 
-The lock still has 898 resolved entries, all with integrity: 897 registry entries
-and one exact upstream node-gyp commit. Lock SHA-256 is
-`0127526b35829794af69db4b817f6fd581c0f8045973517618e8d171af999fef`;
-package manifest SHA-256 is
-`a035ff86bcc36a4d6293d15ed669d63cfec649cff83e85fe427b96034e0e346e`.
-All 234 packaged module name/version pairs occur in that lock. Eleven occupy
+The lock still has 898 resolved entries, all with integrity: 897 registry
+entries and one exact upstream node-gyp commit. Lock SHA-256 is
+`0127526b35829794af69db4b817f6fd581c0f8045973517618e8d171af999fef`; package
+manifest SHA-256 is
+`a035ff86bcc36a4d6293d15ed669d63cfec649cff83e85fe427b96034e0e346e`. All 234
+packaged module name/version pairs occur in that lock. Eleven occupy
 different nested/hoisted paths after builder collection; their matching lock
 paths are recorded rather than misclassified as unexpected versions.
 
-The [Electron schedule](https://releases.electronjs.org/schedule) confirms 40 EOL
-on 2026-06-30 and supported majors 42–44. Registry tags: 42.11.3, 43.6.0,
-44.3.0; 42's scheduled EOL is 2026-10-20. Builder/app-builder-lib `latest` is
-26.15.3, while `v26` is 26.16.1. These are observations, not approved targets.
-better-sqlite3 latest is 13.0.3; latest 12.x is 12.11.1. The upstream
-[Electron 42 fix](https://github.com/WiseLibs/better-sqlite3/pull/1475) merged
-and shipped in [12.10.1](https://github.com/WiseLibs/better-sqlite3/releases/tag/v12.10.1).
+The [Electron schedule](https://releases.electronjs.org/schedule) confirms
+40 EOL on 2026-06-30 and supported majors 42–44. Registry tags: 42.11.3,
+43.6.0, 44.3.0; 42's scheduled EOL is 2026-10-20. Builder/app-builder-lib
+`latest` is 26.15.3, while `v26` is 26.16.1. These are observations, not
+approved targets. better-sqlite3 latest is 13.0.3; latest 12.x is 12.11.1.
+The upstream [Electron 42
+fix](https://github.com/WiseLibs/better-sqlite3/pull/1475) merged and
+shipped in
+[12.10.1](https://github.com/WiseLibs/better-sqlite3/releases/tag/v12.10.1).
 [Node 22](https://github.com/nodejs/Release) remains Maintenance LTS through
 2027-04-30. Local Node/npm are 22.22.3/10.9.8; CI pins only Node major 22.
 
@@ -124,35 +130,58 @@ does not establish root cause. Process/profile cleanup completed. No successful
 restart, verify, restore or cleanup-phase proof is inferred from this run.
 
 Existing trace-option retry was refused before launch: `Archive lifecycle
-supervisor refuses an unchanged same-head rerun.` The lease was not removed or
-bypassed. Cadence permits diagnosed retries, but that executable restriction
-still exists. Independent exact-master Linux run
+supervisor refuses an unchanged same-head rerun.` The lease was not removed
+or bypassed. Cadence permits diagnosed retries, but that executable
+restriction still exists. Independent exact-master Linux run
 [34338004244](https://github.com/donal0c/sartracker-web/actions/runs/34338004244)
-uses the unchanged workflow for platform comparison, not local blind rerunning.
-Its mandatory steps all passed. The canonical receipt independently validates (`valid: true`, `passed: true`). It records two launches/exits, 4,096 breadcrumbs, 202 replay objects and 101 outings; create/verify/restore/cleanup current-fix maxima are 179/125/177/151 ms. Interrupted decrypt leaves a deliberate canary, and restart removes all residual entries. Read-only review before/after credential-gated cleanup passes; final plaintext residue is zero. This is the synthetic CI workload, not the full interruption/scale/field matrix.
+uses the unchanged workflow for platform comparison, not local blind
+rerunning. Its mandatory steps all passed. The canonical receipt
+independently validates (`valid: true`, `passed: true`). It records two
+launches/exits, 4,096 breadcrumbs, 202 replay objects and 101 outings;
+create/verify/restore/cleanup current-fix maxima are 179/125/177/151 ms.
+Interrupted decrypt leaves a deliberate canary, and restart removes all
+residual entries. Read-only review before/after credential-gated cleanup
+passes; final plaintext residue is zero. This is the synthetic CI workload,
+not the full interruption/scale/field matrix.
 
-The downloaded `.deb` was extracted and inspected, not installed. Its executable and ASAR exactly match the lifecycle receipt. ASAR SHA-256 is `38b624abe91e6feb5e40d64dc472ccac042a20db17521044df8657762315472c`; native SQLite is ELF x86-64, ABI143 registration, SHA-256 `c6dd5b3806e9fdc0e48e5ac18e0f7fac1db4b265f6a010afd275983efac159cd`. Package inspection finds 3,902 ASAR entries, 234 manifests, 53 unpacked files and no named/signature risk-category matches. Linux extras are three field tools, AppArmor profile, package-type and update metadata; update metadata does not create an updater code path. The same upstream test/native-source minimization debt remains.
+The downloaded `.deb` was extracted and inspected, not installed. Its
+executable and ASAR exactly match the lifecycle receipt. ASAR SHA-256 is
+`38b624abe91e6feb5e40d64dc472ccac042a20db17521044df8657762315472c`; native
+SQLite is ELF x86-64, ABI143 registration, SHA-256
+`c6dd5b3806e9fdc0e48e5ac18e0f7fac1db4b265f6a010afd275983efac159cd`. Package
+inspection finds 3,902 ASAR entries, 234 manifests, 53 unpacked files and no
+named/signature risk-category matches. Linux extras are three field tools,
+AppArmor profile, package-type and update metadata; update metadata does not
+create an updater code path. The same upstream test/native-source
+minimization debt remains.
 
-Downloaded installer hashes match CI SHA256SUMS: `.deb` `77795087c2485bd2f27e9c6a5339130fe9909da03bd4789b95da3a49a0874527`; AppImage `30442079ec8ebf2fcde0fb3f9ed731595c0aca037b265ce0d278fc89b6af78e2`. AppImage launch is CI evidence; its filesystem was not separately extracted here. These internal artifacts retain the existing beta version label but are **not** the historical published beta or a promotion candidate.
+Downloaded installer hashes match CI SHA256SUMS: `.deb`
+`77795087c2485bd2f27e9c6a5339130fe9909da03bd4789b95da3a49a0874527`; AppImage
+`30442079ec8ebf2fcde0fb3f9ed731595c0aca037b265ce0d278fc89b6af78e2`. AppImage
+launch is CI evidence; its filesystem was not separately extracted here.
+These internal artifacts retain the existing beta version label but are
+**not** the historical published beta or a promotion candidate.
 
 ## Live controls and historical release
 
-Read-only REST records confirm public repository/prerelease, unprotected master,
-zero rulesets/effective rules, no required review/check, all Actions permitted
-without SHA pinning, default read-only token without PR approval. Secret scanning,
-push protection, non-provider patterns, validity checks and Dependabot updates
-are disabled. Alert endpoints say disabled/no analysis, not zero alerts; CodeQL
-default setup is unconfigured. Initial master snapshot had no checks/statuses;
-the independently dispatched CI above is a later observation.
+Read-only REST records confirm public repository/prerelease, unprotected
+master, zero rulesets/effective rules, no required review/check, all Actions
+permitted without SHA pinning, default read-only token without PR approval.
+Secret scanning, push protection, non-provider patterns, validity checks and
+Dependabot updates are disabled. Alert endpoints say disabled/no analysis,
+not zero alerts; CodeQL default setup is unconfigured. Initial master
+snapshot had no checks/statuses; the independently dispatched CI above is a
+later observation.
 
 Immutable release setting is disabled and not owner-enforced. Beta.12.11 is
 published, unsigned, public, `immutable:false`. Tag object
 `a20d6b1f43533cb01da940be21c6fbf9421330ac` peels to
-`bced8052b85c110792a7af5ccb7122a94b2fafad`. Three asset IDs/sizes/update times/API
-digests agree with historical records. No fresh historical installer download
-or execution here. `gh release verify` reports no tag attestations; historical
-`.deb` attestation endpoint returns 404. No evidence of mutation/compromise.
-No attested packaged SBOM is produced; this inventory is not an attested SBOM.
+`bced8052b85c110792a7af5ccb7122a94b2fafad`. Three asset IDs/sizes/update
+times/API digests agree with historical records. No fresh historical
+installer download or execution here. `gh release verify` reports no tag
+attestations; historical `.deb` attestation endpoint returns 404. No
+evidence of mutation/compromise. No attested packaged SBOM is produced; this
+inventory is not an attested SBOM.
 
 PR6 improves PR CI coverage (docs/handoff/manual), exact source binding and
 terminal receipt validation. The release workflow and field-tools still lack
@@ -227,4 +256,8 @@ ASAR logical entries and every bundle/unpacked/resource file, hashes file bytes,
 records symlink targets and package metadata. Its predicates are a bounded
 investigation, not a new enforced release guard.
 
-Two independent focused reviews cover dependency/release/security and traceability/proof-tier/contradictions. Their exact-head rechecks, dispositions, Linear linkage and final normal CI are recorded on the PR to avoid a self-referential evidence commit. No unavailable setting or platform is converted into a false green claim.
+Two independent focused reviews cover dependency/release/security and
+traceability/proof-tier/contradictions. Their exact-head rechecks,
+dispositions, Linear linkage and final normal CI are recorded on the PR to
+avoid a self-referential evidence commit. No unavailable setting or platform
+is converted into a false green claim.
