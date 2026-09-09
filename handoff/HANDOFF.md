@@ -17,8 +17,12 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   and all strict watchdog gates remain. Red/green workflow-to-runtime regression
   and 244 focused tests pass. Remaining review threads now reconcile PR6
   hazard controls, merged workplan status and release-bearing dev dependency
-  policy; final CI is recorded on PR #12. No causal fix or
-  field qualification is inferred from the configuration correction.
+  policy. CI `34360407470` still rejected restore current continuity at 226 ms
+  with profiling disabled; source/build/replay/tracking passed. Investigation
+  now retains the largest correlated request/emission/map-update interval in
+  the bounded failure receipt, separating polling cadence from delivery time.
+  Its regression is red/green; 282 affected tests and lint pass. Diagnostic CI
+  and the causal conclusion are recorded on PR #12; no timing fix is yet proved.
 
 - DON-256's first twelve-item Sar_4 UI batch merged as
   [PR #11](https://github.com/donal0c/sartracker-web/pull/11) at `9c73c62d`.

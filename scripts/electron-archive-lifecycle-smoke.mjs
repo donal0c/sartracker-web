@@ -89,6 +89,7 @@ const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
   'cleanup',
   'create',
   'currentFixContinuity',
+  'currentFixInterval',
   'currentFixMaxGapMs',
   'currentFixTimeout',
   'causeClass',
@@ -120,6 +121,9 @@ const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
   'phaseSampleCountAtStart',
   'phaseSampleDelta',
   'previousObservedAtMs',
+  'previousRequestStartedAtMs',
+  'previousEmittedAtMs',
+  'observedAtMs',
   'rendererFrameMaxGapMs',
   'rendererFrameSampleCount',
   'rendererCdpFailure',
@@ -1569,6 +1573,8 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
   const operationCheckpoints = new Map()
   const errors = new Set()
   let currentFixContinuity = null
+  let currentFixInterval = null
+  let previousCorrelatedFix = null
   let currentFixTimeout = null
   let rendererCurrentFixMonotonicTail = null
   let invalidRendererFrame = null
@@ -1754,6 +1760,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       activePhase,
       activeLaunchNumber: Number.isSafeInteger(activeLaunch?.number) ? activeLaunch.number : null,
       currentFixContinuity,
+      currentFixInterval,
       currentFixTimeout,
       rendererCdpFailure,
       rendererCurrentFixMonotonicTail,
@@ -1865,6 +1872,7 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
     }
     const startedAtMs = readExternalNow()
     if (startedAtMs === null) return
+    previousCorrelatedFix = null
     activeContinuityInterval = {
       phase,
       startedAtMs,
@@ -2193,12 +2201,34 @@ export function createPackagedLivenessProbe(mockServer, dependencies = {}) {
       } else if (interval.endedAtMs === null
         || observation.observedAtMs < interval.endedAtMs) {
         const previousObservedAtMs = interval.lastObservedAtMs ?? interval.startedAtMs
+        // Keep the largest fully correlated interval as numeric diagnostics.
+        // Its request cadence and delivery latency explain the measured gap;
+        // they never replace the authoritative continuity assertion below.
+        const gapMs = observation.observedAtMs - previousObservedAtMs
+        if (previousCorrelatedFix?.observedAtMs === previousObservedAtMs
+          && (currentFixInterval === null || gapMs > currentFixInterval.gapMs)) {
+          currentFixInterval = Object.freeze({
+            phase: source.phase,
+            gapMs,
+            previousRequestStartedAtMs: previousCorrelatedFix.requestStartedAtMs,
+            previousEmittedAtMs: previousCorrelatedFix.emittedAtMs,
+            previousObservedAtMs,
+            requestStartedAtMs: source.requestStartedAtMs,
+            emittedAtMs: source.emittedAtMs,
+            observedAtMs: observation.observedAtMs,
+          })
+        }
         recordCurrentFixGap(source.phase, observation.observedAtMs - previousObservedAtMs, {
           intervalStartedAtMs: interval.startedAtMs,
           previousObservedAtMs,
           auditedAtMs: observation.observedAtMs,
         })
         interval.lastObservedAtMs = observation.observedAtMs
+        previousCorrelatedFix = {
+          requestStartedAtMs: source.requestStartedAtMs,
+          emittedAtMs: source.emittedAtMs,
+          observedAtMs: observation.observedAtMs,
+        }
       }
       for (const operation of operationCheckpoints.values()) {
         if (operation.phase === source.phase
