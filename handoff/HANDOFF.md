@@ -21,8 +21,16 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   with profiling disabled; source/build/replay/tracking passed. Investigation
   now retains the largest correlated request/emission/map-update interval in
   the bounded failure receipt, separating polling cadence from delivery time.
-  Its regression is red/green; 282 affected tests and lint pass. Diagnostic CI
-  and the causal conclusion are recorded on PR #12; no timing fix is yet proved.
+  Its regression is red/green; 282 affected tests and lint pass. CI `34373548949`
+  passed once, then rejected a 219.5 ms frame before archive invocation. A
+  controlled cold-Mesa-cache reproduction now supports CPU page rasterization
+  for the Linux smoke: full local lifecycle passes at 16 and 4 CPUs, unchanged
+  200 ms gates. The CI argument regression is red/green; 216 affected tests
+  pass. All 400 source files / 4,157 tests pass, with five loopback-server
+  suites rerun outside the local sandbox; lint/build pass. Hosted CI is pending.
+  See the
+  [investigation](../docs/archive-ci-rendering-investigation.md); the older
+  current-position rejection is not relabelled as a proven archive defect.
 
 - DON-256's first twelve-item Sar_4 UI batch merged as
   [PR #11](https://github.com/donal0c/sartracker-web/pull/11) at `9c73c62d`.
