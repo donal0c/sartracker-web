@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 
 import { useMissionControlViewModel } from '../features/mission/use-mission-control-view-model'
 import { formatMissionDuration } from '../features/mission/mission-timers'
@@ -33,6 +33,7 @@ const MissionArchiveCleanupDialog = lazy(async () => {
 type MissionControlPanelProps = {
   readonly minimized?: boolean
   readonly onMinimizedChange?: (minimized: boolean) => void
+  readonly onActionErrorChange?: (error: string | null) => void
 }
 
 /**
@@ -41,6 +42,7 @@ type MissionControlPanelProps = {
 export function MissionControlPanel({
   minimized = false,
   onMinimizedChange,
+  onActionErrorChange,
 }: MissionControlPanelProps = {}) {
   const {
     phase,
@@ -97,10 +99,13 @@ export function MissionControlPanel({
     confirmUnlock,
   } = useMissionControlViewModel()
 
+  useEffect(() => { onActionErrorChange?.(actionError) }, [actionError, onActionErrorChange])
+
   const phasePresentation = selectMissionPhasePresentation(phase)
   const canMinimizeToMast =
     phase === 'active' &&
     currentMission !== null &&
+    actionError === null &&
     onMinimizedChange !== undefined
   const effectiveMinimized = canMinimizeToMast && minimized
 

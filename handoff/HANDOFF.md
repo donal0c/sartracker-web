@@ -4,6 +4,16 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
 
 ## Where we are
 
+- Active: DON-256 first twelve-item Sar_4 UI batch on
+  `codex/team-ui-feedback-batch-1`, base `3cdf555d`. Shared-renderer changes add
+  persistent tracking awareness, compact mission controls, complete rail collapse,
+  explicit device-list scrolling and a persisted contrast option. No native,
+  schema, archive or tracking-pipeline changes. Source 398 files/4,143 tests,
+  lint/build, 27 stable mission/UI tests and 23 independent screenshot reviews
+  passed; both focused reviews resolved. [Evidence](../docs/ui-feedback-batch-1-evidence.md)
+  records all twelve dispositions. Exact-head attestations/CI are tracked on
+  the batch PR and DON-256; Donal retains merge authority.
+
 - [PR #10](https://github.com/donal0c/sartracker-web/pull/10), programme PR6
   archive lifecycle, merged to `master` at `e0ead68852b10606551302b5104e409634c962e1`.
   DON-248, DON-252 and DON-253 are Done. All 95 external-review findings have

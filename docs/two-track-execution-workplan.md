@@ -123,6 +123,25 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
+**Authorized UI batch (2026-09-09): DON-256** owns the first twelve Sar_4
+feedback items on `codex/team-ui-feedback-batch-1`, base `3cdf555de93459c83198121b31053ff1d53db74e`.
+Risk and acceptance contract: reduce chrome without concealing tracking trust,
+mission/backup failures or recovery. Preserve domain state, layer filters and
+PR6 lifecycle/archive behavior; no schema/native changes. Cover Focus health,
+Devices Zoom, compact minimized mission/Review/Restore, complete rail collapse,
+coordinate-scale separation, Map Tools isolation, existing label drag/reload,
+secondary text, persisted high contrast and four desktop sizes (1280x720 through
+1920x1080). Run red-first focused regressions, affected browser/visual checks and
+independent capture review, one stable serial source/lint/build cycle, two final
+executable-head risk reviews and exact-head CI. Update manual and handoff before
+one reviewable PR; Donal merges. Other Sar_4 requests remain outside this batch.
+The explicit high-contrast option authorization supersedes the historical
+single-theme choice below. SAR-QA-002/008 retain current-position priority.
+Implementation and both focused-review remediations are complete; source,
+browser and screenshot evidence plus all twelve dispositions are recorded in
+[the batch evidence](ui-feedback-batch-1-evidence.md). Exact-head CI and review
+attestations are tracked in the PR/DON-256 before Donal's merge decision.
+
 1. Breadcrumb PR-1 through PR-6 are merged. [PR #10](https://github.com/donal0c/sartracker-web/pull/10) merged on 2026-09-09 at `e0ead68852b10606551302b5104e409634c962e1`; DON-248/252/253 are Done. All 95 updated review findings are dispositioned and final PR-head CI `34324371898` passed. Use [Testing and review cadence](testing-and-review-cadence.md) for new work. The old staged recovery/stop instructions are [archived](../handoff/archive/pr6-closeout-history-20260909.md), not the active sequence. Next: WAR-04B's narrow merged-head refresh, then BCP-17 final candidate qualification before DON-255 publication. Merge does not establish release or field acceptance.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.

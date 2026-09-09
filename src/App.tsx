@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
 import { DiagnosticsRuntimeBridge } from './features/diagnostics/diagnostics-runtime-bridge'
@@ -6,14 +6,10 @@ import { DiagnosticsWorkspace } from './components/diagnostics-workspace'
 import { DrawingDialog } from './components/drawing-dialog'
 import { CoordinateConverterDialog } from './components/coordinate-converter-dialog'
 import { DevicesWorkspace } from './components/devices-workspace'
-import { FocusModeSidebar } from './components/focus-mode-sidebar'
+import { OperationalSidebar } from './components/operational-sidebar'
 import { FocusModeToggle } from './components/focus-mode-toggle'
-import { DeferredGpxImportPanel } from './components/deferred-gpx-import-panel'
-import { HelicopterPanel } from './components/helicopter-panel'
-import { LayerFilterPanel } from './components/layer-filter-panel'
 import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
-import { MissionControlPanel } from './components/mission-control-panel'
 import { MarkerDialog } from './components/marker-dialog'
 import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
 import { OutingRuntimeBridge } from './features/outings/outing-runtime-bridge'
@@ -21,7 +17,6 @@ import { ParticipantRuntimeBridge } from './features/participants/participant-ru
 import { MeasurementRuntimeBridge } from './features/measurements/measurement-runtime-bridge'
 import { useAppStore } from './lib/app-store'
 import { MissionReviewRuntimeBridge } from './features/mission-review/mission-review-runtime-bridge'
-import { TrackingStatusPanel } from './components/tracking-status-panel'
 import { SettingsWorkspace } from './components/settings-workspace'
 import { loadAppSettings } from './infrastructure/settings-store/tauri-settings-store'
 import { exportSupportBundle } from './infrastructure/support-report/tauri-support-report-store'
@@ -48,6 +43,9 @@ import { reloadRuntimeFaultShell } from './features/runtime/runtime-fault-reload
 import { useTrackingStore } from './features/tracking/tracking-store'
 import { selectCommandMastTrackingReadout } from './features/tracking/command-mast-tracking-readout'
 import { APP_VERSION } from './lib/app-version'
+import { CompactMissionStrip } from './components/compact-mission-strip'
+import { PersistentTrackingHealth } from './components/persistent-tracking-health'
+import { ThemeToggle } from './components/theme-toggle'
 
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
@@ -55,22 +53,22 @@ const MapView = lazy(async () => {
   return { default: module.MapView }
 })
 
-/** Sidebar tab identifiers for the segmented control below Mission Control. */
-type SidebarTab = 'tracking' | 'tools' | 'layers'
 type RuntimeMode = 'electron' | 'hosted-browser'
-
-const SIDEBAR_TABS: readonly { readonly id: SidebarTab; readonly label: string }[] = [
-  { id: 'tracking', label: 'Tracking' },
-  { id: 'tools', label: 'Tools' },
-  { id: 'layers', label: 'Layers' },
-]
 
 function App() {
   const status = useAppStore((state) => state.status)
   const focusModeActive = useFocusModeStore((state) => state.active)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('tracking')
+  const [missionActionError, setMissionActionError] = useState<string | null>(null)
+  const [railCollapsed, setRailCollapsed] = useState(false)
   const [minimizedMissionControlId, setMinimizedMissionControlId] = useState<string | null>(null)
+  const handleMissionActionError = useCallback((error: string | null) => {
+    setMissionActionError(error)
+    if (error !== null) {
+      setMinimizedMissionControlId(null)
+      setRailCollapsed(false)
+    }
+  }, [])
   const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const browserTestingMode = shouldEnableMissionBrowserHarness()
   const runtimeMode: RuntimeMode = browserTestingMode ? 'hosted-browser' : 'electron'
@@ -78,8 +76,16 @@ function App() {
   const runtimeBootError = useRuntimeBootStore((state) => state.error)
   const missionPhase = useMissionStore((state) => state.phase)
   const currentMission = useMissionStore((state) => state.currentMission)
+  const governanceMission = useMissionStore((state) => state.governanceMission)
+  const railCollapseBlockedReason = missionActionError !== null
+    ? 'Resolve the mission action failure before hiding this workspace.'
+    : missionPhase === 'paused' || missionPhase === 'recovery' || governanceMission !== null
+      ? 'Mission pause, recovery or archive controls must remain visible.'
+      : null
+  const effectiveRailCollapsed = railCollapsed && railCollapseBlockedReason === null
   const missionControlMinimized =
     missionPhase === 'active' &&
+    missionActionError === null &&
     currentMission !== null &&
     minimizedMissionControlId === currentMission.id
 
@@ -122,11 +128,17 @@ function App() {
           missionControlMinimized={missionControlMinimized}
           onOpenDiagnostics={openDiagnosticsWorkspace}
           onOpenSettings={() => setSettingsOpen(true)}
-          onRestoreMissionControl={() => setMinimizedMissionControlId(null)}
           runtimeMode={runtimeMode}
           status={status}
         />
       )}
+      <div className="sar-awareness-strip">
+        {(missionControlMinimized || effectiveRailCollapsed) && <CompactMissionStrip onRestore={() => { setMinimizedMissionControlId(null); setRailCollapsed(false) }} />}
+        <PersistentTrackingHealth />
+        <ThemeToggle />
+        {effectiveRailCollapsed && <button autoFocus className="sar-button px-3 py-2 text-xs font-bold" data-testid="restore-workspace" onClick={() => setRailCollapsed(false)} type="button">Restore workspace</button>}
+        {focusModeActive && effectiveRailCollapsed && <FocusModeToggle className="sar-button px-3 py-2 text-xs" />}
+      </div>
       <RuntimeSafetyBanner
         browserTestingMode={browserTestingMode}
         focusModeActive={focusModeActive}
@@ -146,79 +158,15 @@ function App() {
           </Suspense>
         </section>
 
-        {/* Operational Sidebar - Fixed Right */}
-        {focusModeActive ? (
-          <FocusModeSidebar />
-        ) : (
-          <aside
-            className="sar-sidebar z-20 flex w-[400px] flex-col"
-            data-testid="operational-sidebar"
-          >
-            {/*
-              Pinned Mission Control — always visible. The height is normally
-              capped so the tab content below stays reachable, but while paused
-              we lift the cap (DON-64) so the paused alarm and Resume control can
-              never be clipped or scrolled out of view.
-            */}
-            {missionControlMinimized ? null : (
-              <div
-                className={`min-h-0 flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-5 ${
-                  missionPhase === 'paused' ? '' : 'max-h-[53vh]'
-                }`}
-                data-testid="mission-control-dock"
-              >
-                <MissionControlPanel
-                  minimized={missionControlMinimized}
-                  onMinimizedChange={(minimized) =>
-                    setMinimizedMissionControlId(minimized ? currentMission?.id ?? null : null)
-                  }
-                />
-              </div>
-            )}
-
-            {/* Segmented Tab Control */}
-            <div className="flex-shrink-0 px-5 pb-2 pt-3" data-testid="sidebar-tabs">
-              <div className="grid grid-cols-3 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] p-1">
-                {SIDEBAR_TABS.map((tab) => (
-                  <button
-                    className={`px-3 py-2 text-[12px] font-bold uppercase tracking-[0.08em] transition-colors ${
-                      sidebarTab === tab.id ? 'sar-tab-active shadow-sm' : 'sar-tab-inactive'
-                    }`}
-                    data-testid={`sidebar-tab-${tab.id}`}
-                    key={tab.id}
-                    onClick={() => setSidebarTab(tab.id)}
-                    type="button"
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Tab Content — scrollable */}
-            <div
-              className={`flex-1 overflow-y-auto px-5 py-4 ${sidebarTab === 'layers' ? 'flex flex-col' : 'space-y-5'}`}
-              data-testid="sidebar-tab-content"
-            >
-              {sidebarTab === 'tracking' && (
-                <>
-                  <TrackingStatusPanel />
-                </>
-              )}
-              {sidebarTab === 'tools' && (
-                <>
-                  <DeferredGpxImportPanel />
-                  <HelicopterPanel />
-                </>
-              )}
-              {sidebarTab === 'layers' && (
-                <>
-                  <LayerFilterPanel />
-                </>
-              )}
-            </div>
-          </aside>
-        )}
+        <OperationalSidebar
+          focusModeActive={focusModeActive}
+          collapsed={effectiveRailCollapsed}
+          minimized={missionControlMinimized}
+          collapseDisabledReason={railCollapseBlockedReason}
+          onActionErrorChange={handleMissionActionError}
+          onMinimizedChange={(minimized) => setMinimizedMissionControlId(minimized ? currentMission?.id ?? null : null)}
+          onCollapseWorkspace={() => setRailCollapsed(true)}
+        />
       </div>
 
       <DrawingDialog />
@@ -471,7 +419,6 @@ export function CommandMast(props: {
   readonly missionControlMinimized?: boolean
   readonly onOpenDiagnostics: () => void
   readonly onOpenSettings: () => void
-  readonly onRestoreMissionControl?: () => void
 }) {
   const phase = useMissionStore((state) => state.phase)
   const currentMission = useMissionStore((state) => state.currentMission)
@@ -492,9 +439,9 @@ export function CommandMast(props: {
 
   return (
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
-      <div className="sar-command-mast-grid grid min-h-[104px] w-full items-stretch overflow-hidden">
+      <div className="sar-command-mast-grid grid min-h-[80px] w-full items-stretch overflow-hidden">
         <div className="flex min-w-0 items-center gap-3 border-r border-[var(--sar-line)] px-4">
-          <div className="relative flex h-20 w-24 flex-shrink-0 items-center justify-center overflow-hidden border border-stone-200/40 bg-white">
+          <div className="relative flex h-14 w-16 flex-shrink-0 items-center justify-center overflow-hidden border border-stone-200/40 bg-white">
             <img
               alt="Mountain Rescue team logo"
               className="h-full w-full object-contain"
@@ -528,7 +475,7 @@ export function CommandMast(props: {
         </div>
 
         <div
-          className="min-w-0 border-r border-[var(--sar-line)] px-4 py-3"
+          className="min-w-0 border-r border-[var(--sar-line)] px-4 py-2"
           data-testid={
             props.missionControlMinimized && currentMission !== null
               ? 'command-mast-mission-control-minimized'
@@ -548,21 +495,6 @@ export function CommandMast(props: {
           <p className="mt-1 truncate font-mono text-[11px] uppercase tracking-[0.12em] text-stone-300">
             {currentMission === null ? 'Ready to start' : `Started ${formatTime(currentMission.start_time)}`}
           </p>
-          {props.missionControlMinimized && currentMission !== null ? (
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <span className="truncate text-[10px] font-black uppercase tracking-[0.08em] text-amber-300">
-                Minimized
-              </span>
-              <button
-                className="border border-stone-500 bg-[var(--sar-panel-raised)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-stone-100 transition hover:border-amber-300 hover:bg-stone-800"
-                data-testid="command-mast-mission-control-expand"
-                onClick={() => props.onRestoreMissionControl?.()}
-                type="button"
-              >
-                Expand
-              </button>
-            </div>
-          ) : null}
         </div>
 
         <TopReadout label="Elapsed" value={formatMissionDuration(timerState?.elapsedSeconds ?? 0)} />

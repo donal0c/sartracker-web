@@ -591,11 +591,11 @@ async function readTrackingLayerState(page: import('@playwright/test').Page) {
 }
 
 async function readSparseBreadcrumbLine(page: import('@playwright/test').Page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const map = (
       window as Window & {
         __SARTRACKER_MAP__?: {
-          getSource: (sourceId: string) => unknown
+          getSource: (sourceId: string) => { getData: () => Promise<{ features?: Array<{ properties?: { featureKind?: string; deviceId?: string }; geometry?: { coordinates?: unknown[] } }> }> } | undefined
           querySourceFeatures: (sourceId: string) => Array<{
             geometry?: { type?: string; coordinates?: unknown[] }
             properties?: { featureKind?: string; deviceId?: string }
@@ -605,6 +605,7 @@ async function readSparseBreadcrumbLine(page: import('@playwright/test').Page) {
     ).__SARTRACKER_MAP__
 
     const source = map?.getSource('tracking')
+    const sourceData = await source?.getData()
     const features = source === undefined ? [] : (map?.querySourceFeatures('tracking') ?? [])
     const lineFeatures =
       features.filter(
@@ -621,8 +622,11 @@ async function readSparseBreadcrumbLine(page: import('@playwright/test').Page) {
         0,
       ),
       hasLine: lineFeatures.length > 0,
+      // querySourceFeatures reports loaded, clipped vector tiles: their vertex
+      // counts change with viewport height. Check complete source geometry while
+      // retaining the independent rendered-line assertion above.
       coversSparseTrail:
-        lineFeatures.reduce(
+        (sourceData?.features ?? []).filter((feature) => feature.properties?.featureKind === 'breadcrumbLine' && feature.properties.deviceId === 'alpha').reduce(
           (total, feature) => total + (feature.geometry?.coordinates?.length ?? 0),
           0,
         ) >= 6,

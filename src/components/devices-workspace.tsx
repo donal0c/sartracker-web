@@ -138,7 +138,7 @@ function DevicesWorkspaceContent(props: {
         }
       />
 
-        <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
+        <div className="sar-devices-layout grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <section
             className="flex min-h-0 flex-col overflow-hidden border-r border-stone-800"
             data-testid="devices-workspace"
@@ -267,7 +267,7 @@ function DevicesWorkspaceContent(props: {
             </div>
 
             {/* Device list — fills remaining vertical space */}
-            <div className="min-h-0 flex-1 overflow-y-auto" data-testid="device-list-scroll">
+            <div aria-label="Device list; scroll horizontally for all actions" className="min-h-0 flex-1 overflow-auto" data-testid="device-list-scroll" role="region" tabIndex={0}>
               {filteredRows.length === 0 ? (
                 <p
                   className="px-6 py-6 text-sm text-stone-300"
