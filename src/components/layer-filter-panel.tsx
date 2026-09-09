@@ -26,7 +26,7 @@ import { isCoverageNodeId } from '../features/layers/layer-catalog-ids'
 /**
  * Renders the operational layer tree and feature inspection workspace.
  */
-export function LayerFilterPanel() {
+export function LayerFilterPanel({ onCollapseWorkspace, collapseDisabledReason = null }: { readonly onCollapseWorkspace?: () => void; readonly collapseDisabledReason?: string | null } = {}) {
   const root = useLayerCatalogStore((state) => state.root)
   const selectedNodeId = useLayerCatalogStore((state) => state.selectedNodeId)
   const catalogController = useLayerCatalogStore((state) => state.controller)
@@ -84,14 +84,18 @@ export function LayerFilterPanel() {
         <button
           className="sar-button px-3 py-1.5 text-xs font-bold uppercase tracking-[0.08em]"
           data-testid="layer-panel-toggle"
-          onClick={() => setPanelExpanded(!panelExpanded)}
+          disabled={collapseDisabledReason !== null}
+          title={collapseDisabledReason ?? 'Hide the right workspace without changing layers'}
+          onClick={() => onCollapseWorkspace ? onCollapseWorkspace() : setPanelExpanded(!panelExpanded)}
           type="button"
         >
-          {panelExpanded ? 'Collapse' : 'Expand'}
+          {onCollapseWorkspace || panelExpanded ? 'Collapse' : 'Expand'}
         </button>
       </div>
 
-      {panelExpanded ? (
+      {collapseDisabledReason !== null && <p className="mb-3 text-xs text-amber-200">{collapseDisabledReason}</p>}
+
+      {onCollapseWorkspace || panelExpanded ? (
         <div className="flex min-h-0 flex-1 flex-col gap-4">
           <input
             className="sar-input w-full px-3 py-2 text-xs"

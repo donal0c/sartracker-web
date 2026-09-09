@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useLayoutEffect } from 'react'
 
 import { useMissionControlViewModel } from '../features/mission/use-mission-control-view-model'
 import { formatMissionDuration } from '../features/mission/mission-timers'
@@ -9,6 +9,7 @@ import {
 } from './outing-controls-section'
 import { ParticipantControlsSection } from './participant-controls-section'
 import { InlineDecisionDialog } from './inline-decision-dialog'
+import { AdminRosterError } from './admin-roster-error'
 import { MAX_MISSION_NAME_BYTES } from '../lib/mission-name'
 
 const MISSION_NAME_INPUT_ID = 'mission-name-input'
@@ -33,6 +34,8 @@ const MissionArchiveCleanupDialog = lazy(async () => {
 type MissionControlPanelProps = {
   readonly minimized?: boolean
   readonly onMinimizedChange?: (minimized: boolean) => void
+  readonly onActionErrorChange?: (error: string | null) => void
+  readonly onDecisionOpenChange?: (open: boolean) => void
 }
 
 /**
@@ -41,6 +44,8 @@ type MissionControlPanelProps = {
 export function MissionControlPanel({
   minimized = false,
   onMinimizedChange,
+  onActionErrorChange,
+  onDecisionOpenChange,
 }: MissionControlPanelProps = {}) {
   const {
     phase,
@@ -55,6 +60,8 @@ export function MissionControlPanel({
     setStartOffsetHours,
     startError,
     actionError,
+    rosterError,
+    retryAdminRoster,
     duplicateWarning,
     showFinishDialog,
     setShowFinishDialog,
@@ -97,10 +104,16 @@ export function MissionControlPanel({
     confirmUnlock,
   } = useMissionControlViewModel()
 
+  const decisionOpen = showFinishDialog || showFinalizeDialog || showUnlockDialog || showCleanupDialog || showEvidenceLossDialog || governanceBusy
+  useLayoutEffect(() => { onActionErrorChange?.(actionError) }, [actionError, onActionErrorChange])
+  useLayoutEffect(() => { onDecisionOpenChange?.(decisionOpen) }, [decisionOpen, onDecisionOpenChange])
+
   const phasePresentation = selectMissionPhasePresentation(phase)
   const canMinimizeToMast =
     phase === 'active' &&
     currentMission !== null &&
+    actionError === null &&
+    !decisionOpen &&
     onMinimizedChange !== undefined
   const effectiveMinimized = canMinimizeToMast && minimized
 
@@ -114,7 +127,7 @@ export function MissionControlPanel({
       data-mission-phase={phase}
       data-testid="mission-control"
     >
-      <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
+      <div className="sar-mission-header mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
         <div>
           <span className="sar-section-label text-amber-300">Mission Control</span>
           <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
@@ -535,6 +548,7 @@ export function MissionControlPanel({
               />
             </label>
           </div>
+          <AdminRosterError message={rosterError} onRetry={retryAdminRoster} />
           {actionError !== null ? <MissionActionError message={actionError} /> : null}
           <div className="mt-4 flex gap-2">
             <button
@@ -562,6 +576,8 @@ export function MissionControlPanel({
           <MissionEvidenceLossDialog
             actionError={actionError}
             adminRoster={adminRoster}
+            rosterError={rosterError}
+            onRetryRoster={retryAdminRoster}
             evidenceLossReason={evidenceLossReason}
             governanceBusy={governanceBusy}
             onCancel={() => setShowEvidenceLossDialog(false)}

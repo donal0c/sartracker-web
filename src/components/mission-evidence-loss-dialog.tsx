@@ -1,4 +1,5 @@
 import { InlineDecisionDialog } from './inline-decision-dialog'
+import { AdminRosterError } from './admin-roster-error'
 
 const TITLE_ID = 'mission-evidence-loss-dialog-title'
 const DESCRIPTION_ID = 'mission-evidence-loss-dialog-description'
@@ -6,6 +7,8 @@ const DESCRIPTION_ID = 'mission-evidence-loss-dialog-description'
 type MissionEvidenceLossDialogProps = {
   readonly actionError: string | null
   readonly adminRoster: readonly string[]
+  readonly rosterError?: string | null
+  readonly onRetryRoster?: () => void
   readonly evidenceLossReason: string
   readonly governanceBusy: boolean
   readonly onCancel: () => void
@@ -58,6 +61,7 @@ export function MissionEvidenceLossDialog(props: MissionEvidenceLossDialogProps)
           />
         </label>
       </div>
+      {props.onRetryRoster && <AdminRosterError message={props.rosterError ?? null} onRetry={props.onRetryRoster} />}
       {props.actionError === null ? null : (
         <p
           className="mt-3 border border-rose-400/30 bg-rose-400/10 p-2 text-xs font-semibold text-rose-300"

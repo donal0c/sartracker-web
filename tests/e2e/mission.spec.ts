@@ -402,13 +402,13 @@ test.describe('M5 mission control workflows', () => {
 
     await page.getByTestId('mission-control-collapse-btn').click()
 
-    await expect(page.getByTestId('mission-control-dock')).toHaveCount(0)
+    await expect(page.getByTestId('mission-control-dock')).toBeHidden()
     await expect(page.getByTestId('command-mast-mission-control-minimized')).toBeVisible()
     await expect(page.getByTestId('command-mast-mission-control-minimized')).toContainText('Minimize Flow')
     await expect(page.getByTestId('mission-pause-resume-btn')).toHaveCount(0)
     await expect(page.getByTestId('mission-finish-btn')).toHaveCount(0)
 
-    await page.getByTestId('command-mast-mission-control-expand').click()
+    await page.getByTestId('compact-mission-restore').click()
 
     await expect(page.getByTestId('mission-control-dock')).toBeVisible()
     await expect(page.getByTestId('mission-control-collapse-btn')).toBeVisible()
@@ -429,7 +429,7 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-paused-banner')).toContainText('Mission paused')
   })
 
-  test('keeps Mission Control expanded in focus mode because the normal top mast is hidden', async ({ page }) => {
+  test('keeps expanded Mission Control usable when entering focus mode', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Focus-Minimize Guard')
     await page.getByTestId('mission-start-btn').click()
 
