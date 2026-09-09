@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 2,
+  "proofKind": "packaged-electron-archive-lifecycle-v2",
+  "source": {
+    "expectedHead": "10f399138004db3db2a2aff5772746acd7025196",
+    "headBefore": "10f399138004db3db2a2aff5772746acd7025196",
+    "headAfter": "10f399138004db3db2a2aff5772746acd7025196",
+    "treeBefore": "e65cc117e0339b2383194bbc65211839a07683df",
+    "treeAfter": "e65cc117e0339b2383194bbc65211839a07683df",
+    "worktreeCleanBefore": true,
+    "worktreeCleanAfter": true,
+    "packagedExecutableSha256": "6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8",
+    "packagedApplicationArchiveSha256": "ace42487bef13dad66c6ca5409932f69e320cf3e94df4afac4fce09c91645c84",
+    "packagedBuildHeadMatched": true
+  },
+  "run": {
+    "startedAt": "2026-09-09T00:06:55.339Z",
+    "finishedAt": "2026-09-09T00:07:39.463Z",
+    "durationMs": 44124,
+    "platform": "linux",
+    "architecture": "x64",
+    "nodeVersion": "v22.22.2",
+    "launchCount": 2,
+    "observedLaunchExitCount": 2
+  },
+  "mission": {
+    "missionId": "c8db9632-2785-4d76-bec9-a3afe547e113",
+    "missionNameSha256": "19838c80b6e3fc71cddf8d34e4b8a21fb15563196bce4d33067e269449fd4978",
+    "createdStatus": "active",
+    "finishedStatus": "finished",
+    "finalizedStatus": "finalized",
+    "seededOutingChoices": 101,
+    "seededPositionRows": 4096,
+    "seededReplayObjectRows": 202
+  },
+  "archive": {
+    "archiveId": "1b67beb9-4741-456e-b635-f45fd49e6851",
+    "containerVersion": 2,
+    "statusAfterFinalize": "verified",
+    "statusAfterIndependentVerify": "verified",
+    "availability": "present",
+    "ciphertextSha256": "cb0453b98b9fbf1f6886540cfe338fc9680f2ae7bc7650a17ed18c1772f17340",
+    "sizeBytes": 5788420,
+    "createProgressPhases": [
+      "attachments",
+      "digest",
+      "encrypt",
+      "extract",
+      "plaintext_cleanup",
+      "preflight",
+      "proof",
+      "publish",
+      "seal",
+      "snapshot",
+      "sqlite",
+      "staged",
+      "sync"
+    ],
+    "verifyProgressPhases": [
+      "attachments",
+      "decrypt",
+      "entries",
+      "gpx",
+      "inventory",
+      "keys",
+      "plaintext_cleanup",
+      "preflight",
+      "proof",
+      "replay",
+      "sqlite",
+      "verified"
+    ]
+  },
+  "reviewBeforeCleanup": {
+    "opened": true,
+    "immutable": true,
+    "verified": true,
+    "plaintextResidual": "permission_restricted_session_open",
+    "contentSha256": "e8ba13216da9137dfbe39dc9b376634acf74c717f8a5917590c0bba95805b89b",
+    "archiveIdMatched": true,
+    "readMissionIdMatched": true,
+    "breadcrumbCount": 4096,
+    "replayObjectCount": 202,
+    "replayOutingFilterCount": 101,
+    "replayTrackCount": 4096,
+    "openResidualFileCount": 1,
+    "openDirectoriesOwnerOnly": true,
+    "openFilesOwnerOnly": true,
+    "openPrivacyCanaryDetected": true,
+    "mutationAttempt": "upsertMarker",
+    "mutationBoundary": "preload_read_only",
+    "mutationDenied": true,
+    "denialAudited": true,
+    "closed": true,
+    "residualEntriesAfterClose": 0
+  },
+  "interruptedRestore": {
+    "supported": true,
+    "progressTriggered": true,
+    "triggerPhase": "decrypt",
+    "killSignalRequested": "SIGKILL",
+    "exitSignal": "SIGKILL",
+    "residualEntriesBeforeRestart": 2,
+    "plaintextFileObservedBeforeRestart": true,
+    "privacyCanaryDetectedBeforeRestart": true,
+    "restartSweepCompleted": true,
+    "residualEntriesAfterRestart": 0
+  },
+  "cleanup": {
+    "eligibilityChecked": true,
+    "eligibleBeforeCredential": false,
+    "freshCredentialOnlyBlocker": true,
+    "completed": true,
+    "storageState": "archived",
+    "movedRows": 5516,
+    "remainingBreadcrumbRows": 0
+  },
+  "reviewAfterCleanup": {
+    "opened": true,
+    "immutable": true,
+    "verified": true,
+    "plaintextResidual": "permission_restricted_session_open",
+    "contentSha256": "e8ba13216da9137dfbe39dc9b376634acf74c717f8a5917590c0bba95805b89b",
+    "archiveIdMatched": true,
+    "readMissionIdMatched": true,
+    "breadcrumbCount": 4096,
+    "replayObjectCount": 202,
+    "replayOutingFilterCount": 101,
+    "replayTrackCount": 4096,
+    "openResidualFileCount": 1,
+    "openDirectoriesOwnerOnly": true,
+    "openFilesOwnerOnly": true,
+    "openPrivacyCanaryDetected": true,
+    "mutationAttempt": "upsertMarker",
+    "mutationBoundary": "preload_read_only",
+    "mutationDenied": true,
+    "denialAudited": true,
+    "closed": true,
+    "residualEntriesAfterClose": 0
+  },
+  "liveness": {
+    "provenance": "packaged-electron-external-watchdog-v1",
+    "hardGateMs": 200,
+    "pollProfile": {
+      "mode": "time-compressed-validation",
+      "intervalMs": 50
+    },
+    "byPhase": {
+      "create": {
+        "sampleCount": 265,
+        "currentFixMaxGapMs": 129,
+        "sourceToRendererMaxMs": 52,
+        "requestToRendererMaxMs": 52,
+        "mainWatchdogMaxGapMs": 75.62398400000166,
+        "rendererFrameMaxGapMs": 100
+      },
+      "verify": {
+        "sampleCount": 48,
+        "currentFixMaxGapMs": 121,
+        "sourceToRendererMaxMs": 60,
+        "requestToRendererMaxMs": 60,
+        "mainWatchdogMaxGapMs": 63.02497299999959,
+        "rendererFrameMaxGapMs": 77
+      },
+      "restore": {
+        "sampleCount": 81,
+        "currentFixMaxGapMs": 147,
+        "sourceToRendererMaxMs": 74,
+        "requestToRendererMaxMs": 74,
+        "mainWatchdogMaxGapMs": 76.17435300000216,
+        "rendererFrameMaxGapMs": 95.90000003576279
+      },
+      "cleanup": {
+        "sampleCount": 52,
+        "currentFixMaxGapMs": 118,
+        "sourceToRendererMaxMs": 36,
+        "requestToRendererMaxMs": 36,
+        "mainWatchdogMaxGapMs": 64.94664799999737,
+        "rendererFrameMaxGapMs": 49.5
+      }
+    }
+  },
+  "privacy": {
+    "secretsProvidedOnlyViaPreload": true,
+    "secretsAbsentFromProcessArguments": true,
+    "secretsAbsentFromEvidence": true,
+    "exactSecretScanFiles": 73,
+    "exactSecretMatches": 0,
+    "plaintextResidueEntriesAtEnd": 0
+  },
+  "verdict": {
+    "passed": true,
+    "failureReasons": []
+  }
+}

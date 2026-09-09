@@ -196,3 +196,14 @@ The new regression failed before this change; all 42 verification/envelope/runne
 tests pass. The superseded `4e7061c5` CI run was cancelled, not rejected, while
 this remaining part of the visible finding was completed. New clean package
 receipts and a replacement current-head CI are required for this final change.
+
+Final implementation `10f399138004db3db2a2aff5772746acd7025196`, tree
+`e65cc117e0339b2383194bbc65211839a07683df`, passes both clean packaged
+lifecycle validators again after M-2. Main/current/frame maxima: macOS
+53.943/67/16.300 ms; reference four-logical-CPU Linux 76.175/147/100 ms.
+A further focused check with CI's render tracing enabled also passes at
+81.786/147/111.5 ms. All three canonical validators return valid/passed true,
+with two launches, matching Review, cleanup, interruption/restart and zero
+exact secret matches/final plaintext residue. Receipts are the three
+`docs/evidence/pr6/review-remediation-10f39913-*-20260909.json` files.
+Current-head ordinary CI is the remaining remote check.
