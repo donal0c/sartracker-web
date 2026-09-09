@@ -46,13 +46,18 @@ despite running in the same CI job. The run does not convert the prior-head
 reviews into final-head reviews or prove release, live-provider, long-duration
 field, archive-security, or restore-and-replay behavior.
 
-The `DON-248`/`DON-252`/`DON-253` archive-lifecycle successor is also not
-implemented. The canonical programme policy and ADR name that successor
-programme PR-6. Programme PR-5 was the evidence/replay slice merged as
-`eec92812b783a795c093f37268b295dd2179a3af`. The programme PR-6 ordinal
-must not be confused with GitHub PR #6, which is this docs-only assurance PR.
-Archive security, streaming, archive-backed review, and restore-and-replay
-remain `rewrite-pending` under those issue owners.
+### Targeted post-PR6 reconciliation (2026-09-09)
+
+Programme PR6 / GitHub PR #10 merged at
+`e0ead68852b10606551302b5104e409634c962e1` from tested head `1b1f86ee`.
+[WAR-04B](findings/WAR-04B.md) refreshes only the directly affected archive and
+release/package rows against master `3cdf555de93459c83198121b31053ff1d53db74e`.
+The streamed encrypted archive, verification, restore, recovery and read-only
+Review implementation has landed; RPL-004 is now an `evidence-tier-gap`, not
+an unimplemented rewrite. Historical PR6 scale/interruption evidence retains
+its exact earlier heads. Local exact-master native/package inspection passed,
+but its lifecycle rejected 203 ms current continuity; Linux CI `34338004244` passes the exact-master synthetic lifecycle and package gates. The local failure remains unresolved. This neither advances unrelated application rows nor qualifies a
+release. Release verdict remains HOLD.
 
 ## Assurance objective
 
@@ -169,9 +174,8 @@ the landed code and opened tests. Reclassification records a control only where
 the merged path and inspected test justify it; it does not inherit an assurance
 claim merely because PR5 merged.
 
-The next mandatory reconciliation remains the unimplemented
-`DON-248`/`DON-252`/`DON-253` archive-lifecycle successor. Keep `RPL-004`
-`rewrite-pending` until its streamed encrypted/locked archive, key custody,
-restore-and-replay, large-file, and recovery matrices land and are inspected.
-After any such merge, retrace every changed archive/replay/finalization row and
-obtain fresh exact-head broad life-safety and focused traceability reviews.
+The targeted post-PR6 archive/package/release refresh is recorded in WAR-04B.
+Remaining exact-candidate platform, interruption, custody and field acceptance
+belongs to DON-254/DON-255; the local timing rejection is not erased by historical
+PR6 passes. The broader WAR-01 snapshot remains unchanged outside that overlay.
+The refresh requires its two independent final-head reviews and normal CI.

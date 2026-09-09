@@ -4,6 +4,14 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
 
 ## Where we are
 
+- WAR-04B post-PR6 refresh is active on `codex/war-04b-post-pr6-refresh`, pinned
+  to master `3cdf555d`. [Report](../docs/assurance/findings/WAR-04B.md) records
+  fresh audits/live controls, 265 focused passing tests and local package/native
+  inventory. Local lifecycle rejects 203 ms current continuity; cleanup passes,
+  cause unknown, same-head retry refused. Independent Linux `34338004244` passes
+  all gates; downloaded executable/ASAR match its receipt. Final reviews and
+  PR-head CI binding are recorded on the review PR. Release HOLD; no remediation/publication.
+
 - [PR #10](https://github.com/donal0c/sartracker-web/pull/10), programme PR6
   archive lifecycle, merged to `master` at `e0ead68852b10606551302b5104e409634c962e1`.
   DON-248, DON-252 and DON-253 are Done. All 95 external-review findings have

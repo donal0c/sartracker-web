@@ -7,10 +7,11 @@ operational use. It does not qualify an artifact, close a residual risk, replace
 the final release matrix, or authorize publication. The release note for the
 exact candidate must link this protocol and complete its session-specific fields.
 
-The archive-lifecycle issue set (`DON-248`, `DON-252`, and `DON-253`) is not
-implemented at the time this protocol is written. Archive, restore, custody,
-and archive-backed review therefore remain unqualified and must not be relied
-upon during shadow use.
+The archive-lifecycle issue set (`DON-248`, `DON-252`, and `DON-253`) merged in
+PR #10 on 2026-09-09. Implementation and its pre-merge engineering evidence do
+not satisfy this protocol's field admission gate. Exact-candidate qualification,
+custody and release acceptance remain DON-254/DON-255 work; the
+[post-PR6 WAR-04B refresh](findings/WAR-04B.md) retains release HOLD.
 
 ## 1. What shadow use means
 
