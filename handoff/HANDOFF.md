@@ -22,6 +22,14 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   on the PR. Keep unmerged; no release authority is granted.
   DON-146 owns this slice; DON-254/DON-255 retain final qualification/publication.
 
+- **Three-stream coordination is locked (2026-09-09):** SAR-team feedback,
+  confirmed deep-audit defects, and WAR hardening share the
+  [coordinated work ledger](../docs/assurance/coordinated-work-ledger.md).
+  Team Feedback Batch 2 owns only `AUD-07` and `AUD-14`; twelve other confirmed
+  audit findings are grouped into four later repair trains. BCP-17/final
+  qualification waits for release-blocking repairs and applicable WAR-04
+  remediation, then runs against one frozen exact candidate.
+
 - [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, merged
   at `c51e4b35`. Final executable evidence is CI `34386382652` on `03b09a7e`:
   400 files / 4,158 tests and all packaged gates; downloaded receipt validates.
