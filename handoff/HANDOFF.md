@@ -7,30 +7,23 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
 - [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, now
   integrates master `9c73c62d` at Donal's request. Its audit/package inventory
   remains pinned to `3cdf555d`; newer integration CI is recorded on the PR.
-  The IPC-003/macOS review corrections remain intact. Prior `99934a2a` CI
-  rejected source timing, then a 202.4 ms archive-create renderer frame; local
-  203 ms continuity rejection also remains unexplained. No threshold changed.
+  IPC-003/macOS corrections and all three resolved review threads remain intact.
   [Report](../docs/assurance/findings/WAR-04B.md) retains evidence limits;
   release HOLD remains. Only handoff conflicted; product code matches upstream.
-  Integrated CI also rejected restore/current and create/frame timing. Removed
-  its leftover temporary Chrome profiler from normal CI; opt-in diagnostics
-  and all strict watchdog gates remain. Red/green workflow-to-runtime regression
-  and 244 focused tests pass. Remaining review threads now reconcile PR6
-  hazard controls, merged workplan status and release-bearing dev dependency
-  policy. CI `34360407470` still rejected restore current continuity at 226 ms
-  with profiling disabled; source/build/replay/tracking passed. Investigation
-  now retains the largest correlated request/emission/map-update interval in
-  the bounded failure receipt, separating polling cadence from delivery time.
-  Its regression is red/green; 282 affected tests and lint pass. CI `34373548949`
-  passed once, then rejected a 219.5 ms frame before archive invocation. A
-  controlled cold-Mesa-cache reproduction now supports CPU page rasterization
+  CI rejected restore/current continuity at 226 ms and initial frames at
+  219.5 ms with profiling disabled. Paired current-fix diagnostics are retained.
+  A controlled cold-Mesa-cache reproduction supports CPU page rasterization
   for the Linux smoke: full local lifecycle passes at 16 and 4 CPUs, unchanged
   200 ms gates. The CI argument regression is red/green; 216 affected tests
   pass. All 400 source files / 4,157 tests pass, with five loopback-server
-  suites rerun outside the local sandbox; lint/build pass. Hosted CI is pending.
-  See the
-  [investigation](../docs/archive-ci-rendering-investigation.md); the older
-  current-position rejection is not relabelled as a proven archive defect.
+  suites rerun outside the local sandbox; lint/build and packaged visuals pass.
+  Both `de4d367e` CI attempts stopped before tests on an unrelated Chrome APT
+  index hash mismatch. Validation APT commands now select the runner's main
+  Ubuntu sources; integrity checks remain enabled. Red/green workflow check,
+  17 affected tests, real APT source-selection check and actionlint pass.
+  Hosted CI is pending. See the
+  [investigation](../docs/archive-ci-rendering-investigation.md); historical
+  failures remain recorded and release HOLD is unchanged.
 
 - DON-256's first twelve-item Sar_4 UI batch merged as
   [PR #11](https://github.com/donal0c/sartracker-web/pull/11) at `9c73c62d`.

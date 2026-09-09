@@ -73,5 +73,26 @@ rendered dot and label in the packaged map. The active WebGL context reported
 Remote basemap tiles were intentionally blocked by the smoke profile; their
 degraded state is not tile-rendering proof. Screenshot capture was separate
 from the cold-cache timing comparisons.
-Normal hosted CI is pending and must establish whether this correction
-resolves its observed failure before this PR is called merge-ready.
+
+## Independent runner package-index failure
+
+The correction was pushed as `de4d367e`. Both attempts of run `34385748674`
+stopped during `apt-get update`, before Node installation or application tests.
+Google's Chrome repository supplied a package index whose SHA-256 differed
+from its release metadata. One diagnosed retry confirmed the same mismatch;
+no package-integrity check was bypassed.
+
+The standalone validation job installs Ubuntu runtime packages, so its APT
+update and install commands now use `Dir::Etc::sourceparts=-`. This excludes
+runner-added third-party feeds for these invocations, retaining the runner's
+main Ubuntu source list and normal authentication/integrity checks. A missing
+or empty main source list fails before APT runs. No source-list file is deleted.
+
+The workflow regression failed before this correction; 17 affected tests,
+lint and actionlint then passed. A real APT `--print-uris` comparison with
+separate Ubuntu and Chrome fixture sources confirmed that Ubuntu remains
+selected and Chrome is excluded. Product/runtime code is unchanged since
+the completed source cycle above; those results remain applicable.
+
+Normal hosted CI is pending and must exercise the rendering correction before
+this PR is called merge-ready.

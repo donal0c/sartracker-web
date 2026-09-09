@@ -77,6 +77,15 @@ function expectMesaLaunch(step: WorkflowStep): void {
 }
 
 describe('Linux Electron renderer workflows [DON-260]', () => {
+  it('scopes validation runtime packages to the runner Ubuntu sources [DON-254]', () => {
+    const workflow = readWorkflow('.github/workflows/electron-linux-validation.yml')
+    const install = selectStep(workflow.jobs.build, 'Install Linux Electron runtime deps').run ?? ''
+    expect(install).toContain('test -s /etc/apt/sources.list')
+    expect(install).toContain('sudo apt-get -o Dir::Etc::sourceparts=- update')
+    expect(install).toContain('sudo apt-get -o Dir::Etc::sourceparts=- install -y')
+    expect(install).not.toMatch(/allow-unauthenticated|AllowInsecure|trusted=yes/u)
+  })
+
   it('pins both release workflow Linux paths to Mesa without Vulkan fallback', () => {
     const workflowPath = '.github/workflows/electron-release.yml'
     const workflowSource = readFileSync(workflowPath, 'utf8')

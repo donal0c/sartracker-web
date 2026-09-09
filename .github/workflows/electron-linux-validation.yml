@@ -75,8 +75,11 @@ jobs:
 
       - name: Install Linux Electron runtime deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          # These packages come from Ubuntu, not runner-added Chrome or
+          # Microsoft feeds. Keep their index failures out of this install.
+          test -s /etc/apt/sources.list
+          sudo apt-get -o Dir::Etc::sourceparts=- update
+          sudo apt-get -o Dir::Etc::sourceparts=- install -y \
             dbus-x11 \
             gnome-keyring \
             imagemagick \
