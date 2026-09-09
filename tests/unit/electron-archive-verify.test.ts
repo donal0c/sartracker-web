@@ -340,6 +340,8 @@ function replaceArchiveBytes(
 }
 
 describe('independent mission archive verification', () => {
+  // These cases create real encrypted fixtures. Match the neighbouring 60 s
+  // integration budget; this is separate from the runtime's 200 ms liveness gate.
   it('authenticates one fresh non-machine cleanup slot while hashing the exact pinned archive', async () => {
     const { fixture, result } = await createArchive()
     const cancellationFlag = new Int32Array(new SharedArrayBuffer(4))
@@ -362,7 +364,7 @@ describe('independent mission archive verification', () => {
       secretBytes: Buffer.from(recoveryCode, 'utf8'),
       cancellationFlag,
     })).resolves.toMatchObject({ slotType: 'recovery', custodyReconciled: true })
-  })
+  }, 60_000)
 
   it('rejects a wrong cleanup secret and a same-path ciphertext substitution without an unwrap claim', async () => {
     const { fixture, result } = await createArchive()
@@ -383,7 +385,7 @@ describe('independent mission archive verification', () => {
       secretBytes: Buffer.from(passphrase, 'utf8'),
       cancellationFlag,
     })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_CUSTODY_MISMATCH' })
-  })
+  }, 60_000)
 
   it('classifies a registered key-slot tag mutation as custody corruption, never a wrong secret', async () => {
     const { fixture, result } = await createArchive()
@@ -408,7 +410,7 @@ describe('independent mission archive verification', () => {
       secretBytes: Buffer.from(passphrase, 'utf8'),
       cancellationFlag: new Int32Array(new SharedArrayBuffer(4)),
     })).rejects.toMatchObject({ code: 'ARCHIVE_CLEANUP_CUSTODY_MISMATCH' })
-  })
+  }, 60_000)
 
   it('proves recovery request row 6 without substituting protected finalization epoch 5', async () => {
     const { fixture, result } = await createRecoveryArchive()

@@ -47,6 +47,11 @@
 
 ## Next Actions And Issues
 
+- CI `34321601249` rejected three default-five-second archive fixture timeouts
+  and one 353.165 ms GPX write. Fixture deadlines now match their 60-second
+  siblings; GPX's 200 ms gate is unchanged with added diagnostics. Both affected
+  suites pass locally and on reference Linux (86 each); GPX cause was not
+  reproduced. Full details and the rejected run remain in the complete ledger.
 - Check ordinary final-head Linux CI on PR #10 before author-side completion.
   Once green, remaining work is external review and separately authorized merge.
   Local source/build/lint, browser/visual and clean macOS packaged smoke pass.

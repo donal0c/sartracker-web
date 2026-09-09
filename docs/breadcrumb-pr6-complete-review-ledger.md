@@ -36,6 +36,30 @@ and proportionate smokes.
   and DON-252/253. Prior full field-scale and 32-case interruption results remain
   historical; no fresh claim is made here.
 
+## CI follow-up
+
+Run `34321601249` on `7239951c` passed 4,133 tests and rejected four. Three
+archive-credential cases exceeded Vitest's default five-second timeout; the
+remaining fixture-backed cases already used 60 seconds. The same three failures
+reproduced on the disposable reference Linux checkout. Giving them that existing
+integration deadline passes all 13 cases; the three take 6.5–6.8 seconds there.
+This changes no cryptographic parameter or application deadline.
+
+The fourth rejection measured a 353.165 ms awaited current-position write during
+the unchanged 50k-point GPX test, against its 200 ms gate. The GPX worker and
+responsive writer are unchanged from the previously passing baseline. Baseline
+and current-source reference runs passed, including a diagnostic single-core
+probe. A diagnostic-only writer trace on the current source measured 64.227 ms
+worst latency, three attempts and 12.895 ms total SQLite execution; this does not
+establish the cause of the CI outlier. The temporary instrumentation was removed.
+
+The 200 ms assertion remains unchanged. The test now records bounded process-CPU
+and event-loop heartbeat diagnostics for a future failure. Both affected suites
+pass locally (86 tests; GPX write 84.679 ms, heartbeat 23.819 ms) and on the
+reference Linux host (86 tests; GPX write 89.122 ms, heartbeat 42.211 ms). No production
+change is attributed to the unreplicated timing outlier, and the rejected run is
+not erased or promoted to passing proof. Final-head CI remains the completion gate.
+
 ## High and Medium-High
 
 | ID | Prior disposition / remaining assessment |

@@ -4131,25 +4131,45 @@ describe('mission evidence versioning [DON-277]', () => {
     const importing = store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
       .finally(() => { importSettled = true })
     let maximumWriteMs = 0
+    let largestWriteProcessCpuMs = 0
+    let maximumHeartbeatGapMs = 0
+    let previousHeartbeat = performance.now()
+    const heartbeat = setInterval(() => {
+      const now = performance.now()
+      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, now - previousHeartbeat)
+      previousHeartbeat = now
+    }, 10)
     let sequence = 0
-    while (!importSettled && sequence < 500) {
-      const startedAt = performance.now()
-      await store.addPosition({
-        mission_id: mission.id,
-        device_id: 'current-device',
-        source_position_id: `current-${sequence}`,
-        lat: 52,
-        lon: -9.7,
-        timestamp: new Date().toISOString(),
-        timestamp_source: 'fix',
-      })
-      maximumWriteMs = Math.max(maximumWriteMs, performance.now() - startedAt)
-      sequence += 1
-      await new Promise((resolve) => setTimeout(resolve, 1))
+    try {
+      while (!importSettled && sequence < 500) {
+        const startedAt = performance.now()
+        const cpuStarted = process.cpuUsage()
+        await store.addPosition({
+          mission_id: mission.id,
+          device_id: 'current-device',
+          source_position_id: `current-${sequence}`,
+          lat: 52,
+          lon: -9.7,
+          timestamp: new Date().toISOString(),
+          timestamp_source: 'fix',
+        })
+        const elapsed = performance.now() - startedAt
+        if (elapsed > maximumWriteMs) {
+          maximumWriteMs = elapsed
+          const cpu = process.cpuUsage(cpuStarted)
+          largestWriteProcessCpuMs = (cpu.user + cpu.system) / 1_000
+        }
+        sequence += 1
+        await new Promise((resolve) => setTimeout(resolve, 1))
+      }
+      await importing
+    } finally {
+      clearInterval(heartbeat)
     }
-    await importing
+    const diagnostics = { maximumWriteMs, largestWriteProcessCpuMs, maximumHeartbeatGapMs, sequence }
+    process.stdout.write(`GPX current-write diagnostics: ${JSON.stringify(diagnostics)}\n`)
     expect(sequence).toBeGreaterThan(0)
-    expect(maximumWriteMs).toBeLessThan(200)
+    expect(maximumWriteMs, JSON.stringify(diagnostics)).toBeLessThan(200)
   }, 30_000)
 
   it('keeps current writes below 200 ms while retaining an exact-limit 8 MiB GPX source [DON-274]', async () => {
