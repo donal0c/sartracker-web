@@ -6,7 +6,10 @@ import { join } from 'node:path'
 import { createRequire } from 'node:module'
 
 describe('packaged private-data exclusion [DON-146]', () => {
-  it('opens logical ASAR entries and rejects private data hidden behind an innocent name', async () => {
+  it.each([
+    ['innocent.bin', 'SQLite format 3\0synthetic fixture'],
+    ['credentials.yaml', 'synthetic: fixture'],
+  ])('opens logical ASAR entries and rejects %s', async (name, contents) => {
     const root = mkdtempSync(join(tmpdir(), 'sartracker-asar-inventory-'))
     const require = createRequire(import.meta.url)
     const asar = require('@electron/asar')
@@ -15,13 +18,15 @@ describe('packaged private-data exclusion [DON-146]', () => {
       const bundle = join(root, 'bundle')
       mkdirSync(source)
       mkdirSync(join(bundle, 'resources'), { recursive: true })
-      writeFileSync(join(source, 'innocent.bin'), 'SQLite format 3\0synthetic fixture')
+      writeFileSync(join(source, name), contents)
       await asar.createPackage(source, join(bundle, 'resources/app.asar'))
       expect(() => inspectLinuxPackage(bundle, { packages: {} })).toThrow(/private/)
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
   it.each(['maps/private.mbtiles', 'data/mission.sqlite', 'x/archive.sararchive',
     'profile/Cookies', 'scratch/output.json', '.env', 'credentials.json',
+    'shared/credentials.yaml', 'electron/secrets.txt', 'dist/cookies.csv',
+    'shared/credentials.yaml.backup',
     'tmp/receipt.json', 'test-results/screenshot.png', 'evidence/raw.json',
     'maps/source.tif', 'maps/source.gpkg', 'mission-track.gpx', 'diagnostics/raw.json'])('rejects %s', (name) => {
     expect(() => assertPublicPackageEntry(name, Buffer.from('synthetic'))).toThrow(/private/)

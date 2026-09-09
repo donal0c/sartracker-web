@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const asar = require('@electron/asar')
-const privateName = /\.(?:sararch|sararchive|zip|sqlite|sqlite3|db|mbtiles|pmtiles|gpkg|gpx|tiff?|p12|pfx|pem|key)(?:-(?:wal|shm))?$|(?:^|\/)(?:tmp|test-results|verification|scratch|profiles?|evidence|raw-evidence|diagnostics|fixtures|\.git|\.env(?:\.[^/]*)?|id_rsa)(?:\/|$)|(?:^|\/)(?:credentials?|secrets?|cookies|login data)(?:\.json)?$/i
+const privateName = /\.(?:sararch|sararchive|zip|sqlite|sqlite3|db|mbtiles|pmtiles|gpkg|gpx|tiff?|p12|pfx|pem|key)(?:-(?:wal|shm))?$|(?:^|\/)(?:tmp|test-results|verification|scratch|profiles?|evidence|raw-evidence|diagnostics|fixtures|\.git|\.env(?:\.[^/]*)?|id_rsa)(?:\/|$)|(?:^|\/)(?:credentials?|secrets?|cookies|login data)(?:\.[^/]+)?$/i
 
 /** Reject named private payloads and known database/archive signatures, without printing content. */
 export function assertPublicPackageEntry(name, bytes) {

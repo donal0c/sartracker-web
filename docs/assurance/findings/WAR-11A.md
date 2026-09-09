@@ -125,3 +125,11 @@ failures or establish Linux/field equivalence.
 Final PR-head CI, downloaded receipt validation and both independent final-head
 reviews are recorded on the PR, avoiding a self-referential evidence commit.
 Until those records exist, no final-head readiness claim is made.
+
+PR review follow-up: CI `34395228284` passed 403 files / 4,195 tests and every
+packaged gate on `f72ade97`. Automated review then found that named credential
+files with non-JSON extensions escaped the category filter. Five new regressions
+failed first (including logical ASAR), then passed after extending the exact
+credential basename match to every suffix, including multiple extensions.
+`credentials-store.cjs` remains allowed. Final-head CI and independent rechecks
+supersede the earlier green head; the earlier run is retained, not relabelled.

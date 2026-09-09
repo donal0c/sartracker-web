@@ -13,6 +13,8 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   native macOS archive receipt independently passes all phases and recovery.
   These are different disposable snapshots, not final PR-head/Linux proof.
   [WAR-11A](../docs/assurance/findings/WAR-11A.md) holds hashes and limits.
+  PR #14's first CI passed all gates on `f72ade97`; automated review then found
+  a credential filename suffix gap, fixed with five red/green regressions.
   Next: final-head Ubuntu CI/downloaded receipt validation and two independent
   reviews, recorded on the PR. Keep unmerged; no release authority is granted.
   DON-146 owns this slice; DON-254/DON-255 retain final qualification/publication.
