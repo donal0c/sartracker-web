@@ -4,16 +4,24 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- WAR-04B post-PR6 refresh is active on `codex/war-04b-post-pr6-refresh`, pinned
-  to master `3cdf555d`. [Report](../docs/assurance/findings/WAR-04B.md) records
-  fresh audits/live controls, 265 focused passing tests and local package/native
-  inventory. Local lifecycle rejects 203 ms current continuity; cleanup passes,
-  cause unknown, same-head retry refused. Independent Linux `34338004244` passes
-  all gates; downloaded executable/ASAR match its receipt. Final reviews and
-  PR-head CI binding are recorded on the review PR. Review follow-up corrects
-  IPC-003's stale archive cross-reference and labels macOS unqualified; prose
-  is rewrapped. Source facts, links and unchanged code/test/config were checked;
-  prior runtime evidence remains ancestor-specific. Release HOLD unchanged.
+- [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, now
+  integrates master `9c73c62d` at Donal's request. Its audit/package inventory
+  remains pinned to `3cdf555d`; newer integration CI is recorded on the PR.
+  The IPC-003/macOS review corrections remain intact. Prior `99934a2a` CI
+  rejected source timing, then a 202.4 ms archive-create renderer frame; local
+  203 ms continuity rejection also remains unexplained. No threshold changed.
+  [Report](../docs/assurance/findings/WAR-04B.md) retains evidence limits;
+  release HOLD remains. Only handoff conflicted; executable/test/config trees
+  match upstream, and documentation facts/links/diff were checked.
+
+- DON-256's first twelve-item Sar_4 UI batch merged as
+  [PR #11](https://github.com/donal0c/sartracker-web/pull/11) at `9c73c62d`.
+  Tested upstream head `e384ea8a` has green CI `34345038450`; source
+  400 files/4,155 tests, 89 affected browser/visual tests plus roster retry,
+  and 27 screenshot reviews are retained in its
+  [evidence](../docs/ui-feedback-batch-1-evidence.md). Persistent tracking,
+  compact/collapsible controls and contrast changes are upstream UI work;
+  their prior timing rejections are not claimed fixed by this integration.
 
 - [PR #10](https://github.com/donal0c/sartracker-web/pull/10), programme PR6
   archive lifecycle, merged to `master` at `e0ead68852b10606551302b5104e409634c962e1`.

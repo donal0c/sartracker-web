@@ -41,9 +41,9 @@
   /** Primary body text alternate – legible at distance. */
   --sar-text-strong: #ece8e1;
   /** Secondary text – meets WCAG AA on the panel backgrounds. */
-  --sar-text-muted: #c2bdb5;
+  --sar-text-muted: #d6d1ca;
   /** Tertiary chrome labels – section headings, telemetry caps. */
-  --sar-text-dim: #9c958b;
+  --sar-text-dim: #bdb6ad;
   --sar-amber: #f4b74a;
   --sar-amber-strong: #f59e0b;
   --sar-emerald: #34d399;
@@ -69,6 +69,50 @@ body,
 
 body {
   margin: 0;
+}
+
+/* Operational awareness stays outside panels, with deliberate wrapping at zoom. */
+.sar-awareness-strip {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--sar-line);
+  background: var(--sar-panel);
+}
+.sar-persistent-health { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; padding: 0.35rem 0.6rem; font-size: 12px; }
+.sar-compact-mission { display: flex; align-items: center; gap: 0.65rem; font-size: 12px; }
+.sar-compact-mission > span:first-child { max-width: 12rem; }
+.sar-device-list-scroll { scrollbar-gutter: stable; }
+.sar-device-grid { min-width: 59.5rem; }
+.sar-devices-inspector { padding: 1rem; }
+.sar-devices-inspector h3 { overflow-wrap: anywhere; }
+.sar-devices-layout > section { overflow-y: auto; }
+.sar-devices-layout .sar-device-list-scroll { min-height: 10rem; }
+@media (max-width: 1023px) {
+  .sar-devices-layout { overflow-y: auto; display: flex; flex-direction: column; }
+  .sar-devices-layout > section { flex: 0 0 auto; }
+  .sar-devices-layout .sar-device-list-scroll { max-height: 45vh; }
+  .sar-devices-layout > aside { flex-shrink: 0; overflow: visible; }
+}
+.sar-operational-sidebar { flex-shrink: 0; min-height: 0; max-width: 42vw; }
+.sar-workspace-content { min-height: 0; }
+.sar-mission-dock-focus { max-height: 48vh; }
+.sar-mission-header { flex-wrap: wrap; gap: 0.5rem; }
+:where(.sar-shell) .text-stone-400, :where(.sar-shell) .text-stone-500 { color: var(--sar-text-dim); }
+.sar-shell input::placeholder { color: var(--sar-text-dim); opacity: 1; }
+.sar-shell :is(button, a, input, select, textarea):focus-visible { outline: 3px solid #facc15; outline-offset: 2px; }
+:root[data-theme='high-contrast'] { --sar-panel: #000; --sar-panel-sunken: #000; --sar-panel-raised: #202020; --sar-line: #bdbdbd; --sar-text: #fff; --sar-text-strong: #fff; --sar-text-muted: #f0f0f0; --sar-text-dim: #dedede; }
+[data-theme='high-contrast'] :is(.sar-panel, .sar-sidebar, .sar-control-dock, .sar-rail-section) { background: #000; border-color: #bdbdbd; }
+[data-theme='high-contrast'] :is(button, input, select, textarea) { border-color: #bdbdbd; }
+[data-theme='high-contrast'] button:disabled { opacity: 1; border-style: dashed; color: #bdbdbd; cursor: not-allowed; }
+@media (max-width: 1100px) {
+  .sar-awareness-strip { max-height: 30vh; overflow-y: auto; }
+  .sar-compact-mission { flex-wrap: wrap; }
+  .sar-global-mast { overflow-x: auto; }
+  .sar-command-mast-grid { min-width: 1100px; }
 }
 
 @layer components {

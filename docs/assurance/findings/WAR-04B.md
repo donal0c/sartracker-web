@@ -25,6 +25,18 @@ statements below supersede its pre-merge/zero-production-audit assertions.
 
 ## Risk and evidence plan
 
+**Integration boundary (2026-09-09):** PR #12 subsequently merged upstream
+`9c73c62d8f491445b77aa84146da1fb968ef5781` (PR #11 UI delivery) at Donal's
+request. This report's inventory, audit and original package receipts remain
+bound to `3cdf555d`; they are not an inventory of the newer UI package.
+The PR diff against updated master remains documentation/evidence only.
+The upstream executable/test/config trees are preserved unchanged; its tested
+head `e384ea8a` passed CI `34345038450`. Integration-head CI is recorded on
+[PR #12](https://github.com/donal0c/sartracker-web/pull/12).
+Earlier head `99934a2a` failed two source timing gates, then a 202.4 ms archive
+renderer-frame gate on its single retry. Those failures remain in the PR and
+DON-254; merging upstream does not establish their cause or a fix.
+
 The risk is mistaking pre-merge, source-only or advisory-count evidence for
 exact-package release proof. Keep executable/test/config blobs unchanged,
 inspect ASAR/unpacked/extra resources, classify actual input reachability,

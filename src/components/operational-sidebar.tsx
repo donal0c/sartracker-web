@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useMissionStore } from '../features/mission/mission-store'
 
 import { FocusModeToggle } from './focus-mode-toggle'
 import { DeferredGpxImportPanel } from './deferred-gpx-import-panel'
@@ -16,18 +17,33 @@ const FOCUS_SIDEBAR_TABS: readonly { readonly id: FocusSidebarTab; readonly labe
 ]
 
 /**
- * Renders the Focus Mode Plus sidebar with compact mission strip and full tabbed workspace.
+ * Shares a stable mission-control owner across normal, Focus and hidden presentations.
  */
-export function FocusModeSidebar() {
-  const [activeTab, setActiveTab] = useState<FocusSidebarTab>('layers')
+export function OperationalSidebar({ focusModeActive, collapsed = false, minimized = false, collapseDisabledReason, onActionErrorChange, onDecisionOpenChange, onMinimizedChange, onCollapseWorkspace }: {
+  readonly focusModeActive: boolean
+  readonly collapseDisabledReason: string | null
+  readonly onActionErrorChange: (error: string | null) => void
+  readonly onDecisionOpenChange: (open: boolean) => void
+  readonly collapsed?: boolean
+  readonly minimized?: boolean
+  readonly onMinimizedChange: (minimized: boolean) => void
+  readonly onCollapseWorkspace: () => void
+}) {
+  const [focusTab, setFocusTab] = useState<FocusSidebarTab>('layers')
+  const [normalTab, setNormalTab] = useState<FocusSidebarTab>('tracking')
+  const activeTab = focusModeActive ? focusTab : normalTab
+  const setActiveTab = focusModeActive ? setFocusTab : setNormalTab
+  const prefix = focusModeActive ? 'focus-sidebar' : 'sidebar'
+  const phase = useMissionStore((state) => state.phase)
 
   return (
     <aside
-      className="sar-sidebar z-20 flex w-[400px] flex-col"
-      data-testid="focus-mode-sidebar"
+      className="sar-sidebar sar-operational-sidebar z-20 flex w-[400px] flex-col"
+      data-testid={focusModeActive ? 'focus-mode-sidebar' : 'operational-sidebar'}
+      style={collapsed ? { display: 'none' } : undefined}
     >
       {/* Compact Focus Mode header with mission strip */}
-      <header className="flex-shrink-0 border-b-2 border-amber-500/70 px-4 py-3">
+      {focusModeActive && <header className="flex-shrink-0 border-b-2 border-amber-500/70 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <div className="relative flex h-14 w-16 flex-shrink-0 items-center justify-center overflow-hidden border border-stone-200/40 bg-white">
@@ -58,25 +74,27 @@ export function FocusModeSidebar() {
           </div>
           <FocusModeToggle className="sar-button-focus flex-shrink-0 rounded-lg px-3 py-2 text-[11px] font-bold" />
         </div>
-      </header>
+      </header>}
 
       {/* Mission Control — full panel pinned above tabs */}
       <div
-        className="min-h-0 flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-4"
-        data-testid="focus-mode-mission-dock"
+        className={`min-h-0 max-h-[53vh] flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-4 ${focusModeActive ? 'sar-mission-dock-focus' : ''}`}
+        data-testid={focusModeActive ? 'focus-mode-mission-dock' : 'mission-control-dock'}
+        style={{ display: minimized ? 'none' : undefined, maxHeight: phase === 'paused' ? 'none' : undefined }}
       >
-        <MissionControlPanel />
+        <MissionControlPanel minimized={minimized} onMinimizedChange={onMinimizedChange} onActionErrorChange={onActionErrorChange} onDecisionOpenChange={onDecisionOpenChange} />
       </div>
 
       {/* Tabbed workspace — same structure as normal sidebar */}
-      <div className="flex-shrink-0 px-5 pb-2 pt-3" data-testid="focus-sidebar-tabs">
+      <div className="flex-shrink-0 px-5 pb-2 pt-3" data-testid={`${prefix}-tabs`}>
         <div className="grid grid-cols-3 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] p-1">
           {FOCUS_SIDEBAR_TABS.map((tab) => (
             <button
               className={`px-3 py-2 text-[12px] font-bold uppercase tracking-[0.08em] transition-colors ${
                 activeTab === tab.id ? 'sar-tab-active shadow-sm' : 'sar-tab-inactive'
               }`}
-              data-testid={`focus-sidebar-tab-${tab.id}`}
+              aria-pressed={activeTab === tab.id}
+              data-testid={`${prefix}-tab-${tab.id}`}
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               type="button"
@@ -89,8 +107,8 @@ export function FocusModeSidebar() {
 
       {/* Tab content — fills remaining height */}
       <div
-        className={`flex-1 overflow-y-auto px-5 py-4 ${activeTab === 'layers' ? 'flex flex-col' : 'space-y-5'}`}
-        data-testid="focus-sidebar-tab-content"
+        className={`sar-workspace-content flex-1 overflow-y-auto px-5 py-4 ${activeTab === 'layers' ? 'flex flex-col' : 'space-y-5'}`}
+        data-testid={`${prefix}-tab-content`}
       >
         {activeTab === 'tracking' && (
           <>
@@ -104,8 +122,8 @@ export function FocusModeSidebar() {
           </>
         )}
         {activeTab === 'layers' && (
-          <section className="flex min-h-fit flex-1 flex-col" data-testid="focus-mode-layer-controls">
-            <LayerFilterPanel />
+          <section className="flex min-h-fit flex-1 flex-col" data-testid={focusModeActive ? 'focus-mode-layer-controls' : undefined}>
+            <LayerFilterPanel onCollapseWorkspace={onCollapseWorkspace} collapseDisabledReason={collapseDisabledReason} />
           </section>
         )}
       </div>

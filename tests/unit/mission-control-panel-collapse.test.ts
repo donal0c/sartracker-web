@@ -65,6 +65,15 @@ describe('MissionControlPanel collapse behavior', () => {
     expect(query('[data-testid="mission-finish-btn"]')).toBeNull()
   })
 
+  it('does not hide a failed mission action through minimization', async () => {
+    const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
+    missionControlMock.model = createModel({ actionError: 'Could not pause mission' })
+    render(React.createElement(MissionControlPanel, { minimized: true, onMinimizedChange: vi.fn() }))
+    expect(query('[data-testid="mission-control"]')).not.toBeNull()
+    expect(query('[data-testid="mission-control-collapse-btn"]')).toBeNull()
+    expect(query('[data-testid="mission-action-error"]')?.textContent).toContain('Could not pause mission')
+  })
+
   it('does not offer collapse while paused', async () => {
     const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
     missionControlMock.model = createModel({ phase: 'paused' })

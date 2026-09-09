@@ -264,6 +264,11 @@ test.describe('M8 drawing workflows', () => {
 
     await expect.poll(async () => readTextLabelCoordinates(page, 'Landing Zone West Ridge')).not.toEqual(before)
     await expect(page.getByTestId('drawing-dialog')).toBeHidden()
+    const moved = await readTextLabelCoordinates(page, 'Landing Zone West Ridge')
+    await page.reload()
+    await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
+    await page.getByRole('button', { name: 'Resume', exact: true }).click()
+    await expect.poll(async () => readTextLabelCoordinates(page, 'Landing Zone West Ridge')).toEqual(moved)
   })
 
   test('DON-205: does not drag text labels through docked workspace overlays', async ({

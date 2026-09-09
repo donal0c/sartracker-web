@@ -67,30 +67,30 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await startMission(page, 'Minimized Mast Check')
     await page.getByTestId('mission-control-collapse-btn').click()
 
-    await expect(page.getByTestId('mission-control-dock')).toHaveCount(0)
+    await expect(page.getByTestId('mission-control-dock')).toBeHidden()
     await expect(page.getByTestId('command-mast-mission-control-minimized')).toBeVisible()
     await expect(page.getByTestId('command-mast-mission-control-minimized')).toContainText(
       'Minimized Mast Check',
     )
-    await expect(page.getByTestId('command-mast-mission-control-expand')).toBeVisible()
+    await expect(page.getByTestId('compact-mission-restore')).toBeVisible()
     await expect(page.getByTestId('mission-pause-resume-btn')).toHaveCount(0)
     await expect(page.getByTestId('mission-finish-btn')).toHaveCount(0)
 
-    await captureElementAndRegister(page, 'command-mast-mission-control-minimized', {
+    await captureElementAndRegister(page, 'compact-mission-strip', {
       testId: 'mission-minimized-mast-state',
       testName: 'Mission Control minimized into the command mast',
       area: 'mission',
       severity: 'critical',
       verificationPrompt: `Verify this element-scoped screenshot of the minimized Mission Control cell in the top command mast:
 1. It should show the active mission name "Minimized Mast Check".
-2. It should show a visible "MINIMIZED" label.
-3. It should show a visible "EXPAND" button.
+2. It should show the active state and Active search timer.
+3. It should show visible Review and Restore mission buttons.
 4. It should look like compact command-mast content rather than the full right-rail Mission Control card.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'mission-control-dock count is 0',
+        'mission-control-dock is hidden',
         'command mast minimized mission cell is visible',
-        'Expand control is visible in the command mast',
+        'Restore control is visible in the compact mission strip',
         'pause and finish controls are absent while minimized',
       ],
     })

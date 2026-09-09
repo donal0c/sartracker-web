@@ -37,6 +37,8 @@ export type MissionControlViewModel = {
   readonly setStartOffsetHours: (hours: string) => void
   readonly startError: string | null
   readonly actionError: string | null
+  readonly rosterError: string | null
+  readonly retryAdminRoster: () => void
   readonly duplicateWarning: string | null
   readonly showFinishDialog: boolean
   readonly setShowFinishDialog: (show: boolean) => void
@@ -108,6 +110,8 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const [startOffsetHours, setStartOffsetHours] = useState('0')
   const [startError, setStartError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [rosterError, setRosterError] = useState<string | null>(null)
+  const [rosterAttempt, setRosterAttempt] = useState(0)
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
   const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false)
   const [showFinishDialog, setShowFinishDialog] = useState(false)
@@ -132,6 +136,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     }
 
     let cancelled = false
+    setRosterError(null)
 
     void loadAppSettings()
       .then((settings) => {
@@ -140,6 +145,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
         }
 
         setAdminRoster(settings.missionDefaults.adminRoster)
+        setRosterError(null)
         setSelectedAdmin((current) =>
           current !== '' && settings.missionDefaults.adminRoster.includes(current)
             ? current
@@ -148,14 +154,19 @@ export function useMissionControlViewModel(): MissionControlViewModel {
       })
       .catch((error) => {
         if (!cancelled) {
-          setActionError(toErrorMessage(error))
+          setRosterError(toErrorMessage(error))
         }
       })
 
     return () => {
       cancelled = true
     }
-  }, [showEvidenceLossDialog, showUnlockDialog])
+  }, [showEvidenceLossDialog, showUnlockDialog, rosterAttempt])
+
+  /** Retries only roster loading without clearing a lifecycle action failure. */
+  function retryAdminRoster(): void {
+    setRosterAttempt((attempt) => attempt + 1)
+  }
 
   function setMissionName(name: string): void {
     setMissionNameState(name)
@@ -444,6 +455,8 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     setStartOffsetHours,
     startError,
     actionError,
+    rosterError,
+    retryAdminRoster,
     duplicateWarning,
     showFinishDialog,
     setShowFinishDialog,

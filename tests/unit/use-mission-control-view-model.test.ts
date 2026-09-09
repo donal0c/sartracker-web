@@ -56,6 +56,38 @@ describe('useMissionControlViewModel', () => {
     resetStores()
   })
 
+  it('keeps roster failure separate and clears it on successful retry', async () => {
+    mocks.loadAppSettings.mockRejectedValueOnce(new Error('Roster unavailable'))
+    const { getModel } = renderHook()
+    await act(async () => { getModel().setShowUnlockDialog(true) })
+    expect(getModel().rosterError).toBe('Roster unavailable')
+    expect(getModel().actionError).toBeNull()
+    await act(async () => { getModel().retryAdminRoster() })
+    expect(getModel().rosterError).toBeNull()
+    expect(getModel().adminRoster).toContain('Ops Lead')
+  })
+
+  it('successful roster loading does not erase an unrelated mission action failure', async () => {
+    useMissionStore.setState({ phase: 'active', currentMission: createMission({ status: 'active' }), controller: createController({ pauseMission: vi.fn().mockRejectedValue(new Error('Pause failed')) }) })
+    const { getModel } = renderHook()
+    await act(async () => { await getModel().pauseOrResume() })
+    expect(getModel().actionError).toBe('Pause failed')
+    await act(async () => { getModel().setShowUnlockDialog(true) })
+    expect(getModel().adminRoster).toContain('Ops Lead')
+    expect(getModel().actionError).toBe('Pause failed')
+  })
+
+  it('retries roster loading when a failed dialog is closed and reopened', async () => {
+    mocks.loadAppSettings.mockRejectedValueOnce(new Error('Roster unavailable'))
+    const { getModel } = renderHook()
+    await act(async () => { getModel().setShowUnlockDialog(true) })
+    expect(getModel().rosterError).toBe('Roster unavailable')
+    act(() => { getModel().setShowUnlockDialog(false) })
+    await act(async () => { getModel().setShowUnlockDialog(true) })
+    expect(getModel().rosterError).toBeNull()
+    expect(getModel().actionError).toBeNull()
+  })
+
   it('requires duplicate mission-name acknowledgement before starting a conflicting mission', async () => {
     const controller = createController({
       hasMissionNameConflict: vi.fn().mockResolvedValue(true),

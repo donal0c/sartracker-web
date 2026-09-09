@@ -1,0 +1,49 @@
+PR #11 — deep review (5 agents + verification)
+
+Branch codex/team-ui-feedback-batch-1 → master. CI green, tsc --noEmit clean, the 3 new/changed unit files pass (14 tests). The work is genuinely good in places — but there are five things I'd block on.
+
+Blockers
+
+1. Layer tree becomes permanently unrecoverable on upgrade — reproduced.
+panelExpanded is persisted to localStorage under sartracker:layer-tree-ui with no version/migration (layer-tree-ui-store.ts:36,62). After this PR setPanelExpanded is dead code: layer-filter-panel.tsx:89 always calls onCollapseWorkspace() because operational-sidebar.tsx:124 always supplies it. Any operator who ever collapsed the layer tree in the shipping build upgrades into a Layer Workspace that renders only a header — search, filters, tree and inspector are gated at layer-filter-panel.tsx:98 and never return. No in-app recovery short of clearing site storage.
+
+I wrote and ran a Playwright repro; it passes (i.e. the bug is real). Seeded panelExpanded:false, the button reads "Expand", and clicking it hides the whole sidebar. Spec saved at …/scratchpad/pr11-layer-tree-regression.spec.ts — worth adopting as the regression test. E2E didn't catch this because every test starts from clean storage.
+
+2. Rail collapse can hide an open End Mission dialog and leaves a global Escape swallower armed.
+railCollapseBlockedReason (App.tsx:80-84) doesn't know about showFinishDialog/showEvidenceLossDialog. The finish confirmation is inline, not modal (mission-control-panel.tsx:581), so the operator can still reach the Layers tab and Collapse. The aside then goes display:none while the dialog stays mounted — and InlineDecisionDialog holds a document-level capture-phase Escape listener that calls stopImmediatePropagation (inline-decision-dialog.tsx:37-47). Every subsequent Escape anywhere in the app is swallowed and silently cancels an invisible "End Mission?" confirmation. Focus also dumps to <body>.
+
+3. The collapse latch silently re-hides controls when the protection clears.
+railCollapsed and minimizedMissionControlId are never reset when a block engages — only masked (App.tsx:85). Collapse the rail → mission pauses → sidebar correctly reappears → operator presses Resume → the sidebar and Mission Control vanish again with no operator action. Same on governance/recovery clearing. Note handleMissionActionError (App.tsx:65-71) does clear both flags — the pause path is just inconsistent with it. Untested: no test asserts the paused/recovery arm of railCollapseBlockedReason.
+
+4. High-contrast never applies to the boot shell or the startup-fault shell.
+ThemeToggle mounts at App.tsx:138, but App.tsx:99 returns <RuntimeBootGate> early for every non-ready phase. It also writes data-theme in a passive useEffect with no pre-hydration script in index.html. So a high-contrast operator gets the standard theme through boot, and permanently on the runtime-failure screen — the one screen where legibility matters most. Set data-theme in main.tsx before render, or inline in index.html.
+
+5. Devices list forces horizontal scroll at every width, and the inspector clips coordinates.
+The overlay is max-w-7xl = 80rem; the new 18rem inspector leaves ~62rem for the list, but index.css:88 forces min-width: 66rem on rows. The grid's intrinsic minimum is only 57.5rem, which fits. So "Actions" sits permanently off-screen behind scroll the layout doesn't need — including at 1920px. Separately, Detail is a non-wrapping flex justify-between (devices-workspace.tsx:636); at ~200px usable width the 53.34912, -6.26031 coordinate readout overflows. The new overflow-wrap: anywhere only covers the h3, not the values. The column was ~465px before.
+
+High
+
+6. The always-visible tracking strip is less alarming than the panel it summarises. persistent-tracking-health.ts:8 returns amber warning for mode: 'offline'; the panel renders the same state as red pulsing sar-status-chip-alert (tracking-status-panel.tsx:95,119). The strip has no alert tone at all. Worse, :11 hardcodes the label 'Tracking connected' and only varies tone — so "OFFLINE MODE — showing last known positions from cache" (which the panel classifies as critical at :363) renders as "⚠ Tracking connected", identical to the benign "breadcrumb history still loading". And fix_time_unverified sets neither status.warning nor device_cache_stale, so the panel's amber "FIX TIME UNVERIFIED" block has no strip equivalent — strip shows solid green. staleCount itself is correct and matches the panel exactly.
+
+7. A background failure can dead-lock both hide controls for the session. actionError is sticky (cleared only at the start of the next mission action) and MissionActionError has no dismiss. The admin-roster load rejection (use-mission-control-view-model.ts:148) sets it with no operator action at all — after which Collapse is disabled and Minimize never renders, with nothing on screen to clear it.
+
+8. The toggle's label contradicts its action. layer-filter-panel.tsx:92 still derives "Collapse"/"Expand" from panelExpanded, which no longer relates to the click; the title says "Hide the right workspace".
+
+Medium
+
+- autoFocus at App.tsx:139 re-applies on every remount — combined with #3, resuming a paused mission yanks focus mid-typing into marker/coordinate dialogs.
+- The error lift is a passive effect (mission-control-panel.tsx:102), so there's one painted frame where the error exists but the dock is still display:none. Wants useLayoutEffect or derived state.
+- minimizedMissionControlId is never cleared on finish/archive (App.tsx:167); currently masked by the phase === 'active' guard, but a recovery-resume of the same mission id re-applies a minimize nobody asked for.
+- index.css:86-100 styles seven [data-testid=…] selectors, two of them structural (> .grid, > div:first-child). Renaming a testid silently breaks layout while DOM assertions stay green — and the same diff already uses the sar-* convention five lines above. Contradicts the anti-sprawl rules.
+- sar-status-chip-${readout.tone} (persistent-tracking-health.tsx:11) is a dynamic class under Tailwind v3 purge. It only renders coloured because success/warning/neutral happen to appear as literals in App.tsx. Delete those and the safety chip silently goes unstyled.
+- The blanket .sar-shell .text-stone-400/500 override (index.css:104) hits 101 call sites and wins source-order over hover:text-stone-200, killing hover affordances at layer-filter-panel.tsx:453 and helicopter-panel.tsx:231.
+- New manual section #display-preferences is not in the TOC (public/manual/index.html:342-359). Also, its "Restore the controls before pausing or finishing" advice is unnecessary — the code already un-minimizes on pause.
+- ui-feedback-batch.spec.ts:118 uses evaluateAll(…every(…)) with no count assertion — passes vacuously if zero buttons render.
+
+What's genuinely good
+
+Contrast work is a real win and I verified the numbers: Tailwind stone-500 was 3.97:1 on panel — an AA failure — now 9.47:1; both --sar-text-* bumps now clear AAA. The device-list sticky header and rows are both direct .grid children, so headers stay aligned during horizontal scroll (I checked — not a bug). The toHaveCount(0) → toBeHidden() edits are legitimate markup updates with the load-bearing assertions retained, and removing the mast Expand button lost no coverage — the new control is reachable in Focus mode where the old one wasn't. drawing-tools.spec.ts added a reload-persistence assertion. The unit tests are real behavioural assertions, not tautologies.
+
+One test weakening worth naming: devices-workspace.spec.ts:625 moved coversSparseTrail from rendered querySourceFeatures to source.getData(). The justification (viewport-dependent tile clipping, plausibly caused by this PR's new awareness strip shrinking map height) is sound, but rendered completeness of the breadcrumb trail is no longer verified — only presence.
+
+---

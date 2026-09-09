@@ -138,7 +138,7 @@ function DevicesWorkspaceContent(props: {
         }
       />
 
-        <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
+        <div className="sar-devices-layout grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <section
             className="flex min-h-0 flex-col overflow-hidden border-r border-stone-800"
             data-testid="devices-workspace"
@@ -267,7 +267,7 @@ function DevicesWorkspaceContent(props: {
             </div>
 
             {/* Device list — fills remaining vertical space */}
-            <div className="min-h-0 flex-1 overflow-y-auto" data-testid="device-list-scroll">
+            <div aria-label="Device list; scroll horizontally for all actions" className="sar-device-list-scroll min-h-0 flex-1 overflow-auto" data-testid="device-list-scroll" role="region" tabIndex={0}>
               {filteredRows.length === 0 ? (
                 <p
                   className="px-6 py-6 text-sm text-stone-300"
@@ -278,7 +278,7 @@ function DevicesWorkspaceContent(props: {
               ) : (
                 <>
                   <div
-                    className={`sticky top-0 z-10 grid ${DEVICE_ROW_GRID_COLUMNS} border-b border-stone-800 bg-[var(--sar-panel)] px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300`}
+                    className={`sar-device-grid sticky top-0 z-10 grid ${DEVICE_ROW_GRID_COLUMNS} border-b border-stone-800 bg-[var(--sar-panel)] px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300`}
                   >
                     <span>Device</span>
                     <span>Name</span>
@@ -311,7 +311,7 @@ function DevicesWorkspaceContent(props: {
             </div>
           </section>
 
-          <aside className="min-w-0 overflow-y-auto px-6 py-6" data-testid="devices-inspector">
+          <aside className="sar-devices-inspector min-w-0 overflow-y-auto px-6 py-6" data-testid="devices-inspector">
             {selectedRow === null ? (
               <div className="rounded-2xl border border-dashed border-stone-600 bg-stone-900/30 p-5 text-sm italic text-stone-300">
                 No devices available. Configure a tracking provider in Settings to see devices here.
@@ -483,7 +483,7 @@ function DeviceRow(props: {
 
   return (
     <div
-      className={`grid cursor-pointer ${DEVICE_ROW_GRID_COLUMNS} items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
+      className={`sar-device-grid grid cursor-pointer ${DEVICE_ROW_GRID_COLUMNS} items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
         props.selected ? 'sar-selected-row' : 'bg-transparent'
       }`}
       data-testid={rowTestId}
