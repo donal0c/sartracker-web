@@ -115,7 +115,8 @@ function getSourceData(
     readonly geometry?: { readonly type?: string }
     readonly properties?: {
       readonly featureKind?: string
-      readonly sourcePositionId?: string
+      readonly sourcePositionId?: string | null
+      readonly timestamp?: string
     }
   }[]
 } {
@@ -127,7 +128,8 @@ function getSourceData(
         readonly geometry?: { readonly type?: string }
         readonly properties?: {
           readonly featureKind?: string
-          readonly sourcePositionId?: string
+          readonly sourcePositionId?: string | null
+          readonly timestamp?: string
         }
       }[]
     }
@@ -272,6 +274,87 @@ describe('tracking overlay marker configuration', () => {
       const layer = getLabelLayer(map)
       const textSize = layer.layout?.['text-size']
       expect(textSize).toBeGreaterThanOrEqual(12)
+    })
+  })
+
+  describe('current device fix correlation', () => {
+    it('exposes exact fix identity and time through initial setData and steady-state updateData', async () => {
+      map = createMockMap()
+      map.addSource('tracking', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+      const source = map.sourceHandles.get('tracking')!
+      const { syncTrackingOverlay } = await import(
+        '../../src/features/tracking/sync-tracking-overlay'
+      )
+      const devices = [
+        {
+          device_id: 'alpha',
+          name: 'Alpha',
+          status: 'online' as const,
+          last_seen: null,
+          unique_id: null,
+          category: null,
+        },
+      ]
+      const breadcrumbs: ReturnType<typeof trackingFix>[] = []
+      const initialFix = trackingFix('alpha', 'upstream-100', 0)
+
+      syncTrackingOverlay(
+        map as never,
+        { devices, positions: [initialFix], breadcrumbs },
+        [],
+        [],
+        true,
+      )
+
+      expect(source.setData).toHaveBeenCalledTimes(1)
+      const initialData = source.setData.mock.calls[0]?.[0] as ReturnType<typeof getSourceData>
+      const initialDeviceFeature = initialData.features?.find(
+        (feature) => feature.properties?.featureKind === 'device',
+      )
+      expect(initialDeviceFeature).toEqual(expect.objectContaining({
+        id: 'device:alpha',
+        properties: expect.objectContaining({
+          sourcePositionId: 'upstream-100',
+          timestamp: '2026-08-23T08:00:00.000Z',
+        }),
+      }))
+
+      const replacementFix = trackingFix('alpha', 'upstream-101', 1)
+      syncTrackingOverlay(
+        map as never,
+        { devices, positions: [replacementFix], breadcrumbs },
+        [],
+        [],
+        true,
+      )
+
+      expect(source.setData).toHaveBeenCalledTimes(1)
+      expect(source.updateData).toHaveBeenCalledTimes(1)
+      const diff = source.updateData.mock.calls[0]?.[0] as {
+        readonly remove?: readonly (string | number)[]
+        readonly add?: readonly {
+          readonly id?: string | number
+          readonly properties?: {
+            readonly featureKind?: string
+            readonly sourcePositionId?: string | null
+            readonly timestamp?: string
+          }
+        }[]
+      }
+      const replacementDeviceFeature = diff.add?.find(
+        (feature) => feature.properties?.featureKind === 'device',
+      )
+      expect(diff.remove).toContain('device:alpha')
+      expect(replacementDeviceFeature).toEqual(expect.objectContaining({
+        id: initialDeviceFeature?.id,
+        properties: expect.objectContaining({
+          sourcePositionId: 'upstream-101',
+          timestamp: '2026-08-23T08:01:00.000Z',
+        }),
+      }))
     })
   })
 

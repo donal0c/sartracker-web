@@ -4,6 +4,13 @@ const TELEMETRY_EVENT_TYPES = Object.freeze([
   'mission_backup_synced',
 ])
 const MAX_AUDIT_QUERY_LIMIT = 5_001
+const {
+  assertMissionLiveReviewAvailable,
+} = require('./mission-live-review-access.cjs')
+const {
+  deriveArchiveLifecycleEventId,
+  readCurrentMissionFinalizationBoundary,
+} = require('./mission-finalization-boundary.cjs')
 
 /**
  * Reads the bounded Mission Review audit page and exact breadcrumb count from
@@ -11,11 +18,54 @@ const MAX_AUDIT_QUERY_LIMIT = 5_001
  */
 function readMissionReviewSummary(database, input) {
   const normalized = normalizeMissionReviewReadInput(input)
-  const readSnapshot = database.transaction(() => ({
-    auditEvents: listMissionReviewAuditEvents(database, normalized),
-    breadcrumbCount: countMissionPositions(database, normalized.missionId),
-  }))
-  return readSnapshot()
+  const readSnapshot = database.transaction(() => {
+    assertMissionLiveReviewAvailable(database, normalized.missionId)
+    return {
+      auditEvents: listMissionReviewAuditEvents(database, normalized),
+      breadcrumbCount: countMissionPositions(database, normalized.missionId),
+      correctionAuthorized: readMissionCorrectionAuthorization(
+        database,
+        normalized.missionId,
+      ),
+    }
+  })
+  const result = readSnapshot()
+  assertArchiveReviewResultBudget(result)
+  return result
+}
+
+/** Reads the durable correction epoch independently of the bounded audit page. */
+function readMissionCorrectionAuthorization(database, missionId) {
+  const mission = database.prepare('SELECT status FROM missions WHERE id = ?').get(missionId)
+  if (mission?.status !== 'finished') return false
+  const finalized = readCurrentMissionFinalizationBoundary(database, { missionId })
+  if (finalized === null) return false
+  let unlockEventId
+  try {
+    unlockEventId = deriveArchiveLifecycleEventId(finalized.archiveId, 'mission-unlocked')
+  } catch {
+    return false
+  }
+  const unlocked = database.prepare(`SELECT rowid AS event_rowid, mission_id,
+      event_type, details_json
+    FROM mission_events WHERE id = ?`).get(unlockEventId)
+  const unlockEventRowid = Number(unlocked?.event_rowid)
+  if (unlocked?.mission_id !== missionId || unlocked.event_type !== 'mission_unlocked'
+    || !Number.isSafeInteger(unlockEventRowid)
+    || unlockEventRowid <= finalized.eventRowid) return false
+  let details
+  try {
+    details = JSON.parse(unlocked.details_json ?? 'null')
+  } catch {
+    return false
+  }
+  if (details === null || typeof details !== 'object' || Array.isArray(details)) return false
+  const authority = typeof details.admin_name === 'string' ? details.admin_name.trim() : ''
+  const reason = typeof details.reason === 'string' ? details.reason.trim() : ''
+  return authority !== ''
+    && Buffer.byteLength(authority, 'utf8') <= 200
+    && reason !== ''
+    && Buffer.byteLength(reason, 'utf8') <= 4_000
 }
 
 /** Returns the bounded newest-first audit page with the established telemetry policy. */
@@ -83,5 +133,9 @@ module.exports = {
   TELEMETRY_EVENT_TYPES,
   listMissionReviewAuditEvents,
   normalizeMissionReviewReadInput,
+  readMissionCorrectionAuthorization,
   readMissionReviewSummary,
 }
+const {
+  assertArchiveReviewResultBudget,
+} = require('./archive-review-result-budget.cjs')

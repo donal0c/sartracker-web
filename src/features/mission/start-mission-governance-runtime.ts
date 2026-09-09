@@ -2,7 +2,14 @@ import type {
   FinalizeMissionResult,
   IngestEvidenceHealth,
   Mission,
+  MissionArchiveCustodyInput,
+  MissionArchiveInfo,
+  MissionArchiveRecoveryIssuance,
+  MissionCleanupEligibility,
+  MissionCleanupResult,
   MissionStore,
+  ResumeMissionCleanupInput,
+  StartMissionCleanupInput,
   UnlockFinalizedMissionInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { AcknowledgeIngestEvidenceLossInput } from '../../domain/tracking-ingest-evidence'
@@ -14,6 +21,12 @@ type MissionGovernanceStoreBoundary = Pick<
   | 'listMissions'
   | 'getIngestEvidenceHealth'
   | 'finalizeMission'
+  | 'issueMissionArchiveRecoveryCode'
+  | 'cancelMissionArchiveOperation'
+  | 'listMissionArchives'
+  | 'getMissionCleanupEligibility'
+  | 'startMissionCleanup'
+  | 'resumeMissionCleanup'
   | 'acknowledgeIngestEvidenceLoss'
   | 'unlockFinalizedMission'
 >
@@ -31,7 +44,24 @@ type StartMissionGovernanceRuntimeDependencies = {
 
 export type MissionGovernanceController = {
   readonly refreshGovernanceMission: () => Promise<void>
-  readonly finalizeGovernanceMission: (missionId: string) => Promise<FinalizeMissionResult>
+  readonly issueGovernanceArchiveRecoveryCode: (
+    missionId: string,
+  ) => Promise<MissionArchiveRecoveryIssuance>
+  readonly cancelGovernanceArchiveOperation: (operationId: string) => Promise<boolean>
+  readonly readGovernanceCleanupState: (missionId: string) => Promise<{
+    readonly archive: MissionArchiveInfo
+    readonly eligibility: MissionCleanupEligibility
+  }>
+  readonly startGovernanceCleanup: (
+    input: StartMissionCleanupInput,
+  ) => Promise<MissionCleanupResult>
+  readonly resumeGovernanceCleanup: (
+    input: ResumeMissionCleanupInput,
+  ) => Promise<MissionCleanupResult>
+  readonly finalizeGovernanceMission: (
+    missionId: string,
+    custody: MissionArchiveCustodyInput,
+  ) => Promise<FinalizeMissionResult>
   readonly acknowledgeGovernanceEvidenceLoss: (
     input: AcknowledgeIngestEvidenceLossInput,
   ) => Promise<IngestEvidenceHealth>
@@ -46,20 +76,75 @@ export async function startMissionGovernanceRuntime(
 ): Promise<MissionGovernanceController> {
   let governanceMission: Mission | null = null
   let governanceEvidenceHealth: IngestEvidenceHealth | null = null
+  let recoveryRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
   await refreshGovernanceMission()
 
   return {
     refreshGovernanceMission,
-    finalizeGovernanceMission: async (missionId) => {
+    issueGovernanceArchiveRecoveryCode: (missionId) =>
+      dependencies.missionStore.issueMissionArchiveRecoveryCode(missionId),
+    cancelGovernanceArchiveOperation: (operationId) =>
+      dependencies.missionStore.cancelMissionArchiveOperation(operationId),
+    readGovernanceCleanupState: async (missionId) => {
+      if (dependencies.missionStore.getMissionCleanupEligibility === undefined) {
+        throw new Error('Mission live-store archival is unavailable.')
+      }
+      const archives = await dependencies.missionStore.listMissionArchives(missionId)
+      const archive = [...archives]
+        .filter((candidate) => candidate.mission_id === missionId)
+        .sort((left, right) => right.revision_sequence - left.revision_sequence)[0]
+      if (archive === undefined) {
+        throw new Error('No mission archive is available for live-store archival.')
+      }
+      const eligibility = await dependencies.missionStore.getMissionCleanupEligibility({
+        missionId,
+        archiveId: archive.id,
+      })
+      return { archive, eligibility }
+    },
+    startGovernanceCleanup: async (input) => {
+      if (dependencies.missionStore.startMissionCleanup === undefined) {
+        throw new Error('Mission live-store archival is unavailable.')
+      }
+      const result = await dependencies.missionStore.startMissionCleanup(input)
+      if (governanceMission?.id === input.missionId
+        && result.missionId === input.missionId
+        && result.archiveId === input.archiveId
+        && result.storageState === 'archived') {
+        governanceMission = { ...governanceMission, storage_state: 'archived' }
+        publishRuntime()
+      }
+      await reconcileGovernanceMissionAfterArchiveOperation()
+      await requestAutosaveSync('mission-cleanup')
+      return result
+    },
+    resumeGovernanceCleanup: async (input) => {
+      if (dependencies.missionStore.resumeMissionCleanup === undefined) {
+        throw new Error('Mission live-store archival recovery is unavailable.')
+      }
+      const result = await dependencies.missionStore.resumeMissionCleanup(input)
+      if (governanceMission?.id === input.missionId
+        && result.missionId === input.missionId
+        && result.archiveId === input.archiveId
+        && result.storageState === 'archived') {
+        governanceMission = { ...governanceMission, storage_state: 'archived' }
+        publishRuntime()
+      }
+      await reconcileGovernanceMissionAfterArchiveOperation()
+      await requestAutosaveSync('mission-cleanup')
+      return result
+    },
+    finalizeGovernanceMission: async (missionId, custody) => {
       let result: FinalizeMissionResult
       try {
-        result = await dependencies.missionStore.finalizeMission(missionId)
+        result = await dependencies.missionStore.finalizeMission(missionId, custody)
       } catch (error) {
-        await refreshGovernanceMission()
+        await reconcileGovernanceMissionAfterArchiveOperation()
         throw error
       }
-      await refreshGovernanceMission()
+      applyAuthoritativeFinalization(result, missionId)
+      await reconcileGovernanceMissionAfterArchiveOperation()
       await requestAutosaveSync('mission-finalize')
       return result
     },
@@ -85,10 +170,54 @@ export async function startMissionGovernanceRuntime(
       null
     governanceEvidenceHealth = await readGovernanceEvidenceHealth(governanceMission)
     publishRuntime()
+    scheduleRecoveryRefresh()
   }
 
   function publishRuntime(): void {
     dependencies.applyRuntime({ governanceMission, governanceEvidenceHealth })
+  }
+
+  /** Rechecks a restart-visible custody blocker until the store clears it. */
+  function scheduleRecoveryRefresh(): void {
+    if (governanceMission?.storage_state !== 'recovery_required') {
+      if (recoveryRefreshTimer !== null) {
+        clearTimeout(recoveryRefreshTimer)
+        recoveryRefreshTimer = null
+      }
+      return
+    }
+    if (recoveryRefreshTimer !== null) return
+    recoveryRefreshTimer = setTimeout(() => {
+      recoveryRefreshTimer = null
+      void refreshGovernanceMission().catch((error) => {
+        console.warn('Mission governance recovery refresh failed.', error)
+        scheduleRecoveryRefresh()
+      })
+    }, 500)
+    ;(recoveryRefreshTimer as unknown as { unref?: () => void }).unref?.()
+  }
+
+  /** Publishes the minimum durable terminal truth before fallible reconciliation. */
+  function applyAuthoritativeFinalization(
+    result: FinalizeMissionResult,
+    requestedMissionId: string,
+  ): void {
+    if (result.mission.id !== requestedMissionId
+      || result.mission.status !== 'finalized'
+      || governanceMission?.id !== requestedMissionId) {
+      return
+    }
+    governanceMission = { ...governanceMission, status: 'finalized' }
+    publishRuntime()
+  }
+
+  /** Reconciles current store state without replacing an authoritative archive outcome. */
+  async function reconcileGovernanceMissionAfterArchiveOperation(): Promise<void> {
+    try {
+      await refreshGovernanceMission()
+    } catch (error) {
+      console.warn('Mission governance refresh failed after archive operation.', error)
+    }
   }
 
   /** Fails closed when mission-scoped evidence health cannot be rehydrated. */

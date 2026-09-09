@@ -120,7 +120,183 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-5 are merged. PR5 mission evidence/replay (`DON-274`, `DON-277`, `DON-278`, `DON-279`) landed from final head `f5ba8647131950dde457e50ce36fe0b8ded7337d` as merge `eec92812b783a795c093f37268b295dd2179a3af`; exact-head Linux run `33260131951` is green. The final casualty-treatment/preload/workflow correction deliberately used Donal-authorized focused correction/test/package proof rather than restarting the earlier four-review wave, so those reviews remain prior-head evidence and must not be represented as exact-head review of `f5ba8647`. WAR-01's docs-only post-PR5 reconciliation and independent reviews merged through GitHub PR #6 at `182d077804498f5c10aaf0b8b2c1525f29a31da7`. Breadcrumb programme PR-6—the archive-lifecycle stage owned by `DON-248`/`DON-252`/`DON-253` and distinct from GitHub PR #6—is actively being implemented on a separate branch but remains unmerged, mutable, and not release proof. Donal retains its implementation/merge gate. After its exact merged head exists, run WAR-04B's narrow refresh before any release decision. BCP-17 must qualify one exact final candidate before `DON-255` may publish it.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 through PR-5 are merged. Breadcrumb programme PR-6—the archive-lifecycle stage owned by `DON-248`/`DON-252`/`DON-253` and distinct from merged WAR-01 GitHub PR #6—is being recovered on [PR #10](https://github.com/donal0c/sartracker-web/pull/10). The rejected-head history and causal evidence remain below; no rejected head is rerun unchanged. The current bounded order is to repair only confirmed blockers, freeze and review one candidate tree, run one full non-browser source cycle, commit/push an identical tree, then run one exact-head package/lifecycle attempt and stop before browser/visual, physical-kill, Linux, and Ubuntu gates. Strict `<200 ms` liveness and every archive/custody/cleanup boundary remain unchanged. This is pre-merge engineering work, not release or field acceptance. Donal retains approval/merge authority. After the exact merged head exists, run WAR-04B's narrow refresh before any release decision; BCP-17 must qualify one final candidate before `DON-255` may publish it.
+   **2026-09-05 recovery update:** pushed head `d91ec232…` passed its sole exact
+   macOS packaged lifecycle attempt, Chromium `173/173`, visual `62/62`, and uncached
+   visual review `74/74`, then exposed a `create.seal` physical-kill oracle false
+   negative. The ciphertext and registry/file identity were intact; the oracle
+   searched for private operation identity on a public projection that omits it.
+   D91 is rejected for final qualification. Exact-head Linux run `33935825755`
+   passed through packaged tracking soak before a second proof-oracle race: the
+   one-child readiness check accepted the participant empty-state paragraph and
+   armed `create` while participant scope was still loading. The red-first
+   successor now requires exact public and final operation-bound archive
+   custody, plus exact durable/rendered participant readiness before initial and
+   restarted liveness attribution. Each readiness IPC read is bounded by the
+   remaining monotonic readiness budget. The strict 200 ms gate is unchanged;
+   all final-head gates remain pending. A later candidate, `7e0d8ea3`, passed its
+   exact package/lifecycle, Chromium `173/173`, visual `62/62`, uncached visual
+   review `74/74`, and physical SIGKILL `32/32`, but final review rejected it for
+   same-name mission identity, rendered-device identity, and sealed-archive
+   recovery-readiness gaps. Linux run `33938682590` was cancelled and is not
+   evidence. The current red-first successor binds the original mission UUID,
+   exact device identity in durable and rendered state, and the production IPC
+   archive projection plus recoverable v2 slot semantics. Its five-file harness
+   identity includes that shared projector; strict liveness gates are unchanged.
+   **2026-09-05 cadence rejection:** successor `b75f8689` passed its sole exact
+   macOS package/lifecycle, Chromium `173/173`, visual `62/62`, uncached visual
+   review `74/74`, and physical SIGKILL `32/32`. Linux run `33940959449` passed
+   every earlier gate through packaged tracking soak, then the first pre-cleanup
+   Review operation breached the unchanged current-fix gate at `240 ms`; this is
+   valid cadence-failure evidence and b75 will not be rerun. The current red-first
+   successor publishes current fixes without awaiting durable mission/cache work,
+   transfers evidence into a globally capacity-bounded per-mission FIFO with durable loss accounting,
+   bounds fallback-cache preparation to one active plus one latest state and
+   5,000 cooperatively selected breadcrumb representatives, and bounds both
+   renderer confirmation reads by their remaining monotonic deadline.
+   **2026-09-05 operation-proof rejection:** exact local successor `b7793753`
+   packaged cleanly, then its sole two-launch lifecycle attempt wrote a
+   cleanup-complete 0600 receipt without any `>=200 ms` breach or diagnostics.
+   The old resumed-restore check could accept a cumulative phase sample from a
+   pre-operation in-flight source while the stricter named-operation fence
+   correctly excluded it; completion then deleted the checkpoint before a
+   generic error. B779 is proof-boundary-indeterminate and will not be pushed or
+   rerun. The red-first successor requires resumed restore's own exact in-fence
+   fix, establishes a new restore baseline before post-cleanup Review, and
+   snapshots exact operation diagnostics before deletion without admitting
+   post-work fixes or changing any strict deadline. All
+   successor exact-head package/browser/visual/SIGKILL/Linux/review gates and the
+   single fresh greater-than-2-GiB qualifier remain pending.
+   **2026-09-05 cleanup-snapshot rejection:** exact local successor `30061c2d`
+   packaged cleanly, then its sole lifecycle attempt failed immediately at
+   cleanup start with closed `ARCHIVE_CLEANUP_FAILED`; the old IPC boundary
+   discarded the internal diagnostic. A deterministic two-WAL-connection red
+   regression reproduced `SQLITE_BUSY_SNAPSHOT` hidden inside the membership
+   wrapper after a live-mission commit invalidated cleanup's deferred read
+   snapshot. The smallest successor uses a non-blocking immediate transaction
+   for each cleanup boundary and preserves bounded inventory-derived diagnostics
+   through worker, IPC, Playwright, and the 0600 receipt. The strict `<200 ms`
+   gate, cleanup scope, custody checks, and finite retries are unchanged. Its
+   pre-freeze serial suite is `377/3,806`; replacement exact-head gates remain
+   pending and 30061 will not be rerun.
+   **2026-09-05 renderer-CDP rejection:** exact local successor `e9584e94`
+   packaged cleanly and advanced through cleanup, then its sole two-launch
+   lifecycle attempt rejected after `11,287 ms` during restore-phase
+   `review_after_cleanup` with `renderer_cdp_watchdog_failed`. The mode-0600
+   receipt retained 63 operation-fresh samples, a 64-sample phase delta, no
+   current-fix timeout/continuity fault, all reported restore maxima below
+   120 ms, and complete process/profile cleanup. It cannot distinguish timeout
+   from rejection and is instrumentation-indeterminate, not product-stall
+   evidence; e958 will not be rerun. The red-first successor aggregates Review
+   in Node through sequential bounded-size transfers, reserves an exact-target
+   second CDP connection for liveness, bounds both transport closes, and adds
+   bounded renderer-CDP stage/cause attribution. Strict 200 ms liveness/queue
+   bounds and all source, cleanup, custody, and continuity gates are unchanged.
+   Its focused affected gate is `6/186`, the deterministic serial suite is
+   `377/3,813`, full static/build/backend gates are green, and two independent
+   reviews plus a real Chromium dual-client probe are clean. Those were
+   pre-freeze source checks; the exact package/lifecycle attempt produced the
+   rejection below.
+   **2026-09-05 final-validation rejection:** exact local successor `ec258eba`
+   packaged cleanly, then its sole two-launch lifecycle attempt rejected after
+   `10,956 ms` on exactly one final evidence gate. Its mode-0600 receipt recorded
+   no gate reason or liveness diagnostic, zero cleanup failures, and complete
+   process/profile cleanup. The old receipt discarded the exact validator
+   reason, so ec258eba is final-validation-indeterminate and will not be rerun.
+   Source trace confirmed a harness defect that could accept a raw
+   `199.9996 ms` maximum, round it to `200`, and then fail only the final strict
+   validator; that is not claimed as the irrecoverable historical gate. The
+   red-first successor preserves raw already-validated values and records
+   bounded, sanitized final-gate reasons under a distinct classification.
+   Malformed reason metadata retains a bounded receipt without inventing a gate
+   count. The strict `<200 ms` gate is unchanged. Its affected set passes
+   `6/250`, the deterministic serial suite passes `377/3,818`, full
+   static/build/backend gates are green, and two independent re-reviews are
+   clean. A replacement may advance only on a package and terminal receipt
+   bound to its exact head.
+   **2026-09-05 correction-custody rejection and finite-boundary closeout:**
+   exact pushed head `20486b6c` passed its sole packaged lifecycle in
+   `11,471 ms`, Chromium `173/173`, visual `62/62`, uncached visual review
+   `74/74`, and physical `SIGKILL` `32/32`; all recorded liveness maxima were
+   strictly below `200 ms`. Final review nevertheless found correction-
+   consumer and combined custody/plaintext-cleanup races, so Linux run
+   `33954733857` was cancelled and that head will not be rerun. The next source
+   tree `840947d5fcacb66c64597f85f6a434753de621a9` was also rejected before
+   packaging: audit reproduced a correction pathname-rebind race capable of
+   redirecting rollback deletion outside custody and a lifecycle race that
+   released staging ownership before terminal consumption. The successor
+   prepared after that rejection removes both structures. Correction now uses
+   a cwd-bound Electron utility process with an exact READY dev/inode handshake,
+   one SQLite custody
+   plan written before attachment bytes, recognisable operation-owned mode-0600
+   target/peer hardlinks with exact `nlink === 2`, atomic plan-clear plus unlock,
+   and non-destructive startup reconciliation. Follow-up audits then reproduced
+   four more deterministic integration defects before freeze: the cancellation
+   envelope could not cross Electron UtilityProcess IPC; a helper could remain
+   alive after a terminal message; success and fallback were not bound to the
+   exact correction operation; and full attachment hashing held SQLite's writer
+   transaction. All four are repaired red-first. Cancellation is now message-
+   based with bounded process termination, terminal and durable read-back both
+   require the exact operation, ambiguous or residual state is durably fenced
+   across restart, and reconciliation computes full byte proofs outside a short
+   exact-plan/state/topology transaction. The corrected focused slice passes
+   `8/102`; two independent correction audits are clean at `8/137` and `7/99`.
+   Maximum 4,096-entry committed and near-4-MiB uncommitted measurements held
+   the writer for `59.9-94.7 ms`, with every concurrent writer succeeding. The
+   corrected changed-test matrix passes `20/628`; its first run also caught and
+   closed one obsolete test-only UtilityProcess injection gap without adding a
+   production fallback. Lifecycle now separates its preparation gate, durable active lease,
+   pinned child staging, canonical terminal and consumed record. Exact active-
+   owner checks govern every terminal boundary, success is exposed only after
+   child cleanup and final read-back, same-head reuse is forbidden, and emitted
+   or pre-observed wrapper exits must prove the full POSIX process group empty.
+   Its focused slice passes `3/259` and its independent P1/P2 re-audit is clean.
+   The first fully reviewed successor tree `91f8f3ed` was then rejected by its
+   first full non-browser source cycle before commit or package: two of `3,960`
+   tests crossed lazy-loaded cleanup/verification dialogs with a fixed 50 ms
+   sleep and asserted before mount under suite load. Product code was not
+   implicated. The tests now await the exact split modules inside React `act`,
+   and the focused workspace file passes `14/14` without warnings. Its test-only
+   successor then required bounded review before its source cycle;
+   `91f8f3ed` is not rerun unchanged.
+   That successor was frozen as `969bf644` after two clean delta reviews, then
+   its first source cycle was rejected when Vitest reported the unchanged
+   25,000-row tracking acknowledgement test at `6,815 ms` after it exceeded the
+   generic 5-second timeout under parallel-suite contention (`3,959/3,960`
+   passed). The persistence path is unchanged and the focused case passed in `1,695 ms`
+   before the repair and `1,643 ms` after it. Because this is a semantic/compact-
+   acknowledgement test rather than a latency gate, the replacement keeps the
+   full workload and assertions and adds only a test-local 15-second ceiling.
+   The packaged strict `<200 ms` liveness gate is unchanged; `969bf644` is not
+   rerun unchanged.
+   Behavioral tree `d5727b82` then passed two independent bounded delta reviews
+   and its one full non-browser source cycle: `380/380` unit files and
+   `3,960/3,960` tests in `84.33 s`, full ESLint, production build and bundle
+   budgets, changed-script Node syntax, diff integrity, and backend `58` passed /
+   `1` ignored. Any final status-only descendant must keep every non-doc blob
+   identical to that reviewed and tested tree. This remains local source proof,
+   not package, platform, release, or field acceptance.
+   Earlier authenticated correction evidence, cross-archive custody, exact
+   cleanup cursor continuity, 30-minute no-progress cancellation, and detached
+   qualification supervision remain intact. The strict `<200 ms` gate is
+   unchanged. No package, packaged lifecycle, browser/visual, physical-kill,
+   Linux, or Ubuntu gate has run for this successor. This is frozen local source
+   evidence, not package or platform proof.
+   **2026-09-07 Donal-approved closeout order:** settle only those confirmed
+   blockers and focused gates; finish docs/manual; normalize the tracked
+   generated-version file to the current pre-commit HEAD and freeze one
+   candidate content tree/manifest; complete
+   renderer/operator, fresh broad, and affected persistence plus concurrency/
+   liveness reviews against that exact tree; run one non-browser full local
+   source cycle only if the tree remains unchanged; commit and explicitly fast-
+   forward the existing PR branch only if the committed tree exactly matches
+   the reviewed tree; package once with `EXPECTED_SOURCE_SHA` set to the new
+   commit, restore the generated-version source file to its committed blob
+   without rebuilding, verify the checkout is clean, and run the sole exact-
+   head lifecycle once; then stop and report. Chromium/visual,
+   physical-kill, Linux CI, and the single fresh Ubuntu greater-than-2-GiB run
+   remain deliberately deferred beyond that stop. Passing the lifecycle is not
+   permission to merge, release, or skip any deferred gate.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -145,8 +321,9 @@ operational process authoritative, defines stop/fallback/revert actions and
 proportionate field intake, and fixes the residual-risk and WAR-13B scorecard
 formats. It does not qualify a candidate or make SAR Tracker operationally safe.
 WAR-13B field execution starts only after an exact candidate is published under
-`DON-254`/`DON-255`; `DON-248`/`DON-252`/`DON-253` archive/restore remains
-outside current proof.
+`DON-254`/`DON-255`. PR #10's `DON-248`/`DON-252`/`DON-253` archive/restore
+qualification is separate pre-merge engineering proof; this shadow-use protocol
+does not supply or promote it.
 
 ### WAR-01 assurance baseline
 
@@ -159,10 +336,11 @@ and archive-inclusion seams were re-opened before their rows were reclassified.
 Exact-head Linux run `33260131951` is `T4` only for its packaged tracking-soak,
 launch, and close flows; its direct checkout-module Replay/GPX scale steps are
 `T2`, and prior-head independent reviews retain their separate proof limits.
-The unmerged and mutable `DON-248`/`DON-252`/`DON-253` archive successor is
-actively being implemented separately, remains `rewrite-pending`, and is the
-prerequisite for streamed, encrypted/locked archive and restore-and-replay
-resilience. The WAR task
+The unmerged `DON-248`/`DON-252`/`DON-253` archive successor is in exact-head
+qualification and review on PR #10. Its frozen implementation candidate and
+proof remain pre-merge; `RPL-004` therefore stays `rewrite-pending` until merge.
+That successor is the prerequisite for streamed, encrypted/locked archive and
+restore-and-replay resilience. The WAR task
 packet's “PR6” shorthand refers to that successor, not to this docs-only GitHub
 PR #6. WAR-01 does not create speculative Linear issues: each row cites the
 closest existing owner.
@@ -915,9 +1093,10 @@ This is the default order when the user says “work on the next task.”
 | Done | PR-3: decide and deliver complete mission coverage | Shared Tracking / S2 Electron / Coverage / Verification | `DON-273` / `DON-276` / `DON-275` | Merged as [PR #3](https://github.com/donal0c/sartracker-web/pull/3) at `e3499d81bad68dcbf35dde4ed6ae6bd4d1434db1`; the exact review, migration, scale, browser, visual, macOS, and Ubuntu packaged evidence remains attached to PR #3. |
 | Done | [PR #4](https://github.com/donal0c/sartracker-web/pull/4): enforce canonical `fixTime`, explicit local-time display, and history-independent current polling | Shared Tracking / S2 Electron / Evidence / Verification | `DON-267`; `SAR-QA-021`; `SAR-FIELD-002` | Merged from final head `a6ebfbebb7b624a85ab437508209d8d56c9cf9d8` at `80309c995a18eeb190cce4310c9a46b0f46d5263`. Exact-head Linux run `33068124294` passed. The bounded bridge preserved progressive whole-history coverage and proved 37,479 as 10,000 + 10,000 + 10,000 + 7,479; that CI/package evidence is not programme-final field qualification, and PR-4 added no Replay, timeline, export, or archive scope. |
 | Done | PR-5: mission evidence and data-known-at-time Replay | Shared Evidence / S2 Electron / Mission Review / Verification | `DON-274` / `DON-277` / `DON-278` / `DON-279` | Merged as [PR #5](https://github.com/donal0c/sartracker-web/pull/5) from final head `f5ba8647131950dde457e50ce36fe0b8ded7337d` at `eec92812b783a795c093f37268b295dd2179a3af`. Exact-head Linux run `33260131951` is green; its package path and the final focused correction are the proof boundary, while the earlier four-review wave remains prior-head evidence. Detailed scope and verification are retained in `docs/breadcrumb-pr5-evidence.md` and PR #5. |
+| Recovery in flight; bounded exact-head proof pending | [PR #10](https://github.com/donal0c/sartracker-web/pull/10): PR-6 archive lifecycle | S2 Electron / Archive / Mission Review / Verification | `DON-248` / `DON-252` / `DON-253` | Rejected diagnostics include the earlier caf9/495/81/74/6a/231/d91/7e/b75/b779/30061/e958/ec258 heads, pushed `20486b6c`, pre-package tree `840947d5`, reviewed tree `91f8f3ed`, and test-only descendant `969bf644`; none will be rerun unchanged. Exact 20486's lifecycle/browser/visual/kill evidence is prior-head only and its Linux run was cancelled. Production repairs remain unchanged: cwd-bound Electron utility correction, exact SQLite custody/operation topology, durable exact-operation fencing, two-phase non-destructive recovery, exact lifecycle terminal consumption, and process-group settlement. Correction is `8/102`; audits `8/137` and `7/99`; maximum writer interval `59.9-94.7 ms`; changed matrix `20/628`; lifecycle `3/259`. `91f8f3ed` passed the council/specialists but exposed two fixed lazy-dialog waits (`3,958/3,960`); its repair passes `14/14`. `969bf644` then exposed the unchanged 25,000-row semantic test's generic 5-second ceiling under suite contention (`3,959/3,960`); the retained workload passes focused in `1,643 ms` with a test-local 15-second allowance. Strict `<200 ms` liveness is unchanged. Behavioral tree `d5727b82` passed two clean bounded delta reviews and its full source cycle at `380/380` files and `3,960/3,960` tests plus lint, build/budgets, Node/diff, and backend `58` passed / `1` ignored. No package or deferred platform gate has run. The remaining sequence is final docs-only closure, exact commit/push, one packaged lifecycle attempt, then stop. Pre-merge proof is not release or field acceptance. |
 | Done | [PR #6](https://github.com/donal0c/sartracker-web/pull/6): WAR-01 whole-application assurance charter and stable hazard register | Whole application / Assurance / Verification | Existing owners are cited per hazard; no new issue | Documentation/investigation only, merged at `182d077804498f5c10aaf0b8b2c1525f29a31da7`. Covers all 12 hazard domains and the five absolute blockers. Post-PR5 reconciliation is pinned to merge `eec92812b783a795c093f37268b295dd2179a3af`; merged PR5 rows carry inspected control/evidence limits, `RPL-004` remains `rewrite-pending` for the unmerged and mutable `DON-248`/`DON-252`/`DON-253` archive successor, and the required broad/focused exact-head reviews were clean. Donal retains the implementation/merge gate for the archive successor, not merged GitHub PR #6. |
 | Done | [PR #8](https://github.com/donal0c/sartracker-web/pull/8): WAR-04 platform-services resilience investigation | Map / Settings / Diagnostics / Assurance | `DON-7` / `DON-76` / `DON-177` / `DON-226` / `DON-237`; `DON-264` assessed separately | Investigation/evidence only, merged at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` from final head `3a2278ee8804a9ded0f2fd26626c4c00743c05a6`; no shipping-code remediation. Nine confirmed findings route to three bounded WAR-11 clusters. Twelve isolated synthetic checks preserve the confirmed red states. The normal gates, two exact-head independent reviews and the exact-head Linux branch gate were green. Broad package/provider/platform/scale/soak proof remains WAR-12. |
-| Review-ready | [PR #9](https://github.com/donal0c/sartracker-web/pull/9): WAR-04B release integrity, dependency and repository-control audit | Whole application / Assurance / Release reliability | `DON-146` / `DON-254` / `DON-255` | Investigation/docs only from exact base `3d0d36b3874947d3d620bdb5262d9cd2d7233fcf`; no remediation or release mutation. Confirmed blockers are EOL Electron `40.10.0` and the `electron-builder@26.0.12 -> app-builder-lib@26.0.12` AppImage launcher advisory. The production npm graph is advisory-clean, but a full audit is required because release-bearing Electron/builder code is classified as development dependencies. Live GitHub evidence also confirms mutable unsigned releases, no enforced master/tag review/check boundary, disabled security visibility, no SBOM/attestation, and incomplete ASAR/private-evidence exclusion. `better-sqlite3` PR #1475 is merged and available from `12.10.1`, so `DON-146` is no longer upstream-blocked. PR #8's merge at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` left all audited package, lock, builder, release-workflow, publisher and support-policy inputs blob-identical; its WAR-04 evidence remains separate and supplies no release proof. Use the controlled upgrade order and exact post-programme-PR-6 refresh checklist in `docs/assurance/findings/WAR-04B.md`; the unmerged breadcrumb programme PR-6 archive successor remains mutable and supplies no release proof. This is separate from the merged WAR-01 GitHub PR #6 in the row above. Exact-head review/recheck evidence is retained on PR #9. |
+| Done | [PR #9](https://github.com/donal0c/sartracker-web/pull/9): WAR-04B release integrity, dependency and repository-control audit | Whole application / Assurance / Release reliability | `DON-146` / `DON-254` / `DON-255` | Investigation/docs only, merged at `0ca331ff816800e83134142cb109903e5d2c2992`; no remediation or release mutation. Confirmed blockers are EOL Electron `40.10.0` and the `electron-builder@26.0.12 -> app-builder-lib@26.0.12` AppImage launcher advisory. The production npm graph is advisory-clean, but a full audit is required because release-bearing Electron/builder code is classified as development dependencies. Live GitHub evidence also confirms mutable unsigned releases, no enforced master/tag review/check boundary, disabled security visibility, no SBOM/attestation, and incomplete ASAR/private-evidence exclusion. `better-sqlite3` PR #1475 is merged and available from `12.10.1`, so `DON-146` is no longer upstream-blocked. PR #8's merge at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` left all audited package, lock, builder, release-workflow, publisher and support-policy inputs blob-identical; its WAR-04 evidence remains separate and supplies no release proof. Use the controlled upgrade order and exact post-programme-PR-6 refresh checklist in `docs/assurance/findings/WAR-04B.md`; PR #10's archive proof remains pre-merge and supplies no release proof. This is separate from the merged WAR-01 GitHub PR #6 in the row above. Exact-head review/recheck evidence is retained on PR #9. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
@@ -927,12 +1106,12 @@ This is the default order when the user says “work on the next task.”
 | Done locally | Change-gate tracking audit writes and remove position event echoes | S2 Electron / Tracking | `DON-245` | Packaged 2,000-poll proof: 64,000 device row upserts, 16,000 positions, 32 creates, one real update, zero heartbeat/position echoes. |
 | Done locally | Add accelerated packaged tracking soak and growth-budget gate | S2 Electron / Verification | `DON-246` | Packaged CI/5-day/14-day profiles pass after the gate found and fixed unbounded restart hydration; exact position/growth, restart, responsiveness, memory, backup, WAL, log, support, and privacy evidence is machine-readable. |
 | Active | Qualify beta.12 CI artifact on Ubuntu and original field machine | S2 Electron / Release | `DON-247` | Exact artifact `fb6c4922…` passed the full Ubuntu matrix, was published as an internal prerelease, then was downloaded afresh from the release URL and passed the post-publication Ubuntu smoke. The 2026-07-20 field split is explicit: PCLinuxOS AppImage stayed responsive at 218 hours, while a Mint `.deb` stopped accepting application actions around 182 hours even though the in-app clock continued. The packaged soak now classifies the complete Devices interaction boundary: centre hit test/covering element, trusted browser click delivery, React workspace state, timed renderer-to-main IPC, and close path. The refreshed packaged CI profile passed 4/4 `healthy` classifications, 8,664 exact positions, restart, backup, main/renderer responsiveness, and zero redundant telemetry; full `beta:verify --no-smoke` passed lint, build, `165 files / 1159 tests`, backend `47 / 1 ignored`, Chromium `132/132`, package, and packaged soak. Packaged Linux builds include an external report-only hang collector for bounded `/proc`/thread waits, PID-scoped journal, GPU/session facts, sanitized logs/storage diagnostics, optional operator-requested screenshot, and no database/credential/process-environment content. Runbook: `docs/releases/beta12-mint-hang-capture-runbook.md`. Original Mint identical-profile AppImage-vs-`.deb` execution and collector evidence remain before closeout. |
-| Active (programme PR-6) | Decide archive encryption, authenticity, custody, and emergency access | S2 Electron / Archive / Governance | `DON-248` | BCP-14 in the breadcrumb archive-lifecycle stage; the earlier bounded-store architecture is now locked in the breadcrumb ADR. The implementation remains unmerged and supplies no release proof. |
+| In review (programme PR-6) | Decide archive encryption, authenticity, custody, and emergency access | S2 Electron / Archive / Governance | `DON-248` | BCP-14 is implemented on PR #10 under the security decision and candidate evidence record. Human custody roles remain the non-blocking tabletop and are not guessed. Donal's approval/merge remains; no release proof is claimed. |
 | Backlog | Safe background SQLite integrity assurance | S2 Electron / Persistence | `DON-249` | Must not recreate startup/runtime I/O saturation. |
-| Backlog | Oversized legacy database assessment and recovery | S2 Electron / Recovery | `DON-250` | Mission-state-aware; never abandon operational data or run in-process multi-GB VACUUM. |
-| Backlog | Measured indexes and bounded telemetry retention | S2 Electron / Persistence | `DON-251` | The 3.7 GB PR-1 gate measured the pre-existing Review audit scan at about 7.5 s and exact count at about 1.1–1.3 s on Electron main. PR-1 pulls forward only lazy Review loading plus a cancellable read-only worker snapshot so current positions and main heartbeat stay live. Query-plan-driven indexing and interruption-safe telemetry retention remain here; no O(database-size) v8 migration index is authorized. |
-| Active (programme PR-6) | Create streamed encrypted mission archives with restore-and-replay proof | S2 Electron / Archive | `DON-252` | BCP-15 in the breadcrumb archive-lifecycle stage; no whole shared DB in memory or unrelated missions in an archive. The implementation remains unmerged and supplies no release proof. |
-| Active (programme PR-6) | Add archive-backed review, visible revisions, and indefinite retention | S2 Electron / Governance | `DON-253` | BCP-16 in the breadcrumb archive-lifecycle stage; archive bytes stay immutable and evidence has no permanent deletion path. The implementation remains unmerged and supplies no release proof. |
+| Backlog | Oversized legacy database assessment and recovery | S2 Electron / Recovery | `DON-250` | Owns mission-state-aware oversized-store recovery and any safe physical-compaction route with `DON-251`; never abandon operational data or run in-process multi-GB `VACUUM`. PR #10 performs logical post-archive cleanup only and does not promise file shrink. |
+| Backlog | Measured indexes, bounded telemetry retention, and compaction policy | S2 Electron / Persistence | `DON-251` | The 3.7 GB PR-1 gate measured the pre-existing Review audit scan at about 7.5 s and exact count at about 1.1–1.3 s on Electron main. Query-plan-driven indexing, standing retention, interruption-safe physical compaction, and reusable-page policy remain here with `DON-250`; no O(database-size) v8 migration index or in-process multi-GB `VACUUM` is authorized. PR #10 deletes eligible archived rows logically and may leave the file size unchanged. |
+| In review (programme PR-6) | Create streamed encrypted mission archives with restore-and-replay proof | S2 Electron / Archive | `DON-252` | BCP-15 is implemented on PR #10 with bounded mission-only streaming and sealed-file exhaustive restore/verification. Candidate proof remains pre-merge and is not release proof; Donal's approval/merge remains. |
+| In review (programme PR-6) | Add archive-backed review, visible revisions, and indefinite retention | S2 Electron / Governance | `DON-253` | BCP-16 is implemented on PR #10 with read-only archive Review, visible immutable supplements, and eligibility-gated logical cleanup. Resume is available only when an intact journal proves cleanup is in progress; invalid recovery state fails closed, and live-row membership drift requires re-finalization. Cleanup may remove archived mission rows, rebuildable derived projections, four explicitly settled operational tables, and only the allowed high-volume telemetry event types from `mission_events`. It retains the mission stub, archive/supplement registry, every non-telemetry mission audit event, and unknown future audit event types. Candidate proof remains pre-merge and is not release proof; Donal's approval/merge remains. |
 | Backlog | Qualify the complete breadcrumb and mission-history programme | S2 Electron / Verification | `DON-254` | BCP-17 no-skip qualification of the exact final candidate after all six PRs. |
 | Backlog | Release the complete breadcrumb and mission-history programme | S2 Electron / Release | `DON-255` | One team-facing release only after BCP-17; no intermediate programme releases. |
 | Done | S1: Runtime Boot/Fault Guard | Shared | `sartracker-web-3rl` | Done 2026-05-16 |

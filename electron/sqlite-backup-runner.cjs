@@ -1,5 +1,5 @@
 const path = require('node:path')
-const { Worker } = require('node:worker_threads')
+const { Worker } = require('./mission-worker.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'sqlite-backup-worker.cjs')
 

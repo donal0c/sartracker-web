@@ -1,7 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { loadAppSettings } from '../../infrastructure/settings-store/tauri-settings-store'
-import type { Mission } from '../../infrastructure/mission-store/tauri-mission-store'
+import type {
+  FinalizeMissionResult,
+  Mission,
+  MissionArchiveInfo,
+  MissionArchiveCustodyInput,
+  MissionArchiveProgress,
+  MissionArchiveRecoveryIssuance,
+  MissionCleanupEligibility,
+  MissionCleanupResult,
+  ResumeMissionCleanupInput,
+  StartMissionCleanupInput,
+} from '../../infrastructure/mission-store/tauri-mission-store'
+import { readMissionArchiveErrorCode } from './mission-archive-error'
 import { useFocusModeStore } from '../focus-mode/focus-mode-store'
 import { useMissionReviewWorkspaceStore } from '../mission-review/mission-review-workspace-store'
 import { useMissionStore, type MissionRuntimePhase } from './mission-store'
@@ -32,6 +44,8 @@ export type MissionControlViewModel = {
   readonly setShowFinalizeDialog: (show: boolean) => void
   readonly showUnlockDialog: boolean
   readonly setShowUnlockDialog: (show: boolean) => void
+  readonly showCleanupDialog: boolean
+  readonly setShowCleanupDialog: (show: boolean) => void
   readonly showEvidenceLossDialog: boolean
   readonly setShowEvidenceLossDialog: (show: boolean) => void
   readonly governanceBusy: boolean
@@ -54,7 +68,22 @@ export type MissionControlViewModel = {
   readonly confirmFinish: () => Promise<void>
   readonly resumeRecoverable: () => Promise<void>
   readonly startFresh: () => Promise<void>
-  readonly confirmFinalize: () => Promise<void>
+  readonly issueArchiveRecoveryCode: (
+    missionId: string,
+  ) => Promise<MissionArchiveRecoveryIssuance>
+  readonly cancelArchiveOperation: (operationId: string) => Promise<boolean>
+  readonly subscribeArchiveProgress: (
+    listener: (progress: MissionArchiveProgress) => void,
+  ) => () => void
+  readonly confirmFinalize: (
+    custody: MissionArchiveCustodyInput,
+  ) => Promise<FinalizeMissionResult>
+  readonly loadCleanupState: (missionId: string) => Promise<{
+    readonly archive: MissionArchiveInfo
+    readonly eligibility: MissionCleanupEligibility
+  }>
+  readonly startCleanup: (input: StartMissionCleanupInput) => Promise<MissionCleanupResult>
+  readonly resumeCleanup: (input: ResumeMissionCleanupInput) => Promise<MissionCleanupResult>
   readonly confirmEvidenceLossAcknowledgement: () => Promise<void>
   readonly confirmUnlock: () => Promise<void>
 }
@@ -84,6 +113,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const [showFinishDialog, setShowFinishDialog] = useState(false)
   const [showFinalizeDialog, setShowFinalizeDialog] = useState(false)
   const [showUnlockDialog, setShowUnlockDialog] = useState(false)
+  const [showCleanupDialog, setShowCleanupDialog] = useState(false)
   const [showEvidenceLossDialog, setShowEvidenceLossDialog] = useState(false)
   const [governanceBusy, setGovernanceBusy] = useState(false)
   const [governanceFeedback, setGovernanceFeedback] = useState<string | null>(null)
@@ -91,6 +121,10 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const [selectedAdmin, setSelectedAdmin] = useState('')
   const [unlockReason, setUnlockReason] = useState('')
   const [evidenceLossReason, setEvidenceLossReason] = useState('')
+  const subscribeArchiveProgress = useCallback((
+    listener: (progress: MissionArchiveProgress) => void,
+  ): (() => void) => window.sartrackerElectron?.onMissionArchiveProgress?.(listener)
+    ?? (() => undefined), [])
 
   useEffect(() => {
     if (!showUnlockDialog && !showEvidenceLossDialog) {
@@ -273,9 +307,27 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     }
   }
 
-  async function confirmFinalize(): Promise<void> {
+  async function issueArchiveRecoveryCode(
+    missionId: string,
+  ): Promise<MissionArchiveRecoveryIssuance> {
+    if (governanceController === null) {
+      throw new Error('Mission archive custody is unavailable.')
+    }
+    return governanceController.issueGovernanceArchiveRecoveryCode(missionId)
+  }
+
+  async function cancelArchiveOperation(operationId: string): Promise<boolean> {
+    if (governanceController === null) {
+      throw new Error('Mission archive cancellation is unavailable.')
+    }
+    return governanceController.cancelGovernanceArchiveOperation(operationId)
+  }
+
+  async function confirmFinalize(
+    custody: MissionArchiveCustodyInput,
+  ): Promise<FinalizeMissionResult> {
     if (governanceController === null || governanceMission === null) {
-      return
+      throw new Error('Mission archive finalization is unavailable.')
     }
 
     setGovernanceBusy(true)
@@ -283,9 +335,12 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     setGovernanceFeedback(null)
 
     try {
-      const result = await governanceController.finalizeGovernanceMission(governanceMission.id)
+      const result = await governanceController.finalizeGovernanceMission(
+        governanceMission.id,
+        custody,
+      )
       setGovernanceFeedback(`Mission archived to ${result.archive.archive_path}`)
-      setShowFinalizeDialog(false)
+      return result
     } catch (error) {
       const currentGovernanceHealth =
         useMissionStore.getState().governanceEvidenceHealth
@@ -299,6 +354,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
       } else {
         setActionError(toErrorMessage(error))
       }
+      throw error
     } finally {
       setGovernanceBusy(false)
     }
@@ -329,6 +385,52 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     }
   }
 
+  async function loadCleanupState(missionId: string): Promise<{
+    readonly archive: MissionArchiveInfo
+    readonly eligibility: MissionCleanupEligibility
+  }> {
+    if (governanceController === null || governanceMission?.id !== missionId) {
+      throw new Error('Mission live-store archival is unavailable.')
+    }
+    return governanceController.readGovernanceCleanupState(missionId)
+  }
+
+  async function startCleanup(input: StartMissionCleanupInput): Promise<MissionCleanupResult> {
+    if (governanceController === null || governanceMission?.id !== input.missionId) {
+      throw new Error('Mission live-store archival is unavailable.')
+    }
+    setGovernanceBusy(true)
+    setActionError(null)
+    setGovernanceFeedback(null)
+    try {
+      const result = await governanceController.startGovernanceCleanup(input)
+      setGovernanceFeedback(
+        'Live-store archival completed. The mission remains listed and available through read-only archive review.',
+      )
+      return result
+    } finally {
+      setGovernanceBusy(false)
+    }
+  }
+
+  async function resumeCleanup(input: ResumeMissionCleanupInput): Promise<MissionCleanupResult> {
+    if (governanceController === null || governanceMission?.id !== input.missionId) {
+      throw new Error('Mission live-store archival recovery is unavailable.')
+    }
+    setGovernanceBusy(true)
+    setActionError(null)
+    setGovernanceFeedback(null)
+    try {
+      const result = await governanceController.resumeGovernanceCleanup(input)
+      setGovernanceFeedback(
+        'Live-store archival recovery completed. The mission remains listed and available through read-only archive review.',
+      )
+      return result
+    } finally {
+      setGovernanceBusy(false)
+    }
+  }
+
   return {
     phase,
     currentMission,
@@ -349,6 +451,8 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     setShowFinalizeDialog,
     showUnlockDialog,
     setShowUnlockDialog,
+    showCleanupDialog,
+    setShowCleanupDialog,
     showEvidenceLossDialog,
     setShowEvidenceLossDialog,
     governanceBusy,
@@ -371,7 +475,13 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     confirmFinish,
     resumeRecoverable,
     startFresh,
+    issueArchiveRecoveryCode,
+    cancelArchiveOperation,
+    subscribeArchiveProgress,
     confirmFinalize,
+    loadCleanupState,
+    startCleanup,
+    resumeCleanup,
     confirmEvidenceLossAcknowledgement,
     confirmUnlock,
   }
@@ -385,8 +495,7 @@ function isAcknowledgeableEvidenceHealthFinalizationBlock(
   error: unknown,
   reason: string | null,
 ): boolean {
-  return error instanceof Error &&
-    /degraded evidence health blocks finalization/iu.test(error.message) &&
+  return readMissionArchiveErrorCode(error) === 'ARCHIVE_EVIDENCE_HEALTH_BLOCKED' &&
     (reason === 'mission_persistence_failed' ||
       reason === 'renderer_pending_evidence_lost' ||
       reason === 'renderer_pending_capacity_exhausted')

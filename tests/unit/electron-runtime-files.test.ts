@@ -254,6 +254,60 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('"authorization":"[redacted]"')
   })
 
+  it('never exports archive passphrases or recovery codes in diagnostics or support bundles [DON-248]', async () => {
+    const passphraseSentinel = 'Bundle-Archive-Passphrase-Sentinel-9!'
+    const recoveryCodeSentinel = 'BUNDLE-RECOVERY-SENTINEL-7Z'
+    const files = await createRuntimeFiles({
+      readRecentCrashes: async () => [
+        {
+          ts: '2026-06-09T17:12:00.000Z',
+          kind: 'uncaughtException',
+          summary: `Archive failed PassPhrase=${passphraseSentinel}`,
+          detail: `Retry recovery_code: ${recoveryCodeSentinel}`,
+        },
+      ],
+      readRecentLog: async () => [
+        {
+          ts: '2026-06-09T17:18:00.000Z',
+          level: 'warn',
+          event: 'archive_operation_failed',
+          'pass-phrase': passphraseSentinel,
+          recoveryCode: recoveryCodeSentinel,
+        },
+      ],
+    })
+    const diagnosticContents = [
+      'Diagnostics Report',
+      `passphrase=${passphraseSentinel}`,
+      `recovery-code: ${recoveryCodeSentinel}`,
+    ].join('\n')
+
+    const diagnosticsPath = await files.exportDiagnosticsReport({
+      fileName: 'archive-diagnostics.txt',
+      contents: diagnosticContents,
+    })
+    const supportPath = await files.exportSupportBundle({
+      fileName: 'archive-support-bundle.txt',
+      contents: diagnosticContents,
+    })
+    const incidentPath = await files.exportSupportBundle({
+      fileName: 'archive-incident-support-bundle.txt',
+      contents: diagnosticContents,
+      timeFrame: {
+        incidentAt: '2026-06-09T17:18:00.000Z',
+        beforeMinutes: 30,
+        afterMinutes: 30,
+      },
+    })
+
+    for (const exportPath of [diagnosticsPath, supportPath, incidentPath]) {
+      const contents = await readFile(exportPath, 'utf8')
+      expect(contents).not.toContain(passphraseSentinel)
+      expect(contents).not.toContain(recoveryCodeSentinel)
+      expect(contents).toContain('[redacted]')
+    }
+  })
+
   it('redacts the exact app userData path even when it is outside the operator home', async () => {
     const files = await createRuntimeFiles({
       readRecentCrashes: async () => [

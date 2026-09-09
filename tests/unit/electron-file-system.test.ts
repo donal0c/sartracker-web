@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -273,12 +273,27 @@ describe('Electron filesystem service', () => {
   it('opens existing paths through Electron shell', async () => {
     const shell = { openPath: vi.fn().mockResolvedValue('') }
     const service = await createService({ shell })
-    const filePath = path.join(userDataPath!, 'report.txt')
+    const filePath = path.join(userDataPath!, 'missions', 'mission-1', 'attachments', 'report.txt')
+    await mkdir(path.dirname(filePath), { recursive: true })
     await writeFile(filePath, 'report')
 
     await service.openExternalPath(filePath)
 
-    expect(shell.openPath).toHaveBeenCalledWith(filePath)
+    expect(shell.openPath).toHaveBeenCalledWith(await realpath(filePath))
+  })
+
+  it('refuses private app state and symlinks from live attachments into protected files', async () => {
+    const shell = { openPath: vi.fn().mockResolvedValue('') }
+    const service = await createService({ shell })
+    const privatePath = path.join(userDataPath!, 'archive-review', 'session', 'mission-store.sqlite')
+    await mkdir(path.dirname(privatePath), { recursive: true })
+    await writeFile(privatePath, 'PRIVATE')
+    const link = path.join(userDataPath!, 'missions', 'mission-1', 'attachments', 'innocent.pdf')
+    await mkdir(path.dirname(link), { recursive: true })
+    await symlink(privatePath, link)
+    await expect(service.openExternalPath(privatePath)).rejects.toThrow(/allowed|protected/iu)
+    await expect(service.openExternalPath(link)).rejects.toThrow(/allowed|protected|symbolic/iu)
+    expect(shell.openPath).not.toHaveBeenCalled()
   })
 
   it('chooses official map setup files with constrained file filters', async () => {

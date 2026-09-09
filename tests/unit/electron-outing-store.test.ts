@@ -61,8 +61,8 @@ async function createStore(options: { readonly failAfterMutation?: boolean } = {
 describe('Electron outing store', () => {
   it('migrates additively to schema v10 and manages audited adjacent outings', async () => {
     const store = await createStore()
-    expect(CURRENT_SCHEMA_VERSION).toBe(12)
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    expect(CURRENT_SCHEMA_VERSION).toBe(13)
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
     const mission = await store.createMission({
       name: 'Mountain search',
       start_time: '2026-08-20T08:00:00.000Z',

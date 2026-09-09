@@ -1,5 +1,13 @@
-const SECRET_KEY_PATTERN = /(password|secret|token|credential|api[-_]?key|authorization)/i
-const SECRET_JSON_KEY_PATTERN = /("(?:password|token|secret|credential|api[-_]?key|authorization)"\s*:\s*)"[^"]*"/gi
+const SECRET_KEY_SOURCE = String.raw`(?:password|secret|token|credential|api[-_]?key|authorization|pass[-_]?phrase|recovery[-_]?code)`
+const SECRET_KEY_PATTERN = new RegExp(SECRET_KEY_SOURCE, 'i')
+const SECRET_JSON_KEY_PATTERN = new RegExp(
+  `("${SECRET_KEY_SOURCE}"\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"`,
+  'gi',
+)
+const SECRET_ASSIGNMENT_PATTERN = new RegExp(
+  `\\b(${SECRET_KEY_SOURCE}\\s*[:=]\\s*)(?:"(?:\\\\.|[^"\\\\])*"|'[^'\\r\\n]*'|[^\\r\\n]+)`,
+  'gi',
+)
 const AUTH_HEADER_PATTERN = /\b(Authorization\s*:\s*)(?:Bearer|Basic)\s+\S+/gi
 const AUTH_TOKEN_PATTERN = /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi
 const URL_CREDENTIALS_PATTERN = /\b(https?:\/\/)[^/\s@]+@/gi
@@ -14,6 +22,7 @@ const HOME_PATH_PATTERNS = Object.freeze([
 function sanitizeDiagnosticText(input) {
   let sanitized = String(input)
     .replace(SECRET_JSON_KEY_PATTERN, '$1"[redacted]"')
+    .replace(SECRET_ASSIGNMENT_PATTERN, '$1[redacted]')
     .replace(AUTH_HEADER_PATTERN, '$1[redacted]')
     .replace(AUTH_TOKEN_PATTERN, '[redacted]')
     .replace(URL_CREDENTIALS_PATTERN, '$1[redacted]@')

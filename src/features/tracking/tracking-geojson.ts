@@ -20,6 +20,8 @@ type GeoJsonPointFeature = Feature<
     readonly color: string
     readonly stale: boolean
     readonly dataOrigin: string
+    readonly sourcePositionId: string
+    readonly timestamp: string
     readonly attention: boolean
     readonly attentionAcknowledged: boolean
   }
@@ -138,6 +140,8 @@ export function createDeviceFeatureCollection(
       color: getStyledDeviceColor(position.device_id, style.deviceColors),
       stale: position.device_cache_stale,
       dataOrigin: position.data_origin,
+      sourcePositionId: position.id,
+      timestamp: position.timestamp,
       attention: attentionByDevice[position.device_id]?.state === 'attention',
       attentionAcknowledged: attentionByDevice[position.device_id]?.acknowledged === true,
     },

@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
+import { performance as nodePerformance, PerformanceObserver } from 'node:perf_hooks'
+import { setImmediate as nextNodeTurn } from 'node:timers/promises'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -603,8 +605,8 @@ describe('mission evidence versioning [DON-277]', () => {
     db.close()
 
     store = createElectronMissionStore({ userDataPath })
-    expect(CURRENT_SCHEMA_VERSION).toBe(12)
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    expect(CURRENT_SCHEMA_VERSION).toBe(13)
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const inspection = openDatabase(path.join(userDataPath, 'mission-store.sqlite'))
       const count = Number(inspection.prepare(
@@ -921,31 +923,84 @@ describe('mission evidence versioning [DON-277]', () => {
       objectLimit: 100,
     })).rejects.toThrow(/event provenance.*background|replay.*preparation/iu)
 
+    // Retain causal timing when a shared CI host breaches the unchanged hard
+    // gate. GC uses Node's clock; align it with the test heartbeat clock once.
+    const nodeClockOffset = nodePerformance.now() - performance.now()
+    const gcEntries: { start: number; duration: number }[] = []
     let lastHeartbeat = performance.now()
     let maximumHeartbeatGapMs = 0
+    let largestGapStartedAt = lastHeartbeat
+    let largestGapGc: { start: number; duration: number }[] = []
+    /** Preserves GC overlapping the largest gap even after the rolling history advances. */
+    function retainGcEntries(entries: readonly { startTime: number; duration: number }[]) {
+      for (const entry of entries) {
+        const gc = { start: entry.startTime - nodeClockOffset, duration: entry.duration }
+        gcEntries.push(gc)
+        if (gc.start < largestGapStartedAt + maximumHeartbeatGapMs
+          && gc.start + gc.duration > largestGapStartedAt) largestGapGc.push(gc)
+      }
+      if (gcEntries.length > 64) gcEntries.splice(0, gcEntries.length - 64)
+    }
+    const gcObserver = new PerformanceObserver((list) => retainGcEntries(list.getEntries()))
+    gcObserver.observe({ entryTypes: ['gc'] })
+    let maximumInspectionQueryMs = 0
+    let previousCpu = process.cpuUsage()
+    let largestGapProcessCpuMs = 0
     const heartbeat = setInterval(() => {
       const current = performance.now()
-      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, current - lastHeartbeat)
+      const gap = current - lastHeartbeat
+      const cpu = process.cpuUsage(previousCpu)
+      if (gap > maximumHeartbeatGapMs) {
+        maximumHeartbeatGapMs = gap
+        largestGapStartedAt = lastHeartbeat
+        largestGapProcessCpuMs = (cpu.user + cpu.system) / 1_000
+        largestGapGc = gcEntries.filter((entry) =>
+          entry.start < current && entry.start + entry.duration > lastHeartbeat)
+      }
+      previousCpu = process.cpuUsage()
       lastHeartbeat = current
     }, 10)
-    const inspection = openDatabase(databaseFile)
+    let inspection: InstanceType<typeof Database> | undefined
     let pending = 1
-    for (let attempt = 0; attempt < 8_000 && pending > 0; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 5))
-      pending = Number(inspection.prepare(`SELECT COUNT(*) AS count
-        FROM legacy_event_provenance_backfill_state
-        WHERE scan_target_id IS NOT NULL
-          AND (scanned_through_id IS NULL
-            OR CAST(scanned_through_id AS INTEGER) < CAST(scan_target_id AS INTEGER))`)
-        .get()?.count ?? 0)
+    try {
+      inspection = openDatabase(databaseFile)
+      for (let attempt = 0; attempt < 8_000 && pending > 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        const queryStartedAt = performance.now()
+        pending = Number(inspection.prepare(`SELECT COUNT(*) AS count
+          FROM legacy_event_provenance_backfill_state
+          WHERE scan_target_id IS NOT NULL
+            AND (scanned_through_id IS NULL
+              OR CAST(scanned_through_id AS INTEGER) < CAST(scan_target_id AS INTEGER))`)
+          .get()?.count ?? 0)
+        maximumInspectionQueryMs = Math.max(maximumInspectionQueryMs, performance.now() - queryStartedAt)
+      }
+    } catch (error) {
+      inspection?.close()
+      throw error
+    } finally {
+      clearInterval(heartbeat)
+      // PerformanceObserver delivers GC asynchronously. Drain after stopping
+      // measurement so instrumentation cannot inflate the operator gate.
+      await nextNodeTurn()
+      await nextNodeTurn()
+      retainGcEntries(gcObserver.takeRecords())
+      gcObserver.disconnect()
     }
-    clearInterval(heartbeat)
-    expect(pending).toBe(0)
-    expect(inspection.prepare(`SELECT COUNT(*) AS count FROM mission_events
-      WHERE mission_id = ? AND (recorded_at IS NULL OR recording_completeness IS NULL)`)
-      .get(mission.id)).toMatchObject({ count: 0 })
-    inspection.close()
-    expect(maximumHeartbeatGapMs).toBeLessThan(200)
+    try {
+      expect(pending).toBe(0)
+      expect(inspection.prepare(`SELECT COUNT(*) AS count FROM mission_events
+        WHERE mission_id = ? AND (recorded_at IS NULL OR recording_completeness IS NULL)`)
+        .get(mission.id)).toMatchObject({ count: 0 })
+    } finally { inspection.close() }
+    const heartbeatDiagnostics = {
+      maximumHeartbeatGapMs,
+      maximumInspectionQueryMs,
+      largestGapProcessCpuMs,
+      overlappingMainThreadGc: largestGapGc,
+    }
+    process.stdout.write(`Legacy event preparation heartbeat diagnostics: ${JSON.stringify(heartbeatDiagnostics)}\n`)
+    expect(maximumHeartbeatGapMs, JSON.stringify(heartbeatDiagnostics)).toBeLessThan(200)
     await expect(store.readMissionReplay({
       missionId: mission.id,
       selectedTime: '2026-08-20T10:05:00.000Z',
@@ -1484,7 +1539,7 @@ describe('mission evidence versioning [DON-277]', () => {
     db.close()
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 12 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
     const migratedDb = openDatabase(databaseFile)
     expect(migratedDb.prepare(`SELECT name FROM sqlite_master
       WHERE type = 'index' AND name = 'idx_positions_replay_known_fix'`).get()).toBeUndefined()
@@ -4076,25 +4131,45 @@ describe('mission evidence versioning [DON-277]', () => {
     const importing = store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
       .finally(() => { importSettled = true })
     let maximumWriteMs = 0
+    let largestWriteProcessCpuMs = 0
+    let maximumHeartbeatGapMs = 0
+    let previousHeartbeat = performance.now()
+    const heartbeat = setInterval(() => {
+      const now = performance.now()
+      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, now - previousHeartbeat)
+      previousHeartbeat = now
+    }, 10)
     let sequence = 0
-    while (!importSettled && sequence < 500) {
-      const startedAt = performance.now()
-      await store.addPosition({
-        mission_id: mission.id,
-        device_id: 'current-device',
-        source_position_id: `current-${sequence}`,
-        lat: 52,
-        lon: -9.7,
-        timestamp: new Date().toISOString(),
-        timestamp_source: 'fix',
-      })
-      maximumWriteMs = Math.max(maximumWriteMs, performance.now() - startedAt)
-      sequence += 1
-      await new Promise((resolve) => setTimeout(resolve, 1))
+    try {
+      while (!importSettled && sequence < 500) {
+        const startedAt = performance.now()
+        const cpuStarted = process.cpuUsage()
+        await store.addPosition({
+          mission_id: mission.id,
+          device_id: 'current-device',
+          source_position_id: `current-${sequence}`,
+          lat: 52,
+          lon: -9.7,
+          timestamp: new Date().toISOString(),
+          timestamp_source: 'fix',
+        })
+        const elapsed = performance.now() - startedAt
+        if (elapsed > maximumWriteMs) {
+          maximumWriteMs = elapsed
+          const cpu = process.cpuUsage(cpuStarted)
+          largestWriteProcessCpuMs = (cpu.user + cpu.system) / 1_000
+        }
+        sequence += 1
+        await new Promise((resolve) => setTimeout(resolve, 1))
+      }
+      await importing
+    } finally {
+      clearInterval(heartbeat)
     }
-    await importing
+    const diagnostics = { maximumWriteMs, largestWriteProcessCpuMs, maximumHeartbeatGapMs, sequence }
+    process.stdout.write(`GPX current-write diagnostics: ${JSON.stringify(diagnostics)}\n`)
     expect(sequence).toBeGreaterThan(0)
-    expect(maximumWriteMs).toBeLessThan(200)
+    expect(maximumWriteMs, JSON.stringify(diagnostics)).toBeLessThan(200)
   }, 30_000)
 
   it('keeps current writes below 200 ms while retaining an exact-limit 8 MiB GPX source [DON-274]', async () => {

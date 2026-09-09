@@ -11,6 +11,29 @@ const { runMissionReplayInWorker } = require('../../electron/mission-replay-runn
 }
 
 describe('mission replay worker runner [DON-278]', () => {
+  it('carries the trusted archive memory policy outside the renderer query [DON-252]', async () => {
+    const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
+    worker.terminate = vi.fn(async () => 0)
+    const createWorker = vi.fn(() => worker)
+    const pending = runMissionReplayInWorker({
+      databasePath: '/tmp/unused.sqlite',
+      kind: 'state',
+      archiveReview: true,
+      query: {
+        missionId: 'mission-1',
+        selectedTime: '2026-08-27T08:00:00Z',
+        trackLimit: 1,
+        archiveReview: false,
+      },
+      createWorker,
+    })
+    const observed = createWorker.mock.calls[0]?.[0]
+    worker.emit('exit', 1)
+    await expect(pending).rejects.toThrow(/exited with code 1/u)
+    expect(observed).toMatchObject({ workerData: { archiveReview: true } })
+    expect(observed).not.toHaveProperty('workerData.query.archiveReview')
+  })
+
   it('sends only the closed bounded query envelope to the worker', async () => {
     const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
     worker.terminate = vi.fn(async () => 0)

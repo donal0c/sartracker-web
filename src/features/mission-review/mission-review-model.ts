@@ -61,6 +61,7 @@ export type MissionReviewMarkerRow = {
 
 export type MissionReviewSnapshot = {
   readonly mission: Mission
+  readonly correctionAuthorized: boolean
   readonly summary: MissionReviewSummary
   readonly eventRows: readonly MissionReviewEventRow[]
   readonly markerRows: readonly MissionReviewMarkerRow[]
@@ -69,6 +70,7 @@ export type MissionReviewSnapshot = {
 
 type BuildMissionReviewSnapshotInput = {
   readonly mission: Mission
+  readonly correctionAuthorized?: boolean
   readonly info: MissionStoreInfo
   readonly events: readonly MissionEvent[]
   readonly markers: readonly Marker[]
@@ -100,6 +102,7 @@ export function buildMissionReviewSnapshot(
 
   return {
     mission: input.mission,
+    correctionAuthorized: input.correctionAuthorized === true,
     summary: {
       missionName: input.mission.name,
       missionStatus: input.mission.status,

@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { createDeferredMissionEvidenceQueue } from '../../src/features/tracking/deferred-mission-evidence'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -8,6 +9,7 @@ import breadcrumbsFixture from '../fixtures/traccar-breadcrumbs.json'
 import type { NormalizedTrackingDevice, NormalizedTrackingPosition } from '../../src/features/tracking/tracking-types'
 import {
   createPollingManager,
+  type TrackingMissionEvidenceTransfer,
   type TrackingPollerClient,
 } from '../../src/features/tracking/polling-manager'
 import {
@@ -113,6 +115,122 @@ describe('polling manager', () => {
     expect(onSnapshot).toHaveBeenCalledTimes(3)
 
     poller.stop()
+  })
+
+  it('keeps current transport cadence independent of durable settlement [DON-252]', async () => {
+    const missionObservationCompletions: ReturnType<typeof vi.fn>[] = []
+    let currentRequestCount = 0
+    let activeCurrentRequests = 0
+    let maximumActiveCurrentRequests = 0
+    const client = createClient({
+      getCurrentPositions: vi.fn(async () => {
+        currentRequestCount += 1
+        activeCurrentRequests += 1
+        maximumActiveCurrentRequests = Math.max(
+          maximumActiveCurrentRequests,
+          activeCurrentRequests,
+        )
+        if (currentRequestCount > 1) {
+          await new Promise((resolve) => setTimeout(resolve, 67))
+        }
+        activeCurrentRequests -= 1
+        return NORMALIZED_POSITIONS.map((position) => ({
+          ...position,
+          id: `${position.id}-${currentRequestCount}`,
+        }))
+      }),
+    })
+    const onCurrentSnapshot = vi.fn((
+      _snapshot: unknown,
+      _context: unknown,
+      observation: TrackingMissionEvidenceTransfer,
+    ) => {
+      observation.claim()
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 50,
+      minimumIntervalMs: 50,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onCurrentSnapshot,
+      onStatusChange: vi.fn(),
+      beginMissionEvidenceObservation: (missionId) => {
+        const complete = vi.fn()
+        missionObservationCompletions.push(complete)
+        return { missionId, complete }
+      },
+      getHistoryResetKey: () => 'mission-1',
+      now: () => new Date('2026-09-05T00:02:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
+    expect(onCurrentSnapshot).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(150)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    expect(onCurrentSnapshot).toHaveBeenCalledTimes(2)
+    expect(maximumActiveCurrentRequests).toBe(1)
+    expect(missionObservationCompletions[0]).not.toHaveBeenCalled()
+    await poller.stop()
+  })
+
+  it('does not reclaim mission evidence after synchronous ownership transfer [DON-252]', async () => {
+    const complete = vi.fn()
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 50,
+      minimumIntervalMs: 50,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onCurrentSnapshot: (_snapshot, _context, observation) => {
+        observation.claim()
+        throw new Error('renderer publication failed after evidence admission')
+      },
+      onStatusChange: vi.fn(),
+      beginMissionEvidenceObservation: (missionId) => ({ missionId, complete }),
+      getHistoryResetKey: () => 'mission-1',
+      now: () => new Date('2026-09-05T00:02:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(complete).not.toHaveBeenCalled()
+    expect(onSnapshot).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        historyResetKey: 'mission-1',
+        missionEvidenceId: null,
+      }),
+    )
+    await poller.stop()
+  })
+
+  it('fails the poll closed when current mission evidence is not claimed [DON-252]', async () => {
+    const complete = vi.fn()
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 50,
+      minimumIntervalMs: 50,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onCurrentSnapshot: vi.fn(),
+      onStatusChange,
+      beginMissionEvidenceObservation: (missionId) => ({ missionId, complete }),
+      getHistoryResetKey: () => 'mission-1',
+      now: () => new Date('2026-09-05T00:02:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(complete).toHaveBeenCalledOnce()
+    expect(onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      mode: 'offline',
+    }))
+    await poller.stop()
   })
 
   it('wakes an idle poller immediately when mission activation occurs', async () => {
@@ -894,7 +1012,10 @@ describe('polling manager', () => {
 
     const resetSnapshots = onSnapshot.mock.calls.slice(callsBeforeReset)
     expect(resetSnapshots).toHaveLength(1)
-    expect(resetSnapshots[0]?.[1]).toEqual({ historyResetKey: 'mission-b' })
+    expect(resetSnapshots[0]?.[1]).toEqual({
+      historyResetKey: 'mission-b',
+      missionEvidenceId: null,
+    })
     expect(resetSnapshots[0]?.[0].positions.map(
       (position: NormalizedTrackingPosition) => position.id,
     )).toEqual(NORMALIZED_POSITIONS.map((position) => position.id))
@@ -1759,6 +1880,16 @@ describe('polling manager', () => {
       ),
     ).toEqual(expect.arrayContaining(historyPositions.map((position) => position.id)))
 
+    const persistedHistoryPublications = onSnapshot.mock.calls.filter(
+      ([snapshot]) => snapshot.breadcrumbs.some(
+        (position: { readonly id: string }) => position.id === historyPositions[0]!.id,
+      ) && snapshot.rawBreadcrumbsForPersistence.length === 0,
+    )
+    expect(persistedHistoryPublications.length).toBeGreaterThan(0)
+    for (const [, context] of persistedHistoryPublications) {
+      expect(context.missionEvidenceId).toBeNull()
+    }
+
     poller.stop()
   })
 
@@ -2002,6 +2133,7 @@ describe('polling manager', () => {
 
     const settled = onSnapshot.mock.calls.at(-1)?.[0]
     expect(settled.rawBreadcrumbsForPersistence).toEqual([])
+    expect(onSnapshot.mock.calls.at(-1)?.[1].missionEvidenceId).toBeNull()
     expect(settled.breadcrumbs.map((position: NormalizedTrackingPosition) => position.id)).toEqual(
       canonicalPositions.map((position) => position.id),
     )
@@ -2897,8 +3029,110 @@ describe('polling manager', () => {
     expect(onSnapshot.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({ rawBreadcrumbsForPersistence: [] }),
     )
+    expect(onSnapshot.mock.calls.at(-1)?.[1]).toEqual(
+      expect.objectContaining({ missionEvidenceId: null }),
+    )
 
     poller.stop()
+  })
+
+  it('counts elapsed capacity waiting toward the minimum polling cadence [DON-252]', async () => {
+    const client = createClient()
+    const poller = createPollingManager(client, {
+      intervalMs: 50,
+      minimumIntervalMs: 50,
+      staleThresholdMs: 60_000,
+      onSnapshot: vi.fn(),
+      onCurrentSnapshot: vi.fn(),
+      waitForCurrentEvidenceCapacity: vi.fn().mockResolvedValueOnce(undefined)
+        .mockImplementationOnce(() => new Promise<void>((resolve) => setTimeout(resolve, 40)))
+        .mockResolvedValue(undefined),
+      onStatusChange: vi.fn(),
+    })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(49)
+    expect(client.getCurrentPositions).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    await poller.stop()
+  })
+
+  it('publishes the current fix but waits for evidence capacity before fetching another', async () => {
+    const client = createClient()
+    const published = vi.fn()
+    let release = (): void => undefined
+    const capacity = new Promise<void>((resolve) => { release = resolve })
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60_000,
+      onSnapshot: vi.fn(),
+      onCurrentSnapshot: published,
+      waitForCurrentEvidenceCapacity: vi.fn().mockResolvedValueOnce(undefined).mockImplementation(() => capacity),
+      onStatusChange: vi.fn(),
+    })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(published).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(client.getCurrentPositions).toHaveBeenCalledOnce()
+    release()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(3)
+    await poller.stop()
+  })
+
+  it('persists every displayed observation when the real evidence queue saturates', async () => {
+    let release = (): void => undefined
+    const blockedWrite = new Promise<void>((resolve) => { release = resolve })
+    const persisted: number[] = []
+    const markEvidenceLoss = vi.fn()
+    const queue = createDeferredMissionEvidenceQueue<number>({ capacity: 8,
+      beginObservation: (missionId) => ({ missionId, complete: () => undefined }),
+      persist: async (_missionId, value) => { await blockedWrite; persisted.push(value) },
+      markEvidenceLoss })
+    let displayed = 0
+    const client = createClient()
+    const poller = createPollingManager(client, { intervalMs: 5000, staleThresholdMs: 60000,
+      onSnapshot: vi.fn(), onStatusChange: vi.fn(),
+      onCurrentSnapshot: () => {
+        expect(queue.enqueue('mission-a', ++displayed)).toBe(true)
+        queue.requestFlushMission('mission-a')
+      },
+      waitForCurrentEvidenceCapacity: (signal) => queue.waitForCapacity(signal) })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(100_000)
+    expect(displayed).toBe(8)
+    expect(queue.pendingCount()).toBe(8)
+    expect(persisted).toEqual([])
+    release()
+    await vi.advanceTimersByTimeAsync(10_000)
+    await poller.stop()
+    await queue.settleForStop(() => true)
+    expect(displayed).toBeGreaterThan(8)
+    expect(persisted).toEqual(Array.from({ length: displayed }, (_, index) => index + 1))
+    expect(markEvidenceLoss).not.toHaveBeenCalled()
+  })
+
+  it('does not fetch when a previous mission still owns the full evidence queue', async () => {
+    const client = createClient()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60_000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      waitForCurrentEvidenceCapacity: (signal) => new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => resolve(), { once: true })
+      }),
+    })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(client.getCurrentPositions).not.toHaveBeenCalled()
+    await poller.stop()
+    expect(client.getCurrentPositions).not.toHaveBeenCalled()
   })
 
   it('stays idle without authenticating before a mission starts', async () => {
@@ -2960,7 +3194,7 @@ describe('polling manager', () => {
         breadcrumbs: [],
         rawBreadcrumbsForPersistence: [],
       },
-      { historyResetKey: null, participantRosterAuthoritative: false },
+      { historyResetKey: null, missionEvidenceId: null, participantRosterAuthoritative: false },
     )
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({

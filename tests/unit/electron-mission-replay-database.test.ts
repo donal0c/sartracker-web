@@ -11,7 +11,7 @@ const Database = require('better-sqlite3') as new (path: string) => {
   exec(sql: string): void
 }
 const { openMissionReplayDatabase } = require('../../electron/mission-replay-database.cjs') as {
-  readonly openMissionReplayDatabase: (databasePath: string) => {
+  readonly openMissionReplayDatabase: (databasePath: string, options?: { archiveReview: boolean }) => {
     close(): void
     pragma(sql: string, options?: { readonly simple?: boolean }): unknown
   }
@@ -37,5 +37,21 @@ describe('mission replay database [DON-278]', () => {
     expect(reader.pragma('query_only', { simple: true })).toBe(1)
     expect(Number(reader.pragma('mmap_size', { simple: true }))).toBeGreaterThanOrEqual(536_870_912)
     reader.close()
+  })
+
+  it('keeps archived Replay query-only without mapping a multi-gigabyte snapshot into process RSS [DON-252]', async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'sartracker-replay-db-'))
+    const databasePath = path.join(root, 'mission.sqlite')
+    const writer = new Database(databasePath)
+    writer.exec('CREATE TABLE evidence (id TEXT PRIMARY KEY);')
+    writer.close()
+
+    const reader = openMissionReplayDatabase(databasePath, { archiveReview: true })
+    try {
+      expect(reader.pragma('query_only', { simple: true })).toBe(1)
+      expect(Number(reader.pragma('mmap_size', { simple: true }))).toBe(0)
+    } finally {
+      reader.close()
+    }
   })
 })

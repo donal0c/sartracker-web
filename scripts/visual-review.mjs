@@ -358,6 +358,7 @@ function spawnReviewer({ prompt, model, allowedDir }) {
     const child = spawn(
       'claude',
       [
+        '--bare',
         '--print',
         '--model',
         model,

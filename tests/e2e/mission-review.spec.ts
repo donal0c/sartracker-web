@@ -1,5 +1,7 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import path from 'node:path'
+
+const SYNTHETIC_ARCHIVE_PASSPHRASE = 'Synthetic!Archive123'
 
 test.describe('M15 mission review workspace', () => {
   test.beforeEach(async ({ page }) => {
@@ -20,8 +22,7 @@ test.describe('M15 mission review workspace', () => {
 
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
-    await page.getByTestId('mission-finalize-btn').click()
-    await page.getByTestId('mission-finalize-confirm').click()
+    await finalizeWithSyntheticArchiveCustody(page)
 
     await page.getByTestId('open-mission-review-workspace').click()
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
@@ -57,7 +58,7 @@ test.describe('M15 mission review workspace', () => {
       return parsed.openedPaths ?? []
     })
 
-    expect(openedPaths.some((path) => path.endsWith('.zip'))).toBe(true)
+    expect(openedPaths.some((openedPath) => openedPath.endsWith('.sararch'))).toBe(true)
   })
 
   test('DON-176: Review is docked and leaves active-mission controls operable', async ({ page }) => {
@@ -389,6 +390,21 @@ test.describe('M15 mission review workspace', () => {
     }).toContainEqual(expect.stringContaining('marker-evidence.txt'))
   })
 })
+
+async function finalizeWithSyntheticArchiveCustody(page: Page): Promise<void> {
+  await page.getByTestId('mission-finalize-btn').click()
+  const dialog = page.getByTestId('mission-archive-custody-dialog')
+  await expect(dialog).toBeVisible()
+  await page.getByTestId('archive-passphrase').fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+  await page
+    .getByTestId('archive-passphrase-confirmation')
+    .fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
+  await page.getByTestId('archive-issue-recovery-code').click()
+  const recoveryCode = (await page.getByTestId('archive-recovery-code').innerText()).trim()
+  await page.getByTestId('archive-recovery-code-confirmation').fill(recoveryCode)
+  await page.getByTestId('archive-finalize').click()
+  await expect(dialog).toBeHidden()
+}
 
 async function createMarker(
   page: import('@playwright/test').Page,

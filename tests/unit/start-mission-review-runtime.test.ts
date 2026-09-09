@@ -40,6 +40,31 @@ describe('startMissionReviewRuntime', () => {
     )
   })
 
+  it('does not claim generic cleanup storage is resumable before eligibility is checked', async () => {
+    const cleanupMission: Mission = {
+      ...FIRST_MISSION,
+      storage_state: 'cleanup_in_progress',
+    }
+    const readMissionReview = vi.fn()
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([cleanupMission]),
+        readMissionReview,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(cleanupMission.id)
+
+    expect(readMissionReview).not.toHaveBeenCalled()
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      error: expect.stringContaining('Review Archive Cleanup'),
+    }))
+    expect(String(applyRuntime.mock.calls.at(-1)?.[0]?.error)).not.toMatch(/resume/iu)
+  })
+
   it('keeps one review GPX projection page in renderer state and replaces it on demand [DON-274]', async () => {
     const listGpxImports = vi.fn().mockRejectedValue(new Error('unbounded API must not be called'))
     const listGpxImportPage = vi

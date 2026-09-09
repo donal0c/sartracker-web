@@ -2,7 +2,7 @@
 
 Date: 2026-08-22
 
-Status: **Locked for programme planning.** The operator/domain decisions are confirmed. The renderer implementation and archive key-management mechanism remain measured/design choices inside bounded implementation chunks; they do not reopen the domain model.
+Status: **Locked for programme planning.** The operator/domain decisions are confirmed. PR6 and its security decision subsequently bound the archive key-management mechanism; remaining renderer choices are bounded implementation details and do not reopen the domain model.
 
 ## Purpose
 
@@ -127,7 +127,12 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - The finalized archive is encrypted and locked for confidentiality.
 - The archive also carries a cryptographic hash manifest for integrity verification; encryption alone is not integrity provenance.
 - Archive creation must be streamed and mission-scoped, contain every table/artifact needed for deterministic review and replay, and pass restore-and-replay verification before live-store cleanup is eligible.
-- Encryption key custody, authorized unlock, loss recovery, and emergency access must be decided and tested before the archive implementation chunk can complete.
+- The engineering custody mechanism is bound in
+  `docs/breadcrumb-archive-security-decision.md`: each archive has exactly one
+  passphrase slot and one per-archive recovery-code slot, and both unlock paths
+  are tested. PR6 does not assign a human holder. The non-blocking human-custody
+  tabletop remains an operator-process confirmation, not an implementation
+  answer to invent here.
 
 ## Target Architecture
 
@@ -283,6 +288,37 @@ The implementation is traced by `DON-274`, `DON-277`, `DON-278`, `DON-279`,
 `tests/unit/electron-mission-replay-query.test.ts`,
 `tests/e2e/mission-review.spec.ts`,
 `tests/e2e/mission-evidence-search-passes.spec.ts`, and
-`tests/e2e/visual/visual-mission-evidence-replay.spec.ts`. Archive encryption,
-restore-and-replay qualification, and release/field acceptance remain PR-6 /
-BCP-17 work.
+`tests/e2e/visual/visual-mission-evidence-replay.spec.ts`. PR-6 implements
+archive encryption and independently verified restore-and-Replay. BCP-17
+exact-candidate qualification and release/field acceptance remain separate
+after PR-6.
+
+## PR-6 Archive Security Binding (2026-08-29)
+
+PR-6 implements the archive lifecycle under
+`docs/breadcrumb-archive-security-decision.md`. The repository-owned
+`SARARCH2` format uses framed AES-256-GCM, a fresh archive key, exactly one
+mandatory passphrase slot and one mandatory per-archive recovery slot, an
+encrypted exhaustive manifest and a separately recorded whole-file SHA-256.
+The low-level versioned parser permits at most one future machine slot so
+malformed slot sets fail closed, but PR6 creates or unlocks no machine slot and
+does not use Electron `safeStorage` for archive custody. Its scrypt profile,
+including `maxmem`, is versioned and validated without silent weakening.
+
+Creation uses a pinned mission-scoped SQLite snapshot and streaming workers;
+verification independently restores the sealed file and exhaustively checks
+ciphertext, framing, entries, table inventory, row counts and content digests.
+Sampled replay equality is an additional semantic check and never the basis of
+a completeness claim. Legacy v1 ZIP archives remain readable and visibly
+unencrypted; unknown newer formats fail closed.
+
+Archive review uses an explicit owner-only temporary plaintext session and a
+read-only facade separate from the active mission. Application-owned scratch
+and session files are swept, but this is not a forensic secure-erasure claim.
+Corrections create visible chained supplement archives without mutating prior
+bytes. Live-row cleanup is operator initiated, exhaustive-verification gated,
+and requires a fresh unwrap using that archive's existing passphrase or
+recovery slot. It is bounded, journalled and resumable. Every PR5
+finalization fence, epoch, protected-recovery, finalized-write and replay-
+generation contract remains in force, and current positions never wait for
+archive work.

@@ -95,7 +95,7 @@ describe('finalized mission coverage classification [DON-276]', () => {
     ])
   })
 
-  it('keeps evidence read-only while allowing an equivalent derived-cache rebuild', async () => {
+  it('keeps finalized coverage membership immutable until an explicit correction unlock', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'sartracker-finalized-coverage-'))
     store = createElectronMissionStore({ userDataPath: directory })
     const mission = await store.createMission({ name: 'Finalized coverage' })
@@ -110,6 +110,7 @@ describe('finalized mission coverage classification [DON-276]', () => {
     }
     await store.addPosition(position)
     const before = await store.readCoverageManifest(mission.id, 'before')
+    expect(before.chunks).toHaveLength(1)
     await store.finishMission(mission.id)
     await store.finalizeMission(mission.id)
 
@@ -117,16 +118,10 @@ describe('finalized mission coverage classification [DON-276]', () => {
       .rejects.toThrow(/finalized|finished|read-only/iu)
     const { database_path: databasePath } = await store.info()
     const database = new Database(databasePath)
-    database.prepare('DELETE FROM coverage_invalidations WHERE mission_id = ?').run(mission.id)
-    database.prepare('DELETE FROM coverage_chunks WHERE mission_id = ?').run(mission.id)
-    database.prepare('DELETE FROM coverage_missions WHERE mission_id = ?').run(mission.id)
+    const beforeRows = database.prepare('SELECT * FROM coverage_chunks WHERE mission_id = ?').all(mission.id)
+    await expect(store.readCoverageManifest(mission.id, 'rebuilt'))
+      .rejects.toMatchObject({ code: 'MISSION_COVERAGE_FINALIZED' })
+    expect(database.prepare('SELECT * FROM coverage_chunks WHERE mission_id = ?').all(mission.id)).toEqual(beforeRows)
     database.close()
-
-    const rebuilt = await store.readCoverageManifest(mission.id, 'rebuilt')
-    expect(rebuilt.chunks.map(projectChunk)).toEqual(before.chunks.map(projectChunk))
   })
 })
-
-function projectChunk(chunk: Manifest['chunks'][number]) {
-  return { key: chunk.key, fixCount: chunk.fixCount, fixDigest: chunk.fixDigest }
-}

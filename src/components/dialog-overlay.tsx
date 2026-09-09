@@ -12,12 +12,16 @@ type DialogOverlayProps = {
   readonly open: boolean
   /** Stable id for the visible dialog heading. */
   readonly labelledBy: string
+  /** Optional stable id for the dialog's visible consequence description. */
+  readonly describedBy?: string
   /** Called when Escape or the backdrop requests dismissal. */
   readonly onClose: () => void
   /** Test id for the root overlay. */
   readonly testId: string
   /** Panel width classes. */
   readonly panelClassName?: string
+  /** Overlay stack class for dialogs opened from inside another modal workspace. */
+  readonly overlayClassName?: string
   /** Dialog content. */
   readonly children: ReactNode
 }
@@ -29,9 +33,11 @@ type DialogOverlayProps = {
 export function DialogOverlay({
   open,
   labelledBy,
+  describedBy,
   onClose,
   testId,
   panelClassName = 'max-w-3xl',
+  overlayClassName = 'z-40',
   children,
 }: DialogOverlayProps) {
   const panelRef = useRef<HTMLDivElement>(null)
@@ -76,7 +82,7 @@ export function DialogOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/82 px-4 py-8 backdrop-blur-[2px]"
+      className={`fixed inset-0 flex items-center justify-center bg-stone-950/82 px-4 py-8 backdrop-blur-[2px] ${overlayClassName}`}
       data-testid={testId}
     >
       <button
@@ -87,6 +93,7 @@ export function DialogOverlay({
         type="button"
       />
       <div
+        aria-describedby={describedBy}
         aria-labelledby={labelledBy}
         aria-modal="true"
         className={`sar-panel relative w-full p-6 ${panelClassName}`}

@@ -96,6 +96,22 @@ describe('electron crash log', () => {
     expect(serialized).toContain('[redacted]')
   })
 
+  it('redacts archive custody secrets from persisted crash history [DON-248]', async () => {
+    const passphraseSentinel = 'Crash-Archive-Passphrase-Sentinel-9!'
+    const recoveryCodeSentinel = 'CRASH-RECOVERY-SENTINEL-7Z'
+    const log = await createLog()
+    await log.record({
+      kind: 'unhandledRejection',
+      summary: `Archive failed pass_phrase=${passphraseSentinel}`,
+      detail: `Recovery retry recovery-code: ${recoveryCodeSentinel}`,
+    })
+
+    const serialized = JSON.stringify(await log.readRecent())
+    expect(serialized).not.toContain(passphraseSentinel)
+    expect(serialized).not.toContain(recoveryCodeSentinel)
+    expect(serialized).toContain('[redacted]')
+  })
+
   it('detects an unclean shutdown until a clean exit is marked', async () => {
     const log = await createLog()
     // A fresh install with no recorded exit is treated as clean (no false alarm).

@@ -63,6 +63,8 @@ function createIngestAnomalyOutbox(options) {
   const replayBatchSize = options.replayBatchSize ??
     INGEST_ANOMALY_OUTBOX_REPLAY_BATCH_HYPOTHESIS
   const retryDelayMs = options.retryDelayMs ?? 1_000
+  const assertMissionMutationAllowed = options.assertMissionMutationAllowed
+    ?? (() => undefined)
   const addFailure = (scope, reason) =>
     addFailureToMap(failuresByScope, scope, reason)
 
@@ -86,11 +88,13 @@ function createIngestAnomalyOutbox(options) {
       clearTimeout(replayRetryTimer)
       replayRetryTimer = null
     }
+    return operationTail
   }
 
   /** Writes, projects, and only then removes one canonical envelope. */
   function deliver(envelope) {
     return enqueue(async () => {
+      await assertMissionMutationAllowed(envelope?.missionId)
       await fs.mkdir(options.directoryPath, { recursive: true })
       await initializeDirectoryAndFailureState()
       let serialized
@@ -121,6 +125,7 @@ function createIngestAnomalyOutbox(options) {
           await persistFailure(envelope.missionId, 'outbox_capacity_exhausted')
           throw new Error('Durable outbox capacity is exhausted; evidence was not acknowledged.')
         }
+        await assertMissionMutationAllowed(envelope.missionId)
         try {
           await writeFileDurably(filePath, serialized.text, { platform })
         } catch (error) {
@@ -164,6 +169,7 @@ function createIngestAnomalyOutbox(options) {
   /** Persists the honest completeness block when volatile evidence cannot be retained. */
   function markEvidenceLoss(missionId, reason) {
     return enqueue(async () => {
+      await assertMissionMutationAllowed(missionId)
       await initializeDirectoryAndFailureState()
       if (![
         'mission_persistence_failed',
@@ -173,8 +179,9 @@ function createIngestAnomalyOutbox(options) {
         throw new Error('Ingest evidence-loss reason is invalid.')
       }
       validateMissionScope(missionId)
+      await assertMissionMutationAllowed(missionId)
       const scope = failureScope(missionId)
-      await sealEvidenceLoss(scope, reason)
+      await sealEvidenceLoss(scope, missionId, reason)
     })
   }
 
@@ -184,6 +191,9 @@ function createIngestAnomalyOutbox(options) {
       validateRendererEvidenceIncidentId(incidentId)
       const normalizedScopes = normalizeRendererEvidenceIncidentScopes(scopes)
       await initializeDirectoryAndFailureState()
+      for (const scopeEntry of normalizedScopes) {
+        await assertMissionMutationAllowed(scopeEntry.missionId)
+      }
       await validateScopes?.(normalizedScopes)
       const incidentKey = createDeliveryRecoveryKey(incidentId)
       const previous = rendererEvidenceIncidentsByKey.get(incidentKey)
@@ -199,6 +209,9 @@ function createIngestAnomalyOutbox(options) {
       }
       await fs.mkdir(options.directoryPath, { recursive: true })
       const incident = { incidentKey, scopes: combinedScopes }
+      for (const scopeEntry of combinedScopes) {
+        await assertMissionMutationAllowed(scopeEntry.missionId)
+      }
       await persistRendererEvidenceIncident(incident)
       rendererEvidenceIncidentsByKey.set(incidentKey, incident)
       let stagedCount = 0
@@ -212,6 +225,7 @@ function createIngestAnomalyOutbox(options) {
           incidentKey,
           scopeReason: scopeEntry.scopeReason,
         })
+        await assertMissionMutationAllowed(scopeEntry.missionId)
         await persistFailureScope(scopeEntry.scope)
         stagedCount += 1
         if (
@@ -248,6 +262,7 @@ function createIngestAnomalyOutbox(options) {
       if (!['drained', 'lost'].includes(outcome)) {
         throw new Error('Renderer evidence-drain outcome is invalid.')
       }
+      await assertMissionMutationAllowed(missionId)
       await initializeDirectoryAndFailureState()
       const scope = failureScope(missionId)
       const incidentKey = createDeliveryRecoveryKey(incidentId)
@@ -255,6 +270,7 @@ function createIngestAnomalyOutbox(options) {
       if (context === undefined || context.incidentKey !== incidentKey) {
         throw new Error('Renderer evidence-drain uncertainty does not match the pending incident.')
       }
+      await assertMissionMutationAllowed(missionId)
       await resolveRendererEvidenceIncidentScopes(incidentKey, [scope], outcome)
     })
   }
@@ -274,6 +290,9 @@ function createIngestAnomalyOutbox(options) {
       for (const incidentKey of incidentKeys) {
         const incident = rendererEvidenceIncidentsByKey.get(incidentKey)
         if (incident === undefined) continue
+        for (const scopeEntry of incident.scopes) {
+          await assertMissionMutationAllowed(scopeEntry.missionId)
+        }
         resolvedScopes.push(...await resolveRendererEvidenceIncidentScopes(
           incidentKey,
           incident.scopes.map((scopeEntry) => scopeEntry.scope),
@@ -318,17 +337,31 @@ function createIngestAnomalyOutbox(options) {
         name.endsWith('.corrupt') && fileBelongsToMission(name, missionId),
       ).length
       const failure = selectFailure(missionId, corruptCount)
-      const acknowledgedLossMatches =
-        typeof fenceOptions.acknowledgedLossToken === 'string' &&
-        evidenceLossAcknowledgementMatches(missionId, fenceOptions.acknowledgedLossToken)
+      let acknowledgedLossMatches = false
+      if (failure !== null) {
+        let candidate = null
+        try {
+          candidate = createEvidenceLossAcknowledgementCandidate(missionId)
+        } catch {}
+        if (candidate !== null) {
+          const acknowledgedLossToken = typeof fenceOptions.acknowledgedLossToken === 'string'
+            ? fenceOptions.acknowledgedLossToken
+            : typeof fenceOptions.readAcknowledgedLossToken === 'function'
+              ? await fenceOptions.readAcknowledgedLossToken()
+              : null
+          acknowledgedLossMatches = acknowledgedLossToken === candidate.token
+        }
+      }
       if (
         pendingCount > 0 ||
         corruptCount > 0 ||
         (failure !== null && !acknowledgedLossMatches)
       ) {
-        throw new Error(
+        const error = new Error(
           `Degraded evidence health blocks ${operationName}; resolve durable ingest evidence before continuing.`,
         )
+        error.code = 'EVIDENCE_HEALTH_BLOCKED'
+        throw error
       }
       return operation()
     })
@@ -336,7 +369,12 @@ function createIngestAnomalyOutbox(options) {
 
   /** Replays committed files in deterministic order and quarantines corruption. */
   async function initializeAndReplay() {
+    // initialize() may already be queued when the owning mission store closes.
+    // Once disposal wins that race, startup must not recreate app-addressable
+    // outbox state after the store has released its filesystem ownership.
+    if (disposed) return
     await initializeDirectoryAndFailureState()
+    if (disposed) return
     await replayPending()
   }
 
@@ -348,6 +386,7 @@ function createIngestAnomalyOutbox(options) {
     const names = selectReplayBatch(pendingNames, replayCursorName, replayBatchSize)
     if (names.length > 0) replayCursorName = names.at(-1)
     let projectedCount = 0
+    let recoveryPaused = false
     for (const name of names) {
       const filePath = path.join(options.directoryPath, name)
       let envelope
@@ -360,8 +399,13 @@ function createIngestAnomalyOutbox(options) {
         continue
       }
       try {
+        await assertMissionMutationAllowed(envelope.missionId)
         await options.projectEnvelope(envelope)
       } catch (error) {
+        if (error?.code === 'ARCHIVE_CORRECTION_ATTACHMENT_RECOVERY_REQUIRED') {
+          recoveryPaused = true
+          break
+        }
         await persistFailure(
           envelope.missionId,
           error?.code === 'LATE_EVIDENCE_AFTER_FINALIZATION'
@@ -382,7 +426,7 @@ function createIngestAnomalyOutbox(options) {
     }
     const remainingPendingCount = (await fs.readdir(options.directoryPath))
       .filter((name) => name.endsWith('.json')).length
-    scheduleReplayRetry(remainingPendingCount, projectedCount)
+    scheduleReplayRetry(remainingPendingCount, recoveryPaused ? 0 : projectedCount)
   }
 
   /** Retries bounded replay in background, draining quickly only after progress. */
@@ -494,9 +538,13 @@ function createIngestAnomalyOutbox(options) {
     const resolving = incident.scopes.filter((entry) => selected.has(entry.scope))
     const remaining = incident.scopes.filter((entry) => !selected.has(entry.scope))
     if (outcome === 'drained') {
+      for (const scopeEntry of resolving) {
+        await assertMissionMutationAllowed(scopeEntry.missionId)
+      }
       await replaceRendererEvidenceIncident(incidentKey, remaining)
     }
     for (const scopeEntry of resolving) {
+      await assertMissionMutationAllowed(scopeEntry.missionId)
       removeRendererEvidencePendingInMemory(scopeEntry.scope)
       if (outcome === 'lost') {
         if (!failuresByScope.get(scopeEntry.scope)?.has('renderer_pending_evidence_lost')) {
@@ -507,9 +555,13 @@ function createIngestAnomalyOutbox(options) {
           )
         }
       }
+      await assertMissionMutationAllowed(scopeEntry.missionId)
       await persistFailureScope(scopeEntry.scope)
     }
     if (outcome === 'lost') {
+      for (const scopeEntry of resolving) {
+        await assertMissionMutationAllowed(scopeEntry.missionId)
+      }
       await replaceRendererEvidenceIncident(incidentKey, remaining)
     }
     return resolving
@@ -725,17 +777,9 @@ function createIngestAnomalyOutbox(options) {
     }
   }
 
-  /** Accepts only a token for the current isolated sticky loss occurrence. */
-  function evidenceLossAcknowledgementMatches(missionId, token) {
-    try {
-      return createEvidenceLossAcknowledgementCandidate(missionId).token === token
-    } catch {
-      return false
-    }
-  }
-
   /** Converts one confirmed renderer incident into a sticky loss generation. */
-  async function sealEvidenceLoss(scope, reason) {
+  async function sealEvidenceLoss(scope, missionId, reason) {
+    await assertMissionMutationAllowed(missionId)
     lossGenerationByScope.set(scope, (lossGenerationByScope.get(scope) ?? 0) + 1)
     addFailure(scope, reason)
     await fs.mkdir(options.directoryPath, { recursive: true })
