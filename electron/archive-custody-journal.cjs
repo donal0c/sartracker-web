@@ -1197,6 +1197,10 @@ function createArchiveCustodyJournal({
             active.record.revision,
             ['publish_prepared'],
           )
+          if (!registryMatchesJournal(db, current.record)) {
+            throw new ArchiveCustodyJournalError('ARCHIVE_CUSTODY_JOURNAL_REGISTRY_MISMATCH',
+              'Archive registry changed before custody settlement.')
+          }
           return terminalize(
             current,
             'registered',

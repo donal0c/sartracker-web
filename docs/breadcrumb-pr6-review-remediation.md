@@ -6,9 +6,11 @@ Donal requested correction of the findings with proportionate regression and smo
 coverage. The previous qualification remains historical evidence, not proof of
 subsequent changes. No merge or release is authorized by this remediation.
 
-The source counters and visible list disagree: T1/T2 plus A1–A12 are 14 entries,
-and the selected Medium section lists 16 of 21. The omitted findings have been
-requested. Medium identifiers below follow their visible order.
+This is the historical selected-list reconciliation. The source was expanded on
+2026-09-09 and all 95 findings are now available. The current reconciliation is
+`docs/breadcrumb-pr6-complete-review-ledger.md`; its dispositions supersede the
+earlier missing-entry statements below. Medium identifiers here follow the
+original selected list's visible order.
 
 ## Findings and disposition
 

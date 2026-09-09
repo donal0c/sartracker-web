@@ -425,6 +425,55 @@ function verifyRequestFromTicket(input: {
 }
 
 describe('verified SARARCH2 archive-backed review integration [DON-252 / BCP-15]', () => {
+  it('closes the untransferred database handle when extraction settlement fails after ready', async () => {
+    const userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-archive-close-fault-'))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({ userDataPath })
+    let transferredHandle: import('node:fs/promises').FileHandle | undefined
+    const originalOpen = nodeFs.promises.open.bind(nodeFs.promises)
+    let openSpy: ReturnType<typeof vi.spyOn> | undefined
+    let closeSpy: ReturnType<typeof vi.spyOn> | undefined
+    try {
+      const mission = await seedReviewMission(store)
+      await store.finishMission(mission.id)
+      const finalized = await store.finalizeMission(mission.id,
+        { passphrase: PASSPHRASE, recoveryCode: RECOVERY_CODE },
+        { operationId: CREATE_OPERATION_ID, onProgress: () => undefined })
+      const ticket = store.issueMissionArchiveReviewTicket(finalized.archive.id)
+      openSpy = vi.spyOn(nodeFs.promises, 'open').mockImplementation(async (...args) => {
+        const handle = await originalOpen(...args)
+        if (String(args[0]).endsWith('mission-store.sqlite')) transferredHandle = handle
+        return handle
+      })
+      const originalClose = nodeFs.closeSync.bind(nodeFs)
+      await expect(restoreMissionArchiveForReview({
+        request: restoreRequestFromTicket({ ticket,
+          archiveDirectory: path.join(userDataPath, 'archives'),
+          reviewRoot: path.join(userDataPath, 'archive-review'),
+          operationId: LOW_CAPACITY_RESTORE_OPERATION_ID,
+          sessionId: LOW_CAPACITY_RESTORE_SESSION_ID }),
+        secretBytes: Buffer.from(PASSPHRASE),
+        cancellationFlag: new Int32Array(new SharedArrayBuffer(4)),
+        onProgress: (progress) => {
+          if (progress.phase === 'ready') {
+            closeSpy = vi.spyOn(nodeFs, 'closeSync').mockImplementationOnce((descriptor) => {
+              originalClose(descriptor)
+              throw new Error('injected extraction close failure')
+            })
+          }
+        },
+      })).rejects.toMatchObject({ code: 'ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED' })
+      expect(transferredHandle).toBeDefined()
+      expect(transferredHandle?.fd).toBe(-1)
+    } finally {
+      openSpy?.mockRestore()
+      closeSpy?.mockRestore()
+      await transferredHandle?.close().catch(() => undefined)
+      await store.prepareClose().catch(() => undefined)
+      store.close()
+    }
+  }, 120_000)
+
   it('fails low-capacity restore and verification before digest, KDF, or payload reads', async () => {
     const userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-archive-preflight-'))
     temporaryDirectories.add(userDataPath)

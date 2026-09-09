@@ -469,6 +469,22 @@ describe('SARARCH2 frame nonces and authenticated encryption', () => {
     ).toThrow(/plaintext length/i)
   })
 
+  it('clears provisional frame plaintext after authentication failure', () => {
+    const candidate = Buffer.alloc(32, 0x7a)
+    const loaded = { exports: {} as ArchiveCryptoModule }
+    runInNewContext(readFileSync(require.resolve('../../electron/archive-crypto.cjs'), 'utf8'), {
+      Buffer, module: loaded, require: () => ({ ...require('node:crypto'), createDecipheriv: () => ({
+        setAAD: vi.fn(), setAuthTag: vi.fn(), update: () => candidate,
+        final: () => { throw new Error('authentication failed') },
+      }) }),
+    })
+    expect(() => loaded.exports.decryptFrame({ missionArchiveKey: FIXED_MAK,
+      noncePrefix: FIXED_NONCE_PREFIX, frameIndex: 0n, final: false,
+      ciphertext: Buffer.alloc(32), authTag: Buffer.alloc(16), headerDigest: FIXED_HEADER_DIGEST,
+    })).toThrow()
+    expect(candidate).toEqual(Buffer.alloc(32))
+  })
+
   it('matches a deterministic AES-256-GCM frame vector and decrypts it', () => {
     const plaintext = Buffer.from('mission evidence', 'utf8')
     const encrypted = encryptFrame({

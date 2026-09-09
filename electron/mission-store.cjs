@@ -4597,6 +4597,7 @@ function migrateMissionStoreForArchiveReview(input) {
     input.onProgress?.(Object.freeze({ completedPages, detail }))
   }
   try {
+    db.pragma('trusted_schema = OFF')
     const storedVersion = readStoredSchemaVersion(db)
     if (!Number.isSafeInteger(storedVersion)
       || storedVersion < 1
@@ -7614,39 +7615,6 @@ async function unlockFinalizedMission(
       adminName,
       reason,
       ...(signal === undefined ? {} : { signal }),
-      onRestored: () => {
-        const current = getMission(db, missionId)
-        const currentBoundary = readCurrentMissionFinalizationBoundary(db, {
-          missionId,
-          archiveId: input.archive_id,
-        })
-        if (current.status !== 'finalized'
-          || current.storage_state !== 'archived'
-          || currentBoundary?.eventRowid !== finalizedEpoch) {
-          const error = new Error(
-            'Mission finalization or archive storage changed before correction unlock could commit.',
-          )
-          error.code = 'ARCHIVE_REHYDRATE_EPOCH_CHANGED'
-          throw error
-        }
-        db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finished', missionId)
-        const unlockedAt = now()
-        insertEventWithId(
-          db,
-          deriveArchiveLifecycleEventId(input.archive_id, 'mission-unlocked'),
-          missionId,
-          'mission_unlocked',
-          unlockedAt,
-          {
-            admin_name: adminName,
-            reason,
-            restored_from_archive_id: input.archive_id,
-            archive_correction_operation_id: correctionOperationId,
-            resulting_status: 'finished',
-            storage_state: 'live',
-          },
-        )
-      },
     })
     return getMission(db, missionId)
   }

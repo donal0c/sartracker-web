@@ -6,7 +6,7 @@ const MAX_ARCHIVE_REVIEW_RESULT_ROWS = 100_000
 /** Stable failure for an unsafe or oversized worker result. */
 class ArchiveReviewResultBudgetError extends Error {
   /** Creates a non-reflective result-boundary failure. */
-  constructor(message = 'Archive review result exceeds the 8 MiB output limit.') {
+  constructor(message = 'Mission review result exceeds the 8 MiB output limit. Reduce the requested history or use paged Replay.') {
     super(message)
     this.name = 'ArchiveReviewResultBudgetError'
     this.code = 'ARCHIVE_REVIEW_RESULT_INVALID'

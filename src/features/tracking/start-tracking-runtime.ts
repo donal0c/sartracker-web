@@ -454,6 +454,12 @@ export async function startTrackingRuntime(
         fields: { failureCode },
       })).catch((diagnosticError: unknown) => logger.warn('Persistence failure diagnostic could not be recorded.', diagnosticError))
     },
+    onEvidenceLoss: (_missionId, reason) => {
+      void Promise.resolve().then(() => dependencies.recordDiagnosticEvent?.({
+        level: 'warn', category: 'tracking', event: 'tracking_deferred_evidence_loss',
+        fields: { reason, lostPayloadCount: 1 },
+      })).catch((error: unknown) => logger.warn('Evidence-loss diagnostic could not be recorded.', error))
+    },
     markEvidenceLoss: async (missionId, reason) => {
       await retainMissionEvidenceLoss(
         missionId,
@@ -1670,9 +1676,8 @@ function createLatestTrackingCacheWriteLane(dependencies: {
       accepting = false
       while (activeEntry !== null || pendingEntry !== null) {
         const currentCompletion = activeEntry?.completion
-        if (currentCompletion !== undefined) {
-          await currentCompletion
-        }
+        if (currentCompletion === undefined) throw new Error('Tracking cache settlement lost its active writer.')
+        await currentCompletion
       }
     },
   }

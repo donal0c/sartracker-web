@@ -24,7 +24,7 @@ const {
 const { streamArchiveAttachment } = require('./archive-attachments.cjs')
 const { createMissionArchiveScratch } = require('./archive-scratch.cjs')
 
-const MAX_ARCHIVE_MANIFEST_BYTES = 4 * 1024 * 1024
+const { MAX_ARCHIVE_MANIFEST_BYTES, MAX_ARCHIVE_MANIFEST_ENTRIES } = require('./archive-manifest-limits.cjs')
 const FILE_DIGEST_PROGRESS_BYTES = 8 * 1024 * 1024
 const WORKER_FAILURE_CODES = new Set([
   'ARCHIVE_ATTACHMENT_CHANGED',
@@ -289,7 +289,7 @@ async function createMissionArchiveFile(input) {
       })),
     }
     manifestBytes = Buffer.from(canonicalJson(manifest), 'utf8')
-    if (manifestBytes.length > MAX_ARCHIVE_MANIFEST_BYTES) {
+    if (manifestBytes.length > MAX_ARCHIVE_MANIFEST_BYTES || entryProofs.length > MAX_ARCHIVE_MANIFEST_ENTRIES) {
       const error = new Error('Mission archive manifest exceeds its safe bound.')
       error.code = 'ARCHIVE_CREATE_FAILED'
       throw error

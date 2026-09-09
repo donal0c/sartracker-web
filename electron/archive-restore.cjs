@@ -172,7 +172,8 @@ function normalizeRestoreRequest(input) {
   }
   const archiveDirectory = normalizeAbsoluteDirectory(input.archiveDirectory, 'Archive directory')
   const reviewRoot = normalizeAbsoluteDirectory(input.reviewRoot, 'Archive review root')
-  if (reviewRoot === archiveDirectory || reviewRoot.startsWith(`${archiveDirectory}${path.sep}`)) {
+  if (reviewRoot === archiveDirectory || reviewRoot.startsWith(`${archiveDirectory}${path.sep}`)
+    || archiveDirectory.startsWith(`${reviewRoot}${path.sep}`)) {
     throw new ArchiveRestoreError(
       'ARCHIVE_RESTORE_REQUEST_INVALID',
       'Archive review plaintext must use its separate fixed session root.',
@@ -265,6 +266,7 @@ function inspectRestoredSession(request, sessionDirectory, extracted, databaseSi
   const database = new Database(databasePath, { readonly: true, fileMustExist: true })
   try {
     database.pragma('query_only = ON')
+    database.pragma('trusted_schema = OFF')
     emit('validate', 0, databaseSizeBytes, 'sqlite-integrity')
     const integrity = database.prepare('PRAGMA integrity_check').get()
     emit('validate', databaseSizeBytes, databaseSizeBytes, 'sqlite-validated')
@@ -465,8 +467,10 @@ async function restoreMissionArchiveForReview(input) {
       'Archive review restore failed safely.',
     )
   } finally {
-    settleExtractedOutputs(extracted, preserveExtractedOutputs)
-    if (databaseFileHandle !== null && !transferDatabaseFileHandle) {
+    let settlementError
+    try { settleExtractedOutputs(extracted, preserveExtractedOutputs) } catch (error) { settlementError = error }
+    if (databaseFileHandle !== null
+      && (!transferDatabaseFileHandle || settlementError !== undefined)) {
       try { await databaseFileHandle.close() } catch {}
     }
     if (archive !== undefined) {
@@ -475,6 +479,7 @@ async function restoreMissionArchiveForReview(input) {
     if (archiveKey !== undefined) zeroBuffer(archiveKey)
     if (extracted !== null) extracted.metadata.forEach((buffer) => buffer.fill(0))
     zeroBuffer(secretBytes)
+    if (settlementError !== undefined) throw settlementError
   }
 }
 

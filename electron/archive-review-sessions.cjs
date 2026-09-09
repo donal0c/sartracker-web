@@ -1564,14 +1564,21 @@ function createArchiveReviewSessionManager(options) {
         )
         await assertReviewRootSafe(reviewRoot, reviewRootIdentity)
         const entryPath = path.join(reviewRoot, entry.name)
+        let current
+        try { current = fsSync.lstatSync(entryPath) } catch (error) {
+          if (error?.code === 'ENOENT') continue
+          throw createPlaintextCleanupFailure()
+        }
         // Finder can create this ordinary metadata file when an operator inspects
         // the app-owned directory. Remove only this exact file, never follow links.
         if (entry.name === '.DS_Store') {
-          const metadata = fsSync.lstatSync(entryPath)
+          const metadata = current
           if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1) {
             throw createPlaintextCleanupFailure()
           }
-          fsSync.unlinkSync(entryPath)
+          try { fsSync.unlinkSync(entryPath) } catch (error) {
+            if (error?.code !== 'ENOENT') throw createPlaintextCleanupFailure()
+          }
           continue
         }
         const sweepMatch = SWEEP_DIRECTORY.exec(entry.name)
@@ -1584,7 +1591,6 @@ function createArchiveReviewSessionManager(options) {
             || !UUID_V4.test(sweepLinkMatch[1]))) {
           throw createPlaintextCleanupFailure()
         }
-        const current = fsSync.lstatSync(entryPath)
         if (current.isSymbolicLink()) {
           removePinnedStartupSymlinkSync({
             reviewRoot,

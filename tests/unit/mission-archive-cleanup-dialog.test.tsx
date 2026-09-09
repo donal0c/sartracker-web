@@ -99,10 +99,39 @@ describe('MissionArchiveCleanupDialog [DON-253]', () => {
     expect(readText()).toContain('Pending: Fresh passphrase or recovery code is required at start')
   })
 
+  it('identifies a foreign archive as a custody fault', async () => {
+    const defaults = await createProps().loadState(MISSION_ID)
+    render(createProps({ loadState: vi.fn().mockResolvedValue({
+      ...defaults, archive: { ...defaults.archive, mission_id: 'foreign' },
+    }) }))
+    await flush()
+    expect(readText()).toMatch(/custody.*different mission/iu)
+    expect(state()).toBe('failure')
+  })
+
+  it('explains a non-startable result even without named blockers', async () => {
+    const defaults = await createProps().loadState(MISSION_ID)
+    render(createProps({ loadState: vi.fn().mockResolvedValue({
+      ...defaults, eligibility: { ...defaults.eligibility, blockers: [], startableWithCredential: false },
+    }) }))
+    await flush()
+    expect(readText()).toMatch(/could not establish.*close.*refresh/iu)
+  })
+
+  it('does not claim completion from a blocker when storage is still live', async () => {
+    const defaults = await createProps().loadState(MISSION_ID)
+    render(createProps({ loadState: vi.fn().mockResolvedValue({
+      ...defaults, eligibility: { ...defaults.eligibility, blockers: ['cleanup_already_completed'] },
+    }) }))
+    await flush()
+    expect(state()).not.toBe('completed')
+  })
+
   it('masks passphrase and recovery inputs and requires the exact mission name', async () => {
     render(createProps())
     await flush()
     expect(input('archive-cleanup-secret').type).toBe('password')
+    expect(document.activeElement).toBe(document.querySelector('[data-testid="archive-cleanup-slot-type"]'))
     setSelect('archive-cleanup-slot-type', 'recovery')
     expect(input('archive-cleanup-secret').type).toBe('password')
     setInput('archive-cleanup-secret', RECOVERY_CODE)
@@ -163,6 +192,23 @@ describe('MissionArchiveCleanupDialog [DON-253]', () => {
     expect(readText()).toMatch(/mission remains listed.*archive review/iu)
   })
 
+  it('settles a synchronous start failure without retaining operation ownership', async () => {
+    const cancelOperation = vi.fn().mockResolvedValue(true)
+    render(createProps({
+      startCleanup: () => { throw new Error('synchronous adapter failure') },
+      cancelOperation,
+    }))
+    await flush()
+    setInput('archive-cleanup-secret', PASSPHRASE)
+    setInput('archive-cleanup-confirmation', MISSION_NAME)
+    await click('archive-cleanup-start')
+    expect(state()).toBe('failure')
+    expect(readText()).not.toContain(PASSPHRASE)
+    await act(async () => root?.unmount())
+    root = null
+    expect(cancelOperation).not.toHaveBeenCalled()
+  })
+
   it('keeps durable completion terminal when the post-commit callback throws', async () => {
     render(createProps({
       onCompleted: vi.fn(() => { throw new Error('refresh failed after commit') }),
@@ -210,7 +256,10 @@ describe('MissionArchiveCleanupDialog [DON-253]', () => {
   it('requests sender-owned cancellation and never reflects operation error text', async () => {
     const completion = deferred<MissionCleanupResult>()
     const cancelOperation = vi.fn().mockResolvedValue(true)
-    render(createProps({ startCleanup: () => completion.promise, cancelOperation }))
+    const listeners = new Set<(value: MissionArchiveProgress) => void>()
+    render(createProps({ startCleanup: () => completion.promise, cancelOperation,
+      subscribeProgress: (listener) => { listeners.add(listener); return () => listeners.delete(listener) },
+    }))
     await flush()
     setInput('archive-cleanup-secret', PASSPHRASE)
     setInput('archive-cleanup-confirmation', MISSION_NAME)
@@ -218,6 +267,8 @@ describe('MissionArchiveCleanupDialog [DON-253]', () => {
     await click('archive-cleanup-cancel')
     expect(cancelOperation).toHaveBeenCalledWith(OPERATION_ID)
     expect(state()).toBe('cancellation-requested')
+    act(() => { for (const listener of listeners) listener(progress({ detail: 'Settling final batch', sequence: 10 })) })
+    expect(readText()).toContain('Settling final batch')
 
     completion.reject(Object.assign(new Error('/private/path secret detail'), {
       code: 'ARCHIVE_CLEANUP_CANCELLED',

@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp } from 'node:fs/promises'
 import { rm } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
@@ -1370,6 +1371,22 @@ describe('mission archive IPC containment [DON-248]', () => {
     expect(failed.cleanupLease.release).toHaveBeenCalledOnce()
   })
 
+  it('bounds recovery issuances per sender across different missions', async () => {
+    const { handlers } = createMainHarness({ randomUUID })
+    const issue = handlers.get(CHANNELS.issueMissionArchiveRecoveryCode)!
+    const event = { sender: createSender(7) }
+    for (let index = 0; index < 8; index += 1) await issue(event, `mission-${index}`)
+    await expect(Promise.resolve().then(() => issue(event, 'mission-overflow')))
+      .rejects.toMatchObject({ code: 'ARCHIVE_RECOVERY_ISSUANCE_LIMIT' })
+    await expect(Promise.resolve().then(() => issue(event, 'mission-0'))).resolves.toBeDefined()
+  })
+
+  it('closes recovery-code provider failures without reflecting internal text', async () => {
+    const { handlers } = createMainHarness({ generateRecoveryCode: () => { throw new Error('/private/provider failure') } })
+    await expect(Promise.resolve().then(() => handlers.get(CHANNELS.issueMissionArchiveRecoveryCode)!({ sender: createSender(7) }, 'mission-1')))
+      .rejects.toMatchObject({ code: 'ARCHIVE_RECOVERY_ISSUANCE_FAILED', message: expect.not.stringContaining('/private') })
+  })
+
   it('issues one sender-scoped recovery code and consumes it exactly once for finalization', async () => {
     const { handlers, missionStore } = createMainHarness()
     const sender = createSender(7)
@@ -2209,5 +2226,10 @@ describe('mission archive IPC containment [DON-248]', () => {
     expect(listener).toHaveBeenCalledTimes(2)
     unsubscribe()
     expect(removeListener).toHaveBeenCalledWith(MISSION_ARCHIVE_PROGRESS_CHANNEL, push)
+    unsubscribe()
+    const releases = Array.from({ length: 32 }, () => bridge.onMissionArchiveProgress(vi.fn()))
+    expect(() => bridge.onMissionArchiveProgress(vi.fn())).toThrow(/listener.*limit/iu)
+    releases.forEach((release) => release())
+    expect(() => bridge.onMissionArchiveProgress(vi.fn())).not.toThrow()
   })
 })

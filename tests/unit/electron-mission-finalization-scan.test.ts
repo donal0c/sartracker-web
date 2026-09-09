@@ -141,8 +141,10 @@ describe('cooperative legacy finalization lookup [DON-252]', () => {
       await prepareLegacyFinalizationRead(db, 'mission')
       expect(readLegacyFinalizationRow(db, 'mission', true)?.id).toBe('new')
       other.exec("UPDATE mission_replay_generations SET generation = generation + 1 WHERE mission_id = 'other'")
-      expect(() => db.transaction(() => readLegacyFinalizationRow(db, 'mission', true)).immediate())
-        .toThrow(/changed/iu)
+      expect(db.transaction(() => readLegacyFinalizationRow(db, 'mission', true)).immediate()?.id)
+        .toBe('new')
+      other.exec("UPDATE mission_replay_generations SET generation = generation + 1 WHERE mission_id = 'mission'")
+      expect(() => db.transaction(() => readLegacyFinalizationRow(db, 'mission', true)).immediate()).toThrow(/changed/iu)
     } finally { other.close(); db.close(); rmSync(root, { recursive: true, force: true }) }
   })
 

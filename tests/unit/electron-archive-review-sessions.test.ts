@@ -1258,6 +1258,20 @@ describe('archive review session manager', () => {
     ])
   })
 
+  it('tolerates an entry that disappears after startup enumeration', async () => {
+    const harness = await createHarness()
+    const vanished = path.join(harness.reviewRoot, '.DS_Store')
+    await writeFile(vanished, 'Finder metadata')
+    const original = fsSync.lstatSync
+    const inspection = vi.spyOn(fsSync, 'lstatSync').mockImplementation((...args: Parameters<typeof original>) => {
+      if (args[0] === vanished) fsSync.unlinkSync(vanished)
+      return original(...args)
+    })
+    try {
+      await expect(harness.manager.sweepStartup()).resolves.toBeUndefined()
+    } finally { inspection.mockRestore() }
+  })
+
   it('sweeps stale sessions on startup without following a hostile symlink', async () => {
     const harness = await createHarness()
     const staleSession = path.join(harness.reviewRoot, randomUUID())

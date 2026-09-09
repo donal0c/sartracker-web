@@ -685,6 +685,13 @@
             code, shown only during confirmation. SAR Tracker cannot recover a lost code. Follow your
             organisation's approved custody procedure; this manual does not assign a human holder.
           </div>
+          <p>
+            Creating and checking an archive uses temporary, permission-restricted plaintext copies
+            on this computer, as does Archive Review. Normal completion removes those copies. After
+            a crash, they can remain until SAR Tracker restarts and completes recovery. Protect the
+            computer and its account; archive encryption does not encrypt the live mission database
+            or guarantee secure erasure of temporary files.
+          </p>
           <table>
             <thead>
               <tr><th>Control</th><th>What It Does</th><th>Operator Check</th></tr>
@@ -713,6 +720,11 @@
             eligible live copies only after proving their encrypted archive. Keep the archive file and
             its passphrase or recovery code: recovery of the removed rows depends on them. Counts are
             a preview; the application checks eligibility again before deletion.
+          </p>
+          <p>
+            If cleanup rejects the credential, close and reopen the dialog to retry with the original
+            passphrase or recovery code. If an archive result does not match the selected mission,
+            close the dialog and refresh the mission timeline before relying on its status or retrying.
           </p>
           <p>
             If cancellation takes time, <strong>Return to mission</strong> dismisses the waiting dialog.

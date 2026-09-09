@@ -164,6 +164,13 @@ function copyVerifiedSnapshot(snapshotPath, proof) {
         'The verified archive correction snapshot changed before its private copy was made.',
       )
     }
+    const capacity = fs.statfsSync(path.dirname(snapshotPath))
+    const availableBytes = capacity.bavail * capacity.bsize
+    if (!Number.isSafeInteger(availableBytes)
+      || availableBytes < sourceStat.size + 64 * 1024 * 1024) {
+      throw new ArchiveRehydrateError('ARCHIVE_REHYDRATE_SNAPSHOT_UNAVAILABLE',
+        'Archive correction requires more free disk space for its private snapshot copy.')
+    }
     targetHandle = fs.openSync(
       temporaryPath,
       fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL
@@ -212,10 +219,12 @@ function copyVerifiedSnapshot(snapshotPath, proof) {
     return temporaryPath
   } catch (error) {
     if (error instanceof ArchiveRehydrateError) throw error
-    throw new ArchiveRehydrateError(
+    const failure = new ArchiveRehydrateError(
       'ARCHIVE_REHYDRATE_SNAPSHOT_UNAVAILABLE',
       'The verified archive correction snapshot is unavailable.',
     )
+    failure.cause = error
+    throw failure
   } finally {
     if (targetHandle !== undefined) {
       try { fs.closeSync(targetHandle) } catch {}
@@ -345,15 +354,16 @@ function rebuildDerivedMissionState(database, missionId) {
     .run(missionId)
   database.prepare('DELETE FROM ingest_anomaly_devices WHERE mission_id = ?').run(missionId)
   database.prepare('DELETE FROM ingest_anomaly_mission_health WHERE mission_id = ?').run(missionId)
-  database.exec(`
+  database.prepare(`
     INSERT INTO ingest_anomaly_devices (
       mission_id, device_id, conflict_count, rejected_count
     )
     SELECT mission_id, device_id,
       SUM(CASE WHEN kind = 'conflict' THEN 1 ELSE 0 END),
       SUM(CASE WHEN kind = 'rejected' THEN 1 ELSE 0 END)
-    FROM ingest_anomalies WHERE mission_id = '${missionId.replaceAll("'", "''")}' AND device_id IS NOT NULL
-    GROUP BY mission_id, device_id;
+    FROM ingest_anomalies WHERE mission_id = ? AND device_id IS NOT NULL
+    GROUP BY mission_id, device_id`).run(missionId)
+  database.prepare(`
     INSERT INTO ingest_anomaly_mission_health (
       mission_id, conflict_count, rejected_count, affected_device_count
     )
@@ -361,9 +371,8 @@ function rebuildDerivedMissionState(database, missionId) {
       SUM(CASE WHEN kind = 'conflict' THEN 1 ELSE 0 END),
       SUM(CASE WHEN kind = 'rejected' THEN 1 ELSE 0 END),
       COUNT(DISTINCT device_id)
-    FROM ingest_anomalies WHERE mission_id = '${missionId.replaceAll("'", "''")}'
-    GROUP BY mission_id;
-  `)
+    FROM ingest_anomalies WHERE mission_id = ?
+    GROUP BY mission_id`).run(missionId)
   database.prepare(`INSERT INTO mission_replay_generations (mission_id, generation)
     VALUES (?, 1) ON CONFLICT(mission_id) DO UPDATE SET generation = generation + 1`).run(missionId)
 }
@@ -470,66 +479,81 @@ function rehydrateMissionFromSnapshot(input) {
     // SQLite consumes only the worker-owned, read-only copy authenticated above;
     // a later staging-path mutation or substitution cannot change these bytes.
     database.prepare('ATTACH DATABASE ? AS correction_snapshot').run(verifiedSnapshotPath)
+    let workError
     try {
-    const inventory = listArchiveInventoryForSchema(schemaVersion)
-    const declaredNames = inventory.map((entry) => entry.tableName)
-    const snapshotNames = database.prepare(`SELECT name FROM correction_snapshot.sqlite_master
-      WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all().map((row) => row.name)
-    const declaredSet = new Set(declaredNames)
-    const snapshotSet = new Set(snapshotNames)
-    const missing = declaredNames.find((tableName) => !snapshotSet.has(tableName))
-    const undeclared = snapshotNames.find((tableName) => !declaredSet.has(tableName))
-    if (missing !== undefined || undeclared !== undefined) {
-      throw new ArchiveRehydrateError(
-        'ARCHIVE_REHYDRATE_SCHEMA_INVALID',
-        'Archive correction snapshot inventory does not exactly match the migrated schema.',
-      )
-    }
-    const declarations = inventory
-      .filter((entry) => !SKIPPED_TABLES.has(entry.tableName)
-        && (entry.decision === 'mission_rows' || entry.decision === 'global_rows'))
-      .map((entry) => entry.tableName)
-    const ordered = orderTables(database, declarations)
-    const transaction = database.transaction(() => {
-      const currentMission = database.prepare('SELECT status FROM missions WHERE id = ?')
-        .get(missionId)
-      if (currentMission?.status !== 'finalized') {
+      const inventory = listArchiveInventoryForSchema(schemaVersion)
+      const declaredNames = inventory.map((entry) => entry.tableName)
+      const snapshotNames = database.prepare(`SELECT name FROM correction_snapshot.sqlite_master
+        WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all().map((row) => row.name)
+      const declaredSet = new Set(declaredNames)
+      const snapshotSet = new Set(snapshotNames)
+      const missing = declaredNames.find((tableName) => !snapshotSet.has(tableName))
+      const undeclared = snapshotNames.find((tableName) => !declaredSet.has(tableName))
+      if (missing !== undefined || undeclared !== undefined) {
         throw new ArchiveRehydrateError(
-          'ARCHIVE_REHYDRATE_EPOCH_CHANGED',
-          'Mission finalization changed before archive correction restore could start.',
+          'ARCHIVE_REHYDRATE_SCHEMA_INVALID',
+          'Archive correction snapshot inventory does not exactly match the migrated schema.',
         )
       }
-      for (const tableName of ordered) {
-        const destinationColumns = tableColumns(database, 'main', tableName)
-        const sourceColumns = tableColumns(database, 'correction_snapshot', tableName)
-        if (destinationColumns.length === 0 || sourceColumns.length === 0
-          || destinationColumns.some((column) => !sourceColumns.includes(column))) {
+      const declarations = inventory
+        .filter((entry) => !SKIPPED_TABLES.has(entry.tableName)
+          && (entry.decision === 'mission_rows' || entry.decision === 'global_rows'))
+        .map((entry) => entry.tableName)
+      const ordered = orderTables(database, declarations)
+      const transaction = database.transaction(() => {
+        const currentMission = database.prepare('SELECT status FROM missions WHERE id = ?')
+          .get(missionId)
+        if (currentMission?.status !== 'finalized') {
           throw new ArchiveRehydrateError(
-            'ARCHIVE_REHYDRATE_SCHEMA_INVALID',
-            'Archive correction snapshot schema does not match the live store.',
+            'ARCHIVE_REHYDRATE_EPOCH_CHANGED',
+            'Mission finalization changed before archive correction restore could start.',
           )
         }
-        const columns = destinationColumns.map(quoteIdentifier)
-        const selection = sourceSelection(database, tableName, missionId)
-        const existing = database.prepare(`SELECT COUNT(*) AS count FROM main.${quoteIdentifier(tableName)} AS archive_row WHERE ${selection.whereSql}`)
-          .get(...selection.parameters).count
-        if (Number(existing) !== 0) {
-          throw new ArchiveRehydrateError(
-            'ARCHIVE_REHYDRATE_LIVE_ROWS_PRESENT',
-            'Live mission rows are present; archive correction restore refused to overwrite them.',
-          )
+        for (const tableName of ordered) {
+          const destinationColumns = tableColumns(database, 'main', tableName)
+          const sourceColumns = tableColumns(database, 'correction_snapshot', tableName)
+          if (destinationColumns.length === 0 || sourceColumns.length === 0
+            || destinationColumns.some((column) => !sourceColumns.includes(column))) {
+            throw new ArchiveRehydrateError(
+              'ARCHIVE_REHYDRATE_SCHEMA_INVALID',
+              'Archive correction snapshot schema does not match the live store.',
+            )
+          }
+          const columns = destinationColumns.map(quoteIdentifier)
+          const selection = sourceSelection(database, tableName, missionId)
+          const existing = database.prepare(`SELECT COUNT(*) AS count FROM main.${quoteIdentifier(tableName)} AS archive_row WHERE ${selection.whereSql}`)
+            .get(...selection.parameters).count
+          if (Number(existing) !== 0) {
+            throw new ArchiveRehydrateError(
+              'ARCHIVE_REHYDRATE_LIVE_ROWS_PRESENT',
+              'Live mission rows are present; archive correction restore refused to overwrite them.',
+            )
+          }
+          database.prepare(`INSERT INTO main.${quoteIdentifier(tableName)} (${columns.join(', ')})
+            SELECT ${columns.join(', ')} FROM correction_snapshot.${quoteIdentifier(tableName)} AS archive_row
+            WHERE ${selection.whereSql}`).run(...selection.parameters)
         }
-        database.prepare(`INSERT INTO main.${quoteIdentifier(tableName)} (${columns.join(', ')})
-          SELECT ${columns.join(', ')} FROM correction_snapshot.${quoteIdentifier(tableName)} AS archive_row
-          WHERE ${selection.whereSql}`).run(...selection.parameters)
+        rebuildDerivedMissionState(database, missionId)
+        input.onRestored?.()
+      })
+      transaction.immediate()
+    } catch (error) {
+      workError = error
+      throw error
+    } finally {
+      try { database.exec('DETACH DATABASE correction_snapshot') } catch (error) {
+        if (workError === undefined) {
+          const failure = new ArchiveRehydrateError('ARCHIVE_REHYDRATE_CLEANUP_REQUIRED',
+            'Archive correction database cleanup could not be confirmed.')
+          failure.cause = error
+          throw failure
+        }
+        if (workError instanceof Error && Object.isExtensible(workError)) {
+          workError.cause = new AggregateError([workError.cause, error].filter(Boolean),
+            'Archive correction also failed to detach its snapshot.')
+        }
       }
-      rebuildDerivedMissionState(database, missionId)
-      input.onRestored?.()
-    })
-    transaction.immediate()
-  } finally {
-    database.exec('DETACH DATABASE correction_snapshot')
-  }
+    }
     return Object.freeze({ missionId, archiveId })
   } finally {
     try { fs.chmodSync(verifiedSnapshotPath, 0o600) } catch {}

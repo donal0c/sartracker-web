@@ -77,6 +77,7 @@ export function MissionArchiveCleanupDialog({
   const [resumeAvailable, setResumeAvailable] = useState(false)
   const [postCommitWarning, setPostCommitWarning] = useState<string | null>(null)
   const mountedRef = useRef(false)
+  const credentialTypeRef = useRef<HTMLSelectElement>(null)
   const operationIdRef = useRef<string | null>(null)
   const latestSequenceRef = useRef(0)
   const cancellationRequestedRef = useRef(false)
@@ -107,12 +108,18 @@ export function MissionArchiveCleanupDialog({
     && confirmation === mission.name
 
   useEffect(() => {
+    if (dialogState === 'ready') credentialTypeRef.current?.focus()
+  }, [dialogState])
+
+  useEffect(() => {
     mountedRef.current = true
     let cancelled = false
     void loadStateRef.current(mission.id).then((result) => {
       if (cancelled || !mountedRef.current) return
       if (result.archive.mission_id !== mission.id) {
-        throw new Error('Mission cleanup archive is not request-bound.')
+        setFailureMessage('Archive custody check failed: the returned archive belongs to a different mission. No cleanup started. Close this dialog and contact support before retrying.')
+        setDialogState('failure')
+        return
       }
       setArchive(result.archive)
       setEligibility(result.eligibility)
@@ -129,7 +136,7 @@ export function MissionArchiveCleanupDialog({
         )
         setDialogState('failure')
       } else if (result.eligibility.storageState === 'archived'
-        || result.eligibility.blockers.includes('cleanup_already_completed')) {
+        && result.eligibility.blockers.includes('cleanup_already_completed')) {
         setResumeAvailable(false)
         setDialogState('completed')
       } else if (result.eligibility.blockers.includes('cleanup_in_progress')) {
@@ -172,7 +179,6 @@ export function MissionArchiveCleanupDialog({
     return subscribeProgress((nextProgress) => {
       const operationId = operationIdRef.current
       if (operationId === null
-        || cancellationRequestedRef.current
         || nextProgress.operationId !== operationId
         || nextProgress.missionId !== mission.id
         || nextProgress.kind !== 'cleanup'
@@ -184,7 +190,7 @@ export function MissionArchiveCleanupDialog({
 
   /** Starts only after local confirmation, leaving every authoritative check in main/store. */
   async function handleStart(): Promise<void> {
-    if (!canStart || archive === null) return
+    if (!canStart || archive === null || operationIdRef.current !== null) return
     const operationId = createOperationId()
     if (!UUID_V4.test(operationId)) {
       setFailureMessage('Cleanup could not start because its operation identity was invalid.')
@@ -206,10 +212,9 @@ export function MissionArchiveCleanupDialog({
     setFailureMessage(null)
     setPostCommitWarning(null)
     setDialogState('running')
-    const completion = startCleanupRef.current(request)
     setSecret('')
     try {
-      const result = await completion
+      const result = await startCleanupRef.current(request)
       if (!mountedRef.current) return
       operationIdRef.current = null
       if (result.missionId !== mission.id || result.archiveId !== archive.id
@@ -277,7 +282,8 @@ export function MissionArchiveCleanupDialog({
 
   /** Resumes only the durable journal identified by the current mission/archive pair. */
   async function handleResume(): Promise<void> {
-    if (!resumeAvailable || archive === null || resumeCleanupRef.current === undefined) return
+    if (!resumeAvailable || dialogState !== 'failure' || archive === null
+      || operationIdRef.current !== null || resumeCleanupRef.current === undefined) return
     const operationId = createOperationId()
     if (!UUID_V4.test(operationId)) {
       setFailureMessage('Cleanup recovery could not start because its operation identity was invalid.')
@@ -403,6 +409,7 @@ export function MissionArchiveCleanupDialog({
             <label className="block space-y-2">
               <span className="text-xs font-semibold text-stone-200">Fresh archive credential</span>
               <select
+                ref={credentialTypeRef}
                 className="sar-input w-full px-3 py-2 text-sm"
                 data-testid="archive-cleanup-slot-type"
                 onChange={(event) => {
@@ -473,6 +480,13 @@ export function MissionArchiveCleanupDialog({
         {dialogState === 'ready' && hardBlockers.length > 0 ? (
           <p className="sar-inline-alert mt-5 p-3 text-xs text-amber-100" role="alert">
             Cleanup remains blocked. Resolve every blocked checklist item before entering a credential.
+          </p>
+        ) : null}
+
+        {dialogState === 'ready' && hardBlockers.length === 0
+          && eligibility?.startableWithCredential !== true ? (
+          <p className="sar-inline-alert mt-5 p-3 text-xs text-amber-100" role="alert">
+            Safety checks could not establish that cleanup can start. Close this dialog and refresh the mission timeline before retrying.
           </p>
         ) : null}
 
@@ -632,7 +646,7 @@ function cleanupFailureMessage(code: string | null): string {
     return 'Cleanup is no longer eligible. The live mission and archive remain unchanged; refresh the safety checklist before retrying.'
   }
   if (code === 'ARCHIVE_CLEANUP_WRONG_KEY') {
-    return 'The archive credential was not accepted. The live mission and archive remain unchanged.'
+    return 'The archive credential was not accepted. The live mission and archive remain unchanged. Close and reopen cleanup to try the passphrase or recovery code again.'
   }
   return 'Cleanup stopped at its durable cursor. The verified archive remains intact; some live rows may already have moved. Close and reopen Review Archive Cleanup to determine whether recovery is resumable.'
 }

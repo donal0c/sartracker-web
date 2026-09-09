@@ -1017,14 +1017,16 @@ function normalizeMissionCreateForIpc(input) {
   const output = { name }
   if (input.start_time !== undefined) {
     if (typeof input.start_time !== 'string'
-      || Buffer.byteLength(input.start_time, 'utf8') > MAX_MISSION_START_TIME_BYTES) {
+      || Buffer.byteLength(input.start_time, 'utf8') > MAX_MISSION_START_TIME_BYTES
+      || /[\u0000-\u001f\u007f]/u.test(input.start_time)) {
       throw new Error('Mission start time is invalid.')
     }
     output.start_time = input.start_time
   }
   if (input.notes !== undefined) {
     if (input.notes !== null && (typeof input.notes !== 'string'
-      || Buffer.byteLength(input.notes, 'utf8') > MAX_MISSION_NOTES_BYTES)) {
+      || Buffer.byteLength(input.notes, 'utf8') > MAX_MISSION_NOTES_BYTES
+      || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(input.notes))) {
       throw new Error('Mission notes are invalid.')
     }
     output.notes = input.notes

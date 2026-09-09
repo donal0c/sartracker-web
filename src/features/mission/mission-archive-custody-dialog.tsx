@@ -16,6 +16,7 @@ import type {
 import { readMissionArchiveErrorCode } from './mission-archive-error'
 
 const ARCHIVE_CUSTODY_TITLE_ID = 'mission-archive-custody-title'
+const MAX_SECRET_CODE_UNITS = 1024
 
 export type MissionArchiveCustodyDialogState =
   | 'preparing'
@@ -56,7 +57,7 @@ type OutstandingOperation = {
   readonly stage: 'issued' | 'active'
 }
 
-type FailureKind = 'cancelled' | 'expired' | 'operation' | 'issuance'
+type FailureKind = 'cancelled' | 'expired' | 'operation' | 'issuance' | 'invalid-result'
 
 /**
  * Collects archive credentials, displays a per-archive recovery code once, and
@@ -83,10 +84,6 @@ export function MissionArchiveCustodyDialog({
   const cancellationRequestedRef = useRef(false)
   const sealCompletedRef = useRef(false)
   const latestProgressSequenceRef = useRef({ create: 0, verify: 0 })
-  const passphraseRef = useRef('')
-  const passphraseConfirmationRef = useRef('')
-  const recoveryCodeRef = useRef('')
-  const recoveryCodeConfirmationRef = useRef('')
   const cancelOperationRef = useRef(cancelOperation)
 
   const passphraseError = validateArchivePassphrase(passphrase)
@@ -114,33 +111,13 @@ export function MissionArchiveCustodyDialog({
     }
   }, [])
 
-  /** Removes all renderer-held custody strings from live component state and refs. */
+  /** Releases custody strings from live component state; managed strings cannot be zeroed. */
   const scrubSecrets = useCallback((): void => {
-    passphraseRef.current = ''
-    passphraseConfirmationRef.current = ''
-    recoveryCodeRef.current = ''
-    recoveryCodeConfirmationRef.current = ''
     setPassphrase('')
     setPassphraseConfirmation('')
     setIssuance(null)
     setRecoveryCodeConfirmation('')
   }, [])
-
-  useEffect(() => {
-    passphraseRef.current = passphrase
-  }, [passphrase])
-
-  useEffect(() => {
-    passphraseConfirmationRef.current = passphraseConfirmation
-  }, [passphraseConfirmation])
-
-  useEffect(() => {
-    recoveryCodeRef.current = issuance?.recoveryCode ?? ''
-  }, [issuance])
-
-  useEffect(() => {
-    recoveryCodeConfirmationRef.current = recoveryCodeConfirmation
-  }, [recoveryCodeConfirmation])
 
   useEffect(() => {
     cancelOperationRef.current = cancelOperation
@@ -151,10 +128,6 @@ export function MissionArchiveCustodyDialog({
     return () => {
       mountedRef.current = false
       clearExpiryTimer()
-      passphraseRef.current = ''
-      passphraseConfirmationRef.current = ''
-      recoveryCodeRef.current = ''
-      recoveryCodeConfirmationRef.current = ''
       const outstanding = operationRef.current
       operationRef.current = null
       if (outstanding !== null) {
@@ -186,15 +159,7 @@ export function MissionArchiveCustodyDialog({
         return
       }
       if (progress.phase === 'seal') {
-        const complete = progress.total !== null
-          && progress.total > 0
-          && progress.completed >= progress.total
-        if (complete) {
-          sealCompletedRef.current = true
-          setDialogState('sealed-but-unverified')
-        } else {
-          setDialogState('sealing')
-        }
+        setDialogState('sealing')
         return
       }
       setDialogState('creating')
@@ -286,6 +251,12 @@ export function MissionArchiveCustodyDialog({
       const result = await resultPromise
       if (!mountedRef.current) return
       operationRef.current = null
+      if (result.mission.id !== missionId || result.archive.mission_id !== missionId
+        || result.mission.status !== 'finalized') {
+        setFailureKind('invalid-result')
+        setDialogState('failure')
+        return
+      }
       if (result.archive.status !== 'verified' || result.archive.verified_at === null) {
         sealCompletedRef.current = true
         setDialogState('sealed-but-unverified')
@@ -458,14 +429,16 @@ export function MissionArchiveCustodyDialog({
             <p className="mt-2 text-sm leading-relaxed text-stone-200">
               {failureMessage(failureKind)}
             </p>
-            <button
-              className="sar-button mt-4 w-full px-4 py-3 text-sm font-semibold"
-              data-testid="archive-restart-custody"
-              onClick={handleRestart}
-              type="button"
-            >
-              Start again with a fresh recovery code
-            </button>
+            {failureKind !== 'invalid-result' ? (
+              <button
+                className="sar-button mt-4 w-full px-4 py-3 text-sm font-semibold"
+                data-testid="archive-restart-custody"
+                onClick={handleRestart}
+                type="button"
+              >
+                Start again with a fresh recovery code
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -539,7 +512,14 @@ function SecretField({
         data-testid={testId}
         disabled={disabled}
         id={inputId}
-        onChange={(event) => onChange(event.target.value)}
+        maxLength={MAX_SECRET_CODE_UNITS}
+        onChange={(event) => {
+          if (event.target.value.length > MAX_SECRET_CODE_UNITS) {
+            event.target.value = value
+            return
+          }
+          onChange(event.target.value)
+        }}
         spellCheck={false}
         type="password"
         value={value}
@@ -613,6 +593,7 @@ function archiveWorkHeading(state: MissionArchiveCustodyDialogState): string {
 
 /** Returns a closed failure heading without reflecting backend text. */
 function failureHeading(kind: FailureKind | null): string {
+  if (kind === 'invalid-result') return 'Archive result could not be trusted'
   if (kind === 'expired') return 'Recovery-code issuance expired'
   if (kind === 'cancelled') return 'Archive operation cancelled safely'
   if (kind === 'issuance') return 'Recovery code could not be issued'
@@ -621,6 +602,7 @@ function failureHeading(kind: FailureKind | null): string {
 
 /** Returns one actionable closed failure message. */
 function failureMessage(kind: FailureKind | null): string {
+  if (kind === 'invalid-result') return 'The archive result did not match this mission. Close this dialog and refresh the mission timeline before relying on its status or retrying.'
   if (kind === 'expired') {
     return 'The expired issuance was invalidated. Start again to generate a fresh recovery code.'
   }

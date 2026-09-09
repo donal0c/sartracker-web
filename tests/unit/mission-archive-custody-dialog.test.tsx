@@ -102,6 +102,30 @@ describe('MissionArchiveCustodyDialog [DON-248]', () => {
     expect(props.onVerified).toHaveBeenCalledWith(finalizeResult())
   })
 
+  it('refuses a verified result for another mission', async () => {
+    const result = finalizeResult()
+    const props = createProps({ finalize: vi.fn().mockResolvedValue({
+      ...result, archive: { ...result.archive, mission_id: 'foreign-mission' },
+    }) })
+    render(props)
+    enterValidPassphrase()
+    await issueAndConfirmRecoveryCode()
+    await clickAndFlush('archive-finalize')
+    expect(state()).toBe('failure')
+    expect(props.onVerified).not.toHaveBeenCalled()
+    expect(readDialogText()).toMatch(/close.*refresh/iu)
+    expect(document.querySelector('[data-testid="archive-restart-custody"]')).toBeNull()
+  })
+
+  it('bounds credential input before retaining it in component state', () => {
+    render(createProps())
+    const field = getInput('archive-passphrase')
+    expect(field.maxLength).toBeGreaterThan(0)
+    expect(field.maxLength).toBeLessThanOrEqual(4096)
+    setInput('archive-passphrase', 'a'.repeat(5000))
+    expect(field.value.length).toBeLessThanOrEqual(4096)
+  })
+
   it('ignores foreign and stale progress while presenting every custody phase truthfully', async () => {
     const finalization = deferred<FinalizeMissionResult>()
     const listeners = new Set<(progress: MissionArchiveProgress) => void>()
@@ -135,7 +159,8 @@ describe('MissionArchiveCustodyDialog [DON-248]', () => {
     pushProgress(listeners, { sequence: 3, phase: 'seal', completed: 0, total: 1 })
     expect(state()).toBe('sealing')
     pushProgress(listeners, { sequence: 4, phase: 'seal', completed: 1, total: 1 })
-    expect(state()).toBe('sealed-but-unverified')
+    expect(state()).toBe('sealing')
+    expect(readDialogText()).not.toContain('mission is now locked read-only')
     pushProgress(listeners, { kind: 'verify', sequence: 1, phase: 'proof' })
     expect(state()).toBe('verifying')
 

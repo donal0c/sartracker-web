@@ -1,15 +1,17 @@
 # HANDOFF.md — Live Baton
 
 > Read after `CLAUDE.md`. Detailed proof and rejected runs remain in
-> `docs/breadcrumb-pr6-evidence.md` and `docs/breadcrumb-pr6-review-remediation.md`.
+> `docs/breadcrumb-pr6-evidence.md`, `docs/breadcrumb-pr6-review-remediation.md`,
+> and current `docs/breadcrumb-pr6-complete-review-ledger.md`.
 
 ## Current State
 
 - Existing PR #10 / programme PR6, branch `codex/breadcrumb-pr6-archive-lifecycle`.
-  External-review remediation is implemented or explicitly dispositioned for
-  every visible finding. The linked source lists only 16 of its 21 Medium
-  findings; five omitted entries were requested and remain unassessed.
-- Latest implementation: `10f399138004db3db2a2aff5772746acd7025196`, tree
+  Updated external ledger now contains all 95 findings (15 High, 4 Medium-High,
+  55 Medium, 21 Low). All have a current disposition; expanded fixes are in
+  progress. All 4,137 source tests and seven archive browser flows pass;
+  all four screenshot reviews pass. Packaged/CI validation remains pending.
+- Last verified implementation: `10f399138004db3db2a2aff5772746acd7025196`, tree
   `e65cc117e0339b2383194bbc65211839a07683df`. Subsequent receipts are documentation.
 - Workspace: `/Users/donalocallaghan/.codex/worktrees/a27a/sartracker-web`.
   Preserve this PR. No merge, release, replacement PR or reviewer dispatch.
@@ -18,19 +20,17 @@
 
 ## Verified Remediation
 
-- Initial remediation: 4,105 source tests / 394 files pass, build/lint pass,
-  four Chromium and three visual operator flows pass, all four screenshot
-  reviews pass. Manual and cleanup screenshot updated.
-- Scheduling follow-up: 317 distinct affected tests pass. Backpressure exposed
-  redundant current-fix writes from acknowledged history displays and cleanup
-  lock starvation. Render-only publications decline evidence ownership; cleanup
-  yields outside transactions to admitted foreground writes. Diagnostic DB wait
-  fell from 1,074.4 to 48.35 ms; no queue bound or 200 ms gate was relaxed.
-- Final credential-lifetime follow-up: 42 affected verification/envelope/runner
-  tests pass, including a red-first secret-free terminal validation regression.
-  Creation and verification release normalized credentials/caller requests;
-  managed JavaScript strings cannot be guaranteed zeroed. Build and lint pass.
-- Clean final implementation passes macOS and reference four-logical-CPU Linux
+- Expanded ledger: red-first regressions cover dialog state/identity handling,
+  plaintext settlement and handle ownership, archive entry limits, legacy
+  migration capacity, reconciliation races, IPC limits, tracking loss diagnostics
+  and retry. Full serial suite passes 4,137 tests / 396 files (462.10 s);
+  production build, TypeScript, bundle budgets and lint pass. Four Chromium and
+  three visual archive flows pass (39.0 s); current cleanup screenshot matches
+  the manual; all four screenshot reviews pass. Clean packaged smoke is pending.
+- Remaining limits are explicit in the complete ledger and manual; all 95
+  entries are available. Temporary plaintext can survive a crash until restart;
+  no managed-string zeroing or forensic erasure guarantee is made.
+- Prior `10f39913` implementation passes macOS and reference four-logical-CPU Linux
   packaged lifecycle validators: two launches, 4,096 fixes, matching Review
   before/after cleanup, forced restore interruption/restart, complete teardown,
   zero exact secret matches and final plaintext residue.
@@ -41,14 +41,17 @@
 
 ## Next Actions And Issues
 
-- Check the current PR head's ordinary Linux CI before claiming author-side
-  completion. The earlier `cb6e28a2` and `d60cbc2a` CI failures remain preserved.
+- Finish clean packaged smoke, then push this PR and
+  check ordinary Linux CI. Source/build/lint and affected browser flows pass.
+  Baseline CI `34293902077` passed 4,113 tests before these new changes.
+  The earlier `cb6e28a2` and `d60cbc2a` CI failures remain preserved.
   Run `34292650418` on `4e7061c5` was cancelled to finish M-2, not rejected.
   Do not repeat failed candidates without causal diagnosis.
 - DON-248/252/253 remain In Progress pending review/merge; DON-252 retains
   Bug/Regression/Performance. PR body and Linear comments track current CI truth.
-- Obtain the five omitted Medium findings. The visible ledger retains bounded
-  global event pages and atomic correction restore deliberately; see rationale.
+- No missing ledger entries remain. The complete ledger explicitly retains
+  bounded global event pages, atomic correction restore, strict credentials,
+  and permission-restricted plaintext staging with honest crash/restart limits.
 - Do not automatically repeat the full large-fixture or 32-case interruption
   qualification. Donal requested proportionate fixes and smokes.
 

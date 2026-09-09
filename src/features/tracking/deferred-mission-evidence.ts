@@ -10,6 +10,7 @@ type DeferredMissionEvidenceQueueDependencies<Payload> = {
   readonly beginObservation: (missionId: string) => MissionEvidenceObservation
   readonly persist: (missionId: string, payload: Payload) => Promise<unknown>
   readonly onPersistenceFailure?: (missionId: string, error: unknown) => void
+  readonly onEvidenceLoss?: (missionId: string, reason: IngestEvidenceLossReason) => void
   readonly markEvidenceLoss: (
     missionId: string,
     reason: IngestEvidenceLossReason,
@@ -156,6 +157,7 @@ export function createDeferredMissionEvidenceQueue<Payload>(
   ): void {
     state.lossReason ??= reason
     void startLossMarker(state, false)
+    dependencies.onEvidenceLoss?.(state.missionId, reason)
   }
 
   /** Returns whether one payload is already represented by this FIFO. */
@@ -298,6 +300,7 @@ export function createDeferredMissionEvidenceQueue<Payload>(
       const state = statesByMission.get(missionId)
       if (state === undefined) return
       state.flushRequested = true
+      if (state.lossMarkerError !== null) void startLossMarker(state, true)
       startPump()
     },
     flushMission,

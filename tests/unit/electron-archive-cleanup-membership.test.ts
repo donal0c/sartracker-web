@@ -273,6 +273,21 @@ describe('archive cleanup membership generation', () => {
     }
   })
 
+  it('retains the work failure when bypass teardown also detects corruption', () => {
+    const db = createDatabase()
+    const original = new Error('original work failure')
+    try {
+      const run = db.transaction(() => withArchiveCleanupMembershipBypass(db,
+        { missionId: 'mission-a', archiveId }, () => {
+          db.prepare('DELETE FROM metadata WHERE key = ?').run(archiveCleanupMembershipBypassKey('mission-a'))
+          throw original
+        }))
+      try { run.immediate(); throw new Error('expected failure') } catch (error) {
+        expect(error).toMatchObject({ code: 'ARCHIVE_CLEANUP_MEMBERSHIP_BYPASS_CORRUPT', cause: original })
+      }
+    } finally { db.close() }
+  })
+
   it('keeps an external writer out while the transaction-scoped bypass exists', () => {
     const db = createDatabase()
     const external = new Database(db.name)

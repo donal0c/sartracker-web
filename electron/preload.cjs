@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron')
+let archiveProgressListenerCount = 0
 
 const TRACCAR_REQUEST_CHANNEL = 'sartracker:traccar-http-request'
 const LOAD_SETTINGS_CHANNEL = 'sartracker:load-app-settings'
@@ -1309,9 +1310,17 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
     if (typeof listener !== 'function') {
       throw new Error('Mission archive progress listener is invalid.')
     }
+    if (archiveProgressListenerCount >= 32) throw new Error('Mission archive progress listener limit reached.')
     const handler = (_event, input) => listener(projectArchiveProgressForRenderer(input))
     ipcRenderer.on(MISSION_ARCHIVE_PROGRESS_CHANNEL, handler)
-    return () => ipcRenderer.removeListener(MISSION_ARCHIVE_PROGRESS_CHANNEL, handler)
+    archiveProgressListenerCount += 1
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      archiveProgressListenerCount -= 1
+      ipcRenderer.removeListener(MISSION_ARCHIVE_PROGRESS_CHANNEL, handler)
+    }
   },
   onAppRuntimeTeardownRequested(listener) {
     const handler = (_event, input) => listener(input)

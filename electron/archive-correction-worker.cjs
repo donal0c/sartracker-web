@@ -202,20 +202,24 @@ async function runCorrection(request) {
         const inspection = prepareCorrectionAttachmentCustodyReconciliation({
           db: database,
           plan: custodyState.plan,
-          inspectEntry: (entry) => proveCorrectionAttachmentResidue({
-            sourcePath: path.join(
-              request.attachmentDirectory,
-              entry.entryName.slice('attachments/'.length),
-            ),
-            targetName: entry.targetName,
-            peerName: entry.peerName,
-            expected: entry,
-          }),
+          inspectEntry: (entry) => {
+            throwIfCancelled()
+            return proveCorrectionAttachmentResidue({
+              sourcePath: path.join(
+                request.attachmentDirectory,
+                entry.entryName.slice('attachments/'.length),
+              ),
+              targetName: entry.targetName,
+              peerName: entry.peerName,
+              expected: entry,
+            })
+          },
         })
         database.transaction(() => reconcileCorrectionAttachmentCustody({
           db: database,
           inspection,
           revalidateEntry: (entry, observation) => {
+            throwIfCancelled()
             assertBoundAttachmentRoot(custodyState)
             return revalidateCorrectionAttachmentResidue({
               sourcePath: path.join(

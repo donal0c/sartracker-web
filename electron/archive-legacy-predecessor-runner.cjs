@@ -24,6 +24,7 @@ function startArchiveLegacyPredecessorHash(input) {
   const workerExited = createDeferred()
   if (input.signal?.aborted === true) {
     const rejected = Promise.reject(createAbortError())
+    void rejected.catch(() => undefined)
     workerExited.resolve()
     return decorateOperation(rejected, workerExited.promise, () => undefined)
   }

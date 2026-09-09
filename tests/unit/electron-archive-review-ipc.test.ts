@@ -539,6 +539,15 @@ describe('archive review IPC containment [DON-253]', () => {
     )).rejects.toMatchObject({ code: 'ARCHIVE_REVIEW_RESULT_INVALID' })
   })
 
+  it.each(['restoredPath', 'stagePath', 'snapshotPath'])('rejects nested private %s in read results', async (key) => {
+    const harness = createHarness({ sessionManager: {
+      read: vi.fn(async () => ({ items: [{ [key]: '/private/plaintext.sqlite' }] })),
+    } })
+    await expect(harness.handlers.get(CHANNELS.read)?.({ sender: createSender(71) }, {
+      sessionId: SESSION_ID, requestId: REQUEST_ID, method: 'info', input: {},
+    })).rejects.toMatchObject({ code: 'ARCHIVE_REVIEW_RESULT_INVALID' })
+  })
+
   it('surfaces cleanup failure when rejecting a manager-established malformed session', async () => {
     const cleanupFailure = Object.assign(new Error('plaintext sweep failed'), {
       code: 'ARCHIVE_REVIEW_PLAINTEXT_CLEANUP_FAILED',

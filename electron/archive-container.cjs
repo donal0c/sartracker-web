@@ -477,7 +477,11 @@ async function readPreambleFromReader(reader) {
   }
 }
 
-/** Reads only the bounded plaintext preamble and exposes the unread continuation. */
+/**
+ * Reads bounded, unauthenticated preamble metadata and the unread continuation.
+ * Callers must bind its digest to trusted custody before treating its identity
+ * as evidence; parsing alone proves neither origin nor authenticity.
+ */
 async function readArchivePreamble(readable) {
   const reader = new ArchiveByteReader(readable)
   const preamble = await readPreambleFromReader(reader)
@@ -953,7 +957,12 @@ class LogicalEntryDecoder {
   }
 }
 
-/** Authenticates and streams every entry in one complete SARARCH2 container. */
+/**
+ * Authenticates and streams entry chunks; callbacks receive provisional output.
+ * Completeness is established only when this promise resolves after the final
+ * frame and EOF checks. Callers must keep outputs private and reclaim them on
+ * rejection rather than publishing a partially authenticated container.
+ */
 async function readArchiveContainer({
   readable,
   missionArchiveKey,

@@ -114,12 +114,12 @@ async function getDefaultAvailableDiskBytes(sessionDirectory) {
 }
 
 /** Fails before the first plaintext output when declared expansion lacks 20% headroom. */
-async function assertRestoreCapacity(entries, sessionDirectory, getAvailableDiskBytes) {
+async function assertRestoreCapacity(entries, sessionDirectory, getAvailableDiskBytes, additionalBytes = 0) {
   const declaredBytes = entries.reduce(
     (total, entry) => total + entry.uncompressedSize,
     0,
   )
-  const requiredBytes = BigInt(Math.ceil(
+  const requiredBytes = BigInt(additionalBytes) + BigInt(Math.ceil(
     (declaredBytes * RESTORE_HEADROOM_NUMERATOR) / RESTORE_HEADROOM_DENOMINATOR,
   ))
   let availableBytes
@@ -246,13 +246,13 @@ function createByteProgressReporter(request, phase, detail, total = null) {
 
 /**
  * Creates or claims an empty, non-symlink review directory and applies mode 0700.
- * The boolean records whether cleanup may safely remove the directory itself.
+ * Output ownership handles cleanup; this function does not return a cleanup lease.
  */
 async function prepareSessionDirectory(sessionDirectory) {
   try {
     await mkdir(sessionDirectory, { mode: 0o700 })
     await chmod(sessionDirectory, 0o700)
-    return { created: true }
+    return
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error
   }
@@ -271,7 +271,6 @@ async function prepareSessionDirectory(sessionDirectory) {
     )
   }
   await chmod(sessionDirectory, 0o700)
-  return { created: false }
 }
 
 /** Reads an exact bounded range from the already-open archive descriptor. */
@@ -1068,6 +1067,7 @@ function validateRestoredDatabase(databasePath, expectedMissionId, expectedSchem
   try {
     database = new Database(databasePath, { fileMustExist: true, readonly: true })
     database.pragma('query_only = ON')
+    database.pragma('trusted_schema = OFF')
     const integrityRows = database.pragma('integrity_check')
     if (!Array.isArray(integrityRows)
       || integrityRows.length !== 1
@@ -1134,6 +1134,7 @@ function buildLegacyAttachmentMappings(databasePath, missionId, attachmentEntrie
   try {
     database = new Database(databasePath, { fileMustExist: true, readonly: true })
     database.pragma('query_only = ON')
+    database.pragma('trusted_schema = OFF')
     const ledger = readArchiveAttachmentReferenceLedger({
       db: database,
       databasePath,
@@ -1336,6 +1337,12 @@ async function restoreLegacyMissionArchive(input, dependencies = {}) {
     const manifest = await readBoundedJson(manifestOutput, manifestEntry, outputOwnership)
     const mission = await readBoundedJson(missionOutput, missionEntry, outputOwnership)
     const schemas = validateMetadata(manifest, mission, request.expectedMissionId)
+    if (schemas.databaseSchemaVersion < CURRENT_SUPPORTED_SCHEMA_VERSION) {
+      // Reserve a rewritten database, WAL/backup space, and fixed schema headroom.
+      // This is admission headroom, not a guarantee against concurrent disk use.
+      await assertRestoreCapacity(entries, request.sessionDirectory, getAvailableDiskBytes,
+        databaseEntry.uncompressedSize * 2 + 64 * 1024 * 1024)
+    }
     emitRestoreProgress(request, {
       phase: 'metadata',
       unit: 'files',
@@ -1486,6 +1493,9 @@ async function restoreLegacyMissionArchive(input, dependencies = {}) {
       )
     }
     await assertAllOutputsOwned(outputOwnership)
+    // Settle the source before transferring plaintext ownership to the caller.
+    await archiveHandle.close()
+    archiveHandle = null
     outputOwnership.complete = true
     transferDatabaseFileHandle = true
     return Object.freeze({
@@ -1510,7 +1520,7 @@ async function restoreLegacyMissionArchive(input, dependencies = {}) {
       error,
     )
   } finally {
-    await archiveHandle?.close()
+    try { await archiveHandle?.close() } catch { /* Preserve the primary failure and settle plaintext. */ }
     await settleOutputOwnership(outputOwnership)
     if (databaseFileHandle !== null && !transferDatabaseFileHandle) {
       try { await databaseFileHandle.close() } catch {}

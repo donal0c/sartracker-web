@@ -213,11 +213,14 @@ export function MissionArchiveVerificationDialog({
       if (requiresTimelineRefresh) setDialogState('refreshing-timeline')
       try {
         await onClose(requiresTimelineRefresh)
+        if (mountedRef.current && requiresTimelineRefresh) setDialogState('failure')
       } catch {
         if (!mountedRef.current) return
         closeInProgressRef.current = false
         setFailure('status-unknown')
         setDialogState('failure')
+      } finally {
+        closeInProgressRef.current = false
       }
       return
     }

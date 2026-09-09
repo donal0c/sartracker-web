@@ -142,6 +142,11 @@ describe('Electron main startup', () => {
       name: 'Bounded direct IPC mission',
       notes: 'x'.repeat(64 * 1024 * 1024),
     })).toThrow(/notes|invalid|bound/iu)
+    for (const fields of [{ notes: 'hidden\u0000control' }, { start_time: '2026-09-09\u0000' }]) {
+      expect(() => handler({ sender, senderFrame: { url: 'http://localhost:5173/' } }, {
+        name: 'Control check', ...fields,
+      })).toThrow(/notes|start time|invalid/iu)
+    }
   })
 
   it('denies unexpected navigation and renderer-opened windows [DON-236]', async () => {

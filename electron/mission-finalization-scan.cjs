@@ -80,17 +80,15 @@ async function prepareLegacyFinalizationRead(database, missionId, options = {}) 
     if (upper > 0) await yieldToMain()
   }
   assertNotCancelled(options.signal)
-  // Capture the global revision before checking the mission generation: a
-  // commit between these reads must invalidate either this check or admission.
-  const admissionRevision = readRevision(database)
   if (!sameRevision(revision, readHistoryRevision())) throw changedError()
-  preparedReads.set(database, { missionId, revision: admissionRevision, row: result })
+  preparedReads.set(database, { missionId, revision, readHistoryRevision, row: result })
 }
 
 /** Reads a fresh prepared row, or retains the legacy synchronous path for other callers. */
 function readLegacyFinalizationRow(database, missionId, required = false) {
   const prepared = preparedReads.get(database)
-  if (prepared?.missionId === missionId && sameRevision(prepared.revision, readRevision(database))) {
+  if (prepared?.missionId === missionId
+    && sameRevision(prepared.revision, prepared.readHistoryRevision())) {
     return prepared.row
   }
   if (required) throw changedError()

@@ -8,6 +8,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const nativeFs = require('node:fs') as typeof import('node:fs')
 const Database = require('better-sqlite3')
 const { createElectronMissionStore: createElectronMissionStoreWithoutUtility, CURRENT_SCHEMA_VERSION } = require(
   '../../electron/mission-store.cjs',
@@ -1144,6 +1145,24 @@ describe('archived mission correction rehydration', () => {
     }
   }, 60_000)
 
+  it('refuses a private snapshot copy when free disk space is insufficient', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'rehydrate-disk-'))
+    temporaryDirectories.add(root)
+    const snapshotPath = path.join(root, 'snapshot.sqlite')
+    writeFileSync(snapshotPath, Buffer.alloc(1024), { mode: 0o600 })
+    const proof = snapshotProof(snapshotPath)
+    const original = nativeFs.statfsSync
+    const probe = vi.spyOn(nativeFs, 'statfsSync').mockImplementation((...args: Parameters<typeof original>) => ({
+      ...original(...args), bavail: 0,
+    }))
+    try {
+      expect(() => rehydrateMissionFromSnapshot({ snapshotPath,
+        expectedSha256: proof.snapshot_database_sha256, expectedIdentity: proof.snapshot_database_identity,
+        missionId: 'mission-a', archiveId: '11111111-1111-4111-8111-111111111111', schemaVersion: 13,
+      })).toThrow(/free disk space/iu)
+    } finally { probe.mockRestore() }
+  })
+
   it('rolls back restored rows when the atomic correction completion callback fails', async () => {
     const userDataPath = mkdtempSync(path.join(tmpdir(), 'sartracker-rehydrate-rollback-'))
     temporaryDirectories.add(userDataPath)
@@ -1201,6 +1220,11 @@ describe('archived mission correction rehydration', () => {
             }
           }
           if (property === 'transaction') return target.transaction.bind(target)
+          if (property === 'exec') return (sql: string) => {
+            const result = target.exec(sql)
+            if (sql === 'DETACH DATABASE correction_snapshot') throw new Error('injected detach failure')
+            return result
+          }
           return Reflect.get(target, property, receiver)
         },
       })

@@ -923,15 +923,22 @@ function decryptFrame({
       final: finalFlag,
       plaintextLength: declaredPlaintextLength,
     })
+    const decipher = createDecipheriv('aes-256-gcm', mak, nonce, {
+      authTagLength: AUTH_TAG_BYTES,
+    })
+    decipher.setAAD(aad)
+    decipher.setAuthTag(tag)
+    let candidate
+    let finalBytes
     try {
-      const decipher = createDecipheriv('aes-256-gcm', mak, nonce, {
-        authTagLength: AUTH_TAG_BYTES,
-      })
-      decipher.setAAD(aad)
-      decipher.setAuthTag(tag)
-      return Buffer.concat([decipher.update(ciphertextBytes), decipher.final()])
+      candidate = decipher.update(ciphertextBytes)
+      finalBytes = decipher.final()
+      return Buffer.concat([candidate, finalBytes])
     } catch {
       throw new ArchiveAuthenticationError()
+    } finally {
+      if (candidate !== undefined) zeroBuffer(candidate)
+      if (finalBytes !== undefined) zeroBuffer(finalBytes)
     }
   } finally {
     if (mak !== undefined) zeroBuffer(mak)

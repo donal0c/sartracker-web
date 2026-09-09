@@ -38,7 +38,10 @@ const {
   openPinnedCustodyFile,
 } = require('./archive-custody-file.cjs')
 
-const MAX_MANIFEST_BYTES = 4 * 1024 * 1024
+const {
+  MAX_ARCHIVE_MANIFEST_BYTES: MAX_MANIFEST_BYTES,
+  MAX_ARCHIVE_MANIFEST_ENTRIES,
+} = require('./archive-manifest-limits.cjs')
 const MAX_METADATA_ENTRY_BYTES = 2 * 1024 * 1024
 const READ_CHUNK_BYTES = 64 * 1024
 const CIPHERTEXT_DIGEST_PROGRESS_BYTES = 8 * 1024 * 1024
@@ -563,6 +566,9 @@ function validateManifest(manifest, request, header) {
     ],
     'Mission archive GPX proof',
   )
+  if (manifest.entries.length > MAX_ARCHIVE_MANIFEST_ENTRIES) {
+    throw new ArchiveVerifyError('ARCHIVE_VERIFY_LIMIT_EXCEEDED', 'Mission archive entry count exceeds its safe bound.')
+  }
   if (manifest.gpx_content.proof_version !== 1
     || !Array.isArray(manifest.gpx_content.records)
     || !Number.isSafeInteger(manifest.gpx_content.record_count)
@@ -935,19 +941,26 @@ async function extractAndProveEntries(input) {
 function settleExtractedOutputs(extracted, preservePlaintext) {
   const ownership = extracted?.outputOwnership
   if (ownership === undefined || ownership.settled) return
+  let cleanupFailed = false
   if (!preservePlaintext) {
     for (const output of ownership.outputs) {
       if (output.descriptor === null) continue
-      try { fs.ftruncateSync(output.descriptor, 0) } catch {}
-      try { fs.fsyncSync(output.descriptor) } catch {}
+      try { fs.ftruncateSync(output.descriptor, 0) } catch { cleanupFailed = true }
+      try { fs.fsyncSync(output.descriptor) } catch { cleanupFailed = true }
     }
   }
   for (const output of ownership.outputs) {
     if (output.descriptor === null) continue
-    try { fs.closeSync(output.descriptor) } catch {}
+    try { fs.closeSync(output.descriptor) } catch { cleanupFailed = true }
     output.descriptor = null
   }
   ownership.settled = true
+  if (cleanupFailed) {
+    throw new ArchiveVerifyError(
+      'ARCHIVE_VERIFY_PLAINTEXT_CLEANUP_FAILED',
+      'Mission archive verification plaintext cleanup could not be confirmed.',
+    )
+  }
 }
 
 /** Returns the final worker-pinned restored database identity after a full path recheck. */
@@ -1521,9 +1534,12 @@ async function verifyMissionArchiveFile(input) {
         'Mission archive verification storage ran out of space.',
       )
     }
+    if (error?.code === 'EMFILE' || error?.code === 'ENFILE') {
+      throw new ArchiveVerifyError('ARCHIVE_VERIFY_LIMIT_EXCEEDED', 'Mission archive verification has insufficient file handles. Close other archive work and retry.')
+    }
     throw error
   } finally {
-    settleExtractedOutputs(extracted, false)
+    try { settleExtractedOutputs(extracted, false) } catch (error) { cleanupError = error }
     try {
       removeVerificationDirectory(operationDirectory)
     } catch (error) {

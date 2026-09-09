@@ -518,6 +518,33 @@ describe('archive custody metadata journal', () => {
     }
   })
 
+  it('rechecks the registry witness inside the terminal settlement transaction', async () => {
+    const db = createDatabase()
+    let invalidateAtAdmission = false
+    const wrapped = new Proxy(db, {
+      get(target, property) {
+        if (property === 'transaction') return (callback: () => unknown) => target.transaction(() => {
+          if (invalidateAtAdmission) {
+            invalidateAtAdmission = false
+            target.prepare('DELETE FROM mission_archives WHERE id = ?').run(archiveId)
+          }
+          return callback()
+        })
+        const value = target[property]
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+    try {
+      const journal = createArchiveCustodyJournal({ db: wrapped, archiveDirectory, now: () => timestamp })
+      journal.planBuildingWithinTransaction(buildingInput())
+      journal.recordPublishPrepared({ operationId, expectedRevision: 1, receipt: creationReceipt(), observedAt: timestamp })
+      insertCompleteRegistryWitness(db)
+      invalidateAtAdmission = true
+      await expect(journal.reconcileActive()).rejects.toMatchObject({ code: 'ARCHIVE_CUSTODY_JOURNAL_REGISTRY_MISMATCH' })
+      expect(journal.readActive()).not.toBeNull()
+    } finally { db.close() }
+  })
+
   it('repairs a matching registry witness without touching the filesystem', async () => {
     const db = createDatabase()
     const runCustodyOperation = vi.fn()

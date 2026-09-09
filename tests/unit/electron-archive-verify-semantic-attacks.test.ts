@@ -561,6 +561,21 @@ describe('mission archive semantic substitution attacks', () => {
         attacked, 'ARCHIVE_VERIFY_SCOPE_MISMATCH')
     }, 90_000)
 
+  it('rejects excessive declared entries before allocating plaintext descriptors', async () => {
+    const fixture = await createArchiveFixture()
+    const { entries, header } = await readFixtureEntries(fixture)
+    const original = entries.find((entry) => entry.name === 'manifest.json')!
+    const manifest = parseCanonicalJson(original.bytes, 'test manifest') as ArchiveManifest
+    const changed = { ...manifest, entries: Array.from({ length: 10_001 }, (_, index) => ({
+      name: `attachments/${index}.bin`, sha256: 'a'.repeat(64), size_bytes: 1,
+    })) }
+    const attacked = await writeReencryptedAttack(fixture, header, 'entry-budget',
+      entries.map((entry) => entry.name === 'manifest.json'
+        ? { ...entry, bytes: Buffer.from(canonicalJson(changed)) } : entry))
+    await expectRejectedWithoutPlaintext(fixture,
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', attacked, 'ARCHIVE_VERIFY_LIMIT_EXCEEDED')
+  }, 90_000)
+
   it('rejects a validly encrypted extra logical entry outside the closed manifest inventory', async () => {
     const fixture = await createArchiveFixture()
     const { entries, header } = await readFixtureEntries(fixture)

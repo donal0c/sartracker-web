@@ -16,6 +16,23 @@ function createDeferred<T>(): {
 }
 
 describe('deferred mission evidence queue [DON-276]', () => {
+  it('reports every discarded payload even when the durable mission loss marker coalesces', async () => {
+    const onEvidenceLoss = vi.fn()
+    const queue = createDeferredMissionEvidenceQueue<string>({
+      capacity: 1, beginObservation: (missionId) => ({ missionId, complete: vi.fn() }),
+      persist: vi.fn().mockResolvedValue(undefined), markEvidenceLoss: vi.fn().mockResolvedValue(undefined),
+      onEvidenceLoss,
+    })
+    queue.enqueue('mission-1', 'retained')
+    queue.enqueue('mission-1', 'lost-a')
+    queue.enqueue('mission-1', 'lost-b')
+    expect(onEvidenceLoss.mock.calls).toEqual([
+      ['mission-1', 'renderer_pending_capacity_exhausted'],
+      ['mission-1', 'renderer_pending_capacity_exhausted'],
+    ])
+    await queue.flushMission('mission-1')
+  })
+
   it('holds the producer at capacity until a retained write settles and permits cancellation of the wait', async () => {
     const write = createDeferred<void>()
     const queue = createDeferredMissionEvidenceQueue<string>({
@@ -260,6 +277,8 @@ describe('deferred mission evidence queue [DON-276]', () => {
     expect(guardian).not.toHaveBeenCalled()
 
     persistence.resolve('fix-a')
+    queue.requestFlushMission('mission-1')
+    await vi.waitFor(() => expect(marker).toHaveBeenCalledTimes(2))
     await expect(queue.flushMission('mission-1')).resolves.toBeUndefined()
     expect(marker).toHaveBeenCalledTimes(2)
     expect(guardian).toHaveBeenCalledOnce()

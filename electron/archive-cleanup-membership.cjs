@@ -367,10 +367,12 @@ function withArchiveCleanupMembershipBypass(db, input, work) {
   const removed = db.prepare('DELETE FROM metadata WHERE key = ? AND value = ?')
     .run(bypassKey, input.archiveId)
   if (removed.changes !== 1) {
-    throw new ArchiveCleanupMembershipError(
+    const failure = new ArchiveCleanupMembershipError(
       'ARCHIVE_CLEANUP_MEMBERSHIP_BYPASS_CORRUPT',
       'Archive cleanup membership bypass changed inside its transaction.',
     )
+    if (workError !== null) failure.cause = workError
+    throw failure
   }
   if (workError !== null) throw workError
   return result

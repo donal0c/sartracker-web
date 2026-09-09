@@ -625,40 +625,48 @@ function registerMissionArchiveIpcHandlers(input) {
 
   input.ipcMain.handle(channels.issueMissionArchiveRecoveryCode, (event, missionId) => {
     input.validateIpcSender(event)
-    const senderId = observeSender(event.sender)
-    const normalizedMissionId = normalizeIdentifier(
-      missionId,
-      'Mission archive mission identity',
-      MAX_MISSION_ID_BYTES,
-    )
-    sweepExpiredIssuances()
-    let operationId
-    do {
-      operationId = normalizeIdentifier(
-        randomUUID(),
-        'Mission archive operation identity',
-        MAX_OPERATION_ID_BYTES,
-        UUID_V4,
+    try {
+      const senderId = observeSender(event.sender)
+      const normalizedMissionId = normalizeIdentifier(
+        missionId,
+        'Mission archive mission identity',
+        MAX_MISSION_ID_BYTES,
       )
-    } while (issuances.has(operationId) || activeOperations.has(operationId))
-    const recoveryCode = normalizeRecoveryCode(generateRecoveryCode())
-    const expiresAtMs = nowMs() + RECOVERY_ISSUANCE_LIFETIME_MS
-    for (const [priorOperationId, prior] of issuances) {
-      if (prior.senderId === senderId && prior.missionId === normalizedMissionId) {
-        issuances.delete(priorOperationId)
+      sweepExpiredIssuances()
+      const senderIssuances = [...issuances.values()].filter((issuance) => issuance.senderId === senderId)
+      if (senderIssuances.length >= 8 && !senderIssuances.some((issuance) => issuance.missionId === normalizedMissionId)) {
+        throw archiveIpcError('ARCHIVE_RECOVERY_ISSUANCE_LIMIT', 'Too many recovery codes are pending. Close another archive dialog or wait for its code to expire.')
       }
+      let operationId
+      do {
+        operationId = normalizeIdentifier(
+          randomUUID(),
+          'Mission archive operation identity',
+          MAX_OPERATION_ID_BYTES,
+          UUID_V4,
+        )
+      } while (issuances.has(operationId) || activeOperations.has(operationId))
+      const recoveryCode = normalizeRecoveryCode(generateRecoveryCode())
+      const expiresAtMs = nowMs() + RECOVERY_ISSUANCE_LIFETIME_MS
+      for (const [priorOperationId, prior] of issuances) {
+        if (prior.senderId === senderId && prior.missionId === normalizedMissionId) {
+          issuances.delete(priorOperationId)
+        }
+      }
+      issuances.set(operationId, Object.freeze({
+        senderId,
+        missionId: normalizedMissionId,
+        recoveryCodeDigest: hashRecoveryCode(recoveryCode),
+        expiresAtMs,
+      }))
+      return Object.freeze({
+        operationId,
+        recoveryCode,
+        expiresAt: new Date(expiresAtMs).toISOString(),
+      })
+    } catch (error) {
+      throw closeArchiveFailure(error, 'ARCHIVE_RECOVERY_ISSUANCE_FAILED')
     }
-    issuances.set(operationId, Object.freeze({
-      senderId,
-      missionId: normalizedMissionId,
-      recoveryCodeDigest: hashRecoveryCode(recoveryCode),
-      expiresAtMs,
-    }))
-    return Object.freeze({
-      operationId,
-      recoveryCode,
-      expiresAt: new Date(expiresAtMs).toISOString(),
-    })
   })
 
   input.ipcMain.handle(channels.finalizeMission, async (event, request) => {

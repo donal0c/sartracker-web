@@ -281,6 +281,14 @@ describe('sealed mission archive verification retry dialog [DON-252 / BCP-15]', 
     expect(query('archive-verification-retry')).toBeNull()
   })
 
+  it('allows closing again if a resolved close callback leaves the dialog mounted', async () => {
+    const onClose = vi.fn().mockResolvedValue(undefined)
+    render({ onClose })
+    await clickAndFlush('archive-verification-close')
+    await clickAndFlush('archive-verification-close')
+    expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
   it('requires a timeline refresh when the controller cannot trust terminal state', async () => {
     const closeAttempt = deferred<void>()
     const onClose = vi.fn(() => closeAttempt.promise)

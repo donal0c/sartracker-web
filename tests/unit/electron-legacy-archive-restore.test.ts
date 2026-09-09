@@ -5,6 +5,7 @@ import {
   chmod,
   mkdtemp,
   mkdir,
+  open,
   readFile,
   readdir,
   rm,
@@ -413,6 +414,39 @@ async function expectFailedWithMainOwnedResidue(
 }
 
 describe('legacy plaintext archive streaming restore', () => {
+  it('settles extracted plaintext when closing the archive handle rejects', async () => {
+    const fixture = await createFixture()
+    const promises = require('node:fs/promises') as typeof import('node:fs/promises')
+    const originalOpen = promises.open
+    let injected = false
+    const openSpy = vi.spyOn(promises, 'open').mockImplementation(async (...args) => {
+      const handle = await originalOpen(...args)
+      if (args[0] === fixture.archivePath) {
+        const originalClose = handle.close.bind(handle)
+        handle.close = async () => {
+          await originalClose()
+          if (!injected) {
+            injected = true
+            throw new Error('injected archive close failure')
+          }
+        }
+      }
+      return handle
+    })
+    const modulePath = require.resolve('../../electron/legacy-archive-restore.cjs')
+    const cached = require.cache[modulePath]
+    delete require.cache[modulePath]
+    const isolated = require(modulePath) as { restoreLegacyMissionArchive: typeof restoreLegacyMissionArchive }
+    const sessionDirectory = path.join(rootDirectory, 'close-failure-session')
+    try {
+      await expect(isolated.restoreLegacyMissionArchive({
+        archivePath: fixture.archivePath, sessionDirectory, expectedMissionId: fixture.missionId,
+      })).rejects.toThrow()
+      expect(injected).toBe(true)
+      await expect(stat(path.join(sessionDirectory, 'mission-store.sqlite'))).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally { openSpy.mockRestore(); require.cache[modulePath] = cached }
+  })
+
   it('rejects a valid ZIP whose bytes differ from the registry content baseline', async () => {
     const fixture = await createFixture()
     await expect(restoreTrackedLegacyMissionArchive({
@@ -708,6 +742,19 @@ describe('legacy plaintext archive streaming restore', () => {
       outputOpenCount: 1,
       sessionResidue: [],
     })
+  })
+
+  it('reserves migration and WAL space before extracting a legacy database', async () => {
+    const source = await createSchema12ShapedSnapshot()
+    const fixture = await createFixture({ missionId: source.missionId, schemaVersion: 12,
+      missionSchemaVersion: 12, missionJsonSchemaVersion: 12, missionStatus: 'finished',
+      databaseBytes: source.bytes, extraEntries: [], })
+    const sessionDirectory = path.join(rootDirectory, 'migration-capacity-session')
+    await expect(restoreTrackedLegacyMissionArchive({ archivePath: fixture.archivePath,
+      sessionDirectory, expectedMissionId: fixture.missionId,
+    }, { getAvailableDiskBytes: async () => source.bytes.length * 2 }))
+      .rejects.toMatchObject({ code: 'LEGACY_ARCHIVE_DISK_FULL' })
+    await expect(stat(path.join(sessionDirectory, 'mission-store.sqlite'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('migrates a genuine v12 archive only inside its restricted scratch session', async () => {
