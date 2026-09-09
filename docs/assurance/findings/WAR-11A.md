@@ -164,3 +164,12 @@ new launcher/inventory/lock-native controls and emits v2 `inspection-only`, with
 pre-build capture explicitly false and the dirty inspection checkout retained.
 Those installer hashes are unchanged from the local summary above; this is
 functional gate evidence in x64 emulation, not a fresh build or lifecycle claim.
+
+CI integration follow-up: validation runs a web build before the package command.
+That earlier build also rewrites version metadata, so it now restores only that
+generated file after rejecting other tracked/staged changes, then requires a
+clean checkout. An executable shell regression fails before the change and
+passes afterward, including preservation/rejection of an unrelated edit. This
+keeps the package command's pre-build capture meaningful without ignoring a
+pre-existing generated-file edit supplied by a caller. Run `34411977668` is
+superseded by this correction; no result from it is promoted to the final head.

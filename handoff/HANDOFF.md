@@ -13,6 +13,8 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   an AppRun dialog-prefix bypass, so that head's readiness is withdrawn.
   Correction uses exact dialog commands, lock-derived runtime policy, explicit
   toolchain ownership, source receipt v2 and independently required receipt upload.
+  CI clears only its preceding web build's generated metadata before capturing
+  package source; a regression confirms unrelated changes remain rejected.
   Focused red/green checks pass. ELF truncation allegation did not reproduce;
   the parser stays unchanged. [WAR-11A](../docs/assurance/findings/WAR-11A.md)
   contains the full disposition ledger and historical local/CI proof limits.
