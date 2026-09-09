@@ -4,7 +4,8 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- Team Feedback Batch 2 is locally verified in `codex/team-ui-feedback-batch-2`,
+- [PR #15](https://github.com/donal0c/sartracker-web/pull/15), Team Feedback
+  Batch 2, is locally verified in `codex/team-ui-feedback-batch-2`,
   pinned to fetched master `c51e4b3537c4b026f7079dd40193a894cedcdd9f`.
   DON-215 and the workplan contain the contract. The implementation
   includes independent category/device visibility, a read-only replay map and
@@ -19,6 +20,7 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   34.6 ms against the unchanged 200 ms gate. Both focused reviews cleared their
   findings. Final-SHA attestations and exact-head CI remain required before
   review-ready closeout. See [evidence](../docs/ui-feedback-batch-2-evidence.md).
+  The PR checks/body and DON-215 hold final-head CI and review receipts.
   No merge, release or deployment is authorized.
 
 - [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, now

@@ -4,6 +4,10 @@ Review candidate on `codex/team-ui-feedback-batch-2`, base
 `c51e4b3537c4b026f7079dd40193a894cedcdd9f`. DON-215 owns the Preview
 implementation; DON-256 is the team-feedback parent. No merge or release is authorized.
 
+Delivery: [PR #15](https://github.com/donal0c/sartracker-web/pull/15).
+The PR checks/body and DON-215 record final-head CI and review attestations after
+this local evidence snapshot; this document does not predeclare their outcome.
+
 ## Accepted behavior
 
 - Current Location and Breadcrumbs retain independent global defaults and
