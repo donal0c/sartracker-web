@@ -8,6 +8,17 @@ const exportsByName = {
   GSETTINGS_SCHEMA_DIR: 'export GSETTINGS_SCHEMA_DIR="${APPDIR}/usr/share/glib-2.0/schemas${GSETTINGS_SCHEMA_DIR:+:${GSETTINGS_SCHEMA_DIR}}"',
 }
 
+// Complete commands from the selected builder template, without EULA support.
+// Never exempt a prefix: shell operators or substitutions can reassign a path.
+const dialogCommands = new Set([
+  'LD_LIBRARY_PATH="" zenity --error --text "${1}" 2>/dev/null',
+  'LD_LIBRARY_PATH="" kdialog --msgbox "${1}" 2>/dev/null',
+  'LD_LIBRARY_PATH="" Xdialog --msgbox "${1}" 2>/dev/null',
+  'LD_LIBRARY_PATH="" zenity --question --title="$TITLE" --text="$TEXT" 2>/dev/null || exit 0',
+  'LD_LIBRARY_PATH="" kdialog --title "$TITLE" --yesno "$TEXT" || exit 0',
+  'LD_LIBRARY_PATH="" Xdialog --title "$TITLE" --clear --yesno "$TEXT" 10 80 || exit 0',
+])
+
 /**
  * Inspect generated AppRun bytes, then evaluate only its allow-listed exports
  * in bash. Never execute the application or arbitrary launcher commands. Fail
@@ -22,7 +33,7 @@ export function verifyAppImageLauncher(source) {
   for (const [name, expected] of Object.entries(exportsByName)) {
     const assignments = lines.filter((line) => !line.startsWith('#') && new RegExp(`\\b${name}\\b`).test(line))
       // Upstream clears the loader variable only for these optional host dialogs.
-      .filter((line) => !(name === 'LD_LIBRARY_PATH' && /^LD_LIBRARY_PATH="" (?:zenity|kdialog|Xdialog)\s/.test(line)))
+      .filter((line) => !(name === 'LD_LIBRARY_PATH' && dialogCommands.has(line)))
     if (assignments.length !== 1 || assignments[0] !== expected) {
       throw new Error(`Unsafe or unrecognized AppRun ${name} assignment.`)
     }
@@ -42,7 +53,7 @@ export function verifyAppImageLauncher(source) {
       env, encoding: 'utf8', timeout: 5000, maxBuffer: 8192,
     })
     if (result.status !== 0 || result.error) throw new Error(`AppRun search-path probe failed (${scenario}).`)
-    const values = result.stdout.trimEnd().split('\n')
+    const values = result.stdout.replace(/\n$/, '').split('\n')
     if (values.length !== names.length) throw new Error('AppRun probe returned incomplete paths.')
     for (const [index, value] of values.entries()) {
       if (value.split(':').some((part) => !part.startsWith('/'))) {

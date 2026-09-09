@@ -9,8 +9,10 @@ const privateName = /\.(?:sararch|sararchive|zip|sqlite|sqlite3|db|mbtiles|pmtil
 
 /** Reject named private payloads and known database/archive signatures, without printing content. */
 export function assertPublicPackageEntry(name, bytes) {
-  if (privateName.test(name)
-    || bytes.subarray(0, 16).toString() === 'SQLite format 3\0'
+  if (privateName.test(name)) {
+    throw new Error(`Package matched a prohibited filename category: ${name}; inspect for private data or a dependency name collision before changing packaging policy.`)
+  }
+  if (bytes.subarray(0, 16).toString() === 'SQLite format 3\0'
     || bytes.subarray(0, 8).toString() === 'SARARCH2'
     || bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 3, 4]))) {
     throw new Error(`Package contains a prohibited private-data category: ${name}`)
@@ -37,10 +39,15 @@ export function inspectPhysicalPackage(root, { installationLinks = false } = {})
         const target = readlinkSync(filename)
         const resolved = installationLinks && path.isAbsolute(target)
           ? path.join(root, target) : path.resolve(path.dirname(filename), target)
-        if (!resolved.startsWith(`${root}${path.sep}`)
-          || !realpathSync(resolved).startsWith(`${root}${path.sep}`)) {
+        if (!resolved.startsWith(`${root}${path.sep}`)) {
           throw new Error(`Package symlink escapes inspected root: ${relative}`)
         }
+        let destination
+        try { destination = realpathSync(resolved) }
+        catch (error) {
+          throw new Error(`Package symlink cannot be resolved: ${relative} (${error.code ?? 'unknown filesystem error'})`, { cause: error })
+        }
+        if (!destination.startsWith(`${root}${path.sep}`)) throw new Error(`Package symlink escapes inspected root: ${relative}`)
         files.push({ boundary: 'physical', path: relative, symlink: target })
       } else if (stat.isDirectory()) walk(filename)
       else if (stat.isFile()) {
@@ -99,9 +106,6 @@ export function inspectLinuxPackage(root, lock) {
       if (!allowed.has(`${pkg.name}@${pkg.version}`)) throw new Error(`Packaged dependency not in lock: ${pkg.name}@${pkg.version}`)
       packages.push({ name: pkg.name, version: pkg.version, path: name })
     }
-  }
-  if (!packages.some((pkg) => pkg.name === 'better-sqlite3' && pkg.version === '12.10.0')) {
-    throw new Error('Expected unchanged better-sqlite3 package is missing.')
   }
   return { asarSha256: sha256(readFileSync(archive)), files, packages }
 }

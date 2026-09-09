@@ -13,6 +13,13 @@ and two independent reviews are recorded on its unmerged PR. After this slice,
 qualify SQLite/native compatibility independently, then a supported Electron
 runtime, before BCP-17/WAR-12 final-candidate qualification. Release HOLD remains.
 
+PR #14 review follow-up: reject modified AppRun dialog lines exactly, distinguish
+pre-build source changes from generated version metadata, declare the inspection
+toolchain explicitly, and derive runtime identity from the lock. Retain the
+native load/query/integrity and 200 ms gates. Reproduce before fixing; run focused
+regressions, one stable source cycle, actual package inspection and final-head
+CI/reviews. Record rejected findings and residuals in WAR-11A; no runtime upgrade.
+
 Owner: DON-146; qualification/publication remain DON-254/DON-255. Base:
 `c51e4b3537c4b026f7079dd40193a894cedcdd9f`, branch
 `codex/war-11a-appimage-builder-hardening`.

@@ -1,6 +1,7 @@
 # WAR-11A — AppImage builder remediation
 
-Status: implemented for unmerged review; native Ubuntu PR qualification pending.
+Status: review corrections in progress; earlier review-readiness withdrawn after
+the confirmed AppRun dialog-prefix bypass. Prior CI remains historical evidence.
 Release **HOLD** remains.
 Base `c51e4b3537c4b026f7079dd40193a894cedcdd9f`; owner DON-146, with
 DON-254/DON-255 retaining final qualification/publication authority.
@@ -82,8 +83,9 @@ No settings/rulesets/action-pinning, signing, SBOM/attestation, immutable releas
 Windows support, live-provider, original-machine, field or BCP-17/WAR-12 work.
 Package exclusion checks cover named categories/signatures, not arbitrary
 embedded-secret absence. A `.deb` extraction is not installation qualification.
-DON-146's existing Done state does not prove its runtime upgrade or SIGTRAP
-hypothesis; this bounded builder work does not fulfil those acceptance criteria.
+DON-146 was historically Done despite the unchanged runtime; live recheck now
+shows In Progress. This bounded builder work does not fulfil its runtime-upgrade
+or original-machine SIGTRAP acceptance criteria.
 
 ## Package, CI and final review evidence
 
@@ -133,3 +135,32 @@ failed first (including logical ASAR), then passed after extending the exact
 credential basename match to every suffix, including multiple extensions.
 `credentials-store.cjs` remains allowed. Final-head CI and independent rechecks
 supersede the earlier green head; the earlier run is retained, not relabelled.
+
+## External review corrections and dispositions
+
+| Finding | Disposition / evidence |
+| --- | --- |
+| AppRun dialog-prefix exemption accepts appended loader reassignment | Confirmed blocker. Four mutated dialog regressions fail first (semicolon, AND, OR, command substitution). Only six complete literal commands from the selected no-EULA template are exempted; actual upstream launcher still passes. Earlier independent reviews missed this defect and do not clear it. |
+| Hardcoded runtime identities and opaque failures; inventory mixes policy | Corrected. Inventory records contents; `linux-package-policy.js` compares exact locked Electron and root better-sqlite3 identities with the actual runtime probe and reports field/expected/observed. Native load/query/integrity and x64 checks remain; ABI is recorded after actual native loading instead of duplicating Electron's ABI mapping. No runtime version changed. |
+| Undeclared inspection dependencies / internal builder import | Corrected. Direct exact dev declarations own ASAR 3.4.1, app-builder-lib 26.16.1 and builder-util 26.16.0. Every non-root lock record is unchanged. One adapter verifies declarations, installed versions, supported builder pin and API shape before calling the internal helper. Future builder upgrades require adapter review. |
+| Hardcoded FUSE2 toolset | Corrected. Read `electron-builder.json` toolsets.appimage with the selected builder's default; record the selection. Modern/custom toolsets remain subject to actual format/launcher/payload gates and are not separately qualified by this slice. |
+| Generated version makes sourceDirty ambiguous | Corrected with receipt v2: capture before and after packaging; retain pre-existing changes, record both raw states and generated-file hashes, and distinguish build-command capture from standalone inspection. Only the known post-build generated file is separated from source edits. No claim of cryptographic source attestation. |
+| Prohibited directory names may collide with dependency conventions | Latent, no current collision identified. Keep fail-closed inspection; distinguish a filename-category match requiring inspection from a known payload signature. No blanket node_modules exemption or assertion that a name match proves leaked data. |
+| Dangling symlink returns raw ENOENT | Confirmed by failing regression, corrected with package-relative path and filesystem error code. Escape rejection remains. |
+| ELF section-header overrun | Not reproduced; no parser change. The whole count × 64-byte table is bounded before reads. All 68 truncation lengths 64–131 reject with the explicit bounds error, not RangeError. Each section's furthest field ends at byte 40 of its bounded 64-byte entry. |
+| trimEnd hides a trailing empty output field | Removed broad whitespace trimming; strip only the final protocol newline. The fixed allowlisted exports cannot produce the reported empty final field, so no reachable launcher bypass was established from this item. |
+| Non-Linux distribution fails after building | Fail before build on unsupported hosts; build documentation explicitly names Linux x64 and prerequisites. macOS engineering `--dir` packaging is unchanged. |
+| Missing receipt can be masked by another upload path | Confirmed workflow contract gap; failing workflow regression corrected with a separate single-path required receipt upload. |
+
+Final correction-head source/package CI, receipt validation and independent
+rechecks are recorded on PR #14. Neither prior green run nor a historical local
+receipt is silently promoted to evidence for these corrections.
+
+Correction validation: the stable local suite passed 406 files / 4,218 tests,
+lint and build/budgets. Subsequent provenance-mode and builder/library guard
+regressions passed after first failing; final focused check is 9 files / 101
+tests plus lint. Reinspection of the original local Linux installers passes the
+new launcher/inventory/lock-native controls and emits v2 `inspection-only`, with
+pre-build capture explicitly false and the dirty inspection checkout retained.
+Those installer hashes are unchanged from the local summary above; this is
+functional gate evidence in x64 emulation, not a fresh build or lifecycle claim.

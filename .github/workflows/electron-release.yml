@@ -287,7 +287,15 @@ jobs:
           path: |
             tmp/beta-artifacts/tracking-soak-ci
             tmp/renderer-attestation
-            tmp/electron-validation-evidence/package-safety.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload package safety receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-safety-${{ needs.gates.outputs.tag }}
+          path: tmp/electron-validation-evidence/package-safety.json
           if-no-files-found: error
           retention-days: 14
 

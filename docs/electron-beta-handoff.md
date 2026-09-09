@@ -69,6 +69,12 @@ smoke gate.
 Linux AppImage and `.deb` must be built by the tag-driven GitHub Actions lane so
 `better-sqlite3` is native Linux x64 and the exact CI bytes can be qualified:
 
+Run these commands on Linux x64. The package command rejects other hosts before
+building; macOS engineering packaging uses `npm run electron:pack`. Linux needs
+`squashfs-tools` and the runtime dependencies installed by the CI workflow. A
+successful build must also produce the required package-safety receipt; a local
+cross-build or extracted `.deb` is not installed-platform qualification.
+
 ```bash
 npm ci
 npm run electron:dist:linux

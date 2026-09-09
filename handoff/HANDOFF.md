@@ -8,15 +8,16 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   Builder/app-builder-lib 26.0.12 → 26.16.1; Electron/SQLite/application code
   and the 200 ms gates are unchanged. The new package gate inspects actual
   AppRun paths, all installer/ASAR contents, payload identity and native SQLite.
-  Local source: 402 files / 4,186 tests, lint/build; later inspection corrections
-  have focused red/green checks. Local emulated Linux package inspection passes;
-  native macOS archive receipt independently passes all phases and recovery.
-  These are different disposable snapshots, not final PR-head/Linux proof.
-  [WAR-11A](../docs/assurance/findings/WAR-11A.md) holds hashes and limits.
-  PR #14's first CI passed all gates on `f72ade97`; automated review then found
-  a credential filename suffix gap, fixed with five red/green regressions.
-  Next: final-head Ubuntu CI/downloaded receipt validation and two independent
-  reviews, recorded on the PR. Keep unmerged; no release authority is granted.
+  PR #14 CI `34397884713` passed 403 files / 4,200 tests and all packaged gates
+  on `6c1df970`; downloaded hashes/receipts validate. External review then found
+  an AppRun dialog-prefix bypass, so that head's readiness is withdrawn.
+  Correction uses exact dialog commands, lock-derived runtime policy, explicit
+  toolchain ownership, source receipt v2 and independently required receipt upload.
+  Focused red/green checks pass. ELF truncation allegation did not reproduce;
+  the parser stays unchanged. [WAR-11A](../docs/assurance/findings/WAR-11A.md)
+  contains the full disposition ledger and historical local/CI proof limits.
+  Next: correction-head source/package checks and independent rechecks, recorded
+  on the PR. Keep unmerged; no release authority is granted.
   DON-146 owns this slice; DON-254/DON-255 retain final qualification/publication.
 
 - [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, merged

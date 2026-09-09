@@ -26,6 +26,11 @@ describe('non-executing AppImage extraction [DON-146]', () => {
     bytes.write('hsqs', 160)
     expect(appImageSquashfsOffset(bytes)).toBe(160)
   })
+  it('rejects every truncated section-table boundary before attempting field reads', () => {
+    for (let length = 64; length < 132; length += 1) {
+      expect(() => appImageSquashfsOffset(fixture().subarray(0, length))).toThrow('AppImage ELF offset is out of bounds.')
+    }
+  })
   it('refuses malformed, missing, wrong-format and out-of-bounds filesystems', () => {
     expect(() => appImageSquashfsOffset(Buffer.alloc(12))).toThrow()
     const missing = fixture(); missing.fill(0, 128)

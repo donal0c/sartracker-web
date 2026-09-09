@@ -10,7 +10,7 @@
     "fixed": "26.15.0",
     "minimumBuildNode": "22.12.0"
   },
-  "lockSha256": "fc6b0425594544c330251267a0919af601c523fc1ba7f6af7b4b25f23c6f39fc",
+  "lockSha256": "5f5cf9349327511ce0b61dfe78ed62ff39de92e9e0a60a8f0b7d79b2f6f195bd",
   "summary": {
     "added": 45,
     "removed": 111,
@@ -20,7 +20,8 @@
     "All surviving changes resolve inside the builder subtree. Compatible resolver refreshes are accepted subtree re-resolution, not all strict minimum requirements.",
     "Root mkdirp/rimraf moves are hoist relocations; app-builder-lib semver 7.7.4 satisfies new ~7.7.3.",
     "No newly added/changed registry dependency has consumer install hooks. Declared development/build scripts are enumerated separately. Builder still invokes checksum-bound downloaded toolsets and native compilation.",
-    "No runtime upgrade, exploit claim, SBOM attestation, or release qualification."
+    "No runtime upgrade, exploit claim, SBOM attestation, or release qualification.",
+    "External review follow-up declares existing @electron/asar 3.4.1, app-builder-lib 26.16.1 and builder-util 26.16.0 as direct exact development dependencies. Only root lock metadata changes; every non-root record, version, URL, integrity and hook is unchanged. Pinned internal adapter validates installed identities and API shape."
   ],
   "delta": [
     {

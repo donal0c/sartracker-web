@@ -72,4 +72,17 @@ describe('packaged private-data exclusion [DON-146]', () => {
       expect(() => inspectPhysicalPackage(root)).toThrow(/escape/)
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
+
+  it('reports the package-relative path of a dangling link without raw ENOENT', () => {
+    const root = mkdtempSync(join(tmpdir(), 'sartracker-dangling-link-'))
+    try {
+      symlinkSync('missing', join(root, 'broken'))
+      expect(() => inspectPhysicalPackage(root)).toThrow('Package symlink cannot be resolved: broken (ENOENT)')
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('labels a filename match as a category match, not confirmed private data', () => {
+    expect(() => assertPublicPackageEntry('node_modules/example/lib/fixtures/sample.json', Buffer.from('{}')))
+      .toThrow(/prohibited filename category.*inspect.*name collision/i)
+  })
 })

@@ -42,6 +42,15 @@ describe('generated AppImage search paths [DON-146]', () => {
     expect(() => verifyAppImageLauncher(`${fixed}\nLD_LIBRARY_PATH=.:/tmp`)).toThrow(/LD_LIBRARY_PATH/)
   })
 
+  it.each([
+    'LD_LIBRARY_PATH="" zenity --info; export LD_LIBRARY_PATH=.:/tmp',
+    'LD_LIBRARY_PATH="" kdialog --msgbox "${1}" 2>/dev/null && export LD_LIBRARY_PATH=.:/tmp',
+    'LD_LIBRARY_PATH="" Xdialog --msgbox "${1}" 2>/dev/null || export LD_LIBRARY_PATH=.:/tmp',
+    'LD_LIBRARY_PATH="" zenity --error --text "$(export LD_LIBRARY_PATH=.:/tmp)" 2>/dev/null',
+  ])('rejects modified dialog commands without executing them: %s', (line) => {
+    expect(() => verifyAppImageLauncher(`${fixed}\n${line}`)).toThrow(/LD_LIBRARY_PATH/)
+  })
+
   it.each(['export OTHER=value LD_LIBRARY_PATH="$LD_LIBRARY_PATH:"', 'declare -x LD_LIBRARY_PATH="$LD_LIBRARY_PATH:"'])(
     'rejects an unrecognized loader reference: %s', (assignment) => {
       expect(() => verifyAppImageLauncher(`${fixed}\n${assignment}`)).toThrow(/LD_LIBRARY_PATH/)

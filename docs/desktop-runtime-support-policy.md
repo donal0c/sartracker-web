@@ -149,6 +149,11 @@ private-data categories, binds application payloads to the unpacked smoke target
 and loads target-native SQLite through the packaged Electron runtime. Its
 `package-safety.json` receipt records hashes and explicit proof limits; it is
 separate from lifecycle receipts, checksums and final candidate qualification.
+Receipt v2 preserves pre-build source changes separately from normal generated
+version metadata and labels standalone reinspection as inspection-only. Runtime
+versions must match the lock; actual native loading proves ABI compatibility.
+The inspection dependencies are direct exact development dependencies, with a
+guarded adapter for the pinned builder's internal toolset API.
 
 **Note:** The caret ranges in `package.json` allow minor/patch updates, but
 `package-lock.json` is committed and authoritative. `npm ci` in CI ensures
