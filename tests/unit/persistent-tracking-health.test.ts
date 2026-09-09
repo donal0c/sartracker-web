@@ -15,4 +15,11 @@ describe('persistent tracking health', () => {
   it('preserves reported degraded state despite online connection', () => {
     expect(describeTrackingHealth({ ...status, warning: 'Roster unavailable' }, 'active', 0).tone).toBe('warning')
   })
+  it('retains critical offline severity and contradictory cache warnings', () => {
+    expect(describeTrackingHealth({ ...status, mode: 'offline' }, 'active', 0).tone).toBe('alert')
+    expect(describeTrackingHealth({ ...status, warning: 'OFFLINE MODE — showing last known positions from cache' }, 'active', 0)).toEqual({ label: 'Tracking not live · cached positions', tone: 'alert' })
+  })
+  it('does not mark unverified fix times healthy', () => {
+    expect(describeTrackingHealth(status, 'active', 0, 2)).toEqual({ label: 'Tracking connected · 2 fix times unverified', tone: 'warning' })
+  })
 })

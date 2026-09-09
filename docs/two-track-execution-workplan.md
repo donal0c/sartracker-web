@@ -141,6 +141,9 @@ Implementation and both focused-review remediations are complete; source,
 browser and screenshot evidence plus all twelve dispositions are recorded in
 [the batch evidence](ui-feedback-batch-1-evidence.md). Exact-head CI and review
 attestations are tracked in the PR/DON-256 before Donal's merge decision.
+The external deep-review remediation is verified locally (4,155 tests, affected
+browser/visual flows and 27 screenshot reviews); its full disposition is in that
+evidence file. Follow the updated PR head's CI rather than reuse ancestor CI.
 
 1. Breadcrumb PR-1 through PR-6 are merged. [PR #10](https://github.com/donal0c/sartracker-web/pull/10) merged on 2026-09-09 at `e0ead68852b10606551302b5104e409634c962e1`; DON-248/252/253 are Done. All 95 updated review findings are dispositioned and final PR-head CI `34324371898` passed. Use [Testing and review cadence](testing-and-review-cadence.md) for new work. The old staged recovery/stop instructions are [archived](../handoff/archive/pr6-closeout-history-20260909.md), not the active sequence. Next: WAR-04B's narrow merged-head refresh, then BCP-17 final candidate qualification before DON-255 publication. Merge does not establish release or field acceptance.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.

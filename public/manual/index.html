@@ -344,6 +344,7 @@
           <a href="#desktop-beta">Desktop Beta</a>
           <a href="#shadow-use">Controlled Shadow Use</a>
           <a href="#screen">Main Screen</a>
+          <a href="#display-preferences">Display Preferences</a>
           <a href="#mission">Mission Control</a>
           <a href="#map">Map And Coordinates</a>
           <a href="#official-maps">Official Maps</a>
@@ -666,7 +667,8 @@
           <h2>Compact workspaces and contrast</h2>
           <p>The top awareness strip keeps tracking connection status and last success visible on every Focus tab, including when the right workspace is hidden. Connected describes the feed; stale positions or a disconnected warning must not be treated as current tracking.</p>
           <p><strong>Theme: Standard / High contrast</strong> switches panel and control contrast. This preference is saved on this device for the next launch. If saving fails, the current theme still applies and a warning explains that it could not be saved.</p>
-          <p><strong>Minimize</strong> removes the active Mission Control card in either display mode. The top strip retains mission name, state, Active search timer, Review and <strong>Restore mission</strong>. Restore the controls before pausing or finishing. Paused and recovery states retain the full mission controls.</p>
+          <p><strong>Minimize</strong> removes the active Mission Control card in either display mode. The top strip retains mission name, state, Active search timer, Review and <strong>Restore mission</strong>. Restore the controls to access Pause or End Mission. A pause, recovery, mission decision or action failure automatically restores the controls and cancels the previous hide choice; returning to an active mission does not hide them again. Open mission decisions must be completed or cancelled before hiding the workspace.</p>
+          <p>Your saved contrast choice also applies during startup and on the startup-fault screen. If a mission dialog cannot load admin identities, use <strong>Retry admin roster</strong>; a successful reload restores the identity choices.</p>
           <p><strong>Layer Workspace → Collapse</strong> hides the full right workspace and returns its width to the map. <strong>Restore workspace</strong> is available in the top strip and works with keyboard Tab and Enter. Layer visibility, filters and the selected tab are retained. While paused or recovering, the safety controls stay expanded.</p>
           <p>The Devices list and selected-device details have separate scrolling areas. Scroll the list horizontally to reach all columns and Zoom; a device without a fix cannot be zoomed to.</p>
           <figure class="screenshot"><img src="assets/ui-feedback-focus.png" alt="Focus Mode with minimized mission, persistent disconnected warning and readable layer controls" /><figcaption>Browser exercise: disconnected tracking stays visible with the mission minimized.</figcaption></figure>

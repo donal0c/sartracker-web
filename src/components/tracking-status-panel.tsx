@@ -1,4 +1,5 @@
 import { useTrackingStore } from '../features/tracking/tracking-store'
+import { isCriticalTrackingTrustWarning } from '../features/tracking/tracking-trust-warning'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
 import { useExactBreadcrumbDotStore } from '../features/tracking/exact-breadcrumb-dot-store'
 import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcrumb-dot-controller'
@@ -360,13 +361,6 @@ function getTrackingModeLabel(mode: 'idle' | 'offline' | 'online', warning: stri
   return mode
 }
 
-function isCriticalTrackingTrustWarning(warning: string | null): boolean {
-  if (warning === null) {
-    return false
-  }
-
-  return /offline mode|live refresh suspended/i.test(warning)
-}
 
 function TrackingStatusMessage(props: {
   readonly children: string

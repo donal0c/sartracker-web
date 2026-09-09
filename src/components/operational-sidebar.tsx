@@ -19,10 +19,11 @@ const FOCUS_SIDEBAR_TABS: readonly { readonly id: FocusSidebarTab; readonly labe
 /**
  * Shares a stable mission-control owner across normal, Focus and hidden presentations.
  */
-export function OperationalSidebar({ focusModeActive, collapsed = false, minimized = false, collapseDisabledReason, onActionErrorChange, onMinimizedChange, onCollapseWorkspace }: {
+export function OperationalSidebar({ focusModeActive, collapsed = false, minimized = false, collapseDisabledReason, onActionErrorChange, onDecisionOpenChange, onMinimizedChange, onCollapseWorkspace }: {
   readonly focusModeActive: boolean
   readonly collapseDisabledReason: string | null
   readonly onActionErrorChange: (error: string | null) => void
+  readonly onDecisionOpenChange: (open: boolean) => void
   readonly collapsed?: boolean
   readonly minimized?: boolean
   readonly onMinimizedChange: (minimized: boolean) => void
@@ -37,7 +38,7 @@ export function OperationalSidebar({ focusModeActive, collapsed = false, minimiz
 
   return (
     <aside
-      className="sar-sidebar z-20 flex w-[400px] flex-col"
+      className="sar-sidebar sar-operational-sidebar z-20 flex w-[400px] flex-col"
       data-testid={focusModeActive ? 'focus-mode-sidebar' : 'operational-sidebar'}
       style={collapsed ? { display: 'none' } : undefined}
     >
@@ -77,11 +78,11 @@ export function OperationalSidebar({ focusModeActive, collapsed = false, minimiz
 
       {/* Mission Control — full panel pinned above tabs */}
       <div
-        className="min-h-0 max-h-[53vh] flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-4"
+        className={`min-h-0 max-h-[53vh] flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-4 ${focusModeActive ? 'sar-mission-dock-focus' : ''}`}
         data-testid={focusModeActive ? 'focus-mode-mission-dock' : 'mission-control-dock'}
         style={{ display: minimized ? 'none' : undefined, maxHeight: phase === 'paused' ? 'none' : undefined }}
       >
-        <MissionControlPanel minimized={minimized} onMinimizedChange={onMinimizedChange} onActionErrorChange={onActionErrorChange} />
+        <MissionControlPanel minimized={minimized} onMinimizedChange={onMinimizedChange} onActionErrorChange={onActionErrorChange} onDecisionOpenChange={onDecisionOpenChange} />
       </div>
 
       {/* Tabbed workspace — same structure as normal sidebar */}
@@ -106,7 +107,7 @@ export function OperationalSidebar({ focusModeActive, collapsed = false, minimiz
 
       {/* Tab content — fills remaining height */}
       <div
-        className={`flex-1 overflow-y-auto px-5 py-4 ${activeTab === 'layers' ? 'flex flex-col' : 'space-y-5'}`}
+        className={`sar-workspace-content flex-1 overflow-y-auto px-5 py-4 ${activeTab === 'layers' ? 'flex flex-col' : 'space-y-5'}`}
         data-testid={`${prefix}-tab-content`}
       >
         {activeTab === 'tracking' && (

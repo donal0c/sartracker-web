@@ -4,7 +4,9 @@ import './index.css'
 import App from './App.tsx'
 import { bootstrapAppRuntime } from './features/runtime/bootstrap-app-runtime'
 import { installAppRuntimeTeardown } from './features/runtime/install-app-runtime-teardown'
+import { applySavedTheme } from './lib/theme-preference'
 
+applySavedTheme()
 const runtimeBootstrapPromise = bootstrapAppRuntime()
 installAppRuntimeTeardown({
   bootstrapPromise: runtimeBootstrapPromise,

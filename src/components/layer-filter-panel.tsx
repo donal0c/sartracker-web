@@ -89,13 +89,13 @@ export function LayerFilterPanel({ onCollapseWorkspace, collapseDisabledReason =
           onClick={() => onCollapseWorkspace ? onCollapseWorkspace() : setPanelExpanded(!panelExpanded)}
           type="button"
         >
-          {panelExpanded ? 'Collapse' : 'Expand'}
+          {onCollapseWorkspace || panelExpanded ? 'Collapse' : 'Expand'}
         </button>
       </div>
 
       {collapseDisabledReason !== null && <p className="mb-3 text-xs text-amber-200">{collapseDisabledReason}</p>}
 
-      {panelExpanded ? (
+      {onCollapseWorkspace || panelExpanded ? (
         <div className="flex min-h-0 flex-1 flex-col gap-4">
           <input
             className="sar-input w-full px-3 py-2 text-xs"

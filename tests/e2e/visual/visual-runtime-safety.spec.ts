@@ -11,6 +11,7 @@ import {
 
 test.describe('Visual: Runtime safety states', () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('sartracker:high-contrast', 'true'))
     await navigateToHarness(page)
   })
 

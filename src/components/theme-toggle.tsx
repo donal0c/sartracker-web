@@ -1,11 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const THEME_KEY = 'sartracker:high-contrast'
-
-/** Restores a presentation-only preference without involving mission persistence. */
-function readTheme(): boolean {
-  try { return window.localStorage.getItem(THEME_KEY) === 'true' } catch { return false }
-}
+import { readTheme, THEME_KEY } from '../lib/theme-preference'
 
 /** Offers a persisted high-contrast variant and reports unavailable preference storage. */
 export function ThemeToggle() {

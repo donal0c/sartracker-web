@@ -442,6 +442,20 @@ test.describe('M19 devices workspace', () => {
         hasLine: true,
         coversSparseTrail: true,
       })
+    await page.evaluate(() => {
+      const map = (window as Window & { __SARTRACKER_MAP__: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+      map.fitBounds([[-9.776, 51.997], [-9.746, 52.017]], { padding: 60, duration: 0 })
+    })
+    // Check every fixture vertex and each segment midpoint in the rendered layer,
+    // independently of source vertex counts and viewport-dependent tile clipping.
+    await expect.poll(() => page.evaluate(() => {
+      const map = (window as Window & { __SARTRACKER_MAP__: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+      return Array.from({ length: 11 }, (_, index) => {
+        const point = map.project([-9.746 - index * 0.003, 51.997 + index * 0.002])
+        return map.queryRenderedFeatures([[point.x - 4, point.y - 4], [point.x + 4, point.y + 4]], { layers: ['tracking-breadcrumbs-line'] })
+          .some((feature) => feature.properties.deviceId === 'alpha' && feature.properties.featureKind === 'breadcrumbLine')
+      }).filter(Boolean).length
+    }), { timeout: 15_000 }).toBe(11)
   })
 })
 
@@ -624,7 +638,7 @@ async function readSparseBreadcrumbLine(page: import('@playwright/test').Page) {
       hasLine: lineFeatures.length > 0,
       // querySourceFeatures reports loaded, clipped vector tiles: their vertex
       // counts change with viewport height. Check complete source geometry while
-      // retaining the independent rendered-line assertion above.
+      // retaining the independent rendered vertex/segment checks in the test.
       coversSparseTrail:
         (sourceData?.features ?? []).filter((feature) => feature.properties?.featureKind === 'breadcrumbLine' && feature.properties.deviceId === 'alpha').reduce(
           (total, feature) => total + (feature.geometry?.coordinates?.length ?? 0),

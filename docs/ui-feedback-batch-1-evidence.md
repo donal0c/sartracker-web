@@ -47,7 +47,7 @@ The document's other feedback is context, not additional implementation scope.
   exemption. Restored the exemption for both modes, with a 1280x720 alarm/Resume
   viewport regression. No additional review wave was requested.
 
-## Verification record
+## Original candidate verification (51acca12)
 
 Final post-review serial source gate: **398 files / 4,143 tests passed**
 (476.86 seconds). Lint and production build/bundle budgets passed.
@@ -85,3 +85,55 @@ per-person breadcrumb display semantics, search-area label placement, mission
 renaming, privileged settings, preview scope, groups/logbooks/gear, multi-day
 domain rules and map sharing. Existing Linear ownership and programme decisions
 remain authoritative; no speculative product answers were introduced.
+
+## External deep-review remediation
+
+Donal authorized remediation of [the preserved external review](../team-feedback/sar-4/pr11-deep-review.txt).
+The rejected UI candidate is `51acca12030ab5cf5b94733bd21f2bc7921bae45`.
+The following supersedes its review-completion claim, while retaining its test
+and CI history as ancestor evidence.
+
+| Finding | Verified disposition |
+| --- | --- |
+| 1. Persisted collapsed layer panel | Reproduced in Playwright with version-0 `panelExpanded:false`. The whole-rail presentation now always renders its tree contents, independently of the legacy preference. Stored node/visibility preferences remain intact. |
+| 2. Hidden End Mission decision | Reproduced. Every mission decision/busy state prevents minimization and collapse; protection is lifted to the shell in a layout effect before paint. Escape cancels the visible decision, then Collapse becomes available. |
+| 3. Hidden-state latch | Reproduced across Pause/Resume. `useWorkspaceVisibility` limits hiding choices to one uninterrupted mission/protection context. Pause, recovery, governance, errors and mission changes clear the choices rather than mask them. Browser tests cover returning to the same mission after recovery/idle; hook tests cover protected and changed identities. |
+| 4. Startup contrast | Confirmed early-return defect. Saved theme applies synchronously before runtime bootstrap/render. Browser tests hold boot or inject a startup failure without ever mounting ThemeToggle; both retain high contrast. |
+| 5. Devices layout | Wide-screen forced scrolling reproduced and removed by using the actual 57.5rem column minimum plus 2rem padding. The reported `53.34912, -6.26031` coordinate clipping did not reproduce: explicit value/panel bounds and overflow assertions pass at all four supported sizes. Coordinate formatting is unchanged. |
+| 6. Tracking trust severity | Offline uses the explicit alert class. A shared existing critical-warning classifier prevents contradictory online/cache text from showing connected status. Unverified fix times are counted and visible, never green. Pure and Focus browser tests cover these states; the contradictory online/cache state is defensive coverage, not a confirmed producer path. |
+| 7. Roster loading error | Confirmed error coupling, but loading is dialog-triggered, not unsolicited startup. Separate roster error/retry state clears on success or a fresh load; lifecycle errors remain untouched. Hook tests cover retry, reopen and preserving a Pause failure. The browser exercises Retry, the loaded identity and usable hide controls afterward. |
+| 8. Collapse label | Whole-rail action always says Collapse, independently of the legacy panel preference. |
+| Medium: automatic focus | Removed remount autofocus. Only explicit Collapse moves focus to Restore; keyboard Restore returns it to the original control. Safety-state changes do not request that focus move. |
+| Medium: painted hidden error | Error and decision protection use layout effects rather than passive effects. |
+| Medium: old minimized mission ID | Replaced the persistent ID latch with the context-bound presentation state; same-mission recovery/idle regressions pass. |
+| Medium: test-ID CSS | Replaced layout selectors with named production classes, including explicit grid, inspector, sidebar, dock, header and content classes. |
+| Medium: generated tone class | Replaced string construction with a static tone-to-class mapping that Tailwind can discover independently. |
+| Medium: hover override | Lowered the secondary-text override specificity. The real Helicopter control changes to its intended hover colour in a browser regression. |
+| Medium: manual | Added the contents entry and clarified access to hidden actions versus automatic safety restoration. Restore-before-Pause advice was not itself a defect. |
+| Medium: vacuous filter check | Added an explicit six-button count before label containment checks. |
+| Rendered trail completeness | Retained complete source geometry and added independent rendered-layer hit checks at six known fixture vertices and five segment midpoints after fitting the complete trail. This no longer relies on clipped tile vertex counts or presence alone. |
+
+The escape mechanisms were gaps in transition/upgrade coverage: clean storage,
+isolated active/paused states, ready-only theme tests, scroll-before-hit-testing,
+status text without severity assertions, and always-successful roster loading.
+The new regressions exercise those boundaries. No native, archive, ingestion,
+coordinate algorithm, storage schema or safety-threshold changes were needed.
+
+### Remediation verification
+
+- Full serial source suite: **400 files / 4,155 tests passed**, 458.73 seconds.
+- Lint and production build/bundle budgets passed. Generated build-ID churn was
+  restored to the committed blob; no version change is included.
+- **89 affected browser/visual tests passed**, plus the added roster-retry
+  browser flow passed separately on the same executable source.
+- **27 fresh screenshots passed independent Opus review** at medium severity;
+  the focused accessibility reviewer also inspected Devices at four sizes,
+  constrained Focus, boot and startup-fault captures. Manual screenshots refreshed.
+- Both focused reviewers found no remaining remediation blocker. Exact committed
+  head attestations and current CI are recorded on PR #11 and DON-256 before
+  handoff; source tests do not stand in for those results.
+
+The earlier `51acca12` Linux CI frame rejection (202.9ms against <200ms) remains
+recorded in DON-256 and its PR history. Its single unchanged-head repeat passed
+all gates with a bound terminal receipt; its cause remains unconfirmed. This
+remediation does not claim to fix that historical measurement or qualify a beta.

@@ -85,23 +85,23 @@ body {
 .sar-persistent-health { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; padding: 0.35rem 0.6rem; font-size: 12px; }
 .sar-compact-mission { display: flex; align-items: center; gap: 0.65rem; font-size: 12px; }
 .sar-compact-mission > span:first-child { max-width: 12rem; }
-[data-testid='device-list-scroll'] { scrollbar-gutter: stable; }
-[data-testid='device-list-scroll'] > .grid { min-width: 66rem; }
-[data-testid='devices-inspector'] { padding: 1rem; }
-[data-testid='devices-inspector'] h3 { overflow-wrap: anywhere; }
+.sar-device-list-scroll { scrollbar-gutter: stable; }
+.sar-device-grid { min-width: 59.5rem; }
+.sar-devices-inspector { padding: 1rem; }
+.sar-devices-inspector h3 { overflow-wrap: anywhere; }
 .sar-devices-layout > section { overflow-y: auto; }
-.sar-devices-layout [data-testid='device-list-scroll'] { min-height: 10rem; }
+.sar-devices-layout .sar-device-list-scroll { min-height: 10rem; }
 @media (max-width: 1023px) {
   .sar-devices-layout { overflow-y: auto; display: flex; flex-direction: column; }
   .sar-devices-layout > section { flex: 0 0 auto; }
-  .sar-devices-layout [data-testid='device-list-scroll'] { max-height: 45vh; }
+  .sar-devices-layout .sar-device-list-scroll { max-height: 45vh; }
   .sar-devices-layout > aside { flex-shrink: 0; overflow: visible; }
 }
-[data-testid='operational-sidebar'], [data-testid='focus-mode-sidebar'] { flex-shrink: 0; min-height: 0; max-width: 42vw; }
-[data-testid='sidebar-tab-content'], [data-testid='focus-sidebar-tab-content'] { min-height: 0; }
-[data-testid='focus-mode-mission-dock'] { max-height: 48vh; }
-[data-testid='mission-control'] > div:first-child { flex-wrap: wrap; gap: 0.5rem; }
-.sar-shell .text-stone-400, .sar-shell .text-stone-500 { color: var(--sar-text-dim); }
+.sar-operational-sidebar { flex-shrink: 0; min-height: 0; max-width: 42vw; }
+.sar-workspace-content { min-height: 0; }
+.sar-mission-dock-focus { max-height: 48vh; }
+.sar-mission-header { flex-wrap: wrap; gap: 0.5rem; }
+:where(.sar-shell) .text-stone-400, :where(.sar-shell) .text-stone-500 { color: var(--sar-text-dim); }
 .sar-shell input::placeholder { color: var(--sar-text-dim); opacity: 1; }
 .sar-shell :is(button, a, input, select, textarea):focus-visible { outline: 3px solid #facc15; outline-offset: 2px; }
 :root[data-theme='high-contrast'] { --sar-panel: #000; --sar-panel-sunken: #000; --sar-panel-raised: #202020; --sar-line: #bdbdbd; --sar-text: #fff; --sar-text-strong: #fff; --sar-text-muted: #f0f0f0; --sar-text-dim: #dedede; }

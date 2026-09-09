@@ -46,6 +46,7 @@ import { APP_VERSION } from './lib/app-version'
 import { CompactMissionStrip } from './components/compact-mission-strip'
 import { PersistentTrackingHealth } from './components/persistent-tracking-health'
 import { ThemeToggle } from './components/theme-toggle'
+import { useWorkspaceVisibility } from './features/mission/use-workspace-visibility'
 
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
@@ -60,14 +61,11 @@ function App() {
   const focusModeActive = useFocusModeStore((state) => state.active)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [missionActionError, setMissionActionError] = useState<string | null>(null)
-  const [railCollapsed, setRailCollapsed] = useState(false)
-  const [minimizedMissionControlId, setMinimizedMissionControlId] = useState<string | null>(null)
+  const [missionDecisionOpen, setMissionDecisionOpen] = useState(false)
+  const restoreWorkspaceRef = useRef<HTMLButtonElement>(null)
+  const collapseOriginRef = useRef<HTMLElement | null>(null)
   const handleMissionActionError = useCallback((error: string | null) => {
     setMissionActionError(error)
-    if (error !== null) {
-      setMinimizedMissionControlId(null)
-      setRailCollapsed(false)
-    }
   }, [])
   const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const browserTestingMode = shouldEnableMissionBrowserHarness()
@@ -77,17 +75,23 @@ function App() {
   const missionPhase = useMissionStore((state) => state.phase)
   const currentMission = useMissionStore((state) => state.currentMission)
   const governanceMission = useMissionStore((state) => state.governanceMission)
-  const railCollapseBlockedReason = missionActionError !== null
+  const railCollapseBlockedReason = missionDecisionOpen
+    ? 'Complete or cancel the open mission decision before hiding this workspace.'
+    : missionActionError !== null
     ? 'Resolve the mission action failure before hiding this workspace.'
     : missionPhase === 'paused' || missionPhase === 'recovery' || governanceMission !== null
       ? 'Mission pause, recovery or archive controls must remain visible.'
       : null
-  const effectiveRailCollapsed = railCollapsed && railCollapseBlockedReason === null
+  const workspace = useWorkspaceVisibility(
+    `${currentMission?.id ?? 'none'}:${missionPhase}:${governanceMission?.id ?? 'none'}`,
+    railCollapseBlockedReason,
+  )
+  const effectiveRailCollapsed = workspace.collapsed
   const missionControlMinimized =
     missionPhase === 'active' &&
     missionActionError === null &&
     currentMission !== null &&
-    minimizedMissionControlId === currentMission.id
+    workspace.minimized
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -133,10 +137,13 @@ function App() {
         />
       )}
       <div className="sar-awareness-strip">
-        {(missionControlMinimized || effectiveRailCollapsed) && <CompactMissionStrip onRestore={() => { setMinimizedMissionControlId(null); setRailCollapsed(false) }} />}
+        {(missionControlMinimized || effectiveRailCollapsed) && <CompactMissionStrip onRestore={workspace.restore} />}
         <PersistentTrackingHealth />
         <ThemeToggle />
-        {effectiveRailCollapsed && <button autoFocus className="sar-button px-3 py-2 text-xs font-bold" data-testid="restore-workspace" onClick={() => setRailCollapsed(false)} type="button">Restore workspace</button>}
+        {effectiveRailCollapsed && <button ref={restoreWorkspaceRef} className="sar-button px-3 py-2 text-xs font-bold" data-testid="restore-workspace" onClick={() => {
+          workspace.restoreRail()
+          requestAnimationFrame(() => collapseOriginRef.current?.focus())
+        }} type="button">Restore workspace</button>}
         {focusModeActive && effectiveRailCollapsed && <FocusModeToggle className="sar-button px-3 py-2 text-xs" />}
       </div>
       <RuntimeSafetyBanner
@@ -164,8 +171,13 @@ function App() {
           minimized={missionControlMinimized}
           collapseDisabledReason={railCollapseBlockedReason}
           onActionErrorChange={handleMissionActionError}
-          onMinimizedChange={(minimized) => setMinimizedMissionControlId(minimized ? currentMission?.id ?? null : null)}
-          onCollapseWorkspace={() => setRailCollapsed(true)}
+          onDecisionOpenChange={setMissionDecisionOpen}
+          onMinimizedChange={workspace.minimize}
+          onCollapseWorkspace={() => {
+            collapseOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+            workspace.collapse()
+            requestAnimationFrame(() => restoreWorkspaceRef.current?.focus())
+          }}
         />
       </div>
 
