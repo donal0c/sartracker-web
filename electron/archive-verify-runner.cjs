@@ -74,11 +74,14 @@ function projectNonSecretRequest(request) {
 
 /** Starts independent archive verification without placing credentials in workerData. */
 function startArchiveVerifyWorker(input) {
-  const request = normalizeArchiveVerifyRequest(input?.request)
+  let request = normalizeArchiveVerifyRequest(input?.request)
+  // Retain callbacks/options, not the caller's secret-bearing request object.
+  input = { ...input, request: undefined }
   const workerExited = createDeferred()
   if (input.signal?.aborted === true) {
     const rejected = Promise.reject(createAbortError())
     workerExited.resolve()
+    request = projectNonSecretRequest(request)
     return decorateOperation(rejected, workerExited.promise, () => undefined)
   }
   const watchdogMs = normalizeDuration(
@@ -99,12 +102,15 @@ function startArchiveVerifyWorker(input) {
   const cancellationFlag = new Int32Array(cancellationBuffer)
   let worker
   let cancel = () => undefined
+  const passphraseBytes = createOwnedSecretBuffer(request.passphrase)
+  const recoveryCodeBytes = createOwnedSecretBuffer(request.recoveryCode)
+  request = projectNonSecretRequest(request)
 
   const completion = new Promise((resolve, reject) => {
     try {
       const workerInput = {
         workerData: Object.freeze({
-          request: projectNonSecretRequest(request),
+          request,
           cancellationBuffer,
         }),
         workerPath: input.workerPath ?? DEFAULT_WORKER_PATH,
@@ -240,8 +246,6 @@ function startArchiveVerifyWorker(input) {
       handleAbort()
       return
     }
-    const passphraseBytes = createOwnedSecretBuffer(request.passphrase)
-    const recoveryCodeBytes = createOwnedSecretBuffer(request.recoveryCode)
     try {
       worker.postMessage({
         type: 'credentials',
@@ -258,6 +262,9 @@ function startArchiveVerifyWorker(input) {
     zeroIfAttached(passphraseBytes)
     zeroIfAttached(recoveryCodeBytes)
   })
+  // Also clear buffers on synchronous worker-creation failure or early cancellation.
+  zeroIfAttached(passphraseBytes)
+  zeroIfAttached(recoveryCodeBytes)
   return decorateOperation(completion, workerExited.promise, () => cancel())
 }
 

@@ -540,10 +540,12 @@ function normalizeArchiveCreateResult(input, expectedInput) {
   })
 }
 
-/** Validates one exact secret-bearing independent verification request. */
-function normalizeArchiveVerifyRequest(input) {
+/** Validates a verification request, or its already-validated non-secret result identity. */
+function normalizeArchiveVerifyRequest(input, includeCredentials = true) {
   const code = 'ARCHIVE_VERIFY_ENVELOPE_INVALID_REQUEST'
-  requireExactRecord(input, VERIFY_REQUEST_KEYS, code, 'Archive verify request')
+  const keys = includeCredentials ? VERIFY_REQUEST_KEYS
+    : VERIFY_REQUEST_KEYS.filter((key) => key !== 'passphrase' && key !== 'recoveryCode')
+  requireExactRecord(input, keys, code, 'Archive verify request')
   let identity
   try {
     identity = normalizeArchiveVerificationIdentity({
@@ -599,7 +601,7 @@ function normalizeArchiveVerifyRequest(input) {
     manifestSha256: identity.manifestSha256,
     entryCount: identity.entryCount,
     tableCount: identity.tableCount,
-    passphrase: normalizePassphrase(input.passphrase),
+    ...(includeCredentials ? { passphrase: normalizePassphrase(input.passphrase),
     recoveryCode: (() => {
       if (typeof input.recoveryCode !== 'string' || input.recoveryCode.length > 64) {
         throw new ArchiveEnvelopeError(
@@ -615,7 +617,7 @@ function normalizeArchiveVerifyRequest(input) {
           'Archive recovery code must be one exact eight-by-five Crockford code.',
         )
       }
-    })(),
+    })() } : {}),
   })
 }
 
@@ -994,12 +996,13 @@ function normalizeArchiveVerificationProof(input, expectedInput) {
 /** Validates the wrapped terminal message and returns only its proof payload. */
 function normalizeArchiveVerifyResult(input, expectedInput) {
   const code = 'ARCHIVE_VERIFY_ENVELOPE_INVALID_RESULT'
-  const expected = normalizeArchiveVerifyRequest(expectedInput)
+  const expected = normalizeArchiveVerifyRequest(expectedInput,
+    Object.hasOwn(expectedInput ?? {}, 'passphrase') || Object.hasOwn(expectedInput ?? {}, 'recoveryCode'))
   requireExactRecord(input, ['operationId', 'proof', 'type'], code, 'Archive verify result')
   if (input.type !== 'complete' || input.operationId !== expected.operationId) {
     throw new ArchiveEnvelopeError(code, 'Archive verify result operation identity was substituted.')
   }
-  return normalizeArchiveVerificationProof(input.proof, expected)
+  return normalizeArchiveVerificationProofForIdentity(input.proof, projectArchiveVerificationIdentity(expected))
 }
 
 /** Validates one bounded verify progress message for its exact operation. */

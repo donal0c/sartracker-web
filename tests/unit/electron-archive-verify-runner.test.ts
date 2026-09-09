@@ -180,6 +180,27 @@ function verificationProof(overrides: Readonly<Record<string, unknown>> = {}) {
 }
 
 describe('archive verify worker runner', () => {
+  it('validates the terminal proof after the normalized credentials have been released', () => {
+    const { normalizeArchiveVerifyResult } = require('../../electron/archive-envelope.cjs') as {
+      normalizeArchiveVerifyResult: (message: unknown, expected: unknown) => unknown
+    }
+    const identity: Record<string, unknown> = { ...verifyRequest() }
+    delete identity.passphrase
+    delete identity.recoveryCode
+    expect(normalizeArchiveVerifyResult({
+      type: 'complete', operationId, proof: verificationProof(),
+    }, identity)).toMatchObject({ archiveId: identity.archiveId })
+    expect(() => normalizeArchiveVerifyResult({
+      type: 'complete', operationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', proof: verificationProof(),
+    }, identity)).toThrow(/operation identity/)
+    expect(() => normalizeArchiveVerifyResult({
+      type: 'complete', operationId, proof: verificationProof({ archiveId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }),
+    }, identity)).toThrow()
+    expect(() => normalizeArchiveVerifyResult({
+      type: 'complete', operationId, proof: verificationProof(),
+    }, { ...identity, passphrase })).toThrow(/missing or unsupported fields/)
+  })
+
   it('transfers both secrets outside workerData and resolves only after clean physical exit', async () => {
     const worker = new FakeWorker()
     let workerData: Readonly<Record<string, unknown>> | undefined

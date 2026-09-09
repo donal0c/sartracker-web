@@ -115,3 +115,8 @@
   cover two launches, matching Review, cleanup and interruption/restart with
   zero secret matches/final plaintext residue. Receipts are in `docs/evidence/pr6/`.
   Ordinary pushed-head CI is next; no fresh full-scale qualification is claimed.
+- Final M-2 audit also releases verification's normalized credential strings and
+  caller request before long-lived listeners; terminal checks retain exact
+  non-secret identity. The 42 affected verification/envelope/runner tests pass.
+  Superseded CI `34292650418` was cancelled for this completion, not rejected.
+  New clean package receipts and replacement CI are next.

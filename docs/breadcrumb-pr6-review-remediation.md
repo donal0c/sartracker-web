@@ -36,7 +36,7 @@ Pending means not yet resolved or verified, not an acceptance of the proposed fi
 | B-4 | Custody transaction helpers omit transaction ownership assertions | Implemented; custody helpers open an immediate transaction when needed and assert terminalization ownership; induced failure rolls back both journal changes. |
 | B-5 | Attachment proof conflates historical digest and path-only custody | Implemented; new proofs distinguish digest custody and legacy path-only counts. Historical proofs retain their original unknown tier rather than being upgraded. |
 | M-1 | Key unwrap conflates authentication and provider failures | Implemented; provider/setup errors remain distinct from authentication failure; authentication failure uses neutral credential-or-damage wording. |
-| M-2 | Credential strings outlive their necessary use | Implemented for archive creation; long-lived runner/result validation retains only non-secret identity after transfer. Managed JavaScript strings cannot be guaranteed zeroed. |
+| M-2 | Credential strings outlive their necessary use | Implemented for archive creation and verification; long-lived runner/result validation retains non-secret identity after transfer, and the caller request reference is released. Managed JavaScript strings cannot be guaranteed zeroed. |
 | M-3 | Temporary key/random buffers are not cleared | Implemented; random-provider and temporary plaintext key buffers are cleared. |
 | M-4 | Remaining poll delay may bypass the minimum interval | Reassessed: the minimum belongs to the whole cadence, not an additional cooldown after elapsed work. The normalized interval remains clamped; elapsed capacity waiting counts toward it. A deterministic 40 ms wait / 50 ms cadence regression prevents double-charging that wait. |
 | M-5 | Restart trail decimation is undocumented | Documented; restart trail caps are display limits and do not delete mission fixes. |
@@ -186,3 +186,13 @@ residue. Maximum main/current/frame gaps are 51.218/63/15.800 ms on macOS and
 `docs/evidence/pr6/review-remediation-25bcd332-linux-20260909.json`.
 These are focused small-fixture checks, not a new full large-fixture or 32-case
 interruption qualification. Ordinary pushed-head CI remains the remote check.
+
+Final M-2 audit also removed the verification runner's normalized credential
+strings and caller-request reference before its long-lived listeners are
+installed. Result validation now accepts the exact non-secret request projection
+and still rejects substituted operation/archive identity and partial credential
+fields. Owned transfer buffers are also cleared on early worker creation failure.
+The new regression failed before this change; all 42 verification/envelope/runner
+tests pass. The superseded `4e7061c5` CI run was cancelled, not rejected, while
+this remaining part of the visible finding was completed. New clean package
+receipts and a replacement current-head CI are required for this final change.
