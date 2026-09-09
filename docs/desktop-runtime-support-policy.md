@@ -183,7 +183,8 @@ reproducible builds. Version drift only happens via explicit `npm update`.
 | `better-sqlite3` | Pin exact major; minor/patch on review | Native module — requires rebuild validation on Linux |
 | MapLibre GL JS | Pin major; minor/patch after local map render check | Core rendering dependency |
 | Other production deps | Monthly `npm audit` + quarterly manual review | Standard npm update flow |
-| Dev dependencies | Low priority | Update when convenient; do not block releases |
+| Release-bearing dev dependencies (Electron, electron-builder and launcher/native build chain) | Immediate security/EOL evaluation | Assess shipped runtime and generated artifacts; unresolved release blockers hold publication regardless of npm dev classification |
+| Test/tooling-only dev dependencies | Routine maintenance, with immediate security triage | Prioritize by actual build/CI exposure; lower priority only when no shipped or release-integrity impact is established |
 
 ### Lockfile rules
 

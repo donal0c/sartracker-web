@@ -15,7 +15,9 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   Integrated CI also rejected restore/current and create/frame timing. Removed
   its leftover temporary Chrome profiler from normal CI; opt-in diagnostics
   and all strict watchdog gates remain. Red/green workflow-to-runtime regression
-  and 244 focused tests pass; final CI is recorded on PR #12. No causal fix or
+  and 244 focused tests pass. Remaining review threads now reconcile PR6
+  hazard controls, merged workplan status and release-bearing dev dependency
+  policy; final CI is recorded on PR #12. No causal fix or
   field qualification is inferred from the configuration correction.
 
 - DON-256's first twelve-item Sar_4 UI batch merged as
