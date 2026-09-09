@@ -17,11 +17,13 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   200 ms gates. The CI argument regression is red/green; 216 affected tests
   pass. All 400 source files / 4,157 tests pass, with five loopback-server
   suites rerun outside the local sandbox; lint/build and packaged visuals pass.
-  Both `de4d367e` CI attempts stopped before tests on an unrelated Chrome APT
-  index hash mismatch. Validation APT commands now select the runner's main
-  Ubuntu sources; integrity checks remain enabled. Red/green workflow check,
-  17 affected tests, real APT source-selection check and actionlint pass.
-  Hosted CI is pending. See the
+  An unrelated Chrome APT index mismatch was fixed by selecting Ubuntu's main
+  package sources, retaining integrity checks. Normal Linux CI `34386382652`
+  passes on `03b09a7e`: 400 files / 4,158 tests and all packaged gates.
+  Downloaded receipt independently validates; frame maximum 117.5 ms,
+  current-fix maximum 172 ms. PR is open, merge-ready and not merged.
+  This documentation closeout reuses that byte-identical executable/test/
+  workflow evidence; no new runtime run is claimed. See the
   [investigation](../docs/archive-ci-rendering-investigation.md); historical
   failures remain recorded and release HOLD is unchanged.
 

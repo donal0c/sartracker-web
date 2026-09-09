@@ -94,5 +94,32 @@ separate Ubuntu and Chrome fixture sources confirmed that Ubuntu remains
 selected and Chrome is excluded. Product/runtime code is unchanged since
 the completed source cycle above; those results remain applicable.
 
-Normal hosted CI is pending and must exercise the rendering correction before
-this PR is called merge-ready.
+## Hosted verification and merge readiness
+
+[Linux run 34386382652](https://github.com/donal0c/sartracker-web/actions/runs/34386382652)
+passed on `03b09a7ecae3adb5d39fdd3d193d82f28128ce36`, tree
+`b21c86d784131bcec991733bfde857a229318ba5`: setup, lint, 400 files / 4,158
+tests, production build, native Linux packaging, 960k replay, packaged
+tracking, archive lifecycle, terminal evidence and AppImage launch/close.
+
+The downloaded archive receipt independently validates with matching clean
+before/after head and tree, exact packaged build identity and successful
+cleanup. SHA-256:
+`78d8093bb85287089bbfd7d5c37ebbd697e9db2ef5c8621aaa99c4b142c7c9f8`.
+
+| Phase | Frame maximum | Current-fix maximum |
+| --- | --- | --- |
+| Create | 94.5 ms | 128 ms |
+| Verify | 117.5 ms | 155 ms |
+| Restore | 114.3 ms | 172 ms |
+| Cleanup | 69.3 ms | 135 ms |
+
+GitHub reported the tested head open, clean and mergeable, with all review
+threads resolved and latest master `9c73c62d` included. This resolves the
+current PR pipeline rejection. Historical failures remain recorded; this is
+not field qualification or a reversal of the release HOLD.
+
+The subsequent closeout changes only this evidence document and the handoff.
+Its executable, test, dependency and workflow trees are byte-identical to the
+green tested head above. Following the repository's documentation-only
+evidence-reuse policy, it does not claim a new runtime run for that closeout.
