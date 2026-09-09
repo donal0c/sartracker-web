@@ -31,8 +31,10 @@ and proportionate smokes.
   gate. Zero exact secret matches and final plaintext residue. Canonical receipt
   validation returns valid/passed true:
   `docs/evidence/pr6/expanded-review-76ef77c1-macos-20260909.json`.
-- Final-head ordinary Linux CI is still pending. Prior full field-scale and
-  32-case interruption results remain historical; no fresh claim is made here.
+- Final-head ordinary Linux CI must be green before author-side completion;
+  its live result and downloaded-receipt validation are maintained in PR #10
+  and DON-252/253. Prior full field-scale and 32-case interruption results remain
+  historical; no fresh claim is made here.
 
 ## High and Medium-High
 

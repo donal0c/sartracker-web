@@ -10,8 +10,8 @@
   Updated external ledger now contains all 95 findings (15 High, 4 Medium-High,
   55 Medium, 21 Low). All have a current disposition; expanded fixes are in
   progress. All 4,137 source tests and seven archive browser flows pass;
-  all four screenshot reviews and clean macOS packaged smoke pass. Final Linux
-  CI remains pending.
+  all four screenshot reviews and clean macOS packaged smoke pass. The live
+  final-head Linux CI result is maintained in PR #10 checks and DON-252/253.
 - Latest implementation: `76ef77c145aa7fcc8cb013d6830177135ae87e50`, tree
   `43dc3fbab5930a1976c23c838473f886c6a4b215`. Subsequent receipts are documentation.
 - Workspace: `/Users/donalocallaghan/.codex/worktrees/a27a/sartracker-web`.
@@ -47,8 +47,9 @@
 
 ## Next Actions And Issues
 
-- Push this PR and check ordinary final-head Linux CI. Local source/build/lint,
-  affected browser/visual flows and clean macOS packaged smoke pass.
+- Check ordinary final-head Linux CI on PR #10 before author-side completion.
+  Once green, remaining work is external review and separately authorized merge.
+  Local source/build/lint, browser/visual and clean macOS packaged smoke pass.
   Baseline CI `34293902077` passed 4,113 tests before these new changes.
   The earlier `cb6e28a2` and `d60cbc2a` CI failures remain preserved.
   Run `34292650418` on `4e7061c5` was cancelled to finish M-2, not rejected.
