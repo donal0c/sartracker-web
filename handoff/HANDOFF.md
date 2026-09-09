@@ -11,8 +11,12 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   rejected source timing, then a 202.4 ms archive-create renderer frame; local
   203 ms continuity rejection also remains unexplained. No threshold changed.
   [Report](../docs/assurance/findings/WAR-04B.md) retains evidence limits;
-  release HOLD remains. Only handoff conflicted; executable/test/config trees
-  match upstream, and documentation facts/links/diff were checked.
+  release HOLD remains. Only handoff conflicted; product code matches upstream.
+  Integrated CI also rejected restore/current and create/frame timing. Removed
+  its leftover temporary Chrome profiler from normal CI; opt-in diagnostics
+  and all strict watchdog gates remain. Red/green workflow-to-runtime regression
+  and 244 focused tests pass; final CI is recorded on PR #12. No causal fix or
+  field qualification is inferred from the configuration correction.
 
 - DON-256's first twelve-item Sar_4 UI batch merged as
   [PR #11](https://github.com/donal0c/sartracker-web/pull/11) at `9c73c62d`.

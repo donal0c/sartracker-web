@@ -4,8 +4,9 @@
 
 **HOLD.** This 2026-09-09 investigation is pinned to fetched `origin/master`
 `3cdf555de93459c83198121b31053ff1d53db74e`, tree
-`c10d71a340ec2722e50a97a8605a1f99cee3d629`. No production, dependency, lock,
-workflow, setting, tag, release or product behavior changed. No
+`c10d71a340ec2722e50a97a8605a1f99cee3d629`. The original audit changed no
+production, dependency, lock, workflow, setting, tag or release. The subsequent
+CI profiling correction is described below; no product behavior changed. No
 field/release readiness is claimed. The unchanged Electron 40 runtime is
 end-of-life and the AppImage builder remains affected. Production audit is
 now **1 critical**, not zero: MapLibre's affected sanitizer ships, but its
@@ -29,13 +30,27 @@ statements below supersede its pre-merge/zero-production-audit assertions.
 `9c73c62d8f491445b77aa84146da1fb968ef5781` (PR #11 UI delivery) at Donal's
 request. This report's inventory, audit and original package receipts remain
 bound to `3cdf555d`; they are not an inventory of the newer UI package.
-The PR diff against updated master remains documentation/evidence only.
-The upstream executable/test/config trees are preserved unchanged; its tested
-head `e384ea8a` passed CI `34345038450`. Integration-head CI is recorded on
+The initial integration preserved upstream executable/test/config trees;
+its tested head `e384ea8a` passed CI `34345038450`. Integration-head CI is
+recorded on
 [PR #12](https://github.com/donal0c/sartracker-web/pull/12).
 Earlier head `99934a2a` failed two source timing gates, then a 202.4 ms archive
 renderer-frame gate on its single retry. Those failures remain in the PR and
 DON-254; merging upstream does not establish their cause or a fix.
+
+**CI follow-up:** integrated head `135e5d94` rejected a 207 ms restore
+current-fix interval and, on its bounded repeat, a 260.2 ms create frame.
+The normal workflow still enabled a temporary Chrome GPU/timeline profiler
+for an earlier investigation. That opt-in profiler is now removed from the
+default CI timing lane; `SARTRACKER_ARCHIVE_RENDER_TRACE=1` remains available
+for explicit diagnostic runs. Independent current/main/frame watchdogs,
+the strict 200 ms limit, workloads and terminal validation are unchanged.
+One workflow-to-runtime regression reproduced unwanted profiler startup
+before the edit and passes afterward; 244 focused safety/diagnostic tests
+pass. This is a CI configuration correction, not proof that profiling caused
+the prior failures. The original unprofiled local rejection also remains.
+The PR now includes this workflow correction and its test alongside the
+documentation/evidence changes; product and dependency code remain untouched.
 
 The risk is mistaking pre-merge, source-only or advisory-count evidence for
 exact-package release proof. Keep executable/test/config blobs unchanged,

@@ -207,9 +207,8 @@ jobs:
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
-          # Temporary diagnostic lane for the unexplained c2c04dca frame breach.
-          # Sanitized sidecar timings never replace the authoritative 200 ms gate.
-          SARTRACKER_ARCHIVE_RENDER_TRACE: '1'
+          # Keep the optional Chrome profiler out of the normal timing lane.
+          # The independent current/main/frame watchdogs remain mandatory.
         run: |
           set -euo pipefail
           lscpu --json > tmp/electron-validation-evidence/cpu-topology.json
