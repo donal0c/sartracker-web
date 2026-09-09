@@ -571,16 +571,25 @@ describe('packaged archive-lifecycle process-faithful liveness runner [DON-252 /
         startedAtMs: Date.now() - 25,
       })
       const diagnosticError = new Error('External liveness gate failed.')
+      const currentFixInterval = {
+        phase: 'restore', gapMs: 226,
+        previousRequestStartedAtMs: 10_000, previousEmittedAtMs: 10_000,
+        previousObservedAtMs: 10_010, requestStartedAtMs: 10_160,
+        emittedAtMs: 10_160, observedAtMs: 10_236,
+      }
       Object.defineProperty(diagnosticError, 'archiveLifecycleDiagnostics', {
         value: Object.freeze({
           activePhase: 'restore',
           errorKinds: Object.freeze(['operation_deadline_exceeded']),
+          currentFixInterval,
         }),
       })
       const stagedFailurePath = await writeArchiveLifecycleFailureReceipt(
         createFailureReceiptInput(failureRun.childEvidenceDir, { error: diagnosticError }),
       )
       const stagedFailure = await readFile(stagedFailurePath, 'utf8')
+      expect(JSON.parse(stagedFailure).failure.archiveLifecycleDiagnostics.currentFixInterval)
+        .toEqual(currentFixInterval)
       const preservedFailure = await ensureArchiveLifecycleSupervisorTerminalArtifact({
         childExitCode: 1,
         evidenceDir: failureDir,

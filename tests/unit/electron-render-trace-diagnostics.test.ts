@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events'
+import { readFileSync } from 'node:fs'
+import { load } from 'js-yaml'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRenderTraceCollector, startRenderTraceDiagnostics } from '../../build/electron-render-trace-diagnostics.js'
 import { attachRenderTraceDiagnostic } from '../../scripts/electron-archive-lifecycle-smoke.mjs'
@@ -24,6 +26,28 @@ function sessionFixture() {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks() })
 
 describe('bounded rendering trace diagnostics [DON-252]', () => {
+  it('does not start the optional profiler in the normal CI timing lane [DON-254]', async () => {
+    const workflow = load(readFileSync('.github/workflows/electron-linux-validation.yml', 'utf8')) as {
+      jobs: { build: { steps: { name: string; env?: Record<string, string> }[] } }
+    }
+    const step = workflow.jobs.build.steps.find(candidate => candidate.name === 'Packaged archive lifecycle smoke')
+    expect(step).toBeDefined()
+    vi.stubEnv('SARTRACKER_ARCHIVE_RENDER_TRACE', step?.env?.SARTRACKER_ARCHIVE_RENDER_TRACE)
+    const session = sessionFixture()
+    const newCDPSession = vi.fn(async () => session)
+    const launch = {
+      browser: { contexts: () => [{ newCDPSession }] }, page: {},
+      rendererTrace: undefined as undefined | { stop: () => Promise<unknown> },
+    }
+    try {
+      await attachRenderTraceDiagnostic(launch, 'a'.repeat(40))
+      expect(newCDPSession).not.toHaveBeenCalled()
+      expect(launch.rendererTrace).toBeUndefined()
+    } finally {
+      await launch.rendererTrace?.stop()
+    }
+  })
+
   it('retains task timing and known thread roles without copying arbitrary trace data', () => {
     const collector = createRenderTraceCollector()
     collector.accept([

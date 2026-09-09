@@ -1280,6 +1280,33 @@ describe('packaged archive-lifecycle liveness operation gates [DON-252 / BCP-15]
     })
   })
 
+  it('separates request cadence from delivery latency for the rejected current-fix interval [DON-254]', async () => {
+    const harness = createProbeHarness()
+    await harness.probe.attachLaunch(harness.launch)
+    await harness.probe.setPhase('restore')
+    harness.emitCurrentFix(true)
+    await harness.probe.waitForPhaseSample('restore', 100)
+    harness.advanceClock(150)
+    harness.emitCurrentFix(true, undefined, undefined, 76)
+
+    const failure = await harness.probe.waitForPhaseSample('restore', 100)
+      .catch((error: unknown) => error) as Error & {
+        archiveLifecycleDiagnostics?: Readonly<Record<string, unknown>>
+      }
+    expect(failure.archiveLifecycleDiagnostics).toMatchObject({
+      errorKinds: ['current_fix_continuity_gate_breached'],
+      currentFixInterval: {
+        phase: 'restore', gapMs: 226,
+        previousRequestStartedAtMs: 10_000,
+        previousEmittedAtMs: 10_000,
+        previousObservedAtMs: 10_010,
+        requestStartedAtMs: 10_160,
+        emittedAtMs: 10_160,
+        observedAtMs: 10_236,
+      },
+    })
+  })
+
   it('attaches bounded source-age evidence when an exact fix misses the gate', async () => {
     const harness = createProbeHarness()
     await harness.probe.attachLaunch(harness.launch)

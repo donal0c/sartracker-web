@@ -519,8 +519,8 @@
           <h3>Windows (secondary distribution target)</h3>
           <p>
             Windows packaging is scaffolded as a single NSIS <code>-setup.exe</code> for Windows x86_64
-            (current-user install, no admin required), but the release workflow does not attach a Windows
-            installer to team betas until the Windows official-map smoke gate passes. Do not expect a
+            (current-user install, no admin required), but Windows release CI and publisher support still
+            need implementation and qualification, including the official-map smoke check. Do not expect a
             Windows artifact on the current Linux-only beta unless a maintainer explicitly says Windows
             was enabled for that release. MSI is deferred until the version scheme supports it; see
             <code>sartracker-web-g1u</code>.

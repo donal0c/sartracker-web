@@ -75,8 +75,11 @@ jobs:
 
       - name: Install Linux Electron runtime deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          # These packages come from Ubuntu, not runner-added Chrome or
+          # Microsoft feeds. Keep their index failures out of this install.
+          test -s /etc/apt/sources.list
+          sudo apt-get -o Dir::Etc::sourceparts=- update
+          sudo apt-get -o Dir::Etc::sourceparts=- install -y \
             dbus-x11 \
             gnome-keyring \
             imagemagick \
@@ -207,9 +210,8 @@ jobs:
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
-          # Temporary diagnostic lane for the unexplained c2c04dca frame breach.
-          # Sanitized sidecar timings never replace the authoritative 200 ms gate.
-          SARTRACKER_ARCHIVE_RENDER_TRACE: '1'
+          # Keep the optional Chrome profiler out of the normal timing lane.
+          # The independent current/main/frame watchdogs remain mandatory.
         run: |
           set -euo pipefail
           lscpu --json > tmp/electron-validation-evidence/cpu-topology.json

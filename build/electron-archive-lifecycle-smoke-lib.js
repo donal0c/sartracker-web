@@ -704,6 +704,10 @@ export function buildArchiveLifecycleSmokeCiRunnerArgs(input) {
       '--ignore-gpu-blocklist',
       '--use-gl=angle',
       '--use-angle=gl',
+      // Keep page rasterization off Mesa's shared graphics command queue:
+      // cold page-shader compilation can starve map frames on CPU-only CI.
+      // WebGL map rendering, compositing and all liveness gates remain active.
+      '--disable-gpu-rasterization',
       '--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE',
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',

@@ -4,19 +4,37 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- Active: DON-256 first twelve-item Sar_4 UI batch on
-  `codex/team-ui-feedback-batch-1`, base `3cdf555d`. Shared-renderer changes add
-  persistent tracking awareness, compact mission controls, complete rail collapse,
-  explicit device-list scrolling and a persisted contrast option. No native,
-  schema, archive or tracking-pipeline changes. External deep-review fixes cover
-  legacy layer preferences, open decisions, hide-state latches, startup contrast,
-  tracking severity and roster retry. Source 400 files/4,155 tests, lint/build,
-  89 affected browser/visual tests plus roster retry, and 27 independent screenshot
-  reviews passed; both focused rechecks clear. [Evidence](../docs/ui-feedback-batch-1-evidence.md)
-  retains every disposition and corrected claim. Exact-head attestations/CI are
-  tracked on [PR #11](https://github.com/donal0c/sartracker-web/pull/11) and DON-256;
-  Donal retains merge authority. Earlier 51acca12 CI timing rejection/repeat remain
-  recorded there; no unexplained timing measurement is claimed fixed.
+- [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, now
+  integrates master `9c73c62d` at Donal's request. Its audit/package inventory
+  remains pinned to `3cdf555d`; newer integration CI is recorded on the PR.
+  IPC-003/macOS corrections and all three resolved review threads remain intact.
+  [Report](../docs/assurance/findings/WAR-04B.md) retains evidence limits;
+  release HOLD remains. Only handoff conflicted; product code matches upstream.
+  CI rejected restore/current continuity at 226 ms and initial frames at
+  219.5 ms with profiling disabled. Paired current-fix diagnostics are retained.
+  A controlled cold-Mesa-cache reproduction supports CPU page rasterization
+  for the Linux smoke: full local lifecycle passes at 16 and 4 CPUs, unchanged
+  200 ms gates. The CI argument regression is red/green; 216 affected tests
+  pass. All 400 source files / 4,157 tests pass, with five loopback-server
+  suites rerun outside the local sandbox; lint/build and packaged visuals pass.
+  An unrelated Chrome APT index mismatch was fixed by selecting Ubuntu's main
+  package sources, retaining integrity checks. Normal Linux CI `34386382652`
+  passes on `03b09a7e`: 400 files / 4,158 tests and all packaged gates.
+  Downloaded receipt independently validates; frame maximum 117.5 ms,
+  current-fix maximum 172 ms. PR is open, merge-ready and not merged.
+  This documentation closeout reuses that byte-identical executable/test/
+  workflow evidence; no new runtime run is claimed. See the
+  [investigation](../docs/archive-ci-rendering-investigation.md); historical
+  failures remain recorded and release HOLD is unchanged.
+
+- DON-256's first twelve-item Sar_4 UI batch merged as
+  [PR #11](https://github.com/donal0c/sartracker-web/pull/11) at `9c73c62d`.
+  Tested upstream head `e384ea8a` has green CI `34345038450`; source
+  400 files/4,155 tests, 89 affected browser/visual tests plus roster retry,
+  and 27 screenshot reviews are retained in its
+  [evidence](../docs/ui-feedback-batch-1-evidence.md). Persistent tracking,
+  compact/collapsible controls and contrast changes are upstream UI work;
+  their prior timing rejections are not claimed fixed by this integration.
 
 - [PR #10](https://github.com/donal0c/sartracker-web/pull/10), programme PR6
   archive lifecycle, merged to `master` at `e0ead68852b10606551302b5104e409634c962e1`.

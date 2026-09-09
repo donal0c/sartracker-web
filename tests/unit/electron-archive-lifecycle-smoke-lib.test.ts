@@ -826,6 +826,7 @@ describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON
       '--ignore-gpu-blocklist',
       '--use-gl=angle',
       '--use-angle=gl',
+      '--disable-gpu-rasterization',
       '--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE',
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
