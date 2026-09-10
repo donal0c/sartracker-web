@@ -132,7 +132,8 @@ and needs an explicit scope decision before implementation.
 # PR15 review remediation — locally verified
 
 The user review supersedes the earlier local all-clear. Remediation is verified
-locally; PR15 remains draft, and hosted x64 archive continuity is unresolved.
+locally and on the new-head Linux run; PR15 remains draft. Earlier hosted x64
+archive failures remain unexplained, and the new pass has limited headroom.
 
 - Replay projection now isolates invalid records with per-record limitations and
   retains valid breadcrumbs, last-known positions and objects. Worker bounds,
@@ -180,13 +181,13 @@ archive format/schema version are unchanged. An older binary may structurally op
 the additive database but ignores the new completeness semantics, so rollback is
 not safety-equivalent. Migration, restart and archived review require separate proof.
 
-Current focused verification: 274 tests across native store, polling, runtime and
+Intermediate focused verification: 274 tests across native store, polling, runtime and
 coverage regression suites pass (`/tmp/pr15-final-focused.log`). The stopped-runtime
 admission regression subsequently exposed a silently skipped persistence operation;
 the callback now rejects it and all 80 runtime tests pass
 (`/tmp/pr15-stopped-admission-green2.log`). Independent controls and structured
-warning recovery pass two browser flows (`/tmp/pr15-history-browser.log`). Final
-stable verification is running; these are local synthetic results, not hosted proof.
+warning recovery passed two browser flows (`/tmp/pr15-history-browser.log`). Final
+stable verification was still pending then; these are local synthetic results, not hosted proof.
 Packaging/release gate wiring remains deferred under the unchanged scope exclusion:
 the packaged geometry script and new E2E specs are not newly added to CI/beta gates.
 
@@ -212,8 +213,25 @@ The packaged CI-profile tracking soak passed both launches, 6/6 batches and all
 maximum 42.4 ms (`tmp/pr15-tracking-soak/electron-tracking-soak-report.json`). That
 receipt predates only the replay warning deduplication and whitespace formatting;
 tracking/native behavior is unchanged. These are synthetic local package results,
-not exact-head hosted x64 or release proof. Hosted archive continuity remains
-unresolved and its 200 ms gate is unchanged.
+not exact-head hosted x64 or release proof. The cause of the earlier hosted archive
+failures remains unresolved and the 200 ms gate is unchanged.
+
+New-head hosted closeout: runtime commit `42f9f30577040c2cfab943d6897cfe2082b8b9e8`
+passed [Linux CI 34447132522](https://github.com/donal0c/sartracker-web/actions/runs/34447132522)
+on its first run. Source/lint/build, Linux packaging, normal 960k replay, native
+inspection, Mesa attestation, tracking, archive lifecycle, terminal evidence and
+AppImage launch all passed. The downloaded validation artifact is retained under
+`tmp/pr15-ci-42f9f305`. `validateArchiveLifecycleSmokeEvidence` independently returns
+valid/passed with no failure reasons; source binding and receipt both match clean
+head `42f9f305` and tree `691e3873d82b8cd3847c492d728ddae0dffe19bf`.
+Packaged app.asar SHA256: `77b01cce3a48115ecbe64c5556633c1e4e51b9da2e4ea507dfa3ef505d13b025`.
+Archive phase current-fix maxima: create 158 ms, verify 143 ms, restore 169 ms,
+cleanup 192 ms. Frame maximum 93.1 ms. The unchanged 200 ms gate passes, but the
+8 ms current-fix headroom is narrow. This is a new-head pass, not a causal fix or
+explanation for the preceding head's 242/210 ms failures. No unchanged-head rerun
+was made. PR remains draft, with no merge/release/field acceptance claimed.
+The final documentation-only closeout reuses the verified executable/test/workflow
+tree; it does not claim a new packaged or hosted run.
 
 The operator recheck also found stale metadata-read rejection and mixed tile
 recovery cases. Three additional red/green regressions now cover them (13 tests

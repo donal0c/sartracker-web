@@ -22,10 +22,15 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   separate from acknowledged contiguous history. No-new-fix failure/restart and
   independent-controls regressions pass. Focused reviewers cleared prefix continuity,
   overlapping admission failures and tile recovery. Remediation is verified locally;
-  exact-head hosted verification remains separate. Gate wiring stays deferred.
+  Runtime commit `42f9f305` passed Linux CI `34447132522`, including 960k replay,
+  tracking, archive lifecycle and AppImage launch. Downloaded terminal evidence
+  independently validates exact source/tree, custody, teardown and privacy.
+  Archive current-fix max 192 ms (8 ms headroom); frames 93.1 ms. This docs-only
+  closeout reuses the unchanged executable/test/workflow tree. Gate wiring stays deferred.
   Review details: `tmp/pr15-review/`.
   CI `34398992302` attempts 1/2 failed hosted x64 archive continuity at
-  242/210 ms; this remains unresolved, with the 200 ms gate unchanged.
+  242/210 ms; their cause remains unexplained despite the new-head pass. The
+  200 ms gate is unchanged, and no release/field acceptance is established.
   Same-head macOS lifecycle passed (66 ms); isolated four-CPU Linux ARM64 passed
   (173 ms), which does not establish hosted x64 correctness or causality.
   The owned `sar-batch2-linux` container is stopped; receipts are in
