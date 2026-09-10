@@ -1,0 +1,60 @@
+Verdict: request changes
+
+The design intent is right and the hard part — one session retaining evidence custody across transport replacement — is genuinely well thought through. But there are five confirmed defects that bite in normal operation, three of them in the failure paths this PR exists to make safe. Notably, the PR's own claim of "no remaining accepted P1/P2" after four independent reviews doesn't hold up.
+
+Blockers
+
+1. Mission evidence is dropped at shutdown — start-tracking-runtime.ts:1141
+if (retirementFailure !== null) throw retirementFailure sits before unregisterMissionEvidenceSettler() (:1142), deferredMissionEvidence.settleForStop() (:1143) and trackingCacheWriteLane.settle() (:1146). One failed retiring stop() during a settings save — and the latch at :1014 never clears — means accepted-but-unpersisted fixes are silently lost on app exit. That's the exact custody guarantee the PR is built to add. stopPromise ??= (:1088) memoises the rejection so it can't be retried.
+
+2. The runtime becomes undisposable — start-app-runtime.ts:281
+That rejection propagates, skipping lines 282–286: coreFeatureRuntimes, the coverage and breadcrumb-dot runtimes all leak, and disposalPromise ??= (:274) caches the rejection permanently. Same pattern in the startup catch at :257, where it additionally replaces the original startup error before any cleanup runs.
+
+3. Mission pause falsely reports OFFLINE and enters backoff — polling-manager.ts:998
+I traced this end to end. reserveCapacity throws on abort (deferred-mission-evidence.ts:110) where waitForCapacity resolved. The try at :996 has only a finally, so the throw bypasses the stopping || discardSupersededPoll guard at :1005 and lands in the catch at :1209. On mission pause, requestPollNow (:1626) aborts with stopping === false and an unchanged historyResetKey, so discardSupersededPoll returns false — the selected poller then publishes OFFLINE MODE — showing last known positions, increments consecutiveFailures, and schedules exponential backoff. A false offline banner is precisely the wrong signal here.
+
+4. Coordinate rejections vanish on every poller stop — start-app-runtime.ts:427
+suppressOperationalPublication is driven by the polling manager's own stopping flag (polling-manager.ts:750), not by retirement. And rejectionEvidenceDelivery is null in production — I grepped the repo: recordIngestRejections exists only as an optional type (tauri-mission-store.ts:1214) and in test mocks, no store implements it. So the suppressed branch is a no-op and the applyCurrentPositionRejections fallback never runs. Master surfaced those rejections; this drops them.
+
+5. Stationary attention under-reports and flickers on ordinary GPS noise
+The anchor resets on any single fix ≥ threshold from anchor or previous, with no corroboration requirement — unlike the ≥500 m gross-excursion path, which does require it. Measured against a reimplementation of master:
+
+┌────────────────────────────────────┬────────────────────┬───────────────────────────────────┐
+│     Device genuinely immobile      │       master       │              this PR              │
+├────────────────────────────────────┼────────────────────┼───────────────────────────────────┤
+│ 3 h, one 45 m stray fix            │ attention, 180 min │ attention, 60 min                 │
+├────────────────────────────────────┼────────────────────┼───────────────────────────────────┤
+│ 4 h, ±25 m scatter (accuracy 10 m) │ up to 220 min      │ flickers on/off, capped at 40 min │
+├────────────────────────────────────┼────────────────────┼───────────────────────────────────┤
+│ 12 m creep / 20 min, 4.5 h         │ steady attention   │ none every third heartbeat        │
+├────────────────────────────────────┼────────────────────┼───────────────────────────────────┤
+│ 4 h, zero noise (control)          │ 240 min            │ 240 min ✅                        │
+└────────────────────────────────────┴────────────────────┴───────────────────────────────────┘
+
+Correct only on noise-free data. stationary-attention-store.ts:64 compounds it: acknowledged now clears whenever sinceTimestamp changes, and jitter changes it constantly, so the operator is re-alerted on every reset. Fix direction: require corroboration before re-anchoring — the same two-consecutive-fixes evidence the out-and-back case already relies on.
+
+Should fix
+
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────────┐
+│                                                                                                                                             │                 Where                  │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┤
+│ Reservations gate waiters but not enqueues — enqueueOwned admits on retainedCount() alone, so a reserved slot can be taken and the          │ deferred-mission-evidence.ts:273 vs    │
+│ reserver's fix dropped with a durable loss marker                                                                                           │ :112                                   │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┤
+│ Switching Traccar servers mid-mission: reconfigure never resets operationalPositionRetention, so server A's fixes render as live under      │ start-tracking-runtime.ts:1094–1132    │
+│ server B's colliding device ids                                                                                                             │                                        │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┤
+│ retirementFailure is a one-way latch — the critical banner can never clear                                                                  │ :1383                                  │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┤
+│ A throwing reconfigure leaves activeServices as noop handles, silently killing mission autosave                                             │ start-app-runtime.ts:328               │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────┘
+
+Minor
+
+'Last known' precedes 'Stale' in device-workspace-model.ts:90 (cosmetic — the stale flag and filter count are unaffected). Manual doesn't cover two new operator-visible strings: the unknown status badge and TRACKING REPLACEMENT EVIDENCE UNSETTLED. The PR body's "later commits have identical inputs" overstates it — 5cd9acbe rewrote the proof script that produced the 82.4 ms headline; HANDOFF.md says this more precisely, and the script isn't in CI either way.
+
+What holds up
+
+prepareStationaryAttention is exactly equivalent to evaluateStationaryAttention — I fuzzed 400 sequences × 14 appends with random lat/lon/accuracy and duplicate timestamps, zero mismatches. The incremental projection is sound; it just faithfully preserves the algorithm's own flaw. The retired-poller-publishes race, the retiringPollers set/delete ordering, the reloadTail/reloadGeneration interlock, and exactly-once capacity release were each traced and cleared. 5cd9acbe's fail-closed proof change is a real improvement. Scoped run: 9 tracking test files, 241 tests, green.
+
+The escape analysis worth recording: no test asserts elapsedMs against ground truth under jitter, and disposal-while-reconfiguring, a throwing reconfigure, and retirementFailure surfacing have zero coverage — which is why four review passes missed all of this.

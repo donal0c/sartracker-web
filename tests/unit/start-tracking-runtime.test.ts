@@ -46,6 +46,74 @@ function createDeferred<T>(): {
 }
 
 describe('startTrackingRuntime', () => {
+  it('keeps custody open for a held response after a failed stop, then seals it on retry [A-R17]', async () => {
+    useMissionStore.setState({ phase: 'active', currentMission: {
+      id: 'mission-1', name: 'Mission', status: 'active', start_time: '2026-04-06T09:00:00Z',
+      pause_time: null, finish_time: null, paused_seconds: 0, notes: null, schema_version: 1,
+    } })
+    let hooks!: Parameters<Parameters<typeof startTrackingRuntime>[0]['createPoller']>[1]
+    const unregister = vi.fn()
+    const persist = vi.fn().mockResolvedValue(undefined)
+    const markLoss = vi.fn().mockResolvedValue(undefined)
+    const stopPoller = vi.fn().mockRejectedValueOnce(new Error('producer still owns response')).mockResolvedValue(undefined)
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://synthetic.invalid' }, createClient: () => ({}),
+      createPoller: (_client, input) => { hooks = input; return { start: vi.fn(), stop: stopPoller } },
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() }, writeCache: false,
+      missionStore: createMissionStoreStub({ getActiveMission: async () => ({ id: 'mission-1' }), addPositionsBulk: persist }),
+      applySnapshot: vi.fn(), applyStatus: vi.fn(), recordMissionEvidenceLoss: markLoss,
+      registerMissionEvidenceSettler: () => unregister,
+    })
+    await expect(stop()).rejects.toThrow()
+    expect(unregister).not.toHaveBeenCalled()
+    const observation = { missionId: 'mission-1', complete: vi.fn(), claim: vi.fn() }
+    hooks.onCurrentSnapshot(SNAPSHOT, { historyResetKey: 'mission-1', missionEvidenceId: 'mission-1' }, observation)
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledOnce())
+    await stop()
+    expect(observation.claim).toHaveBeenCalledOnce()
+    expect(observation.complete).toHaveBeenCalledOnce()
+    expect(unregister).toHaveBeenCalledOnce()
+    expect(markLoss).not.toHaveBeenCalled()
+  })
+
+  it('drains shared custody after a retiring stop fails and permits a failed stop retry [A-R10]', async () => {
+    const retiredError = new Error('retired transport failed')
+    const retiredStop = vi.fn().mockRejectedValueOnce(retiredError).mockResolvedValue(undefined)
+    const selectedStop = vi.fn().mockResolvedValue(undefined)
+    const unregister = vi.fn()
+    const hooksByPoller: Parameters<Parameters<typeof startTrackingRuntime>[0]['createPoller']>[1][] = []
+    const write = createDeferred<string>()
+    const cacheWrite = vi.fn(() => write.promise)
+    const dependencies = {
+      config: { baseUrl: 'http://synthetic.invalid' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn((_client, hooks) => {
+        hooksByPoller.push(hooks)
+        return { start: vi.fn(), stop: hooksByPoller.length === 1 ? retiredStop : selectedStop }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: cacheWrite },
+      missionStore: createMissionStoreStub(), applySnapshot: vi.fn(), applyStatus: vi.fn(),
+      registerMissionEvidenceSettler: vi.fn(() => unregister),
+      logger: { warn: vi.fn() },
+    } satisfies Parameters<typeof startTrackingRuntime>[0]
+    const stop = await startTrackingRuntime(dependencies)
+    const publication = hooksByPoller[0]!.onSnapshot(SNAPSHOT)
+    await vi.waitFor(() => expect(cacheWrite).toHaveBeenCalled())
+    await stop.reconfigure!(dependencies)
+    await vi.waitFor(() => expect(dependencies.applyStatus.mock.calls.some(([s]) =>
+      s.warning?.includes('EVIDENCE UNSETTLED'))).toBe(true))
+    let completed = false
+    const stopping = stop().catch(() => { completed = true })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(completed).toBe(false)
+    write.resolve('saved')
+    await publication
+    await stopping
+    await stop()
+    expect(unregister).toHaveBeenCalledOnce()
+    expect(retiredStop.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(selectedStop).toHaveBeenCalledOnce()
+  })
+
   it('replaces current polling without waiting for retiring work or releasing evidence custody [AUD-13]', async () => {
     const drain = createDeferred<void>()
     const hooksByPoller: Parameters<NonNullable<Parameters<typeof startTrackingRuntime>[0]['createPoller']>>[1][] = []
@@ -4374,7 +4442,7 @@ function createMissionStoreStub(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
- it('does not let a retired fallback corrupt retained current position [AUD-13]', async () => {
+ it.each([false, true])('isolates retired fallback and provider replacement=%s [A-R16]', async (switchProvider) => {
   const hooksByPoller: Parameters<NonNullable<Parameters<typeof startTrackingRuntime>[0]['createPoller']>>[1][] = []
   const drain = createDeferred<void>()
   const selectedDevice = SNAPSHOT.devices[0]!
@@ -4407,11 +4475,13 @@ function createMissionStoreStub(overrides: Record<string, unknown> = {}) {
     devices: [selectedDevice], positions, breadcrumbs: [],
   })
   await hooksByPoller[0]!.onSnapshot(snapshot([oldFix]), context)
-  await stop.reconfigure!(dependencies)
-  await hooksByPoller[1]!.onSnapshot(snapshot([freshFix]), context)
+  await stop.reconfigure!({ ...dependencies,
+    config: { baseUrl: switchProvider ? 'http://replacement.invalid' : dependencies.config.baseUrl } })
+  if (!switchProvider) await hooksByPoller[1]!.onSnapshot(snapshot([freshFix]), context)
   await hooksByPoller[0]!.onSnapshot(snapshot([oldFix]), context)
   await hooksByPoller[1]!.onSnapshot(snapshot([]), context)
   try {
-    expect(dependencies.applySnapshot.mock.calls.at(-1)![0].positions[0].id).toBe('fresh')
+    expect(dependencies.applySnapshot.mock.calls.at(-1)![0].positions.map((fix) => fix.id))
+      .toEqual(switchProvider ? [] : ['fresh'])
   } finally { drain.resolve(); await stop() }
 })

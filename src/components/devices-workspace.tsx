@@ -518,11 +518,8 @@ function DeviceRow(props: {
             className="mt-1 truncate text-[10px] font-bold uppercase tracking-wide text-amber-300"
             data-testid={`device-attention-${props.row.deviceId}`}
           >
-            {props.row.stationaryAttentionUnreliable
-              ? 'Stationary Attention — latest fix uncorroborated'
-              : props.row.attentionAcknowledged
-                ? 'Attention Acknowledged'
-                : 'Stationary Attention'}
+            {props.row.attentionAcknowledged ? 'Attention Acknowledged' : 'Stationary Attention'}
+            {props.row.stationaryAttentionUnreliable ? ' — latest fix uncorroborated' : ''}
           </p>
         ) : props.row.stationaryAttentionUnavailable ? (
           <p

@@ -46,6 +46,7 @@ export type DeferredMissionEvidenceQueue<Payload> = {
   readonly waitForCapacity: (signal?: AbortSignal) => Promise<void>
   readonly reserveCapacity: (signal?: AbortSignal) => Promise<() => void>
   readonly flushMission: (missionId: string) => Promise<void>
+  readonly drainAccepted: (canPersistMission: (missionId: string) => boolean) => Promise<void>
   readonly settleMissionForFinish: (
     missionId: string,
     participantScopeReady: boolean,
@@ -270,7 +271,7 @@ export function createDeferredMissionEvidenceQueue<Payload>(
     if (hasEquivalentPayload(missionId, payloadKey)) {
       return true
     }
-    if (retainedCount() >= dependencies.capacity) {
+    if (retainedCount() + reservedCount >= dependencies.capacity) {
       requireEvidenceLoss(state, 'renderer_pending_capacity_exhausted')
       return true
     }
@@ -325,6 +326,15 @@ export function createDeferredMissionEvidenceQueue<Payload>(
       startPump()
     },
     flushMission,
+    drainAccepted: async (canPersistMission) => {
+      const results = await Promise.allSettled([...statesByMission.keys()].map(async (missionId) => {
+        if (!canPersistMission(missionId)) throw new Error('Accepted evidence is waiting for its mission scope.')
+        await flushMission(missionId)
+      }))
+      const failures = results.filter((result) => result.status === 'rejected')
+      if (failures.length > 0) throw new AggregateError(failures.map((result) => result.reason),
+        'Accepted mission evidence remains unsettled.')
+    },
     settleMissionForFinish: async (missionId, participantScopeReady) => {
       if (retainedCount(missionId) > 0 && !participantScopeReady) {
         throw new Error(

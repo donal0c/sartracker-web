@@ -1,4 +1,5 @@
 import { createDeviceColor } from './tracking-color'
+import { createRuntimeCleanup } from '../runtime/runtime-cleanup'
 import {
   limitTrackingCacheBreadcrumbs,
   parseTrackingCachePayload,
@@ -385,7 +386,7 @@ export async function startTrackingRuntime(
   const logger = dependencies.logger ?? DEFAULT_TRACKING_RUNTIME_LOGGER
   let persistedPositionKeyCache: PersistedPositionKeyCache | null = null
   let latestTrackingStatus: TrackingConnectionStatus | null = null
-  let retirementFailure: unknown = null
+  const retirementFailures = new Map<TrackingRuntimePoller, unknown>()
   let trackingCacheWarningActive = false
   let missionPersistenceWarningActive = false
   let droppedPersistedBreadcrumbCount = 0
@@ -563,8 +564,7 @@ export async function startTrackingRuntime(
       : { recordRequestDiagnostic: dependencies.recordTrackingPollDiagnostic }),
   })
   let pollerGeneration = 0
-  const retiringPollers = new Set<Promise<void>>()
-  let stopPromise: Promise<void> | null = null
+  const retiringPollers = new Map<TrackingRuntimePoller, Promise<void>>()
   const initialClient = client
   if (dependencies.missionModelEnabled === true) {
     void preloadParticipantDiscovery(
@@ -1010,12 +1010,22 @@ export async function startTrackingRuntime(
 
   /** Retains every retiring transport until final disposal joins its custody. */
   function retirePoller(previous: TrackingRuntimePoller): void {
-    const retirement = Promise.resolve(previous.stop()).catch((error: unknown) => {
-      retirementFailure = error
+    if (retiringPollers.has(previous)) return
+    let stopping: Promise<void>
+    try {
+      // Revokes publication synchronously, before any queued response resumes.
+      stopping = Promise.resolve(previous.stop())
+    } catch (error) {
+      stopping = Promise.reject(error)
+    }
+    const retirement = stopping.then(() => {
+      if (retirementFailures.delete(previous)) refreshTrackingStatus()
+    }).catch((error: unknown) => {
+      retirementFailures.set(previous, error)
       logger.warn('Retiring tracking transport could not settle its evidence.', error)
       refreshTrackingStatus()
-    }).finally(() => retiringPollers.delete(retirement))
-    retiringPollers.add(retirement)
+    }).finally(() => retiringPollers.delete(previous))
+    retiringPollers.set(previous, retirement)
   }
 
   const unsubscribeMissionWake = useMissionStore.subscribe((state, previousState) => {
@@ -1084,10 +1094,55 @@ export async function startTrackingRuntime(
     unsubscribeParticipationScope()
     throw error
   }
-  const stop = (): Promise<void> => {
-    stopPromise ??= disposeRuntime()
-    return stopPromise
-  }
+  let selectedTransportStopped = false
+  let evidenceSettled = false
+  /** Admission may close only when no transport can transfer another observation. */
+  const producersStopped = (): boolean => selectedTransportStopped &&
+    retiringPollers.size === 0 && retirementFailures.size === 0
+  const stop = createRuntimeCleanup([
+    () => {
+      acceptingRuntimeUpdates = false
+      unsubscribeMissionWake()
+      unsubscribeDeviceSelectionWake()
+      unsubscribeParticipationScope()
+    },
+    async () => { await poller.stop(); selectedTransportStopped = true },
+    async () => {
+      await Promise.all([...retiringPollers.values()])
+      for (const previous of retirementFailures.keys()) retirePoller(previous)
+      await Promise.all([...retiringPollers.values()])
+      if (retirementFailures.size > 0) {
+        throw new AggregateError([...retirementFailures.values()], 'Retiring tracking evidence remains unsettled.')
+      }
+    },
+    async () => {
+      const canPersist = (missionId: string): boolean =>
+        readParticipationScopeStatus() === 'ready' &&
+        useMissionStore.getState().currentMission?.id === missionId
+      if (!producersStopped()) {
+        await deferredMissionEvidence.drainAccepted(canPersist)
+        throw new Error('Tracking producers remain unsettled; evidence admission stays open for retry.')
+      }
+      await deferredMissionEvidence.settleForStop(canPersist)
+      evidenceSettled = true
+      unregisterMissionEvidenceSettler()
+    },
+    async () => {
+      await trackingCacheWriteLane.settle(producersStopped())
+      if (!producersStopped()) throw new Error('Tracking cache admission remains open until producers stop.')
+    },
+    async () => {
+      try {
+        if (participantBackfillTask !== null) await participantBackfillTask
+      } finally {
+        participantBackfillAbortController.abort()
+      }
+    },
+    () => {
+      if (!producersStopped() || !evidenceSettled) throw new Error('Tracking evidence ownership remains active for shutdown retry.')
+      invalidateTrackingRuntimeGeneration(runtimeGeneration)
+    },
+  ])
   return Object.assign(stop, { reconfigure })
 
   /** Changes transport settings while one runtime retains all evidence custody. */
@@ -1100,6 +1155,10 @@ export async function startTrackingRuntime(
     const candidate = nextClient === null
       ? { start: () => undefined, stop: async () => undefined }
       : createOwnedPoller(next, nextClient)
+    if (dependencies.config?.baseUrl !== next.config?.baseUrl) {
+      // Provider-local device ids are not identities across different servers.
+      operationalPositionRetention.reset()
+    }
     dependencies = next
     deferredOperationalSnapshot = null
     client = nextClient
@@ -1107,6 +1166,7 @@ export async function startTrackingRuntime(
       pollerGeneration++
     }
     poller = candidate
+    for (const failed of retirementFailures.keys()) retirePoller(failed)
     retirePoller(previous)
     latestTrackingStatus = {
       mode: 'idle', consecutiveFailures: 0, recovered: false,
@@ -1128,27 +1188,6 @@ export async function startTrackingRuntime(
       dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
       throw error
     }
-  }
-
-  /** Joins selected and retiring transports before releasing shared custody. */
-  async function disposeRuntime(): Promise<void> {
-    acceptingRuntimeUpdates = false
-    unsubscribeMissionWake()
-    unsubscribeDeviceSelectionWake()
-    unsubscribeParticipationScope()
-    await poller.stop()
-    await Promise.all([...retiringPollers])
-    if (retirementFailure !== null) throw retirementFailure
-    unregisterMissionEvidenceSettler()
-    await deferredMissionEvidence.settleForStop((missionId) =>
-      readParticipationScopeStatus() === 'ready' &&
-      useMissionStore.getState().currentMission?.id === missionId)
-    await trackingCacheWriteLane.settle()
-    if (participantBackfillTask !== null) {
-      await participantBackfillTask
-    }
-    participantBackfillAbortController.abort()
-    invalidateTrackingRuntimeGeneration(runtimeGeneration)
   }
 
   /** Publishes one participant-scoped map snapshot without awaiting durable work. */
@@ -1380,7 +1419,7 @@ export async function startTrackingRuntime(
   ): TrackingConnectionStatus {
     const warnings = [
       status.warning,
-      retirementFailure === null ? null
+      retirementFailures.size === 0 ? null
         : 'TRACKING REPLACEMENT EVIDENCE UNSETTLED — current polling may continue, but previous evidence custody has not completed. Check diagnostics.',
       droppedPersistedBreadcrumbCount > 0
         ? formatDroppedPersistedBreadcrumbWarning(
@@ -1722,7 +1761,7 @@ type TrackingCacheWriteLaneEntry = {
 
 type LatestTrackingCacheWriteLane = {
   readonly enqueue: (key: string, serialize: () => string | Promise<string>) => Promise<void>
-  readonly settle: () => Promise<void>
+  readonly settle: (closeAdmission?: boolean) => Promise<void>
 }
 
 /**
@@ -1798,8 +1837,8 @@ function createLatestTrackingCacheWriteLane(dependencies: {
       }
       return entry.completion
     },
-    settle: async () => {
-      accepting = false
+    settle: async (closeAdmission = true) => {
+      if (closeAdmission) accepting = false
       while (activeEntry !== null || pendingEntry !== null) {
         const currentCompletion = activeEntry?.completion
         if (currentCompletion === undefined) throw new Error('Tracking cache settlement lost its active writer.')

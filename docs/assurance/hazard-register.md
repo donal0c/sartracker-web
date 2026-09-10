@@ -12,9 +12,9 @@ fix, rejected candidates, native custody proof and strict renderer-frame gate.
 The retained tracking session separates replacement publication from retiring
 evidence settlement; continuous stationary episodes and prepared per-device
 history replace endpoint-only/repeated whole-history evaluation. This overlay
-has passed local source/native/browser gates and four independent application
-reviews at `cb929bb8`; proof-only `5cd9acbe` also passes cumulative review.
-Matching Linux CI passed with inspected receipts; PR #17 is ready for review.
+previously passed gates at `cb929bb8`, but external review found additional
+failure-path and stationary-duration defects. That readiness is withdrawn;
+PR #17 is draft pending [remediation verification](findings/repair-train-a-remediation.md).
 The separate soak's 466.7 ms renderer maximum remains unexplained qualification
 evidence under DON-254 and is not a strict-200 pass. Upon acceptance this
 supersedes only those historical row observations.

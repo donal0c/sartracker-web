@@ -1266,7 +1266,10 @@
             conservatively assumes the movement floor before applying the accuracy factor. One
             uncorroborated terminal movement fix preserves existing attention and is labelled
             unreliable until a second plausible movement fix corroborates it; corroborated meaningful
-            movement clears attention. Returning to an earlier position does not restore an old
+            movement clears attention. If the next fix returns within the old location's
+            accuracy-aware bounds, the original duration and acknowledgement are retained.
+            While that first deviation is unconfirmed, duration runs only through the last
+            confirmed stationary fix. Returning after corroborated movement does not restore an old
             stationary episode: a continuous new stationary interval must build first. Movement is
             checked along the route as well as against the interval's starting position, so an
             out-and-back walk is not treated as standing still. Sparse evidence is treated as insufficient data rather than a
@@ -1350,8 +1353,19 @@
             in breadcrumb-dot mode, so dense missions can be made calmer or more prominent without editing
             devices one by one. <strong>Reconnect</strong> reloads settings and forces the tracking provider to reconnect.
             During reconnection, retained positions remain visible as <strong>Last known</strong>
-            and devices are not shown as Online until the replacement connection reports current data.
+            and devices show <strong>Unknown</strong> rather than Online until the replacement
+            connection reports current data. Last known describes connection freshness; an
+            older fix can also meet the Stale filter's age threshold.
             When the provider responds successfully, current updates resume automatically.
+          </p>
+          <p>
+            <strong>TRACKING REPLACEMENT EVIDENCE UNSETTLED</strong> means an earlier connection
+            has not completed evidence settlement, even if current polling continues. Preserve
+            the profile, check Diagnostics and retry Reconnect; the warning clears only when
+            the earlier connection settles successfully. Do not treat it as a confirmed data-loss
+            report or ignore it because new positions arrive. If reconnection fails, the previously
+            running autosave remains active. A failed shutdown must be retried after resolving
+            the reported problem; evidence admission stays open for any response still owned.
           </p>
           <h3>Adding Tracker Information</h3>
           <ol>

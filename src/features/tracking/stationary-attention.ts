@@ -28,7 +28,11 @@ export const DEFAULT_STATIONARY_ATTENTION_CONFIG: StationaryAttentionConfig = {
 }
 
 type TimedFix = { readonly fix: NormalizedTrackingPosition; readonly timeMs: number }
-type Episode = { readonly anchor: TimedFix; readonly previous: TimedFix }
+type Episode = {
+  readonly anchor: TimedFix
+  readonly previous: TimedFix
+  readonly pendingDeviation?: TimedFix
+}
 
 /** Prepares immutable history once; a newer current fix only revisits the mutable tail. */
 export function prepareStationaryAttention(
@@ -54,11 +58,8 @@ export function prepareStationaryAttention(
     const revisedTail = isGrossExcursion(ordered.at(-2), lastRaw, next, config)
       ? tail.filter((entry) => entry !== lastRaw) : tail
     const nextTail = [...revisedTail, next]
-    const terminalContext = episode === null ? nextTail : [episode.previous, ...nextTail]
-    const unreliable = hasUncorroboratedTerminalOutlier(terminalContext, config)
-    const effectiveTail = unreliable ? nextTail.slice(0, -1) : nextTail
-    const nextEpisode = foldEpisode(effectiveTail, config, episode)
-    return episodeEvaluation(nextEpisode, prefix.length + effectiveTail.length, unreliable, config)
+    const nextEpisode = foldEpisode(nextTail, config, episode)
+    return episodeEvaluation(nextEpisode, prefix.length + nextTail.length, config)
   }
 }
 
@@ -82,9 +83,7 @@ export function evaluateStationaryAttention(
   const accepted = ordered.filter((entry, index) => !isGrossExcursion(
     ordered[index - 1], entry, ordered[index + 1], config,
   ))
-  const terminalOutlier = hasUncorroboratedTerminalOutlier(accepted, config)
-  const effective = terminalOutlier ? accepted.slice(0, -1) : accepted
-  return episodeEvaluation(foldEpisode(effective, config), effective.length, terminalOutlier, config)
+  return episodeEvaluation(foldEpisode(accepted, config), accepted.length, config)
 }
 
 /** Sorts usable observations deterministically without mutating evidence. */
@@ -101,22 +100,35 @@ function isGrossExcursion(previous: TimedFix | undefined, entry: TimedFix, next:
     displacement(previous.fix, next.fix) < movementThreshold(previous.fix, next.fix, config)
 }
 
-/** Carries a continuous episode forward using both its anchor and successive fixes. */
+/** Requires a second outside fix to confirm departure from a stationary episode. */
 function foldEpisode(entries: readonly TimedFix[], config: StationaryAttentionConfig, initial: Episode | null = null): Episode | null {
   let state = initial
   for (const entry of entries) {
-    const anchor = state === null ||
-      displacement(state.anchor.fix, entry.fix) >= movementThreshold(state.anchor.fix, entry.fix, config) ||
+    if (state === null) {
+      state = { anchor: entry, previous: entry }
+      continue
+    }
+    const outside = displacement(state.anchor.fix, entry.fix) >= movementThreshold(state.anchor.fix, entry.fix, config) ||
       displacement(state.previous.fix, entry.fix) >= movementThreshold(state.previous.fix, entry.fix, config)
-      ? entry : state.anchor
-    state = { anchor, previous: entry }
+    if (!outside) {
+      // A return corroborates the original location, not a new episode.
+      state = { anchor: state.anchor, previous: entry }
+    } else if (state.pendingDeviation === undefined) {
+      state = { ...state, pendingDeviation: entry }
+    } else {
+      const pending = state.pendingDeviation
+      const anchor = displacement(pending.fix, entry.fix) >= movementThreshold(pending.fix, entry.fix, config)
+        ? entry : pending
+      state = { anchor, previous: entry }
+    }
   }
   return state
 }
 
 /** Converts derived episode state to the existing operator attention contract. */
-function episodeEvaluation(episode: Episode | null, count: number, terminalOutlier: boolean, config: StationaryAttentionConfig): StationaryAttentionEvaluation {
+function episodeEvaluation(episode: Episode | null, count: number, config: StationaryAttentionConfig): StationaryAttentionEvaluation {
   if (episode === null || count < 2) return { state: 'insufficient-data' }
+  const terminalOutlier = episode.pendingDeviation !== undefined
   const { anchor, previous: latest } = episode
   const minimumHeartbeatSpanMs = config.heartbeatWindowMs - config.heartbeatToleranceMs
   const elapsedMs = latest.timeMs - anchor.timeMs
@@ -187,41 +199,6 @@ function movementThreshold(
       validAccuracy(right.accuracy, config.movementFloorM),
     ),
   )
-}
-
-/** Detects one implausible newest fix that has not yet been corroborated by a later fix. */
-function hasUncorroboratedTerminalOutlier(
-  ordered: readonly { readonly fix: NormalizedTrackingPosition; readonly timeMs: number }[],
-  config: StationaryAttentionConfig,
-): boolean {
-  const beforePrevious = ordered.at(-3)
-  const previous = ordered.at(-2)
-  const latest = ordered.at(-1)
-  if (beforePrevious === undefined || previous === undefined || latest === undefined) {
-    return false
-  }
-  const priorMovementM = distance(
-    point([beforePrevious.fix.lon, beforePrevious.fix.lat]),
-    point([previous.fix.lon, previous.fix.lat]),
-    { units: 'meters' },
-  )
-  const latestMovementM = distance(
-    point([previous.fix.lon, previous.fix.lat]),
-    point([latest.fix.lon, latest.fix.lat]),
-    { units: 'meters' },
-  )
-  const priorStationaryThresholdM = movementThreshold(
-    beforePrevious.fix,
-    previous.fix,
-    config,
-  )
-  const latestMovementThresholdM = movementThreshold(
-    previous.fix,
-    latest.fix,
-    config,
-  )
-  return priorMovementM < priorStationaryThresholdM &&
-    latestMovementM >= latestMovementThresholdM
 }
 
 function isBoundedNumber(value: unknown, minimum: number, maximum: number): value is number {

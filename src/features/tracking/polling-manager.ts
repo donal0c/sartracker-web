@@ -999,6 +999,13 @@ export function createPollingManager(
           } else {
             await options.waitForCurrentEvidenceCapacity?.(controller.signal)
           }
+        } catch (error) {
+          if (!controller.signal.aborted) throw error
+          // Pause, scope replacement and stop cancel admission, not the provider.
+          if (!stopping && !discardSupersededPoll(generation, pollHistoryResetKey)) {
+            scheduleNextPoll(0)
+          }
+          return
         } finally {
           if (evidenceCapacityWait === controller) evidenceCapacityWait = null
         }
@@ -1122,6 +1129,7 @@ export function createPollingManager(
       let currentFixPublishedAtMs = monotonicNow()
       if (options.onCurrentSnapshot === undefined) {
         try {
+          releaseEvidenceCapacity()
           const snapshotSettlement = options.onSnapshot(
             publishedSnapshot,
             snapshotContext,
@@ -1140,6 +1148,9 @@ export function createPollingManager(
           currentPositionResult.rejected,
           missionObservation.missionId,
         )
+        // Convert the reserved slot to retained ownership in this synchronous
+        // callback. No await or other producer can run between release/admission.
+        releaseEvidenceCapacity()
         options.onCurrentSnapshot(
           publishedSnapshot,
           snapshotContext,
@@ -1612,7 +1623,10 @@ export function createPollingManager(
       void runPoll(lifecycleGeneration)
     },
     stop: () => {
-      stopPromise ??= stopPolling()
+      stopPromise ??= stopPolling().catch((error: unknown) => {
+        stopPromise = null
+        throw error
+      })
       return stopPromise
     },
     requestPollNow: () => {
@@ -1640,8 +1654,8 @@ export function createPollingManager(
 
   /** Stops new work, settles the current safety observation, then invalidates the poll. */
   async function stopPolling(): Promise<void> {
-    flushHistorySnapshot(false)
     stopping = true
+    flushHistorySnapshot(false)
     evidenceCapacityWait?.abort()
     immediatePollRequested = false
     pendingHistoryRefreshByMission.clear()

@@ -4,6 +4,7 @@ import type {
 } from '../persistence/mission-autosave'
 import { startMissionAutosave } from '../persistence/mission-autosave'
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
+import { createRuntimeCleanup } from './runtime-cleanup'
 import {
   createTauriMissionStore,
   type IngestEvidenceHealth,
@@ -242,6 +243,30 @@ export async function startAppRuntime(
   let trackingSession: TrackingRuntimeStop | null = null
   let reloadTail: Promise<void> = Promise.resolve()
   let disposed = false
+  let stopOwnedServices = async (): Promise<void> => undefined
+  let trackingCustodyStopped = false
+  const cleanup = createRuntimeCleanup([
+    async () => {
+      disposed = true
+      reloadGeneration += 1
+      await reloadTail.catch(() => undefined)
+      const previousServices = activeServices
+      activeServices = createNoopRuntimeServiceHandles()
+      stopOwnedServices = createRuntimeCleanup([
+        previousServices.stopAutosave, previousServices.stopTracking,
+      ])
+    },
+    () => stopOwnedServices(),
+    async () => { await stopTrackingSession(); trackingCustodyStopped = true },
+    async () => {
+      if (!trackingCustodyStopped) throw new Error('Rejection evidence admission remains open until tracking settles.')
+      await rejectionEvidenceDelivery?.dispose()
+    },
+    () => { setMissionReviewMissionStore(null) },
+    () => stopExactBreadcrumbDots(),
+    () => stopCoverage(),
+    () => coreFeatureRuntimes.dispose(),
+  ])
   try {
     stopExactBreadcrumbDots = resolvedDependencies.startExactBreadcrumbDotRuntime(
       missionStore,
@@ -254,13 +279,14 @@ export async function startAppRuntime(
     })
     await reloadSettings()
   } catch (error) {
-    await stopTrackingSession()
-    stopExactBreadcrumbDots()
-    stopCoverage()
-    coreFeatureRuntimes.dispose()
+    try {
+      await cleanup()
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError],
+        'App startup failed and cleanup remains incomplete.', { cause: error })
+    }
     throw error
   }
-  let disposalPromise: Promise<void> | null = null
 
   return {
     reloadSettings: async (options) => {
@@ -270,23 +296,7 @@ export async function startAppRuntime(
 
       await reloadSettings(options)
     },
-    dispose: () => {
-      disposalPromise ??= (async () => {
-        disposed = true
-        reloadGeneration += 1
-        await reloadTail.catch(() => undefined)
-        const previousServices = activeServices
-        activeServices = createNoopRuntimeServiceHandles()
-        await stopRuntimeServices(previousServices)
-        await stopTrackingSession()
-        await rejectionEvidenceDelivery?.dispose()
-        setMissionReviewMissionStore(null)
-        stopExactBreadcrumbDots()
-        stopCoverage()
-        coreFeatureRuntimes.dispose()
-      })()
-      return disposalPromise
-    },
+    dispose: cleanup,
   }
 
   /** Releases the session only after every settings replacement has settled. */
@@ -325,8 +335,11 @@ export async function startAppRuntime(
     // services here; the retained tracking session selects one publisher while
     // retiring transports finish their accepted evidence independently.
     const previousServices = activeServices
-    activeServices = createNoopRuntimeServiceHandles()
-    await stopRuntimeServices(previousServices)
+    const preservesTrackingSession = trackingSession !== null
+    if (!preservesTrackingSession) {
+      activeServices = createNoopRuntimeServiceHandles()
+      await stopRuntimeServices(previousServices)
+    }
     if (generation !== reloadGeneration || disposed) return
 
     const nextServices = await createManagedRuntimeServices({
@@ -503,6 +516,7 @@ export async function startAppRuntime(
     }
 
     activeServices = nextServices
+    if (preservesTrackingSession) await stopRuntimeServices(previousServices)
   }
 }
 

@@ -16,6 +16,20 @@ function createDeferred<T>(): {
 }
 
 describe('deferred mission evidence queue [DON-276]', () => {
+  it('does not allow an unreserved enqueue to steal transport capacity [A-R14]', async () => {
+    const persist = vi.fn().mockResolvedValue(undefined)
+    const queue = createDeferredMissionEvidenceQueue<string>({ capacity: 1,
+      beginObservation: (missionId) => ({ missionId, complete: vi.fn() }),
+      persist, markEvidenceLoss: vi.fn().mockResolvedValue(undefined) })
+    const release = await queue.reserveCapacity()
+    queue.enqueue('mission-1', 'unreserved')
+    expect(queue.pendingCount()).toBe(0)
+    // Conversion from reservation to synchronous admission cannot yield.
+    release()
+    queue.enqueue('mission-1', 'reserved-fix')
+    await queue.flushMission('mission-1')
+    expect(persist.mock.calls).toEqual([['mission-1', 'reserved-fix']])
+  })
   it('reserves capacity for an in-flight retiring transport [AUD-13]', async () => {
     const queue = createDeferredMissionEvidenceQueue<string>({
       capacity: 1, beginObservation: (missionId) => ({ missionId, complete: vi.fn() }),
@@ -28,8 +42,8 @@ describe('deferred mission evidence queue [DON-276]', () => {
     const waiting = queue.reserveCapacity(controller.signal).then(() => { acquired = true })
     await Promise.resolve()
     expect(acquired).toBe(false)
-    queue.enqueue('mission-1', 'old-in-flight-fix')
     release()
+    queue.enqueue('mission-1', 'old-in-flight-fix')
     await Promise.resolve()
     expect(acquired).toBe(false)
     controller.abort()

@@ -6,6 +6,20 @@ import type { NormalizedTrackingPosition, TrackingSnapshot } from '../../src/fea
 describe('stationary attention store [DON-269]', () => {
   beforeEach(() => useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState()))
 
+  it('retains acknowledgement and elapsed truth through an isolated noise return [A-R15]', () => {
+    const history = Array.from({ length: 10 }, (_, i) =>
+      ({ ...fix(String(i), i * 20, 52 + (i === 5 ? 45 : 0) / 111195), accuracy: 10 }))
+    useStationaryAttentionStore.getState().applySnapshot(createSnapshot(history.slice(0, 5)), 'mission-a')
+    useStationaryAttentionStore.getState().acknowledge('device-1')
+    for (let end = 6; end <= history.length; end++) {
+      useStationaryAttentionStore.getState().applySnapshot(createSnapshot(history.slice(0, end)), 'mission-a')
+      expect(useStationaryAttentionStore.getState().byDevice['device-1'])
+        .toMatchObject({ state: 'attention', acknowledged: true,
+          sinceTimestamp: history[0]!.timestamp,
+          elapsedMs: (end === 6 ? 80 : (end - 1) * 20) * 60000 })
+    }
+  })
+
   it('requires a fresh acknowledgement for a new stationary episode [AUD-02]', () => {
     const first = [fix('a', 0, 52), fix('b', 20, 52)]
     useStationaryAttentionStore.getState().applySnapshot(createSnapshot(first))

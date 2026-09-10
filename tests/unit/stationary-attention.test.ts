@@ -9,6 +9,15 @@ import {
 import type { NormalizedTrackingPosition } from '../../src/features/tracking/tracking-types'
 
 describe('stationary attention policy [DON-269]', () => {
+  it('preserves the full elapsed episode through one ordinary uncorroborated noise return [A-R15]', () => {
+    const history = Array.from({ length: 10 }, (_, i) =>
+      fix(String(i), i * 20, 52 + (i === 5 ? 45 : 0) / 111195, -9.7, 10))
+    for (let end = 2; end <= history.length; end++) {
+      const result = evaluateStationaryAttention(history.slice(0, end), DEFAULT_STATIONARY_ATTENTION_CONFIG)
+      expect(result).toMatchObject({ state: 'attention', sinceTimestamp: history[0]!.timestamp,
+        elapsedMs: (end === 6 ? 80 : (end - 1) * 20) * 60000 })
+    }
+  })
   it('matches full policy when prepared histories receive current fixes, outliers and reordered inputs [AUD-03]', () => {
     const offsets = [0, 5, 20, 100, 600, 700, 0]
     let seed = 17

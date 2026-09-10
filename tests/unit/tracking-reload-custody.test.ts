@@ -13,6 +13,52 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+it('revokes old rejection publication synchronously across queued response interleavings [A-R18]', async () => {
+  const unsuppressedOffsets: number[] = []
+  for (let offset = 0; offset < 16; offset++) {
+    useMissionStore.setState({ phase: 'active', currentMission: {
+      id: 'm', name: 'Retirement ordering', status: 'active',
+      start_time: '2026-04-06T09:00:00Z', pause_time: null,
+      finish_time: null, paused_seconds: 0, notes: null, schema_version: 1,
+    } })
+    const held = Promise.withResolvers<void>()
+    let generation = 0
+    let oldRequests = 0
+    const dependencies: StartTrackingRuntimeDependencies = {
+      config: { baseUrl: 'http://synthetic.invalid' }, createClient: () => ({}),
+      createPoller: (_client, hooks) => {
+        const mine = ++generation
+        return createPollingManager({
+          authenticate: async () => undefined, getDevices: async () => [], getBreadcrumbs: async () => [],
+          getCurrentPositions: async () => {
+            if (mine === 1) { oldRequests++; await held.promise }
+            return []
+          },
+        }, { ...hooks, intervalMs: 5000, staleThresholdMs: 60000,
+          getPollingMode: () => 'active', getHistoryResetKey: () => 'm',
+          onCurrentPositionRejections: (_rows, context) => {
+            if (mine !== generation && !context.suppressOperationalPublication) unsuppressedOffsets.push(offset)
+          },
+        })
+      },
+      cache: { read: async () => null, write: async (value) => value }, writeCache: false,
+      missionStore: { getActiveMission: async () => ({ id: 'm' }), listPositions: async () => [],
+        upsertDevice: async () => undefined, addPosition: async () => undefined },
+      applySnapshot: () => undefined, applyStatus: () => undefined,
+    }
+    const stop = await startTrackingRuntime(dependencies)
+    try {
+      for (let turn = 0; turn < 30 && oldRequests === 0; turn++) await Promise.resolve()
+      expect(oldRequests).toBe(1)
+      held.resolve()
+      for (let turn = 0; turn < offset; turn++) await Promise.resolve()
+      await stop.reconfigure!(dependencies)
+      for (let turn = 0; turn < 40; turn++) await Promise.resolve()
+    } finally { held.resolve(); await stop() }
+  }
+  expect(unsuppressedOffsets).toEqual([])
+})
+
 it('does not reserve evidence capacity for a retired authentication request [AUD-13]', async () => {
   vi.useFakeTimers()
   const authentication = Promise.withResolvers<void>()

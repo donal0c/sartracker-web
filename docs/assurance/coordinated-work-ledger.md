@@ -52,12 +52,12 @@ head.
 
 ## Deep-audit finding disposition
 
-Repair Train A is ready for review in PR #17 from fetched master `083f5047`;
-AUD-13/02/03 have fresh red/green source, native and rendered proof. Four
-independent application reviews clear `cb929bb8`, and cumulative review clears
-proof-only `5cd9acbe`. Matching Linux CI `34478455858` passed with inspected
-source/package/archive receipts. DON-254 retains the separate soak's unexplained
-466.7 ms renderer maximum; no universal sub-200 or release claim is made.
+Repair Train A PR #17 is draft for externally prompted remediation; earlier
+readiness and the three Train A row statuses below are withdrawn pending new
+verification. See [current disposition](findings/repair-train-a-remediation.md).
+The row evidence below describes the prior application only. DON-254 retains
+the separate soak's unexplained 466.7 ms renderer maximum; no universal sub-200
+or release claim is made.
 The [repair record](findings/repair-train-a.md)
 holds before/after evidence, accepted review repairs and rejected runs. Existing
 DON-267/DON-269 own the work; DON-254 retains final-candidate qualification.

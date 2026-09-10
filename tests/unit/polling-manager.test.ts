@@ -3162,6 +3162,46 @@ describe('polling manager', () => {
     expect(client.getCurrentPositions).not.toHaveBeenCalled()
   })
 
+  it('treats a paused capacity reservation as cancellation, never a provider failure [A-R12]', async () => {
+    let mode: 'active' | 'paused' = 'active'
+    const queue = createDeferredMissionEvidenceQueue<number>({ capacity: 1,
+      beginObservation: (missionId) => ({ missionId, complete: vi.fn() }),
+      persist: vi.fn().mockResolvedValue(undefined), markEvidenceLoss: vi.fn() })
+    const release = await queue.reserveCapacity()
+    const onStatusChange = vi.fn()
+    const diagnostics = vi.fn()
+    const client = createClient()
+    const poller = createPollingManager(client, { intervalMs: 5000, staleThresholdMs: 60000,
+      getPollingMode: () => mode, getHistoryResetKey: () => 'mission-a',
+      reserveCurrentEvidenceCapacity: (signal) => queue.reserveCapacity(signal),
+      onSnapshot: vi.fn(), onStatusChange, onPollDiagnostic: diagnostics })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    mode = 'paused'
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onStatusChange.mock.calls.some(([s]) => s.mode === 'offline' || s.consecutiveFailures > 0)).toBe(false)
+    expect(diagnostics.mock.calls.some(([d]) => d.outcome === 'failure')).toBe(false)
+    expect(client.getCurrentPositions).not.toHaveBeenCalled()
+    release()
+    await poller.stop()
+  })
+
+  it('retries a failed stop instead of permanently memoising its rejection [A-R10]', async () => {
+    let failCleanup = false
+    const clear = vi.fn((timer: ReturnType<typeof setTimeout>) => {
+      if (failCleanup) { failCleanup = false; throw new Error('timer cleanup failed') }
+      clearTimeout(timer)
+    })
+    const poller = createPollingManager(createClient(), { intervalMs: 5000, staleThresholdMs: 60000,
+      onSnapshot: vi.fn(), onStatusChange: vi.fn(), clearTimeout: clear })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    failCleanup = true
+    await expect(poller.stop()).rejects.toThrow('timer cleanup failed')
+    await expect(poller.stop()).resolves.toBeUndefined()
+  })
+
   it('stays idle without authenticating before a mission starts', async () => {
     const client = createClient()
     const onStatusChange = vi.fn()
