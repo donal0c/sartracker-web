@@ -92,6 +92,21 @@ invented cause or a blanket claim that all failures are blockers forever.
 
 ## Reuse proof honestly
 
+**Pre-merge documentation conflicts (Donal, 2026-09-10):** resolving a handoff,
+workplan or other documentation-only conflict must not restart validation.
+Check the resolution and diff, confirm executable inputs are unchanged, and
+reuse the existing evidence. Do not repeat full tests, lint/build, browser or
+packaged smoke, scale runs, or manually dispatched CI merely because a merge
+created a new commit or changed its SHA. A conflict itself is not a testing trigger.
+
+Before any expensive repeat, identify the concrete executable change that
+invalidates the previous evidence and select only the checks warranted by it.
+Executable inputs include application code, dependencies, build/runtime
+configuration and test tooling; their changes still require risk-based selection,
+not an automatic restart of the whole process. A separately observed failure
+may justify targeted diagnosis under the failure policy above, but must not be
+attributed to an unrelated documentation merge or used to restart every check.
+
 Record source head/tree, workload and platform for substantial evidence. After a
 fix, rerun affected checks; retain unaffected reviews and tests only with a
 clear diff showing why they remain applicable. A documentation-only commit does

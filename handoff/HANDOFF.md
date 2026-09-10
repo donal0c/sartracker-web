@@ -39,11 +39,17 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   PR #14 conflicted only in this handoff; PR #13 only in the workplan.
   Source behavior is unchanged by these integrations.
   Combined source passes 415 files / 4,271 tests, lint and production build.
-  Fresh exact-head Linux package CI is required before removing draft status.
+  Integration CI `34458799719` passed source/build/package/replay/tracking, then
+  failed archive continuity at 206 ms. Draft remains; no same-head CI retry.
+  Linux-only archive smoke now bounds Mesa rendering to two workers after local
+  contention diagnostics; 282 boundary tests and lint pass. Same-package cold-cache
+  two-worker lifecycle passes (current max 171 ms). Hosted causality is unresolved;
+  the unchanged 200 ms gate and fresh new-head CI still decide readiness. See the
+  [investigation](../docs/archive-ci-rendering-investigation.md#pr-15-integration-bounded-software-renderer-concurrency).
   Final integration results are recorded on PR #15 and DON-215; no merge or release.
   PR #13 adds only coordination documentation; both its queue and this batch's
   acceptance contract are retained. Executable/test/workflow trees remain identical
-  to integration `35dd1c83`, whose Linux CI `34458799719` is the active proof run.
+  to integration `35dd1c83` before the explicit Linux worker-bound adjustment.
 
 
 - WAR-11A merged as [PR #14](https://github.com/donal0c/sartracker-web/pull/14)
@@ -92,6 +98,12 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   DON-247 and DON-264 remain separate reliability work.
 
 ## Testing approach to carry forward
+
+Donal reaffirmed on 2026-09-10: documentation-only pre-merge conflict resolution
+does **not** trigger repeat tests, builds, browser/package smoke or CI dispatch.
+Verify the diff and reuse prior evidence; a new merge SHA alone invalidates none
+of it. Before repeating expensive validation, name the executable change or
+separate failure that warrants that specific check. See the cadence below.
 
 Follow [Testing and review cadence](../docs/testing-and-review-cadence.md):
 reproduce narrowly, fix and run affected tests, complete one stable source cycle,

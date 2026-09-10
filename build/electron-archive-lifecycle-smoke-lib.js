@@ -727,6 +727,10 @@ export function buildArchiveLifecycleSmokeCiEnvironment(input) {
     ...input.environment,
     LIBGL_ALWAYS_SOFTWARE: '1',
     GALLIUM_DRIVER: 'llvmpipe',
+    // Bound software-rendering concurrency on the four-vCPU Linux runner so
+    // graphics workers leave scheduling capacity for polling and watchdogs.
+    // This keeps rasterization enabled and does not change any liveness gate.
+    LP_NUM_THREADS: '2',
   }
 }
 
