@@ -30,6 +30,7 @@ import {
   unavailableAttribution,
 } from '../build/responsiveness-attribution-node.js'
 import { extractStoragePhaseAttribution } from '../build/responsiveness-attribution-lib.js'
+import { SOAK_INTERACTION_TARGETS } from '../build/soak-interaction-targets.js'
 
 import { summarizeResponsiveness } from '../build/electron-map-freeze-probe-lib.js'
 import { sanitizeEvidenceText } from '../build/electron-official-map-offline-smoke-lib.js'
@@ -858,9 +859,9 @@ async function launchPackagedApp(options, userDataDir, number) {
       closePromise: null,
     }
   } catch (error) {
-    await runCleanupStep(() => mainInspector?.close(), 250)
     await runCleanupStep(() => mainHeartbeat?.stop(), 250)
     await runCleanupStep(() => attribution === undefined ? undefined : collectAttributionEvidence(attribution), 12_000)
+    await runCleanupStep(() => mainInspector?.close(), 250)
     await runCleanupStep(() => browser?.close(), 2_000)
     let cleanupFailure
     try {
@@ -1010,7 +1011,7 @@ async function recordOperatorInteraction(input) {
   await focusPackagedPage(input.page, 2_000)
   const preflight = await inspectPointerTarget(
     input.page,
-    'open-devices-workspace',
+    SOAK_INTERACTION_TARGETS.open,
   ).catch(() => ({
     documentFocused: false,
     targetFound: false,
@@ -1045,15 +1046,15 @@ async function recordOperatorInteraction(input) {
       installRecorder: () =>
         installClickRecorder(
           input.page,
-          'open-devices-workspace',
-          'workspace-close-btn',
+          SOAK_INTERACTION_TARGETS.open,
+          SOAK_INTERACTION_TARGETS.close,
           'actionable',
         ),
       click: () =>
         clickActionablePointerTarget({
           page: input.page,
           preflight,
-          testId: 'open-devices-workspace',
+          testId: SOAK_INTERACTION_TARGETS.open,
           stableDurationMs: 250,
           timeoutMs: 2_000,
         }),
@@ -1065,7 +1066,7 @@ async function recordOperatorInteraction(input) {
       openAction.stateReached &&
       await waitForPointerTargetActionable(
         input.page,
-        'workspace-close-btn',
+        SOAK_INTERACTION_TARGETS.close,
         5_000,
       )
     result.openClickCompleted = openAction.clickCompleted
@@ -1087,7 +1088,7 @@ async function recordOperatorInteraction(input) {
   result.mainIpcStatus = mainIpc.status
 
   const closePreflight = result.workspaceOpened
-    ? await inspectPointerTarget(input.page, 'workspace-close-btn').catch(() => ({
+    ? await inspectPointerTarget(input.page, SOAK_INTERACTION_TARGETS.close).catch(() => ({
         documentFocused: false,
         targetFound: false,
         targetReceivesPointer: false,
@@ -1100,7 +1101,7 @@ async function recordOperatorInteraction(input) {
       installRecorder: () =>
         installClickRecorder(
           input.page,
-          'workspace-close-btn',
+          SOAK_INTERACTION_TARGETS.close,
           'devices-workspace',
           'hidden',
         ),
@@ -1108,7 +1109,7 @@ async function recordOperatorInteraction(input) {
         clickActionablePointerTarget({
           page: input.page,
           preflight: closePreflight,
-          testId: 'workspace-close-btn',
+          testId: SOAK_INTERACTION_TARGETS.close,
           stableDurationMs: 250,
           timeoutMs: 2_000,
         }),
@@ -1142,8 +1143,8 @@ async function recordOperatorInteraction(input) {
     interactionStartSequence,
   })
   const expectedInteractionTestIds = [
-    ...(result.openClickCompleted ? ['open-devices-workspace'] : []),
-    ...(result.closeClickCompleted ? ['workspace-close-btn'] : []),
+    ...(result.openClickCompleted ? [SOAK_INTERACTION_TARGETS.open] : []),
+    ...(result.closeClickCompleted ? [SOAK_INTERACTION_TARGETS.close] : []),
   ]
   const auditIssues = inspectOperatorClickAudit(
     audit,
@@ -3368,6 +3369,7 @@ async function connectMainInspector(port, appProcess) {
   const rejectPending = () => {
     closed = true
     for (const request of pending.values()) {
+      clearTimeout(request.timeout)
       request.reject(new Error('Electron main inspector closed.'))
     }
     pending.clear()
@@ -3379,6 +3381,7 @@ async function connectMainInspector(port, appProcess) {
     const request = pending.get(message.id)
     if (request === undefined) return
     pending.delete(message.id)
+    clearTimeout(request.timeout)
     if (message.error !== undefined || message.result?.exceptionDetails !== undefined) {
       const error = new Error('Electron main inspector evaluation failed.')
       error.inspectorFailure = {
@@ -3399,11 +3402,18 @@ async function connectMainInspector(port, appProcess) {
         return
       }
       requestId += 1
-      pending.set(requestId, { resolve, reject })
+      const id = requestId
+      const timeout = setTimeout(() => {
+        if (!pending.has(id)) return
+        pending.delete(id)
+        reject(new Error('Electron main inspector evaluation timed out.'))
+      }, 5_000)
+      pending.set(id, { resolve, reject, timeout })
       try {
-        socket.send(JSON.stringify({ id: requestId, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise } }))
+        socket.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise } }))
       } catch {
-        pending.delete(requestId)
+        clearTimeout(timeout)
+        pending.delete(id)
         reject(new Error('Electron main inspector is unavailable.'))
       }
     }),

@@ -5,11 +5,12 @@ import { startResponsivenessAttribution } from '../../build/responsiveness-attri
 describe('responsiveness attribution [DON-254]', () => {
   it('cleans already-installed observers when a later realm install fails', async () => {
     const calls: string[] = []
-    await expect(startResponsivenessAttribution({
+    const probe = await startResponsivenessAttribution({
       mainPid: 1,
       mainInspector: { evaluate: async (expression: string) => { calls.push(expression); return { result: { value: {} } } } },
       page: { evaluate: async (expression: string) => { calls.push(expression); throw new Error('injected renderer install failure') } },
-    })).rejects.toThrow('injected renderer install failure')
+    })
+    expect(await probe.stop()).toMatchObject({ collected: false, reason: 'installation-failed' })
     expect(calls.some(value => value.includes('__SAR_ATTR_PROBE__?.stop()'))).toBe(true)
     expect(calls.some(value => value.includes('__SAR_ATTR_POINTER__?.stop()'))).toBe(true)
   })

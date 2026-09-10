@@ -4,6 +4,8 @@
 
 ## Planning Rule
 
+DON-254's bounded [responsiveness investigation](assurance/findings/responsiveness-attribution.md) owns PR #21 diagnostic harness remediation and unresolved main-timer attribution; it does not replace Train B/WAR-06 work or final qualification.
+
 ### WAR-11A: AppImage builder boundary (merged, 2026-09-10)
 
 WAR-04B refresh PR #12 is merged at `c51e4b35`. This slice implements builder

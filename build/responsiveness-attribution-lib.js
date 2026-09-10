@@ -13,6 +13,7 @@ export function installRealmResponsivenessProbe(root = globalThis) {
   let over200Count = 0
   let droppedEventCount = 0
   let stoppedAtMs = null
+  let wallStoppedAtMs = null
   const gcEvents = []
   let droppedGcCount = 0
   let gcStatus = 'unavailable'
@@ -58,11 +59,12 @@ export function installRealmResponsivenessProbe(root = globalThis) {
         root.clearInterval(timer)
         sample()
         stoppedAtMs = previous
+        wallStoppedAtMs = Date.now()
         gcObserver?.disconnect()
       }
       return {
         clock: 'realm-performance-now', timeOriginMs: root.performance.timeOrigin,
-        startedAtMs, stoppedAtMs, wallStartedAtMs, wallStoppedAtMs: Date.now(), intervalMs: 50, samples,
+        startedAtMs, stoppedAtMs, wallStartedAtMs, wallStoppedAtMs, intervalMs: 50, samples,
         maximumGapMs, over200Count, droppedEventCount, events,
         gc: { status: gcStatus, events: gcEvents, droppedEventCount: droppedGcCount },
       }
@@ -71,10 +73,12 @@ export function installRealmResponsivenessProbe(root = globalThis) {
 }
 
 /** Captures pointer geometry at actual browser dispatch, without text or IDs from user data. */
-export function installPointerAttribution(root = globalThis) {
-  const allowed = ['open-devices-workspace', 'workspace-close-btn']
+export function installPointerAttribution(root, allowed) {
+  if (!Array.isArray(allowed) || allowed.length === 0) throw new Error('Pointer attribution requires interaction targets.')
   const events = []
   let droppedEventCount = 0
+  let unregisteredPreflightCount = 0
+  let missingExpectedTargetCount = 0
   const layoutShifts = []
   let droppedLayoutShiftCount = 0
   let layoutObserver
@@ -97,8 +101,12 @@ export function installPointerAttribution(root = globalThis) {
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
   }
   const listener = (event) => {
+    if (event.type === 'pointercancel') { root.__SAR_ATTR_LAST_PREFLIGHT__ = null; return }
     if (events.length === 256) { events.shift(); droppedEventCount += 1 }
     const path = event.composedPath()
+    const hit = root.document.elementFromPoint(event.clientX, event.clientY)
+    const preflight = root.__SAR_ATTR_LAST_PREFLIGHT__
+    if (preflight && !allowed.includes(preflight.testId)) unregisteredPreflightCount++
     events.push({
       type: event.type, atMs: root.performance.now(), trusted: event.isTrusted,
       x: event.clientX, y: event.clientY,
@@ -106,18 +114,21 @@ export function installPointerAttribution(root = globalThis) {
         ? root.__SAR_ATTR_LAST_PREFLIGHT__ : null,
       controls: allowed.map((testId) => {
         const target = root.document.querySelector(`[data-testid="${testId}"]`)
-        const hit = root.document.elementFromPoint(event.clientX, event.clientY)
+        if (preflight?.testId === testId && target === null) missingExpectedTargetCount++
         return { testId, rect: bounds(target), inEventPath: path.includes(target),
           receivesPoint: target !== null && (hit === target || target.contains(hit)) }
       }),
     })
+    // A completed dispatch must not own later unrelated pointer events.
+    if (event.type === 'click') root.__SAR_ATTR_LAST_PREFLIGHT__ = null
   }
-  for (const type of ['pointerdown', 'pointerup', 'click']) root.document.addEventListener(type, listener, true)
+  for (const type of ['pointerdown', 'pointerup', 'click', 'pointercancel']) root.document.addEventListener(type, listener, true)
   return {
     stop() {
-      for (const type of ['pointerdown', 'pointerup', 'click']) root.document.removeEventListener(type, listener, true)
+      for (const type of ['pointerdown', 'pointerup', 'click', 'pointercancel']) root.document.removeEventListener(type, listener, true)
       layoutObserver?.disconnect()
       return { timeOriginMs: root.performance.timeOrigin, events, droppedEventCount,
+        unregisteredPreflightCount, missingExpectedTargetCount,
         layout: { status: layoutStatus, events: layoutShifts, droppedEventCount: droppedLayoutShiftCount } }
     },
   }
@@ -156,6 +167,8 @@ export function validateAttributionEvidence(evidence, requireFrames = false) {
       !Number.isFinite(anchor.controllerAfterMs) || anchor.controllerAfterMs < anchor.controllerBeforeMs) ||
     !['main', 'renderer', 'main-end', 'renderer-end'].every(name => evidence.anchors.filter(anchor => anchor.realm === name).length === 1) ||
     !Array.isArray(evidence?.renderer?.pointer?.events) ||
+    evidence.renderer.pointer.unregisteredPreflightCount > 0 ||
+    evidence.renderer.pointer.missingExpectedTargetCount > 0 ||
     (requireFrames && !Array.isArray(evidence.renderer.cadencedFrames?.events))) {
     throw new Error('Responsiveness attribution incomplete: mandatory realm or clock evidence is missing.')
   }

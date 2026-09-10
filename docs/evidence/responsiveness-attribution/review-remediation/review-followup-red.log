@@ -1,0 +1,45 @@
+
+ RUN  v4.1.3 <workspace>
+
+ ❯ tests/unit/responsiveness-attribution-review.test.ts (9 tests | 2 failed) 24ms
+     × does not treat a later unrelated click as a missing former action target 2ms
+     × never reports an uncollected original heartbeat as a successful empty channel 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/responsiveness-attribution-review.test.ts > responsiveness review regressions [DON-254] > does not treat a later unrelated click as a missing former action target
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/unit/responsiveness-attribution-review.test.ts:109:53
+    107|     present = false
+    108|     listener({ ...event, composedPath: () => [] })
+    109|     expect(probe.stop().missingExpectedTargetCount).toBe(0)
+       |                                                     ^
+    110|   })
+    111|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/responsiveness-attribution-review.test.ts > responsiveness review regressions [DON-254] > never reports an uncollected original heartbeat as a successful empty channel
+TypeError: attachInspectorAttribution is not a function
+ ❯ tests/unit/responsiveness-attribution-review.test.ts:113:32
+    111|
+    112|   it('never reports an uncollected original heartbeat as a successful …
+    113|     const result = diagnostics.attachInspectorAttribution({ collected:…
+       |                                ^
+    114|     expect(result).toMatchObject({ collected: false, reason: 'inspecto…
+    115|     expect(result.inspectorRoundTrips).toBeUndefined()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 7 passed (9)
+   Start at  22:19:01
+   Duration  788ms (transform 30ms, setup 0ms, import 455ms, tests 24ms, environment 244ms)

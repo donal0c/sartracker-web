@@ -1,0 +1,17 @@
+[WebServer] (node:38753) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[WebServer]   npx update-browserslist-db@latest
+[WebServer]   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 3 tests using 1 worker
+
+(node:38754) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:38754) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [electron-controls] › tests/e2e/electron/responsiveness-attribution.spec.ts:5:1 › separates injected main, renderer and controller delays in Electron [DON-254] (3.2s)
+  ✓  2 [electron-controls] › tests/e2e/electron/responsiveness-attribution.spec.ts:44:1 › records target movement after stable preflight at trusted pointer dispatch [DON-254] (659ms)
+  ✓  3 [electron-controls] › tests/e2e/electron/responsiveness-attribution.spec.ts:75:1 › publishes an explicit failed collection after Electron transport disappears [DON-254] (523ms)
+
+  3 passed (5.2s)

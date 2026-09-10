@@ -1,7 +1,7 @@
 # Responsiveness attribution — DON-254
 
-Investigation started 2026-09-10. This record is isolated from active Repair
-Train B and WAR-06 coordination edits. No gate, production behavior, release,
+Investigation started 2026-09-10. This record has entry pointers in handoff and
+the workplan without replacing active Repair Train B or WAR-06 state. No gate, production behavior, release,
 merge decision, or field acceptance is changed by this harness work.
 
 ## Current decision and provenance
@@ -107,7 +107,9 @@ the last preflight coordinates/time. Cadenced frame outliers remain separate
 from renderer timer gaps. Original probes stop before diagnostic collection so
 collection does not extend the original measurement window.
 
-Missing mandatory realm/clock/frame evidence rejects diagnostic collection.
+Missing mandatory realm/clock/frame evidence rejects diagnostic completeness;
+review remediation records `collected: false` with a fixed reason and partial
+channels, preserving the original operational verdict instead of throwing.
 Eviction is explicit and forbids absence claims for lost intervals. Optional
 GC/host data and GPU execution cannot exonerate a stall. Correlation is evidence
 for a hypothesis, not automatic causal classification or permission to pass.
@@ -276,10 +278,45 @@ The final evidence closeout changes documentation only. Per the testing cadence,
 it reuses the green executable CI run above; facts, JSON, links, diff and
 unchanged executable trees are checked instead of repeating runtime suites.
 
-Master was refreshed again after implementation and remains `302bdd04`, the
-branch's exact base; no upstream rebase delta exists. Active PR #19 and PR #20
-have overlapping pending coordination dispositions. Keep this report isolated
-until those land, then integrate one concise pointer into handoff/workplan/
-coordinated hazard records without overwriting their Train B/WAR-06 state.
-DON-254 stays open. This named integration step is not a claim that the shared
-records have already been updated.
+Master was refreshed after the original implementation at `302bdd04`, the
+branch's exact base. Active PR #19 and PR #20 have overlapping coordination
+dispositions. Review remediation adds one entry pointer to handoff and the
+workplan; detailed hazard disposition still belongs to their coordination
+owners. DON-254 stays open.
+
+## User review remediation
+
+The review identified gaps not covered by the earlier independent reviews.
+CI `34525215816` did not run `test:e2e:chromium` or the new Electron spec;
+its green result must not be cited as proof of those tests.
+
+| Finding | Correction |
+| --- | --- |
+| ATTR-R07: Electron spec selected by display-free release Chromium project | Move to `tests/e2e/electron/`, exclude from Chromium, add `electron-controls` project and run it under Xvfb with Linux runtime dependencies in Linux validation. POSIX suspension control runs on Linux/macOS; Windows exercises the other controls. |
+| ATTR-R08: diagnostic failures throw or disappear during abnormal close | Preserve original operational verdict; record explicit failure reason and surviving channels. Use an independent 12-second collection budget, parallel bounded reads, idempotent stop and a post-cleanup receipt on normal/abnormal exits. |
+| ATTR-R09: pressure FIFO loses early causal context | Progressively decimate across the entire run while keeping first/latest observations. Report stride, maximum spacing and discarded count. A fourteen-day synthetic retention test proves bounded whole-run coverage, not fine-grained pressure coverage around every stall. |
+| ATTR-R10: inconsistent wall stop clock | Snapshot controller once before cleanup and freeze the realm's wall stop timestamp. |
+| ATTR-R11: duplicated hit-testing and target knowledge | Hit-test once per event; share measured interaction target identities with the observer. Unknown preflight or missing expected target explicitly invalidates diagnostic completeness. |
+| ATTR-R12: half-converted inspector ID | Use captured ID consistently for pending registration, send, timeout and send failure. |
+| ATTR-R13: findings not discoverable from onboarding | Add handoff/workplan pointers without rewriting other lanes. |
+
+Risk is confined to test selection and diagnostic lifecycle/retention. Production,
+coordinates, persistence, original safety verdicts and numeric thresholds are
+unchanged. Five targeted regressions first failed; affected unit tests and real
+Electron controls pass locally. The full source run passed 4,392 tests and
+failed one archive Git-custody test because `git ls-files` still named the
+unstaged moved Electron spec; direct capture reproduced `ENOENT`. Staging the
+rename restored the tracked-file inventory; all 30 tests in that suite passed
+with the affected suites (94 total). The rejected run is retained, not relabelled
+green. Lint/build and three real Electron controls pass, including transport
+disconnection with an explicit failure record. A same-package macOS CI-profile
+soak passed original gates and exact 8,664-position custody; both launches had
+complete attribution and the standalone post-cleanup receipt. File hashes and
+logs are in [local remediation evidence](../../evidence/responsiveness-attribution/review-remediation/local-receipt.json).
+The wired Linux control run remains pending. Earlier Linux evidence remains
+historical and does not prove these executable changes.
+
+The narrow follow-up review also found stale preflight ownership after a
+completed close and a missing-heartbeat default on abnormal cleanup. Two more
+red-first tests now cover clearing ownership on click/cancel and explicit
+diagnostic incompleteness when original heartbeat collection has not finished.

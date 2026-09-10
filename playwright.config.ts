@@ -28,7 +28,13 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: '**/visual/**',
+      testIgnore: ['**/visual/**', '**/electron/**'],
+    },
+    {
+      name: 'electron-controls',
+      testMatch: '**/electron/**/*.spec.ts',
+      workers: 1,
+      retries: 0,
     },
     {
       name: 'visual',
