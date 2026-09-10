@@ -52,9 +52,13 @@ head.
 
 ## Deep-audit finding disposition
 
-Repair Train A is active from fetched master `083f5047`; AUD-13/02/03 freshly
-reproduced and repairs are undergoing final source/native/review gates on
-`codex/astra-repair-train-a`. The [repair record](findings/repair-train-a.md)
+Repair Train A is ready for review in PR #17 from fetched master `083f5047`;
+AUD-13/02/03 have fresh red/green source, native and rendered proof. Four
+independent application reviews clear `cb929bb8`, and cumulative review clears
+proof-only `5cd9acbe`. Matching Linux CI `34478455858` passed with inspected
+source/package/archive receipts. DON-254 retains the separate soak's unexplained
+466.7 ms renderer maximum; no universal sub-200 or release claim is made.
+The [repair record](findings/repair-train-a.md)
 holds before/after evidence, accepted review repairs and rejected runs. Existing
 DON-267/DON-269 own the work; DON-254 retains final-candidate qualification.
 WAR-02A and every other train remain separate. These rows are not closed by
@@ -64,9 +68,9 @@ implementation alone.
 | --- | --- | --- | --- | --- |
 | `AUD-07` hidden evidence remains selectable | P2 | **Implemented in PR #15; awaiting merge** | DON-215 / Team Feedback Batch 2; fix `42f9f305`, integrated executable `e60dc43e` | Required hit-test visibility and per-object replay limitations; red/green, rendered interaction and bounded review proof in [batch evidence](../ui-feedback-batch-2-evidence.md); final Linux CI `34462624720` passed |
 | `AUD-14` failed history retrieval coexists with “All mission history shown” | P2 | **Implemented in PR #15; awaiting merge** | DON-215 / Team Feedback Batch 2; fix `42f9f305`, integrated executable `e60dc43e`; authorized durable request-target extension | Structured completeness survives empty failures, deselection, pause and restart; red/green, packaged restart/pause and bounded review proof in [batch evidence](../ui-feedback-batch-2-evidence.md); final Linux CI `34462624720` passed |
-| `AUD-13` overlapping reloads can stop tracking while Live remains shown | P1 | **Repair train A — tracking safety and liveness** | `DON-267` / `DON-254`; start after the active team batch if its runtime/visibility work overlaps; feed and sharpen `WAR-06` rather than waiting for every WAR audit | Native loopback red/green interleaving, current-position continuity/status truth, targeted packaged proof, concurrency review |
-| `AUD-02` out-and-back route falsely appears stationary | P2 | **Repair train A** | `DON-269`; join `TRK-004` / `WAR-06` and preserve the team-confirmed 20-minute rule | Counterexample regression, accuracy/jitter controls, rendered warning clear/raise proof |
-| `AUD-03` stationary projection broadly rescans mission history | P1 | **Repair train A** | `DON-269` / `DON-254`; same stationary/current-position seam and release-blocking scale issue | Documented 100-device workload, operation bound and renderer frame maximum below the hard 200 ms gate |
+| `AUD-13` overlapping reloads can stop tracking while Live remains shown | P1 | **PR #17 ready for review; awaiting merge** | `DON-267` / `DON-254`; feed `WAR-06`; application `cb929bb8` | Native loopback red/green, current continuity/status, accepted-fix SQLite custody and concurrency review pass; matching Linux CI passes. [Train A](findings/repair-train-a.md) |
+| `AUD-02` out-and-back route falsely appears stationary | P2 | **PR #17 ready for review; awaiting merge** | `DON-269`; `TRK-004` / `WAR-06`; twenty-minute rule retained | Counterexample, accuracy/jitter, acknowledgement and rendered clear/new-episode proof pass; independent review clear. [Train A](findings/repair-train-a.md) |
+| `AUD-03` stationary projection broadly rescans mission history | P1 | **PR #17 ready for review; awaiting merge** | `DON-269` / `DON-254`; final qualification remains separate | Real interleaved 100×5,000 accumulator operation bound passes; final guarded incremental renderer maximum 82.4 ms <200. Cold-load and broader soak outliers remain outside this proof. [Train A](findings/repair-train-a.md) |
 | `AUD-01` legal GPX extension fields overwrite canonical evidence/add a coordinate | P1 | **Repair train B — GPX evidence fidelity and lifecycle** | `DON-274` / `DON-254`; start after Team Feedback Batch 2 because Review/replay presentation is changing | XSD-valid source-to-SQLite-to-replay identity test; no invented coordinate/time/elevation; native/package boundary proof |
 | `AUD-10` native GPX parser drops CDATA values | P2 | **Repair train B** | `DON-274`; same parser/source-fidelity contract as `AUD-01` | Browser/native parser parity and exact persisted evidence regression |
 | `AUD-05` ending an outing during successful GPX import leaves stale importing UI | P2 | **Repair train B** | `DON-274` / `DON-270`; same import receipt/lifecycle settlement boundary | Deterministic import/outing interleaving, truthful completion state, native SQLite proof |

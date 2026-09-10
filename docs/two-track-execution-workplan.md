@@ -163,11 +163,16 @@ ship or ask testers for whole Electron profile zips.
 
 ### Repair Train A — tracking safety and liveness (2026-09-10)
 
-Active on `codex/astra-repair-train-a` from fetched `083f5047`; exactly
-AUD-13/02/03 under DON-267/DON-269 with DON-254 qualification. Reproduce
-native overlapping reloads and the stationary route/100×5,000 failures,
-repair with immutable evidence and current-position priority, then run
-focused/source/browser/native checks and independent exact-head reviews.
+Implemented in [PR #17](https://github.com/donal0c/sartracker-web/pull/17) on
+`codex/astra-repair-train-a` from fetched `083f5047`; exactly AUD-13/02/03
+under DON-267/DON-269 with DON-254 qualification. Fresh native reload,
+stationary-route and real 100×5,000 counterexamples have red/green proof.
+The full source cycle, browser/native checks and four independent application
+reviews pass on `cb929bb8`; tightened renderer measurement and cumulative
+recheck pass on proof-only `5cd9acbe`. Linux CI `34478455858` passed on matching
+application inputs; downloaded source/package/archive receipts were checked.
+PR #17 is ready for review; await Donal's merge decision. DON-254 retains the
+separate soak's unexplained 466.7 ms renderer maximum and final qualification.
 The [evidence and review ledger](assurance/findings/repair-train-a.md) records
 accepted findings, failed attempts and proof limits. WAR-02A stays separate.
 No merge, release, deployment or new team questions are authorized.

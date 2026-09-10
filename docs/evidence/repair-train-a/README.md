@@ -28,6 +28,8 @@ review dispositions, source identity and proof limits.
   run remains `renderer-callback-before-coverage-guard.json`.
 - PNGs: actual rendered warning clear/new episode and reconnect Last known state.
 - Final source/browser/lint logs: command results; trailing blank lines removed.
+- [Linux CI receipt](linux-ci-receipt.md): clean application-head source/package
+  binding, archive hard gates, tracking truth and retained renderer outliers.
 
 These synthetic local checks do not establish live-provider, field, Windows,
 Linux, signed-distribution or frozen release-candidate acceptance. Normal Linux

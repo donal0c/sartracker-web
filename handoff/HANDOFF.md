@@ -4,15 +4,22 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **Repair Train A is active** on `codex/astra-repair-train-a`, fetched base
+- **Repair Train A is ready for review** on `codex/astra-repair-train-a`, fetched base
   `083f5047`. AUD-13/02/03 repaired; final local source is 416 files / 4,285
   tests, lint/build, two browser flows, packaged reconnect/custody and 100×5,000
-  renderer proof (maximum 67.4 ms, strict <200 ms). [PR #17](https://github.com/donal0c/sartracker-web/pull/17)
-  is draft. A-R9 retired-warning review repair and packaged proof pass; final
-  exact-head review/CI pending. Earlier CI was cancelled for that source change.
+  renderer proof (final guarded maximum 82.4 ms, strict <200 ms; earlier
+  conservative run 98.8 ms). [PR #17](https://github.com/donal0c/sartracker-web/pull/17)
+  contains A-R9 retired-warning repair and packaged proof; four independent
+  application reviews clear `cb929bb8`; Linux CI `34478455858` passed on
+  that application head. Proof-only `5cd9acbe` also passes cumulative review and
+  tightens frame measurement; application/build/test inputs are unchanged.
+  Downloaded package/source/archive receipts match; archive current maximum
+  135 ms and frames 77.9 ms. Separate soak renderer maximum 466.7 ms remains
+  unexplained DON-254 qualification evidence, not a strict-200 success.
   Details and retained failures:
   [Train A](../docs/assurance/findings/repair-train-a.md). DON-267/DON-269 own
-  repair; DON-254 remains qualification. No merge/release authority.
+  repair in review; DON-254 remains qualification. Await Donal's review/merge
+  decision. No merge/release authority.
 
 - [PR #15](https://github.com/donal0c/sartracker-web/pull/15), Team Feedback
   Batch 2 (DON-215), merged at current master `083f5047` on 2026-09-10.

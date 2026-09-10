@@ -165,7 +165,7 @@ six anomalies are recorded with healthy evidence state. Replacement render was
 `retained-rejection.png`. This targets A-R9; unchanged stationary source/test
 blobs retain their earlier renderer/browser proof. The final A-R9 source cycle
 passes **416 files / 4,285 tests** in 462.33 s; lint and package build pass.
-Four exact-commit reviews clear the updated PR head; normal Linux CI is running.
+Four exact-commit reviews clear the application head; normal Linux CI passed.
 
 ## Final independent review
 
@@ -182,7 +182,15 @@ Git blobs match the A-R9 package binding. No remaining accepted P1/P2.
 
 Review is separate from merge, release and field acceptance. Linux CI
 [`34478455858`](https://github.com/donal0c/sartracker-web/actions/runs/34478455858)
-is the pending clean-source Linux package/qualification gate.
+passed the clean-source Linux package/qualification gates. The downloaded
+[CI receipt](../../evidence/repair-train-a/linux-ci-receipt.md) records checked
+source/tree/ASAR/executable bindings, native SQLite, exact 8,664-position custody,
+restart/privacy/teardown and actual AppImage launch. Archive current maximum was
+135 ms and renderer maximum 77.9 ms, both strictly below 200 ms. The separate
+soak's 466.7 ms renderer maximum and 204.68 ms external-action maximum remain
+unexplained DON-254 qualification observations; its existing 1,000 ms renderer
+freeze gate does not establish strict-200 compliance. Independent cumulative
+evidence review found no new scoped Train A blocker and required this caveat.
 
 The later A-E1 proof-only commit changes the standalone renderer probe and
 evidence/docs. `electron-builder.json` packages only `dist`, `electron`, `shared`
@@ -192,7 +200,11 @@ source-test, dependency, build and CI workflow files match `cb929bb8`. Per
 the changed probe was rerun directly and linted; the matching Linux run is
 preserved rather than restarted for an unrelated gate. Stationary measurement
 review clears the callback clocks, preceding-frame inclusion and post-operation
-coverage guard. Final cumulative verification of the evidence commit follows.
+coverage guard. Final cumulative review also clears exact proof head
+`5cd9acbee416300341cff1a88bd27cf2415a4f90`: all five receipt maxima were
+recomputed, the post-operation coverage is present, and application/test/build
+inputs are unchanged from `cb929bb8`. No new P1/P2 was found. This evidence
+head has not been freshly CI-tested; the matching application run is retained.
 
 ## Repeat the bounded proofs
 
