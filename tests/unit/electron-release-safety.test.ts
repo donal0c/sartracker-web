@@ -92,6 +92,12 @@ describe('Electron release workflow safety [DON-260]', () => {
   const workflowSource = readFileSync(workflowPath, 'utf8')
   const workflow = load(workflowSource) as Workflow
 
+  it('requires the package receipt independently of other uploaded evidence [DON-146]', () => {
+    const receipt = selectStep(workflow.jobs['bundle-linux'], 'Upload package safety receipt')
+    expect(receipt.with?.path).toBe('tmp/electron-validation-evidence/package-safety.json')
+    expect(receipt.with?.['if-no-files-found']).toBe('error')
+  })
+
   it('pins every build and release checkout to the commit resolved by gates', () => {
     const gates = workflow.jobs.gates
     expect(gates.outputs?.commit).toBe('${{ steps.resolve_tag.outputs.commit }}')

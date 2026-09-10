@@ -490,6 +490,12 @@
 
           <h3>Linux (primary distribution target)</h3>
           <p>
+            <strong>Release hold:</strong> the AppImage builder remediation is a packaging control,
+            not approval of a new beta. Previously downloaded installers are unchanged. The runtime
+            support, final package qualification and field-admission gates still apply; use only a
+            release explicitly approved by the maintainer.
+          </p>
+          <p>
             Two artifacts are published per CI Linux beta: a portable
             <code>.AppImage</code> and a Debian <code>.deb</code> package, both x86_64. Current Electron beta
             artifacts are named <code>sartracker-electron-validation_&lt;version&gt;_linux_x86_64.AppImage</code> and

@@ -1,0 +1,307 @@
+{
+  "schema": "sartracker-linux-package-safety-v1",
+  "sourceHead": "18c0b4dcc996d896b0f7a3b0a2bd92127b7ee88c",
+  "sourceTree": "254083e14fe82cb64344745d2c4250ef0466a8b8",
+  "sourceDirty": true,
+  "artifactSourceHead": "18c0b4dcc996d896b0f7a3b0a2bd92127b7ee88c",
+  "platform": "Local Docker Linux x64 emulation on Apple Silicon, Debian 12 / Node 22.23.2; not native Ubuntu timing proof",
+  "installers": [
+    {
+      "name": "sartracker-electron-validation_0.1.0-beta.12.11_linux_x86_64.AppImage",
+      "sha256": "354a8179f061437b8bb33ce4f66018fd07ca80408992b6b04ffc689347505b0d"
+    },
+    {
+      "name": "sartracker-electron-validation_0.1.0-beta.12.11_linux_amd64.deb",
+      "sha256": "d0bbdc4af3f3cabf33ed11073133ecd4db3d8ffda55fcfd26c653290dbdebaf3"
+    }
+  ],
+  "lockSha256": "fc6b0425594544c330251267a0919af601c523fc1ba7f6af7b4b25f23c6f39fc",
+  "launcher": {
+    "sha256": "b9c8621d7225a3e74e676165ceae5093b345ccd7dc1e35a389699c51f11d829d",
+    "cases": [
+      "unset",
+      "empty",
+      "populated"
+    ]
+  },
+  "squashfsOffset": 188392,
+  "native": {
+    "electron": "40.10.0",
+    "abi": "143",
+    "arch": "x64",
+    "sqlite": "3.53.1",
+    "integrity": "ok",
+    "value": 42
+  },
+  "inventory": [
+    {
+      "format": "appimage",
+      "asarSha256": "4b7a915f8d3940731bf1bfeb57c0d7421af407fc93d072dc958f94d5915c503a",
+      "files": 4049,
+      "packages": 234,
+      "nativeModules": [
+        {
+          "boundary": "physical",
+          "path": "resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+          "size": 2163280,
+          "sha256": "04b505e8f0bd12356c17c878c05fce8154acae95394ce82e7f71c4028cc9a66f",
+          "executableBits": 73
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/test_extension.node",
+          "size": 15192,
+          "sha256": "a82cdada86bf75e951584f67947c43634a041105eb5924028c4578bae4bbb8c8",
+          "executableBits": 73
+        },
+        {
+          "boundary": "asar",
+          "path": "node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+          "size": 2163280,
+          "sha256": "04b505e8f0bd12356c17c878c05fce8154acae95394ce82e7f71c4028cc9a66f"
+        },
+        {
+          "boundary": "asar",
+          "path": "node_modules/better-sqlite3/build/Release/test_extension.node",
+          "size": 15192,
+          "sha256": "a82cdada86bf75e951584f67947c43634a041105eb5924028c4578bae4bbb8c8"
+        }
+      ],
+      "extraResources": [
+        {
+          "boundary": "physical",
+          "path": "resources/field-tools/sartracker-linux-hang-collector-lib.cjs",
+          "size": 4429,
+          "sha256": "1b1a0b12e75fa4cff2e0ae88a2e74fc6cf27f30a6bc4f4d2872fe5df716dd6d1",
+          "executableBits": 0
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/field-tools/sartracker-linux-hang-collector.cjs",
+          "size": 17589,
+          "sha256": "c13278c50164ac63baae791762dbedf817fd9dafee7783d8ec633ec017661807",
+          "executableBits": 73
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/field-tools/sartracker-linux-hang-collector.sh",
+          "size": 897,
+          "sha256": "e29244fc6160e8c739263b625c2f6ef311be164ef803d50ea5cbfb27f2585bc2",
+          "executableBits": 73
+        }
+      ],
+      "inventorySha256": "3dffac97a20295ca4d2365d4d79ee63a0bbe8b9d8b2010c884904e4d9ee82cdc"
+    },
+    {
+      "format": "deb",
+      "asarSha256": "4b7a915f8d3940731bf1bfeb57c0d7421af407fc93d072dc958f94d5915c503a",
+      "files": 4034,
+      "packages": 234,
+      "nativeModules": [
+        {
+          "boundary": "physical",
+          "path": "resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+          "size": 2163280,
+          "sha256": "04b505e8f0bd12356c17c878c05fce8154acae95394ce82e7f71c4028cc9a66f",
+          "executableBits": 73
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/test_extension.node",
+          "size": 15192,
+          "sha256": "a82cdada86bf75e951584f67947c43634a041105eb5924028c4578bae4bbb8c8",
+          "executableBits": 73
+        },
+        {
+          "boundary": "asar",
+          "path": "node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+          "size": 2163280,
+          "sha256": "04b505e8f0bd12356c17c878c05fce8154acae95394ce82e7f71c4028cc9a66f"
+        },
+        {
+          "boundary": "asar",
+          "path": "node_modules/better-sqlite3/build/Release/test_extension.node",
+          "size": 15192,
+          "sha256": "a82cdada86bf75e951584f67947c43634a041105eb5924028c4578bae4bbb8c8"
+        }
+      ],
+      "extraResources": [
+        {
+          "boundary": "physical",
+          "path": "resources/apparmor-profile",
+          "size": 270,
+          "sha256": "3cb4bc30ae9b0875a8250037791995138f3e0e01629811c0e94958dd6a83dcb8",
+          "executableBits": 0
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/field-tools/sartracker-linux-hang-collector-lib.cjs",
+          "size": 4429,
+          "sha256": "1b1a0b12e75fa4cff2e0ae88a2e74fc6cf27f30a6bc4f4d2872fe5df716dd6d1",
+          "executableBits": 0
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/field-tools/sartracker-linux-hang-collector.cjs",
+          "size": 17589,
+          "sha256": "c13278c50164ac63baae791762dbedf817fd9dafee7783d8ec633ec017661807",
+          "executableBits": 73
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/field-tools/sartracker-linux-hang-collector.sh",
+          "size": 897,
+          "sha256": "e29244fc6160e8c739263b625c2f6ef311be164ef803d50ea5cbfb27f2585bc2",
+          "executableBits": 73
+        }
+      ],
+      "inventorySha256": "de1d88f03b7da142e06ff4e8c76403a3ae99637d0c4ebfd58e635292e158479d"
+    },
+    {
+      "format": "linux-unpacked",
+      "asarSha256": "4b7a915f8d3940731bf1bfeb57c0d7421af407fc93d072dc958f94d5915c503a",
+      "files": 4034,
+      "packages": 234,
+      "nativeModules": [
+        {
+          "boundary": "physical",
+          "path": "resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+          "size": 2163280,
+          "sha256": "04b505e8f0bd12356c17c878c05fce8154acae95394ce82e7f71c4028cc9a66f",
+          "executableBits": 73
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/test_extension.node",
+          "size": 15192,
+          "sha256": "a82cdada86bf75e951584f67947c43634a041105eb5924028c4578bae4bbb8c8",
+          "executableBits": 73
+        },
+        {
+          "boundary": "asar",
+          "path": "node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+          "size": 2163280,
+          "sha256": "04b505e8f0bd12356c17c878c05fce8154acae95394ce82e7f71c4028cc9a66f"
+        },
+        {
+          "boundary": "asar",
+          "path": "node_modules/better-sqlite3/build/Release/test_extension.node",
+          "size": 15192,
+          "sha256": "a82cdada86bf75e951584f67947c43634a041105eb5924028c4578bae4bbb8c8"
+        }
+      ],
+      "extraResources": [
+        {
+          "boundary": "physical",
+          "path": "resources/apparmor-profile",
+          "size": 270,
+          "sha256": "3cb4bc30ae9b0875a8250037791995138f3e0e01629811c0e94958dd6a83dcb8",
+          "executableBits": 0
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/field-tools/sartracker-linux-hang-collector-lib.cjs",
+          "size": 4429,
+          "sha256": "1b1a0b12e75fa4cff2e0ae88a2e74fc6cf27f30a6bc4f4d2872fe5df716dd6d1",
+          "executableBits": 0
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/field-tools/sartracker-linux-hang-collector.cjs",
+          "size": 17589,
+          "sha256": "c13278c50164ac63baae791762dbedf817fd9dafee7783d8ec633ec017661807",
+          "executableBits": 73
+        },
+        {
+          "boundary": "physical",
+          "path": "resources/field-tools/sartracker-linux-hang-collector.sh",
+          "size": 897,
+          "sha256": "e29244fc6160e8c739263b625c2f6ef311be164ef803d50ea5cbfb27f2585bc2",
+          "executableBits": 73
+        }
+      ],
+      "inventorySha256": "65e5feb7ab36c0107b1641513ea593f6c9a49b231cedb92fe0b5345684f77e06"
+    }
+  ],
+  "debFiles": 138,
+  "debControl": [
+    {
+      "boundary": "physical",
+      "path": "control",
+      "size": 438,
+      "sha256": "3a2eaa0418f7193cecbf807c5576c105b69f5ac311d2e2119ac8808da567e8b7",
+      "executableBits": 0
+    },
+    {
+      "boundary": "physical",
+      "path": "md5sums",
+      "size": 15391,
+      "sha256": "6a2e8424ce4f16c303c409874a1c74aad3e798cee89aa65d75992a0ae07cb4bf",
+      "executableBits": 0
+    },
+    {
+      "boundary": "physical",
+      "path": "postinst",
+      "size": 3128,
+      "sha256": "c5976ad5f3354a5f395e7ea412112953d697f38e6df7bae41b99ec209c271fa9",
+      "executableBits": 73
+    },
+    {
+      "boundary": "physical",
+      "path": "postrm",
+      "size": 1154,
+      "sha256": "7b50835fa670abdd137b218259506330e0b59a127766a87e683215ed2b29cecd",
+      "executableBits": 73
+    }
+  ],
+  "launcherLibraries": [
+    {
+      "boundary": "physical",
+      "path": "usr/lib/libXss.so.1",
+      "size": 14488,
+      "sha256": "270fe6e4d430118793d01cac5c6081d0ea9e244cfcf510475bc779bef21b754a",
+      "executableBits": 0
+    },
+    {
+      "boundary": "physical",
+      "path": "usr/lib/libXtst.so.6",
+      "size": 22880,
+      "sha256": "38f9ccb12d2c477aad85db6279afc334d9f250f613884c188ace7232b83e9b68",
+      "executableBits": 0
+    },
+    {
+      "boundary": "physical",
+      "path": "usr/lib/libappindicator.so.1",
+      "size": 52128,
+      "sha256": "033b8803f20b98e8cd56fc8e75e3a71a552f75c0cff9bd0937f3ddd6ee5d2145",
+      "executableBits": 0
+    },
+    {
+      "boundary": "physical",
+      "path": "usr/lib/libgconf-2.so.4",
+      "size": 192296,
+      "sha256": "ba977334112bb81f6457ee4aad833c6d5f1ff731c718073cd50777d613b23185",
+      "executableBits": 0
+    },
+    {
+      "boundary": "physical",
+      "path": "usr/lib/libindicator.so.7",
+      "size": 60648,
+      "sha256": "3b61ae3424c4800975c1806245a2d286f6e1fc49cd9350913075c27a95f3c7a0",
+      "executableBits": 0
+    },
+    {
+      "boundary": "physical",
+      "path": "usr/lib/libnotify.so.4",
+      "size": 31304,
+      "sha256": "8f42294247a886c5a94b2a0ce1c0b65e953616d7efe8da664b3826cdeae47948",
+      "executableBits": 0
+    }
+  ],
+  "limits": "Named private categories/signatures only; no arbitrary embedded-secret clearance. Native probe is synthetic; lifecycle and field qualification are separate.",
+  "retainedFailures": [
+    "Initial AppImage runtime extraction returned ENOEXEC under local emulation; extracted packaged Electron executes. This is not an AppImage launch pass.",
+    "Inspection initially rejected Debian-only AppArmor metadata; regression correction preserved exact Debian metadata comparison.",
+    "Inspector was corrected after artifact construction; sourceDirty=true includes those inspection changes and generated version metadata. Artifact source snapshot is separately identified."
+  ]
+}

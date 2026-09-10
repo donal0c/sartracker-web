@@ -35,30 +35,27 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   (173 ms), which does not establish hosted x64 correctness or causality.
   The owned `sar-batch2-linux` container is stopped; receipts are in
   `tmp/batch2-linux-source` and the [evidence](../docs/ui-feedback-batch-2-evidence.md).
-  No blind CI reruns, merge, release or deployment.
+  Current master `35cff87d` (merged PR #14) is integrated for merge readiness.
+  Only this handoff conflicted; source behavior is unchanged by the integration.
+  Combined source passes 415 files / 4,271 tests, lint and production build.
+  Fresh exact-head Linux package CI is required before removing draft status.
+  Final integration results are recorded on PR #15 and DON-215; no merge or release.
 
-- [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, now
-  integrates master `9c73c62d` at Donal's request. Its audit/package inventory
-  remains pinned to `3cdf555d`; newer integration CI is recorded on the PR.
-  IPC-003/macOS corrections and all three resolved review threads remain intact.
-  [Report](../docs/assurance/findings/WAR-04B.md) retains evidence limits;
-  release HOLD remains. Only handoff conflicted; product code matches upstream.
-  CI rejected restore/current continuity at 226 ms and initial frames at
-  219.5 ms with profiling disabled. Paired current-fix diagnostics are retained.
-  A controlled cold-Mesa-cache reproduction supports CPU page rasterization
-  for the Linux smoke: full local lifecycle passes at 16 and 4 CPUs, unchanged
-  200 ms gates. The CI argument regression is red/green; 216 affected tests
-  pass. All 400 source files / 4,157 tests pass, with five loopback-server
-  suites rerun outside the local sandbox; lint/build and packaged visuals pass.
-  An unrelated Chrome APT index mismatch was fixed by selecting Ubuntu's main
-  package sources, retaining integrity checks. Normal Linux CI `34386382652`
-  passes on `03b09a7e`: 400 files / 4,158 tests and all packaged gates.
-  Downloaded receipt independently validates; frame maximum 117.5 ms,
-  current-fix maximum 172 ms. PR is open, merge-ready and not merged.
-  This documentation closeout reuses that byte-identical executable/test/
-  workflow evidence; no new runtime run is claimed. See the
-  [investigation](../docs/archive-ci-rendering-investigation.md); historical
-  failures remain recorded and release HOLD is unchanged.
+
+- WAR-11A merged as [PR #14](https://github.com/donal0c/sartracker-web/pull/14)
+  at `35cff87d`; final Linux CI `34413097593` passed. Builder 26.16.1 adds
+  installer/ASAR inventory, AppRun policy, native SQLite and clean-source checks.
+  Electron/application runtime and the 200 ms gates remain unchanged.
+  [WAR-11A](../docs/assurance/findings/WAR-11A.md) retains its evidence ledger.
+  DON-254/DON-255 still own final qualification/publication.
+
+- [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, merged
+  at `c51e4b35`. Final executable evidence is CI `34386382652` on `03b09a7e`:
+  400 files / 4,158 tests and all packaged gates; downloaded receipt validates.
+  Cold-Mesa/source corrections remain. Historical 203/226 ms current-fix and
+  219.5 ms frame failures remain in the [report](../docs/assurance/findings/WAR-04B.md)
+  and [investigation](../docs/archive-ci-rendering-investigation.md).
+
 
 - DON-256's first twelve-item Sar_4 UI batch merged as
   [PR #11](https://github.com/donal0c/sartracker-web/pull/11) at `9c73c62d`.
@@ -75,8 +72,9 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   fixes or explicit dispositions in the [complete ledger](../docs/breadcrumb-pr6-complete-review-ledger.md).
 - Documentation cleanup records the final testing approach below. Start new work
   from current `master`; the archive PR does not need another review cycle.
-- Next programme steps: WAR-04B's narrow merged-head refresh, then BCP-17 final
-  candidate qualification before DON-255 publication. Use the
+- Next programme steps: finish PR #15 integration, independently qualify native
+  dependency/runtime upgrades, then BCP-17 final candidate qualification before
+  DON-255 publication. Use the
   [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear
   issues for scope. Merge is complete; release/field acceptance is not established.
   DON-247 and DON-264 remain separate reliability work.

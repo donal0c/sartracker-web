@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
-import { rmSync } from 'node:fs'
+import { rmSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { capturePackageSource } from '../build/linux-package-source.js'
+import { loadPackageToolchain } from '../build/linux-package-toolchain.js'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rebuildMarkerPaths = [
@@ -39,12 +41,27 @@ class CommandFailure extends Error {
 }
 
 let exitCode = 0
+const inspectLinux = process.argv.includes('--linux') && !process.argv.includes('--dir')
+if (inspectLinux && (process.platform !== 'linux' || process.arch !== 'x64')) {
+  console.error('Linux installer qualification requires a Linux x64 host; use the Linux CI lane. No package build was started.')
+  process.exit(1)
+}
 
 try {
+  let sourceBefore
+  if (inspectLinux) {
+    rmSync(path.join(projectRoot, 'tmp/electron-validation-evidence/package-safety.json'), { force: true })
+    loadPackageToolchain(JSON.parse(readFileSync(path.join(projectRoot, 'package.json'), 'utf8')))
+    sourceBefore = capturePackageSource(projectRoot)
+  }
   runRequired('npm', ['run', 'build'])
   removeElectronRebuildMarkers()
   runRequired('npm', ['exec', '--', 'electron-builder', '--config', 'electron-builder.json', ...process.argv.slice(2)])
+  if (inspectLinux) {
+    runRequired(process.execPath, ['scripts/verify-linux-package.mjs', '--source-before', JSON.stringify(sourceBefore)])
+  }
 } catch (error) {
+  console.error(`Electron packaging failed: ${error instanceof Error ? error.message : String(error)}`)
   exitCode = error instanceof CommandFailure ? error.exitCode : 1
 } finally {
   const restore = runOptional('npm', ['rebuild', 'better-sqlite3'])

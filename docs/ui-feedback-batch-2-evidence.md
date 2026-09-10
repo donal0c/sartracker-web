@@ -233,6 +233,18 @@ was made. PR remains draft, with no merge/release/field acceptance claimed.
 The final documentation-only closeout reuses the verified executable/test/workflow
 tree; it does not claim a new packaged or hosted run.
 
+Merge-readiness integration (2026-09-10): master `35cff87d` brings merged PR #14's
+builder 26.16.1 and actual Linux installer inspection. Only the handoff conflicted;
+application source is unchanged. After installing the combined lockfile, the full
+serial source suite passes 415 files / 4,271 tests (463.64 s), lint and production
+build pass, and bundle budgets pass. Logs: `/tmp/pr15-integration-source.log`,
+`/tmp/pr15-integration-lint.log`, `/tmp/pr15-integration-build.log`. Previous browser
+and bounded source reviews apply to unchanged application behavior. The combined
+Linux packaging boundary requires a new exact-head CI run; its final run, source
+binding and receipt result are recorded on PR #15 and DON-215 before draft removal.
+Earlier rejected timing measurements remain unexplained, with the 200 ms gate
+unchanged. Merge readiness does not establish release or field acceptance.
+
 The operator recheck also found stale metadata-read rejection and mixed tile
 recovery cases. Three additional red/green regressions now cover them (13 tests
 passed in `/tmp/pr15-reviewer-followup-green.log`). Basemap warnings are keyed to
