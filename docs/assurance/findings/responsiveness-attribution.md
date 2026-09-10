@@ -72,6 +72,15 @@ the linked PR bodies/comments and DON-254's Reliability & Regression Ledger.
 Last known good and first known bad **for a causal defect** remain unknown;
 individual passing runs are not a demonstrated stable baseline.
 
+The dispatch's approximate 59.5/65.9/101.5 ms comparison values must not be
+pooled. The retained 59.539734 ms value is PR #17's archive **create-phase
+watchdog**; 65.979697 ms is an earlier `cb6e28a2` archive create watchdog in a
+run that later failed 207 ms current-fix continuity. PR #17's 101.541162 ms is
+the **tracking-soak inspector RTT**. These are different measurement paths
+and, in the 65.9 ms case, not an overall passing run. References:
+`docs/evidence/repair-train-a/github-followup/linux-ci-attempt-2-inspection.json`
+and `docs/evidence/pr6/review-remediation-cb6e28a2-linux-failure.json`.
+
 ## Diagnostic design and proof boundary
 
 The same self-contained timer observer runs in controller, packaged main and
@@ -109,6 +118,15 @@ when a host/controller explanation is attached.
 
 ## Controlled comparison and decision
 
+**Coverage correction (ATTR-R06):** the initial diagnostic implementation
+awaited setup before starting the original main RTT probe. Review found a
+possible missed interval, particularly on restored tracking. The main probe
+now starts at its original position immediately after renderer readiness,
+before diagnostic setup; startup failure closes the inspector and drains the
+probe with bounded cleanup. A wiring regression failed before this correction.
+The original comparison below remains exploratory evidence and does not
+verify the corrected startup interval. A fresh same-harness comparison completed below.
+
 The planned A–B–B–A packaged comparison completed with the same diagnostic
 harness, fresh profiles, unchanged CI workload and existing verdict limits.
 A is master `302bdd04`; B is PR #19 `769669ba`. Every run preserved exact
@@ -129,6 +147,21 @@ workloads were not stopped. Fixture dates are freshly anchored per run, while
 workload shape/counts are identical. This is a bias-conscious local comparison,
 not a controlled reproduction of the hosted environment or statistical proof
 of equivalence. There is no demonstrated PR19 slowdown in these observations.
+
+The corrected A–B–B–A comparison reused the same immutable packages with no
+task-owned test/build work concurrent. All four original verdicts, exact
+8,664-position truth, restart and mandatory diagnostic channels passed:
+
+| Corrected run | Inspector RTT max | Independent main timer max | Cadenced frame max | Independent renderer timer max |
+| --- | --- | --- | --- | --- |
+| A1 | 24.89 ms | 156.59 ms | 82.8 ms | 83.9 ms |
+| B1 | 16.16 ms | 148.72 ms | 66.9 ms | 73.4 ms |
+| B2 | 11.51 ms | 160.03 ms | 67.5 ms | 81.8 ms |
+| A2 | 10.77 ms | 161.11 ms | 67.0 ms | 83.8 ms |
+
+[Corrected raw evidence](../../evidence/responsiveness-attribution/corrected-abba.json)
+is the applicable local comparison for the final harness. The same platform
+and fixture-clock limitations apply; this still does not explain Linux CI.
 
 **PR #19 decision: remain draft; retain failed run 34515489481.** GPX-specific
 causation is unsupported, and the evidence cannot exonerate the whole app or
@@ -153,7 +186,12 @@ the operator manual therefore needs no change.
 Independent review findings ATTR-R01–R05 led to preserving the original frame
 measurement window, explicit retained-gate assertions, eviction/completeness
 validation, and bounded remote cleanup after partial installation/collection
-failure. Final exact-head review remains in progress.
+failure. ATTR-R06's additional wiring regression failed before correction,
+then 55 focused tests and lint passed; corrected packaged comparison is above.
+CI runs `34523115131` and `34523403661` were superseded by fixture and startup
+coverage corrections and are not successful qualification evidence.
+Both prior independent reviews are clean; exact identities and charters
+are recorded in [the review receipt](../../evidence/responsiveness-attribution/reviews.json).
 
 Both independent reviews cleared executable `798a6fd8` against `302bdd04`:
 diagnostic safety/cleanup and evidence/causality. A supplementary delayed
@@ -164,8 +202,9 @@ recorded 494.27 ms inspector RTT and 510.45 ms independent main timer; both
 Electron control tests then passed again. This supports detection of that
 injected main stall, not a cause for historical CI. No application/package/
 soak-harness bytes changed in this fixture-only follow-up; earlier packaged
-comparison evidence remains applicable. Targeted review is required for the
-fixture follow-up, without restarting unrelated reviews or local suites.
+comparison evidence remains applicable. Both targeted reviewers cleared
+`3fe6928adab456d75e206c44bb08de8bec7167a7`, retaining their prior unchanged-harness
+reviews without restarting unrelated reviews or local suites.
 
 Master was refreshed again after implementation and remains `302bdd04`, the
 branch's exact base; no upstream rebase delta exists. Active PR #19 and PR #20

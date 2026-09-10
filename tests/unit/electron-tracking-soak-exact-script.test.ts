@@ -6,6 +6,14 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
   const source = readFileSync('scripts/electron-tracking-soak.mjs', 'utf8')
   const soakLibSource = readFileSync('build/electron-tracking-soak-lib.js', 'utf8')
 
+  it('starts the original main gate before diagnostic setup and drains it on setup failure [DON-254]', () => {
+    const launch = source.slice(source.indexOf('async function launchPackagedApp('), source.indexOf('/** Records bounded renderer/CDP'))
+    expect(launch.indexOf('startMainHeartbeat(mainInspector, 50)')).toBeLessThan(launch.indexOf('await startResponsivenessAttribution('))
+    const cleanup = launch.slice(launch.indexOf('} catch (error)'))
+    expect(cleanup).toContain('mainHeartbeat?.stop()')
+    expect(cleanup.indexOf('mainInspector?.close()')).toBeLessThan(cleanup.indexOf('mainHeartbeat?.stop()'))
+  })
+
   it('shares one recorded mission-scoped fixture clock with mock and independent oracle', () => {
     expect(source).toContain('createTrackingSoakFixtureClock(')
     expect(source).toContain('baseTimeMs: fixtureClock.baseTimeMs')
