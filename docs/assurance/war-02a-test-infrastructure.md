@@ -110,8 +110,10 @@ These are targeted semantic mutants of current code, not a claim to replay
 every line of an old checkout. Neither edits production files. The source suite
 runs `negative-controls.test.ts`, which invokes the proof driver and requires
 both current controls to pass and both disabled controls to fail. The driver
-uses structured Vitest results and checks the named safety assertion; an import,
-timeout, missing native module or arbitrary test failure is not red proof.
+uses structured Vitest results and checks exactly one named safety assertion.
+The custom reporter also records suite/hook and unhandled error counts; all must
+be zero, with the expected completed-run reason. An import, timeout, missing
+native module, extra cleanup failure or unhandled error is not red proof.
 
 ## Repeatable commands
 
@@ -147,7 +149,20 @@ WAR02A_NEGATIVE_CONTROL=backup-direct-target npm test -- tests/unit/assurance/wa
   generated version metadata was restored to its original blob; there is no
   production diff. A subsequent test indentation change is whitespace only.
   Local logs are in ignored `tmp/war02a/`; these are local source results, not CI
-  or package evidence. Independent exact-head reviews remain pending.
+  or package evidence.
+- Independent architecture review of `de7d15bf` was clean. The determinism/fault
+  review found one P2: the proof gate accepted the named assertion alongside an
+  unrelated failure. Six validator regressions reproduced that false acceptance
+  before correction. The gate now accepts only one exact assertion and explicit
+  zero run-level errors. Eight validator cases and three real child-run fixtures
+  cover intended assertion plus afterEach cleanup, afterAll suite, and unhandled
+  rejection errors. All three prove the intended oracle did fire and the mixed
+  result was nevertheless rejected. Affected recheck passes 9 files / 65 tests,
+  strict helper types, focused lint and script syntax checks. The earlier full
+  422-file source cycle remains evidence for unchanged inputs; the correction
+  changes only proof reporting/validation and adds its regression tests.
+  Final exact-head
+  recheck/cumulative review are recorded on [PR #16](https://github.com/donal0c/sartracker-web/pull/16).
 
 The 24 filesystem cases cover EIO, ENOSPC and injected interruption before/after
 write, file sync, rename and directory sync. The 12 SQLite/mirror cases cover
