@@ -155,6 +155,18 @@ measurement window, explicit retained-gate assertions, eviction/completeness
 validation, and bounded remote cleanup after partial installation/collection
 failure. Final exact-head review remains in progress.
 
+Both independent reviews cleared executable `798a6fd8` against `302bdd04`:
+diagnostic safety/cleanup and evidence/causality. A supplementary delayed
+500 ms main-block probe initially lost its Electron execution context; that
+attempt is rejected, not timing proof. The synthetic fixture now retains its
+BrowserWindow reference across allocation-heavy controls. The repeated probe
+recorded 494.27 ms inspector RTT and 510.45 ms independent main timer; both
+Electron control tests then passed again. This supports detection of that
+injected main stall, not a cause for historical CI. No application/package/
+soak-harness bytes changed in this fixture-only follow-up; earlier packaged
+comparison evidence remains applicable. Targeted review is required for the
+fixture follow-up, without restarting unrelated reviews or local suites.
+
 Master was refreshed again after implementation and remains `302bdd04`, the
 branch's exact base; no upstream rebase delta exists. Active PR #19 and PR #20
 have overlapping pending coordination dispositions. Keep this report isolated
