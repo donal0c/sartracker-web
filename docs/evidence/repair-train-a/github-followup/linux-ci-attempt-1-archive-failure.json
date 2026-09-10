@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "proofKind": "packaged-electron-archive-lifecycle-failure-v1",
+  "source": {
+    "expectedHead": "713461bfa4018f8009e51660618515f78b8e23c0",
+    "headBefore": "713461bfa4018f8009e51660618515f78b8e23c0",
+    "treeBefore": "867d22df5a9e5fceef591e8f472d25d2c1b019cb",
+    "worktreeCleanBefore": true
+  },
+  "run": {
+    "startedAt": "2026-09-10T16:02:01.483Z",
+    "failedAt": "2026-09-10T16:02:20.654Z",
+    "durationMs": 19171,
+    "platform": "linux",
+    "architecture": "x64",
+    "nodeVersion": "v22.23.2",
+    "observedLaunchCount": 1
+  },
+  "failure": {
+    "classification": "external_liveness_gate_failure",
+    "message": "Archive-lifecycle external watchdog recorded an instrumentation failure (current_fix_continuity_gate_breached).",
+    "archiveLifecycleDiagnostics": {
+      "activeLaunchNumber": 1,
+      "activePhase": "restore",
+      "currentFixContinuity": {
+        "auditedAtMs": 1789056140175,
+        "gapMs": 224,
+        "intervalStartedAtMs": 1789056138611,
+        "phase": "restore",
+        "previousObservedAtMs": 1789056139951
+      },
+      "currentFixInterval": {
+        "emittedAtMs": 1789056140155,
+        "gapMs": 224,
+        "phase": "restore",
+        "previousObservedAtMs": 1789056139951,
+        "previousRequestStartedAtMs": 1789056139929,
+        "previousEmittedAtMs": 1789056139929,
+        "observedAtMs": 1789056140175,
+        "requestStartedAtMs": 1789056140155
+      },
+      "currentFixTimeout": null,
+      "errorKinds": [
+        "current_fix_continuity_gate_breached"
+      ],
+      "invalidRendererFrame": null,
+      "operationCount": 1,
+      "operationOverflowCount": 0,
+      "operations": [
+        {
+          "endedAtMs": null,
+          "freshSampleCount": 23,
+          "kind": "review_before_cleanup",
+          "phase": "restore",
+          "phaseSampleCountAtStart": 1,
+          "phaseSampleDelta": 24,
+          "startSourceSequence": 221,
+          "startedAtMs": 1789056138611,
+          "endSourceSequence": null
+        }
+      ],
+      "phaseMetrics": {
+        "cleanup": {
+          "currentFixMaxGapMs": 0,
+          "mainSampleCount": 0,
+          "mainWatchdogMaxGapMs": 0,
+          "rendererFrameMaxGapMs": 0,
+          "rendererFrameSampleCount": 0,
+          "requestToRendererMaxMs": 0,
+          "sampleCount": 0,
+          "sourceToRendererMaxMs": 0
+        },
+        "create": {
+          "currentFixMaxGapMs": 108,
+          "mainSampleCount": 121,
+          "mainWatchdogMaxGapMs": 64.78788599999916,
+          "rendererFrameMaxGapMs": 75.89999999990687,
+          "rendererFrameSampleCount": 129,
+          "requestToRendererMaxMs": 46,
+          "sampleCount": 125,
+          "sourceToRendererMaxMs": 46
+        },
+        "restore": {
+          "currentFixMaxGapMs": 224,
+          "mainSampleCount": 33,
+          "mainWatchdogMaxGapMs": 106.18636400000105,
+          "rendererFrameMaxGapMs": 73.10000000009313,
+          "rendererFrameSampleCount": 34,
+          "requestToRendererMaxMs": 32,
+          "sampleCount": 25,
+          "sourceToRendererMaxMs": 32
+        },
+        "verify": {
+          "currentFixMaxGapMs": 110,
+          "mainSampleCount": 86,
+          "mainWatchdogMaxGapMs": 84.32513699999981,
+          "rendererFrameMaxGapMs": 67,
+          "rendererFrameSampleCount": 88,
+          "requestToRendererMaxMs": 31,
+          "sampleCount": 83,
+          "sourceToRendererMaxMs": 31
+        }
+      },
+      "rendererCdpFailure": null,
+      "rendererCurrentFixMonotonicTail": {
+        "gapMs": 198.4000000001397,
+        "phase": "restore"
+      },
+      "sourceCadence": {
+        "auditedAtMs": 1789056140178,
+        "latestAcknowledgedSequence": 244,
+        "latestEmittedAtMs": 1789056140155,
+        "latestReceivedSequence": 244,
+        "latestRequestAgeMs": 23,
+        "latestRequestStartedAtMs": 1789056140155,
+        "latestSourceAgeMs": 23,
+        "oldestPendingRequestAgeMs": null,
+        "oldestPendingSourceAgeMs": null,
+        "pendingCount": 0
+      }
+    }
+  },
+  "cleanup": {
+    "cleanupFailureCount": 0,
+    "failures": [],
+    "processCleanupCompleted": true,
+    "profileCleanupCompleted": true
+  },
+  "verdict": {
+    "passed": false
+  }
+}

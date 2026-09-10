@@ -1,0 +1,50 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/stationary-attention.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/a881/sartracker-web
+
+ ❯ tests/unit/stationary-attention.test.ts (12 tests | 2 failed) 6ms
+     × does not call an out-and-back route stationary [AUD-02] 3ms
+     × starts a new episode after confirmed movement instead of reviving the old warning [AUD-02] 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/stationary-attention.test.ts > stationary attention policy [DON-269] > does not call an out-and-back route stationary [AUD-02]
+AssertionError: expected 'attention' to be 'none' // Object.is equality
+
+Expected: "none"
+Received: "attention"
+
+ ❯ tests/unit/stationary-attention.test.ts:15:8
+     13|       fix(String(index), index * 5, 52 + metres / 111_195, -9.7, 4))
+     14|     expect(evaluateStationaryAttention(route, DEFAULT_STATIONARY_ATTEN…
+     15|       .toBe('none')
+       |        ^
+     16|   })
+     17|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/stationary-attention.test.ts > stationary attention policy [DON-269] > starts a new episode after confirmed movement instead of reviving the old warning [AUD-02]
+AssertionError: expected 'attention' to be 'none' // Object.is equality
+
+Expected: "none"
+Received: "attention"
+
+ ❯ tests/unit/stationary-attention.test.ts:22:8
+     20|       .map(([minutes, metres], index) => fix(String(index), minutes!, …
+     21|     expect(evaluateStationaryAttention(route.slice(0, -1), DEFAULT_STA…
+     22|       .toBe('none')
+       |        ^
+     23|     expect(evaluateStationaryAttention(route, DEFAULT_STATIONARY_ATTEN…
+     24|       .toMatchObject({ state: 'attention', sinceTimestamp: route[5]!.t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 10 passed (12)
+   Start at  12:35:43
+   Duration  629ms (transform 21ms, setup 0ms, import 108ms, tests 6ms, environment 434ms)

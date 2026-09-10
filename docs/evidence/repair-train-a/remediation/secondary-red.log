@@ -1,0 +1,82 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/a881/sartracker-web
+
+ ❯ tests/unit/deferred-mission-evidence.test.ts (15 tests | 1 failed | 14 skipped) 5ms
+     × does not allow an unreserved enqueue to steal transport capacity [A-R14] 4ms
+ ❯ tests/unit/stationary-attention.test.ts (14 tests | 1 failed | 13 skipped) 7ms
+     × preserves the full elapsed episode through one ordinary uncorroborated noise return [A-R15] 6ms
+ ❯ tests/unit/start-app-runtime.test.ts (22 tests | 1 failed | 21 skipped) 7ms
+     × keeps the working autosave service after tracking reconfiguration throws [A-R13] 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/deferred-mission-evidence.test.ts > deferred mission evidence queue [DON-276] > does not allow an unreserved enqueue to steal transport capacity [A-R14]
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/unit/deferred-mission-evidence.test.ts:26:34
+     24|     const release = await queue.reserveCapacity()
+     25|     queue.enqueue('mission-1', 'unreserved')
+     26|     expect(queue.pendingCount()).toBe(0)
+       |                                  ^
+     27|     // Conversion from reservation to synchronous admission cannot yie…
+     28|     release()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/unit/start-app-runtime.test.ts > app runtime startup > keeps the working autosave service after tracking reconfiguration throws [A-R13]
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array []
+
+
+Number of calls: 1
+
+ ❯ tests/unit/start-app-runtime.test.ts:1020:34
+    1018|     })
+    1019|     await expect(runtime!.reloadSettings()).rejects.toThrow('invalid r…
+    1020|     expect(oldAutosave.stop).not.toHaveBeenCalled()
+       |                                  ^
+    1021|     expect(newAutosave.stop).toHaveBeenCalledOnce()
+    1022|     await startCore.mock.calls[0]![0].requestAutosaveSync('manual')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/unit/stationary-attention.test.ts > stationary attention policy [DON-269] > preserves the full elapsed episode through one ordinary uncorroborated noise return [A-R15]
+AssertionError: expected { state: 'none' } to match object { state: 'attention', …(2) }
+
+- Expected
++ Received
+
+  {
+-   "elapsedMs": 7200000,
+-   "sinceTimestamp": "2026-08-22T10:00:00.000Z",
+-   "state": "attention",
++   "state": "none",
+  }
+
+ ❯ tests/unit/stationary-attention.test.ts:17:22
+     15|     for (let end = 2; end <= history.length; end++) {
+     16|       const result = evaluateStationaryAttention(history.slice(0, end)…
+     17|       expect(result).toMatchObject({ state: 'attention', sinceTimestam…
+       |                      ^
+     18|         elapsedMs: (end === 6 ? 80 : (end - 1) * 20) * 60000 })
+     19|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  3 failed | 48 skipped (51)
+   Start at  15:28:43
+   Duration  1.99s (transform 378ms, setup 0ms, import 652ms, tests 18ms, environment 1.10s)
+

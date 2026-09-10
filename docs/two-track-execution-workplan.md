@@ -161,6 +161,23 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
+### Repair Train A — tracking safety and liveness (2026-09-10)
+
+[PR #17](https://github.com/donal0c/sartracker-web/pull/17) on
+`codex/astra-repair-train-a` is ready for scoped review at application `713461bf`
+under DON-267/DON-269 (AUD-13/02/03). All accepted review findings, including
+A-R20 per-device freshness and A-R21 request diagnostics, are repaired. Four
+exact-head reviews clear. Local and Linux CI pass 427 files / 4,377 tests;
+actual native omission/custody proof and unchanged stationary browser/renderer
+proof pass. [Current disposition](assurance/findings/repair-train-a-remediation.md)
+and [Linux receipt](evidence/repair-train-a/github-followup/linux-ci-receipt.md)
+record the evidence and boundaries. CI `34496976736` attempt 2 passes all gates
+with archive maximum 193 ms; attempt 1's 224 ms breach remains unexplained.
+DON-254 retains that failure and soak renderer 499.9 ms / external action
+374.58 ms. No reliable strict-200 qualification or release acceptance follows.
+WAR-02A stays separate. No merge, release, deployment or new team questions
+are authorized.
+
 ### Team feedback batch 2 — acceptance contract (2026-09-09)
 
 Base fetched and pinned: `c51e4b3537c4b026f7079dd40193a894cedcdd9f`;

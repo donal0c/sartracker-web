@@ -1,0 +1,29 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/a881/sartracker-web
+
+ ❯ tests/unit/rejection-evidence-delivery.test.ts (29 tests | 1 failed | 28 skipped) 57ms
+     × fails closed when teardown evidence loss cannot be durably marked 56ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/rejection-evidence-delivery.test.ts > rejection evidence delivery [DON-268] > fails closed when teardown evidence loss cannot be durably marked
+AssertionError: promise rejected "Error: evidence-loss marker unavailable" instead of resolving
+ ❯ tests/unit/rejection-evidence-delivery.test.ts:884:37
+    882|     await expect(delivery.dispose()).rejects.toThrow('evidence-loss ma…
+    883|     recordIngestEvidenceLoss.mockResolvedValue(healthy())
+    884|     await expect(delivery.dispose()).resolves.toBeUndefined()
+       |                                     ^
+    885|   })
+    886|
+
+Caused by: Error: evidence-loss marker unavailable
+ ❯ tests/unit/rejection-evidence-delivery.test.ts:872:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 28 skipped (29)
+   Start at  15:36:38
+   Duration  599ms (transform 41ms, setup 0ms, import 51ms, tests 57ms, environment 421ms)
+

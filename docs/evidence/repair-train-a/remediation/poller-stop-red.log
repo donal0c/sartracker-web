@@ -1,0 +1,32 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/a881/sartracker-web
+
+ ❯ tests/unit/polling-manager.test.ts (89 tests | 1 failed | 88 skipped) 12ms
+     × retries a failed stop instead of permanently memoising its rejection [A-R10] 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/polling-manager.test.ts > polling manager > retries a failed stop instead of permanently memoising its rejection [A-R10]
+AssertionError: promise rejected "Error: timer cleanup failed" instead of resolving
+ ❯ tests/unit/polling-manager.test.ts:3202:32
+    3200|     failCleanup = true
+    3201|     await expect(poller.stop()).rejects.toThrow('timer cleanup failed')
+    3202|     await expect(poller.stop()).resolves.toBeUndefined()
+       |                                ^
+    3203|   })
+    3204|
+
+Caused by: Error: timer cleanup failed
+ ❯ tests/unit/polling-manager.test.ts:3193:53
+ ❯ stopPolling src/features/tracking/polling-manager.ts:1660:7
+ ❯ Object.stop src/features/tracking/polling-manager.ts:1626:23
+ ❯ tests/unit/polling-manager.test.ts:3201:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 88 skipped (89)
+   Start at  15:32:45
+   Duration  833ms (transform 124ms, setup 0ms, import 148ms, tests 12ms, environment 441ms)
+

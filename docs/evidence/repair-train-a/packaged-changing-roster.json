@@ -1,0 +1,1218 @@
+{
+  "proof": "Packaged Electron executable; actual Settings Save Connect and Devices Reconnect; local synthetic HTTP provider holds one current response; actual bulk SQLite/custody/runtime/pollers; no importer/runtime/controller mocks; bounded local proof, not release qualification",
+  "control": false,
+  "executable": "/Users/donalocallaghan/.codex/worktrees/a881/sartracker-web/tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/MacOS/SAR Tracker Electron Validation",
+  "replacementRenderedMs": 36,
+  "reconnectingStatus": "UNKNOWN",
+  "reconnectingSource": "Last known",
+  "sessions": 6,
+  "currentRequests": 135,
+  "historyRequests": 44,
+  "emittedIds": [
+    1001,
+    1002,
+    1003,
+    1004,
+    1005,
+    1006,
+    1007,
+    1008,
+    1009,
+    1010,
+    1011,
+    1012,
+    1013,
+    1015,
+    1016,
+    1017,
+    1018,
+    1019,
+    1020,
+    1021,
+    1022,
+    1023,
+    1024,
+    1025,
+    1014,
+    1026,
+    1027,
+    1028,
+    1029,
+    1030,
+    1031,
+    1032,
+    1033,
+    1034,
+    1035,
+    1036,
+    1037,
+    1038,
+    1039,
+    1040,
+    1041,
+    1042,
+    1043,
+    1044,
+    1045,
+    1046,
+    1047,
+    1048,
+    1049,
+    1050,
+    1051,
+    1052,
+    1053,
+    1054,
+    1055,
+    1056,
+    1057,
+    1058,
+    1059,
+    1060,
+    1061,
+    1062,
+    1063,
+    1064,
+    1065,
+    1066,
+    1067,
+    1068,
+    1069,
+    1070,
+    1071,
+    1072,
+    1073,
+    1074,
+    1075,
+    1076,
+    1077,
+    1078,
+    1079,
+    1080,
+    1081,
+    1082,
+    1083,
+    1084,
+    1085,
+    1086,
+    1087,
+    1088,
+    1089,
+    1090,
+    1091,
+    1092,
+    1093,
+    1094,
+    1095,
+    1096,
+    1097,
+    1098,
+    1099,
+    1100,
+    1101,
+    1102,
+    1103,
+    1104,
+    1105,
+    1106,
+    1107,
+    1108,
+    1109,
+    1110,
+    1111,
+    1112,
+    1113,
+    1114,
+    1115,
+    1116,
+    1117,
+    1118,
+    1119,
+    1120,
+    1121,
+    1122,
+    1123,
+    1124,
+    1125,
+    1126,
+    1127,
+    1128,
+    1129,
+    1130,
+    1131,
+    1132,
+    1133,
+    1134,
+    1135
+  ],
+  "events": [
+    {
+      "event": "session",
+      "sessions": 1,
+      "at": 1789042350405
+    },
+    {
+      "event": "sent-current",
+      "id": 1001,
+      "at": 1789042350427
+    },
+    {
+      "event": "session",
+      "sessions": 2,
+      "at": 1789042350562
+    },
+    {
+      "event": "sent-current",
+      "id": 1002,
+      "at": 1789042350625
+    },
+    {
+      "event": "sent-current",
+      "id": 1003,
+      "at": 1789042350659
+    },
+    {
+      "event": "sent-current",
+      "id": 1004,
+      "at": 1789042350681
+    },
+    {
+      "event": "sent-current",
+      "id": 1005,
+      "at": 1789042350704
+    },
+    {
+      "event": "sent-current",
+      "id": 1006,
+      "at": 1789042350736
+    },
+    {
+      "event": "sent-current",
+      "id": 1007,
+      "at": 1789042350761
+    },
+    {
+      "event": "sent-current",
+      "id": 1008,
+      "at": 1789042350768
+    },
+    {
+      "event": "sent-current",
+      "id": 1009,
+      "at": 1789042350774
+    },
+    {
+      "event": "sent-current",
+      "id": 1010,
+      "at": 1789042350778
+    },
+    {
+      "event": "sent-current",
+      "id": 1011,
+      "at": 1789042350784
+    },
+    {
+      "event": "sent-current",
+      "id": 1012,
+      "at": 1789042350791
+    },
+    {
+      "event": "sent-current",
+      "id": 1013,
+      "at": 1789042350811
+    },
+    {
+      "event": "held-current",
+      "id": 1014,
+      "at": 1789042350827
+    },
+    {
+      "event": "session",
+      "sessions": 3,
+      "at": 1789042350917
+    },
+    {
+      "event": "session",
+      "sessions": 4,
+      "at": 1789042350917
+    },
+    {
+      "event": "session",
+      "sessions": 5,
+      "at": 1789042351033
+    },
+    {
+      "event": "session",
+      "sessions": 6,
+      "at": 1789042351033
+    },
+    {
+      "event": "sent-replacement",
+      "id": 1015,
+      "at": 1789042351638
+    },
+    {
+      "event": "sent-replacement",
+      "id": 1016,
+      "at": 1789042351638
+    },
+    {
+      "event": "sent-replacement",
+      "id": 1017,
+      "at": 1789042351638
+    },
+    {
+      "event": "sent-replacement",
+      "id": 1018,
+      "at": 1789042351638
+    },
+    {
+      "event": "sent-current",
+      "id": 1019,
+      "at": 1789042351642
+    },
+    {
+      "event": "sent-current",
+      "id": 1020,
+      "at": 1789042351651
+    },
+    {
+      "event": "sent-current",
+      "id": 1021,
+      "at": 1789042351654
+    },
+    {
+      "event": "sent-current",
+      "id": 1022,
+      "at": 1789042351658
+    },
+    {
+      "event": "sent-current",
+      "id": 1023,
+      "at": 1789042351661
+    },
+    {
+      "event": "sent-current",
+      "id": 1024,
+      "at": 1789042351668
+    },
+    {
+      "event": "sent-current",
+      "id": 1025,
+      "at": 1789042351670
+    },
+    {
+      "event": "replacement-rendered-before-old-release",
+      "replacementRenderedMs": 36,
+      "at": 1789042351674
+    },
+    {
+      "event": "release-old-current",
+      "at": 1789042351674
+    },
+    {
+      "event": "sent-current",
+      "id": 1026,
+      "at": 1789042351684
+    },
+    {
+      "event": "sent-current",
+      "id": 1027,
+      "at": 1789042351694
+    },
+    {
+      "event": "sent-current",
+      "id": 1028,
+      "at": 1789042351704
+    },
+    {
+      "event": "sent-current",
+      "id": 1029,
+      "at": 1789042351713
+    },
+    {
+      "event": "sent-current",
+      "id": 1030,
+      "at": 1789042351723
+    },
+    {
+      "event": "sent-current",
+      "id": 1031,
+      "at": 1789042351734
+    },
+    {
+      "event": "sent-current",
+      "id": 1032,
+      "at": 1789042351742
+    },
+    {
+      "event": "sent-current",
+      "id": 1033,
+      "at": 1789042351752
+    },
+    {
+      "event": "sent-current",
+      "id": 1034,
+      "at": 1789042351759
+    },
+    {
+      "event": "sent-current",
+      "id": 1035,
+      "at": 1789042351768
+    },
+    {
+      "event": "sent-current",
+      "id": 1036,
+      "at": 1789042351777
+    },
+    {
+      "event": "sent-current",
+      "id": 1037,
+      "at": 1789042351786
+    },
+    {
+      "event": "sent-current",
+      "id": 1038,
+      "at": 1789042351795
+    },
+    {
+      "event": "sent-current",
+      "id": 1039,
+      "at": 1789042351804
+    },
+    {
+      "event": "sent-current",
+      "id": 1040,
+      "at": 1789042351813
+    },
+    {
+      "event": "sent-current",
+      "id": 1041,
+      "at": 1789042351820
+    },
+    {
+      "event": "sent-current",
+      "id": 1042,
+      "at": 1789042351830
+    },
+    {
+      "event": "sent-current",
+      "id": 1043,
+      "at": 1789042351841
+    },
+    {
+      "event": "sent-current",
+      "id": 1044,
+      "at": 1789042351849
+    },
+    {
+      "event": "sent-current",
+      "id": 1045,
+      "at": 1789042351860
+    },
+    {
+      "event": "sent-current",
+      "id": 1046,
+      "at": 1789042351867
+    },
+    {
+      "event": "sent-current",
+      "id": 1047,
+      "at": 1789042351877
+    },
+    {
+      "event": "sent-current",
+      "id": 1048,
+      "at": 1789042351888
+    },
+    {
+      "event": "sent-current",
+      "id": 1049,
+      "at": 1789042351895
+    },
+    {
+      "event": "sent-current",
+      "id": 1050,
+      "at": 1789042351905
+    },
+    {
+      "event": "sent-current",
+      "id": 1051,
+      "at": 1789042351916
+    },
+    {
+      "event": "sent-current",
+      "id": 1052,
+      "at": 1789042351924
+    },
+    {
+      "event": "sent-current",
+      "id": 1053,
+      "at": 1789042351932
+    },
+    {
+      "event": "sent-current",
+      "id": 1054,
+      "at": 1789042351943
+    },
+    {
+      "event": "sent-current",
+      "id": 1055,
+      "at": 1789042351953
+    },
+    {
+      "event": "sent-current",
+      "id": 1056,
+      "at": 1789042351961
+    },
+    {
+      "event": "sent-current",
+      "id": 1057,
+      "at": 1789042351970
+    },
+    {
+      "event": "sent-current",
+      "id": 1058,
+      "at": 1789042351978
+    },
+    {
+      "event": "sent-current",
+      "id": 1059,
+      "at": 1789042351990
+    },
+    {
+      "event": "sent-current",
+      "id": 1060,
+      "at": 1789042352002
+    },
+    {
+      "event": "sent-current",
+      "id": 1061,
+      "at": 1789042352010
+    },
+    {
+      "event": "sent-current",
+      "id": 1062,
+      "at": 1789042352018
+    },
+    {
+      "event": "sent-current",
+      "id": 1063,
+      "at": 1789042352027
+    },
+    {
+      "event": "sent-current",
+      "id": 1064,
+      "at": 1789042352034
+    },
+    {
+      "event": "sent-current",
+      "id": 1065,
+      "at": 1789042352043
+    },
+    {
+      "event": "sent-current",
+      "id": 1066,
+      "at": 1789042352057
+    },
+    {
+      "event": "sent-current",
+      "id": 1067,
+      "at": 1789042352066
+    },
+    {
+      "event": "sent-current",
+      "id": 1068,
+      "at": 1789042352074
+    },
+    {
+      "event": "sent-current",
+      "id": 1069,
+      "at": 1789042352087
+    },
+    {
+      "event": "sent-current",
+      "id": 1070,
+      "at": 1789042352100
+    },
+    {
+      "event": "sent-current",
+      "id": 1071,
+      "at": 1789042352109
+    },
+    {
+      "event": "sent-current",
+      "id": 1072,
+      "at": 1789042352118
+    },
+    {
+      "event": "sent-current",
+      "id": 1073,
+      "at": 1789042352126
+    },
+    {
+      "event": "sent-current",
+      "id": 1074,
+      "at": 1789042352134
+    },
+    {
+      "event": "sent-current",
+      "id": 1075,
+      "at": 1789042352145
+    },
+    {
+      "event": "sent-current",
+      "id": 1076,
+      "at": 1789042352158
+    },
+    {
+      "event": "sent-current",
+      "id": 1077,
+      "at": 1789042352166
+    },
+    {
+      "event": "sent-current",
+      "id": 1078,
+      "at": 1789042352177
+    },
+    {
+      "event": "sent-current",
+      "id": 1079,
+      "at": 1789042352184
+    },
+    {
+      "event": "sent-current",
+      "id": 1080,
+      "at": 1789042352193
+    },
+    {
+      "event": "sent-current",
+      "id": 1081,
+      "at": 1789042352203
+    },
+    {
+      "event": "sent-current",
+      "id": 1082,
+      "at": 1789042352214
+    },
+    {
+      "event": "sent-current",
+      "id": 1083,
+      "at": 1789042352222
+    },
+    {
+      "event": "sent-current",
+      "id": 1084,
+      "at": 1789042352234
+    },
+    {
+      "event": "sent-current",
+      "id": 1085,
+      "at": 1789042352243
+    },
+    {
+      "event": "sent-current",
+      "id": 1086,
+      "at": 1789042352256
+    },
+    {
+      "event": "sent-current",
+      "id": 1087,
+      "at": 1789042352268
+    },
+    {
+      "event": "sent-current",
+      "id": 1088,
+      "at": 1789042352277
+    },
+    {
+      "event": "sent-current",
+      "id": 1089,
+      "at": 1789042352286
+    },
+    {
+      "event": "sent-current",
+      "id": 1090,
+      "at": 1789042352298
+    },
+    {
+      "event": "sent-current",
+      "id": 1091,
+      "at": 1789042352309
+    },
+    {
+      "event": "sent-current",
+      "id": 1092,
+      "at": 1789042352319
+    },
+    {
+      "event": "sent-current",
+      "id": 1093,
+      "at": 1789042352332
+    },
+    {
+      "event": "sent-current",
+      "id": 1094,
+      "at": 1789042352338
+    },
+    {
+      "event": "sent-current",
+      "id": 1095,
+      "at": 1789042352349
+    },
+    {
+      "event": "sent-current",
+      "id": 1096,
+      "at": 1789042352361
+    },
+    {
+      "event": "sent-current",
+      "id": 1097,
+      "at": 1789042352368
+    },
+    {
+      "event": "sent-current",
+      "id": 1098,
+      "at": 1789042352382
+    },
+    {
+      "event": "sent-current",
+      "id": 1099,
+      "at": 1789042352392
+    },
+    {
+      "event": "sent-current",
+      "id": 1100,
+      "at": 1789042352398
+    },
+    {
+      "event": "sent-current",
+      "id": 1101,
+      "at": 1789042352410
+    },
+    {
+      "event": "sent-current",
+      "id": 1102,
+      "at": 1789042352425
+    },
+    {
+      "event": "sent-current",
+      "id": 1103,
+      "at": 1789042352434
+    },
+    {
+      "event": "sent-current",
+      "id": 1104,
+      "at": 1789042352444
+    },
+    {
+      "event": "sent-current",
+      "id": 1105,
+      "at": 1789042352459
+    },
+    {
+      "event": "sent-current",
+      "id": 1106,
+      "at": 1789042352466
+    },
+    {
+      "event": "sent-current",
+      "id": 1107,
+      "at": 1789042352477
+    },
+    {
+      "event": "sent-current",
+      "id": 1108,
+      "at": 1789042352492
+    },
+    {
+      "event": "sent-current",
+      "id": 1109,
+      "at": 1789042352502
+    },
+    {
+      "event": "sent-current",
+      "id": 1110,
+      "at": 1789042352514
+    },
+    {
+      "event": "sent-current",
+      "id": 1111,
+      "at": 1789042352530
+    },
+    {
+      "event": "sent-current",
+      "id": 1112,
+      "at": 1789042352536
+    },
+    {
+      "event": "sent-current",
+      "id": 1113,
+      "at": 1789042352550
+    },
+    {
+      "event": "sent-current",
+      "id": 1114,
+      "at": 1789042352564
+    },
+    {
+      "event": "sent-current",
+      "id": 1115,
+      "at": 1789042352576
+    },
+    {
+      "event": "sent-current",
+      "id": 1116,
+      "at": 1789042352589
+    },
+    {
+      "event": "sent-current",
+      "id": 1117,
+      "at": 1789042352600
+    },
+    {
+      "event": "sent-current",
+      "id": 1118,
+      "at": 1789042352613
+    },
+    {
+      "event": "sent-current",
+      "id": 1119,
+      "at": 1789042352623
+    },
+    {
+      "event": "sent-current",
+      "id": 1120,
+      "at": 1789042352635
+    },
+    {
+      "event": "sent-current",
+      "id": 1121,
+      "at": 1789042352645
+    },
+    {
+      "event": "sent-current",
+      "id": 1122,
+      "at": 1789042352657
+    },
+    {
+      "event": "sent-current",
+      "id": 1123,
+      "at": 1789042352676
+    },
+    {
+      "event": "sent-current",
+      "id": 1124,
+      "at": 1789042352687
+    },
+    {
+      "event": "sent-current",
+      "id": 1125,
+      "at": 1789042352700
+    },
+    {
+      "event": "sent-current",
+      "id": 1126,
+      "at": 1789042352712
+    },
+    {
+      "event": "sent-current",
+      "id": 1127,
+      "at": 1789042352721
+    },
+    {
+      "event": "sent-current",
+      "id": 1128,
+      "at": 1789042352732
+    },
+    {
+      "event": "sent-current",
+      "id": 1129,
+      "at": 1789042352743
+    },
+    {
+      "event": "sent-current",
+      "id": 1130,
+      "at": 1789042352749
+    },
+    {
+      "event": "sent-current",
+      "id": 1131,
+      "at": 1789042352762
+    },
+    {
+      "event": "sent-current",
+      "id": 1132,
+      "at": 1789042352781
+    },
+    {
+      "event": "sent-current",
+      "id": 1133,
+      "at": 1789042352793
+    },
+    {
+      "event": "sent-current",
+      "id": 1134,
+      "at": 1789042352806
+    },
+    {
+      "event": "sent-current",
+      "id": 1135,
+      "at": 1789042352826
+    },
+    {
+      "event": "sent-current",
+      "id": 1136,
+      "at": 1789042352831
+    },
+    {
+      "event": "sent-current",
+      "id": 1137,
+      "at": 1789042352843
+    },
+    {
+      "event": "sent-current",
+      "id": 1138,
+      "at": 1789042352857
+    },
+    {
+      "event": "sent-current",
+      "id": 1139,
+      "at": 1789042352872
+    },
+    {
+      "event": "sent-current",
+      "id": 1140,
+      "at": 1789042352885
+    },
+    {
+      "event": "sent-current",
+      "id": 1141,
+      "at": 1789042352976
+    },
+    {
+      "event": "sent-current",
+      "id": 1142,
+      "at": 1789042352990
+    },
+    {
+      "event": "sent-current",
+      "id": 1143,
+      "at": 1789042352997
+    },
+    {
+      "event": "sent-current",
+      "id": 1144,
+      "at": 1789042353006
+    },
+    {
+      "event": "sent-current",
+      "id": 1145,
+      "at": 1789042353017
+    },
+    {
+      "event": "session",
+      "sessions": 7,
+      "at": 1789042353018
+    },
+    {
+      "event": "session",
+      "sessions": 8,
+      "at": 1789042353018
+    },
+    {
+      "event": "sent-current",
+      "id": 1146,
+      "at": 1789042353022
+    },
+    {
+      "event": "sent-current",
+      "id": 1147,
+      "at": 1789042353031
+    },
+    {
+      "event": "sent-current",
+      "id": 1148,
+      "at": 1789042353037
+    },
+    {
+      "event": "sent-current",
+      "id": 1149,
+      "at": 1789042353045
+    },
+    {
+      "event": "sent-current",
+      "id": 1150,
+      "at": 1789042353057
+    },
+    {
+      "event": "sent-current",
+      "id": 1151,
+      "at": 1789042353082
+    },
+    {
+      "event": "sent-current",
+      "id": 1152,
+      "at": 1789042353095
+    },
+    {
+      "event": "sent-current",
+      "id": 1153,
+      "at": 1789042353105
+    },
+    {
+      "event": "sent-current",
+      "id": 1154,
+      "at": 1789042353120
+    },
+    {
+      "event": "sent-current",
+      "id": 1155,
+      "at": 1789042353136
+    },
+    {
+      "event": "sent-current",
+      "id": 1156,
+      "at": 1789042353146
+    },
+    {
+      "event": "sent-current",
+      "id": 1157,
+      "at": 1789042353156
+    },
+    {
+      "event": "sent-current",
+      "id": 1158,
+      "at": 1789042353169
+    },
+    {
+      "event": "sent-current",
+      "id": 1159,
+      "at": 1789042353176
+    },
+    {
+      "event": "sent-current",
+      "id": 1160,
+      "at": 1789042353191
+    },
+    {
+      "event": "sent-current",
+      "id": 1161,
+      "at": 1789042353204
+    },
+    {
+      "event": "sent-current",
+      "id": 1162,
+      "at": 1789042353210
+    },
+    {
+      "event": "sent-current",
+      "id": 1163,
+      "at": 1789042353224
+    },
+    {
+      "event": "sent-current",
+      "id": 1164,
+      "at": 1789042353235
+    },
+    {
+      "event": "sent-current",
+      "id": 1165,
+      "at": 1789042353242
+    },
+    {
+      "event": "sent-current",
+      "id": 1166,
+      "at": 1789042353257
+    },
+    {
+      "event": "sent-current",
+      "id": 1167,
+      "at": 1789042353272
+    },
+    {
+      "event": "sent-current",
+      "id": 1168,
+      "at": 1789042353280
+    },
+    {
+      "event": "sent-current",
+      "id": 1169,
+      "at": 1789042353292
+    },
+    {
+      "event": "sent-current",
+      "id": 1170,
+      "at": 1789042353307
+    },
+    {
+      "event": "sent-current",
+      "id": 1171,
+      "at": 1789042353317
+    },
+    {
+      "event": "sent-current",
+      "id": 1172,
+      "at": 1789042353340
+    },
+    {
+      "event": "sent-current",
+      "id": 1173,
+      "at": 1789042353366
+    },
+    {
+      "event": "sent-current",
+      "id": 1174,
+      "at": 1789042353385
+    },
+    {
+      "event": "sent-current",
+      "id": 1175,
+      "at": 1789042353479
+    }
+  ],
+  "persistedIds": [
+    "1002",
+    "1003",
+    "1004",
+    "1005",
+    "1006",
+    "1007",
+    "1008",
+    "1009",
+    "1010",
+    "1011",
+    "1012",
+    "1013",
+    "1014",
+    "1015",
+    "1016",
+    "1017",
+    "1018",
+    "1019",
+    "1020",
+    "1021",
+    "1022",
+    "1023",
+    "1024",
+    "1025",
+    "1026",
+    "1027",
+    "1028",
+    "1029",
+    "1030",
+    "1031",
+    "1032",
+    "1033",
+    "1034",
+    "1035",
+    "1036",
+    "1037",
+    "1038",
+    "1039",
+    "1040",
+    "1041",
+    "1042",
+    "1043",
+    "1044",
+    "1045",
+    "1046",
+    "1047",
+    "1048",
+    "1049",
+    "1050",
+    "1051",
+    "1052",
+    "1053",
+    "1054",
+    "1055",
+    "1056",
+    "1057",
+    "1058",
+    "1059",
+    "1060",
+    "1061",
+    "1062",
+    "1063",
+    "1064",
+    "1065",
+    "1066",
+    "1067",
+    "1068",
+    "1069",
+    "1070",
+    "1071",
+    "1072",
+    "1073",
+    "1074",
+    "1075",
+    "1076",
+    "1077",
+    "1078",
+    "1079",
+    "1080",
+    "1081",
+    "1082",
+    "1083",
+    "1084",
+    "1085",
+    "1086",
+    "1087",
+    "1088",
+    "1089",
+    "1090",
+    "1091",
+    "1092",
+    "1093",
+    "1094",
+    "1095",
+    "1096",
+    "1097",
+    "1098",
+    "1099",
+    "1100",
+    "1101",
+    "1102",
+    "1103",
+    "1104",
+    "1105",
+    "1106",
+    "1107",
+    "1108",
+    "1109",
+    "1110",
+    "1111",
+    "1112",
+    "1113",
+    "1114",
+    "1115",
+    "1116",
+    "1117",
+    "1118",
+    "1119",
+    "1120",
+    "1121",
+    "1122",
+    "1123",
+    "1124",
+    "1125",
+    "1126",
+    "1127",
+    "1128",
+    "1129",
+    "1130",
+    "1131",
+    "1133"
+  ],
+  "health": {
+    "state": "healthy",
+    "reason": null,
+    "pendingCount": 0,
+    "corruptCount": 0,
+    "conflictCount": 0,
+    "rejectedCount": 0,
+    "affectedDeviceCount": 0,
+    "conflictDeviceIds": []
+  },
+  "errors": []
+}

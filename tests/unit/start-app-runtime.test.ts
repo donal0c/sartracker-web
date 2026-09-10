@@ -76,6 +76,7 @@ describe('app runtime startup', () => {
     }[], context: {
       readonly missionId: string | null
       readonly observedAt: string
+      readonly suppressOperationalPublication?: boolean
     }) => void) | undefined
     let breadcrumbRejectionHook: typeof rejectionHook
     const createPollingManager = vi.fn().mockImplementation((_client, options) => {
@@ -148,6 +149,22 @@ describe('app runtime startup', () => {
         expect.objectContaining({ receivedAt: '2026-08-22T10:00:02.000Z' }),
         expect.objectContaining({ receivedAt: '2026-08-22T10:00:02.000Z' }),
       ],
+    }))
+    const selectedSummary = useIngestHealthStore.getState().summary
+    const retiringContext = { missionId: 'mission-1',
+      observedAt: '2026-08-22T10:00:03.000Z', suppressOperationalPublication: true }
+    rejectionHook?.([], retiringContext)
+    expect(useIngestHealthStore.getState().summary).toBe(selectedSummary)
+    rejectionHook?.([{
+      deviceId: 'device-2', reason: 'invalid_coordinates', rowIndex: 0,
+      anomalyKey: 'source:retired-bad-1', canonicalEvidence: { id: 'retired-bad-1' },
+    }], retiringContext)
+    expect(useIngestHealthStore.getState().summary).toBe(selectedSummary)
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledTimes(3))
+    expect(recordIngestRejections).toHaveBeenLastCalledWith(expect.objectContaining({
+      mission_id: 'mission-1', rejections: [expect.objectContaining({
+        receivedAt: retiringContext.observedAt,
+      })],
     }))
     expect(missionStore.getIngestEvidenceHealth).toHaveBeenCalledWith('mission-1')
     await startTrackingRuntime.mock.calls[0]?.[0].recordMissionEvidenceLoss?.(
@@ -954,6 +971,111 @@ describe('app runtime startup', () => {
     expect(activeTrackingStop).toHaveBeenCalledTimes(1)
   })
 
+  it('cleans every runtime despite a failed tracking stop and retries only unsettled cleanup [A-R11]', async () => {
+    const failure = new Error('tracking stop failed')
+    const stopTracking = Object.assign(vi.fn().mockRejectedValueOnce(failure).mockResolvedValue(undefined),
+      { reconfigure: vi.fn() })
+    const coreDispose = vi.fn()
+    const stopCoverage = vi.fn()
+    const stopDots = vi.fn()
+    const stopAutosave = vi.fn()
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(createMissionStoreStub()),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController(stopAutosave)),
+      startCoreFeatureRuntimes: vi.fn().mockResolvedValue(createCoreFeatureRuntimeHandles(coreDispose)),
+      startExactBreadcrumbDotRuntime: vi.fn().mockReturnValue(stopDots),
+      startCoverageRuntime: vi.fn().mockReturnValue(stopCoverage),
+      startTrackingRuntime: vi.fn().mockResolvedValue(stopTracking),
+    })
+    await expect(runtime!.dispose()).rejects.toThrow()
+    expect(coreDispose).toHaveBeenCalledOnce()
+    expect(stopCoverage).toHaveBeenCalledOnce()
+    expect(stopDots).toHaveBeenCalledOnce()
+    await runtime!.dispose()
+    expect(stopTracking).toHaveBeenCalledTimes(2)
+    expect(stopAutosave).toHaveBeenCalledOnce()
+    expect(coreDispose).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the working autosave service after tracking reconfiguration throws [A-R13]', async () => {
+    const oldAutosave = createAutosaveController()
+    const newAutosave = createAutosaveController()
+    const tracking = Object.assign(vi.fn().mockResolvedValue(undefined), {
+      reconfigure: vi.fn().mockRejectedValue(new Error('invalid replacement')),
+    })
+    const startCore = vi.fn().mockResolvedValue(createCoreFeatureRuntimeHandles(vi.fn()))
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(createMissionStoreStub()),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValueOnce(oldAutosave).mockReturnValue(newAutosave),
+      startCoreFeatureRuntimes: startCore,
+      startTrackingRuntime: vi.fn().mockResolvedValue(tracking),
+    })
+    await expect(runtime!.reloadSettings()).rejects.toThrow('invalid replacement')
+    expect(oldAutosave.stop).not.toHaveBeenCalled()
+    expect(newAutosave.stop).toHaveBeenCalledOnce()
+    await startCore.mock.calls[0]![0].requestAutosaveSync('manual')
+    expect(oldAutosave.requestSync).toHaveBeenCalledOnce()
+    await runtime!.dispose()
+  })
+
+  it('joins a held reconfiguration before disposing both service generations [A-R11]', async () => {
+    const held = Promise.withResolvers<void>()
+    const tracking = Object.assign(vi.fn().mockResolvedValue(undefined), { reconfigure: vi.fn(() => held.promise) })
+    const oldAutosave = createAutosaveController()
+    const newAutosave = createAutosaveController()
+    const coreDispose = vi.fn()
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(createMissionStoreStub()),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValueOnce(oldAutosave).mockReturnValue(newAutosave),
+      startCoreFeatureRuntimes: vi.fn().mockResolvedValue(createCoreFeatureRuntimeHandles(coreDispose)),
+      startTrackingRuntime: vi.fn().mockResolvedValue(tracking),
+    })
+    const reload = runtime!.reloadSettings()
+    await vi.waitFor(() => expect(tracking.reconfigure).toHaveBeenCalledOnce())
+    const disposal = runtime!.dispose()
+    expect(tracking).not.toHaveBeenCalled()
+    expect(coreDispose).not.toHaveBeenCalled()
+    held.resolve()
+    await reload
+    await disposal
+    expect(tracking).toHaveBeenCalledOnce()
+    expect(oldAutosave.stop).toHaveBeenCalledOnce()
+    expect(newAutosave.stop).toHaveBeenCalledOnce()
+    expect(coreDispose).toHaveBeenCalledOnce()
+  })
+
+  it('retains the original startup error while attempting all cleanup after another failure [A-R11]', async () => {
+    const original = new Error('tracking startup failed')
+    const cleanupFailure = new Error('dot cleanup failed')
+    const coreDispose = vi.fn()
+    const coverageStop = vi.fn()
+    const result = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(createMissionStoreStub()),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startCoreFeatureRuntimes: vi.fn().mockResolvedValue(createCoreFeatureRuntimeHandles(coreDispose)),
+      startExactBreadcrumbDotRuntime: vi.fn().mockReturnValue(() => { throw cleanupFailure }),
+      startCoverageRuntime: vi.fn().mockReturnValue(coverageStop),
+      startTrackingRuntime: vi.fn().mockRejectedValue(original),
+    }).catch((error: unknown) => error)
+    expect(result).toBeInstanceOf(AggregateError)
+    expect((result as AggregateError).cause).toBe(original)
+    expect((result as AggregateError).errors).toEqual([original, cleanupFailure])
+    expect(coreDispose).toHaveBeenCalledOnce()
+    expect(coverageStop).toHaveBeenCalledOnce()
+  })
+
   it('keeps core runtime ownership until pending rejection evidence is drained', async () => {
     let acknowledgeEvidence: ((value: {
       acknowledgedDeliveryIds: string[]
@@ -1033,7 +1155,7 @@ describe('app runtime startup', () => {
 
     const disposal = runtime?.dispose()
 
-    expect(activeTrackingStop).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(activeTrackingStop).toHaveBeenCalledOnce())
     expect(disposeCoreFeatureRuntimes).not.toHaveBeenCalled()
     acknowledgeEvidence?.()
     await disposal

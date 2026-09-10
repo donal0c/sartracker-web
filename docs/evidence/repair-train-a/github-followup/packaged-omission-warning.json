@@ -1,0 +1,194 @@
+{
+  "proof": "Packaged Electron executable; actual Settings Save Connect and Devices Reconnect; local synthetic HTTP provider holds one current response; actual bulk SQLite/custody/runtime/pollers; no importer/runtime/controller mocks; bounded local proof, not release qualification",
+  "control": false,
+  "profile": "/Users/donalocallaghan/.codex/worktrees/a881/sartracker-web/output/repair-train-a/github-native-green/tracking-reload-native-profile-1789054588294",
+  "executable": "/Users/donalocallaghan/.codex/worktrees/a881/sartracker-web/tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/MacOS/SAR Tracker Electron Validation",
+  "replacementRenderedMs": 5,
+  "reconnectingStatus": "UNKNOWN",
+  "reconnectingSource": "Last known",
+  "injectReplacementRejections": true,
+  "rejectionWarningRetained": true,
+  "emptyReplacement": {
+    "connection": "online",
+    "status": "UNKNOWN",
+    "source": "Last known"
+  },
+  "sessions": 6,
+  "currentRequests": 12,
+  "historyRequests": 10,
+  "emittedIds": [
+    1001,
+    1002,
+    1003,
+    1009,
+    1010,
+    1004,
+    1011,
+    1012
+  ],
+  "events": [
+    {
+      "event": "session",
+      "sessions": 1,
+      "at": 1789054590179
+    },
+    {
+      "event": "sent-current",
+      "id": 1001,
+      "at": 1789054590186
+    },
+    {
+      "event": "session",
+      "sessions": 2,
+      "at": 1789054590299
+    },
+    {
+      "event": "sent-current",
+      "id": 1002,
+      "at": 1789054590358
+    },
+    {
+      "event": "sent-current",
+      "id": 1003,
+      "at": 1789054590394
+    },
+    {
+      "event": "held-current",
+      "id": 1004,
+      "at": 1789054595415
+    },
+    {
+      "event": "session",
+      "sessions": 3,
+      "at": 1789054595507
+    },
+    {
+      "event": "session",
+      "sessions": 4,
+      "at": 1789054595508
+    },
+    {
+      "event": "session",
+      "sessions": 5,
+      "at": 1789054595650
+    },
+    {
+      "event": "session",
+      "sessions": 6,
+      "at": 1789054595650
+    },
+    {
+      "event": "sent-empty-replacement",
+      "at": 1789054596256
+    },
+    {
+      "event": "sent-empty-replacement",
+      "at": 1789054596256
+    },
+    {
+      "event": "sent-empty-replacement",
+      "at": 1789054596256
+    },
+    {
+      "event": "sent-empty-replacement",
+      "at": 1789054596256
+    },
+    {
+      "event": "sent-replacement",
+      "id": 1009,
+      "at": 1789054596412
+    },
+    {
+      "event": "sent-current",
+      "id": 1010,
+      "at": 1789054596416
+    },
+    {
+      "event": "replacement-rendered-before-old-release",
+      "replacementRenderedMs": 5,
+      "at": 1789054596423
+    },
+    {
+      "event": "release-old-current",
+      "at": 1789054596423
+    },
+    {
+      "event": "sent-current",
+      "id": 1011,
+      "at": 1789054601421
+    },
+    {
+      "event": "sent-current",
+      "id": 1012,
+      "at": 1789054606426
+    },
+    {
+      "event": "session",
+      "sessions": 7,
+      "at": 1789054606940
+    },
+    {
+      "event": "session",
+      "sessions": 8,
+      "at": 1789054606941
+    },
+    {
+      "event": "sent-current",
+      "id": 1013,
+      "at": 1789054606942
+    },
+    {
+      "event": "sent-current",
+      "id": 1014,
+      "at": 1789054606943
+    },
+    {
+      "event": "sent-current",
+      "id": 1015,
+      "at": 1789054606950
+    },
+    {
+      "event": "sent-current",
+      "id": 1016,
+      "at": 1789054606953
+    }
+  ],
+  "persistedIds": [
+    "1002",
+    "1003",
+    "1004",
+    "1009",
+    "1010",
+    "1011",
+    "1012"
+  ],
+  "health": {
+    "state": "healthy",
+    "reason": null,
+    "pendingCount": 0,
+    "corruptCount": 0,
+    "conflictCount": 0,
+    "rejectedCount": 4,
+    "affectedDeviceCount": 1,
+    "conflictDeviceIds": []
+  },
+  "body": "MR\n\nMOUNTAIN RESCUE\n\nSAR Tracker\n\n0.1.0-BETA.12.11+SHA.AC368FD2D68FD088CB80CB69B0D63C4079C75CC3\n\nMISSION\nACTIVE\n\nSynthetic overlapping reload audit\n\nSTARTED 16:36:30\n\nELAPSED\n\n00:00:15\n\nACTIVE\n\n00:00:15\n\nDEVICES\n\n1\n\nONLINE\n\nFIX\n1\nSTALE\n0\n\nSYSTEM STATUS\n\nREADY\n\nDESKTOP PERSISTENCE\n\nDIAGNOSTICS\nFOCUS MODE\nSETTINGS\nWEATHER\nHELP\n● Tracking connected\nLast success: 10/09/2026, 16:36:46\nTheme: Standard\nMAPS\nOpenTopoMap\nv\nMAP TOOLS\nSELECT\n© OpenTopoMap contributors | MapLibre\nOpenTopoMap degraded: Some tiles failed to load\n2 km\n\nMAP SCALE\n\n51.970000°N, 9.700000°W | V 83219 81074 | 51°58'12.000\"N, 9°42'00.000\"W\n\nDD\n\n51.970000°N, 9.700000°W\n\n|\n\nIRISH GRID\n\nV 83219 81074\n\n|\n\nDMS\n\n51°58'12.000\"N, 9°42'00.000\"W\n\nCONVERT\nMISSION CONTROL\n\nLIFECYCLE AND TIMING\n\nREVIEW\nMINIMIZE\nACTIVE\n\nELAPSED\n\n00:00:15\n\nACTIVE SEARCH\n\n00:00:15\n\nPARTICIPANTS\n\n1 active devices\n\nSynthetic Alpha\n\ndevice · explicit · effective 10/09/2026, 16:36:30\n\nHistory backfill: pending / retrying\n\nRemove\nIndividual device\nTraccar group\nChoose…\nSynthetic Alpha\nEffective from (optional; defaults to now)\nAdd participant\nStart\nPAUSE\nFINISH\n\nOUTINGS\n\nCoordinator-defined operational periods\n\nNo active outing — new fixes will be recorded as Unassigned.\n\nSTART OUTING\n\nUnassigned\n\nAccepted fixes outside every explicit outing window\n\nAccepted fixes: 0\n\nTRACKING\nTOOLS\nLAYERS\nTRACKING SYSTEM\n\nTELEMETRY STREAM\n\nONLINE\nOPEN DEVICES\n\nPOSITION DATA WARNING — 1 row was rejected in the latest poll across 1 identified device. Valid current fixes remain visible.\n\nMISSION HISTORY COVERAGE\n\nAll mission history shown\n\nUpdated 16:36\nINSPECT EXACT FIXES\nDEVICES\n1\nFIXES\n1\nCACHE\n0\nSTALE\n0\nLast success\n10/09/2026, 16:36:46 GMT+01:00 (Europe/Dublin)\n\nTelemetry stream healthy\n\nDEVICES WORKSPACE\n\nTracking Devices\nReconnect\nClose\nEsc\n\nTRACKING HEALTH\n\nonline\n\nLAST SUCCESS\n\n10/09/2026, 16:36:46 GMT+01:00 (Europe/Dublin)\n\nTracking feed healthy.\n\nBREADCRUMB DISPLAY\n\nSOLID LINE\nBREADCRUMB DOTS\nBREADCRUMB SIZE\n8px trail width\n1\nDEVICES\n0\nACTIVE\n0\nHIDDEN\n1\nONLINE\n0\nSTALE\n0\nNOFIX\nSearch visible devices\nDEVICE\nNAME\nTRAIL\nSTATUS\nLAST SEEN\nSOURCE\nVISIBLE\nACTIONS\n\n1\n\nSynthetic Alpha\n\nPOSITION ROW REJECTED\n\nONLINE\n10/09/2026, 16:36:28\nGMT+01:00 (Europe/Dublin)\nLive\nShown\nZoom\nAdd\n\nSELECTED DEVICE\n\nSynthetic Alpha\n\n1\n\nSTATUS\nonline\nLAST SEEN\n10/09/2026, 16:36:28 GMT+01:00 (Europe/Dublin)\nFIX TIME\n10/09/2026, 16:36:46 GMT+01:00 (Europe/Dublin)\nSOURCE\nLive\nPOSITION DATA\n1 position row rejected — invalid coordinates.\nGPS ACCURACY\n4.0 m\nBATTERY\n—\nSPEED\n—\nCOORDINATES\n52.00012, -9.70000\nZOOM TO DEVICE",
+  "errors": [],
+  "retry": {
+    "persistedIds": [
+      "1002",
+      "1003",
+      "1004",
+      "1009",
+      "1010",
+      "1011",
+      "1012",
+      "1013",
+      "1014",
+      "1015",
+      "1016"
+    ],
+    "body": "MR\n\nMOUNTAIN RESCUE\n\nSAR Tracker\n\n0.1.0-BETA.12.11+SHA.AC368FD2D68FD088CB80CB69B0D63C4079C75CC3\n\nMISSION\nACTIVE\n\nSynthetic overlapping reload audit\n\nSTARTED 16:36:30\n\nELAPSED\n\n00:00:16\n\nACTIVE\n\n00:00:16\n\nDEVICES\n\n1\n\nONLINE\n\nFIX\n1\nSTALE\n0\n\nSYSTEM STATUS\n\nREADY\n\nDESKTOP PERSISTENCE\n\nDIAGNOSTICS\nFOCUS MODE\nSETTINGS\nWEATHER\nHELP\n● Tracking connected\nLast success: 10/09/2026, 16:36:46\nTheme: Standard\nMAPS\nOpenTopoMap\nv\nMAP TOOLS\nSELECT\n© OpenTopoMap contributors | MapLibre\nOpenTopoMap degraded: Some tiles failed to load\n2 km\n\nMAP SCALE\n\n51.970000°N, 9.700000°W | V 83219 81074 | 51°58'12.000\"N, 9°42'00.000\"W\n\nDD\n\n51.970000°N, 9.700000°W\n\n|\n\nIRISH GRID\n\nV 83219 81074\n\n|\n\nDMS\n\n51°58'12.000\"N, 9°42'00.000\"W\n\nCONVERT\nMISSION CONTROL\n\nLIFECYCLE AND TIMING\n\nREVIEW\nMINIMIZE\nACTIVE\n\nELAPSED\n\n00:00:16\n\nACTIVE SEARCH\n\n00:00:16\n\nPARTICIPANTS\n\n1 active devices\n\nSynthetic Alpha\n\ndevice · explicit · effective 10/09/2026, 16:36:30\n\nHistory backfill: pending / retrying\n\nRemove\nIndividual device\nTraccar group\nChoose…\nSynthetic Alpha\nEffective from (optional; defaults to now)\nAdd participant\nStart\nPAUSE\nFINISH\n\nOUTINGS\n\nCoordinator-defined operational periods\n\nNo active outing — new fixes will be recorded as Unassigned.\n\nSTART OUTING\n\nUnassigned\n\nAccepted fixes outside every explicit outing window\n\nAccepted fixes: 0\n\nTRACKING\nTOOLS\nLAYERS\nTRACKING SYSTEM\n\nTELEMETRY STREAM\n\nONLINE\nOPEN DEVICES\n\nPOSITION DATA WARNING — 1 row was rejected in the latest poll across 1 identified device. Valid current fixes remain visible.\n\nMISSION HISTORY COVERAGE\n\nAll mission history shown\n\nUpdated 16:36\nINSPECT EXACT FIXES\nDEVICES\n1\nFIXES\n1\nCACHE\n0\nSTALE\n0\nLast success\n10/09/2026, 16:36:46 GMT+01:00 (Europe/Dublin)\n\nTelemetry stream healthy\n\nDEVICES WORKSPACE\n\nTracking Devices\nReconnect\nClose\nEsc\n\nTRACKING HEALTH\n\nonline\n\nLAST SUCCESS\n\n10/09/2026, 16:36:46 GMT+01:00 (Europe/Dublin)\n\nTracking feed healthy.\n\nBREADCRUMB DISPLAY\n\nSOLID LINE\nBREADCRUMB DOTS\nBREADCRUMB SIZE\n8px trail width\n1\nDEVICES\n0\nACTIVE\n0\nHIDDEN\n1\nONLINE\n0\nSTALE\n0\nNOFIX\nSearch visible devices\nDEVICE\nNAME\nTRAIL\nSTATUS\nLAST SEEN\nSOURCE\nVISIBLE\nACTIONS\n\n1\n\nSynthetic Alpha\n\nPOSITION ROW REJECTED\n\nONLINE\n10/09/2026, 16:36:28\nGMT+01:00 (Europe/Dublin)\nLive\nShown\nZoom\nAdd\n\nSELECTED DEVICE\n\nSynthetic Alpha\n\n1\n\nSTATUS\nonline\nLAST SEEN\n10/09/2026, 16:36:28 GMT+01:00 (Europe/Dublin)\nFIX TIME\n10/09/2026, 16:36:46 GMT+01:00 (Europe/Dublin)\nSOURCE\nLive\nPOSITION DATA\n1 position row rejected — invalid coordinates.\nGPS ACCURACY\n4.0 m\nBATTERY\n—\nSPEED\n—\nCOORDINATES\n52.00016, -9.70000\nZOOM TO DEVICE",
+    "currentRequests": 16
+  }
+}

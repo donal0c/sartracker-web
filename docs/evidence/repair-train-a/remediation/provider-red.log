@@ -1,0 +1,35 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/a881/sartracker-web
+
+ ❯ tests/unit/start-tracking-runtime.test.ts (84 tests | 1 failed | 82 skipped) 16ms
+   × isolates retired fallback and provider replacement=true [A-R16] 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > isolates retired fallback and provider replacement=true [A-R16]
+AssertionError: expected [ 'old' ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "old",
++ ]
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:4455:8
+    4453|   try {
+    4454|     expect(dependencies.applySnapshot.mock.calls.at(-1)![0].positions.…
+    4455|       .toEqual(switchProvider ? [] : ['fresh'])
+       |        ^
+    4456|   } finally { drain.resolve(); await stop() }
+    4457| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 82 skipped (84)
+   Start at  15:29:24
+   Duration  815ms (transform 145ms, setup 0ms, import 173ms, tests 16ms, environment 544ms)
+

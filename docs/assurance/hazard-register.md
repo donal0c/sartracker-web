@@ -5,6 +5,26 @@
 **Register status:** WAR-01 post-PR5 reconciliation plus targeted WAR-04
 platform-services and WAR-04B release-control overlays.
 
+**Repair Train A overlay (2026-09-10):** `TRK-001`'s overlapping settings/reconnect
+drain gap and `TRK-004`'s out-and-back/whole-history projection defects reproduced
+on `083f5047`. The [repair record](findings/repair-train-a.md) tracks the bounded
+fix, rejected candidates, native custody proof and strict renderer-frame gate.
+The retained tracking session separates replacement publication from retiring
+evidence settlement; continuous stationary episodes and prepared per-device
+history replace endpoint-only/repeated whole-history evaluation. This overlay
+required additional failure-path and stationary-duration repairs after external
+review. [Remediation verification](findings/repair-train-a-remediation.md) now
+passes at application `713461bf`: four source reviews, local/native and Linux
+CI `34496976736` attempt 2 with inspected receipts. Final A-R20/A-R21 repairs
+preserve per-device freshness and request diagnostics. The PR is ready for
+scoped review. Archive maximum 193 ms passes this attempt, but attempt 1's
+224 ms breach remains unexplained. Soak renderer 499.9 ms and external action
+374.58 ms remain DON-254 qualification evidence with prior observations.
+This does not establish reliable strict-200 qualification or release acceptance;
+it supersedes only the bounded repaired observations.
+Other `TRK-001` startup, scope, pause/recovery and bounded storage-backpressure
+gaps remain open; no whole-hazard or field-qualification claim is made.
+
 **WAR-02A test-infrastructure overlay (2026-09-10, PR #16):**
 [`PST-002` and `IPC-002` focused evidence](war-02a-test-infrastructure.md) adds
 T1/T2 fault and lifecycle controls on production base `083f5047`. PST-002 now has

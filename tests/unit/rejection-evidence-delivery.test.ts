@@ -880,6 +880,8 @@ describe('rejection evidence delivery [DON-268]', () => {
     await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledOnce())
 
     await expect(delivery.dispose()).rejects.toThrow('evidence-loss marker unavailable')
+    recordIngestEvidenceLoss.mockResolvedValue(healthy())
+    await expect(delivery.dispose()).resolves.toBeUndefined()
   })
 
   function createRejection(anomalyKey: string): CurrentPositionRejection {

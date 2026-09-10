@@ -1,0 +1,76 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/a881/sartracker-web
+
+ ❯ tests/unit/polling-manager.test.ts (87 tests | 1 failed | 86 skipped) 11ms
+     × settles retrieved current-position evidence before asynchronous stop completes 10ms
+ ❯ tests/unit/start-app-runtime.test.ts (20 tests | 1 failed | 19 skipped) 116ms
+     × publishes current rejections before non-blocking durable evidence delivery [DON-268] 115ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/polling-manager.test.ts > polling manager > settles retrieved current-position evidence before asynchronous stop completes
+AssertionError: expected "vi.fn()" to be called with arguments: [ [ { deviceId: '2', …(5) } ], …(1) ]
+
+Received:
+
+  1st vi.fn() call:
+
+@@ -13,8 +13,7 @@
+      },
+    ],
+    {
+      "missionId": "mission-1",
+      "observedAt": "2026-08-26T10:35:00.000Z",
+-     "suppressOperationalPublication": true,
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/polling-manager.test.ts:396:41
+    394|
+    395|     await expect(stopping).resolves.toBeUndefined()
+    396|     expect(onCurrentPositionRejections).toHaveBeenCalledWith([rejectio…
+       |                                         ^
+    397|       missionId: 'mission-1',
+    398|       observedAt: '2026-08-26T10:35:00.000Z',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/start-app-runtime.test.ts > app runtime startup > publishes current rejections before non-blocking durable evidence delivery [DON-268]
+AssertionError: expected { totalRejected: +0, …(3) } to be { totalRejected: 1, …(3) } // Object.is equality
+
+- Expected
++ Received
+
+  {
+-   "affectedDeviceCount": 1,
+-   "byDevice": {
+-     "device-1": {
+-       "count": 1,
+-       "lastReason": "invalid_coordinates",
+-     },
+-   },
+-   "totalRejected": 1,
++   "affectedDeviceCount": 0,
++   "byDevice": {},
++   "totalRejected": 0,
+    "unidentifiedRejected": 0,
+  }
+
+ ❯ tests/unit/start-app-runtime.test.ts:157:53
+    155|       observedAt: '2026-08-22T10:00:03.000Z', suppressOperationalPubli…
+    156|     rejectionHook?.([], retiringContext)
+    157|     expect(useIngestHealthStore.getState().summary).toBe(selectedSumma…
+       |                                                     ^
+    158|     rejectionHook?.([{
+    159|       deviceId: 'device-2', reason: 'invalid_coordinates', rowIndex: 0,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 105 skipped (107)
+   Start at  13:31:03
+   Duration  1.29s (transform 492ms, setup 0ms, import 684ms, tests 127ms, environment 881ms)

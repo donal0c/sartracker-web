@@ -137,12 +137,14 @@ type PollingManagerOptions = {
   ) => void
   /** Stops further fetching at the evidence owner's memory bound, after visible publication. */
   readonly waitForCurrentEvidenceCapacity?: (signal: AbortSignal) => Promise<void>
+  readonly reserveCurrentEvidenceCapacity?: (signal: AbortSignal) => Promise<() => void>
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
   readonly onCurrentPositionRejections?: (
     rejections: readonly CurrentPositionRejection[],
     context: {
       readonly missionId: string | null
       readonly observedAt: string
+      readonly suppressOperationalPublication?: boolean
     },
   ) => void
   readonly onBreadcrumbRejections?: (
@@ -161,6 +163,8 @@ type PollingManagerOptions = {
 }
 
 export type TrackingSnapshotContext = {
+  /** Retiring transports may settle evidence, but may not replace current UI. */
+  readonly suppressOperationalPublication?: boolean
   readonly historyResetKey: string | null
   /** Explicit mission scope for persistence; null keeps live display outside mission evidence. */
   readonly missionEvidenceId?: string | null
@@ -743,6 +747,7 @@ export function createPollingManager(
       options.onCurrentPositionRejections?.(rejections, {
         missionId,
         observedAt: now().toISOString(),
+        ...(stopping ? { suppressOperationalPublication: true } : {}),
       })
     } catch (error) {
       logger.warn('Current-position rejection evidence delivery failed.', {
@@ -900,6 +905,7 @@ export function createPollingManager(
     let pollPhase: TrackingPollPhase = 'authentication'
     const pollHistoryResetKey = options.getHistoryResetKey?.() ?? null
     let completeCurrentPositionObservation = (): void => undefined
+    let releaseEvidenceCapacity = (): void => undefined
     try {
       if (pollHistoryResetKey !== activeHistoryResetKey) {
         const retainedCurrentSnapshot = lastGoodSnapshot === null
@@ -979,23 +985,32 @@ export function createPollingManager(
         return
       }
 
+      await withPollPhase('authentication', authenticateIfNeeded())
+      if (stopping || discardSupersededPoll(generation, pollHistoryResetKey)) return
+
       // A mission switch may interrupt the previous producer's capacity wait.
       // Reserve room before observing another fix, even on the first new poll.
-      if (options.waitForCurrentEvidenceCapacity !== undefined) {
+      if (options.reserveCurrentEvidenceCapacity !== undefined || options.waitForCurrentEvidenceCapacity !== undefined) {
         const controller = new AbortController()
         evidenceCapacityWait = controller
         try {
-          await options.waitForCurrentEvidenceCapacity(controller.signal)
+          if (options.reserveCurrentEvidenceCapacity !== undefined) {
+            releaseEvidenceCapacity = await options.reserveCurrentEvidenceCapacity(controller.signal)
+          } else {
+            await options.waitForCurrentEvidenceCapacity?.(controller.signal)
+          }
+        } catch (error) {
+          if (!controller.signal.aborted) throw error
+          // Pause, scope replacement and stop cancel admission, not the provider.
+          if (!stopping && !discardSupersededPoll(generation, pollHistoryResetKey)) {
+            scheduleNextPoll(0)
+          }
+          return
         } finally {
           if (evidenceCapacityWait === controller) evidenceCapacityWait = null
         }
         if (stopping || discardSupersededPoll(generation, pollHistoryResetKey)) return
       }
-      await withPollPhase('authentication', authenticateIfNeeded())
-      if (discardSupersededPoll(generation, pollHistoryResetKey)) {
-        return
-      }
-
       pollPhase = 'current_positions'
       const recoveredBeforeCurrentPositions = consecutiveFailures > 0
       const missionObservation = options.beginMissionEvidenceObservation?.(
@@ -1025,6 +1040,7 @@ export function createPollingManager(
       const settleCurrentPositionObservation = (completeMissionEvidence: boolean): void => {
         if (currentPositionObservationCompleted) return
         currentPositionObservationCompleted = true
+        releaseEvidenceCapacity()
         if (completeMissionEvidence) missionObservation.complete()
         resolveCurrentPositionObservation()
         if (currentPositionObservationInFlight === currentPositionObservation) {
@@ -1113,6 +1129,7 @@ export function createPollingManager(
       let currentFixPublishedAtMs = monotonicNow()
       if (options.onCurrentSnapshot === undefined) {
         try {
+          releaseEvidenceCapacity()
           const snapshotSettlement = options.onSnapshot(
             publishedSnapshot,
             snapshotContext,
@@ -1131,6 +1148,9 @@ export function createPollingManager(
           currentPositionResult.rejected,
           missionObservation.missionId,
         )
+        // Convert the reserved slot to retained ownership in this synchronous
+        // callback. No await or other producer can run between release/admission.
+        releaseEvidenceCapacity()
         options.onCurrentSnapshot(
           publishedSnapshot,
           snapshotContext,
@@ -1258,6 +1278,8 @@ export function createPollingManager(
         failureKind: classifyTrackingFailure(failure.cause),
       })
       scheduleNextPoll(backoffDelay)
+    } finally {
+      releaseEvidenceCapacity()
     }
   }
 
@@ -1601,7 +1623,10 @@ export function createPollingManager(
       void runPoll(lifecycleGeneration)
     },
     stop: () => {
-      stopPromise ??= stopPolling()
+      stopPromise ??= stopPolling().catch((error: unknown) => {
+        stopPromise = null
+        throw error
+      })
       return stopPromise
     },
     requestPollNow: () => {
@@ -1629,8 +1654,8 @@ export function createPollingManager(
 
   /** Stops new work, settles the current safety observation, then invalidates the poll. */
   async function stopPolling(): Promise<void> {
-    flushHistorySnapshot(false)
     stopping = true
+    flushHistorySnapshot(false)
     evidenceCapacityWait?.abort()
     immediatePollRequested = false
     pendingHistoryRefreshByMission.clear()

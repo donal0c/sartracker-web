@@ -71,6 +71,11 @@ const STATUS: TrackingConnectionStatus = {
 }
 
 describe('device workspace model', () => {
+  it('labels retained live-origin fixes as last known while reconnecting [AUD-13]', () => {
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {}, 'idle')
+    expect(rows[0]).toMatchObject({ status: 'unknown', sourceDisplay: 'Last known' })
+  })
+
   it('builds readable roster rows from the tracking snapshot', () => {
     const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'], ['alpha'])
 

@@ -63,6 +63,8 @@ export type BreadcrumbSnapshotMetadata = {
 }
 
 export type TrackingSnapshot = {
+  /** Presentation-only retained fixes not yet confirmed by the selected replacement transport. */
+  readonly unconfirmedCurrentDeviceIds?: readonly string[]
   readonly devices: readonly NormalizedTrackingDevice[]
   readonly positions: readonly NormalizedTrackingPosition[]
   readonly breadcrumbs: readonly NormalizedTrackingPosition[]

@@ -1,0 +1,46 @@
+
+Running 3 tests using 2 workers
+
+(node:19349) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:19348) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:19349) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:19348) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/stationary-attention.spec.ts:12:3 › Stationary attention [DON-269] › highlights, acknowledges, and clears attention without hiding the current fix (2.9s)
+  ✓  2 [chromium] › tests/e2e/stationary-attention.spec.ts:25:3 › Stationary attention [DON-269] › keeps an out-and-back route clear and raises a new warning only after a stationary interval [AUD-02] (3.1s)
+  ✘  3 [chromium] › tests/e2e/stationary-attention.spec.ts:53:3 › Stationary attention [DON-269] › preserves acknowledged duration through one ordinary noise fix and return [A-R15] (6.5s)
+
+
+  1) [chromium] › tests/e2e/stationary-attention.spec.ts:53:3 › Stationary attention [DON-269] › preserves acknowledged duration through one ordinary noise fix and return [A-R15] 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoContainText[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByTestId('device-attention-alpha')
+    Expected substring: [32m"[7mAcknowledg[27med"[39m
+    Received string:    [31m"[7mStationary Attention — latest fix uncorroborat[27med"[39m
+    Timeout: 5000ms
+
+    Call log:
+    [2m  - Expect "toContainText" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('device-attention-alpha')[22m
+    [2m    8 × locator resolved to <p data-testid="device-attention-alpha" class="mt-1 truncate text-[10px] font-bold uppercase tracking-wide text-amber-300">Stationary Attention — latest fix uncorroborated</p>[22m
+    [2m      - unexpected value "Stationary Attention — latest fix uncorroborated"[22m
+
+
+      73 |     for (const count of [6, 7, 10]) {
+      74 |       await publish(count)
+    > 75 |       await expect(page.getByTestId('device-attention-alpha')).toContainText('Acknowledged')
+         |                                                                ^
+      76 |     }
+      77 |     await expect(page.getByTestId('device-attention-alpha')).toContainText('180')
+      78 |     await page.screenshot({ path: 'output/repair-train-a/stationary-noise-acknowledged.png' })
+        at /Users/donalocallaghan/.codex/worktrees/a881/sartracker-web/tests/e2e/stationary-attention.spec.ts:75:64
+
+    Error Context: test-results/stationary-attention-Stati-71ac6-noise-fix-and-return-A-R15--chromium/error-context.md
+
+  1 failed
+    [chromium] › tests/e2e/stationary-attention.spec.ts:53:3 › Stationary attention [DON-269] › preserves acknowledged duration through one ordinary noise fix and return [A-R15] 
+  2 passed (10.1s)

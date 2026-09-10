@@ -1,0 +1,29 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/stationary-attention-projection.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/a881/sartracker-web
+
+ ❯ tests/unit/stationary-attention-projection.test.ts (6 tests | 1 failed) 13980ms
+     × visits interleaved compaction rows a bounded number of times [AUD-03] 13531ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/stationary-attention-projection.test.ts > stationary attention projection [DON-269] > visits interleaved compaction rows a bounded number of times [AUD-03]
+AssertionError: expected 102783756 to be less than 2000000
+ ❯ tests/unit/stationary-attention-projection.test.ts:25:20
+     23|     projector.project({ devices, breadcrumbs: changed.positions, posit…
+     24|     expect(evaluate).toHaveBeenCalledTimes(1)
+     25|     expect(visits).toBeLessThan(4 * breadcrumbs.length)
+       |                    ^
+     26|   }, 20_000)
+     27|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  12:37:59
+   Duration  14.64s (transform 46ms, setup 0ms, import 135ms, tests 13.98s, environment 449ms)

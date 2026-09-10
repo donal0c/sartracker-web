@@ -237,7 +237,10 @@ export function createRejectionEvidenceDelivery(
 
   /** Prevents a superseded runtime from publishing later health. */
   function dispose(): Promise<void> {
-    disposalPromise ??= runDisposal()
+    disposalPromise ??= runDisposal().catch((error: unknown) => {
+      disposalPromise = null
+      throw error
+    })
     return disposalPromise
   }
 

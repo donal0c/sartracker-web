@@ -1,0 +1,180 @@
+{
+  "proof": "Packaged Electron executable; actual Settings Save Connect and Devices Reconnect; local synthetic HTTP provider holds one current response; actual bulk SQLite/custody/runtime/pollers; no importer/runtime/controller mocks; bounded local proof, not release qualification",
+  "control": false,
+  "executable": "/Users/donalocallaghan/.codex/worktrees/a881/sartracker-web/tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/MacOS/SAR Tracker Electron Validation",
+  "replacementRenderedMs": 41,
+  "reconnectingStatus": "UNKNOWN",
+  "reconnectingSource": "Last known",
+  "sessions": 6,
+  "currentRequests": 12,
+  "historyRequests": 9,
+  "emittedIds": [
+    1001,
+    1002,
+    1003,
+    1005,
+    1006,
+    1007,
+    1008,
+    1009,
+    1010,
+    1004,
+    1011,
+    1012
+  ],
+  "events": [
+    {
+      "event": "session",
+      "sessions": 1,
+      "at": 1789042385556
+    },
+    {
+      "event": "sent-current",
+      "id": 1001,
+      "at": 1789042385563
+    },
+    {
+      "event": "session",
+      "sessions": 2,
+      "at": 1789042385678
+    },
+    {
+      "event": "sent-current",
+      "id": 1002,
+      "at": 1789042385734
+    },
+    {
+      "event": "sent-current",
+      "id": 1003,
+      "at": 1789042385765
+    },
+    {
+      "event": "held-current",
+      "id": 1004,
+      "at": 1789042390782
+    },
+    {
+      "event": "session",
+      "sessions": 3,
+      "at": 1789042390858
+    },
+    {
+      "event": "session",
+      "sessions": 4,
+      "at": 1789042390859
+    },
+    {
+      "event": "session",
+      "sessions": 5,
+      "at": 1789042390975
+    },
+    {
+      "event": "session",
+      "sessions": 6,
+      "at": 1789042390975
+    },
+    {
+      "event": "sent-replacement",
+      "id": 1005,
+      "at": 1789042391579
+    },
+    {
+      "event": "sent-replacement",
+      "id": 1006,
+      "at": 1789042391580
+    },
+    {
+      "event": "sent-replacement",
+      "id": 1007,
+      "at": 1789042391580
+    },
+    {
+      "event": "sent-replacement",
+      "id": 1008,
+      "at": 1789042391580
+    },
+    {
+      "event": "sent-current",
+      "id": 1009,
+      "at": 1789042391585
+    },
+    {
+      "event": "sent-current",
+      "id": 1010,
+      "at": 1789042391587
+    },
+    {
+      "event": "replacement-rendered-before-old-release",
+      "replacementRenderedMs": 41,
+      "at": 1789042391620
+    },
+    {
+      "event": "release-old-current",
+      "at": 1789042391620
+    },
+    {
+      "event": "sent-current",
+      "id": 1011,
+      "at": 1789042396594
+    },
+    {
+      "event": "sent-current",
+      "id": 1012,
+      "at": 1789042401601
+    },
+    {
+      "event": "session",
+      "sessions": 7,
+      "at": 1789042402109
+    },
+    {
+      "event": "session",
+      "sessions": 8,
+      "at": 1789042402109
+    },
+    {
+      "event": "sent-current",
+      "id": 1013,
+      "at": 1789042402110
+    },
+    {
+      "event": "sent-current",
+      "id": 1014,
+      "at": 1789042402111
+    },
+    {
+      "event": "sent-current",
+      "id": 1015,
+      "at": 1789042402117
+    },
+    {
+      "event": "sent-current",
+      "id": 1016,
+      "at": 1789042402121
+    }
+  ],
+  "persistedIds": [
+    "1002",
+    "1003",
+    "1004",
+    "1005",
+    "1006",
+    "1007",
+    "1008",
+    "1009",
+    "1010",
+    "1011",
+    "1012"
+  ],
+  "health": {
+    "state": "healthy",
+    "reason": null,
+    "pendingCount": 0,
+    "corruptCount": 0,
+    "conflictCount": 0,
+    "rejectedCount": 0,
+    "affectedDeviceCount": 0,
+    "conflictDeviceIds": []
+  },
+  "errors": []
+}

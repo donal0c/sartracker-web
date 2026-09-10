@@ -1,0 +1,33 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/a881/sartracker-web
+
+ ❯ tests/unit/start-tracking-runtime.test.ts (83 tests | 1 failed | 82 skipped) 77ms
+     × drains shared custody after a retiring stop fails and permits a failed stop retry [A-R10] 76ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > drains shared custody after a retiring stop fails and permits a failed stop retry [A-R10]
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:77:23
+     75|     const stopping = stop().catch(() => { completed = true })
+     76|     await new Promise((resolve) => setTimeout(resolve, 10))
+     77|     expect(completed).toBe(false)
+       |                       ^
+     78|     write.resolve('saved')
+     79|     await publication
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 82 skipped (83)
+   Start at  15:25:18
+   Duration  754ms (transform 120ms, setup 0ms, import 143ms, tests 77ms, environment 457ms)
+

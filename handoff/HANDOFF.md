@@ -4,7 +4,25 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **WAR-02A test foundation is implemented** from fetched master `083f5047`
+- **Repair Train A review remediation**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
+  is ready for scoped review at application `713461bf`, integrated with master
+  `4076975d`. A-R10–A-R21 are disposed: lifecycle/custody retry, autosave,
+  reservations, stationary elapsed truth, per-device replacement freshness and
+  replacement request diagnostics. All four exact-head reviews clear; local and
+  Linux CI pass 427 files / 4,377 tests, lint/build. Actual macOS reconnect,
+  omission and SQLite custody proof passes; unchanged stationary inputs reuse
+  three browser flows and the 78.5 ms incremental 100×5,000 renderer proof.
+  CI `34496976736` attempt 2 passes all package/replay/soak/archive/AppImage steps;
+  inspected archive maximum is 193 ms. Attempt 1's 224 ms breach is retained and
+  unexplained: the one unchanged-head repeat proves no causal fix. Soak renderer
+  499.9 ms / external action 374.58 ms also remain DON-254 qualification evidence.
+  This is scoped review readiness, not reliable strict-200 or release acceptance.
+  [Disposition](../docs/assurance/findings/repair-train-a-remediation.md) and
+  [latest receipt](../docs/evidence/repair-train-a/github-followup/linux-ci-receipt.md)
+  bind the proof. DON-267/DON-269 own repairs; DON-254 remains open. Documentation
+  closeout reuses unchanged application inputs. No merge/release authority.
+
+- **WAR-02A test foundation merged in PR #16 at `4076975d`** from fetched master `083f5047`
   (merged PR #15). Additive helpers/tests are isolated under
   `tests/unit/assurance/war-02a/`; production and Repair Train A are untouched.
   Source at `de7d15bf`: 422 files / 4,325 tests, lint/build. Final affected 65
@@ -12,10 +30,12 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   records live CI/merge readiness. Claude's four follow-up findings are now
   addressed: automatic strict build gate, literal mutation, open faults, and
   child infrastructure diagnostics. Final local source: 424 files / 4,346 tests;
-  lint/build pass. Updated-head CI is pending. Earlier independent reviews clear executable
+  lint/build pass. PR #16 CI `34483190305` passed at `47ed9cce`; this integration
+  checks that reported status without re-qualifying the separate WAR lane.
+  Earlier independent reviews clear executable
   `18bd374f`, including the corrected mixed-failure red gate and final cumulative
   review. [Evidence](../docs/assurance/war-02a-test-infrastructure.md).
-  DON-254 remains qualification owner; no package/provider/soak proof or merge.
+  DON-254 remains qualification owner; no package/provider/soak acceptance.
 
 - [PR #15](https://github.com/donal0c/sartracker-web/pull/15), Team Feedback
   Batch 2 (DON-215), merged at `083f5047`, including PRs #13/#14. Its retained
@@ -67,8 +87,7 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   fixes or explicit dispositions in the [complete ledger](../docs/breadcrumb-pr6-complete-review-ledger.md).
 - Documentation cleanup records the final testing approach below. Start new work
   from current `master`; the archive PR does not need another review cycle.
-- Next programme steps: Repair Train A and disjoint WAR test foundations;
-  independently qualify native
+- Next programme steps: complete Repair Train A, independently qualify native
   dependency/runtime upgrades, then BCP-17 final candidate qualification before
   DON-255 publication. Use the
   [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear

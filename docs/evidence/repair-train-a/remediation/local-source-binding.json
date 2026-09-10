@@ -1,0 +1,41 @@
+{
+  "base": "083f504753089abfcce9decdee8348dc069f03b8",
+  "parentCommit": "2da06afa124c9041375b7b6ebb12feb8e7adf5f0",
+  "branch": "codex/astra-repair-train-a",
+  "builtAt": "2026-09-10T14:51:49.149548+00:00",
+  "dirtyBuild": true,
+  "changedSourceGitBlobs": {
+    "scripts/tracking-reload-native-proof.mjs": "11682ec5e0a880ca2c3f5fdc240e1cd9fca3e3c6",
+    "scripts/tracking-stationary-renderer-proof.mjs": "28d57a3366793891261fff3cf8c2fb020f16eec9",
+    "src/components/devices-workspace.tsx": "d6169d994bd70c4f69a4987a4258945ed9726778",
+    "src/features/runtime/runtime-cleanup.ts": "35bcdc30432d9e876b6ca052cdfa862311f2fdc5",
+    "src/features/runtime/runtime-managed-services.ts": "d655a5d0bb4cb4faa3175cdda9713da8e8f16d93",
+    "src/features/runtime/start-app-runtime.ts": "0fac02e62742923f478303fdeab26e7f85c3e21f",
+    "src/features/tracking/deferred-mission-evidence.ts": "05c7ec22ed57b65db81cd074d08239a457f02be3",
+    "src/features/tracking/device-workspace-model.ts": "69ed8a0c6bd124d1e6d420f8ed2ae3ed7e194690",
+    "src/features/tracking/polling-manager.ts": "aefa0bb60559c97c3a466fbdb9ba62ed8a2b5b39",
+    "src/features/tracking/rejection-evidence-delivery.ts": "06beb4e3f4b2b3ede76b24e121770f73df205da8",
+    "src/features/tracking/start-tracking-runtime.ts": "4818398249bb16bc271cc10f0a28a5122a85abc3",
+    "src/features/tracking/stationary-attention-projection.ts": "3580e537d9bf8baa907e57a28da4a8d35636d8ac",
+    "src/features/tracking/stationary-attention-store.ts": "3b9e85f262a36a8698e9e3b75568a87f9b59e8d8",
+    "src/features/tracking/stationary-attention.ts": "3ca566b51b383700362f0a476762af1d55255410",
+    "tests/e2e/stationary-attention.spec.ts": "eaca79a380ef877d5d264a94b8e83d31d6eba3a7",
+    "tests/unit/deferred-mission-evidence.test.ts": "60e99548b2bf763aa087095fff162d38aa6cbbb0",
+    "tests/unit/device-workspace-model.test.ts": "b3cf02c978722072586f0bcf41a54c0b31bac3fe",
+    "tests/unit/polling-manager.test.ts": "67efaaa762773f9e1224fe698933c05c8198a291",
+    "tests/unit/rejection-evidence-delivery.test.ts": "b70f6cf8a397f735c336bbf5216e1ad22502ee59",
+    "tests/unit/runtime-cleanup.test.ts": "ab38bea722ba0f068da5b33defd6c52c33cacb2d",
+    "tests/unit/start-app-runtime.test.ts": "9229c9478d1422dbab436571c14dbb78e09e1b41",
+    "tests/unit/start-tracking-runtime.test.ts": "6065349e31619422c11340fe0f08f9e65d780ec4",
+    "tests/unit/stationary-attention-projection.test.ts": "45aa2985ed00dbbf0394d4fd0c22652ef09febfd",
+    "tests/unit/stationary-attention-store.test.ts": "22792955206d7dd8866015a68055df960727c23e",
+    "tests/unit/stationary-attention.test.ts": "48d9adf0f7865b54e2546a152a68dcc298d53f75",
+    "tests/unit/tracking-reload-custody.test.ts": "72dfbd5baa73129b4b0f88cb20b1457a9aa74333"
+  },
+  "artifactSha256": "a02ce0f10a16faa8fb9aafd506530d37f12b5c0122b83c00f18050c074ad7621",
+  "artifact": "tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/Resources/app.asar",
+  "proofs": [
+    "packaged-warning.json"
+  ],
+  "notes": "Local unsigned macOS arm64 VITE_SARTRACKER_MISSION_MODEL=1 package. Source/test/probe blobs bind precommit validation to later committed head. Generated version stamp excluded. Old CI receipts are historical; new CI pending."
+}

@@ -16,6 +16,44 @@ function createDeferred<T>(): {
 }
 
 describe('deferred mission evidence queue [DON-276]', () => {
+  it('does not allow an unreserved enqueue to steal transport capacity [A-R14]', async () => {
+    const persist = vi.fn().mockResolvedValue(undefined)
+    const queue = createDeferredMissionEvidenceQueue<string>({ capacity: 1,
+      beginObservation: (missionId) => ({ missionId, complete: vi.fn() }),
+      persist, markEvidenceLoss: vi.fn().mockResolvedValue(undefined) })
+    const release = await queue.reserveCapacity()
+    queue.enqueue('mission-1', 'unreserved')
+    expect(queue.pendingCount()).toBe(0)
+    // Conversion from reservation to synchronous admission cannot yield.
+    release()
+    queue.enqueue('mission-1', 'reserved-fix')
+    await queue.flushMission('mission-1')
+    expect(persist.mock.calls).toEqual([['mission-1', 'reserved-fix']])
+  })
+  it('reserves capacity for an in-flight retiring transport [AUD-13]', async () => {
+    const queue = createDeferredMissionEvidenceQueue<string>({
+      capacity: 1, beginObservation: (missionId) => ({ missionId, complete: vi.fn() }),
+      persist: vi.fn().mockResolvedValue(undefined), markEvidenceLoss: vi.fn(),
+    })
+    expect(queue.reserveCapacity).toBeTypeOf('function')
+    const release = await queue.reserveCapacity()
+    let acquired = false
+    const controller = new AbortController()
+    const waiting = queue.reserveCapacity(controller.signal).then(() => { acquired = true })
+    await Promise.resolve()
+    expect(acquired).toBe(false)
+    release()
+    queue.enqueue('mission-1', 'old-in-flight-fix')
+    await Promise.resolve()
+    expect(acquired).toBe(false)
+    controller.abort()
+    await expect(waiting).rejects.toThrow()
+    await queue.flushMission('mission-1')
+    const releaseNext = await queue.reserveCapacity()
+    releaseNext()
+    releaseNext()
+  })
+
   it('reports every discarded payload even when the durable mission loss marker coalesces', async () => {
     const onEvidenceLoss = vi.fn()
     const queue = createDeferredMissionEvidenceQueue<string>({
