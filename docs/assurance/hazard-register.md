@@ -5,6 +5,16 @@
 **Register status:** WAR-01 post-PR5 reconciliation plus targeted WAR-04
 platform-services and WAR-04B release-control overlays.
 
+**Confirmed deep-audit intake (2026-09-09):** fourteen reproduced finding
+groups from the 2026-09-07 system audit are centrally triaged in the
+[coordinated work ledger](coordinated-work-ledger.md). `AUD-07` and `AUD-14`
+are assigned to the active team-feedback visibility/Review batch; the remaining
+findings are assigned to four coherent repair trains covering tracking,
+GPX/evidence, map interaction/rendering, and mission progress/Review. These
+assignments do not mark the underlying hazard rows controlled. Every finding
+must be reproduced on its repair head, fixed with a durable gate, reconciled
+back into the affected row, and closed in Linear before final qualification.
+
 **WAR-04B post-PR6 overlay (2026-09-09):** MIS-001–MIS-003, RPL-001–RPL-004,
 IPC-001, the IPC-003 archive cross-reference, EVD-005, PKG-002 and
 REL-001–REL-004 are reconciled against master

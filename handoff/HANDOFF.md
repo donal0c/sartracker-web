@@ -35,11 +35,15 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   (173 ms), which does not establish hosted x64 correctness or causality.
   The owned `sar-batch2-linux` container is stopped; receipts are in
   `tmp/batch2-linux-source` and the [evidence](../docs/ui-feedback-batch-2-evidence.md).
-  Current master `35cff87d` (merged PR #14) is integrated for merge readiness.
-  Only this handoff conflicted; source behavior is unchanged by the integration.
+  Current master `d02d8a61` (merged PRs #13/#14) is integrated for merge readiness.
+  PR #14 conflicted only in this handoff; PR #13 only in the workplan.
+  Source behavior is unchanged by these integrations.
   Combined source passes 415 files / 4,271 tests, lint and production build.
   Fresh exact-head Linux package CI is required before removing draft status.
   Final integration results are recorded on PR #15 and DON-215; no merge or release.
+  PR #13 adds only coordination documentation; both its queue and this batch's
+  acceptance contract are retained. Executable/test/workflow trees remain identical
+  to integration `35dd1c83`, whose Linux CI `34458799719` is the active proof run.
 
 
 - WAR-11A merged as [PR #14](https://github.com/donal0c/sartracker-web/pull/14)
@@ -48,6 +52,14 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   Electron/application runtime and the 200 ms gates remain unchanged.
   [WAR-11A](../docs/assurance/findings/WAR-11A.md) retains its evidence ledger.
   DON-254/DON-255 still own final qualification/publication.
+
+- **Three-stream coordination is locked (2026-09-09):** SAR-team feedback,
+  confirmed deep-audit defects, and WAR hardening share the
+  [coordinated work ledger](../docs/assurance/coordinated-work-ledger.md).
+  Team Feedback Batch 2 owns only `AUD-07` and `AUD-14`; twelve other confirmed
+  audit findings are grouped into four later repair trains. BCP-17/final
+  qualification waits for release-blocking repairs and applicable WAR-04
+  remediation, then runs against one frozen exact candidate.
 
 - [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, merged
   at `c51e4b35`. Final executable evidence is CI `34386382652` on `03b09a7e`:

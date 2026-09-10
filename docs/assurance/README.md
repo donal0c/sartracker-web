@@ -9,6 +9,12 @@ the Breadcrumb and Mission-History Programme as well as the merged
 `DON-274`/`DON-277`/`DON-278`/`DON-279` evidence and replay boundaries from PR5
 head `f5ba8647131950dde457e50ce36fe0b8ded7337d`.
 
+The active cross-stream disposition of SAR-team feedback, confirmed deep-audit
+defects, and WAR work is maintained in the
+[coordinated work ledger](coordinated-work-ledger.md). That ledger controls
+repair grouping and release ordering; this charter continues to define the
+assurance vocabulary and evidence limits.
+
 The companion [hazard register](hazard-register.md) records what the repository
 actually controls, what the inspected tests prove, where the proof stops, and
 which existing Linear issue owns the nearest follow-up. It is an assurance map,
