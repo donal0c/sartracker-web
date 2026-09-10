@@ -4,9 +4,9 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **Repair Train A review remediation**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
-  is ready for scoped review at application `713461bf`, integrated with master
-  `4076975d`. A-R10–A-R21 are disposed: lifecycle/custody retry, autosave,
+- **Repair Train A merged**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
+  at `302bdd040976bd370271cf5866549fa2a7e05ff5` on 2026-09-10. Its final
+  application head is `713461bf`. A-R10–A-R21 are disposed: lifecycle/custody retry, autosave,
   reservations, stationary elapsed truth, per-device replacement freshness and
   replacement request diagnostics. All four exact-head reviews clear; local and
   Linux CI pass 427 files / 4,377 tests, lint/build. Actual macOS reconnect,
@@ -19,8 +19,8 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   This is scoped review readiness, not reliable strict-200 or release acceptance.
   [Disposition](../docs/assurance/findings/repair-train-a-remediation.md) and
   [latest receipt](../docs/evidence/repair-train-a/github-followup/linux-ci-receipt.md)
-  bind the proof. DON-267/DON-269 own repairs; DON-254 remains open. Documentation
-  closeout reuses unchanged application inputs. No merge/release authority.
+  bind the proof. DON-267/DON-269 are Done in Linear; DON-254 remains open.
+  Merge does not establish release or field acceptance.
 
 - **WAR-02A test foundation merged in PR #16 at `4076975d`** from fetched master `083f5047`
   (merged PR #15). Additive helpers/tests are isolated under
@@ -56,11 +56,12 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   [WAR-11A](../docs/assurance/findings/WAR-11A.md) retains its evidence ledger.
   DON-254/DON-255 still own final qualification/publication.
 
-- **Three-stream coordination is locked (2026-09-09):** SAR-team feedback,
+- **Three-stream coordination is locked (2026-09-10):** SAR-team feedback,
   confirmed deep-audit defects, and WAR hardening share the
   [coordinated work ledger](../docs/assurance/coordinated-work-ledger.md).
-  Team Feedback Batch 2 owns only `AUD-07` and `AUD-14`; twelve other confirmed
-  audit findings are grouped into four later repair trains. BCP-17/final
+  Team Feedback Batch 2 repaired `AUD-07` and `AUD-14`; Repair Train A repaired
+  `AUD-13`, `AUD-02`, and `AUD-03`. Nine confirmed audit findings remain across
+  Repair Trains B–D. BCP-17/final
   qualification waits for release-blocking repairs and applicable WAR-04
   remediation, then runs against one frozen exact candidate.
 
@@ -87,9 +88,24 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   fixes or explicit dispositions in the [complete ledger](../docs/breadcrumb-pr6-complete-review-ledger.md).
 - Documentation cleanup records the final testing approach below. Start new work
   from current `master`; the archive PR does not need another review cycle.
-- Next programme steps: complete Repair Train A, independently qualify native
-  dependency/runtime upgrades, then BCP-17 final candidate qualification before
-  DON-255 publication. Use the
+- **Active next work (launched 2026-09-10 from master `302bdd04`):** Repair
+  Train B owns current-head reproduction and repair of `AUD-01`, `AUD-10`, and
+  `AUD-05`. In parallel, investigation-only WAR-06 audits tracking lifecycle
+  using the merged WAR-02A harness and independently rechecks Repair Train A.
+  WAR-06 must not change production code; every confirmed P1/P2 or shared-state
+  change returns for Astra retracing before implementation.
+- Remaining Sar_4/team requests are still explicit rather than absorbed into
+  these tasks: official/private map distribution and provider/grid work
+  (`DON-144`/`DON-7`/`DON-76`), search-area label positioning (`DON-214`), map
+  export/print (`DON-216`), external-team/drone resource modelling (`DON-217`),
+  evacuation/gear workflow ownership (`DON-218`), privileged settings and
+  unlock/recovery (`DON-219`–`DON-221`), and operator-facing multi-outing layer
+  organization (`DON-100`). Marker Details simplification remains a later
+  coordinator-confirmation item. Mission Preview/per-device visibility landed
+  in PR #15; Linear `DON-215` is reconciled to Done.
+- Next programme steps: complete Repair Train B, disposition WAR-06 findings,
+  then sequence Repair Trains C/D and applicable WAR remediation before BCP-17
+  final candidate qualification and DON-255 publication. Use the
   [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear
   issues for scope. Merge is complete; release/field acceptance is not established.
   DON-247 and DON-264 remain separate reliability work.

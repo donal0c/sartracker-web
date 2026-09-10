@@ -161,10 +161,24 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-### Repair Train A — tracking safety and liveness (2026-09-10)
+### Repair Train B and WAR-06 — active next work (2026-09-10)
 
-[PR #17](https://github.com/donal0c/sartracker-web/pull/17) on
-`codex/astra-repair-train-a` is ready for scoped review at application `713461bf`
+Repair Train A merged in [PR #17](https://github.com/donal0c/sartracker-web/pull/17)
+at `302bdd040976bd370271cf5866549fa2a7e05ff5`. Repair Train B is now the
+implementation priority: reproduce and repair `AUD-01`, `AUD-10`, and `AUD-05`
+at current head under the GPX evidence-fidelity and import/outing lifecycle
+boundary. In parallel, WAR-06 is an investigation-only tracking-lifecycle audit
+using the merged WAR-02A harness. It independently rechecks Repair Train A and
+may add bounded reproductions/evidence, but it does not change production code.
+Any confirmed P1/P2, disagreement, or shared-state architecture change requires
+an Astra retrace before implementation. Both tasks started from `302bdd04` in
+isolated worktrees; shared coordination-document ownership stays with Repair
+Train B until integration.
+
+### Repair Train A — merged evidence boundary (2026-09-10)
+
+[PR #17](https://github.com/donal0c/sartracker-web/pull/17) merged at `302bdd04`;
+its application head is `713461bf`
 under DON-267/DON-269 (AUD-13/02/03). All accepted review findings, including
 A-R20 per-device freshness and A-R21 request diagnostics, are repaired. Four
 exact-head reviews clear. Local and Linux CI pass 427 files / 4,377 tests;
@@ -175,10 +189,15 @@ record the evidence and boundaries. CI `34496976736` attempt 2 passes all gates
 with archive maximum 193 ms; attempt 1's 224 ms breach remains unexplained.
 DON-254 retains that failure and soak renderer 499.9 ms / external action
 374.58 ms. No reliable strict-200 qualification or release acceptance follows.
-WAR-02A stays separate. No merge, release, deployment or new team questions
-are authorized.
+WAR-02A stays separate. Merge is not release, deployment, field acceptance, or
+permission to erase the retained timing failures.
 
-### Team feedback batch 2 — acceptance contract (2026-09-09)
+### Team feedback batch 2 — merged acceptance record (2026-09-10)
+
+[PR #15](https://github.com/donal0c/sartracker-web/pull/15) merged at
+`083f504753089abfcce9decdee8348dc069f03b8`. The contract and evidence below
+remain the exact implementation boundary. `DON-215` is reconciled to Done in
+Linear.
 
 Base fetched and pinned: `c51e4b3537c4b026f7079dd40193a894cedcdd9f`;
 branch `codex/team-ui-feedback-batch-2`. Existing DON-215 owns Preview.
@@ -238,7 +257,7 @@ Include both in the batch evidence, final independent reviews and CI.
 
 ### Coordinated three-stream safety queue
 
-**WAR-02A test foundation (2026-09-10, implemented in PR #16):** additive deterministic
+**WAR-02A test foundation (2026-09-10, merged in PR #16 at `4076975d`):** additive deterministic
 scheduler, explicit completion gates and filesystem/SQLite call-boundary fault
 injection under `tests/unit/assurance/war-02a/`. The
 [contract and evidence](assurance/war-02a-test-infrastructure.md) bind base
@@ -248,19 +267,19 @@ Production and Repair Train A (`AUD-13`/`AUD-02`/`AUD-03`) remain outside scope.
 Stable source/static cycle passed: 422 files / 4,325 tests, lint/build and strict
 helper types. Review remediation passes 65 focused tests; architecture,
 determinism/fault and final cumulative reviews clear executable head `18bd374f`.
-[PR #16](https://github.com/donal0c/sartracker-web/pull/16) records live CI/merge
-readiness. Donal retains merge authority. No new package/provider/soak qualification.
+[PR #16](https://github.com/donal0c/sartracker-web/pull/16) records the accepted
+CI and merge evidence. No new package/provider/soak qualification follows.
 
 The current SAR-team feedback, confirmed deep-audit defects, and remaining WAR
 work are one coordinated queue, not competing backlogs. The canonical finding
 dispositions and repair groupings are in
 [`docs/assurance/coordinated-work-ledger.md`](assurance/coordinated-work-ledger.md).
 
-Team Feedback Batch 2 owns only the two confirmed audit defects inside its
-existing visibility/Mission Review boundary: `AUD-07` hidden evidence selection
-and `AUD-14` false all-history wording during a known retrieval failure. The
-other confirmed audit findings must not silently enlarge that PR. They proceed
-after it as four coherent repair trains: tracking safety/liveness, GPX evidence
+Team Feedback Batch 2 repaired only the two confirmed audit defects inside its
+visibility/Mission Review boundary: `AUD-07` hidden evidence selection and
+`AUD-14` false all-history wording during a known retrieval failure. Repair
+Train A subsequently repaired `AUD-13`, `AUD-02`, and `AUD-03`. The nine
+remaining confirmed findings proceed through Repair Trains B–D: GPX evidence
 fidelity/lifecycle, map interaction/rendering, and mission progress/Review.
 Prerequisite-satisfied WAR investigation may continue around them when file and
 state ownership is disjoint.
@@ -292,7 +311,13 @@ The external deep-review remediation is verified locally (4,155 tests, affected
 browser/visual flows and 27 screenshot reviews); its full disposition is in that
 evidence file. Follow the updated PR head's CI rather than reuse ancestor CI.
 
-1. Breadcrumb PR-1 through PR-6 are merged. [PR #10](https://github.com/donal0c/sartracker-web/pull/10) merged on 2026-09-09 at `e0ead68852b10606551302b5104e409634c962e1`; DON-248/252/253 are Done. All 95 updated review findings are dispositioned and final PR-head CI `34324371898` passed. Use [Testing and review cadence](testing-and-review-cadence.md) for new work. The old staged recovery/stop instructions are [archived](../handoff/archive/pr6-closeout-history-20260909.md), not the active sequence. Next: WAR-04B's narrow merged-head refresh, then BCP-17 final candidate qualification before DON-255 publication. Merge does not establish release or field acceptance.
+1. Breadcrumb PR-1 through PR-6, Team Feedback Batches 1–2, WAR-11A,
+   WAR-02A, and Repair Train A are merged through master `302bdd04`. Use
+   [Testing and review cadence](testing-and-review-cadence.md) for new work.
+   Repair Train B and investigation-only WAR-06 are active next. Repair Trains
+   C/D and applicable WAR remediation follow; BCP-17 final qualification runs
+   only after those release-blocking repairs are dispositioned. Merge does not
+   establish release or field acceptance.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
