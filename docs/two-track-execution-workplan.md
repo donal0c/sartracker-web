@@ -221,6 +221,19 @@ Include both in the batch evidence, final independent reviews and CI.
 
 ### Coordinated three-stream safety queue
 
+**WAR-02A test foundation (2026-09-10, implemented in PR #16):** additive deterministic
+scheduler, explicit completion gates and filesystem/SQLite call-boundary fault
+injection under `tests/unit/assurance/war-02a/`. The
+[contract and evidence](assurance/war-02a-test-infrastructure.md) bind base
+`083f5047`, the two historical red controls and the exact verification limits.
+DON-254 is the existing assurance owner; this does not complete BCP-17.
+Production and Repair Train A (`AUD-13`/`AUD-02`/`AUD-03`) remain outside scope.
+Stable source/static cycle passed: 422 files / 4,325 tests, lint/build and strict
+helper types. Review remediation passes 65 focused tests; architecture,
+determinism/fault and final cumulative reviews clear executable head `18bd374f`.
+[PR #16](https://github.com/donal0c/sartracker-web/pull/16) records live CI/merge
+readiness. Donal retains merge authority. No new package/provider/soak qualification.
+
 The current SAR-team feedback, confirmed deep-audit defects, and remaining WAR
 work are one coordinated queue, not competing backlogs. The canonical finding
 dispositions and repair groupings are in

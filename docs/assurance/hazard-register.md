@@ -5,6 +5,20 @@
 **Register status:** WAR-01 post-PR5 reconciliation plus targeted WAR-04
 platform-services and WAR-04B release-control overlays.
 
+**WAR-02A test-infrastructure overlay (2026-09-10, PR #16):**
+[`PST-002` and `IPC-002` focused evidence](war-02a-test-infrastructure.md) adds
+T1/T2 fault and lifecycle controls on production base `083f5047`. PST-002 now has
+real SQLite/mirror tests for EIO, ENOSPC and injected interruption before/after
+the native backup call and rename, plus real durable-file write/sync/rename
+tests. IPC-002 now has virtual deadline/completion ordering joined to real
+mission-store evidence health after restart. Both historical negative controls
+fail at their named safety assertions. These new files are under
+`tests/unit/assurance/war-02a/`; prior row evidence retains its original scope.
+The broader gaps and owners remain unchanged: no SQLite VFS/page-write fault,
+abrupt OS death, power-loss durability, package, soak or field proof is added.
+DON-254 owns this test foundation's qualification follow-through. Neither hazard
+is closed; Repair Train A is untouched.
+
 **Confirmed deep-audit intake (2026-09-09):** fourteen reproduced finding
 groups from the 2026-09-07 system audit are centrally triaged in the
 [coordinated work ledger](coordinated-work-ledger.md). `AUD-07` and `AUD-14`
