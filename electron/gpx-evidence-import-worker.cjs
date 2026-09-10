@@ -143,7 +143,7 @@ async function run() {
 
 /** Parses ordered GPX evidence with explicit point/segment rejection provenance. */
 function parseGpxEvidence(contents, fileName, scalarParsers) {
-  const parser = new SaxesParser()
+  const parser = new SaxesParser({ xmlns: true })
   const segments = []
   const points = []
   const rejections = []
@@ -154,9 +154,27 @@ function parseGpxEvidence(contents, fileName, scalarParsers) {
   let point = null
   let capture = null
   let capturedText = ''
+  const frames = []
+  let namespace = null
 
+  parser.on('doctype', () => { throw new Error('GPX document type is not supported.') })
   parser.on('opentag', (tag) => {
-    const name = localName(tag.name)
+    const parent = frames.at(-1)
+    if (capture !== null) throw new Error('GPX scalar must be a single text value.')
+    if (parent === undefined) {
+      if (tag.local !== 'gpx' || !['', 'http://www.topografix.com/GPX/1/0', 'http://www.topografix.com/GPX/1/1'].includes(tag.uri)) {
+        throw new Error('GPX document root is not supported.')
+      }
+      namespace = tag.uri
+    }
+    const expectedParent = { trk: 'gpx', trkseg: 'trk', trkpt: 'trkseg', name: 'trk', ele: 'trkpt', time: 'trkpt' }
+    const name = tag.uri === namespace && (parent === undefined || parent.name === expectedParent[tag.local])
+      ? tag.local : null
+    if (['name', 'ele', 'time'].includes(name)) {
+      if (parent.scalars.has(name)) throw new Error(`GPX ${name} must be a single text value.`)
+      parent.scalars.add(name)
+    }
+    frames.push({ name, scalars: new Set() })
     if (name === 'trk') trackName = null
     if (name === 'trkseg') {
       segmentIndex += 1
@@ -172,8 +190,9 @@ function parseGpxEvidence(contents, fileName, scalarParsers) {
     if (name === 'time' && point !== null) beginCapture('timestamp')
   })
   parser.on('text', (value) => { if (capture !== null) capturedText += value })
-  parser.on('closetag', (tag) => {
-    const name = localName(tag.name)
+  parser.on('cdata', (value) => { if (capture !== null) capturedText += value })
+  parser.on('closetag', () => {
+    const { name } = frames.pop()
     if (name === 'name' && capture === 'track-name') {
       trackName = capturedText.trim() || null
       endCapture()
@@ -256,8 +275,6 @@ function attributeValue(value) {
   if (typeof value === 'string') return value
   return typeof value?.value === 'string' ? value.value : null
 }
-
-function localName(name) { return String(name).split(':').pop() }
 
 function validatePath(value) {
   const normalized = normalizeRawGpxPath(value, 'GPX evidence worker path')

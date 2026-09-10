@@ -354,6 +354,80 @@ describe('startGpxRuntime', () => {
     )
   })
 
+  it('settles a successful import across a same-mission outing refresh [AUD-05]', async () => {
+    let resolveImport: ((value: { imports: readonly { id: string }[]; dispatchDurationMs: number }) => void) | undefined
+    const imported = createStoredImport('gpx-a', 'mission-a')
+    const listGpxImports = vi.fn().mockResolvedValue([])
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({
+      gpxStore: { listGpxImports, upsertGpxImport: vi.fn(), deleteGpxImport: vi.fn(),
+        importGpxEvidencePaths: () => new Promise((resolve) => { resolveImport = resolve }) },
+      applyRuntime,
+    })
+    await controller.refreshMission('mission-a')
+    const pending = controller.importPaths(['/tracks/a.gpx'])
+    await controller.refreshMission('mission-a')
+    listGpxImports.mockResolvedValue([imported])
+    resolveImport?.({ imports: [{ id: imported.id }], dispatchDurationMs: 1 })
+    await expect(pending).resolves.toEqual([{ id: imported.id }])
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ importing: false, imports: [imported] }))
+  })
+
+  it('does not let an older outing refresh overwrite a completed import [AUD-05]', async () => {
+    let resolveRefresh: ((value: readonly ReturnType<typeof createStoredImport>[]) => void) | undefined
+    const imported = createStoredImport('gpx-a', 'mission-a')
+    const listGpxImports = vi.fn().mockResolvedValue([])
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({
+      gpxStore: { listGpxImports, upsertGpxImport: vi.fn(), deleteGpxImport: vi.fn(),
+        importGpxEvidencePaths: vi.fn().mockResolvedValue({ imports: [{ id: imported.id }], dispatchDurationMs: 1 }) },
+      applyRuntime,
+    })
+    await controller.refreshMission('mission-a')
+    listGpxImports.mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    const refresh = controller.refreshMission('mission-a')
+    await vi.waitFor(() => expect(resolveRefresh).toBeDefined())
+    listGpxImports.mockResolvedValue([imported])
+    await controller.importPaths(['/tracks/a.gpx'])
+    resolveRefresh?.([])
+    await refresh
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ importing: false, imports: [imported] }))
+  })
+
+  it('keeps the first import busy when another caller attempts admission [AUD-05]', async () => {
+    let resolveImport: ((value: { imports: readonly { id: string }[]; dispatchDurationMs: number }) => void) | undefined
+    const applyRuntime = vi.fn()
+    const importGpxEvidencePaths = vi.fn().mockImplementation(() => new Promise((resolve) => { resolveImport = resolve }))
+    const controller = await startGpxRuntime({ gpxStore: {
+      listGpxImports: vi.fn().mockResolvedValue([]), upsertGpxImport: vi.fn(), deleteGpxImport: vi.fn(), importGpxEvidencePaths,
+    }, applyRuntime })
+    await controller.refreshMission('mission-a')
+    const pending = controller.importPaths(['/tracks/a.gpx'])
+    await expect(controller.importPaths(['/tracks/b.gpx'])).rejects.toThrow('already in progress')
+    expect(importGpxEvidencePaths).toHaveBeenCalledOnce()
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ importing: true }))
+    resolveImport?.({ imports: [], dispatchDurationMs: 1 })
+    await pending
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ importing: false }))
+  })
+
+  it.each([false, true])('settles import failure across outing refresh, returned-to-mission=%s [AUD-05]', async (switchAway) => {
+    let rejectImport: ((reason: Error) => void) | undefined
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({
+      gpxStore: { listGpxImports: vi.fn().mockResolvedValue([]), upsertGpxImport: vi.fn(), deleteGpxImport: vi.fn(),
+        importGpxEvidencePaths: () => new Promise((_resolve, reject) => { rejectImport = reject }) }, applyRuntime,
+    })
+    await controller.refreshMission('mission-a')
+    const pending = controller.importPaths(['/tracks/a.gpx'])
+    if (switchAway) await controller.refreshMission('mission-b')
+    await controller.refreshMission('mission-a')
+    const assertion = switchAway ? expect(pending).resolves.toEqual([]) : expect(pending).rejects.toThrow('disk failure')
+    rejectImport?.(new Error('disk failure'))
+    await assertion
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ importing: false, error: switchAway ? null : 'disk failure' }))
+  })
+
   it('does not publish a completed path import after the active mission changes [DON-274]', async () => {
     let resolveImport: ((value: { imports: readonly { id: string }[]; dispatchDurationMs: number }) => void) | undefined
     const importGpxEvidencePaths = vi.fn().mockImplementation(

@@ -1,0 +1,59 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c1c7/sartracker-web
+
+ ❯ tests/unit/start-gpx-runtime.test.ts (17 tests | 1 failed | 16 skipped) 62ms
+     × does not let an older outing refresh overwrite a completed import [AUD-05] 61ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > does not let an older outing refresh overwrite a completed import [AUD-05]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
++     "activeMissionId": "mission-a",
++     "error": null,
++     "hasMoreImportIssues": false,
++     "hasMoreImports": false,
++     "importIssues": [],
++     "importPageNumber": 1,
+      "importing": false,
+-     "imports": [
+-       {
+-         "display_name": "gpx-a",
+-         "file_name": "gpx-a.gpx",
+-         "geometry_json": "{\"type\":\"MultiLineString\",\"coordinates\":[]}",
+-         "id": "gpx-a",
+-         "imported_at": "2026-04-11T10:00:00.000Z",
+-         "metadata_json": null,
+-         "mission_id": "mission-a",
+-         "source_path": "/tracks/gpx-a.gpx",
+-         "updated_at": "2026-04-11T10:00:00.000Z",
+-       },
+-     ],
++     "imports": [],
++     "loading": false,
++     "loadingMoreImports": false,
++     "outings": [],
++     "watchedDirectories": [],
+    },
+  ]
+
+ ❯ tests/unit/start-gpx-runtime.test.ts:394:26
+    392|     resolveRefresh?.([])
+    393|     await refresh
+    394|     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContain…
+       |                          ^
+    395|   })
+    396|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 16 skipped (17)
+   Start at  19:03:05
+   Duration  796ms (transform 51ms, setup 0ms, import 59ms, tests 62ms, environment 588ms)

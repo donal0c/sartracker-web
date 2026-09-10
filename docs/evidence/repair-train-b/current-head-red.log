@@ -1,0 +1,168 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c1c7/sartracker-web
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts (75 tests | 2 failed | 73 skipped) 171ms
+     × persists exact canonical GPX extensions values [AUD-01 AUD-10] 93ms
+     × persists exact canonical GPX cdata values [AUD-01 AUD-10] 77ms
+ ❯ tests/unit/start-gpx-runtime.test.ts (14 tests | 1 failed | 13 skipped) 8ms
+     × settles a successful import across a same-mission outing refresh [AUD-05] 7ms
+ ❯ tests/unit/gpx-parser.test.ts (8 tests | 1 failed | 7 skipped) 12ms
+     × excludes legal extension collisions from canonical evidence [AUD-01] 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > persists exact canonical GPX extensions values [AUD-01 AUD-10]
+AssertionError: expected [ { point_index: +0, …(5) }, …(2) ] to deeply equal [ { point_index: +0, …(5) }, …(1) ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "elevation": 100,
++     "elevation": 999,
+      "lat": 52,
+      "lon": -9.7,
+      "point_index": 0,
+-     "source_time": "2026-09-07T08:00:00.000Z",
++     "source_time": "2026-09-07T19:00:00.000Z",
+      "track_name": "Ridge party",
+    },
+    {
+      "elevation": 110,
+      "lat": 52.001,
+      "lon": -9.701,
+      "point_index": 1,
+      "source_time": "2026-09-07T08:01:00.000Z",
++     "track_name": "Ridge party",
++   },
++   {
++     "elevation": null,
++     "lat": 51,
++     "lon": -8,
++     "point_index": 2,
++     "source_time": "2026-09-07T08:02:00.000Z",
+      "track_name": "Ridge party",
+    },
+  ]
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:3603:146
+    3601|     const db = openDatabase(await databasePath())
+    3602|     try {
+    3603|       expect(db.prepare('SELECT point_index, track_name, lat, lon, ele…
+       |                                                                                                                                                  ^
+    3604|         { point_index: 0, track_name: 'Ridge party', lat: 52, lon: -9.…
+    3605|         { point_index: 1, track_name: 'Ridge party', lat: 52.001, lon:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > persists exact canonical GPX cdata values [AUD-01 AUD-10]
+AssertionError: expected [ { point_index: +0, …(5) }, …(2) ] to deeply equal [ { point_index: +0, …(5) }, …(1) ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "elevation": 100,
++     "elevation": 999,
+      "lat": 52,
+      "lon": -9.7,
+      "point_index": 0,
+-     "source_time": "2026-09-07T08:00:00.000Z",
+-     "track_name": "Ridge party",
++     "source_time": "2026-09-07T19:00:00.000Z",
++     "track_name": null,
+    },
+    {
+-     "elevation": 110,
++     "elevation": null,
+      "lat": 52.001,
+      "lon": -9.701,
+      "point_index": 1,
+-     "source_time": "2026-09-07T08:01:00.000Z",
+-     "track_name": "Ridge party",
++     "source_time": null,
++     "track_name": null,
++   },
++   {
++     "elevation": null,
++     "lat": 51,
++     "lon": -8,
++     "point_index": 2,
++     "source_time": "2026-09-07T08:02:00.000Z",
++     "track_name": null,
+    },
+  ]
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:3603:146
+    3601|     const db = openDatabase(await databasePath())
+    3602|     try {
+    3603|       expect(db.prepare('SELECT point_index, track_name, lat, lon, ele…
+       |                                                                                                                                                  ^
+    3604|         { point_index: 0, track_name: 'Ridge party', lat: 52, lon: -9.…
+    3605|         { point_index: 1, track_name: 'Ridge party', lat: 52.001, lon:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/unit/gpx-parser.test.ts > gpx parser > excludes legal extension collisions from canonical evidence [AUD-01]
+AssertionError: expected [ { segmentIndex: +0, …(6) }, …(2) ] to deeply equal [ { segmentIndex: +0, …(6) }, …(1) ]
+
+- Expected
++ Received
+
+@@ -15,6 +15,15 @@
+      "pointIndex": 1,
+      "segmentIndex": 0,
+      "timestamp": "2026-09-07T08:01:00.000Z",
+      "trackName": "Ridge party",
+    },
++   {
++     "elevation": null,
++     "lat": 51,
++     "lon": -8,
++     "pointIndex": 2,
++     "segmentIndex": 0,
++     "timestamp": "2026-09-07T08:02:00.000Z",
++     "trackName": "Ridge party",
++   },
+  ]
+
+ ❯ tests/unit/gpx-parser.test.ts:10:27
+      8|     const parsed = parseGpxFile({ fileName: 'extensions.gpx', sourcePa…
+      9|       contents: readFileSync('tests/fixtures/gpx-extension-fidelity.gp…
+     10|     expect(parsed.points).toEqual([
+       |                           ^
+     11|       { segmentIndex: 0, pointIndex: 0, trackName: 'Ridge party', lat:…
+     12|       { segmentIndex: 0, pointIndex: 1, trackName: 'Ridge party', lat:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > settles a successful import across a same-mission outing refresh [AUD-05]
+AssertionError: expected [] to deeply equal [ { id: 'gpx-a' } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "id": "gpx-a",
+-   },
+- ]
++ []
+
+ ❯ tests/unit/start-gpx-runtime.test.ts:372:26
+    370|     listGpxImports.mockResolvedValue([imported])
+    371|     resolveImport?.({ imports: [{ id: imported.id }], dispatchDuration…
+    372|     await expect(pending).resolves.toEqual([{ id: imported.id }])
+       |                          ^
+    373|     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContain…
+    374|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  4 failed | 93 skipped (97)
+   Start at  19:00:09
+   Duration  1.74s (transform 97ms, setup 0ms, import 160ms, tests 191ms, environment 1.02s)

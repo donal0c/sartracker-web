@@ -5,6 +5,12 @@
 **Register status:** WAR-01 post-PR5 reconciliation plus targeted WAR-04
 platform-services and WAR-04B release-control overlays.
 
+**Repair Train B overlay (2026-09-10):** `RPL-003`/`EVD-001` source-fidelity
+and `MIS-002` import/outing settlement gaps reproduce at `302bdd04` as
+AUD-01/AUD-10/AUD-05. The [repair record](findings/repair-train-b.md) owns
+current source, native, browser and package evidence; the broader hazard rows
+retain their original proof limits. No whole-hazard or field closure is claimed.
+
 **Repair Train A overlay (2026-09-10):** `TRK-001`'s overlapping settings/reconnect
 drain gap and `TRK-004`'s out-and-back/whole-history projection defects reproduced
 on `083f5047`. The [repair record](findings/repair-train-a.md) tracks the bounded
