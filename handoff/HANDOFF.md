@@ -4,27 +4,23 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **Repair Train A review remediation** on `codex/astra-repair-train-a`.
-  [PR #17](https://github.com/donal0c/sartracker-web/pull/17) remains draft:
-  final GitHub intake found A-R20 per-device replacement freshness and A-R21
-  replacement request diagnostics. Both are reproduced and fixed; new source
-  427 files / 4,377 tests, lint/build and native omission/custody proof pass.
-  New exact-head CI remains pending. Earlier repaired lifecycle,
-  custody, autosave, reservation, provider-retention and stationary-duration
-  defects have red/green repairs. The prior cycle's tests, three browser flows and the
-  synthetic 100×5,000 incremental renderer probe pass (maximum 78.5 ms).
-  Full source passes 417 files / 4,299 tests; lint/build and rebuilt macOS native
-  reconnect/custody proof pass (replacement 39 ms before old response release).
-  All four reviews clear `ac368fd2` integrated with master `4076975d`; Linux CI
-  `34492149684` passes 426 files / 4,374 tests and all package/replay/soak/archive/
-  AppImage gates. Downloaded bindings and receipts were independently inspected;
-  archive maxima 166 ms current / 69.5 ms frames meet strict <200 ms.
-  [Current disposition](../docs/assurance/findings/repair-train-a-remediation.md)
-  supersedes the [historical receipts](../docs/assurance/findings/repair-train-a.md).
-  DON-267/DON-269 own repairs; DON-254 retains qualification, including the old
-  unexplained 466.7 ms and new 416.7 ms soak observations. Docs-only closeout
-  preserves tested application inputs. Await Donal's review; no merge/release authority.
-
+- **Repair Train A review remediation**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
+  is ready for scoped review at application `713461bf`, integrated with master
+  `4076975d`. A-R10–A-R21 are disposed: lifecycle/custody retry, autosave,
+  reservations, stationary elapsed truth, per-device replacement freshness and
+  replacement request diagnostics. All four exact-head reviews clear; local and
+  Linux CI pass 427 files / 4,377 tests, lint/build. Actual macOS reconnect,
+  omission and SQLite custody proof passes; unchanged stationary inputs reuse
+  three browser flows and the 78.5 ms incremental 100×5,000 renderer proof.
+  CI `34496976736` attempt 2 passes all package/replay/soak/archive/AppImage steps;
+  inspected archive maximum is 193 ms. Attempt 1's 224 ms breach is retained and
+  unexplained: the one unchanged-head repeat proves no causal fix. Soak renderer
+  499.9 ms / external action 374.58 ms also remain DON-254 qualification evidence.
+  This is scoped review readiness, not reliable strict-200 or release acceptance.
+  [Disposition](../docs/assurance/findings/repair-train-a-remediation.md) and
+  [latest receipt](../docs/evidence/repair-train-a/github-followup/linux-ci-receipt.md)
+  bind the proof. DON-267/DON-269 own repairs; DON-254 remains open. Documentation
+  closeout reuses unchanged application inputs. No merge/release authority.
 
 - **WAR-02A test foundation merged in PR #16 at `4076975d`** from fetched master `083f5047`
   (merged PR #15). Additive helpers/tests are isolated under

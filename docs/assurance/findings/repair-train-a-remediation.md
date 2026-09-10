@@ -1,6 +1,9 @@
 # Train A external-review remediation
 
-**Current disposition: draft; A-R20/A-R21 local proof passes, new CI pending.**
+**Current disposition: ready for scoped review at application `713461bf`.
+All four source reviews clear; local and Linux CI attempt 2 pass 427/4,377.
+Attempt 1's 224 ms archive failure remains unexplained, alongside soak timing
+limits under DON-254. No reliable strict-200 qualification or release acceptance.**
 
 Donal supplied the [unaltered review](repair-train-a-external-review-20260910.txt)
 against PR #17 head `2da06afa124c9041375b7b6ebb12feb8e7adf5f0` and explicitly
@@ -93,7 +96,7 @@ Source positions/cache/persistence are unchanged. Prior `ac368fd2` proof below
 is historical for this follow-up. [New local proof](../../evidence/repair-train-a/github-followup/)
 passes 427 files / 4,377 tests, lint/build and the actual native omission case:
 Unknown/Last known through empty success, then Online/Live on the next current
-fix, with custody and rejection warning intact. New exact-head CI remains pending.
+fix, with custody and rejection warning intact. [Exact-head Linux CI attempt 2](../../evidence/repair-train-a/github-followup/linux-ci-receipt.md) passes; attempt 1 remains recorded, not erased.
 
 The earlier policy tests checked attention presence and prepared/full equivalence,
 but not elapsed time against an independently specified noisy stationary episode.

@@ -52,13 +52,12 @@ head.
 
 ## Deep-audit finding disposition
 
-Repair Train A PR #17 remains draft for final GitHub findings A-R20/A-R21;
-new local source/native proof passes and new exact-head CI is pending. The
-ready row statuses below describe the prior `ac368fd2` cycle only. All four
-reviews cleared that cycle; Linux CI `34492149684` and inspected receipts pass.
-See [current disposition](findings/repair-train-a-remediation.md). DON-254 retains
-the separate soak's unexplained 416.7 ms and prior 466.7 ms renderer maxima;
-no universal sub-200 or release claim is made.
+Repair Train A PR #17 is ready for scoped review at application `713461bf`.
+Four exact-head reviews, local 427/4,377, native omission/custody and Linux CI
+`34496976736` attempt 2 pass. Archive maximum is 193 ms. Attempt 1's 224 ms
+failure remains unexplained; soak renderer 499.9 ms and external action 374.58 ms
+remain DON-254 qualification evidence. No reliable strict-200 or release claim.
+See [current disposition](findings/repair-train-a-remediation.md).
 The [repair record](findings/repair-train-a.md)
 holds before/after evidence, accepted review repairs and rejected runs. Existing
 DON-267/DON-269 own the work; DON-254 retains final-candidate qualification.
@@ -69,7 +68,7 @@ implementation alone.
 | --- | --- | --- | --- | --- |
 | `AUD-07` hidden evidence remains selectable | P2 | **Implemented in PR #15; awaiting merge** | DON-215 / Team Feedback Batch 2; fix `42f9f305`, integrated executable `e60dc43e` | Required hit-test visibility and per-object replay limitations; red/green, rendered interaction and bounded review proof in [batch evidence](../ui-feedback-batch-2-evidence.md); final Linux CI `34462624720` passed |
 | `AUD-14` failed history retrieval coexists with “All mission history shown” | P2 | **Implemented in PR #15; awaiting merge** | DON-215 / Team Feedback Batch 2; fix `42f9f305`, integrated executable `e60dc43e`; authorized durable request-target extension | Structured completeness survives empty failures, deselection, pause and restart; red/green, packaged restart/pause and bounded review proof in [batch evidence](../ui-feedback-batch-2-evidence.md); final Linux CI `34462624720` passed |
-| `AUD-13` overlapping reloads can stop tracking while Live remains shown | P1 | **PR #17 ready for review; awaiting merge** | `DON-267` / `DON-254`; feed `WAR-06`; application `ac368fd2` | Native reconnect/current continuity, retryable cleanup, admission and accepted-fix/rejection SQLite custody pass; four reviews and matching Linux CI pass. [Remediation](findings/repair-train-a-remediation.md) |
+| `AUD-13` overlapping reloads can stop tracking while Live remains shown | P1 | **PR #17 ready for review; awaiting merge** | `DON-267` / `DON-254`; feed `WAR-06`; application `713461bf` | Native reconnect/current continuity, retryable cleanup, admission and accepted-fix/rejection SQLite custody pass; four reviews and matching Linux CI pass. [Remediation](findings/repair-train-a-remediation.md) |
 | `AUD-02` out-and-back route falsely appears stationary | P2 | **PR #17 ready for review; awaiting merge** | `DON-269`; `TRK-004` / `WAR-06`; twenty-minute rule retained | Route, accuracy/jitter, exact elapsed and acknowledgement through noise-return pass; three rendered flows and independent review clear. [Remediation](findings/repair-train-a-remediation.md) |
 | `AUD-03` stationary projection broadly rescans mission history | P1 | **PR #17 ready for review; awaiting merge** | `DON-269` / `DON-254`; final qualification remains separate | Real interleaved 100×5,000 accumulator bound passes; guarded incremental renderer maximum 78.5 ms <200 with post-operation samples. Cold-load and broader soak outliers remain outside this proof. [Remediation](findings/repair-train-a-remediation.md) |
 | `AUD-01` legal GPX extension fields overwrite canonical evidence/add a coordinate | P1 | **Repair train B — GPX evidence fidelity and lifecycle** | `DON-274` / `DON-254`; start after Team Feedback Batch 2 because Review/replay presentation is changing | XSD-valid source-to-SQLite-to-replay identity test; no invented coordinate/time/elevation; native/package boundary proof |

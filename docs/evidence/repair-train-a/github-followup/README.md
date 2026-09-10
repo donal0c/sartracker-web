@@ -23,4 +23,18 @@ their bounded three-flow / 78.5 ms evidence in `../remediation` is reused.
 The full source run separately logged a GPX heartbeat diagnostic of 278.39 ms;
 its actual current-write gate passed at 107.47 ms. That diagnostic is preserved
 in `source.log`, without claiming all heartbeat samples were under 200 ms.
-New exact-head Linux CI remains required for this changed application.
+Linux CI `34496976736` attempt 1 failed at head `713461bf`: archive restore
+current-fix continuity measured **224 ms**, exceeding the unchanged strict
+<200 ms gate. See `linux-ci-attempt-1-archive-failure.json`. Adjacent mock-server
+request receipts were 226 ms apart; delivery to the renderer was 20/22 ms.
+The gap precedes server receipt; application polling versus server/process
+scheduling is not distinguished. The reconnect reset/client paths were inactive
+in this harness. The runner CPU differed from the prior passing run, but this
+is not a confirmed cause. Cleanup succeeded; AppImage smoke was skipped.
+
+One unchanged-head repeat was a bounded reproducibility check after this trace
+inspection. The failed binary was not uploaded and no narrower hosted entrypoint
+exists. [Attempt 2 passed](linux-ci-receipt.md), with inspected archive maximum
+193 ms. This does not explain or erase attempt 1. Soak renderer 499.9 ms and
+external action 374.58 ms remain DON-254 investigation evidence. No release
+acceptance or reliable strict-200 qualification is claimed.

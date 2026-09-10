@@ -164,17 +164,17 @@ ship or ask testers for whole Electron profile zips.
 ### Repair Train A — tracking safety and liveness (2026-09-10)
 
 [PR #17](https://github.com/donal0c/sartracker-web/pull/17) on
-`codex/astra-repair-train-a` remains draft for final GitHub findings A-R20/A-R21
-within AUD-13/02/03 under DON-267/DON-269. New local 427/4,377 source and native
-omission proof pass; new exact-head CI is pending. Earlier findings are fully disposed.
-[Current disposition and verification](assurance/findings/repair-train-a-remediation.md)
-records accepted defects, disproved claims and new regressions. Local source,
-browser, renderer and rebuilt native proof pass; the accepted PR #16 foundation
-is integrated at `ac368fd2`. All four exact-head reviews and Linux CI `34492149684`
-pass; downloaded receipts were inspected. Combined source is 426 files / 4,374
-tests; archive current/frame maxima 166/69.5 ms meet strict <200 ms.
-The [original ledger](assurance/findings/repair-train-a.md) retains historical
-receipts only. DON-254 retains qualification and unexplained prior soak timing.
+`codex/astra-repair-train-a` is ready for scoped review at application `713461bf`
+under DON-267/DON-269 (AUD-13/02/03). All accepted review findings, including
+A-R20 per-device freshness and A-R21 request diagnostics, are repaired. Four
+exact-head reviews clear. Local and Linux CI pass 427 files / 4,377 tests;
+actual native omission/custody proof and unchanged stationary browser/renderer
+proof pass. [Current disposition](assurance/findings/repair-train-a-remediation.md)
+and [Linux receipt](evidence/repair-train-a/github-followup/linux-ci-receipt.md)
+record the evidence and boundaries. CI `34496976736` attempt 2 passes all gates
+with archive maximum 193 ms; attempt 1's 224 ms breach remains unexplained.
+DON-254 retains that failure and soak renderer 499.9 ms / external action
+374.58 ms. No reliable strict-200 qualification or release acceptance follows.
 WAR-02A stays separate. No merge, release, deployment or new team questions
 are authorized.
 
