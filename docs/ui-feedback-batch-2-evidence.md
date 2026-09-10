@@ -245,6 +245,25 @@ binding and receipt result are recorded on PR #15 and DON-215 before draft remov
 Earlier rejected timing measurements remain unexplained, with the 200 ms gate
 unchanged. Merge readiness does not establish release or field acceptance.
 
+Final merge preparation includes master `d02d8a61` (PRs #13/#14). PR #13's
+coordination ledger is retained alongside the batch acceptance contract. After
+integration CI rejected 206 ms archive continuity, the Linux smoke's software
+renderer concurrency was bounded to two workers, preserving rendering, workload
+and the 200 ms gates. The [investigation](archive-ci-rendering-investigation.md#pr-15-integration-bounded-software-renderer-concurrency)
+records the rejected run, local comparisons and their limits. All 282 affected
+liveness-boundary tests and lint pass; application behavior is unchanged.
+
+[Final Linux CI 34462624720](https://github.com/donal0c/sartracker-web/actions/runs/34462624720)
+passed all stages on `e60dc43e13997b5297e396ce74561c30172025f7`: 415 files /
+4,271 tests, lint/build, installer inspection, 960k replay, native SQLite,
+tracking, archive lifecycle, terminal evidence and AppImage launch. Downloaded
+source/package/archive receipts independently validate clean exact head/tree
+`e2a15683385a7cc10155488b9bb5bd572a09fd4e`. Current-fix maximum 188 ms and frame
+maximum 110.3 ms pass the unchanged gate; continuity headroom is 12 ms. Prior
+242/210/206 ms rejections remain unexplained, not erased by this result.
+Final documentation closeout reuses this unchanged executable/test/workflow tree.
+PR readiness is recorded on PR #15; merge and release have not been performed.
+
 The operator recheck also found stale metadata-read rejection and mixed tile
 recovery cases. Three additional red/green regressions now cover them (13 tests
 passed in `/tmp/pr15-reviewer-followup-green.log`). Basemap warnings are keyed to

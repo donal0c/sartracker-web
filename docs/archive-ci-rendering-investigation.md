@@ -169,3 +169,16 @@ that the earlier 242/210/206 ms failures are explained. The regression failed wi
 an inherited sixteen-worker setting, then passed with Linux pinned to two and
 non-Linux settings preserved. Local liveness-boundary tests and lint pass; the
 normal new-head CI result and receipt validation are recorded on PR #15/DON-215.
+
+Hosted result: [CI 34462624720](https://github.com/donal0c/sartracker-web/actions/runs/34462624720)
+passed on `e60dc43e13997b5297e396ce74561c30172025f7`, tree
+`e2a15683385a7cc10155488b9bb5bd572a09fd4e`, including every source and packaged
+gate. Downloaded source binding, package-safety v2 and archive-lifecycle receipts
+independently validate the exact clean head/tree, native runtime, custody and
+teardown. Current-fix maxima were 116/143/175/188 ms for create/verify/restore/
+cleanup; renderer frames peaked at 110.3 ms. The strict 200 ms gate passes with
+12 ms current-fix headroom. Packaged app.asar SHA-256:
+`05bf28a73adc53ad021261478ecd7585e92da349001567d96aa4c8f526a11966`.
+Receipts: `tmp/pr15-ci-e60dc43e`. This establishes the configured hosted run,
+not a causal explanation of earlier failures or release/field qualification.
+Subsequent closeout changes only documentation and reuses this executable proof.

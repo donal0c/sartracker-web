@@ -5,52 +5,29 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
 ## Where we are
 
 - [PR #15](https://github.com/donal0c/sartracker-web/pull/15), Team Feedback
-  Batch 2, remains draft on `codex/team-ui-feedback-batch-2` (DON-215).
-  Donal's review rejected the previous local all-clear at `2386e7db`.
-  Review remediation: per-object replay limitations; required hit-test
-  visibility and hidden-marker creation protection; durable checkpoint-based
-  coverage completeness; real loader/worker regressions; corrected optimistic
-  visibility cascade; mission-switch isolation; recovering map-source warnings.
-  Final stable source passes 409 files / 4,209 tests; lint/build and 31 affected
-  browser flows pass. Packaged macOS request-target restart/pause and live/archive
-  geometry proofs pass (50 ms frames); inspected map retains one offline warning.
-  Tracking CI-profile soak passes 8,664 positions/two launches, main max 42.4 ms;
-  it predates only final warning deduplication/formatting. Local synthetic proof.
-  Donal approved independent live Breadcrumbs/Mission History controls and durable
-  history request targets, including migration/writes. Both are implemented locally:
-  nullable additive checkpoint columns retain requested bounds before dispatch,
-  separate from acknowledged contiguous history. No-new-fix failure/restart and
-  independent-controls regressions pass. Focused reviewers cleared prefix continuity,
-  overlapping admission failures and tile recovery. Remediation is verified locally;
-  Runtime commit `42f9f305` passed Linux CI `34447132522`, including 960k replay,
-  tracking, archive lifecycle and AppImage launch. Downloaded terminal evidence
-  independently validates exact source/tree, custody, teardown and privacy.
-  Archive current-fix max 192 ms (8 ms headroom); frames 93.1 ms. This docs-only
-  closeout reuses the unchanged executable/test/workflow tree. Gate wiring stays deferred.
-  Review details: `tmp/pr15-review/`.
-  CI `34398992302` attempts 1/2 failed hosted x64 archive continuity at
-  242/210 ms; their cause remains unexplained despite the new-head pass. The
-  200 ms gate is unchanged, and no release/field acceptance is established.
-  Same-head macOS lifecycle passed (66 ms); isolated four-CPU Linux ARM64 passed
-  (173 ms), which does not establish hosted x64 correctness or causality.
-  The owned `sar-batch2-linux` container is stopped; receipts are in
-  `tmp/batch2-linux-source` and the [evidence](../docs/ui-feedback-batch-2-evidence.md).
-  Current master `d02d8a61` (merged PRs #13/#14) is integrated for merge readiness.
-  PR #14 conflicted only in this handoff; PR #13 only in the workplan.
-  Source behavior is unchanged by these integrations.
-  Combined source passes 415 files / 4,271 tests, lint and production build.
-  Integration CI `34458799719` passed source/build/package/replay/tracking, then
-  failed archive continuity at 206 ms. Draft remains; no same-head CI retry.
-  Linux-only archive smoke now bounds Mesa rendering to two workers after local
-  contention diagnostics; 282 boundary tests and lint pass. Same-package cold-cache
-  two-worker lifecycle passes (current max 171 ms). Hosted causality is unresolved;
-  the unchanged 200 ms gate and fresh new-head CI still decide readiness. See the
-  [investigation](../docs/archive-ci-rendering-investigation.md#pr-15-integration-bounded-software-renderer-concurrency).
-  Final integration results are recorded on PR #15 and DON-215; no merge or release.
-  PR #13 adds only coordination documentation; both its queue and this batch's
-  acceptance contract are retained. Executable/test/workflow trees remain identical
-  to integration `35dd1c83` before the explicit Linux worker-bound adjustment.
-
+  Batch 2 (DON-215), is prepared for merge; the PR records live readiness status.
+  Current master `d02d8a61` includes merged PRs #13 and #14. Both are integrated;
+  documentation conflicts retain the batch acceptance contract and safety queue.
+  Review fixes cover per-object replay limitations, required hit-test visibility,
+  hidden-marker creation protection, durable history request/completeness state,
+  independent live/history controls, visibility cascade and mission-switch isolation.
+  Remediation reviewers cleared application commit `42f9f305`; integrations leave
+  that application behavior unchanged. Details: [batch evidence](../docs/ui-feedback-batch-2-evidence.md).
+  Stable local source: 415 files / 4,271 tests, lint/build. Prior 31 affected browser
+  flows, final screenshot review, packaged request-target restart/pause, large
+  geometry and 8,664-position tracking proofs remain applicable to unchanged code.
+  Linux CI `34462624720` passed on `e60dc43e`: complete source/lint/build,
+  installer inspection, 960k replay, tracking, archive lifecycle and AppImage launch.
+  Downloaded source/package/archive receipts independently validate the exact clean
+  head/tree, native SQLite, custody, teardown and privacy. Current-fix maximum
+  188 ms; frames 110.3 ms, below unchanged 200 ms gates (12 ms continuity headroom).
+  Linux archive-test graphics concurrency is bounded to two Mesa workers; 282
+  boundary tests pass. Prior 242/210/206 ms hosted failures remain unexplained;
+  this configured-environment pass is not a causal fix or field-acceptance claim.
+  [Investigation](../docs/archive-ci-rendering-investigation.md) retains comparisons.
+  This final documentation-only closeout reuses `e60dc43e` executable/test/workflow
+  evidence. New geometry/E2E gate wiring stays deferred. The owned Linux diagnostic
+  container is stopped. Await user merge; no merge, release or deployment performed.
 
 - WAR-11A merged as [PR #14](https://github.com/donal0c/sartracker-web/pull/14)
   at `35cff87d`; final Linux CI `34413097593` passed. Builder 26.16.1 adds
