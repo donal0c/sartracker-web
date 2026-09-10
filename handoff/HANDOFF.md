@@ -4,30 +4,25 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
 
 ## Where we are
 
+- **WAR-02A test foundation is in progress** from fetched master `083f5047`
+  (merged PR #15). Additive helpers/tests are isolated under
+  `tests/unit/assurance/war-02a/`; production and Repair Train A are untouched.
+  Focused 54 tests, source 422 files / 4,325 tests, lint/build and strict helper
+  types pass; both historical controls fail when disabled. Independent PR reviews
+  are next. [Contract/evidence](../docs/assurance/war-02a-test-infrastructure.md).
+  DON-254 remains qualification owner; no package/provider/soak proof or merge.
+
 - [PR #15](https://github.com/donal0c/sartracker-web/pull/15), Team Feedback
-  Batch 2 (DON-215), is prepared for merge; the PR records live readiness status.
-  Current master `d02d8a61` includes merged PRs #13 and #14. Both are integrated;
-  documentation conflicts retain the batch acceptance contract and safety queue.
-  Review fixes cover per-object replay limitations, required hit-test visibility,
-  hidden-marker creation protection, durable history request/completeness state,
-  independent live/history controls, visibility cascade and mission-switch isolation.
-  Remediation reviewers cleared application commit `42f9f305`; integrations leave
-  that application behavior unchanged. Details: [batch evidence](../docs/ui-feedback-batch-2-evidence.md).
-  Stable local source: 415 files / 4,271 tests, lint/build. Prior 31 affected browser
-  flows, final screenshot review, packaged request-target restart/pause, large
-  geometry and 8,664-position tracking proofs remain applicable to unchanged code.
-  Linux CI `34462624720` passed on `e60dc43e`: complete source/lint/build,
-  installer inspection, 960k replay, tracking, archive lifecycle and AppImage launch.
-  Downloaded source/package/archive receipts independently validate the exact clean
-  head/tree, native SQLite, custody, teardown and privacy. Current-fix maximum
-  188 ms; frames 110.3 ms, below unchanged 200 ms gates (12 ms continuity headroom).
-  Linux archive-test graphics concurrency is bounded to two Mesa workers; 282
-  boundary tests pass. Prior 242/210/206 ms hosted failures remain unexplained;
-  this configured-environment pass is not a causal fix or field-acceptance claim.
-  [Investigation](../docs/archive-ci-rendering-investigation.md) retains comparisons.
-  This final documentation-only closeout reuses `e60dc43e` executable/test/workflow
-  evidence. New geometry/E2E gate wiring stays deferred. The owned Linux diagnostic
-  container is stopped. Await user merge; no merge, release or deployment performed.
+  Batch 2 (DON-215), merged at `083f5047`, including PRs #13/#14. Its retained
+  [batch evidence](../docs/ui-feedback-batch-2-evidence.md) covers application
+  `42f9f305`, source 415 files / 4,271 tests, affected browser/visual and packaged
+  restart/pause/tracking checks. Linux CI `34462624720` passed on `e60dc43e`;
+  downloaded receipts bind native SQLite, custody, teardown and privacy.
+  Current-fix/frame maxima 188/110.3 ms remain below unchanged 200 ms limits.
+  Prior 242/210/206 ms hosted failures remain unexplained; the bounded Mesa
+  configuration pass is not a causal fix or field acceptance. The
+  [investigation](../docs/archive-ci-rendering-investigation.md) retains evidence.
+  New geometry/E2E gate wiring remains deferred. No release acceptance is claimed.
 
 - WAR-11A merged as [PR #14](https://github.com/donal0c/sartracker-web/pull/14)
   at `35cff87d`; final Linux CI `34413097593` passed. Builder 26.16.1 adds
@@ -67,7 +62,8 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   fixes or explicit dispositions in the [complete ledger](../docs/breadcrumb-pr6-complete-review-ledger.md).
 - Documentation cleanup records the final testing approach below. Start new work
   from current `master`; the archive PR does not need another review cycle.
-- Next programme steps: finish PR #15 integration, independently qualify native
+- Next programme steps: Repair Train A and disjoint WAR test foundations;
+  independently qualify native
   dependency/runtime upgrades, then BCP-17 final candidate qualification before
   DON-255 publication. Use the
   [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear
