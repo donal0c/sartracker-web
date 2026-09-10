@@ -2,6 +2,27 @@
   "base": "302bdd040976bd370271cf5866549fa2a7e05ff5",
   "applicationAndHarnessReviewHead": "798a6fd8922d30fa879952daf1dff7549112e24e",
   "finalFixtureReviewHead": "3fe6928adab456d75e206c44bb08de8bec7167a7",
+  "finalExecutableReviewHead": "971a07de7a4f5bbe1ea2060a5ebdb259d843b08c",
+  "linuxEvidenceRechecks": {
+    "run": "34525215816",
+    "measurementReview": "Verified three main timer gaps despite passing inspector RTT, CPU/GC and wider scheduling windows; component cause unresolved, no universal responsiveness acceptance.",
+    "evidenceReview": "Verified exact source/package binding, passing original soak/archive gates and retained independent gaps; launch 2 pressure eviction explicitly limits attribution.",
+    "additionalTestsRun": false
+  },
+  "finalTargetedRechecks": [
+    {
+      "reviewer": "independent measurement_review agent",
+      "verdict": "CLEAN",
+      "scope": "ATTR-R06 committed original heartbeat startup coverage, inspector-first failure cleanup and ordering regression",
+      "additionalTestsRun": false
+    },
+    {
+      "reviewer": "independent evidence_review agent",
+      "verdict": "CLEAN",
+      "scope": "Corrected ABBA maxima, four original passing verdicts, exact 8664-position custody, eight complete launch observations without eviction, exploratory evidence distinction and unchanged PR19 draft decision",
+      "additionalTestsRun": false
+    }
+  ],
   "reviews": [
     {
       "reviewer": "independent measurement_review agent",

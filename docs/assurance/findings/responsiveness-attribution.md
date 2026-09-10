@@ -11,6 +11,12 @@ establish either a main-process application stall or a harmless host delay.
 The 544.164511 ms observation is an external inspector round trip, with two
 samples at or above its unchanged 200 ms limit. That rejection is binding.
 
+The instrumented Linux run passed the original workflow but exposed a separate
+measurement gap: inspector RTT stayed below 79 ms while the main process's own
+50 ms timer recorded callback gaps of 217.08, 512.35 and 345.73 ms. This is not
+universal sub-200 ms acceptance. The responsible application operation and
+the scheduling contribution remain unresolved.
+
 Fetched master is `302bdd040976bd370271cf5866549fa2a7e05ff5`; PR #19 is draft
 at `769669baf5d47ee9aa157c90746f6e406778d554`, tree
 `1dbca6e67642e7e4092fbb5fc9c70573e4a7d9da`. Run
@@ -166,12 +172,69 @@ and fixture-clock limitations apply; this still does not explain Linux CI.
 **PR #19 decision: remain draft; retain failed run 34515489481.** GPX-specific
 causation is unsupported, and the evidence cannot exonerate the whole app or
 host. No introducing product commit or production repair owner is established.
-The smallest next experiment is an instrumented Linux run with the retained
-channels; if it breaches, correlate intervals before selecting one targeted
-counterfactual. Do not reinterpret this local pass as acceptance or blindly
+The instrumented Linux result below now supplies the next evidence boundary.
+Do not reinterpret the local or Linux original-gate pass as acceptance or blindly
 rerun the old aggregate-only harness. This PR owns diagnostic attribution;
 DON-254 owns qualification and any discovered production stall gets its own
 smallest repair scope.
+
+## Instrumented Linux result and remaining causal boundary
+
+Run [34525215816](https://github.com/donal0c/sartracker-web/actions/runs/34525215816)
+passed at executable head `971a07de7a4f5bbe1ea2060a5ebdb259d843b08c`, tree
+`a22c006210776573709683b685799135373e413b`. Source, package and archive records
+agree; the package's generated version change was restored by the workflow.
+The downloaded evidence artifact is `10172367386`. Its digest, report digest,
+installer hashes and bounded observations are retained in
+[the Linux receipt](../../evidence/responsiveness-attribution/linux-ci-971.json).
+
+Lint, the full source suite, builds, normal 960k qualification, native artifact
+inspection, llvmpipe attestation, packaged soak, archive lifecycle and AppImage
+launch/close all passed. Soak retained exact position custody and zero operator
+interaction errors. Archive current-fix / main watchdog / frame maxima were
+166 / 90.45 / 98.9 ms, below those unchanged 200 ms gates.
+
+**ATTR-M06: the inspector gate can under-detect ordinary timer-service delay.**
+Its Linux maximum was 78.99 ms, yet the independently installed main timer
+observed the following callback intervals. These are 50 ms timer gaps, not
+measurements of continuous JavaScript blocking:
+
+| Launch | Main callback gap | Process CPU during interval | Overlapping recorded GC |
+| --- | --- | --- | --- |
+| 1 | 217.08 ms | 233.97 ms | None retained |
+| 1 | 512.35 ms | 496.15 ms | 36.44 ms |
+| 2 | 345.73 ms | 307.25 ms | 32.26 ms |
+
+Controller timer maxima stayed below 60 ms. Controller starvation therefore
+does not explain these particular gaps. Main-process CPU was substantial;
+it includes other threads and does not identify the blocking call path.
+Launch 1's wider scheduler windows show concurrent run-queue waiting, about
+67.72 ms over 500 ms and 134.20 ms over 1,002 ms around the two gaps. Those
+windows cannot assign an exact share of either delay to host scheduling.
+Recorded cgroup throttling counters were zero. Recorded GC durations explain
+only a small fraction of the longer gaps; asynchronous GC observation and
+unlogged work remain limitations. No GPU timeline was captured.
+
+Both launches collected mandatory channels. Launch 2 explicitly evicted 47
+pressure samples, including the early gap's scheduling context. The bounded
+storage log also retains only its tail. Missing early phase records cannot
+exonerate storage work. Frame maximum was 533.3 ms and independent renderer
+timer maximum 408.3 ms; the soak's existing 1,000 ms freeze gate is distinct
+from the archive's 200 ms gate. Neither threshold was changed.
+
+The confirmed defect in measurement is treating inspector RTT as proof of
+ordinary event-loop responsiveness. The component-level cause of the main
+timer gaps remains open. Prompt inspector servicing during other activity
+and timer starvation are hypotheses, not established mechanisms. No
+introducing application commit is identified, and this base-derived run
+does not identify the cause of PR #19's historical 544 ms RTT breach.
+
+DON-254's next bounded diagnostic slice should capture a main-thread CPU
+profile and operation boundaries around this same Linux workload, retaining
+all existing gates and independent timers. Compare tracing off/on to measure
+observer overhead before attributing a call path. Then choose one targeted
+counterfactual from that evidence; do not rerun qualification hoping for green.
+This is an explicit remaining investigation, not a claimed production fix.
 
 ## Verification and integration
 
@@ -205,6 +268,13 @@ soak-harness bytes changed in this fixture-only follow-up; earlier packaged
 comparison evidence remains applicable. Both targeted reviewers cleared
 `3fe6928adab456d75e206c44bb08de8bec7167a7`, retaining their prior unchanged-harness
 reviews without restarting unrelated reviews or local suites.
+
+Both reviewers also cleared exact executable `971a07de` after ATTR-R06 and
+independently inspected the downloaded Linux evidence. They confirmed the
+contradictory timing observations and unresolved component-level cause.
+The final evidence closeout changes documentation only. Per the testing cadence,
+it reuses the green executable CI run above; facts, JSON, links, diff and
+unchanged executable trees are checked instead of repeating runtime suites.
 
 Master was refreshed again after implementation and remains `302bdd04`, the
 branch's exact base; no upstream rebase delta exists. Active PR #19 and PR #20
