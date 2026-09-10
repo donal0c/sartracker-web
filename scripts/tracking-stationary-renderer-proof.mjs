@@ -26,7 +26,12 @@ try {
     const frames = []
     const longTasks = []
     let recording = true
-    function recordFrame(timestamp) { if (recording) { frames.push(timestamp); requestAnimationFrame(recordFrame) } }
+    function recordFrame(timestamp) {
+      if (recording) {
+        frames.push({ timestamp, callbackAt: performance.now() })
+        requestAnimationFrame(recordFrame)
+      }
+    }
     requestAnimationFrame(recordFrame)
     const observer = new PerformanceObserver(list => {
       for (const entry of list.getEntries()) longTasks.push({ startTime: entry.startTime, duration: entry.duration })
@@ -43,13 +48,26 @@ try {
       await new Promise(resolve => setTimeout(resolve, 300))
       await new Promise(requestAnimationFrame)
       const windowStart = performance.now()
+      const firstFrameIndex = Math.max(0, frames.length - 1)
       const stats = await new Promise(resolve => setTimeout(() => resolve(operation()), 0))
+      const operationFinishedAt = performance.now()
       await new Promise(resolve => setTimeout(resolve, 120))
       const windowEnd = performance.now()
-      const frameGaps = frames.slice(1).flatMap((frame, index) =>
-        frames[index] >= windowStart - 25 && frame <= windowEnd ? [frame - frames[index]] : [])
+      // Always include the frame immediately before the operation; filtering
+      // by timestamp proximity could discard the very gap being measured.
+      const sampledFrames = frames.slice(firstFrameIndex)
+      const callbackGaps = sampledFrames.slice(1).map((frame, index) =>
+        frame.callbackAt - sampledFrames[index].callbackAt)
+      const timestampGaps = sampledFrames.slice(1).map((frame, index) =>
+        frame.timestamp - sampledFrames[index].timestamp)
       const overlappingLongTasks = longTasks.filter(task => task.startTime >= windowStart && task.startTime <= windowEnd)
-      return { phase, ...stats, maximumRafGapMs: Math.max(0, ...frameGaps), sampledFrameGaps: frameGaps.length,
+      return { phase, ...stats, maximumRafGapMs: Math.max(0, ...callbackGaps, ...timestampGaps),
+        maximumCallbackGapMs: Math.max(0, ...callbackGaps), maximumFrameTimestampGapMs: Math.max(0, ...timestampGaps),
+        sampledFrameGaps: callbackGaps.length,
+        postOperationFrameObserved: sampledFrames.some(frame => frame.callbackAt >= operationFinishedAt),
+        operationStartedAtMs: windowStart, operationFinishedAtMs: operationFinishedAt,
+        firstCallbackAtMs: sampledFrames[0]?.callbackAt, lastCallbackAtMs: sampledFrames.at(-1)?.callbackAt,
+        callbackGapsMs: callbackGaps, frameTimestampGapsMs: timestampGaps,
         maximumLongTaskMs: Math.max(0, ...overlappingLongTasks.map(task => task.duration)), longTasks: overlappingLongTasks }
     }
     const samples = []
@@ -89,5 +107,6 @@ try {
   await writeFile(`output/repair-train-a/stationary-renderer-${Date.now()}.json`, JSON.stringify(output, null, 2))
   if (output.samples.some(sample => sample.maximumRafGapMs >= 200)) throw new Error('AUD-03: renderer frame gap exceeded 200 ms')
   if (output.samples.some(sample => sample.sampledFrameGaps === 0)) throw new Error('AUD-03: renderer timing did not capture frames')
+  if (output.samples.some(sample => !sample.postOperationFrameObserved)) throw new Error('AUD-03: renderer timing did not capture a post-operation frame')
   console.log(JSON.stringify(output, null, 2))
 } finally { await context.close(); await browser.close() }

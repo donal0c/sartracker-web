@@ -20,7 +20,12 @@ review dispositions, source identity and proof limits.
   current coordinates continue, the old response cannot clear the selected
   rejection warning, and anomaly evidence is recorded.
 - `renderer-final.json`: every incremental 100×5,000 renderer sample, including
-  long tasks and maximum frame gaps. Cold fixture preparation is excluded.
+  long tasks, callback-clock and frame-timestamp gaps. The gate uses the larger
+  maximum and includes the frame immediately before the operation. Earlier
+  timestamp-only receipt is `renderer-prior-frame-timestamps.json`. Cold fixture
+  preparation is excluded. Missing post-operation callbacks fail the final gate;
+  callback boundaries and complete gap arrays are retained. The earlier callback
+  run remains `renderer-callback-before-coverage-guard.json`.
 - PNGs: actual rendered warning clear/new episode and reconnect Last known state.
 - Final source/browser/lint logs: command results; trailing blank lines removed.
 

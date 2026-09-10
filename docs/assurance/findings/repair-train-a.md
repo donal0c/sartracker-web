@@ -2,8 +2,9 @@
 
 Base: `083f504753089abfcce9decdee8348dc069f03b8`, fetched from `origin/master`
 on 2026-09-10. Branch: `codex/astra-repair-train-a`. Owners: DON-267,
-DON-269; qualification remains DON-254. Status: implementation validation and
-independent review in progress; **not ready for merge or release**.
+DON-269; qualification remains DON-254. PR: [#17](https://github.com/donal0c/sartracker-web/pull/17).
+Executable/reviewed head: `cb929bb876615c2ad8a89f00bc09568752385e6a`.
+Status: local verification and four independent reviews clear; Linux CI pending.
 
 ## Contract and scope
 
@@ -69,6 +70,7 @@ sampled frame gap against the unchanged strict 200 ms maximum.
 | A-R8 | Retiring request failure replays an old fallback into last-known retention; a later empty fresh response revives the old coordinate. | Accepted P1, independently reproduced (`old` instead of `fresh`). Suppressed callbacks use pure scope filtering and cannot mutate operational retention. Durable runtime regression passes with the custody suite (85 tests). |
 | A-R9 | A retiring successful response can clear or replace the selected connection's current rejection warning. | Accepted P2 on `e38c55b4`, independently reproduced with real pollers. Retiring rejection context now suppresses operational publication; the app still records its durable anomalies. Real-poller/context and app delivery tests fail red then pass, including a nonempty retired anomaly with its original mission/time. Affected four-file gate: 139 passed; independent recheck clear. |
 | A-X1 | Held storage eventually stops current admission at eight payloads. | Matched exact-base no-reload, candidate no-reload and candidate reload controls all behave identically and retain every fix after release. Pre-existing bounded admission policy, not attributed to this repair; broader TRK-001/DON-267/DON-252 work remains separate. No claim of current availability through unlimited storage failure. |
+| A-E1 | Frame-timestamp-only gaps were smaller than synchronous operation time, and a proximity filter could exclude the preceding frame. | Tightened the standalone proof to retain the preceding frame by index and record callback `performance.now()` gaps as well as rAF timestamps. The hard gate uses the larger maximum. New maximum 98.8 ms passes; older timestamp-only receipts remain explicitly labelled. No application or normal-CI input changed. |
 
 Native development first needed the Electron SQLite ABI rebuilt; that launch
 failure is not a product reproduction. A preliminary changing-roster provider
@@ -106,12 +108,29 @@ The changing-roster control rendered the replacement 36 ms after response
 release. Its frequent roster changes deliberately cause extra wakeups; its
 request count is not presented as a normal polling-cadence measurement.
 
-The final renderer repeat measured 2.5 ms for all-device current-only projection,
+The prior timestamp-only renderer repeat measured 2.5 ms for all-device current-only projection,
 64.4–81.3 ms combined compaction/projection and a maximum frame gap of 67.4 ms.
 Both this run and the earlier isolated renderer run stay below 200 ms; the
 rejected 200.1 ms candidate remains in the evidence directory. Initial fixture
 construction/first projection are excluded: this proves the incremental seam,
 not cold hydration of a 500,000-fix mission.
+
+A-E1's conservative callback-time repeat supersedes the timestamp-only maximum
+for final readiness: **98.8 ms maximum across callback and frame-timestamp gaps**,
+1.9 ms all-device current-only projection and 54.4–98.8 ms combined compaction
+work. Every sample stays strictly below 200 ms. The earlier final-named receipt
+is retained as `renderer-prior-frame-timestamps.json`; the new `renderer-final.json`
+records both clocks. The proof script itself is outside the normal Linux CI
+commands; its changed measurement was rerun directly with production modules.
+Application, dependency, build, source-test and CI workflow inputs are unchanged.
+Independent measurement review then required explicit post-operation frame
+coverage. The final script fails if no callback is observed after the operation;
+its receipt records first/last callback clocks and every sampled gap. All five
+final samples include a post-operation callback, with **82.4 ms maximum** and
+70.6–82.1 ms combined compaction work. The earlier conservative callback run's
+98.8 ms result remains in `renderer-callback-before-coverage-guard.json`; no
+observed rejection or larger sample was discarded. The worst observed callback
+maximum across these two runs is 98.8 ms, below 200 ms.
 
 Committed receipts and inspected screenshots live in
 [`docs/evidence/repair-train-a`](../../evidence/repair-train-a). Synthetic native
@@ -119,7 +138,7 @@ profiles, full app logs and earlier failed harness runs remain locally under
 `output/repair-train-a` and `/tmp/sar-train-a-*.log`; profiles are not committed.
 The final source cycle after A-R8 passed: **416 files / 4,285 tests**, 465.99 s.
 Lint and package build pass; both stationary browser flows pass again.
-Exact-head reviews and normal CI are pending. Local scripts are
+The exact-head review results below supersede the earlier pending status. Local scripts are
 `scripts/tracking-reload-native-proof.mjs` and
 `scripts/tracking-stationary-renderer-proof.mjs`; neither depends on WAR-02A.
 These are synthetic local engineering checks, not live-provider, field,
@@ -146,7 +165,34 @@ six anomalies are recorded with healthy evidence state. Replacement render was
 `retained-rejection.png`. This targets A-R9; unchanged stationary source/test
 blobs retain their earlier renderer/browser proof. The final A-R9 source cycle
 passes **416 files / 4,285 tests** in 462.33 s; lint and package build pass.
-Exact-commit reviews and normal Linux CI will run on the updated PR head.
+Four exact-commit reviews clear the updated PR head; normal Linux CI is running.
+
+## Final independent review
+
+All four lanes verified `cb929bb876615c2ad8a89f00bc09568752385e6a` against
+`083f504753089abfcce9decdee8348dc069f03b8`. All twenty current source/test
+Git blobs match the A-R9 package binding. No remaining accepted P1/P2.
+
+| Independent lane | Checked scope | Result |
+| --- | --- | --- |
+| Broad safety | Cumulative source/tests/docs, SAR-QA-002/016, A-R1–A-R9, freshness and custody; final native receipt/screenshot | Clear |
+| Concurrency/liveness | Reload selection, retirement, admission/authentication, cache/discovery/disposal and selected warning ownership | Clear |
+| Stationary/scale | Continuous episode, prepared/full policy, acknowledgement/cache, real accumulator and rendered warning clear/raise; unchanged source evidence reused | Clear |
+| Final cumulative | Complete diff and disposition ledger, exact source binding, corrected package attribution and proof limits | Clear |
+
+Review is separate from merge, release and field acceptance. Linux CI
+[`34478455858`](https://github.com/donal0c/sartracker-web/actions/runs/34478455858)
+is the pending clean-source Linux package/qualification gate.
+
+The later A-E1 proof-only commit changes the standalone renderer probe and
+evidence/docs. `electron-builder.json` packages only `dist`, `electron`, `shared`
+and package metadata; normal Linux CI does not invoke this probe. All application,
+source-test, dependency, build and CI workflow files match `cb929bb8`. Per
+[the testing cadence](../../testing-and-review-cadence.md#reuse-proof-honestly),
+the changed probe was rerun directly and linted; the matching Linux run is
+preserved rather than restarted for an unrelated gate. Stationary measurement
+review clears the callback clocks, preceding-frame inclusion and post-operation
+coverage guard. Final cumulative verification of the evidence commit follows.
 
 ## Repeat the bounded proofs
 
