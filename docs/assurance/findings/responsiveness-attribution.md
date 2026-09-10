@@ -313,10 +313,37 @@ disconnection with an explicit failure record. A same-package macOS CI-profile
 soak passed original gates and exact 8,664-position custody; both launches had
 complete attribution and the standalone post-cleanup receipt. File hashes and
 logs are in [local remediation evidence](../../evidence/responsiveness-attribution/review-remediation/local-receipt.json).
-The wired Linux control run remains pending. Earlier Linux evidence remains
+The wired Linux control run is verified below. Earlier Linux evidence remains
 historical and does not prove these executable changes.
 
 The narrow follow-up review also found stale preflight ownership after a
 completed close and a missing-heartbeat default on abnormal cleanup. Two more
 red-first tests now cover clearing ownership on click/cancel and explicit
 diagnostic incompleteness when original heartbeat collection has not finished.
+
+### Remediation CI disposition
+
+[Run 34532256680](https://github.com/donal0c/sartracker-web/actions/runs/34532256680)
+at executable `693b1c30275311c61c6bb9cfdc9800e78cb0408f` passed 429 source files /
+4,393 tests, all three Electron controls under Xvfb, lint/build, normal 960k
+qualification and packaged tracking soak. The original soak verdict and exact
+custody passed; both launch attribution records are complete and match the
+standalone post-cleanup receipt. Launch 2 retains its first/latest pressure
+samples across the whole run, with stride 2, 297 retained of 592 observed and
+maximum spacing 1,008.96 ms. Decimation still limits fine-grained causality.
+
+**Overall CI remains failed:** the unchanged archive cleanup continuity gate
+recorded 205 ms against the strict 200 ms limit. Its terminal failure receipt
+was verified and process/profile cleanup completed. AppImage launch was not
+run after this rejection. Archive application/harness paths are unchanged by
+the remediation. The interval comprises 168 ms between emitted/requested
+source samples plus a 37 ms increase in delivery lag (16 to 53 ms); this does
+not identify the introducing operation or waive the continuity failure.
+
+Soak inspector RTT maximum was 86.99 ms, independent main callback maxima
+596.55 / 329.30 ms, controller maxima below 63 ms and frame maximum 449.9 ms.
+The timing contradiction remains unresolved. The review findings are addressed;
+qualification and component-level timing causation are not. No blind rerun or
+gate change was made. [Exact receipt and retained failure](../../evidence/responsiveness-attribution/review-remediation/linux-ci-receipt.json)
+bind the evidence artifact `10175001360` and step results. Source/targeted reviews
+at `693b1c30` are clean; that is distinct from the failed whole-workflow verdict.
