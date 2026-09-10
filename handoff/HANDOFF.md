@@ -9,7 +9,10 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   `tests/unit/assurance/war-02a/`; production and Repair Train A are untouched.
   Source at `de7d15bf`: 422 files / 4,325 tests, lint/build. Final affected 65
   tests and helper types pass; both red controls remain proven. [PR #16](https://github.com/donal0c/sartracker-web/pull/16)
-  records live CI/merge readiness. All independent reviews clear executable
+  records live CI/merge readiness. Claude's four follow-up findings are now
+  addressed: automatic strict build gate, literal mutation, open faults, and
+  child infrastructure diagnostics. Final local source: 424 files / 4,346 tests;
+  lint/build pass. Updated-head CI is pending. Earlier independent reviews clear executable
   `18bd374f`, including the corrected mixed-failure red gate and final cumulative
   review. [Evidence](../docs/assurance/war-02a-test-infrastructure.md).
   DON-254 remains qualification owner; no package/provider/soak proof or merge.

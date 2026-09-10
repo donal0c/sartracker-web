@@ -3,7 +3,8 @@ import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { validateProofReport } = require('../../../../scripts/assurance/war-02a-proof-result.mjs') as {
+const { validateProofReport, assertProofProcessCompleted } = require('../../../../scripts/assurance/war-02a-proof-result.mjs') as {
+  assertProofProcessCompleted: (result: { error?: Error; signal: string | null; status: number | null }, label: string) => void
   validateProofReport: (report: unknown, expected: { name: string; oracle: string; disabled: boolean }) => boolean
 }
 const expected = { name: 'selected case', oracle: 'safety property', disabled: true }
@@ -20,6 +21,14 @@ function redReport() {
 }
 
 describe('WAR-02A red-proof result acceptance', () => {
+  it.each(['ETIMEDOUT', 'ENOENT'])('classifies %s as infrastructure failure, not safety proof', (code) => {
+    expect(() => assertProofProcessCompleted({ error: Object.assign(new Error(code), { code }), signal: null, status: null }, 'control'))
+      .toThrow(/infrastructure failure.*no safety proof.*(ETIMEDOUT|ENOENT)/)
+  })
+  it('distinguishes terminated children from completed assertion exits', () => {
+    expect(() => assertProofProcessCompleted({ signal: 'SIGTERM', status: null }, 'control')).toThrow(/infrastructure failure.*SIGTERM/)
+    expect(() => assertProofProcessCompleted({ signal: null, status: 1 }, 'control')).not.toThrow()
+  })
   it('accepts the sole intended assertion failure', () => {
     expect(validateProofReport(redReport(), expected)).toBe(true)
   })

@@ -19,7 +19,7 @@ production, Repair Train A and existing regression files remain untouched.
   EIO/ENOSPC are injected errors; interruption is a distinct test error, not
   an OS power-loss claim. An unused armed fault fails the test. Traces show
   attempted/completed operations and the exact injected boundary.
-- Filesystem adapters wrap real disposable files, including file write, file
+- Filesystem adapters wrap real disposable files, including open, file write, file
   sync, rename and directory sync. SQLite backup errors are injected at the
   application/native-call boundary; this does not emulate SQLite's VFS, torn
   sectors or filesystem journal replay.
@@ -55,18 +55,19 @@ affected rechecks and cumulative review follow any remediation.
 ## Implemented boundary and use
 
 All helpers and tests live in `tests/unit/assurance/war-02a/`. The default Vitest
-include already collects this directory; no runtime, dependency or CI gate was
-changed. Its own `tsconfig.json` checks helpers strictly because the application
-build intentionally does not type-check test files.
+include already collects this directory. Its strict `tsconfig.json` is referenced
+by the root build graph, so the normal build and inherited CI enforce helper
+types. It has a separate build-info path to avoid colliding with the Node config.
+No runtime, dependency or workflow file changed.
 
 | Helper | Contract and limit |
 | --- | --- |
 | `virtual-scheduler.ts` | `schedule(label, delay, callback)` and `advanceTo(ms)` explicitly order events. Equal deadlines use insertion order. Timer adapters leave global timers untouched. Reentrant advancement and a finite dispatch-budget overrun throw. Callbacks dispatch synchronously; they must not return a Promise. `assertIdle()` detects leftover events. |
 | `createGate(name)` | `wait()` exposes an `entered` receipt; the driver then chooses `release(value)` or `reject(error)`. Arrival and settlement are one-shot. `assertSettled()` catches unreleased or unused gates. Native work and Promise jobs remain outside virtual time; tests join them through receipts rather than time guesses. |
 | `fault-plan.ts` | One fault per plan, addressed by operation, before/after boundary and 1-based occurrence. `run()` records a before event, invokes the real operation, then records after. A before fault prevents invocation; an after fault reports failure after the effect. The exact native error is retained when the native call itself rejects. `assertTriggered()` rejects a missed injection. |
-| `fault-filesystem.ts` | Real handle write/writeFile and file/directory sync, rename and remove. Other filesystem calls pass through. Paths on wrapped operations are lexically restricted to a disposable trusted root; this is not a symlink security sandbox. It never fills the real disk or damages another profile. |
+| `fault-filesystem.ts` | Real open, handle write/writeFile and file/directory sync, rename and remove. `file.open` counts both file and directory opens; use occurrence to select one. Before-open faults acquire no handle; after-open faults close the acquired handle before withholding it from the caller. Other filesystem calls pass through. Paths on wrapped operations are lexically restricted to a disposable trusted root; this is not a symlink security sandbox. It never fills the real disk or damages another profile. |
 | `sqlite-backup-adapter.ts` | Real `better-sqlite3` online backup, with faults before/after the native backup call and an optional held completion delivery. It closes the native connection before the gate. It replaces the worker runner only inside the isolated test; its returned thread ID is a test acknowledgement, not evidence of a real worker. SQLite page-write/fsync/VFS faults, worker-thread isolation and OS-kill recovery are not covered. |
-| `isolated-commonjs.ts` | Evaluates the checkout's complete CommonJS module with direct-dependency overrides; does not patch `require.cache`, globals or on-disk source. Negative controls use one exact source anchor and refuse missing/ambiguous matches. Transitive dependencies remain real and unmodified. |
+| `isolated-commonjs.ts` | Evaluates the checkout's complete CommonJS module with direct-dependency overrides; does not patch `require.cache`, globals or on-disk source. Negative controls use one exact source anchor and refuse missing/ambiguous matches. Index-based splicing preserves replacement text literally, including dollar metacharacters. Transitive dependencies remain real and unmodified. |
 
 The scheduler's five-kind replay test is a harness capability demonstration,
 not a test of the production tracking poller. Joined production tests cover
@@ -114,6 +115,10 @@ uses structured Vitest results and checks exactly one named safety assertion.
 The custom reporter also records suite/hook and unhandled error counts; all must
 be zero, with the expected completed-run reason. An import, timeout, missing
 native module, extra cleanup failure or unhandled error is not red proof.
+Child-process launch errors, timeouts and signals explicitly report an
+infrastructure failure with the underlying code and no safety proof obtained.
+The proof driver and both nested-run test wrappers share this distinction;
+deadlines and the named safety assertions are unchanged.
 
 ## Repeatable commands
 
@@ -135,6 +140,18 @@ WAR02A_NEGATIVE_CONTROL=backup-direct-target npm test -- tests/unit/assurance/wa
 
 ## Evidence ledger
 
+- Claude follow-up (2026-09-10): all four findings addressed. Root `tsc -b`
+  now includes the strict harness config with separate build metadata; a
+  temporary wrong-type probe produced TS2322 through that normal graph and
+  was removed. Literal replacement and six before/after open-fault regressions
+  failed before correction. Three process-result cases cover timeout, launch
+  error and signal classification; nested driver/reporter call sites share the
+  diagnostic. The initial focused recheck passed 9 files / 75 tests; the final
+  stable source cycle, including those call sites, passed 424 files / 4,346
+  tests in 473.61 s. Lint and normal build/bundle budgets passed. Logs are in
+  ignored `tmp/war02a/claude-*.log`. The build-generated version change was
+  restored; production is untouched. Updated-head CI remains a separate result
+  tracked on PR #16; no manual package/provider/soak qualification was added.
 - Before implementation: two helper suites failed collection because the
   scheduler/fault helpers did not yet exist; the filesystem/backup suites then
   failed for their missing adapters. These are test-first setup failures, not
@@ -173,8 +190,10 @@ WAR02A_NEGATIVE_CONTROL=backup-direct-target npm test -- tests/unit/assurance/wa
   not counted as a pass. This closeout changes documentation only and reuses
   the named executable/test evidence; no qualification tier is upgraded.
 
-The 24 filesystem cases cover EIO, ENOSPC and injected interruption before/after
-write, file sync, rename and directory sync. The 12 SQLite/mirror cases cover
+The 30 filesystem cases cover EIO, ENOSPC and injected interruption before/after
+open, write, file sync, rename and directory sync. Open faults exercise the
+durable writer's unassigned-handle cleanup branch and verify the old file and
+absence of a temporary candidate. The 12 SQLite/mirror cases cover
 the same codes before/after native backup and rename. After rename the new whole
 file is visible even if acknowledgement fails; it is not claimed rolled back.
 Injected interruption runs JavaScript cleanup. Abrupt process death, power loss,

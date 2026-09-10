@@ -18,7 +18,19 @@ export function createFaultFileSystem(root: string, source: FaultPlan | (() => F
     ...fs,
     /** Wraps handle writes and syncs while binding other native methods to their handle. */
     async open(file: string, flags: string, mode?: number) {
-      const handle = await fs.open(checked(file), flags, mode)
+      let opened: Awaited<ReturnType<typeof fs.open>> | undefined
+      let handle: Awaited<ReturnType<typeof fs.open>>
+      try {
+        handle = await plan().run('file.open', async () => {
+          opened = await fs.open(checked(file), flags, mode)
+          return opened
+        })
+      } catch (error) {
+        // An after-open injection withholds ownership from the caller.
+        // Close that acquired handle before propagating the injection.
+        await opened?.close()
+        throw error
+      }
       const directory = (await handle.stat()).isDirectory()
       return new Proxy(handle, {
         get(target, property) {

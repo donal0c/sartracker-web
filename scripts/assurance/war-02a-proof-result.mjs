@@ -18,3 +18,11 @@ export function validateProofReport(report, { name, oracle, disabled }) {
     : report.success === true && report.numPassedTests === 1 && report.numFailedTests === 0
       && assertion.status === 'passed' && assertion.failureMessages.length === 0
 }
+/** Separates child scheduling/launch failures from completed safety assertions. */
+export function assertProofProcessCompleted(result, label) {
+  if (result.error || result.signal !== null || result.status === null) {
+    const reason = result.error ? `${result.error.code ?? 'spawn error'}: ${result.error.message}`
+      : result.signal ?? 'missing exit status'
+    throw new Error(`WAR-02A ${label}: infrastructure failure; no safety proof was obtained (${reason})`)
+  }
+}

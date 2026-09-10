@@ -15,7 +15,7 @@ const { writeFileDurably } = require('../../../../electron/durable-file.cjs') as
 }
 
 describe('WAR-02A real filesystem boundaries', () => {
-  for (const operation of ['file.write', 'file.sync', 'file.rename', 'directory.sync']) {
+  for (const operation of ['file.open', 'file.write', 'file.sync', 'file.rename', 'directory.sync']) {
     for (const boundary of ['before', 'after'] as const) {
       for (const code of ['EIO', 'ENOSPC', 'INTERRUPTED'] as const) {
         it(`${code} ${boundary} ${operation} preserves a whole old or new file`, async () => {

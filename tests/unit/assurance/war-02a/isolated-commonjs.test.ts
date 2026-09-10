@@ -7,6 +7,15 @@ import { describe, expect, it } from 'vitest'
 import { loadIsolatedCommonJs } from './isolated-commonjs'
 
 describe('WAR-02A test-only module isolation', () => {
+  it('inserts replacement metacharacters literally', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'war02a-literal-'))
+    try {
+      const file = path.join(root, 'fixture.cjs')
+      await writeFile(file, 'module.exports = "anchor"')
+      const value = "$$ $& $` $'"
+      expect(loadIsolatedCommonJs(file, {}, { from: '"anchor"', to: JSON.stringify(value) })).toBe(value)
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
   it('keeps dependencies local, leaves cached original unchanged and rejects ambiguous mutations', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'war02a-loader-'))
     const file = path.join(root, 'fixture.cjs')

@@ -14,7 +14,8 @@ export function loadIsolatedCommonJs<T>(
     if (!mutation.from || source.split(mutation.from).length !== 2) {
       throw new Error('Negative control must match exactly one source anchor')
     }
-    source = source.replace(mutation.from, mutation.to)
+    const index = source.indexOf(mutation.from)
+    source = source.slice(0, index) + mutation.to + source.slice(index + mutation.from.length)
   }
   const realRequire = createRequire(file)
   const localRequire = (name: string): unknown =>

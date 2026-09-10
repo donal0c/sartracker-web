@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { validateProofReport } from './war-02a-proof-result.mjs'
+import { assertProofProcessCompleted, validateProofReport } from './war-02a-proof-result.mjs'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const cases = [
@@ -31,6 +31,7 @@ for (const entry of cases) {
     if (disabled) env.WAR02A_NEGATIVE_CONTROL = entry.control
     const result = spawnSync(process.execPath, args, { cwd: root, env, encoding: 'utf8', timeout: 60_000 })
     const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`
+    assertProofProcessCompleted(result, `${entry.control} ${disabled ? 'red' : 'green'}`)
     let report
     try { report = JSON.parse(result.stdout) } catch { /* Invalid structured evidence fails below. */ }
     const valid = !result.error && result.signal === null && result.status === (disabled ? 1 : 0)

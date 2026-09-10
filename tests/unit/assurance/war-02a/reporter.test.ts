@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest'
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const require = createRequire(import.meta.url)
-const { validateProofReport } = require('../../../../scripts/assurance/war-02a-proof-result.mjs') as {
+const { validateProofReport, assertProofProcessCompleted } = require('../../../../scripts/assurance/war-02a-proof-result.mjs') as {
+  assertProofProcessCompleted: (result: ReturnType<typeof spawnSync>, label: string) => void
   validateProofReport: (report: unknown, expected: { name: string; oracle: string; disabled: boolean }) => boolean
 }
 
@@ -28,8 +29,7 @@ describe('WAR-02A real reporter error channels', () => {
         const result = spawnSync(process.execPath, [path.join(root, 'node_modules/vitest/vitest.mjs'), 'run',
           '--config', config, '--reporter', path.join(root, 'scripts/assurance/war-02a-reporter.mjs')],
         { cwd: root, encoding: 'utf8', timeout: 30_000 })
-        expect(result.error).toBeUndefined()
-        expect(result.signal).toBeNull()
+        assertProofProcessCompleted(result, `reporter ${kind}`)
         expect(result.status).toBe(1)
         const report = JSON.parse(result.stdout) as {
           war02a: { suiteErrorCount: number; unhandledErrorCount: number }
