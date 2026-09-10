@@ -82,7 +82,8 @@ type CreateManagedRuntimeServicesDependencies = {
         readonly getCanonicalBreadcrumbs?: (
           expectedMissionId: string,
         ) => Promise<import('../tracking/polling-manager').CanonicalBreadcrumbSeed>
-        readonly persistHistoryChunk?: (
+        readonly persistHistoryRequest?: (input: import('../tracking/polling-manager').TrackingHistoryRequestInput) => Promise<void>
+      readonly persistHistoryChunk?: (
           input: import('../tracking/polling-manager').TrackingHistoryChunkPersistenceInput,
         ) => Promise<import('../tracking/polling-manager').TrackingHistoryChunkPersistenceResult>
         readonly persistHistoryChunks?: (
@@ -161,6 +162,7 @@ type CreateManagedRuntimeServicesDependencies = {
       readonly getCanonicalBreadcrumbs?: (
         expectedMissionId: string,
       ) => Promise<import('../tracking/polling-manager').CanonicalBreadcrumbSeed>
+      readonly persistHistoryRequest?: (input: import('../tracking/polling-manager').TrackingHistoryRequestInput) => Promise<void>
       readonly persistHistoryChunk?: (
         input: import('../tracking/polling-manager').TrackingHistoryChunkPersistenceInput,
       ) => Promise<import('../tracking/polling-manager').TrackingHistoryChunkPersistenceResult>

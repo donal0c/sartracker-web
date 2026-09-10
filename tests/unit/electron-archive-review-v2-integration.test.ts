@@ -1079,7 +1079,10 @@ async function seedReviewMission(store: MissionStore): Promise<{
     type: 'search_area',
     name: 'Archive Review Sector',
     display_order: 0,
-    geometry_json: '{"type":"Polygon","coordinates":[]}',
+    geometry_json: JSON.stringify({ type: 'Polygon', coordinates: [[
+      ...Array.from({ length: 1_000 }, (_, index) => [-9.5 + Math.cos(index * Math.PI / 500) * 0.01, 52 + Math.sin(index * Math.PI / 500) * 0.01]),
+      [-9.49, 52],
+    ]] }),
   })
   const gpxBytes = Buffer.from(
     '<gpx version="1.1"><trk><trkseg><trkpt lat="52" lon="-9.7"/><trkpt lat="52.01" lon="-9.71"/><trkpt lat="52.02" lon="-9.72"/></trkseg></trk></gpx>',
@@ -1231,6 +1234,28 @@ async function exhaustReplay(
     ) as ReplayPage
     objectRows.push(...requireRecordArray(page.objects, 'Replay object page rows'))
     objectCursor = requireNullableString(page.nextObjectCursor, 'Replay next object cursor')
+  }
+
+  for (const object of objectRows) {
+    const objectState = requireRecord(object.state, 'object state')
+    if (objectState._state_details_omitted !== true) continue
+    let offset: number | null = 0
+    let serialized = ''
+    while (offset !== null) {
+      const page = requireRecord(await facade.call('readMissionReplayObjectChunk', [{
+        ...input, replayGeneration: state.replayGeneration,
+        objectDetails: { objectType: object.object_type, objectId: object.object_id, offset },
+      }, nextRequestId()]), 'detail page')
+      expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThan(512 * 1024)
+      const details = requireRecord(page.objectDetails, 'details')
+      expect(details.versionSequence).toBe(object.version_sequence)
+      expect(details.offset).toBe(offset)
+      expect(typeof details.fragment).toBe('string')
+      serialized += details.fragment as string
+      offset = details.nextOffset as number | null
+    }
+    expect(createHash('sha256').update(serialized).digest('hex')).toBe(objectState._state_sha256)
+    expect(JSON.parse(serialized).geometry_json).toEqual(expect.any(String))
   }
 
   let outingCursor = requireNullableString(

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ReplayMapView } from '../features/mission-review/replay-map-view'
 
 import type {
   MissionReplayRuntimeState,
@@ -81,12 +82,13 @@ export function MissionReplayTab(props: {
         <button className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 disabled:opacity-40" data-testid="mission-replay-seek" disabled={selectedTime.iso === null || props.controller === null || props.replay.loading} onClick={() => selectedTime.iso === null ? undefined : void props.controller?.seekReplay(selectedTime.iso, {
           ...(deviceFilterIds.length === 0 ? {} : { deviceIds: deviceFilterIds }),
           ...(outingFilterIds.length === 0 ? {} : { outingIds: outingFilterIds }),
-        })} type="button">{props.replay.loading ? 'Loading evidence…' : 'Replay data known at this time'}</button>
+        }, true)} type="button">{props.replay.loading ? 'Loading evidence…' : 'Replay data known at this time'}</button>
       </div>
       {selectedTime.error === null ? null : <p className="mt-3 text-sm text-rose-200" data-testid="mission-replay-time-error" role="alert">{selectedTime.error}</p>}
     </section>
     {props.replay.error !== null ? <p className="rounded-xl border border-rose-400/40 bg-rose-400/10 p-4 text-sm text-rose-100" data-testid="mission-replay-error" role="alert">Replay is incomplete: {props.replay.error}. The live map has not been changed.</p> : null}
     {result !== null ? <>
+      {props.replay.mapEvidence && <ReplayMapView key={`${result.missionId}:${result.selectedTime}`} evidence={props.replay.mapEvidence} />}
       <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="mission-replay-display-filters">
         <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Display-only track filters</p>
         <p className="mt-2 text-xs text-stone-400">These filters narrow exact track and static GPX evidence only. They never alter reconstructed mission state.</p>
@@ -119,7 +121,7 @@ export function MissionReplayTab(props: {
         <button className="mt-4 rounded-lg border border-amber-400/50 px-3 py-2 text-xs font-semibold text-amber-100" data-testid="mission-replay-apply-filters" disabled={selectedTime.iso === null || props.controller === null || props.replay.loading} onClick={() => selectedTime.iso === null ? undefined : void props.controller?.seekReplay(selectedTime.iso, {
           ...(deviceFilterIds.length === 0 ? {} : { deviceIds: deviceFilterIds }),
           ...(outingFilterIds.length === 0 ? {} : { outingIds: outingFilterIds }),
-        })} type="button">Apply display filters</button>
+        }, true)} type="button">Apply display filters</button>
       </section>
       <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5">
         <div className="flex justify-between gap-4"><p className="font-mono text-sm text-stone-200">{result.tracks.length.toLocaleString()} / {result.totalTrackCount.toLocaleString()} dated points</p><span className="font-mono text-xs text-stone-400">{Math.round(result.progress * 100)}%</span></div>

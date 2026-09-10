@@ -27,7 +27,7 @@ export type LayerGroupVisibility = {
   readonly gpxTracks: boolean
 }
 
-type LayerVisibilityState = {
+export type LayerVisibilityState = {
   readonly hydratedMissionId: string | null
   readonly groupVisibility: LayerGroupVisibility
   readonly hiddenDeviceIds: readonly string[]
@@ -248,7 +248,10 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
         slot_3: readLayerVisibility(root, getHelicopterLayerNodeId('slot_3')),
         slot_4: readLayerVisibility(root, getHelicopterLayerNodeId('slot_4')),
       }
-      const nextBreadcrumbsVisible = readLayerVisibility(root, TRACKING_BREADCRUMBS_LAYER_NODE_ID)
+      const breadcrumbLayer = root.children.flatMap((group) => group.children)
+        .find((layer) => layer.id === TRACKING_BREADCRUMBS_LAYER_NODE_ID)
+      const nextBreadcrumbsVisible = breadcrumbLayer === undefined || breadcrumbLayer.isVisible ||
+        breadcrumbLayer.children.some((child) => child.isVisible)
       const nextMeasurementsVisible = readLayerVisibility(root, MEASUREMENTS_LAYER_NODE_ID)
 
       // Preserve existing array/object references when values are unchanged to
@@ -347,13 +350,6 @@ function collectHiddenBreadcrumbDeviceIds(root: LayerCatalogRootNode): readonly 
     return []
   }
 
-  if (!breadcrumbLayer.isVisible) {
-    return breadcrumbLayer.children
-      .flatMap((child) =>
-        child.entity?.type === 'device' ? [child.entity.device.device_id] : [],
-      )
-  }
-
   return breadcrumbLayer.children.flatMap((child) =>
     child.entity?.type === 'device' && !child.isVisible ? [child.entity.device.device_id] : [],
   )
@@ -402,13 +398,6 @@ function collectHiddenDeviceIds(root: LayerCatalogRootNode): readonly string[] {
 
   if (deviceLayer === undefined) {
     return []
-  }
-
-  if (!deviceLayer.isVisible) {
-    return deviceLayer.children
-      .flatMap((child) =>
-        child.entity?.type === 'device' ? [child.entity.device.device_id] : [],
-      )
   }
 
   return deviceLayer.children.flatMap((child) =>

@@ -107,6 +107,8 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     if (map === null) return
     const synchronizeOverlay = async (signal: AbortSignal) => {
       const catalog = selectCoverageCatalogForMission(coverageState, missionId)
+      const manifest = coverageState.status !== 'inactive' && coverageState.missionId === missionId
+        ? coverageState.manifest : null
       let activation: Awaited<ReturnType<typeof syncCoverageOverlay>> | null = null
       try {
         if (
@@ -120,10 +122,6 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
           omittedDeviceIds: omittedCoverageDeviceIds,
           omittedPeriodKeys: omittedCoveragePeriodKeys,
         }, signal)
-        const manifest = coverageState.status !== 'inactive' &&
-          coverageState.missionId === missionId
-          ? coverageState.manifest
-          : null
         await coverageController?.notifySelectionApplied(selectCoverageChunkKeys(manifest, {
           omittedDeviceIds: omittedCoverageDeviceIds,
           omittedPeriodKeys: omittedCoveragePeriodKeys,

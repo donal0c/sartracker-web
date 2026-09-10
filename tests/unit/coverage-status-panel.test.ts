@@ -23,6 +23,14 @@ afterEach(() => {
 })
 
 describe('coverage status panel [DON-275]', () => {
+  it('AUD-14 does not claim all history when retrieval has failed despite saved evidence being delivered', () => {
+    act(() => root.render(React.createElement(CoverageStatusPanel, {
+      state: state('complete', { blockers: ['history_reconciliation_incomplete'] }), omittedDeviceCount: 0, omittedOutingCount: 0, unassignedOmitted: false,
+      onRetry: vi.fn(), onInspectExactFixes: vi.fn(),
+    })))
+    expect(host.textContent).not.toContain('All mission history shown')
+    expect(host.textContent).toContain('Saved history has not been reconciled through the mission window')
+  })
   it('shows database-backed loading progress and permits an honest decrease', () => {
     render(state('loading', { deliveredFixCount: 80, totalFixCount: 100 }))
     expect(host.textContent).toContain('80 of 100 fixes')

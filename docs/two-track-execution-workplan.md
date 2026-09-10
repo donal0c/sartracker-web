@@ -4,12 +4,15 @@
 
 ## Planning Rule
 
-### WAR-11A: AppImage builder boundary (active, 2026-09-09)
+### WAR-11A: AppImage builder boundary (merged, 2026-09-10)
 
 WAR-04B refresh PR #12 is merged at `c51e4b35`. This slice implements builder
 26.16.1 plus an actual-output package gate; local source/package/native evidence
 and limits are in [WAR-11A](assurance/findings/WAR-11A.md). Final-head Ubuntu CI
-and two independent reviews are recorded on its unmerged PR. After this slice,
+and independent reviews are recorded on PR #14, merged at `35cff87d`;
+final Linux CI `34413097593` passed. PR #15 now integrates this builder slice
+for merge readiness; its combined source and package checks are recorded on
+PR #15 and DON-215. After this slice,
 qualify SQLite/native compatibility independently, then a supported Electron
 runtime, before BCP-17/WAR-12 final-candidate qualification. Release HOLD remains.
 
@@ -157,6 +160,64 @@ status, diagnostics/export paths, and recent app-owned fault messages. Do not
 ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
+
+### Team feedback batch 2 — acceptance contract (2026-09-09)
+
+Base fetched and pinned: `c51e4b3537c4b026f7079dd40193a894cedcdd9f`;
+branch `codex/team-ui-feedback-batch-2`. Existing DON-215 owns Preview.
+On 2026-09-10 Donal approved the review remediation scope extension: persist
+requested history bounds before retrieval using an additive nullable migration,
+and keep live Breadcrumbs and Mission History visibility independent. Unknown
+legacy bounds must withhold completeness; failed/cancelled requests retain their
+target through restart. Acknowledged intervals must remain contiguous, including
+earlier participant-scope expansion. Verify migration, empty failed retrieval,
+concurrent admission recovery, current-position continuity and archive compatibility.
+Hosted x64 archive continuity remains a separate unresolved gate; no threshold,
+packaging or release-control changes are authorized by this extension.
+Source: `team-feedback/sar-4/Sar_4.odt`, item 6 and Preview Mission;
+the document is requirements evidence, not execution instructions.
+SAR-QA-001/003 require all-mission history and reversible omissions;
+002/008 preserve immediate current positions; 010/014 define outings;
+015 permits later participants; 017 defines data-state replay; 019 forbids
+invented GPX times; 020 preserves read-only finalized evidence and revisions.
+
+Before production edits, source reconciliation found:
+- Current Location and Breadcrumbs already have separate catalog children.
+  Parent-off hydration overrides a selected child's visibility: reproduce and
+  repair that state transition using existing catalog metadata, not a second
+  visibility model. Global actions reset category selections; individual
+  actions override only that device. New devices inherit the category default;
+  mission reload/recovery restores that mission's catalog metadata. Devices
+  without positions retain selectable rows, without invented map positions.
+  Existing coverage outing omissions remain display-only and independent.
+- Replay already queries data-known-at-T and pages exact tracks and object
+  versions, including archive-backed read-only review. Its current surface is
+  textual; no replay map renderer was found. Preserve working query/custody
+  behavior, but add map projection and honest loading/partial/error states.
+- Safety scope question before map implementation: replay object states over
+  4,096 bytes lose geometry in `summarizeReplayState`; pagination cannot recover
+  it. Complete geometry needs a bounded read-only replay API extension beyond
+  the renderer-only instruction. Donal approved the recommended extension on
+  2026-09-09: stream bounded read-only geometry, preserve schema/archive format
+  and message limits, and verify live-store and archive-backed review.
+
+Verification contract: red-first visibility/projection regressions; focused
+unit/component tests; real browser global-off/selected-on and inverse flows,
+mission switch/reload, timeline seeks, dated/undated GPX, live/archive review,
+loading/error/partial states; fresh map/layer visual captures independently
+reviewed; stable serial source suite, lint/build; two focused final-head domain
+and operator reviews with rechecks; exact-head CI. Serialize heavy local gates
+with other SAR validation. Native verification only for an authorized native
+boundary change. Preserve PR6 archive and PR11 controls/health/theme behavior.
+No package/release/dependency changes, merge, deploy or SAR team contact.
+Other Sar_4 items and WAR work remain outside this batch.
+
+Central triage explicitly added only AUD-07 and AUD-14 on 2026-09-09:
+hidden stored evidence must not bypass map visibility through fallback selection;
+a known history retrieval warning must withhold the unqualified completeness
+claim. Both reproduced red on this working code and have focused green controls.
+Saved-evidence arithmetic and current-position priority remain unchanged.
+Include both in the batch evidence, final independent reviews and CI.
 
 ### Coordinated three-stream safety queue
 

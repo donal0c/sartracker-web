@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { resolveClickedMapTarget } from '../../src/features/map/map-click-target-resolver'
+import { useLayerVisibilityStore } from '../../src/features/layers/layer-visibility-store'
 import type { Drawing, GpxTrackImport, Marker } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 const projectingMap = {
@@ -13,8 +14,19 @@ const projectingMap = {
 } as never
 
 describe('resolveClickedMapTarget — priority and outcomes', () => {
+  it('AUD-07 excludes hidden stored evidence from fallback selection without deleting it', () => {
+    const markers = [createMarker('hidden-clue', 5, 5)]
+    const drawings = [createPolygonDrawing('hidden-area')]
+    const visibility = { ...useLayerVisibilityStore.getState(), hiddenMarkerIds: ['hidden-clue'], hiddenDrawingIds: ['hidden-area'] }
+    const args = { map: projectingMap, point: { x: 50, y: 50 }, markers, drawings, gpxImports: [], visibility }
+    expect(resolveClickedMapTarget(args)).toMatchObject({ kind: 'hidden_evidence', id: null })
+    expect(markers).toHaveLength(1)
+    expect(drawings).toHaveLength(1)
+    expect(resolveClickedMapTarget({ ...args, visibility: useLayerVisibilityStore.getState() }).id).toBe('hidden-clue')
+  })
   it('returns "empty" when no marker, drawing, or GPX track is near the click', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 9999, y: 9999 },
       markers: [createMarker('marker-1', -9.7, 52)],
@@ -27,6 +39,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('selects a marker when a marker is alone near the click', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 100, y: 120 },
       markers: [createMarker('marker-1', 10, 12)],
@@ -39,6 +52,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('selects a drawing when a drawing is alone near the click', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 100, y: 100 },
       markers: [],
@@ -51,6 +65,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('prefers the marker when a marker sits inside a polygon drawing (headline bug fix)', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 50, y: 50 },
       markers: [createMarker('marker-inside', 5, 5)],
@@ -64,6 +79,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('prefers the marker when a marker sits next to a line drawing', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 110, y: 110 },
       markers: [createMarker('marker-near-line', 11, 11)],
@@ -77,6 +93,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('selects the drawing when it is the only feature within the marker pick radius', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 110, y: 110 },
       markers: [createMarker('marker-far', 30, 30)],
@@ -90,6 +107,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('does not let GPX outrank a marker', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 110, y: 110 },
       markers: [createMarker('marker-near', 11, 11)],
@@ -103,6 +121,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('does not let GPX outrank a drawing', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 110, y: 110 },
       markers: [],
@@ -116,6 +135,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('reports "empty" with a soft GPX signal when only a GPX track is near the click', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 110, y: 110 },
       markers: [],
@@ -132,6 +152,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('still surfaces the GPX soft signal when a marker is selected nearby', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 110, y: 110 },
       markers: [createMarker('marker-near', 11, 11)],
@@ -156,10 +177,11 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
     } as never
 
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map,
       point: { x: 50, y: 50 },
       markers: [],
-      drawings: [createPolygonDrawing('search-area-1')],
+      drawings: [createPolygonDrawing('search-area-1'), createPointDrawing('rendered-drawing', [80, 80])],
       gpxImports: [],
     })
 
@@ -180,9 +202,10 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
     } as never
 
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map,
       point: { x: 100, y: 120 },
-      markers: [createMarker('fallback-marker', 10, 12)],
+      markers: [createMarker('fallback-marker', 10, 12), createMarker('rendered-marker', 80, 80)],
       drawings: [],
       gpxImports: [],
     })
@@ -193,6 +216,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('tolerates malformed drawing geometry without throwing', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 100, y: 100 },
       markers: [],
@@ -207,6 +231,7 @@ describe('resolveClickedMapTarget — priority and outcomes', () => {
 
   it('tolerates malformed GPX geometry without throwing', () => {
     const result = resolveClickedMapTarget({
+      visibility: useLayerVisibilityStore.getInitialState(),
       map: projectingMap,
       point: { x: 100, y: 100 },
       markers: [],

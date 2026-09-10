@@ -4,6 +4,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { PersistTrackingHistoryBatchInput } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -62,6 +63,7 @@ type CoverageKey = {
 }
 
 type CoverageMissionStore = {
+  readonly persistTrackingHistoryBatch: (input: PersistTrackingHistoryBatchInput) => Promise<unknown>
   readonly prepareClose: () => Promise<void>
   readonly close: () => void
   readonly createMission: (input: { readonly name: string; readonly start_time: string }) => Promise<{ readonly id: string }>
@@ -326,6 +328,13 @@ describe('Electron coverage mission-store orchestration', () => {
     }, 'real-worker-sync-2')
     await store.activateCoverageTileCatalog({ activationId: secondCatalog.activationId })
     await store.finalizeCoverageTileCatalog({ activationId: secondCatalog.activationId })
+    await expect(store.readCoverageClaim({ missionId: mission.id,
+      selectedKeys: secondManifest.chunks.map((chunk) => chunk.key) }, 'real-worker-unreconciled')).resolves.toMatchObject({
+      databaseReady: false, blockers: ['history_reconciliation_incomplete'],
+    })
+    await store.persistTrackingHistoryBatch({ mission_id: mission.id, positions: [], checkpoints: [{
+      device_id: 'device-1', history_from: '2026-08-24T08:00:00.000Z', reconciled_until: '2026-08-24T09:06:00.000Z',
+    }] })
     await expect(store.readCoverageClaim({
       missionId: mission.id,
       selectedKeys: secondManifest.chunks.map((chunk) => chunk.key),
@@ -835,7 +844,7 @@ describe('Electron coverage mission-store orchestration', () => {
       started_at: '2026-08-24T10:00:00.000Z',
     }).then(() => ordering.push('resolved'))
 
-    expect(ordering).toEqual([`changed:${mission.id}:2`, 'resolved'])
+    expect(ordering).toEqual([`changed:${mission.id}:3`, 'resolved'])
   })
 
   it('revokes coverage before a group membership scope change resolves', async () => {
@@ -1383,5 +1392,8 @@ async function seedMission(coverageStore: CoverageMissionStore): Promise<{ reado
       { source_position_id: 'source-2', device_id: 'device-1', lat: 52.01, lon: -9.71, timestamp: '2026-08-24T09:05:00.000Z', timestamp_source: 'fix' },
     ],
   })
+  await coverageStore.persistTrackingHistoryBatch({ mission_id: mission.id, positions: [], checkpoints: [{
+    device_id: 'device-1', history_from: '2026-08-24T08:00:00.000Z', reconciled_until: '2026-08-24T09:05:00.000Z',
+  }] })
   return mission
 }

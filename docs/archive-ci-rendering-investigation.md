@@ -123,3 +123,62 @@ The subsequent closeout changes only this evidence document and the handoff.
 Its executable, test, dependency and workflow trees are byte-identical to the
 green tested head above. Following the repository's documentation-only
 evidence-reuse policy, it does not claim a new runtime run for that closeout.
+
+## PR #15 integration: bounded software-renderer concurrency
+
+Linux run `34458799719` on executable integration `35dd1c83` passed source,
+lint/build, installer inspection, 960k replay, native SQLite and tracking, then
+rejected a 206 ms current-fix interval during post-cleanup archive Review.
+Server receipt timestamps were 210 ms apart; the two source-to-renderer delays
+were 25 and 21 ms. This localizes the gap before the next server receipt, but
+does not distinguish delayed polling from delayed execution of the mock server.
+Restore renderer frames reached 108.8 ms and the main watchdog 71.3 ms.
+The exact-head failure and clean teardown are retained in `tmp/pr15-ci-35dd1c83`.
+
+A cold-cache diagnostic used the unchanged application at docs-only descendant
+`57f33519`, builder 26.16.1 and Electron 40.10.0 in the owned Linux ARM64 container.
+It has a four-CPU quota but exposes sixteen CPUs, unlike hosted x64's four logical
+CPUs/two physical cores. A 50 ms observer in the smoke/mock-server process recorded
+scheduler delays separately from the authoritative liveness gate. A first launch
+omitted the required Linux launch flags and failed before renderer readiness;
+the default exploratory run then enabled the Linux graphics flags but omitted
+the occluded-window switch. The controlled four/two-worker comparisons use the
+exact normal CI launch arguments, including that switch.
+
+| Mesa workers | Current-fix maximum | Main maximum | Frame maximum | External loop gaps over 70 ms during run | CPU throttled time |
+| --- | --- | --- | --- | --- | --- |
+| Default | 194 ms | 109.1 ms | 130.4 ms | Frequent, mostly about 100 ms | Not captured as a run delta |
+| 4 | 92 ms | 97.6 ms | 126.4 ms | 10 | 26.87 s |
+| 2 | 171 ms | 69.3 ms | 167.2 ms | 1 | 5.78 s |
+
+Each comparison used a separate cold Mesa cache and the same package/workload.
+Both explicitly bounded worker runs completed the full two-launch lifecycle and
+their receipts independently validate. Files are under
+`tmp/batch2-linux-source/tmp/pr15-archive-lp{4,2}` with corresponding
+`pr15-external-loop-*` and `pr15-cgroup-*` diagnostics. These are local synthetic
+comparisons, not a reproduction or causal explanation of the hosted rejection.
+Four workers had the best current-fix maximum; two reduced measured contention.
+
+The Linux archive CI environment now pins `LP_NUM_THREADS=2` to bound graphics
+concurrency. [Mesa documents this variable](https://docs.mesa3d.org/envvars.html#envvar-LP_NUM_THREADS)
+as the rendering worker count, defaulting to detected CPU cores. Rasterization,
+WebGL map rendering, the original workload, all observations and the strict
+200 ms limits remain enabled. macOS and the shipped application are unchanged.
+This is a bounded environment adjustment requiring a new hosted run, not a claim
+that the earlier 242/210/206 ms failures are explained. The regression failed with
+an inherited sixteen-worker setting, then passed with Linux pinned to two and
+non-Linux settings preserved. Local liveness-boundary tests and lint pass; the
+normal new-head CI result and receipt validation are recorded on PR #15/DON-215.
+
+Hosted result: [CI 34462624720](https://github.com/donal0c/sartracker-web/actions/runs/34462624720)
+passed on `e60dc43e13997b5297e396ce74561c30172025f7`, tree
+`e2a15683385a7cc10155488b9bb5bd572a09fd4e`, including every source and packaged
+gate. Downloaded source binding, package-safety v2 and archive-lifecycle receipts
+independently validate the exact clean head/tree, native runtime, custody and
+teardown. Current-fix maxima were 116/143/175/188 ms for create/verify/restore/
+cleanup; renderer frames peaked at 110.3 ms. The strict 200 ms gate passes with
+12 ms current-fix headroom. Packaged app.asar SHA-256:
+`05bf28a73adc53ad021261478ecd7585e92da349001567d96aa4c8f526a11966`.
+Receipts: `tmp/pr15-ci-e60dc43e`. This establishes the configured hosted run,
+not a causal explanation of earlier failures or release/field qualification.
+Subsequent closeout changes only documentation and reuses this executable proof.

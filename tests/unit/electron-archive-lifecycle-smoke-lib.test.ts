@@ -850,18 +850,19 @@ describe('packaged Electron archive-lifecycle smoke helpers [DON-248/DON-252/DON
       '--prepared-evidence',
     ])
     expect(buildArchiveLifecycleSmokeCiEnvironment({
-      environment: { DISPLAY: ':99', EXISTING: 'preserved' },
+      environment: { DISPLAY: ':99', EXISTING: 'preserved', LP_NUM_THREADS: '16' },
       platform: 'linux',
     })).toEqual({
       DISPLAY: ':99',
       EXISTING: 'preserved',
       LIBGL_ALWAYS_SOFTWARE: '1',
       GALLIUM_DRIVER: 'llvmpipe',
+      LP_NUM_THREADS: '2',
     })
     expect(buildArchiveLifecycleSmokeCiEnvironment({
-      environment: { EXISTING: 'preserved' },
+      environment: { EXISTING: 'preserved', LP_NUM_THREADS: '16' },
       platform: 'darwin',
-    })).toEqual({ EXISTING: 'preserved' })
+    })).toEqual({ EXISTING: 'preserved', LP_NUM_THREADS: '16' })
   })
 
   it('binds the packaged application archive separately from its platform wrapper', () => {

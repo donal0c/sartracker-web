@@ -14,6 +14,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
   if (props.state.status === 'inactive') return null
 
   const blockers = new Set(props.state.blockers ?? [])
+  const historyUnreconciled = blockers.has('history_reconciliation_incomplete')
   const reorganizing = props.state.manifest?.pendingInvalidation === true ||
     blockers.has('pending_invalidation')
   const backfill = props.state.manifest?.backfillIncomplete === true ||
@@ -25,7 +26,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
   const rendererDetached = blockers.has('renderer_detached')
   const rendererFilterPending = blockers.has('renderer_filter_pending')
   const evidenceBlocked = degraded || rendererEvidencePending || rendererEvidenceDegraded
-  const progressUntrusted = evidenceBlocked || rendererDetached || rendererFilterPending ||
+  const progressUntrusted = historyUnreconciled || evidenceBlocked || rendererDetached || rendererFilterPending ||
     reorganizing || backfill
   const completenessUnverified = props.state.status !== 'complete' &&
     props.state.deliveredFixCount >= props.state.totalFixCount
@@ -71,6 +72,11 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
           ) : degraded ? (
             <p className="mt-1" data-testid="coverage-degraded">
               Evidence health is degraded. History cannot be called complete until storage recovers.
+            </p>
+          ) : historyUnreconciled ? (
+            <p className="mt-1" data-testid="coverage-retrieval-warning">
+              Saved history has not been reconciled through the mission window. Completeness is not verified.
+              {' '}Loaded saved evidence remains shown. A connection recovery or visibility change does not fill this gap.
             </p>
           ) : props.state.status === 'complete' ? (
             <CompleteSummary

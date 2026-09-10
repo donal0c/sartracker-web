@@ -107,7 +107,8 @@ export function getMarkerLabelLayerId(markerType: MarkerType): string {
   return `mission-markers-label-${markerType}`
 }
 
-async function ensureMarkerImages(map: maplibregl.Map, signal: AbortSignal): Promise<void> {
+/** Reuses canonical operational marker symbols on live and read-only review maps. */
+export async function ensureMarkerImages(map: maplibregl.Map, signal: AbortSignal): Promise<void> {
   for (const [imageId, svg] of Object.entries(MARKER_IMAGE_SVGS)) {
     signal.throwIfAborted()
     if (map.hasImage(imageId)) {

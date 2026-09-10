@@ -1,26 +1,40 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-09. Read after `CLAUDE.md`.
+Updated 2026-09-10. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- WAR-11A is the active unmerged builder slice, based on master `c51e4b35`.
-  Builder/app-builder-lib 26.0.12 → 26.16.1; Electron/SQLite/application code
-  and the 200 ms gates are unchanged. The new package gate inspects actual
-  AppRun paths, all installer/ASAR contents, payload identity and native SQLite.
-  PR #14 CI `34397884713` passed 403 files / 4,200 tests and all packaged gates
-  on `6c1df970`; downloaded hashes/receipts validate. External review then found
-  an AppRun dialog-prefix bypass, so that head's readiness is withdrawn.
-  Correction uses exact dialog commands, lock-derived runtime policy, explicit
-  toolchain ownership, source receipt v2 and independently required receipt upload.
-  CI clears only its preceding web build's generated metadata before capturing
-  package source; a regression confirms unrelated changes remain rejected.
-  Focused red/green checks pass. ELF truncation allegation did not reproduce;
-  the parser stays unchanged. [WAR-11A](../docs/assurance/findings/WAR-11A.md)
-  contains the full disposition ledger and historical local/CI proof limits.
-  Next: correction-head source/package checks and independent rechecks, recorded
-  on the PR. Keep unmerged; no release authority is granted.
-  DON-146 owns this slice; DON-254/DON-255 retain final qualification/publication.
+- [PR #15](https://github.com/donal0c/sartracker-web/pull/15), Team Feedback
+  Batch 2 (DON-215), is prepared for merge; the PR records live readiness status.
+  Current master `d02d8a61` includes merged PRs #13 and #14. Both are integrated;
+  documentation conflicts retain the batch acceptance contract and safety queue.
+  Review fixes cover per-object replay limitations, required hit-test visibility,
+  hidden-marker creation protection, durable history request/completeness state,
+  independent live/history controls, visibility cascade and mission-switch isolation.
+  Remediation reviewers cleared application commit `42f9f305`; integrations leave
+  that application behavior unchanged. Details: [batch evidence](../docs/ui-feedback-batch-2-evidence.md).
+  Stable local source: 415 files / 4,271 tests, lint/build. Prior 31 affected browser
+  flows, final screenshot review, packaged request-target restart/pause, large
+  geometry and 8,664-position tracking proofs remain applicable to unchanged code.
+  Linux CI `34462624720` passed on `e60dc43e`: complete source/lint/build,
+  installer inspection, 960k replay, tracking, archive lifecycle and AppImage launch.
+  Downloaded source/package/archive receipts independently validate the exact clean
+  head/tree, native SQLite, custody, teardown and privacy. Current-fix maximum
+  188 ms; frames 110.3 ms, below unchanged 200 ms gates (12 ms continuity headroom).
+  Linux archive-test graphics concurrency is bounded to two Mesa workers; 282
+  boundary tests pass. Prior 242/210/206 ms hosted failures remain unexplained;
+  this configured-environment pass is not a causal fix or field-acceptance claim.
+  [Investigation](../docs/archive-ci-rendering-investigation.md) retains comparisons.
+  This final documentation-only closeout reuses `e60dc43e` executable/test/workflow
+  evidence. New geometry/E2E gate wiring stays deferred. The owned Linux diagnostic
+  container is stopped. Await user merge; no merge, release or deployment performed.
+
+- WAR-11A merged as [PR #14](https://github.com/donal0c/sartracker-web/pull/14)
+  at `35cff87d`; final Linux CI `34413097593` passed. Builder 26.16.1 adds
+  installer/ASAR inventory, AppRun policy, native SQLite and clean-source checks.
+  Electron/application runtime and the 200 ms gates remain unchanged.
+  [WAR-11A](../docs/assurance/findings/WAR-11A.md) retains its evidence ledger.
+  DON-254/DON-255 still own final qualification/publication.
 
 - **Three-stream coordination is locked (2026-09-09):** SAR-team feedback,
   confirmed deep-audit defects, and WAR hardening share the
@@ -37,6 +51,7 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   219.5 ms frame failures remain in the [report](../docs/assurance/findings/WAR-04B.md)
   and [investigation](../docs/archive-ci-rendering-investigation.md).
 
+
 - DON-256's first twelve-item Sar_4 UI batch merged as
   [PR #11](https://github.com/donal0c/sartracker-web/pull/11) at `9c73c62d`.
   Tested upstream head `e384ea8a` has green CI `34345038450`; source
@@ -52,7 +67,7 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   fixes or explicit dispositions in the [complete ledger](../docs/breadcrumb-pr6-complete-review-ledger.md).
 - Documentation cleanup records the final testing approach below. Start new work
   from current `master`; the archive PR does not need another review cycle.
-- Next programme steps: complete WAR-11A review, independently qualify native
+- Next programme steps: finish PR #15 integration, independently qualify native
   dependency/runtime upgrades, then BCP-17 final candidate qualification before
   DON-255 publication. Use the
   [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear
@@ -60,6 +75,12 @@ Updated 2026-09-09. Read after `CLAUDE.md`.
   DON-247 and DON-264 remain separate reliability work.
 
 ## Testing approach to carry forward
+
+Donal reaffirmed on 2026-09-10: documentation-only pre-merge conflict resolution
+does **not** trigger repeat tests, builds, browser/package smoke or CI dispatch.
+Verify the diff and reuse prior evidence; a new merge SHA alone invalidates none
+of it. Before repeating expensive validation, name the executable change or
+separate failure that warrants that specific check. See the cadence below.
 
 Follow [Testing and review cadence](../docs/testing-and-review-cadence.md):
 reproduce narrowly, fix and run affected tests, complete one stable source cycle,

@@ -86,6 +86,14 @@ export async function startLayerCatalogRuntime(
 
   return {
     refreshCatalog: async (input) => {
+      if (missionId !== input.missionId) {
+        latestRefreshRequestId += 1
+        metadataEntries = []
+        root = createEmptyLayerCatalogTree().root
+        nodeIndex = buildNodeIndex(root)
+        selectedNodeId = null
+        lastPublishedInputSignature = null
+      }
       missionId = input.missionId
       lastDevices = input.devices
       lastMarkers = input.markers
@@ -128,6 +136,7 @@ export async function startLayerCatalogRuntime(
         lastPublishedInputSignature = inputSignature
         rebuild()
       } catch (runtimeError) {
+        if (requestId !== latestRefreshRequestId || invalidationVersionAtStart !== refreshInvalidationVersion) return
         loading = false
         error = toErrorMessage(runtimeError)
         publishRuntime()
@@ -142,9 +151,9 @@ export async function startLayerCatalogRuntime(
       loading = true
       error = null
       publishRuntime()
+      const requestId = ++latestRefreshRequestId
+      const invalidationVersionAtStart = refreshInvalidationVersion
       try {
-        const requestId = ++latestRefreshRequestId
-        const invalidationVersionAtStart = refreshInvalidationVersion
         const nextMetadataEntries = await dependencies.layerCatalogStore.listMetadata(missionId)
         if (
           requestId !== latestRefreshRequestId ||
@@ -165,6 +174,7 @@ export async function startLayerCatalogRuntime(
         })
         rebuild()
       } catch (runtimeError) {
+        if (requestId !== latestRefreshRequestId || invalidationVersionAtStart !== refreshInvalidationVersion) return
         loading = false
         error = toErrorMessage(runtimeError)
         publishRuntime()

@@ -22,6 +22,16 @@ export type LayerInspectionRow = {
   readonly value: string
 }
 
+/** Describes whether a tracking category contains explicit visibility exceptions. */
+export function getLayerVisibilityCheckboxState(node: LayerCatalogNode): { checked: boolean; mixed: boolean } {
+  if (node.kind === 'layer' && (node.id === TRACKING_DEVICES_LAYER_NODE_ID
+    || node.id === TRACKING_BREADCRUMBS_LAYER_NODE_ID) && node.children.length > 0) {
+    const visibleCount = node.children.filter((child) => child.isVisible).length
+    return { checked: visibleCount === node.children.length, mixed: visibleCount > 0 && visibleCount < node.children.length }
+  }
+  return { checked: node.isVisible, mixed: false }
+}
+
 /**
  * Builds the operator-facing inspection rows for the selected layer tree node.
  */

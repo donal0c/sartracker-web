@@ -2,6 +2,51 @@ import { expect, test, type Page } from '@playwright/test'
 import { seedCoverageMission } from './helpers/coverage-test-setup'
 
 test.describe('complete mission-history coverage [DON-275]', () => {
+  test('AUD-14 uses structured completeness state instead of connection-warning wording', async ({ page }) => {
+    await seedCoverageMission(page)
+    const panel = page.getByTestId('coverage-status-panel')
+    await expect(panel).toContainText('All mission history shown')
+    await page.evaluate(async () => {
+      const { useCoverageStore, applyCoverageState } = await import('/src/features/tracking/coverage-store.ts')
+      const coverage = useCoverageStore.getState().state
+      if (coverage.status === 'inactive') throw new Error('Expected loaded coverage')
+      applyCoverageState({ ...coverage, status: 'partial', blockers: ['history_reconciliation_incomplete'] })
+      const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
+      const state = useTrackingStore.getState()
+      state.applyStatus({ ...state.status, warning: 'Breadcrumb history incomplete for Alpha; retrying while current fixes remain live.' })
+    })
+    await expect(panel).toContainText('Saved history has not been reconciled')
+    await expect(panel).not.toContainText('All mission history shown')
+    await expect(page.getByTestId('tracking-counters')).toContainText('2')
+    await page.evaluate(async () => {
+      const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
+      const state = useTrackingStore.getState()
+      state.applyStatus({ ...state.status, warning: null })
+    })
+    await expect(panel).not.toContainText('All mission history shown')
+    await page.evaluate(async () => {
+      const { useCoverageStore, applyCoverageState } = await import('/src/features/tracking/coverage-store.ts')
+      const coverage = useCoverageStore.getState().state
+      if (coverage.status === 'inactive') throw new Error('Expected loaded coverage')
+      applyCoverageState({ ...coverage, status: 'complete', blockers: [] })
+    })
+    await expect(panel).toContainText('All mission history shown')
+  })
+  test('live Breadcrumbs visibility does not hide Mission History or change its checked participants', async ({ page }) => {
+    await seedCoverageMission(page)
+    await expect(page.getByTestId('coverage-status-panel')).toContainText('All mission history shown')
+    const before = await readCoverageLayerFilters(page)
+    await page.getByTestId('sidebar-tab-layers').click()
+    await page.getByTestId('layer-expand-all-btn').click()
+    await page.getByTestId('layer-visibility-layer-tracking-breadcrumbs').uncheck()
+    await expect(page.getByTestId('layer-visibility-feature-coverage-device-alpha')).toBeChecked()
+    await expect(page.getByTestId('layer-visibility-feature-coverage-device-bravo')).toBeChecked()
+    expect(await readCoverageLayerFilters(page)).toEqual(before)
+    await page.getByTestId('layer-visibility-group-tracking').uncheck()
+    expect(await readCoverageLayerFilters(page)).toEqual(before)
+    await page.getByTestId('sidebar-tab-tracking').click()
+    await expect(page.getByTestId('coverage-status-panel')).toContainText('All mission history shown')
+  })
   test('shows all mission history by default and keeps live positions independent of omissions', async ({ page }) => {
     await seedCoverageMission(page)
 

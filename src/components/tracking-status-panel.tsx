@@ -1,4 +1,5 @@
 import { useTrackingStore } from '../features/tracking/tracking-store'
+import { resolveMissionHistoryOmissions } from '../features/layers/breadcrumb-coverage-visibility'
 import { isCriticalTrackingTrustWarning } from '../features/tracking/tracking-trust-warning'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
 import { useExactBreadcrumbDotStore } from '../features/tracking/exact-breadcrumb-dot-store'
@@ -40,9 +41,9 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   )
   const missionCoverageState = selectCoverageStateForMission(coverageState, missionId)
   const coverageController = useCoverageStore((state) => state.controller)
-  const omittedCoverageDeviceCount = useCoverageFilterStore(
-    (state) => state.omittedDeviceIds.length,
-  )
+  const omittedDeviceIds = useCoverageFilterStore((state) => state.omittedDeviceIds)
+  const omittedCoverageDeviceCount = resolveMissionHistoryOmissions(
+    [...new Set(missionCoverageState.status === 'inactive' ? [] : missionCoverageState.manifest?.chunks.map((chunk) => chunk.key.device_id) ?? [])], omittedDeviceIds).length
   const omittedCoverageOutingCount = useCoverageFilterStore(
     (state) => state.omittedPeriodKeys.filter((key) => key.startsWith('outing\u0000')).length,
   )

@@ -13,12 +13,14 @@ import {
 } from '../../src/features/tracking/start-tracking-runtime'
 import type {
   TrackingHistoryChunkPersistenceInput,
+  TrackingHistoryRequestInput,
   TrackingMissionEvidenceTransfer,
   TrackingSnapshotContext,
 } from '../../src/features/tracking/polling-manager'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 import { createParticipationScope } from '../../src/features/participants/participation-scope'
+import { useCoverageStore } from '../../src/features/tracking/coverage-store'
 
 const SNAPSHOT: TrackingSnapshot = {
   devices: devicesFixture.map((device) => normalizeTraccarDevice(device)),
@@ -44,6 +46,30 @@ function createDeferred<T>(): {
 }
 
 describe('startTrackingRuntime', () => {
+  it('records admission failure without evidence loss and rejects a stopped generation', async () => {
+    useCoverageStore.setState({ historyAdmissionFailures: {} })
+    let hooks!: { persistHistoryRequest: (input: TrackingHistoryRequestInput) => Promise<void> }
+    const persist = vi.fn().mockRejectedValueOnce(new Error('disk unavailable')).mockResolvedValue({ changedPositionCount: 0 })
+    const applyStatus = vi.fn()
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, value) => { hooks = value; return { start: vi.fn(), stop: vi.fn() } }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({ getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }), persistTrackingPositionsBulk: persist }),
+      applySnapshot: vi.fn(), applyStatus, writeCache: false,
+    })
+    const input = { expectedMissionId: 'mission-1', deviceId: 'alpha', historyFrom: '2026-08-08T08:00:00.000Z', requestedUntil: '2026-08-08T10:00:00.000Z' }
+    await expect(hooks.persistHistoryRequest(input)).rejects.toThrow('disk unavailable')
+    expect(useCoverageStore.getState().historyAdmissionFailures['mission-1']?.alpha).toBeDefined()
+    expect(JSON.stringify(applyStatus.mock.calls)).not.toContain('evidence loss')
+    await hooks.persistHistoryRequest(input)
+    expect(useCoverageStore.getState().historyAdmissionFailures['mission-1']?.alpha).toBeUndefined()
+    stop()
+    await expect(hooks.persistHistoryRequest(input)).rejects.toThrow(/stopped|generation/i)
+    expect(persist).toHaveBeenCalledTimes(2)
+    useCoverageStore.setState({ historyAdmissionFailures: {} })
+  })
+
   afterEach(() => {
     useMissionStore.setState(useMissionStore.getInitialState())
     useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
@@ -2946,7 +2972,7 @@ describe('startTrackingRuntime', () => {
     expect(persistTrackingPositionsBulk).toHaveBeenNthCalledWith(2, {
       mission_id: 'mission-1',
       positions: [expect.objectContaining({ source_position_id: 'in-window' })],
-      checkpoints: [],
+      checkpoints: [{ device_id: '1', history_from: '2026-04-06T10:00:00.000Z', reconciled_until: '2026-04-06T12:00:00.000Z' }],
     })
   })
 

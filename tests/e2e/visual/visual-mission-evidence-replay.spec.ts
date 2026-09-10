@@ -33,6 +33,20 @@ test.describe('Visual: mission evidence and replay', () => {
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
     await expect(page.getByTestId('mission-replay-time')).toHaveValue(acceptedReplayTime)
     await page.setViewportSize({ width: 1440, height: 1200 })
+    await expect(page.getByTestId('mission-replay-map')).toContainText('Map loaded with evidence limitations')
+    await expect(page.getByTestId('mission-replay-map').locator('canvas')).toBeVisible()
+    await captureElementAndRegister(page, 'mission-replay-map', {
+      testId: 'batch-2-replay-map', testName: 'Read-only dated mission evidence map', area: 'mission-review', severity: 'critical',
+      verificationPrompt: `Verify this read-only mission replay map capture:
+1. A map canvas and its zoom controls are visible.
+2. Separate controls identify breadcrumbs, current at selected time, dated GPX, and markers/drawings.
+3. Historical positions are explicitly distinguished from live locations.
+4. Undated GPX is explicitly excluded from precise replay.
+5. The map states evidence limitations rather than claiming complete mission history.
+6. A purple dated GPX evidence dot is visible on the map.
+Report each item and overall PASS or FAIL.`,
+      playwrightAssertions: ['map canvas visible', 'available evidence limitations retained', 'dated and static GPX remain distinct'],
+    })
 
     await captureElementAndRegister(page, 'mission-replay-workspace', {
       testId: 'mission-replay-data-known-at-time',

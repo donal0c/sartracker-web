@@ -115,6 +115,7 @@ type PollingManagerOptions = {
   readonly persistHistoryChunk?: (
     input: TrackingHistoryChunkPersistenceInput,
   ) => Promise<TrackingHistoryChunkPersistenceResult>
+  readonly persistHistoryRequest?: (input: TrackingHistoryRequestInput) => Promise<void>
   readonly persistHistoryChunks?: (
     inputs: readonly TrackingHistoryChunkPersistenceInput[],
   ) => Promise<void>
@@ -174,12 +175,20 @@ export type BreadcrumbHistoryCheckpointSeed = {
 }
 
 export type TrackingHistoryChunkPersistenceInput = {
-  readonly phase: 'initial' | 'anti_entropy'
+  readonly phase: 'initial' | 'anti_entropy' | 'incremental'
   readonly expectedMissionId: string | null
   readonly deviceId: string
   readonly historyFrom: string
   readonly reconciledUntil: string
+  readonly reconciledFrom?: string
   readonly positions: readonly NormalizedTrackingPosition[]
+}
+
+export type TrackingHistoryRequestInput = {
+  readonly expectedMissionId: string
+  readonly deviceId: string
+  readonly historyFrom: string
+  readonly requestedUntil: string
 }
 
 export type TrackingHistoryChunkPersistenceResult = {
@@ -310,6 +319,7 @@ export function createPollingManager(
     deviceId: chunk.deviceId,
     historyFrom: chunk.historyFrom.toISOString(),
     reconciledUntil: chunk.to.toISOString(),
+    reconciledFrom: chunk.from.toISOString(),
     positions: chunk.positions,
   })
 
@@ -813,6 +823,14 @@ export function createPollingManager(
           throw new Error('Mission history evidence scope closed before transport admission.')
         }
         releaseTransport = await acquireHistoryTransport(signal)
+        const historyFrom = options.getInitialBreadcrumbFrom?.()
+        if (observation.missionId !== null && historyFrom !== null && historyFrom !== undefined) {
+          await options.persistHistoryRequest?.({ expectedMissionId: observation.missionId, deviceId,
+            historyFrom: historyFrom.toISOString(), requestedUntil: to.toISOString() })
+        }
+        if (signal.aborted || expectedHistoryResetKey !== activeHistoryResetKey) {
+          throw new Error('Mission history request was superseded before transport.')
+        }
         const result = await (
           client.getBreadcrumbsWithReport?.(deviceId, from, to, signal) ??
           client.getBreadcrumbs(deviceId, from, to, signal).then((accepted) => ({
@@ -1721,6 +1739,13 @@ export function createPollingManager(
           request.historyResetKey,
         )
         const breadcrumbs = result.accepted
+        if (options.persistHistoryChunk !== undefined && request.historyResetKey !== null && initialFrom !== null) {
+          await runMissionEvidencePersistence(request.historyResetKey, () => options.persistHistoryChunk!({
+            phase: 'incremental', expectedMissionId: request.historyResetKey, deviceId: device.device_id,
+            historyFrom: initialFrom.toISOString(), reconciledFrom: fetchFrom.toISOString(),
+            reconciledUntil: fetchUntil.toISOString(), positions: breadcrumbs,
+          }))
+        }
         const newestTimestamp = getCursorTimestampFromBatch(
           breadcrumbs,
           fetchUntil,

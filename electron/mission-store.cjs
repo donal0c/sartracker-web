@@ -2490,7 +2490,8 @@ function createElectronMissionStore(options) {
     },
     persistTrackingPositionsBulk: async (input) => {
       const startedAtMs = performance.now()
-      const hasCheckpoints = Array.isArray(input.checkpoints) && input.checkpoints.length > 0
+      const hasCheckpoints = (Array.isArray(input.checkpoints) && input.checkpoints.length > 0)
+        || (Array.isArray(input.requests) && input.requests.length > 0)
       const result = await runCoverageMutation(
         input.mission_id,
         () => hasCheckpoints
@@ -4294,6 +4295,10 @@ function migrate(db, archiveDirectory) {
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
   `)
+    // Additive operational migration: request targets are excluded from archive rows.
+    // Existing targets stay unknown until a real request or acknowledged chunk supplies one.
+    ensureColumnExists(db, 'tracking_history_checkpoints', 'requested_until', 'TEXT')
+    ensureColumnExists(db, 'tracking_history_checkpoints', 'requested_from', 'TEXT')
     ensureColumnExists(db, 'markers', 'updated_by', 'TEXT')
     ensureColumnExists(db, 'markers', 'coordinator_ids', 'TEXT')
     ensureColumnExists(db, 'markers', 'attachment_path', 'TEXT')
@@ -8194,6 +8199,7 @@ function persistTrackingHistoryBatch(
   coverageFaultInjection = {},
 ) {
   ensureWritableMission(db, input.mission_id)
+  if (input.requests !== undefined && (!Array.isArray(input.requests) || input.requests.length > 1000)) throw new Error('History request targets must be a bounded list.')
   const checkpoints = Array.isArray(input.checkpoints) ? input.checkpoints : []
   let positionResult = {
     positions: [],
@@ -8230,6 +8236,26 @@ function persistTrackingHistoryBatch(
         added.skippedAmbiguousLegacyAdoptionCount ?? 0,
     }
 
+    let historyChanged = false
+    for (const request of input.requests ?? []) {
+      const deviceId = typeof request?.device_id === 'string' ? request.device_id.trim() : ''
+      if (!deviceId || deviceExists.get(input.mission_id, deviceId) === undefined) throw new Error('History request device is unavailable.')
+      const historyFrom = normalizeCheckpointTimestamp(request.history_from, 'request history start')
+      const requestedUntil = normalizeCheckpointTimestamp(request.requested_until, 'requested-until target')
+      if (requestedUntil < historyFrom) throw new Error('History request target precedes its history start.')
+      const changed = db.prepare(`INSERT INTO tracking_history_checkpoints
+        (mission_id, device_id, history_from, reconciled_until, requested_from, requested_until, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(mission_id, device_id) DO UPDATE SET
+          requested_from = MIN(COALESCE(requested_from, excluded.requested_from), excluded.requested_from),
+          requested_until = MAX(COALESCE(requested_until, excluded.requested_until), excluded.requested_until),
+          updated_at = excluded.updated_at
+        WHERE requested_until IS NULL OR requested_from IS NULL
+          OR requested_until < excluded.requested_until OR requested_from > excluded.requested_from`)
+        .run(input.mission_id, deviceId, historyFrom, historyFrom, historyFrom, requestedUntil, now())
+      historyChanged ||= changed.changes > 0
+    }
+
     for (const checkpoint of checkpoints) {
       if (
         typeof checkpoint?.device_id !== 'string' ||
@@ -8255,6 +8281,15 @@ function persistTrackingHistoryBatch(
         )
       }
       const existing = readCheckpoint.get(input.mission_id, deviceId)
+      let establishesEarlierPrefix = false
+      // Only an acknowledged contiguous interval can move the evidence frontier.
+      if (checkpoint.reconciled_from !== undefined) {
+        const intervalFrom = normalizeCheckpointTimestamp(checkpoint.reconciled_from, 'reconciled interval start')
+        if (intervalFrom > reconciledUntil) throw new Error('Tracking history reconciled interval ends before it starts.')
+        if (intervalFrom > (existing?.reconciled_until ?? historyFrom)) continue
+        if (existing !== undefined && historyFrom < existing.history_from && intervalFrom > historyFrom) continue
+        establishesEarlierPrefix = existing !== undefined && historyFrom < existing.history_from
+      }
       if (existing !== undefined && historyFrom > existing.history_from) {
         throw new Error(
           'Tracking history checkpoint start does not match the stored mission-device checkpoint.',
@@ -8262,6 +8297,7 @@ function persistTrackingHistoryBatch(
       }
       if (
         existing !== undefined &&
+        !establishesEarlierPrefix &&
         historyFrom < existing.history_from &&
         reconciledUntil < existing.history_from
       ) {
@@ -8275,7 +8311,7 @@ function persistTrackingHistoryBatch(
         continue
       }
       const storedReconciledUntil =
-        existing !== undefined && existing.reconciled_until > reconciledUntil
+        existing !== undefined && !establishesEarlierPrefix && existing.reconciled_until > reconciledUntil
           ? existing.reconciled_until
           : reconciledUntil
       upsertCheckpoint.run(
@@ -8285,7 +8321,12 @@ function persistTrackingHistoryBatch(
         storedReconciledUntil,
         now(),
       )
+      historyChanged = true
+      db.prepare(`UPDATE tracking_history_checkpoints SET requested_until = MAX(COALESCE(requested_until, ?), ?),
+        requested_from = MIN(COALESCE(requested_from, ?), ?) WHERE mission_id = ? AND device_id = ?`)
+        .run(reconciledUntil, reconciledUntil, historyFrom, historyFrom, input.mission_id, deviceId)
     }
+    if (historyChanged) bumpCoverageChangeSequence(db, input.mission_id, now())
   })
 
   transaction()

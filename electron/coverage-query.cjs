@@ -1,4 +1,5 @@
 const { createHash } = require('node:crypto')
+const { hasUnreconciledCoverageHistory } = require('./coverage-history-completeness.cjs')
 
 const { compareStringsByCodeUnit } = require('./deterministic-string-order.cjs')
 const { resolveCoveragePeriod } = require('./coverage-period-resolver.cjs')
@@ -199,6 +200,9 @@ function readCoverageClaimSnapshot(database, input) {
   if (mission?.enumerated !== 1) blockers.push('not_enumerated')
   if (pendingInvalidation) blockers.push('pending_invalidation')
   if (backfillIncomplete) blockers.push('backfill_incomplete')
+  if (hasUnreconciledCoverageHistory(database, input.missionId, readCoverageDeviceUniverse(database, input.missionId))) {
+    blockers.push('history_reconciliation_incomplete')
+  }
   for (const key of input.selectedKeys) {
     const identity = createChunkMapKey(key.device_id, key.period_kind, key.period_id)
     const chunk = allowedKeys.has(identity)

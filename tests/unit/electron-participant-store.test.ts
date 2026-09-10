@@ -670,8 +670,10 @@ describe('Electron participant store [DON-271]', () => {
       completed: true,
     })
 
+    // Completing participant admission backfill does not attest the separate
+    // tracking-history reconciliation frontier, which this fixture never wrote.
     await expect(store.readCoverageClaim({ missionId: mission.id, selectedKeys: [] }))
-      .resolves.toMatchObject({ databaseReady: true, blockers: [] })
+      .resolves.toMatchObject({ databaseReady: false, blockers: ['history_reconciliation_incomplete'] })
     await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   })
 

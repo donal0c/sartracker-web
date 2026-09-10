@@ -75,15 +75,39 @@ function createClient(
 function createDeferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
+  readonly reject: (error: Error) => void
 } {
   let resolvePromise: (value: T) => void = () => undefined
-  const promise = new Promise<T>((resolve) => {
+  let rejectPromise: (error: Error) => void = () => undefined
+  const promise = new Promise<T>((resolve, reject) => {
     resolvePromise = resolve
+    rejectPromise = reject
   })
-  return { promise, resolve: resolvePromise }
+  return { promise, resolve: resolvePromise, reject: rejectPromise }
 }
 
 describe('polling manager', () => {
+  it('records the history target before transport and keeps current fixes running when admission fails', async () => {
+    const client = createClient()
+    const pending = createDeferred<void>()
+    const persistHistoryRequest = vi.fn(() => pending.promise)
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5000, staleThresholdMs: 60000, getHistoryResetKey: () => 'mission-target',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-09T00:00:00Z'),
+      persistHistoryRequest, onSnapshot, onStatusChange: vi.fn(),
+    })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(persistHistoryRequest).toHaveBeenCalled()
+    expect(client.getBreadcrumbs).not.toHaveBeenCalled()
+    expect(client.getCurrentPositions).toHaveBeenCalled()
+    pending.reject(new Error('Checkpoint write failed'))
+    await vi.advanceTimersByTimeAsync(1)
+    expect(client.getBreadcrumbs).not.toHaveBeenCalled()
+    expect(onSnapshot).toHaveBeenCalled()
+    poller.stop()
+  })
   beforeEach(() => {
     vi.useFakeTimers()
   })
@@ -1729,13 +1753,14 @@ describe('polling manager', () => {
     poller.start()
     await vi.advanceTimersByTimeAsync(0)
 
-    expect(persistHistoryChunk.mock.calls.map((call) => call[0])).toEqual([
+    expect(persistHistoryChunk.mock.calls.map((call) => call[0]).filter((input) => input.phase === 'initial')).toEqual([
       {
         phase: 'initial',
         expectedMissionId: 'mission-1',
         deviceId: '1',
         historyFrom: missionStartedAt.toISOString(),
         reconciledUntil: '2026-04-06T04:00:00.000Z',
+        reconciledFrom: '2026-04-06T02:00:00.000Z',
         positions: [],
       },
       {
@@ -1744,6 +1769,7 @@ describe('polling manager', () => {
         deviceId: '1',
         historyFrom: missionStartedAt.toISOString(),
         reconciledUntil: currentTime.toISOString(),
+        reconciledFrom: '2026-04-06T04:00:00.000Z',
         positions: [],
       },
     ])
@@ -1864,7 +1890,7 @@ describe('polling manager', () => {
         positions: [historyPositions[1]],
       }),
     ])
-    expect(persistHistoryChunk).not.toHaveBeenCalled()
+    expect(persistHistoryChunk.mock.calls.every(([input]) => input.phase === 'incremental')).toBe(true)
     expect(
       onSnapshot.mock.calls.flatMap((call) => call[0].breadcrumbs).map(
         (position) => position.id,
