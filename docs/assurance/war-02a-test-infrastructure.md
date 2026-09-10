@@ -1,0 +1,200 @@
+# WAR-02A deterministic test infrastructure
+
+Starting source: `083f504753089abfcce9decdee8348dc069f03b8` (fetched master,
+2026-09-10). Assurance owner: DON-254. Scope is additive test infrastructure;
+production, Repair Train A and existing regression files remain untouched.
+
+## Contract defined before implementation
+
+- A virtual scheduler owns integer milliseconds and stable insertion order at
+  equal deadlines. Tests explicitly schedule poll, mission-switch, restart,
+  teardown and worker-completion events. Cancellation removes pending work;
+  backward time, invalid delays and runaway queues fail visibly. It does not
+  pretend to virtualize native SQLite, operating-system workers or Promise jobs.
+- Named asynchronous gates expose an entered receipt and require explicit
+  release. Integration tests await those receipts, never wall-clock sleeps,
+  polling retries or an arbitrary number of microtask flushes. Native work is
+  awaited before its completion is delivered at a selected virtual event.
+- A fault plan targets an operation, before/after boundary and occurrence.
+  EIO/ENOSPC are injected errors; interruption is a distinct test error, not
+  an OS power-loss claim. An unused armed fault fails the test. Traces show
+  attempted/completed operations and the exact injected boundary.
+- Filesystem adapters wrap real disposable files, including open, file write, file
+  sync, rename and directory sync. SQLite backup errors are injected at the
+  application/native-call boundary; this does not emulate SQLite's VFS, torn
+  sectors or filesystem journal replay.
+- Real production renderer coordination and rolling backup controls are
+  exercised through existing seams. Test-only CommonJS dependency isolation
+  must not replace global modules or change production files. Historical
+  negative controls disable one named safety property in the test boundary;
+  the same assertion must fail, while the current control passes.
+
+## Safety and proof limits
+
+No product rules are introduced. SAR-QA-001/007/020 constrain retained evidence;
+SAR-QA-002 keeps current position independent of evidence work. The source is
+the [indexed Q&A](../breadcrumb-team-question-and-answer-ledger.md) and its
+raw transcript. Scheduling labels describe test events, not new mission rules.
+
+The target is T1/T2 local evidence, not browser, package, power-loss, provider,
+multi-machine, soak, release or field qualification. PST-002 and IPC-002 remain
+open at their broader proof boundaries. AUD-13/AUD-02/AUD-03 remain Repair Train A.
+
+## Planned verification
+
+First run helper contract tests red before implementation. Exercise all five
+lifecycle event kinds, equal-time ordering, cancellation, invalid time, bounded
+execution and explicit gates. Test before/after EIO, ENOSPC and interruption,
+fault hit accounting, real file preservation, SQLite old/new snapshot contents,
+and renderer evidence across mission switch and restart. Run the two historical
+controls in green and deliberately disabled modes with identical safety oracles.
+Then run focused suites and one stable serial source suite, lint and build.
+Independent exact-head architecture and determinism/fault reviews follow the PR;
+affected rechecks and cumulative review follow any remediation.
+
+## Implemented boundary and use
+
+All helpers and tests live in `tests/unit/assurance/war-02a/`. The default Vitest
+include already collects this directory. Its strict `tsconfig.json` is referenced
+by the root build graph, so the normal build and inherited CI enforce helper
+types. It has a separate build-info path to avoid colliding with the Node config.
+No runtime, dependency or workflow file changed.
+
+| Helper | Contract and limit |
+| --- | --- |
+| `virtual-scheduler.ts` | `schedule(label, delay, callback)` and `advanceTo(ms)` explicitly order events. Equal deadlines use insertion order. Timer adapters leave global timers untouched. Reentrant advancement and a finite dispatch-budget overrun throw. Callbacks dispatch synchronously; they must not return a Promise. `assertIdle()` detects leftover events. |
+| `createGate(name)` | `wait()` exposes an `entered` receipt; the driver then chooses `release(value)` or `reject(error)`. Arrival and settlement are one-shot. `assertSettled()` catches unreleased or unused gates. Native work and Promise jobs remain outside virtual time; tests join them through receipts rather than time guesses. |
+| `fault-plan.ts` | One fault per plan, addressed by operation, before/after boundary and 1-based occurrence. `run()` records a before event, invokes the real operation, then records after. A before fault prevents invocation; an after fault reports failure after the effect. The exact native error is retained when the native call itself rejects. `assertTriggered()` rejects a missed injection. |
+| `fault-filesystem.ts` | Real open, handle write/writeFile and file/directory sync, rename and remove. `file.open` counts both file and directory opens; use occurrence to select one. Before-open faults acquire no handle; after-open faults close the acquired handle before withholding it from the caller. Other filesystem calls pass through. Paths on wrapped operations are lexically restricted to a disposable trusted root; this is not a symlink security sandbox. It never fills the real disk or damages another profile. |
+| `sqlite-backup-adapter.ts` | Real `better-sqlite3` online backup, with faults before/after the native backup call and an optional held completion delivery. It closes the native connection before the gate. It replaces the worker runner only inside the isolated test; its returned thread ID is a test acknowledgement, not evidence of a real worker. SQLite page-write/fsync/VFS faults, worker-thread isolation and OS-kill recovery are not covered. |
+| `isolated-commonjs.ts` | Evaluates the checkout's complete CommonJS module with direct-dependency overrides; does not patch `require.cache`, globals or on-disk source. Negative controls use one exact source anchor and refuse missing/ambiguous matches. Index-based splicing preserves replacement text literally, including dollar metacharacters. Transitive dependencies remain real and unmodified. |
+
+The scheduler's five-kind replay test is a harness capability demonstration,
+not a test of the production tracking poller. Joined production tests cover
+mission switch, teardown timeout, native completion delivery and store restart.
+This deliberately avoids Repair Train A's polling/stationary regression seams.
+
+Example driver pattern:
+
+```ts
+const completion = createGate<void>('worker-completion')
+// The adapter performs native work, then calls completion.wait().
+const operation = adapter.run(input)
+await completion.entered
+clock.schedule('worker-completion', 20, () => { completion.release() })
+clock.advanceTo(20)
+await operation
+completion.assertSettled()
+clock.assertIdle()
+```
+
+## Historical controls and falsification
+
+Renderer scope: fix `0c674e81e97f0376bff268d181d99a1583cd1556`
+(`DON-276`/`DON-275`) broadened teardown loss ownership beyond the active mission.
+The new test finishes mission A, creates B, stages the real durable incident at
+a virtual soft deadline, then delivers loss or a successful drain. It closes
+and reopens the real store and checks both missions' evidence health. The lost
+case goes red when the isolated coordinator's scope query is filtered to the
+active mission: A incorrectly comes back healthy. The successful-drain control
+checks that provisional uncertainty remains retractable.
+
+Backup atomicity: fix `1799b2cad4c4403d692dc316d3f0cd4798d0f9dc` (`DON-232`)
+replaced direct mirror writes with temporary copy plus rename. Its historical
+full integrity scan is **not** restored by this harness. The new test creates a
+good mirror, changes the live SQLite rows, injects a failure and independently
+reads bytes and SQLite rows. The negative control sets the temporary destination
+to the mirror inside isolated source evaluation. The rename-error case then
+loses the good mirror and fails the same preservation assertion.
+
+These are targeted semantic mutants of current code, not a claim to replay
+every line of an old checkout. Neither edits production files. The source suite
+runs `negative-controls.test.ts`, which invokes the proof driver and requires
+both current controls to pass and both disabled controls to fail. The driver
+uses structured Vitest results and checks exactly one named safety assertion.
+The custom reporter also records suite/hook and unhandled error counts; all must
+be zero, with the expected completed-run reason. An import, timeout, missing
+native module, extra cleanup failure or unhandled error is not red proof.
+Child-process launch errors, timeouts and signals explicitly report an
+infrastructure failure with the underlying code and no safety proof obtained.
+The proof driver and both nested-run test wrappers share this distinction;
+deadlines and the named safety assertions are unchanged.
+
+## Repeatable commands
+
+```sh
+npm test -- tests/unit/assurance/war-02a --no-file-parallelism
+node scripts/assurance/war-02a-prove-red.mjs
+npx tsc -p tests/unit/assurance/war-02a/tsconfig.json
+npm test -- --no-file-parallelism
+npm run lint
+npm run build
+```
+
+Manual red-only commands intentionally exit 1 and must never be reported green:
+
+```sh
+WAR02A_NEGATIVE_CONTROL=renderer-active-only npm test -- tests/unit/assurance/war-02a/renderer-lifecycle.test.ts -t 'historical renderer scope: lost'
+WAR02A_NEGATIVE_CONTROL=backup-direct-target npm test -- tests/unit/assurance/war-02a/backup.test.ts -t 'historical backup atomicity: EIO before file.rename'
+```
+
+## Evidence ledger
+
+- Claude follow-up (2026-09-10): all four findings addressed. Root `tsc -b`
+  now includes the strict harness config with separate build metadata; a
+  temporary wrong-type probe produced TS2322 through that normal graph and
+  was removed. Literal replacement and six before/after open-fault regressions
+  failed before correction. Three process-result cases cover timeout, launch
+  error and signal classification; nested driver/reporter call sites share the
+  diagnostic. The initial focused recheck passed 9 files / 75 tests; the final
+  stable source cycle, including those call sites, passed 424 files / 4,346
+  tests in 473.61 s. Lint and normal build/bundle budgets passed. Logs are in
+  ignored `tmp/war02a/claude-*.log`. The build-generated version change was
+  restored; production is untouched. Updated-head CI remains a separate result
+  tracked on PR #16; no manual package/provider/soak qualification was added.
+- Before implementation: two helper suites failed collection because the
+  scheduler/fault helpers did not yet exist; the filesystem/backup suites then
+  failed for their missing adapters. These are test-first setup failures, not
+  historical defect proof. Reentrant-clock and unreleased-gate checks subsequently
+  failed at assertions before their guards were implemented.
+- Focused implementation: 7 files / 54 tests pass. The separate proof driver
+  records two current-control passes and two failures at their named safety
+  oracles. The strict test-infrastructure type check passes.
+- Stable source cycle on the implementation worktree, Node 22.22.3/macOS arm64:
+  `npm test -- --no-file-parallelism` passed 422 files / 4,325 tests in 471.78 s.
+  `npm run lint` and `npm run build` passed, including bundle budgets. The build's
+  generated version metadata was restored to its original blob; there is no
+  production diff. A subsequent test indentation change is whitespace only.
+  Local logs are in ignored `tmp/war02a/`; these are local source results, not CI
+  or package evidence.
+- Independent architecture review of `de7d15bf` was clean. The determinism/fault
+  review found one P2: the proof gate accepted the named assertion alongside an
+  unrelated failure. Six validator regressions reproduced that false acceptance
+  before correction. The gate now accepts only one exact assertion and explicit
+  zero run-level errors. Eight validator cases and three real child-run fixtures
+  cover intended assertion plus afterEach cleanup, afterAll suite, and unhandled
+  rejection errors. All three prove the intended oracle did fire and the mixed
+  result was nevertheless rejected. Affected recheck passes 9 files / 65 tests,
+  strict helper types, focused lint and script syntax checks. The earlier full
+  422-file source cycle remains evidence for unchanged inputs; the correction
+  changes only proof reporting/validation and adds its regression tests.
+  Both affected reviewers cleared corrected executable/test head
+  `18bd374f60098286b34545bc5602638149fbc9df`. A third independent cumulative
+  review against `083f5047` also returned clean on that exact head. The focused
+  and cumulative reviewers each independently passed the 3 proof-gate files /
+  12 tests. No source review was represented as a GitHub-account approval.
+- [PR #16](https://github.com/donal0c/sartracker-web/pull/16) is the live record
+  for final CI and merge readiness. Its inherited Linux workflow starts
+  automatically on PR updates; no additional package/soak job was manually
+  dispatched for WAR-02A. The initial run was superseded by the correction,
+  not counted as a pass. This closeout changes documentation only and reuses
+  the named executable/test evidence; no qualification tier is upgraded.
+
+The 30 filesystem cases cover EIO, ENOSPC and injected interruption before/after
+open, write, file sync, rename and directory sync. Open faults exercise the
+durable writer's unassigned-handle cleanup branch and verify the old file and
+absence of a temporary candidate. The 12 SQLite/mirror cases cover
+the same codes before/after native backup and rename. After rename the new whole
+file is visible even if acknowledgement fails; it is not claimed rolled back.
+Injected interruption runs JavaScript cleanup. Abrupt process death, power loss,
+partial native page writes and filesystem journal recovery remain unqualified.

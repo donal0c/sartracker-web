@@ -18,30 +18,31 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   DON-267/DON-269 own repairs; DON-254 retains qualification, including the old
   unexplained 466.7 ms soak observation. No merge/release authority.
 
+
+- **WAR-02A test foundation merged in PR #16 at `4076975d`** from fetched master `083f5047`
+  (merged PR #15). Additive helpers/tests are isolated under
+  `tests/unit/assurance/war-02a/`; production and Repair Train A are untouched.
+  Source at `de7d15bf`: 422 files / 4,325 tests, lint/build. Final affected 65
+  tests and helper types pass; both red controls remain proven. [PR #16](https://github.com/donal0c/sartracker-web/pull/16)
+  records live CI/merge readiness. Claude's four follow-up findings are now
+  addressed: automatic strict build gate, literal mutation, open faults, and
+  child infrastructure diagnostics. Final local source: 424 files / 4,346 tests;
+  lint/build pass. Updated-head CI is pending. Earlier independent reviews clear executable
+  `18bd374f`, including the corrected mixed-failure red gate and final cumulative
+  review. [Evidence](../docs/assurance/war-02a-test-infrastructure.md).
+  DON-254 remains qualification owner; no package/provider/soak acceptance.
+
 - [PR #15](https://github.com/donal0c/sartracker-web/pull/15), Team Feedback
-  Batch 2 (DON-215), merged at current master `083f5047` on 2026-09-10.
-  Master includes merged PRs #13 and #14. Both are integrated;
-  documentation conflicts retain the batch acceptance contract and safety queue.
-  Review fixes cover per-object replay limitations, required hit-test visibility,
-  hidden-marker creation protection, durable history request/completeness state,
-  independent live/history controls, visibility cascade and mission-switch isolation.
-  Remediation reviewers cleared application commit `42f9f305`; integrations leave
-  that application behavior unchanged. Details: [batch evidence](../docs/ui-feedback-batch-2-evidence.md).
-  Stable local source: 415 files / 4,271 tests, lint/build. Prior 31 affected browser
-  flows, final screenshot review, packaged request-target restart/pause, large
-  geometry and 8,664-position tracking proofs remain applicable to unchanged code.
-  Linux CI `34462624720` passed on `e60dc43e`: complete source/lint/build,
-  installer inspection, 960k replay, tracking, archive lifecycle and AppImage launch.
-  Downloaded source/package/archive receipts independently validate the exact clean
-  head/tree, native SQLite, custody, teardown and privacy. Current-fix maximum
-  188 ms; frames 110.3 ms, below unchanged 200 ms gates (12 ms continuity headroom).
-  Linux archive-test graphics concurrency is bounded to two Mesa workers; 282
-  boundary tests pass. Prior 242/210/206 ms hosted failures remain unexplained;
-  this configured-environment pass is not a causal fix or field-acceptance claim.
-  [Investigation](../docs/archive-ci-rendering-investigation.md) retains comparisons.
-  This final documentation-only closeout reuses `e60dc43e` executable/test/workflow
-  evidence. New geometry/E2E gate wiring stays deferred. The owned Linux diagnostic
-  container is stopped. Release and field acceptance remain unestablished.
+  Batch 2 (DON-215), merged at `083f5047`, including PRs #13/#14. Its retained
+  [batch evidence](../docs/ui-feedback-batch-2-evidence.md) covers application
+  `42f9f305`, source 415 files / 4,271 tests, affected browser/visual and packaged
+  restart/pause/tracking checks. Linux CI `34462624720` passed on `e60dc43e`;
+  downloaded receipts bind native SQLite, custody, teardown and privacy.
+  Current-fix/frame maxima 188/110.3 ms remain below unchanged 200 ms limits.
+  Prior 242/210/206 ms hosted failures remain unexplained; the bounded Mesa
+  configuration pass is not a causal fix or field acceptance. The
+  [investigation](../docs/archive-ci-rendering-investigation.md) retains evidence.
+  New geometry/E2E gate wiring remains deferred. No release acceptance is claimed.
 
 - WAR-11A merged as [PR #14](https://github.com/donal0c/sartracker-web/pull/14)
   at `35cff87d`; final Linux CI `34413097593` passed. Builder 26.16.1 adds
