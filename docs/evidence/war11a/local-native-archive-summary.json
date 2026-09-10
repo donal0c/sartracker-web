@@ -1,0 +1,82 @@
+{
+  "schema": "war11a-local-native-archive-summary-v1",
+  "source": {
+    "expectedHead": "c762b9f40fa772410beb33f09b0965ddcda2cf2b",
+    "headBefore": "c762b9f40fa772410beb33f09b0965ddcda2cf2b",
+    "headAfter": "c762b9f40fa772410beb33f09b0965ddcda2cf2b",
+    "treeBefore": "d50987e0fe81f7fea0df398fe255cb1fb30289d1",
+    "treeAfter": "d50987e0fe81f7fea0df398fe255cb1fb30289d1",
+    "worktreeCleanBefore": true,
+    "worktreeCleanAfter": true,
+    "packagedExecutableSha256": "f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf",
+    "packagedApplicationArchiveSha256": "853d0f8b2d34131524cd716bebc11b6c8504b1598947f53de029ba7a356afaed",
+    "packagedBuildHeadMatched": true
+  },
+  "run": {
+    "startedAt": "2026-09-09T19:19:28.210Z",
+    "finishedAt": "2026-09-09T19:19:42.733Z",
+    "durationMs": 14523,
+    "platform": "darwin",
+    "architecture": "arm64",
+    "nodeVersion": "v22.22.3",
+    "launchCount": 2,
+    "observedLaunchExitCount": 2
+  },
+  "liveness": {
+    "provenance": "packaged-electron-external-watchdog-v1",
+    "hardGateMs": 200,
+    "pollProfile": {
+      "mode": "time-compressed-validation",
+      "intervalMs": 50
+    },
+    "byPhase": {
+      "create": {
+        "sampleCount": 217,
+        "currentFixMaxGapMs": 32,
+        "sourceToRendererMaxMs": 13,
+        "requestToRendererMaxMs": 13,
+        "mainWatchdogMaxGapMs": 50.59162500000002,
+        "rendererFrameMaxGapMs": 147.89999997615814
+      },
+      "verify": {
+        "sampleCount": 107,
+        "currentFixMaxGapMs": 35,
+        "sourceToRendererMaxMs": 12,
+        "requestToRendererMaxMs": 12,
+        "mainWatchdogMaxGapMs": 53.732334000000264,
+        "rendererFrameMaxGapMs": 16.600000023841858
+      },
+      "restore": {
+        "sampleCount": 158,
+        "currentFixMaxGapMs": 28,
+        "sourceToRendererMaxMs": 19,
+        "requestToRendererMaxMs": 19,
+        "mainWatchdogMaxGapMs": 50.859292000001005,
+        "rendererFrameMaxGapMs": 16.200000047683716
+      },
+      "cleanup": {
+        "sampleCount": 110,
+        "currentFixMaxGapMs": 60,
+        "sourceToRendererMaxMs": 7,
+        "requestToRendererMaxMs": 7,
+        "mainWatchdogMaxGapMs": 50.92566599999918,
+        "rendererFrameMaxGapMs": 12.5
+      }
+    }
+  },
+  "privacy": {
+    "secretsProvidedOnlyViaPreload": true,
+    "secretsAbsentFromProcessArguments": true,
+    "secretsAbsentFromEvidence": true,
+    "exactSecretScanFiles": 63,
+    "exactSecretMatches": 0,
+    "plaintextResidueEntriesAtEnd": 0
+  },
+  "validation": {
+    "valid": true,
+    "passed": true,
+    "failureReasons": []
+  },
+  "receiptSha256": "496a1882988912acb947b6ab70c6c716acd3fa2c16f6005e7dfcd141bfa48a2e",
+  "limits": "Disposable clean local macOS snapshot, not final PR head or Linux/field qualification. Inspector-only later changes do not affect this packaged runtime. Historical contrary timing evidence retained."
+}

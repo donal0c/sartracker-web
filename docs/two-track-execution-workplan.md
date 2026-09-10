@@ -4,6 +4,41 @@
 
 ## Planning Rule
 
+### WAR-11A: AppImage builder boundary (active, 2026-09-09)
+
+WAR-04B refresh PR #12 is merged at `c51e4b35`. This slice implements builder
+26.16.1 plus an actual-output package gate; local source/package/native evidence
+and limits are in [WAR-11A](assurance/findings/WAR-11A.md). Final-head Ubuntu CI
+and two independent reviews are recorded on its unmerged PR. After this slice,
+qualify SQLite/native compatibility independently, then a supported Electron
+runtime, before BCP-17/WAR-12 final-candidate qualification. Release HOLD remains.
+
+PR #14 review follow-up: reject modified AppRun dialog lines exactly, distinguish
+pre-build source changes from generated version metadata, declare the inspection
+toolchain explicitly, and derive runtime identity from the lock. Retain the
+native load/query/integrity and 200 ms gates. Reproduce before fixing; run focused
+regressions, one stable source cycle, actual package inspection and final-head
+CI/reviews. Record rejected findings and residuals in WAR-11A; no runtime upgrade.
+
+Owner: DON-146; qualification/publication remain DON-254/DON-255. Base:
+`c51e4b3537c4b026f7079dd40193a894cedcdd9f`, branch
+`codex/war-11a-appimage-builder-hardening`.
+
+Risk: changing the builder can alter generated launchers, dependency collection
+and native rebuilds. Remediate GHSA-7g7r-gx96-252g without changing Electron,
+better-sqlite3, mission/archive semantics, renderer behavior or timing budgets.
+Red-first contract: a harmless affected launcher fixture must fail the new
+output inspection; unset, empty and populated loader environment cases must
+be checked. Missing/malformed outputs fail visibly. Pin an authoritative maintained
+26.x release at or above 26.15.0, review the entire forced lock/script delta,
+then run focused gate/package tests and one stable serial source/lint/build cycle.
+Inspect exact Linux AppImage/deb ASAR, unpacked and extra resources for named
+private-data categories; exercise target-native ABI/load/integrity and packaged
+archive/restart/recovery/verify/restore plus launch/close. Serialize heavyweight
+local checks. Require exact-head CI receipts and two independent focused final
+reviews. Retain historical failures and all other release HOLD items; no
+tag, publication, deployment, settings changes, team contact or BCP-17 claim.
+
 There is one active work queue: this file.
 
 Supporting docs may explain a specific area, but they must not become separate task boards. If a task is discovered in a report, chat, test run, review, bug report, or support note, fold it into this file as a chunk before treating it as planned work.
