@@ -4,7 +4,9 @@ Base: `083f504753089abfcce9decdee8348dc069f03b8`, fetched from `origin/master`
 on 2026-09-10. Branch: `codex/astra-repair-train-a`. Owners: DON-267,
 DON-269; qualification remains DON-254. PR: [#17](https://github.com/donal0c/sartracker-web/pull/17).
 Executable/reviewed head: `cb929bb876615c2ad8a89f00bc09568752385e6a`.
-Status: local verification and four independent reviews clear; Linux CI pending.
+Status: local verification and four independent reviews clear; matching Linux CI
+passed. Final documentation review clears `20d4a9d6`; its stale pending label
+is corrected here. PR ready for review, awaiting Donal's merge decision.
 
 ## Contract and scope
 
