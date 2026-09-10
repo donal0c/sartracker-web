@@ -144,6 +144,7 @@ type PollingManagerOptions = {
     context: {
       readonly missionId: string | null
       readonly observedAt: string
+      readonly suppressOperationalPublication?: boolean
     },
   ) => void
   readonly onBreadcrumbRejections?: (
@@ -746,6 +747,7 @@ export function createPollingManager(
       options.onCurrentPositionRejections?.(rejections, {
         missionId,
         observedAt: now().toISOString(),
+        ...(stopping ? { suppressOperationalPublication: true } : {}),
       })
     } catch (error) {
       logger.warn('Current-position rejection evidence delivery failed.', {

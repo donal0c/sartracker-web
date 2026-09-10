@@ -13,6 +13,7 @@ const profile = resolve(evidence, `tracking-reload-native-profile-${Date.now()}`
 await mkdir(profile, { recursive: true })
 let holdNext = false, sessions = 0, currentRequests = 0, historyRequests = 0
 let holdReplacement = false
+let injectReplacementRejections = false
 const replacementHeld = []
 const held = [], emitted = [], events = []
 const rosterLastUpdate = new Date().toISOString()
@@ -30,9 +31,10 @@ const server = createServer((req, res) => {
     currentRequests++
     const point = { id: 1000 + currentRequests, deviceId: 1, latitude: 52 + currentRequests / 100000,
       longitude: -9.7, fixTime: new Date().toISOString(), valid: true, accuracy: 4, attributes: {} }
-    if (holdNext) { holdNext = false; held.push(() => { emitted.push(point); send([point]) }); events.push({ event: 'held-current', id: point.id, at: Date.now() }); return }
-    if (holdReplacement) { replacementHeld.push(() => { emitted.push(point); send([point]); events.push({ event: 'sent-replacement', id: point.id, at: Date.now() }) }); return }
-    emitted.push(point); events.push({ event: 'sent-current', id: point.id, at: Date.now() }); send([point]); return
+    const rows = injectReplacementRejections ? [point, { ...point, id: point.id + 10_000, latitude: 100 }] : [point]
+    if (holdNext) { holdNext = false; held.push(() => { emitted.push(point); send(rows) }); events.push({ event: 'held-current', id: point.id, at: Date.now() }); return }
+    if (holdReplacement) { replacementHeld.push(() => { emitted.push(point); send(rows); events.push({ event: 'sent-replacement', id: point.id, at: Date.now() }) }); return }
+    emitted.push(point); events.push({ event: 'sent-current', id: point.id, at: Date.now() }); send(rows); return
   }
   send([])
 })
@@ -65,6 +67,7 @@ try {
   await page.getByTestId('workspace-close-btn').click()
   holdNext = true
   await waitFor(() => held.length === 1)
+  injectReplacementRejections = process.argv.includes('--replacement-rejection')
   holdReplacement = true
   await page.getByTestId('open-settings-workspace').click()
   await page.getByTestId('settings-save-connect').click()
@@ -89,9 +92,21 @@ try {
   }, 5000)
   const replacementRenderedMs = Date.now() - replacementStartedAt
   events.push({ event: 'replacement-rendered-before-old-release', replacementRenderedMs, at: Date.now() })
+  if (injectReplacementRejections) {
+    await page.getByTestId('device-ingest-warning-1').waitFor()
+    // Hold later replacement responses so they cannot mask an old response
+    // incorrectly clearing the selected rejection warning.
+    holdReplacement = true
+  }
   events.push({ event: 'release-old-current', at: Date.now() })
   held.splice(0).forEach((release) => release())
   await new Promise((done) => setTimeout(done, 300))
+  const rejectionWarningRetained = !injectReplacementRejections || await page.getByTestId('device-ingest-warning-1').isVisible()
+  if (injectReplacementRejections) {
+    await page.screenshot({ path: resolve(evidence, `${prefix}-retained-rejection.png`) })
+    holdReplacement = false
+    replacementHeld.splice(0).forEach((release) => release())
+  }
   await new Promise((done) => setTimeout(done, 500))
   const requestsAtSettledRace = currentRequests
   try { await waitFor(() => currentRequests >= requestsAtSettledRace + 2, 15000) }
@@ -105,6 +120,7 @@ try {
   })
   const result = { proof: `${process.env.TRAIN_A_EXECUTABLE ? 'Packaged Electron executable' : 'Development Electron'}; actual Settings Save Connect and Devices Reconnect; local synthetic HTTP provider holds one current response; actual bulk SQLite/custody/runtime/pollers; no importer/runtime/controller mocks; bounded local proof, not release qualification`, control, profile,
     executable: process.env.TRAIN_A_EXECUTABLE ?? null, replacementRenderedMs, reconnectingStatus, reconnectingSource,
+    injectReplacementRejections, rejectionWarningRetained,
     sessions, currentRequests, historyRequests, emittedIds: emitted.map((point) => point.id), events,
     persistedIds: state.positions.map((point) => point.source_position_id), health: state.health,
     body: (await page.locator('body').innerText()).slice(-10000), errors }
@@ -131,11 +147,20 @@ try {
   if (!result.persistedIds.includes(String(events.find(entry => entry.event === 'held-current').id))) throw new Error('AUD-13: held source fix was not retained')
   if (reconnectingStatus.toLowerCase() === 'online') throw new Error('AUD-13: retained position remained ONLINE while reconnecting')
   if (reconnectingSource !== 'Last known') throw new Error('AUD-13: retained position was not labelled Last known while reconnecting')
+  if (!rejectionWarningRetained) throw new Error('AUD-13: retiring response cleared the selected rejection warning')
 } finally {
   holdReplacement = false
   replacementHeld.splice(0).forEach((release) => release())
   held.splice(0).forEach((release) => release())
   await writeFile(resolve(evidence, `${prefix}-events.json`), JSON.stringify({ profile, sessions, currentRequests, historyRequests, events }, null, 2))
   await writeFile(resolve(evidence, `${prefix}-app.log`), appLog.join(''))
-  await app.close(); server.closeAllConnections(); await new Promise((done) => server.close(done))
+  // A native startup-fault dialog can block normal quit. This deadline owns
+  // only the synthetic process launched above and preserves its profile/logs.
+  const shutdownDeadline = setTimeout(() => app.process().kill('SIGKILL'), 5000)
+  try { await app.close() }
+  finally {
+    clearTimeout(shutdownDeadline)
+    server.closeAllConnections()
+    await new Promise((done) => server.close(done))
+  }
 }

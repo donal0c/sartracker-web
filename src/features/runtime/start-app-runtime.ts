@@ -420,8 +420,17 @@ export async function startAppRuntime(
             reserveCurrentEvidenceCapacity: hooks.reserveCurrentEvidenceCapacity,
           }),
           onStatusChange: hooks.onStatusChange,
-          onCurrentPositionRejections:
-            rejectionEvidenceDelivery?.record ?? applyCurrentPositionRejections,
+          onCurrentPositionRejections: (rejections, context) => {
+            if (context.suppressOperationalPublication) {
+              // Retiring responses retain anomaly custody without replacing
+              // the selected connection's current warning state.
+              rejectionEvidenceDelivery?.recordEvidence(rejections, context)
+            } else if (rejectionEvidenceDelivery !== null) {
+              rejectionEvidenceDelivery.record(rejections, context)
+            } else {
+              applyCurrentPositionRejections(rejections)
+            }
+          },
           ...(rejectionEvidenceDelivery === null
             ? {}
             : { onBreadcrumbRejections: rejectionEvidenceDelivery.recordEvidence }),

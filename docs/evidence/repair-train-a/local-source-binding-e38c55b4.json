@@ -1,16 +1,15 @@
 {
   "base": "083f504753089abfcce9decdee8348dc069f03b8",
-  "parentCommit": "e38c55b4a599e227696990ab98954fd7293ef899",
   "branch": "codex/astra-repair-train-a",
-  "builtAt": "2026-09-10T12:36:51.040Z",
+  "builtAt": "2026-09-10T12:12:52.223Z",
   "dirtyBuild": true,
   "changedSourceGitBlobs": {
     "src/components/devices-workspace.tsx": "68a41d135223cf8b3c699492d3b6980827e31651",
     "src/features/runtime/runtime-managed-services.ts": "d655a5d0bb4cb4faa3175cdda9713da8e8f16d93",
-    "src/features/runtime/start-app-runtime.ts": "ed1c9ecf9ed09d42764f07455face08c8b85b16e",
+    "src/features/runtime/start-app-runtime.ts": "5008aa7d1f3fe0f2369a2e7478c5562c8b5c1fbf",
     "src/features/tracking/deferred-mission-evidence.ts": "643e69416e37f96ac58b5d7bef79337f61670fe0",
     "src/features/tracking/device-workspace-model.ts": "69ed8a0c6bd124d1e6d420f8ed2ae3ed7e194690",
-    "src/features/tracking/polling-manager.ts": "cad156015ed98ed13bff8579d45b57beb76356e2",
+    "src/features/tracking/polling-manager.ts": "2cfe651ce740f1ea146629a9fd88e26a891ca148",
     "src/features/tracking/start-tracking-runtime.ts": "3714644a2d19e9fce0f4f0079d74ab60c863e59b",
     "src/features/tracking/stationary-attention-projection.ts": "3580e537d9bf8baa907e57a28da4a8d35636d8ac",
     "src/features/tracking/stationary-attention-store.ts": "3b9e85f262a36a8698e9e3b75568a87f9b59e8d8",
@@ -18,18 +17,14 @@
     "tests/e2e/stationary-attention.spec.ts": "acae9dc90417206ba1bb37c513c73858a4ede10d",
     "tests/unit/deferred-mission-evidence.test.ts": "aaf87aa515b014a300da0fde1677a3cd9118ee9c",
     "tests/unit/device-workspace-model.test.ts": "b3cf02c978722072586f0bcf41a54c0b31bac3fe",
-    "tests/unit/polling-manager.test.ts": "758a473ab6aefeefe947b2a51514973105ae59e8",
-    "tests/unit/start-app-runtime.test.ts": "4abbd2a35cd53328688a19b4ddacdcd1cad2a78a",
+    "tests/unit/start-app-runtime.test.ts": "dfbc0882295d9eddb2071ddc6b3eb54537397c0e",
     "tests/unit/start-tracking-runtime.test.ts": "b2659a406cded638a71d1c9f8d28ea4f3caf43a9",
     "tests/unit/stationary-attention-projection.test.ts": "45aa2985ed00dbbf0394d4fd0c22652ef09febfd",
     "tests/unit/stationary-attention-store.test.ts": "23d046c2d9e27008245e2d2685692e6929754123",
     "tests/unit/stationary-attention.test.ts": "8cddd6b8da94b3201e1b5244969ef1e9a05ae002",
     "tests/unit/tracking-reload-custody.test.ts": "9a8ade1f17f6137063eac6bbd34ef3e732e6c868"
   },
-  "artifactSha256": "ca18b97ac6841804237559768008c4e40cde090258aa3daa7c1d7d5bac44b8b5",
+  "artifactSha256": "087db825be7518151cfec4789e6ebc9a5d3b3d7a95934a22bd34695b82a30bea",
   "artifact": "tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/Resources/app.asar",
-  "proofs": [
-    "packaged-a-r9-warning.json"
-  ],
-  "notes": "Local unsigned macOS arm64 package after A-R9, VITE_SARTRACKER_MISSION_MODEL=1. Source blobs bind pre-commit proof to later head. Generated version stamp excluded. Earlier stable/changing-roster package uses local-source-binding-e38c55b4.json. Stationary production blobs unchanged, so their incremental renderer/browser evidence is reused."
+  "notes": "Local macOS arm64 unsigned package built with VITE_SARTRACKER_MISSION_MODEL=1. Changed source blobs bind this pre-commit proof to the later commit. Generated version stamp excluded; CI is a separate exact clean-head artifact proof."
 }

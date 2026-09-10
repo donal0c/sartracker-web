@@ -7,7 +7,9 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
 - **Repair Train A is active** on `codex/astra-repair-train-a`, fetched base
   `083f5047`. AUD-13/02/03 repaired; final local source is 416 files / 4,285
   tests, lint/build, two browser flows, packaged reconnect/custody and 100×5,000
-  renderer proof (maximum 67.4 ms, strict <200 ms). Exact-head review/CI pending.
+  renderer proof (maximum 67.4 ms, strict <200 ms). [PR #17](https://github.com/donal0c/sartracker-web/pull/17)
+  is draft. A-R9 retired-warning review repair and packaged proof pass; final
+  exact-head review/CI pending. Earlier CI was cancelled for that source change.
   Details and retained failures:
   [Train A](../docs/assurance/findings/repair-train-a.md). DON-267/DON-269 own
   repair; DON-254 remains qualification. No merge/release authority.

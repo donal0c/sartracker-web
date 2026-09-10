@@ -76,6 +76,7 @@ describe('app runtime startup', () => {
     }[], context: {
       readonly missionId: string | null
       readonly observedAt: string
+      readonly suppressOperationalPublication?: boolean
     }) => void) | undefined
     let breadcrumbRejectionHook: typeof rejectionHook
     const createPollingManager = vi.fn().mockImplementation((_client, options) => {
@@ -148,6 +149,22 @@ describe('app runtime startup', () => {
         expect.objectContaining({ receivedAt: '2026-08-22T10:00:02.000Z' }),
         expect.objectContaining({ receivedAt: '2026-08-22T10:00:02.000Z' }),
       ],
+    }))
+    const selectedSummary = useIngestHealthStore.getState().summary
+    const retiringContext = { missionId: 'mission-1',
+      observedAt: '2026-08-22T10:00:03.000Z', suppressOperationalPublication: true }
+    rejectionHook?.([], retiringContext)
+    expect(useIngestHealthStore.getState().summary).toBe(selectedSummary)
+    rejectionHook?.([{
+      deviceId: 'device-2', reason: 'invalid_coordinates', rowIndex: 0,
+      anomalyKey: 'source:retired-bad-1', canonicalEvidence: { id: 'retired-bad-1' },
+    }], retiringContext)
+    expect(useIngestHealthStore.getState().summary).toBe(selectedSummary)
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledTimes(3))
+    expect(recordIngestRejections).toHaveBeenLastCalledWith(expect.objectContaining({
+      mission_id: 'mission-1', rejections: [expect.objectContaining({
+        receivedAt: retiringContext.observedAt,
+      })],
     }))
     expect(missionStore.getIngestEvidenceHealth).toHaveBeenCalledWith('mission-1')
     await startTrackingRuntime.mock.calls[0]?.[0].recordMissionEvidenceLoss?.(

@@ -396,6 +396,7 @@ describe('polling manager', () => {
     expect(onCurrentPositionRejections).toHaveBeenCalledWith([rejection], {
       missionId: 'mission-1',
       observedAt: '2026-08-26T10:35:00.000Z',
+      suppressOperationalPublication: true,
     })
   })
 

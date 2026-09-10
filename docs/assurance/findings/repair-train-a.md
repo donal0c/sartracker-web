@@ -67,6 +67,7 @@ sampled frame gap against the unchanged strict 200 ms maximum.
 | A-R6 | New episode could inherit acknowledgement; current cache key ignored changed accuracy. | Accepted same-policy-boundary repairs; red/green store and current-input regressions. |
 | A-R7 | All 100 current fixes with retained history took 215.3 ms; renderer maximum 200.1 ms. | Rejected timing retained. Prepared history removes the repeated full-policy scan; differential tests compare against full evaluation, including gross outliers and reordered timestamps. |
 | A-R8 | Retiring request failure replays an old fallback into last-known retention; a later empty fresh response revives the old coordinate. | Accepted P1, independently reproduced (`old` instead of `fresh`). Suppressed callbacks use pure scope filtering and cannot mutate operational retention. Durable runtime regression passes with the custody suite (85 tests). |
+| A-R9 | A retiring successful response can clear or replace the selected connection's current rejection warning. | Accepted P2 on `e38c55b4`, independently reproduced with real pollers. Retiring rejection context now suppresses operational publication; the app still records its durable anomalies. Real-poller/context and app delivery tests fail red then pass, including a nonempty retired anomaly with its original mission/time. Affected four-file gate: 139 passed; independent recheck clear. |
 | A-X1 | Held storage eventually stops current admission at eight payloads. | Matched exact-base no-reload, candidate no-reload and candidate reload controls all behave identically and retain every fix after release. Pre-existing bounded admission policy, not attributed to this repair; broader TRK-001/DON-267/DON-252 work remains separate. No claim of current availability through unlimited storage failure. |
 
 Native development first needed the Electron SQLite ABI rebuilt; that launch
@@ -95,9 +96,9 @@ response, then resumed polling with healthy SQLite evidence including the old
 source fix. These remain scoped to their source snapshots; final refinement
 checks and package binding are recorded below when complete.
 
-Final local package checks pass on macOS arm64, Electron 40.10.0, with the
-source blobs and ASAR SHA-256 in
-[local-source-binding.json](../../evidence/repair-train-a/local-source-binding.json).
+Local package checks on candidate `e38c55b4` pass on macOS arm64, Electron 40.10.0,
+with the source blobs and ASAR SHA-256 in
+[local-source-binding-e38c55b4.json](../../evidence/repair-train-a/local-source-binding-e38c55b4.json).
 Both stable and changing-roster loopback providers show UNKNOWN / Last known,
 replacement coordinates before the retiring response is released, continuing
 automatic polls, the held source fix in SQLite and healthy evidence status.
@@ -123,6 +124,29 @@ Exact-head reviews and normal CI are pending. Local scripts are
 `scripts/tracking-stationary-renderer-proof.mjs`; neither depends on WAR-02A.
 These are synthetic local engineering checks, not live-provider, field,
 cross-platform release or final-candidate acceptance.
+
+The first draft head `e38c55b4` received clear concurrency and stationary reviews;
+the broad review found A-R9, so it was not accepted. CI `34476378669` was cancelled
+when the executable changed for that repair, not counted as a pass or an
+unexplained failure. Final source/package proof and all exact-head reviews are
+being refreshed for the A-R9 commit. The earlier package source binding remains
+as `local-source-binding-e38c55b4.json`; it must not be presented as the new
+executable's receipt.
+
+The rebuilt A-R9 package has its own
+[source binding](../../evidence/repair-train-a/local-source-binding.json) and
+[native warning-retention receipt](../../evidence/repair-train-a/packaged-a-r9-warning.json).
+It repeats actual overlapping Save/Connect and Reconnect, Last known status,
+fresh replacement-before-old publication, automatic continuation and held-fix
+SQLite custody, while injecting a rejected coordinate in the replacement feed.
+Future replacement responses are held after the old response is released so
+they cannot conceal an incorrect warning clear. The warning remains visible;
+six anomalies are recorded with healthy evidence state. Replacement render was
+37 ms after replacement-response release. The inspected screenshot is
+`retained-rejection.png`. This targets A-R9; unchanged stationary source/test
+blobs retain their earlier renderer/browser proof. The final A-R9 source cycle
+passes **416 files / 4,285 tests** in 462.33 s; lint and package build pass.
+Exact-commit reviews and normal Linux CI will run on the updated PR head.
 
 ## Repeat the bounded proofs
 

@@ -10,11 +10,15 @@ review dispositions, source identity and proof limits.
 - `retired-fallback-{red,green}.log`: independently discovered A-R8 and repair.
 - `capacity-*.json`: matched base/candidate controls for A-X1, the unchanged
   eight-payload storage-backpressure limit. No loss after writes resume.
-- `packaged-{stable,changing-roster}.json`: final local native loopback results.
+- `packaged-{stable,changing-roster}.json`: `e38c55b4` local native loopback results,
+  bound by `local-source-binding-e38c55b4.json`.
   Synthetic profile paths and body text were omitted from these copies; event
   ordering, source IDs and evidence health remain. Full raw files stay local.
 - `local-source-binding.json`: changed source/test Git blobs plus the unsigned
-  macOS arm64 ASAR SHA-256. Version build stamp is explicitly excluded.
+  A-R9 macOS arm64 ASAR SHA-256. Version build stamp is explicitly excluded.
+- `packaged-a-r9-warning.json` and `retained-rejection.png`: rebuilt A-R9 package;
+  current coordinates continue, the old response cannot clear the selected
+  rejection warning, and anomaly evidence is recorded.
 - `renderer-final.json`: every incremental 100×5,000 renderer sample, including
   long tasks and maximum frame gaps. Cold fixture preparation is excluded.
 - PNGs: actual rendered warning clear/new episode and reconnect Last known state.
