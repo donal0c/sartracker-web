@@ -1,0 +1,80 @@
+[2m[WebServer] [22m(node:52638) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 6 tests using 1 worker
+
+(node:52642) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52642) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/gpx-import.spec.ts:19:3 › M22 GPX import parity › renders imported GPX tracks in the panel, layer catalog, review workspace, and map source (4.4s)
+[2m[WebServer] [22m7:31:22 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:22 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:22 PM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m7:31:22 PM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m7:31:22 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:22 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:22 PM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m7:31:22 PM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m7:31:23 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:23 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:23 PM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m7:31:23 PM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m7:31:25 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:25 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:25 PM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m7:31:25 PM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+  ✓  2 [chromium] › tests/e2e/gpx-import.spec.ts:89:3 › M22 GPX import parity › keeps exact GPX geometry and settles import when the outing ends [AUD-01 AUD-05 AUD-10] (3.5s)
+[2m[WebServer] [22m7:31:26 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:26 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:26 PM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m7:31:26 PM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m7:31:27 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:27 PM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":2000,"error":"Durable history request recording is unavailable."}
+  ✓  3 [chromium] › tests/e2e/gpx-import.spec.ts:126:3 › M22 GPX import parity › keeps a rejected competing import visible after settlement [B-BROAD-01 B-CONC-01] (2.9s)
+[2m[WebServer] [22m7:31:29 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:29 PM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":4000,"error":"Durable history request recording is unavailable."}
+  ✓  4 [chromium] › tests/e2e/gpx-import.spec.ts:162:3 › M22 GPX import parity › shows retained interrupted-import provenance after runtime recovery [DON-274] (2.0s)
+[2m[WebServer] [22m7:31:31 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:31 PM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m7:31:33 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:33 PM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":8000,"error":"Durable history request recording is unavailable."}
+  ✓  5 [chromium] › tests/e2e/gpx-import.spec.ts:189:3 › M22 GPX import parity › pages imported GPX projections without accumulating renderer evidence [DON-274] (3.2s)
+[2m[WebServer] [22m7:31:36 PM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:197:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1420/src/features/tracking/start-tracking-runtime.ts:1034:3
+[2m[WebServer] [22m7:31:36 PM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+  ✓  6 [chromium] › tests/e2e/gpx-import.spec.ts:221:3 › M22 GPX import parity › DON-194: changes individual GPX colours and keeps the layer tree readable on smaller displays (3.2s)
+
+  6 passed (20.6s)

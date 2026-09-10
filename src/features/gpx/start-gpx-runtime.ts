@@ -119,6 +119,7 @@ export async function startGpxRuntime(
   let refreshToken = 0
   let missionGeneration = 0
   let importPublication = 0
+  let importAdmissionNotice: string | null = null
   let nextImportCursor: string | null = null
 
   publishRuntime()
@@ -128,7 +129,10 @@ export async function startGpxRuntime(
       const token = ++refreshToken
       const publication = importPublication
       const previousMissionId = state.activeMissionId
-      if (missionId !== previousMissionId) missionGeneration += 1
+      if (missionId !== previousMissionId) {
+        missionGeneration += 1
+        importAdmissionNotice = null
+      }
       state = {
         ...state,
         activeMissionId: missionId,
@@ -389,7 +393,7 @@ export async function startGpxRuntime(
       return []
     }
 
-    if (state.importing) throw new Error('A GPX import is already in progress. Wait for it to finish.')
+    if (!admitImport()) return []
 
     state = {
       ...state,
@@ -485,6 +489,7 @@ export async function startGpxRuntime(
         ...state,
         importing: false,
         imports: projectionPage.entries,
+        loadingMoreImports: false,
         importPageNumber: 1,
         hasMoreImports: projectionPage.nextCursor !== null,
         error: null,
@@ -498,6 +503,7 @@ export async function startGpxRuntime(
         ...state,
         importing: false,
         error: toErrorMessage(error),
+        loadingMoreImports: false,
       }
       publishRuntime()
       throw error
@@ -531,7 +537,7 @@ export async function startGpxRuntime(
     ) {
       return []
     }
-    if (state.importing) throw new Error('A GPX import is already in progress. Wait for it to finish.')
+    if (!admitImport()) return []
     state = { ...state, importing: true, error: null }
     publishRuntime()
     try {
@@ -569,20 +575,33 @@ export async function startGpxRuntime(
     } catch (error) {
       if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return []
       importPublication += 1
-      state = { ...state, importing: false, error: toErrorMessage(error) }
+      state = { ...state, importing: false, loadingMoreImports: false, error: toErrorMessage(error) }
       publishRuntime()
       throw error
     }
   }
 
+  /** Keeps a rejected selection visible through the admitted operation's settlement. */
+  function admitImport(): boolean {
+    if (!state.importing) {
+      importAdmissionNotice = null
+      return true
+    }
+    importAdmissionNotice = 'Another GPX import is in progress. This request was not imported. Select the files or folder again after it finishes.'
+    publishRuntime()
+    return false
+  }
+
+  /** Publishes operation errors together with any still-actionable admission notice. */
   function publishRuntime(): void {
-    dependencies.applyRuntime(state)
+    dependencies.applyRuntime({ ...state, error: [state.error, importAdmissionNotice].filter(Boolean).join(' ') || null })
   }
 
   /** Replaces the current renderer window instead of accumulating GPX geometry. */
   async function loadImportPage(cursor: string | undefined, pageNumber: number): Promise<void> {
     const missionId = state.activeMissionId
     const token = refreshToken
+    const publication = importPublication
     if (missionId === null) return
     state = { ...state, loadingMoreImports: true, error: null }
     publishRuntime()
@@ -590,9 +609,9 @@ export async function startGpxRuntime(
       const page = await readGpxImportProjectionPage(
         missionId,
         cursor,
-        () => token === refreshToken && state.activeMissionId === missionId,
+        () => token === refreshToken && publication === importPublication && state.activeMissionId === missionId,
       )
-      if (token !== refreshToken || state.activeMissionId !== missionId) return
+      if (token !== refreshToken || publication !== importPublication || state.activeMissionId !== missionId) return
       nextImportCursor = page.nextCursor
       state = {
         ...state,
@@ -603,7 +622,7 @@ export async function startGpxRuntime(
       }
       publishRuntime()
     } catch (error) {
-      if (token !== refreshToken || state.activeMissionId !== missionId) return
+      if (token !== refreshToken || publication !== importPublication || state.activeMissionId !== missionId) return
       state = { ...state, loadingMoreImports: false, error: toErrorMessage(error) }
       publishRuntime()
     }

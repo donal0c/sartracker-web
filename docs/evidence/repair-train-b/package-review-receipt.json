@@ -1,0 +1,174 @@
+{
+  "proofTier": "local packaged Electron; synthetic profile; network blocked; native chooser automated",
+  "sourceHead": "1ef5a13f42439f44d6210159d4a91dc6786c0813",
+  "sourceDirty": true,
+  "sourceFileHashes": {
+    "electron/gpx-evidence-import-worker.cjs": "4fc62a786fb46869435651ac970a6f5391e06647048c3c5ad58b37284fc94fc1",
+    "src/features/gpx/gpx-parser.ts": "2afde3e9f26ddd7cb7d03ca289dedb6980365ce20460269b754bd174dc00dbb7",
+    "src/features/gpx/start-gpx-runtime.ts": "2040d34c2067a5230b1c1f08ed18e8b7ac3943393a428e4791110ded45a58948"
+  },
+  "profile": "/var/folders/5s/21sy7jq5565f1sp1w7qw19c00000gn/T/sar-gpx-fidelity-KzF0Vs",
+  "executablePath": "/Users/donalocallaghan/.codex/worktrees/c1c7/sartracker-web/tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/MacOS/SAR Tracker Electron Validation",
+  "sourceSha256": "f2c04360c6bcd318a396e3cb320ec2d1d713461256781fbbe04963762097da5e",
+  "largeSourceSha256": "630e4974864cc2e094c7cc348173ff76ba630c0eddff85ab7aa4df085b5378ca",
+  "largePointCount": 75000,
+  "passed": true,
+  "archiveSha256": "2a6123d44c579816d2ff74cb6a0f3c5355339328c7898e863285f0024934e0df",
+  "packagedInputHashes": {
+    "electron/gpx-evidence-import-worker.cjs": "4fc62a786fb46869435651ac970a6f5391e06647048c3c5ad58b37284fc94fc1",
+    "shared/gpx-source-scalars.mjs": "4238aae5c6f0f0f32bc93186c0f54d8f0af416b284dcbcc8cdead72c0ccdd97e",
+    "dist/assets/admin-roster-error-DXAK9D9Q.js": "52c479ca47ac22e7e4c78d1068c76230c875ef31df2d7736b403b1d75ab50e90",
+    "dist/assets/archive-cancellation-pending-Nzw1I-ar.js": "a873619bd8e1bb11f3d1345b4ded4358091a76f1b3357428c8a9281763985169",
+    "dist/assets/browser-validation-Bg14zSu8.js": "35a922a0fe7d1941fe9da3832a7cd1237daa4475d99e5c240e33a9da26e1a6ca",
+    "dist/assets/coordinate-preferences-BGv46__d.js": "74422ab2c583a7e05a320cc010d7aff5214bafa3b4afab85954c00645d990f5b",
+    "dist/assets/deferred-mission-evidence-DiLDWgff.js": "3232d94d7b8071a9fa5ea64c799cf865f7991016126050a565b51bdac82708af",
+    "dist/assets/focus-management-CsoSzxIH.js": "acb80ff6f12d544be12d85d1c709e1c9ddaa56fa72a5780bad7d06c9bf4a4911",
+    "dist/assets/geodesy-vendor-B43R0xio.js": "53fae9b66495b4f861b546e088c4e507ac3e26372af291ba3a78509bca75762d",
+    "dist/assets/gpx-import-panel-C4cjfKXN.js": "0f869e02f05cdbab0cb72d7f8431674a4f69ccd43d0e3684559a44b91be9d407",
+    "dist/assets/gpx-style-CIrKLZCz.js": "a111e9401781ae85c9459249c34de722582020f84ec7ecb598d5ef201d076560",
+    "dist/assets/index-Bfyun-Up.css": "6ec261b0151f32defc8fb8300974842b069308559dea3417af71c3f25e3c7a70",
+    "dist/assets/index-DKbNT1Y8.js": "040b5fb883752be821d3e9163a8aa01ae3cf6330082ab7b9ab759fb8ed72dcaf",
+    "dist/assets/map-config-B4w7arKS.js": "e1a066f17ade9ac57958c0e9a4415ebffe14269e2fe22aa0c1ee8d16b0228976",
+    "dist/assets/map-vendor-B2k4QVOw.css": "250bbffd7789f7fc4abb05eec8d12a19dcba9c3426578e9ee1185934f4c8c238",
+    "dist/assets/map-vendor-BTruBOlk.js": "b1bafa45a7714a2be99ce4fae8dae4fcd790ed83615ad38eca4d2d6b4ce3b4c7",
+    "dist/assets/map-view-CcXJxNtP.css": "8cfab87f317f3d51133a9b89328ee652589888f85d26f5be2bedea28b24ac41d",
+    "dist/assets/map-view-DB6wWsDF.js": "2e6876600b2b97897aba2d30ba0fb3ac2a985d65ec979dd916351f86657f72f4",
+    "dist/assets/mission-archive-cleanup-dialog-DtmB3won.js": "aa20038787ce957acea6c03c01c584be4f642be17bc8c4db5f37eddf974ddcef",
+    "dist/assets/mission-archive-custody-dialog-BgTOnDJI.js": "c7070a34cde36e89e25cc74a0eb7841d239234ec582e75f7a702226d4e5dc5c1",
+    "dist/assets/mission-archive-error-aJ9oHP_U.js": "6475b65b70b30867b1e197bbc6fc9b464521f1034d9c493280d877294113dad7",
+    "dist/assets/mission-archive-identity-CryEJErq.js": "344d8b1b872f389b4788650d23f3252a6538942efdacf7e3e722e25f6b0b27ed",
+    "dist/assets/mission-archive-review-operator-ui-BfM3n9yf.js": "0c1126b38bdc6b23a767a7fa545d45065b7df86ca97df24da2e6ec99f48a615b",
+    "dist/assets/mission-archive-verification-dialog-BZHOQINj.js": "68e31072c928e1bbc855eb99453c2020208966c01dcba2a52740402da8ee5e85",
+    "dist/assets/mission-evidence-loss-dialog-CsggYsXB.js": "6c994b595fc8decade657991dff7d055b0757a446fa5a882cd3644fb2287122c",
+    "dist/assets/mission-evidence-replay-tabs-BCWyFcXp.js": "c64a4cf9dffe71eefd532de1bbc6e35d7a08ae055a0e4ca2bee0305fa9f21d5b",
+    "dist/assets/mission-name-DK_4Ext-.js": "2c58a2a4d1389d573a88bb5290face6c39bc859b6f0c0d7c3c36066278f7c211",
+    "dist/assets/operator-time-CPCwbLgp.js": "8d51490d742ec7509d4528ba407eb4c523d40c89ed439fd88984c9805fd4731f",
+    "dist/assets/react-vendor-BF3Hnweg.js": "9e96004fbf1e00ef819203f844335e76c6aae954141e59173e95fad6e9ed5855",
+    "dist/assets/read-gpx-import-pages-BHRJlNwq.js": "b06c84ccf70466d86cb0ad23857ff8eb5debad80d55475c67366b4e5bc57794a",
+    "dist/assets/replay-map-worker-BtgMLwEY.js": "36bcfbcc14a85cb82573f2cc4d1fb69bba7e7a8430b96fd2f0a7968239138c5c",
+    "dist/assets/rolldown-runtime-DF2fYuay.js": "03a76345c69f8bd751dac18894f65c0918f1690fbbb661f38052819cd5ae8209",
+    "dist/assets/runtime-cleanup-kG57GoPY.js": "206c13cd053ba03a5a2da1bfdd86572eeae517f6ca8830d8b43349a365a23e18",
+    "dist/assets/start-mission-archive-review-runtime-CCszi9VP.js": "b5bd3702b2455a21d8e53dd0f7007074ad067c0326965a9e4624d59318c7d7af",
+    "dist/assets/start-tracking-runtime-_lrm6uYK.js": "4ed9a5716c516c76761fcf9740867b89c9d6fd37fccb3212e82c3dc96caba5a1",
+    "dist/assets/sync-marker-overlay-DajM_SEO.js": "1db94d32ca34f7602ba2ce37b3785c38bb032bd4ac94a15b88b0eeed27931473",
+    "dist/assets/tauri-gpx-import-source-RqKyIcqd.js": "4e8af2dae44cef3b57cbccdacb00ab19f73f9bc42f3eab0b54f5b1304eed4fe7",
+    "dist/assets/tracking-color-C9nOuChc.js": "ccbde646a02d1be6a55eced59eea9639240aa465e55b239cfc00b4bdc509e35a",
+    "dist/brand/kmrt-logo-compact.png": "600c718890d4a25df9b58ff26ae7a579f496cb6e7ae6afea138177b3d347c776",
+    "dist/favicon.svg": "61bc9a161de58248288e6905425d7180f0624c2865007b97d763fdac12043a66",
+    "dist/icons.svg": "b45fa506195cfcdef406ba9f0c77b36ddc1a7c224040926ec70abc2fdea7b93a",
+    "dist/index.html": "d8a75a5e274812ea39677073b09f2e05a3539feb3b773384a338a4f040057ace",
+    "dist/manual/assets/app-shell.png": "f6dba764ec3f53a272901c6f3fcff8dc20f69687ce4f9f010c45423800b31080",
+    "dist/manual/assets/archive-cleanup-complete-preconditions.png": "a5d4e0fba8ed7473a171c29422c24035d333f65ca465a837484a7ba980ea6837",
+    "dist/manual/assets/archive-review-read-only-residual-warning.png": "425c3f4cb85c477d661d1dd2370dcaf6d76f45426e2864e9c61297f54d9f7fa0",
+    "dist/manual/assets/archive-sealed-verification-retry.png": "e8297ed026f7d9ba45b5f2780d2a6bb94708ddfa5e48fda66238ad87d128f693",
+    "dist/manual/assets/batch-2-replay-map.png": "bb2d6138c9228849f5a9d2f0c8955981cbfcad0f8c0614a6a6a5193dca57d876",
+    "dist/manual/assets/diagnostics-workspace.png": "1212e9d5b63cc31641472952fed5f57873fb2b496dff442dac9a14dceef333bc",
+    "dist/manual/assets/layer-workspace.png": "3da13917a73d3cf967b9a959a4bb72d485c3271ceb4df5c585f8de1db0e395d5",
+    "dist/manual/assets/mission-archive-custody-issued-code.png": "3985eae4d05f65bc9ac213c3026ac52c4ba666e6fdc8992a1cee42f3fca92f9d",
+    "dist/manual/assets/mission-evidence-loss-acknowledgement.png": "e7456b3d2206fb8c6c39c6cfe551421c11beaecd57cd195ec2a02e99a1602d03",
+    "dist/manual/assets/mission-evidence-replay.png": "1cd750a9d9d7047e820eb226cb346ba3c9bba1f396365b9e803b5c3c0aa44d8a",
+    "dist/manual/assets/mission-history-claim-unverified.png": "96be6108809d7fda701957ef7188e24af4bdbd4f96298fa60d49428f18d75faa",
+    "dist/manual/assets/mission-history-coverage-status.png": "87182d0a0e1bdd4a80a3a4c044cbb3e53b8e37f69cf138ca27d77530fa7dc472",
+    "dist/manual/assets/mission-history-evidence-pending.png": "61067a0c914a1a12869dfd9cc945f3cabce8b28cfb053cd6b6354c674257e1d8",
+    "dist/manual/assets/mission-history-filter-pending.png": "d2f2693875480f8db99923f442e18314b0b7906d0dbd809f6f0edd63c7285ebc",
+    "dist/manual/assets/mission-history-live-independent.png": "7d21cfc4a040bb78c43c9e6c717730abb96641cb2ccba89da1009e28808d87d7",
+    "dist/manual/assets/mission-history-reattaching.png": "a2b47c7c2be63c43b6a17331fab22d33e8ead92389d188c0ea4eb23b06441447",
+    "dist/manual/assets/mission-outing-summary.png": "50f8b5f0e5d95767ca0f0f39f9886edabec4315234c3cb814cb00d01ffaea8fe",
+    "dist/manual/assets/mission-participant-selection.png": "ea5134328088bdd617a7485f14c5fcac20a542e4176130fe66c677b235b8a8b8",
+    "dist/manual/assets/mission-review.png": "a355686b5784fa847db9ce22057d926d292e9ea2a5646728844b3e958c386e28",
+    "dist/manual/assets/settings-workspace.png": "a7174c1da9f26ace028c8623c42de3c979fbe12f5079bef048559cc6dd283565",
+    "dist/manual/assets/tools-and-map.png": "d64925ac132f191cc232c2741b1f68060093525cab8e1482c969430ba3fc5059",
+    "dist/manual/assets/tracking-current-position-ingest-warning.png": "eb842b374a97616da6b3cfd74a1e0090da826ada1f2079ffc09d61fd557421bb",
+    "dist/manual/assets/tracking-degraded-evidence-conflict.png": "499ae23b272df984b63ca4a0dc76d9184f13bc414047b5687008c638859ae109",
+    "dist/manual/assets/tracking-map.png": "411f939a47fa4fb2b22380cda7c7cfb8be6f1671bda819f5d728f0af398a7265",
+    "dist/manual/assets/tracking-shutdown-evidence-loss.png": "3859fd16344ccd8a2f756da5292de7332e219296961688ab5f93021938e79446",
+    "dist/manual/assets/tracking-stationary-attention-map.png": "3c804be7df1b33bca7ebc646effd62c042376ad319ca123d7db46ae39475dd60",
+    "dist/manual/assets/tracking-stationary-attention-workspace.png": "ed28dddb9a1565d2a3899eb9ad55612ab61caa308ca6f60605c1dd5ffb3762b1",
+    "dist/manual/assets/ui-feedback-collapsed.png": "c5df6620bfacfaaf02fe0b9e53fc8a89eced43c03442b99c6412777a3b740664",
+    "dist/manual/assets/ui-feedback-focus.png": "19dfd08d1c3203abdf11f85c8282126a8f2e56becb7bacef65cdeeeba31f2f34",
+    "dist/manual/index.html": "6971b791c00e11fdc46c8d76de66ed724095f74af22440d12a2fc63136bac67d",
+    "dist/robots.txt": "16ceb5ee3e0dc13aa9adf31a3ebbe45a1d965b8c2b9f72eaf84e5911e140ed95",
+    "dist/sw.js": "ad76fb3c154bf00ab8048540eed35b9b55b095d20decd43dbaba9726cba5cfea"
+  },
+  "importSettlementMs": 18882,
+  "beforeRestart": {
+    "integrity": "ok",
+    "points": [
+      {
+        "point_index": 0,
+        "track_name": "Ridge party",
+        "lat": 52,
+        "lon": -9.7,
+        "elevation": 100,
+        "source_time": "2026-09-07T08:00:00.000Z"
+      },
+      {
+        "point_index": 1,
+        "track_name": "Ridge party",
+        "lat": 52.001,
+        "lon": -9.701,
+        "elevation": 110,
+        "source_time": "2026-09-07T08:01:00.000Z"
+      }
+    ],
+    "revisions": [
+      {
+        "content_sha256": "630e4974864cc2e094c7cc348173ff76ba630c0eddff85ab7aa4df085b5378ca"
+      },
+      {
+        "content_sha256": "f2c04360c6bcd318a396e3cb320ec2d1d713461256781fbbe04963762097da5e"
+      }
+    ],
+    "count": 75002,
+    "receipts": [
+      {
+        "status": "settled"
+      },
+      {
+        "status": "settled"
+      }
+    ],
+    "issues": 0,
+    "endedOutings": 1
+  },
+  "afterRestart": {
+    "integrity": "ok",
+    "points": [
+      {
+        "point_index": 0,
+        "track_name": "Ridge party",
+        "lat": 52,
+        "lon": -9.7,
+        "elevation": 100,
+        "source_time": "2026-09-07T08:00:00.000Z"
+      },
+      {
+        "point_index": 1,
+        "track_name": "Ridge party",
+        "lat": 52.001,
+        "lon": -9.701,
+        "elevation": 110,
+        "source_time": "2026-09-07T08:01:00.000Z"
+      }
+    ],
+    "revisions": [
+      {
+        "content_sha256": "630e4974864cc2e094c7cc348173ff76ba630c0eddff85ab7aa4df085b5378ca"
+      },
+      {
+        "content_sha256": "f2c04360c6bcd318a396e3cb320ec2d1d713461256781fbbe04963762097da5e"
+      }
+    ],
+    "count": 75002,
+    "receipts": [
+      {
+        "status": "settled"
+      },
+      {
+        "status": "settled"
+      }
+    ],
+    "issues": 0,
+    "endedOutings": 1
+  }
+}

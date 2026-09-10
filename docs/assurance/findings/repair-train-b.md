@@ -64,10 +64,45 @@ is retained; the harness now obtains `createRequire` through Node's built-in
 module accessor. This is a harness evaluation correction, not a parser or
 application failure; the same archive is reused.
 
-## Disposition
+## Independent review remediation
 
-Local implementation and verification complete; independent reviews and Linux
-CI remain pending. No closure or field acceptance.
+Four independent charters reviewed `1ef5a13f`: broad safety, native persistence,
+import concurrency and renderer/input containment. Native persistence was clean
+(21 selected tests). Three findings were reproduced before remediation:
+
+| Finding | Disposition |
+| --- | --- |
+| B-BROAD-01 / B-CONC-01 | Duplicate finding: busy admission rejected outside error publication. Requests now resolve without dispatch and retain an explicit retry notice through active-import settlement and same-mission refresh; mission switch or next admitted import clears it. |
+| B-BROAD-02 | Pre-existing adjacent page-read race within the owned publication boundary, fixed here: old success/error page replies cannot replace newer import settlement, and settlement clears page loading. |
+| B-RENDER-01 | Validate canonical names even on empty tracks and point scalars before coordinate rejection; browser and native whole-document rejection now agree on both shared regression cases. |
+
+Review regressions recorded [two runtime reds](../../evidence/repair-train-b/review-red.log)
+and [two browser-parser reds](../../evidence/repair-train-b/renderer-review-red.log).
+[Remediation focused verification](../../evidence/repair-train-b/review-focused-green.log) passes 3 files / 128 tests (74.46 s), including
+real native persistence; current writes max 79.761 ms, unchanged <200 ms gate.
+All [six GPX browser flows](../../evidence/repair-train-b/review-browser.log) pass.
+The initial new notice screenshot clipped the track row; its [visual failure](../../evidence/repair-train-b/review-visual.log)
+is retained. A [taller capture](../../evidence/repair-train-b/admission-notice.png)
+passes [independent visual review](../../evidence/repair-train-b/admission-visual-review.json).
+The first taller-capture attempt overlapped packaging and timed out awaiting a
+second import; build-generated source changes can reset the Vite runtime. This
+[rejected run](../../evidence/repair-train-b/review-browser-notice.log) is retained;
+the [isolated unchanged-source repeat](../../evidence/repair-train-b/review-browser-notice-isolated.log)
+passes. This is a test-environment interference explanation, not a claimed application fix.
+Lint/build pass. The [rebuilt package receipt](../../evidence/repair-train-b/package-review-receipt.json)
+passes the same 75,002-point import/End Outing/restart workload (18,882 ms import
+settlement), exact evidence and integrity unchanged after restart. ASAR SHA-256:
+`2a6123d44c579816d2ff74cb6a0f3c5355339328c7898e863285f0024934e0df`.
+Its raw source hashes bind the reviewed remediation; sourceHead is the precommit
+ancestor and sourceDirty is explicit. Final committed-head attestations and CI
+remain pending. Earlier full-source proof remains attributed to the original implementation;
+the remediation changes two renderer modules and their tests, not native worker,
+schema, storage or publication transactions.
+
+## Delivery state
+
+Local remediation verification is complete; final-head review attestations and
+Linux CI remain pending. No closure or field acceptance.
 WAR-06 remains investigation-only and does not own these repairs.
 
 The [packaged receipt](../../evidence/repair-train-b/package-receipt.json) passes

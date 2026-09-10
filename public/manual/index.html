@@ -1785,7 +1785,9 @@
             split into smaller GPX files. Select at most 100 GPX files at a time. A folder containing more
             than 100 GPX files is rejected explicitly rather than returning or importing a partial list;
             divide it into smaller operator-selected batches. Wait for the current import to finish before
-            starting another; identical bytes still resolve to one canonical source with path aliases.
+            starting another. If a file selection or folder scan overlaps another import, the panel keeps
+            a retry notice visible after that import finishes; select the files or folder again.
+            Identical bytes still resolve to one canonical source with path aliases.
             Imports yield between database writes while current-position writes are waiting, so a busy
             tracking session may take longer to finish importing. Keep the import result visible and
             check any reported failure; an unfinished import is not complete mission evidence.

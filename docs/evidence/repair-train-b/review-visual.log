@@ -1,0 +1,19 @@
+
+> sartracker-web@0.1.0-beta.12.11 visual:review
+> node scripts/visual-review.mjs --only repair-train-b-admission-notice
+
+visual-review: starting
+  manifest dir: /Users/donalocallaghan/.codex/worktrees/c1c7/sartracker-web/test-results/visual-verification
+  report dir:   /Users/donalocallaghan/.codex/worktrees/c1c7/sartracker-web/test-results/visual-verification/reports
+  entries:      1 (filtered from 2)
+  model:        opus
+  failOn:       high
+  cache:        on
+  concurrency:  3
+  dryRun:       false
+
+FAIL  [critical]  repair-train-b-admission-notice — Competing import retry notice (11.52s) — 1 failed item
+        • Item 3: '1 SHOWN' count is visible, but no imported track entry is visible — the IMPORTED TRACKS section header is cut off at the bottom edge with no track row rendered in frame
+OVERALL: FAIL  (0 pass, 1 fail, 0 error; failOn=high, blocking fails=1)
+
+report written: /Users/donalocallaghan/.codex/worktrees/c1c7/sartracker-web/test-results/visual-verification/reports/visual-review-2026-09-10T18-32-08Z.json

@@ -1,0 +1,79 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c1c7/sartracker-web
+
+ ❯ tests/unit/start-gpx-runtime.test.ts (19 tests | 2 failed) 215ms
+     × keeps the first import busy when another caller attempts admission [AUD-05] 7ms
+     × does not let an older page overwrite a settled import [B-BROAD-02] 54ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > keeps the first import busy when another caller attempts admission [AUD-05]
+AssertionError: promise rejected "Error: A GPX import is already in progres…" instead of resolving
+ ❯ tests/unit/start-gpx-runtime.test.ts:406:60
+    404|     await controller.refreshMission('mission-a')
+    405|     const pending = controller.importPaths(['/tracks/a.gpx'])
+    406|     await expect(controller.importPaths(['/tracks/b.gpx'])).resolves.t…
+       |                                                            ^
+    407|     expect(importGpxEvidencePaths).toHaveBeenCalledOnce()
+    408|     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContain…
+
+Caused by: Error: A GPX import is already in progress. Wait for it to finish.
+ ❯ importPathsIntoRuntime src/features/gpx/start-gpx-runtime.ts:534:32
+ ❯ Object.importPaths src/features/gpx/start-gpx-runtime.ts:229:41
+ ❯ tests/unit/start-gpx-runtime.test.ts:406:29
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > does not let an older page overwrite a settled import [B-BROAD-02]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "importPageNumber": 1,
+-     "imports": [
+-       {
+-         "display_name": "new-import",
+-         "file_name": "new-import.gpx",
+-         "geometry_json": "{\"type\":\"MultiLineString\",\"coordinates\":[]}",
+-         "id": "new-import",
+-         "imported_at": "2026-04-11T10:00:00.000Z",
+-         "metadata_json": null,
+-         "mission_id": "mission-a",
+-         "source_path": "/tracks/new-import.gpx",
+-         "updated_at": "2026-04-11T10:00:00.000Z",
+-       },
+-     ],
++     "activeMissionId": "mission-a",
++     "error": null,
++     "hasMoreImportIssues": false,
++     "hasMoreImports": false,
++     "importIssues": [],
++     "importPageNumber": 2,
++     "importing": false,
++     "imports": [],
++     "loading": false,
+      "loadingMoreImports": false,
++     "outings": [],
++     "watchedDirectories": [],
+    },
+  ]
+
+ ❯ tests/unit/start-gpx-runtime.test.ts:431:26
+    429|     resolvePage?.({ entries: [], nextCursor: null })
+    430|     await page
+    431|     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContain…
+       |                          ^
+    432|   })
+    433|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 17 passed (19)
+   Start at  19:28:18
+   Duration  1.49s (transform 253ms, setup 0ms, import 263ms, tests 215ms, environment 427ms)
+

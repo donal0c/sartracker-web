@@ -63,12 +63,17 @@ export function parseGpxFile(input: ParseGpxFileInput): ParsedGpxFile {
   const rejections: GpxEvidenceRejection[] = []
   const segments: (readonly [number, number])[][] = []
 
-  const trackSegments = directChildren(root, 'trk').flatMap((track) => directChildren(track, 'trkseg'))
+  const trackSegments = directChildren(root, 'trk').flatMap((track) => {
+    readScalar(track, 'name')
+    return directChildren(track, 'trkseg')
+  })
   for (const [segmentIndex, segment] of trackSegments.entries()) {
     const trackName = readTrackName(segment)
     const geometryPoints: (readonly [number, number])[] = []
 
     for (const [pointIndex, point] of directChildren(segment, 'trkpt').entries()) {
+      const elevationSource = readScalar(point, 'ele')
+      const timestampSource = readScalar(point, 'time')
       const latSource = point.getAttribute('lat')
       const lonSource = point.getAttribute('lon')
       const lat = parseGpxDecimal(latSource)
@@ -84,13 +89,11 @@ export function parseGpxFile(input: ParseGpxFileInput): ParsedGpxFile {
         continue
       }
 
-      const elevationSource = readScalar(point, 'ele')
       const elevation = parseGpxDecimal(elevationSource)
       if (elevationSource !== null && elevation === null) {
         rejections.push({ kind: 'point', segmentIndex, pointIndex, reason: 'invalid_elevation', sourceValue: elevationSource })
       }
 
-      const timestampSource = readScalar(point, 'time')
       const timestamp = parseExplicitGpxTimestamp(timestampSource)
       if (timestampSource !== null && timestamp === null) {
         rejections.push({ kind: 'point', segmentIndex, pointIndex, reason: 'invalid_timestamp', sourceValue: timestampSource })

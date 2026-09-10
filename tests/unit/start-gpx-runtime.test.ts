@@ -403,12 +403,32 @@ describe('startGpxRuntime', () => {
     }, applyRuntime })
     await controller.refreshMission('mission-a')
     const pending = controller.importPaths(['/tracks/a.gpx'])
-    await expect(controller.importPaths(['/tracks/b.gpx'])).rejects.toThrow('already in progress')
+    await expect(controller.importPaths(['/tracks/b.gpx'])).resolves.toEqual([])
     expect(importGpxEvidencePaths).toHaveBeenCalledOnce()
-    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ importing: true }))
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ importing: true, error: expect.stringContaining('Select the files or folder again') }))
     resolveImport?.({ imports: [], dispatchDurationMs: 1 })
     await pending
-    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ importing: false }))
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ importing: false, error: expect.stringContaining('Select the files or folder again') }))
+  })
+
+  it('does not let an older page overwrite a settled import [B-BROAD-02]', async () => {
+    let resolvePage: ((value: { entries: GpxTrackImport[]; nextCursor: null }) => void) | undefined
+    const imported = createStoredImport('new-import', 'mission-a')
+    const listGpxImportPage = vi.fn().mockResolvedValue({ entries: [], nextCursor: 'page-2' })
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({ gpxStore: {
+      listGpxImports: vi.fn(), listGpxImportPage, upsertGpxImport: vi.fn(), deleteGpxImport: vi.fn(),
+      importGpxEvidencePaths: vi.fn().mockResolvedValue({ imports: [imported], dispatchDurationMs: 1 }),
+    }, applyRuntime })
+    await controller.refreshMission('mission-a')
+    listGpxImportPage.mockImplementationOnce(() => new Promise((resolve) => { resolvePage = resolve }))
+    const page = controller.loadNextImports()
+    await vi.waitFor(() => expect(resolvePage).toBeDefined())
+    listGpxImportPage.mockResolvedValue({ entries: [imported], nextCursor: null })
+    await controller.importPaths(['/new.gpx'])
+    resolvePage?.({ entries: [], nextCursor: null })
+    await page
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ imports: [imported], importPageNumber: 1, loadingMoreImports: false }))
   })
 
   it.each([false, true])('settles import failure across outing refresh, returned-to-mission=%s [AUD-05]', async (switchAway) => {

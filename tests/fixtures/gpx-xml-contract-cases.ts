@@ -21,6 +21,8 @@ gpxXmlValidCases.push({ name: 'prefixed and rebound namespace', source: `
 
 /** Every case must fail as a whole document, without publishing partial track evidence. */
 export const gpxXmlInvalidCases = [
+  ['ambiguous scalar on rejected point', '<gpx><trk><trkseg><trkpt lat="999" lon="-9"><time>A</time><time>B</time></trkpt><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg></trk></gpx>'],
+  ['ambiguous name on empty track', '<gpx><trk><name>A<value/>B</name></trk><trk><trkseg><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg></trk></gpx>'],
   ['foreign root', '<gpx xmlns="urn:vendor"><trk><trkseg><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg></trk></gpx>'],
   ['wrapped root', '<wrapper><gpx><trk><trkseg><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg></trk></gpx></wrapper>'],
   ['doctype', '<!DOCTYPE gpx><gpx><trk><trkseg><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg></trk></gpx>'],

@@ -123,6 +123,43 @@ test.describe('M22 GPX import parity', () => {
     })
   })
 
+  test('keeps a rejected competing import visible after settlement [B-BROAD-01 B-CONC-01]', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1200 })
+    const contents = readFileSync('tests/fixtures/gpx-extension-fidelity.gpx', 'utf8')
+    await page.evaluate((source) => {
+      const original = crypto.subtle.digest.bind(crypto.subtle)
+      let release: (() => void) | undefined
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      crypto.subtle.digest = async (...args) => { await gate; return await original(...args) }
+      const pending = window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([
+        { sourcePath: '/tracks/first.gpx', fileName: 'first.gpx', contents: source },
+      ])
+      Object.assign(window, { releaseGpxDigest: () => { crypto.subtle.digest = original; release?.() }, pendingGpxImport: pending })
+    }, contents)
+    await expect(page.getByTestId('gpx-import-files')).toContainText('Importing')
+    await page.evaluate(async (source) => {
+      await window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([
+        { sourcePath: '/tracks/second.gpx', fileName: 'second.gpx', contents: source },
+      ])
+    }, contents)
+    await expect(page.getByTestId('gpx-import-error')).toContainText('This request was not imported')
+    await page.evaluate(async () => {
+      const gate = window as unknown as { releaseGpxDigest(): void; pendingGpxImport: Promise<unknown> }
+      gate.releaseGpxDigest()
+      await gate.pendingGpxImport
+    })
+    await expect(page.getByTestId('gpx-import-error')).toContainText('Select the files or folder again')
+    await expect(page.getByTestId('gpx-import-list')).toContainText('first')
+    await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
+    await page.getByTestId('mission-control-collapse-btn').click()
+    await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
+    await captureAndRegister(page, {
+      testId: 'repair-train-b-admission-notice', testName: 'Competing import retry notice', area: 'layers', severity: 'critical',
+      verificationPrompt: 'Verify the GPX panel: 1. The retry notice says this request was not imported and instructs selecting the files or folder again. 2. Import Files is visible rather than Importing. 3. The count is 1 shown and the first track is visible.',
+      playwrightAssertions: ['Competing request resolved without dispatch', 'Notice survived first import settlement', 'First import remains visible'],
+    })
+  })
+
   test('shows retained interrupted-import provenance after runtime recovery [DON-274]', async ({ page }) => {
     await page.evaluate(() => {
       window.__SARTRACKER_BROWSER_HARNESS__?.injectGpxImportIssues([{
