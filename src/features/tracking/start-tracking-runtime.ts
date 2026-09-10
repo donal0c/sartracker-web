@@ -1,5 +1,6 @@
 import { createDeviceColor } from './tracking-color'
 import { createRuntimeCleanup } from '../runtime/runtime-cleanup'
+import { createCurrentTransportFreshness } from './current-transport-freshness'
 import {
   limitTrackingCacheBreadcrumbs,
   parseTrackingCachePayload,
@@ -404,6 +405,7 @@ export async function startTrackingRuntime(
   let participantBackfillTask: Promise<void> | null = null
   let acceptingRuntimeUpdates = true
   const operationalPositionRetention = createOperationalPositionRetention()
+  const currentTransportFreshness = createCurrentTransportFreshness()
   let deferredOperationalSnapshot: {
     readonly snapshot: TrackingSnapshot
     readonly historyResetKey: string | null
@@ -541,7 +543,7 @@ export async function startTrackingRuntime(
           historyResetKey: null,
         }
       } else {
-        dependencies.applySnapshot(operationalCachedSnapshot)
+        dependencies.applySnapshot(currentTransportFreshness.decorate(operationalCachedSnapshot))
       }
       // Cold-start visibility: until the first live poll succeeds, the operator
       // is looking at last-known cached positions. Surface that explicitly so
@@ -882,6 +884,7 @@ export async function startTrackingRuntime(
 
       if (context.suppressOperationalPublication) return
 
+      currentTransportFreshness.observeCurrent(snapshot)
       const operationalSnapshot = filterOperationalSnapshot(
         snapshot,
         context.historyResetKey ?? currentOperationalContextKey(),
@@ -1058,7 +1061,7 @@ export async function startTrackingRuntime(
         )
         if (operationalSnapshot !== null) {
           deferredOperationalSnapshot = null
-          dependencies.applySnapshot(operationalSnapshot)
+          dependencies.applySnapshot(currentTransportFreshness.decorate(operationalSnapshot))
           scheduleParticipantBackfill()
           void dependencies.recordDiagnosticEvent?.({
             level: 'info',
@@ -1150,7 +1153,11 @@ export async function startTrackingRuntime(
     if (!acceptingRuntimeUpdates) throw new Error('Tracking runtime has already been disposed.')
     // Construct the client before retiring a working transport. A malformed
     // configuration must not stop the existing current-position request path.
-    const nextClient = next.config === null ? null : next.createClient(next.config)
+    const nextClient = next.config === null ? null : next.createClient({
+      ...next.config,
+      ...(next.recordTrackingPollDiagnostic === undefined
+        ? {} : { recordRequestDiagnostic: next.recordTrackingPollDiagnostic }),
+    })
     const previous = poller
     const candidate = nextClient === null
       ? { start: () => undefined, stop: async () => undefined }
@@ -1159,6 +1166,7 @@ export async function startTrackingRuntime(
       // Provider-local device ids are not identities across different servers.
       operationalPositionRetention.reset()
     }
+    currentTransportFreshness.reset()
     dependencies = next
     deferredOperationalSnapshot = null
     client = nextClient
@@ -1193,7 +1201,7 @@ export async function startTrackingRuntime(
   /** Publishes one participant-scoped map snapshot without awaiting durable work. */
   function publishOperationalSnapshot(snapshot: TrackingSnapshot): void {
     deferredOperationalSnapshot = null
-    dependencies.applySnapshot(snapshot)
+    dependencies.applySnapshot(currentTransportFreshness.decorate(snapshot))
     scheduleParticipantBackfill()
     void dependencies.recordDiagnosticEvent?.({
       level: 'info',

@@ -21,6 +21,7 @@ import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 import { createParticipationScope } from '../../src/features/participants/participation-scope'
 import { useCoverageStore } from '../../src/features/tracking/coverage-store'
+import { buildDeviceWorkspaceRows } from '../../src/features/tracking/device-workspace-model'
 
 const SNAPSHOT: TrackingSnapshot = {
   devices: devicesFixture.map((device) => normalizeTraccarDevice(device)),
@@ -46,6 +47,25 @@ function createDeferred<T>(): {
 }
 
 describe('startTrackingRuntime', () => {
+  it('retains request diagnostics on replacement client configuration [A-R21]', async () => {
+    const recordDiagnostic = vi.fn()
+    const createClient = vi.fn().mockReturnValue({})
+    const dependencies = {
+      config: { baseUrl: 'http://synthetic.invalid' }, createClient,
+      createPoller: () => ({ start: vi.fn(), stop: vi.fn() }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(), applySnapshot: vi.fn(), applyStatus: vi.fn(),
+      recordTrackingPollDiagnostic: recordDiagnostic,
+    } satisfies Parameters<typeof startTrackingRuntime>[0]
+    const stop = await startTrackingRuntime(dependencies)
+    expect(createClient).toHaveBeenLastCalledWith(expect.objectContaining({ recordRequestDiagnostic: recordDiagnostic }))
+    const replacementDiagnostic = vi.fn()
+    await stop.reconfigure!({ ...dependencies, recordTrackingPollDiagnostic: replacementDiagnostic })
+    try {
+      expect(createClient).toHaveBeenLastCalledWith(expect.objectContaining({ recordRequestDiagnostic: replacementDiagnostic }))
+    } finally { await stop() }
+  })
+
   it('keeps custody open for a held response after a failed stop, then seals it on retry [A-R17]', async () => {
     useMissionStore.setState({ phase: 'active', currentMission: {
       id: 'mission-1', name: 'Mission', status: 'active', start_time: '2026-04-06T09:00:00Z',
@@ -4477,7 +4497,20 @@ function createMissionStoreStub(overrides: Record<string, unknown> = {}) {
   await hooksByPoller[0]!.onSnapshot(snapshot([oldFix]), context)
   await stop.reconfigure!({ ...dependencies,
     config: { baseUrl: switchProvider ? 'http://replacement.invalid' : dependencies.config.baseUrl } })
-  if (!switchProvider) await hooksByPoller[1]!.onSnapshot(snapshot([freshFix]), context)
+  await hooksByPoller[1]!.onSnapshot(snapshot([]), context)
+  if (!switchProvider) {
+    const retained = dependencies.applySnapshot.mock.calls.at(-1)![0]
+    expect(buildDeviceWorkspaceRows(retained, [])[0]).toMatchObject({
+      sourceDisplay: 'Last known', status: 'unknown', latitude: oldFix.lat,
+    })
+  }
+  if (!switchProvider) {
+    hooksByPoller[0]!.onCurrentSnapshot(snapshot([oldFix]), context, { missionId: 'mission-1', claim: vi.fn(), complete: vi.fn() })
+    await hooksByPoller[1]!.onSnapshot(snapshot([oldFix]), context)
+    expect(buildDeviceWorkspaceRows(dependencies.applySnapshot.mock.calls.at(-1)![0], [])[0]?.sourceDisplay).toBe('Last known')
+    hooksByPoller[1]!.onCurrentSnapshot(snapshot([freshFix]), context, { missionId: 'mission-1', claim: vi.fn(), complete: vi.fn() })
+    expect(buildDeviceWorkspaceRows(dependencies.applySnapshot.mock.calls.at(-1)![0], [])[0]?.sourceDisplay).toBe('Live')
+  }
   await hooksByPoller[0]!.onSnapshot(snapshot([oldFix]), context)
   await hooksByPoller[1]!.onSnapshot(snapshot([]), context)
   try {

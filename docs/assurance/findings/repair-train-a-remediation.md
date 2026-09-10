@@ -1,5 +1,7 @@
 # Train A external-review remediation
 
+**Current disposition: draft; A-R20/A-R21 local proof passes, new CI pending.**
+
 Donal supplied the [unaltered review](repair-train-a-external-review-20260910.txt)
 against PR #17 head `2da06afa124c9041375b7b6ebb12feb8e7adf5f0` and explicitly
 authorized repair and revalidation. The PR returned to draft. The earlier
@@ -63,8 +65,35 @@ provider-local device IDs cannot carry current positions into another server.
 - **A-R19:** rejection delivery's own memoized failed disposal prevented retry
   after storage recovered. Its existing failed-loss-marker test now requires
   successful retry after the durable store becomes available; red/green retained.
+- **A-R20:** [GitHub P1](https://github.com/donal0c/sartracker-web/pull/17#discussion_r3979502804)
+  identified retained coordinates regaining Live after an empty/incomplete
+  replacement. The original `e38c55b4` change used global connection status;
+  different-provider reset alone did not cover same-provider replacement.
+  The old actual package reproduces Online/Live after an empty successful poll.
+  Per-device operational snapshot metadata now remains Unknown/Last known until
+  selected current evidence confirms that device. All publication paths decorate
+  after retention; retired/history/cache callbacks cannot confirm it. Source
+  fixes, timestamps and persistence are unchanged.
+- **A-R21:** [GitHub P2](https://github.com/donal0c/sartracker-web/pull/17#discussion_r3979502819)
+  identified replacement clients missing per-request diagnostics. The replacement
+  constructor introduced in `e38c55b4` omitted the callback that initial startup
+  supplies. A failing boundary regression checks the replacement's updated
+  diagnostic callback; the constructor now forwards it.
 
 ## Escape analysis
+
+The final GitHub refresh also found two older review threads absent from the
+pasted review intake. They should have been included earlier: A-R20's same-provider
+empty replacement falsely restored Live, while A-R21 lost request diagnostics.
+The first is now reproduced in the actual prior macOS package (Online/Live after
+an empty response); the second has a failing configuration-boundary regression.
+Their follow-up adds per-device operational freshness metadata, confirmed only
+by selected current responses, and restores the replacement diagnostic callback.
+Source positions/cache/persistence are unchanged. Prior `ac368fd2` proof below
+is historical for this follow-up. [New local proof](../../evidence/repair-train-a/github-followup/)
+passes 427 files / 4,377 tests, lint/build and the actual native omission case:
+Unknown/Last known through empty success, then Online/Live on the next current
+fix, with custody and rejection warning intact. New exact-head CI remains pending.
 
 The earlier policy tests checked attention presence and prepared/full equivalence,
 but not elapsed time against an independently specified noisy stationary episode.
@@ -97,6 +126,27 @@ browser, renderer, native and red regressions. The local source binding records
 26 source/test/probe blobs and the ASAR hash; the precommit package displays its
 parent SHA, so that label alone is not claimed as final-source identity.
 
-Final exact-head reviews and Linux CI are still pending at this checkpoint.
-The old soak's 466.7 ms renderer / 204.68 ms
-external-action observations remain under DON-254, with no causal-fix claim.
+Repair commit `0c080136` is integrated with accepted PR #16/master `4076975d`
+at **`ac368fd2d68fd088cb80cb69b0d63c4079c75cc3`**. Integration adds upstream
+test infrastructure and its TypeScript build inclusion, with no change to the
+locally verified application, package configuration or Train A tests/probes.
+Integrated `tsc -b` passes. New Linux CI **34492149684** passes the combined source
+suite and builds its own exact-head package. The local 417/4,299 count remains
+the pre-integration source result, not the combined-suite count.
+
+Concurrency, stationary/scale, broad safety and the separate final cumulative
+reviewer independently clear this exact head with no remaining accepted P1/P2,
+and verify all 26 receipt bindings. No heavy tests were repeated for identity
+checks. The [Linux receipt](../../evidence/repair-train-a/remediation/linux-ci-receipt.md)
+records **426 files / 4,374 tests** and all normal package/replay/soak/archive/
+AppImage gates passing. Downloaded clean source/tree, three installer/unpacked
+ASAR inventories and native custody/privacy receipts were independently checked.
+Archive maxima are 166 ms current, 87.14 ms main and 69.5 ms frames, all strict
+<200 ms. The final reviewer also cleared the completed CI receipt review.
+
+The new soak's **416.7 ms renderer maximum / seven samples above 250 ms** and
+the old 466.7 ms renderer / 204.68 ms external-action observations remain under
+DON-254, with no causal-fix or universal responsiveness claim. This closes the
+bounded repair/review cycle only. Documentation-only closeout preserves all
+application, test, dependency, build, probe and workflow inputs from `ac368fd2`;
+per the testing cadence, unchanged runtime suites are not rerun for that docs SHA.

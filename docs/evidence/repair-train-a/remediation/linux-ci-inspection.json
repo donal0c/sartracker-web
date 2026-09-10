@@ -1,0 +1,153 @@
+{
+  "head": "ac368fd2d68fd088cb80cb69b0d63c4079c75cc3",
+  "tree": "0e4e6dc557a7640e487206e132d88e28276df409",
+  "asar": "a4227f99dfc54c62ec1ddb92ab4fd0ba58b9ef4c2830f91ca917d4420b974eee",
+  "executable": "6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8",
+  "installers": [
+    {
+      "name": "sartracker-electron-validation_0.1.0-beta.12.11_linux_x86_64.AppImage",
+      "sha256": "5a458dded239cc2ebb1f4cc2296185fa460644775e457115e7382fbfca510374"
+    },
+    {
+      "name": "sartracker-electron-validation_0.1.0-beta.12.11_linux_amd64.deb",
+      "sha256": "76da772b194a3739c06b62d9307ef076270261fa8af9680bdf9d75d4db929eff"
+    }
+  ],
+  "archivePhases": {
+    "create": {
+      "sampleCount": 132,
+      "currentFixMaxGapMs": 84,
+      "sourceToRendererMaxMs": 38,
+      "requestToRendererMaxMs": 38,
+      "mainWatchdogMaxGapMs": 67.74139300000024,
+      "rendererFrameMaxGapMs": 64.39999999990687
+    },
+    "verify": {
+      "sampleCount": 89,
+      "currentFixMaxGapMs": 92,
+      "sourceToRendererMaxMs": 40,
+      "requestToRendererMaxMs": 40,
+      "mainWatchdogMaxGapMs": 87.14339800000016,
+      "rendererFrameMaxGapMs": 61
+    },
+    "restore": {
+      "sampleCount": 111,
+      "currentFixMaxGapMs": 130,
+      "sourceToRendererMaxMs": 53,
+      "requestToRendererMaxMs": 53,
+      "mainWatchdogMaxGapMs": 75.61542299999928,
+      "rendererFrameMaxGapMs": 69.5
+    },
+    "cleanup": {
+      "sampleCount": 46,
+      "currentFixMaxGapMs": 166,
+      "sourceToRendererMaxMs": 26,
+      "requestToRendererMaxMs": 26,
+      "mainWatchdogMaxGapMs": 60.055177999998705,
+      "rendererFrameMaxGapMs": 57
+    }
+  },
+  "archivePrivacy": {
+    "secretsProvidedOnlyViaPreload": true,
+    "secretsAbsentFromProcessArguments": true,
+    "secretsAbsentFromEvidence": true,
+    "exactSecretScanFiles": 73,
+    "exactSecretMatches": 0,
+    "plaintextResidueEntriesAtEnd": 0
+  },
+  "archiveCleanup": {
+    "eligibilityChecked": true,
+    "eligibleBeforeCredential": false,
+    "freshCredentialOnlyBlocker": true,
+    "completed": true,
+    "storageState": "archived",
+    "movedRows": 5516,
+    "remainingBreadcrumbRows": 0
+  },
+  "archiveRun": {
+    "startedAt": "2026-09-10T15:14:58.366Z",
+    "finishedAt": "2026-09-10T15:15:26.143Z",
+    "durationMs": 27777,
+    "platform": "linux",
+    "architecture": "x64",
+    "nodeVersion": "v22.23.2",
+    "launchCount": 2,
+    "observedLaunchExitCount": 2
+  },
+  "soakPositions": 8664,
+  "soakResponsiveness": {
+    "mainProcess": {
+      "count": 3621,
+      "maxMs": 47.32196400000248,
+      "meanMs": 2.228147382491042,
+      "p50Ms": 1.0565249999926891,
+      "p95Ms": 6.184978999997838,
+      "p99Ms": 25.06169100000261,
+      "overThresholdCount": 0,
+      "stallThresholdMs": 200
+    },
+    "renderer": {
+      "count": 3968,
+      "maxMs": 416.70000000001164,
+      "meanMs": 45.877696572580874,
+      "p50Ms": 50,
+      "p95Ms": 66.69999999999709,
+      "p99Ms": 99.89999999999418,
+      "overThresholdCount": 7,
+      "stallThresholdMs": 250
+    },
+    "operatorInteractions": {
+      "count": 4,
+      "maxMs": 1604.0946590000003,
+      "meanMs": 1541.4690947500017,
+      "p50Ms": 1528.7064550000068,
+      "p95Ms": 1604.0946590000003,
+      "p99Ms": 1604.0946590000003,
+      "overThresholdCount": 4,
+      "stallThresholdMs": 250,
+      "actionTiming": {
+        "count": 8,
+        "maxMs": 95.10000000009313,
+        "meanMs": 46.16249999997672,
+        "p50Ms": 37.5,
+        "p95Ms": 95.10000000009313,
+        "p99Ms": 95.10000000009313,
+        "overThresholdCount": 0,
+        "stallThresholdMs": 250
+      },
+      "externalActionTiming": {
+        "count": 8,
+        "maxMs": 181.96802099999968,
+        "meanMs": 95.1299404999985,
+        "p50Ms": 81.02338600000076,
+        "p95Ms": 181.96802099999968,
+        "p99Ms": 181.96802099999968,
+        "overThresholdCount": 0,
+        "stallThresholdMs": 250
+      },
+      "targetStabilityTiming": {
+        "count": 8,
+        "maxMs": 606.3707810000014,
+        "meanMs": 442.2724085,
+        "p50Ms": 379.3972880000001,
+        "p95Ms": 606.3707810000014,
+        "p99Ms": 606.3707810000014,
+        "overThresholdCount": 8,
+        "stallThresholdMs": 250
+      },
+      "errors": 0,
+      "classifications": {
+        "healthy": 4
+      }
+    },
+    "rendererThrottledByDesktopSession": false
+  },
+  "replayEventLoopMaxMs": 38.25,
+  "receiptSha256": {
+    "source-binding.json": "eb917b3c61878e66df227dfeb4a5e8e7109c49965d7dc16c9b44467296da354e",
+    "package-safety.json": "641bff131ee74689b1d16a0c2686abc16fda06c63a0bf1786ae686b62452f505",
+    "electron-archive-lifecycle-smoke-report.json": "c30656149d5d9d488f1682b24d0670b6181c413dd70ff2f5687c899db81fdb8e",
+    "electron-tracking-soak-report.json": "fecef2b715ca9aeff7610e2eac05acb119e8f3e0d3c4b353ce993c81e5c2f176",
+    "bcp-960k.json": "cd026b7cf5ab00c7a1ce04bf3007d7f7b4bb75515e3990122a8bbeea1d5cf1d3"
+  }
+}

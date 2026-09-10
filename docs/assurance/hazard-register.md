@@ -12,10 +12,13 @@ fix, rejected candidates, native custody proof and strict renderer-frame gate.
 The retained tracking session separates replacement publication from retiring
 evidence settlement; continuous stationary episodes and prepared per-device
 history replace endpoint-only/repeated whole-history evaluation. This overlay
-previously passed gates at `cb929bb8`, but external review found additional
-failure-path and stationary-duration defects. That readiness is withdrawn;
-PR #17 is draft pending [remediation verification](findings/repair-train-a-remediation.md).
-The separate soak's 466.7 ms renderer maximum remains unexplained qualification
+required additional failure-path and stationary-duration repairs after external
+review. [Remediation verification](findings/repair-train-a-remediation.md) now
+passes at `ac368fd2`: four reviews, source/browser/native and Linux CI `34492149684`,
+with inspected receipts. Final GitHub A-R20/A-R21 findings required further
+per-device freshness/diagnostic repairs; their local proof passes but new CI is
+pending, so PR #17 remains draft.
+The separate soak's 416.7 ms and prior 466.7 ms renderer maxima remain unexplained qualification
 evidence under DON-254 and is not a strict-200 pass. Upon acceptance this
 supersedes only those historical row observations.
 Other `TRK-001` startup, scope, pause/recovery and bounded storage-backpressure

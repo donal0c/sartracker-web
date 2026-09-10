@@ -1,0 +1,63 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/a881/sartracker-web
+
+ ❯ tests/unit/start-tracking-runtime.test.ts (86 tests | 2 failed | 83 skipped) 24ms
+     × retains request diagnostics on replacement client configuration [A-R21] 12ms
+   × isolates retired fallback and provider replacement=false [A-R16] 11ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > retains request diagnostics on replacement client configuration [A-R21]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "recordRequestDiagnostic": [Function Mock],
++     "baseUrl": "http://synthetic.invalid",
+    },
+  ]
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:65:28
+     63|     await stop.reconfigure!({ ...dependencies, recordTrackingPollDiagn…
+     64|     try {
+     65|       expect(createClient).toHaveBeenLastCalledWith(expect.objectConta…
+       |                            ^
+     66|     } finally { await stop() }
+     67|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > isolates retired fallback and provider replacement=false [A-R16]
+AssertionError: expected { deviceId: '1', …(23) } to match object { sourceDisplay: 'Last known', …(2) }
+(21 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "latitude": 52,
+-   "sourceDisplay": "Last known",
+-   "status": "unknown",
++   "sourceDisplay": "Live",
++   "status": "online",
+  }
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:4503:55
+    4501|   if (!switchProvider) {
+    4502|     const retained = dependencies.applySnapshot.mock.calls.at(-1)![0]
+    4503|     expect(buildDeviceWorkspaceRows(retained, [])[0]).toMatchObject({
+       |                                                       ^
+    4504|       sourceDisplay: 'Last known', status: 'unknown', latitude: oldFix…
+    4505|     })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed | 83 skipped (86)
+   Start at  16:22:52
+   Duration  766ms (transform 128ms, setup 0ms, import 152ms, tests 24ms, environment 510ms)
+

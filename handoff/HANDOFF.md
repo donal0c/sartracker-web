@@ -5,18 +5,25 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
 ## Where we are
 
 - **Repair Train A review remediation** on `codex/astra-repair-train-a`.
-  [PR #17](https://github.com/donal0c/sartracker-web/pull/17) is draft after
-  Donal's external review; earlier readiness is withdrawn. Confirmed lifecycle,
+  [PR #17](https://github.com/donal0c/sartracker-web/pull/17) remains draft:
+  final GitHub intake found A-R20 per-device replacement freshness and A-R21
+  replacement request diagnostics. Both are reproduced and fixed; new source
+  427 files / 4,377 tests, lint/build and native omission/custody proof pass.
+  New exact-head CI remains pending. Earlier repaired lifecycle,
   custody, autosave, reservation, provider-retention and stationary-duration
-  defects have red/green repairs. Focused tests, three browser flows and the
+  defects have red/green repairs. The prior cycle's tests, three browser flows and the
   synthetic 100×5,000 incremental renderer probe pass (maximum 78.5 ms).
   Full source passes 417 files / 4,299 tests; lint/build and rebuilt macOS native
   reconnect/custody proof pass (replacement 39 ms before old response release).
-  Exact-head reviews and new Linux CI are pending.
+  All four reviews clear `ac368fd2` integrated with master `4076975d`; Linux CI
+  `34492149684` passes 426 files / 4,374 tests and all package/replay/soak/archive/
+  AppImage gates. Downloaded bindings and receipts were independently inspected;
+  archive maxima 166 ms current / 69.5 ms frames meet strict <200 ms.
   [Current disposition](../docs/assurance/findings/repair-train-a-remediation.md)
   supersedes the [historical receipts](../docs/assurance/findings/repair-train-a.md).
   DON-267/DON-269 own repairs; DON-254 retains qualification, including the old
-  unexplained 466.7 ms soak observation. No merge/release authority.
+  unexplained 466.7 ms and new 416.7 ms soak observations. Docs-only closeout
+  preserves tested application inputs. Await Donal's review; no merge/release authority.
 
 
 - **WAR-02A test foundation merged in PR #16 at `4076975d`** from fetched master `083f5047`
@@ -27,7 +34,9 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   records live CI/merge readiness. Claude's four follow-up findings are now
   addressed: automatic strict build gate, literal mutation, open faults, and
   child infrastructure diagnostics. Final local source: 424 files / 4,346 tests;
-  lint/build pass. Updated-head CI is pending. Earlier independent reviews clear executable
+  lint/build pass. PR #16 CI `34483190305` passed at `47ed9cce`; this integration
+  checks that reported status without re-qualifying the separate WAR lane.
+  Earlier independent reviews clear executable
   `18bd374f`, including the corrected mixed-failure red gate and final cumulative
   review. [Evidence](../docs/assurance/war-02a-test-infrastructure.md).
   DON-254 remains qualification owner; no package/provider/soak acceptance.

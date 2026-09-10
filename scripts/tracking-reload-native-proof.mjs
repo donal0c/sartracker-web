@@ -14,6 +14,7 @@ await mkdir(profile, { recursive: true })
 let holdNext = false, sessions = 0, currentRequests = 0, historyRequests = 0
 let holdReplacement = false
 let injectReplacementRejections = false
+let omitReplacementPositions = false
 const replacementHeld = []
 const held = [], emitted = [], events = []
 const rosterLastUpdate = new Date().toISOString()
@@ -33,7 +34,10 @@ const server = createServer((req, res) => {
       longitude: -9.7, fixTime: new Date().toISOString(), valid: true, accuracy: 4, attributes: {} }
     const rows = injectReplacementRejections ? [point, { ...point, id: point.id + 10_000, latitude: 100 }] : [point]
     if (holdNext) { holdNext = false; held.push(() => { emitted.push(point); send(rows) }); events.push({ event: 'held-current', id: point.id, at: Date.now() }); return }
-    if (holdReplacement) { replacementHeld.push(() => { emitted.push(point); send(rows); events.push({ event: 'sent-replacement', id: point.id, at: Date.now() }) }); return }
+    if (holdReplacement) { replacementHeld.push(() => {
+      if (omitReplacementPositions) { send([]); events.push({ event: 'sent-empty-replacement', at: Date.now() }); return }
+      emitted.push(point); send(rows); events.push({ event: 'sent-replacement', id: point.id, at: Date.now() })
+    }); return }
     emitted.push(point); events.push({ event: 'sent-current', id: point.id, at: Date.now() }); send(rows); return
   }
   send([])
@@ -82,6 +86,24 @@ try {
   await page.screenshot({ path: resolve(evidence, `${prefix}-reconnecting.png`) })
   const reconnectingStatus = await page.getByTestId('device-status-1').innerText()
   const reconnectingSource = await page.getByTestId('device-source-1').innerText()
+  let emptyReplacement = null
+  if (process.argv.includes('--replacement-omission')) {
+    omitReplacementPositions = true
+    replacementHeld.splice(0).forEach((release) => release())
+    await waitFor(async () => (await page.getByTestId('devices-tracking-mode').innerText()).toLowerCase() === 'online')
+    emptyReplacement = {
+      connection: await page.getByTestId('devices-tracking-mode').innerText(),
+      status: await page.getByTestId('device-status-1').innerText(),
+      source: await page.getByTestId('device-source-1').innerText(),
+    }
+    await page.screenshot({ path: resolve(evidence, `${prefix}-empty-replacement.png`) })
+    if (emptyReplacement.status.toLowerCase() !== 'unknown' || emptyReplacement.source !== 'Last known') {
+      throw new Error(`A-R20: empty replacement relabelled old fix: ${JSON.stringify(emptyReplacement)}`)
+    }
+    // The next real scheduled poll must supply a fix before this device is live.
+    await waitFor(() => replacementHeld.length > 0, 7500)
+    omitReplacementPositions = false
+  }
   const replacementStartedAt = Date.now()
   holdReplacement = false
   replacementHeld.splice(0).forEach((release) => release())
@@ -91,6 +113,11 @@ try {
     return (await page.getByTestId('devices-inspector').innerText()).includes((52 + (replacement.id - 1000) / 100000).toFixed(5))
   }, 5000)
   const replacementRenderedMs = Date.now() - replacementStartedAt
+  if (process.argv.includes('--replacement-omission') &&
+      ((await page.getByTestId('device-source-1').innerText()) !== 'Live' ||
+       (await page.getByTestId('device-status-1').innerText()).toLowerCase() !== 'online')) {
+    throw new Error('A-R20: a selected current fix did not restore Live/Online presentation')
+  }
   events.push({ event: 'replacement-rendered-before-old-release', replacementRenderedMs, at: Date.now() })
   if (injectReplacementRejections) {
     await page.getByTestId('device-ingest-warning-1').waitFor()
@@ -120,7 +147,7 @@ try {
   })
   const result = { proof: `${process.env.TRAIN_A_EXECUTABLE ? 'Packaged Electron executable' : 'Development Electron'}; actual Settings Save Connect and Devices Reconnect; local synthetic HTTP provider holds one current response; actual bulk SQLite/custody/runtime/pollers; no importer/runtime/controller mocks; bounded local proof, not release qualification`, control, profile,
     executable: process.env.TRAIN_A_EXECUTABLE ?? null, replacementRenderedMs, reconnectingStatus, reconnectingSource,
-    injectReplacementRejections, rejectionWarningRetained,
+    injectReplacementRejections, rejectionWarningRetained, emptyReplacement,
     sessions, currentRequests, historyRequests, emittedIds: emitted.map((point) => point.id), events,
     persistedIds: state.positions.map((point) => point.source_position_id), health: state.health,
     body: (await page.locator('body').innerText()).slice(-10000), errors }

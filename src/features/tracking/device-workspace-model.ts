@@ -63,6 +63,7 @@ export function buildDeviceWorkspaceRows(
     snapshot.positions.map((position) => [position.device_id, position] as const),
   )
   const activeDeviceIdSet = new Set(activeDeviceIds)
+  const unconfirmedCurrentDeviceIds = new Set(snapshot.unconfirmedCurrentDeviceIds)
 
   return [...snapshot.devices]
     .map((device) => {
@@ -72,7 +73,8 @@ export function buildDeviceWorkspaceRows(
       return {
         deviceId: device.device_id,
         name: device.name,
-        status: connectionMode === 'online' ? device.status : 'unknown' as const,
+        status: connectionMode === 'online' && !unconfirmedCurrentDeviceIds.has(device.device_id)
+          ? device.status : 'unknown' as const,
         active: activeDeviceIdSet.has(device.device_id),
         hidden: hiddenDeviceIds.includes(device.device_id),
         hasFix: position !== null,
@@ -87,7 +89,7 @@ export function buildDeviceWorkspaceRows(
             ? 'No fix'
             : position.fix_time_unverified === true
               ? 'Fix time unverified'
-            : connectionMode !== 'online' && position.data_origin === 'live'
+            : (connectionMode !== 'online' || unconfirmedCurrentDeviceIds.has(device.device_id)) && position.data_origin === 'live'
               ? 'Last known'
             : position.device_cache_stale
               ? 'Stale'

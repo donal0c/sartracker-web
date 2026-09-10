@@ -1354,7 +1354,9 @@
             devices one by one. <strong>Reconnect</strong> reloads settings and forces the tracking provider to reconnect.
             During reconnection, retained positions remain visible as <strong>Last known</strong>
             and devices show <strong>Unknown</strong> rather than Online until the replacement
-            connection reports current data. Last known describes connection freshness; an
+            connection supplies a current fix for that particular device. A successful connection
+            or another device's fresh fix does not make a retained coordinate Live: an omitted
+            device stays Unknown / Last known. Last known describes connection freshness; an
             older fix can also meet the Stale filter's age threshold.
             When the provider responds successfully, current updates resume automatically.
           </p>
