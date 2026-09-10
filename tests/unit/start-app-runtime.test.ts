@@ -1033,7 +1033,7 @@ describe('app runtime startup', () => {
 
     const disposal = runtime?.dispose()
 
-    expect(activeTrackingStop).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(activeTrackingStop).toHaveBeenCalledOnce())
     expect(disposeCoreFeatureRuntimes).not.toHaveBeenCalled()
     acknowledgeEvidence?.()
     await disposal

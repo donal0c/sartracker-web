@@ -1,0 +1,25 @@
+# Repair Train A evidence
+
+See [the repair record](../../assurance/findings/repair-train-a.md) for causes,
+review dispositions, source identity and proof limits.
+
+- `native-base-red.json`, `policy-red.log`, `projection-red.log`: fresh failures
+  on base `083f504753089abfcce9decdee8348dc069f03b8`.
+- `native-rejected-capacity.json`, `renderer-rejected-current-only.json`:
+  rejected intermediate candidates. They are not final-head failures or passes.
+- `retired-fallback-{red,green}.log`: independently discovered A-R8 and repair.
+- `capacity-*.json`: matched base/candidate controls for A-X1, the unchanged
+  eight-payload storage-backpressure limit. No loss after writes resume.
+- `packaged-{stable,changing-roster}.json`: final local native loopback results.
+  Synthetic profile paths and body text were omitted from these copies; event
+  ordering, source IDs and evidence health remain. Full raw files stay local.
+- `local-source-binding.json`: changed source/test Git blobs plus the unsigned
+  macOS arm64 ASAR SHA-256. Version build stamp is explicitly excluded.
+- `renderer-final.json`: every incremental 100×5,000 renderer sample, including
+  long tasks and maximum frame gaps. Cold fixture preparation is excluded.
+- PNGs: actual rendered warning clear/new episode and reconnect Last known state.
+- Final source/browser/lint logs: command results; trailing blank lines removed.
+
+These synthetic local checks do not establish live-provider, field, Windows,
+Linux, signed-distribution or frozen release-candidate acceptance. Normal Linux
+PR CI has its own clean exact-head source and artifact receipts.

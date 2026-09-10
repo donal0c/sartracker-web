@@ -1,0 +1,1365 @@
+{
+  "proof": "Development Electron40.10.0 pinned source; actual Settings Save Connect and Devices Reconnect; local synthetic HTTP provider holds one current response; actual bulk SQLite/custody/runtime/pollers; no importer/runtime/controller mocks; not packaged qualification",
+  "control": false,
+  "sessions": 4,
+  "currentRequests": 163,
+  "historyRequests": 54,
+  "emittedIds": [
+    1001,
+    1003,
+    1004,
+    1005,
+    1006,
+    1007,
+    1008,
+    1009,
+    1010,
+    1011,
+    1012,
+    1013,
+    1014,
+    1015,
+    1016,
+    1017,
+    1018,
+    1019,
+    1020,
+    1021,
+    1022,
+    1023,
+    1024,
+    1025,
+    1026,
+    1027,
+    1028,
+    1029,
+    1030,
+    1031,
+    1032,
+    1033,
+    1034,
+    1035,
+    1036,
+    1037,
+    1038,
+    1039,
+    1040,
+    1041,
+    1042,
+    1043,
+    1044,
+    1045,
+    1046,
+    1047,
+    1048,
+    1049,
+    1050,
+    1051,
+    1052,
+    1053,
+    1054,
+    1055,
+    1056,
+    1057,
+    1058,
+    1059,
+    1060,
+    1002,
+    1061,
+    1062,
+    1063,
+    1064,
+    1065,
+    1066,
+    1067,
+    1068,
+    1069,
+    1070,
+    1071,
+    1072,
+    1073,
+    1074,
+    1075,
+    1076,
+    1077,
+    1078,
+    1079,
+    1080,
+    1081,
+    1082,
+    1083,
+    1084,
+    1085,
+    1086,
+    1087,
+    1088,
+    1089,
+    1090,
+    1091,
+    1092,
+    1093,
+    1094,
+    1095,
+    1096,
+    1097,
+    1098,
+    1099,
+    1100,
+    1101,
+    1102,
+    1103,
+    1104,
+    1105,
+    1106,
+    1107,
+    1108,
+    1109,
+    1110,
+    1111,
+    1112,
+    1113,
+    1114,
+    1115,
+    1116,
+    1117,
+    1118,
+    1119,
+    1120,
+    1121,
+    1122,
+    1123,
+    1124,
+    1125,
+    1126,
+    1127,
+    1128,
+    1129,
+    1130,
+    1131,
+    1132,
+    1133,
+    1134,
+    1135,
+    1136,
+    1137,
+    1138,
+    1139,
+    1140,
+    1141,
+    1142,
+    1143,
+    1144,
+    1145,
+    1146,
+    1147,
+    1148,
+    1149,
+    1150,
+    1151,
+    1152,
+    1153,
+    1154,
+    1155,
+    1156,
+    1157,
+    1158,
+    1159,
+    1160,
+    1161,
+    1162,
+    1163
+  ],
+  "events": [
+    {
+      "event": "session",
+      "sessions": 1,
+      "at": 1789040663711
+    },
+    {
+      "event": "sent-current",
+      "id": 1001,
+      "at": 1789040663718
+    },
+    {
+      "event": "session",
+      "sessions": 2,
+      "at": 1789040663823
+    },
+    {
+      "event": "held-current",
+      "id": 1002,
+      "at": 1789040663872
+    },
+    {
+      "event": "session",
+      "sessions": 3,
+      "at": 1789040663977
+    },
+    {
+      "event": "sent-current",
+      "id": 1003,
+      "at": 1789040663980
+    },
+    {
+      "event": "sent-current",
+      "id": 1004,
+      "at": 1789040663987
+    },
+    {
+      "event": "sent-current",
+      "id": 1005,
+      "at": 1789040663996
+    },
+    {
+      "event": "sent-current",
+      "id": 1006,
+      "at": 1789040664020
+    },
+    {
+      "event": "sent-current",
+      "id": 1007,
+      "at": 1789040664039
+    },
+    {
+      "event": "sent-current",
+      "id": 1008,
+      "at": 1789040664046
+    },
+    {
+      "event": "sent-current",
+      "id": 1009,
+      "at": 1789040664051
+    },
+    {
+      "event": "sent-current",
+      "id": 1010,
+      "at": 1789040664055
+    },
+    {
+      "event": "sent-current",
+      "id": 1011,
+      "at": 1789040664059
+    },
+    {
+      "event": "sent-current",
+      "id": 1012,
+      "at": 1789040664063
+    },
+    {
+      "event": "sent-current",
+      "id": 1013,
+      "at": 1789040664067
+    },
+    {
+      "event": "sent-current",
+      "id": 1014,
+      "at": 1789040664093
+    },
+    {
+      "event": "sent-current",
+      "id": 1015,
+      "at": 1789040664109
+    },
+    {
+      "event": "sent-current",
+      "id": 1016,
+      "at": 1789040664119
+    },
+    {
+      "event": "session",
+      "sessions": 4,
+      "at": 1789040664143
+    },
+    {
+      "event": "sent-current",
+      "id": 1017,
+      "at": 1789040664145
+    },
+    {
+      "event": "sent-current",
+      "id": 1018,
+      "at": 1789040664160
+    },
+    {
+      "event": "sent-current",
+      "id": 1019,
+      "at": 1789040664167
+    },
+    {
+      "event": "sent-current",
+      "id": 1020,
+      "at": 1789040664179
+    },
+    {
+      "event": "sent-current",
+      "id": 1021,
+      "at": 1789040664194
+    },
+    {
+      "event": "sent-current",
+      "id": 1022,
+      "at": 1789040664205
+    },
+    {
+      "event": "sent-current",
+      "id": 1023,
+      "at": 1789040664217
+    },
+    {
+      "event": "sent-current",
+      "id": 1024,
+      "at": 1789040664225
+    },
+    {
+      "event": "sent-current",
+      "id": 1025,
+      "at": 1789040664237
+    },
+    {
+      "event": "sent-current",
+      "id": 1026,
+      "at": 1789040664247
+    },
+    {
+      "event": "sent-current",
+      "id": 1027,
+      "at": 1789040664257
+    },
+    {
+      "event": "sent-current",
+      "id": 1028,
+      "at": 1789040664266
+    },
+    {
+      "event": "sent-current",
+      "id": 1029,
+      "at": 1789040664275
+    },
+    {
+      "event": "sent-current",
+      "id": 1030,
+      "at": 1789040664284
+    },
+    {
+      "event": "sent-current",
+      "id": 1031,
+      "at": 1789040664301
+    },
+    {
+      "event": "sent-current",
+      "id": 1032,
+      "at": 1789040664309
+    },
+    {
+      "event": "sent-current",
+      "id": 1033,
+      "at": 1789040664317
+    },
+    {
+      "event": "sent-current",
+      "id": 1034,
+      "at": 1789040664327
+    },
+    {
+      "event": "sent-current",
+      "id": 1035,
+      "at": 1789040664336
+    },
+    {
+      "event": "sent-current",
+      "id": 1036,
+      "at": 1789040664344
+    },
+    {
+      "event": "sent-current",
+      "id": 1037,
+      "at": 1789040664355
+    },
+    {
+      "event": "sent-current",
+      "id": 1038,
+      "at": 1789040664363
+    },
+    {
+      "event": "sent-current",
+      "id": 1039,
+      "at": 1789040664373
+    },
+    {
+      "event": "sent-current",
+      "id": 1040,
+      "at": 1789040664386
+    },
+    {
+      "event": "sent-current",
+      "id": 1041,
+      "at": 1789040664395
+    },
+    {
+      "event": "sent-current",
+      "id": 1042,
+      "at": 1789040664404
+    },
+    {
+      "event": "sent-current",
+      "id": 1043,
+      "at": 1789040664415
+    },
+    {
+      "event": "sent-current",
+      "id": 1044,
+      "at": 1789040664427
+    },
+    {
+      "event": "sent-current",
+      "id": 1045,
+      "at": 1789040664436
+    },
+    {
+      "event": "sent-current",
+      "id": 1046,
+      "at": 1789040664448
+    },
+    {
+      "event": "sent-current",
+      "id": 1047,
+      "at": 1789040664459
+    },
+    {
+      "event": "sent-current",
+      "id": 1048,
+      "at": 1789040664468
+    },
+    {
+      "event": "sent-current",
+      "id": 1049,
+      "at": 1789040664480
+    },
+    {
+      "event": "sent-current",
+      "id": 1050,
+      "at": 1789040664488
+    },
+    {
+      "event": "sent-current",
+      "id": 1051,
+      "at": 1789040664496
+    },
+    {
+      "event": "sent-current",
+      "id": 1052,
+      "at": 1789040664505
+    },
+    {
+      "event": "sent-current",
+      "id": 1053,
+      "at": 1789040664514
+    },
+    {
+      "event": "sent-current",
+      "id": 1054,
+      "at": 1789040664525
+    },
+    {
+      "event": "sent-current",
+      "id": 1055,
+      "at": 1789040664537
+    },
+    {
+      "event": "sent-current",
+      "id": 1056,
+      "at": 1789040664550
+    },
+    {
+      "event": "sent-current",
+      "id": 1057,
+      "at": 1789040664559
+    },
+    {
+      "event": "sent-current",
+      "id": 1058,
+      "at": 1789040664571
+    },
+    {
+      "event": "sent-current",
+      "id": 1059,
+      "at": 1789040664579
+    },
+    {
+      "event": "sent-current",
+      "id": 1060,
+      "at": 1789040664588
+    },
+    {
+      "event": "release-old-current",
+      "at": 1789040664592
+    },
+    {
+      "event": "sent-current",
+      "id": 1061,
+      "at": 1789040664610
+    },
+    {
+      "event": "sent-current",
+      "id": 1062,
+      "at": 1789040664623
+    },
+    {
+      "event": "sent-current",
+      "id": 1063,
+      "at": 1789040664633
+    },
+    {
+      "event": "sent-current",
+      "id": 1064,
+      "at": 1789040664644
+    },
+    {
+      "event": "sent-current",
+      "id": 1065,
+      "at": 1789040664655
+    },
+    {
+      "event": "sent-current",
+      "id": 1066,
+      "at": 1789040664663
+    },
+    {
+      "event": "sent-current",
+      "id": 1067,
+      "at": 1789040664678
+    },
+    {
+      "event": "sent-current",
+      "id": 1068,
+      "at": 1789040664687
+    },
+    {
+      "event": "sent-current",
+      "id": 1069,
+      "at": 1789040664698
+    },
+    {
+      "event": "sent-current",
+      "id": 1070,
+      "at": 1789040664707
+    },
+    {
+      "event": "sent-current",
+      "id": 1071,
+      "at": 1789040664715
+    },
+    {
+      "event": "sent-current",
+      "id": 1072,
+      "at": 1789040664729
+    },
+    {
+      "event": "sent-current",
+      "id": 1073,
+      "at": 1789040664743
+    },
+    {
+      "event": "sent-current",
+      "id": 1074,
+      "at": 1789040664752
+    },
+    {
+      "event": "sent-current",
+      "id": 1075,
+      "at": 1789040664760
+    },
+    {
+      "event": "sent-current",
+      "id": 1076,
+      "at": 1789040664774
+    },
+    {
+      "event": "sent-current",
+      "id": 1077,
+      "at": 1789040664784
+    },
+    {
+      "event": "sent-current",
+      "id": 1078,
+      "at": 1789040664794
+    },
+    {
+      "event": "sent-current",
+      "id": 1079,
+      "at": 1789040664805
+    },
+    {
+      "event": "sent-current",
+      "id": 1080,
+      "at": 1789040664814
+    },
+    {
+      "event": "sent-current",
+      "id": 1081,
+      "at": 1789040664824
+    },
+    {
+      "event": "sent-current",
+      "id": 1082,
+      "at": 1789040664838
+    },
+    {
+      "event": "sent-current",
+      "id": 1083,
+      "at": 1789040664847
+    },
+    {
+      "event": "sent-current",
+      "id": 1084,
+      "at": 1789040664856
+    },
+    {
+      "event": "sent-current",
+      "id": 1085,
+      "at": 1789040664867
+    },
+    {
+      "event": "sent-current",
+      "id": 1086,
+      "at": 1789040664876
+    },
+    {
+      "event": "sent-current",
+      "id": 1087,
+      "at": 1789040664884
+    },
+    {
+      "event": "sent-current",
+      "id": 1088,
+      "at": 1789040664899
+    },
+    {
+      "event": "sent-current",
+      "id": 1089,
+      "at": 1789040664910
+    },
+    {
+      "event": "sent-current",
+      "id": 1090,
+      "at": 1789040664918
+    },
+    {
+      "event": "sent-current",
+      "id": 1091,
+      "at": 1789040664929
+    },
+    {
+      "event": "sent-current",
+      "id": 1092,
+      "at": 1789040664936
+    },
+    {
+      "event": "sent-current",
+      "id": 1093,
+      "at": 1789040664948
+    },
+    {
+      "event": "sent-current",
+      "id": 1094,
+      "at": 1789040664961
+    },
+    {
+      "event": "sent-current",
+      "id": 1095,
+      "at": 1789040664969
+    },
+    {
+      "event": "sent-current",
+      "id": 1096,
+      "at": 1789040664978
+    },
+    {
+      "event": "sent-current",
+      "id": 1097,
+      "at": 1789040664991
+    },
+    {
+      "event": "sent-current",
+      "id": 1098,
+      "at": 1789040665000
+    },
+    {
+      "event": "sent-current",
+      "id": 1099,
+      "at": 1789040665012
+    },
+    {
+      "event": "sent-current",
+      "id": 1100,
+      "at": 1789040665025
+    },
+    {
+      "event": "sent-current",
+      "id": 1101,
+      "at": 1789040665034
+    },
+    {
+      "event": "sent-current",
+      "id": 1102,
+      "at": 1789040665042
+    },
+    {
+      "event": "sent-current",
+      "id": 1103,
+      "at": 1789040665055
+    },
+    {
+      "event": "sent-current",
+      "id": 1104,
+      "at": 1789040665064
+    },
+    {
+      "event": "sent-current",
+      "id": 1105,
+      "at": 1789040665074
+    },
+    {
+      "event": "sent-current",
+      "id": 1106,
+      "at": 1789040665087
+    },
+    {
+      "event": "sent-current",
+      "id": 1107,
+      "at": 1789040665096
+    },
+    {
+      "event": "sent-current",
+      "id": 1108,
+      "at": 1789040665104
+    },
+    {
+      "event": "sent-current",
+      "id": 1109,
+      "at": 1789040665118
+    },
+    {
+      "event": "sent-current",
+      "id": 1110,
+      "at": 1789040665127
+    },
+    {
+      "event": "sent-current",
+      "id": 1111,
+      "at": 1789040665135
+    },
+    {
+      "event": "sent-current",
+      "id": 1112,
+      "at": 1789040665148
+    },
+    {
+      "event": "sent-current",
+      "id": 1113,
+      "at": 1789040665156
+    },
+    {
+      "event": "sent-current",
+      "id": 1114,
+      "at": 1789040665165
+    },
+    {
+      "event": "sent-current",
+      "id": 1115,
+      "at": 1789040665180
+    },
+    {
+      "event": "sent-current",
+      "id": 1116,
+      "at": 1789040665189
+    },
+    {
+      "event": "sent-current",
+      "id": 1117,
+      "at": 1789040665196
+    },
+    {
+      "event": "sent-current",
+      "id": 1118,
+      "at": 1789040665211
+    },
+    {
+      "event": "sent-current",
+      "id": 1119,
+      "at": 1789040665220
+    },
+    {
+      "event": "sent-current",
+      "id": 1120,
+      "at": 1789040665232
+    },
+    {
+      "event": "sent-current",
+      "id": 1121,
+      "at": 1789040665245
+    },
+    {
+      "event": "sent-current",
+      "id": 1122,
+      "at": 1789040665256
+    },
+    {
+      "event": "sent-current",
+      "id": 1123,
+      "at": 1789040665266
+    },
+    {
+      "event": "sent-current",
+      "id": 1124,
+      "at": 1789040665278
+    },
+    {
+      "event": "sent-current",
+      "id": 1125,
+      "at": 1789040665290
+    },
+    {
+      "event": "sent-current",
+      "id": 1126,
+      "at": 1789040665300
+    },
+    {
+      "event": "sent-current",
+      "id": 1127,
+      "at": 1789040665319
+    },
+    {
+      "event": "sent-current",
+      "id": 1128,
+      "at": 1789040665330
+    },
+    {
+      "event": "sent-current",
+      "id": 1129,
+      "at": 1789040665341
+    },
+    {
+      "event": "sent-current",
+      "id": 1130,
+      "at": 1789040665353
+    },
+    {
+      "event": "sent-current",
+      "id": 1131,
+      "at": 1789040665363
+    },
+    {
+      "event": "sent-current",
+      "id": 1132,
+      "at": 1789040665374
+    },
+    {
+      "event": "sent-current",
+      "id": 1133,
+      "at": 1789040665387
+    },
+    {
+      "event": "sent-current",
+      "id": 1134,
+      "at": 1789040665399
+    },
+    {
+      "event": "sent-current",
+      "id": 1135,
+      "at": 1789040665409
+    },
+    {
+      "event": "sent-current",
+      "id": 1136,
+      "at": 1789040665426
+    },
+    {
+      "event": "sent-current",
+      "id": 1137,
+      "at": 1789040665436
+    },
+    {
+      "event": "sent-current",
+      "id": 1138,
+      "at": 1789040665446
+    },
+    {
+      "event": "sent-current",
+      "id": 1139,
+      "at": 1789040665458
+    },
+    {
+      "event": "sent-current",
+      "id": 1140,
+      "at": 1789040665465
+    },
+    {
+      "event": "sent-current",
+      "id": 1141,
+      "at": 1789040665477
+    },
+    {
+      "event": "sent-current",
+      "id": 1142,
+      "at": 1789040665491
+    },
+    {
+      "event": "sent-current",
+      "id": 1143,
+      "at": 1789040665498
+    },
+    {
+      "event": "sent-current",
+      "id": 1144,
+      "at": 1789040665511
+    },
+    {
+      "event": "sent-current",
+      "id": 1145,
+      "at": 1789040665526
+    },
+    {
+      "event": "sent-current",
+      "id": 1146,
+      "at": 1789040665533
+    },
+    {
+      "event": "sent-current",
+      "id": 1147,
+      "at": 1789040665545
+    },
+    {
+      "event": "sent-current",
+      "id": 1148,
+      "at": 1789040665558
+    },
+    {
+      "event": "sent-current",
+      "id": 1149,
+      "at": 1789040665564
+    },
+    {
+      "event": "sent-current",
+      "id": 1150,
+      "at": 1789040665574
+    },
+    {
+      "event": "sent-current",
+      "id": 1151,
+      "at": 1789040665588
+    },
+    {
+      "event": "sent-current",
+      "id": 1152,
+      "at": 1789040665594
+    },
+    {
+      "event": "sent-current",
+      "id": 1153,
+      "at": 1789040665609
+    },
+    {
+      "event": "sent-current",
+      "id": 1154,
+      "at": 1789040665627
+    },
+    {
+      "event": "sent-current",
+      "id": 1155,
+      "at": 1789040665634
+    },
+    {
+      "event": "sent-current",
+      "id": 1156,
+      "at": 1789040665649
+    },
+    {
+      "event": "sent-current",
+      "id": 1157,
+      "at": 1789040665662
+    },
+    {
+      "event": "sent-current",
+      "id": 1158,
+      "at": 1789040665669
+    },
+    {
+      "event": "sent-current",
+      "id": 1159,
+      "at": 1789040665683
+    },
+    {
+      "event": "sent-current",
+      "id": 1160,
+      "at": 1789040665694
+    },
+    {
+      "event": "sent-current",
+      "id": 1161,
+      "at": 1789040665701
+    },
+    {
+      "event": "sent-current",
+      "id": 1162,
+      "at": 1789040665717
+    },
+    {
+      "event": "sent-current",
+      "id": 1163,
+      "at": 1789040665732
+    },
+    {
+      "event": "sent-current",
+      "id": 1164,
+      "at": 1789040665747
+    },
+    {
+      "event": "sent-current",
+      "id": 1165,
+      "at": 1789040665757
+    },
+    {
+      "event": "sent-current",
+      "id": 1166,
+      "at": 1789040665763
+    },
+    {
+      "event": "sent-current",
+      "id": 1167,
+      "at": 1789040665782
+    },
+    {
+      "event": "sent-current",
+      "id": 1168,
+      "at": 1789040665790
+    },
+    {
+      "event": "sent-current",
+      "id": 1169,
+      "at": 1789040665886
+    },
+    {
+      "event": "sent-current",
+      "id": 1170,
+      "at": 1789040665904
+    },
+    {
+      "event": "sent-current",
+      "id": 1171,
+      "at": 1789040665914
+    },
+    {
+      "event": "sent-current",
+      "id": 1172,
+      "at": 1789040665931
+    },
+    {
+      "event": "session",
+      "sessions": 5,
+      "at": 1789040665932
+    },
+    {
+      "event": "sent-current",
+      "id": 1173,
+      "at": 1789040665933
+    },
+    {
+      "event": "sent-current",
+      "id": 1174,
+      "at": 1789040665952
+    },
+    {
+      "event": "sent-current",
+      "id": 1175,
+      "at": 1789040665961
+    },
+    {
+      "event": "sent-current",
+      "id": 1176,
+      "at": 1789040665977
+    },
+    {
+      "event": "sent-current",
+      "id": 1177,
+      "at": 1789040665999
+    },
+    {
+      "event": "sent-current",
+      "id": 1178,
+      "at": 1789040666018
+    },
+    {
+      "event": "sent-current",
+      "id": 1179,
+      "at": 1789040666027
+    },
+    {
+      "event": "sent-current",
+      "id": 1180,
+      "at": 1789040666042
+    },
+    {
+      "event": "sent-current",
+      "id": 1181,
+      "at": 1789040666055
+    },
+    {
+      "event": "sent-current",
+      "id": 1182,
+      "at": 1789040666065
+    },
+    {
+      "event": "sent-current",
+      "id": 1183,
+      "at": 1789040666084
+    },
+    {
+      "event": "sent-current",
+      "id": 1184,
+      "at": 1789040666097
+    },
+    {
+      "event": "sent-current",
+      "id": 1185,
+      "at": 1789040666105
+    },
+    {
+      "event": "sent-current",
+      "id": 1186,
+      "at": 1789040666121
+    },
+    {
+      "event": "sent-current",
+      "id": 1187,
+      "at": 1789040666138
+    },
+    {
+      "event": "sent-current",
+      "id": 1188,
+      "at": 1789040666146
+    },
+    {
+      "event": "sent-current",
+      "id": 1189,
+      "at": 1789040666160
+    },
+    {
+      "event": "sent-current",
+      "id": 1190,
+      "at": 1789040666175
+    },
+    {
+      "event": "sent-current",
+      "id": 1191,
+      "at": 1789040666183
+    },
+    {
+      "event": "sent-current",
+      "id": 1192,
+      "at": 1789040666200
+    },
+    {
+      "event": "sent-current",
+      "id": 1193,
+      "at": 1789040666216
+    },
+    {
+      "event": "sent-current",
+      "id": 1194,
+      "at": 1789040666223
+    },
+    {
+      "event": "sent-current",
+      "id": 1195,
+      "at": 1789040666242
+    },
+    {
+      "event": "sent-current",
+      "id": 1196,
+      "at": 1789040666258
+    },
+    {
+      "event": "sent-current",
+      "id": 1197,
+      "at": 1789040666267
+    },
+    {
+      "event": "sent-current",
+      "id": 1198,
+      "at": 1789040666365
+    }
+  ],
+  "persistedIds": [
+    "1002",
+    "1003",
+    "1004",
+    "1005",
+    "1006",
+    "1007",
+    "1008",
+    "1009",
+    "1010",
+    "1011",
+    "1012",
+    "1013",
+    "1014",
+    "1015",
+    "1016",
+    "1017",
+    "1018",
+    "1019",
+    "1020",
+    "1021",
+    "1022",
+    "1023",
+    "1024",
+    "1025",
+    "1026",
+    "1027",
+    "1028",
+    "1029",
+    "1030",
+    "1031",
+    "1032",
+    "1033",
+    "1034",
+    "1035",
+    "1036",
+    "1037",
+    "1038",
+    "1039",
+    "1040",
+    "1041",
+    "1042",
+    "1043",
+    "1044",
+    "1045",
+    "1046",
+    "1047",
+    "1048",
+    "1049",
+    "1050",
+    "1051",
+    "1052",
+    "1053",
+    "1054",
+    "1055",
+    "1056",
+    "1057",
+    "1058",
+    "1059",
+    "1060",
+    "1061",
+    "1062",
+    "1063",
+    "1064",
+    "1065",
+    "1066",
+    "1067",
+    "1068",
+    "1069",
+    "1070",
+    "1071",
+    "1072",
+    "1073",
+    "1074",
+    "1075",
+    "1076",
+    "1077",
+    "1078",
+    "1079",
+    "1080",
+    "1081",
+    "1082",
+    "1083",
+    "1084",
+    "1085",
+    "1086",
+    "1087",
+    "1088",
+    "1089",
+    "1090",
+    "1091",
+    "1092",
+    "1093",
+    "1094",
+    "1095",
+    "1096",
+    "1097",
+    "1098",
+    "1099",
+    "1100",
+    "1101",
+    "1102",
+    "1103",
+    "1104",
+    "1105",
+    "1106",
+    "1107",
+    "1108",
+    "1109",
+    "1110",
+    "1111",
+    "1112",
+    "1113",
+    "1114",
+    "1115",
+    "1116",
+    "1117",
+    "1118",
+    "1119",
+    "1120",
+    "1121",
+    "1122",
+    "1123",
+    "1124",
+    "1125",
+    "1126",
+    "1127",
+    "1128",
+    "1129",
+    "1130",
+    "1131",
+    "1132",
+    "1133",
+    "1134",
+    "1135",
+    "1136",
+    "1137",
+    "1138",
+    "1139",
+    "1140",
+    "1141",
+    "1142",
+    "1143",
+    "1144",
+    "1145",
+    "1146",
+    "1147",
+    "1148",
+    "1149",
+    "1150",
+    "1151",
+    "1152",
+    "1153",
+    "1154",
+    "1155",
+    "1156",
+    "1157",
+    "1158",
+    "1159",
+    "1160"
+  ],
+  "health": {
+    "state": "critical",
+    "reason": "renderer_pending_capacity_exhausted",
+    "pendingCount": 0,
+    "corruptCount": 0,
+    "conflictCount": 0,
+    "rejectedCount": 0,
+    "affectedDeviceCount": 0,
+    "conflictDeviceIds": []
+  },
+  "errors": []
+}

@@ -1,10 +1,40 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { createStationaryAttentionProjector } from '../../src/features/tracking/stationary-attention-projection'
+import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
 import type { StationaryAttentionEvaluation } from '../../src/features/tracking/stationary-attention'
 import type { NormalizedTrackingPosition, TrackingSnapshot } from '../../src/features/tracking/tracking-types'
 
 describe('stationary attention projection [DON-269]', () => {
+  it('rechecks changed current stationary inputs even when the source identity is unchanged', () => {
+    const evaluate = vi.fn((): StationaryAttentionEvaluation => ({ state: 'none' }))
+    const projector = createStationaryAttentionProjector(evaluate)
+    const current = fix('device-1', 'current', 20)
+    const snapshot = { devices: [device('device-1')], breadcrumbs: [], positions: [current] }
+    projector.project(snapshot, config())
+    projector.project({ ...snapshot, positions: [{ ...current, accuracy: 90 }] }, config())
+    expect(evaluate).toHaveBeenCalledTimes(2)
+  })
+
+  it('visits interleaved compaction rows a bounded number of times [AUD-03]', () => {
+    let visits = 0
+    const devices = Array.from({ length: 100 }, (_, index) => device(`device-${index}`))
+    const breadcrumbs = Array.from({ length: 5_000 }, (_, index) => devices.map((entry) => {
+      const original = fix(entry.device_id, `${entry.device_id}-${index}`, index)
+      return { ...original, get device_id() { visits++; return original.device_id } }
+    })).flat()
+    const accumulator = createBreadcrumbAccumulator(breadcrumbs)
+    const evaluate = vi.fn((): StationaryAttentionEvaluation => ({ state: 'none' }))
+    const projector = createStationaryAttentionProjector(evaluate)
+    projector.project({ devices, breadcrumbs: accumulator.snapshot().positions, positions: [] }, config())
+    const changed = accumulator.append([fix('device-0', 'next', 5_000)])
+    visits = 0
+    evaluate.mockClear()
+    projector.project({ devices, breadcrumbs: changed.positions, positions: [] }, config())
+    expect(evaluate).toHaveBeenCalledTimes(1)
+    expect(visits).toBeLessThan(4 * breadcrumbs.length)
+  }, 20_000)
+
   it('reuses an unchanged device evaluation when another current fix changes', () => {
     const evaluate = vi.fn((fixes: readonly NormalizedTrackingPosition[]): StationaryAttentionEvaluation => ({
       state: fixes.length >= 2 ? 'attention' : 'insufficient-data',

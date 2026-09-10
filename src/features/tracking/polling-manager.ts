@@ -137,6 +137,7 @@ type PollingManagerOptions = {
   ) => void
   /** Stops further fetching at the evidence owner's memory bound, after visible publication. */
   readonly waitForCurrentEvidenceCapacity?: (signal: AbortSignal) => Promise<void>
+  readonly reserveCurrentEvidenceCapacity?: (signal: AbortSignal) => Promise<() => void>
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
   readonly onCurrentPositionRejections?: (
     rejections: readonly CurrentPositionRejection[],
@@ -161,6 +162,8 @@ type PollingManagerOptions = {
 }
 
 export type TrackingSnapshotContext = {
+  /** Retiring transports may settle evidence, but may not replace current UI. */
+  readonly suppressOperationalPublication?: boolean
   readonly historyResetKey: string | null
   /** Explicit mission scope for persistence; null keeps live display outside mission evidence. */
   readonly missionEvidenceId?: string | null
@@ -900,6 +903,7 @@ export function createPollingManager(
     let pollPhase: TrackingPollPhase = 'authentication'
     const pollHistoryResetKey = options.getHistoryResetKey?.() ?? null
     let completeCurrentPositionObservation = (): void => undefined
+    let releaseEvidenceCapacity = (): void => undefined
     try {
       if (pollHistoryResetKey !== activeHistoryResetKey) {
         const retainedCurrentSnapshot = lastGoodSnapshot === null
@@ -979,23 +983,25 @@ export function createPollingManager(
         return
       }
 
+      await withPollPhase('authentication', authenticateIfNeeded())
+      if (stopping || discardSupersededPoll(generation, pollHistoryResetKey)) return
+
       // A mission switch may interrupt the previous producer's capacity wait.
       // Reserve room before observing another fix, even on the first new poll.
-      if (options.waitForCurrentEvidenceCapacity !== undefined) {
+      if (options.reserveCurrentEvidenceCapacity !== undefined || options.waitForCurrentEvidenceCapacity !== undefined) {
         const controller = new AbortController()
         evidenceCapacityWait = controller
         try {
-          await options.waitForCurrentEvidenceCapacity(controller.signal)
+          if (options.reserveCurrentEvidenceCapacity !== undefined) {
+            releaseEvidenceCapacity = await options.reserveCurrentEvidenceCapacity(controller.signal)
+          } else {
+            await options.waitForCurrentEvidenceCapacity?.(controller.signal)
+          }
         } finally {
           if (evidenceCapacityWait === controller) evidenceCapacityWait = null
         }
         if (stopping || discardSupersededPoll(generation, pollHistoryResetKey)) return
       }
-      await withPollPhase('authentication', authenticateIfNeeded())
-      if (discardSupersededPoll(generation, pollHistoryResetKey)) {
-        return
-      }
-
       pollPhase = 'current_positions'
       const recoveredBeforeCurrentPositions = consecutiveFailures > 0
       const missionObservation = options.beginMissionEvidenceObservation?.(
@@ -1025,6 +1031,7 @@ export function createPollingManager(
       const settleCurrentPositionObservation = (completeMissionEvidence: boolean): void => {
         if (currentPositionObservationCompleted) return
         currentPositionObservationCompleted = true
+        releaseEvidenceCapacity()
         if (completeMissionEvidence) missionObservation.complete()
         resolveCurrentPositionObservation()
         if (currentPositionObservationInFlight === currentPositionObservation) {
@@ -1258,6 +1265,8 @@ export function createPollingManager(
         failureKind: classifyTrackingFailure(failure.cause),
       })
       scheduleNextPoll(backoffDelay)
+    } finally {
+      releaseEvidenceCapacity()
     }
   }
 

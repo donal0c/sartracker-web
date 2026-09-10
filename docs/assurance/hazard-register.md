@@ -5,6 +5,17 @@
 **Register status:** WAR-01 post-PR5 reconciliation plus targeted WAR-04
 platform-services and WAR-04B release-control overlays.
 
+**Repair Train A overlay (2026-09-10):** `TRK-001`'s overlapping settings/reconnect
+drain gap and `TRK-004`'s out-and-back/whole-history projection defects reproduced
+on `083f5047`. The [repair record](findings/repair-train-a.md) tracks the bounded
+fix, rejected candidates, native custody proof and strict renderer-frame gate.
+The retained tracking session separates replacement publication from retiring
+evidence settlement; continuous stationary episodes and prepared per-device
+history replace endpoint-only/repeated whole-history evaluation. This overlay
+supersedes only those historical row observations once final review completes.
+Other `TRK-001` startup, scope, pause/recovery and bounded storage-backpressure
+gaps remain open; no whole-hazard or field-qualification claim is made.
+
 **Confirmed deep-audit intake (2026-09-09):** fourteen reproduced finding
 groups from the 2026-09-07 system audit are centrally triaged in the
 [coordinated work ledger](coordinated-work-ledger.md). `AUD-07` and `AUD-14`

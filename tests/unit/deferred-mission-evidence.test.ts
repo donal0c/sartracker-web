@@ -16,6 +16,30 @@ function createDeferred<T>(): {
 }
 
 describe('deferred mission evidence queue [DON-276]', () => {
+  it('reserves capacity for an in-flight retiring transport [AUD-13]', async () => {
+    const queue = createDeferredMissionEvidenceQueue<string>({
+      capacity: 1, beginObservation: (missionId) => ({ missionId, complete: vi.fn() }),
+      persist: vi.fn().mockResolvedValue(undefined), markEvidenceLoss: vi.fn(),
+    })
+    expect(queue.reserveCapacity).toBeTypeOf('function')
+    const release = await queue.reserveCapacity()
+    let acquired = false
+    const controller = new AbortController()
+    const waiting = queue.reserveCapacity(controller.signal).then(() => { acquired = true })
+    await Promise.resolve()
+    expect(acquired).toBe(false)
+    queue.enqueue('mission-1', 'old-in-flight-fix')
+    release()
+    await Promise.resolve()
+    expect(acquired).toBe(false)
+    controller.abort()
+    await expect(waiting).rejects.toThrow()
+    await queue.flushMission('mission-1')
+    const releaseNext = await queue.reserveCapacity()
+    releaseNext()
+    releaseNext()
+  })
+
   it('reports every discarded payload even when the durable mission loss marker coalesces', async () => {
     const onEvidenceLoss = vi.fn()
     const queue = createDeferredMissionEvidenceQueue<string>({

@@ -1,0 +1,92 @@
+{
+  "evidence": "Real production accumulator/projector in Chromium renderer on an isolated blank local page. Fixture generated inside renderer; construction and initial projection excluded from timing windows. One unchanged control and exactly three one-device compaction repeats. Synthetic, non-packaged; not a release-gate run.",
+  "fixture": {
+    "devices": 100,
+    "retainedPerDevice": 5000,
+    "dailyOutingFixes": 420,
+    "secondsBetweenFixes": 100,
+    "rawCount": 500000
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/147.0.7727.15 Safari/537.36",
+  "samples": [
+    {
+      "phase": "unchanged-control",
+      "projectionMs": 0,
+      "deviceCount": 100,
+      "beforeCount": 500000,
+      "maximumRafGapMs": 9.099999999999909,
+      "sampledFrameGaps": 16,
+      "maximumLongTaskMs": 0,
+      "longTasks": []
+    },
+    {
+      "phase": "current-only-all-devices",
+      "projectionMs": 215.29999995231628,
+      "deviceCount": 100,
+      "beforeCount": 500000,
+      "maximumRafGapMs": 200.0999999999999,
+      "sampledFrameGaps": 19,
+      "maximumLongTaskMs": 215,
+      "longTasks": [
+        {
+          "startTime": 2474.7000000476837,
+          "duration": 215
+        }
+      ]
+    },
+    {
+      "phase": "compaction-1",
+      "appendMs": 32.89999997615814,
+      "projectionMs": 29.40000009536743,
+      "totalSynchronousMs": 62.300000071525574,
+      "deviceCount": 100,
+      "beforeCount": 500000,
+      "afterCount": 499983,
+      "maximumRafGapMs": 50,
+      "sampledFrameGaps": 19,
+      "maximumLongTaskMs": 62,
+      "longTasks": [
+        {
+          "startTime": 4466.5,
+          "duration": 62
+        }
+      ]
+    },
+    {
+      "phase": "compaction-2",
+      "appendMs": 27.600000023841858,
+      "projectionMs": 28.899999976158142,
+      "totalSynchronousMs": 56.5,
+      "deviceCount": 100,
+      "beforeCount": 500000,
+      "afterCount": 499983,
+      "maximumRafGapMs": 41,
+      "sampledFrameGaps": 19,
+      "maximumLongTaskMs": 56,
+      "longTasks": [
+        {
+          "startTime": 6349.800000071526,
+          "duration": 56
+        }
+      ]
+    },
+    {
+      "phase": "compaction-3",
+      "appendMs": 28.299999952316284,
+      "projectionMs": 29.399999976158142,
+      "totalSynchronousMs": 57.699999928474426,
+      "deviceCount": 100,
+      "beforeCount": 500000,
+      "afterCount": 499983,
+      "maximumRafGapMs": 41.600000000000364,
+      "sampledFrameGaps": 19,
+      "maximumLongTaskMs": 57,
+      "longTasks": [
+        {
+          "startTime": 8266.900000095367,
+          "duration": 57
+        }
+      ]
+    }
+  ]
+}

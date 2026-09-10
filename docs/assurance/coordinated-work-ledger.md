@@ -1,6 +1,6 @@
 # Coordinated Team, Audit, and WAR Work Ledger
 
-Updated: 2026-09-09
+Updated: 2026-09-10
 
 Status: active coordination record. The canonical execution order remains
 `docs/two-track-execution-workplan.md`; this ledger prevents the three current
@@ -51,6 +51,14 @@ head.
   may invent a new operational requirement.
 
 ## Deep-audit finding disposition
+
+Repair Train A is active from fetched master `083f5047`; AUD-13/02/03 freshly
+reproduced and repairs are undergoing final source/native/review gates on
+`codex/astra-repair-train-a`. The [repair record](findings/repair-train-a.md)
+holds before/after evidence, accepted review repairs and rejected runs. Existing
+DON-267/DON-269 own the work; DON-254 retains final-candidate qualification.
+WAR-02A and every other train remain separate. These rows are not closed by
+implementation alone.
 
 | Finding | Priority | Current disposition | Coordinated owner / timing | Required proof before closure |
 | --- | --- | --- | --- | --- |

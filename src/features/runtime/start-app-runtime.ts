@@ -36,7 +36,7 @@ import {
 } from '../tracking/polling-manager'
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
-import type { TrackingRuntimeMissionStore } from '../tracking/start-tracking-runtime'
+import type { TrackingRuntimeMissionStore, TrackingRuntimeStop } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
 import {
@@ -239,6 +239,9 @@ export async function startAppRuntime(
   setMissionReviewMissionStore(coreMissionStore)
   let stopExactBreadcrumbDots = (): void => undefined
   let stopCoverage = (): void => undefined
+  let trackingSession: TrackingRuntimeStop | null = null
+  let reloadTail: Promise<void> = Promise.resolve()
+  let disposed = false
   try {
     stopExactBreadcrumbDots = resolvedDependencies.startExactBreadcrumbDotRuntime(
       missionStore,
@@ -251,12 +254,12 @@ export async function startAppRuntime(
     })
     await reloadSettings()
   } catch (error) {
+    await stopTrackingSession()
     stopExactBreadcrumbDots()
     stopCoverage()
     coreFeatureRuntimes.dispose()
     throw error
   }
-  let disposed = false
   let disposalPromise: Promise<void> | null = null
 
   return {
@@ -271,9 +274,11 @@ export async function startAppRuntime(
       disposalPromise ??= (async () => {
         disposed = true
         reloadGeneration += 1
+        await reloadTail.catch(() => undefined)
         const previousServices = activeServices
         activeServices = createNoopRuntimeServiceHandles()
         await stopRuntimeServices(previousServices)
+        await stopTrackingSession()
         await rejectionEvidenceDelivery?.dispose()
         setMissionReviewMissionStore(null)
         stopExactBreadcrumbDots()
@@ -282,6 +287,11 @@ export async function startAppRuntime(
       })()
       return disposalPromise
     },
+  }
+
+  /** Releases the session only after every settings replacement has settled. */
+  async function stopTrackingSession(): Promise<void> {
+    await trackingSession?.()
   }
 
   async function reloadSettings(options?: { readonly forceConnect?: boolean }): Promise<void> {
@@ -295,22 +305,46 @@ export async function startAppRuntime(
       return
     }
 
+    const replacement = reloadTail.catch(() => undefined).then(async () => {
+      if (generation !== reloadGeneration || disposed) return
+      await replaceServices(runtimeSettings, generation)
+    })
+    reloadTail = replacement
+    await replacement
+  }
+
+  /** Serializes settings intent while the tracking session retains evidence custody. */
+  async function replaceServices(
+    runtimeSettings: Awaited<ReturnType<StartAppRuntimeDependencies['readRuntimeBootstrapSettings']>>,
+    generation: number,
+  ): Promise<void> {
+
     useStationaryAttentionStore.getState().setConfig(runtimeSettings.stationaryAttentionConfig)
 
-    // A replacement tracker must never overlap the currently active poller.
-    // Stop the old services only after settings have loaded successfully, then
-    // start the replacement. This keeps a failed settings read non-disruptive
-    // while preventing old and new runtime generations from publishing
-    // competing mission snapshots.
+    // Settings load while the current tracker remains live. Replace auxiliary
+    // services here; the retained tracking session selects one publisher while
+    // retiring transports finish their accepted evidence independently.
     const previousServices = activeServices
     activeServices = createNoopRuntimeServiceHandles()
     await stopRuntimeServices(previousServices)
+    if (generation !== reloadGeneration || disposed) return
 
     const nextServices = await createManagedRuntimeServices({
       runtimeSettings,
       missionStore: trackingMissionStore,
       startMissionAutosave: resolvedDependencies.startMissionAutosave,
-      startTrackingRuntime: resolvedDependencies.startTrackingRuntime,
+      startTrackingRuntime: async (input) => {
+        if (trackingSession?.reconfigure !== undefined) {
+          await trackingSession.reconfigure(input)
+          return () => undefined
+        }
+        const started = await resolvedDependencies.startTrackingRuntime(input)
+        if (started.reconfigure !== undefined) {
+          trackingSession = started
+          return () => undefined
+        }
+        return started
+      },
       createClient:
         runtimeKind === 'electron' ? createElectronTraccarClient : createTauriTraccarClient,
       createPoller: (client, hooks) =>
@@ -382,6 +416,9 @@ export async function startAppRuntime(
           onSnapshot: hooks.onSnapshot,
           onCurrentSnapshot: hooks.onCurrentSnapshot,
           waitForCurrentEvidenceCapacity: hooks.waitForCurrentEvidenceCapacity,
+          ...(hooks.reserveCurrentEvidenceCapacity === undefined ? {} : {
+            reserveCurrentEvidenceCapacity: hooks.reserveCurrentEvidenceCapacity,
+          }),
           onStatusChange: hooks.onStatusChange,
           onCurrentPositionRejections:
             rejectionEvidenceDelivery?.record ?? applyCurrentPositionRejections,

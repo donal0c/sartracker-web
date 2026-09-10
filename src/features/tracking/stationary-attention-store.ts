@@ -61,7 +61,8 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
       byDevice[device.device_id] = {
         ...evaluation,
         acknowledged:
-          evaluation.state === 'attention' && previous[device.device_id]?.state === 'attention'
+          evaluation.state === 'attention' && previous[device.device_id]?.state === 'attention' &&
+          evaluation.sinceTimestamp === previous[device.device_id]?.sinceTimestamp
             ? previous[device.device_id]?.acknowledged === true
             : false,
       }

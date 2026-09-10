@@ -44,6 +44,7 @@ export type DeferredMissionEvidenceQueue<Payload> = {
   ) => boolean
   readonly requestFlushMission: (missionId: string) => void
   readonly waitForCapacity: (signal?: AbortSignal) => Promise<void>
+  readonly reserveCapacity: (signal?: AbortSignal) => Promise<() => void>
   readonly flushMission: (missionId: string) => Promise<void>
   readonly settleMissionForFinish: (
     missionId: string,
@@ -73,6 +74,7 @@ export function createDeferredMissionEvidenceQueue<Payload>(
   let activeEntry: DeferredMissionEvidenceEntry<Payload> | null = null
   let pumpInFlight: Promise<void> | null = null
   let accepting = true
+  let reservedCount = 0
   let stopBarrierComplete = false
 
   /** Wakes explicit Finish and stop drains after one ownership transition. */
@@ -85,7 +87,7 @@ export function createDeferredMissionEvidenceQueue<Payload>(
 
   /** Backpressures the producer without retaining another payload or cancelling accepted writes. */
   async function waitForCapacity(signal?: AbortSignal): Promise<void> {
-    while (accepting && !signal?.aborted && retainedCount() >= dependencies.capacity) {
+    while (accepting && !signal?.aborted && retainedCount() + reservedCount >= dependencies.capacity) {
       await new Promise<void>((resolve) => {
         /** Releases this waiter on either capacity change or producer shutdown. */
         const wake = (): void => {
@@ -97,6 +99,24 @@ export function createDeferredMissionEvidenceQueue<Payload>(
         signal?.addEventListener('abort', wake, { once: true })
         if (signal?.aborted) wake()
       })
+    }
+  }
+
+  /** Reserves one payload before transport observes it, including retiring polls. */
+  async function reserveCapacity(signal?: AbortSignal): Promise<() => void> {
+    // Recheck after awaiting: another waiter may have claimed the free slot.
+    do {
+      await waitForCapacity(signal)
+      signal?.throwIfAborted()
+      if (!accepting) throw new Error('Tracking evidence admission is closed.')
+    } while (retainedCount() + reservedCount >= dependencies.capacity)
+    reservedCount++
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      reservedCount--
+      for (const wake of [...capacityWaiters]) wake()
     }
   }
 
@@ -290,6 +310,7 @@ export function createDeferredMissionEvidenceQueue<Payload>(
   }
 
   return {
+    reserveCapacity,
     enqueue: (missionId, payload) => {
       const observation = dependencies.beginObservation(missionId)
       return enqueueOwned(missionId, payload, observation)

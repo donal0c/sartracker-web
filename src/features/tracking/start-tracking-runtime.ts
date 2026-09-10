@@ -91,6 +91,7 @@ type TrackingRuntimePollerFactory = (
       observation: TrackingMissionEvidenceTransfer,
     ) => void
     readonly waitForCurrentEvidenceCapacity: (signal: AbortSignal) => Promise<void>
+    readonly reserveCurrentEvidenceCapacity?: (signal: AbortSignal) => Promise<() => void>
     readonly onStatusChange: (status: TrackingConnectionStatus) => void
     readonly getInitialBreadcrumbs: (
       signal?: AbortSignal,
@@ -310,7 +311,7 @@ export type TrackingRuntimeMissionStore = {
   }) => Promise<unknown>
 }
 
-type StartTrackingRuntimeDependencies = {
+export type StartTrackingRuntimeDependencies = {
   readonly config: TrackingRuntimeConfig | null
   readonly createClient: TrackingRuntimeClientFactory
   readonly createPoller: TrackingRuntimePollerFactory
@@ -361,6 +362,9 @@ const DEFAULT_TRACKING_RUNTIME_LOGGER: TrackingRuntimeLogger = {
 }
 
 const trackingCacheIdentityTokens = new WeakMap<object, number>()
+export type TrackingRuntimeStop = (() => Promise<void>) & {
+  readonly reconfigure?: (dependencies: StartTrackingRuntimeDependencies) => Promise<void>
+}
 const breadcrumbRendererSessionId = createBreadcrumbRendererSessionId()
 let nextTrackingCacheIdentityToken = 1
 let nextTrackingRuntimeGeneration = 0
@@ -374,14 +378,14 @@ let breadcrumbStorageQueryTail: Promise<void> = Promise.resolve()
  */
 export async function startTrackingRuntime(
   dependencies: StartTrackingRuntimeDependencies,
-): Promise<() => Promise<void>> {
+): Promise<TrackingRuntimeStop> {
   const runtimeGeneration = ++nextTrackingRuntimeGeneration
   activeTrackingRuntimeGeneration = runtimeGeneration
   const now = dependencies.now ?? (() => new Date())
   const logger = dependencies.logger ?? DEFAULT_TRACKING_RUNTIME_LOGGER
-  const writeCache = dependencies.writeCache ?? true
   let persistedPositionKeyCache: PersistedPositionKeyCache | null = null
   let latestTrackingStatus: TrackingConnectionStatus | null = null
+  let retirementFailure: unknown = null
   let trackingCacheWarningActive = false
   let missionPersistenceWarningActive = false
   let droppedPersistedBreadcrumbCount = 0
@@ -552,22 +556,26 @@ export async function startTrackingRuntime(
     }
   }
 
-  const client = dependencies.createClient({
+  let client = dependencies.createClient({
     ...dependencies.config,
     ...(dependencies.recordTrackingPollDiagnostic === undefined
       ? {}
       : { recordRequestDiagnostic: dependencies.recordTrackingPollDiagnostic }),
   })
+  let pollerGeneration = 0
+  const retiringPollers = new Set<Promise<void>>()
+  let stopPromise: Promise<void> | null = null
+  const initialClient = client
   if (dependencies.missionModelEnabled === true) {
     void preloadParticipantDiscovery(
       client,
       dependencies,
       logger,
       () => acceptingRuntimeUpdates &&
-        runtimeGeneration === activeTrackingRuntimeGeneration,
+        runtimeGeneration === activeTrackingRuntimeGeneration && client === initialClient,
     )
   }
-  const poller = dependencies.createPoller(client, {
+  const hooks: Parameters<TrackingRuntimePollerFactory>[1] = {
     persistHistoryRequest: async (input) => {
       if (!acceptingRuntimeUpdates) throw new Error('Tracking generation stopped before history request recording.')
       let requestedFrom = input.historyFrom
@@ -849,8 +857,9 @@ export async function startTrackingRuntime(
       }
     },
     waitForCurrentEvidenceCapacity: (signal) => deferredMissionEvidence.waitForCapacity(signal),
+    reserveCurrentEvidenceCapacity: (signal) => deferredMissionEvidence.reserveCapacity(signal),
     onCurrentSnapshot: (snapshot, context, observation) => {
-      applyParticipantRosterWithoutBlocking(snapshot.devices, context)
+      if (!context.suppressOperationalPublication) applyParticipantRosterWithoutBlocking(snapshot.devices, context)
       const missionEvidenceId = context.missionEvidenceId === undefined
         ? context.historyResetKey
         : context.missionEvidenceId
@@ -871,6 +880,8 @@ export async function startTrackingRuntime(
         }
       }
 
+      if (context.suppressOperationalPublication) return
+
       const operationalSnapshot = filterOperationalSnapshot(
         snapshot,
         context.historyResetKey ?? currentOperationalContextKey(),
@@ -884,12 +895,12 @@ export async function startTrackingRuntime(
       } else {
         publishOperationalSnapshot(operationalSnapshot)
       }
-      if (writeCache && context.suppressTrackingCache !== true) {
+      if (dependencies.writeCache !== false && context.suppressTrackingCache !== true) {
         void queueTrackingCacheWrite(snapshot)
       }
     },
     onSnapshot: async (snapshot, context) => {
-      applyParticipantRosterWithoutBlocking(snapshot.devices, context)
+      if (!context?.suppressOperationalPublication) applyParticipantRosterWithoutBlocking(snapshot.devices, context)
       const missionEvidenceId = context?.missionEvidenceId === undefined
         ? context?.historyResetKey ?? null
         : context.missionEvidenceId
@@ -897,11 +908,12 @@ export async function startTrackingRuntime(
       const operationalSnapshot = filterOperationalSnapshot(
         snapshot,
         context?.historyResetKey ?? currentOperationalContextKey(),
+        context?.suppressOperationalPublication !== true,
       )
       const sideEffects: Promise<unknown>[] = []
       let missionPersistenceResultIndex: number | null = null
       if (operationalSnapshot === null) {
-        deferredOperationalSnapshot = {
+        if (!context?.suppressOperationalPublication) deferredOperationalSnapshot = {
           snapshot,
           historyResetKey: context?.historyResetKey ?? null,
         }
@@ -920,10 +932,12 @@ export async function startTrackingRuntime(
             }, missionEvidenceId))
           }
         }
-        refreshTrackingStatus()
+        if (!context?.suppressOperationalPublication) refreshTrackingStatus()
       } else {
-        deferredOperationalSnapshot = null
-        publishOperationalSnapshot(operationalSnapshot)
+        if (!context?.suppressOperationalPublication) {
+          deferredOperationalSnapshot = null
+          publishOperationalSnapshot(operationalSnapshot)
+        }
         if (missionEvidenceAccepted) {
           const missionEvidenceSnapshot = filterMissionEvidenceSnapshot(snapshot)
           missionPersistenceResultIndex = sideEffects.length
@@ -937,7 +951,7 @@ export async function startTrackingRuntime(
         }
       }
       const shouldWriteTrackingCache =
-        writeCache && context?.suppressTrackingCache !== true
+        dependencies.writeCache !== false && context?.suppressTrackingCache !== true && !context?.suppressOperationalPublication
 
       if (shouldWriteTrackingCache) {
         sideEffects.push(queueTrackingCacheWrite(snapshot))
@@ -968,7 +982,41 @@ export async function startTrackingRuntime(
     onPollDiagnostic: (entry) => {
       dependencies.recordTrackingPollDiagnostic?.(entry)
     },
-  })
+  }
+  let poller = createOwnedPoller()
+
+  /** Gives old transports evidence settlement rights without publication rights. */
+  function createOwnedPoller(
+    nextDependencies = dependencies,
+    nextClient = client,
+  ): TrackingRuntimePoller {
+    const generation = pollerGeneration + 1
+    const candidate = nextDependencies.createPoller(nextClient, {
+      ...hooks,
+      onCurrentSnapshot: (snapshot, context, observation) => hooks.onCurrentSnapshot(snapshot, {
+        ...context, suppressOperationalPublication: generation !== pollerGeneration,
+      }, observation),
+      onSnapshot: (snapshot, context) => hooks.onSnapshot(snapshot, {
+        historyResetKey: context?.historyResetKey ?? null,
+        ...context, suppressOperationalPublication: generation !== pollerGeneration,
+      }),
+      onStatusChange: (status) => {
+        if (generation === pollerGeneration) hooks.onStatusChange(status)
+      },
+    })
+    pollerGeneration = generation
+    return candidate
+  }
+
+  /** Retains every retiring transport until final disposal joins its custody. */
+  function retirePoller(previous: TrackingRuntimePoller): void {
+    const retirement = Promise.resolve(previous.stop()).catch((error: unknown) => {
+      retirementFailure = error
+      logger.warn('Retiring tracking transport could not settle its evidence.', error)
+      refreshTrackingStatus()
+    }).finally(() => retiringPollers.delete(retirement))
+    retiringPollers.add(retirement)
+  }
 
   const unsubscribeMissionWake = useMissionStore.subscribe((state, previousState) => {
     const missionId = state.currentMission?.id ?? null
@@ -1036,12 +1084,61 @@ export async function startTrackingRuntime(
     unsubscribeParticipationScope()
     throw error
   }
-  return async () => {
+  const stop = (): Promise<void> => {
+    stopPromise ??= disposeRuntime()
+    return stopPromise
+  }
+  return Object.assign(stop, { reconfigure })
+
+  /** Changes transport settings while one runtime retains all evidence custody. */
+  async function reconfigure(next: StartTrackingRuntimeDependencies): Promise<void> {
+    if (!acceptingRuntimeUpdates) throw new Error('Tracking runtime has already been disposed.')
+    // Construct the client before retiring a working transport. A malformed
+    // configuration must not stop the existing current-position request path.
+    const nextClient = next.config === null ? null : next.createClient(next.config)
+    const previous = poller
+    const candidate = nextClient === null
+      ? { start: () => undefined, stop: async () => undefined }
+      : createOwnedPoller(next, nextClient)
+    dependencies = next
+    deferredOperationalSnapshot = null
+    client = nextClient
+    if (nextClient === null) {
+      pollerGeneration++
+    }
+    poller = candidate
+    retirePoller(previous)
+    latestTrackingStatus = {
+      mode: 'idle', consecutiveFailures: 0, recovered: false,
+      lastSuccessAt: latestTrackingStatus?.lastSuccessAt ?? null,
+      warning: nextClient === null ? (next.idleWarning ?? 'Tracking is not configured.')
+        : 'Reconnecting tracking — retained positions are last known until a fresh response arrives.',
+    }
+    dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
+    try {
+      poller.start()
+      if (nextClient !== null && next.missionModelEnabled === true) {
+        void preloadParticipantDiscovery(nextClient, next, logger, () =>
+          acceptingRuntimeUpdates && client === nextClient &&
+          runtimeGeneration === activeTrackingRuntimeGeneration)
+      }
+    } catch (error) {
+      latestTrackingStatus = { ...latestTrackingStatus, mode: 'offline', consecutiveFailures: 1,
+        warning: 'Tracking could not reconnect. Retry Reconnect and check the provider settings.' }
+      dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
+      throw error
+    }
+  }
+
+  /** Joins selected and retiring transports before releasing shared custody. */
+  async function disposeRuntime(): Promise<void> {
     acceptingRuntimeUpdates = false
     unsubscribeMissionWake()
     unsubscribeDeviceSelectionWake()
     unsubscribeParticipationScope()
     await poller.stop()
+    await Promise.all([...retiringPollers])
+    if (retirementFailure !== null) throw retirementFailure
     unregisterMissionEvidenceSettler()
     await deferredMissionEvidence.settleForStop((missionId) =>
       readParticipationScopeStatus() === 'ready' &&
@@ -1283,6 +1380,8 @@ export async function startTrackingRuntime(
   ): TrackingConnectionStatus {
     const warnings = [
       status.warning,
+      retirementFailure === null ? null
+        : 'TRACKING REPLACEMENT EVIDENCE UNSETTLED — current polling may continue, but previous evidence custody has not completed. Check diagnostics.',
       droppedPersistedBreadcrumbCount > 0
         ? formatDroppedPersistedBreadcrumbWarning(
             droppedPersistedBreadcrumbCount,
@@ -1389,11 +1488,15 @@ export async function startTrackingRuntime(
   function filterOperationalSnapshot(
     snapshot: TrackingSnapshot,
     contextKey = currentOperationalContextKey(),
+    retainCurrentPositions = true,
   ): TrackingSnapshot | null {
     if (dependencies.missionModelEnabled !== true) return snapshot
     if (readParticipationScopeStatus() !== 'ready') return null
     const scope = dependencies.readParticipationScope?.()
     if (scope === undefined) return null
+    // Retiring fallback/history callbacks may settle evidence, but cannot alter
+    // the last-known positions that a later selected response will retain.
+    if (!retainCurrentPositions) return scope.filterSnapshot(snapshot, now().toISOString())
     return operationalPositionRetention.apply(snapshot, scope, now(), contextKey)
   }
 

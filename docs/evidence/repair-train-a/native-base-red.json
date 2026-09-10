@@ -1,0 +1,282 @@
+{
+  "proof": "Development Electron40.10.0 pinned source; actual Settings Save Connect and Devices Reconnect; local synthetic HTTP provider holds one current response; actual bulk SQLite/custody/runtime/pollers; no importer/runtime/controller mocks; not packaged qualification",
+  "control": false,
+  "sessions": 5,
+  "currentRequests": 4,
+  "historyRequests": 1,
+  "emittedIds": [
+    1001,
+    1003,
+    1002,
+    1004
+  ],
+  "events": [
+    {
+      "event": "session",
+      "sessions": 1,
+      "at": 1789040312460
+    },
+    {
+      "event": "sent-current",
+      "id": 1001,
+      "at": 1789040312478
+    },
+    {
+      "event": "session",
+      "sessions": 2,
+      "at": 1789040314128
+    },
+    {
+      "event": "held-current",
+      "id": 1002,
+      "at": 1789040314134
+    },
+    {
+      "event": "session",
+      "sessions": 3,
+      "at": 1789040314654
+    },
+    {
+      "event": "sent-current",
+      "id": 1003,
+      "at": 1789040314656
+    },
+    {
+      "event": "release-old-current",
+      "at": 1789040315099
+    },
+    {
+      "event": "session",
+      "sessions": 4,
+      "at": 1789040315146
+    },
+    {
+      "event": "session",
+      "sessions": 5,
+      "at": 1789040315146
+    },
+    {
+      "event": "sent-current",
+      "id": 1004,
+      "at": 1789040315148
+    },
+    {
+      "event": "no-two-later-polls",
+      "requestsAtSettledRace": 4,
+      "currentRequests": 4,
+      "at": 1789040330932
+    },
+    {
+      "event": "session",
+      "sessions": 6,
+      "at": 1789040331554
+    },
+    {
+      "event": "session",
+      "sessions": 7,
+      "at": 1789040331554
+    },
+    {
+      "event": "sent-current",
+      "id": 1005,
+      "at": 1789040331556
+    },
+    {
+      "event": "sent-current",
+      "id": 1006,
+      "at": 1789040331556
+    },
+    {
+      "event": "sent-current",
+      "id": 1007,
+      "at": 1789040331561
+    },
+    {
+      "event": "sent-current",
+      "id": 1008,
+      "at": 1789040331566
+    },
+    {
+      "event": "sent-current",
+      "id": 1009,
+      "at": 1789040331569
+    },
+    {
+      "event": "sent-current",
+      "id": 1010,
+      "at": 1789040331574
+    },
+    {
+      "event": "sent-current",
+      "id": 1011,
+      "at": 1789040331578
+    },
+    {
+      "event": "sent-current",
+      "id": 1012,
+      "at": 1789040331581
+    },
+    {
+      "event": "sent-current",
+      "id": 1013,
+      "at": 1789040331584
+    },
+    {
+      "event": "sent-current",
+      "id": 1014,
+      "at": 1789040331591
+    },
+    {
+      "event": "sent-current",
+      "id": 1015,
+      "at": 1789040331594
+    },
+    {
+      "event": "sent-current",
+      "id": 1016,
+      "at": 1789040331598
+    },
+    {
+      "event": "sent-current",
+      "id": 1017,
+      "at": 1789040331602
+    },
+    {
+      "event": "sent-current",
+      "id": 1018,
+      "at": 1789040331614
+    },
+    {
+      "event": "sent-current",
+      "id": 1019,
+      "at": 1789040331625
+    },
+    {
+      "event": "sent-current",
+      "id": 1020,
+      "at": 1789040331750
+    },
+    {
+      "event": "sent-current",
+      "id": 1021,
+      "at": 1789040331758
+    },
+    {
+      "event": "sent-current",
+      "id": 1022,
+      "at": 1789040331765
+    },
+    {
+      "event": "sent-current",
+      "id": 1023,
+      "at": 1789040331774
+    },
+    {
+      "event": "sent-current",
+      "id": 1024,
+      "at": 1789040331781
+    },
+    {
+      "event": "sent-current",
+      "id": 1025,
+      "at": 1789040331788
+    },
+    {
+      "event": "sent-current",
+      "id": 1026,
+      "at": 1789040331796
+    },
+    {
+      "event": "sent-current",
+      "id": 1027,
+      "at": 1789040331803
+    },
+    {
+      "event": "sent-current",
+      "id": 1028,
+      "at": 1789040331810
+    },
+    {
+      "event": "sent-current",
+      "id": 1029,
+      "at": 1789040331817
+    },
+    {
+      "event": "sent-current",
+      "id": 1030,
+      "at": 1789040331825
+    },
+    {
+      "event": "sent-current",
+      "id": 1031,
+      "at": 1789040331832
+    },
+    {
+      "event": "sent-current",
+      "id": 1032,
+      "at": 1789040331842
+    },
+    {
+      "event": "sent-current",
+      "id": 1033,
+      "at": 1789040331849
+    },
+    {
+      "event": "sent-current",
+      "id": 1034,
+      "at": 1789040331858
+    },
+    {
+      "event": "sent-current",
+      "id": 1035,
+      "at": 1789040331872
+    },
+    {
+      "event": "sent-current",
+      "id": 1036,
+      "at": 1789040331881
+    },
+    {
+      "event": "sent-current",
+      "id": 1037,
+      "at": 1789040331889
+    },
+    {
+      "event": "sent-current",
+      "id": 1038,
+      "at": 1789040331901
+    },
+    {
+      "event": "sent-current",
+      "id": 1039,
+      "at": 1789040331910
+    },
+    {
+      "event": "sent-current",
+      "id": 1040,
+      "at": 1789040331918
+    },
+    {
+      "event": "sent-current",
+      "id": 1041,
+      "at": 1789040331927
+    },
+    {
+      "event": "sent-current",
+      "id": 1042,
+      "at": 1789040332015
+    }
+  ],
+  "persistedIds": [],
+  "health": {
+    "state": "healthy",
+    "reason": null,
+    "pendingCount": 0,
+    "corruptCount": 0,
+    "conflictCount": 0,
+    "rejectedCount": 0,
+    "affectedDeviceCount": 0,
+    "conflictDeviceIds": []
+  },
+  "errors": []
+}

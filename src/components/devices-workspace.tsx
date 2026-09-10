@@ -86,8 +86,9 @@ function DevicesWorkspaceContent(props: {
       activeDeviceIds,
       ingestHealth,
       attentionByDevice,
+      trackingStatus.mode,
     ),
-    [activeDeviceIds, attentionByDevice, hiddenDeviceIds, ingestHealth, trackingSnapshot],
+    [activeDeviceIds, attentionByDevice, hiddenDeviceIds, ingestHealth, trackingSnapshot, trackingStatus.mode],
   )
   const summary = useMemo(
     () => buildDeviceWorkspaceSummary(rows, trackingStatus),

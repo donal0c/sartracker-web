@@ -4,9 +4,17 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
 
 ## Where we are
 
+- **Repair Train A is active** on `codex/astra-repair-train-a`, fetched base
+  `083f5047`. AUD-13/02/03 repaired; final local source is 416 files / 4,285
+  tests, lint/build, two browser flows, packaged reconnect/custody and 100×5,000
+  renderer proof (maximum 67.4 ms, strict <200 ms). Exact-head review/CI pending.
+  Details and retained failures:
+  [Train A](../docs/assurance/findings/repair-train-a.md). DON-267/DON-269 own
+  repair; DON-254 remains qualification. No merge/release authority.
+
 - [PR #15](https://github.com/donal0c/sartracker-web/pull/15), Team Feedback
-  Batch 2 (DON-215), is prepared for merge; the PR records live readiness status.
-  Current master `d02d8a61` includes merged PRs #13 and #14. Both are integrated;
+  Batch 2 (DON-215), merged at current master `083f5047` on 2026-09-10.
+  Master includes merged PRs #13 and #14. Both are integrated;
   documentation conflicts retain the batch acceptance contract and safety queue.
   Review fixes cover per-object replay limitations, required hit-test visibility,
   hidden-marker creation protection, durable history request/completeness state,
@@ -27,7 +35,7 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   [Investigation](../docs/archive-ci-rendering-investigation.md) retains comparisons.
   This final documentation-only closeout reuses `e60dc43e` executable/test/workflow
   evidence. New geometry/E2E gate wiring stays deferred. The owned Linux diagnostic
-  container is stopped. Await user merge; no merge, release or deployment performed.
+  container is stopped. Release and field acceptance remain unestablished.
 
 - WAR-11A merged as [PR #14](https://github.com/donal0c/sartracker-web/pull/14)
   at `35cff87d`; final Linux CI `34413097593` passed. Builder 26.16.1 adds
@@ -67,7 +75,7 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
   fixes or explicit dispositions in the [complete ledger](../docs/breadcrumb-pr6-complete-review-ledger.md).
 - Documentation cleanup records the final testing approach below. Start new work
   from current `master`; the archive PR does not need another review cycle.
-- Next programme steps: finish PR #15 integration, independently qualify native
+- Next programme steps: complete Repair Train A, independently qualify native
   dependency/runtime upgrades, then BCP-17 final candidate qualification before
   DON-255 publication. Use the
   [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear

@@ -3,11 +3,53 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_STATIONARY_ATTENTION_CONFIG,
   evaluateStationaryAttention,
+  prepareStationaryAttention,
   sanitizeStationaryAttentionConfig,
 } from '../../src/features/tracking/stationary-attention'
 import type { NormalizedTrackingPosition } from '../../src/features/tracking/tracking-types'
 
 describe('stationary attention policy [DON-269]', () => {
+  it('matches full policy when prepared histories receive current fixes, outliers and reordered inputs [AUD-03]', () => {
+    const offsets = [0, 5, 20, 100, 600, 700, 0]
+    let seed = 17
+    for (let sample = 0; sample < 300; sample++) {
+      const history: NormalizedTrackingPosition[] = []
+      for (let index = 0; index < 12; index++) {
+        seed = (seed * 1664525 + 1013904223) >>> 0
+        const metres = offsets[seed % offsets.length]!
+        const next = fix(`${sample}-${index}`, index * 5, 52 + metres / 111195, -9.7,
+          index % 5 === 0 ? null : [4, 30, 300][seed % 3]!)
+        const extras = sample % 3 === 0 ? [{ ...next, timestamp: history.at(-1)?.timestamp ?? next.timestamp }]
+          : sample % 7 === 0 ? [{ ...next, timestamp: 'invalid' }] : [next]
+        expect(prepareStationaryAttention(history, DEFAULT_STATIONARY_ATTENTION_CONFIG)(extras))
+          .toEqual(evaluateStationaryAttention([...history, ...extras], DEFAULT_STATIONARY_ATTENTION_CONFIG))
+        history.push(next)
+      }
+    }
+  })
+
+  it('does not call an out-and-back route stationary [AUD-02]', () => {
+    const route = [0, 100, 200, 100, 0].map((metres, index) =>
+      fix(String(index), index * 5, 52 + metres / 111_195, -9.7, 4))
+    expect(evaluateStationaryAttention(route, DEFAULT_STATIONARY_ATTENTION_CONFIG).state)
+      .toBe('none')
+  })
+
+  it('starts a new episode after confirmed movement instead of reviving the old warning [AUD-02]', () => {
+    const route = [[0, 0], [20, 0], [25, 100], [30, 200], [35, 100], [40, 0], [60, 0]]
+      .map(([minutes, metres], index) => fix(String(index), minutes!, 52 + metres! / 111_195, -9.7, 4))
+    expect(evaluateStationaryAttention(route.slice(0, -1), DEFAULT_STATIONARY_ATTENTION_CONFIG).state)
+      .toBe('none')
+    expect(evaluateStationaryAttention(route, DEFAULT_STATIONARY_ATTENTION_CONFIG))
+      .toMatchObject({ state: 'attention', sinceTimestamp: route[5]!.timestamp, elapsedMs: 20 * 60_000 })
+  })
+
+  it('does not mistake cumulative slow walking for stationary jitter [AUD-02]', () => {
+    const route = [0, 10, 20, 30, 40].map((metres, index) =>
+      fix(String(index), index * 5, 52 + metres / 111_195, -9.7, 4))
+    expect(evaluateStationaryAttention(route, DEFAULT_STATIONARY_ATTENTION_CONFIG).state).toBe('none')
+  })
+
   it('fires on the second accepted fix after twenty minutes without meaningful movement', () => {
     expect(evaluateStationaryAttention([
       fix('a', 0, 52, -9.7, 4),

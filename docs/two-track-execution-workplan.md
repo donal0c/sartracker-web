@@ -161,6 +161,17 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
+### Repair Train A — tracking safety and liveness (2026-09-10)
+
+Active on `codex/astra-repair-train-a` from fetched `083f5047`; exactly
+AUD-13/02/03 under DON-267/DON-269 with DON-254 qualification. Reproduce
+native overlapping reloads and the stationary route/100×5,000 failures,
+repair with immutable evidence and current-position priority, then run
+focused/source/browser/native checks and independent exact-head reviews.
+The [evidence and review ledger](assurance/findings/repair-train-a.md) records
+accepted findings, failed attempts and proof limits. WAR-02A stays separate.
+No merge, release, deployment or new team questions are authorized.
+
 ### Team feedback batch 2 — acceptance contract (2026-09-09)
 
 Base fetched and pinned: `c51e4b3537c4b026f7079dd40193a894cedcdd9f`;

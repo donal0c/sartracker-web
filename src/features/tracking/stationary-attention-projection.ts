@@ -1,5 +1,6 @@
 import {
   evaluateStationaryAttention,
+  prepareStationaryAttention,
   type StationaryAttentionConfig,
   type StationaryAttentionEvaluation,
 } from './stationary-attention'
@@ -49,6 +50,10 @@ export function createStationaryAttentionProjector(
   let cachedBreadcrumbs: TrackingSnapshot['breadcrumbs'] | null = null
   let cachedHistoryByDevice = new Map<string, AcceptedFixHistory>()
   const cachedEvaluationByDevice = new Map<string, CachedDeviceEvaluation>()
+  const preparedByDevice = new Map<string, {
+    history: AcceptedFixHistory; configKey: string;
+    evaluate: ReturnType<typeof prepareStationaryAttention>;
+  }>()
 
   function project(
     snapshot: TrackingSnapshot,
@@ -67,7 +72,8 @@ export function createStationaryAttentionProjector(
       if (activeDeviceIdSet !== null && !activeDeviceIdSet.has(device.device_id)) continue
       const history = historyByDevice.get(device.device_id) ?? EMPTY_HISTORY
       const current = currentByDevice.get(device.device_id) ?? new Map()
-      const currentIdentityKey = [...current.keys()].sort().join('\u0000')
+      const currentIdentityKey = JSON.stringify([...current].map(([identity, fix]) =>
+        [identity, fix.lat, fix.lon, fix.accuracy, fix.timestamp]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))))
       const cached = cachedEvaluationByDevice.get(device.device_id)
       if (
         cached?.history === history &&
@@ -81,10 +87,15 @@ export function createStationaryAttentionProjector(
       const currentOnly = [...current].filter(
         ([identityKey]) => !history.identityKeys.has(identityKey),
       ).map(([, fix]) => fix)
-      const evaluation = evaluate(
-        currentOnly.length === 0 ? history.fixes : [...history.fixes, ...currentOnly],
-        config,
-      )
+      let prepared = preparedByDevice.get(device.device_id)
+      if (evaluate === evaluateStationaryAttention &&
+          (prepared?.history !== history || prepared.configKey !== configKey)) {
+        prepared = { history, configKey, evaluate: prepareStationaryAttention(history.fixes, config) }
+        preparedByDevice.set(device.device_id, prepared)
+      }
+      const evaluation = evaluate === evaluateStationaryAttention && prepared !== undefined
+        ? prepared.evaluate(currentOnly)
+        : evaluate(currentOnly.length === 0 ? history.fixes : [...history.fixes, ...currentOnly], config)
       cachedEvaluationByDevice.set(device.device_id, {
         history,
         currentIdentityKey,
@@ -125,32 +136,36 @@ export function createStationaryAttentionProjector(
       sharedSuffixLength += 1
     }
 
-    const removed = previous.slice(
+    const removed = new Set(previous.slice(
       sharedPrefixLength,
       previous.length - sharedSuffixLength,
-    )
-    const added = breadcrumbs.slice(
-      sharedPrefixLength,
-      breadcrumbs.length - sharedSuffixLength,
-    )
-    const changedDeviceIds = new Set([
-      ...removed.map((fix) => fix.device_id),
-      ...added.map((fix) => fix.device_id),
-    ])
+    ))
+    // Cancel unchanged references once before copying any per-device maps.
+    const addedByDevice = new Map<string, NormalizedTrackingPosition[]>()
+    for (let index = sharedPrefixLength; index < breadcrumbs.length - sharedSuffixLength; index++) {
+      const fix = breadcrumbs[index]!
+      if (removed.delete(fix)) continue
+      const group = addedByDevice.get(fix.device_id) ?? []
+      group.push(fix)
+      addedByDevice.set(fix.device_id, group)
+    }
+    const removedByDevice = new Map<string, NormalizedTrackingPosition[]>()
+    for (const fix of removed) {
+      const group = removedByDevice.get(fix.device_id) ?? []
+      group.push(fix)
+      removedByDevice.set(fix.device_id, group)
+    }
+    const changedDeviceIds = new Set([...removedByDevice.keys(), ...addedByDevice.keys()])
     const nextHistoryByDevice = new Map(cachedHistoryByDevice)
     for (const deviceId of changedDeviceIds) {
       const fixes = new Map(
         cachedHistoryByDevice.get(deviceId)?.fixesByIdentity ?? [],
       )
-      for (const fix of removed) {
-        if (fix.device_id === deviceId) {
-          fixes.delete(createTrackingPositionIdentityKey(fix))
-        }
+      for (const fix of removedByDevice.get(deviceId) ?? []) {
+        fixes.delete(createTrackingPositionIdentityKey(fix))
       }
-      for (const fix of added) {
-        if (fix.device_id === deviceId) {
-          fixes.set(createTrackingPositionIdentityKey(fix), fix)
-        }
+      for (const fix of addedByDevice.get(deviceId) ?? []) {
+        fixes.set(createTrackingPositionIdentityKey(fix), fix)
       }
       if (fixes.size === 0) {
         nextHistoryByDevice.delete(deviceId)
@@ -174,6 +189,7 @@ export function createStationaryAttentionProjector(
     cachedBreadcrumbs = null
     cachedHistoryByDevice = new Map()
     cachedEvaluationByDevice.clear()
+    preparedByDevice.clear()
   }
 
   return { project, reset }

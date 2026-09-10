@@ -1266,13 +1266,17 @@
             conservatively assumes the movement floor before applying the accuracy factor. One
             uncorroborated terminal movement fix preserves existing attention and is labelled
             unreliable until a second plausible movement fix corroborates it; corroborated meaningful
-            movement clears attention. Sparse evidence is treated as insufficient data rather than a
+            movement clears attention. Returning to an earlier position does not restore an old
+            stationary episode: a continuous new stationary interval must build first. Movement is
+            checked along the route as well as against the interval's starting position, so an
+            out-and-back walk is not treated as standing still. Sparse evidence is treated as insufficient data rather than a
             stationary claim.
           </p>
           <div class="note">
             <strong>Attention is not an emergency declaration.</strong> The amber ring is additive: the
             normal current-position marker stays visible and unchanged. Acknowledgement dims the
             presentation only; it does not edit evidence or erase the underlying stationary state.
+            A new stationary episode requires a new acknowledgement.
           </div>
           <figure class="screenshot">
             <img src="assets/tracking-stationary-attention-map.png" alt="Map showing an amber stationary-attention ring outside an unchanged current-position marker" />
@@ -1345,6 +1349,9 @@
             <strong>Breadcrumb Size</strong> control changes trail width in solid-line mode and dot diameter
             in breadcrumb-dot mode, so dense missions can be made calmer or more prominent without editing
             devices one by one. <strong>Reconnect</strong> reloads settings and forces the tracking provider to reconnect.
+            During reconnection, retained positions remain visible as <strong>Last known</strong>
+            and devices are not shown as Online until the replacement connection reports current data.
+            When the provider responds successfully, current updates resume automatically.
           </p>
           <h3>Adding Tracker Information</h3>
           <ol>

@@ -1,0 +1,15 @@
+
+Running 2 tests using 2 workers
+
+(node:63795) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:63796) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:63795) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:63796) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/stationary-attention.spec.ts:12:3 › Stationary attention [DON-269] › highlights, acknowledges, and clears attention without hiding the current fix (2.3s)
+  ✓  2 [chromium] › tests/e2e/stationary-attention.spec.ts:25:3 › Stationary attention [DON-269] › keeps an out-and-back route clear and raises a new warning only after a stationary interval [AUD-02] (2.5s)
+
+  2 passed (3.0s)
