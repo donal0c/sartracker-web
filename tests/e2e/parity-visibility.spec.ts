@@ -376,6 +376,7 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     await page.getByTestId('layer-visibility-feature-tracking-breadcrumb-alpha').check()
     await expect.poll(async () => (await readVisibilityState(page)).hiddenBreadcrumbDeviceIds).toEqual(['bravo'])
     await expect.poll(async () => (await readVisibilityState(page)).breadcrumbsVisible).toBe(true)
+    await expect(breadcrumbs).toHaveJSProperty('indeterminate', true)
     expect((await readVisibilityState(page)).hiddenDeviceIds).toEqual([])
     await page.getByTestId('layer-visibility-feature-tracking-breadcrumb-alpha').uncheck()
     await expect.poll(async () => (await readVisibilityState(page)).hiddenBreadcrumbDeviceIds.slice().sort()).toEqual(['alpha', 'bravo'])
@@ -385,9 +386,10 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     await page.getByTestId('layer-visibility-layer-tracking-devices').uncheck()
     await page.getByTestId('layer-visibility-feature-device-alpha').check()
     await expect.poll(async () => (await readVisibilityState(page)).hiddenDeviceIds).toEqual(['bravo'])
+    await expect(page.getByTestId('layer-visibility-layer-tracking-devices')).toHaveJSProperty('indeterminate', true)
     await expect(page.getByTestId('persistent-tracking-health')).toContainText('Current-location display disabled for 1 device')
     await page.getByTestId('mission-control-collapse-btn').click()
-    await page.screenshot({ path: 'tmp/batch2-visibility.png', fullPage: true })
+    await page.screenshot({ path: 'tmp/pr15-remediation-visibility.png', fullPage: true })
     await page.getByTestId('compact-mission-restore').click()
     await page.reload()
     await waitForShell(page)
@@ -609,6 +611,11 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     // Hazard marker must NOT be hidden
     expect(after.hiddenMarkerIds).not.toContain('marker-hazard-1')
 
+    // Remove the seeded route/ring at the same pixel so this exercises duplicate
+    // creation protection, rather than correctly selecting an overlapping drawing.
+    await page.getByTestId('layer-visibility-feature-drawing-drawing-line-1').click()
+    await page.getByTestId('layer-visibility-feature-drawing-drawing-ring-1').click()
+
     // AUD-07: the real rendered hit vanishes, and the fallback must not reopen it.
     await page.evaluate(async () => {
       const { useMarkerStore } = await import('/src/features/markers/marker-store.ts')
@@ -631,8 +638,8 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     await expect.poll(() => page.evaluate(async () => {
       const { useMarkerStore } = await import('/src/features/markers/marker-store.ts')
       return useMarkerStore.getState().dialog?.mode ?? null
-    })).not.toBe('edit')
-    if (await page.getByTestId('marker-close-btn').isVisible()) await page.getByTestId('marker-close-btn').click()
+    })).toBeNull()
+    await expect(page.getByText('A hidden marker is near this location.', { exact: false })).toBeVisible()
     await markerToggle.click()
     await expect(markerToggle).toBeChecked()
     await page.mouse.click(point.x, point.y)

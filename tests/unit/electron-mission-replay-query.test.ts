@@ -81,9 +81,17 @@ type ReplayChunk = {
 }
 
 describe('mission replay query [DON-278]', () => {
+  it('rejects object-detail types absent from the retained object schema', () => {
+    const db = createReplayDatabase()
+    expect(() => readMissionReplayObjectChunk(db, { missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1, replayGeneration: 0,
+      objectDetails: { objectType: 'helicopter', objectId: 'invalid', offset: 0 },
+    } as ReplayInput)).toThrow('Mission replay object detail request is invalid.')
+    db.close()
+  })
   it('streams exact large replay object state in bounded generation-bound fragments [DON-215]', () => {
     const db = createReplayDatabase()
-    const name = '山'.repeat(30_000)
+    // JSON prefix is nine code units: the first page ends between this emoji's surrogates.
+    const name = '🚁'.repeat(30_000)
     insertVersion(db, ['large', 'shape', 1, '2026-08-27T08:00:00Z', '2026-08-27T08:00:01Z', name])
     const input = { missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1, replayGeneration: 0 }
     let offset = 0
@@ -94,7 +102,7 @@ describe('mission replay query [DON-278]', () => {
       } as ReplayInput) as unknown as { objectDetails: { fragment: string; nextOffset: number | null } }
       expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThan(512 * 1024)
       expect(page.objectDetails.fragment.length).toBeLessThanOrEqual(16_384)
-      text += page.objectDetails.fragment
+      text += structuredClone(page.objectDetails.fragment)
       offset = page.objectDetails.nextOffset ?? -1
     } while (offset >= 0)
     expect(JSON.parse(text)).toEqual({ name })

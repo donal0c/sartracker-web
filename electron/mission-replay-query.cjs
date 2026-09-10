@@ -1012,7 +1012,7 @@ function normalizeReplayWorkerQuery(input, kind) {
 /** Validates the bounded identity and character offset for a retained object read. */
 function normalizeObjectDetails(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)
-    || !['marker', 'drawing', 'search_area', 'helicopter'].includes(value.objectType)
+    || !['marker', 'drawing', 'search_area'].includes(value.objectType)
     || typeof value.objectId !== 'string' || value.objectId.length < 1 || value.objectId.length > 200
     || !Number.isSafeInteger(value.offset) || value.offset < 0) {
     throw new Error('Mission replay object detail request is invalid.')

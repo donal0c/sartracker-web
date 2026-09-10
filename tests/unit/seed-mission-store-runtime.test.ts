@@ -65,8 +65,17 @@ describe('generateMissionStoreFixture [DON-242]', () => {
     expect(generated.manifest.bytes.byTable.positions).toBeGreaterThan(0)
     expect(generated.manifest.bytes.byTable.mission_events).toBeGreaterThan(0)
     expect(generated.manifest.database.sha256).toBe(
-      '3124fa534255987f67177d0f64b1132ad6140a88636a5c7796c59f6ce101f223',
+      '9b4fc843fe6454da17739c089f4d5b3faed975873e54fa7655bf94f6850596c9',
     )
+    const fixtureDatabase = new Database(outputPath, { readonly: true })
+    try {
+      // Additive request metadata changes the deterministic database bytes, not evidence rows.
+      expect(fixtureDatabase.prepare('PRAGMA table_info(tracking_history_checkpoints)').all())
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({ name: 'requested_from', notnull: 0 }),
+          expect.objectContaining({ name: 'requested_until', notnull: 0 }),
+        ]))
+    } finally { fixtureDatabase.close() }
     await expect(sha256File(outputPath)).resolves.toBe(generated.manifest.database.sha256)
     await expect(sha256File(copyToPath)).resolves.toBe(generated.manifest.database.sha256)
 

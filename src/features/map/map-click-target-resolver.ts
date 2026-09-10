@@ -1,5 +1,7 @@
 import type maplibregl from 'maplibre-gl'
-import { isDrawingVisible, isMarkerVisible, type LayerVisibilityState } from '../layers/layer-visibility-store'
+import type { LayerVisibilityState } from '../layers/layer-visibility-store'
+import { selectVisibleDrawings, selectVisibleMarkers } from '../layers/select-visible-map-evidence'
+import { getEffectiveGpxTracksVisible } from '../layers/effective-overlay-visibility'
 
 import { findNearestDrawingId } from '../drawings/drawing-hit-testing'
 import { findNearestGpxImportId } from '../gpx/gpx-hit-testing'
@@ -21,7 +23,8 @@ import { getInteractiveMarkerLayerIds, resolveClickedMarkerId } from './map-mark
  *                by an enclosing polygon or an overlapping line.
  *   2. drawing — search areas, range rings, bearing lines, search sectors,
  *                lines, text labels.
- *   3. empty   — no marker or drawing wins. A nearby GPX track is reported
+ *   3. hidden_evidence — a hidden marker prevents accidental duplicate creation.
+ *   4. empty   — no marker or drawing wins. A nearby GPX track is reported
  *                as a soft signal (`gpxNearbyImportId`) for callers that want
  *                to surface track context, but does not change the click
  *                outcome here. Empty clicks remain available for marker
@@ -32,7 +35,7 @@ import { getInteractiveMarkerLayerIds, resolveClickedMarkerId } from './map-mark
  * interaction hooks no longer race via `event.stopImmediatePropagation`.
  */
 
-export type MapClickTargetKind = 'marker' | 'drawing' | 'empty'
+export type MapClickTargetKind = 'marker' | 'drawing' | 'hidden_evidence' | 'empty'
 
 export type MapClickTarget = {
   readonly kind: MapClickTargetKind
@@ -41,7 +44,7 @@ export type MapClickTarget = {
 }
 
 type ResolveClickedMapTargetArgs = {
-  readonly visibility?: LayerVisibilityState
+  readonly visibility: LayerVisibilityState
   readonly map: maplibregl.Map
   readonly point: { readonly x: number; readonly y: number }
   readonly markers: readonly Marker[]
@@ -52,18 +55,19 @@ type ResolveClickedMapTargetArgs = {
 /**
  * Resolves which map feature, if any, an operator's click should select.
  *
- * Always tolerates malformed geometry — the function never throws. A click on
+ * Requires the current visibility state; callers cannot opt out of filtering.
+ * Always tolerates malformed geometry. A click on
  * malformed data degrades to "no marker / no drawing wins", and the GPX soft
  * signal is `null` rather than undefined.
  */
 export function resolveClickedMapTarget(args: ResolveClickedMapTargetArgs): MapClickTarget {
-  if (args.visibility !== undefined) {
-    const visibility = args.visibility
-    args = { ...args,
-      markers: visibility.groupVisibility.mapTools ? args.markers.filter((marker) => isMarkerVisible(visibility.markerTypeVisibility, visibility.hiddenMarkerIds, marker)) : [],
-      drawings: visibility.groupVisibility.mapTools ? args.drawings.filter((drawing) => isDrawingVisible(visibility.drawingTypeVisibility, visibility.hiddenDrawingIds, drawing)) : [],
-      gpxImports: visibility.groupVisibility.gpxTracks ? args.gpxImports.filter((item) => !visibility.hiddenGpxImportIds.includes(item.id)) : [],
-    }
+  const storedMarkers = args.markers
+  const visibility = args.visibility
+  args = { ...args,
+    markers: selectVisibleMarkers(args.markers, visibility),
+    drawings: selectVisibleDrawings(args.drawings, visibility),
+    gpxImports: getEffectiveGpxTracksVisible(visibility.groupVisibility)
+      ? args.gpxImports.filter((item) => !visibility.hiddenGpxImportIds.includes(item.id)) : [],
   }
   const markerId = pickMarkerId(args)
   const gpxNearbyImportId = pickGpxNearbyImportId(args)
@@ -77,7 +81,11 @@ export function resolveClickedMapTarget(args: ResolveClickedMapTargetArgs): MapC
     return { kind: 'drawing', id: drawingId, gpxNearbyImportId }
   }
 
-  return { kind: 'empty', id: null, gpxNearbyImportId }
+  const visibleMarkerIds = new Set(args.markers.map((marker) => marker.id))
+  const hiddenMarkerId = findNearestMarkerId(args.map, args.point,
+    storedMarkers.filter((marker) => !visibleMarkerIds.has(marker.id)))
+  // Hidden evidence is never selected, but its location must not silently open duplicate creation.
+  return { kind: hiddenMarkerId === null ? 'empty' : 'hidden_evidence', id: null, gpxNearbyImportId }
 }
 
 function pickMarkerId(args: ResolveClickedMapTargetArgs): string | null {
@@ -91,7 +99,7 @@ function pickMarkerId(args: ResolveClickedMapTargetArgs): string | null {
       : readMarkerIdFromRenderedFeatures(args.map, args.point, interactiveMarkerLayers)
 
   return resolveClickedMarkerId(
-    args.visibility === undefined || args.markers.some((marker) => marker.id === renderedMarkerId) ? renderedMarkerId : null,
+    args.markers.some((marker) => marker.id === renderedMarkerId) ? renderedMarkerId : null,
     findNearestMarkerId(args.map, args.point, args.markers),
   )
 }
@@ -107,7 +115,7 @@ function pickDrawingId(args: ResolveClickedMapTargetArgs): string | null {
       : readDrawingIdFromRenderedFeatures(args.map, args.point, interactiveDrawingLayers)
 
   const renderedId = resolveClickedDrawingId(renderedDrawingId)
-  if (renderedId !== null && (args.visibility === undefined || args.drawings.some((drawing) => drawing.id === renderedId))) {
+  if (renderedId !== null && args.drawings.some((drawing) => drawing.id === renderedId)) {
     return renderedId
   }
 

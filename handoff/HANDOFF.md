@@ -1,27 +1,36 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-09. Read after `CLAUDE.md`.
+Updated 2026-09-10. Read after `CLAUDE.md`.
 
 ## Where we are
 
 - [PR #15](https://github.com/donal0c/sartracker-web/pull/15), Team Feedback
-  Batch 2, is locally verified in `codex/team-ui-feedback-batch-2`,
-  pinned to fetched master `c51e4b3537c4b026f7079dd40193a894cedcdd9f`.
-  DON-215 and the workplan contain the contract. The implementation
-  includes independent category/device visibility, a read-only replay map and
-  the approved bounded native object-detail read (no schema/archive-format change).
-  AUD-07/AUD-14 were added by central triage: hidden-hit selection and truthful
-  history-failure wording both have current-code red/green regressions; the clue
-  hide/show browser control and joined poller/database warning proof pass.
-  Final source: 407 files / 4,179 tests passed. Affected browser: 37 passed;
-  drawings: 14 passed; final visibility recheck and independent capture review pass.
-  Five replay/search visual captures cleared independent review after rechecks.
-  Packaged macOS live/archive geometry proof passes; measured frame maximum
-  34.6 ms against the unchanged 200 ms gate. Both focused reviews cleared their
-  findings. Final-SHA attestations and exact-head CI remain required before
-  review-ready closeout. See [evidence](../docs/ui-feedback-batch-2-evidence.md).
-  The PR checks/body and DON-215 hold final-head CI and review receipts.
-  No merge, release or deployment is authorized.
+  Batch 2, remains draft on `codex/team-ui-feedback-batch-2` (DON-215).
+  Donal's review rejected the previous local all-clear at `2386e7db`.
+  Review remediation: per-object replay limitations; required hit-test
+  visibility and hidden-marker creation protection; durable checkpoint-based
+  coverage completeness; real loader/worker regressions; corrected optimistic
+  visibility cascade; mission-switch isolation; recovering map-source warnings.
+  Final stable source passes 409 files / 4,209 tests; lint/build and 31 affected
+  browser flows pass. Packaged macOS request-target restart/pause and live/archive
+  geometry proofs pass (50 ms frames); inspected map retains one offline warning.
+  Tracking CI-profile soak passes 8,664 positions/two launches, main max 42.4 ms;
+  it predates only final warning deduplication/formatting. Local synthetic proof.
+  Donal approved independent live Breadcrumbs/Mission History controls and durable
+  history request targets, including migration/writes. Both are implemented locally:
+  nullable additive checkpoint columns retain requested bounds before dispatch,
+  separate from acknowledged contiguous history. No-new-fix failure/restart and
+  independent-controls regressions pass. Focused reviewers cleared prefix continuity,
+  overlapping admission failures and tile recovery. Remediation is verified locally;
+  exact-head hosted verification remains separate. Gate wiring stays deferred.
+  Review details: `tmp/pr15-review/`.
+  CI `34398992302` attempts 1/2 failed hosted x64 archive continuity at
+  242/210 ms; this remains unresolved, with the 200 ms gate unchanged.
+  Same-head macOS lifecycle passed (66 ms); isolated four-CPU Linux ARM64 passed
+  (173 ms), which does not establish hosted x64 correctness or causality.
+  The owned `sar-batch2-linux` container is stopped; receipts are in
+  `tmp/batch2-linux-source` and the [evidence](../docs/ui-feedback-batch-2-evidence.md).
+  No blind CI reruns, merge, release or deployment.
 
 - [PR #12](https://github.com/donal0c/sartracker-web/pull/12), WAR-04B, now
   integrates master `9c73c62d` at Donal's request. Its audit/package inventory

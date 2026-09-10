@@ -331,7 +331,7 @@ function projectReplayQueryForIpc(input, kind) {
 /** Copies only bounded retained-object fragment request fields. */
 function projectReplayObjectDetails(input) {
   if (input === null || typeof input !== 'object' || Array.isArray(input)
-    || !['marker', 'drawing', 'search_area', 'helicopter'].includes(input.objectType)
+    || !['marker', 'drawing', 'search_area'].includes(input.objectType)
     || typeof input.objectId !== 'string' || input.objectId.length < 1 || input.objectId.length > 200
     || !Number.isSafeInteger(input.offset) || input.offset < 0) {
     throw new Error('Mission replay object detail request is invalid.')

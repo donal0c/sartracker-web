@@ -33,17 +33,13 @@ it('must revoke all-mission-history completion when actual history reconciliatio
   expect(schema).toBeDefined()
   database.exec(schema)
   database.exec(`
-    CREATE TABLE tracking_history_checkpoints (
-      mission_id TEXT NOT NULL, device_id TEXT NOT NULL, history_from TEXT NOT NULL,
-      reconciled_until TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (mission_id, device_id)
-    );
-    INSERT INTO tracking_history_checkpoints VALUES ('mission-1', '1', '2026-08-24T08:00:00.000Z', '2026-08-24T08:00:00.000Z', '2026-08-24T08:00:00.000Z');
+    INSERT INTO tracking_history_checkpoints VALUES ('mission-1', '1', '2026-08-24T08:00:00.000Z', '2026-08-24T09:00:00.000Z', '2026-08-24T09:00:00.000Z', '2026-08-24T09:00:00.000Z', '2026-08-24T08:00:00.000Z');
     INSERT INTO devices VALUES ('device-row-1', 'mission-1', '1');
     INSERT INTO mission_participants VALUES ('participant-1', 'mission-1', 'device', '1', NULL, NULL);
     INSERT INTO participant_backfill_checkpoints VALUES ('mission-1', 1);
     INSERT INTO positions VALUES ('position-1', 'mission-1', '1', '1', '2026-08-24T08:00:00.000Z', 52, -9.7, 'fix');
-    INSERT INTO positions VALUES ('position-100', 'mission-1', '1', '100', '2026-08-24T10:00:00.000Z', 52.001, -9.701, 'fix');
-    INSERT INTO coverage_chunks VALUES ('mission-1', '1', 'unassigned', '', 1, 1, 2, 'digest', '2026-08-24T08:00:00.000Z', '2026-08-24T10:00:00.000Z', '2026-08-24T10:00:00.000Z');
+    INSERT INTO positions VALUES ('position-100', 'mission-1', '1', '100', '2026-08-24T09:00:00.000Z', 52.001, -9.701, 'fix');
+    INSERT INTO coverage_chunks VALUES ('mission-1', '1', 'unassigned', '', 1, 1, 2, 'digest', '2026-08-24T08:00:00.000Z', '2026-08-24T09:00:00.000Z', '2026-08-24T09:00:00.000Z');
     UPDATE coverage_missions SET enumerated = 1;
   `)
   const readManifest = () => readCoverageManifestSnapshot(database, { missionId: 'mission-1' }) as CoverageManifest
@@ -77,22 +73,30 @@ it('must revoke all-mission-history completion when actual history reconciliatio
   if (delivery.state.status !== 'inactive' && delivery.state.tileCatalog !== null) {
     await delivery.controller?.notifyCatalogApplied(delivery.state.tileCatalog)
   }
-  await vi.waitFor(() => expect(useCoverageStore.getState().state.status).toBe('complete'))
+  await vi.waitFor(() => expect(useCoverageStore.getState().state).toMatchObject({
+    status: 'complete', deliveredFixCount: 2, totalFixCount: 2,
+  }))
 
+  let pollingMode: 'active' | 'paused' | 'idle' = 'active'
   const getBreadcrumbs = vi.fn(async () => { throw new Error('Provider history unavailable') })
   const poller = createPollingManager({
     authenticate: vi.fn(async () => undefined),
     getDevices: vi.fn(async () => [{ device_id: '1', name: 'Alpha', status: 'online' as const,
       last_seen: null, unique_id: null, category: null, group_id: null }]),
     getCurrentPositions: vi.fn(async () => [{ id: '100', device_id: '1', lat: 52.001, lon: -9.701,
-      timestamp: '2026-08-24T10:00:00.000Z', timestamp_source: 'fix' as const, fix_time_unverified: false,
+      timestamp: '2026-08-24T09:00:00.000Z', timestamp_source: 'fix' as const, fix_time_unverified: false,
       altitude: null, speed: null, battery: null, accuracy: 4, source: 'traccar', data_origin: 'live' as const,
       cache_age_seconds: null, device_cache_stale: false }]),
     getBreadcrumbs,
   }, {
     intervalMs: 5000, staleThresholdMs: 60000,
     getHistoryResetKey: () => 'mission-1',
+    getPollingMode: () => pollingMode,
     getInitialBreadcrumbFrom: () => new Date('2026-08-24T08:00:00.000Z'),
+    persistHistoryRequest: async (request) => {
+      database.prepare('UPDATE tracking_history_checkpoints SET requested_until = MAX(requested_until, ?) WHERE mission_id = ? AND device_id = ?')
+        .run(request.requestedUntil, request.expectedMissionId, request.deviceId)
+    },
     getInitialHistoryCheckpoints: async () => {
       const checkpoint = database.prepare('SELECT history_from, reconciled_until FROM tracking_history_checkpoints WHERE mission_id = ? AND device_id = ?').get('mission-1', '1')
       return { '1': { historyFrom: checkpoint.history_from, reconciledUntil: checkpoint.reconciled_until } }
@@ -110,23 +114,37 @@ it('must revoke all-mission-history completion when actual history reconciliatio
   const html = renderToStaticMarkup(createElement(CoverageStatusPanel, {
     state: coverage, omittedDeviceCount: 0, omittedOutingCount: 0, unassignedOmitted: false,
     onRetry: () => undefined, onInspectExactFixes: () => undefined,
-    retrievalWarning: useTrackingStore.getState().status.warning,
   }))
-  console.log('AUDIT_HISTORY_FAILURE_COMPLETE', JSON.stringify({
-    tracking: useTrackingStore.getState().status,
-    currentFixCount: useTrackingStore.getState().snapshot.positions.length,
-    failedHistoryReads: getBreadcrumbs.mock.calls.length,
-    unfinishedFrontier: database.prepare('SELECT history_from, reconciled_until FROM tracking_history_checkpoints').get(),
-    claim: await missionStore.readCoverageClaim({ missionId: 'mission-1', selectedKeys: readManifest().chunks.map(({key}) => key) }),
-    coverageStatus: coverage.status,
-    saysAllMissionHistoryShown: html.includes('All mission history shown'),
-  }))
-  database.exec(`UPDATE participant_backfill_checkpoints SET completed = 0`)
-  await useCoverageStore.getState().controller?.refresh()
-  expect(useCoverageStore.getState().state).toMatchObject({ status: 'partial', blockers: ['backfill_incomplete'] })
-  console.log('AUDIT_HISTORY_FAILURE_CONTROL', 'An unfinished selection backfill correctly blocks completion; normal history failure does not.')
-  expect(coverage.status).toBe('complete') // Saved-evidence arithmetic remains unchanged.
+  expect(coverage).toMatchObject({ status: 'partial', deliveredFixCount: 2, totalFixCount: 2 })
   expect(html).not.toContain('All mission history shown')
-  expect(html).toContain('history incomplete for Alpha')
+  expect(html).toContain('Saved history has not been reconciled through the mission window')
   expect(useTrackingStore.getState().snapshot.positions).toHaveLength(1)
+
+  applyTrackingStatus({ ...useTrackingStore.getState().status, warning: 'CONNECTION RESTORED' })
+  await useCoverageStore.getState().controller?.refresh()
+  expect(useCoverageStore.getState().state).toMatchObject({ status: 'partial', blockers: ['history_reconciliation_incomplete'] })
+  for (const mode of ['paused', 'idle'] as const) {
+    pollingMode = mode
+    poller.requestPollNow()
+    await vi.waitFor(() => expect(useTrackingStore.getState().status.warning).toBe(mode === 'paused'
+      ? 'Live refresh suspended while mission is paused.' : 'Waiting for an active mission.'))
+    await useCoverageStore.getState().controller?.refresh()
+    expect(useCoverageStore.getState().state).toMatchObject({ status: 'partial', blockers: ['history_reconciliation_incomplete'] })
+  }
+  database.exec(`UPDATE mission_participants SET removed_at='2026-08-24T10:00:00.000Z'`)
+  await poller.stop()
+  stopCoverage()
+  const stopReopened = startCoverageRuntime(missionStore, { enabled: true, rendererGeneration: 'reopened',
+    subscribeCoverageChanged: () => () => undefined, schedulePeriodicRefresh: () => () => undefined })
+  cleanups.push(stopReopened)
+  await vi.waitFor(() => {
+    const state = useCoverageStore.getState().state
+    expect(state.status !== 'inactive' && state.tileCatalog !== null).toBe(true)
+  })
+  const reopened = useCoverageStore.getState()
+  if (reopened.state.status !== 'inactive' && reopened.state.tileCatalog) await reopened.controller?.notifyCatalogApplied(reopened.state.tileCatalog)
+  await vi.waitFor(() => expect(useCoverageStore.getState().state).toMatchObject({ status: 'partial', blockers: ['history_reconciliation_incomplete'] }))
+  database.exec(`UPDATE tracking_history_checkpoints SET reconciled_until='2026-08-24T10:00:00.000Z'`)
+  await useCoverageStore.getState().controller?.refresh()
+  expect(useCoverageStore.getState().state).toMatchObject({ status: 'complete', blockers: [], deliveredFixCount: 2, totalFixCount: 2 })
 }, 10000)

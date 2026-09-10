@@ -227,6 +227,7 @@ type ElectronMissionStore = {
   }>
   readonly persistTrackingHistoryBatch: (input: {
     readonly mission_id: string
+    readonly requests?: readonly { readonly device_id: string; readonly history_from: string; readonly requested_until: string }[]
     readonly positions: readonly {
       readonly source_position_id?: string
       readonly device_id: string
@@ -239,6 +240,7 @@ type ElectronMissionStore = {
       readonly device_id: string
       readonly history_from: string
       readonly reconciled_until: string
+      readonly reconciled_from?: string
     }[]
   }) => Promise<unknown>
   readonly listTrackingHistoryCheckpoints: (missionId: string) => Promise<readonly {
@@ -2642,7 +2644,17 @@ describe('electron mission store', () => {
       }],
     })
     store.close()
+    const legacyDb = new Database(path.join(userDataPath!, 'mission-store.sqlite'))
+    try {
+      legacyDb.exec('ALTER TABLE tracking_history_checkpoints DROP COLUMN requested_from')
+      legacyDb.exec('ALTER TABLE tracking_history_checkpoints DROP COLUMN requested_until')
+    } finally { legacyDb.close() }
     store = createElectronMissionStore({ userDataPath: userDataPath! })
+    const migratedDb = new Database(path.join(userDataPath!, 'mission-store.sqlite'))
+    try {
+      expect(migratedDb.prepare('SELECT requested_from, requested_until FROM tracking_history_checkpoints WHERE mission_id = ?').get(mission.id))
+        .toEqual({ requested_from: null, requested_until: null })
+    } finally { migratedDb.close() }
 
     await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
       {
@@ -2652,9 +2664,29 @@ describe('electron mission store', () => {
         reconciled_until: '2026-08-08T02:00:00.000Z',
       },
     ])
+    await store.persistTrackingHistoryBatch({ mission_id: mission.id, positions: [], checkpoints: [], requests: [{
+      device_id: 'tracker-1', history_from: '2026-08-08T00:00:00.000Z', requested_until: '2026-08-08T03:00:00.000Z',
+    }] })
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    const targetDb = new Database(path.join(userDataPath!, 'mission-store.sqlite'))
+    try {
+      expect(targetDb.prepare('SELECT requested_until, reconciled_until FROM tracking_history_checkpoints WHERE mission_id = ?').get(mission.id))
+        .toEqual({ requested_until: '2026-08-08T03:00:00.000Z', reconciled_until: '2026-08-08T02:00:00.000Z' })
+    } finally { targetDb.close() }
+    await store.persistTrackingHistoryBatch({ mission_id: mission.id, positions: [], checkpoints: [{
+      device_id: 'tracker-1', history_from: '2026-08-08T00:00:00.000Z',
+      reconciled_from: '2026-08-08T02:30:00.000Z', reconciled_until: '2026-08-08T03:00:00.000Z',
+    }] })
+    expect((await store.listTrackingHistoryCheckpoints(mission.id))[0]?.reconciled_until).toBe('2026-08-08T02:00:00.000Z')
+    await store.persistTrackingHistoryBatch({ mission_id: mission.id, positions: [], checkpoints: [{
+      device_id: 'tracker-1', history_from: '2026-08-08T00:00:00.000Z',
+      reconciled_from: '2026-08-08T02:00:00.000Z', reconciled_until: '2026-08-08T03:00:00.000Z',
+    }] })
+    expect((await store.listTrackingHistoryCheckpoints(mission.id))[0]?.reconciled_until).toBe('2026-08-08T03:00:00.000Z')
   })
 
-  it('widens a history checkpoint only after the new prefix reaches the stored origin', async () => {
+  it('retains contiguous earlier-prefix progress without claiming an unfilled suffix', async () => {
     store = await createStore()
     const mission = await store.createMission({
       name: 'Expanded Participation History Mission',
@@ -2683,13 +2715,26 @@ describe('electron mission store', () => {
       checkpoints: [{
         device_id: 'tracker-1',
         history_from: '2026-08-08T08:00:00.000Z',
+        reconciled_from: '2026-08-08T13:55:00.000Z',
+        reconciled_until: '2026-08-08T14:05:00.000Z',
+      }],
+    })
+    expect((await store.listTrackingHistoryCheckpoints(mission.id))[0]?.history_from).toBe('2026-08-08T12:00:00.000Z')
+
+    await store.persistTrackingHistoryBatch({
+      mission_id: mission.id,
+      positions: [],
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-08T08:00:00.000Z',
+        reconciled_from: '2026-08-08T08:00:00.000Z',
         reconciled_until: '2026-08-08T10:00:00.000Z',
       }],
     })
     await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
       expect.objectContaining({
-        history_from: '2026-08-08T12:00:00.000Z',
-        reconciled_until: '2026-08-08T14:00:00.000Z',
+        history_from: '2026-08-08T08:00:00.000Z',
+        reconciled_until: '2026-08-08T10:00:00.000Z',
       }),
     ])
 
@@ -2699,13 +2744,14 @@ describe('electron mission store', () => {
       checkpoints: [{
         device_id: 'tracker-1',
         history_from: '2026-08-08T08:00:00.000Z',
+        reconciled_from: '2026-08-08T10:00:00.000Z',
         reconciled_until: '2026-08-08T12:00:00.000Z',
       }],
     })
     await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
       expect.objectContaining({
         history_from: '2026-08-08T08:00:00.000Z',
-        reconciled_until: '2026-08-08T14:00:00.000Z',
+        reconciled_until: '2026-08-08T12:00:00.000Z',
       }),
     ])
   })

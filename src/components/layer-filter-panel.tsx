@@ -14,6 +14,7 @@ import {
 import {
   buildLayerInspectionRows,
   getLayerNodeCountLabel,
+  getLayerVisibilityCheckboxState,
   toLayerTreeTestId,
 } from '../features/layers/layer-panel-model'
 import { useLayerTreeUiStore } from '../features/layers/layer-tree-ui-store'
@@ -227,6 +228,7 @@ function TreeNodeRow(props: {
     },
   )
   const rowSelected = props.selectedNodeId === props.node.id
+  const visibilityCheckbox = getLayerVisibilityCheckboxState(findCatalogNode(props.root, props.node.id) ?? props.node)
 
   return (
     <div data-testid={`layer-branch-${toLayerTreeTestId(props.node.id)}`}>
@@ -252,7 +254,9 @@ function TreeNodeRow(props: {
 
         {props.node.kind !== 'root' ? (
           <input
-            checked={props.node.isVisible}
+            checked={visibilityCheckbox.checked}
+            aria-checked={visibilityCheckbox.mixed ? 'mixed' : visibilityCheckbox.checked}
+            ref={(input) => { if (input !== null) input.indeterminate = visibilityCheckbox.mixed }}
             className="h-5 w-5 flex-shrink-0 rounded border-stone-600 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
             data-testid={`layer-visibility-${toLayerTreeTestId(props.node.id)}`}
             onChange={(event) =>

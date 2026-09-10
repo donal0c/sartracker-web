@@ -32,6 +32,7 @@ export async function loadReplayMap(input: {
   const publishProgress = () => input.publish({ status: 'loading', data: null,
     loaded: tracks.length + objects.length, total, message: 'Loading selected-time map evidence…' })
   try {
+    if (!input.isCurrent()) return
     publishProgress()
     let cursor = first.nextCursor
     const seen = new Set<string>()
@@ -63,7 +64,8 @@ export async function loadReplayMap(input: {
     }
     for (let index = 0; index < objects.length && input.isCurrent(); index += 1) {
       const object = objects[index]!
-      if (object.state._state_details_omitted !== true || !['marker', 'drawing', 'search_area', 'helicopter'].includes(object.object_type)) continue
+      if (object.state._state_details_omitted !== true || (object.object_type !== 'marker'
+        && object.object_type !== 'drawing' && object.object_type !== 'search_area')) continue
       if (!input.store.readMissionReplayObjectChunk) throw new Error('Full map geometry is unavailable.')
       let offset: number | null = 0
       let totalCharacters: number | undefined
@@ -102,8 +104,9 @@ export async function loadReplayMap(input: {
     const limitations = first.limitations.filter((entry) => !['large_object_details_summarized', 'undated_gpx_static', 'outing_filter_choices_paged', 'static_gpx_summary_truncated'].includes(entry.code))
     const data = await (input.project ?? projectReplayMapAsync)(tracks, objects, input.isCurrent)
     if (!input.isCurrent()) return
-    input.publish({ status: limitations.length ? 'partial' : 'ready', data, loaded: total, total,
-      message: limitations.length ? 'Map loaded with evidence limitations; see the warnings below.' : 'Selected-time dated evidence loaded. Undated GPX is excluded from this timeline.' })
+    const hasLimitations = limitations.length > 0 || data.limitations.length > 0
+    input.publish({ status: hasLimitations ? 'partial' : 'ready', data, loaded: total, total,
+      message: hasLimitations ? 'Map loaded with evidence limitations; see the warnings below.' : 'Selected-time dated evidence loaded. Undated GPX is excluded from this timeline.' })
   } catch (error) {
     if (input.isCurrent()) input.publish({ status: 'error', data: null, loaded: tracks.length + objects.length, total,
       message: error instanceof Error ? error.message : 'Replay map could not be loaded.' })

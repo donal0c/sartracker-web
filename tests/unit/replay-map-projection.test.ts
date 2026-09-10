@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { projectReplayMap } from '../../src/features/mission-review/replay-map-projection'
 
 describe('replay map projection [DON-215]', () => {
+  it.each([
+    { type: 'unknown_kind', geometry_json: JSON.stringify({ type: 'Point', coordinates: [-9, 52] }) },
+    { type: 'line', geometry_json: JSON.stringify({ type: 'LineString', coordinates: [[-9, 999], [-9, 52]] }) },
+    { type: 'line', geometry_json: JSON.stringify({ type: 'GeometryCollection', geometries: [] }) },
+  ])('retains valid evidence when one drawing cannot be projected: $type $geometry_json', (state) => {
+    const result = projectReplayMap([
+      { evidence_id: 'fix', source_type: 'traccar_fix', track_id: 'alpha', lat: 52, lon: -9, effective_at: '2026-09-09T10:00:00Z' },
+    ], [
+      { object_type: 'drawing', object_id: 'bad-drawing', operation: 'created', state },
+      { object_type: 'marker', object_id: 'clue', operation: 'created', state: { id: 'clue', type: 'clue', name: 'Boot Print', lat: 52, lon: -9 } },
+    ])
+    expect(result.features.map((feature) => feature.properties?.category)).toEqual(['breadcrumbs', 'current', 'objects'])
+    expect(result.limitations).toEqual([expect.objectContaining({ evidenceId: 'bad-drawing', code: 'object_not_projected' })])
+  })
   it('preserves distinct retained LPB percentile labels', () => {
     const polygon = [[[-9.7,52],[-9.69,52],[-9.69,52.01],[-9.7,52]]]
     const result = projectReplayMap([], [{ object_type: 'drawing', object_id: 'rings', operation: 'created', state: {
@@ -42,6 +56,7 @@ describe('replay map projection [DON-215]', () => {
       name: 'Search area', geometry_json: JSON.stringify({ type: 'Polygon', coordinates: [[[-9,52],[-9.1,52],[-9.1,52.1],[-9,52]]] }),
     } }])
     expect(projection.features[0]?.geometry.type).toBe('Polygon')
-    expect(() => projectReplayMap([{ evidence_id: 'bad', source_type: 'traccar_fix', track_id: 'x', lat: NaN, lon: -9, effective_at: '2026-09-09T10:00:00Z' }], [])).toThrow(/coordinate/)
+    expect(projectReplayMap([{ evidence_id: 'bad', source_type: 'traccar_fix', track_id: 'x', lat: NaN, lon: -9, effective_at: '2026-09-09T10:00:00Z' }], []).limitations)
+      .toEqual([expect.objectContaining({ code: 'track_not_projected', evidenceId: 'bad' })])
   })
 })

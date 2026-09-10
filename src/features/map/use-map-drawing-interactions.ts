@@ -13,7 +13,8 @@ import {
 } from './map-drawing-interactions'
 import { createOperationalCrosshairCursor } from './map-cursors'
 import { resolveClickedMapTarget } from './map-click-target-resolver'
-import { isDrawingVisible, useLayerVisibilityStore } from '../layers/layer-visibility-store'
+import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
+import { selectVisibleDrawings } from '../layers/select-visible-map-evidence'
 import {
   createTextLabelDragState,
   resolveDraggableTextLabelId,
@@ -155,7 +156,7 @@ export function useMapDrawingInteractions(
       if (activeTool === 'select' && interactionMode === 'idle') {
         const visibility = useLayerVisibilityStore.getState()
         const labelId = resolveDraggableTextLabelId({
-          drawings: visibility.groupVisibility.mapTools ? drawings.filter((drawing) => isDrawingVisible(visibility.drawingTypeVisibility, visibility.hiddenDrawingIds, drawing)) : [],
+          drawings: selectVisibleDrawings(drawings, visibility),
           point: resolved.point,
           project: (coordinate) => map.project(coordinate),
           renderedLabelDrawingIds: readRenderedTextLabelDrawingIds(map, resolved.point),

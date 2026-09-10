@@ -10,6 +10,7 @@ const COVERAGE_BLOCKERS = new Set([
   'not_enumerated',
   'pending_invalidation',
   'backfill_incomplete',
+  'history_reconciliation_incomplete',
   'chunk_missing',
   'chunk_not_fresh',
 ])

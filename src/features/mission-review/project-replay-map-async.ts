@@ -1,6 +1,11 @@
 import type { MissionReplayReadResult, MissionReplayTrackRecord } from '../../infrastructure/mission-store/tauri-mission-store'
+import type { ReplayProjectionLimitation } from './replay-map-projection'
 
-export type ReplayMapProjection = { readonly blob: Blob; readonly bounds: readonly [number, number, number, number] | null }
+export type ReplayMapProjection = {
+  readonly blob: Blob
+  readonly bounds: readonly [number, number, number, number] | null
+  readonly limitations: readonly ReplayProjectionLimitation[]
+}
 
 /** Feeds bounded batches to a disposable worker without blocking current-position rendering. */
 export async function projectReplayMapAsync(tracks: readonly MissionReplayTrackRecord[], objects: MissionReplayReadResult['objects'], isCurrent: () => boolean): Promise<ReplayMapProjection> {
@@ -17,7 +22,9 @@ export async function projectReplayMapAsync(tracks: readonly MissionReplayTrackR
       cleanup()
       if (event.data.error) reject(new Error(event.data.error))
       else if (!finish && event.data.ready === true) resolve(null)
-      else if (finish && event.data.blob instanceof Blob && (event.data.bounds === null ||
+      else if (finish && event.data.blob instanceof Blob && Array.isArray(event.data.limitations)
+        && event.data.limitations.every((entry) => entry && typeof entry.evidenceId === 'string'
+          && typeof entry.message === 'string' && ['object_not_projected', 'track_not_projected'].includes(entry.code)) && (event.data.bounds === null ||
         (Array.isArray(event.data.bounds) && event.data.bounds.length === 4 && event.data.bounds.every(Number.isFinite)))) resolve(event.data)
       else reject(new Error('Replay map worker returned invalid evidence.'))
     }

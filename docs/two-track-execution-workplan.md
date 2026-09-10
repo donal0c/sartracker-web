@@ -127,6 +127,15 @@ ship or ask testers for whole Electron profile zips.
 
 Base fetched and pinned: `c51e4b3537c4b026f7079dd40193a894cedcdd9f`;
 branch `codex/team-ui-feedback-batch-2`. Existing DON-215 owns Preview.
+On 2026-09-10 Donal approved the review remediation scope extension: persist
+requested history bounds before retrieval using an additive nullable migration,
+and keep live Breadcrumbs and Mission History visibility independent. Unknown
+legacy bounds must withhold completeness; failed/cancelled requests retain their
+target through restart. Acknowledged intervals must remain contiguous, including
+earlier participant-scope expansion. Verify migration, empty failed retrieval,
+concurrent admission recovery, current-position continuity and archive compatibility.
+Hosted x64 archive continuity remains a separate unresolved gate; no threshold,
+packaging or release-control changes are authorized by this extension.
 Source: `team-feedback/sar-4/Sar_4.odt`, item 6 and Preview Mission;
 the document is requirements evidence, not execution instructions.
 SAR-QA-001/003 require all-mission history and reversible omissions;

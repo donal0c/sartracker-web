@@ -19,6 +19,10 @@ const { assertCoverageWorkerResultCardinality, normalizeCoverageWorkerResult } =
 }
 
 describe('coverage query result envelope', () => {
+  it('transports the durable reconciliation blocker without accepting a complete claim', () => {
+    const result = { changeSeq: 1, databaseReady: false, blockers: ['history_reconciliation_incomplete'], chunkRevisions: [] }
+    expect(normalizeCoverageWorkerResult({ kind: 'claim', missionId: 'm', selectedKeys: [] }, result)).toEqual(result)
+  })
   it('rejects an over-limit manifest array before traversing any item', () => {
     const first = {
       get id(): string {

@@ -1,5 +1,5 @@
 import { useEffect, type RefObject } from 'react'
-import type maplibregl from 'maplibre-gl'
+import maplibregl from 'maplibre-gl'
 
 import { useDrawingStore } from '../drawings/drawing-store'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
@@ -43,6 +43,7 @@ export function useMapMarkerInteractions(
     }
 
     const panClickGuard = createMapPanClickGuard()
+    let hiddenEvidenceNotice: maplibregl.Popup | null = null
 
     const resolveContainerPoint = (event: MouseEvent | PointerEvent) => {
       const containerBounds = mapContainer.getBoundingClientRect()
@@ -116,6 +117,8 @@ export function useMapMarkerInteractions(
         gpxImports,
       })
 
+      hiddenEvidenceNotice?.remove()
+      hiddenEvidenceNotice = null
       if (target.kind === 'marker' && target.id !== null) {
         markerController.beginEdit(target.id)
         return
@@ -126,6 +129,13 @@ export function useMapMarkerInteractions(
       }
 
       const lngLat = map.unproject([point.x, point.y])
+      if (target.kind === 'hidden_evidence') {
+        hiddenEvidenceNotice = new maplibregl.Popup({ className: 'text-stone-900', closeOnClick: false })
+          .setLngLat(lngLat)
+          .setText('A hidden marker is near this location. Show its layer in Map Workspace before editing or placing another marker here.')
+          .addTo(map)
+        return
+      }
       if (markerActiveMissionId !== currentMissionId) {
         void markerController.refreshMission(currentMissionId).then(() => {
           markerController.beginCreateAt(lngLat.lat, lngLat.lng)
@@ -142,6 +152,7 @@ export function useMapMarkerInteractions(
     window.addEventListener('click', handleMarkerClick, true)
 
     return () => {
+      hiddenEvidenceNotice?.remove()
       window.removeEventListener('pointerdown', handlePointerDown, true)
       window.removeEventListener('pointermove', handlePointerMove, true)
       window.removeEventListener('pointerup', handlePointerUp, true)

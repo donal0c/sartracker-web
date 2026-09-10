@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildLayerInspectionRows,
   getLayerNodeCountLabel,
+  getLayerVisibilityCheckboxState,
   toLayerTreeTestId,
 } from '../../src/features/layers/layer-panel-model'
 import { buildLayerCatalogTree } from '../../src/features/layers/layer-catalog-builder'
@@ -15,6 +16,16 @@ import type { NormalizedTrackingDevice } from '../../src/features/tracking/track
 import type { Drawing, Marker } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 describe('layer panel model', () => {
+  it('shows mixed tracking visibility and derives all-off from children rather than the saved default', () => {
+    const layer = findCatalogNode(createRoot(), 'layer:tracking:devices')!
+    if (layer.kind !== 'layer') throw new Error('Expected tracking layer')
+    expect(getLayerVisibilityCheckboxState({ ...layer, isVisible: false,
+      children: layer.children.map((child, index) => ({ ...child, isVisible: index === 0 })),
+    })).toEqual({ checked: false, mixed: true })
+    expect(getLayerVisibilityCheckboxState({ ...layer, isVisible: true,
+      children: layer.children.map((child) => ({ ...child, isVisible: false })),
+    })).toEqual({ checked: false, mixed: false })
+  })
   it('builds operator inspection rows for tracking, measurement, and feature nodes', () => {
     const root = createRoot()
 

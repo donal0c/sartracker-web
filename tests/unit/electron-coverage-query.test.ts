@@ -104,6 +104,23 @@ describe('Electron coverage query', () => {
 
   afterEach(() => database.close())
 
+  it('keeps a persisted history gap blocked after roster removal and clears it only when the frontier advances', () => {
+    seedMissionModel(database)
+    database.exec(`
+      UPDATE coverage_missions SET enumerated = 1;
+      INSERT INTO coverage_chunks VALUES ('mission-1','device-1','unassigned','',1,1,2,'digest',
+        '2026-08-24T08:00:00.000Z','2026-08-24T12:00:00.000Z','2026-08-24T12:00:00.000Z');
+      UPDATE tracking_history_checkpoints SET reconciled_until='2026-08-24T08:00:00.000Z' WHERE device_id='device-1';
+      DELETE FROM devices WHERE device_id='device-1';
+    `)
+    const query = { missionId: 'mission-1', selectedKeys: [] }
+    expect(readCoverageClaimSnapshot(database, query)).toMatchObject({
+      databaseReady: false, blockers: expect.arrayContaining(['history_reconciliation_incomplete']),
+    })
+    database.exec(`UPDATE tracking_history_checkpoints SET reconciled_until='2026-08-24T12:00:00.000Z' WHERE device_id='device-1'`)
+    expect(readCoverageClaimSnapshot(database, query).blockers).not.toContain('history_reconciliation_incomplete')
+  })
+
   it('enumerates roster and zero-fix active participants across outings plus Unassigned', () => {
     seedMissionModel(database)
 
@@ -397,6 +414,14 @@ describe('Electron coverage query', () => {
 
 function createSchema(database: Database): void {
   database.exec(`
+    CREATE TABLE missions (id TEXT PRIMARY KEY, start_time TEXT NOT NULL, pause_time TEXT, finish_time TEXT);
+    INSERT INTO missions VALUES ('mission-1','2026-08-24T08:00:00.000Z',NULL,NULL);
+    CREATE TABLE tracking_history_checkpoints (
+      mission_id TEXT NOT NULL, device_id TEXT NOT NULL, history_from TEXT NOT NULL,
+      reconciled_until TEXT NOT NULL, updated_at TEXT NOT NULL,
+      requested_until TEXT DEFAULT '2026-08-24T12:00:00.000Z',
+      requested_from TEXT DEFAULT '2026-08-24T08:00:00.000Z', PRIMARY KEY (mission_id,device_id)
+    );
     CREATE TABLE devices (id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, device_id TEXT NOT NULL);
     CREATE TABLE outings (
       id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, label TEXT NOT NULL DEFAULT 'Outing',
@@ -444,6 +469,10 @@ function createSchema(database: Database): void {
 
 function seedMissionModel(database: Database): void {
   database.exec(`
+    INSERT INTO tracking_history_checkpoints (mission_id,device_id,history_from,reconciled_until,updated_at) VALUES
+      ('mission-1','device-1','2026-08-24T08:00:00.000Z','2026-08-24T12:00:00.000Z','2026-08-24T12:00:00.000Z'),
+      ('mission-1','device-2','2026-08-24T08:00:00.000Z','2026-08-24T12:00:00.000Z','2026-08-24T12:00:00.000Z'),
+      ('mission-1','device-3','2026-08-24T08:00:00.000Z','2026-08-24T12:00:00.000Z','2026-08-24T12:00:00.000Z');
     INSERT INTO devices VALUES ('row-1', 'mission-1', 'device-1');
     INSERT INTO outings (id, mission_id, started_at, ended_at) VALUES
       ('outing-1', 'mission-1', '2026-08-24T10:00:00.000Z', '2026-08-24T11:00:00.000Z');

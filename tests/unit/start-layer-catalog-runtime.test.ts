@@ -9,6 +9,37 @@ import type {
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 describe('startLayerCatalogRuntime', () => {
+  it.each(['refreshCatalog', 'forceRefresh'] as const)('ignores a stale %s rejection after switching missions', async (method) => {
+    const applyRuntime = vi.fn()
+    let rejectRead: (error: Error) => void = () => { throw new Error('Read not started') }
+    const listMetadata = vi.fn().mockResolvedValue([])
+    const runtime = await startLayerCatalogRuntime({ layerCatalogStore: { listMetadata, upsertMetadata: vi.fn() }, applyRuntime })
+    const input = { devices: [], markers: [], drawings: [], helicopters: [], gpxImports: [], measurements: [] }
+    await runtime.refreshCatalog({ ...input, missionId: 'mission-1' })
+    listMetadata.mockImplementationOnce(() => new Promise((_, reject) => { rejectRead = reject }))
+    const pending = method === 'forceRefresh' ? runtime.forceRefresh()
+      : runtime.refreshCatalog({ ...input, markers: [createMarker()], missionId: 'mission-1' })
+    await runtime.refreshCatalog({ ...input, missionId: 'mission-2' })
+    const published = applyRuntime.mock.calls.length
+    rejectRead(new Error('Old mission read failed'))
+    await pending.catch(() => undefined)
+    expect(applyRuntime.mock.calls).toHaveLength(published)
+    expect(applyRuntime.mock.lastCall?.[0]).toMatchObject({ missionId: 'mission-2', loading: false, error: null })
+  })
+  it('does not publish the old mission tree under a new mission while metadata loads', async () => {
+    const applyRuntime = vi.fn()
+    let finishRead: (entries: readonly LayerCatalogMetadataEntry[]) => void = () => { throw new Error('Read not started') }
+    const listMetadata = vi.fn().mockResolvedValueOnce([]).mockImplementationOnce(() =>
+      new Promise<readonly LayerCatalogMetadataEntry[]>((resolve) => { finishRead = resolve }))
+    const runtime = await startLayerCatalogRuntime({ layerCatalogStore: { listMetadata, upsertMetadata: vi.fn() }, applyRuntime })
+    const input = { devices: [], markers: [createMarker()], drawings: [], helicopters: [], gpxImports: [], measurements: [] }
+    await runtime.refreshCatalog({ ...input, missionId: 'mission-1' })
+    const pending = runtime.refreshCatalog({ ...input, missionId: 'mission-2' })
+    expect(applyRuntime.mock.lastCall?.[0]).toMatchObject({ missionId: 'mission-2', loading: true, root: { children: [] } })
+    finishRead([])
+    await pending
+    expect(applyRuntime.mock.lastCall?.[0]).toMatchObject({ missionId: 'mission-2', loading: false })
+  })
   it('persists feature-item aliases with the correct parent layer id', async () => {
     const upsertMetadata = vi.fn().mockImplementation(async (input) => ({
       missionId: input.missionId,

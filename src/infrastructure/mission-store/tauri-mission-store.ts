@@ -571,8 +571,10 @@ export type MissionReplayTrackRecord = {
   readonly completeness: 'complete' | 'legacy_baseline'
 }
 
+export type MissionReplayMapObjectType = 'marker' | 'drawing' | 'search_area'
+
 export type MissionReplayReadInput = {
-  readonly objectDetails?: { readonly objectType: string; readonly objectId: string; readonly offset: number }
+  readonly objectDetails?: { readonly objectType: MissionReplayMapObjectType; readonly objectId: string; readonly offset: number }
   readonly missionId: string
   readonly selectedTime: string
   readonly trackLimit: number
@@ -684,7 +686,7 @@ export type MissionReplayObjectChunkResult = Pick<
   /** Number of objects whose state was bounded to a summary on this page. */
   readonly summarizedObjectCount: number
   readonly objectDetails?: {
-    readonly objectType: string
+    readonly objectType: MissionReplayMapObjectType
     readonly objectId: string
     readonly offset: number
     readonly versionSequence: number
@@ -944,8 +946,9 @@ export type TrackingHistoryCheckpoint = {
 
 export type PersistTrackingHistoryBatchInput = {
   readonly mission_id: string
+  readonly requests?: readonly { readonly device_id: string; readonly history_from: string; readonly requested_until: string }[]
   readonly positions: readonly Omit<AddPositionInput, 'mission_id'>[]
-  readonly checkpoints: readonly Omit<TrackingHistoryCheckpoint, 'mission_id'>[]
+  readonly checkpoints: readonly (Omit<TrackingHistoryCheckpoint, 'mission_id'> & { readonly reconciled_from?: string })[]
 }
 
 export type PersistTrackingPositionsBulkInput = PersistTrackingHistoryBatchInput

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useLayerVisibilityStore } from '../../src/features/layers/layer-visibility-store'
 
 import { applyVisibilityForNodeIds, collectSubtreeNodeIds, type LayerVisibilityStoreAdapter } from '../../src/features/layers/layer-visibility-service'
 import {
@@ -7,7 +8,18 @@ import {
 } from '../../src/features/layers/layer-catalog-ids'
 import type { LayerCatalogRootNode } from '../../src/features/layers/layer-catalog-types'
 
+afterEach(() => useLayerVisibilityStore.setState(useLayerVisibilityStore.getInitialState()))
+
 describe('layer visibility service', () => {
+  it.each(['layer:tracking:devices', 'layer:tracking:breadcrumbs'])('applies an entire %s cascade against an immutable getState snapshot', (layerId) => {
+    const root = createRoot()
+    const nodeIds = collectSubtreeNodeIds(root, layerId)
+    const hiddenKey = layerId === 'layer:tracking:devices' ? 'hiddenDeviceIds' : 'hiddenBreadcrumbDeviceIds'
+    applyVisibilityForNodeIds(root, nodeIds, false, useLayerVisibilityStore.getState())
+    expect(useLayerVisibilityStore.getState()[hiddenKey]).toEqual(['alpha', 'bravo'])
+    applyVisibilityForNodeIds(root, nodeIds, true, useLayerVisibilityStore.getState())
+    expect(useLayerVisibilityStore.getState()[hiddenKey]).toEqual([])
+  })
   it('opens breadcrumb rendering for an individual override without showing everyone [DON-215]', () => {
     const store = createStoreAdapter({ hiddenBreadcrumbDeviceIds: ['alpha', 'bravo'] })
     applyVisibilityForNodeIds(createRoot(), [getBreadcrumbDeviceFeatureNodeId('alpha')], true, store)

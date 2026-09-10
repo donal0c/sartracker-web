@@ -118,6 +118,11 @@ export function applyVisibilityForNodeIds(
   visible: boolean,
   store: LayerVisibilityStoreAdapter,
 ): void {
+  const hidden = {
+    devices: new Set(store.hiddenDeviceIds), breadcrumbs: new Set(store.hiddenBreadcrumbDeviceIds),
+    markers: new Set(store.hiddenMarkerIds), drawings: new Set(store.hiddenDrawingIds),
+    helicopters: new Set(store.hiddenHelicopterIds), gpx: new Set(store.hiddenGpxImportIds),
+  }
   for (const nodeId of nodeIds) {
     const group = GROUP_BY_NODE_ID[nodeId]
     if (group !== undefined) {
@@ -128,23 +133,23 @@ export function applyVisibilityForNodeIds(
     const featureNode = parseFeatureNodeId(nodeId)
     if (featureNode !== null) {
       if (featureNode.entityType === 'device') {
-        toggleByHiddenList(featureNode.entityId, visible, store.hiddenDeviceIds, store.toggleDeviceVisibility)
+        toggleByHiddenSet(featureNode.entityId, visible, hidden.devices, store.toggleDeviceVisibility)
       } else if (featureNode.entityType === 'tracking-breadcrumb') {
         if (visible) store.setBreadcrumbsVisible(true)
-        toggleByHiddenList(
+        toggleByHiddenSet(
           featureNode.entityId,
           visible,
-          store.hiddenBreadcrumbDeviceIds,
+          hidden.breadcrumbs,
           store.toggleBreadcrumbDeviceVisibility,
         )
       } else if (featureNode.entityType === 'marker') {
-        toggleByHiddenList(featureNode.entityId, visible, store.hiddenMarkerIds, store.toggleMarkerVisibility)
+        toggleByHiddenSet(featureNode.entityId, visible, hidden.markers, store.toggleMarkerVisibility)
       } else if (featureNode.entityType === 'drawing') {
-        toggleByHiddenList(featureNode.entityId, visible, store.hiddenDrawingIds, store.toggleDrawingVisibility)
+        toggleByHiddenSet(featureNode.entityId, visible, hidden.drawings, store.toggleDrawingVisibility)
       } else if (featureNode.entityType === 'helicopter') {
-        toggleByHiddenList(featureNode.entityId, visible, store.hiddenHelicopterIds, store.toggleHelicopterVisibility)
+        toggleByHiddenSet(featureNode.entityId, visible, hidden.helicopters, store.toggleHelicopterVisibility)
       } else if (featureNode.entityType === 'gpx') {
-        toggleByHiddenList(featureNode.entityId, visible, store.hiddenGpxImportIds, store.toggleGpxImportVisibility)
+        toggleByHiddenSet(featureNode.entityId, visible, hidden.gpx, store.toggleGpxImportVisibility)
       }
       continue
     }
@@ -169,17 +174,19 @@ export function applyVisibilityForNodeIds(
 
     const gpxImportId = parseGpxImportLayerNodeId(nodeId)
     if (gpxImportId !== null) {
-      toggleByHiddenList(gpxImportId, visible, store.hiddenGpxImportIds, store.toggleGpxImportVisibility)
+      toggleByHiddenSet(gpxImportId, visible, hidden.gpx, store.toggleGpxImportVisibility)
       continue
     }
 
     if (nodeId === TRACKING_BREADCRUMBS_LAYER_NODE_ID) {
-      const deviceIds = collectDeviceIdsFromTrackingLayer(root)
+      const deviceIds = collectDeviceIdsFromTrackingLayer(root, TRACKING_BREADCRUMBS_LAYER_NODE_ID)
       store.setBreadcrumbsVisible(visible)
       if (visible) {
         store.showAllBreadcrumbDevices()
+        hidden.breadcrumbs.clear()
       } else {
         store.hideAllBreadcrumbDevices(deviceIds)
+        hidden.breadcrumbs = new Set(deviceIds)
       }
       continue
     }
@@ -193,17 +200,20 @@ export function applyVisibilityForNodeIds(
       const deviceIds = collectDeviceIdsFromTrackingLayer(root)
       if (visible) {
         store.showAllDevices()
+        hidden.devices.clear()
       } else {
         store.hideAllDevices(deviceIds)
+        hidden.devices = new Set(deviceIds)
       }
     }
   }
 }
 
-function collectDeviceIdsFromTrackingLayer(root: LayerCatalogRootNode): readonly string[] {
+/** Reads child identities from the category being changed. */
+function collectDeviceIdsFromTrackingLayer(root: LayerCatalogRootNode, layerId = TRACKING_DEVICES_LAYER_NODE_ID): readonly string[] {
   const deviceLayer = root.children
     .flatMap((group) => group.children)
-    .find((layer) => layer.id === TRACKING_DEVICES_LAYER_NODE_ID)
+    .find((layer) => layer.id === layerId)
   if (deviceLayer === undefined) {
     return []
   }
@@ -212,16 +222,19 @@ function collectDeviceIdsFromTrackingLayer(root: LayerCatalogRootNode): readonly
     .flatMap((feature) => (feature.entity?.type === 'device' ? [feature.entity.device.device_id] : []))
 }
 
-function toggleByHiddenList(
+/** Applies each desired state once, including after a parent bulk change. */
+function toggleByHiddenSet(
   entityId: string,
   visible: boolean,
-  hiddenIds: readonly string[],
+  hiddenIds: Set<string>,
   toggle: (entityId: string) => void,
 ): void {
-  const hidden = hiddenIds.includes(entityId)
+  const hidden = hiddenIds.has(entityId)
   if (visible && hidden) {
     toggle(entityId)
+    hiddenIds.delete(entityId)
   } else if (!visible && !hidden) {
     toggle(entityId)
+    hiddenIds.add(entityId)
   }
 }

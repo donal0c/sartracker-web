@@ -369,6 +369,7 @@ export async function startAppRuntime(
           getInitialBreadcrumbSelectionMetadata:
             hooks.getInitialBreadcrumbSelectionMetadata,
           getInitialHistoryCheckpoints: hooks.getInitialHistoryCheckpoints,
+          ...(hooks.persistHistoryRequest === undefined ? {} : { persistHistoryRequest: hooks.persistHistoryRequest }),
           ...(hooks.getCanonicalBreadcrumbs === undefined
             ? {}
             : { getCanonicalBreadcrumbs: hooks.getCanonicalBreadcrumbs }),

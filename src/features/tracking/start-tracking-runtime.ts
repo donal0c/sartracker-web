@@ -28,10 +28,12 @@ import type {
   BreadcrumbHistoryCheckpointSeed,
   CanonicalBreadcrumbSeed,
   TrackingHistoryChunkPersistenceInput,
+  TrackingHistoryRequestInput,
   TrackingHistoryChunkPersistenceResult,
   TrackingMissionEvidenceTransfer,
   TrackingSnapshotContext,
 } from './polling-manager'
+import { recordHistoryAdmissionFailure, recoverHistoryAdmission } from './coverage-store'
 import type { BreadcrumbSelectionMetadata } from './breadcrumb-accumulator'
 import type {
   BreadcrumbNormalizationResult,
@@ -111,6 +113,7 @@ type TrackingRuntimePollerFactory = (
     readonly persistHistoryChunk?: (
       input: TrackingHistoryChunkPersistenceInput,
     ) => Promise<TrackingHistoryChunkPersistenceResult>
+    readonly persistHistoryRequest?: (input: TrackingHistoryRequestInput) => Promise<void>
     readonly persistHistoryChunks?: (
       inputs: readonly TrackingHistoryChunkPersistenceInput[],
     ) => Promise<void>
@@ -565,6 +568,33 @@ export async function startTrackingRuntime(
     )
   }
   const poller = dependencies.createPoller(client, {
+    persistHistoryRequest: async (input) => {
+      if (!acceptingRuntimeUpdates) throw new Error('Tracking generation stopped before history request recording.')
+      let requestedFrom = input.historyFrom
+      let recorded = false
+      try {
+        await enqueueTrackingPersistence(runtimeGeneration, async () => {
+          if (!acceptingRuntimeUpdates) throw new Error('Tracking generation stopped before history request recording.')
+          const mission = await dependencies.missionStore.getActiveMission()
+          if (mission?.id !== input.expectedMissionId) throw new Error('Mission changed before history request was recorded.')
+          const scoped = scopeHistoryPersistenceInput({ ...input, phase: 'initial', reconciledUntil: input.requestedUntil, positions: [] })
+          if (scoped.historyFrom === null) throw new Error('No authorized mission history exists in this request window.')
+          requestedFrom = scoped.historyFrom
+          const persist = dependencies.missionStore.persistTrackingPositionsBulk ?? dependencies.missionStore.persistTrackingHistoryBatch
+          if (persist === undefined) throw new Error('Durable history request recording is unavailable.')
+          await persist({ mission_id: mission.id, positions: [], checkpoints: [], requests: [{
+            device_id: input.deviceId, history_from: scoped.historyFrom, requested_until: input.requestedUntil,
+          }] })
+          recorded = true
+        })
+        if (!recorded) throw new Error('Tracking generation stopped before history request recording.')
+        await recoverHistoryAdmission(input.expectedMissionId, input.deviceId, requestedFrom, input.requestedUntil)
+      } catch (error) {
+        recordHistoryAdmissionFailure(input.expectedMissionId, input.deviceId, requestedFrom, input.requestedUntil)
+        logger.warn('History request target could not be saved; retrieval will retry without a completeness claim.', error)
+        throw error
+      }
+    },
     getInitialBreadcrumbs: async (signal?: AbortSignal) => {
       const seed = await loadInitialPersistedBreadcrumbs(signal)
       droppedPersistedBreadcrumbCount = seed.droppedPositionCount
@@ -672,6 +702,7 @@ export async function startTrackingRuntime(
                     : [{
                         device_id: input.deviceId,
                         history_from: historyFrom,
+                        ...(input.reconciledFrom === undefined ? {} : { reconciled_from: input.reconciledFrom }),
                         reconciled_until: input.reconciledUntil,
                       }])
                 if (
@@ -743,7 +774,6 @@ export async function startTrackingRuntime(
             data_origin: position.data_origin,
           }))
           if (
-            input.phase === 'initial' &&
             dependencies.missionStore.persistTrackingPositionsBulk !== undefined
           ) {
             const persisted = await dependencies.missionStore.persistTrackingPositionsBulk({
@@ -755,13 +785,13 @@ export async function startTrackingRuntime(
                     device_id: input.deviceId,
                     history_from: scopedInput.historyFrom,
                     reconciled_until: input.reconciledUntil,
+                    ...(input.reconciledFrom === undefined ? {} : { reconciled_from: input.reconciledFrom }),
                   }],
             })
             changedPositionCount = persisted.changedPositionCount
             return
           }
           if (
-            input.phase === 'initial' &&
             dependencies.missionStore.persistTrackingHistoryBatch !== undefined
           ) {
             const persisted = await dependencies.missionStore.persistTrackingHistoryBatch({
@@ -773,6 +803,7 @@ export async function startTrackingRuntime(
                     device_id: input.deviceId,
                     history_from: scopedInput.historyFrom,
                     reconciled_until: input.reconciledUntil,
+                    ...(input.reconciledFrom === undefined ? {} : { reconciled_from: input.reconciledFrom }),
                   }],
             })
             changedPositionCount = Array.isArray(persisted) ? persisted.length : 0
@@ -781,15 +812,7 @@ export async function startTrackingRuntime(
           if (positions.length === 0) {
             return
           }
-          if (dependencies.missionStore.persistTrackingPositionsBulk !== undefined) {
-            const persisted = await dependencies.missionStore.persistTrackingPositionsBulk({
-              mission_id: activeMission.id,
-              positions,
-              checkpoints: [],
-            })
-            changedPositionCount = persisted.changedPositionCount
-            return
-          } else if (dependencies.missionStore.addPositionsBulk !== undefined) {
+          if (dependencies.missionStore.addPositionsBulk !== undefined) {
             const persisted = await dependencies.missionStore.addPositionsBulk({
               mission_id: activeMission.id,
               positions,

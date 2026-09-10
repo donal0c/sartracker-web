@@ -22,8 +22,8 @@ self.onmessage = (event: MessageEvent<{ tracks?: MissionReplayTrackRecord[]; obj
       } else for (const child of value) extend(child)
     }
     for (const feature of data.features) if ('coordinates' in feature.geometry) extend(feature.geometry.coordinates)
-    const blob = new Blob([JSON.stringify(data)], { type: 'application/geo+json' })
-    self.postMessage({ blob, bounds: data.features.length ? bounds : null })
+    const blob = new Blob([JSON.stringify({ type: data.type, features: data.features })], { type: 'application/geo+json' })
+    self.postMessage({ blob, bounds: data.features.length ? bounds : null, limitations: data.limitations })
   } catch (error) {
     self.postMessage({ error: error instanceof Error ? error.message : 'Map projection failed.' })
   }

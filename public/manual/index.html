@@ -1075,8 +1075,11 @@
             Within either category, switch all devices off and then enable just the devices you need,
             or switch all on and omit individual devices. A global action resets that category's choices;
             new devices inherit its latest global default. Choices are retained with the mission.
+            A mixed checkbox means some devices in that category are visible and others are hidden.
             Hidden evidence remains saved but cannot be selected on the map. A persistent warning
             identifies explicitly hidden current locations even when the side panels are collapsed.
+            Clicking near a hidden marker shows a notice instead of opening marker creation; show its
+            layer before editing it or placing another marker at that location.
           </p>
           <div class="note">
             <strong>Participant visibility:</strong> with the mission model enabled, only selected
@@ -1453,6 +1456,7 @@
               <tr><td><strong>Coverage is being reattached to the map</strong></td><td>A map-style change removed the attested history layers. Current positions remain live, but SAR Tracker shows neither a coverage percentage nor a Retry action until the history layers are visibly attached again.</td></tr>
               <tr><td><strong>Applying the selected history filter to the map</strong></td><td>The filter choice has changed, but the map has not yet acknowledged the matching historical layers. Completion is paused, and SAR Tracker shows neither a coverage percentage nor a Retry action. Current positions remain live and are never filtered by this history control.</td></tr>
               <tr><td><strong>Participant history is still being added</strong></td><td>A participant backfill is incomplete. Current positions remain live, but a complete-history claim is blocked.</td></tr>
+              <tr><td><strong>Saved history has not been reconciled through the mission window</strong></td><td>Saved reconciliation checkpoints do not yet cover the requested history window, or an older database has not yet established that window. Loaded evidence stays visible, including when a failed request returned no new fixes. A connection recovery, paused mission, hidden participant or app restart does not fill this gap or restore a completeness claim.</td></tr>
               <tr><td><strong>Updating outing assignment</strong></td><td>An audited outing-boundary change is reorganizing saved fixes. Loaded coverage remains visible, but 100% is blocked until the update finishes.</td></tr>
               <tr><td><strong>Anomaly evidence is waiting to be saved</strong></td><td>The live map continues, but renderer-held anomaly evidence has not reached durable mission storage. SAR Tracker withholds both the completion claim and a misleading full progress bar. Follow the evidence warning in Tracking; the coverage Retry button is intentionally unavailable because it cannot repair evidence storage.</td></tr>
               <tr><td><strong>Evidence health is degraded</strong></td><td>Saved evidence cannot yet support a completeness claim. Follow the accompanying evidence-health warning and repair guidance.</td></tr>
@@ -1494,6 +1498,9 @@
           <p>
             Hiding Alpha Team under Mission History does not hide Alpha Team's current marker. To hide a
             live marker, use the separate <strong>Tracking → Current Location</strong> visibility control.
+            The live <strong>Tracking → Breadcrumbs</strong> control is also independent: hiding it or
+            the Tracking group does not change the checked Mission History participants or hide their
+            historical coverage. Use Mission History's own checkboxes to omit that coverage.
             Devices that were discovered by Traccar but were never selected as mission participants stay
             available in the participant picker and diagnostics only; they do not appear in mission
             evidence, Mission History filters, or the operational mission map.
@@ -1866,6 +1873,11 @@
             Traccar <code>fixTime</code> is the only breadcrumb evidence clock. Evidence recorded after the
             selected time is not backdated into the view. Warnings identify undated static GPX, missing recorded
             provenance, and legacy objects whose earlier revision history is unknown.
+          </p>
+          <p>
+            If one retained object has unsupported or invalid map data, Replay keeps the other evidence
+            visible and lists the object that could not be drawn. A basemap loading warning does not
+            mean retained evidence has been removed; the warning clears when that source loads successfully.
           </p>
           <p>
             Display-only filters can narrow exact Traccar tracks by device and dated/static GPX by outing.
