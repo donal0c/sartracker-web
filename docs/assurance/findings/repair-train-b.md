@@ -4,6 +4,9 @@ Starting source: `302bdd040976bd370271cf5866549fa2a7e05ff5`, fetched
 `origin/master` on 2026-09-10; clean fresh worktree, branch `codex/repair-train-b`.
 Scope: AUD-01, AUD-10, AUD-05; DON-274 with DON-270 outing boundary.
 
+Implementation commit: `a1cf535f4de5bd81b6aaabd4b4f01cf163b21abc`.
+The three source hashes in the package receipt match this commit exactly.
+
 ## Contract and verification plan
 
 Canonical meaning: SAR-QA-004/006/007/013/014/017/019 and the raw transcript.
