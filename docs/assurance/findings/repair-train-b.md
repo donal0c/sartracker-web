@@ -6,6 +6,8 @@ Scope: AUD-01, AUD-10, AUD-05; DON-274 with DON-270 outing boundary.
 
 Implementation commit: `a1cf535f4de5bd81b6aaabd4b4f01cf163b21abc`.
 The three source hashes in the package receipt match this commit exactly.
+Review remediation: `f4b4875e1657e6dd61b400500872cdfeab4fb68b`; all three
+source hashes in `package-review-receipt.json` match that commit exactly.
 
 ## Contract and verification plan
 
@@ -94,15 +96,23 @@ passes the same 75,002-point import/End Outing/restart workload (18,882 ms impor
 settlement), exact evidence and integrity unchanged after restart. ASAR SHA-256:
 `2a6123d44c579816d2ff74cb6a0f3c5355339328c7898e863285f0024934e0df`.
 Its raw source hashes bind the reviewed remediation; sourceHead is the precommit
-ancestor and sourceDirty is explicit. Final committed-head attestations and CI
-remain pending. Earlier full-source proof remains attributed to the original implementation;
+ancestor and sourceDirty is explicit. All four independent charters attest clean
+at `f4b4875e1657e6dd61b400500872cdfeab4fb68b`: broad B-BROAD-01/02 and
+concurrency B-CONC-01 resolved, renderer B-RENDER-01 resolved, persistence no
+findings (21 unchanged native checks carried forward). Remediation rechecks are
+targeted source/evidence review, not four repeated package executions.
+Linux qualification is tracked in [PR #19 checks](https://github.com/donal0c/sartracker-web/pull/19/checks)
+and its final CI evidence comment; review readiness requires that gate to pass.
+Superseded run `34514075105` was cancelled after the remediation push; it is
+not counted as passing. Earlier full-source proof remains attributed to the original implementation;
 the remediation changes two renderer modules and their tests, not native worker,
 schema, storage or publication transactions.
 
 ## Delivery state
 
-Local remediation verification is complete; final-head review attestations and
-Linux CI remain pending. No closure or field acceptance.
+Local remediation verification and four exact-head reviews are complete.
+[PR #19](https://github.com/donal0c/sartracker-web/pull/19) carries Linux gate
+status and terminal evidence. This is a scoped repair, not field acceptance.
 WAR-06 remains investigation-only and does not own these repairs.
 
 The [packaged receipt](../../evidence/repair-train-b/package-receipt.json) passes
