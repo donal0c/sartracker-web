@@ -103,7 +103,9 @@ repair train.
   scheduling, real-file/SQLite call-boundary faults and historical teardown and
   backup red controls. Its tests/helpers do not own Repair Train A files or
   regressions. Source 422 files / 4,325 tests, lint/build and helper types pass;
-  independent exact-head reviews are pending.
+  final affected 65 tests pass, and all independent reviews clear executable
+  head `18bd374f`. [PR #16](https://github.com/donal0c/sartracker-web/pull/16)
+  records live CI/merge readiness.
   DON-254 retains final qualification, and no hazard or audit finding is closed.
 
 - Team requirements: Batch 1 is merged. Batch 2 is active and owns per-device

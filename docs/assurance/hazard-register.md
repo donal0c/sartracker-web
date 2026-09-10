@@ -5,7 +5,7 @@
 **Register status:** WAR-01 post-PR5 reconciliation plus targeted WAR-04
 platform-services and WAR-04B release-control overlays.
 
-**WAR-02A test-infrastructure overlay (2026-09-10, review pending):**
+**WAR-02A test-infrastructure overlay (2026-09-10, PR #16):**
 [`PST-002` and `IPC-002` focused evidence](war-02a-test-infrastructure.md) adds
 T1/T2 fault and lifecycle controls on production base `083f5047`. PST-002 now has
 real SQLite/mirror tests for EIO, ENOSPC and injected interruption before/after

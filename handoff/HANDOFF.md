@@ -4,13 +4,14 @@ Updated 2026-09-10. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **WAR-02A test foundation is in progress** from fetched master `083f5047`
+- **WAR-02A test foundation is implemented** from fetched master `083f5047`
   (merged PR #15). Additive helpers/tests are isolated under
   `tests/unit/assurance/war-02a/`; production and Repair Train A are untouched.
   Source at `de7d15bf`: 422 files / 4,325 tests, lint/build. Final affected 65
   tests and helper types pass; both red controls remain proven. [PR #16](https://github.com/donal0c/sartracker-web/pull/16)
-  remains draft: broad review cleared; mixed-failure red-gate finding is corrected
-  with regressions, pending final exact-head reviews. [Evidence](../docs/assurance/war-02a-test-infrastructure.md).
+  records live CI/merge readiness. All independent reviews clear executable
+  `18bd374f`, including the corrected mixed-failure red gate and final cumulative
+  review. [Evidence](../docs/assurance/war-02a-test-infrastructure.md).
   DON-254 remains qualification owner; no package/provider/soak proof or merge.
 
 - [PR #15](https://github.com/donal0c/sartracker-web/pull/15), Team Feedback

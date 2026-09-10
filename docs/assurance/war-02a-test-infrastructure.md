@@ -161,8 +161,17 @@ WAR02A_NEGATIVE_CONTROL=backup-direct-target npm test -- tests/unit/assurance/wa
   strict helper types, focused lint and script syntax checks. The earlier full
   422-file source cycle remains evidence for unchanged inputs; the correction
   changes only proof reporting/validation and adds its regression tests.
-  Final exact-head
-  recheck/cumulative review are recorded on [PR #16](https://github.com/donal0c/sartracker-web/pull/16).
+  Both affected reviewers cleared corrected executable/test head
+  `18bd374f60098286b34545bc5602638149fbc9df`. A third independent cumulative
+  review against `083f5047` also returned clean on that exact head. The focused
+  and cumulative reviewers each independently passed the 3 proof-gate files /
+  12 tests. No source review was represented as a GitHub-account approval.
+- [PR #16](https://github.com/donal0c/sartracker-web/pull/16) is the live record
+  for final CI and merge readiness. Its inherited Linux workflow starts
+  automatically on PR updates; no additional package/soak job was manually
+  dispatched for WAR-02A. The initial run was superseded by the correction,
+  not counted as a pass. This closeout changes documentation only and reuses
+  the named executable/test evidence; no qualification tier is upgraded.
 
 The 24 filesystem cases cover EIO, ENOSPC and injected interruption before/after
 write, file sync, rename and directory sync. The 12 SQLite/mirror cases cover
