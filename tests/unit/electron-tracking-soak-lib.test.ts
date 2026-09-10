@@ -479,6 +479,20 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       ...validInput,
       operatorActionMaximumMs: 1_500,
     })
+    expect(buildTrackingSoakVerdict(validInput).passed).toBe(true)
+    for (const durationMs of [200, 350, 544.164511]) {
+      const attributedStall = buildTrackingSoakVerdict({
+        ...validInput, mainMaximumMs: durationMs, mainStallThresholdMs: 200,
+        attribution: { cause: 'controller-or-host', diagnosticOnly: true },
+      })
+      expect(attributedStall.passed).toBe(false)
+      expect(attributedStall.failureReasons).toEqual([
+        `Main-process maximum ${durationMs}ms reached the 200ms stall threshold.`,
+      ])
+    }
+    const missedTarget = buildTrackingSoakVerdict({ ...validInput, operatorInteractionErrors: 1 })
+    expect(missedTarget.passed).toBe(false)
+    expect(missedTarget.failureReasons).toHaveLength(1)
     const externalDeliveryVerdict = buildTrackingSoakVerdict({
       ...validInput,
       operatorExternalActionMaximumMs: 1_500,

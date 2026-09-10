@@ -1,0 +1,36 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/responsiveness-attribution.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 <workspace>
+
+ ❯ tests/unit/responsiveness-attribution.test.ts (6 tests | 1 failed) 6ms
+     × cleans already-installed observers when a later realm install fails 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/responsiveness-attribution.test.ts > responsiveness attribution [DON-254] > cleans already-installed observers when a later realm install fails
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/unit/responsiveness-attribution.test.ts:13:79
+     11|       page: { evaluate: async (expression: string) => { calls.push(exp…
+     12|     })).rejects.toThrow('injected renderer install failure')
+     13|     expect(calls.some(value => value.includes('__SAR_ATTR_PROBE__?.sto…
+       |                                                                               ^
+     14|     expect(calls.some(value => value.includes('__SAR_ATTR_POINTER__?.s…
+     15|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  20:45:57
+   Duration  405ms (transform 23ms, setup 0ms, import 32ms, tests 6ms, environment 274ms)

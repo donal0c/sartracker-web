@@ -1,0 +1,1262 @@
+[
+  {
+    "label": "base",
+    "head": "302bdd040976bd370271cf5866549fa2a7e05ff5",
+    "rawElectronFiles": [
+      {
+        "path": "electron/archive-attachments.cjs",
+        "sha256": "f4438af5539e1237afe0d71ba5be8b85d637c376b5684f724bdbc446ae872025"
+      },
+      {
+        "path": "electron/archive-cleanup-credential-runner.cjs",
+        "sha256": "290b1fb22c565fd4d0c0fa16ca4df755d7ee3b2afc0d1e8ab2e83f49ea167ade"
+      },
+      {
+        "path": "electron/archive-cleanup-credential-worker.cjs",
+        "sha256": "2034f43211f410f08ea91b49ed7424044504ab29c69415376e62102ab2018217"
+      },
+      {
+        "path": "electron/archive-cleanup-credential.cjs",
+        "sha256": "d42ece442bea3a4469e311508ab513f1df5b2a6d23ec82278fce8ac853dc51b5"
+      },
+      {
+        "path": "electron/archive-cleanup-failure.cjs",
+        "sha256": "72f4de6db6f1771061316bbd249dc599974737ef39e1333ce61dbdddc7199c2d"
+      },
+      {
+        "path": "electron/archive-cleanup-membership.cjs",
+        "sha256": "553909a9ef586061ea6fcbb987d5cee339a050790984f2474bc157c570dba175"
+      },
+      {
+        "path": "electron/archive-cleanup-preview.cjs",
+        "sha256": "58ce9a1d7bc6bccccc4bbf4b010e350fafa916e24f7af802e5271d34d7db7452"
+      },
+      {
+        "path": "electron/archive-cleanup-runner.cjs",
+        "sha256": "8c96a69af4b6d62d0ecd7d75a3e46de890482e1110fbbc8fa8d822762ed2ad67"
+      },
+      {
+        "path": "electron/archive-cleanup-startup.cjs",
+        "sha256": "991ac54e61dd552f9a2fc85b0f9607f54d656598cffcaee1c55ad416e0ab363f"
+      },
+      {
+        "path": "electron/archive-cleanup-worker.cjs",
+        "sha256": "6549079c88c0061f4ae9f7009ec46cadb7902f6b2002876e48f2c605ef62c69a"
+      },
+      {
+        "path": "electron/archive-cleanup.cjs",
+        "sha256": "b97eb2cf8c1281268a3c6ec171dc18438a13ee603247deeda476247fe448172c"
+      },
+      {
+        "path": "electron/archive-container.cjs",
+        "sha256": "de1276df1950099421845d5269ec304f2175076f176e8f83cd227a7dfb1289d1"
+      },
+      {
+        "path": "electron/archive-correction-attachment-copy.cjs",
+        "sha256": "11667172988b33b5fa39ba38215600e89efbc1451db25e0cff7958009492a409"
+      },
+      {
+        "path": "electron/archive-correction-attachment-references.cjs",
+        "sha256": "9cf395a40f6e801d3db51476466dcea88e175d136895d4c656bae5988b08be52"
+      },
+      {
+        "path": "electron/archive-correction-custody-recovery-runner.cjs",
+        "sha256": "2035e53d2312a70b326edff82c4677f6914d8790bccb8893c74025b168e4f2b8"
+      },
+      {
+        "path": "electron/archive-correction-custody-recovery-worker.cjs",
+        "sha256": "46c9c15166f60e2634800000180621365119342d145c3073321e11523efce512"
+      },
+      {
+        "path": "electron/archive-correction-custody.cjs",
+        "sha256": "42238c6328958b27d69f5c6275042177f00a848c15cc76e755c8acd78dd58db7"
+      },
+      {
+        "path": "electron/archive-correction-directory-capability.cjs",
+        "sha256": "3dbf5958cb67fe599a54f7841b901015c5fe5db9a5e45cc25e38c5f3c3e3673d"
+      },
+      {
+        "path": "electron/archive-correction-runner.cjs",
+        "sha256": "f8ab5a884e6888ced236a7e5a563bc30faad9ac28777e5f6d700b9dd4b541272"
+      },
+      {
+        "path": "electron/archive-correction-snapshot-runner.cjs",
+        "sha256": "c07ae5c829fe729a171d4c48e1b7c8580a200916e92770d375b34d0bd7a2138e"
+      },
+      {
+        "path": "electron/archive-correction-snapshot-worker.cjs",
+        "sha256": "74381eabe71f734a26884e2adab6b3fe944f2f7bb90f9995b28d6e70baeb6bf4"
+      },
+      {
+        "path": "electron/archive-correction-worker.cjs",
+        "sha256": "c87c7b7da8ab2f71e4abb22ab97daa262a16ef6933ac2487c64d487dcbfdfae6"
+      },
+      {
+        "path": "electron/archive-crypto.cjs",
+        "sha256": "ee7a530d21fb48cf3c1f0161fb8d6780404fd5b763bb98989e80e71f60af6c9b"
+      },
+      {
+        "path": "electron/archive-custody-file.cjs",
+        "sha256": "5b18ad27cf689f37ce998317fb34fd1a713319f489ddbb4f786b8acd24f1be41"
+      },
+      {
+        "path": "electron/archive-custody-journal.cjs",
+        "sha256": "ce1dc521eb67814a74fb845e94a6608840d29284ba34cb09fb28e02198c53efe"
+      },
+      {
+        "path": "electron/archive-custody-operation-envelope.cjs",
+        "sha256": "48e2c86a8ff0270d7a7fc81ed053fa3a2b99a4901274f0e36b8ec700b0b7cbcc"
+      },
+      {
+        "path": "electron/archive-custody-operation-runner.cjs",
+        "sha256": "7878921d8f2617c67a3365c1e9d0808de63500af34f566fce08e364bdad5e946"
+      },
+      {
+        "path": "electron/archive-custody-operation-worker.cjs",
+        "sha256": "8772b1c74544fc89107f089f2ca9cadc280429e5020a317829ee7c4165930e1c"
+      },
+      {
+        "path": "electron/archive-custody-reconcile-envelope.cjs",
+        "sha256": "8195cabd88d2a6b63413bc5c692211adcce4e1114792a7c8c2683349bff88292"
+      },
+      {
+        "path": "electron/archive-custody-reconcile-runner.cjs",
+        "sha256": "468f755726264612db33e6cd994a245ad7430fe1d9508608a5498f32a4b862ff"
+      },
+      {
+        "path": "electron/archive-custody-reconcile-worker.cjs",
+        "sha256": "9a67308e5c382128815282f51dfb5767fbfde70fd2a9f659fc4dc02fc3e776cf"
+      },
+      {
+        "path": "electron/archive-envelope.cjs",
+        "sha256": "059bbfc5d1f27613b4e8cccc5efddaf8a2c34ef8ded14c7c214d74a85c9d7c61"
+      },
+      {
+        "path": "electron/archive-gpx-proof.cjs",
+        "sha256": "9b579c3bee1f6236a21a15377b5fcfef248d2cf136a8d4b42641ba3cbdf555d2"
+      },
+      {
+        "path": "electron/archive-inventory.cjs",
+        "sha256": "2d0599f3639d4b74ab667794cb5cb406dd602f679d5385ca0c8b7251f0e38ed9"
+      },
+      {
+        "path": "electron/archive-legacy-predecessor-envelope.cjs",
+        "sha256": "97e1ab600212f18db2d6ddbdaa36b08ff4a84cb761ae0b642d795a1bae9cfb70"
+      },
+      {
+        "path": "electron/archive-legacy-predecessor-runner.cjs",
+        "sha256": "476695bcf2ff424f30d00b3bd9a97dd2460c1d3c9423424d1a147dc156cb1a58"
+      },
+      {
+        "path": "electron/archive-legacy-predecessor-worker.cjs",
+        "sha256": "d5ff768b0965bea2053e2234091bdaa1bf647db7c70d9d924b2e690a8ffb1401"
+      },
+      {
+        "path": "electron/archive-manifest-limits.cjs",
+        "sha256": "36d5a8deeb02f854eafb381b9b8b225ca44a4f13260578882ecc0db62d0baa5f"
+      },
+      {
+        "path": "electron/archive-plaintext-sweep-runner.cjs",
+        "sha256": "8cf0ae2408bbfbd3222f511f9ab9c45a86054fea9307266e8d0f37d364533659"
+      },
+      {
+        "path": "electron/archive-plaintext-sweep-worker.cjs",
+        "sha256": "42fa62fa87827d030ffc9c7e9092f74b57e5e67257c113f30216e2627d10ec2e"
+      },
+      {
+        "path": "electron/archive-registry.cjs",
+        "sha256": "b56de5bb21fd02d04243910da19b40c8b661355b486af6cb06ce56caee2f1ec0"
+      },
+      {
+        "path": "electron/archive-rehydrate.cjs",
+        "sha256": "561fb34af1b6f467fab5b249ab699f2684bab3e36bde6bf607559eb90ed64ef6"
+      },
+      {
+        "path": "electron/archive-replay-proof.cjs",
+        "sha256": "a570520a387caa77a46be6719a5372ae862a750b46b2fd4730d3d3b647406aa6"
+      },
+      {
+        "path": "electron/archive-restore-runner.cjs",
+        "sha256": "068800445a8ddc4df5853b9eab7f8fe35880035754b8b216643775d7360fe14a"
+      },
+      {
+        "path": "electron/archive-restore-worker.cjs",
+        "sha256": "77e9594a4e3f4f8926af364615416b2c004b05eea9b6478e69e767162d14325b"
+      },
+      {
+        "path": "electron/archive-restore.cjs",
+        "sha256": "6f3e8a61bc9c5dc4a9f1d91bcd6a816781d4fb7ad8d87f3e48eac74e44010f27"
+      },
+      {
+        "path": "electron/archive-review-attachment-opener.cjs",
+        "sha256": "4fc5ed53a5e30ec7f2902cec66658d7100ae3ca22408a56814c50c7c72c83235"
+      },
+      {
+        "path": "electron/archive-review-envelope.cjs",
+        "sha256": "c4ad87ab125483c03d66dc9880c1aabaf8c85e26d1d5ee7a97e31f661782686d"
+      },
+      {
+        "path": "electron/archive-review-ipc.cjs",
+        "sha256": "31fdd24d9714ae9d7ba077e6c40167ad438f52b10cbd2c17f4ff1a498b6ac081"
+      },
+      {
+        "path": "electron/archive-review-projection-query.cjs",
+        "sha256": "b1d46555f76efc98f1f84407359e9418d09627de3a5f56c95431506482155134"
+      },
+      {
+        "path": "electron/archive-review-projection-runner.cjs",
+        "sha256": "fc9c082d2103949942fd7cd908fa6e58a19d46f0ee154dcebb8d81a30b1300a7"
+      },
+      {
+        "path": "electron/archive-review-projection-worker.cjs",
+        "sha256": "d2f429f5907f0c770c496658dbcfc3f7cf5c82812149549f54215d243d225927"
+      },
+      {
+        "path": "electron/archive-review-result-budget.cjs",
+        "sha256": "1a7c055622bdffe3e71fea2bd8b605ee75664c854abe35284b96a715c642b322"
+      },
+      {
+        "path": "electron/archive-review-sessions.cjs",
+        "sha256": "1bb080cb6e5530c53ced80e4e9b27438da1865c157daca91672d4a1ad74ba27e"
+      },
+      {
+        "path": "electron/archive-review-source.cjs",
+        "sha256": "88bd2348f5a36b749a960790a31c46f63a282942276a0aed6ccf755ee9e469aa"
+      },
+      {
+        "path": "electron/archive-review-sweep-runner.cjs",
+        "sha256": "deb841a9794af7bb319ad91330d4da4f89176d061624fce1417197da3a66fac6"
+      },
+      {
+        "path": "electron/archive-review-sweep-worker.cjs",
+        "sha256": "e714123ec4e3680769335958fb3188693fe2da7c099e02a1faf4bc2bd6ac9537"
+      },
+      {
+        "path": "electron/archive-review-work-queue.cjs",
+        "sha256": "7209b9172bb2c809fc2d5325b40c8cfb35ee1356be1a4861955f30288ee1c934"
+      },
+      {
+        "path": "electron/archive-scratch.cjs",
+        "sha256": "783d0ae6b21a086e17ba3723d1dc4662da9adc006b7f6f246f9f9e2cd9d2084b"
+      },
+      {
+        "path": "electron/archive-verify-runner.cjs",
+        "sha256": "c14450a1006bd274b8d681b83f741200c9df39aa43ea35ab90a09830e7d42563"
+      },
+      {
+        "path": "electron/archive-verify-worker.cjs",
+        "sha256": "0943aef101108ad758b044a22337b540b4c41749c59c77e60093300883def615"
+      },
+      {
+        "path": "electron/archive-verify.cjs",
+        "sha256": "764c1883de76cc5be18c80652baecb5bf3f99480e567c06221850b1fe88dead2"
+      },
+      {
+        "path": "electron/archive-workload-watchdog.cjs",
+        "sha256": "23b7752f5ffd1d2bac9408cdf371a0c90bf1ea1741c6c78a9e9d7834cc11967f"
+      },
+      {
+        "path": "electron/breadcrumb-dot-query-runner.cjs",
+        "sha256": "ab3b577abba6dc34b0496374a8288433865ead9f5ee3aeb86d51f0b70e24fd66"
+      },
+      {
+        "path": "electron/breadcrumb-dot-query-worker.cjs",
+        "sha256": "a43aeaada9f4d504f9b72cd02411548a0c592905c2cd4c19c99d35406e0872a6"
+      },
+      {
+        "path": "electron/breadcrumb-dot-query.cjs",
+        "sha256": "52dbe1ac94c7960e5a9a65cef32d90ac8507fcc6d6888f37b2b3f53d41b0d4e1"
+      },
+      {
+        "path": "electron/breadcrumb-query-ipc.cjs",
+        "sha256": "95ad1240ebf44b3c53a3b2ddef7a6d2aa7b0966a4e2b6c9f242fb4bc4f1524b5"
+      },
+      {
+        "path": "electron/breadcrumb-query-runner.cjs",
+        "sha256": "21d6ed80b3f18f7806f0fd4d10f6651b56490897818c300c37a22b283bd6959b"
+      },
+      {
+        "path": "electron/breadcrumb-query-worker.cjs",
+        "sha256": "dc8006947a3b51b3a1308f3c38f2a0bfc975a955c46c10a6c1b8622123860c6d"
+      },
+      {
+        "path": "electron/breadcrumb-query.cjs",
+        "sha256": "a1ed53a356898a6917e36d68bf12ee03bb8c9652746609d89d0b429a3fcb1471"
+      },
+      {
+        "path": "electron/coverage-build-attestation.cjs",
+        "sha256": "af268305007abb19e563b4947833085b574b5827f841aa7e627b2bbf769a219d"
+      },
+      {
+        "path": "electron/coverage-history-completeness.cjs",
+        "sha256": "a17043249a37b5b1e38b166e4472a3b42d05870b2dcd8288684ab138f3ef1f60"
+      },
+      {
+        "path": "electron/coverage-ipc.cjs",
+        "sha256": "afcf280334ea44abbb74ac8c599b9c1db370093ce824a9f678053cdc8ef608d7"
+      },
+      {
+        "path": "electron/coverage-ledger.cjs",
+        "sha256": "950c88b6613504478b6060ae89729736f0b7debfe8dfd2094f9db31b026628d2"
+      },
+      {
+        "path": "electron/coverage-period-resolver.cjs",
+        "sha256": "2cb971c3bacde3dcd965c639630e6b756bc6bf22185c1e3e52f3918dc9d3fc3f"
+      },
+      {
+        "path": "electron/coverage-query-plan.cjs",
+        "sha256": "d45d24d4a97277d69bc81e27de86a26642612974b403c9082b255e7f14e43f01"
+      },
+      {
+        "path": "electron/coverage-query-result-attestation.cjs",
+        "sha256": "c653572e34608265d0f76a7d4568d8658b49dcc2fb3c59e58167d544e6ffaea8"
+      },
+      {
+        "path": "electron/coverage-query-result-envelope.cjs",
+        "sha256": "a787ce05267f53fc2237d7535af55ebf26f25ff32e790dce634d867a1faef6ee"
+      },
+      {
+        "path": "electron/coverage-query-runner.cjs",
+        "sha256": "287d2697bfae1dde5bf9418d6be4ceb7c2ca385f7c82ec625d3e9fed94121c45"
+      },
+      {
+        "path": "electron/coverage-query-worker.cjs",
+        "sha256": "43ae0ff7a56e069da7e3412457f5b9b945140380b2214c0924f7b4ef700339b0"
+      },
+      {
+        "path": "electron/coverage-query.cjs",
+        "sha256": "472b807aada904a32a5b9a8590420a3bccce1acac3bae1db64206bf5dfcfd3ff"
+      },
+      {
+        "path": "electron/coverage-tile-address.cjs",
+        "sha256": "1e2e6f2d996bcf5072f9d1b51449ce6088643fbda7d95afa8a1c28a909864911"
+      },
+      {
+        "path": "electron/coverage-tile-cache-ledger.cjs",
+        "sha256": "5ae311db75fdbfa60a2a146282a656e74e614ae40e988ca7cb6bc47886f80aad"
+      },
+      {
+        "path": "electron/coverage-tile-catalog.cjs",
+        "sha256": "c2a1ef0c2a5284a19b02716497ab99213086d9b0357817732248f1cad8ec8618"
+      },
+      {
+        "path": "electron/coverage-tile-runner.cjs",
+        "sha256": "8a11320da118bac5d531d9570585f1b4f022ccf2fd593ddfdf35848ca1e39665"
+      },
+      {
+        "path": "electron/coverage-tile-worker.cjs",
+        "sha256": "62a89b605cf287b7c7903bb3108c0ec32fa85603c772ba5e608dd320afe1262c"
+      },
+      {
+        "path": "electron/coverage-trail-segmentation.cjs",
+        "sha256": "348cce598bd30be565ac735b7cfabe3797ae5af8a510c64b417405d777eb5e22"
+      },
+      {
+        "path": "electron/coverage-trail-segmentation.d.cts",
+        "sha256": "8b95e7fc6e9e5b8a316a210d238af5471ee8ec8858e90bf2aca3e96292afc233"
+      },
+      {
+        "path": "electron/coverage-worker-envelope.cjs",
+        "sha256": "c0fc984c27d0b5a440ae92fa951817307f0f04157c065b53161dd619055b29d5"
+      },
+      {
+        "path": "electron/crash-log.cjs",
+        "sha256": "36bb34aca47dbf319c1c856242b904e9ef828a285f70c83f6657acc73c7be540"
+      },
+      {
+        "path": "electron/deterministic-string-order.cjs",
+        "sha256": "4c8d296783aa28ffc874a70398452092665aec9ab68604d49764bec9c7be2e06"
+      },
+      {
+        "path": "electron/diagnostic-sanitizer.cjs",
+        "sha256": "df645441df09ab874c623f6a276beae2aeeb70aec80150bdc12c96af64ac76a5"
+      },
+      {
+        "path": "electron/durable-file.cjs",
+        "sha256": "645507a01bb61e2e5a3ffc4c24ce09a02e13fed0608e02e32d18c6c71301d8fd"
+      },
+      {
+        "path": "electron/file-system.cjs",
+        "sha256": "3147d22fc66620fecbc3ce2abfadfeda63624f3a302659a0a06afc760d16c7cc"
+      },
+      {
+        "path": "electron/foreground-write-priority.cjs",
+        "sha256": "6eaae703d3c22838bf6117c0f23fc5e9e6cbea419a9fe19bd42e780a3cc3e823"
+      },
+      {
+        "path": "electron/gpx-evidence-import-runner.cjs",
+        "sha256": "303cf2fbbfaa887a2d71ca2479d442e517eaf71a5e2cc8edd7b973e83caa10c7"
+      },
+      {
+        "path": "electron/gpx-evidence-import-worker.cjs",
+        "sha256": "d8a95e108fa6ae37ac0ee524e843127e65d8b5c2cc51cffe809ac18845ee6ef4"
+      },
+      {
+        "path": "electron/gpx-import-envelope.cjs",
+        "sha256": "ed358759e59f8b956caad6d64beae1de7de865364e7113e15ec4a5369eaed0ef"
+      },
+      {
+        "path": "electron/gpx-renderer-boundary.cjs",
+        "sha256": "228742b1f1a9b73a30fb3685794a4d9cc7b46ee6e12b3da7f7fe2a69fefa6403"
+      },
+      {
+        "path": "electron/gpx-source-reader.cjs",
+        "sha256": "038a4117b705abb2f14f0f8c435124fab7a0dd1fc8f0a6055614a87a3d9e9049"
+      },
+      {
+        "path": "electron/ingest-anomaly-ledger.cjs",
+        "sha256": "a6002e5ee161e4a4defa77aa682fe2f9c4fc1d8f2f57446337ad192111be6744"
+      },
+      {
+        "path": "electron/ingest-anomaly-outbox.cjs",
+        "sha256": "922098a0c4f153954a68a84e5aa350dd80d91b6f9bd09872b116755be2b0a6c8"
+      },
+      {
+        "path": "electron/legacy-archive-restore-runner.cjs",
+        "sha256": "017dbd0aa03a05e0099820a1a6306efdfb0f30ccfb4048c3cf21378997987e60"
+      },
+      {
+        "path": "electron/legacy-archive-restore-worker.cjs",
+        "sha256": "94537022df99d5871104ef88836a90298f12088554ba31096e391a047b3f8ad8"
+      },
+      {
+        "path": "electron/legacy-archive-restore.cjs",
+        "sha256": "2d46a1ad9825ca50079fef73f1a6d3ea899b7ca180d1f60d7fb90f7d723cf356"
+      },
+      {
+        "path": "electron/legacy-evidence-backfill-runner.cjs",
+        "sha256": "487a355f9c7feccff297f91da81518236d6fb55f5c701f22e9758505dfc8e61f"
+      },
+      {
+        "path": "electron/legacy-evidence-backfill-worker.cjs",
+        "sha256": "899e1a682180184e8272ad649232014fcee3ade5e8a7656c64d3b79124323880"
+      },
+      {
+        "path": "electron/main.cjs",
+        "sha256": "f37cf2ca0c7947f0bfc208ce864950f06822cffcc84eb025858933b2a9e77cd0"
+      },
+      {
+        "path": "electron/mission-archive-ipc.cjs",
+        "sha256": "bb5e06d818f3a95b6f70fa72be91116c2bc8616c03ae61bad8428923a4d070b7"
+      },
+      {
+        "path": "electron/mission-archive-runner.cjs",
+        "sha256": "e7cacadfb2139ffe0b6a2578d44e08e92416d69501e133db3dd79434bfbc8d58"
+      },
+      {
+        "path": "electron/mission-archive-worker.cjs",
+        "sha256": "7af56351cc1ee46e31311b1ca408805d4f28fbebdce89519f301df6395665613"
+      },
+      {
+        "path": "electron/mission-event-provenance-backfill.cjs",
+        "sha256": "3190be2488dcac4aeda4a4e959d078462f260b398c37b213112510b65453f6a9"
+      },
+      {
+        "path": "electron/mission-evidence-version-store.cjs",
+        "sha256": "3569c9d02c57bb951f9808d3ee40297c3453112a01b66962f27b0c1e823d1e3f"
+      },
+      {
+        "path": "electron/mission-finalization-boundary.cjs",
+        "sha256": "ea21ba1d6c97aa6345ebe0536bb529349534d0c9035a70ae5f89095efaa6e536"
+      },
+      {
+        "path": "electron/mission-finalization-scan.cjs",
+        "sha256": "c98f6a5a6e8e6267e50302d1ccf0e55f5a33896a70e68e8f9ea8742ec08beacc"
+      },
+      {
+        "path": "electron/mission-live-review-access.cjs",
+        "sha256": "3e10a92f3f2cb59a268dd738e80ed4ae59e776fc35ca4ff0509c8e2d97b757cb"
+      },
+      {
+        "path": "electron/mission-replay-database.cjs",
+        "sha256": "e12bf41e87a5087db984df994fb090ae88ec60831ef0bcd3fd07c23a63bfb31d"
+      },
+      {
+        "path": "electron/mission-replay-message-policy.cjs",
+        "sha256": "25bf4b94798281c8e742f44a9f0d2056fd32f7b3f3cdd81a1aaf1c2b32bd5013"
+      },
+      {
+        "path": "electron/mission-replay-query-ipc.cjs",
+        "sha256": "52e3b86d15cef5a2e56b9374ee2a78d6a748d082e3e0718d5d1ac586d8d476d7"
+      },
+      {
+        "path": "electron/mission-replay-query.cjs",
+        "sha256": "54771f5883b6fd6877c8a31ecf532a80bfe304582383676adad10ef0649ddbc7"
+      },
+      {
+        "path": "electron/mission-replay-runner.cjs",
+        "sha256": "b4decba4ba94d48933d83e7f6c12af82c0d81f9f88785eab6aef21ce0475fcfb"
+      },
+      {
+        "path": "electron/mission-replay-worker.cjs",
+        "sha256": "281a43f73bcaafddb9cb813eedbdd4edd5e9449b989770b21c139ec8c0bb6b32"
+      },
+      {
+        "path": "electron/mission-review-read-query-ipc.cjs",
+        "sha256": "872d6a44ae26323043bbf52a185d41ff15c9a60ef25de8bfd62ac48912332790"
+      },
+      {
+        "path": "electron/mission-review-read-query-runner.cjs",
+        "sha256": "37fd6ebc42f3ce87a31c23d099c3e822d5f21e845976c435a6b5a9cfb965089f"
+      },
+      {
+        "path": "electron/mission-review-read-query-worker.cjs",
+        "sha256": "dfae242e09fe74b4ea0315f43c7a1247f0741330a833eaa9e5229caa19ae6af3"
+      },
+      {
+        "path": "electron/mission-review-read-query.cjs",
+        "sha256": "db8eb91b9cac5aac2633b61c336d4e15a92569df220d79bdb3b501e1a64aa961"
+      },
+      {
+        "path": "electron/mission-store.cjs",
+        "sha256": "5c3d973cdf4cfd2a1bb62f5dc3178cdcb48c3a2900b8939bf5e4f8cb7fac01e5"
+      },
+      {
+        "path": "electron/mission-worker.cjs",
+        "sha256": "41ab66586a783b6984ed9daefde1be8bec12549fcc59e7e6863645184f9222f1"
+      },
+      {
+        "path": "electron/official-map-proxy.cjs",
+        "sha256": "be1240a9e9ee0f332131a1e7bfc58992569ae1238148ede74ca801cfbef640f4"
+      },
+      {
+        "path": "electron/outing-fix-summary-ipc.cjs",
+        "sha256": "6a4e99fa16edfa50cb0d1d616ddc437f90eec477df0aeab34d809966dbcda5fb"
+      },
+      {
+        "path": "electron/outing-fix-summary-query.cjs",
+        "sha256": "a09472658bf686756811e0027dba169af25d79019d2aa9d01a17906fca609558"
+      },
+      {
+        "path": "electron/outing-fix-summary-runner.cjs",
+        "sha256": "5805390d49286cdf20156a331c0be4eb8435163a10ddf98092b81355db7b0c98"
+      },
+      {
+        "path": "electron/outing-fix-summary-worker.cjs",
+        "sha256": "b709ecaee5c783db82752a816f843dd7ef5a986315174746376f5dd56598fc3d"
+      },
+      {
+        "path": "electron/outing-overlap-policy.cjs",
+        "sha256": "707cb32d13e019d916d9c15bcd125be18c0cdf1ecf1bd993ae8dcbd285086094"
+      },
+      {
+        "path": "electron/outing-store.cjs",
+        "sha256": "cc6063364b5c24599a3d526572bf429db1d0d9859297909cc5c2fc52ac2e3d80"
+      },
+      {
+        "path": "electron/participant-store.cjs",
+        "sha256": "3469baf0192281a80a97b2c18177efb63304c4dc545397370d11d2ad9a60ea0b"
+      },
+      {
+        "path": "electron/position-ingest-policy.cjs",
+        "sha256": "04286dadf008fc7cea30d8026e0aefe3173a1dc07eee29bdbefc32f98654bbdb"
+      },
+      {
+        "path": "electron/preload.cjs",
+        "sha256": "7b1fa2d5068530e4d2e3f8a20c7445de1a62194ce92d681508e3d7cd647223e2"
+      },
+      {
+        "path": "electron/renderer-teardown-coordinator.cjs",
+        "sha256": "c6a2e1bcc015cdd98b330b9d3a1da2445369d6f2b82d034d08079e09dcaa98e4"
+      },
+      {
+        "path": "electron/responsive-mission-writer.cjs",
+        "sha256": "49bf317df56a0866699105b094ded240ee79e594f423949bfc84c3da81b65a17"
+      },
+      {
+        "path": "electron/runtime-files.cjs",
+        "sha256": "a0280cf7514f64479a20eaed8389e5078f6d8677cd53d24441a31a5d2a13b19a"
+      },
+      {
+        "path": "electron/runtime-log.cjs",
+        "sha256": "f4ab3d061ed792938b71a44dca688255c54c134dcae7400f870616f42478cff1"
+      },
+      {
+        "path": "electron/search-operations-page-query.cjs",
+        "sha256": "75d658522e82abf7771419c8adffe3048666980abe9c05ecfc4be3ddafeeffa4"
+      },
+      {
+        "path": "electron/search-operations-page-runner.cjs",
+        "sha256": "94b86db5b93e9350a10b6545c3fc629b7c3c9c74f7992ddc98fbca9d3af19efe"
+      },
+      {
+        "path": "electron/search-operations-page-worker.cjs",
+        "sha256": "6a281a06cf0352e463dc1049bc8d3c11caa522c6f07d4aca77f76667234e40ed"
+      },
+      {
+        "path": "electron/settings-store.cjs",
+        "sha256": "b216e005a889de53f442f28cd7fe87f70642c3f486645c7e48c86c79ef8206d5"
+      },
+      {
+        "path": "electron/sqlite-backup-runner.cjs",
+        "sha256": "8e0bc79ede31d3ead523e1f7ce1b7e1f8522cfc107491019bf885ee27cf69bcd"
+      },
+      {
+        "path": "electron/sqlite-backup-worker.cjs",
+        "sha256": "826e02c215f7093c240344314a4729ba5c4a6f2d65e34db93987f3396547251a"
+      },
+      {
+        "path": "electron/sqlite-snapshot-sanity.cjs",
+        "sha256": "5f870f87ccd333bfda1913f92a7e3c7143b80dbb7207f2db86702565dad2f6a2"
+      },
+      {
+        "path": "electron/storage-diagnostics-format.cjs",
+        "sha256": "950fc1de66fb2cdd1d2bc6617e148899adccd585ecd626d3349b49ac8ae9adb3"
+      },
+      {
+        "path": "electron/storage-diagnostics-state.cjs",
+        "sha256": "2d55ca7c7f75a7fbc85e84bf35a4ee46891daaf15bed571e46ce42b7b578e69f"
+      },
+      {
+        "path": "electron/storage-diagnostics.cjs",
+        "sha256": "3a9e4e48e33290726dcfaac86de007a0c745a94d215e4d4b0ae4731187ff9ed3"
+      },
+      {
+        "path": "electron/tracking-soak-validation.cjs",
+        "sha256": "be4b825c0859e503931f9438c1b39c82c032ce1d3c7bf0a7b5afada4cb0e08b9"
+      },
+      {
+        "path": "electron/tracking-timestamp.cjs",
+        "sha256": "141158dddbe1847e745ec4d9fc0ea9de84e1bbd60de2ab1c35e74a91c6587d1c"
+      },
+      {
+        "path": "electron/transferred-file-handle-cleanup.cjs",
+        "sha256": "75637cbaa744ed6e7e30bc3b9398424fcfec400851dcbb2024fe47961be83941"
+      },
+      {
+        "path": "electron/zip-archive.cjs",
+        "sha256": "79dc6164fdb909076f3ed42ad8ace12a2d9b9553f8d3055ae9a4996acfd3ae4f"
+      }
+    ]
+  },
+  {
+    "label": "pr19",
+    "head": "769669baf5d47ee9aa157c90746f6e406778d554",
+    "rawElectronFiles": [
+      {
+        "path": "electron/archive-attachments.cjs",
+        "sha256": "f4438af5539e1237afe0d71ba5be8b85d637c376b5684f724bdbc446ae872025"
+      },
+      {
+        "path": "electron/archive-cleanup-credential-runner.cjs",
+        "sha256": "290b1fb22c565fd4d0c0fa16ca4df755d7ee3b2afc0d1e8ab2e83f49ea167ade"
+      },
+      {
+        "path": "electron/archive-cleanup-credential-worker.cjs",
+        "sha256": "2034f43211f410f08ea91b49ed7424044504ab29c69415376e62102ab2018217"
+      },
+      {
+        "path": "electron/archive-cleanup-credential.cjs",
+        "sha256": "d42ece442bea3a4469e311508ab513f1df5b2a6d23ec82278fce8ac853dc51b5"
+      },
+      {
+        "path": "electron/archive-cleanup-failure.cjs",
+        "sha256": "72f4de6db6f1771061316bbd249dc599974737ef39e1333ce61dbdddc7199c2d"
+      },
+      {
+        "path": "electron/archive-cleanup-membership.cjs",
+        "sha256": "553909a9ef586061ea6fcbb987d5cee339a050790984f2474bc157c570dba175"
+      },
+      {
+        "path": "electron/archive-cleanup-preview.cjs",
+        "sha256": "58ce9a1d7bc6bccccc4bbf4b010e350fafa916e24f7af802e5271d34d7db7452"
+      },
+      {
+        "path": "electron/archive-cleanup-runner.cjs",
+        "sha256": "8c96a69af4b6d62d0ecd7d75a3e46de890482e1110fbbc8fa8d822762ed2ad67"
+      },
+      {
+        "path": "electron/archive-cleanup-startup.cjs",
+        "sha256": "991ac54e61dd552f9a2fc85b0f9607f54d656598cffcaee1c55ad416e0ab363f"
+      },
+      {
+        "path": "electron/archive-cleanup-worker.cjs",
+        "sha256": "6549079c88c0061f4ae9f7009ec46cadb7902f6b2002876e48f2c605ef62c69a"
+      },
+      {
+        "path": "electron/archive-cleanup.cjs",
+        "sha256": "b97eb2cf8c1281268a3c6ec171dc18438a13ee603247deeda476247fe448172c"
+      },
+      {
+        "path": "electron/archive-container.cjs",
+        "sha256": "de1276df1950099421845d5269ec304f2175076f176e8f83cd227a7dfb1289d1"
+      },
+      {
+        "path": "electron/archive-correction-attachment-copy.cjs",
+        "sha256": "11667172988b33b5fa39ba38215600e89efbc1451db25e0cff7958009492a409"
+      },
+      {
+        "path": "electron/archive-correction-attachment-references.cjs",
+        "sha256": "9cf395a40f6e801d3db51476466dcea88e175d136895d4c656bae5988b08be52"
+      },
+      {
+        "path": "electron/archive-correction-custody-recovery-runner.cjs",
+        "sha256": "2035e53d2312a70b326edff82c4677f6914d8790bccb8893c74025b168e4f2b8"
+      },
+      {
+        "path": "electron/archive-correction-custody-recovery-worker.cjs",
+        "sha256": "46c9c15166f60e2634800000180621365119342d145c3073321e11523efce512"
+      },
+      {
+        "path": "electron/archive-correction-custody.cjs",
+        "sha256": "42238c6328958b27d69f5c6275042177f00a848c15cc76e755c8acd78dd58db7"
+      },
+      {
+        "path": "electron/archive-correction-directory-capability.cjs",
+        "sha256": "3dbf5958cb67fe599a54f7841b901015c5fe5db9a5e45cc25e38c5f3c3e3673d"
+      },
+      {
+        "path": "electron/archive-correction-runner.cjs",
+        "sha256": "f8ab5a884e6888ced236a7e5a563bc30faad9ac28777e5f6d700b9dd4b541272"
+      },
+      {
+        "path": "electron/archive-correction-snapshot-runner.cjs",
+        "sha256": "c07ae5c829fe729a171d4c48e1b7c8580a200916e92770d375b34d0bd7a2138e"
+      },
+      {
+        "path": "electron/archive-correction-snapshot-worker.cjs",
+        "sha256": "74381eabe71f734a26884e2adab6b3fe944f2f7bb90f9995b28d6e70baeb6bf4"
+      },
+      {
+        "path": "electron/archive-correction-worker.cjs",
+        "sha256": "c87c7b7da8ab2f71e4abb22ab97daa262a16ef6933ac2487c64d487dcbfdfae6"
+      },
+      {
+        "path": "electron/archive-crypto.cjs",
+        "sha256": "ee7a530d21fb48cf3c1f0161fb8d6780404fd5b763bb98989e80e71f60af6c9b"
+      },
+      {
+        "path": "electron/archive-custody-file.cjs",
+        "sha256": "5b18ad27cf689f37ce998317fb34fd1a713319f489ddbb4f786b8acd24f1be41"
+      },
+      {
+        "path": "electron/archive-custody-journal.cjs",
+        "sha256": "ce1dc521eb67814a74fb845e94a6608840d29284ba34cb09fb28e02198c53efe"
+      },
+      {
+        "path": "electron/archive-custody-operation-envelope.cjs",
+        "sha256": "48e2c86a8ff0270d7a7fc81ed053fa3a2b99a4901274f0e36b8ec700b0b7cbcc"
+      },
+      {
+        "path": "electron/archive-custody-operation-runner.cjs",
+        "sha256": "7878921d8f2617c67a3365c1e9d0808de63500af34f566fce08e364bdad5e946"
+      },
+      {
+        "path": "electron/archive-custody-operation-worker.cjs",
+        "sha256": "8772b1c74544fc89107f089f2ca9cadc280429e5020a317829ee7c4165930e1c"
+      },
+      {
+        "path": "electron/archive-custody-reconcile-envelope.cjs",
+        "sha256": "8195cabd88d2a6b63413bc5c692211adcce4e1114792a7c8c2683349bff88292"
+      },
+      {
+        "path": "electron/archive-custody-reconcile-runner.cjs",
+        "sha256": "468f755726264612db33e6cd994a245ad7430fe1d9508608a5498f32a4b862ff"
+      },
+      {
+        "path": "electron/archive-custody-reconcile-worker.cjs",
+        "sha256": "9a67308e5c382128815282f51dfb5767fbfde70fd2a9f659fc4dc02fc3e776cf"
+      },
+      {
+        "path": "electron/archive-envelope.cjs",
+        "sha256": "059bbfc5d1f27613b4e8cccc5efddaf8a2c34ef8ded14c7c214d74a85c9d7c61"
+      },
+      {
+        "path": "electron/archive-gpx-proof.cjs",
+        "sha256": "9b579c3bee1f6236a21a15377b5fcfef248d2cf136a8d4b42641ba3cbdf555d2"
+      },
+      {
+        "path": "electron/archive-inventory.cjs",
+        "sha256": "2d0599f3639d4b74ab667794cb5cb406dd602f679d5385ca0c8b7251f0e38ed9"
+      },
+      {
+        "path": "electron/archive-legacy-predecessor-envelope.cjs",
+        "sha256": "97e1ab600212f18db2d6ddbdaa36b08ff4a84cb761ae0b642d795a1bae9cfb70"
+      },
+      {
+        "path": "electron/archive-legacy-predecessor-runner.cjs",
+        "sha256": "476695bcf2ff424f30d00b3bd9a97dd2460c1d3c9423424d1a147dc156cb1a58"
+      },
+      {
+        "path": "electron/archive-legacy-predecessor-worker.cjs",
+        "sha256": "d5ff768b0965bea2053e2234091bdaa1bf647db7c70d9d924b2e690a8ffb1401"
+      },
+      {
+        "path": "electron/archive-manifest-limits.cjs",
+        "sha256": "36d5a8deeb02f854eafb381b9b8b225ca44a4f13260578882ecc0db62d0baa5f"
+      },
+      {
+        "path": "electron/archive-plaintext-sweep-runner.cjs",
+        "sha256": "8cf0ae2408bbfbd3222f511f9ab9c45a86054fea9307266e8d0f37d364533659"
+      },
+      {
+        "path": "electron/archive-plaintext-sweep-worker.cjs",
+        "sha256": "42fa62fa87827d030ffc9c7e9092f74b57e5e67257c113f30216e2627d10ec2e"
+      },
+      {
+        "path": "electron/archive-registry.cjs",
+        "sha256": "b56de5bb21fd02d04243910da19b40c8b661355b486af6cb06ce56caee2f1ec0"
+      },
+      {
+        "path": "electron/archive-rehydrate.cjs",
+        "sha256": "561fb34af1b6f467fab5b249ab699f2684bab3e36bde6bf607559eb90ed64ef6"
+      },
+      {
+        "path": "electron/archive-replay-proof.cjs",
+        "sha256": "a570520a387caa77a46be6719a5372ae862a750b46b2fd4730d3d3b647406aa6"
+      },
+      {
+        "path": "electron/archive-restore-runner.cjs",
+        "sha256": "068800445a8ddc4df5853b9eab7f8fe35880035754b8b216643775d7360fe14a"
+      },
+      {
+        "path": "electron/archive-restore-worker.cjs",
+        "sha256": "77e9594a4e3f4f8926af364615416b2c004b05eea9b6478e69e767162d14325b"
+      },
+      {
+        "path": "electron/archive-restore.cjs",
+        "sha256": "6f3e8a61bc9c5dc4a9f1d91bcd6a816781d4fb7ad8d87f3e48eac74e44010f27"
+      },
+      {
+        "path": "electron/archive-review-attachment-opener.cjs",
+        "sha256": "4fc5ed53a5e30ec7f2902cec66658d7100ae3ca22408a56814c50c7c72c83235"
+      },
+      {
+        "path": "electron/archive-review-envelope.cjs",
+        "sha256": "c4ad87ab125483c03d66dc9880c1aabaf8c85e26d1d5ee7a97e31f661782686d"
+      },
+      {
+        "path": "electron/archive-review-ipc.cjs",
+        "sha256": "31fdd24d9714ae9d7ba077e6c40167ad438f52b10cbd2c17f4ff1a498b6ac081"
+      },
+      {
+        "path": "electron/archive-review-projection-query.cjs",
+        "sha256": "b1d46555f76efc98f1f84407359e9418d09627de3a5f56c95431506482155134"
+      },
+      {
+        "path": "electron/archive-review-projection-runner.cjs",
+        "sha256": "fc9c082d2103949942fd7cd908fa6e58a19d46f0ee154dcebb8d81a30b1300a7"
+      },
+      {
+        "path": "electron/archive-review-projection-worker.cjs",
+        "sha256": "d2f429f5907f0c770c496658dbcfc3f7cf5c82812149549f54215d243d225927"
+      },
+      {
+        "path": "electron/archive-review-result-budget.cjs",
+        "sha256": "1a7c055622bdffe3e71fea2bd8b605ee75664c854abe35284b96a715c642b322"
+      },
+      {
+        "path": "electron/archive-review-sessions.cjs",
+        "sha256": "1bb080cb6e5530c53ced80e4e9b27438da1865c157daca91672d4a1ad74ba27e"
+      },
+      {
+        "path": "electron/archive-review-source.cjs",
+        "sha256": "88bd2348f5a36b749a960790a31c46f63a282942276a0aed6ccf755ee9e469aa"
+      },
+      {
+        "path": "electron/archive-review-sweep-runner.cjs",
+        "sha256": "deb841a9794af7bb319ad91330d4da4f89176d061624fce1417197da3a66fac6"
+      },
+      {
+        "path": "electron/archive-review-sweep-worker.cjs",
+        "sha256": "e714123ec4e3680769335958fb3188693fe2da7c099e02a1faf4bc2bd6ac9537"
+      },
+      {
+        "path": "electron/archive-review-work-queue.cjs",
+        "sha256": "7209b9172bb2c809fc2d5325b40c8cfb35ee1356be1a4861955f30288ee1c934"
+      },
+      {
+        "path": "electron/archive-scratch.cjs",
+        "sha256": "783d0ae6b21a086e17ba3723d1dc4662da9adc006b7f6f246f9f9e2cd9d2084b"
+      },
+      {
+        "path": "electron/archive-verify-runner.cjs",
+        "sha256": "c14450a1006bd274b8d681b83f741200c9df39aa43ea35ab90a09830e7d42563"
+      },
+      {
+        "path": "electron/archive-verify-worker.cjs",
+        "sha256": "0943aef101108ad758b044a22337b540b4c41749c59c77e60093300883def615"
+      },
+      {
+        "path": "electron/archive-verify.cjs",
+        "sha256": "764c1883de76cc5be18c80652baecb5bf3f99480e567c06221850b1fe88dead2"
+      },
+      {
+        "path": "electron/archive-workload-watchdog.cjs",
+        "sha256": "23b7752f5ffd1d2bac9408cdf371a0c90bf1ea1741c6c78a9e9d7834cc11967f"
+      },
+      {
+        "path": "electron/breadcrumb-dot-query-runner.cjs",
+        "sha256": "ab3b577abba6dc34b0496374a8288433865ead9f5ee3aeb86d51f0b70e24fd66"
+      },
+      {
+        "path": "electron/breadcrumb-dot-query-worker.cjs",
+        "sha256": "a43aeaada9f4d504f9b72cd02411548a0c592905c2cd4c19c99d35406e0872a6"
+      },
+      {
+        "path": "electron/breadcrumb-dot-query.cjs",
+        "sha256": "52dbe1ac94c7960e5a9a65cef32d90ac8507fcc6d6888f37b2b3f53d41b0d4e1"
+      },
+      {
+        "path": "electron/breadcrumb-query-ipc.cjs",
+        "sha256": "95ad1240ebf44b3c53a3b2ddef7a6d2aa7b0966a4e2b6c9f242fb4bc4f1524b5"
+      },
+      {
+        "path": "electron/breadcrumb-query-runner.cjs",
+        "sha256": "21d6ed80b3f18f7806f0fd4d10f6651b56490897818c300c37a22b283bd6959b"
+      },
+      {
+        "path": "electron/breadcrumb-query-worker.cjs",
+        "sha256": "dc8006947a3b51b3a1308f3c38f2a0bfc975a955c46c10a6c1b8622123860c6d"
+      },
+      {
+        "path": "electron/breadcrumb-query.cjs",
+        "sha256": "a1ed53a356898a6917e36d68bf12ee03bb8c9652746609d89d0b429a3fcb1471"
+      },
+      {
+        "path": "electron/coverage-build-attestation.cjs",
+        "sha256": "af268305007abb19e563b4947833085b574b5827f841aa7e627b2bbf769a219d"
+      },
+      {
+        "path": "electron/coverage-history-completeness.cjs",
+        "sha256": "a17043249a37b5b1e38b166e4472a3b42d05870b2dcd8288684ab138f3ef1f60"
+      },
+      {
+        "path": "electron/coverage-ipc.cjs",
+        "sha256": "afcf280334ea44abbb74ac8c599b9c1db370093ce824a9f678053cdc8ef608d7"
+      },
+      {
+        "path": "electron/coverage-ledger.cjs",
+        "sha256": "950c88b6613504478b6060ae89729736f0b7debfe8dfd2094f9db31b026628d2"
+      },
+      {
+        "path": "electron/coverage-period-resolver.cjs",
+        "sha256": "2cb971c3bacde3dcd965c639630e6b756bc6bf22185c1e3e52f3918dc9d3fc3f"
+      },
+      {
+        "path": "electron/coverage-query-plan.cjs",
+        "sha256": "d45d24d4a97277d69bc81e27de86a26642612974b403c9082b255e7f14e43f01"
+      },
+      {
+        "path": "electron/coverage-query-result-attestation.cjs",
+        "sha256": "c653572e34608265d0f76a7d4568d8658b49dcc2fb3c59e58167d544e6ffaea8"
+      },
+      {
+        "path": "electron/coverage-query-result-envelope.cjs",
+        "sha256": "a787ce05267f53fc2237d7535af55ebf26f25ff32e790dce634d867a1faef6ee"
+      },
+      {
+        "path": "electron/coverage-query-runner.cjs",
+        "sha256": "287d2697bfae1dde5bf9418d6be4ceb7c2ca385f7c82ec625d3e9fed94121c45"
+      },
+      {
+        "path": "electron/coverage-query-worker.cjs",
+        "sha256": "43ae0ff7a56e069da7e3412457f5b9b945140380b2214c0924f7b4ef700339b0"
+      },
+      {
+        "path": "electron/coverage-query.cjs",
+        "sha256": "472b807aada904a32a5b9a8590420a3bccce1acac3bae1db64206bf5dfcfd3ff"
+      },
+      {
+        "path": "electron/coverage-tile-address.cjs",
+        "sha256": "1e2e6f2d996bcf5072f9d1b51449ce6088643fbda7d95afa8a1c28a909864911"
+      },
+      {
+        "path": "electron/coverage-tile-cache-ledger.cjs",
+        "sha256": "5ae311db75fdbfa60a2a146282a656e74e614ae40e988ca7cb6bc47886f80aad"
+      },
+      {
+        "path": "electron/coverage-tile-catalog.cjs",
+        "sha256": "c2a1ef0c2a5284a19b02716497ab99213086d9b0357817732248f1cad8ec8618"
+      },
+      {
+        "path": "electron/coverage-tile-runner.cjs",
+        "sha256": "8a11320da118bac5d531d9570585f1b4f022ccf2fd593ddfdf35848ca1e39665"
+      },
+      {
+        "path": "electron/coverage-tile-worker.cjs",
+        "sha256": "62a89b605cf287b7c7903bb3108c0ec32fa85603c772ba5e608dd320afe1262c"
+      },
+      {
+        "path": "electron/coverage-trail-segmentation.cjs",
+        "sha256": "348cce598bd30be565ac735b7cfabe3797ae5af8a510c64b417405d777eb5e22"
+      },
+      {
+        "path": "electron/coverage-trail-segmentation.d.cts",
+        "sha256": "8b95e7fc6e9e5b8a316a210d238af5471ee8ec8858e90bf2aca3e96292afc233"
+      },
+      {
+        "path": "electron/coverage-worker-envelope.cjs",
+        "sha256": "c0fc984c27d0b5a440ae92fa951817307f0f04157c065b53161dd619055b29d5"
+      },
+      {
+        "path": "electron/crash-log.cjs",
+        "sha256": "36bb34aca47dbf319c1c856242b904e9ef828a285f70c83f6657acc73c7be540"
+      },
+      {
+        "path": "electron/deterministic-string-order.cjs",
+        "sha256": "4c8d296783aa28ffc874a70398452092665aec9ab68604d49764bec9c7be2e06"
+      },
+      {
+        "path": "electron/diagnostic-sanitizer.cjs",
+        "sha256": "df645441df09ab874c623f6a276beae2aeeb70aec80150bdc12c96af64ac76a5"
+      },
+      {
+        "path": "electron/durable-file.cjs",
+        "sha256": "645507a01bb61e2e5a3ffc4c24ce09a02e13fed0608e02e32d18c6c71301d8fd"
+      },
+      {
+        "path": "electron/file-system.cjs",
+        "sha256": "3147d22fc66620fecbc3ce2abfadfeda63624f3a302659a0a06afc760d16c7cc"
+      },
+      {
+        "path": "electron/foreground-write-priority.cjs",
+        "sha256": "6eaae703d3c22838bf6117c0f23fc5e9e6cbea419a9fe19bd42e780a3cc3e823"
+      },
+      {
+        "path": "electron/gpx-evidence-import-runner.cjs",
+        "sha256": "303cf2fbbfaa887a2d71ca2479d442e517eaf71a5e2cc8edd7b973e83caa10c7"
+      },
+      {
+        "path": "electron/gpx-evidence-import-worker.cjs",
+        "sha256": "4fc62a786fb46869435651ac970a6f5391e06647048c3c5ad58b37284fc94fc1"
+      },
+      {
+        "path": "electron/gpx-import-envelope.cjs",
+        "sha256": "ed358759e59f8b956caad6d64beae1de7de865364e7113e15ec4a5369eaed0ef"
+      },
+      {
+        "path": "electron/gpx-renderer-boundary.cjs",
+        "sha256": "228742b1f1a9b73a30fb3685794a4d9cc7b46ee6e12b3da7f7fe2a69fefa6403"
+      },
+      {
+        "path": "electron/gpx-source-reader.cjs",
+        "sha256": "038a4117b705abb2f14f0f8c435124fab7a0dd1fc8f0a6055614a87a3d9e9049"
+      },
+      {
+        "path": "electron/ingest-anomaly-ledger.cjs",
+        "sha256": "a6002e5ee161e4a4defa77aa682fe2f9c4fc1d8f2f57446337ad192111be6744"
+      },
+      {
+        "path": "electron/ingest-anomaly-outbox.cjs",
+        "sha256": "922098a0c4f153954a68a84e5aa350dd80d91b6f9bd09872b116755be2b0a6c8"
+      },
+      {
+        "path": "electron/legacy-archive-restore-runner.cjs",
+        "sha256": "017dbd0aa03a05e0099820a1a6306efdfb0f30ccfb4048c3cf21378997987e60"
+      },
+      {
+        "path": "electron/legacy-archive-restore-worker.cjs",
+        "sha256": "94537022df99d5871104ef88836a90298f12088554ba31096e391a047b3f8ad8"
+      },
+      {
+        "path": "electron/legacy-archive-restore.cjs",
+        "sha256": "2d46a1ad9825ca50079fef73f1a6d3ea899b7ca180d1f60d7fb90f7d723cf356"
+      },
+      {
+        "path": "electron/legacy-evidence-backfill-runner.cjs",
+        "sha256": "487a355f9c7feccff297f91da81518236d6fb55f5c701f22e9758505dfc8e61f"
+      },
+      {
+        "path": "electron/legacy-evidence-backfill-worker.cjs",
+        "sha256": "899e1a682180184e8272ad649232014fcee3ade5e8a7656c64d3b79124323880"
+      },
+      {
+        "path": "electron/main.cjs",
+        "sha256": "f37cf2ca0c7947f0bfc208ce864950f06822cffcc84eb025858933b2a9e77cd0"
+      },
+      {
+        "path": "electron/mission-archive-ipc.cjs",
+        "sha256": "bb5e06d818f3a95b6f70fa72be91116c2bc8616c03ae61bad8428923a4d070b7"
+      },
+      {
+        "path": "electron/mission-archive-runner.cjs",
+        "sha256": "e7cacadfb2139ffe0b6a2578d44e08e92416d69501e133db3dd79434bfbc8d58"
+      },
+      {
+        "path": "electron/mission-archive-worker.cjs",
+        "sha256": "7af56351cc1ee46e31311b1ca408805d4f28fbebdce89519f301df6395665613"
+      },
+      {
+        "path": "electron/mission-event-provenance-backfill.cjs",
+        "sha256": "3190be2488dcac4aeda4a4e959d078462f260b398c37b213112510b65453f6a9"
+      },
+      {
+        "path": "electron/mission-evidence-version-store.cjs",
+        "sha256": "3569c9d02c57bb951f9808d3ee40297c3453112a01b66962f27b0c1e823d1e3f"
+      },
+      {
+        "path": "electron/mission-finalization-boundary.cjs",
+        "sha256": "ea21ba1d6c97aa6345ebe0536bb529349534d0c9035a70ae5f89095efaa6e536"
+      },
+      {
+        "path": "electron/mission-finalization-scan.cjs",
+        "sha256": "c98f6a5a6e8e6267e50302d1ccf0e55f5a33896a70e68e8f9ea8742ec08beacc"
+      },
+      {
+        "path": "electron/mission-live-review-access.cjs",
+        "sha256": "3e10a92f3f2cb59a268dd738e80ed4ae59e776fc35ca4ff0509c8e2d97b757cb"
+      },
+      {
+        "path": "electron/mission-replay-database.cjs",
+        "sha256": "e12bf41e87a5087db984df994fb090ae88ec60831ef0bcd3fd07c23a63bfb31d"
+      },
+      {
+        "path": "electron/mission-replay-message-policy.cjs",
+        "sha256": "25bf4b94798281c8e742f44a9f0d2056fd32f7b3f3cdd81a1aaf1c2b32bd5013"
+      },
+      {
+        "path": "electron/mission-replay-query-ipc.cjs",
+        "sha256": "52e3b86d15cef5a2e56b9374ee2a78d6a748d082e3e0718d5d1ac586d8d476d7"
+      },
+      {
+        "path": "electron/mission-replay-query.cjs",
+        "sha256": "54771f5883b6fd6877c8a31ecf532a80bfe304582383676adad10ef0649ddbc7"
+      },
+      {
+        "path": "electron/mission-replay-runner.cjs",
+        "sha256": "b4decba4ba94d48933d83e7f6c12af82c0d81f9f88785eab6aef21ce0475fcfb"
+      },
+      {
+        "path": "electron/mission-replay-worker.cjs",
+        "sha256": "281a43f73bcaafddb9cb813eedbdd4edd5e9449b989770b21c139ec8c0bb6b32"
+      },
+      {
+        "path": "electron/mission-review-read-query-ipc.cjs",
+        "sha256": "872d6a44ae26323043bbf52a185d41ff15c9a60ef25de8bfd62ac48912332790"
+      },
+      {
+        "path": "electron/mission-review-read-query-runner.cjs",
+        "sha256": "37fd6ebc42f3ce87a31c23d099c3e822d5f21e845976c435a6b5a9cfb965089f"
+      },
+      {
+        "path": "electron/mission-review-read-query-worker.cjs",
+        "sha256": "dfae242e09fe74b4ea0315f43c7a1247f0741330a833eaa9e5229caa19ae6af3"
+      },
+      {
+        "path": "electron/mission-review-read-query.cjs",
+        "sha256": "db8eb91b9cac5aac2633b61c336d4e15a92569df220d79bdb3b501e1a64aa961"
+      },
+      {
+        "path": "electron/mission-store.cjs",
+        "sha256": "5c3d973cdf4cfd2a1bb62f5dc3178cdcb48c3a2900b8939bf5e4f8cb7fac01e5"
+      },
+      {
+        "path": "electron/mission-worker.cjs",
+        "sha256": "41ab66586a783b6984ed9daefde1be8bec12549fcc59e7e6863645184f9222f1"
+      },
+      {
+        "path": "electron/official-map-proxy.cjs",
+        "sha256": "be1240a9e9ee0f332131a1e7bfc58992569ae1238148ede74ca801cfbef640f4"
+      },
+      {
+        "path": "electron/outing-fix-summary-ipc.cjs",
+        "sha256": "6a4e99fa16edfa50cb0d1d616ddc437f90eec477df0aeab34d809966dbcda5fb"
+      },
+      {
+        "path": "electron/outing-fix-summary-query.cjs",
+        "sha256": "a09472658bf686756811e0027dba169af25d79019d2aa9d01a17906fca609558"
+      },
+      {
+        "path": "electron/outing-fix-summary-runner.cjs",
+        "sha256": "5805390d49286cdf20156a331c0be4eb8435163a10ddf98092b81355db7b0c98"
+      },
+      {
+        "path": "electron/outing-fix-summary-worker.cjs",
+        "sha256": "b709ecaee5c783db82752a816f843dd7ef5a986315174746376f5dd56598fc3d"
+      },
+      {
+        "path": "electron/outing-overlap-policy.cjs",
+        "sha256": "707cb32d13e019d916d9c15bcd125be18c0cdf1ecf1bd993ae8dcbd285086094"
+      },
+      {
+        "path": "electron/outing-store.cjs",
+        "sha256": "cc6063364b5c24599a3d526572bf429db1d0d9859297909cc5c2fc52ac2e3d80"
+      },
+      {
+        "path": "electron/participant-store.cjs",
+        "sha256": "3469baf0192281a80a97b2c18177efb63304c4dc545397370d11d2ad9a60ea0b"
+      },
+      {
+        "path": "electron/position-ingest-policy.cjs",
+        "sha256": "04286dadf008fc7cea30d8026e0aefe3173a1dc07eee29bdbefc32f98654bbdb"
+      },
+      {
+        "path": "electron/preload.cjs",
+        "sha256": "7b1fa2d5068530e4d2e3f8a20c7445de1a62194ce92d681508e3d7cd647223e2"
+      },
+      {
+        "path": "electron/renderer-teardown-coordinator.cjs",
+        "sha256": "c6a2e1bcc015cdd98b330b9d3a1da2445369d6f2b82d034d08079e09dcaa98e4"
+      },
+      {
+        "path": "electron/responsive-mission-writer.cjs",
+        "sha256": "49bf317df56a0866699105b094ded240ee79e594f423949bfc84c3da81b65a17"
+      },
+      {
+        "path": "electron/runtime-files.cjs",
+        "sha256": "a0280cf7514f64479a20eaed8389e5078f6d8677cd53d24441a31a5d2a13b19a"
+      },
+      {
+        "path": "electron/runtime-log.cjs",
+        "sha256": "f4ab3d061ed792938b71a44dca688255c54c134dcae7400f870616f42478cff1"
+      },
+      {
+        "path": "electron/search-operations-page-query.cjs",
+        "sha256": "75d658522e82abf7771419c8adffe3048666980abe9c05ecfc4be3ddafeeffa4"
+      },
+      {
+        "path": "electron/search-operations-page-runner.cjs",
+        "sha256": "94b86db5b93e9350a10b6545c3fc629b7c3c9c74f7992ddc98fbca9d3af19efe"
+      },
+      {
+        "path": "electron/search-operations-page-worker.cjs",
+        "sha256": "6a281a06cf0352e463dc1049bc8d3c11caa522c6f07d4aca77f76667234e40ed"
+      },
+      {
+        "path": "electron/settings-store.cjs",
+        "sha256": "b216e005a889de53f442f28cd7fe87f70642c3f486645c7e48c86c79ef8206d5"
+      },
+      {
+        "path": "electron/sqlite-backup-runner.cjs",
+        "sha256": "8e0bc79ede31d3ead523e1f7ce1b7e1f8522cfc107491019bf885ee27cf69bcd"
+      },
+      {
+        "path": "electron/sqlite-backup-worker.cjs",
+        "sha256": "826e02c215f7093c240344314a4729ba5c4a6f2d65e34db93987f3396547251a"
+      },
+      {
+        "path": "electron/sqlite-snapshot-sanity.cjs",
+        "sha256": "5f870f87ccd333bfda1913f92a7e3c7143b80dbb7207f2db86702565dad2f6a2"
+      },
+      {
+        "path": "electron/storage-diagnostics-format.cjs",
+        "sha256": "950fc1de66fb2cdd1d2bc6617e148899adccd585ecd626d3349b49ac8ae9adb3"
+      },
+      {
+        "path": "electron/storage-diagnostics-state.cjs",
+        "sha256": "2d55ca7c7f75a7fbc85e84bf35a4ee46891daaf15bed571e46ce42b7b578e69f"
+      },
+      {
+        "path": "electron/storage-diagnostics.cjs",
+        "sha256": "3a9e4e48e33290726dcfaac86de007a0c745a94d215e4d4b0ae4731187ff9ed3"
+      },
+      {
+        "path": "electron/tracking-soak-validation.cjs",
+        "sha256": "be4b825c0859e503931f9438c1b39c82c032ce1d3c7bf0a7b5afada4cb0e08b9"
+      },
+      {
+        "path": "electron/tracking-timestamp.cjs",
+        "sha256": "141158dddbe1847e745ec4d9fc0ea9de84e1bbd60de2ab1c35e74a91c6587d1c"
+      },
+      {
+        "path": "electron/transferred-file-handle-cleanup.cjs",
+        "sha256": "75637cbaa744ed6e7e30bc3b9398424fcfec400851dcbb2024fe47961be83941"
+      },
+      {
+        "path": "electron/zip-archive.cjs",
+        "sha256": "79dc6164fdb909076f3ed42ad8ace12a2d9b9553f8d3055ae9a4996acfd3ae4f"
+      }
+    ]
+  }
+]

@@ -23,6 +23,13 @@ import { fileURLToPath } from 'node:url'
 
 import { chromium } from 'playwright'
 import { collectMainEventLoopEvidence, installMainEventLoopProbe } from '../build/main-event-loop-probe.js'
+import {
+  attachInspectorAttribution,
+  collectAttributionEvidence,
+  startResponsivenessAttribution,
+  unavailableAttribution,
+} from '../build/responsiveness-attribution-node.js'
+import { extractStoragePhaseAttribution } from '../build/responsiveness-attribution-lib.js'
 
 import { summarizeResponsiveness } from '../build/electron-map-freeze-probe-lib.js'
 import { sanitizeEvidenceText } from '../build/electron-official-map-offline-smoke-lib.js'
@@ -423,7 +430,9 @@ async function main() {
       ),
     }
     const runtimeLogBytes = await combinedLogBytes(userDataDir)
-    const runtimeTiming = parseTrackingSoakRuntimeLog(await readCombinedRuntimeLog(userDataDir))
+    const runtimeContents = await readCombinedRuntimeLog(userDataDir)
+    const runtimeTiming = parseTrackingSoakRuntimeLog(runtimeContents)
+    const storagePhaseAttribution = extractStoragePhaseAttribution(runtimeContents)
     const growth = buildTrackingGrowthEvidence(growthCheckpoints)
     const supportBundleBytes = Buffer.byteLength(supportBundle, 'utf8')
     const mainStats = summarizeResponsiveness(
@@ -602,6 +611,7 @@ async function main() {
       positionTruth,
       growth,
       runtimeTiming,
+      storagePhaseAttribution,
       responsiveness: {
         mainProcess: mainStats,
         independentMainEventLoops: launches.map((launch) => launch.mainEventLoopEvidence),
@@ -637,6 +647,7 @@ async function main() {
         mainHeartbeatErrors: launch.mainHeartbeatErrors,
         mainHeartbeatFailures: launch.mainHeartbeatFailures,
         mainEventLoopEvidence: launch.mainEventLoopEvidence,
+        attribution: launch.attributionEvidence ?? unavailableAttribution('not-collected'),
         rendererCrashes: launch.rendererCrashes,
         processMemory: createProcessMemoryReport(launch.processMemory),
         operatorClickAuditTail: launch.operatorClickAuditTail,
@@ -675,6 +686,15 @@ async function main() {
         cleanupFailure = error
       }
     }
+    // Keep diagnostic availability/failure visible even when the operational report was not written.
+    await writeJson(path.join(evidenceDir, 'responsiveness-attribution.json'), {
+      schemaVersion: 1,
+      diagnosticOnly: true,
+      launches: launches.map((launch) => ({
+        number: launch.number,
+        attribution: launch.attributionEvidence ?? unavailableAttribution('not-collected'),
+      })),
+    }).catch(() => console.warn('[tracking-soak] attribution evidence file could not be written.'))
     await Promise.allSettled(
       launches.map((launch) =>
         writeFile(
@@ -771,6 +791,7 @@ async function launchPackagedApp(options, userDataDir, number) {
   let browser
   let mainInspector
   let mainHeartbeat
+  let attribution
   try {
     await waitForCdp(remoteDebuggingPort, appProcess)
     mainInspector = await connectMainInspector(inspectorPort, appProcess)
@@ -794,6 +815,12 @@ async function launchPackagedApp(options, userDataDir, number) {
     rendererLifecycle.markReady()
     mainHeartbeat = startMainHeartbeat(mainInspector, 50)
     await mainInspector.evaluate(`globalThis.__SARTRACKER_MAIN_EVENT_LOOP_PROBE__ = (${installMainEventLoopProbe.toString()})(); true`)
+    attribution = await startResponsivenessAttribution({
+      mainInspector,
+      page,
+      mainPid: appProcess.pid,
+      requireFrames: true,
+    })
 
     return {
       number,
@@ -802,6 +829,8 @@ async function launchPackagedApp(options, userDataDir, number) {
       page,
       mainInspector,
       mainHeartbeat,
+      attribution,
+      attributionEvidence: unavailableAttribution('not-collected'),
       mainHeartbeatErrors: 0,
       mainHeartbeatFailures: [],
       mainEventLoopEvidence: null,
@@ -831,6 +860,7 @@ async function launchPackagedApp(options, userDataDir, number) {
   } catch (error) {
     await runCleanupStep(() => mainInspector?.close(), 250)
     await runCleanupStep(() => mainHeartbeat?.stop(), 250)
+    await runCleanupStep(() => attribution === undefined ? undefined : collectAttributionEvidence(attribution), 12_000)
     await runCleanupStep(() => browser?.close(), 2_000)
     let cleanupFailure
     try {
@@ -2885,9 +2915,10 @@ async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
       500,
     )
     await runCleanupStep(
-      () => collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps),
+      () => collectOriginalLaunchResponsiveness(launch, mainRoundTrips, rendererGaps),
       2_000,
     )
+    await collectLaunchAttribution(launch)
     let gracefulFailure
     let exitEvidence
     try {
@@ -2950,11 +2981,18 @@ async function collectOperatorClickAuditTail(launch) {
  * measured window.
  */
 async function collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps) {
+  await collectOriginalLaunchResponsiveness(launch, mainRoundTrips, rendererGaps)
+  await collectLaunchAttribution(launch)
+}
+
+/** Retains the original timing probes and their operational verdict semantics. */
+async function collectOriginalLaunchResponsiveness(launch, mainRoundTrips, rendererGaps) {
   if (launch.responsivenessCollected === true) {
     return
   }
   launch.responsivenessCollected = true
   const heartbeat = await launch.mainHeartbeat.stop()
+  launch.heartbeatEvidence = heartbeat
   launch.mainHeartbeatErrors = heartbeat.errors
   launch.mainHeartbeatFailures = heartbeat.failures
   mainRoundTrips.push(...heartbeat.roundTrips)
@@ -2962,6 +3000,21 @@ async function collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps)
   const launchRendererGaps = await collectRendererProbe(launch.page).catch(() => [])
   launch.rendererSampleCount = launchRendererGaps.length
   rendererGaps.push(...launchRendererGaps)
+}
+
+/** Publishes bounded diagnostic evidence without changing the original soak verdict. */
+async function collectLaunchAttribution(launch) {
+  launch.attributionCollectionPromise ??= (async () => {
+    const evidence = attachInspectorAttribution(
+      await collectAttributionEvidence(launch.attribution),
+      launch.heartbeatEvidence,
+    )
+    launch.attributionEvidence = evidence
+    if (!evidence.collected) {
+      console.warn(`[tracking-soak] attribution launch=${launch.number} collected=false reason=${evidence.reason}`)
+    }
+  })()
+  await launch.attributionCollectionPromise
 }
 
 async function sampleProcessMemory(launch, context = {}) {
