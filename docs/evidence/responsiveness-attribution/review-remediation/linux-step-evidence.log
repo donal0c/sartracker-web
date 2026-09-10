@@ -12,7 +12,6 @@ Build and inspect Linux Electron artifacts	Electron responsiveness attribution c
 Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:32.1171733Z [WebServer] Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
 Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:32.1200856Z [WebServer]   npx update-browserslist-db@latest
 Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:32.1202384Z [WebServer]   Why you should do it regularly: https://github.com/browserslist/update-db#readme
-Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:32.2496946Z 
 Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:32.2511250Z Running 3 tests using 1 worker
 Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:39.3852755Z ···
 Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:39.3857463Z   3 passed (10.8s)
