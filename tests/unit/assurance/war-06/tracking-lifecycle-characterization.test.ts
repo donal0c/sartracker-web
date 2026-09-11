@@ -27,6 +27,19 @@ const FIXED_NOW = new Date('2026-04-06T10:35:00.000Z')
 const activeRuntimeStops = new Set<RuntimeStop>()
 const pendingCurrentPositionResolutions = new Set<() => void>()
 
+/** Stops a runtime and retries once when its first cleanup attempt remains incomplete. */
+async function stopRuntimeWithRetry(stop: RuntimeStop): Promise<void> {
+  try {
+    await stop()
+  } catch (firstError) {
+    try {
+      await stop()
+    } catch (retryError) {
+      throw new AggregateError([firstError, retryError], 'WAR-06 runtime cleanup retry failed.')
+    }
+  }
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   useTrackingStore.setState(useTrackingStore.getInitialState())
@@ -36,12 +49,11 @@ beforeEach(() => {
 afterEach(async () => {
   for (const resolve of pendingCurrentPositionResolutions) resolve()
   pendingCurrentPositionResolutions.clear()
-  const stops = [...activeRuntimeStops]
-  activeRuntimeStops.clear()
   const failures: unknown[] = []
-  for (const stop of stops) {
+  for (const stop of [...activeRuntimeStops]) {
     try {
-      await stop()
+      await stopRuntimeWithRetry(stop)
+      activeRuntimeStops.delete(stop)
     } catch (error) {
       failures.push(error)
     }
@@ -384,50 +396,50 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
       replacement = controller.startMission({ name: 'Mission B' })
     }
   })
-  const runtime = await startCharacterizationRuntime({
-    applySnapshot: (nextSnapshot) => {
-      applyTrackingSnapshot(
-        nextSnapshot,
-        useMissionStore.getState().currentMission?.id ?? null,
-        ['device-1'],
-      )
-    },
-    scopeStatus: () => scopeStatus,
-    readScope: () => currentScope,
-    subscribeScope: () => () => undefined,
-  })
-
-  const observation = {
-    missionId: null,
-    complete: vi.fn(),
-    claim: vi.fn(),
-  }
-  runtime.hooks.onCurrentSnapshot(
-    missionACurrent,
-    { historyResetKey: 'mission-a', missionEvidenceId: null },
-    observation,
-  )
-  expect(useTrackingStore.getState().snapshot.positions).toHaveLength(0)
-
   try {
+    const runtime = await startCharacterizationRuntime({
+      applySnapshot: (nextSnapshot) => {
+        applyTrackingSnapshot(
+          nextSnapshot,
+          useMissionStore.getState().currentMission?.id ?? null,
+          ['device-1'],
+        )
+      },
+      scopeStatus: () => scopeStatus,
+      readScope: () => currentScope,
+      subscribeScope: () => () => undefined,
+    })
+
+    const observation = {
+      missionId: null,
+      complete: vi.fn(),
+      claim: vi.fn(),
+    }
+    runtime.hooks.onCurrentSnapshot(
+      missionACurrent,
+      { historyResetKey: 'mission-a', missionEvidenceId: null },
+      observation,
+    )
+    expect(useTrackingStore.getState().snapshot.positions).toHaveLength(0)
+
     await controller.finishMission()
     if (replacement === null) throw new Error('Mission controller did not publish idle.')
     await replacement
+    expect(useMissionStore.getState().phase).toBe('active')
+    expect(useMissionStore.getState().currentMission?.id).toBe('mission-b')
+    currentScope = scopeForMission('mission-b')
+    scopeStatus = 'ready'
+    runtime.notifyScopeChanged()
+
+    expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id))
+      .toEqual(['mission-a-deferred-fix'])
+    expect(useStationaryAttentionStore.getState().missionId).toBe('mission-b')
+
+    pendingCurrentPositionResolutions.clear()
+    await flushMicrotasks()
   } finally {
     unsubscribeMissionTransition()
   }
-  expect(useMissionStore.getState().phase).toBe('active')
-  expect(useMissionStore.getState().currentMission?.id).toBe('mission-b')
-  currentScope = scopeForMission('mission-b')
-  scopeStatus = 'ready'
-  runtime.notifyScopeChanged()
-
-  expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id))
-    .toEqual(['mission-a-deferred-fix'])
-  expect(useStationaryAttentionStore.getState().missionId).toBe('mission-b')
-
-  pendingCurrentPositionResolutions.clear()
-  await flushMicrotasks()
 })
 
 it('characterizes the unkeyed cached snapshot across finish-idle-start [WAR-06-CACHE-SIBLING]', async () => {
