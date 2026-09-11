@@ -220,21 +220,23 @@ Train B until integration.
 
 WAR-06 PR #20 review repair is now reconciled as evidence-only work. The branch
 was rebased onto current `origin/master` `3db57a79` (merged PR #22); review
-`5175815340` covered pre-rebase head `839737e8`, and the executable evidence
-commit is `dc3ea822`. Three passing characterizations cover the real polling
-manager delayed flush (`WAR-06-AUD-01`), real mission finish → idle → start plus
-runtime current-fix hydration (`WAR-06-AUD-02`), and the unkeyed cache sibling.
-The report and test cleanup are fail-safe. These remain unrepaired P1 candidate
-renderer hazards; the strict `<200 ms` full-suite timing failures remain
-unresolved. No production change, merge, release, deployment, team contact, or
-gate relaxation is claimed. Final exact-head Luna review `5176300059` is clean
-on pre-PR22 executable head `c4cda818`; it is retained as historical
-provenance, not approval of the rebased head. Two new exact-head read-only
-reviews are CLEAN on executable candidate `10781e2d`, and ordinary CI
-`34632732266` passes. PR-mode timing/replay/packaged skips remain explicit
-gaps; PRs #19 and #21 remain draft and the latest qualification comment
-retains the 205 ms strict-gate failure. Any production repair remains
-downstream of this investigation PR.
+`5175815340` covered pre-rebase head `839737e8`, and the corrected executable
+characterization commit is `28bab15a`. Three passing intentional-red
+characterizations now cover the real polling-manager delayed timer during a
+finish → idle → start replacement poll (`WAR-06-AUD-01`), the real
+poller-to-runtime current-fix callback with mission-wake coalescing during
+hydration (`WAR-06-AUD-02`), and a cold-start read of the unkeyed global cache
+under Mission B. The report, escape analysis and test cleanup are fail-safe.
+These remain unrepaired P1 candidate renderer hazards; the strict `<200 ms>`
+full-suite timing failures remain unresolved. No production change, merge,
+release, deployment, team contact, or gate relaxation is claimed. Prior review
+`5176300059` is historical pre-PR22 provenance, not approval of the corrected
+head. Fresh review receipts and exact-head CI must bind the pushed correction;
+the live [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
+are the source of that final receipt. PR-mode timing/replay/packaged skips
+remain explicit gaps; PRs #19 and #21 remain draft and the latest
+qualification comment retains the 205 ms strict-gate failure. Any production
+repair remains downstream of this investigation PR.
 
 ### Repair Train A — merged evidence boundary (2026-09-10)
 

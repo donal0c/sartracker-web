@@ -29,23 +29,25 @@ Updated 2026-09-11. Read after `CLAUDE.md`.
   breadcrumb IPC/query transfer (316–550 ms), then separate legacy recovery
   (~239 ms), then rerun unchanged strict `<200 ms` release qualification;
   (4) release remains HOLD until the repairs and qualification pass.
-  DON-254 remains open. Linear's issue limit prevented separate A/B issues;
+  DON-254 is In Progress. Linear's issue limit prevented separate A/B issues;
   comments `46c986c3…` / `1dfb6581…` and the regression ledger retain them.
   [Causal record](../docs/assurance/findings/responsiveness-causal-repair.md).
   Historical PR19/20/21 findings stay separate. No merge/release/team contact.
 
-- **WAR-06 PR #20 investigation-only evidence is active.** The branch is
-  rebased onto current `origin/master` `3db57a79` after PR22. The three
-  characterizations use the real polling-manager delayed history flush, finish
-  → idle → start plus the runtime current-fix callback, and the unkeyed cache
-  hydration path. Local WAR-06 is 3/3, adjacent tracking/reload/runtime/poller
-  is 185/185, ordinary correctness is 4,461 passed / 6 qualification-only
-  skipped, lint/build pass, and no production repair is included. Exact
-  executable candidate `10781e2d` has two CLEAN read-only reviews and ordinary
-  CI `34632732266` green; PR-mode timing/replay/packaged skips remain explicit
-  gaps. Strict `<200 ms` failures remain qualification evidence, not a reason
-  to weaken ordinary correctness gates. PR #20 remains ahead of PR #21 and PR
-  #19 in the locked queue.
+- **WAR-06 PR #20 investigation-only evidence is active.** The corrected tests
+  are at `28bab15a` on base `3db57a79`: AUD-01 uses a real finish → idle →
+  start replacement poll with a pending Traccar response and delayed history
+  timer; AUD-02 uses the real poller-to-runtime current-fix callback and
+  mission-wake coalescing during participant hydration; the cache sibling is a
+  cold-start read of the global cache under Mission B. WAR-06 is 3/3, adjacent
+  tracking/reload/runtime/poller is 185/185, ordinary correctness is 4,461
+  passed / 6 qualification-only skipped, lint/build pass, and no production
+  repair is included. Fresh review receipts and exact-head CI must bind the
+  pushed correction; use the [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
+  and [WAR-06 report](../docs/assurance/findings/war-06/WAR-06.md). Strict
+  `<200 ms` failures remain qualification evidence, not a reason to weaken
+  ordinary correctness gates. PR #20 remains ahead of PR #21 and PR #19 in
+  the locked queue.
 
 - **Repair Train A merged**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
   at `302bdd040976bd370271cf5866549fa2a7e05ff5` on 2026-09-10. Its final
@@ -62,7 +64,7 @@ Updated 2026-09-11. Read after `CLAUDE.md`.
   This is scoped review readiness, not reliable strict-200 or release acceptance.
   [Disposition](../docs/assurance/findings/repair-train-a-remediation.md) and
   [latest receipt](../docs/evidence/repair-train-a/github-followup/linux-ci-receipt.md)
-  bind the proof. DON-267/DON-269 are Done in Linear; DON-254 remains open.
+  bind the proof. DON-267/DON-269 are Done in Linear; DON-254 is In Progress.
   Merge does not establish release or field acceptance.
 
 - **WAR-02A test foundation merged in PR #16 at `4076975d`** from fetched master `083f5047`
