@@ -161,6 +161,30 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
+### Responsiveness causal repair — DON-254 (2026-09-11)
+
+From refreshed master `49b2e1d4`, `codex/responsiveness-causal-repair` owns the
+strict-200 causal repair. Native SQLite red control confirms GPX can start a
+background transaction while an admitted foreground write sleeps in busy retry.
+Separate native 350 ms lock control proves startup archive bookkeeping blocks
+the main loop for 355.498 ms despite only 3.988 ms CPU. Route archive bookkeeping
+through the responsive writer and join it during shutdown.
+Use the existing foreground counter at GPX write boundaries; retain atomic
+transactions, exact bytes/points, publication fences and cancellation/exit joins.
+Extend current-write measurement through import settlement and retain latency,
+main responsiveness and CPU as separate observations. No schema/coordinate or
+team-domain change; no threshold amendment is currently supported.
+Verify deterministic priority and worker wiring, exact original 50k workload
+with profiling off/on, affected native suites, full source/lint/build, package
+and Linux CI, then independent review. Historical source205.296ms and PR19/21
+packaged failures remain unresolved until their own causal evidence is adequate.
+PR20's investigation-only findings and PR19's product repairs stay separate.
+Full-tail source checks pass locally and on isolated Ubuntu; native priority,
+startup completion/shutdown and queued identity checks pass. Full 429-file source
+cycle, lint/build and eight Chromium workflows pass. Package/CI and final review
+remain pending in the [causal repair record](assurance/findings/responsiveness-causal-repair.md).
+No merge/release/deploy or field acceptance.
+
 ### Repair Train B and WAR-06 — active next work (2026-09-10)
 
 Repair Train A merged in [PR #17](https://github.com/donal0c/sartracker-web/pull/17)

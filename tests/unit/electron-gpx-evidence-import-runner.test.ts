@@ -17,6 +17,28 @@ const { validateGpxImportEnvelope } = require('../../electron/gpx-import-envelop
 }
 
 describe('GPX evidence import worker runner [DON-277]', () => {
+  it('passes the foreground admission counter into the worker and rejects malformed counters', async () => {
+    const buffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
+    const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
+    worker.terminate = vi.fn(async () => 0)
+    const createWorker = vi.fn(() => worker)
+    const result = runGpxEvidenceImportInWorker({
+      databasePath: '/tmp/unused.sqlite', missionId: 'mission-1', paths: ['/tmp/evidence.gpx'],
+      foregroundWriterBuffer: buffer, createWorker,
+    })
+    worker.emit('message', { type: 'complete', imports: [], failures: [] })
+    worker.emit('exit', 0)
+    await result
+    expect(createWorker).toHaveBeenCalledWith(expect.objectContaining({
+      workerData: expect.objectContaining({ foregroundWriterBuffer: buffer }),
+    }))
+    expect(() => runGpxEvidenceImportInWorker({
+      databasePath: '/tmp/unused.sqlite', missionId: 'mission-1', paths: ['/tmp/evidence.gpx'],
+      foregroundWriterBuffer: new SharedArrayBuffer(8), createWorker,
+    })).toThrow(/counter/)
+    expect(createWorker).toHaveBeenCalledTimes(1)
+  })
+
   it('trims bounded mission and path scalars only after raw envelope admission', () => {
     expect(validateGpxImportEnvelope({
       missionId: '  mission-1  ',

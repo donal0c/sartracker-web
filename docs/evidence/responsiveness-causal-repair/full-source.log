@@ -1,0 +1,16 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+Legacy event preparation heartbeat diagnostics: {"maximumHeartbeatGapMs":11.592957999997452,"maximumInspectionQueryMs":2.0349999999998545,"largestGapProcessCpuMs":6.012,"overlappingMainThreadGc":[]}
+GPX current-write diagnostics: {"maximumWriteMs":32.06191600000602,"largestWriteProcessCpuMs":4.13,"maximumHeartbeatGapMs":15.783333000006678,"sequence":1056}
+Startup SQLite contention: {"maximumGapMs":11.39262500000001,"processCpuMs":9.749}
+Startup SQLite contention: {"maximumGapMs":11.452541999999994,"processCpuMs":5.403}
+
+ Test Files  429 passed (429)
+      Tests  4384 passed (4384)
+   Start at  10:23:33
+   Duration  486.87s (transform 3.67s, setup 0ms, import 12.19s, tests 333.57s, environment 113.77s)

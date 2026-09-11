@@ -1,0 +1,61 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-mission-evidence-versioning.test.ts -t throughout a 50k-point --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts (74 tests | 1 failed | 73 skipped) 30019ms
+     × keeps current-position writes and main heartbeat below 200 ms throughout a 50k-point GPX import [DON-274] 30018ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > keeps current-position writes and main heartbeat below 200 ms throughout a 50k-point GPX import [DON-274]
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:4153:3
+    4151|   })
+    4152|
+    4153|   it('keeps current-position writes and main heartbeat below 200 ms th…
+       |   ^
+    4154|     store = await createStore()
+    4155|     const mission = await store.createMission({ name: 'GPX Current Pri…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+AbortError: GPX evidence import worker was cancelled.
+ ❯ createAbortError electron/gpx-evidence-import-runner.cjs:101:17
+ ❯ AbortSignal.handleAbort electron/gpx-evidence-import-runner.cjs:62:50
+ ❯ AbortSignal.[nodejs.internal.kHybridDispatch] node:internal/event_target:843:20
+ ❯ AbortSignal.dispatchEvent node:internal/event_target:776:26
+ ❯ runAbort node:internal/abort_controller:486:10
+ ❯ abortSignal node:internal/abort_controller:457:3
+ ❯ AbortController.abort node:internal/abort_controller:505:5
+ ❯ Object.prepareClose electron/mission-store.cjs:1892:52
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:195:18
+    193|   afterEach(async () => {
+    194|     vi.restoreAllMocks()
+    195|     await store?.prepareClose()
+       |                  ^
+    196|     store?.close()
+    197|     store = null
+ ❯ node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+
+This error originated in "tests/unit/electron-mission-evidence-versioning.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "keeps current-position writes and main heartbeat below 200 ms throughout a 50k-point GPX import [DON-274]". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 73 skipped (74)
+     Errors  1 error
+   Start at  10:11:30
+   Duration  30.75s (transform 70ms, setup 0ms, import 121ms, tests 30.02s, environment 328ms)

@@ -1,0 +1,22 @@
+[WebServer] (node:58971) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[WebServer]   npx update-browserslist-db@latest
+[WebServer]   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 8 tests using 1 worker
+
+(node:58973) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:58973) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/archive-review-operator-flow.spec.ts:7:3 › C9 archive-backed Mission Review operator flow [DON-253 / BCP-16] › opens a verified archive read-only, keeps the residual warning visible, and closes back to live review (5.5s)
+  ✓  2 [chromium] › tests/e2e/archive-review-operator-flow.spec.ts:64:3 › C9 archive-backed Mission Review operator flow [DON-253 / BCP-16] › archives live rows only after every check, retains read-only review, and persists the archived timeline [DON-253 / BCP-16] (6.7s)
+  ✓  3 [chromium] › tests/e2e/archive-review-operator-flow.spec.ts:147:3 › C9 archive-backed Mission Review operator flow [DON-253 / BCP-16] › retries a sealed verification failure with both original credentials before review is enabled (4.3s)
+  ✓  4 [chromium] › tests/e2e/archive-review-operator-flow.spec.ts:201:3 › C9 archive-backed Mission Review operator flow [DON-253 / BCP-16] › restores a retained archive for an authorized correction and returns to live review (4.7s)
+  ✓  5 [chromium] › tests/e2e/gpx-import.spec.ts:17:3 › M22 GPX import parity › renders imported GPX tracks in the panel, layer catalog, review workspace, and map source (2.5s)
+  ✓  6 [chromium] › tests/e2e/gpx-import.spec.ts:87:3 › M22 GPX import parity › shows retained interrupted-import provenance after runtime recovery [DON-274] (1.5s)
+  ✓  7 [chromium] › tests/e2e/gpx-import.spec.ts:114:3 › M22 GPX import parity › pages imported GPX projections without accumulating renderer evidence [DON-274] (2.0s)
+  ✓  8 [chromium] › tests/e2e/gpx-import.spec.ts:146:3 › M22 GPX import parity › DON-194: changes individual GPX colours and keeps the layer tree readable on smaller displays (2.2s)
+
+  8 passed (30.6s)

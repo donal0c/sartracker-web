@@ -13,6 +13,7 @@ const {
   upsertGpxEvidenceChunked,
 } = require('./mission-store.cjs')
 const { readBoundedGpxSource } = require('./gpx-source-reader.cjs')
+const { waitForForegroundWrites } = require('./foreground-write-priority.cjs')
 const {
   normalizeRawGpxPath,
   validateGpxImportEnvelope,
@@ -22,10 +23,13 @@ if (parentPort === null) throw new Error('GPX evidence worker requires a parent 
 
 async function run() {
   let database
+  /** Waits outside every GPX transaction while foreground writes are admitted. */
+  const beforeWrite = () => waitForForegroundWrites(workerData.foregroundWriterBuffer)
   try {
     const envelope = validateGpxImportEnvelope(workerData)
     const databasePath = normalizeRawGpxPath(workerData.databasePath, 'GPX database path')
     const scalarParsers = await import('../shared/gpx-source-scalars.mjs')
+    await beforeWrite()
     database = new Database(databasePath)
     database.pragma('foreign_keys = ON')
     database.pragma('journal_mode = WAL')
@@ -44,6 +48,7 @@ async function run() {
       try {
         normalizedPath = validatePath(sourcePath)
         if (workerData.receiptsStarted !== true) {
+          await beforeWrite()
           recordGpxImportSourceReceipt(database, {
             batchId: workerData.batchId,
             missionId: envelope.missionId,
@@ -55,6 +60,7 @@ async function run() {
         sourceBytes = await readBoundedGpxSource(normalizedPath)
         const contentSha256 = createHash('sha256').update(sourceBytes).digest('hex')
         const sourceBytesBase64 = sourceBytes.toString('base64')
+        await beforeWrite()
         retainGpxImportSourceBytes(database, {
           batchId: workerData.batchId,
           missionId: envelope.missionId,
@@ -87,7 +93,7 @@ async function run() {
           batchId: workerData.batchId,
           missionId: envelope.missionId,
           sourcePath: normalizedPath,
-        })
+        }, beforeWrite)
         imports.push({
           id: stored.id,
           mission_id: stored.mission_id,
@@ -105,6 +111,7 @@ async function run() {
         const reason = error instanceof TypeError && /encoded data/u.test(error.message)
           ? 'GPX source is not valid UTF-8.'
           : error instanceof Error ? error.message : String(error)
+        await beforeWrite()
         recordGpxImportFailure(database, {
           batchId: workerData.batchId,
           missionId: envelope.missionId,
@@ -119,6 +126,7 @@ async function run() {
       }
       parentPort.postMessage({ type: 'progress', completed: index + 1, total: envelope.paths.length })
     }
+    await beforeWrite()
     finishGpxImportBatch(database, workerData.batchId, envelope.missionId)
     parentPort.postMessage({ type: 'complete', workerThreadId: threadId, imports, failures })
   } catch (error) {

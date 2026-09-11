@@ -1,0 +1,526 @@
+[
+  {
+    "run": "macos-baseline-profile",
+    "threadId": 0,
+    "sourceDiagnosticsSha256": "3fd168d965e6857ba15f9945c9219bb1272f42368e2a1576c543b1818997dd60",
+    "profileSha256": "15100e6445c0055f568ce12e601176d26d270b2bde8671db31cdb3ed7e77033d",
+    "largestImmediateTransactions": [
+      {
+        "sequence": 30,
+        "label": "transaction:immediate",
+        "start": 2298.083,
+        "end": 2298.294542,
+        "wall": 0.21154200000000856,
+        "cpuMs": 0.211,
+        "voluntary": 0,
+        "involuntary": 4,
+        "outcome": "SQLITE_BUSY"
+      },
+      {
+        "sequence": 13,
+        "label": "transaction:immediate",
+        "start": 1295.200625,
+        "end": 1295.281584,
+        "wall": 0.0809590000001208,
+        "cpuMs": 0.169,
+        "voluntary": 0,
+        "involuntary": 1,
+        "outcome": "SQLITE_BUSY"
+      },
+      {
+        "sequence": 1,
+        "label": "transaction:immediate",
+        "start": 801.760542,
+        "end": 801.836375,
+        "wall": 0.07583299999998871,
+        "cpuMs": 0.13,
+        "voluntary": 0,
+        "involuntary": 2,
+        "outcome": "SQLITE_BUSY"
+      },
+      {
+        "sequence": 15,
+        "label": "transaction:immediate",
+        "start": 1418.133709,
+        "end": 1418.179917,
+        "wall": 0.04620799999997871,
+        "cpuMs": 0.1,
+        "voluntary": 0,
+        "involuntary": 0,
+        "outcome": "SQLITE_BUSY"
+      },
+      {
+        "sequence": 10,
+        "label": "transaction:immediate",
+        "start": 1179.219709,
+        "end": 1179.261542,
+        "wall": 0.0418329999999969,
+        "cpuMs": 0.088,
+        "voluntary": 0,
+        "involuntary": 0,
+        "outcome": "SQLITE_BUSY"
+      },
+      {
+        "sequence": 7,
+        "label": "transaction:immediate",
+        "start": 1103.263334,
+        "end": 1103.303167,
+        "wall": 0.039833000000044194,
+        "cpuMs": 0.081,
+        "voluntary": 0,
+        "involuntary": 0,
+        "outcome": "SQLITE_BUSY"
+      },
+      {
+        "sequence": 16,
+        "label": "transaction:immediate",
+        "start": 1444.036667,
+        "end": 1444.076042,
+        "wall": 0.03937499999983629,
+        "cpuMs": 0.076,
+        "voluntary": 0,
+        "involuntary": 0,
+        "outcome": "SQLITE_BUSY"
+      },
+      {
+        "sequence": 26,
+        "label": "transaction:immediate",
+        "start": 2032.241417,
+        "end": 2032.277917,
+        "wall": 0.0364999999999327,
+        "cpuMs": 0.06,
+        "voluntary": 0,
+        "involuntary": 0,
+        "outcome": "SQLITE_BUSY"
+      }
+    ],
+    "transactionTotals": {
+      "transaction:deferred": {
+        "count": 1003,
+        "wallMs": 214.48576100000628,
+        "maxMs": 14.405582999999979
+      },
+      "transaction:immediate": {
+        "count": 534,
+        "wallMs": 386.0270870000028,
+        "maxMs": 2.4238330000000587
+      }
+    },
+    "largestStatementTotals": {
+      "run:INSERT INTO coverage_chunks ( mission_id, device_id, period_kind, period_id, content_rev, built_rev, updated_a": {
+        "count": 500,
+        "wallMs": 17.86450900000125,
+        "maxMs": 1.7618749999999181
+      },
+      "exec:CREATE TABLE IF NOT EXISTS missions (\n      id TEXT PRIMARY KEY,\n      name TEXT": {
+        "count": 1,
+        "wallMs": 1.7186249999999745,
+        "maxMs": 1.7186249999999745
+      },
+      "run:INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery": {
+        "count": 500,
+        "wallMs": 20.810662999999636,
+        "maxMs": 1.299833000000035
+      },
+      "run:UPDATE devices SET last_seen = CASE WHEN last_seen IS NULL OR julianday(?) > julianday(last_seen) THEN ? ELSE ": {
+        "count": 500,
+        "wallMs": 7.985744000002455,
+        "maxMs": 0.4705410000001393
+      },
+      "run:INSERT INTO coverage_missions ( mission_id, change_seq, enumerated, updated_at ) VALUES (?, 1, 0, ?) ON CONFLI": {
+        "count": 500,
+        "wallMs": 5.607751999999778,
+        "maxMs": 0.38654200000007677
+      },
+      "run:ALTER TABLE devices ADD COLUMN unique_id TEXT": {
+        "count": 1,
+        "wallMs": 0.3548329999999851,
+        "maxMs": 0.3548329999999851
+      },
+      "run:ALTER TABLE tracking_history_checkpoints ADD COLUMN requested_until TEXT": {
+        "count": 1,
+        "wallMs": 0.2816249999999627,
+        "maxMs": 0.2816249999999627
+      },
+      "exec:CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);": {
+        "count": 1,
+        "wallMs": 0.27045799999996234,
+        "maxMs": 0.27045799999996234
+      }
+    }
+  },
+  {
+    "run": "macos-baseline-profile",
+    "threadId": 1,
+    "sourceDiagnosticsSha256": "8979658baf884f2a7607121536e13608cbafac681cef45fbf4ceb6c315e61a07",
+    "profileSha256": "9d514c7dbbdecbaf09141c2ce0494142e827104d9dcbeb806c2a2a08f3838e00",
+    "largestImmediateTransactions": [
+      {
+        "sequence": 1,
+        "label": "transaction:immediate",
+        "start": 11744.196209,
+        "end": 11764.89025,
+        "wall": 20.694041000000652,
+        "cpuMs": 10.945,
+        "voluntary": 68,
+        "involuntary": 86,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 0,
+        "label": "transaction:immediate",
+        "start": 800.82525,
+        "end": 813.421667,
+        "wall": 12.596416999999974,
+        "cpuMs": 9.206,
+        "voluntary": 15,
+        "involuntary": 55,
+        "outcome": "ok"
+      }
+    ],
+    "transactionTotals": {
+      "transaction:immediate": {
+        "count": 2004,
+        "wallMs": 1018.6837469999965,
+        "maxMs": 20.694041000000652
+      }
+    },
+    "largestStatementTotals": {
+      "run:UPDATE gpx_import_revisions SET import_state = 'complete', recorded_at = ?, audit_event_id = ? WHERE import_id": {
+        "count": 1,
+        "wallMs": 4.425792000000001,
+        "maxMs": 4.425792000000001
+      },
+      "run:UPDATE gpx_import_source_receipts SET status = 'settled', source_bytes_base64 = NULL, updated_at = ? WHERE bat": {
+        "count": 1,
+        "wallMs": 2.5005830000009155,
+        "maxMs": 2.5005830000009155
+      },
+      "run:INSERT INTO gpx_evidence_points ( import_id, revision_sequence, segment_index, point_index, track_name, lat, l": {
+        "count": 50000,
+        "wallMs": 289.67865099997323,
+        "maxMs": 1.8872919999994338
+      },
+      "get:SELECT * FROM gpx_track_imports WHERE id = ?": {
+        "count": 2,
+        "wallMs": 1.3140819999989617,
+        "maxMs": 1.1656659999989643
+      },
+      "run:UPDATE gpx_import_source_receipts SET status = 'retained', content_sha256 = ?, source_bytes_base64 = ?, update": {
+        "count": 1,
+        "wallMs": 0.8679169999999203,
+        "maxMs": 0.8679169999999203
+      },
+      "run:INSERT INTO gpx_import_revisions ( id, mission_id, import_id, revision_sequence, source_revision_sequence, con": {
+        "count": 1,
+        "wallMs": 0.7125829999999951,
+        "maxMs": 0.7125829999999951
+      },
+      "get:SELECT status FROM missions WHERE id = ?": {
+        "count": 4008,
+        "wallMs": 8.99737599999878,
+        "maxMs": 0.673624999999447
+      },
+      "get:SELECT * FROM mission_cleanup_journal WHERE mission_id = ?": {
+        "count": 4008,
+        "wallMs": 8.032025999958933,
+        "maxMs": 0.5779589999992822
+      }
+    }
+  },
+  {
+    "run": "ubuntu-baseline-profile",
+    "threadId": 0,
+    "sourceDiagnosticsSha256": "8315f8dfde2b3df7b0a2ae75dde41a285c1cbdb7d13f0fc2804345625a72a4f9",
+    "profileSha256": "fb8f84a2f6411491e19a3e6f96938549a8cd69f4659bab30df82c6a265287541",
+    "largestImmediateTransactions": [
+      {
+        "sequence": 413,
+        "label": "transaction:immediate",
+        "start": 9595.410091,
+        "end": 9623.324831,
+        "wall": 27.914740000000165,
+        "cpuMs": 16.154,
+        "voluntary": 70,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 522,
+        "label": "transaction:immediate",
+        "start": 11968.176215,
+        "end": 11993.490511,
+        "wall": 25.314296000000468,
+        "cpuMs": 12.384,
+        "voluntary": 65,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 206,
+        "label": "transaction:immediate",
+        "start": 5195.333034,
+        "end": 5220.414086,
+        "wall": 25.081051999999545,
+        "cpuMs": 13.246,
+        "voluntary": 67,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 15,
+        "label": "transaction:immediate",
+        "start": 1101.181449,
+        "end": 1126.244019,
+        "wall": 25.06257000000005,
+        "cpuMs": 13.403,
+        "voluntary": 113,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 74,
+        "label": "transaction:immediate",
+        "start": 2353.007994,
+        "end": 2378.065647,
+        "wall": 25.057652999999846,
+        "cpuMs": 11.265,
+        "voluntary": 67,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 254,
+        "label": "transaction:immediate",
+        "start": 6286.417841,
+        "end": 6311.404992,
+        "wall": 24.987150999999358,
+        "cpuMs": 12.307,
+        "voluntary": 66,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 83,
+        "label": "transaction:immediate",
+        "start": 2561.242057,
+        "end": 2586.141817,
+        "wall": 24.899760000000242,
+        "cpuMs": 11.099,
+        "voluntary": 76,
+        "involuntary": 1,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 554,
+        "label": "transaction:immediate",
+        "start": 12704.54507,
+        "end": 12729.43168,
+        "wall": 24.886609999999564,
+        "cpuMs": 12.001,
+        "voluntary": 66,
+        "involuntary": 1,
+        "outcome": "ok"
+      }
+    ],
+    "transactionTotals": {
+      "transaction:deferred": {
+        "count": 1003,
+        "wallMs": 1052.535663000017,
+        "maxMs": 37.869957
+      },
+      "transaction:immediate": {
+        "count": 693,
+        "wallMs": 9023.694211000013,
+        "maxMs": 27.914740000000165
+      }
+    },
+    "largestStatementTotals": {
+      "exec:CREATE TABLE IF NOT EXISTS missions (\n      id TEXT PRIMARY KEY,\n      name TEXT": {
+        "count": 1,
+        "wallMs": 3.485245999999961,
+        "maxMs": 3.485245999999961
+      },
+      "get:SELECT 1 FROM missions WHERE id = ?": {
+        "count": 1508,
+        "wallMs": 27.398573999988116,
+        "maxMs": 2.0684930000006716
+      },
+      "get:SELECT value FROM metadata WHERE key = 'archive_correction_attachment_recovery_failure'": {
+        "count": 1508,
+        "wallMs": 10.967861999999172,
+        "maxMs": 1.4396679999990738
+      },
+      "run:INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery": {
+        "count": 500,
+        "wallMs": 99.30508999999199,
+        "maxMs": 1.1617069999992964
+      },
+      "run:ALTER TABLE tracking_history_checkpoints ADD COLUMN requested_until TEXT": {
+        "count": 1,
+        "wallMs": 0.6385209999999688,
+        "maxMs": 0.6385209999999688
+      },
+      "exec:CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);": {
+        "count": 1,
+        "wallMs": 0.5783979999999929,
+        "maxMs": 0.5783979999999929
+      },
+      "run:ALTER TABLE tracking_history_checkpoints ADD COLUMN requested_from TEXT": {
+        "count": 1,
+        "wallMs": 0.5078690000000279,
+        "maxMs": 0.5078690000000279
+      },
+      "run:ALTER TABLE markers ADD COLUMN retired_at TEXT": {
+        "count": 1,
+        "wallMs": 0.46911499999998796,
+        "maxMs": 0.46911499999998796
+      }
+    }
+  },
+  {
+    "run": "ubuntu-baseline-profile",
+    "threadId": 1,
+    "sourceDiagnosticsSha256": "74a97963498a588e88c4229b5416709b2fdaf78d27988fe4ea40b4428482281f",
+    "profileSha256": "559dde8032fd714f9ee3d19bf7c2f29ea4010c69e79a5d12cd89b8b41f61251c",
+    "largestImmediateTransactions": [
+      {
+        "sequence": 393,
+        "label": "transaction:immediate",
+        "start": 20344.39522,
+        "end": 20395.788881,
+        "wall": 51.393661000001885,
+        "cpuMs": 23.879,
+        "voluntary": 152,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 155,
+        "label": "transaction:immediate",
+        "start": 7092.017393,
+        "end": 7127.885429,
+        "wall": 35.86803599999985,
+        "cpuMs": 16.19,
+        "voluntary": 109,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 384,
+        "label": "transaction:immediate",
+        "start": 17049.85389,
+        "end": 17083.733674,
+        "wall": 33.879784000000654,
+        "cpuMs": 9.048,
+        "voluntary": 104,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 392,
+        "label": "transaction:immediate",
+        "start": 19818.218597,
+        "end": 19851.892656,
+        "wall": 33.67405900000085,
+        "cpuMs": 11.067,
+        "voluntary": 123,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 388,
+        "label": "transaction:immediate",
+        "start": 18427.779321,
+        "end": 18461.367629,
+        "wall": 33.588307999998506,
+        "cpuMs": 10.075,
+        "voluntary": 108,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 390,
+        "label": "transaction:immediate",
+        "start": 19120.701287,
+        "end": 19154.265041,
+        "wall": 33.56375399999888,
+        "cpuMs": 9.172,
+        "voluntary": 99,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 386,
+        "label": "transaction:immediate",
+        "start": 17740.386529,
+        "end": 17773.805038,
+        "wall": 33.418508999999176,
+        "cpuMs": 9.09,
+        "voluntary": 106,
+        "involuntary": 0,
+        "outcome": "ok"
+      },
+      {
+        "sequence": 382,
+        "label": "transaction:immediate",
+        "start": 16356.441285,
+        "end": 16389.647928,
+        "wall": 33.20664299999771,
+        "cpuMs": 8.317,
+        "voluntary": 99,
+        "involuntary": 0,
+        "outcome": "ok"
+      }
+    ],
+    "transactionTotals": {
+      "transaction:immediate": {
+        "count": 2004,
+        "wallMs": 9254.861491000001,
+        "maxMs": 51.393661000001885
+      }
+    },
+    "largestStatementTotals": {
+      "run:UPDATE gpx_import_revisions SET import_state = 'complete', recorded_at = ?, audit_event_id = ? WHERE import_id": {
+        "count": 1,
+        "wallMs": 5.75445899999977,
+        "maxMs": 5.75445899999977
+      },
+      "run:UPDATE gpx_import_source_receipts SET status = 'retained', content_sha256 = ?, source_bytes_base64 = ?, update": {
+        "count": 1,
+        "wallMs": 2.724221000000057,
+        "maxMs": 2.724221000000057
+      },
+      "run:INSERT INTO gpx_import_revisions ( id, mission_id, import_id, revision_sequence, source_revision_sequence, con": {
+        "count": 1,
+        "wallMs": 2.32923100000005,
+        "maxMs": 2.32923100000005
+      },
+      "run:INSERT INTO gpx_track_imports (id, mission_id, source_path, file_name, display_name, geometry_json, metadata_j": {
+        "count": 2,
+        "wallMs": 1.111279999999283,
+        "maxMs": 1.0087129999992612
+      },
+      "run:INSERT INTO gpx_evidence_points ( import_id, revision_sequence, segment_index, point_index, track_name, lat, l": {
+        "count": 50000,
+        "wallMs": 1336.318079999975,
+        "maxMs": 0.9384099999988393
+      },
+      "get:SELECT * FROM gpx_track_imports WHERE id = ?": {
+        "count": 2,
+        "wallMs": 1.3266230000008363,
+        "maxMs": 0.8170959999988554
+      },
+      "run:UPDATE gpx_import_source_receipts SET status = 'settled', source_bytes_base64 = NULL, updated_at = ? WHERE bat": {
+        "count": 1,
+        "wallMs": 0.5272290000029898,
+        "maxMs": 0.5272290000029898
+      },
+      "get:SELECT value FROM metadata WHERE key = 'archive_correction_attachment_recovery_failure'": {
+        "count": 4008,
+        "wallMs": 24.69336600003942,
+        "maxMs": 0.30694999999991524
+      }
+    }
+  }
+]

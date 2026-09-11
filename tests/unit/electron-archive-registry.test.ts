@@ -151,6 +151,7 @@ type ArchiveRegistryModule = {
     readonly db: DatabaseConnection
     readonly archiveDirectory: string
     readonly statFile?: typeof stat
+    readonly runReconciliationWrite?: (execute: () => unknown, signal?: AbortSignal) => Promise<unknown>
     readonly appendAuditEvent?: (
       missionId: string,
       eventType: string,
@@ -1749,6 +1750,41 @@ describe('archive registry transitions and disk reconciliation', () => {
         { relative_path: 'legacy-selected.zip', last_reconciled_at: expect.any(String) },
       ])
     } finally {
+      fixture.close()
+    }
+  })
+
+  it('rejects an archive identity changed while its custody observation waits to write', async () => {
+    const fixture = await createFixture()
+    let releaseWrite: () => void = () => undefined
+    const writeGate = new Promise<void>(resolve => { releaseWrite = resolve })
+    let enteredWrite: () => void = () => undefined
+    const writeQueued = new Promise<void>(resolve => { enteredWrite = resolve })
+    let reconciliation: Promise<unknown> | undefined
+    try {
+      seedLegacyArchiveRows(fixture.db, fixture.archiveDirectory, ['legacy-queued.zip'])
+      const registry = createArchiveRegistry({
+        db: fixture.db,
+        archiveDirectory: fixture.archiveDirectory,
+        startCustodyReconciliation: ({ ticket }) => completedCustodyOperation(ticket),
+        runReconciliationWrite: async execute => {
+          enteredWrite()
+          await writeGate
+          return execute()
+        },
+      })
+      reconciliation = registry.reconcileArchiveAvailability({ limit: 1 })
+      void reconciliation.catch(() => undefined)
+      await writeQueued
+      fixture.db.prepare('UPDATE mission_archives SET relative_path = ? WHERE relative_path = ?')
+        .run('legacy-replaced.zip', 'legacy-queued.zip')
+      releaseWrite()
+      await expect(reconciliation).rejects.toMatchObject({ code: 'ARCHIVE_REGISTRY_IDENTITY_CHANGED' })
+      expect(fixture.db.prepare('SELECT relative_path, availability, last_reconciled_at FROM mission_archives').all())
+        .toEqual([{ relative_path: 'legacy-replaced.zip', availability: 'unknown', last_reconciled_at: null }])
+    } finally {
+      releaseWrite()
+      await reconciliation?.catch(() => undefined)
       fixture.close()
     }
   })

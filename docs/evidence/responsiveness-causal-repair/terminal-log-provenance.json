@@ -1,0 +1,101 @@
+{
+  "normalization": "ANSI colour removed and trailing whitespace at end of file removed; original logs retained in task tmp locations",
+  "logs": [
+    {
+      "file": "browser.log",
+      "originalSha256": "c64c8fdcf3a6f52fa145a5963232ea76d0f3b2204b0adf54d02f9d6d36ded50e"
+    },
+    {
+      "file": "fixed-profile.log",
+      "originalSha256": "9d6e2dd435926a22ea9e05b6829721143d15293215c6be5bd4d498bc674d5d3e"
+    },
+    {
+      "file": "fixed500-off.log",
+      "originalSha256": "1e5e53412e79a622b9dbc0d0bc33012051745d9e625b1b8686170a9ec6df7232"
+    },
+    {
+      "file": "full-import-fixed.log",
+      "originalSha256": "47148e5d785f921f3eeb265280881c0a05beaec115a5e453ba421059fbe0c990"
+    },
+    {
+      "file": "full-source.log",
+      "originalSha256": "b83a64832fd99224d81ed441049ae92e052150672ee99f04d988d23550f2b5b6"
+    },
+    {
+      "file": "off-isolated.log",
+      "originalSha256": "24e4bb4af262ca4631cce85c2a3d1190d513701e931410a357efad88b5b5b7e6"
+    },
+    {
+      "file": "profile-isolated.log",
+      "originalSha256": "9d43e5b2ae6cbf560e5a6f39c066768358e06f4493cae83eff6540b5d5ed9f7d"
+    },
+    {
+      "file": "sar-archive-queue-green.log",
+      "originalSha256": "446161f456fe72e9a610dd22765f003dea3d9605ef3b78bd5894fafba05e3c93"
+    },
+    {
+      "file": "sar-baseline-gpx.log",
+      "originalSha256": "a200a78ae7dbdea8d72fffda0939d177dc3bc565fb5ea90f3df4b4b3b9dc83b2"
+    },
+    {
+      "file": "sar-baseline-off2-gpx.log",
+      "originalSha256": "8a1d326d5e96fcbb193824e2205a71e29e0c233d8a8372ac63f2c962508f7c4b"
+    },
+    {
+      "file": "sar-causal-build.log",
+      "originalSha256": "3b9141355e7f178197fdcb11a617127bb1fe014109ea93c8268acea88d44b12a"
+    },
+    {
+      "file": "sar-causal-lint.log",
+      "originalSha256": "4f7477fabc43e8b0eb03192c1c484d77f28be3d96c130b49421528df20e3d929"
+    },
+    {
+      "file": "sar-focused-native.log",
+      "originalSha256": "8e0eb9eb798a03496f4611e6415ad4df6ee468f33f04d365ee9d296f29417010"
+    },
+    {
+      "file": "sar-full-import-fixed2.log",
+      "originalSha256": "2b4dec88b6e533fd444ee7d5ac252864912647d98e01d304476a6003bc194ec2"
+    },
+    {
+      "file": "sar-main-profile-gpx.log",
+      "originalSha256": "9a5f19d433aa02d10f3691b579bd2313b46770e3872db0cba73adf1f029cc711"
+    },
+    {
+      "file": "sar-main-trace-gpx.log",
+      "originalSha256": "e7e3e335fb55481a8d2af5b5a388b510a91550f0e80d44cc212e8a1cca49cfd7"
+    },
+    {
+      "file": "sar-native-priority-mutation-red.log",
+      "originalSha256": "d6c6f262b89c5c44ba658de22611aafca7185d5b59ef8e49067ffcb3aa25c5a6"
+    },
+    {
+      "file": "sar-priority-red.log",
+      "originalSha256": "a633559a0c8fcae26b7ae8fefdea64ac61ce7a1df1553b5ff867b34e5b587bf0"
+    },
+    {
+      "file": "sar-runner-red.log",
+      "originalSha256": "cf4414bfd9e1e872090930d3d01e6201cb3881e02b98541c063b3fdce5d53555"
+    },
+    {
+      "file": "sar-startup-close-green.log",
+      "originalSha256": "5eb5b7e52931b6a18121e4e53e2cecb3ae2d1c2059a80831b2345545523591bc"
+    },
+    {
+      "file": "sar-startup-red.log",
+      "originalSha256": "aa78ea8930ad1f418a96bacc00f42c5257aa4664f6c2b4344c714327b5359d1e"
+    },
+    {
+      "file": "trace-isolated.log",
+      "originalSha256": "b21767f272ddbcd4959988ac944fe6bd039a50aa0905bc3e7fe040874eb212b5"
+    },
+    {
+      "file": "ubuntu-full-import-fixed.log",
+      "originalSha256": "d4a92251f3183b2f18459fa7e101823ef0143cc8982624503e56f62250575e1d"
+    },
+    {
+      "file": "unbounded-tail-timeout.log",
+      "originalSha256": "6591cc7004417a2ef2d5d4783f8179897cfd330535e29e25c095d5c11ba4e327"
+    }
+  ]
+}

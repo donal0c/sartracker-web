@@ -12,6 +12,12 @@ const DEFAULT_WORKER_PATH = path.join(__dirname, 'gpx-evidence-import-worker.cjs
 function runGpxEvidenceImportInWorker(input) {
   const envelope = validateGpxImportEnvelope(input)
   const databasePath = normalizeRawGpxPath(input.databasePath, 'GPX database path')
+  const foregroundWriterBuffer = input.foregroundWriterBuffer
+    ?? new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
+  if (!(foregroundWriterBuffer instanceof SharedArrayBuffer)
+    || foregroundWriterBuffer.byteLength !== Int32Array.BYTES_PER_ELEMENT) {
+    throw new Error('GPX foreground writer counter is invalid.')
+  }
   if (input.signal?.aborted === true) return Promise.reject(createAbortError())
   const startedAt = performance.now()
   let resolveWorkerExit
@@ -19,16 +25,18 @@ function runGpxEvidenceImportInWorker(input) {
   const result = new Promise((resolve, reject) => {
     let worker
     try {
-      worker = input.createWorker?.() ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
-        workerData: {
-          databasePath,
-          missionId: envelope.missionId,
-          paths: envelope.paths,
-          batchId: input.batchId ?? randomUUID(),
-          receiptsStarted: input.receiptsStarted === true,
-          pauseAfter: normalizePauseAfter(input.faultInjection?.pauseAfter),
-        },
-      })
+      const workerPath = input.workerPath ?? DEFAULT_WORKER_PATH
+      const workerData = {
+        databasePath,
+        foregroundWriterBuffer,
+        missionId: envelope.missionId,
+        paths: envelope.paths,
+        batchId: input.batchId ?? randomUUID(),
+        receiptsStarted: input.receiptsStarted === true,
+        pauseAfter: normalizePauseAfter(input.faultInjection?.pauseAfter),
+      }
+      worker = input.createWorker?.({ workerPath, workerData })
+        ?? new Worker(workerPath, { workerData })
     } catch (error) {
       resolveWorkerExit()
       reject(error)

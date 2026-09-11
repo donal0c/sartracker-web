@@ -125,6 +125,7 @@ const {
     input: Readonly<Record<string, unknown>>,
     chunkSize?: number,
     publicationReceipt?: Readonly<Record<string, unknown>>,
+    beforeWrite?: () => Promise<void>,
   ) => Promise<Readonly<Record<string, unknown>>>
   readonly startGpxImportBatch: (
     db: InstanceType<typeof Database>,
@@ -4112,7 +4113,44 @@ describe('mission evidence versioning [DON-277]', () => {
     await expect(store.listGpxImports(mission.id)).resolves.toHaveLength(1)
   })
 
-  it('keeps synchronous current-position writes below the 200 ms hard gate during a 50k-point GPX import [DON-274]', async () => {
+  it('gives an admitted foreground write priority over GPX staging after SQLite contention [DON-254]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Foreground Priority' })
+    const file = await databasePath()
+    const foregroundDb = new (require('better-sqlite3'))(file)
+    const backgroundDb = new (require('better-sqlite3'))(file)
+    const lockDb = new (require('better-sqlite3'))(file)
+    const { createResponsiveMissionWriter } = require('../../electron/responsive-mission-writer.cjs')
+    const { waitForForegroundWrites } = require('../../electron/foreground-write-priority.cjs')
+    const writer = createResponsiveMissionWriter(foregroundDb)
+    foregroundDb.exec('CREATE TABLE priority_probe (value TEXT)')
+    let importing: Promise<Readonly<Record<string, unknown>>> | undefined
+    try {
+      lockDb.exec('BEGIN IMMEDIATE')
+      const current = writer.run(() => {
+        expect(foregroundDb.prepare('SELECT COUNT(*) AS count FROM gpx_track_imports').get()).toEqual({ count: 0 })
+        return foregroundDb.prepare('INSERT INTO priority_probe VALUES (?)').run('current')
+      })
+      await nextNodeTurn()
+      expect(writer.pendingCount).toBe(1)
+      lockDb.exec('ROLLBACK')
+      importing = upsertGpxEvidenceChunked(backgroundDb, gpxInput(mission.id, {}), 1, undefined,
+        () => waitForForegroundWrites(writer.pendingBuffer))
+      // The foreground retry is admitted but sleeping. GPX must not win the now-free writer lane.
+      expect(backgroundDb.prepare('SELECT COUNT(*) AS count FROM gpx_track_imports').get()).toEqual({ count: 0 })
+      await current
+      await importing
+      expect(foregroundDb.prepare('SELECT * FROM priority_probe').all()).toEqual([{ value: 'current' }])
+      expect(backgroundDb.prepare('SELECT COUNT(*) AS count FROM gpx_evidence_points').get()).toEqual({ count: 2 })
+    } finally {
+      if (lockDb.inTransaction) lockDb.exec('ROLLBACK')
+      await importing
+      await writer.close()
+      lockDb.close(); backgroundDb.close(); foregroundDb.close()
+    }
+  })
+
+  it('keeps current-position writes and main heartbeat below 200 ms throughout a 50k-point GPX import [DON-274]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'GPX Current Priority Mission' })
     await store.upsertDevice({
@@ -4130,6 +4168,7 @@ describe('mission evidence versioning [DON-277]', () => {
     let importSettled = false
     const importing = store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
       .finally(() => { importSettled = true })
+    void importing.catch(() => undefined)
     let maximumWriteMs = 0
     let largestWriteProcessCpuMs = 0
     let maximumHeartbeatGapMs = 0
@@ -4140,8 +4179,10 @@ describe('mission evidence versioning [DON-277]', () => {
       previousHeartbeat = now
     }, 10)
     let sequence = 0
+    let measuredAfterSettlement = false
     try {
-      while (!importSettled && sequence < 500) {
+      while (!measuredAfterSettlement) {
+        measuredAfterSettlement = importSettled
         const startedAt = performance.now()
         const cpuStarted = process.cpuUsage()
         await store.addPosition({
@@ -4160,17 +4201,27 @@ describe('mission evidence versioning [DON-277]', () => {
           largestWriteProcessCpuMs = (cpu.user + cpu.system) / 1_000
         }
         sequence += 1
-        await new Promise((resolve) => setTimeout(resolve, 1))
+        // Preserve the original 500-write burst; continue a bounded 50 Hz probe through publication.
+        await new Promise((resolve) => setTimeout(resolve, sequence < 500 ? 1 : 20))
       }
       await importing
     } finally {
+      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, performance.now() - previousHeartbeat)
       clearInterval(heartbeat)
     }
     const diagnostics = { maximumWriteMs, largestWriteProcessCpuMs, maximumHeartbeatGapMs, sequence }
     process.stdout.write(`GPX current-write diagnostics: ${JSON.stringify(diagnostics)}\n`)
     expect(sequence).toBeGreaterThan(0)
+    expect(measuredAfterSettlement).toBe(true)
     expect(maximumWriteMs, JSON.stringify(diagnostics)).toBeLessThan(200)
-  }, 30_000)
+    expect(maximumHeartbeatGapMs, JSON.stringify(diagnostics)).toBeLessThan(200)
+    const inspection = openDatabase(await databasePath())
+    try {
+      expect(inspection.prepare('SELECT COUNT(*) AS count FROM gpx_evidence_points').get()).toEqual({ count: 50_000 })
+      expect(inspection.prepare('SELECT COUNT(*) AS count FROM positions').get()).toEqual({ count: sequence })
+      expect(inspection.prepare('SELECT status, failed_files FROM gpx_import_batches').get()).toEqual({ status: 'completed', failed_files: 0 })
+    } finally { inspection.close() }
+  }, 60_000)
 
   it('keeps current writes below 200 ms while retaining an exact-limit 8 MiB GPX source [DON-274]', async () => {
     store = await createStore()

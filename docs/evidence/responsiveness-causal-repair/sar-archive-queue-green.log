@@ -1,0 +1,12 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-archive-registry.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+
+ Test Files  1 passed (1)
+      Tests  23 passed (23)
+   Start at  10:23:03
+   Duration  1.49s (transform 38ms, setup 0ms, import 82ms, tests 739ms, environment 431ms)

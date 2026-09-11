@@ -1,0 +1,137 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-mission-evidence-versioning.test.ts tests/unit/electron-startup-write-responsiveness.test.ts -t throughout a 50k-point|startup archive bookkeeping --no-file-parallelism
+
+
+ RUN  v4.1.3 /home/donal/sartracker-causal-20260911.2UcQcB
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts (74 tests | 1 failed | 73 skipped) 30053ms
+     ↓ indexes explicit missing-time evidence without a mission-wide replay scan [DON-278]
+     ↓ counts replay eligibility on the later of fixTime and durable recorded time [DON-278]
+     ↓ records late fixTime provenance and invalidates an already-open replay chain [DON-278]
+     ↓ invalidates an equal-now replay chain when an accepted fix enters that mission [DON-278]
+     ↓ invalidates an open replay chain when participant evidence changes [DON-278]
+     ↓ writes projection, immutable version, and audit identity in one transaction
+     ↓ rolls the projection back when immutable version persistence fails
+     ↓ rejects oversized marker and non-search drawing evidence before synchronous version writes [DON-277]
+     ↓ preserves an accumulated casualty treatment log beyond a single-note limit [DON-277]
+     ↓ versions outing lifecycle changes without rewriting the earlier outing state
+     ↓ retires evidence without physically deleting it and rejects finalized writes
+     ↓ migrates legacy mutable rows to explicit incomplete baseline versions
+     ↓ rejects edits that would overwrite the sole exact copy of oversized legacy mutable evidence [DON-277]
+     ↓ reconstructs large legacy mutable-object inventories in bounded background turns [DON-277]
+     ↓ keeps current positions available and records a fail-closed reason when legacy worker startup fails [DON-277]
+     ↓ prepares large legacy event provenance in bounded turns and fails Replay closed meanwhile [DON-278]
+     ↓ keeps current fixes below the hard gate while byte-bounding legacy event writer turns [DON-278]
+     ↓ retains an oversized legacy event and fails evidence custody closed with explicit quarantine [DON-278]
+     ↓ quarantines an oversized legacy event identity without retaining it in the migration cursor [DON-278]
+     ↓ recaptures rowid targets when a prior candidate left textual event cursors [DON-278]
+     ↓ updates only the sparse incomplete event rows selected for one bounded turn [DON-278]
+     ↓ scopes legacy event quarantine custody fences to the affected mission [DON-278]
+     ↓ keeps clean-mission custody bounded with a field-scale quarantine map [DON-278]
+     ↓ fails archive and finalization closed while legacy event provenance is pending [DON-278]
+     ↓ migrates an authentic v11 GPX table before creating v12 indexes and retains a static baseline [DON-274]
+     ↓ bounds legacy GPX startup work and resumes every retained import without silent loss [DON-274]
+     ↓ seeks legacy GPX reconstruction from a durable cursor instead of rescanning settled rows [DON-274]
+     ↓ settles every signed rowid boundary as an immutable revision or explicit quarantine [DON-274]
+     ↓ quarantines over-envelope legacy GPX without materializing it into renderer evidence [DON-274]
+     ↓ fences revisionless legacy GPX before background classification can overwrite it [DON-274]
+     ↓ blocks direct archive custody while legacy GPX quarantine is unsettled [DON-274]
+     ↓ recovers interrupted GPX staging into retained failure provenance before allowing retry [DON-274]
+     ↓ records chunked GPX evidence at publication so replay before publication stays unchanged [DON-278]
+     ↓ rejects a staged GPX revision when the operator retires its current evidence [DON-274 DON-278]
+     ↓ audits the transaction-current GPX revision when publication wins retirement [DON-274 DON-278]
+     ↓ atomically settles the retained source receipt with GPX publication [DON-278]
+     ↓ rolls restart receipt settlement back if batch accounting cannot commit [DON-278]
+     ↓ does not reconcile an unsettled receipt against retired GPX evidence [DON-278]
+     ↓ does not reconcile against a superseded hash on an active GPX import [DON-278]
+     ↓ does not erase retained exact bytes for a matching legacy GPX baseline [DON-278]
+     ↓ recovers pre-read and retained-source receipts as explicit durable failures [DON-274]
+     ↓ recovers a large interrupted receipt queue in bounded background turns [DON-274]
+     ↓ deduplicates GPX by exact content and preserves changed files as revisions [DON-274]
+     ↓ rejects same-hash evidence mutations instead of splitting projection from its revision [DON-274]
+     ↓ compares every parsed row before accepting a chunked same-hash retry or alias [DON-274]
+     ↓ rejects an explicit GPX ID whose source path belongs to different evidence [DON-274]
+     ↓ binds the claimed GPX digest to retained bytes and preserves same-path lineage across dedupe [DON-274]
+     ↓ assigns GPX to an outing as a new immutable static-evidence revision [DON-274]
+     ↓ assigns 200k-point retained GPX by immutable source reference without blocking current work [DON-274]
+     ↓ keeps every declared search pass inside its assignment outing [DON-279]
+     ↓ rejects ambiguous or oversized Search Operations input before persistence work [DON-279]
+     ↓ keeps stable areas, repeated assignments, and coordinator-declared pass revisions [DON-279]
+     ↓ rejects invented and cross-mission search-pass evidence links [DON-279]
+     ↓ rejects invented and cross-mission participant assignments [DON-279]
+     ↓ rejects assignments and passes whose area or assignment has been retired [DON-279]
+     ↓ hashes, parses, and bulk-persists GPX off the main isolate with bounded results [DON-274]
+     ↓ continues a GPX batch after malformed and invalid-UTF-8 files and retains explicit failure provenance [DON-274]
+     ↓ retains structured point and segment rejections when every GPX point is invalid [DON-274]
+     ↓ rejects permissive scalar coercions in the production worker without inventing exact evidence [DON-274]
+     ↓ rejects out-of-range timezone offsets in the production worker [DON-274]
+     ↓ serializes concurrent identical GPX batches into one canonical import with two aliases [DON-274]
+     ↓ caps admitted GPX import batches before creating unbounded durable receipts [DON-274]
+     ↓ records an oversized GPX as an explicit per-file failure before exact-byte retention [DON-274]
+     ↓ imports readable siblings while durably recording a missing selected GPX file [DON-274]
+     ↓ blocks Finish and Finalize while durable GPX state is unsettled [DON-274]
+     ↓ returns bounded persisted GPX import issues without retained bytes or absolute paths [DON-274]
+     ↓ preflights renderer GPX identities and assignment actors before database work [DON-274]
+     ↓ bounds every persisted GPX issue scalar and exposes projection loss explicitly [DON-274]
+     ↓ cancels and joins active GPX workers before allowing mission-store shutdown [DON-274]
+     ↓ fails shutdown closed on a bounded deadline until the GPX worker physically exits [DON-274]
+     ↓ rechecks the finished-mission write fence inside the GPX worker transaction [DON-274]
+     ↓ gives an admitted foreground write priority over GPX staging after SQLite contention [DON-254]
+     × keeps current-position writes and main heartbeat below 200 ms throughout a 50k-point GPX import [DON-274] 30052ms
+     ↓ keeps current writes below 200 ms while retaining an exact-limit 8 MiB GPX source [DON-274]
+Startup SQLite contention: {"maximumGapMs":23.289805,"processCpuMs":28.199}
+ ✓ tests/unit/electron-startup-write-responsiveness.test.ts (1 test) 507ms
+   ✓ keeps the main loop below 200 ms when startup archive bookkeeping meets a background SQLite writer [DON-254]  505ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > keeps current-position writes and main heartbeat below 200 ms throughout a 50k-point GPX import [DON-274]
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:4153:3
+    4151|   })
+    4152|
+    4153|   it('keeps current-position writes and main heartbeat below 200 ms th…
+       |   ^
+    4154|     store = await createStore()
+    4155|     const mission = await store.createMission({ name: 'GPX Current Pri…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+AbortError: GPX evidence import worker was cancelled.
+ ❯ createAbortError electron/gpx-evidence-import-runner.cjs:101:17
+ ❯ AbortSignal.handleAbort electron/gpx-evidence-import-runner.cjs:62:50
+ ❯ AbortSignal.[nodejs.internal.kHybridDispatch] node:internal/event_target:843:20
+ ❯ AbortSignal.dispatchEvent node:internal/event_target:776:26
+ ❯ runAbort node:internal/abort_controller:486:10
+ ❯ abortSignal node:internal/abort_controller:457:3
+ ❯ AbortController.abort node:internal/abort_controller:505:5
+ ❯ Object.prepareClose electron/mission-store.cjs:1919:52
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:195:18
+    193|   afterEach(async () => {
+    194|     vi.restoreAllMocks()
+    195|     await store?.prepareClose()
+       |                  ^
+    196|     store?.close()
+    197|     store = null
+ ❯ node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+
+This error originated in "tests/unit/electron-mission-evidence-versioning.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "keeps current-position writes and main heartbeat below 200 ms throughout a 50k-point GPX import [DON-274]". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 1 passed | 73 skipped (75)
+     Errors  1 error
+   Start at  10:17:27
+   Duration  31.54s (transform 101ms, setup 0ms, import 162ms, tests 30.56s, environment 664ms)

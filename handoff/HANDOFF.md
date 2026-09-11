@@ -1,8 +1,20 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-10. Read after `CLAUDE.md`.
+Updated 2026-09-11. Read after `CLAUDE.md`.
 
 ## Where we are
+
+- **Urgent DON-254 responsiveness repair in progress**, base `49b2e1d4`, branch
+  `codex/responsiveness-causal-repair`. Native red controls prove GPX overtakes
+  admitted current writes and startup archive bookkeeping blocks on SQLite
+  (355.498 ms heartbeat with 3.988 ms CPU). Both are repaired using the existing
+  responsive writer/counter. Local and Ubuntu full-import/heartbeat gates pass;
+  cancellation, startup shutdown and queued archive identity checks pass.
+  Full source (429 files), lint/build and eight Chromium flows pass. Package,
+  CI and final review remain pending in the
+  [causal record](../docs/assurance/findings/responsiveness-causal-repair.md).
+  Historical PR19/20/21 failures remain separately recorded. DON-254 stays open;
+  no merge, release, deployment or field acceptance. This is the active priority.
 
 - **Repair Train A merged**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
   at `302bdd040976bd370271cf5866549fa2a7e05ff5` on 2026-09-10. Its final

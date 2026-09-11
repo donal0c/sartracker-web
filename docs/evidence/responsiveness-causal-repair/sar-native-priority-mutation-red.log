@@ -1,0 +1,41 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-gpx-foreground-priority.test.ts -t complete boundary --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/electron-gpx-foreground-priority.test.ts (2 tests | 1 failed | 1 skipped) 85ms
+   × preserves foreground admission across the real GPX worker complete boundary [DON-254] 85ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-gpx-foreground-priority.test.ts > preserves foreground admission across the real GPX worker complete boundary [DON-254]
+AssertionError: expected { count: 1 } to deeply equal { count: +0 }
+
+- Expected
++ Received
+
+  {
+-   "count": 0,
++   "count": 1,
+  }
+
+ ❯ tests/unit/electron-gpx-foreground-priority.test.ts:36:94
+     34|     lockDb.exec('BEGIN IMMEDIATE')
+     35|     current = writer.run(() => {
+     36|       expect(foregroundDb.prepare('SELECT COUNT(*) AS count FROM gpx_i…
+       |                                                                                              ^
+     37|       foregroundDb.prepare('INSERT INTO priority_probe VALUES (?)').ru…
+     38|     })
+ ❯ Function.<anonymous> electron/responsive-mission-writer.cjs:18:22
+ ❯ Function.sqliteTransaction node_modules/better-sqlite3/lib/methods/transaction.js:65:24
+ ❯ execute electron/responsive-mission-writer.cjs:36:28
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 skipped (2)
+   Start at  10:17:26
+   Duration  755ms (transform 18ms, setup 0ms, import 60ms, tests 85ms, environment 536ms)

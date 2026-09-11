@@ -1779,6 +1779,9 @@
             than 100 GPX files is rejected explicitly rather than returning or importing a partial list;
             divide it into smaller operator-selected batches. Concurrent imports are serialized so identical bytes still
             resolve to one canonical source with path aliases.
+            Imports yield between database writes while current-position writes are waiting, so a busy
+            tracking session may take longer to finish importing. Keep the import result visible and
+            check any reported failure; an unfinished import is not complete mission evidence.
           </p>
           <div class="note">
             <strong>GPX time evidence:</strong> fully dated tracks can participate in precise Replay. Partially
