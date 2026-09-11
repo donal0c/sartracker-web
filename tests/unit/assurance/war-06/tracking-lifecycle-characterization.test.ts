@@ -3,11 +3,13 @@ import type { Mission } from '../../../../src/infrastructure/mission-store/tauri
 import { startMissionRuntime } from '../../../../src/features/mission/start-mission-runtime'
 import { useMissionStore } from '../../../../src/features/mission/mission-store'
 import { createParticipationScope } from '../../../../src/features/participants/participation-scope'
+import { useActiveMissionDevicesStore } from '../../../../src/features/tracking/active-mission-devices-store'
 import {
   createPollingManager,
   type TrackingHistoryChunkPersistenceInput,
   type TrackingPollerClient,
 } from '../../../../src/features/tracking/polling-manager'
+import { startMissionTrackingStatusBridge } from '../../../../src/features/tracking/mission-tracking-status-bridge'
 import {
   startTrackingRuntime,
   type StartTrackingRuntimeDependencies,
@@ -25,7 +27,8 @@ type RuntimeStop = Awaited<ReturnType<typeof startTrackingRuntime>>
 
 const FIXED_NOW = new Date('2026-04-06T10:35:00.000Z')
 const activeRuntimeStops = new Set<RuntimeStop>()
-const pendingCurrentPositionResolutions = new Set<() => void>()
+const pendingDeferredResolutions = new Set<() => void>()
+const MAX_MICROTASK_TURNS = 100
 
 /** Stops a runtime and preserves a first-attempt failure even when retry succeeds. */
 async function stopRuntimeWithRetry(stop: RuntimeStop): Promise<void> {
@@ -48,11 +51,14 @@ beforeEach(() => {
   vi.useFakeTimers()
   useTrackingStore.setState(useTrackingStore.getInitialState())
   useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
+  useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
 })
 
 afterEach(async () => {
-  for (const resolve of pendingCurrentPositionResolutions) resolve()
-  pendingCurrentPositionResolutions.clear()
+  for (const resolve of pendingDeferredResolutions) resolve()
+  pendingDeferredResolutions.clear()
+  vi.clearAllTimers()
+  vi.useRealTimers()
   const failures: unknown[] = []
   for (const stop of [...activeRuntimeStops]) {
     try {
@@ -64,10 +70,10 @@ afterEach(async () => {
       activeRuntimeStops.delete(stop)
     }
   }
-  vi.useRealTimers()
   useMissionStore.setState(useMissionStore.getInitialState())
   useTrackingStore.setState(useTrackingStore.getInitialState())
   useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
+  useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
   if (failures.length > 0) {
     throw new AggregateError(failures, 'WAR-06 characterization runtime cleanup failed.')
   }
@@ -160,6 +166,31 @@ function snapshot(
   }
 }
 
+/** Creates two same-location historical fixes that make stationary projection observable. */
+function stationaryHistory(prefix: string): readonly NormalizedTrackingPosition[] {
+  return [
+    snapshot(`${prefix}-start`, { timestamp: '2026-04-06T09:00:00.000Z' }).positions[0]!,
+    snapshot(`${prefix}-heartbeat`, { timestamp: '2026-04-06T09:20:00.000Z' }).positions[0]!,
+  ]
+}
+
+/** Applies the same mission-scoped device-selection boundary as the production app runtime. */
+function applyCharacterizationSnapshot(nextSnapshot: TrackingSnapshot): void {
+  const missionId = useMissionStore.getState().currentMission?.id ?? null
+  applyTrackingSnapshot(
+    nextSnapshot,
+    missionId,
+    useActiveMissionDevicesStore.getState().getActiveDeviceIds(missionId),
+  )
+}
+
+/** Erases the visible publication only for the falsifiability control subprocess. */
+function applyNegativeControlBeforeOracle(): void {
+  if (process.env.WAR06_NEGATIVE_CONTROL !== 'drop-visible-publication') return
+  useTrackingStore.setState(useTrackingStore.getInitialState())
+  useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
+}
+
 function createDeferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -174,10 +205,16 @@ function createDeferred<T>(): {
   return { promise, resolve: resolvePromise, reject: rejectPromise }
 }
 
-async function flushMicrotasks(): Promise<void> {
-  for (let index = 0; index < 12; index += 1) {
+/** Waits for a named observable state and fails loudly if the chain never reaches it. */
+async function flushMicrotasksUntil(
+  predicate: () => boolean,
+  description: string,
+): Promise<void> {
+  for (let index = 0; index < MAX_MICROTASK_TURNS; index += 1) {
+    if (predicate()) return
     await Promise.resolve()
   }
+  throw new Error(`WAR-06 harness did not reach ${description} after ${MAX_MICROTASK_TURNS} microtask turns.`)
 }
 
 async function createMissionController(): Promise<Awaited<ReturnType<typeof startMissionRuntime>>> {
@@ -275,10 +312,18 @@ async function startCharacterizationRuntime(input: {
       notifyScopeChanged = listener
       return input.subscribeScope(listener)
     },
-    writeCache: false,
+    writeCache: true,
     now: () => new Date('2026-04-06T10:35:00.000Z'),
   }
-  const stop = await startTrackingRuntime(dependencies)
+  const trackingStop = await startTrackingRuntime(dependencies)
+  const stopTrackingStatusBridge = startMissionTrackingStatusBridge({
+    applySnapshot: dependencies.applySnapshot,
+    applyStatus: dependencies.applyStatus,
+  })
+  const stop: RuntimeStop = async () => {
+    stopTrackingStatusBridge()
+    await trackingStop()
+  }
   activeRuntimeStops.add(stop)
   if (hooks === undefined) {
     try {
@@ -297,18 +342,19 @@ async function startCharacterizationRuntime(input: {
  * guard rather than weakening it to an empty-result assertion. Keep the route
  * description and the repair evidence linked to docs/assurance/findings/war-06/WAR-06.md.
  */
-describe('WAR-06 reachable lifecycle characterization (intentional red)', () => {
+describe.sequential('WAR-06 reachable lifecycle characterization (intentional red)', () => {
 it('reproduces stale history publication at the real delayed poller flush [WAR-06-AUD-01]', async () => {
   const controller = await createMissionController()
   await controller.startMission({ name: 'Mission A' })
+  useActiveMissionDevicesStore.getState().setDeviceActive('mission-a', 'device-1', true)
   let currentScope = scopeForMission('mission-a')
   const missionACurrent = snapshot('mission-a-current')
-  const missionAHistory = snapshot('mission-a-history').positions[0]!
+  const missionAHistory = stationaryHistory('mission-a-history')
   const missionBCurrent = snapshot('mission-b-current')
   const pendingMissionBCurrent = createDeferred<readonly NormalizedTrackingPosition[]>()
-  pendingCurrentPositionResolutions.add(() => pendingMissionBCurrent.resolve(missionBCurrent.positions))
+  pendingDeferredResolutions.add(() => pendingMissionBCurrent.resolve(missionBCurrent.positions))
   const pendingSecondHistoryPersistence = createDeferred<void>()
-  pendingCurrentPositionResolutions.add(() => pendingSecondHistoryPersistence.resolve())
+  pendingDeferredResolutions.add(() => pendingSecondHistoryPersistence.resolve())
   let currentPollCount = 0
   let requestPollNow: () => void = () => undefined
   let requestPollNowCallCount = 0
@@ -330,17 +376,11 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
         ? Promise.resolve(missionACurrent.positions)
         : pendingMissionBCurrent.promise
     }),
-    getBreadcrumbs: vi.fn().mockResolvedValue([missionAHistory]),
+    getBreadcrumbs: vi.fn().mockResolvedValue(missionAHistory),
   }
   const { notifyScopeChanged } = await startCharacterizationRuntime({
     createClient: () => client,
-    applySnapshot: (nextSnapshot) => {
-      applyTrackingSnapshot(
-        nextSnapshot,
-        useMissionStore.getState().currentMission?.id ?? null,
-        ['device-1'],
-      )
-    },
+    applySnapshot: applyCharacterizationSnapshot,
     scopeStatus: () => 'ready',
     readScope: () => currentScope,
     subscribeScope: () => () => undefined,
@@ -356,6 +396,9 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
           },
           getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
           getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+          getBreadcrumbDeviceIds: () => useActiveMissionDevicesStore.getState().getActiveDeviceIds(
+            useMissionStore.getState().currentMission?.id ?? null,
+          ),
           getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
           persistHistoryChunk,
           ...withoutHistoryPersistenceHooks(hooks),
@@ -377,21 +420,22 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
   expect(notifyScopeChanged).toBeTypeOf('function')
 
   await vi.advanceTimersByTimeAsync(0)
-  for (let index = 0; index < 20 && !scheduledDelays.includes(100); index += 1) {
-    await Promise.resolve()
-  }
-  expect(scheduledDelays).toContain(100)
+  await flushMicrotasksUntil(() => scheduledDelays.includes(100), 'the delayed history publication timer')
   expect(client.getBreadcrumbs).toHaveBeenCalled()
 
-  // A production wake starts a second poll while the real 100 ms history
-  // publication timer is pending. The second poll blocks on the Traccar
-  // current-position response; the real finish → idle → start Mission B wake
-  // therefore hits the real pollInFlight early return before the timer
-  // publishes Mission A history.
+  // The harness invokes the poller's wake wrapper to start a second poll while
+  // the real 100 ms history publication timer is pending. The second poll
+  // blocks on the Traccar current-position response; the real finish → idle →
+  // start Mission B wakes therefore hit the real pollInFlight early return
+  // before the timer publishes Mission A history.
   requestPollNow()
-  await flushMicrotasks()
+  await flushMicrotasksUntil(
+    () => client.getCurrentPositions.mock.calls.length === 2,
+    'the pending replacement current-position request',
+  )
   expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
   await controller.finishMission()
+  useActiveMissionDevicesStore.getState().setDeviceActive('mission-b', 'device-1', true)
   await controller.startMission({ name: 'Mission B' })
   currentScope = scopeForMission('mission-b')
   expect(useMissionStore.getState().phase).toBe('active')
@@ -399,52 +443,61 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
   expect(requestPollNowCallCount).toBe(3)
   expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
   await vi.advanceTimersByTimeAsync(100)
-  await flushMicrotasks()
+  await flushMicrotasksUntil(
+    () => useTrackingStore.getState().snapshot.breadcrumbs.some((position) => position.id === missionAHistory[0]!.id),
+    'the stale Mission A history publication',
+  )
+  applyNegativeControlBeforeOracle()
 
-  expect(useTrackingStore.getState().snapshot.breadcrumbs.map((position) => position.id))
-    .toContain(missionAHistory.id)
-  expect(useStationaryAttentionStore.getState().missionId).toBe('mission-b')
+  expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id),
+    'WAR-06 AUD-01 safety oracle: stale Mission A current coordinates remain visible under Mission B')
+    .toContain(missionACurrent.positions[0]!.id)
+  expect(useTrackingStore.getState().snapshot.breadcrumbs.map((position) => position.id),
+    'WAR-06 AUD-01 safety oracle: stale Mission A history remains visible under Mission B')
+    .toContain(missionAHistory[0]!.id)
+  expect(useStationaryAttentionStore.getState(),
+    'WAR-06 AUD-01 safety oracle: stale Mission A fix feeds Mission B stationary projection')
+    .toMatchObject({
+      missionId: 'mission-b',
+      byDevice: { 'device-1': { state: 'attention', sinceTimestamp: missionAHistory[0]!.timestamp } },
+    })
 
   pendingMissionBCurrent.resolve(missionBCurrent.positions)
   pendingSecondHistoryPersistence.resolve()
-  pendingCurrentPositionResolutions.clear()
-  await flushMicrotasks()
+  pendingDeferredResolutions.clear()
 })
 
-it('reproduces deferred stale current-fix publication through finish-idle-start [WAR-06-AUD-02]', async () => {
+it('reproduces deferred stale current-fix publication through finish-idle-start while a poll is in flight [WAR-06-AUD-02]', async () => {
   const controller = await createMissionController()
   await controller.startMission({ name: 'Mission A' })
+  useActiveMissionDevicesStore.getState().setDeviceActive('mission-a', 'device-1', true)
   let scopeStatus: 'loading' | 'ready' = 'loading'
   let currentScope = scopeForMission('mission-a')
-  const missionACurrent = snapshot('mission-a-deferred-fix')
-  const pendingReplacementCurrentPositions = createDeferred<readonly NormalizedTrackingPosition[]>()
-  pendingCurrentPositionResolutions.add(() => pendingReplacementCurrentPositions.resolve([]))
+  const missionAHistory = stationaryHistory('mission-a-deferred-history')
+  const missionACurrentFix = snapshot('mission-a-deferred-fix')
+  const missionACurrent: TrackingSnapshot = {
+    ...missionACurrentFix,
+    positions: [...missionAHistory, ...missionACurrentFix.positions],
+  }
   let finishRequested: Promise<Mission | null> | null = null
   let requestPollNowCallCount = 0
   const client: TrackingPollerClient = {
     authenticate: vi.fn().mockResolvedValue(undefined),
     getDevices: vi.fn().mockResolvedValue(missionACurrent.devices),
-    getCurrentPositions: vi.fn()
-      .mockResolvedValueOnce(missionACurrent.positions)
-      .mockReturnValue(pendingReplacementCurrentPositions.promise),
-    getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    getCurrentPositions: vi.fn().mockResolvedValue(missionACurrent.positions),
+    getBreadcrumbs: vi.fn().mockResolvedValue(missionAHistory),
   }
   let replacement: Promise<Mission> | null = null
   const unsubscribeMissionTransition = useMissionStore.subscribe((state) => {
     if (state.phase === 'idle' && replacement === null) {
+      useActiveMissionDevicesStore.getState().setDeviceActive('mission-b', 'device-1', true)
       replacement = controller.startMission({ name: 'Mission B' })
     }
   })
   try {
     const runtime = await startCharacterizationRuntime({
       createClient: () => client,
-      applySnapshot: (nextSnapshot) => {
-        applyTrackingSnapshot(
-          nextSnapshot,
-          useMissionStore.getState().currentMission?.id ?? null,
-          ['device-1'],
-        )
-      },
+      applySnapshot: applyCharacterizationSnapshot,
       scopeStatus: () => scopeStatus,
       readScope: () => currentScope,
       subscribeScope: () => () => undefined,
@@ -474,6 +527,9 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
             },
             getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
             getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+            getBreadcrumbDeviceIds: () => useActiveMissionDevicesStore.getState().getActiveDeviceIds(
+              useMissionStore.getState().currentMission?.id ?? null,
+            ),
             getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
             ...withoutHistoryPersistenceHooks(wrappedHooks),
             now: () => FIXED_NOW,
@@ -488,30 +544,37 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
         return { ...poller, requestPollNow }
       },
     })
-    await flushMicrotasks()
-    expect(client.getCurrentPositions).toHaveBeenCalled()
-    expect(useTrackingStore.getState().snapshot.positions).toHaveLength(0)
+    await flushMicrotasksUntil(() => finishRequested !== null, 'the real Mission A current-fix callback')
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
 
     if (finishRequested === null) throw new Error('The real poller did not publish Mission A.')
     await finishRequested
     if (replacement === null) throw new Error('Mission controller did not publish idle.')
     await replacement
-    await flushMicrotasks()
     expect(requestPollNowCallCount).toBe(2)
-    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
     expect(useMissionStore.getState().phase).toBe('active')
     expect(useMissionStore.getState().currentMission?.id).toBe('mission-b')
     currentScope = scopeForMission('mission-b')
     scopeStatus = 'ready'
     runtime.notifyScopeChanged()
 
-    expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id))
-      .toEqual(['mission-a-deferred-fix'])
-    expect(useStationaryAttentionStore.getState().missionId).toBe('mission-b')
+    await flushMicrotasksUntil(
+      () => useTrackingStore.getState().snapshot.positions.some((position) => position.id === 'mission-a-deferred-fix'),
+      'the deferred Mission A current-fix publication',
+    )
+    applyNegativeControlBeforeOracle()
+    expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id),
+      'WAR-06 AUD-02 safety oracle: deferred Mission A current fix remains visible under Mission B')
+      .toContain('mission-a-deferred-fix')
+    expect(useStationaryAttentionStore.getState(),
+      'WAR-06 AUD-02 safety oracle: deferred Mission A fix feeds Mission B stationary projection')
+      .toMatchObject({
+        missionId: 'mission-b',
+        byDevice: { 'device-1': { state: 'attention', sinceTimestamp: missionAHistory[0]!.timestamp } },
+      })
 
-    pendingReplacementCurrentPositions.resolve([])
-    pendingCurrentPositionResolutions.clear()
-    await flushMicrotasks()
+    pendingDeferredResolutions.clear()
   } finally {
     unsubscribeMissionTransition()
   }
@@ -522,10 +585,12 @@ it('characterizes the unkeyed cached snapshot on Mission B cold start [WAR-06-CA
   await controller.startMission({ name: 'Mission A' })
   await controller.finishMission()
   await controller.startMission({ name: 'Mission B' })
+  useActiveMissionDevicesStore.getState().setDeviceActive('mission-b', 'device-1', true)
   const currentScope = scopeForMission('mission-b')
   const cachedSnapshot = snapshot('mission-a-cached-fix', {
     dataOrigin: 'cache',
     timestamp: '2026-04-06T10:34:00.000Z',
+    breadcrumbs: stationaryHistory('mission-a-cached-history'),
   })
   const cachedContents = serializeTrackingCachePayload({
     cached_at: '2026-04-06T10:34:00.000Z',
@@ -535,13 +600,7 @@ it('characterizes the unkeyed cached snapshot on Mission B cold start [WAR-06-CA
   })
   await startCharacterizationRuntime({
     cacheRead: vi.fn().mockResolvedValue(cachedContents),
-    applySnapshot: (nextSnapshot) => {
-      applyTrackingSnapshot(
-        nextSnapshot,
-        useMissionStore.getState().currentMission?.id ?? null,
-        ['device-1'],
-      )
-    },
+    applySnapshot: applyCharacterizationSnapshot,
     scopeStatus: () => 'ready',
     readScope: () => currentScope,
     subscribeScope: () => () => undefined,
@@ -551,9 +610,16 @@ it('characterizes the unkeyed cached snapshot on Mission B cold start [WAR-06-CA
   // already active rehydrates Mission A's cached fix without any lifecycle
   // choreography or participant-scope delay.
   expect(useMissionStore.getState().currentMission?.id).toBe('mission-b')
+  applyNegativeControlBeforeOracle()
 
-  expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id))
+  expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id),
+    'WAR-06 CACHE-SIBLING safety oracle: Mission A cache remains visible under Mission B')
     .toEqual(['mission-a-cached-fix'])
-  expect(useStationaryAttentionStore.getState().missionId).toBe('mission-b')
+  expect(useStationaryAttentionStore.getState(),
+    'WAR-06 CACHE-SIBLING safety oracle: Mission A cache feeds Mission B stationary projection')
+    .toMatchObject({
+      missionId: 'mission-b',
+      byDevice: { 'device-1': { state: 'attention', sinceTimestamp: cachedSnapshot.breadcrumbs[0]!.timestamp } },
+    })
 })
 })
