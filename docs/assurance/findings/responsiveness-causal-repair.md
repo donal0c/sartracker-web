@@ -130,9 +130,8 @@ Focused native/runner suites: 45 tests pass. Archive registry: 23 tests pass,
 including queued identity rejection. Expanded local/Ubuntu and startup
 complete/shutdown proof is above. Three independent pre-commit source reviews
 (measurement, custody, lifecycle) are scoped clear; no reviewer ran tests.
-The full stable serial source command exited 0; its retained Vitest cache records
-429 files, all with `failed:false` (the console did not print a test-count
-summary, so no inferred count is claimed). The full-tail gate in that cycle
+The full stable serial source command passed all 429 files / 4,384 tests in
+486.87 seconds; the retained log and Vitest file cache agree. The full-tail gate in that cycle
 measured 1,056 writes, 32.062 ms maximum write and 15.783 ms heartbeat; startup
 complete/shutdown measured 11.393/11.453 ms. Lint and production build/bundle
 budgets pass. All eight existing Chromium GPX/archive operator flows pass.
@@ -155,5 +154,13 @@ application ASAR SHA-256 is
 `b387f303f39a871b315af67d3e49f96b282b8669d111148476e2d6e310b5c6a7`.
 Receipts are `macos-archive.json` and `macos-tracking.json` in the evidence
 directory. A subsequent documentation-only commit reuses this exact executable
-proof; it does not claim a freshly rebuilt artifact. Linux CI and final
-committed review remain pending. This is not merge-ready approval yet.
+proof; it does not claim a freshly rebuilt artifact. Linux CI remains pending.
+This is not merge-ready approval yet.
+
+Four independent source charters are clear at `7637e936`: broad life-safety and
+measurement, custody/completeness, concurrency/finalization, and renderer/input
+containment. The first three verified the committed identity of their reviewed
+diff; the renderer review inspected that exact commit. Reviewers ran no tests.
+The broad reviewer corrected this report's initial omitted test-total claim
+against the retained complete log. Subsequent commits change evidence/docs only;
+no executable/test input changed and the source reviews remain applicable.
