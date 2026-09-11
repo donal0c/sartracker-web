@@ -38,6 +38,8 @@ import {
   normalizeRenderedExactBreadcrumbDotFeaturesForAudit,
   parseBreadcrumb36HourProofArgs,
   processExited,
+  parseExactBreadcrumbDotPageSummary,
+  exactBreadcrumbDotPageSummaryMatches,
   readCompactBreadcrumbMilestoneEvidenceInRenderer,
   summarizeBreadcrumbRequestLedger,
   verifyBreadcrumbRuntimeConfiguration,
@@ -112,6 +114,7 @@ async function main() {
   let report = null
   let runError = null
   let mission = null
+  let selectedParticipantCount = null
   let sourceTruth = null
   let renderedOracle = null
   let exactDotOracle = null
@@ -144,6 +147,7 @@ async function main() {
     await launch.page.getByTestId('breadcrumb-mode-dots').click({ force: true })
     await launch.page.keyboard.press('Escape')
     await launch.page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
+    selectedParticipantCount = await selectProofMissionParticipants(launch.page, profile.deviceCount)
     const missionStartedByProofAtMs = Date.now()
     await launch.page.getByTestId('mission-name-input').fill(
       'Deterministic 36-hour Breadcrumb Proof',
@@ -152,6 +156,11 @@ async function main() {
     await launch.page.getByTestId('mission-offset-input').fill('36', { force: true })
     await launch.page.getByTestId('mission-start-btn').click({ force: true })
     mission = await waitForActiveMission(launch.page, 10_000)
+    if (selectedParticipantCount !== null) {
+      await launch.page.waitForFunction((expected) =>
+        document.querySelector('[data-testid="participant-active-list"]')?.children.length === expected,
+      selectedParticipantCount, { timeout: 10_000 })
+    }
     recordPhase('missionCreated')
     assertBackdatedMission(mission.start_time, missionStartedByProofAtMs)
     sourceTruth = buildBreadcrumb36HourTruthEvidence(profile, {
@@ -457,6 +466,7 @@ async function main() {
       mission: {
         id: mission.id,
         startTime: mission.start_time,
+        selectedParticipantCount,
       },
       normalPollIntervalMs: options.normalPollIntervalMs,
       mockLatencyMs: options.latencyMs,
@@ -589,6 +599,7 @@ async function main() {
         proof: 'packaged-electron-36-hour-initial-breadcrumb-history',
         recordedAt: new Date().toISOString(),
         result: 'error',
+        retainedFailureProfilePath: userDataRoot,
         errorClass: runError instanceof Error ? runError.name : 'UnknownError',
         errorMessage:
           runError instanceof Error ? runError.message.slice(0, 1_000) : String(runError).slice(0, 1_000),
@@ -609,7 +620,7 @@ async function main() {
         },
         mission: mission === null
           ? null
-          : { id: mission.id, startTime: mission.start_time },
+          : { id: mission.id, startTime: mission.start_time, selectedParticipantCount },
         sourceTruth,
         renderedOracle,
         exactDotOracle,
@@ -639,7 +650,16 @@ async function main() {
         mock: finalMockSnapshot,
       })
     }
-    await rm(userDataRoot, { recursive: true, force: true })
+    if (runError === null) {
+      await rm(userDataRoot, { recursive: true, force: true })
+    } else {
+      // Completed-but-rejected reports also need a durable path to retained evidence.
+      await writeJson(path.join(evidenceDir, 'retained-failure-profile.json'), {
+        retainedFailureProfilePath: userDataRoot,
+        completedReport: report !== null,
+        recordedAt: new Date().toISOString(),
+      })
+    }
   }
 
   if (runError !== null) {
@@ -761,12 +781,12 @@ async function captureStableBreadcrumbDotEvidence(input) {
       .getByTestId('exact-breadcrumb-dot-page-summary')
       .textContent()
     const pageSummary = parseExactBreadcrumbDotPageSummary(pageSummaryText)
-    if (
-      pageSummary.pagePositionCount !== observed.featureCount ||
-      pageSummary.totalPositionCount !== input.exactDotOracle.totalPositionCount ||
-      pageSummary.fromTimestamp !== observed.fromTimestamp ||
-      pageSummary.toTimestamp !== observed.toTimestamp
-    ) {
+    if (!exactBreadcrumbDotPageSummaryMatches(pageSummary, {
+      pagePositionCount: observed.featureCount,
+      totalPositionCount: input.exactDotOracle.totalPositionCount,
+      fromTimestamp: observed.fromTimestamp,
+      toTimestamp: observed.toTimestamp,
+    })) {
       throw new Error(
         `Operator exact-dot page summary disagreed with page ${pageIndex + 1} source evidence.`,
       )
@@ -886,12 +906,12 @@ async function captureLatestExactBreadcrumbDotEvidence(input) {
   const operatorPage = parseExactBreadcrumbDotPageSummary(
     await input.page.getByTestId('exact-breadcrumb-dot-page-summary').textContent(),
   )
-  if (
-    operatorPage.pagePositionCount !== observed.featureCount ||
-    operatorPage.totalPositionCount !== input.totalPositionCount ||
-    operatorPage.fromTimestamp !== observed.fromTimestamp ||
-    operatorPage.toTimestamp !== observed.toTimestamp
-  ) {
+  if (!exactBreadcrumbDotPageSummaryMatches(operatorPage, {
+    pagePositionCount: observed.featureCount,
+    totalPositionCount: input.totalPositionCount,
+    fromTimestamp: observed.fromTimestamp,
+    toTimestamp: observed.toTimestamp,
+  })) {
     throw new Error(
       'Post-completion restart exact-dot operator summary differed from the latest source page.',
     )
@@ -909,33 +929,6 @@ async function activateBreadcrumbLineProofMode(page) {
   await page.getByTestId('breadcrumb-mode-line').click({ force: true })
   await page.keyboard.press('Escape')
   await page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
-}
-
-function parseExactBreadcrumbDotPageSummary(value) {
-  const match = /^Showing ([\d,]+) exact fixes of ([\d,]+)(?: — (.+) to (.+))?$/u.exec(
-    String(value ?? '').trim(),
-  )
-  if (match === null) {
-    throw new Error('Operator exact breadcrumb-dot page summary is malformed or missing.')
-  }
-  const pagePositionCount = Number(match[1].replaceAll(',', ''))
-  const totalPositionCount = Number(match[2].replaceAll(',', ''))
-  const fromTimestamp = match[3] ?? null
-  const toTimestamp = match[4] ?? null
-  if (
-    !Number.isSafeInteger(pagePositionCount) ||
-    pagePositionCount < 0 ||
-    !Number.isSafeInteger(totalPositionCount) ||
-    totalPositionCount < pagePositionCount
-  ) {
-    throw new Error('Operator exact breadcrumb-dot page summary has invalid counts.')
-  }
-  return {
-    pagePositionCount,
-    totalPositionCount,
-    fromTimestamp,
-    toTimestamp,
-  }
 }
 
 async function waitForStableExactBreadcrumbDotPage(input) {
@@ -1360,6 +1353,24 @@ async function seedRuntimeConfiguration(userDataDir, baseUrl, pollIntervalMs) {
   })
 }
 
+/** Selects the complete fixture roster when the package uses explicit mission participants. */
+async function selectProofMissionParticipants(page, expectedCount) {
+  const selection = page.getByTestId('participant-selection-step')
+  if (!await selection.isVisible()) return null
+  const checkboxes = page.getByTestId('participant-device-picker').locator('input[type="checkbox"]')
+  await checkboxes.first().waitFor({ timeout: 30_000 })
+  const count = await checkboxes.count()
+  if (count !== expectedCount) {
+    throw new Error(`36-hour proof expected ${expectedCount} selectable devices; observed ${count}.`)
+  }
+  for (let index = 0; index < count; index += 1) {
+    await checkboxes.nth(index).check({ force: true })
+  }
+  await page.getByTestId('participant-selected-count')
+    .filter({ hasText: `${expectedCount} selected` }).waitFor({ timeout: 10_000 })
+  return count
+}
+
 async function launchPackagedApp(options, userDataDir, instrumentation = {}) {
   const remoteDebuggingPort = await findFreePort()
   const logChunks = []
@@ -1691,13 +1702,9 @@ async function readTrackingSetDataCapture(page) {
 }
 
 async function readTrackingEvidenceCollection(page) {
-  const capture = await readTrackingSetDataCapture(page)
-  if (capture.latest !== null) {
-    return capture.latest
-  }
   const serialized = await readSerializedTrackingSourceCollection(page)
   if (serialized === null) {
-    throw new Error('Tracking source exposed neither captured nor serialized GeoJSON evidence.')
+    throw new Error('Tracking source exposed no readable GeoJSON evidence.')
   }
   return serialized
 }
@@ -1707,13 +1714,18 @@ async function readSerializedTrackingSourceCollection(page) {
   return observation?.collection ?? null
 }
 
+/** Reads current source geometry; updateData does not refresh setData capture or serialize().data. */
 async function readSerializedTrackingSourceObservation(page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const source = window.__SARTRACKER_MAP__?.getSource('tracking')
-    if (source === undefined || typeof source.serialize !== 'function') {
+    if (source == null) {
       return null
     }
-    const data = source.serialize()?.data
+    const hasLiveData = typeof source.getData === 'function'
+    // An available live reader must succeed: stale snapshots cannot replace a failed read.
+    const data = hasLiveData
+      ? await source.getData()
+      : typeof source.serialize === 'function' ? source.serialize()?.data : null
     const sampledAtUnixMs = Date.now()
     if (
       data === null ||
@@ -1723,7 +1735,11 @@ async function readSerializedTrackingSourceObservation(page) {
     ) {
       return null
     }
-    return { collection: data, sampledAtUnixMs }
+    return {
+      collection: data,
+      sampledAtUnixMs,
+      evidencePath: hasLiveData ? 'GeoJSONSource.getData()' : 'GeoJSONSource.serialize().data',
+    }
   })
 }
 
@@ -1736,21 +1752,7 @@ async function waitForStableSerializedTrackingEvidence(input) {
   while (Date.now() < deadline) {
     assertProcessAlive(input.page)
     const firstReadStartedAtMs = Date.now()
-    const firstCapture = await readTrackingSetDataCapture(input.page).catch(() => null)
-    const firstObservation =
-      firstCapture?.latest !== null &&
-      firstCapture?.latest !== undefined &&
-      Number.isFinite(firstCapture.latestUpdateAtUnixMs) &&
-      firstCapture.latestUpdateAtUnixMs >= input.observedFromMs
-        ? {
-            collection: firstCapture.latest,
-            sampledAtUnixMs: firstCapture.sampledAtUnixMs,
-            evidencePath: 'GeoJSONSource.setData capture',
-          }
-        : await readSerializedTrackingSourceObservation(input.page)
-          .then((observation) => observation === null
-            ? null
-            : { ...observation, evidencePath: 'GeoJSONSource.serialize().data' })
+    const firstObservation = await readSerializedTrackingSourceObservation(input.page)
     const firstCollection = firstObservation?.collection ?? null
     readCount += 1
     maximumReadDurationMs = Math.max(
@@ -1766,21 +1768,7 @@ async function waitForStableSerializedTrackingEvidence(input) {
         firstExactSourceSampledAtUnixMs ??= firstObservation.sampledAtUnixMs
         await input.page.waitForTimeout(250)
         const secondReadStartedAtMs = Date.now()
-        const secondCapture = await readTrackingSetDataCapture(input.page).catch(() => null)
-        const secondObservation =
-          secondCapture?.latest !== null &&
-          secondCapture?.latest !== undefined &&
-          Number.isFinite(secondCapture.latestUpdateAtUnixMs) &&
-          secondCapture.latestUpdateAtUnixMs >= input.observedFromMs
-            ? {
-                collection: secondCapture.latest,
-                sampledAtUnixMs: secondCapture.sampledAtUnixMs,
-                evidencePath: 'GeoJSONSource.setData capture',
-              }
-            : await readSerializedTrackingSourceObservation(input.page)
-              .then((observation) => observation === null
-                ? null
-                : { ...observation, evidencePath: 'GeoJSONSource.serialize().data' })
+        const secondObservation = await readSerializedTrackingSourceObservation(input.page)
         const secondCollection = secondObservation?.collection ?? null
         readCount += 1
         maximumReadDurationMs = Math.max(
@@ -1790,6 +1778,8 @@ async function waitForStableSerializedTrackingEvidence(input) {
         if (secondCollection !== null) {
           const second = createRenderedBreadcrumbEvidence(secondCollection)
           if (renderedEvidenceMatches(second, first)) {
+            // Capture metadata is diagnostic only; both geometry samples came from the source.
+            const secondCapture = await readTrackingSetDataCapture(input.page).catch(() => null)
             const proofCompletedAtUnixMs = Date.now()
             const timing = createBreadcrumbPublicationTimingEvidence({
               observedFromUnixMs: input.observedFromMs,

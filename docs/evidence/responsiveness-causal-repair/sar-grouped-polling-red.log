@@ -1,0 +1,33 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/polling-manager.test.ts (90 tests | 1 failed | 89 skipped) 19ms
+     × admits complete history groups separately and joins their original mission fence on stop 18ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/polling-manager.test.ts > polling manager > admits complete history groups separately and joins their original mission fence on stop
+AssertionError: expected [ { phase: 'initial', …(6) }, …(7) ] to have a length of 4 but got 8
+
+- Expected
++ Received
+
+- 4
++ 8
+
+ ❯ tests/unit/polling-manager.test.ts:1883:52
+    1881|     await vi.advanceTimersByTimeAsync(0)
+    1882|     expect(persistHistoryChunks).toHaveBeenCalledOnce()
+    1883|     expect(persistHistoryChunks.mock.calls[0]![0]).toHaveLength(4)
+       |                                                    ^
+    1884|     expect(waveObservations.length).toBeGreaterThan(0)
+    1885|     let stopped = false
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 89 skipped (90)
+   Start at  13:11:12
+   Duration  639ms (transform 117ms, setup 0ms, import 140ms, tests 19ms, environment 408ms)
+

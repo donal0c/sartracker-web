@@ -4,6 +4,7 @@ const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
+const { createBulkDeviceObservationWriter } = require('./bulk-device-observations.cjs')
 
 // Associates each open SQLite handle with its in-process archive-correction
 // writer fence. Mutation helpers below receive only the database handle, so a
@@ -603,6 +604,7 @@ function createElectronMissionStore(options) {
   }
   const archiveRegistry = createArchiveRegistry({
     db,
+    runReconciliationWrite: (execute, signal) => responsiveWriter.run(execute, { signal }),
     archiveDirectory,
     appendAuditEvent: (missionId, eventType, details) =>
       appendEvent(db, missionId, eventType, details),
@@ -709,6 +711,7 @@ function createElectronMissionStore(options) {
   let gpxReceiptRecoveryTimer = null
   let gpxReceiptRecoveryFailure = null
   let legacyArchiveRegistryBackfillTimer = null
+  let legacyArchiveRegistryBackfillActive = null
   let legacyArchiveRegistryBackfillFailure = null
   let archiveRegistryReconciliationTimer = null
   let archiveRegistryReconciliationFailure = null
@@ -921,34 +924,47 @@ function createElectronMissionStore(options) {
   const scheduleLegacyArchiveRegistryBackfill = () => {
     if (
       storeClosed
+      || archiveRegistryReconciliationShutdownRequested
       || migrationState.legacyArchiveRegistryBackfillRemaining === 0
       || legacyArchiveRegistryBackfillTimer !== null
+      || legacyArchiveRegistryBackfillActive !== null
       || legacyArchiveRegistryBackfillFailure !== null
     ) return
     legacyArchiveRegistryBackfillTimer = setTimeout(() => {
       legacyArchiveRegistryBackfillTimer = null
-      if (storeClosed) return
-      try {
+      if (storeClosed || archiveRegistryReconciliationShutdownRequested) return
+      legacyArchiveRegistryBackfillActive = responsiveWriter.run(() => {
         const result = backfillLegacyArchiveRegistry(db, { archiveDirectory })
-        migrationState.legacyArchiveRegistryBackfillRemaining = result.remaining
         if (result.remaining === 0) {
           db.prepare(`DELETE FROM metadata
             WHERE key = 'legacy_archive_registry_backfill_failure'`).run()
-          scheduleArchiveRegistryReconciliation()
         }
-        scheduleLegacyArchiveRegistryBackfill()
-      } catch (error) {
+        return result
+      }).then((result) => {
+        migrationState.legacyArchiveRegistryBackfillRemaining = result.remaining
+        if (result.remaining === 0) scheduleArchiveRegistryReconciliation()
+      }).catch(async (error) => {
+        if (archiveRegistryReconciliationShutdownRequested && error?.name === 'AbortError') return
         legacyArchiveRegistryBackfillFailure = safeEvidenceFailureReason(
           error?.message ?? error,
         )
-        db.prepare(`INSERT INTO metadata (key, value) VALUES (
-          'legacy_archive_registry_backfill_failure', ?
-        ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-          .run(legacyArchiveRegistryBackfillFailure)
+        try {
+          await responsiveWriter.run(() => db.prepare(`INSERT INTO metadata (key, value) VALUES (
+            'legacy_archive_registry_backfill_failure', ?
+          ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+            .run(legacyArchiveRegistryBackfillFailure))
+        } catch (persistenceError) {
+          if (!archiveRegistryReconciliationShutdownRequested) {
+            console.error('Legacy archive registry failure could not be persisted:', persistenceError)
+          }
+        }
         console.error(
           `Legacy archive registry backfill stopped safely: ${legacyArchiveRegistryBackfillFailure}`,
         )
-      }
+      }).finally(() => {
+        legacyArchiveRegistryBackfillActive = null
+        scheduleLegacyArchiveRegistryBackfill()
+      })
     }, LEGACY_ARCHIVE_REGISTRY_BACKFILL_DELAY_MS)
   }
 
@@ -971,14 +987,16 @@ function createElectronMissionStore(options) {
       archiveRegistryReconciliationActive = archiveRegistry.reconcileArchiveAvailability({
         cycleStartedAt: archiveRegistryReconciliationCycleStartedAt,
         signal: archiveRegistryReconciliationController.signal,
-      }).then((result) => {
+      }).then(async (result) => {
         if (result.remaining === 0) {
+          await responsiveWriter.run(() => db.prepare(`DELETE FROM metadata
+            WHERE key = 'archive_registry_reconciliation_failure'`).run(), {
+            signal: archiveRegistryReconciliationController.signal,
+          })
           archiveRegistryReconciliationComplete = true
-          db.prepare(`DELETE FROM metadata
-            WHERE key = 'archive_registry_reconciliation_failure'`).run()
         }
         return result
-      }).catch((error) => {
+      }).catch(async (error) => {
         // prepareClose() deliberately aborts this best-effort startup sweep.
         // Cancellation is a clean shutdown outcome, not a durable registry
         // failure that should strand the next process behind a false marker.
@@ -989,10 +1007,16 @@ function createElectronMissionStore(options) {
           error?.message ?? error,
         )
         if (!storeClosed) {
-          db.prepare(`INSERT INTO metadata (key, value) VALUES (
-            'archive_registry_reconciliation_failure', ?
-          ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-            .run(archiveRegistryReconciliationFailure)
+          try {
+            await responsiveWriter.run(() => db.prepare(`INSERT INTO metadata (key, value) VALUES (
+              'archive_registry_reconciliation_failure', ?
+            ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+              .run(archiveRegistryReconciliationFailure))
+          } catch (persistenceError) {
+            if (!archiveRegistryReconciliationShutdownRequested) {
+              console.error('Archive registry reconciliation failure could not be persisted:', persistenceError)
+            }
+          }
           console.error(
             `Archive registry reconciliation stopped safely: ${archiveRegistryReconciliationFailure}`,
           )
@@ -1884,6 +1908,10 @@ function createElectronMissionStore(options) {
       const responsiveWritesSettled = responsiveWriter.close()
       archiveCorrectionAttachmentRecoveryShutdownRequested = true
       archiveRegistryReconciliationShutdownRequested = true
+      if (legacyArchiveRegistryBackfillTimer !== null) {
+        clearTimeout(legacyArchiveRegistryBackfillTimer)
+        legacyArchiveRegistryBackfillTimer = null
+      }
       if (archiveRegistryReconciliationTimer !== null) {
         clearTimeout(archiveRegistryReconciliationTimer)
         archiveRegistryReconciliationTimer = null
@@ -1898,6 +1926,9 @@ function createElectronMissionStore(options) {
       }
       const shutdownTasks = active.map((entry) => entry.quiesced)
       shutdownTasks.push(responsiveWritesSettled)
+      if (legacyArchiveRegistryBackfillActive !== null) {
+        shutdownTasks.push(legacyArchiveRegistryBackfillActive)
+      }
       for (const activeQuery of activeCoverageRequests) {
         activeQuery.controller.abort()
         shutdownTasks.push(activeQuery.completion)
@@ -1961,6 +1992,9 @@ function createElectronMissionStore(options) {
       }
     },
     close: () => {
+      if (legacyArchiveRegistryBackfillActive !== null) {
+        throw new Error('Cannot close the mission store while archive registry backfill is active; call prepareClose first.')
+      }
       if (activeCoverageRequests.size > 0) {
         throw new Error('Cannot close the mission store while coverage requests are active; call prepareClose first.')
       }
@@ -2874,6 +2908,7 @@ function createElectronMissionStore(options) {
       const controller = new AbortController()
       const result = enqueueGpxEvidenceImport({
         databasePath,
+        foregroundWriterBuffer: responsiveWriter.pendingBuffer,
         missionId,
         paths,
         batchId,
@@ -8050,8 +8085,12 @@ function addPositionsBulk(
   let skippedAmbiguousLegacyAdoptionCount = 0
   let replayEligibilityChanged = false
   const acceptedCoveragePositions = []
+  let legacyCandidates
 
   const transaction = db.transaction(() => {
+    const deviceObservations = createBulkDeviceObservationWriter((deviceId, timestamp) => {
+      updateDevice.run(timestamp, timestamp, input.mission_id, deviceId)
+    })
     const receivedAt = now()
     for (const position of positions) {
       validateLatLon(position.lat, position.lon, 'Position')
@@ -8099,12 +8138,7 @@ function addPositionsBulk(
               const promotion = retainFixTimeProvenance.run(receivedAt, existing.id)
               replayEligibilityChanged = replayEligibilityChanged || promotion.changes > 0
             }
-            updateDevice.run(
-              timestamp,
-              timestamp,
-              input.mission_id,
-              position.device_id,
-            )
+            deviceObservations.record(position.device_id, timestamp)
           }
           continue
         }
@@ -8115,6 +8149,7 @@ function addPositionsBulk(
           position,
           timestamp,
           dataOrigin,
+          legacyCandidates ??= prepareLegacyPositionCandidates(db),
         )
         if (adopted === AMBIGUOUS_LEGACY_ADOPTION) {
           skippedAmbiguousLegacyAdoptionCount += 1
@@ -8168,12 +8203,13 @@ function addPositionsBulk(
         timestampSource,
         timestampSource === 'fix' ? receivedAt : null,
       )
-      updateDevice.run(timestamp, timestamp, input.mission_id, position.device_id)
+      deviceObservations.record(position.device_id, timestamp)
       changedPositionCount += 1
       changedIds?.push(id)
       insertedPositionCount += 1
       acceptedCoveragePositions.push({ device_id: position.device_id, timestamp })
     }
+    deviceObservations.flush()
     recordAcceptedCoveragePositions(db, {
       missionId: input.mission_id,
       positions: acceptedCoveragePositions,
@@ -8403,6 +8439,18 @@ function findPositionBySourceIdentity(db, missionId, sourcePositionId) {
     .get(missionId, sourcePositionId)
 }
 
+/** Compiles the exact candidate lookup; each execution observes preceding writes in its transaction. */
+function prepareLegacyPositionCandidates(db) {
+  return db.prepare(`SELECT * FROM positions
+       WHERE mission_id = ? AND device_id = ? AND source_position_id IS NULL
+         AND timestamp = ? AND lat = ? AND lon = ?
+         AND name IS ? AND altitude IS ? AND speed IS ? AND battery IS ?
+         AND accuracy IS ? AND source IS ? AND data_origin = ?
+       ORDER BY rowid ASC
+       LIMIT 2`)
+}
+
+/** Adopts only one exact legacy candidate, optionally reusing the batch's compiled lookup. */
 function adoptSourceIdentityForLegacyPosition(
   db,
   missionId,
@@ -8410,31 +8458,22 @@ function adoptSourceIdentityForLegacyPosition(
   input,
   timestamp,
   dataOrigin,
+  candidateQuery = prepareLegacyPositionCandidates(db),
 ) {
-  const candidates = db
-    .prepare(
-      `SELECT * FROM positions
-       WHERE mission_id = ? AND device_id = ? AND source_position_id IS NULL
-         AND timestamp = ? AND lat = ? AND lon = ?
-         AND name IS ? AND altitude IS ? AND speed IS ? AND battery IS ?
-         AND accuracy IS ? AND source IS ? AND data_origin = ?
-       ORDER BY rowid ASC
-       LIMIT 2`,
-    )
-    .all(
-      missionId,
-      input.device_id,
-      timestamp,
-      input.lat,
-      input.lon,
-      input.name ?? null,
-      input.altitude ?? null,
-      input.speed ?? null,
-      input.battery ?? null,
-      input.accuracy ?? null,
-      input.source ?? null,
-      dataOrigin,
-    )
+  const candidates = candidateQuery.all(
+    missionId,
+    input.device_id,
+    timestamp,
+    input.lat,
+    input.lon,
+    input.name ?? null,
+    input.altitude ?? null,
+    input.speed ?? null,
+    input.battery ?? null,
+    input.accuracy ?? null,
+    input.source ?? null,
+    dataOrigin,
+  )
   if (candidates.length === 0) {
     return undefined
   }
@@ -10810,12 +10849,14 @@ function assertSameHashGpxEvidenceMatches(db, current, input, displayGeometryJso
 }
 
 /** Yields after each GPX writer slice so current-position writers can acquire WAL ownership. */
-function yieldGpxWriterTurn() {
-  return new Promise((resolve) => setTimeout(resolve, 5))
+async function yieldGpxWriterTurn(beforeWrite) {
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  if (beforeWrite !== null) await beforeWrite()
 }
 
 /** Persists large GPX point sets in short writer slices, publishing only after a final fence. */
-async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationReceipt = null) {
+async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationReceipt = null, beforeWrite = null) {
+  if (beforeWrite !== null) await beforeWrite()
   if ((input.points?.length ?? 0) <= chunkSize
     && (input.rejections?.length ?? 0) <= chunkSize
     && (input.source_bytes_base64?.length ?? 0) <= MAX_INLINE_GPX_SOURCE_BASE64_LENGTH) {
@@ -10921,7 +10962,7 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
       )
   })
   stage.immediate()
-  await yieldGpxWriterTurn()
+  await yieldGpxWriterTurn(beforeWrite)
 
   const pointStatement = db.prepare(`INSERT INTO gpx_evidence_points (
     import_id, revision_sequence, segment_index, point_index, track_name,
@@ -10942,7 +10983,7 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
       }
     })
     writeChunk.immediate()
-    await yieldGpxWriterTurn()
+    await yieldGpxWriterTurn(beforeWrite)
   }
   const rejectionStatement = db.prepare(`INSERT INTO gpx_evidence_rejections (
     id, import_id, revision_sequence, kind, segment_index, point_index, reason, source_value
@@ -10959,10 +11000,10 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
       }
     })
     writeChunk.immediate()
-    await yieldGpxWriterTurn()
+    await yieldGpxWriterTurn(beforeWrite)
   }
 
-  await yieldGpxWriterTurn()
+  await yieldGpxWriterTurn(beforeWrite)
 
   const publish = db.transaction(() => {
     ensureWritableMission(db, missionId)

@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -182,7 +183,7 @@ it.each(['devices', 'single-devices', 'positions', 'one-position', 'positions-bu
       else if (kind === 'cancel-coverage' || kind === 'shutdown-coverage') {
         expect(outcome.error).toMatchObject({ name: 'AbortError' })
       } else expect(outcome.error).toBeNull()
-      expect(maximumHeartbeatGapMs).toBeLessThan(200)
+      assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).toBeLessThan(200))
       await newer
       await cancellation
       if (kind === 'shutdown-coverage') await cleanup.catch(() => undefined)

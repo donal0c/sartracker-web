@@ -1,0 +1,1 @@
+{"mainEventLoop":{"clock":"main-performance-now","timeOriginMs":1789125561394.94,"intervalMs":50,"startedAtMs":39.498918,"stoppedAtMs":512.092536,"samples":3,"maximumGapMs":361.476032},"inspectorRoundTripMs":1.4321159999999935,"error":null,"failureReasons":["Independent main-loop maximum 361.476032ms on launch 1 reached the 200ms stall threshold."]}

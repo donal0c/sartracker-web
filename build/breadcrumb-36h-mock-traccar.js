@@ -275,6 +275,13 @@ export async function startBreadcrumb36HourMockTraccarServer(options = {}) {
         return
       }
 
+      if (request.method === 'GET' && requestUrl.pathname === '/api/groups') {
+        httpStatus = 200
+        outcome = 'success'
+        sendJson(response, httpStatus, [])
+        return
+      }
+
       if (request.method === 'GET' && requestUrl.pathname === '/api/devices') {
         const devices = buildDevices(profile)
         httpStatus = 200
@@ -392,6 +399,9 @@ function classifyRequest(request, requestUrl, profile) {
   }
   if (request.method === 'GET' && requestUrl.pathname === '/api/devices') {
     return { kind: 'devices', deviceId: null, from: null, to: null }
+  }
+  if (request.method === 'GET' && requestUrl.pathname === '/api/groups') {
+    return { kind: 'groups', deviceId: null, from: null, to: null }
   }
   if (request.method === 'GET' && requestUrl.pathname === '/api/positions') {
     const deviceId = parseInteger(requestUrl.searchParams.get('deviceId'))

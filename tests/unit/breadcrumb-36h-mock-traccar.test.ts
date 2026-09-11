@@ -102,6 +102,47 @@ describe('deterministic 36-hour mock Traccar', () => {
     ])
   })
 
+  it('serves an authenticated empty group roster without consuming history faults or changing source rows', async () => {
+    const server = await startBreadcrumb36HourMockTraccarServer({
+      faults: [{ kind: 'history', deviceId: 1, occurrence: 2, status: 503 }],
+    })
+    closeServers.push(server.close)
+    const headers = { Authorization: 'Basic synthetic' }
+    const unauthorized = await fetch(`${server.baseUrl}/api/groups`)
+    expect(unauthorized.status).toBe(401)
+    const groups = await fetch(`${server.baseUrl}/api/groups`, { headers })
+    expect(groups.status).toBe(200)
+    expect(await groups.json()).toEqual([])
+    expect(server.snapshot().maximumConcurrentHistoryRequests).toBe(0)
+
+    const url = new URL('/api/positions', server.baseUrl)
+    url.searchParams.set('deviceId', '1')
+    url.searchParams.set('from', '2026-08-08T00:00:00.000Z')
+    url.searchParams.set('to', '2026-08-08T00:00:10.000Z')
+    const first = await fetch(url, { headers })
+    expect(first.status).toBe(200)
+    const positions = await first.json() as readonly { readonly id: number }[]
+    expect(positions.map((position) => position.id)).toEqual([1000000, 1000001, 1000002])
+    const repeatedGroups = await fetch(`${server.baseUrl}/api/groups`, { headers })
+    expect(repeatedGroups.status).toBe(200)
+    expect(await repeatedGroups.json()).toEqual([])
+    const failed = await fetch(url, { headers })
+    expect(failed.status).toBe(503)
+    const retry = await fetch(url, { headers })
+    expect(retry.status).toBe(200)
+    expect(await retry.json()).toEqual(positions)
+
+    const snapshot = server.snapshot()
+    expect(snapshot.requestLedger.filter((entry) => entry.kind === 'groups').map(
+      (entry) => [entry.httpStatus, entry.returnedCount, entry.historyConcurrencyAtStart],
+    )).toEqual([[401, 0, null], [200, 0, null], [200, 0, null]])
+    expect(snapshot.requestLedger.filter((entry) => entry.kind === 'history').map(
+      (entry) => entry.httpStatus,
+    )).toEqual([200, 503, 200])
+    expect(snapshot.activeHistoryRequests).toBe(0)
+    expect(snapshot.maximumConcurrentHistoryRequests).toBe(1)
+  })
+
   it('serves inclusive from/to history with globally stable identities and digests', async () => {
     const server = await startBreadcrumb36HourMockTraccarServer()
     closeServers.push(server.close)

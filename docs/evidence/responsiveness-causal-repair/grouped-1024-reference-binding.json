@@ -1,0 +1,110 @@
+{
+  "evidenceKind": "actual Linux reference package; not CI artifact",
+  "asarSha256": "eb0ef15cbaf1cdde2e22341aef137f8dcf510e0476e60bf2ac35eb1835d2e290",
+  "sourceBaseCommit": "8672411b7e366a7c1625e8df16a69bdd914a5f3d",
+  "sourceFiles": {
+    "src/features/tracking/polling-manager.ts": "4e9a2e411c0e2d893a3936c63a34fb1754b338ba56fa80f4b9c19b1997b89dc6",
+    "src/features/tracking/breadcrumb-history-reconciler.ts": "feaad8820e64a1c96f9c788245c225d841e8a9749c5f4e3c4f2bcd209a842e75",
+    "src/features/tracking/persist-history-chunk-groups.ts": "cc0406fea81004f1deb3d05f8acae8f16b24ad7911f6fe2d84880700a7a607d8",
+    "scripts/electron-tracking-soak.mjs": "9e51679e3f9c019487b0f4f2654ade7671e8899cdee246ef471ee60599baec55",
+    "build/electron-tracking-soak-lib.js": "6c5cd4e7e2d5d2931cf90f3531e2139e3c8f712d620bc3254ba5c6aaf5b952b0",
+    "build/main-event-loop-probe.js": "8d451fc00022e3e6fc4dce18709c20983db655f0b3bccddbbc75c3d6034b9ea1"
+  },
+  "verdict": {
+    "valid": true,
+    "passed": true,
+    "failureReasons": [],
+    "redundantTelemetrySlopeRowsPerEquivalentPoll": 0,
+    "operationalPositionSlopeRowsPerEquivalentPoll": 8.022222222222222
+  },
+  "launches": [
+    {
+      "number": 1,
+      "mainEventLoopEvidence": {
+        "clock": "main-performance-now",
+        "timeOriginMs": 1789129248775.331,
+        "intervalMs": 50,
+        "startedAtMs": 1161.803835,
+        "stoppedAtMs": 9508.162569,
+        "samples": 155,
+        "maximumGapMs": 79.90209199999936
+      },
+      "mainHeartbeatErrors": 0,
+      "shutdown": {
+        "exited": true,
+        "exitKind": "code",
+        "forced": false,
+        "graceful": true
+      },
+      "exitCode": 0
+    },
+    {
+      "number": 2,
+      "mainEventLoopEvidence": {
+        "clock": "main-performance-now",
+        "timeOriginMs": 1789129259153.889,
+        "intervalMs": 50,
+        "startedAtMs": 1133.716831,
+        "stoppedAtMs": 182931.061902,
+        "samples": 3432,
+        "maximumGapMs": 142.68608700000914
+      },
+      "mainHeartbeatErrors": 0,
+      "shutdown": {
+        "exited": true,
+        "exitKind": "code",
+        "forced": false,
+        "graceful": true
+      },
+      "exitCode": 0
+    }
+  ],
+  "positionTruth": {
+    "actual": {
+      "full": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "7e66536f8949a81c4f5cb67d3be4b3a33b097d5bd062e4330405c004669f46f8"
+      },
+      "normalPrefix": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "7e66536f8949a81c4f5cb67d3be4b3a33b097d5bd062e4330405c004669f46f8"
+      },
+      "normalPrefixBatch": 480
+    },
+    "expected": {
+      "full": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "7e66536f8949a81c4f5cb67d3be4b3a33b097d5bd062e4330405c004669f46f8"
+      },
+      "normalPrefix": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "7e66536f8949a81c4f5cb67d3be4b3a33b097d5bd062e4330405c004669f46f8"
+      },
+      "normalPrefixBatch": 480
+    },
+    "exactMatch": true,
+    "normalPrefixExactMatch": true
+  },
+  "rendererMaxMs": 183.80000000001746,
+  "externalActionMaxMs": 100.15090700000292,
+  "limits": [
+    "Reference directory is an isolated source overlay, not an exact Git checkout or CI artifact.",
+    "Previously rejected CI8672411b retained separately.",
+    "Full-page screenshot has a rendered upper application surface and a large blank area below; not a new layout qualification claim."
+  ],
+  "asarInspection": {
+    "extractedCjsMatchLocalAndRemoteSource": {
+      "electron/mission-store.cjs": "c05ddc193b265461ae5cda00afbbc1b1d9ed5f305367ab032dc90b4a90348ad6",
+      "electron/bulk-device-observations.cjs": "023fd3a47e0733e9b61c0bef6bc494b495f5ef7053a5d99bbc862e316da49700",
+      "electron/archive-registry.cjs": "6afecdebc54cc96d4bfc416dae20271f65d7da0526b7ae05527cc3b70d03ed9f",
+      "electron/gpx-evidence-import-runner.cjs": "b2bc31343c033e848282b8dcabb4448a35f8b8bc06e049f75e31ff8e77e44f93",
+      "electron/gpx-evidence-import-worker.cjs": "a0585c41a34eb28321b5fcd8c597626acd01bd0bee44172568d5cb082f32fc91"
+    },
+    "rendererJsFilesComparedToRemoteBuild": 33,
+    "allMatched": true
+  }
+}

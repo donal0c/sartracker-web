@@ -1,0 +1,1179 @@
+{
+  "limitation": "Sampled occupancy includes native waits; not measured CPU or single-call duration. Anchor precedes Profiler.enable/setSamplingInterval/start; per-sample alignment approximate. Raw profiles retained at local originalPath and owned reference directory.",
+  "profiles": [
+    {
+      "launch": 1,
+      "originalPath": "tmp/causal-reference-profile/main-launch-1.cpuprofile",
+      "originalSha256": "1b1a0cd0404b743d94fd52a4183b8790bccf52a7b9c51636865bedc640c2389b",
+      "profileDurationMs": 7521.003,
+      "anchor": {
+        "result": {
+          "type": "object",
+          "value": {
+            "nowMs": 1177.575528,
+            "timeOriginMs": 1789122515942.146
+          }
+        }
+      },
+      "topStacks": [
+        {
+          "sampledMs": 2290.416000000002,
+          "frames": [
+            {
+              "file": "",
+              "function": "run",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "execute",
+              "line": 15
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "",
+              "line": 70
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 280.88899999999995,
+          "frames": [
+            {
+              "file": "",
+              "function": "run",
+              "line": 0
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8088
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "addPositionsBulk",
+              "line": 8039
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8262
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2530
+            }
+          ]
+        },
+        {
+          "sampledMs": 142.402,
+          "frames": [
+            {
+              "file": "",
+              "function": "(garbage collector)",
+              "line": 0
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 118.99199999999998,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "adoptSourceIdentityForLegacyPosition",
+              "line": 8440
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8088
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "addPositionsBulk",
+              "line": 8039
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8262
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            }
+          ]
+        },
+        {
+          "sampledMs": 61.12199999999999,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2530
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 3412
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "",
+              "line": 17
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "execute",
+              "line": 15
+            }
+          ]
+        },
+        {
+          "sampledMs": 49.86900000000001,
+          "frames": [
+            {
+              "file": "",
+              "function": "get",
+              "line": 0
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "getActiveMission",
+              "line": 5543
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "getActiveMission",
+              "line": 3019
+            },
+            {
+              "file": "electron/main.cjs",
+              "function": "",
+              "line": 993
+            },
+            {
+              "file": "node:electron/js2c/browser_init",
+              "function": "",
+              "line": 2
+            },
+            {
+              "file": "node:events",
+              "function": "emit",
+              "line": 456
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 39.04600000000001,
+          "frames": [
+            {
+              "file": "",
+              "function": "fstat",
+              "line": 0
+            },
+            {
+              "file": "node:internal/fs/promises",
+              "function": "readFileHandle",
+              "line": 513
+            },
+            {
+              "file": "node:internal/fs/promises",
+              "function": "readFile",
+              "line": 1278
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 38.754,
+          "frames": [
+            {
+              "file": "",
+              "function": "close",
+              "line": 0
+            },
+            {
+              "file": "node:internal/fs/promises",
+              "function": "close",
+              "line": 240
+            },
+            {
+              "file": "node:internal/fs/promises",
+              "function": "",
+              "line": 431
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 38.729000000000006,
+          "frames": [
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8088
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "addPositionsBulk",
+              "line": 8039
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8262
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2530
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 3412
+            }
+          ]
+        },
+        {
+          "sampledMs": 37.458,
+          "frames": [
+            {
+              "file": "",
+              "function": "get",
+              "line": 0
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8088
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "addPositionsBulk",
+              "line": 8039
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8262
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2530
+            }
+          ]
+        },
+        {
+          "sampledMs": 32.863,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "getActiveMission",
+              "line": 5543
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "getActiveMission",
+              "line": 3019
+            },
+            {
+              "file": "electron/main.cjs",
+              "function": "",
+              "line": 993
+            },
+            {
+              "file": "node:electron/js2c/browser_init",
+              "function": "",
+              "line": 2
+            },
+            {
+              "file": "node:events",
+              "function": "emit",
+              "line": 456
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 30.384000000000004,
+          "frames": [
+            {
+              "file": "",
+              "function": "read",
+              "line": 0
+            },
+            {
+              "file": "node:internal/fs/promises",
+              "function": "readFileHandle",
+              "line": 513
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 28.817,
+          "frames": [
+            {
+              "file": "",
+              "function": "run",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "execute",
+              "line": 15
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "",
+              "line": 70
+            },
+            {
+              "file": "",
+              "function": "runMicrotasks",
+              "line": 0
+            },
+            {
+              "file": "node:internal/process/task_queues",
+              "function": "processTicksAndRejections",
+              "line": 72
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 27.874,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-live-review-access.cjs",
+              "function": "readMissionLiveReviewStorageState",
+              "line": 518
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "projectMissionStorageState",
+              "line": 5549
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "getActiveMission",
+              "line": 5543
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "getActiveMission",
+              "line": 3019
+            },
+            {
+              "file": "electron/main.cjs",
+              "function": "",
+              "line": 993
+            },
+            {
+              "file": "node:electron/js2c/browser_init",
+              "function": "",
+              "line": 2
+            }
+          ]
+        },
+        {
+          "sampledMs": 27.728000000000005,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2554
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 3412
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "",
+              "line": 17
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "execute",
+              "line": 15
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "launch": 2,
+      "originalPath": "tmp/causal-reference-profile/main-launch-2.cpuprofile",
+      "originalSha256": "e8e9314f91e504ff13d5882966cf1a21de8acc45504da27526c2f3ceeb4ee7b8",
+      "profileDurationMs": 12034.908,
+      "anchor": {
+        "result": {
+          "type": "object",
+          "value": {
+            "nowMs": 1152.009656,
+            "timeOriginMs": 1789122525469.925
+          }
+        }
+      },
+      "topStacks": [
+        {
+          "sampledMs": 4435.453,
+          "frames": [
+            {
+              "file": "",
+              "function": "run",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "execute",
+              "line": 15
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "",
+              "line": 70
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 343.075,
+          "frames": [
+            {
+              "file": "",
+              "function": "run",
+              "line": 0
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8088
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "addPositionsBulk",
+              "line": 8039
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8262
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2530
+            }
+          ]
+        },
+        {
+          "sampledMs": 221.1220000000001,
+          "frames": [
+            {
+              "file": "",
+              "function": "(garbage collector)",
+              "line": 0
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 143.36099999999993,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2530
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 3412
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "",
+              "line": 17
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "execute",
+              "line": 15
+            }
+          ]
+        },
+        {
+          "sampledMs": 86.37799999999997,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "adoptSourceIdentityForLegacyPosition",
+              "line": 8440
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8088
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "addPositionsBulk",
+              "line": 8039
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8262
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            }
+          ]
+        },
+        {
+          "sampledMs": 72.937,
+          "frames": [
+            {
+              "file": "",
+              "function": "get",
+              "line": 0
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "getActiveMission",
+              "line": 5543
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "getActiveMission",
+              "line": 3019
+            },
+            {
+              "file": "electron/main.cjs",
+              "function": "",
+              "line": 993
+            },
+            {
+              "file": "node:electron/js2c/browser_init",
+              "function": "",
+              "line": 2
+            },
+            {
+              "file": "node:events",
+              "function": "emit",
+              "line": 456
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 70.04399999999998,
+          "frames": [
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8088
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "addPositionsBulk",
+              "line": 8039
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8262
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2530
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 3412
+            }
+          ]
+        },
+        {
+          "sampledMs": 66.628,
+          "frames": [
+            {
+              "file": "",
+              "function": "get",
+              "line": 0
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8088
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "addPositionsBulk",
+              "line": 8039
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8262
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2530
+            }
+          ]
+        },
+        {
+          "sampledMs": 62.730000000000004,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "getActiveMission",
+              "line": 5543
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "getActiveMission",
+              "line": 3019
+            },
+            {
+              "file": "electron/main.cjs",
+              "function": "",
+              "line": 993
+            },
+            {
+              "file": "node:electron/js2c/browser_init",
+              "function": "",
+              "line": 2
+            },
+            {
+              "file": "node:events",
+              "function": "emit",
+              "line": 456
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 53.516,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8262
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2530
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 3412
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "",
+              "line": 17
+            }
+          ]
+        },
+        {
+          "sampledMs": 50.76800000000001,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "addPositionsBulk",
+              "line": 8039
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 8262
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2530
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 3412
+            }
+          ]
+        },
+        {
+          "sampledMs": 49.807,
+          "frames": [
+            {
+              "file": "",
+              "function": "fstat",
+              "line": 0
+            },
+            {
+              "file": "node:internal/fs/promises",
+              "function": "readFileHandle",
+              "line": 513
+            },
+            {
+              "file": "node:internal/fs/promises",
+              "function": "readFile",
+              "line": 1278
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        },
+        {
+          "sampledMs": 48.838,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "persistTrackingHistoryBatch",
+              "line": 8229
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 2554
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 3412
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "",
+              "line": 17
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "execute",
+              "line": 15
+            }
+          ]
+        },
+        {
+          "sampledMs": 46.58599999999999,
+          "frames": [
+            {
+              "file": "",
+              "function": "Statement",
+              "line": 0
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/wrappers.js",
+              "function": "prepare",
+              "line": 4
+            },
+            {
+              "file": "electron/mission-live-review-access.cjs",
+              "function": "readMissionLiveReviewStorageState",
+              "line": 518
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "assertMissionArchiveCorrectionWritable",
+              "line": 11492
+            },
+            {
+              "file": "electron/mission-store.cjs",
+              "function": "",
+              "line": 3412
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "",
+              "line": 17
+            },
+            {
+              "file": "node_modules/better-sqlite3/lib/methods/transaction.js",
+              "function": "sqliteTransaction",
+              "line": 52
+            },
+            {
+              "file": "electron/responsive-mission-writer.cjs",
+              "function": "execute",
+              "line": 15
+            }
+          ]
+        },
+        {
+          "sampledMs": 46.461,
+          "frames": [
+            {
+              "file": "",
+              "function": "close",
+              "line": 0
+            },
+            {
+              "file": "node:internal/fs/promises",
+              "function": "close",
+              "line": 240
+            },
+            {
+              "file": "node:internal/fs/promises",
+              "function": "",
+              "line": 431
+            },
+            {
+              "file": "",
+              "function": "(root)",
+              "line": 0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

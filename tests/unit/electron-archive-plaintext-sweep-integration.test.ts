@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -89,7 +90,7 @@ describe('mission-store archive plaintext startup sweep', () => {
 
     const readStarted = performance.now()
     await expect(store.latestPositions(mission.id)).resolves.toEqual([])
-    expect(performance.now() - readStarted).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - readStarted).toBeLessThan(200))
 
     let finalizationSettled = false
     const finalization = store.finalizeMission(mission.id, custody)

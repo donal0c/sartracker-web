@@ -1,0 +1,26 @@
+
+ RUN  v4.1.3 <checkout>
+
+ ❯ tests/unit/main-event-loop-probe.test.ts (5 tests | 1 failed | 4 skipped) 3ms
+     × fails collection within a bounded deadline when main never services the stop timer 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/main-event-loop-probe.test.ts > independent packaged main-loop gate [DON-254] > fails collection within a bounded deadline when main never services the stop timer
+TypeError: collectMainEventLoopEvidence is not a function
+ ❯ tests/unit/main-event-loop-probe.test.ts:11:26
+      9|     vi.useFakeTimers()
+     10|     try {
+     11|       const collection = collectMainEventLoopEvidence({ evaluate: () =…
+       |                          ^
+     12|       await vi.advanceTimersByTimeAsync(100)
+     13|       await expect(collection).resolves.toEqual({ error: 'main_timer_c…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 skipped (5)
+   Start at  12:20:49
+   Duration  397ms (transform 22ms, setup 0ms, import 30ms, tests 3ms, environment 292ms)
+

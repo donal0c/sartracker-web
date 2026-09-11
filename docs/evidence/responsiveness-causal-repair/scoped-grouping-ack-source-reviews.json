@@ -1,0 +1,44 @@
+{
+  "scope": "Frozen incremental PR22 source review before commit; exact-head rebind pending",
+  "base": "49b2e1d416ca2fa4ff98cfae31c4d947bc4b0a6e",
+  "headBeforeCommit": "8672411b7e366a7c1625e8df16a69bdd914a5f3d",
+  "sourceHashes": {
+    "electron/mission-store.cjs": "c05ddc193b265461ae5cda00afbbc1b1d9ed5f305367ab032dc90b4a90348ad6",
+    "electron/archive-registry.cjs": "6afecdebc54cc96d4bfc416dae20271f65d7da0526b7ae05527cc3b70d03ed9f",
+    "electron/bulk-device-observations.cjs": "023fd3a47e0733e9b61c0bef6bc494b495f5ef7053a5d99bbc862e316da49700",
+    "electron/gpx-evidence-import-runner.cjs": "b2bc31343c033e848282b8dcabb4448a35f8b8bc06e049f75e31ff8e77e44f93",
+    "electron/gpx-evidence-import-worker.cjs": "a0585c41a34eb28321b5fcd8c597626acd01bd0bee44172568d5cb082f32fc91",
+    "src/features/tracking/persist-history-chunk-groups.ts": "cc0406fea81004f1deb3d05f8acae8f16b24ad7911f6fe2d84880700a7a607d8",
+    "src/features/tracking/polling-manager.ts": "4e9a2e411c0e2d893a3936c63a34fb1754b338ba56fa80f4b9c19b1997b89dc6",
+    "src/features/tracking/breadcrumb-history-reconciler.ts": "feaad8820e64a1c96f9c788245c225d841e8a9749c5f4e3c4f2bcd209a842e75",
+    "src/features/tracking/start-tracking-runtime.ts": "f78cbf67dc48ff3a42a26d32d079dfbe6908e43550217f8a5e030c9cd165831c",
+    "build/main-event-loop-probe.js": "8d451fc00022e3e6fc4dce18709c20983db655f0b3bccddbbc75c3d6034b9ea1",
+    "build/electron-tracking-soak-lib.js": "6c5cd4e7e2d5d2931cf90f3531e2139e3c8f712d620bc3254ba5c6aaf5b952b0",
+    "scripts/electron-tracking-soak.mjs": "9e51679e3f9c019487b0f4f2654ade7671e8899cdee246ef471ee60599baec55",
+    "build/electron-breadcrumb-36h-proof-lib.js": "51afd73beb86745e6f18a2232312bbbc9be2b7b5e6682aabe506ba7731abbd9f",
+    "scripts/electron-breadcrumb-36h-proof.mjs": "65beda8a9dbef77106cb304d889495af3033550c5659fbc896f1d034e6f8357a",
+    ".github/workflows/electron-linux-validation.yml": "d45c585969d4bb7d0026aa575e7d8c4b4cb20421904391277a8860d1bd7a3ae7"
+  },
+  "reviews": [
+    {
+      "reviewer": "/root/custody_review",
+      "result": "clear",
+      "charter": "Native persistence, GPX admission/publication, archive retry/shutdown, grouped rollback/restart, ACK parity",
+      "authorship": "Authored reconciler partial ACK and polling original-mission guard; those pieces consistency rechecked only, independently checked by renderer lane."
+    },
+    {
+      "reviewer": "/root/renderer_review",
+      "result": "clear",
+      "charter": "Grouping original-mission Finish fence, ordered ACK, current interleave, shutdown and late-publication suppression, ACK participant and final live source readers",
+      "authorship": "Authored runtime/native integration tests and summary parser; parser independently checked by causal lane, no production grouping/ACK/live-reader authorship."
+    },
+    {
+      "reviewer": "/root/causal_review",
+      "result": "clear",
+      "charter": "Strict independent timer, tails and negative controls, normal CI, artifact retention, final live-source milestone and timestamp compatibility",
+      "authorship": "Authored grouping helper and mock groups compatibility, independently checked by other lanes; no authorship of timer/live readers/parser."
+    }
+  ],
+  "testsByReviewers": "None; root full source cycle in progress",
+  "limits": "Source review, not exact committed head or global performance qualification. Separate IPC316-550ms and legacy239ms release blockers unchanged."
+}

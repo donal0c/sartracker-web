@@ -1,0 +1,21 @@
+{
+  "scope": "36-hour proof harness compatibility and failed-profile retention only",
+  "productionApplicationChanged": false,
+  "reviewer": "/root/renderer_review",
+  "reviewerAuthorship": "Reviewer authored the separate timestamp parser; custody reviewer independently checked that parser. Current and line readers authored by custody reviewer, failure retention by root.",
+  "reviewedFiles": {
+    "build/electron-breadcrumb-36h-proof-lib.js": "51afd73beb86745e6f18a2232312bbbc9be2b7b5e6682aabe506ba7731abbd9f",
+    "scripts/electron-breadcrumb-36h-proof.mjs": "65beda8a9dbef77106cb304d889495af3033550c5659fbc896f1d034e6f8357a"
+  },
+  "result": "No unresolved findings in assigned harness scope",
+  "verified": [
+    "Current milestone awaits live source device Point features including offscreen positions; no new viewport condition.",
+    "Both line stability samples await live getData and retain the exact count/device/coordinate oracle.",
+    "Available getData failure cannot fall back to stale capture.",
+    "5000/10000/60000 ms limits and exact raw digests remain unchanged.",
+    "Early and completed-but-rejected failures retain profiles with a durable pointer. Success cleanup is unchanged."
+  ],
+  "tests": "Final current-source milestone: five red then six green; earlier line controls retained. Independent source reviews by renderer and causal lanes, no reviewer tests.",
+  "limits": "Source review only. Separate extended IPC and legacy recovery failures remain release blockers outside incremental PR22 scope.",
+  "supersedes": "rejected-rendered-reader-review.json: intermediate viewport reader was rejected; this is final source-publication reader review"
+}

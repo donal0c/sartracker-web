@@ -1,0 +1,20 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-mission-evidence-versioning.test.ts tests/unit/electron-startup-write-responsiveness.test.ts -t throughout a 50k|startup archive bookkeeping --no-file-parallelism
+
+
+ RUN  v4.1.3 /home/donal/sartracker-causal-20260911.2UcQcB
+
+GPX current-write diagnostics: {"maximumWriteMs":50.43016299999999,"largestWriteProcessCpuMs":10.726,"maximumHeartbeatGapMs":45.90173800000048,"sequence":1165}
+ ✓ tests/unit/electron-mission-evidence-versioning.test.ts (74 tests | 73 skipped) 34189ms
+     ✓ keeps current-position writes and main heartbeat below 200 ms throughout a 50k-point GPX import [DON-274]  34188ms
+Startup SQLite contention: {"maximumGapMs":28.689014000000043,"processCpuMs":39.218}
+Startup SQLite contention: {"maximumGapMs":11.232343000000128,"processCpuMs":27.582}
+ ✓ tests/unit/electron-startup-write-responsiveness.test.ts (2 tests) 1028ms
+   ✓ keeps the main loop below 200 ms when startup archive bookkeeping meets a background SQLite writer during complete [DON-254]  526ms
+   ✓ keeps the main loop below 200 ms when startup archive bookkeeping meets a background SQLite writer during shutdown [DON-254]  500ms
+
+ Test Files  2 passed (2)
+      Tests  3 passed | 73 skipped (76)
+   Start at  10:23:25
+   Duration  36.21s (transform 105ms, setup 0ms, import 170ms, tests 35.22s, environment 665ms)

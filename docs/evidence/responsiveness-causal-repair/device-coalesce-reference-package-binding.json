@@ -1,0 +1,50 @@
+{
+  "kind": "locally-rebuilt-linux-reference-package",
+  "asarSha256": "4aefbc09f42c849501048dad1c32649cb0ab1f4cb3a0bc102f96b96701f37695",
+  "baseCommit": "49b2e1d416ca2fa4ff98cfae31c4d947bc4b0a6e",
+  "priorRepairCommit": "7637e93606b5da1e9c5a38a1699e0f282bce7f6b",
+  "gitHeadBeforeCommit": "6a88a65ed3765b06870da90084eb9162ac0890b7",
+  "workingSourceFiles": [
+    {
+      "path": "electron/mission-store.cjs",
+      "sha256": "c05ddc193b265461ae5cda00afbbc1b1d9ed5f305367ab032dc90b4a90348ad6",
+      "packagedExtractionMatched": true
+    },
+    {
+      "path": "electron/bulk-device-observations.cjs",
+      "sha256": "023fd3a47e0733e9b61c0bef6bc494b495f5ef7053a5d99bbc862e316da49700",
+      "packagedExtractionMatched": true
+    },
+    {
+      "path": "electron/archive-registry.cjs",
+      "sha256": "6afecdebc54cc96d4bfc416dae20271f65d7da0526b7ae05527cc3b70d03ed9f",
+      "packagedExtractionMatched": true
+    },
+    {
+      "path": "electron/gpx-evidence-import-runner.cjs",
+      "sha256": "b2bc31343c033e848282b8dcabb4448a35f8b8bc06e049f75e31ff8e77e44f93",
+      "packagedExtractionMatched": true
+    },
+    {
+      "path": "electron/gpx-evidence-import-worker.cjs",
+      "sha256": "a0585c41a34eb28321b5fcd8c597626acd01bd0bee44172568d5cb082f32fc91",
+      "packagedExtractionMatched": true
+    },
+    {
+      "path": "build/main-event-loop-probe.js",
+      "sha256": "8d451fc00022e3e6fc4dce18709c20983db655f0b3bccddbbc75c3d6034b9ea1",
+      "packagedExtractionMatched": false
+    },
+    {
+      "path": "build/electron-tracking-soak-lib.js",
+      "sha256": "6c5cd4e7e2d5d2931cf90f3531e2139e3c8f712d620bc3254ba5c6aaf5b952b0",
+      "packagedExtractionMatched": false
+    },
+    {
+      "path": "scripts/electron-tracking-soak.mjs",
+      "sha256": "9e51679e3f9c019487b0f4f2654ade7671e8899cdee246ef471ee60599baec55",
+      "packagedExtractionMatched": false
+    }
+  ],
+  "interpretation": "First five application repair files were independently extracted from ASAR and hash-matched on reference host. Build/script files are external corrected harness, not application-ASAR assertions. Reference Xwayland software-rendered proof, not CI artifact proof."
+}

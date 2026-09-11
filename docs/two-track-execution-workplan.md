@@ -161,6 +161,49 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
+### Responsiveness causal repair — DON-254 (2026-09-11)
+
+PR22 (`codex/responsiveness-causal-repair`, base `49b2e1d4`) finishes the frozen
+incremental write/history-custody/ACK-only repair. Donal explicitly permits merge
+with retained timing failures once ordinary exact-head correctness CI and
+independent reviews pass. **Merge permission is not release qualification.**
+The retained threshold is **200 ms, not 20 ms**; beta/release stays **HOLD**.
+No more timing diagnosis or architecture work belongs in PR22.
+
+Ordinary tests keep mixed workloads and correctness assertions. A dedicated
+release path retains every original strict `<200 ms` assertion and packaged
+qualification workload; no limit is raised, averaged or silently waived.
+The routing change is independently reviewed; full correctness passes 433 files /
+4,458 tests with six explicit qualification-only cases; lint/build pass. PR22's live checks and
+review comments retain its exact-head merge receipt. Previous local strict source passes
+432 files / 4,444 tests and the reference ASAR `65db986f…` passes exact 8,664
+positions/restart/graceful exit with main maxima 90.781/119.481 ms. CI
+`34606545104` at `df6bdc7d` rejected three source controls at 203–228 ms;
+previous 210.537 ms and all other failures remain in the
+[causal record](assurance/findings/responsiveness-causal-repair.md).
+
+The explicit ordered queue is:
+
+1. Donal merges PR22 after ordinary exact-head checks and independent reviews.
+2. Reconcile PR20, then PR21, then PR19 against the new master and drive each to
+   merge readiness in that order.
+3. Execute high-priority pre-release responsiveness work: bound the large
+   breadcrumb IPC/query transfer responsible for 316–550 ms stalls; repair the
+   separate legacy-recovery path measured around 239 ms; then rerun the unchanged
+   strict `<200 ms` release-qualification suite and retained timing cases.
+4. Release remains HOLD until those repairs and qualification pass.
+
+Follow-up A's transport/session WIP and follow-up B's legacy diagnostic patch
+remain recoverable in `tmp/pr22-scope-freeze-20260911/`. Newer test-only native
+attribution was removed from the active tree and preserved in
+`tmp/pr22-attribution-preserved-20260911/`; its naturally completed 4,456-test
+pass does not erase the CI failures. No diagnosis continues in PR22.
+Linear's free issue limit prevented separate follow-up issues; DON-254 comments
+`46c986c3-a16e-48f0-b069-a1b36eeb2d62` and
+`1dfb6581-71a5-4582-9bd8-4ba0ac6173a8` plus the Reliability & Regression Ledger
+retain the work. DON-254 stays open. No merge, release, deployment or team contact
+has been performed by this task.
+
 ### Repair Train B and WAR-06 — active next work (2026-09-10)
 
 Repair Train A merged in [PR #17](https://github.com/donal0c/sartracker-web/pull/17)

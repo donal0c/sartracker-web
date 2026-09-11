@@ -1,0 +1,10 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+Legacy object preparation heartbeat diagnostics: {"maximumHeartbeatGapMs":35.471708999999464,"inspectionOpenMs":0.1459580000000642,"maximumInspectionQueryMs":24.32091600000058,"largestGap":{"start":14057.714083,"duration":35.471708999999464,"threadCpuMs":3.394,"processCpuMs":17.384,"eventLoop":{"idle":11.009624999998778,"active":24.484541016579897,"utilization":0.6898187438787438},"inspections":[{"kind":"count","start":14068.781417,"duration":24.32091600000058}],"gc":[]}}
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 73 skipped (74)
+   Start at  14:06:35
+   Duration  16.31s (transform 69ms, setup 0ms, import 119ms, tests 15.69s, environment 424ms)
+

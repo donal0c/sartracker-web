@@ -1,0 +1,94 @@
+{
+  "sourceCommit": "8672411b7e366a7c1625e8df16a69bdd914a5f3d",
+  "runUrl": "https://github.com/donal0c/sartracker-web/actions/runs/34594872717",
+  "verdict": {
+    "valid": false,
+    "passed": false,
+    "failureReasons": [
+      "Independent main-loop maximum 210.53714899999977ms on launch 1 reached the 200ms stall threshold."
+    ],
+    "redundantTelemetrySlopeRowsPerEquivalentPoll": 0,
+    "operationalPositionSlopeRowsPerEquivalentPoll": 8.022222222222222
+  },
+  "launches": [
+    {
+      "number": 1,
+      "mainEventLoopEvidence": {
+        "clock": "main-performance-now",
+        "timeOriginMs": 1789127846942.429,
+        "intervalMs": 50,
+        "startedAtMs": 4968.726767,
+        "stoppedAtMs": 18725.22342,
+        "samples": 253,
+        "maximumGapMs": 210.53714899999977
+      },
+      "mainHeartbeatErrors": 0,
+      "mainHeartbeatFailures": [],
+      "shutdown": {
+        "exited": true,
+        "exitKind": "code",
+        "forced": false,
+        "graceful": true
+      },
+      "exitCode": 0
+    },
+    {
+      "number": 2,
+      "mainEventLoopEvidence": {
+        "clock": "main-performance-now",
+        "timeOriginMs": 1789127867820.102,
+        "intervalMs": 50,
+        "startedAtMs": 2195.924638,
+        "stoppedAtMs": 251641.280087,
+        "samples": 4709,
+        "maximumGapMs": 186.727769000001
+      },
+      "mainHeartbeatErrors": 0,
+      "mainHeartbeatFailures": [],
+      "shutdown": {
+        "exited": true,
+        "exitKind": "code",
+        "forced": false,
+        "graceful": true
+      },
+      "exitCode": 0
+    }
+  ],
+  "positionTruth": {
+    "actual": {
+      "full": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "111ad2311a29abf88f8e964334edf72966593d0cc380bb31b15640be3cf36a9c"
+      },
+      "normalPrefix": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "111ad2311a29abf88f8e964334edf72966593d0cc380bb31b15640be3cf36a9c"
+      },
+      "normalPrefixBatch": 480
+    },
+    "expected": {
+      "full": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "111ad2311a29abf88f8e964334edf72966593d0cc380bb31b15640be3cf36a9c"
+      },
+      "normalPrefix": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "111ad2311a29abf88f8e964334edf72966593d0cc380bb31b15640be3cf36a9c"
+      },
+      "normalPrefixBatch": 480
+    },
+    "exactMatch": true,
+    "normalPrefixExactMatch": true
+  },
+  "reportSha256": "de36939dc69a36ca4d846ae04f0bc2b59c19641f4f59364138ee47aab0096066",
+  "limits": [
+    "Independent timer records a maximum, not the interval timestamp; exact association of the 210.537 ms event with a transaction is not proven.",
+    "Archive and AppImage smoke skipped downstream of failed tracking; neither is passing evidence.",
+    "Built binary artifact upload skipped after failure. Downloaded validation evidence cannot substitute for the missing exact CI binary.",
+    "Previous reference package passes remain reference evidence and do not erase this CI rejection."
+  ]
+}

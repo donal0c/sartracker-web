@@ -1,0 +1,202 @@
+{
+  "kind": "source-overlay Linux reference package, not exact CI",
+  "asarSha256": "65db986f86d10bed64e0b73b5660db0dbd2ce066b23de78fd213052503b38f6d",
+  "cjs": {
+    "electron/mission-store.cjs": {
+      "packaged": "c05ddc193b265461ae5cda00afbbc1b1d9ed5f305367ab032dc90b4a90348ad6",
+      "source": "c05ddc193b265461ae5cda00afbbc1b1d9ed5f305367ab032dc90b4a90348ad6"
+    },
+    "electron/bulk-device-observations.cjs": {
+      "packaged": "023fd3a47e0733e9b61c0bef6bc494b495f5ef7053a5d99bbc862e316da49700",
+      "source": "023fd3a47e0733e9b61c0bef6bc494b495f5ef7053a5d99bbc862e316da49700"
+    },
+    "electron/archive-registry.cjs": {
+      "packaged": "6afecdebc54cc96d4bfc416dae20271f65d7da0526b7ae05527cc3b70d03ed9f",
+      "source": "6afecdebc54cc96d4bfc416dae20271f65d7da0526b7ae05527cc3b70d03ed9f"
+    },
+    "electron/gpx-evidence-import-runner.cjs": {
+      "packaged": "b2bc31343c033e848282b8dcabb4448a35f8b8bc06e049f75e31ff8e77e44f93",
+      "source": "b2bc31343c033e848282b8dcabb4448a35f8b8bc06e049f75e31ff8e77e44f93"
+    },
+    "electron/gpx-evidence-import-worker.cjs": {
+      "packaged": "a0585c41a34eb28321b5fcd8c597626acd01bd0bee44172568d5cb082f32fc91",
+      "source": "a0585c41a34eb28321b5fcd8c597626acd01bd0bee44172568d5cb082f32fc91"
+    }
+  },
+  "rendererAssets": [
+    {
+      "file": "/dist/assets/admin-roster-error-DXAK9D9Q.js",
+      "packaged": "52c479ca47ac22e7e4c78d1068c76230c875ef31df2d7736b403b1d75ab50e90",
+      "build": "52c479ca47ac22e7e4c78d1068c76230c875ef31df2d7736b403b1d75ab50e90"
+    },
+    {
+      "file": "/dist/assets/archive-cancellation-pending-Nzw1I-ar.js",
+      "packaged": "a873619bd8e1bb11f3d1345b4ded4358091a76f1b3357428c8a9281763985169",
+      "build": "a873619bd8e1bb11f3d1345b4ded4358091a76f1b3357428c8a9281763985169"
+    },
+    {
+      "file": "/dist/assets/browser-validation-Bg14zSu8.js",
+      "packaged": "35a922a0fe7d1941fe9da3832a7cd1237daa4475d99e5c240e33a9da26e1a6ca",
+      "build": "35a922a0fe7d1941fe9da3832a7cd1237daa4475d99e5c240e33a9da26e1a6ca"
+    },
+    {
+      "file": "/dist/assets/coordinate-preferences-BGv46__d.js",
+      "packaged": "74422ab2c583a7e05a320cc010d7aff5214bafa3b4afab85954c00645d990f5b",
+      "build": "74422ab2c583a7e05a320cc010d7aff5214bafa3b4afab85954c00645d990f5b"
+    },
+    {
+      "file": "/dist/assets/deferred-mission-evidence-DiLDWgff.js",
+      "packaged": "3232d94d7b8071a9fa5ea64c799cf865f7991016126050a565b51bdac82708af",
+      "build": "3232d94d7b8071a9fa5ea64c799cf865f7991016126050a565b51bdac82708af"
+    },
+    {
+      "file": "/dist/assets/focus-management-CsoSzxIH.js",
+      "packaged": "acb80ff6f12d544be12d85d1c709e1c9ddaa56fa72a5780bad7d06c9bf4a4911",
+      "build": "acb80ff6f12d544be12d85d1c709e1c9ddaa56fa72a5780bad7d06c9bf4a4911"
+    },
+    {
+      "file": "/dist/assets/geodesy-vendor-B43R0xio.js",
+      "packaged": "53fae9b66495b4f861b546e088c4e507ac3e26372af291ba3a78509bca75762d",
+      "build": "53fae9b66495b4f861b546e088c4e507ac3e26372af291ba3a78509bca75762d"
+    },
+    {
+      "file": "/dist/assets/gpx-import-panel-C4cjfKXN.js",
+      "packaged": "0f869e02f05cdbab0cb72d7f8431674a4f69ccd43d0e3684559a44b91be9d407",
+      "build": "0f869e02f05cdbab0cb72d7f8431674a4f69ccd43d0e3684559a44b91be9d407"
+    },
+    {
+      "file": "/dist/assets/gpx-style-CIrKLZCz.js",
+      "packaged": "a111e9401781ae85c9459249c34de722582020f84ec7ecb598d5ef201d076560",
+      "build": "a111e9401781ae85c9459249c34de722582020f84ec7ecb598d5ef201d076560"
+    },
+    {
+      "file": "/dist/assets/index-C-adHJIJ.js",
+      "packaged": "9f338e62048021e4a4f52c8847b5fb979c37ed1843fcc22746df89d74f4177f5",
+      "build": "9f338e62048021e4a4f52c8847b5fb979c37ed1843fcc22746df89d74f4177f5"
+    },
+    {
+      "file": "/dist/assets/map-config-B4w7arKS.js",
+      "packaged": "e1a066f17ade9ac57958c0e9a4415ebffe14269e2fe22aa0c1ee8d16b0228976",
+      "build": "e1a066f17ade9ac57958c0e9a4415ebffe14269e2fe22aa0c1ee8d16b0228976"
+    },
+    {
+      "file": "/dist/assets/map-vendor-BTruBOlk.js",
+      "packaged": "b1bafa45a7714a2be99ce4fae8dae4fcd790ed83615ad38eca4d2d6b4ce3b4c7",
+      "build": "b1bafa45a7714a2be99ce4fae8dae4fcd790ed83615ad38eca4d2d6b4ce3b4c7"
+    },
+    {
+      "file": "/dist/assets/map-view-DB6wWsDF.js",
+      "packaged": "2e6876600b2b97897aba2d30ba0fb3ac2a985d65ec979dd916351f86657f72f4",
+      "build": "2e6876600b2b97897aba2d30ba0fb3ac2a985d65ec979dd916351f86657f72f4"
+    },
+    {
+      "file": "/dist/assets/mission-archive-cleanup-dialog-DtmB3won.js",
+      "packaged": "aa20038787ce957acea6c03c01c584be4f642be17bc8c4db5f37eddf974ddcef",
+      "build": "aa20038787ce957acea6c03c01c584be4f642be17bc8c4db5f37eddf974ddcef"
+    },
+    {
+      "file": "/dist/assets/mission-archive-custody-dialog-BgTOnDJI.js",
+      "packaged": "c7070a34cde36e89e25cc74a0eb7841d239234ec582e75f7a702226d4e5dc5c1",
+      "build": "c7070a34cde36e89e25cc74a0eb7841d239234ec582e75f7a702226d4e5dc5c1"
+    },
+    {
+      "file": "/dist/assets/mission-archive-error-aJ9oHP_U.js",
+      "packaged": "6475b65b70b30867b1e197bbc6fc9b464521f1034d9c493280d877294113dad7",
+      "build": "6475b65b70b30867b1e197bbc6fc9b464521f1034d9c493280d877294113dad7"
+    },
+    {
+      "file": "/dist/assets/mission-archive-identity-CryEJErq.js",
+      "packaged": "344d8b1b872f389b4788650d23f3252a6538942efdacf7e3e722e25f6b0b27ed",
+      "build": "344d8b1b872f389b4788650d23f3252a6538942efdacf7e3e722e25f6b0b27ed"
+    },
+    {
+      "file": "/dist/assets/mission-archive-review-operator-ui-BfM3n9yf.js",
+      "packaged": "0c1126b38bdc6b23a767a7fa545d45065b7df86ca97df24da2e6ec99f48a615b",
+      "build": "0c1126b38bdc6b23a767a7fa545d45065b7df86ca97df24da2e6ec99f48a615b"
+    },
+    {
+      "file": "/dist/assets/mission-archive-verification-dialog-BZHOQINj.js",
+      "packaged": "68e31072c928e1bbc855eb99453c2020208966c01dcba2a52740402da8ee5e85",
+      "build": "68e31072c928e1bbc855eb99453c2020208966c01dcba2a52740402da8ee5e85"
+    },
+    {
+      "file": "/dist/assets/mission-evidence-loss-dialog-CsggYsXB.js",
+      "packaged": "6c994b595fc8decade657991dff7d055b0757a446fa5a882cd3644fb2287122c",
+      "build": "6c994b595fc8decade657991dff7d055b0757a446fa5a882cd3644fb2287122c"
+    },
+    {
+      "file": "/dist/assets/mission-evidence-replay-tabs-BCWyFcXp.js",
+      "packaged": "c64a4cf9dffe71eefd532de1bbc6e35d7a08ae055a0e4ca2bee0305fa9f21d5b",
+      "build": "c64a4cf9dffe71eefd532de1bbc6e35d7a08ae055a0e4ca2bee0305fa9f21d5b"
+    },
+    {
+      "file": "/dist/assets/mission-name-DK_4Ext-.js",
+      "packaged": "2c58a2a4d1389d573a88bb5290face6c39bc859b6f0c0d7c3c36066278f7c211",
+      "build": "2c58a2a4d1389d573a88bb5290face6c39bc859b6f0c0d7c3c36066278f7c211"
+    },
+    {
+      "file": "/dist/assets/operator-time-CPCwbLgp.js",
+      "packaged": "8d51490d742ec7509d4528ba407eb4c523d40c89ed439fd88984c9805fd4731f",
+      "build": "8d51490d742ec7509d4528ba407eb4c523d40c89ed439fd88984c9805fd4731f"
+    },
+    {
+      "file": "/dist/assets/react-vendor-BF3Hnweg.js",
+      "packaged": "9e96004fbf1e00ef819203f844335e76c6aae954141e59173e95fad6e9ed5855",
+      "build": "9e96004fbf1e00ef819203f844335e76c6aae954141e59173e95fad6e9ed5855"
+    },
+    {
+      "file": "/dist/assets/read-gpx-import-pages-BHRJlNwq.js",
+      "packaged": "b06c84ccf70466d86cb0ad23857ff8eb5debad80d55475c67366b4e5bc57794a",
+      "build": "b06c84ccf70466d86cb0ad23857ff8eb5debad80d55475c67366b4e5bc57794a"
+    },
+    {
+      "file": "/dist/assets/replay-map-worker-BtgMLwEY.js",
+      "packaged": "36bcfbcc14a85cb82573f2cc4d1fb69bba7e7a8430b96fd2f0a7968239138c5c",
+      "build": "36bcfbcc14a85cb82573f2cc4d1fb69bba7e7a8430b96fd2f0a7968239138c5c"
+    },
+    {
+      "file": "/dist/assets/rolldown-runtime-DF2fYuay.js",
+      "packaged": "03a76345c69f8bd751dac18894f65c0918f1690fbbb661f38052819cd5ae8209",
+      "build": "03a76345c69f8bd751dac18894f65c0918f1690fbbb661f38052819cd5ae8209"
+    },
+    {
+      "file": "/dist/assets/runtime-cleanup-kG57GoPY.js",
+      "packaged": "206c13cd053ba03a5a2da1bfdd86572eeae517f6ca8830d8b43349a365a23e18",
+      "build": "206c13cd053ba03a5a2da1bfdd86572eeae517f6ca8830d8b43349a365a23e18"
+    },
+    {
+      "file": "/dist/assets/start-mission-archive-review-runtime-CCszi9VP.js",
+      "packaged": "b5bd3702b2455a21d8e53dd0f7007074ad067c0326965a9e4624d59318c7d7af",
+      "build": "b5bd3702b2455a21d8e53dd0f7007074ad067c0326965a9e4624d59318c7d7af"
+    },
+    {
+      "file": "/dist/assets/start-tracking-runtime-BHDyju-1.js",
+      "packaged": "9a5d548b58e901e2f4caca03e18801d1e634afbdef8c2466cb82ac7b8febf6ac",
+      "build": "9a5d548b58e901e2f4caca03e18801d1e634afbdef8c2466cb82ac7b8febf6ac"
+    },
+    {
+      "file": "/dist/assets/sync-marker-overlay-DajM_SEO.js",
+      "packaged": "1db94d32ca34f7602ba2ce37b3785c38bb032bd4ac94a15b88b0eeed27931473",
+      "build": "1db94d32ca34f7602ba2ce37b3785c38bb032bd4ac94a15b88b0eeed27931473"
+    },
+    {
+      "file": "/dist/assets/tauri-gpx-import-source-RqKyIcqd.js",
+      "packaged": "4e8af2dae44cef3b57cbccdacb00ab19f73f9bc42f3eab0b54f5b1304eed4fe7",
+      "build": "4e8af2dae44cef3b57cbccdacb00ab19f73f9bc42f3eab0b54f5b1304eed4fe7"
+    },
+    {
+      "file": "/dist/assets/tracking-color-C9nOuChc.js",
+      "packaged": "ccbde646a02d1be6a55eced59eea9639240aa465e55b239cfc00b4bdc509e35a",
+      "build": "ccbde646a02d1be6a55eced59eea9639240aa465e55b239cfc00b4bdc509e35a"
+    }
+  ],
+  "sourceHashes": {
+    "src/features/tracking/start-tracking-runtime.ts": "f78cbf67dc48ff3a42a26d32d079dfbe6908e43550217f8a5e030c9cd165831c",
+    "src/features/tracking/polling-manager.ts": "4e9a2e411c0e2d893a3936c63a34fb1754b338ba56fa80f4b9c19b1997b89dc6",
+    "src/features/tracking/breadcrumb-history-reconciler.ts": "feaad8820e64a1c96f9c788245c225d841e8a9749c5f4e3c4f2bcd209a842e75",
+    "src/features/tracking/persist-history-chunk-groups.ts": "cc0406fea81004f1deb3d05f8acae8f16b24ad7911f6fe2d84880700a7a607d8",
+    "scripts/electron-tracking-soak.mjs": "9e51679e3f9c019487b0f4f2654ade7671e8899cdee246ef471ee60599baec55",
+    "build/electron-tracking-soak-lib.js": "6c5cd4e7e2d5d2931cf90f3531e2139e3c8f712d620bc3254ba5c6aaf5b952b0",
+    "build/main-event-loop-probe.js": "8d451fc00022e3e6fc4dce18709c20983db655f0b3bccddbbc75c3d6034b9ea1"
+  }
+}

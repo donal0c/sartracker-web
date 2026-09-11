@@ -1,0 +1,13 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-mission-evidence-versioning.test.ts -t keeps synchronous current-position writes --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+GPX current-write diagnostics: {"maximumWriteMs":78.02333299999987,"largestWriteProcessCpuMs":10.175,"maximumHeartbeatGapMs":13.200375000000122,"sequence":500}
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 72 skipped (73)
+   Start at  09:59:48
+   Duration  11.99s (transform 76ms, setup 0ms, import 124ms, tests 11.09s, environment 499ms)

@@ -1,0 +1,52 @@
+
+> sartracker-web@0.1.0-beta.12.11 build
+> node scripts/generate-app-version.mjs && tsc -b && vite build && node scripts/check-bundle-size.mjs
+
+vite v8.0.7 building client environment for production...
+[2K
+transforming...Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+✓ 722 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                                   2.29 kB │ gzip:   0.72 kB
+dist/assets/replay-map-worker-BtgMLwEY.js                       138.34 kB
+dist/assets/map-view-CcXJxNtP.css                                14.80 kB │ gzip:   6.31 kB
+dist/assets/index-Bfyun-Up.css                                   51.10 kB │ gzip:  10.77 kB
+dist/assets/map-vendor-B2k4QVOw.css                              69.80 kB │ gzip:  10.10 kB
+dist/assets/mission-name-DK_4Ext-.js                              0.23 kB │ gzip:   0.20 kB
+dist/assets/rolldown-runtime-DF2fYuay.js                          0.55 kB │ gzip:   0.35 kB
+dist/assets/operator-time-CPCwbLgp.js                             0.61 kB │ gzip:   0.38 kB
+dist/assets/focus-management-CsoSzxIH.js                          0.74 kB │ gzip:   0.41 kB
+dist/assets/mission-archive-identity-CryEJErq.js                  0.78 kB │ gzip:   0.33 kB
+dist/assets/gpx-style-CIrKLZCz.js                                 0.82 kB │ gzip:   0.47 kB
+dist/assets/archive-cancellation-pending-Nzw1I-ar.js              0.96 kB │ gzip:   0.58 kB
+dist/assets/read-gpx-import-pages-BHRJlNwq.js                     1.08 kB │ gzip:   0.52 kB
+dist/assets/admin-roster-error-DXAK9D9Q.js                        1.45 kB │ gzip:   0.73 kB
+dist/assets/runtime-cleanup-kG57GoPY.js                           1.54 kB │ gzip:   0.86 kB
+dist/assets/mission-archive-error-aJ9oHP_U.js                     1.59 kB │ gzip:   0.90 kB
+dist/assets/mission-evidence-loss-dialog-CsggYsXB.js              2.80 kB │ gzip:   1.12 kB
+dist/assets/tauri-gpx-import-source-RqKyIcqd.js                   3.25 kB │ gzip:   1.44 kB
+dist/assets/deferred-mission-evidence-DiLDWgff.js                 4.40 kB │ gzip:   1.76 kB
+dist/assets/tracking-color-C9nOuChc.js                            6.33 kB │ gzip:   2.56 kB
+dist/assets/sync-marker-overlay-DajM_SEO.js                       6.37 kB │ gzip:   2.61 kB
+dist/assets/gpx-import-panel-C4cjfKXN.js                          9.21 kB │ gzip:   3.01 kB
+dist/assets/mission-archive-verification-dialog-BZHOQINj.js       9.61 kB │ gzip:   3.31 kB
+dist/assets/mission-archive-custody-dialog-BgTOnDJI.js           11.67 kB │ gzip:   3.76 kB
+dist/assets/map-config-B4w7arKS.js                               12.66 kB │ gzip:   4.60 kB
+dist/assets/mission-archive-review-operator-ui-BfM3n9yf.js       12.74 kB │ gzip:   3.51 kB
+dist/assets/mission-archive-cleanup-dialog-DtmB3won.js           16.51 kB │ gzip:   4.92 kB
+dist/assets/start-mission-archive-review-runtime-CCszi9VP.js     21.30 kB │ gzip:   5.08 kB
+dist/assets/start-tracking-runtime-_lrm6uYK.js                   34.98 kB │ gzip:  10.45 kB
+dist/assets/mission-evidence-replay-tabs-BCWyFcXp.js             37.37 kB │ gzip:   9.29 kB
+dist/assets/coordinate-preferences-BGv46__d.js                   59.70 kB │ gzip:  17.97 kB
+dist/assets/geodesy-vendor-B43R0xio.js                          129.17 kB │ gzip:  43.11 kB
+dist/assets/browser-validation-Bg14zSu8.js                      130.25 kB │ gzip:  34.86 kB
+dist/assets/react-vendor-BF3Hnweg.js                            182.16 kB │ gzip:  57.34 kB
+dist/assets/map-view-DB6wWsDF.js                                247.44 kB │ gzip:  71.89 kB
+dist/assets/index-BQlA2RNy.js                                   481.51 kB │ gzip: 126.25 kB
+dist/assets/map-vendor-BTruBOlk.js                            1,025.60 kB │ gzip: 272.16 kB
+
+✓ built in 1.28s
+Bundle size budgets passed.

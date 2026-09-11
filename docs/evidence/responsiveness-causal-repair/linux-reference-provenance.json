@@ -1,0 +1,39 @@
+{
+  "schema": "sartracker-causal-reference-provenance-v1",
+  "sourceHead": "6a88a65ed3765b06870da90084eb9162ac0890b7",
+  "ciRun": 34585453685,
+  "ciArtifact": 10194331155,
+  "appImageSha256": "652650d4a34fa45f7603e2c2febd2cbcb5cbcc238485f0acc5545d85ee620f7c",
+  "executableSha256": "6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8",
+  "asarSha256": "01efe091e791b519786428add661360ee1f818f94edc32edec51e1ac9a234127",
+  "referenceHost": "Ubuntu 24.04 x64, Precision 5570, Node 22.22.2, existing authenticated Xwayland :0",
+  "displayDifference": "CI uses Xvfb; reference host has no Xvfb. Existing Xwayland used for both serial reference runs. No claim of identical host environment.",
+  "environment": {
+    "LIBGL_ALWAYS_SOFTWARE": "1",
+    "GALLIUM_DRIVER": "llvmpipe"
+  },
+  "profile": "ci",
+  "mainStallThresholdMs": 200,
+  "freezeThresholdMs": 1000,
+  "electronArguments": [
+    "--no-sandbox",
+    "--ignore-gpu-blocklist",
+    "--use-gl=angle",
+    "--use-angle=gl",
+    "--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE",
+    "--disable-background-timer-throttling",
+    "--disable-renderer-backgrounding",
+    "--disable-backgrounding-occluded-windows"
+  ],
+  "normalHarnessHead": "6a88a65ed3765b06870da90084eb9162ac0890b7",
+  "diagnosticHarnessHead": "7a6dfb05fa2a0e57d6321ff65c8ad10b143d12e7",
+  "diagnosticChangedFilesSha256": {
+    "scripts/electron-tracking-soak.mjs": "c5a72a6da52fefec9514a6a59d036864ddfeb70f5829baa13a9b528883d38169",
+    "build/electron-tracking-soak-lib.js": "b672d5e12c422e4eb4e678a4c2c75ab408eae4b6ce1467c8b91d536a55b3ac9f",
+    "build/responsiveness-attribution-lib.js": "70616e7004208ff1149d39370500fada7f26fea27c2a506aeefc725d5f00b9f5",
+    "build/responsiveness-attribution-node.js": "7b0ccffe6c41cbce430b96f590007170bbda42e6dac5f0cd2a78648809314c73",
+    "build/responsiveness-pressure-timeline.js": "3150e2fbc85852e255736899fc6d7d442eaf1752cdf899e0ec597574fce62030",
+    "build/soak-interaction-targets.js": "b5973efef8b9b4bd5da0cf5b24a3f94afb47ef5e6efdbc2dc4c5a98b2fe2e640"
+  },
+  "diagnosticBoundary": "Only external build/scripts/package.json extracted; no PR21 product source integrated, no CI artifact rebuild. Six build/scripts differences versus normal harness. Same fixed interaction targets. Timers, pressure, timestamps and cleanup instrumentation add observer overhead."
+}

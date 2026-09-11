@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -961,7 +962,7 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     clearInterval(timer)
 
     expect(timerGaps.length).toBeGreaterThan(0)
-    expect(Math.max(...timerGaps)).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(Math.max(...timerGaps)).toBeLessThan(200))
   })
 
   it('applies byte backpressure independently of the pending-file count', async () => {

@@ -1,0 +1,27 @@
+
+ RUN  v4.1.3 <checkout>
+
+ ❯ tests/unit/bulk-device-observations.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/bulk-device-observations.test.ts [ tests/unit/bulk-device-observations.test.ts ]
+Error: Cannot find module '../../electron/bulk-device-observations.cjs'
+Require stack:
+- <checkout>/tests/unit/bulk-device-observations.test.ts
+ ❯ tests/unit/bulk-device-observations.test.ts:5:47
+      3|
+      4| const require = createRequire(import.meta.url)
+      5| const { createBulkDeviceObservationWriter } = require('../../electron/…
+       |                                               ^
+      6|   createBulkDeviceObservationWriter: (write: (deviceId: string, timest…
+      7|     record: (deviceId: string, timestamp: string) => void
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  12:07:14
+   Duration  898ms (transform 16ms, setup 0ms, import 0ms, tests 0ms, environment 576ms)
+

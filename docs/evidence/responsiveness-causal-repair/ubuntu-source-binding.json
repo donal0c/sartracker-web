@@ -1,0 +1,17 @@
+{
+  "sourceCommit": "7637e93606b5da1e9c5a38a1699e0f282bce7f6b",
+  "observedOn": "2026-09-11",
+  "method": "SHA-256 comparison of local committed repair and isolated Ubuntu reference files after the retained full-import/startup run; every listed digest matched on both hosts",
+  "scope": "Relevant executable files, executed test files and dependency lockfile; not a whole remote Git-tree attestation",
+  "sha256": {
+    "electron/mission-store.cjs": "28b3ad2dba802d93de95a63ef011170d687327277a6435d22594d94d3cacc5cb",
+    "electron/archive-registry.cjs": "6afecdebc54cc96d4bfc416dae20271f65d7da0526b7ae05527cc3b70d03ed9f",
+    "electron/gpx-evidence-import-runner.cjs": "b2bc31343c033e848282b8dcabb4448a35f8b8bc06e049f75e31ff8e77e44f93",
+    "electron/gpx-evidence-import-worker.cjs": "a0585c41a34eb28321b5fcd8c597626acd01bd0bee44172568d5cb082f32fc91",
+    "electron/responsive-mission-writer.cjs": "49bf317df56a0866699105b094ded240ee79e594f423949bfc84c3da81b65a17",
+    "electron/foreground-write-priority.cjs": "6eaae703d3c22838bf6117c0f23fc5e9e6cbea419a9fe19bd42e780a3cc3e823",
+    "tests/unit/electron-mission-evidence-versioning.test.ts": "e692223b0132f0d7ee03507ed6aa30cd7cb9146820b9c2a802b2a57998181f58",
+    "tests/unit/electron-startup-write-responsiveness.test.ts": "6f481abb49b2db6850b4f347f9dcc46f7aa8e794609f167433cf76d0fdbfed8f",
+    "package-lock.json": "5f5cf9349327511ce0b61dfe78ed62ff39de92e9e0a60a8f0b7d79b2f6f195bd"
+  }
+}

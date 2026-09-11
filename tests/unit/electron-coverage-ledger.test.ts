@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { createRequire } from 'node:module'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -495,7 +496,7 @@ describe('Electron coverage ledger', () => {
       missionId: 'mission-1', builds,
       updatedAt: '2026-08-24T12:02:00.000Z',
     })).toEqual({ rejectedChunkKeys: [] })
-    expect(performance.now() - startedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - startedAt).toBeLessThan(200))
     expect(database.prepare(`SELECT COUNT(*) AS count FROM coverage_chunks
       WHERE built_rev = content_rev`).get()).toEqual({ count: 1_300 })
   })

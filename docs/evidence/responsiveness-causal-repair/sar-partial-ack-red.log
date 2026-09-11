@@ -1,0 +1,73 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/breadcrumb-history-reconciler.test.ts (24 tests | 6 failed) 23ms
+     × acknowledges partial history results without retrying successful members [DON-254] 5ms
+     × does not advance or immediately replay a malformed 'wrong length' acknowledgement [DON-254] 1ms
+     × does not advance or immediately replay a malformed 'invalid status' acknowledgement [DON-254] 1ms
+     × does not advance or immediately replay a malformed 'missing fulfilled value' acknowledgement [DON-254] 1ms
+     × does not advance or immediately replay a malformed 'missing rejection reason' acknowledgement [DON-254] 1ms
+     × does not advance or immediately replay a malformed 'sparse entries' acknowledgement [DON-254] 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/breadcrumb-history-reconciler.test.ts > breadcrumb history reconciler > acknowledges partial history results without retrying successful members [DON-254]
+AssertionError: expected { phase: 'initial', …(12) } to match object { completedChunkCount: 2, …(2) }
+(10 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "complete": false,
+-   "completedChunkCount": 2,
+-   "failedDeviceCount": 1,
++   "complete": true,
++   "completedChunkCount": 3,
++   "failedDeviceCount": 0,
+  }
+
+ ❯ tests/unit/breadcrumb-history-reconciler.test.ts:219:38
+    217|     ])
+    218|     await vi.advanceTimersByTimeAsync(0)
+    219|     expect(reconciler.getProgress()).toMatchObject({
+       |                                      ^
+    220|       completedChunkCount: 2, failedDeviceCount: 1, complete: false,
+    221|     })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  tests/unit/breadcrumb-history-reconciler.test.ts > breadcrumb history reconciler > does not advance or immediately replay a malformed 'wrong length' acknowledgement [DON-254]
+ FAIL  tests/unit/breadcrumb-history-reconciler.test.ts > breadcrumb history reconciler > does not advance or immediately replay a malformed 'invalid status' acknowledgement [DON-254]
+ FAIL  tests/unit/breadcrumb-history-reconciler.test.ts > breadcrumb history reconciler > does not advance or immediately replay a malformed 'missing fulfilled value' acknowledgement [DON-254]
+ FAIL  tests/unit/breadcrumb-history-reconciler.test.ts > breadcrumb history reconciler > does not advance or immediately replay a malformed 'missing rejection reason' acknowledgement [DON-254]
+ FAIL  tests/unit/breadcrumb-history-reconciler.test.ts > breadcrumb history reconciler > does not advance or immediately replay a malformed 'sparse entries' acknowledgement [DON-254]
+AssertionError: expected { phase: 'initial', …(12) } to match object { completedChunkCount: +0, …(1) }
+(11 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "completedChunkCount": 0,
+-   "failedDeviceCount": 2,
++   "completedChunkCount": 2,
++   "failedDeviceCount": 0,
+  }
+
+ ❯ tests/unit/breadcrumb-history-reconciler.test.ts:251:38
+    249|     })
+    250|     await vi.advanceTimersByTimeAsync(0)
+    251|     expect(reconciler.getProgress()).toMatchObject({ completedChunkCou…
+       |                                      ^
+    252|     expect(onChunk).not.toHaveBeenCalled()
+    253|     expect(logger.warn).toHaveBeenCalledWith(expect.any(String), expec…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 18 passed (24)
+   Start at  13:10:39
+   Duration  632ms (transform 40ms, setup 0ms, import 49ms, tests 23ms, environment 478ms)
+

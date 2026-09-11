@@ -1,0 +1,64 @@
+{
+  "gitHeadBeforeCommit": "6a88a65ed3765b06870da90084eb9162ac0890b7",
+  "sourceFiles": [
+    {
+      "path": "electron/mission-store.cjs",
+      "sha256": "c05ddc193b265461ae5cda00afbbc1b1d9ed5f305367ab032dc90b4a90348ad6"
+    },
+    {
+      "path": "electron/bulk-device-observations.cjs",
+      "sha256": "023fd3a47e0733e9b61c0bef6bc494b495f5ef7053a5d99bbc862e316da49700"
+    },
+    {
+      "path": "build/main-event-loop-probe.js",
+      "sha256": "8d451fc00022e3e6fc4dce18709c20983db655f0b3bccddbbc75c3d6034b9ea1"
+    },
+    {
+      "path": "build/electron-tracking-soak-lib.js",
+      "sha256": "6c5cd4e7e2d5d2931cf90f3531e2139e3c8f712d620bc3254ba5c6aaf5b952b0"
+    },
+    {
+      "path": "scripts/electron-tracking-soak.mjs",
+      "sha256": "9e51679e3f9c019487b0f4f2654ade7671e8899cdee246ef471ee60599baec55"
+    },
+    {
+      "path": "tests/unit/electron-mission-store.test.ts",
+      "sha256": "de75cccfd6733c001a70f33892f48b0c766300f4e2663b32ef5b6bb208ba7716"
+    },
+    {
+      "path": "tests/unit/bulk-device-observations.test.ts",
+      "sha256": "d542c7d69bfe83256cc2e5756ccbd8174f4ae2edc89310c0d7696d4f6fc109e4"
+    },
+    {
+      "path": "tests/unit/main-event-loop-probe.test.ts",
+      "sha256": "739be4ea6209c92b85dc0f3711df96f2e37cb9ee2971dfbc0fc2e9cb62e3dfe1"
+    },
+    {
+      "path": "tests/unit/electron-tracking-soak-lib.test.ts",
+      "sha256": "e027f97a7b1abcf168015d787259cc2573b7d0f211aaa60e294c7a9a3a912aec"
+    },
+    {
+      "path": "tests/fixtures/main-event-loop-probe-negative-control.mjs",
+      "sha256": "82dd3392b88f27642cebec55566f5a8ecd796b205e918f86198cc1d64cc7516e"
+    }
+  ],
+  "fullSource": {
+    "files": 431,
+    "tests": 4395,
+    "durationSeconds": 552.79,
+    "exitCode": 0,
+    "log": "sar-causal-final-full-source.log"
+  },
+  "lint": {
+    "exitCode": 0,
+    "log": "sar-causal-final-lint.log"
+  },
+  "build": {
+    "exitCode": 0,
+    "log": "sar-causal-final-build.log"
+  },
+  "generatedVersionRestoredToCommittedBlob": true,
+  "referencePackageBinding": "device-coalesce-reference-package-binding.json",
+  "referenceVerdict": "device-coalesce-final-enforced-gate.json",
+  "ciStatus": "pending"
+}

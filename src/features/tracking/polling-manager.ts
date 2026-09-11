@@ -14,6 +14,7 @@ import {
   type BreadcrumbHistoryProgress,
 } from './breadcrumb-history-reconciler'
 import { annotateTrackingSnapshotHealth } from './tracking-snapshot-health'
+import { persistHistoryChunkGroups } from './persist-history-chunk-groups'
 import type {
   TrackingBreadcrumbWindowSummary,
   TrackingPollLedgerEntry,
@@ -314,6 +315,7 @@ export function createPollingManager(
   let activeHistoryTransportCount = 0
   const historyTransportWaiters: (() => void)[] = []
   const historyEvidenceOperations = new Set<Promise<BreadcrumbNormalizationResult>>()
+  const historyPersistenceOperations = new Set<Promise<unknown>>()
 
   const createHistoryPersistenceInput = (
     chunk: BreadcrumbHistoryChunk,
@@ -327,22 +329,30 @@ export function createPollingManager(
     positions: chunk.positions,
   })
 
-  /** Keeps one accepted history write inside the close-before-Finish fence. */
+  /** Keeps accepted history writes inside one Finish fence and joins them on stop. */
   async function runMissionEvidencePersistence<Result>(
     missionId: string | null,
     operation: () => Promise<Result>,
   ): Promise<Result> {
-    if (options.beginMissionEvidenceObservation === undefined) {
-      return operation()
-    }
-    const observation = options.beginMissionEvidenceObservation(missionId)
-    if (observation.missionId === null) {
-      throw new Error('Mission evidence scope closed before tracking history persistence.')
-    }
+    const trackedOperation = (async () => {
+      if (options.beginMissionEvidenceObservation === undefined) {
+        return operation()
+      }
+      const observation = options.beginMissionEvidenceObservation(missionId)
+      if (observation.missionId === null) {
+        throw new Error('Mission evidence scope closed before tracking history persistence.')
+      }
+      try {
+        return await operation()
+      } finally {
+        observation.complete()
+      }
+    })()
+    historyPersistenceOperations.add(trackedOperation)
     try {
-      return await operation()
+      return await trackedOperation
     } finally {
-      observation.complete()
+      historyPersistenceOperations.delete(trackedOperation)
     }
   }
 
@@ -434,17 +444,30 @@ export function createPollingManager(
       }
       const inputs = chunks.map(createHistoryPersistenceInput)
       if (options.persistHistoryChunks !== undefined) {
-        await runMissionEvidencePersistence(
-          inputs[0]?.expectedMissionId ?? null,
-          () => options.persistHistoryChunks!(inputs),
-        )
-        if (!isHistoryReconciliationCurrent()) {
-          return
+        try {
+          return await runMissionEvidencePersistence(
+            inputs[0]?.expectedMissionId ?? null,
+            () => persistHistoryChunkGroups({
+              inputs,
+              persistGroup: options.persistHistoryChunks!,
+              ...(options.persistHistoryChunk === undefined
+                ? {} : { persistChunk: options.persistHistoryChunk }),
+              onAcknowledged: (input, index, result) => {
+                if (input.expectedMissionId !== activeHistoryResetKey) return
+                const chunk = chunks[index]
+                if (chunk !== undefined) {
+                  acceptPersistedHistoryChunk(chunk, true, result)
+                }
+              },
+              yieldBetweenGroups: () => new Promise<void>((resolve) => {
+                scheduleTimeout(resolve, 0)
+              }),
+            }),
+          )
+        } catch (reason) {
+          // A closed wave fence must not reopen through reconciler fallback.
+          return chunks.map(() => ({ status: 'rejected' as const, reason }))
         }
-        for (const chunk of chunks) {
-          acceptPersistedHistoryChunk(chunk, true, null)
-        }
-        return
       }
       if (options.persistHistoryChunk !== undefined) {
         const results = await Promise.all(inputs.map((input) =>
@@ -1678,6 +1701,9 @@ export function createPollingManager(
     if (historyEvidenceOperations.size > 0) {
       await Promise.allSettled([...historyEvidenceOperations])
     }
+    if (historyPersistenceOperations.size > 0) {
+      await Promise.allSettled([...historyPersistenceOperations])
+    }
     running = false
     lifecycleGeneration += 1
     historyReconciler.reset()
@@ -1714,6 +1740,7 @@ export function createPollingManager(
   function isHistoryReconciliationCurrent(): boolean {
     return (
       running &&
+      !stopping &&
       (options.getPollingMode?.() ?? 'active') === 'active' &&
       (options.getHistoryResetKey?.() ?? null) === activeHistoryResetKey
     )

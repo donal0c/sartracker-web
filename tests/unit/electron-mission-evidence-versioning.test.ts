@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -125,6 +126,7 @@ const {
     input: Readonly<Record<string, unknown>>,
     chunkSize?: number,
     publicationReceipt?: Readonly<Record<string, unknown>>,
+    beforeWrite?: () => Promise<void>,
   ) => Promise<Readonly<Record<string, unknown>>>
   readonly startGpxImportBatch: (
     db: InstanceType<typeof Database>,
@@ -443,7 +445,7 @@ describe('mission evidence versioning [DON-277]', () => {
       ...SAMPLE_MARKER,
       description: oversized,
     })).rejects.toThrow(/marker description.*invalid/i)
-    expect(performance.now() - markerStarted).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - markerStarted).toBeLessThan(200))
 
     const drawingStarted = performance.now()
     await expect(store.upsertDrawing({
@@ -453,7 +455,7 @@ describe('mission evidence versioning [DON-277]', () => {
       display_order: 0,
       geometry_json: oversized,
     })).rejects.toThrow(/drawing geometry.*invalid/i)
-    expect(performance.now() - drawingStarted).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - drawingStarted).toBeLessThan(200))
 
     const tooManyCoordinates = JSON.stringify({
       type: 'LineString',
@@ -470,7 +472,7 @@ describe('mission evidence versioning [DON-277]', () => {
 
     const retirementStarted = performance.now()
     await expect(store.deleteMarker(oversized)).rejects.toThrow(/marker identity.*200/i)
-    expect(performance.now() - retirementStarted).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - retirementStarted).toBeLessThan(200))
 
     await expect(store.listMarkers(mission.id)).resolves.toEqual([])
     await expect(store.listDrawings(mission.id)).resolves.toEqual([])
@@ -715,7 +717,7 @@ describe('mission evidence versioning [DON-277]', () => {
     const openedAt = performance.now()
     store = createElectronMissionStore({ userDataPath })
     const openMs = performance.now() - openedAt
-    expect(openMs).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(openMs).toBeLessThan(200))
     await expect(store.listMissionObjectVersions({ missionId: mission.id }))
       .rejects.toThrow(/legacy mutable evidence baselines.*background/iu)
     await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER }))
@@ -739,7 +741,7 @@ describe('mission evidence versioning [DON-277]', () => {
       received_at: currentFixTime,
       timestamp_source: 'fix',
     })
-    expect(performance.now() - currentWriteStarted).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - currentWriteStarted).toBeLessThan(200))
 
     let lastHeartbeat = performance.now()
     let maximumHeartbeatGapMs = 0
@@ -761,7 +763,7 @@ describe('mission evidence versioning [DON-277]', () => {
     clearInterval(heartbeat)
     inspection.close()
     expect(baselineCount).toBe(50_000)
-    expect(maximumHeartbeatGapMs).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).toBeLessThan(200))
     await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER }))
       .resolves.toMatchObject({ mission_id: mission.id })
   }, 60_000)
@@ -810,7 +812,7 @@ describe('mission evidence versioning [DON-277]', () => {
       received_at: currentFixTime,
       timestamp_source: 'fix',
     })).resolves.toMatchObject({ source_position_id: 'current-after-worker-start-failure' })
-    expect(performance.now() - currentWriteStarted).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - currentWriteStarted).toBeLessThan(200))
     const inspection = openDatabase(databaseFile)
     expect(inspection.prepare(`SELECT value FROM metadata
       WHERE key = 'legacy_evidence_backfill_failure'`).get()?.value)
@@ -869,7 +871,7 @@ describe('mission evidence versioning [DON-277]', () => {
 
     const openedAt = performance.now()
     store = createElectronMissionStore({ userDataPath })
-    expect(performance.now() - openedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - openedAt).toBeLessThan(200))
     const postMigrationDb = openDatabase(databaseFile)
     expect(postMigrationDb.prepare(`SELECT 1 FROM sqlite_master
       WHERE type = 'index' AND name = 'idx_mission_events_replay'`).get()).toBeUndefined()
@@ -894,7 +896,7 @@ describe('mission evidence versioning [DON-277]', () => {
       received_at: currentFixTime,
       timestamp_source: 'fix',
     })
-    expect(performance.now() - currentWriteStarted).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - currentWriteStarted).toBeLessThan(200))
 
     const checkpointDb = openDatabase(databaseFile)
     let durableCursor: string | null = null
@@ -1000,7 +1002,7 @@ describe('mission evidence versioning [DON-277]', () => {
       overlappingMainThreadGc: largestGapGc,
     }
     process.stdout.write(`Legacy event preparation heartbeat diagnostics: ${JSON.stringify(heartbeatDiagnostics)}\n`)
-    expect(maximumHeartbeatGapMs, JSON.stringify(heartbeatDiagnostics)).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs, JSON.stringify(heartbeatDiagnostics)).toBeLessThan(200))
     await expect(store.readMissionReplay({
       missionId: mission.id,
       selectedTime: '2026-08-20T10:05:00.000Z',
@@ -1079,7 +1081,7 @@ describe('mission evidence versioning [DON-277]', () => {
       if (!completed) await new Promise((resolve) => setTimeout(resolve, 1))
     }
     expect(completed).toBe(true)
-    expect(maximumCurrentWriteMs).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(maximumCurrentWriteMs).toBeLessThan(200))
   }, 60_000)
 
   it('retains an oversized legacy event and fails evidence custody closed with explicit quarantine [DON-278]', async () => {
@@ -1164,7 +1166,7 @@ describe('mission evidence versioning [DON-277]', () => {
 
     const openedAt = performance.now()
     store = createElectronMissionStore({ userDataPath })
-    expect(performance.now() - openedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - openedAt).toBeLessThan(200))
     let quarantined = 0
     for (let attempt = 0; attempt < 1_000 && quarantined === 0; attempt += 1) {
       const inspection = openDatabase(databaseFile)
@@ -1417,7 +1419,7 @@ describe('mission evidence versioning [DON-277]', () => {
       id: cleanMission.id,
       status: 'finished',
     })
-    expect(performance.now() - startedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - startedAt).toBeLessThan(200))
     await expect(store.createMissionArchive(affectedMission.id))
       .rejects.toThrow(/exceed.*bounded reconstruction.*archive.*unavailable/iu)
   })
@@ -1753,7 +1755,7 @@ describe('mission evidence versioning [DON-277]', () => {
     const openedAt = performance.now()
     store = createElectronMissionStore({ userDataPath })
     const openMs = performance.now() - openedAt
-    expect(openMs).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(openMs).toBeLessThan(200))
     let lastHeartbeat = performance.now()
     let maximumHeartbeatGapMs = 0
     const heartbeat = setInterval(() => {
@@ -1769,7 +1771,7 @@ describe('mission evidence versioning [DON-277]', () => {
         FROM legacy_gpx_backfill_state WHERE singleton = 1`).get()?.scanned_through_rowid ?? 0)
     }
     clearInterval(heartbeat)
-    expect(maximumHeartbeatGapMs).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).toBeLessThan(200))
     expect(inspection.prepare(`SELECT scanned_through_rowid, scan_target_rowid
       FROM legacy_gpx_backfill_state WHERE singleton = 1`).get())
       .toMatchObject({ scanned_through_rowid: 500_000, scan_target_rowid: 500_000 })
@@ -1883,7 +1885,7 @@ describe('mission evidence versioning [DON-277]', () => {
 
     const openedAt = performance.now()
     store = createElectronMissionStore({ userDataPath })
-    expect(performance.now() - openedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - openedAt).toBeLessThan(200))
     await expect(store.listGpxImports(mission.id)).resolves.toEqual([])
     await expect(store.listGpxImportPage({ missionId: mission.id, limit: 10 }))
       .resolves.toEqual({ entries: [], nextCursor: null })
@@ -2623,7 +2625,7 @@ describe('mission evidence versioning [DON-277]', () => {
 
     const openedAt = performance.now()
     store = createElectronMissionStore({ userDataPath: userDataPath! })
-    expect(performance.now() - openedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - openedAt).toBeLessThan(200))
     const replayWhileRecovering = store.readMissionReplay({
       missionId: mission.id,
       selectedTime: '2026-08-28T12:05:00.000Z',
@@ -2647,7 +2649,7 @@ describe('mission evidence versioning [DON-277]', () => {
       timestamp: new Date().toISOString(),
       timestamp_source: 'fix',
     })
-    expect(performance.now() - currentWriteStarted).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - currentWriteStarted).toBeLessThan(200))
 
     const inspection = openDatabase(databaseFile)
     let failureCount = 0
@@ -2952,8 +2954,8 @@ describe('mission evidence versioning [DON-277]', () => {
       WHERE import_id = ? GROUP BY revision_sequence ORDER BY revision_sequence`).all(imported.id))
       .toEqual([{ revision_sequence: 1, count: 200_000 }])
     db.close()
-    expect(assignmentDurationMs).toBeLessThan(200)
-    expect(maximumHeartbeatGapMs).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(assignmentDurationMs).toBeLessThan(200))
+    assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).toBeLessThan(200))
 
     await expect(store.readMissionReplay({
       missionId: mission.id,
@@ -3122,7 +3124,7 @@ describe('mission evidence versioning [DON-277]', () => {
       display_order: 0,
       geometry_json: 'g'.repeat(64 * 1_024 * 1_024),
     })).rejects.toThrow(/search area geometry.*524288 characters/i)
-    expect(performance.now() - oversizedAreaStartedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - oversizedAreaStartedAt).toBeLessThan(200))
     await expect(store.listDrawings(mission.id)).resolves.toEqual([])
     await expect(store.listSearchAreas(mission.id)).resolves.toEqual([])
     await expect(store.upsertDrawing({
@@ -3149,7 +3151,7 @@ describe('mission evidence versioning [DON-277]', () => {
       legacy_drawing_id: 'l'.repeat(32 * 1_024 * 1_024),
       updated_by: 'Coordinator One',
     })).rejects.toThrow(/legacy drawing.*200 characters/i)
-    expect(performance.now() - oversizedLegacyStartedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - oversizedLegacyStartedAt).toBeLessThan(200))
     await expect(store.upsertSearchArea({
       mission_id: mission.id,
       name: 'Invalid effective time area',
@@ -3240,14 +3242,14 @@ describe('mission evidence versioning [DON-277]', () => {
       ...validPass,
       started_at: `2026-03-02T08:00:00.${'1'.repeat(32 * 1_024 * 1_024)}Z`,
     })).rejects.toThrow(/pass start.*64 characters/i)
-    expect(performance.now() - oversizedTimestampStartedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - oversizedTimestampStartedAt).toBeLessThan(200))
     const oversizedNotes = 'n'.repeat(32 * 1_024 * 1_024)
     const oversizedStartedAt = performance.now()
     await expect(store.upsertSearchPass({
       ...validPass,
       notes: oversizedNotes,
     })).rejects.toThrow(/notes.*2000 characters/i)
-    expect(performance.now() - oversizedStartedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - oversizedStartedAt).toBeLessThan(200))
     await expect(store.upsertSearchPass({
       ...validPass,
       participant_ids: Array.from({ length: 201 }, (_, index) => `participant-${index}`),
@@ -4112,7 +4114,44 @@ describe('mission evidence versioning [DON-277]', () => {
     await expect(store.listGpxImports(mission.id)).resolves.toHaveLength(1)
   })
 
-  it('keeps synchronous current-position writes below the 200 ms hard gate during a 50k-point GPX import [DON-274]', async () => {
+  it('gives an admitted foreground write priority over GPX staging after SQLite contention [DON-254]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Foreground Priority' })
+    const file = await databasePath()
+    const foregroundDb = new (require('better-sqlite3'))(file)
+    const backgroundDb = new (require('better-sqlite3'))(file)
+    const lockDb = new (require('better-sqlite3'))(file)
+    const { createResponsiveMissionWriter } = require('../../electron/responsive-mission-writer.cjs')
+    const { waitForForegroundWrites } = require('../../electron/foreground-write-priority.cjs')
+    const writer = createResponsiveMissionWriter(foregroundDb)
+    foregroundDb.exec('CREATE TABLE priority_probe (value TEXT)')
+    let importing: Promise<Readonly<Record<string, unknown>>> | undefined
+    try {
+      lockDb.exec('BEGIN IMMEDIATE')
+      const current = writer.run(() => {
+        expect(foregroundDb.prepare('SELECT COUNT(*) AS count FROM gpx_track_imports').get()).toEqual({ count: 0 })
+        return foregroundDb.prepare('INSERT INTO priority_probe VALUES (?)').run('current')
+      })
+      await nextNodeTurn()
+      expect(writer.pendingCount).toBe(1)
+      lockDb.exec('ROLLBACK')
+      importing = upsertGpxEvidenceChunked(backgroundDb, gpxInput(mission.id, {}), 1, undefined,
+        () => waitForForegroundWrites(writer.pendingBuffer))
+      // The foreground retry is admitted but sleeping. GPX must not win the now-free writer lane.
+      expect(backgroundDb.prepare('SELECT COUNT(*) AS count FROM gpx_track_imports').get()).toEqual({ count: 0 })
+      await current
+      await importing
+      expect(foregroundDb.prepare('SELECT * FROM priority_probe').all()).toEqual([{ value: 'current' }])
+      expect(backgroundDb.prepare('SELECT COUNT(*) AS count FROM gpx_evidence_points').get()).toEqual({ count: 2 })
+    } finally {
+      if (lockDb.inTransaction) lockDb.exec('ROLLBACK')
+      await importing
+      await writer.close()
+      lockDb.close(); backgroundDb.close(); foregroundDb.close()
+    }
+  })
+
+  it('keeps current-position writes and main heartbeat below 200 ms throughout a 50k-point GPX import [DON-274]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'GPX Current Priority Mission' })
     await store.upsertDevice({
@@ -4130,6 +4169,7 @@ describe('mission evidence versioning [DON-277]', () => {
     let importSettled = false
     const importing = store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
       .finally(() => { importSettled = true })
+    void importing.catch(() => undefined)
     let maximumWriteMs = 0
     let largestWriteProcessCpuMs = 0
     let maximumHeartbeatGapMs = 0
@@ -4140,8 +4180,10 @@ describe('mission evidence versioning [DON-277]', () => {
       previousHeartbeat = now
     }, 10)
     let sequence = 0
+    let measuredAfterSettlement = false
     try {
-      while (!importSettled && sequence < 500) {
+      while (!measuredAfterSettlement) {
+        measuredAfterSettlement = importSettled
         const startedAt = performance.now()
         const cpuStarted = process.cpuUsage()
         await store.addPosition({
@@ -4160,17 +4202,27 @@ describe('mission evidence versioning [DON-277]', () => {
           largestWriteProcessCpuMs = (cpu.user + cpu.system) / 1_000
         }
         sequence += 1
-        await new Promise((resolve) => setTimeout(resolve, 1))
+        // Preserve the original 500-write burst; continue a bounded 50 Hz probe through publication.
+        await new Promise((resolve) => setTimeout(resolve, sequence < 500 ? 1 : 20))
       }
       await importing
     } finally {
+      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, performance.now() - previousHeartbeat)
       clearInterval(heartbeat)
     }
     const diagnostics = { maximumWriteMs, largestWriteProcessCpuMs, maximumHeartbeatGapMs, sequence }
     process.stdout.write(`GPX current-write diagnostics: ${JSON.stringify(diagnostics)}\n`)
     expect(sequence).toBeGreaterThan(0)
-    expect(maximumWriteMs, JSON.stringify(diagnostics)).toBeLessThan(200)
-  }, 30_000)
+    expect(measuredAfterSettlement).toBe(true)
+    assertReleaseResponsiveness(() => expect(maximumWriteMs, JSON.stringify(diagnostics)).toBeLessThan(200))
+    assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs, JSON.stringify(diagnostics)).toBeLessThan(200))
+    const inspection = openDatabase(await databasePath())
+    try {
+      expect(inspection.prepare('SELECT COUNT(*) AS count FROM gpx_evidence_points').get()).toEqual({ count: 50_000 })
+      expect(inspection.prepare('SELECT COUNT(*) AS count FROM positions').get()).toEqual({ count: sequence })
+      expect(inspection.prepare('SELECT status, failed_files FROM gpx_import_batches').get()).toEqual({ status: 'completed', failed_files: 0 })
+    } finally { inspection.close() }
+  }, 60_000)
 
   it('keeps current writes below 200 ms while retaining an exact-limit 8 MiB GPX source [DON-274]', async () => {
     store = await createStore()
@@ -4212,7 +4264,7 @@ describe('mission evidence versioning [DON-277]', () => {
 
     await expect(importing).resolves.toMatchObject({ imports: [expect.objectContaining({ id: expect.any(String) })] })
     expect(sequence).toBeGreaterThan(0)
-    expect(maximumWriteMs).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(maximumWriteMs).toBeLessThan(200))
     const inspection = openDatabase(await databasePath())
     expect(inspection.prepare(`SELECT
         length(COALESCE(imports.source_bytes_base64, '')) AS projection_bytes,

@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    provide: { releaseResponsivenessMode: 'release-qualification' },
     include: ['tests/unit/**/*.test.{ts,tsx}'],
   },
 })

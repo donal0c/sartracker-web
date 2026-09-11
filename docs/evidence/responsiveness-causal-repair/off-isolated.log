@@ -1,0 +1,15 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-mission-evidence-versioning.test.ts -t keeps synchronous current-position writes --no-file-parallelism
+
+
+ RUN  v4.1.3 /home/donal/sartracker-causal-20260911.2UcQcB
+
+GPX current-write diagnostics: {"maximumWriteMs":63.2542169999997,"largestWriteProcessCpuMs":12.783,"maximumHeartbeatGapMs":32.37856600000032,"sequence":500}
+ ✓ tests/unit/electron-mission-evidence-versioning.test.ts (73 tests | 72 skipped) 20977ms
+     ✓ keeps synchronous current-position writes below the 200 ms hard gate during a 50k-point GPX import [DON-274]  20976ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 72 skipped (73)
+   Start at  10:06:34
+   Duration  21.50s (transform 89ms, setup 0ms, import 124ms, tests 20.98s, environment 328ms)

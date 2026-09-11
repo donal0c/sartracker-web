@@ -5,6 +5,8 @@ import { createRequire } from 'node:module'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
+import { persistHistoryChunkGroups } from '../../src/features/tracking/persist-history-chunk-groups'
+import type { TrackingHistoryChunkPersistenceInput } from '../../src/features/tracking/polling-manager'
 
 const require = createRequire(import.meta.url)
 type StorageOperation = { readonly id: string; readonly type: 'backup'; readonly requestedAtMs: number }
@@ -2767,7 +2769,8 @@ describe('electron mission store', () => {
       device_id: 'tracker-1',
       name: 'Tracker One',
       color: '#00AAFF',
-      status: 'online',
+      status: 'unknown',
+      last_seen: '2026-08-08T00:00:00.000Z',
     })
 
     await expect(store.persistTrackingHistoryBatch({
@@ -2789,6 +2792,237 @@ describe('electron mission store', () => {
 
     await expect(store.listPositions(mission.id)).resolves.toEqual([])
     await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([])
+    await expect(store.listDevices(mission.id)).resolves.toEqual([
+      expect.objectContaining({ device_id: 'tracker-1', last_seen: '2026-08-08T00:00:00.000Z', status: 'unknown' }),
+    ])
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.listPositions(mission.id)).resolves.toEqual([])
+    await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([])
+    await expect(store.listDevices(mission.id)).resolves.toEqual([
+      expect.objectContaining({ last_seen: '2026-08-08T00:00:00.000Z', status: 'unknown' }),
+    ])
+  })
+
+  it('retains only acknowledged history groups across native rollback, restart and idempotent retry [DON-254]', async () => {
+    store = await createStore()
+    const historyFrom = '2026-08-08T00:00:00.000Z'
+    const reconciledUntil = '2026-08-08T01:00:00.000Z'
+    const mission = await store.createMission({ name: 'Grouped History Custody', start_time: historyFrom })
+    for (const deviceId of ['prefix', 'suffix']) {
+      await store.upsertDevice({ mission_id: mission.id, device_id: deviceId, name: deviceId,
+        color: '#00AAFF', status: 'unknown', last_seen: historyFrom })
+    }
+    const inputs: readonly TrackingHistoryChunkPersistenceInput[] = ['prefix', 'suffix'].map((deviceId) => ({
+      phase: 'initial', expectedMissionId: mission.id, deviceId, historyFrom,
+      reconciledUntil: deviceId === 'prefix' ? reconciledUntil : '2026-08-07T23:00:00.000Z',
+      // Each complete 600-row chunk is below the production 1,024-row group budget;
+      // together they require two admissions without splitting either checkpoint.
+      positions: Array.from({ length: 600 }, (_, index) => ({
+        id: `${deviceId}-${index}`, device_id: deviceId, lat: 52.0599, lon: -9.5045,
+        timestamp: new Date(Date.parse(historyFrom) + (index + 1) * 1_000).toISOString(),
+        altitude: null, speed: null, battery: null, accuracy: null, source: null,
+        data_origin: 'live', timestamp_source: 'fix', cache_age_seconds: null, device_cache_stale: false,
+      })),
+    }))
+    const acknowledged: number[] = []
+    const inserted: number[] = []
+    /** Adapts real polling chunks into the actual native atomic persistence boundary. */
+    const persistGroup = async (group: readonly TrackingHistoryChunkPersistenceInput[]) => {
+      const result = await store!.persistTrackingPositionsBulk({
+        mission_id: group[0]!.expectedMissionId!,
+        positions: group.flatMap((chunk) => chunk.positions.map((position) => ({
+          ...position, source_position_id: position.id, timestamp_source: 'fix' as const,
+        }))),
+        checkpoints: group.map((chunk) => ({ device_id: chunk.deviceId,
+          history_from: chunk.historyFrom, reconciled_until: chunk.reconciledUntil })),
+      })
+      inserted.push(result.insertedPositionCount)
+    }
+    const options = { persistGroup, onAcknowledged: (_input: TrackingHistoryChunkPersistenceInput, index: number) => {
+      acknowledged.push(index)
+    }, yieldBetweenGroups: async () => { await new Promise((resolve) => setTimeout(resolve, 0)) } }
+    try {
+      const results = await persistHistoryChunkGroups({ ...options, inputs })
+      expect(results.map((result) => result.status)).toEqual(['fulfilled', 'rejected'])
+      expect(results[1]).toMatchObject({ reason: expect.objectContaining({
+        message: expect.stringMatching(/checkpoint.*before.*history start/iu),
+      }) })
+      expect(acknowledged).toEqual([0])
+      expect(inserted).toEqual([600])
+
+      await store.prepareClose()
+      store.close()
+      store = createElectronMissionStore({ userDataPath: userDataPath! })
+      const prefixRows = await store.listPositions(mission.id)
+      expect(prefixRows.map((row) => row.source_position_id).sort())
+        .toEqual(inputs[0]!.positions.map((position) => position.id).sort())
+      await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
+        { mission_id: mission.id, device_id: 'prefix', history_from: historyFrom, reconciled_until: reconciledUntil },
+      ])
+      expect((await store.listDevices(mission.id)).find((device) => device.device_id === 'suffix'))
+        .toMatchObject({ status: 'unknown', last_seen: historyFrom })
+
+      inserted.length = 0
+      acknowledged.length = 0
+      const corrected = inputs.map((input) => ({ ...input, reconciledUntil }))
+      const retry = await persistHistoryChunkGroups({ ...options, inputs: corrected })
+      expect(retry.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled'])
+      expect(acknowledged).toEqual([0, 1])
+      expect(inserted).toEqual([0, 600])
+      await store.prepareClose()
+      store.close()
+      store = createElectronMissionStore({ userDataPath: userDataPath! })
+      const rows = await store.listPositions(mission.id)
+      expect(rows.map((row) => row.source_position_id).sort())
+        .toEqual(inputs.flatMap((input) => input.positions.map((position) => position.id)).sort())
+      expect(rows.filter((row) => row.device_id === 'prefix').map((row) => row.id).sort())
+        .toEqual(prefixRows.map((row) => row.id).sort())
+      await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual(
+        ['prefix', 'suffix'].map((deviceId) => ({ mission_id: mission.id, device_id: deviceId,
+          history_from: historyFrom, reconciled_until: reconciledUntil })),
+      )
+      expect((await store.listDevices(mission.id)).find((device) => device.device_id === 'suffix'))
+        .toMatchObject({ status: 'online', last_seen: inputs[1]!.positions.at(-1)!.timestamp })
+    } finally { await store.prepareClose() }
+  })
+
+  it('bounds lookup compilation and device writes for a 1,800-position atomic history batch [DON-254]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Bulk Compilation Budget' })
+    await store.upsertDevice({ mission_id: mission.id, device_id: 'tracker-1', name: 'Tracker One', color: '#00AAFF', status: 'unknown' })
+    const positions = Array.from({ length: 1800 }, (_, index) => ({
+      device_id: 'tracker-1', source_position_id: `bulk-source-${index}`,
+      lat: 52.0599, lon: -9.5045,
+      timestamp: new Date(Date.parse('2026-07-28T10:00:00.000Z') + index * 1000).toISOString(),
+      timestamp_source: 'fix' as const,
+    }))
+    const prepare = vi.spyOn(Database.prototype, 'prepare')
+    const inspection = new Database((await store.info()).database_path)
+    inspection.exec(`CREATE TABLE bulk_device_write_probe (device_id TEXT);
+      CREATE TRIGGER count_bulk_device_writes AFTER UPDATE OF last_seen, status ON devices
+      BEGIN INSERT INTO bulk_device_write_probe VALUES (NEW.device_id); END;`)
+    try {
+      await expect(store.persistTrackingPositionsBulk({
+        mission_id: mission.id, positions,
+        checkpoints: [{ device_id: 'tracker-1', history_from: positions[0].timestamp, reconciled_until: positions.at(-1)!.timestamp }],
+      })).resolves.toMatchObject({ insertedPositionCount: 1800, changedPositionCount: 1800 })
+      const legacyQueryCompilations = prepare.mock.calls.filter(([sql]) =>
+        typeof sql === 'string' && sql.includes('source_position_id IS NULL') && sql.includes('ORDER BY rowid ASC'),
+      ).length
+      // Compilation was a measured main-thread cost; executions must still inspect every row.
+      expect(legacyQueryCompilations).toBe(1)
+      expect(inspection.prepare('SELECT COUNT(*) AS count FROM bulk_device_write_probe').get()).toEqual({ count: 1 })
+      expect(inspection.prepare('SELECT last_seen, status FROM devices WHERE mission_id = ? AND device_id = ?').get(mission.id, 'tracker-1')).toEqual({
+        last_seen: positions.at(-1)!.timestamp, status: 'online',
+      })
+      await expect(store.countPositions(mission.id)).resolves.toBe(1800)
+      await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
+        expect.objectContaining({ device_id: 'tracker-1', reconciled_until: positions.at(-1)!.timestamp }),
+      ])
+    } finally { prepare.mockRestore(); inspection.close() }
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.countPositions(mission.id)).resolves.toBe(1800)
+    await expect(store.listDevices(mission.id)).resolves.toEqual([
+      expect.objectContaining({ last_seen: positions.at(-1)!.timestamp, status: 'online' }),
+    ])
+    await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({ reconciled_until: positions.at(-1)!.timestamp }),
+    ])
+  })
+
+  it('coalesces accepted device observations without including skipped rows or changing conflict evidence [DON-254]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Device Observation Eligibility' })
+    const deviceIds = ['accepted', 'cross-owner', 'coordinate-only', 'legacy', 'ambiguous']
+    for (const deviceId of deviceIds) {
+      await store.upsertDevice({ mission_id: mission.id, device_id: deviceId, name: deviceId, color: '#00AAFF', status: 'unknown' })
+    }
+    const fix = { lat: 52.0599, lon: -9.5045, timestamp: '2026-07-28T10:00:00.000Z' }
+    await store.addPosition({ mission_id: mission.id, device_id: 'accepted', source_position_id: 'owned-source', ...fix })
+    for (const deviceId of ['coordinate-only', 'legacy', 'ambiguous', 'ambiguous']) {
+      await store.addPosition({ mission_id: mission.id, device_id: deviceId, ...fix })
+    }
+    for (const deviceId of deviceIds) {
+      await store.upsertDevice({ mission_id: mission.id, device_id: deviceId, name: deviceId, color: '#00AAFF', status: 'unknown', last_seen: null })
+    }
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [
+        { ...fix, device_id: 'accepted', source_position_id: 'owned-source' },
+        { ...fix, device_id: 'accepted', source_position_id: 'owned-source', timestamp: '2026-07-28T14:00:00.000Z' },
+        { ...fix, device_id: 'accepted', source_position_id: 'new-source', timestamp: '2026-07-28T12:00:00.000Z' },
+        { ...fix, device_id: 'accepted', source_position_id: 'older-source', timestamp: '2026-07-28T11:00:00.000Z' },
+        { ...fix, device_id: 'cross-owner', source_position_id: 'owned-source', timestamp: '2026-07-28T15:00:00.000Z' },
+        { ...fix, device_id: 'coordinate-only' },
+        { ...fix, device_id: 'legacy', source_position_id: 'adopted-source' },
+        { ...fix, device_id: 'ambiguous', source_position_id: 'ambiguous-source' },
+      ],
+    })
+    const devices = await store.listDevices(mission.id)
+    expect(devices.find((device) => device.device_id === 'accepted')).toMatchObject({ last_seen: '2026-07-28T14:00:00.000Z', status: 'online' })
+    for (const deviceId of deviceIds.slice(1)) {
+      expect(devices.find((device) => device.device_id === deviceId)).toMatchObject({ last_seen: null, status: 'unknown' })
+    }
+    const rows = await store.listPositions(mission.id)
+    expect(rows).toHaveLength(7)
+    expect(rows.find((row) => row.source_position_id === 'owned-source')).toMatchObject({ device_id: 'accepted', timestamp: fix.timestamp })
+    const inspection = new Database((await store.info()).database_path)
+    try {
+      // Same-owner and cross-owner conflicts are audited; ambiguous adoption is
+      // returned as a skip count and does not create a conflict ledger entry.
+      expect(inspection.prepare('SELECT COUNT(*) AS count FROM ingest_anomalies WHERE mission_id = ?').get(mission.id)).toEqual({ count: 2 })
+    } finally { inspection.close() }
+  })
+
+  it('invalidates finished-mission cleanup custody for duplicate observations and rolls back failed batches [DON-254]', async () => {
+    const { archiveCleanupMembershipGenerationKey, readArchiveCleanupMembershipGeneration } = require('../../electron/archive-cleanup-membership.cjs') as {
+      archiveCleanupMembershipGenerationKey: (missionId: string) => string
+      readArchiveCleanupMembershipGeneration: (db: unknown, missionId: string) => number
+    }
+    store = await createStore({ readAdminRoster: async () => ['Duty Admin'] })
+    const mission = await store.createMission({ name: 'Coalesced Cleanup Custody', start_time: '2026-07-28T00:00:00.000Z' })
+    await store.upsertDevice({ mission_id: mission.id, device_id: 'tracker-1', name: 'Tracker One', color: '#00AAFF', status: 'unknown' })
+    const fix = { device_id: 'tracker-1', source_position_id: 'owned-source', lat: 52.0599, lon: -9.5045, timestamp: '2026-07-28T10:00:00.000Z', timestamp_source: 'fix' as const }
+    await store.addPositionsBulk({ mission_id: mission.id, positions: [fix] })
+    await store.finishMission(mission.id)
+    await store.finalizeMission(mission.id)
+    await store.unlockFinalizedMission({ mission_id: mission.id, admin_name: 'Duty Admin', reason: 'Verify duplicate observation cleanup invalidation.' })
+    const inspection = new Database((await store.info()).database_path)
+    try {
+      const before = readArchiveCleanupMembershipGeneration(inspection, mission.id)
+      await store.addPositionsBulk({ mission_id: mission.id, positions: [fix, fix] })
+      const after = readArchiveCleanupMembershipGeneration(inspection, mission.id)
+      expect(after).toBeGreaterThan(before)
+      await expect(store.persistTrackingHistoryBatch({
+        mission_id: mission.id, positions: [fix, fix],
+        checkpoints: [{ device_id: 'tracker-1', history_from: '2026-07-28T10:00:00.000Z', reconciled_until: '2026-07-28T09:00:00.000Z' }],
+      })).rejects.toThrow(/checkpoint.*before.*history start/iu)
+      expect(readArchiveCleanupMembershipGeneration(inspection, mission.id)).toBe(after)
+      inspection.prepare('UPDATE metadata SET value = ? WHERE key = ?').run('corrupt', archiveCleanupMembershipGenerationKey(mission.id))
+      await expect(store.addPositionsBulk({ mission_id: mission.id, positions: [fix, fix] })).rejects.toThrow(/generation.*corrupt/iu)
+      expect(inspection.prepare('SELECT value FROM metadata WHERE key = ?').get(archiveCleanupMembershipGenerationKey(mission.id))).toEqual({ value: 'corrupt' })
+      await expect(store.countPositions(mission.id)).resolves.toBe(1)
+    } finally { inspection.close() }
+  })
+
+  it('rechecks legacy candidates after earlier rows adopt them in the same batch [DON-254]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Legacy Lookup Own Writes' })
+    await store.upsertDevice({ mission_id: mission.id, device_id: 'tracker-1', name: 'Tracker One', color: '#00AAFF', status: 'unknown' })
+    const fix = { device_id: 'tracker-1', lat: 52.0599, lon: -9.5045, timestamp: '2026-07-28T10:00:00.000Z' }
+    const legacy = await store.addPosition({ mission_id: mission.id, ...fix })
+    const rows = await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [{ ...fix, source_position_id: 'first-source' }, { ...fix, source_position_id: 'second-source' }],
+    })
+    expect(rows).toEqual([
+      expect.objectContaining({ id: legacy.id, source_position_id: 'first-source' }),
+      expect.objectContaining({ source_position_id: 'second-source' }),
+    ])
+    expect(rows[1].id).not.toBe(legacy.id)
+    await expect(store.countPositions(mission.id)).resolves.toBe(2)
   })
 
   it('attaches a recovered source identity to one exact legacy fix instead of duplicating it [DON-260]', async () => {

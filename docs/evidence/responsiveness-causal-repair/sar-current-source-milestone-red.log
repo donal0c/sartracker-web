@@ -1,0 +1,118 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts (74 tests | 5 failed | 68 skipped) 9ms
+     × reads offscreen current source publication instead of stale capture: published=true 5ms
+     × reads offscreen current source publication instead of stale capture: published=false 0ms
+     × keeps current source reads authoritative: reject 2ms
+     × keeps current source reads authoritative: legacy 1ms
+     × samples only bounded breadcrumb milestone counts inside the renderer 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > packaged Electron 36-hour breadcrumb proof helpers > reads offscreen current source publication instead of stale capture: published=true
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:319:45
+    317|         readCurrentPositions: true, readExactBreadcrumbs: false,
+    318|       })
+    319|       expect(evidence.currentPositionCount).toBe(published ? 1 : 0)
+       |                                             ^
+    320|       expect(getData).toHaveBeenCalledOnce()
+    321|       expect(queryRenderedFeatures).not.toHaveBeenCalled()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > packaged Electron 36-hour breadcrumb proof helpers > reads offscreen current source publication instead of stale capture: published=false
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:320:23
+    318|       })
+    319|       expect(evidence.currentPositionCount).toBe(published ? 1 : 0)
+    320|       expect(getData).toHaveBeenCalledOnce()
+       |                       ^
+    321|       expect(queryRenderedFeatures).not.toHaveBeenCalled()
+    322|       expect(serialize).not.toHaveBeenCalled()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > packaged Electron 36-hour breadcrumb proof helpers > keeps current source reads authoritative: reject
+AssertionError: promise resolved "{ sampledAtUnixMs: 1789132300146, …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "currentPositionCount": 0,
++   "exactBreadcrumbPointCount": null,
++   "sampledAtUnixMs": 1789132300146,
+  }
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:339:48
+    337|     try {
+    338|       const read = readCompactBreadcrumbMilestoneEvidenceInRenderer({ …
+    339|       if (mode === 'reject') await expect(read).rejects.toThrow('curre…
+       |                                                ^
+    340|       else await expect(read).resolves.toMatchObject({ currentPosition…
+    341|       expect(source.serialize).toHaveBeenCalledTimes(mode === 'legacy'…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > packaged Electron 36-hour breadcrumb proof helpers > keeps current source reads authoritative: legacy
+AssertionError: expected { Object (sampledAtUnixMs, currentPositionCount, ...) } to match object { currentPositionCount: 1 }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "currentPositionCount": 1,
++   "currentPositionCount": 0,
+  }
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:340:30
+    338|       const read = readCompactBreadcrumbMilestoneEvidenceInRenderer({ …
+    339|       if (mode === 'reject') await expect(read).rejects.toThrow('curre…
+    340|       else await expect(read).resolves.toMatchObject({ currentPosition…
+       |                              ^
+    341|       expect(source.serialize).toHaveBeenCalledTimes(mode === 'legacy'…
+    342|     } finally { vi.unstubAllGlobals() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > packaged Electron 36-hour breadcrumb proof helpers > samples only bounded breadcrumb milestone counts inside the renderer
+AssertionError: expected { Object (sampledAtUnixMs, currentPositionCount, ...) } to deeply equal { sampledAtUnixMs: Any<Number>, …(2) }
+
+- Expected
++ Received
+
+  {
+-   "currentPositionCount": 1,
++   "currentPositionCount": 0,
+    "exactBreadcrumbPointCount": 1,
+    "sampledAtUnixMs": 1789132300149,
+  }
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:392:20
+    390|         readExactBreadcrumbs: true,
+    391|       })
+    392|       expect(both).toEqual({
+       |                    ^
+    393|         sampledAtUnixMs: expect.any(Number),
+    394|         currentPositionCount: 1,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 1 passed | 68 skipped (74)
+   Start at  14:11:39
+   Duration  668ms (transform 91ms, setup 0ms, import 110ms, tests 9ms, environment 472ms)
+

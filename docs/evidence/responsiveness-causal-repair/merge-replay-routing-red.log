@@ -1,0 +1,33 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/electron-linux-renderer-workflows.test.ts (8 tests | 1 failed) 15ms
+     × separates ordinary correctness from mandatory unchanged release timing [DON-254] 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-linux-renderer-workflows.test.ts > Linux Electron renderer workflows [DON-260] > separates ordinary correctness from mandatory unchanged release timing [DON-254]
+AssertionError: expected undefined to be '${{ github.event_name == \'workflow_d…' // Object.is equality
+
+- Expected:
+"${{ github.event_name == 'workflow_dispatch' }}"
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-linux-renderer-workflows.test.ts:90:40
+     88|       'Qualify mission evidence replay at the normal 960k envelope',
+     89|       'Packaged tracking soak (CI profile)', 'Packaged archive lifecyc…
+     90|       expect(selectStep(job, name).if).toBe("${{ github.event_name == …
+       |                                        ^
+     91|     }
+     92|     expect(selectStep(job, 'Strict responsiveness qualification (<200 …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 passed (8)
+   Start at  15:48:58
+   Duration  431ms (transform 19ms, setup 0ms, import 27ms, tests 15ms, environment 305ms)
+

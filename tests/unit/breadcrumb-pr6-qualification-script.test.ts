@@ -1,3 +1,4 @@
+import { isReleaseResponsivenessQualification } from '../support/release-responsiveness'
 import { createHash } from 'node:crypto'
 import {
   chmod,
@@ -628,7 +629,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(() => deriveContentionProbeEvidence(measurements)).toThrow('200 ms')
   })
 
-  it('keeps current publication moving while durable persistence is pending', async () => {
+  it.skipIf(!isReleaseResponsivenessQualification())('keeps current publication moving while durable persistence is pending', async () => {
     let releasePersistence: (() => void) | undefined
     const persistence = new Promise<void>((resolve) => {
       releasePersistence = resolve
@@ -656,7 +657,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       .toBe(result.byPhase.create.syntheticPublicationCount)
   })
 
-  it('separates the 50 ms heartbeat from a normal-cadence current publication window', async () => {
+  it.skipIf(!isReleaseResponsivenessQualification())('separates the 50 ms heartbeat from a normal-cadence current publication window', async () => {
     const probe = startQualificationContentionProbe({
       store: { addPosition: vi.fn(async () => undefined) },
       missionId: 'probe-mission',
@@ -677,7 +678,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(result.byPhase.create.syntheticPublicationMaxCadenceMs).toBeLessThan(200)
   })
 
-  it('caches probe teardown so every worker is stopped and joined exactly once', async () => {
+  it.skipIf(!isReleaseResponsivenessQualification())('caches probe teardown so every worker is stopped and joined exactly once', async () => {
     class CountingWorker {
       listeners = new Map<string, ((value?: unknown) => void)[]>()
       stopMessages = 0
@@ -756,7 +757,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     await expect(probe.stop()).rejects.toThrow('200 ms')
   })
 
-  it('drains durable ingest through the qualification worker without blocking publication', async () => {
+  it.skipIf(!isReleaseResponsivenessQualification())('drains durable ingest through the qualification worker without blocking publication', async () => {
     const root = await createTemporaryRoot()
     const databasePath = path.join(root, 'mission-store.sqlite')
     const database = new Database(databasePath)
@@ -838,7 +839,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     }
   })
 
-  it('measures durable worker queue time from publication through acknowledgement', async () => {
+  it.skipIf(!isReleaseResponsivenessQualification())('measures durable worker queue time from publication through acknowledgement', async () => {
     class DelayedAckWorker {
       listeners = new Map<string, ((value?: unknown) => void)[]>()
 
@@ -893,7 +894,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(result.durableMaxLatencyMs).toBeGreaterThanOrEqual(250)
   })
 
-  it('retries durable ingest while a concurrent cleanup transaction sustains SQLite contention', async () => {
+  it.skipIf(!isReleaseResponsivenessQualification())('retries durable ingest while a concurrent cleanup transaction sustains SQLite contention', async () => {
     const root = await createTemporaryRoot()
     const databasePath = path.join(root, 'mission-store.sqlite')
     const database = new Database(databasePath)

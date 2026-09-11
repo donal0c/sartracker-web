@@ -268,28 +268,7 @@ export type TrackingRuntimeMissionStore = {
   readonly persistTrackingHistoryBatch?: (
     input: PersistTrackingHistoryBatchInput,
   ) => Promise<unknown>
-  readonly persistTrackingPositionsBulk?: (input: {
-    readonly mission_id: string
-    readonly positions: readonly {
-      readonly source_position_id?: string | null
-      readonly device_id: string
-      readonly lat: number
-      readonly lon: number
-      readonly altitude?: number | null
-      readonly speed?: number | null
-      readonly battery?: number | null
-      readonly accuracy?: number | null
-      readonly source?: string | null
-      readonly timestamp?: string | null
-      readonly timestamp_source?: 'fix' | null
-      readonly data_origin?: 'live' | 'cache'
-    }[]
-    readonly checkpoints: readonly {
-      readonly device_id: string
-      readonly history_from: string
-      readonly reconciled_until: string
-    }[]
-  }) => Promise<{
+  readonly persistTrackingPositionsBulk?: (input: PersistTrackingHistoryBatchInput) => Promise<{
     readonly changedPositionCount: number
     readonly insertedPositionCount: number
     readonly skippedAmbiguousLegacyAdoptionCount: number
@@ -1244,7 +1223,8 @@ export async function startTrackingRuntime(
       participantBackfillInFlight ||
       dependencies.missionStore.listParticipantBackfillCheckpoints === undefined ||
       dependencies.missionStore.upsertParticipantBackfillCheckpoint === undefined ||
-      dependencies.missionStore.persistTrackingHistoryBatch === undefined ||
+      (dependencies.missionStore.persistTrackingPositionsBulk === undefined &&
+        dependencies.missionStore.persistTrackingHistoryBatch === undefined) ||
       !hasBreadcrumbClient(client)
     ) return
 
@@ -1261,7 +1241,10 @@ export async function startTrackingRuntime(
   }
 
   async function runNextParticipantBackfillPass(): Promise<void> {
-    if (!hasBreadcrumbClient(client)) return
+    // Participant backfill consumes only durability acknowledgement, never returned rows.
+    const persistChunk = dependencies.missionStore.persistTrackingPositionsBulk
+      ?? dependencies.missionStore.persistTrackingHistoryBatch
+    if (!hasBreadcrumbClient(client) || persistChunk === undefined) return
     const activeMission = await dependencies.missionStore.getActiveMission()
     if (activeMission === null) return
     const checkpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
@@ -1282,7 +1265,7 @@ export async function startTrackingRuntime(
         ...(dependencies.recordBreadcrumbRejections === undefined
           ? {}
           : { recordRejections: dependencies.recordBreadcrumbRejections }),
-        persistChunk: dependencies.missionStore.persistTrackingHistoryBatch!,
+        persistChunk,
         updateCheckpoint: dependencies.missionStore.upsertParticipantBackfillCheckpoint!,
         signal: participantBackfillAbortController.signal,
       })

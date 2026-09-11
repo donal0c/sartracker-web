@@ -316,6 +316,7 @@ function createArchiveRegistry({
   archiveDirectory,
   appendAuditEvent = null,
   startCustodyReconciliation = startArchiveCustodyReconciliation,
+  runReconciliationWrite = (execute) => execute(),
 }) {
   if (!db || typeof db.prepare !== 'function' || typeof db.transaction !== 'function') {
     throw new ArchiveRegistryError(
@@ -339,6 +340,10 @@ function createArchiveRegistry({
       'ARCHIVE_REGISTRY_INVALID_INPUT',
       'Archive custody reconciliation runner must be a function.',
     )
+  }
+  if (typeof runReconciliationWrite !== 'function') {
+    throw new ArchiveRegistryError('ARCHIVE_REGISTRY_INVALID_INPUT',
+      'Archive reconciliation write adapter must be a function.')
   }
 
   /** Returns the live mission status carried by an archive lifecycle audit event. */
@@ -1319,7 +1324,7 @@ function createArchiveRegistry({
             current.id,
           )
         })
-        applyObservation.immediate()
+        await runReconciliationWrite(() => applyObservation.immediate(), input.signal)
         if (reason !== null) unavailable.push({ archiveId: row.id, reason })
       }
       const remaining = exactArchiveId !== null

@@ -1,0 +1,110 @@
+Debugger listening on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+
+DevTools listening on ws://127.0.0.1:43247/devtools/browser/719beeae-3fb8-4923-a69c-2f8b063c0775
+[188818:0911/135913.959190:ERROR:dbus/object_proxy.cc:573] Failed to call method: org.freedesktop.systemd1.Manager.StartTransientUnit: object_path= /org/freedesktop/systemd1: org.freedesktop.systemd1.UnitExists: Unit app-org.chromium.Chromium-188818.scope was already loaded or has a fragment file.
+Error occurred in handler for 'sartracker:traccar-http-request': TypeError: Cannot read properties of undefined (reading 'markResourceTiming')
+    at lib/web/fetch/index.js (node:internal/deps/undici/undici:12849:42)
+    at __require (node:internal/deps/undici/undici:6:50)
+    at node:internal/deps/undici/undici:17385:17
+    at BuiltinModule.compileForInternalLoader (node:internal/bootstrap/realm:398:7)
+    at requireBuiltin (node:internal/bootstrap/realm:429:14)
+    at fetch (node:internal/bootstrap/web/exposed-window-or-worker:80:28)
+    at handleTraccarHttpRequest (/home/donal/sartracker-causal-20260911.2UcQcB/tmp/electron-dist/linux-unpacked/resources/app.asar/electron/main.cjs:677:30)
+    at async Session.<anonymous> (node:electron/js2c/browser_init:2:115322)
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:39877/098ce1f9-75b0-409c-86ab-26bba036f61b
+For help, see: https://nodejs.org/en/docs/inspector

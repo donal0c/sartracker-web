@@ -1,0 +1,38 @@
+--- PR21/scripts/electron-tracking-soak.mjs
++++ profile/scripts/electron-tracking-soak.mjs
+@@ -803,0 +804,18 @@
++    const profileAnchor = await mainInspector.evaluate('({ nowMs: performance.now(), timeOriginMs: performance.timeOrigin })')
++    await mainInspector.send('Profiler.enable', {})
++    await mainInspector.send('Profiler.setSamplingInterval', { interval: 1000 })
++    await mainInspector.send('Profiler.start', {})
++    let profileStopPromise
++    let profileTimer
++    const stopCpuProfile = () => {
++      profileStopPromise ??= (async () => {
++        clearTimeout(profileTimer)
++        const result = await mainInspector.send('Profiler.stop', {})
++        await writeJson(path.join(path.resolve(options.evidenceDir), `main-launch-${number}.cpuprofile`), result.profile)
++        await writeJson(path.join(path.resolve(options.evidenceDir), `main-launch-${number}-profile-anchor.json`), profileAnchor)
++      })()
++      return profileStopPromise
++    }
++    profileTimer = setTimeout(() => {
++      stopCpuProfile().catch(error => console.error(`[profile] launch=${number} failed: ${error.message}`))
++    }, 12000)
+@@ -812,0 +831 @@
++      stopCpuProfile,
+@@ -2987,0 +3007 @@
++    await launch.stopCpuProfile?.()
+@@ -3365,2 +3385 @@
+-  return {
+-    evaluate: (expression) => new Promise((resolve, reject) => {
++  const send = (method, params) => new Promise((resolve, reject) => {
+@@ -3379 +3398 @@
+-        socket.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }))
++        socket.send(JSON.stringify({ id, method, params }))
+@@ -3385 +3404,4 @@
+-    }),
++    })
++  return {
++    send,
++    evaluate: (expression) => send('Runtime.evaluate', { expression, returnByValue: true }),

@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createStationaryAttentionProjector } from '../../src/features/tracking/stationary-attention-projection'
@@ -152,7 +153,7 @@ describe('stationary attention projection [DON-269]', () => {
       positions: [],
     }, config())
 
-    expect(performance.now() - startedAt).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(performance.now() - startedAt).toBeLessThan(200))
   })
 })
 

@@ -4,6 +4,7 @@ import { load } from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 
 interface WorkflowStep {
+  if?: string
   env?: Record<string, string>
   name?: string
   run?: string
@@ -77,6 +78,25 @@ function expectMesaLaunch(step: WorkflowStep): void {
 }
 
 describe('Linux Electron renderer workflows [DON-260]', () => {
+  it('separates ordinary correctness from mandatory unchanged release timing [DON-254]', () => {
+    const workflow = readWorkflow('.github/workflows/electron-linux-validation.yml')
+    const job = workflow.jobs.build
+    const correctness = selectStep(job, 'Full correctness unit gate')
+    expect(correctness.run).toBe('npm run test:correctness -- --no-file-parallelism')
+    expect(correctness.if).toBeUndefined()
+    for (const name of ['Strict responsiveness qualification (<200 ms)',
+      'Qualify mission evidence replay at the normal 960k envelope',
+      'Packaged tracking soak (CI profile)', 'Packaged archive lifecycle smoke']) {
+      expect(selectStep(job, name).if).toBe("${{ github.event_name == 'workflow_dispatch' }}")
+    }
+    expect(selectStep(job, 'Strict responsiveness qualification (<200 ms)').run)
+      .toBe('npm run test:responsiveness')
+    expect(selectStep(job, 'Record PR qualification boundary').run).toContain('release HOLD')
+    const source = readFileSync('.github/workflows/electron-linux-validation.yml', 'utf8')
+    expect(source).toContain("- 'vitest*.config.ts'")
+    expect(source).not.toContain('continue-on-error: true')
+  })
+
   it('scopes validation runtime packages to the runner Ubuntu sources [DON-254]', () => {
     const workflow = readWorkflow('.github/workflows/electron-linux-validation.yml')
     const install = selectStep(workflow.jobs.build, 'Install Linux Electron runtime deps').run ?? ''

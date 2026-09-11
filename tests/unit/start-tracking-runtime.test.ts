@@ -2086,6 +2086,100 @@ describe('startTrackingRuntime', () => {
     expect(stopped).toBe(true)
   })
 
+  it.each(['both', 'acknowledgement-only', 'legacy-only'] as const)(
+    'uses the available participant backfill acknowledgement port (%s) and holds evidence until its checkpoint settles [DON-254]',
+    async (ports) => {
+      const persistence = createDeferred<void>()
+      const checkpointWrite = createDeferred<void>()
+      const persistTrackingPositionsBulk = vi.fn(async () => {
+        await persistence.promise
+        return { changedPositionCount: 1, insertedPositionCount: 1, skippedAmbiguousLegacyAdoptionCount: 0 }
+      })
+      const persistTrackingHistoryBatch = vi.fn(async () => {
+        await persistence.promise
+        return []
+      })
+      const upsertParticipantBackfillCheckpoint = vi.fn(() => checkpointWrite.promise)
+      const complete = vi.fn()
+      const beginMissionEvidenceObservation = vi.fn((missionId: string) => ({ missionId, complete }))
+      const checkpoint = {
+        mission_id: 'mission-1', traccar_device_id: '1',
+        window_from: '2026-04-06T08:00:00.000Z', window_to: '2026-04-06T10:00:00.000Z',
+        reconciled_until: '2026-04-06T08:00:00.000Z', completed: 0,
+        updated_at: '2026-04-06T10:00:00.000Z',
+      }
+      const position = {
+        ...SNAPSHOT.positions[0]!, id: 'participant-source-1', device_id: '1',
+        timestamp: '2026-04-06T09:00:00.000Z', timestamp_source: 'fix' as const,
+      }
+      const getBreadcrumbsWithReport = vi.fn().mockResolvedValue({ accepted: [position], rejected: [] })
+      let hooks!: Parameters<Parameters<typeof startTrackingRuntime>[0]['createPoller']>[1]
+      const stop = await startTrackingRuntime({
+        config: { baseUrl: 'http://synthetic.invalid' },
+        createClient: () => ({ getBreadcrumbsWithReport }),
+        createPoller: (_client, input) => { hooks = input; return { start: vi.fn(), stop: vi.fn() } },
+        cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() }, writeCache: false,
+        missionStore: createMissionStoreStub({
+          getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+          listParticipantBackfillCheckpoints: vi.fn().mockResolvedValue([checkpoint]),
+          upsertParticipantBackfillCheckpoint,
+          ...(ports === 'legacy-only' ? {} : { persistTrackingPositionsBulk }),
+          ...(ports === 'acknowledgement-only' ? {} : { persistTrackingHistoryBatch }),
+        }),
+        applySnapshot: vi.fn(), applyStatus: vi.fn(), missionModelEnabled: true,
+        beginMissionEvidenceObservation,
+        readParticipationScope: () => ({
+          includesAt: () => true,
+          firstEvidenceTimestampAtOrAfter: (_deviceId, from) => from,
+          activeDeviceIdsAt: () => ['1'], operationalDeviceIdsAt: () => ['1'],
+          filterSnapshot: (snapshot) => snapshot, filterEvidenceSnapshot: (snapshot) => snapshot,
+        }),
+      })
+      try {
+        await hooks.onSnapshot({ devices: [], positions: [], breadcrumbs: [] })
+        await vi.waitFor(() => expect(
+          persistTrackingPositionsBulk.mock.calls.length + persistTrackingHistoryBatch.mock.calls.length,
+        ).toBe(1))
+        const selectedPersist = ports === 'legacy-only' ? persistTrackingHistoryBatch : persistTrackingPositionsBulk
+        expect(selectedPersist).toHaveBeenCalledWith({
+          mission_id: 'mission-1', checkpoints: [],
+          positions: [{
+            source_position_id: position.id, device_id: position.device_id,
+            lat: position.lat, lon: position.lon, altitude: position.altitude,
+            speed: position.speed, battery: position.battery, accuracy: position.accuracy,
+            source: position.source, timestamp: position.timestamp, timestamp_source: 'fix',
+            data_origin: position.data_origin,
+          }],
+        })
+        expect(ports === 'legacy-only' ? persistTrackingPositionsBulk : persistTrackingHistoryBatch).not.toHaveBeenCalled()
+        expect(beginMissionEvidenceObservation).toHaveBeenCalledWith('mission-1')
+        expect(upsertParticipantBackfillCheckpoint).not.toHaveBeenCalled()
+        expect(complete).not.toHaveBeenCalled()
+        let stopped = false
+        const stopping = stop().then(() => { stopped = true })
+        for (let turn = 0; turn < 10; turn += 1) await Promise.resolve()
+        expect(stopped).toBe(false)
+        persistence.resolve()
+        await vi.waitFor(() => expect(upsertParticipantBackfillCheckpoint).toHaveBeenCalledWith({
+          mission_id: 'mission-1', traccar_device_id: '1',
+          window_from: checkpoint.window_from, window_to: checkpoint.window_to,
+          reconciled_until: checkpoint.window_to, completed: true,
+        }))
+        expect(stopped).toBe(false)
+        expect(complete).not.toHaveBeenCalled()
+        expect(getBreadcrumbsWithReport.mock.calls[0]?.[3]).toMatchObject({ aborted: false })
+        checkpointWrite.resolve()
+        await stopping
+        expect(stopped).toBe(true)
+        expect(complete).toHaveBeenCalledOnce()
+      } finally {
+        persistence.resolve()
+        checkpointWrite.resolve()
+        await stop()
+      }
+    },
+  )
+
   it('grandfathers legacy tracking persistence when the mission model flag is off [DON-271]', async () => {
     const upsertDevicesBulk = vi.fn().mockResolvedValue(undefined)
     let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
@@ -3283,6 +3377,95 @@ describe('startTrackingRuntime', () => {
       ],
     })
     expect(persistTrackingHistoryBatch).not.toHaveBeenCalled()
+  })
+
+  it('persists current evidence between history groups and drains both groups before runtime stop [DON-254]', async () => {
+    useMissionStore.setState({ phase: 'active', currentMission: {
+      id: 'mission-1', name: 'Original mission', status: 'active', start_time: '2026-04-06T00:00:00.000Z',
+      pause_time: null, finish_time: null, paused_seconds: 0, notes: null, schema_version: 1,
+    } })
+    let hooks!: Parameters<Parameters<typeof startTrackingRuntime>[0]['createPoller']>[1]
+    const firstGroup = createDeferred<void>()
+    const secondGroup = createDeferred<void>()
+    const producer = createDeferred<void>()
+    const unregister = vi.fn()
+    const durableOrder: string[] = []
+    const persistedMissions: string[] = []
+    let historyCalls = 0
+    const persistTrackingPositionsBulk = vi.fn(async (input: { mission_id: string; checkpoints?: readonly unknown[] }) => {
+      persistedMissions.push(input.mission_id)
+      if ((input.checkpoints?.length ?? 0) === 0) {
+        durableOrder.push('current')
+        return { changedPositionCount: 1, insertedPositionCount: 1, skippedAmbiguousLegacyAdoptionCount: 0 }
+      }
+      const group = ++historyCalls
+      await (group === 1 ? firstGroup.promise : secondGroup.promise)
+      durableOrder.push(`history-${group}`)
+      return { changedPositionCount: 1, insertedPositionCount: 1, skippedAmbiguousLegacyAdoptionCount: 0 }
+    })
+    const stopPoller = vi.fn(() => producer.promise)
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://synthetic.invalid' }, createClient: () => ({}),
+      createPoller: (_client, input) => { hooks = input; return { start: vi.fn(), stop: stopPoller } },
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() }, writeCache: false,
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        persistTrackingPositionsBulk,
+      }),
+      applySnapshot: vi.fn(), applyStatus: vi.fn(),
+      registerMissionEvidenceSettler: () => unregister,
+    })
+    const position = SNAPSHOT.breadcrumbs[0]!
+    const groups: readonly TrackingHistoryChunkPersistenceInput[][] = [0, 1].map((index) => [{
+      phase: 'initial', expectedMissionId: 'mission-1', deviceId: position.device_id,
+      historyFrom: '2026-04-06T00:00:00.000Z',
+      reconciledUntil: `2026-04-06T0${index + 1}:00:00.000Z`,
+      positions: [{ ...position, id: `history-group-${index + 1}` }],
+    }])
+    // The producer owns the entire response while separately awaiting each runtime admission.
+    const history = (async () => {
+      try {
+        for (const group of groups) await hooks.persistHistoryChunks!(group)
+      } finally { producer.resolve() }
+    })()
+    const observation = { missionId: 'mission-1', claim: vi.fn(), complete: vi.fn() }
+    let stopping: Promise<void> | undefined
+    try {
+      await vi.waitFor(() => expect(persistTrackingPositionsBulk).toHaveBeenCalledOnce())
+      hooks.onCurrentSnapshot({ ...SNAPSHOT, rawBreadcrumbsForPersistence: [] },
+        { historyResetKey: 'mission-1', missionEvidenceId: 'mission-1' }, observation)
+      // Let the current-evidence guardian enqueue its write while the first durable write is held.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(observation.claim).toHaveBeenCalledOnce()
+      expect(persistTrackingPositionsBulk).toHaveBeenCalledOnce()
+      let stopped = false
+      stopping = stop().then(() => { stopped = true })
+      await vi.waitFor(() => expect(stopPoller).toHaveBeenCalledOnce())
+      expect(stopped).toBe(false)
+      expect(unregister).not.toHaveBeenCalled()
+
+      firstGroup.resolve()
+      await vi.waitFor(() => expect(persistTrackingPositionsBulk).toHaveBeenCalledTimes(3))
+      expect(durableOrder).toEqual(['history-1', 'current'])
+      expect(observation.complete).toHaveBeenCalledOnce()
+      expect(stopped).toBe(false)
+      expect(unregister).not.toHaveBeenCalled()
+
+      secondGroup.resolve()
+      await history
+      await stopping
+      expect(durableOrder).toEqual(['history-1', 'current', 'history-2'])
+      expect(persistedMissions).toEqual(['mission-1', 'mission-1', 'mission-1'])
+      expect(persistTrackingPositionsBulk).toHaveBeenNthCalledWith(3, expect.objectContaining({
+        checkpoints: [expect.objectContaining({ reconciled_until: '2026-04-06T02:00:00.000Z' })],
+        positions: [expect.objectContaining({ source_position_id: 'history-group-2' })],
+      }))
+      expect(unregister).toHaveBeenCalledOnce()
+    } finally {
+      firstGroup.resolve(); secondGroup.resolve()
+      await history
+      await (stopping ?? stop())
+    }
   })
 
   it('does not release a failed initial-history wave before its durable loss marker settles', async () => {

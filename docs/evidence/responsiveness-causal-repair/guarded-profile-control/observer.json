@@ -1,0 +1,206 @@
+{
+  "evidenceKind": "separate diagnostic companion; unchanged workload verdict remains separate",
+  "sourcePath": "/Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web/tmp/main-loop-sqlite-profile-companion.mjs",
+  "sourceSha256": "8c9c289de94ad53098cbc8f1ba3638c8e6aef558642561e59d0b236b1ef2e59b",
+  "sqliteProbeSha256": "713d624a5462a7601936f8c2fe678f6464bb195ef3f9d9e61f0b96cf02eee787",
+  "profileMs": 8000,
+  "port": 53790,
+  "startedAtUnixMs": 1789131869841,
+  "updatedAtUnixMs": 1789131874818,
+  "stopReason": "SIGTERM",
+  "verdict": "observed_main_loop_breach",
+  "qualifiedPass": false,
+  "limitation": "Snapshots omit the final unserviced interval and any time before installation or after disconnection. All-small samples are only a diagnostic lower bound. Compare installation times with workload mission/recovery phases.",
+  "preinstallationErrors": [],
+  "readinessObservations": [
+    {
+      "targetId": "af5dab09-0194-43ea-8cd5-31f9a7ab6bde",
+      "atUnixMs": 1789131870180,
+      "ready": false,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "af5dab09-0194-43ea-8cd5-31f9a7ab6bde",
+      "atUnixMs": 1789131870284,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "af5dab09-0194-43ea-8cd5-31f9a7ab6bde",
+      "atUnixMs": 1789131871292,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "af5dab09-0194-43ea-8cd5-31f9a7ab6bde",
+      "atUnixMs": 1789131872297,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "af5dab09-0194-43ea-8cd5-31f9a7ab6bde",
+      "atUnixMs": 1789131873305,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    }
+  ],
+  "launches": [
+    {
+      "number": 1,
+      "targetId": "af5dab09-0194-43ea-8cd5-31f9a7ab6bde",
+      "timeOriginMs": 1789131869865.064,
+      "readinessAtInstallation": {
+        "ready": true,
+        "basis": "Electron entry module loaded and app ready",
+        "checkedAtUnixMs": 1789131870284
+      },
+      "installationRequestedAtUnixMs": 1789131870284,
+      "installationConfirmedAtUnixMs": 1789131870286,
+      "installedAtMainWallMs": 1789131870285,
+      "finalTailCollected": false,
+      "disconnectedTail": true,
+      "connectionCount": 4,
+      "snapshotCount": 4,
+      "discardedSnapshotCount": 0,
+      "snapshots": [
+        {
+          "receivedAtUnixMs": 1789131870287,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789131869865.064,
+          "installedAtMainWallMs": 1789131870285,
+          "startedAtMs": 421.072917,
+          "sampledUntilMs": 421.072917,
+          "readAtMs": 421.164084,
+          "samples": 0,
+          "maximumGapMs": 0,
+          "maximumGapWindow": null,
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789131871293,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789131869865.064,
+          "installedAtMainWallMs": 1789131870285,
+          "startedAtMs": 421.072917,
+          "sampledUntilMs": 1405.675875,
+          "readAtMs": 1427.902,
+          "samples": 18,
+          "maximumGapMs": 80.81745799999999,
+          "maximumGapWindow": {
+            "fromMs": 1006.036542,
+            "toMs": 1086.854
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789131872297,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789131869865.064,
+          "installedAtMainWallMs": 1789131870285,
+          "startedAtMs": 421.072917,
+          "sampledUntilMs": 2415.367875,
+          "readAtMs": 2432.861167,
+          "samples": 31,
+          "maximumGapMs": 370.2782500000003,
+          "maximumGapWindow": {
+            "fromMs": 1884.418667,
+            "toMs": 2254.696917
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 1884.418667,
+              "toMs": 2254.696917,
+              "gapMs": 370.2782500000003
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789131873306,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789131869865.064,
+          "installedAtMainWallMs": 1789131870285,
+          "startedAtMs": 421.072917,
+          "sampledUntilMs": 3439.91725,
+          "readAtMs": 3441.237709,
+          "samples": 50,
+          "maximumGapMs": 370.2782500000003,
+          "maximumGapWindow": {
+            "fromMs": 1884.418667,
+            "toMs": 2254.696917
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 1884.418667,
+              "toMs": 2254.696917,
+              "gapMs": 370.2782500000003
+            }
+          ],
+          "finalTailCollected": false
+        }
+      ],
+      "errors": [],
+      "profile": {
+        "complete": false,
+        "cpuProfileComplete": true,
+        "sqliteSnapshotComplete": false,
+        "requestedWindowMs": 8000,
+        "startedAtUnixMs": 1789131870286,
+        "endReason": "application_shutdown",
+        "sqliteProbeSha256": "713d624a5462a7601936f8c2fe678f6464bb195ef3f9d9e61f0b96cf02eee787",
+        "cpuProfilePath": "/Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web/tmp/electron-observer-bootstrap-guarded-final/main-launch-1.cpuprofile",
+        "sqlitePath": "/Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web/tmp/electron-observer-bootstrap-guarded-final/main-launch-1-sqlite.json",
+        "sqliteInstallationError": "Inspector evaluation failed",
+        "anchorBefore": {
+          "nowMs": 444.915125,
+          "timeOriginMs": 1789131869865.064,
+          "wallMs": 1789131870309
+        },
+        "anchorAfter": {
+          "nowMs": 463.087209,
+          "timeOriginMs": 1789131869865.064,
+          "wallMs": 1789131870327
+        },
+        "finalSqliteCollectionStartedAtUnixMs": 1789131873459,
+        "error": "Inspector protocol error",
+        "endedAtUnixMs": 1789131873459
+      },
+      "latestSnapshot": {
+        "clock": "main-performance-now",
+        "intervalMs": 50,
+        "timeOriginMs": 1789131869865.064,
+        "installedAtMainWallMs": 1789131870285,
+        "startedAtMs": 421.072917,
+        "sampledUntilMs": 3439.91725,
+        "readAtMs": 3441.237709,
+        "samples": 50,
+        "maximumGapMs": 370.2782500000003,
+        "maximumGapWindow": {
+          "fromMs": 1884.418667,
+          "toMs": 2254.696917
+        },
+        "breachCount": 1,
+        "breaches": [
+          {
+            "fromMs": 1884.418667,
+            "toMs": 2254.696917,
+            "gapMs": 370.2782500000003
+          }
+        ],
+        "finalTailCollected": false
+      },
+      "connectionEndedAtUnixMs": 1789131873306,
+      "targetUnavailableAtUnixMs": 1789131874309
+    }
+  ]
+}

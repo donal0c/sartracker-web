@@ -1,0 +1,3524 @@
+{
+  "evidenceKind": "separate diagnostic companion; unchanged workload verdict remains separate",
+  "sourcePath": "/home/donal/sartracker-causal-20260911.2UcQcB/tmp/main-loop-companion.mjs",
+  "sourceSha256": "58ba6aa8df26ca4b07cddebc9191d2efa2a476973e4d65f9ce681fce96eb1e82",
+  "port": 39877,
+  "startedAtUnixMs": 1789130557458,
+  "updatedAtUnixMs": 1789130632853,
+  "stopReason": "duration_elapsed",
+  "verdict": "observed_main_loop_breach",
+  "qualifiedPass": false,
+  "limitation": "Snapshots omit the final unserviced interval and any time before installation or after disconnection. All-small samples are only a diagnostic lower bound. Compare installation times with workload mission/recovery phases.",
+  "launches": [
+    {
+      "targetId": "13b095a2-5ef7-4979-ba28-b8cdf3c26714",
+      "timeOriginMs": 1789130558950.986,
+      "installationRequestedAtUnixMs": 1789130559034,
+      "installationConfirmedAtUnixMs": 1789130559036,
+      "installedAtMainWallMs": 1789130559035,
+      "finalTailCollected": false,
+      "disconnectedTail": true,
+      "connectionCount": 10,
+      "snapshotCount": 10,
+      "discardedSnapshotCount": 0,
+      "snapshots": [
+        {
+          "receivedAtUnixMs": 1789130559036,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130558950.986,
+          "installedAtMainWallMs": 1789130559035,
+          "startedAtMs": 84.450318,
+          "sampledUntilMs": 84.450318,
+          "readAtMs": 84.732967,
+          "samples": 0,
+          "maximumGapMs": 0,
+          "maximumGapWindow": null,
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130560042,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130558950.986,
+          "installedAtMainWallMs": 1789130559035,
+          "startedAtMs": 84.450318,
+          "sampledUntilMs": 1068.790227,
+          "readAtMs": 1091.342834,
+          "samples": 18,
+          "maximumGapMs": 98.11668999999999,
+          "maximumGapWindow": {
+            "fromMs": 84.450318,
+            "toMs": 182.567008
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130561046,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130558950.986,
+          "installedAtMainWallMs": 1789130559035,
+          "startedAtMs": 84.450318,
+          "sampledUntilMs": 2074.512292,
+          "readAtMs": 2095.67051,
+          "samples": 38,
+          "maximumGapMs": 98.11668999999999,
+          "maximumGapWindow": {
+            "fromMs": 84.450318,
+            "toMs": 182.567008
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130562051,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130558950.986,
+          "installedAtMainWallMs": 1789130559035,
+          "startedAtMs": 84.450318,
+          "sampledUntilMs": 3054.555016,
+          "readAtMs": 3100.78299,
+          "samples": 57,
+          "maximumGapMs": 98.11668999999999,
+          "maximumGapWindow": {
+            "fromMs": 84.450318,
+            "toMs": 182.567008
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130563057,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130558950.986,
+          "installedAtMainWallMs": 1789130559035,
+          "startedAtMs": 84.450318,
+          "sampledUntilMs": 4058.70502,
+          "readAtMs": 4105.880149,
+          "samples": 77,
+          "maximumGapMs": 98.11668999999999,
+          "maximumGapWindow": {
+            "fromMs": 84.450318,
+            "toMs": 182.567008
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130564061,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130558950.986,
+          "installedAtMainWallMs": 1789130559035,
+          "startedAtMs": 84.450318,
+          "sampledUntilMs": 5063.749901,
+          "readAtMs": 5110.437737,
+          "samples": 97,
+          "maximumGapMs": 98.11668999999999,
+          "maximumGapWindow": {
+            "fromMs": 84.450318,
+            "toMs": 182.567008
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130565065,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130558950.986,
+          "installedAtMainWallMs": 1789130559035,
+          "startedAtMs": 84.450318,
+          "sampledUntilMs": 6066.247912,
+          "readAtMs": 6113.814707,
+          "samples": 117,
+          "maximumGapMs": 98.11668999999999,
+          "maximumGapWindow": {
+            "fromMs": 84.450318,
+            "toMs": 182.567008
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130566068,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130558950.986,
+          "installedAtMainWallMs": 1789130559035,
+          "startedAtMs": 84.450318,
+          "sampledUntilMs": 7074.320478,
+          "readAtMs": 7117.644456,
+          "samples": 137,
+          "maximumGapMs": 98.11668999999999,
+          "maximumGapWindow": {
+            "fromMs": 84.450318,
+            "toMs": 182.567008
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130567073,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130558950.986,
+          "installedAtMainWallMs": 1789130559035,
+          "startedAtMs": 84.450318,
+          "sampledUntilMs": 8085.335237,
+          "readAtMs": 8121.913332,
+          "samples": 157,
+          "maximumGapMs": 98.11668999999999,
+          "maximumGapWindow": {
+            "fromMs": 84.450318,
+            "toMs": 182.567008
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130568084,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130558950.986,
+          "installedAtMainWallMs": 1789130559035,
+          "startedAtMs": 84.450318,
+          "sampledUntilMs": 9102.433552,
+          "readAtMs": 9133.508557,
+          "samples": 177,
+          "maximumGapMs": 98.11668999999999,
+          "maximumGapWindow": {
+            "fromMs": 84.450318,
+            "toMs": 182.567008
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        }
+      ],
+      "errors": [],
+      "latestSnapshot": {
+        "clock": "main-performance-now",
+        "intervalMs": 50,
+        "timeOriginMs": 1789130558950.986,
+        "installedAtMainWallMs": 1789130559035,
+        "startedAtMs": 84.450318,
+        "sampledUntilMs": 9102.433552,
+        "readAtMs": 9133.508557,
+        "samples": 177,
+        "maximumGapMs": 98.11668999999999,
+        "maximumGapWindow": {
+          "fromMs": 84.450318,
+          "toMs": 182.567008
+        },
+        "breachCount": 0,
+        "breaches": [],
+        "finalTailCollected": false
+      },
+      "connectionEndedAtUnixMs": 1789130568084
+    },
+    {
+      "targetId": "c66f4515-83bc-4f53-9ddb-4c3bfd3d60c6",
+      "timeOriginMs": 1789130569040.04,
+      "installationRequestedAtUnixMs": 1789130570098,
+      "installationConfirmedAtUnixMs": 1789130570099,
+      "installedAtMainWallMs": 1789130570098,
+      "finalTailCollected": false,
+      "disconnectedTail": true,
+      "connectionCount": 62,
+      "snapshotCount": 62,
+      "discardedSnapshotCount": 0,
+      "snapshots": [
+        {
+          "receivedAtUnixMs": 1789130570099,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 1058.955804,
+          "readAtMs": 1059.071477,
+          "samples": 0,
+          "maximumGapMs": 0,
+          "maximumGapWindow": null,
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130571103,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 2036.981085,
+          "readAtMs": 2063.545261,
+          "samples": 16,
+          "maximumGapMs": 188.5179129999999,
+          "maximumGapWindow": {
+            "fromMs": 1425.112734,
+            "toMs": 1613.630647
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130572106,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 2995.120812,
+          "readAtMs": 3066.618953,
+          "samples": 34,
+          "maximumGapMs": 188.5179129999999,
+          "maximumGapWindow": {
+            "fromMs": 1425.112734,
+            "toMs": 1613.630647
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130573121,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 3958.681515,
+          "readAtMs": 4080.683528,
+          "samples": 44,
+          "maximumGapMs": 188.5179129999999,
+          "maximumGapWindow": {
+            "fromMs": 1425.112734,
+            "toMs": 1613.630647
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130574126,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 5005.596569,
+          "readAtMs": 5085.76136,
+          "samples": 56,
+          "maximumGapMs": 188.5179129999999,
+          "maximumGapWindow": {
+            "fromMs": 1425.112734,
+            "toMs": 1613.630647
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130575129,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 6058.361898,
+          "readAtMs": 6089.175005,
+          "samples": 66,
+          "maximumGapMs": 188.5179129999999,
+          "maximumGapWindow": {
+            "fromMs": 1425.112734,
+            "toMs": 1613.630647
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130576154,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 7035.12773,
+          "readAtMs": 7114.199532,
+          "samples": 77,
+          "maximumGapMs": 188.5179129999999,
+          "maximumGapWindow": {
+            "fromMs": 1425.112734,
+            "toMs": 1613.630647
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130577159,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 8109.631334,
+          "readAtMs": 8118.779887,
+          "samples": 87,
+          "maximumGapMs": 194.6189770000001,
+          "maximumGapWindow": {
+            "fromMs": 7312.601155,
+            "toMs": 7507.220132
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130578162,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 9016.379362,
+          "readAtMs": 9122.229021,
+          "samples": 96,
+          "maximumGapMs": 194.6189770000001,
+          "maximumGapWindow": {
+            "fromMs": 7312.601155,
+            "toMs": 7507.220132
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130579166,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 10078.606895,
+          "readAtMs": 10126.494445,
+          "samples": 107,
+          "maximumGapMs": 209.319657,
+          "maximumGapWindow": {
+            "fromMs": 9584.63676,
+            "toMs": 9793.956417
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130580170,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 11117.823028,
+          "readAtMs": 11130.016651,
+          "samples": 117,
+          "maximumGapMs": 209.319657,
+          "maximumGapWindow": {
+            "fromMs": 9584.63676,
+            "toMs": 9793.956417
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130581200,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 12028.352796,
+          "readAtMs": 12159.73073,
+          "samples": 126,
+          "maximumGapMs": 209.319657,
+          "maximumGapWindow": {
+            "fromMs": 9584.63676,
+            "toMs": 9793.956417
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130582203,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 13135.452858,
+          "readAtMs": 13163.231825,
+          "samples": 139,
+          "maximumGapMs": 209.319657,
+          "maximumGapWindow": {
+            "fromMs": 9584.63676,
+            "toMs": 9793.956417
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130583208,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 14088.238883,
+          "readAtMs": 14168.034232,
+          "samples": 149,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 2,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130584214,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 15072.259594,
+          "readAtMs": 15174.687639,
+          "samples": 159,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130585239,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 16039.996551,
+          "readAtMs": 16198.995185,
+          "samples": 170,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130586250,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 17145.056278,
+          "readAtMs": 17210.476031,
+          "samples": 179,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130587254,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 18157.215962,
+          "readAtMs": 18214.42719,
+          "samples": 193,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130588258,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 19121.06657,
+          "readAtMs": 19218.272952,
+          "samples": 206,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130589262,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 20178.293713,
+          "readAtMs": 20222.62464,
+          "samples": 215,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130590265,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 21215.756172,
+          "readAtMs": 21225.570558,
+          "samples": 227,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130591278,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 22083.677326,
+          "readAtMs": 22237.910347,
+          "samples": 236,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130592292,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 23149.661009,
+          "readAtMs": 23252.334254,
+          "samples": 249,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130593296,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 24220.514634,
+          "readAtMs": 24256.173179,
+          "samples": 262,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130594300,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 25162.632446,
+          "readAtMs": 25260.636182,
+          "samples": 270,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130595304,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 26180.905396,
+          "readAtMs": 26264.402115,
+          "samples": 284,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130596308,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 27178.415408,
+          "readAtMs": 27268.216764,
+          "samples": 296,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130597312,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 28255.308401,
+          "readAtMs": 28272.608052,
+          "samples": 305,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130598316,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 29260.49029,
+          "readAtMs": 29276.128897,
+          "samples": 316,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 4,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130599321,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 30234.125203,
+          "readAtMs": 30280.511101,
+          "samples": 326,
+          "maximumGapMs": 225.17627699999866,
+          "maximumGapWindow": {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309
+          },
+          "breachCount": 5,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130600324,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 31242.51172,
+          "readAtMs": 31284.206152,
+          "samples": 335,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 6,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130601330,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 32280.729522,
+          "readAtMs": 32289.78199,
+          "samples": 353,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 6,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130602335,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 33278.835894,
+          "readAtMs": 33294.814178,
+          "samples": 366,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 6,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130603338,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 34245.120334,
+          "readAtMs": 34298.159723,
+          "samples": 375,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 7,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130604342,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 35256.829773,
+          "readAtMs": 35301.716776,
+          "samples": 387,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 7,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130605358,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 36117.916633,
+          "readAtMs": 36318.144401,
+          "samples": 398,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 7,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130606363,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 37238.732183,
+          "readAtMs": 37323.301574,
+          "samples": 409,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 8,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130607367,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 38281.596069,
+          "readAtMs": 38327.489861,
+          "samples": 421,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 8,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130608371,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 39298.863684,
+          "readAtMs": 39330.749283,
+          "samples": 434,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 8,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130609375,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 40311.616126,
+          "readAtMs": 40334.965862,
+          "samples": 443,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 9,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130610380,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 41318.323366,
+          "readAtMs": 41340.369484,
+          "samples": 456,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 9,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130611385,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 42333.430264,
+          "readAtMs": 42345.451351,
+          "samples": 467,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 9,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130612391,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 43341.283791,
+          "readAtMs": 43350.847754,
+          "samples": 479,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 9,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130613395,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 44339.07189,
+          "readAtMs": 44355.090042,
+          "samples": 492,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 9,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130614405,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 45211.979172,
+          "readAtMs": 45365.190904,
+          "samples": 503,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 9,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130615411,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 46342.2383,
+          "readAtMs": 46370.87438,
+          "samples": 514,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 9,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130616416,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 47219.206686,
+          "readAtMs": 47376.001951,
+          "samples": 525,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 9,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130617421,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 48319.497765,
+          "readAtMs": 48381.333154,
+          "samples": 534,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 10,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130618425,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 49328.958104,
+          "readAtMs": 49384.845993,
+          "samples": 547,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 10,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130619430,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 50360.503696,
+          "readAtMs": 50389.877337,
+          "samples": 560,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 10,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130620434,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 51381.325891,
+          "readAtMs": 51393.873349,
+          "samples": 568,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 11,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130621438,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 52344.190136,
+          "readAtMs": 52398.44681,
+          "samples": 580,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 11,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130622442,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 53362.827539,
+          "readAtMs": 53402.335797,
+          "samples": 590,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 13,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            },
+            {
+              "fromMs": 52803.150952,
+              "toMs": 53003.741613,
+              "gapMs": 200.59066099999472
+            },
+            {
+              "fromMs": 53155.267089,
+              "toMs": 53362.827539,
+              "gapMs": 207.56044999999722
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130623448,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 54395.807155,
+          "readAtMs": 54408.487741,
+          "samples": 606,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 13,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            },
+            {
+              "fromMs": 52803.150952,
+              "toMs": 53003.741613,
+              "gapMs": 200.59066099999472
+            },
+            {
+              "fromMs": 53155.267089,
+              "toMs": 53362.827539,
+              "gapMs": 207.56044999999722
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130624453,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 55404.88255,
+          "readAtMs": 55413.28719,
+          "samples": 626,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 13,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            },
+            {
+              "fromMs": 52803.150952,
+              "toMs": 53003.741613,
+              "gapMs": 200.59066099999472
+            },
+            {
+              "fromMs": 53155.267089,
+              "toMs": 53362.827539,
+              "gapMs": 207.56044999999722
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130625458,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 56415.163057,
+          "readAtMs": 56418.453993,
+          "samples": 646,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 13,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            },
+            {
+              "fromMs": 52803.150952,
+              "toMs": 53003.741613,
+              "gapMs": 200.59066099999472
+            },
+            {
+              "fromMs": 53155.267089,
+              "toMs": 53362.827539,
+              "gapMs": 207.56044999999722
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130626606,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 57171.921588,
+          "readAtMs": 57566.068656,
+          "samples": 661,
+          "maximumGapMs": 291.9189389999992,
+          "maximumGapWindow": {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453
+          },
+          "breachCount": 13,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            },
+            {
+              "fromMs": 52803.150952,
+              "toMs": 53003.741613,
+              "gapMs": 200.59066099999472
+            },
+            {
+              "fromMs": 53155.267089,
+              "toMs": 53362.827539,
+              "gapMs": 207.56044999999722
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130627611,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 58570.849375,
+          "readAtMs": 58571.44128,
+          "samples": 682,
+          "maximumGapMs": 394.33310000000347,
+          "maximumGapWindow": {
+            "fromMs": 57171.921588,
+            "toMs": 57566.254688
+          },
+          "breachCount": 14,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            },
+            {
+              "fromMs": 52803.150952,
+              "toMs": 53003.741613,
+              "gapMs": 200.59066099999472
+            },
+            {
+              "fromMs": 53155.267089,
+              "toMs": 53362.827539,
+              "gapMs": 207.56044999999722
+            },
+            {
+              "fromMs": 57171.921588,
+              "toMs": 57566.254688,
+              "gapMs": 394.33310000000347
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130628616,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 59553.362303,
+          "readAtMs": 59576.13237,
+          "samples": 701,
+          "maximumGapMs": 394.33310000000347,
+          "maximumGapWindow": {
+            "fromMs": 57171.921588,
+            "toMs": 57566.254688
+          },
+          "breachCount": 14,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            },
+            {
+              "fromMs": 52803.150952,
+              "toMs": 53003.741613,
+              "gapMs": 200.59066099999472
+            },
+            {
+              "fromMs": 53155.267089,
+              "toMs": 53362.827539,
+              "gapMs": 207.56044999999722
+            },
+            {
+              "fromMs": 57171.921588,
+              "toMs": 57566.254688,
+              "gapMs": 394.33310000000347
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130629620,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 60560.908861,
+          "readAtMs": 60579.979085,
+          "samples": 721,
+          "maximumGapMs": 394.33310000000347,
+          "maximumGapWindow": {
+            "fromMs": 57171.921588,
+            "toMs": 57566.254688
+          },
+          "breachCount": 14,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            },
+            {
+              "fromMs": 52803.150952,
+              "toMs": 53003.741613,
+              "gapMs": 200.59066099999472
+            },
+            {
+              "fromMs": 53155.267089,
+              "toMs": 53362.827539,
+              "gapMs": 207.56044999999722
+            },
+            {
+              "fromMs": 57171.921588,
+              "toMs": 57566.254688,
+              "gapMs": 394.33310000000347
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130630624,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 61574.898074,
+          "readAtMs": 61583.755737,
+          "samples": 741,
+          "maximumGapMs": 394.33310000000347,
+          "maximumGapWindow": {
+            "fromMs": 57171.921588,
+            "toMs": 57566.254688
+          },
+          "breachCount": 14,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            },
+            {
+              "fromMs": 52803.150952,
+              "toMs": 53003.741613,
+              "gapMs": 200.59066099999472
+            },
+            {
+              "fromMs": 53155.267089,
+              "toMs": 53362.827539,
+              "gapMs": 207.56044999999722
+            },
+            {
+              "fromMs": 57171.921588,
+              "toMs": 57566.254688,
+              "gapMs": 394.33310000000347
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789130631850,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789130569040.04,
+          "installedAtMainWallMs": 1789130570098,
+          "startedAtMs": 1058.955804,
+          "sampledUntilMs": 62447.43589,
+          "readAtMs": 62810.183894,
+          "samples": 758,
+          "maximumGapMs": 394.33310000000347,
+          "maximumGapWindow": {
+            "fromMs": 57171.921588,
+            "toMs": 57566.254688
+          },
+          "breachCount": 14,
+          "breaches": [
+            {
+              "fromMs": 9584.63676,
+              "toMs": 9793.956417,
+              "gapMs": 209.319657
+            },
+            {
+              "fromMs": 13253.128032,
+              "toMs": 13478.304309,
+              "gapMs": 225.17627699999866
+            },
+            {
+              "fromMs": 14389.306389,
+              "toMs": 14603.866483,
+              "gapMs": 214.5600940000004
+            },
+            {
+              "fromMs": 16233.814497,
+              "toMs": 16442.203277,
+              "gapMs": 208.38878000000113
+            },
+            {
+              "fromMs": 29470.248177,
+              "toMs": 29673.627623,
+              "gapMs": 203.379445999999
+            },
+            {
+              "fromMs": 30797.324514,
+              "toMs": 31089.243453,
+              "gapMs": 291.9189389999992
+            },
+            {
+              "fromMs": 33595.111585,
+              "toMs": 33814.894201,
+              "gapMs": 219.78261600000405
+            },
+            {
+              "fromMs": 36117.916633,
+              "toMs": 36320.519192,
+              "gapMs": 202.60255899999902
+            },
+            {
+              "fromMs": 39489.932798,
+              "toMs": 39701.312266,
+              "gapMs": 211.37946799999918
+            },
+            {
+              "fromMs": 47537.354422,
+              "toMs": 47768.314602,
+              "gapMs": 230.96018000000186
+            },
+            {
+              "fromMs": 50677.079753,
+              "toMs": 50913.318439,
+              "gapMs": 236.23868600000424
+            },
+            {
+              "fromMs": 52803.150952,
+              "toMs": 53003.741613,
+              "gapMs": 200.59066099999472
+            },
+            {
+              "fromMs": 53155.267089,
+              "toMs": 53362.827539,
+              "gapMs": 207.56044999999722
+            },
+            {
+              "fromMs": 57171.921588,
+              "toMs": 57566.254688,
+              "gapMs": 394.33310000000347
+            }
+          ],
+          "finalTailCollected": false
+        }
+      ],
+      "errors": [],
+      "latestSnapshot": {
+        "clock": "main-performance-now",
+        "intervalMs": 50,
+        "timeOriginMs": 1789130569040.04,
+        "installedAtMainWallMs": 1789130570098,
+        "startedAtMs": 1058.955804,
+        "sampledUntilMs": 62447.43589,
+        "readAtMs": 62810.183894,
+        "samples": 758,
+        "maximumGapMs": 394.33310000000347,
+        "maximumGapWindow": {
+          "fromMs": 57171.921588,
+          "toMs": 57566.254688
+        },
+        "breachCount": 14,
+        "breaches": [
+          {
+            "fromMs": 9584.63676,
+            "toMs": 9793.956417,
+            "gapMs": 209.319657
+          },
+          {
+            "fromMs": 13253.128032,
+            "toMs": 13478.304309,
+            "gapMs": 225.17627699999866
+          },
+          {
+            "fromMs": 14389.306389,
+            "toMs": 14603.866483,
+            "gapMs": 214.5600940000004
+          },
+          {
+            "fromMs": 16233.814497,
+            "toMs": 16442.203277,
+            "gapMs": 208.38878000000113
+          },
+          {
+            "fromMs": 29470.248177,
+            "toMs": 29673.627623,
+            "gapMs": 203.379445999999
+          },
+          {
+            "fromMs": 30797.324514,
+            "toMs": 31089.243453,
+            "gapMs": 291.9189389999992
+          },
+          {
+            "fromMs": 33595.111585,
+            "toMs": 33814.894201,
+            "gapMs": 219.78261600000405
+          },
+          {
+            "fromMs": 36117.916633,
+            "toMs": 36320.519192,
+            "gapMs": 202.60255899999902
+          },
+          {
+            "fromMs": 39489.932798,
+            "toMs": 39701.312266,
+            "gapMs": 211.37946799999918
+          },
+          {
+            "fromMs": 47537.354422,
+            "toMs": 47768.314602,
+            "gapMs": 230.96018000000186
+          },
+          {
+            "fromMs": 50677.079753,
+            "toMs": 50913.318439,
+            "gapMs": 236.23868600000424
+          },
+          {
+            "fromMs": 52803.150952,
+            "toMs": 53003.741613,
+            "gapMs": 200.59066099999472
+          },
+          {
+            "fromMs": 53155.267089,
+            "toMs": 53362.827539,
+            "gapMs": 207.56044999999722
+          },
+          {
+            "fromMs": 57171.921588,
+            "toMs": 57566.254688,
+            "gapMs": 394.33310000000347
+          }
+        ],
+        "finalTailCollected": false
+      },
+      "connectionEndedAtUnixMs": 1789130631850,
+      "targetUnavailableAtUnixMs": 1789130632853
+    }
+  ]
+}

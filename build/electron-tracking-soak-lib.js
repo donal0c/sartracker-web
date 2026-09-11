@@ -4,6 +4,7 @@
  */
 
 import { createHash } from 'node:crypto'
+import { validateMainEventLoopEvidence } from './main-event-loop-probe.js'
 
 import { validateExtendedExactSoakProof } from './electron-tracking-soak-exact-proof-lib.js'
 
@@ -209,6 +210,7 @@ export function parseTrackingSoakArgs(argv) {
 export function buildTrackingSoakVerdict(input) {
   const failureReasons = []
   const expectedRestarts = input.profile.restartCheckpoints.length
+  failureReasons.push(...validateMainEventLoopEvidence(input.mainEventLoopLaunches, expectedRestarts + 1))
 
   requireAtLeast(failureReasons, input.observedBatches, input.profile.actualBatches, 'tracking batches')
   requireExact(failureReasons, input.deviceRows, input.profile.deviceCount, 'device rows')

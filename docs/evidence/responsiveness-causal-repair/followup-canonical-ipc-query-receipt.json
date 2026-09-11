@@ -1,0 +1,107 @@
+{
+  "diagnosticOnly": true,
+  "appPath": "tmp/grouped-1024-rejected-linux-unpacked/sartracker-web",
+  "profilePath": "tmp/targeted-canonical-profile",
+  "startedAtUnixMs": 1789133139969,
+  "queries": [
+    {
+      "startedAtUnixMs": 1789133146927,
+      "endedAtUnixMs": 1789133150313,
+      "positionCount": 103626,
+      "resultKeys": [
+        "positions",
+        "deviceTotals",
+        "deviceSelections",
+        "droppedPositionCount"
+      ],
+      "firstPositionKeys": [
+        "id",
+        "mission_id",
+        "device_id",
+        "source_position_id",
+        "name",
+        "lat",
+        "lon",
+        "altitude",
+        "speed",
+        "battery",
+        "accuracy",
+        "source",
+        "timestamp",
+        "data_origin",
+        "received_at",
+        "content_hash",
+        "source_kind",
+        "timestamp_source",
+        "timestamp_provenance_recorded_at"
+      ]
+    },
+    {
+      "startedAtUnixMs": 1789133151823,
+      "endedAtUnixMs": 1789133155281,
+      "positionCount": 103626,
+      "resultKeys": [
+        "positions",
+        "deviceTotals",
+        "deviceSelections",
+        "droppedPositionCount"
+      ],
+      "firstPositionKeys": [
+        "id",
+        "mission_id",
+        "device_id",
+        "source_position_id",
+        "name",
+        "lat",
+        "lon",
+        "altitude",
+        "speed",
+        "battery",
+        "accuracy",
+        "source",
+        "timestamp",
+        "data_origin",
+        "received_at",
+        "content_hash",
+        "source_kind",
+        "timestamp_source",
+        "timestamp_provenance_recorded_at"
+      ]
+    },
+    {
+      "startedAtUnixMs": 1789133156786,
+      "endedAtUnixMs": 1789133160502,
+      "positionCount": 103626,
+      "resultKeys": [
+        "positions",
+        "deviceTotals",
+        "deviceSelections",
+        "droppedPositionCount"
+      ],
+      "firstPositionKeys": [
+        "id",
+        "mission_id",
+        "device_id",
+        "source_position_id",
+        "name",
+        "lat",
+        "lon",
+        "altitude",
+        "speed",
+        "battery",
+        "accuracy",
+        "source",
+        "timestamp",
+        "data_origin",
+        "received_at",
+        "content_hash",
+        "source_kind",
+        "timestamp_source",
+        "timestamp_provenance_recorded_at"
+      ]
+    }
+  ],
+  "exitCode": 0,
+  "signalCode": null,
+  "completedAtUnixMs": 1789133172249
+}

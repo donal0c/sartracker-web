@@ -1,0 +1,33 @@
+
+ RUN  v4.1.3 <checkout>
+
+ ❯ tests/unit/electron-tracking-soak-lib.test.ts (34 tests | 1 failed | 33 skipped) 6ms
+     × fails when one operator action reaches the freeze threshold [DON-247] 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-tracking-soak-lib.test.ts > Electron packaged tracking soak helpers [DON-246] > fails when one operator action reaches the freeze threshold [DON-247]
+AssertionError: expected '' to match /independent main-loop/iu
+
+- Expected:
+/independent main-loop/iu
+
++ Received:
+""
+
+ ❯ tests/unit/electron-tracking-soak-lib.test.ts:505:62
+    503|     expect(mainStallVerdict.failureReasons.join('\n')).toMatch(/main-p…
+    504|     expect(mainStallVerdict.failureReasons.join('\n')).not.toMatch(/re…
+    505|     expect(hiddenMainStallVerdict.failureReasons.join('\n')).toMatch(/…
+       |                                                              ^
+    506|     expect(missingMainTimerVerdict.failureReasons.join('\n')).toMatch(…
+    507|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 33 skipped (34)
+   Start at  12:16:39
+   Duration  757ms (transform 69ms, setup 0ms, import 85ms, tests 6ms, environment 585ms)
+

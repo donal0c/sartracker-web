@@ -1,0 +1,30 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-startup-write-responsiveness.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+Startup SQLite contention: {"maximumGapMs":355.49845799999997,"processCpuMs":3.988}
+ ❯ tests/unit/electron-startup-write-responsiveness.test.ts (1 test | 1 failed) 417ms
+   × keeps the main loop below 200 ms when startup archive bookkeeping meets a background SQLite writer [DON-254] 416ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-startup-write-responsiveness.test.ts > keeps the main loop below 200 ms when startup archive bookkeeping meets a background SQLite writer [DON-254]
+AssertionError: {"maximumGapMs":355.49845799999997,"processCpuMs":3.988}: expected 355.49845799999997 to be less than 200
+ ❯ tests/unit/electron-startup-write-responsiveness.test.ts:57:52
+     55|     const evidence = { maximumGapMs, processCpuMs: (used.user + used.s…
+     56|     process.stdout.write(`Startup SQLite contention: ${JSON.stringify(…
+     57|     expect(maximumGapMs, JSON.stringify(evidence)).toBeLessThan(200)
+       |                                                    ^
+     58|   } finally {
+     59|     clearInterval(heartbeat)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  10:13:40
+   Duration  981ms (transform 15ms, setup 0ms, import 37ms, tests 417ms, environment 252ms)

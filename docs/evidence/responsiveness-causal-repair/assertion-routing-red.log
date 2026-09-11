@@ -1,0 +1,33 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/release-responsiveness.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/release-responsiveness.test.ts [ tests/unit/release-responsiveness.test.ts ]
+Error: Failed to resolve import "../support/release-responsiveness" from "tests/unit/release-responsiveness.test.ts". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web/tests/unit/release-responsiveness.test.ts:7:7
+  1  |  import { readFileSync, readdirSync } from "node:fs";
+  2  |  import { describe, expect, it, vi } from "vitest";
+  3  |  import { assertResponsivenessForMode, isReleaseResponsivenessQualification } from "../support/release-responsiveness";
+     |                                                                                     ^
+  4  |  describe("release responsiveness assertion routing", () => {
+  5  |  	it("preserves strict failure at the exact 200 ms boundary", () => {
+ ❯ TransformPluginContext._formatLog node_modules/vite/dist/node/chunks/node.js:30354:39
+ ❯ TransformPluginContext.error node_modules/vite/dist/node/chunks/node.js:30351:14
+ ❯ normalizeUrl node_modules/vite/dist/node/chunks/node.js:27633:18
+ ❯ node_modules/vite/dist/node/chunks/node.js:27696:30
+ ❯ TransformPluginContext.transform node_modules/vite/dist/node/chunks/node.js:27664:4
+ ❯ EnvironmentPluginContainer.transform node_modules/vite/dist/node/chunks/node.js:30143:14
+ ❯ loadAndTransform node_modules/vite/dist/node/chunks/node.js:24468:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  15:43:30
+   Duration  579ms (transform 0ms, setup 0ms, import 0ms, tests 0ms, environment 457ms)
+

@@ -15,6 +15,105 @@ const MAX_CURRENT_FIX_MS = 5_000
 const MAX_FIRST_BREADCRUMB_MS = 10_000
 const MAX_FULL_RECONCILIATION_MS = 60_000
 const MAX_HISTORY_CONCURRENCY = 8
+
+/** Parses operator counts and explicit local time labels without inventing unshown precision. */
+export function parseExactBreadcrumbDotPageSummary(value) {
+  const text = String(value ?? '').trim()
+  const current = /^Exact fix inspection — showing (\S+) of (\S+)(?: — (.+))?$/u.exec(text)
+  const legacy = current === null ? /^Showing (\S+) exact fixes of (\S+)(?: — (.+))?$/u.exec(text) : null
+  const match = current ?? legacy
+  if (match === null) throw new Error('Operator exact breadcrumb-dot page summary is malformed or missing.')
+  const countPattern = /^(?:0|[1-9]\d*|[1-9]\d{0,2}(?:,\d{3})+)$/u
+  if (!countPattern.test(match[1]) || !countPattern.test(match[2])) {
+    throw new Error('Operator exact breadcrumb-dot page summary has invalid counts.')
+  }
+  const pagePositionCount = Number(match[1].replaceAll(',', ''))
+  const totalPositionCount = Number(match[2].replaceAll(',', ''))
+  if (!validExactDotCounts(pagePositionCount, totalPositionCount)) {
+    throw new Error('Operator exact breadcrumb-dot page summary has invalid counts.')
+  }
+  const timestampPrecision = current === null ? 'exact' : 'second'
+  if (pagePositionCount === 0) {
+    if (match[3] !== undefined) throw new Error('Empty exact-dot page must not claim a timestamp range.')
+    return { pagePositionCount, totalPositionCount, fromTimestamp: null, toTimestamp: null, timestampPrecision }
+  }
+  if (match[3] === undefined) throw new Error('Nonempty exact-dot page is missing its timestamp range.')
+  const labels = match[3].split(' to ')
+  if (labels.length < 1 || labels.length > 2) throw new Error('Exact-dot timestamp range is malformed.')
+  const parse = current === null ? parseExactDotIsoTimestamp : parseExactDotLocalTimestamp
+  const fromTimestamp = parse(labels[0])
+  const toTimestamp = parse(labels[1] ?? labels[0])
+  if (Date.parse(fromTimestamp) > Date.parse(toTimestamp)) throw new Error('Exact-dot timestamp range is inverted.')
+  return { pagePositionCount, totalPositionCount, fromTimestamp, toTimestamp, timestampPrecision }
+}
+
+/** Compares the operator display only; callers retain independent exact source/digest assertions. */
+export function exactBreadcrumbDotPageSummaryMatches(summary, expected) {
+  if (!summary || !expected || !validExactDotCounts(summary.pagePositionCount, summary.totalPositionCount)
+    || summary.pagePositionCount !== expected.pagePositionCount
+    || summary.totalPositionCount !== expected.totalPositionCount) return false
+  if (summary.pagePositionCount === 0) return summary.fromTimestamp === null && summary.toTimestamp === null
+    && expected.fromTimestamp === null && expected.toTimestamp === null
+  const precision = summary.timestampPrecision ?? 'exact'
+  if (precision !== 'exact' && precision !== 'second') return false
+  try {
+    const actualFrom = Date.parse(parseExactDotIsoTimestamp(summary.fromTimestamp))
+    const actualTo = Date.parse(parseExactDotIsoTimestamp(summary.toTimestamp))
+    const expectedFrom = Date.parse(parseExactDotIsoTimestamp(expected.fromTimestamp))
+    const expectedTo = Date.parse(parseExactDotIsoTimestamp(expected.toTimestamp))
+    if (actualFrom > actualTo || expectedFrom > expectedTo) return false
+    if (precision === 'exact') return summary.fromTimestamp === expected.fromTimestamp
+      && summary.toTimestamp === expected.toTimestamp
+    return actualFrom % 1_000 === 0 && actualTo % 1_000 === 0
+      && actualFrom === Math.floor(expectedFrom / 1_000) * 1_000
+      && actualTo === Math.floor(expectedTo / 1_000) * 1_000
+  } catch { return false }
+}
+
+/** Checks counts before either parsing or comparison can acknowledge a page. */
+function validExactDotCounts(page, total) {
+  return Number.isSafeInteger(page) && page >= 0 && Number.isSafeInteger(total) && total >= page
+}
+
+/** Requires a real UTC calendar instant while retaining the legacy label's exact spelling. */
+function parseExactDotIsoTimestamp(value) {
+  if (typeof value !== 'string') throw new Error('Exact-dot timestamp is missing.')
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?Z$/u.exec(value)
+  if (match === null) throw new Error('Exact-dot timestamp must be a UTC ISO instant.')
+  const canonical = `${match[1]}.${(match[2] ?? '').padEnd(3, '0')}Z`
+  const instant = new Date(canonical)
+  if (!Number.isFinite(instant.getTime()) || instant.toISOString() !== canonical) {
+    throw new Error('Exact-dot timestamp contains an invalid calendar date or time.')
+  }
+  return value
+}
+
+/** Verifies the displayed calendar, UTC offset and named timezone agree at the given instant. */
+function parseExactDotLocalTimestamp(value) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2}) GMT([+-])(\d{2}):(\d{2}) \(([^()]+)\)$/u.exec(value)
+  if (match === null) throw new Error('Exact-dot local timestamp is malformed.')
+  const [, day, month, year, hour, minute, second, sign, offsetHour, offsetMinute, timeZone] = match
+  if (Number(offsetHour) > 14 || Number(offsetMinute) > 59
+    || (Number(offsetHour) === 14 && Number(offsetMinute) !== 0)) {
+    throw new Error('Exact-dot local timestamp has an invalid UTC offset.')
+  }
+  const calendar = `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`
+  parseExactDotIsoTimestamp(calendar)
+  const offsetMs = (Number(offsetHour) * 60 + Number(offsetMinute)) * 60_000 * (sign === '+' ? 1 : -1)
+  const instant = new Date(Date.parse(calendar) - offsetMs)
+  const parts = new Intl.DateTimeFormat('en-IE', { timeZone, calendar: 'gregory', numberingSystem: 'latn',
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23', timeZoneName: 'longOffset' }).formatToParts(instant)
+  const read = (type) => parts.find((part) => part.type === type)?.value
+  const offset = read('timeZoneName') === 'GMT' ? 'GMT+00:00' : read('timeZoneName')
+  if (Number(read('year')) !== Number(year) || read('month') !== month || read('day') !== day
+    || read('hour') !== hour || read('minute') !== minute || read('second') !== second
+    || offset !== `GMT${sign}${offsetHour}:${offsetMinute}`) {
+    throw new Error('Exact-dot calendar or UTC offset disagrees with its named timezone.')
+  }
+  return instant.toISOString()
+}
+
 const RENDER_BREADCRUMB_LIMIT_PER_DEVICE = 5_000
 const RENDER_BREADCRUMB_GAP_THRESHOLD_MS = 30 * 60 * 1_000
 const EARTH_RADIUS_METRES = 6_371_008.8
@@ -42,11 +141,22 @@ export async function readCompactBreadcrumbMilestoneEvidenceInRenderer(input) {
   let exactBreadcrumbPointCount = null
 
   if (input?.readCurrentPositions === true) {
-    const trackingData = window.__SARTRACKER_TRACKING_SET_DATA_CAPTURE__?.latest
+    const currentSource = window.__SARTRACKER_MAP__?.getSource('tracking')
+    // This milestone measures source publication, including offscreen fixes.
+    // updateData leaves setData capture stale; an available live read must succeed.
+    const currentData =
+      currentSource == null
+        ? null
+        : typeof currentSource.getData === 'function'
+          ? await currentSource.getData()
+          : typeof currentSource.serialize === 'function'
+            ? currentSource.serialize()?.data
+            : null
     currentPositionCount =
-      trackingData?.type === 'FeatureCollection' && Array.isArray(trackingData.features)
-        ? trackingData.features.filter(
-            (feature) => feature?.properties?.featureKind === 'device',
+      currentData?.type === 'FeatureCollection' && Array.isArray(currentData.features)
+        ? currentData.features.filter(
+            (feature) => feature?.properties?.featureKind === 'device'
+              && feature?.geometry?.type === 'Point',
           ).length
         : 0
   }
@@ -1707,10 +1817,10 @@ function validateExactRenderedDotOracle(reasons, rendered, oracle) {
         observed.renderedLayer.coordinateDeviation,
         expected.raw.positionCount,
       ) &&
-      observed.operatorPage?.pagePositionCount === observed.featureCount &&
-      observed.operatorPage.totalPositionCount === oracle.totalPositionCount &&
-      observed.operatorPage.fromTimestamp === observed.fromTimestamp &&
-      observed.operatorPage.toTimestamp === observed.toTimestamp
+      exactBreadcrumbDotPageSummaryMatches(observed.operatorPage, {
+        pagePositionCount: observed.featureCount, totalPositionCount: oracle.totalPositionCount,
+        fromTimestamp: observed.fromTimestamp, toTimestamp: observed.toTimestamp,
+      })
     )
   })
   if (!pagesMatch) {
@@ -1978,11 +2088,10 @@ function validatePostCompletionRestartExactDots(reasons, observed, oracle) {
       observed.renderedLayer.coordinateDeviation,
       expected.positionCount,
     )
-  const operatorMatches =
-    observed.operatorPage?.pagePositionCount === expected.positionCount &&
-    observed.operatorPage.totalPositionCount === oracle.totalPositionCount &&
-    observed.operatorPage.fromTimestamp === observed.fromTimestamp &&
-    observed.operatorPage.toTimestamp === observed.toTimestamp
+  const operatorMatches = exactBreadcrumbDotPageSummaryMatches(observed.operatorPage, {
+    pagePositionCount: expected.positionCount, totalPositionCount: oracle.totalPositionCount,
+    fromTimestamp: observed.fromTimestamp, toTimestamp: observed.toTimestamp,
+  })
   if (!sourceMatches || !renderedMatches || !operatorMatches) {
     reasons.push(
       'Post-completion restart exact-dot source, rendered layer, or operator page differed from the independent latest-page oracle.',
