@@ -2,8 +2,8 @@
 
 Date: 2026-09-11
 Repository: `donal0c/sartracker-web`
-Evidence base/current master: `49b2e1d416ca2fa4ff98cfae31c4d947bc4b0a6e` (`origin/master`, including merged PR #18)
-Evidence implementation commit: `5ddeb6fd81761b0eea67e24403c7ded1c6aa012f` (rebased WAR-06 test evidence)
+Evidence base/current master: `3db57a7942b32beef0d13cc4e8484a5bb492dfa4` (`origin/master`, including merged PR #22)
+Evidence implementation commit: `2390b57bb2e2cc549c0069b80013d968d0fb36d3` (rebased WAR-06 test evidence)
 Original reviewed PR head: `839737e82a8736be8dea3e7104fdada16398ea31` (review `5175815340`; pre-rebase)
 Merged Repair Train A application head: `713461bfa4018f8009e51660618515f78b8e23c0`
 Scope: investigation and durable reproduction evidence only
@@ -170,13 +170,14 @@ the cache silently authoritative for exact mission evidence.
 The evidence tests are intentionally passing characterizations: they assert
 unsafe current behaviour so the reproductions are durable without committing a
 failing test or a speculative production fix. The exact executable test commit
-is `5ddeb6fd81761b0eea67e24403c7ded1c6aa012f`, rebased onto current master
-`49b2e1d416ca2fa4ff98cfae31c4d947bc4b0a6e`.
+is `2390b57bb2e2cc549c0069b80013d968d0fb36d3`, rebased onto current master
+`3db57a7942b32beef0d13cc4e8484a5bb492dfa4`.
 
 | Evidence | Result | Claim boundary |
 | --- | --- | --- |
 | WAR-06 isolated characterization | 3 tests passed | Real `startTrackingRuntime`; real polling-manager delayed flush for AUD-01; real mission-controller finish/idle/start plus current-fix callback for AUD-02 and cache sibling; controlled local source evidence |
-| Existing tracking/reload custody suite | 179 tests passed | Rechecked merged Repair Train A seams; unit/integration source evidence only |
+| Existing tracking/reload/runtime/poller suite | 185 tests passed | Rechecked merged Repair Train A and PR22 tracking seams; unit/integration source evidence only |
+| Ordinary correctness suite on rebased tree | 434 files / 4,461 tests passed / 6 skipped | `test:correctness` explicitly excludes strict wall-clock qualification; no timing pass is claimed |
 | `AUD-13` false-Live reconnect | Not reproduced in focused current-head suite | Does not erase the historical/native limitation or prove packaged/field recovery |
 | `AUD-02` stationary route | Existing policy tests pass | Does not prove every clock, device, or field profile |
 | `AUD-03` stationary projection | Existing source/performance controls pass in the focused suite | Does not prove the strict `<200 ms` gate at release scale |
@@ -188,13 +189,20 @@ Commands run:
 ```bash
 npm test -- tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts --no-file-parallelism
 npm test -- tests/unit/tracking-reload-custody.test.ts tests/unit/start-tracking-runtime.test.ts tests/unit/polling-manager.test.ts --no-file-parallelism
+npm run test:correctness -- --no-file-parallelism
 npm test -- --no-file-parallelism
 npm test
 npm test -- tests/unit/electron-mission-evidence-versioning.test.ts -t 'keeps current fixes below the hard gate while byte-bounding legacy event writer turns' --no-file-parallelism
+npm run lint
+npm run build
 ```
 
-The first command passed 3/3 tests. The second passed 3/3 files and 179/179
-tests. The serial full source cycle passed 427/428 files and 4,378/4,379
+The first command passed 3/3 tests. The second passed 3/3 files and 185/185
+tests. The ordinary correctness cycle passed 434 files / 4,461 tests with 6
+explicit qualification-only cases skipped; its banner states that strict
+wall-clock responsiveness qualification was not run. Lint and production build
+passed, including TypeScript/Vite and bundle-size budgets. The historical serial
+full source cycle passed 427/428 files and 4,378/4,379
 tests; its single failure was the unchanged strict `<200 ms` assertion at
 `tests/unit/electron-mission-evidence-versioning.test.ts:1082`, which observed
 240.89 ms under full-suite load. The default-parallel full source cycle passed
@@ -282,13 +290,13 @@ boundaries. Those are separate proof tiers from the live mission-scope defect.
 
 ## Review and provenance reconciliation
 
-Independent review `5175815340` examined exact pre-rebase PR head
+The prior independent review `5175815340` examined exact pre-rebase PR head
 `839737e82a8736be8dea3e7104fdada16398ea31` with parent/base
 `302bdd040976bd370271cf5866549fa2a7e05ff5`. The branch was then rebased onto
-current `origin/master` `49b2e1d416ca2fa4ff98cfae31c4d947bc4b0a6e`, which includes
-merged PR #18. The repaired characterization evidence is executable at
-`5ddeb6fd81761b0eea67e24403c7ded1c6aa012f`; any later documentation commit is a
-different final PR head and must be checked by exact SHA before approval.
+current `origin/master` `3db57a7942b32beef0d13cc4e8484a5bb492dfa4`, which includes
+merged PR #22. The repaired characterization evidence is executable at
+`2390b57bb2e2cc549c0069b80013d968d0fb36d3`; any later documentation commit is a different final PR head and
+must be checked by exact SHA before approval.
 
 The stable review IDs are dispositioned as follows: `WAR-06-AUD-01-REACHABILITY`
 is addressed by the real manager delayed-flush interleaving;
@@ -301,25 +309,23 @@ workplan, and coordinated ledger without changing PR #18's merged truth.
 
 The full-suite timing failures remain unresolved and are retained as a strict
 gate. They are not reclassified by these additive tests, and this PR makes no
-performance or threshold claim.
+performance or threshold claim. A new exact-head independent review is required
+after the rebase; the prior review IDs are historical provenance, not approval
+of the rebased head.
 
-Independent final review `5176300059` examined executable head `c4cda818` and
-returned clean after identifying one coordination-only contradiction: live
-Linear `DON-254` had drifted to Done while its latest qualification comment,
-PRs #19/#21, and the handoff retained open qualification work. The issue is now
-back to **In Progress**, with a dated explanatory comment. Exact-head Linux CI
-`34575023706` also passed the executable tree. These are engineering/evidence
-checks only and do not close the qualification issue.
+Independent final review `5176300059` examined the pre-PR22 executable head
+`c4cda818` and returned clean after identifying one coordination-only
+contradiction. That review and CI `34575023706` are retained as historical
+evidence; they do not approve this rebased head. The live Linear state and the
+new exact-head CI/reviews must be reconciled before merge readiness is claimed.
 
 ## Next action
 
 Treat `WAR-06-AUD-01`, `WAR-06-AUD-02`, and `WAR-06-CACHE-SIBLING` as one
-lifecycle repair boundary. Following the status correction, PR #20 is
-**merge-ready as additive investigation evidence for Donal's review**, but it
-is not a production repair, release qualification, or operational-use
+lifecycle repair boundary. The rebased PR remains investigation-only and is
+not a production repair, release qualification, or operational-use
 recommendation: the P1 candidate hazards remain unrepaired and the strict
-`<200 ms` failures remain unresolved. The independent Luna review is clean;
-obtain the required Astra retrace before any production identity guard is
-implemented, then run current-position, stationary, persistence, browser,
-packaged, and exact-head review gates. Do not close the findings or claim
-release/field safety from this investigation PR.
+`<200 ms` failures remain unresolved. Complete the new exact-head independent
+reviews and ordinary CI, then record the final receipt before calling it
+merge-ready. Do not close the findings or claim release/field safety from this
+investigation PR.
