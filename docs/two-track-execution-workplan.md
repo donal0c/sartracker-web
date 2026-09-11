@@ -227,8 +227,11 @@ runtime current-fix hydration (`WAR-06-AUD-02`), and the unkeyed cache sibling.
 The report and test cleanup are fail-safe. These remain unrepaired P1 candidate
 renderer hazards; the strict `<200 ms` full-suite timing failures remain
 unresolved. No production change, merge, release, deployment, team contact, or
-gate relaxation is claimed. Final exact-head Luna review, Linear update, and
-any production repair remain downstream of this investigation PR.
+gate relaxation is claimed. Final exact-head Luna review `5176300059` is clean
+on executable head `c4cda818`, and Linear `DON-254` is now **In Progress** after
+status drift was corrected on 2026-09-11. PRs #19 and #21 remain draft and the
+latest qualification comment retains the 205 ms strict-gate failure. Any
+production repair remains downstream of this investigation PR.
 
 ### Repair Train A — merged evidence boundary (2026-09-10)
 

@@ -303,13 +303,23 @@ The full-suite timing failures remain unresolved and are retained as a strict
 gate. They are not reclassified by these additive tests, and this PR makes no
 performance or threshold claim.
 
+Independent final review `5176300059` examined executable head `c4cda818` and
+returned clean after identifying one coordination-only contradiction: live
+Linear `DON-254` had drifted to Done while its latest qualification comment,
+PRs #19/#21, and the handoff retained open qualification work. The issue is now
+back to **In Progress**, with a dated explanatory comment. Exact-head Linux CI
+`34575023706` also passed the executable tree. These are engineering/evidence
+checks only and do not close the qualification issue.
+
 ## Next action
 
 Treat `WAR-06-AUD-01`, `WAR-06-AUD-02`, and `WAR-06-CACHE-SIBLING` as one
-lifecycle repair boundary. This PR recommends **not merge-ready for release or
-operational use**: it adds only evidence, leaves the P1 candidate hazards
-unrepaired, and retains the unresolved strict `<200 ms` failures. Obtain the
-required independent Luna final review and Astra retrace before any production
-identity guard is implemented; then run current-position, stationary,
-persistence, browser, packaged, and exact-head review gates. Do not close the
-findings or claim release/field safety from this investigation PR.
+lifecycle repair boundary. Following the status correction, PR #20 is
+**merge-ready as additive investigation evidence for Donal's review**, but it
+is not a production repair, release qualification, or operational-use
+recommendation: the P1 candidate hazards remain unrepaired and the strict
+`<200 ms` failures remain unresolved. The independent Luna review is clean;
+obtain the required Astra retrace before any production identity guard is
+implemented, then run current-position, stationary, persistence, browser,
+packaged, and exact-head review gates. Do not close the findings or claim
+release/field safety from this investigation PR.
