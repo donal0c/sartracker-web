@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mission } from '../../../../src/infrastructure/mission-store/tauri-mission-store'
 import { startMissionRuntime } from '../../../../src/features/mission/start-mission-runtime'
 import { useMissionStore } from '../../../../src/features/mission/mission-store'
@@ -27,7 +27,7 @@ const FIXED_NOW = new Date('2026-04-06T10:35:00.000Z')
 const activeRuntimeStops = new Set<RuntimeStop>()
 const pendingCurrentPositionResolutions = new Set<() => void>()
 
-/** Stops a runtime and retries once when its first cleanup attempt remains incomplete. */
+/** Stops a runtime and preserves a first-attempt failure even when retry succeeds. */
 async function stopRuntimeWithRetry(stop: RuntimeStop): Promise<void> {
   try {
     await stop()
@@ -37,6 +37,10 @@ async function stopRuntimeWithRetry(stop: RuntimeStop): Promise<void> {
     } catch (retryError) {
       throw new AggregateError([firstError, retryError], 'WAR-06 runtime cleanup retry failed.')
     }
+    throw new AggregateError(
+      [firstError],
+      'WAR-06 runtime cleanup recovered on retry; inspect the first cleanup failure.',
+    )
   }
 }
 
@@ -56,6 +60,8 @@ afterEach(async () => {
       activeRuntimeStops.delete(stop)
     } catch (error) {
       failures.push(error)
+    } finally {
+      activeRuntimeStops.delete(stop)
     }
   }
   vi.useRealTimers()
@@ -275,13 +281,23 @@ async function startCharacterizationRuntime(input: {
   const stop = await startTrackingRuntime(dependencies)
   activeRuntimeStops.add(stop)
   if (hooks === undefined) {
-    await stop()
-    activeRuntimeStops.delete(stop)
+    try {
+      await stopRuntimeWithRetry(stop)
+    } finally {
+      activeRuntimeStops.delete(stop)
+    }
     throw new Error('WAR-06 characterization did not capture tracking hooks.')
   }
   return { stop, hooks, notifyScopeChanged }
 }
 
+/**
+ * These are intentionally red characterization tests, not acceptance gates.
+ * When WAR-06.md is repaired, invert each defect assertion into a non-regression
+ * guard rather than weakening it to an empty-result assertion. Keep the route
+ * description and the repair evidence linked to docs/assurance/findings/war-06/WAR-06.md.
+ */
+describe('WAR-06 reachable lifecycle characterization (intentional red)', () => {
 it('reproduces stale history publication at the real delayed poller flush [WAR-06-AUD-01]', async () => {
   const controller = await createMissionController()
   await controller.startMission({ name: 'Mission A' })
@@ -294,7 +310,7 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
   const pendingSecondHistoryPersistence = createDeferred<void>()
   pendingCurrentPositionResolutions.add(() => pendingSecondHistoryPersistence.resolve())
   let currentPollCount = 0
-  let switchMissionAfterHistoryFlush = () => undefined
+  let requestPollNow: () => void = () => undefined
   const scheduledDelays: number[] = []
   let initialHistoryPersistenceCount = 0
   const persistHistoryChunk = vi.fn((input: TrackingHistoryChunkPersistenceInput) => {
@@ -327,33 +343,32 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
     scopeStatus: () => 'ready',
     readScope: () => currentScope,
     subscribeScope: () => () => undefined,
-    createPoller: (pollerClient, hooks) => createPollingManager(
-      pollerClient as TrackingPollerClient,
-      {
-        intervalMs: 5_000,
-        staleThresholdMs: 60 * 60 * 1000,
-        getPollingMode: () => {
-          const phase = useMissionStore.getState().phase
-          return phase === 'active' || phase === 'paused' ? phase : 'idle'
+    createPoller: (pollerClient, hooks) => {
+      const poller = createPollingManager(
+        pollerClient as TrackingPollerClient,
+        {
+          intervalMs: 5_000,
+          staleThresholdMs: 60 * 60 * 1000,
+          getPollingMode: () => {
+            const phase = useMissionStore.getState().phase
+            return phase === 'active' || phase === 'paused' ? phase : 'idle'
+          },
+          getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
+          getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+          getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
+          persistHistoryChunk,
+          ...withoutHistoryPersistenceHooks(hooks),
+          now: () => FIXED_NOW,
+          setTimeout: (callback, delay, ...args) => {
+            scheduledDelays.push(delay)
+            return globalThis.setTimeout(callback, delay, ...args)
+          },
+          clearTimeout: globalThis.clearTimeout,
         },
-        getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
-        getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
-        getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
-        persistHistoryChunk,
-        ...withoutHistoryPersistenceHooks(hooks),
-        now: () => FIXED_NOW,
-        setTimeout: (callback, delay, ...args) => {
-          scheduledDelays.push(delay)
-          return globalThis.setTimeout(() => {
-            callback(...args)
-            if (delay === 100) {
-              switchMissionAfterHistoryFlush()
-            }
-          }, delay)
-        },
-        clearTimeout: globalThis.clearTimeout,
-      },
-    ),
+      )
+      requestPollNow = poller.requestPollNow
+      return poller
+    },
   })
   expect(notifyScopeChanged).toBeTypeOf('function')
 
@@ -364,13 +379,15 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
   expect(scheduledDelays).toContain(100)
   expect(client.getBreadcrumbs).toHaveBeenCalled()
 
-  // Mission B becomes current while the real 100 ms history publication timer
-  // is pending. The poller's async replacement turn has not yet reached its
-  // stale-key discard, so the delayed flush can expose the old history.
-  switchMissionAfterHistoryFlush = () => {
-    currentScope = scopeForMission('mission-b')
-    useMissionStore.setState({ phase: 'active', currentMission: mission('mission-b') })
-  }
+  // A production wake starts a second poll while the real 100 ms history
+  // publication timer is pending. The second poll blocks on the Traccar
+  // current-position response; the Mission B wake therefore hits the real
+  // pollInFlight early return before the timer publishes Mission A history.
+  requestPollNow()
+  await flushMicrotasks()
+  expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+  currentScope = scopeForMission('mission-b')
+  useMissionStore.setState({ phase: 'active', currentMission: mission('mission-b') })
   await vi.advanceTimersByTimeAsync(100)
   await flushMicrotasks()
 
@@ -390,6 +407,20 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
   let scopeStatus: 'loading' | 'ready' = 'loading'
   let currentScope = scopeForMission('mission-a')
   const missionACurrent = snapshot('mission-a-deferred-fix')
+  const pendingPollCurrentPositions = createDeferred<readonly NormalizedTrackingPosition[]>()
+  pendingCurrentPositionResolutions.add(() => pendingPollCurrentPositions.resolve([]))
+  let pollCurrentPositionCallCount = 0
+  const client: TrackingPollerClient = {
+    authenticate: vi.fn().mockResolvedValue(undefined),
+    getDevices: vi.fn().mockResolvedValue(missionACurrent.devices),
+    getCurrentPositions: vi.fn(() => {
+      pollCurrentPositionCallCount += 1
+      return pollCurrentPositionCallCount === 1
+        ? pendingPollCurrentPositions.promise
+        : Promise.resolve([])
+    }),
+    getBreadcrumbs: vi.fn().mockResolvedValue([]),
+  }
   let replacement: Promise<Mission> | null = null
   const unsubscribeMissionTransition = useMissionStore.subscribe((state) => {
     if (state.phase === 'idle' && replacement === null) {
@@ -398,6 +429,7 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
   })
   try {
     const runtime = await startCharacterizationRuntime({
+      createClient: () => client,
       applySnapshot: (nextSnapshot) => {
         applyTrackingSnapshot(
           nextSnapshot,
@@ -408,7 +440,27 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
       scopeStatus: () => scopeStatus,
       readScope: () => currentScope,
       subscribeScope: () => () => undefined,
+      createPoller: (pollerClient, pollerHooks) => createPollingManager(
+        pollerClient as TrackingPollerClient,
+        {
+          intervalMs: 5_000,
+          staleThresholdMs: 60 * 60 * 1000,
+          getPollingMode: () => {
+            const phase = useMissionStore.getState().phase
+            return phase === 'active' || phase === 'paused' ? phase : 'idle'
+          },
+          getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
+          getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+          getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
+          ...withoutHistoryPersistenceHooks(pollerHooks),
+          now: () => FIXED_NOW,
+          setTimeout: globalThis.setTimeout,
+          clearTimeout: globalThis.clearTimeout,
+        },
+      ),
     })
+    await flushMicrotasks()
+    expect(client.getCurrentPositions).toHaveBeenCalled()
 
     const observation = {
       missionId: null,
@@ -435,6 +487,7 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
       .toEqual(['mission-a-deferred-fix'])
     expect(useStationaryAttentionStore.getState().missionId).toBe('mission-b')
 
+    pendingPollCurrentPositions.resolve([])
     pendingCurrentPositionResolutions.clear()
     await flushMicrotasks()
   } finally {
@@ -445,8 +498,9 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
 it('characterizes the unkeyed cached snapshot across finish-idle-start [WAR-06-CACHE-SIBLING]', async () => {
   const controller = await createMissionController()
   await controller.startMission({ name: 'Mission A' })
-  let scopeStatus: 'loading' | 'ready' = 'loading'
-  let currentScope = scopeForMission('mission-a')
+  await controller.finishMission()
+  await controller.startMission({ name: 'Mission B' })
+  const currentScope = scopeForMission('mission-b')
   const cachedSnapshot = snapshot('mission-a-cached-fix', {
     dataOrigin: 'cache',
     timestamp: '2026-04-06T10:34:00.000Z',
@@ -457,7 +511,7 @@ it('characterizes the unkeyed cached snapshot across finish-idle-start [WAR-06-C
     positions: cachedSnapshot.positions,
     breadcrumbs: cachedSnapshot.breadcrumbs,
   })
-  const { notifyScopeChanged } = await startCharacterizationRuntime({
+  await startCharacterizationRuntime({
     cacheRead: vi.fn().mockResolvedValue(cachedContents),
     applySnapshot: (nextSnapshot) => {
       applyTrackingSnapshot(
@@ -466,25 +520,18 @@ it('characterizes the unkeyed cached snapshot across finish-idle-start [WAR-06-C
         ['device-1'],
       )
     },
-    scopeStatus: () => scopeStatus,
+    scopeStatus: () => 'ready',
     readScope: () => currentScope,
     subscribeScope: () => () => undefined,
   })
 
-  // Cache hydration is held while participant scope is unresolved. The
-  // current mission then finishes and a replacement starts before hydration
-  // resumes, matching the runtime ordering that makes the cache key relevant.
-  expect(useTrackingStore.getState().snapshot.positions).toHaveLength(0)
-  await controller.finishMission()
-  expect(useMissionStore.getState().phase).toBe('idle')
-  await controller.startMission({ name: 'Mission B' })
+  // Electron has one global tracking-cache.json. A relaunch while Mission B is
+  // already active rehydrates Mission A's cached fix without any lifecycle
+  // choreography or participant-scope delay.
   expect(useMissionStore.getState().currentMission?.id).toBe('mission-b')
-
-  currentScope = scopeForMission('mission-b')
-  scopeStatus = 'ready'
-  notifyScopeChanged()
 
   expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id))
     .toEqual(['mission-a-cached-fix'])
   expect(useStationaryAttentionStore.getState().missionId).toBe('mission-b')
+})
 })
