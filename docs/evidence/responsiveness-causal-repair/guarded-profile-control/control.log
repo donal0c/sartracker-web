@@ -1,0 +1,16 @@
+Debugger listening on ws://127.0.0.1:53790/af5dab09-0194-43ea-8cd5-31f9a7ab6bde
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:53790/af5dab09-0194-43ea-8cd5-31f9a7ab6bde
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger ending on ws://127.0.0.1:53790/af5dab09-0194-43ea-8cd5-31f9a7ab6bde
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger attached.
+Debugger attached.
+Debugger attached.
+__SAR_SQL_PROFILE_SHUTDOWN__
+__SAR_SQL_PROFILE_SHUTDOWN__
+Waiting for the debugger to disconnect...
+PASS actual Electron fetch/timer/CPU profile/natural exit; max gap 370.2782500000003

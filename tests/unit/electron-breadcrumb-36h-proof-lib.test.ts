@@ -25,6 +25,8 @@ import {
   normalizeRenderedExactBreadcrumbDotFeaturesForAudit,
   verifyBreadcrumbRuntimeConfiguration,
   parseBreadcrumb36HourProofArgs,
+  parseExactBreadcrumbDotPageSummary,
+  exactBreadcrumbDotPageSummaryMatches,
   processExited,
   readCompactBreadcrumbMilestoneEvidenceInRenderer,
   summarizeBreadcrumbRequestLedger,
@@ -36,6 +38,168 @@ import {
   createBreadcrumb36HourSourceDatabase,
 } from '../../build/breadcrumb-36h-mock-traccar.js'
 import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
+
+describe('live tracking line source evidence', () => {
+  const exact = { type: 'FeatureCollection', features: [{ type: 'Feature',
+    properties: { featureKind: 'breadcrumbLine', deviceId: 1 },
+    geometry: { type: 'LineString', coordinates: [[-9.7, 52.2], [-9.6, 52.3]] },
+  }] }
+  // Same counts, but a wrong coordinate must fail the unchanged digest oracle.
+  const wrong = { ...exact, features: [{ ...exact.features[0],
+    geometry: { type: 'LineString', coordinates: [[-9.7, 52.2], [-9.5, 52.3]] },
+  }] }
+
+  /** Executes the actual script readers without launching its packaged application. */
+  function readers() {
+    const script = readFileSync('scripts/electron-breadcrumb-36h-proof.mjs', 'utf8')
+    const start = script.indexOf('async function readTrackingSetDataCapture(')
+    const end = script.indexOf('function inspectPersistedBreadcrumbs(', start)
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    return Function('createRenderedBreadcrumbEvidence', 'createBreadcrumbPublicationTimingEvidence', 'assertProcessAlive',
+      `${script.slice(start, end)}\nreturn { readTrackingEvidenceCollection, readSerializedTrackingSourceObservation, waitForStableSerializedTrackingEvidence }`,
+    )(createRenderedBreadcrumbEvidence, createBreadcrumbPublicationTimingEvidence, () => undefined) as {
+      readTrackingEvidenceCollection: (page: object) => Promise<unknown>
+      readSerializedTrackingSourceObservation: (page: object) => Promise<{ collection: unknown; sampledAtUnixMs: number; evidencePath: string } | null>
+      waitForStableSerializedTrackingEvidence: (input: object) => Promise<Record<string, unknown>>
+    }
+  }
+
+  /** Models renderer evaluation and elapsed stability waits without wall-clock delay. */
+  const page = {
+    evaluate: async <T,>(callback: () => T) => callback(),
+    waitForTimeout: async (ms: number) => { vi.setSystemTime(Date.now() + ms) },
+  }
+
+  it.each([true, false])('uses live line geometry over stale capture and serialize data: current exact=%s', async (currentExact) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const current = currentExact ? exact : wrong
+    const stale = currentExact ? wrong : exact
+    const getData = vi.fn().mockResolvedValue(current)
+    const serialize = vi.fn().mockReturnValue({ data: stale })
+    vi.stubGlobal('window', {
+      __SARTRACKER_MAP__: { getSource: () => ({ getData, serialize }) },
+      __SARTRACKER_TRACKING_SET_DATA_CAPTURE__: { latest: stale, latestUpdateAtUnixMs: 10_000 },
+    })
+    try {
+      const reader = readers()
+      const stable = reader.waitForStableSerializedTrackingEvidence({ page, observedFromMs: 10_000,
+        timeoutMs: 500, expected: createRenderedBreadcrumbEvidence(exact) })
+      if (currentExact) {
+        await expect(stable).resolves.toMatchObject({ stable: true, evidencePath: 'GeoJSONSource.getData()',
+          coordinateSha256: createRenderedBreadcrumbEvidence(exact).coordinateSha256 })
+        expect(getData).toHaveBeenCalledTimes(2)
+      } else {
+        await expect(stable).rejects.toThrow(/Timed out/)
+      }
+      await expect(reader.readTrackingEvidenceCollection(page)).resolves.toEqual(current)
+      expect(serialize).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals(); vi.useRealTimers() }
+  })
+
+  it('requires live exact geometry in both stability samples', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const getData = vi.fn().mockResolvedValueOnce(exact).mockResolvedValue(wrong)
+    vi.stubGlobal('window', {
+      __SARTRACKER_MAP__: { getSource: () => ({ getData, serialize: () => ({ data: exact }) }) },
+      __SARTRACKER_TRACKING_SET_DATA_CAPTURE__: { latest: exact, latestUpdateAtUnixMs: 10_000 },
+    })
+    try {
+      await expect(readers().waitForStableSerializedTrackingEvidence({ page, observedFromMs: 10_000,
+        timeoutMs: 500, expected: createRenderedBreadcrumbEvidence(exact) })).rejects.toThrow(/Timed out/)
+      expect(getData.mock.calls.length).toBeGreaterThanOrEqual(2)
+    } finally { vi.unstubAllGlobals(); vi.useRealTimers() }
+  })
+
+  it.each(['reject', 'malformed'])('does not substitute stale geometry when live getData is %s', async (failure) => {
+    const getData = failure === 'reject' ? vi.fn().mockRejectedValue(new Error('worker unavailable'))
+      : vi.fn().mockResolvedValue({ type: 'FeatureCollection' })
+    const serialize = vi.fn().mockReturnValue({ data: exact })
+    vi.stubGlobal('window', {
+      __SARTRACKER_MAP__: { getSource: () => ({ getData, serialize }) },
+      __SARTRACKER_TRACKING_SET_DATA_CAPTURE__: { latest: exact },
+    })
+    try {
+      await expect(readers().readTrackingEvidenceCollection(page)).rejects.toThrow()
+      expect(serialize).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('samples after live getData completes and supports sources without that API', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+    const source: { getData?: () => Promise<typeof exact>; serialize: () => { data: typeof exact } } = {
+      getData: async () => { vi.setSystemTime(10_125); return exact },
+      serialize: () => ({ data: exact }),
+    }
+    vi.stubGlobal('window', { __SARTRACKER_MAP__: { getSource: () => source } })
+    try {
+      await expect(readers().readSerializedTrackingSourceObservation(page)).resolves.toEqual({
+        collection: exact, sampledAtUnixMs: 10_125, evidencePath: 'GeoJSONSource.getData()',
+      })
+      delete source.getData
+      await expect(readers().readSerializedTrackingSourceObservation(page)).resolves.toMatchObject({
+        collection: exact, evidencePath: 'GeoJSONSource.serialize().data',
+      })
+    } finally { vi.unstubAllGlobals(); vi.useRealTimers() }
+  })
+})
+
+describe('operator exact-dot summary display precision', () => {
+  const from = '11/09/2026, 13:24:05 GMT+01:00 (Europe/Dublin)'
+  const to = '11/09/2026, 13:25:06 GMT+01:00 (Europe/Dublin)'
+  const text = `Exact fix inspection — showing 1,024 of 12,345 — ${from} to ${to}`
+  it('parses the actual local operator range and compares only displayed seconds', () => {
+    const summary = parseExactBreadcrumbDotPageSummary(text)
+    expect(summary).toEqual({ pagePositionCount: 1024, totalPositionCount: 12345,
+      fromTimestamp: '2026-09-11T12:24:05.000Z', toTimestamp: '2026-09-11T12:25:06.000Z', timestampPrecision: 'second' })
+    const source = { pagePositionCount: 1024, totalPositionCount: 12345,
+      fromTimestamp: '2026-09-11T12:24:05.123Z', toTimestamp: '2026-09-11T12:25:06.999Z' }
+    expect(exactBreadcrumbDotPageSummaryMatches(summary, source)).toBe(true)
+    expect(source.fromTimestamp).toBe('2026-09-11T12:24:05.123Z')
+    expect(exactBreadcrumbDotPageSummaryMatches(summary, { ...source, toTimestamp: '2026-09-11T12:25:07.000Z' })).toBe(false)
+    expect(exactBreadcrumbDotPageSummaryMatches(summary, { ...source, totalPositionCount: 12346 })).toBe(false)
+    expect(exactBreadcrumbDotPageSummaryMatches(summary, { ...source, fromTimestamp: 'bad' })).toBe(false)
+  })
+  it('accepts a single instant and an empty page without inventing a range', () => {
+    expect(parseExactBreadcrumbDotPageSummary(`Exact fix inspection — showing 1 of 1 — ${from}`))
+      .toMatchObject({ fromTimestamp: '2026-09-11T12:24:05.000Z', toTimestamp: '2026-09-11T12:24:05.000Z' })
+    const empty = parseExactBreadcrumbDotPageSummary('Exact fix inspection — showing 0 of 0')
+    expect(empty).toMatchObject({ fromTimestamp: null, toTimestamp: null })
+    expect(exactBreadcrumbDotPageSummaryMatches(empty, { pagePositionCount: 0, totalPositionCount: 0,
+      fromTimestamp: null, toTimestamp: null })).toBe(true)
+  })
+  it('validates the timezone offset across the autumn clock change', () => {
+    const summary = parseExactBreadcrumbDotPageSummary('Exact fix inspection — showing 2 of 2 — 25/10/2026, 01:30:00 GMT+01:00 (Europe/Dublin) to 25/10/2026, 01:30:00 GMT+00:00 (Europe/Dublin)')
+    expect(summary).toMatchObject({ fromTimestamp: '2026-10-25T00:30:00.000Z', toTimestamp: '2026-10-25T01:30:00.000Z' })
+  })
+  it('retains exact legacy ISO precision, including frozen summaries without a precision field', () => {
+    const summary = parseExactBreadcrumbDotPageSummary('Showing 2 exact fixes of 3 — 2026-09-11T12:24:05.123Z to 2026-09-11T12:25:06.999Z')
+    expect(summary.timestampPrecision).toBe('exact')
+    const frozen = { pagePositionCount: summary.pagePositionCount, totalPositionCount: summary.totalPositionCount,
+      fromTimestamp: summary.fromTimestamp, toTimestamp: summary.toTimestamp }
+    expect(exactBreadcrumbDotPageSummaryMatches(frozen, frozen)).toBe(true)
+    expect(exactBreadcrumbDotPageSummaryMatches(summary, { ...frozen, toTimestamp: '2026-09-11T12:25:06.998Z' })).toBe(false)
+  })
+  it.each([
+    'Exact fix inspection — showing 2 of 1',
+    `Exact fix inspection — showing 1,,024 of 12,345 — ${from}`,
+    'Exact fix inspection — showing 1 of 1',
+    'Showing 1 exact fixes of 1',
+    `Exact fix inspection — showing 0 of 0 — ${from}`,
+    `Exact fix inspection — showing 2 of 2 — ${to} to ${from}`,
+    `Exact fix inspection — showing 1 of 1 — ${from.replace('11/09', '31/09')}`,
+    `Exact fix inspection — showing 1 of 1 — ${from.replace('+01:00', '+25:00')}`,
+    `Exact fix inspection — showing 1 of 1 — ${from.replace('+01:00', '+01:60')}`,
+    `Exact fix inspection — showing 1 of 1 — ${from.replace('+01:00', '+00:00')}`,
+    `Exact fix inspection — showing 1 of 1 — ${from.replace('Europe/Dublin', 'Invalid/Zone')}`,
+    'Showing 1 exact fixes of 1 — 2026-02-30T12:00:00.000Z to 2026-02-30T12:00:00.000Z',
+  ])('rejects malformed or contradictory operator evidence: %s', (value) => {
+    expect(() => parseExactBreadcrumbDotPageSummary(value)).toThrow()
+  })
+})
 
 const require = createRequire(import.meta.url)
 const { listBreadcrumbPositions } = require('../../electron/breadcrumb-query.cjs') as {
@@ -125,6 +289,59 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
     })).toThrow(/finite.*timestamp/iu)
   })
 
+  it.each([true, false])('reads offscreen current source publication instead of stale capture: published=%s', async (published) => {
+    const current = {
+      geometry: { type: 'Point', coordinates: [-9.7, 52.2] },
+      properties: { featureKind: 'device', secret: 'must-not-cross-cdp' },
+    }
+    const queryRenderedFeatures = vi.fn().mockReturnValue([])
+    const getData = vi.fn().mockResolvedValue({ type: 'FeatureCollection', features: [
+      ...(published ? [current] : []),
+      { geometry: { type: 'Point' }, properties: { featureKind: 'breadcrumb' } },
+      { geometry: { type: 'LineString' }, properties: { featureKind: 'device' } },
+    ] })
+    const serialize = vi.fn().mockReturnValue({ data: { type: 'FeatureCollection', features: published ? [] : [current] } })
+    Reflect.set(globalThis, 'window', {
+      // updateData can publish current points without changing this old setData snapshot.
+      __SARTRACKER_TRACKING_SET_DATA_CAPTURE__: {
+        latest: { type: 'FeatureCollection', features: published ? [] : [current] },
+      },
+      __SARTRACKER_MAP__: {
+        getLayer: (id: string) => id === 'tracking-devices-circle' ? { id } : undefined,
+        queryRenderedFeatures,
+        getSource: (id: string) => id === 'tracking' ? { getData, serialize } : undefined,
+      },
+    })
+    try {
+      const evidence = await readCompactBreadcrumbMilestoneEvidenceInRenderer({
+        readCurrentPositions: true, readExactBreadcrumbs: false,
+      })
+      expect(evidence.currentPositionCount).toBe(published ? 1 : 0)
+      expect(getData).toHaveBeenCalledOnce()
+      expect(queryRenderedFeatures).not.toHaveBeenCalled()
+      expect(serialize).not.toHaveBeenCalled()
+      expect(JSON.stringify(evidence)).not.toMatch(/secret|coordinates|device/iu)
+    } finally { Reflect.deleteProperty(globalThis, 'window') }
+  })
+
+  it.each(['reject', 'malformed', 'legacy'])('keeps current source reads authoritative: %s', async (mode) => {
+    const source = { serialize: vi.fn().mockReturnValue({ data: { type: 'FeatureCollection', features: [
+      { geometry: { type: 'Point' }, properties: { featureKind: 'device' } },
+    ] } }), ...(mode === 'legacy' ? {} : {
+      getData: mode === 'reject' ? vi.fn().mockRejectedValue(new Error('current source unavailable'))
+        : vi.fn().mockResolvedValue({ type: 'FeatureCollection' }),
+    }) }
+    vi.stubGlobal('window', { __SARTRACKER_MAP__: { getSource: () => source },
+      __SARTRACKER_TRACKING_SET_DATA_CAPTURE__: { latest: source.serialize().data } })
+    source.serialize.mockClear()
+    try {
+      const read = readCompactBreadcrumbMilestoneEvidenceInRenderer({ readCurrentPositions: true, readExactBreadcrumbs: false })
+      if (mode === 'reject') await expect(read).rejects.toThrow('current source unavailable')
+      else await expect(read).resolves.toMatchObject({ currentPositionCount: mode === 'legacy' ? 1 : 0 })
+      expect(source.serialize).toHaveBeenCalledTimes(mode === 'legacy' ? 1 : 0)
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('samples only bounded breadcrumb milestone counts inside the renderer', async () => {
     const rendererReader = Function(
       `return (${readCompactBreadcrumbMilestoneEvidenceInRenderer.toString()})`,
@@ -132,26 +349,8 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
       input: { readonly readCurrentPositions: boolean; readonly readExactBreadcrumbs: boolean },
     ) => Promise<Record<string, unknown>>
     let exactSourceReads = 0
-    let trackingCaptureReads = 0
+    let currentSourceReads = 0
     const rendererWindow = {
-      get __SARTRACKER_TRACKING_SET_DATA_CAPTURE__() {
-        trackingCaptureReads += 1
-        return {
-          latest: {
-            type: 'FeatureCollection',
-            features: [
-              {
-                geometry: { type: 'Point', coordinates: [-9.7, 52.2] },
-                properties: { featureKind: 'device', secret: 'must-not-cross-cdp' },
-              },
-              {
-                geometry: { type: 'Point', coordinates: [-9.6, 52.3] },
-                properties: { featureKind: 'breadcrumb', sourcePositionId: 'raw-id' },
-              },
-            ],
-          },
-        }
-      },
       __SARTRACKER_MAP__: {
         getSource: (sourceId: string) =>
           sourceId === 'tracking-breadcrumb-dots-exact'
@@ -173,7 +372,15 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
                   }
                 },
               }
-            : undefined,
+            : sourceId === 'tracking' ? { getData: async () => {
+                currentSourceReads += 1
+                return { type: 'FeatureCollection', features: [
+                  { geometry: { type: 'Point', coordinates: [-9.7, 52.2] },
+                    properties: { featureKind: 'device', secret: 'must-not-cross-cdp' } },
+                  { geometry: { type: 'Point', coordinates: [-9.6, 52.3] },
+                    properties: { featureKind: 'breadcrumb', sourcePositionId: 'raw-id' } },
+                ] }
+              } } : undefined,
       },
     }
     Reflect.set(globalThis, 'window', rendererWindow)
@@ -207,7 +414,7 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
         currentPositionCount: null,
         exactBreadcrumbPointCount: 1,
       })
-      expect(trackingCaptureReads).toBe(2)
+      expect(currentSourceReads).toBe(2)
       expect(exactSourceReads).toBe(2)
     } finally {
       Reflect.deleteProperty(globalThis, 'window')
@@ -821,7 +1028,7 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
       'return { ...capture, sampledAtUnixMs: Date.now() }',
     )
     expect(packagedProofSource).toContain(
-      'sampledAtUnixMs: firstCapture.sampledAtUnixMs',
+      'const firstObservation = await readSerializedTrackingSourceObservation(input.page)',
     )
   })
 
@@ -1192,9 +1399,9 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
     const captureSource = packagedProofSource.slice(captureStart, captureEnd)
 
     expect(captureSource).toContain("getByTestId('exact-breadcrumb-dot-page-summary')")
-    expect(captureSource).not.toContain(
-      'totalPositionCount: input.exactDotOracle.totalPositionCount',
-    )
+    expect(captureSource).toContain('const pageSummary = parseExactBreadcrumbDotPageSummary(pageSummaryText)')
+    expect(captureSource).toContain('observedPageSummaries.push(pageSummary)')
+    expect(captureSource).toContain('capturedPages.push({ ...observed, operatorPage: pageSummary })')
     expect(captureSource).toMatch(/pagePositionCount|observedPagePositionCount/u)
     expect(captureSource).toMatch(/fromTimestamp|observedFromTimestamp/u)
     expect(captureSource).toMatch(/toTimestamp|observedToTimestamp/u)
@@ -1476,13 +1683,13 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
           sourceTruthSha256: 'f'.repeat(64),
           identityTimestampSha256: '1'.repeat(64),
           invalidFeatureCount: 0,
-          fromTimestamp: null,
-          toTimestamp: null,
+          fromTimestamp: '2026-08-09T10:00:00.000Z',
+          toTimestamp: '2026-08-09T12:00:00.000Z',
           operatorPage: {
             pagePositionCount: 60,
             totalPositionCount: 100,
-            fromTimestamp: null,
-            toTimestamp: null,
+            fromTimestamp: '2026-08-09T10:00:00.000Z',
+            toTimestamp: '2026-08-09T12:00:00.000Z',
           },
           renderedLayer: {
             featureCount: 60,
@@ -1502,13 +1709,13 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
           sourceTruthSha256: '0'.repeat(64),
           identityTimestampSha256: '2'.repeat(64),
           invalidFeatureCount: 0,
-          fromTimestamp: null,
-          toTimestamp: null,
+          fromTimestamp: '2026-08-09T10:00:00.000Z',
+          toTimestamp: '2026-08-09T12:00:00.000Z',
           operatorPage: {
             pagePositionCount: 40,
             totalPositionCount: 100,
-            fromTimestamp: null,
-            toTimestamp: null,
+            fromTimestamp: '2026-08-09T10:00:00.000Z',
+            toTimestamp: '2026-08-09T12:00:00.000Z',
           },
           renderedLayer: {
             featureCount: 40,
@@ -2236,13 +2443,13 @@ function createValidVerdictInput() {
           sourceTruthSha256: 'f'.repeat(64),
           identityTimestampSha256: '1'.repeat(64),
           invalidFeatureCount: 0,
-          fromTimestamp: null,
-          toTimestamp: null,
+          fromTimestamp: '2026-08-09T10:00:00.000Z',
+          toTimestamp: '2026-08-09T12:00:00.000Z',
           operatorPage: {
             pagePositionCount: 60,
             totalPositionCount: 100,
-            fromTimestamp: null,
-            toTimestamp: null,
+            fromTimestamp: '2026-08-09T10:00:00.000Z',
+            toTimestamp: '2026-08-09T12:00:00.000Z',
           },
           renderedLayer: {
             featureCount: 60,
@@ -2262,13 +2469,13 @@ function createValidVerdictInput() {
           sourceTruthSha256: '0'.repeat(64),
           identityTimestampSha256: '2'.repeat(64),
           invalidFeatureCount: 0,
-          fromTimestamp: null,
-          toTimestamp: null,
+          fromTimestamp: '2026-08-09T10:00:00.000Z',
+          toTimestamp: '2026-08-09T12:00:00.000Z',
           operatorPage: {
             pagePositionCount: 40,
             totalPositionCount: 100,
-            fromTimestamp: null,
-            toTimestamp: null,
+            fromTimestamp: '2026-08-09T10:00:00.000Z',
+            toTimestamp: '2026-08-09T12:00:00.000Z',
           },
           renderedLayer: {
             featureCount: 40,

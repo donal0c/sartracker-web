@@ -1,0 +1,26 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/polling-manager.test.ts (90 tests | 1 failed | 89 skipped) 21ms
+     × admits complete history groups separately and joins their original mission fence on stop 20ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/polling-manager.test.ts > polling manager > admits complete history groups separately and joins their original mission fence on stop
+AssertionError: expected "vi.fn()" to be called 2 times, but got 3 times
+ ❯ tests/unit/polling-manager.test.ts:1906:24
+    1904|     const publicationsAtStop = onSnapshot.mock.calls.length
+    1905|     await vi.advanceTimersByTimeAsync(1000)
+    1906|     expect(onSnapshot).toHaveBeenCalledTimes(publicationsAtStop)
+       |                        ^
+    1907|   })
+    1908|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 89 skipped (90)
+   Start at  13:16:02
+   Duration  710ms (transform 130ms, setup 0ms, import 157ms, tests 21ms, environment 456ms)
+

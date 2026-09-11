@@ -1,0 +1,53 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts (65 tests | 2 failed | 63 skipped) 6ms
+     × reads visible current points after incremental updates instead of stale setData capture: rendered=true 5ms
+     × reads visible current points after incremental updates instead of stale setData capture: rendered=false 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > packaged Electron 36-hour breadcrumb proof helpers > reads visible current points after incremental updates instead of stale setData capture: rendered=true
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:208:45
+    206|         readCurrentPositions: true, readExactBreadcrumbs: false,
+    207|       })
+    208|       expect(evidence.currentPositionCount).toBe(rendered ? 1 : 0)
+       |                                             ^
+    209|       expect(queryRenderedFeatures).toHaveBeenCalledExactlyOnceWith(un…
+    210|       expect(JSON.stringify(evidence)).not.toMatch(/secret|coordinates…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > packaged Electron 36-hour breadcrumb proof helpers > reads visible current points after incremental updates instead of stale setData capture: rendered=false
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:208:45
+    206|         readCurrentPositions: true, readExactBreadcrumbs: false,
+    207|       })
+    208|       expect(evidence.currentPositionCount).toBe(rendered ? 1 : 0)
+       |                                             ^
+    209|       expect(queryRenderedFeatures).toHaveBeenCalledExactlyOnceWith(un…
+    210|       expect(JSON.stringify(evidence)).not.toMatch(/secret|coordinates…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 63 skipped (65)
+   Start at  13:47:38
+   Duration  648ms (transform 90ms, setup 0ms, import 113ms, tests 6ms, environment 450ms)
+

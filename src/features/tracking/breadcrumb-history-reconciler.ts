@@ -14,6 +14,11 @@ type BreadcrumbHistoryReconcilerLogger = {
   readonly warn: (message: string, context: Record<string, unknown>) => void
 }
 
+/** A void result acknowledges the whole wave; indexed results acknowledge individual chunks. */
+export type BreadcrumbHistoryChunkAcknowledgement =
+  | void
+  | readonly PromiseSettledResult<void>[]
+
 type BreadcrumbHistoryReconcilerOptions = {
   readonly fetchBreadcrumbs: (
     deviceId: string,
@@ -23,7 +28,7 @@ type BreadcrumbHistoryReconcilerOptions = {
   readonly onChunk: (chunk: BreadcrumbHistoryChunk) => void | Promise<void>
   readonly onChunks?: (
     chunks: readonly BreadcrumbHistoryChunk[],
-  ) => void | Promise<void>
+  ) => BreadcrumbHistoryChunkAcknowledgement | Promise<BreadcrumbHistoryChunkAcknowledgement>
   readonly onProgress: (progress: BreadcrumbHistoryProgress) => void
   readonly shouldContinue: () => boolean
   readonly logger: BreadcrumbHistoryReconcilerLogger
@@ -456,8 +461,9 @@ export function createBreadcrumbHistoryReconciler(
     if (accepted.length === 0 || options.onChunks === undefined) {
       return
     }
+    let acknowledgement: BreadcrumbHistoryChunkAcknowledgement
     try {
-      await options.onChunks(accepted.map((entry) => entry.chunk))
+      acknowledgement = await options.onChunks(accepted.map((entry) => entry.chunk))
     } catch {
       const currentAccepted = accepted.filter((entry) =>
         isCurrentJob(entry.job, drainGeneration),
@@ -479,8 +485,21 @@ export function createBreadcrumbHistoryReconciler(
       }
       return
     }
-    for (const entry of accepted) {
-      advanceAcknowledgedChunk(entry.job, entry.chunk, drainGeneration)
+    // An invalid result cannot establish which chunks committed. Keep every
+    // cursor unchanged and use normal idempotent retries, not immediate fallback.
+    if (acknowledgement !== undefined
+      && !isValidChunkAcknowledgement(acknowledgement, accepted.length)) {
+      const error = new Error('Tracking history acknowledgement must contain one settled result per chunk.')
+      for (const entry of accepted) markJobFailed(entry.job, drainGeneration, error)
+      return
+    }
+    for (const [index, entry] of accepted.entries()) {
+      const result = acknowledgement?.[index]
+      if (result === undefined || result.status === 'fulfilled') {
+        advanceAcknowledgedChunk(entry.job, entry.chunk, drainGeneration)
+      } else {
+        markJobFailed(entry.job, drainGeneration, result.reason)
+      }
     }
   }
 
@@ -858,6 +877,26 @@ export function createBreadcrumbHistoryReconciler(
       antiEntropyStartedAtMs = null
     },
   }
+}
+
+/** Validates the entire acknowledgement before any cursor can move, including sparse arrays. */
+function isValidChunkAcknowledgement(
+  value: unknown,
+  expectedLength: number,
+): value is readonly PromiseSettledResult<void>[] {
+  if (!Array.isArray(value) || value.length !== expectedLength) return false
+  for (let index = 0; index < expectedLength; index += 1) {
+    const result: unknown = value[index]
+    if (result === null || typeof result !== 'object' || !('status' in result)) return false
+    if (result.status === 'fulfilled') {
+      if (!('value' in result) || result.value !== undefined) return false
+    } else if (result.status === 'rejected') {
+      if (!('reason' in result)) return false
+    } else {
+      return false
+    }
+  }
+  return true
 }
 
 function normalizePositiveInteger(value: number | undefined, fallback: number): number {

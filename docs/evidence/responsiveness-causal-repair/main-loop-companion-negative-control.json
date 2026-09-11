@@ -1,0 +1,191 @@
+{
+  "evidenceKind": "separate diagnostic companion; unchanged workload verdict remains separate",
+  "sourcePath": "/Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web/tmp/main-loop-companion.mjs",
+  "sourceSha256": "58ba6aa8df26ca4b07cddebc9191d2efa2a476973e4d65f9ce681fce96eb1e82",
+  "port": 63929,
+  "startedAtUnixMs": 1789129696199,
+  "updatedAtUnixMs": 1789129702279,
+  "stopReason": "SIGTERM",
+  "verdict": "observed_main_loop_breach",
+  "qualifiedPass": false,
+  "limitation": "Snapshots omit the final unserviced interval and any time before installation or after disconnection. All-small samples are only a diagnostic lower bound. Compare installation times with workload mission/recovery phases.",
+  "launches": [
+    {
+      "targetId": "2bda5b57-01bd-4ff5-86b4-52f757a72a3a",
+      "timeOriginMs": 1789129696178.449,
+      "installationRequestedAtUnixMs": 1789129696217,
+      "installationConfirmedAtUnixMs": 1789129696219,
+      "installedAtMainWallMs": 1789129696218,
+      "finalTailCollected": false,
+      "disconnectedTail": true,
+      "connectionCount": 3,
+      "snapshotCount": 3,
+      "discardedSnapshotCount": 0,
+      "snapshots": [
+        {
+          "receivedAtUnixMs": 1789129696219,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789129696178.449,
+          "installedAtMainWallMs": 1789129696218,
+          "startedAtMs": 40.374834,
+          "sampledUntilMs": 40.374834,
+          "readAtMs": 40.437459,
+          "samples": 0,
+          "maximumGapMs": 0,
+          "maximumGapWindow": null,
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789129697226,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789129696178.449,
+          "installedAtMainWallMs": 1789129696218,
+          "startedAtMs": 40.374834,
+          "sampledUntilMs": 1028.798,
+          "readAtMs": 1047.988209,
+          "samples": 13,
+          "maximumGapMs": 369.701916,
+          "maximumGapWindow": {
+            "fromMs": 245.878834,
+            "toMs": 615.58075
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 245.878834,
+              "toMs": 615.58075,
+              "gapMs": 369.701916
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789129698231,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789129696178.449,
+          "installedAtMainWallMs": 1789129696218,
+          "startedAtMs": 40.374834,
+          "sampledUntilMs": 2004.267084,
+          "readAtMs": 2053.045209,
+          "samples": 32,
+          "maximumGapMs": 369.701916,
+          "maximumGapWindow": {
+            "fromMs": 245.878834,
+            "toMs": 615.58075
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 245.878834,
+              "toMs": 615.58075,
+              "gapMs": 369.701916
+            }
+          ],
+          "finalTailCollected": false
+        }
+      ],
+      "errors": [],
+      "latestSnapshot": {
+        "clock": "main-performance-now",
+        "intervalMs": 50,
+        "timeOriginMs": 1789129696178.449,
+        "installedAtMainWallMs": 1789129696218,
+        "startedAtMs": 40.374834,
+        "sampledUntilMs": 2004.267084,
+        "readAtMs": 2053.045209,
+        "samples": 32,
+        "maximumGapMs": 369.701916,
+        "maximumGapWindow": {
+          "fromMs": 245.878834,
+          "toMs": 615.58075
+        },
+        "breachCount": 1,
+        "breaches": [
+          {
+            "fromMs": 245.878834,
+            "toMs": 615.58075,
+            "gapMs": 369.701916
+          }
+        ],
+        "finalTailCollected": false
+      },
+      "connectionEndedAtUnixMs": 1789129698231,
+      "targetUnavailableAtUnixMs": 1789129699235
+    },
+    {
+      "targetId": "4b720839-3000-412e-9db3-432e20949994",
+      "timeOriginMs": 1789129699611.907,
+      "installationRequestedAtUnixMs": 1789129699647,
+      "installationConfirmedAtUnixMs": 1789129699648,
+      "installedAtMainWallMs": 1789129699648,
+      "finalTailCollected": false,
+      "disconnectedTail": true,
+      "connectionCount": 2,
+      "snapshotCount": 2,
+      "discardedSnapshotCount": 0,
+      "snapshots": [
+        {
+          "receivedAtUnixMs": 1789129699648,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789129699611.907,
+          "installedAtMainWallMs": 1789129699648,
+          "startedAtMs": 36.617625,
+          "sampledUntilMs": 36.617625,
+          "readAtMs": 36.665208,
+          "samples": 0,
+          "maximumGapMs": 0,
+          "maximumGapWindow": null,
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789129700657,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789129699611.907,
+          "installedAtMainWallMs": 1789129699648,
+          "startedAtMs": 36.617625,
+          "sampledUntilMs": 1015.696,
+          "readAtMs": 1045.591041,
+          "samples": 19,
+          "maximumGapMs": 52.36933299999998,
+          "maximumGapWindow": {
+            "fromMs": 911.409458,
+            "toMs": 963.778791
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        }
+      ],
+      "errors": [],
+      "latestSnapshot": {
+        "clock": "main-performance-now",
+        "intervalMs": 50,
+        "timeOriginMs": 1789129699611.907,
+        "installedAtMainWallMs": 1789129699648,
+        "startedAtMs": 36.617625,
+        "sampledUntilMs": 1015.696,
+        "readAtMs": 1045.591041,
+        "samples": 19,
+        "maximumGapMs": 52.36933299999998,
+        "maximumGapWindow": {
+          "fromMs": 911.409458,
+          "toMs": 963.778791
+        },
+        "breachCount": 0,
+        "breaches": [],
+        "finalTailCollected": false
+      },
+      "connectionEndedAtUnixMs": 1789129700657,
+      "targetUnavailableAtUnixMs": 1789129701660
+    }
+  ]
+}

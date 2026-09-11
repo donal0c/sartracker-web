@@ -5,6 +5,8 @@ import { createRequire } from 'node:module'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
+import { persistHistoryChunkGroups } from '../../src/features/tracking/persist-history-chunk-groups'
+import type { TrackingHistoryChunkPersistenceInput } from '../../src/features/tracking/polling-manager'
 
 const require = createRequire(import.meta.url)
 type StorageOperation = { readonly id: string; readonly type: 'backup'; readonly requestedAtMs: number }
@@ -2800,6 +2802,89 @@ describe('electron mission store', () => {
     await expect(store.listDevices(mission.id)).resolves.toEqual([
       expect.objectContaining({ last_seen: '2026-08-08T00:00:00.000Z', status: 'unknown' }),
     ])
+  })
+
+  it('retains only acknowledged history groups across native rollback, restart and idempotent retry [DON-254]', async () => {
+    store = await createStore()
+    const historyFrom = '2026-08-08T00:00:00.000Z'
+    const reconciledUntil = '2026-08-08T01:00:00.000Z'
+    const mission = await store.createMission({ name: 'Grouped History Custody', start_time: historyFrom })
+    for (const deviceId of ['prefix', 'suffix']) {
+      await store.upsertDevice({ mission_id: mission.id, device_id: deviceId, name: deviceId,
+        color: '#00AAFF', status: 'unknown', last_seen: historyFrom })
+    }
+    const inputs: readonly TrackingHistoryChunkPersistenceInput[] = ['prefix', 'suffix'].map((deviceId) => ({
+      phase: 'initial', expectedMissionId: mission.id, deviceId, historyFrom,
+      reconciledUntil: deviceId === 'prefix' ? reconciledUntil : '2026-08-07T23:00:00.000Z',
+      // Each complete 600-row chunk is below the production 1,024-row group budget;
+      // together they require two admissions without splitting either checkpoint.
+      positions: Array.from({ length: 600 }, (_, index) => ({
+        id: `${deviceId}-${index}`, device_id: deviceId, lat: 52.0599, lon: -9.5045,
+        timestamp: new Date(Date.parse(historyFrom) + (index + 1) * 1_000).toISOString(),
+        altitude: null, speed: null, battery: null, accuracy: null, source: null,
+        data_origin: 'live', timestamp_source: 'fix', cache_age_seconds: null, device_cache_stale: false,
+      })),
+    }))
+    const acknowledged: number[] = []
+    const inserted: number[] = []
+    /** Adapts real polling chunks into the actual native atomic persistence boundary. */
+    const persistGroup = async (group: readonly TrackingHistoryChunkPersistenceInput[]) => {
+      const result = await store!.persistTrackingPositionsBulk({
+        mission_id: group[0]!.expectedMissionId!,
+        positions: group.flatMap((chunk) => chunk.positions.map((position) => ({
+          ...position, source_position_id: position.id, timestamp_source: 'fix' as const,
+        }))),
+        checkpoints: group.map((chunk) => ({ device_id: chunk.deviceId,
+          history_from: chunk.historyFrom, reconciled_until: chunk.reconciledUntil })),
+      })
+      inserted.push(result.insertedPositionCount)
+    }
+    const options = { persistGroup, onAcknowledged: (_input: TrackingHistoryChunkPersistenceInput, index: number) => {
+      acknowledged.push(index)
+    }, yieldBetweenGroups: async () => { await new Promise((resolve) => setTimeout(resolve, 0)) } }
+    try {
+      const results = await persistHistoryChunkGroups({ ...options, inputs })
+      expect(results.map((result) => result.status)).toEqual(['fulfilled', 'rejected'])
+      expect(results[1]).toMatchObject({ reason: expect.objectContaining({
+        message: expect.stringMatching(/checkpoint.*before.*history start/iu),
+      }) })
+      expect(acknowledged).toEqual([0])
+      expect(inserted).toEqual([600])
+
+      await store.prepareClose()
+      store.close()
+      store = createElectronMissionStore({ userDataPath: userDataPath! })
+      const prefixRows = await store.listPositions(mission.id)
+      expect(prefixRows.map((row) => row.source_position_id).sort())
+        .toEqual(inputs[0]!.positions.map((position) => position.id).sort())
+      await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
+        { mission_id: mission.id, device_id: 'prefix', history_from: historyFrom, reconciled_until: reconciledUntil },
+      ])
+      expect((await store.listDevices(mission.id)).find((device) => device.device_id === 'suffix'))
+        .toMatchObject({ status: 'unknown', last_seen: historyFrom })
+
+      inserted.length = 0
+      acknowledged.length = 0
+      const corrected = inputs.map((input) => ({ ...input, reconciledUntil }))
+      const retry = await persistHistoryChunkGroups({ ...options, inputs: corrected })
+      expect(retry.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled'])
+      expect(acknowledged).toEqual([0, 1])
+      expect(inserted).toEqual([0, 600])
+      await store.prepareClose()
+      store.close()
+      store = createElectronMissionStore({ userDataPath: userDataPath! })
+      const rows = await store.listPositions(mission.id)
+      expect(rows.map((row) => row.source_position_id).sort())
+        .toEqual(inputs.flatMap((input) => input.positions.map((position) => position.id)).sort())
+      expect(rows.filter((row) => row.device_id === 'prefix').map((row) => row.id).sort())
+        .toEqual(prefixRows.map((row) => row.id).sort())
+      await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual(
+        ['prefix', 'suffix'].map((deviceId) => ({ mission_id: mission.id, device_id: deviceId,
+          history_from: historyFrom, reconciled_until: reconciledUntil })),
+      )
+      expect((await store.listDevices(mission.id)).find((device) => device.device_id === 'suffix'))
+        .toMatchObject({ status: 'online', last_seen: inputs[1]!.positions.at(-1)!.timestamp })
+    } finally { await store.prepareClose() }
   })
 
   it('bounds lookup compilation and device writes for a 1,800-position atomic history batch [DON-254]', async () => {

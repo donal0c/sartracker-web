@@ -4,6 +4,59 @@
 `codex/responsiveness-causal-repair`. Dedicated repair; no merge, release,
 deployment or field acceptance. [Raw bounded evidence](../../evidence/responsiveness-causal-repair/).
 
+## Frozen incremental scope and current acceptance
+
+The 2026-09-11 scope decision closes PR22 around the measured write repairs:
+GPX foreground admission, responsive startup bookkeeping, bulk SQL statement
+reuse/device coalescing, whole-chunk grouped history with the original mission
+Finish fence and ordered acknowledgements, ACK-only participant backfill, and
+the strict independent main timer gate. Necessary proof compatibility fixes
+remain included. No threshold, request window or anti-entropy schedule changes.
+
+The current grouped/ACK Linux reference package, ASAR
+`65db986f86d10bed64e0b73b5660db0dbd2ce066b23de78fd213052503b38f6d`,
+passes the ordinary workload: **90.781/119.481 ms** independent main maxima,
+149/3,405 samples, zero inspector errors, exact **8,664** positions/digest,
+restart and two graceful code-zero exits. Renderer maximum is 150.4 ms;
+external action maximum is 89.575 ms. This is a source-overlay reference build,
+not exact-head CI or field proof. Final local source passes **432 files / 4,444
+tests** in 486.41 seconds with `--no-file-parallelism`; lint, TypeScript/build
+and bundle budgets pass. Three affected source reviews are clear, with
+authorship disclosed in `scoped-grouping-ack-source-reviews.json`. The packaged
+browser flow confirms exact position truth, restart and shutdown; visual
+inspection confirms the map and mission/tracking controls render. Controls,
+operator workflow and the manual's existing field-admission restrictions are
+unchanged, so no manual instructions require alteration.
+PR22's normal exact-head CI and commit-bound review comments complete its merge
+acceptance separately. The old 210.537 ms CI failure remains a rejection.
+
+Two discoveries remain **release/field-qualification blockers outside PR22**:
+
+- **DON-254 follow-up A:** the 103,626-row canonical query result crosses worker,
+  main IPC and contextBridge as one large result. Three targeted reads produce
+  316.293/349.031/351.317 ms main gaps; named IPC reply durations are
+  169.914/169.521/161.369 ms, without overlapping SQLite transactions. Full
+  36-hour restart gaps reach 550.359 ms. Bounded lossless transport must preserve
+  the exact single snapshot and every field/row/order plus cancellation custody.
+- **DON-254 follow-up B:** the separate 239.509 ms legacy 50,000-object source
+  failure remains causally unassigned. Its original test stays enabled and
+  unchanged. Subsequent isolated diagnostic passes do not erase the failure.
+
+Linear's workspace free issue limit rejected separate issue creation. Precise
+follow-up records are DON-254 comments `46c986c3-a16e-48f0-b069-a1b36eeb2d62`
+and `1dfb6581-71a5-4582-9bd8-4ba0ac6173a8`, indexed in the Reliability &
+Regression Ledger. Both must be resolved for release qualification; they do
+not expand the acceptance criteria for merging this incremental repair.
+
+Before splitting, the complete dirty tree, tracked binary patch, untracked
+files and hashes were captured in `tmp/pr22-scope-freeze-20260911/`. The five
+incomplete transport files and dedicated red tests were moved there; the legacy
+diagnostic delta was saved as a separate patch and its original test restored.
+No transport production changes remain in the active tree. Recovery patches
+are `breadcrumb-transport-wip.patch` and `legacy-recovery-diagnostics.patch`.
+The former is intentionally incomplete, with ten protocol controls passing and
+the native boundary/client still red. No failed test was relabelled as passed.
+
 ## Finding and decision
 
 Three measured application defects justify narrow repairs with the existing
@@ -43,8 +96,9 @@ source, inspector, renderer or current-fix failure.
    a **206.463 ms rejection**. Adding transaction-local device observation
    coalescing reduces the native 1,800-row update budget from 1,800 to one.
    The actual combined package passes the unchanged independent observer at
-   **154.394/136.716 ms**, with all 8,664 positions exact. Final enforced-harness
-   and CI qualification remain pending; this is reference-host evidence.
+   **154.394/136.716 ms**, with all 8,664 positions exact. The corrected ordinary
+   enforced harness also passes at 165.785/152.291 ms. CI qualification remains
+   pending; these are reference-host measurements.
 
 GPX receives the shared counter and waits outside its write transactions.
 Archive backfill, custody observation application and reconciliation metadata
@@ -377,8 +431,133 @@ all five repair modules match the reviewed working source hashes. The native
 and harness focused suite passes 56 tests across four files. Final stable
 source passes **431 files / 4,395 tests** in 552.79 seconds. The original full-tail
 GPX gate retains 1,043 writes, maximum write 32.001 ms and heartbeat 23.720 ms;
-startup complete/shutdown controls measure 11.298/11.465 ms. Linux CI proof
-remains separate and pending; no new CI artifact is yet claimed.
+startup complete/shutdown controls measure 11.298/11.465 ms. These local and
+reference results do not supersede the later CI rejection below.
+
+### CI rejection and complete-chunk admission repair
+
+CI `34594872717` at `8672411b` passes source/lint/build, 960k replay and native
+inspection, then rejects tracking: independent main-loop maxima are
+**210.537/186.728 ms**, despite a 75.1 ms inspector maximum. Both launches have
+zero probe errors, exact 8,664 positions and graceful exits. Archive and AppImage
+smokes were skipped downstream. Validation evidence was downloaded; the binary
+upload was skipped, so the exact failed CI binary is unavailable. The retained
+[rejection](../../evidence/responsiveness-causal-repair/rejected-ci-8672411b-summary.json)
+binds the report hash and those limits. The maximum-only probe cannot identify
+the exact transaction interval responsible for 210.537 ms.
+
+The next intervention reduces complete history chunks admitted in one SQLite
+transaction. A 1,024-row grouping budget preserves whole chunks and their atomic
+positions/checkpoints, with eight concurrent fetches unchanged. Oversized single
+chunks remain whole; this is not a universal transaction-size bound. One original
+mission observation spans the entire accepted wave, all fallback and all yields.
+Shutdown joins that observation before runtime generation invalidation. Separate
+runtime admissions permit current writes between groups. Indexed acknowledgements
+advance only committed members and avoid replaying a successful prefix after a
+later failure. Red/green, throughput, packaged and CI qualification are in progress;
+no new passing timing claim is made. Four medium-rate chunks of 241 rows fit
+together, while the measured eight-by-225 wave becomes two 900-row transactions.
+The 36-hour fixture also has 1,440-row high-rate chunks; those remain singleton
+transactions. A pure queue model predicts 293 admissions rather than 312 at the
+initial 900 budget, but is explicitly not measured throughput evidence.
+
+Two lifecycle regressions were reproduced while reviewing this boundary: a
+settled history group could publish after stop completed, and a delayed mission A
+acknowledgement could publish A's rows into replacement mission B. The stopping
+predicate and captured-mission publication guard reject those paths. Runtime
+integration proves history group 1, then current evidence, then history group 2,
+with custody retained through stop. Native SQLite integration proves the first
+600-row group survives a later group's checkpoint rejection and restart; retry
+inserts only the missing 600 rows without replacing original SQLite identities.
+
+The standalone Linux workflow now uploads built binaries whenever native artifact
+inspection passed, even if a later smoke fails. Failed gates remain failed. This
+repairs the evidence-retention gap for future candidates and cannot recover the
+missing binary from CI `34594872717`.
+
+The grouped implementation passes **432 files / 4,413 tests** in 95.53 seconds
+wall time (560.52 seconds summed test time across workers), lint and build.
+Three affected source charters are clear, with authorship and file hashes
+disclosed in the [review receipt](../../evidence/responsiveness-causal-repair/grouped-source-reviews.json).
+Actual Linux reference ASAR `eb0ef15c…` passes the unchanged ordinary tracking
+verdict: independent main **79.902/142.686 ms**, 155/3,432 samples, zero inspector
+errors, exact 8,664 positions and two graceful exits. Renderer maximum is
+183.8 ms; external action maximum is 100.151 ms. Extracted five repair modules
+match source, and all 33 bundled renderer JS assets match the remote build.
+The [binding](../../evidence/responsiveness-causal-repair/grouped-1024-reference-binding.json)
+labels this source-overlay reference package separately from CI. The larger
+36-hour workload and exact-head CI remain unqualified at this point.
+
+### Larger grouped-workload rejection
+
+The same grouped ASAR `eb0ef15c…` was exercised with all 33 participants,
+mid-backfill SIGKILL and recovery. A separate independent timer records
+**98.117/394.333 ms**, with **14 recovery breaches**. This rejects the grouped
+candidate despite its smaller ordinary tracking pass. The retained
+[summary](../../evidence/responsiveness-causal-repair/rejected-grouped-36h-summary.json)
+binds the ordinary failure report and independent observer. Its final interval
+runs from main performance 57,171.922 to 57,566.255 ms. No causal attribution is
+made from maxima alone.
+
+The ordinary proof also timed out with `currentFixMs: null`: its `setData`
+capture did not observe incremental `updateData` publication. The corrected
+milestone now awaits live source data; red controls reject missed offscreen
+current points and stale captured data. An intermediate rendered-layer reader
+was itself rejected: the default map camera was outside the synthetic roster,
+adding a viewport condition to a source-publication milestone. Its evidence is
+retained, not claimed as the final reader. The 5,000 ms
+current-fix limit remains unchanged. Post-deadline reads show all 279,936 exact
+rows and 33 complete checkpoints, not that they arrived before the 60-second
+deadline. The recovered evidence-loss warning remains visible. Logs contain
+111 coverage catalog revision mismatches and two chunk-stale errors; these are
+investigation targets, not a proven cause of the main-loop breaches.
+
+The old proof cleanup deleted its failed profile, so that run's detailed SQLite
+and runtime log cannot be recovered. The script now retains failed profiles.
+The full rejected Linux package is preserved as
+`tmp/grouped-1024-rejected-linux-unpacked` on the owned reference host. Next
+diagnosis adds bounded transaction boundaries, slow query templates and CPU
+profiling while keeping application bytes and workload unchanged. Diagnostic
+passes cannot qualify the candidate or erase this rejection.
+
+The next full local source cycle also rejects the existing 50,000-object legacy
+reconstruction control: **239.509 ms** heartbeat versus strict `<200 ms`,
+4,437 tests pass and one fails across 432 files (105.31 seconds wall time).
+The earlier 4,430-test green cycle is retained separately. That control uses a
+worker for reconstruction but performs synchronous inspection counts on main;
+its original failure has no per-query/GC/thread-CPU attribution. A bounded
+instrumented diagnosis is required before assigning this gap to either path.
+
+The first profiling attempt failed before a mission or any mock request:
+Electron's HTTP fetch raised an undici `markResourceTiming` initialization
+error while the inspector observer recorded no launch. No workload or timer
+pass can be inferred. The original diagnostic scripts, application log and
+ordinary failure report are retained under `rejected-profile-startup/`; the
+failed profile remains on the reference host. Actual Electron startup controls
+are being added before another diagnostic attempt.
+
+The guarded 90-second diagnostic subsequently completed the unchanged ordinary
+36-hour proof: all 279,936 positions exact, current/first history publication
+288/288 ms and reconciliation 53,984 ms. Full exact-dot paging, line evidence
+and three post-completion restarts pass that proof's existing verdict. It does
+not enforce the separate independent main timer. That observer rejects the
+package across launches at **160.321/376.725/550.359/544.621/502.366 ms**.
+Earlier captured recovery breaches overlap 1,440-row history transactions,
+including participant backfill's unnecessary returned-row materialization.
+A late 333.774 ms gap has no recorded transaction and includes Electron IPC
+reply serialization. The subsequent targeted probe identifies
+`list-breadcrumb-positions`: 103,626 rows in one response, with three independent
+main gaps of 316.293/349.031/351.317 ms. This confirms a large-result transport
+contributor, without assigning every larger-run breach to the same cause.
+
+Participant backfill now prefers the existing acknowledgement-only persistence
+port because its caller discards returned positions. Red controls fail for both
+ports and acknowledgement-only capability, with legacy fallback preserved.
+The affected runtime/participant suite passes 95 tests; lint/build and independent
+source review pass. Both ports use the same shared history-input type and native
+position/coverage invariants. The original observation still spans persistence
+and participant-checkpoint acknowledgement through stop. No request window,
+anti-entropy schedule, checkpoint or timing threshold changes.
 
 Four independent source charters are clear at `7637e936`: broad life-safety and
 measurement, custody/completeness, concurrency/finalization, and renderer/input

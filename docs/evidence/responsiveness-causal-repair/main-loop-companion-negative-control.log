@@ -1,0 +1,20 @@
+Debugger listening on ws://127.0.0.1:63929/2bda5b57-01bd-4ff5-86b4-52f757a72a3a
+For help, see: https://nodejs.org/learn/getting-started/debugging
+Debugger attached.
+Debugger ending on ws://127.0.0.1:63929/2bda5b57-01bd-4ff5-86b4-52f757a72a3a
+For help, see: https://nodejs.org/learn/getting-started/debugging
+Debugger attached.
+Debugger ending on ws://127.0.0.1:63929/2bda5b57-01bd-4ff5-86b4-52f757a72a3a
+For help, see: https://nodejs.org/learn/getting-started/debugging
+Debugger attached.
+Debugger ending on ws://127.0.0.1:63929/2bda5b57-01bd-4ff5-86b4-52f757a72a3a
+For help, see: https://nodejs.org/learn/getting-started/debugging
+Debugger listening on ws://127.0.0.1:63929/4b720839-3000-412e-9db3-432e20949994
+For help, see: https://nodejs.org/learn/getting-started/debugging
+Debugger attached.
+Debugger ending on ws://127.0.0.1:63929/4b720839-3000-412e-9db3-432e20949994
+For help, see: https://nodejs.org/learn/getting-started/debugging
+Debugger attached.
+Debugger ending on ws://127.0.0.1:63929/4b720839-3000-412e-9db3-432e20949994
+For help, see: https://nodejs.org/learn/getting-started/debugging
+PASS maximumGapMs=369.701916; disconnected tails retained; second launch exited naturally with code 0

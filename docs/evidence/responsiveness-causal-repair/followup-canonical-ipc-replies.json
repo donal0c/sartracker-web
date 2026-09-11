@@ -1,0 +1,918 @@
+{
+  "diagnosticOnly": true,
+  "complete": false,
+  "startedAtMs": 1090.945137,
+  "stoppedAtMs": null,
+  "timeOriginMs": 1789133139983.531,
+  "requestCount": 60,
+  "completedCount": 60,
+  "droppedRecords": 0,
+  "skippedPendingLimit": 0,
+  "pendingReplyCount": 0,
+  "limits": {
+    "records": 4096,
+    "errors": 32,
+    "resultCounts": "fixed shallow array lengths only"
+  },
+  "errors": [],
+  "records": [
+    {
+      "id": 1,
+      "channel": "sartracker:mission-store:get-active-mission",
+      "handlerStartMs": 1792.714838,
+      "handlerSettledMs": 1793.518784,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1793.604071,
+      "replyEndMs": 1793.620431,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 1
+    },
+    {
+      "id": 2,
+      "channel": "sartracker:mission-store:get-active-mission",
+      "handlerStartMs": 1798.39013,
+      "handlerSettledMs": 1798.668882,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1798.676104,
+      "replyEndMs": 1798.688401,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 2
+    },
+    {
+      "id": 3,
+      "channel": "sartracker:mission-store:resume-mission",
+      "handlerStartMs": 1849.967615,
+      "handlerSettledMs": 1867.980861,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1868.004602,
+      "replyEndMs": 1868.033084,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 3
+    },
+    {
+      "id": 5,
+      "channel": "sartracker:mission-store:list-drawings",
+      "handlerStartMs": 1873.420268,
+      "handlerSettledMs": 1874.2672,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1874.291834,
+      "replyEndMs": 1874.329658,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 4
+    },
+    {
+      "id": 6,
+      "channel": "sartracker:mission-store:list-outings",
+      "handlerStartMs": 1874.465761,
+      "handlerSettledMs": 1875.580099,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1875.592615,
+      "replyEndMs": 1875.622607,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 5
+    },
+    {
+      "id": 7,
+      "channel": "sartracker:mission-store:list-gpx-import-issues",
+      "handlerStartMs": 1875.771605,
+      "handlerSettledMs": 1877.551796,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1877.564869,
+      "replyEndMs": 1877.589454,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 6
+    },
+    {
+      "id": 8,
+      "channel": "sartracker:mission-store:list-helicopters",
+      "handlerStartMs": 1877.669197,
+      "handlerSettledMs": 1878.166056,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1878.176371,
+      "replyEndMs": 1878.192293,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 7
+    },
+    {
+      "id": 9,
+      "channel": "sartracker:layer-catalog-store:list-metadata",
+      "handlerStartMs": 1878.26244,
+      "handlerSettledMs": 1878.705144,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1878.711508,
+      "replyEndMs": 1878.727023,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 8
+    },
+    {
+      "id": 10,
+      "channel": "sartracker:mission-store:list-markers",
+      "handlerStartMs": 1878.838288,
+      "handlerSettledMs": 1879.163268,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1879.167976,
+      "replyEndMs": 1879.183931,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 9
+    },
+    {
+      "id": 11,
+      "channel": "sartracker:mission-store:list-outings",
+      "handlerStartMs": 1879.282601,
+      "handlerSettledMs": 1879.471766,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1879.477454,
+      "replyEndMs": 1879.486826,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 10
+    },
+    {
+      "id": 13,
+      "channel": "sartracker:layer-catalog-store:list-metadata",
+      "handlerStartMs": 1880.660929,
+      "handlerSettledMs": 1881.580441,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1881.592217,
+      "replyEndMs": 1881.633785,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 11
+    },
+    {
+      "id": 16,
+      "channel": "sartracker:layer-catalog-store:list-metadata",
+      "handlerStartMs": 1883.258985,
+      "handlerSettledMs": 1884.188901,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1884.195154,
+      "replyEndMs": 1884.906636,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 12
+    },
+    {
+      "id": 14,
+      "channel": "sartracker:traccar-http-request",
+      "handlerStartMs": 1881.949725,
+      "handlerSettledMs": 1895.118147,
+      "handlerOutcome": "rejected",
+      "replyStartMs": 1895.680393,
+      "replyEndMs": 1895.711589,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": null,
+      "completionSequence": 13
+    },
+    {
+      "id": 18,
+      "channel": "sartracker:layer-catalog-store:list-metadata",
+      "handlerStartMs": 1913.480538,
+      "handlerSettledMs": 1913.968084,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1913.972534,
+      "replyEndMs": 1913.990739,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 14
+    },
+    {
+      "id": 19,
+      "channel": "sartracker:layer-catalog-store:list-metadata",
+      "handlerStartMs": 1915.855782,
+      "handlerSettledMs": 1916.244274,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1916.247364,
+      "replyEndMs": 1916.268416,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 15
+    },
+    {
+      "id": 20,
+      "channel": "sartracker:layer-catalog-store:list-metadata",
+      "handlerStartMs": 1916.344913,
+      "handlerSettledMs": 1916.57194,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1916.574288,
+      "replyEndMs": 1916.582058,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 16
+    },
+    {
+      "id": 21,
+      "channel": "sartracker:record-diagnostic-event",
+      "handlerStartMs": 1926.365062,
+      "handlerSettledMs": 1927.065675,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1927.074938,
+      "replyEndMs": 1927.095855,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "undefined"
+      },
+      "completionSequence": 17
+    },
+    {
+      "id": 22,
+      "channel": "sartracker:mission-store:list-gpx-import-page",
+      "handlerStartMs": 1937.011088,
+      "handlerSettledMs": 1939.085863,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1939.092727,
+      "replyEndMs": 1939.113468,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 18
+    },
+    {
+      "id": 17,
+      "channel": "sartracker:mission-store:read-coverage-manifest",
+      "handlerStartMs": 1885.231423,
+      "handlerSettledMs": 1961.603342,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1961.614855,
+      "replyEndMs": 1961.679333,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object",
+        "chunksLength": 33
+      },
+      "completionSequence": 19
+    },
+    {
+      "id": 24,
+      "channel": "sartracker:layer-catalog-store:list-metadata",
+      "handlerStartMs": 1967.80551,
+      "handlerSettledMs": 1968.26381,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 1968.267588,
+      "replyEndMs": 1968.296311,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "arrayLength": 0
+      },
+      "completionSequence": 20
+    },
+    {
+      "id": 4,
+      "channel": "sartracker:mission-store:list-exact-breadcrumb-dot-page",
+      "handlerStartMs": 1868.694348,
+      "handlerSettledMs": 2121.231978,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 2121.243369,
+      "replyEndMs": 2127.306364,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object",
+        "positionsLength": 10000
+      },
+      "completionSequence": 21
+    },
+    {
+      "id": 12,
+      "channel": "sartracker:mission-store:read-outing-fix-summary",
+      "handlerStartMs": 1879.520366,
+      "handlerSettledMs": 2149.438693,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 2149.445424,
+      "replyEndMs": 2149.470461,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 22
+    },
+    {
+      "id": 25,
+      "channel": "sartracker:record-diagnostic-event",
+      "handlerStartMs": 2321.166103,
+      "handlerSettledMs": 2321.872002,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 2321.882901,
+      "replyEndMs": 2321.895586,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "undefined"
+      },
+      "completionSequence": 23
+    },
+    {
+      "id": 15,
+      "channel": "sartracker:mission-store:sync-backup",
+      "handlerStartMs": 1882.225401,
+      "handlerSettledMs": 2465.164277,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 2465.169391,
+      "replyEndMs": 2465.19646,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "string"
+      },
+      "completionSequence": 24
+    },
+    {
+      "id": 26,
+      "channel": "sartracker:traccar-http-request",
+      "handlerStartMs": 2797.796844,
+      "handlerSettledMs": 2800.277282,
+      "handlerOutcome": "rejected",
+      "replyStartMs": 2800.538046,
+      "replyEndMs": 2800.552297,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": null,
+      "completionSequence": 25
+    },
+    {
+      "id": 27,
+      "channel": "sartracker:traccar-http-request",
+      "handlerStartMs": 2927.252003,
+      "handlerSettledMs": 2928.890394,
+      "handlerOutcome": "rejected",
+      "replyStartMs": 2929.159936,
+      "replyEndMs": 2929.171828,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": null,
+      "completionSequence": 26
+    },
+    {
+      "id": 28,
+      "channel": "sartracker:record-diagnostic-event",
+      "handlerStartMs": 2929.633042,
+      "handlerSettledMs": 2930.388653,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 2930.392045,
+      "replyEndMs": 2930.41009,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "undefined"
+      },
+      "completionSequence": 27
+    },
+    {
+      "id": 23,
+      "channel": "sartracker:mission-store:sync-coverage-tile-catalog",
+      "handlerStartMs": 1964.435196,
+      "handlerSettledMs": 3158.037358,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3158.048025,
+      "replyEndMs": 3158.106221,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 28
+    },
+    {
+      "id": 29,
+      "channel": "sartracker:mission-store:read-coverage-tile",
+      "handlerStartMs": 3193.318097,
+      "handlerSettledMs": 3195.602898,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3195.606686,
+      "replyEndMs": 3195.617795,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 29
+    },
+    {
+      "id": 30,
+      "channel": "sartracker:mission-store:read-coverage-tile",
+      "handlerStartMs": 3193.906565,
+      "handlerSettledMs": 3195.641421,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3195.648237,
+      "replyEndMs": 3195.652787,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 30
+    },
+    {
+      "id": 31,
+      "channel": "sartracker:mission-store:read-coverage-tile",
+      "handlerStartMs": 3194.023624,
+      "handlerSettledMs": 3195.670903,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3195.671851,
+      "replyEndMs": 3195.675051,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 31
+    },
+    {
+      "id": 32,
+      "channel": "sartracker:mission-store:read-coverage-tile",
+      "handlerStartMs": 3194.133708,
+      "handlerSettledMs": 3195.713576,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3195.714626,
+      "replyEndMs": 3195.717679,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 32
+    },
+    {
+      "id": 33,
+      "channel": "sartracker:mission-store:read-coverage-tile",
+      "handlerStartMs": 3194.19678,
+      "handlerSettledMs": 3195.727597,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3195.728575,
+      "replyEndMs": 3195.731252,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 33
+    },
+    {
+      "id": 34,
+      "channel": "sartracker:mission-store:read-coverage-tile",
+      "handlerStartMs": 3194.250221,
+      "handlerSettledMs": 3195.739586,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3195.740519,
+      "replyEndMs": 3195.743278,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 34
+    },
+    {
+      "id": 35,
+      "channel": "sartracker:mission-store:read-coverage-tile",
+      "handlerStartMs": 3194.30772,
+      "handlerSettledMs": 3195.752349,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3195.75334,
+      "replyEndMs": 3195.755943,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 35
+    },
+    {
+      "id": 36,
+      "channel": "sartracker:mission-store:read-coverage-tile",
+      "handlerStartMs": 3194.374668,
+      "handlerSettledMs": 3195.76396,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3195.764769,
+      "replyEndMs": 3195.767579,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 36
+    },
+    {
+      "id": 37,
+      "channel": "sartracker:mission-store:read-coverage-tile",
+      "handlerStartMs": 3195.143468,
+      "handlerSettledMs": 3195.780124,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3195.786995,
+      "replyEndMs": 3195.790812,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 37
+    },
+    {
+      "id": 38,
+      "channel": "sartracker:mission-store:activate-coverage-tile-catalog",
+      "handlerStartMs": 3198.916971,
+      "handlerSettledMs": 3199.305979,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3199.309523,
+      "replyEndMs": 3199.323208,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "boolean"
+      },
+      "completionSequence": 38
+    },
+    {
+      "id": 39,
+      "channel": "sartracker:mission-store:finalize-coverage-tile-catalog",
+      "handlerStartMs": 3203.229588,
+      "handlerSettledMs": 3204.29205,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3204.295969,
+      "replyEndMs": 3204.310636,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "boolean"
+      },
+      "completionSequence": 39
+    },
+    {
+      "id": 40,
+      "channel": "sartracker:mission-store:read-coverage-manifest",
+      "handlerStartMs": 3204.87983,
+      "handlerSettledMs": 3267.420308,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3267.429438,
+      "replyEndMs": 3267.535503,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object",
+        "chunksLength": 33
+      },
+      "completionSequence": 40
+    },
+    {
+      "id": 41,
+      "channel": "sartracker:mission-store:read-coverage-claim",
+      "handlerStartMs": 3271.695842,
+      "handlerSettledMs": 3321.210721,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 3321.21667,
+      "replyEndMs": 3321.299719,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 41
+    },
+    {
+      "id": 42,
+      "channel": "sartracker:traccar-http-request",
+      "handlerStartMs": 4801.434939,
+      "handlerSettledMs": 4803.229789,
+      "handlerOutcome": "rejected",
+      "replyStartMs": 4803.951419,
+      "replyEndMs": 4803.979071,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": null,
+      "completionSequence": 42
+    },
+    {
+      "id": 43,
+      "channel": "sartracker:traccar-http-request",
+      "handlerStartMs": 4930.277135,
+      "handlerSettledMs": 4932.65889,
+      "handlerOutcome": "rejected",
+      "replyStartMs": 4933.15848,
+      "replyEndMs": 4933.185685,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": null,
+      "completionSequence": 43
+    },
+    {
+      "id": 44,
+      "channel": "sartracker:record-diagnostic-event",
+      "handlerStartMs": 4934.13607,
+      "handlerSettledMs": 4934.648248,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 4934.651855,
+      "replyEndMs": 4934.666632,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "undefined"
+      },
+      "completionSequence": 44
+    },
+    {
+      "id": 45,
+      "channel": "sartracker:mission-store:get-active-mission",
+      "handlerStartMs": 6943.177466,
+      "handlerSettledMs": 6944.154336,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 6944.165929,
+      "replyEndMs": 6944.197501,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 45
+    },
+    {
+      "id": 47,
+      "channel": "sartracker:traccar-http-request",
+      "handlerStartMs": 8805.518894,
+      "handlerSettledMs": 8807.257162,
+      "handlerOutcome": "rejected",
+      "replyStartMs": 8807.602723,
+      "replyEndMs": 8807.626632,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": null,
+      "completionSequence": 46
+    },
+    {
+      "id": 48,
+      "channel": "sartracker:traccar-http-request",
+      "handlerStartMs": 8934.182346,
+      "handlerSettledMs": 8936.554509,
+      "handlerOutcome": "rejected",
+      "replyStartMs": 8936.793721,
+      "replyEndMs": 8936.812699,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": null,
+      "completionSequence": 47
+    },
+    {
+      "id": 49,
+      "channel": "sartracker:record-diagnostic-event",
+      "handlerStartMs": 8937.695416,
+      "handlerSettledMs": 8938.133542,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 8938.143689,
+      "replyEndMs": 8938.158668,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "undefined"
+      },
+      "completionSequence": 48
+    },
+    {
+      "id": 46,
+      "channel": "sartracker:mission-store:list-breadcrumb-positions",
+      "handlerStartMs": 6944.749463,
+      "handlerSettledMs": 9483.107979,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 9483.119823,
+      "replyEndMs": 9653.033855,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object",
+        "positionsLength": 103626,
+        "deviceTotalsLength": 32,
+        "deviceSelectionsLength": 32
+      },
+      "completionSequence": 49
+    },
+    {
+      "id": 50,
+      "channel": "sartracker:mission-store:get-active-mission",
+      "handlerStartMs": 11838.149022,
+      "handlerSettledMs": 11838.829808,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 11838.8366,
+      "replyEndMs": 11838.853813,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 50
+    },
+    {
+      "id": 51,
+      "channel": "sartracker:mission-store:list-breadcrumb-positions",
+      "handlerStartMs": 11840.280171,
+      "handlerSettledMs": 14408.029895,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 14408.038234,
+      "replyEndMs": 14577.55875,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object",
+        "positionsLength": 103626,
+        "deviceTotalsLength": 32,
+        "deviceSelectionsLength": 32
+      },
+      "completionSequence": 51
+    },
+    {
+      "id": 52,
+      "channel": "sartracker:mission-store:get-active-mission",
+      "handlerStartMs": 16802.159118,
+      "handlerSettledMs": 16802.613974,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 16802.621249,
+      "replyEndMs": 16802.649318,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 52
+    },
+    {
+      "id": 54,
+      "channel": "sartracker:traccar-http-request",
+      "handlerStartMs": 16938.045,
+      "handlerSettledMs": 16940.427615,
+      "handlerOutcome": "rejected",
+      "replyStartMs": 16940.650463,
+      "replyEndMs": 16940.673299,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": null,
+      "completionSequence": 53
+    },
+    {
+      "id": 55,
+      "channel": "sartracker:record-diagnostic-event",
+      "handlerStartMs": 16941.607963,
+      "handlerSettledMs": 16942.110953,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 16942.114564,
+      "replyEndMs": 16942.12949,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "undefined"
+      },
+      "completionSequence": 54
+    },
+    {
+      "id": 53,
+      "channel": "sartracker:mission-store:list-breadcrumb-positions",
+      "handlerStartMs": 16803.023056,
+      "handlerSettledMs": 19546.468464,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 19546.478143,
+      "replyEndMs": 19707.847438,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object",
+        "positionsLength": 103626,
+        "deviceTotalsLength": 32,
+        "deviceSelectionsLength": 32
+      },
+      "completionSequence": 55
+    },
+    {
+      "id": 57,
+      "channel": "sartracker:mission-store:get-active-mission",
+      "handlerStartMs": 30461.616525,
+      "handlerSettledMs": 30461.91179,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 30461.916525,
+      "replyEndMs": 30461.936248,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 56
+    },
+    {
+      "id": 56,
+      "channel": "sartracker:mission-store:read-coverage-manifest",
+      "handlerStartMs": 30460.276773,
+      "handlerSettledMs": 30525.948847,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 30525.957378,
+      "replyEndMs": 30526.09744,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object",
+        "chunksLength": 33
+      },
+      "completionSequence": 57
+    },
+    {
+      "id": 59,
+      "channel": "sartracker:mission-store:read-coverage-manifest",
+      "handlerStartMs": 30527.525416,
+      "handlerSettledMs": 30585.342704,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 30585.351577,
+      "replyEndMs": 30585.618065,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object",
+        "chunksLength": 33
+      },
+      "completionSequence": 58
+    },
+    {
+      "id": 60,
+      "channel": "sartracker:mission-store:read-coverage-claim",
+      "handlerStartMs": 30586.599495,
+      "handlerSettledMs": 30642.501641,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 30642.50748,
+      "replyEndMs": 30642.551644,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "object"
+      },
+      "completionSequence": 59
+    },
+    {
+      "id": 58,
+      "channel": "sartracker:mission-store:sync-backup",
+      "handlerStartMs": 30462.265997,
+      "handlerSettledMs": 31036.130418,
+      "handlerOutcome": "fulfilled",
+      "replyStartMs": 31036.14173,
+      "replyEndMs": 31036.17167,
+      "replyOutcome": "returned",
+      "replyErrorName": null,
+      "resultCounts": {
+        "kind": "string"
+      },
+      "completionSequence": 60
+    }
+  ]
+}

@@ -1,0 +1,1182 @@
+{
+  "evidenceKind": "separate diagnostic companion; unchanged workload verdict remains separate",
+  "sourcePath": "/home/donal/sartracker-causal-20260911.2UcQcB/tmp/main-loop-sqlite-ipc-profile-companion.mjs",
+  "sourceSha256": "1352a06c05ebbeefe7d2cec3643667fc7b9ed0e4a92a5893885a4f7bc6d42f62",
+  "sqliteProbeSha256": "713d624a5462a7601936f8c2fe678f6464bb195ef3f9d9e61f0b96cf02eee787",
+  "ipcProbeSha256": "e1baadd18955095712b9581fb2c19d12dff0ed6c3016b61154595b2af669d706",
+  "profileMs": 90000,
+  "port": 39877,
+  "startedAtUnixMs": 1789133138648,
+  "updatedAtUnixMs": 1789133172215,
+  "stopReason": "duration_elapsed",
+  "verdict": "observed_main_loop_breach",
+  "qualifiedPass": false,
+  "limitation": "Snapshots omit the final unserviced interval and any time before installation or after disconnection. All-small samples are only a diagnostic lower bound. Compare installation times with workload mission/recovery phases.",
+  "preinstallationErrors": [
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "stage": "timer_installation",
+      "atUnixMs": 1789133140019,
+      "message": "Inspector evaluation failed",
+      "inspectorDetail": {
+        "code": null,
+        "text": "Uncaught",
+        "exceptionClass": "ReferenceError",
+        "description": "ReferenceError: performance is not defined"
+      }
+    }
+  ],
+  "readinessObservations": [
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133140018,
+      "ready": true,
+      "basis": "native Node control"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133141026,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133142032,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133143037,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133144043,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133145047,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133146054,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133147060,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133148065,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133149070,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133150074,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133151079,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133152083,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133153088,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133154092,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133155108,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133156113,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133157121,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133158124,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133159128,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133160142,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133161147,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133162152,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133163157,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133164161,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133165176,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133166182,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133167186,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133168190,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133169194,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133170207,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    },
+    {
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "atUnixMs": 1789133171211,
+      "ready": true,
+      "basis": "Electron entry module loaded and app ready"
+    }
+  ],
+  "launches": [
+    {
+      "number": 1,
+      "targetId": "d043e1b8-bebd-47a6-8f48-21c92777992b",
+      "timeOriginMs": 1789133139983.531,
+      "readinessAtInstallation": {
+        "ready": true,
+        "basis": "Electron entry module loaded and app ready",
+        "checkedAtUnixMs": 1789133141026
+      },
+      "installationRequestedAtUnixMs": 1789133141026,
+      "installationConfirmedAtUnixMs": 1789133141026,
+      "installedAtMainWallMs": 1789133141026,
+      "finalTailCollected": false,
+      "disconnectedTail": true,
+      "connectionCount": 31,
+      "snapshotCount": 31,
+      "discardedSnapshotCount": 0,
+      "snapshots": [
+        {
+          "receivedAtUnixMs": 1789133141027,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 1042.751243,
+          "readAtMs": 1042.863599,
+          "samples": 0,
+          "maximumGapMs": 0,
+          "maximumGapWindow": null,
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133142032,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 2032.143416,
+          "readAtMs": 2049.046243,
+          "samples": 19,
+          "maximumGapMs": 80.0367389999999,
+          "maximumGapWindow": {
+            "fromMs": 1092.344086,
+            "toMs": 1172.380825
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133143037,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 3035.270892,
+          "readAtMs": 3054.167752,
+          "samples": 39,
+          "maximumGapMs": 80.0367389999999,
+          "maximumGapWindow": {
+            "fromMs": 1092.344086,
+            "toMs": 1172.380825
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133144044,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 4045.45854,
+          "readAtMs": 4060.252027,
+          "samples": 59,
+          "maximumGapMs": 80.0367389999999,
+          "maximumGapWindow": {
+            "fromMs": 1092.344086,
+            "toMs": 1172.380825
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133145048,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 5051.044126,
+          "readAtMs": 5064.306664,
+          "samples": 79,
+          "maximumGapMs": 80.0367389999999,
+          "maximumGapWindow": {
+            "fromMs": 1092.344086,
+            "toMs": 1172.380825
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133146054,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 6059.854507,
+          "readAtMs": 6071.119407,
+          "samples": 99,
+          "maximumGapMs": 80.0367389999999,
+          "maximumGapWindow": {
+            "fromMs": 1092.344086,
+            "toMs": 1172.380825
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133147061,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 7065.140861,
+          "readAtMs": 7077.717049,
+          "samples": 119,
+          "maximumGapMs": 80.0367389999999,
+          "maximumGapWindow": {
+            "fromMs": 1092.344086,
+            "toMs": 1172.380825
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133148066,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 8079.273749,
+          "readAtMs": 8082.705128,
+          "samples": 139,
+          "maximumGapMs": 80.0367389999999,
+          "maximumGapWindow": {
+            "fromMs": 1092.344086,
+            "toMs": 1172.380825
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133149071,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 9084.851937,
+          "readAtMs": 9087.514261,
+          "samples": 159,
+          "maximumGapMs": 80.0367389999999,
+          "maximumGapWindow": {
+            "fromMs": 1092.344086,
+            "toMs": 1172.380825
+          },
+          "breachCount": 0,
+          "breaches": [],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133150075,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 10054.942686,
+          "readAtMs": 10091.611568,
+          "samples": 173,
+          "maximumGapMs": 316.2931349999999,
+          "maximumGapWindow": {
+            "fromMs": 9336.831334,
+            "toMs": 9653.124469
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133151079,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 11063.339356,
+          "readAtMs": 11096.134274,
+          "samples": 193,
+          "maximumGapMs": 316.2931349999999,
+          "maximumGapWindow": {
+            "fromMs": 9336.831334,
+            "toMs": 9653.124469
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133152085,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 12066.978598,
+          "readAtMs": 12101.321253,
+          "samples": 213,
+          "maximumGapMs": 316.2931349999999,
+          "maximumGapWindow": {
+            "fromMs": 9336.831334,
+            "toMs": 9653.124469
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133153089,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 13074.012593,
+          "readAtMs": 13105.316531,
+          "samples": 233,
+          "maximumGapMs": 316.2931349999999,
+          "maximumGapWindow": {
+            "fromMs": 9336.831334,
+            "toMs": 9653.124469
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133154092,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 14077.996836,
+          "readAtMs": 14108.774198,
+          "samples": 253,
+          "maximumGapMs": 316.2931349999999,
+          "maximumGapWindow": {
+            "fromMs": 9336.831334,
+            "toMs": 9653.124469
+          },
+          "breachCount": 1,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133155110,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 15082.932619,
+          "readAtMs": 15125.281973,
+          "samples": 267,
+          "maximumGapMs": 349.03094500000043,
+          "maximumGapWindow": {
+            "fromMs": 14228.615467,
+            "toMs": 14577.646412
+          },
+          "breachCount": 2,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133156114,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 16089.929998,
+          "readAtMs": 16130.739388,
+          "samples": 287,
+          "maximumGapMs": 349.03094500000043,
+          "maximumGapWindow": {
+            "fromMs": 14228.615467,
+            "toMs": 14577.646412
+          },
+          "breachCount": 2,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133157122,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 17092.696862,
+          "readAtMs": 17138.408876,
+          "samples": 307,
+          "maximumGapMs": 349.03094500000043,
+          "maximumGapWindow": {
+            "fromMs": 14228.615467,
+            "toMs": 14577.646412
+          },
+          "breachCount": 2,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133158125,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 18098.462481,
+          "readAtMs": 18141.546646,
+          "samples": 327,
+          "maximumGapMs": 349.03094500000043,
+          "maximumGapWindow": {
+            "fromMs": 14228.615467,
+            "toMs": 14577.646412
+          },
+          "breachCount": 2,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133159129,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 19102.927914,
+          "readAtMs": 19145.394318,
+          "samples": 347,
+          "maximumGapMs": 349.03094500000043,
+          "maximumGapWindow": {
+            "fromMs": 14228.615467,
+            "toMs": 14577.646412
+          },
+          "breachCount": 2,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133160143,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 20110.382059,
+          "readAtMs": 20159.45969,
+          "samples": 361,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133161148,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 21117.639124,
+          "readAtMs": 21164.592529,
+          "samples": 381,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133162153,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 22124.09712,
+          "readAtMs": 22169.609092,
+          "samples": 401,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133163158,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 23130.331647,
+          "readAtMs": 23174.466243,
+          "samples": 421,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133164161,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 24140.193587,
+          "readAtMs": 24178.076165,
+          "samples": 441,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133165177,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 25148.835218,
+          "readAtMs": 25193.115345,
+          "samples": 461,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133166183,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 26159.041667,
+          "readAtMs": 26199.484932,
+          "samples": 481,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133167187,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 27160.936665,
+          "readAtMs": 27203.536724,
+          "samples": 501,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133168191,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 28167.838038,
+          "readAtMs": 28207.64574,
+          "samples": 521,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133169194,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 29177.163411,
+          "readAtMs": 29210.626462,
+          "samples": 541,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133170208,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 30183.660848,
+          "readAtMs": 30224.500852,
+          "samples": 561,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        },
+        {
+          "receivedAtUnixMs": 1789133171212,
+          "clock": "main-performance-now",
+          "intervalMs": 50,
+          "timeOriginMs": 1789133139983.531,
+          "installedAtMainWallMs": 1789133141026,
+          "startedAtMs": 1042.751243,
+          "sampledUntilMs": 31204.21872,
+          "readAtMs": 31228.284584,
+          "samples": 581,
+          "maximumGapMs": 351.31708399999843,
+          "maximumGapWindow": {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209
+          },
+          "breachCount": 3,
+          "breaches": [
+            {
+              "fromMs": 9336.831334,
+              "toMs": 9653.124469,
+              "gapMs": 316.2931349999999
+            },
+            {
+              "fromMs": 14228.615467,
+              "toMs": 14577.646412,
+              "gapMs": 349.03094500000043
+            },
+            {
+              "fromMs": 19356.616125,
+              "toMs": 19707.933209,
+              "gapMs": 351.31708399999843
+            }
+          ],
+          "finalTailCollected": false
+        }
+      ],
+      "errors": [],
+      "profile": {
+        "complete": false,
+        "cpuProfileComplete": true,
+        "sqliteSnapshotComplete": false,
+        "requestedWindowMs": 90000,
+        "startedAtUnixMs": 1789133141026,
+        "endReason": "application_shutdown",
+        "sqliteProbeSha256": "713d624a5462a7601936f8c2fe678f6464bb195ef3f9d9e61f0b96cf02eee787",
+        "ipcProbeSha256": "e1baadd18955095712b9581fb2c19d12dff0ed6c3016b61154595b2af669d706",
+        "ipcSnapshotComplete": false,
+        "ipcPath": "/home/donal/sartracker-causal-20260911.2UcQcB/tmp/targeted-canonical-ipc/main-launch-1-ipc.json",
+        "cpuProfilePath": "/home/donal/sartracker-causal-20260911.2UcQcB/tmp/targeted-canonical-ipc/main-launch-1.cpuprofile",
+        "sqlitePath": "/home/donal/sartracker-causal-20260911.2UcQcB/tmp/targeted-canonical-ipc/main-launch-1-sqlite.json",
+        "sqliteInstallation": {
+          "installed": true,
+          "startedAtMs": 1089.648556,
+          "timeOriginMs": 1789133139983.531
+        },
+        "ipcInstallation": {
+          "installed": true,
+          "startedAtMs": 1090.945137,
+          "timeOriginMs": 1789133139983.531,
+          "wrappedHandlerCount": 133
+        },
+        "anchorBefore": {
+          "nowMs": 1091.737866,
+          "timeOriginMs": 1789133139983.531,
+          "wallMs": 1789133141075
+        },
+        "anchorAfter": {
+          "nowMs": 1173.034783,
+          "timeOriginMs": 1789133139983.531,
+          "wallMs": 1789133141156
+        },
+        "error": "Inspector protocol error",
+        "endedAtUnixMs": 1789133172127
+      },
+      "latestSnapshot": {
+        "clock": "main-performance-now",
+        "intervalMs": 50,
+        "timeOriginMs": 1789133139983.531,
+        "installedAtMainWallMs": 1789133141026,
+        "startedAtMs": 1042.751243,
+        "sampledUntilMs": 31204.21872,
+        "readAtMs": 31228.284584,
+        "samples": 581,
+        "maximumGapMs": 351.31708399999843,
+        "maximumGapWindow": {
+          "fromMs": 19356.616125,
+          "toMs": 19707.933209
+        },
+        "breachCount": 3,
+        "breaches": [
+          {
+            "fromMs": 9336.831334,
+            "toMs": 9653.124469,
+            "gapMs": 316.2931349999999
+          },
+          {
+            "fromMs": 14228.615467,
+            "toMs": 14577.646412,
+            "gapMs": 349.03094500000043
+          },
+          {
+            "fromMs": 19356.616125,
+            "toMs": 19707.933209,
+            "gapMs": 351.31708399999843
+          }
+        ],
+        "finalTailCollected": false
+      },
+      "connectionEndedAtUnixMs": 1789133171212,
+      "targetUnavailableAtUnixMs": 1789133172215
+    }
+  ]
+}

@@ -4,26 +4,30 @@ Updated 2026-09-11. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **Urgent DON-254 responsiveness repair in progress**, base `49b2e1d4`, branch
-  `codex/responsiveness-causal-repair`. Native red controls prove GPX overtakes
-  admitted current writes and startup archive bookkeeping blocks on SQLite
-  (355.498 ms heartbeat with 3.988 ms CPU). Both are repaired using the existing
-  responsive writer/counter. Local and Ubuntu full-import/heartbeat gates pass;
-  cancellation, startup shutdown and queued archive identity checks pass.
-  Full source (429 files / 4,384 tests), lint/build and eight Chromium flows pass. macOS
-  archive/tracking packages pass at `7637e936` (current-fix max 119 ms).
-  Four source reviews clear; Linux CI `34585453685` passes at `6a88a65e`.
-  PR22 remains draft while final qualification runs. The old CI binary fails
-  independent main timers (243/215 ms); query reuse alone still fails at 206 ms.
-  Combined query reuse/device coalescing passes actual Linux reference timers
-  (154/137 ms), exact 8,664 positions and restart. Native 116 tests and full
-  final source 431 files / 4,395 tests pass; affected source reviews clear. An
-  enforced independent main timer closes the CI escape; corrected reference
-  harness passes 166/152 ms with zero inspector errors. Final CI proof
-  is pending. Prior failures stay retained in the
-  [causal record](../docs/assurance/findings/responsiveness-causal-repair.md).
-  Historical PR19/20/21 failures remain separately recorded. DON-254 stays open;
-  no merge, release, deployment or field acceptance. This is the active priority.
+- **DON-254 incremental responsiveness repair — PR22**, base `49b2e1d4`,
+  branch `codex/responsiveness-causal-repair`; PR22 carries the exact head.
+  Frozen scope: GPX foreground priority, responsive startup bookkeeping, bulk
+  SQL/device coalescing, grouped history with original mission/Finish custody,
+  ACK-only participant backfill and strict independent main timer gate.
+  Current Linux reference ASAR `65db986f…` passes ordinary tracking: independent
+  main 90.781/119.481 ms, exact 8,664 positions, restart and two graceful exits.
+  Full source passes 432 files / 4,444 tests in normal CI serial mode (486.41 s),
+  lint/build pass; three affected source reviews clear with authorship disclosed.
+  PR22 checks/review comments are authoritative for exact-head merge readiness;
+  commit-bound receipts are retained under `tmp/pr22-final-*`. Previous CI
+  `34594872717` rejected 210.537 ms;
+  every rejected candidate remains retained. No merge/release/field acceptance.
+  **Separate release blockers:** DON-254 follow-up A is the 103,626-row canonical
+  IPC transfer (targeted 316–351 ms, extended restart up to 550 ms); follow-up B
+  is the unexplained 239.509 ms legacy 50,000-object source failure. Original
+  legacy test remains enabled and unchanged. Linear's issue limit prevented
+  new issues; precise A/B comments and the regression ledger retain both.
+  They do not expand PR22 merge acceptance. Transport WIP and legacy diagnostic
+  delta are recoverable in `tmp/pr22-scope-freeze-20260911/`, with complete
+  dirty inventory, patches, source copies, red logs and hashes. Merge requires
+  green normal CI and independent reviews on the exact PR head; Donal owns merge.
+  [Causal record](../docs/assurance/findings/responsiveness-causal-repair.md).
+  Historical PR19/20/21 findings stay separate; DON-254 remains open.
 
 - **Repair Train A merged**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
   at `302bdd040976bd370271cf5866549fa2a7e05ff5` on 2026-09-10. Its final

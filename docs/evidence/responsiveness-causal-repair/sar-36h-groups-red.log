@@ -1,0 +1,33 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/breadcrumb-36h-mock-traccar.test.ts (7 tests | 1 failed) 1061ms
+     × serves an authenticated empty group roster without consuming history faults or changing source rows 16ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/breadcrumb-36h-mock-traccar.test.ts > deterministic 36-hour mock Traccar > serves an authenticated empty group roster without consuming history faults or changing source rows
+AssertionError: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ tests/unit/breadcrumb-36h-mock-traccar.test.ts:114:27
+    112|     expect(unauthorized.status).toBe(401)
+    113|     const groups = await fetch(`${server.baseUrl}/api/groups`, { heade…
+    114|     expect(groups.status).toBe(200)
+       |                           ^
+    115|     expect(await groups.json()).toEqual([])
+    116|     expect(server.snapshot().maximumConcurrentHistoryRequests).toBe(0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 6 passed (7)
+   Start at  13:33:12
+   Duration  1.75s (transform 43ms, setup 0ms, import 57ms, tests 1.06s, environment 552ms)
+

@@ -1,0 +1,30 @@
+{
+  "reviewedCommit": "8672411b7e366a7c1625e8df16a69bdd914a5f3d",
+  "baseCommit": "49b2e1d416ca2fa4ff98cfae31c4d947bc4b0a6e",
+  "kind": "independent-agent-source-review",
+  "formalGitHubApproval": false,
+  "reviews": [
+    {
+      "charter": "custody and completeness",
+      "result": "clear",
+      "scope": "Transaction-local device observations, original eligibility, checkpoints, rollback, restart and archive generation; source and retained focused/full logs."
+    },
+    {
+      "charter": "lifecycle and concurrency",
+      "result": "clear",
+      "scope": "Exact production blobs, atomic boundaries, retry/shutdown, timer collection before quit; no actionable findings."
+    },
+    {
+      "charter": "measurement and evidence",
+      "result": "clear",
+      "scope": "Enforced independent timer, bounded collection, inspector coverage, strong native negative control, exact source/harness hashes and reference receipts."
+    },
+    {
+      "charter": "renderer and input containment",
+      "result": "clear",
+      "scope": "No renderer/preload/IPC changes, normalized timestamp inputs, no added product capability; existing test inspector only."
+    }
+  ],
+  "testsRunByReviewers": false,
+  "pending": "Fresh CI artifact qualification; reviewers do not claim CI readiness."
+}

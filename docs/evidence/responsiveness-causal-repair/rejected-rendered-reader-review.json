@@ -1,0 +1,20 @@
+{
+  "scope": "36-hour proof harness compatibility and failed-profile retention only",
+  "productionApplicationChanged": false,
+  "reviewer": "/root/renderer_review",
+  "reviewerAuthorship": "Reviewer authored the separate timestamp parser; custody reviewer independently checked that parser. Current and line readers authored by custody reviewer, failure retention by root.",
+  "reviewedFiles": {
+    "build/electron-breadcrumb-36h-proof-lib.js": "cae7dec3331b1fba1508562a7fe3de7c17378ffadd69dba3ce18f9d9cbbe7eca",
+    "scripts/electron-breadcrumb-36h-proof.mjs": "65beda8a9dbef77106cb304d889495af3033550c5659fbc896f1d034e6f8357a"
+  },
+  "result": "No unresolved findings in assigned harness scope",
+  "verified": [
+    "Current milestone reads rendered device Point features.",
+    "Both line stability samples await live getData and retain the exact count/device/coordinate oracle.",
+    "Available getData failure cannot fall back to stale capture.",
+    "5000/10000/60000 ms limits and exact raw digests remain unchanged.",
+    "Early and completed-but-rejected failures retain profiles with a durable pointer. Success cleanup is unchanged."
+  ],
+  "tests": "Author retained six failing line-reader controls and 71 passing focused tests; reviewer did not run tests.",
+  "limits": "Source review only. Packaged 394.333 ms and later full-source 239.509 ms failures remain unresolved."
+}

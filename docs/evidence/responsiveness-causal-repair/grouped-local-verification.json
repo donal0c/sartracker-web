@@ -1,0 +1,38 @@
+{
+  "evidenceKind": "local working-source validation",
+  "gitHeadBeforeCommit": "8672411b7e366a7c1625e8df16a69bdd914a5f3d",
+  "files": {
+    "src/features/tracking/polling-manager.ts": "4e9a2e411c0e2d893a3936c63a34fb1754b338ba56fa80f4b9c19b1997b89dc6",
+    "src/features/tracking/breadcrumb-history-reconciler.ts": "feaad8820e64a1c96f9c788245c225d841e8a9749c5f4e3c4f2bcd209a842e75",
+    "src/features/tracking/persist-history-chunk-groups.ts": "cc0406fea81004f1deb3d05f8acae8f16b24ad7911f6fe2d84880700a7a607d8"
+  },
+  "source": {
+    "command": "npm test -- --run",
+    "exitCode": 0,
+    "files": 432,
+    "tests": 4413,
+    "durationSeconds": 95.53,
+    "testTimeSummedAcrossWorkersSeconds": 560.52
+  },
+  "lint": {
+    "command": "npm run lint",
+    "exitCode": 0
+  },
+  "build": {
+    "command": "npm run build",
+    "exitCode": 0
+  },
+  "native": {
+    "gpxWrites": 1044,
+    "maximumWriteMs": 31.029542000003858,
+    "maximumHeartbeatGapMs": 14.340041000003112,
+    "startupMainGapsMs": [
+      16.240499999999884,
+      11.764208000000053
+    ]
+  },
+  "limits": [
+    "Package and CI evidence remain separate.",
+    "Generated build metadata restored to committed value after inspecting that sole generated diff."
+  ]
+}

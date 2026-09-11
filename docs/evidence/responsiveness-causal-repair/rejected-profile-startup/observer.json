@@ -1,0 +1,15 @@
+{
+  "evidenceKind": "separate diagnostic companion; unchanged workload verdict remains separate",
+  "sourcePath": "/home/donal/sartracker-causal-20260911.2UcQcB/tmp/main-loop-sqlite-profile-companion.mjs",
+  "sourceSha256": "bc2133a1eb4545480ce90ae8d55863d1ce5ac840003b86e3745992255763672c",
+  "sqliteProbeSha256": "713d624a5462a7601936f8c2fe678f6464bb195ef3f9d9e61f0b96cf02eee787",
+  "profileMs": 55000,
+  "port": 39877,
+  "startedAtUnixMs": 1789131552373,
+  "updatedAtUnixMs": 1789131617312,
+  "stopReason": "SIGTERM",
+  "verdict": "no_breach_observed_in_available_samples",
+  "qualifiedPass": false,
+  "limitation": "Snapshots omit the final unserviced interval and any time before installation or after disconnection. All-small samples are only a diagnostic lower bound. Compare installation times with workload mission/recovery phases.",
+  "launches": []
+}

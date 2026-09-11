@@ -1,0 +1,34 @@
+{
+  "baseCommit": "8672411b7e366a7c1625e8df16a69bdd914a5f3d",
+  "evidenceKind": "working-source review; package and timing proof separate",
+  "files": {
+    "src/features/tracking/polling-manager.ts": "4e9a2e411c0e2d893a3936c63a34fb1754b338ba56fa80f4b9c19b1997b89dc6",
+    "src/features/tracking/breadcrumb-history-reconciler.ts": "feaad8820e64a1c96f9c788245c225d841e8a9749c5f4e3c4f2bcd209a842e75",
+    "src/features/tracking/persist-history-chunk-groups.ts": "cc0406fea81004f1deb3d05f8acae8f16b24ad7911f6fe2d84880700a7a607d8",
+    ".github/workflows/electron-linux-validation.yml": "d45c585969d4bb7d0026aa575e7d8c4b4cb20421904391277a8860d1bd7a3ae7"
+  },
+  "reviews": [
+    {
+      "reviewer": "causal_review",
+      "scope": "concurrency and lifecycle boundaries outside authored grouping helper",
+      "result": "clear",
+      "testsRun": false
+    },
+    {
+      "reviewer": "custody_review",
+      "scope": "custody and partial acknowledgements; independent grouping-helper inspection; authored reconciler and mission guard disclosed",
+      "result": "clear",
+      "testsRun": false
+    },
+    {
+      "reviewer": "renderer_review",
+      "scope": "independent production and workflow review; authored integration tests only",
+      "result": "clear",
+      "testsRun": false
+    }
+  ],
+  "limits": [
+    "Oversized single chunks remain complete above the1024rowbudget.",
+    "Source review does not establish packaged latency or 36-hour catch-up throughput."
+  ]
+}

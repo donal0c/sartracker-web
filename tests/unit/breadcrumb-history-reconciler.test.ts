@@ -188,6 +188,108 @@ describe('breadcrumb history reconciler', () => {
     }
   })
 
+  it('acknowledges partial history results without retrying successful members [DON-254]', async () => {
+    const devices = Array.from({ length: 3 }, (_, index) => ({
+      ...DEVICE, device_id: String(index + 1),
+    }))
+    const acknowledgement = createDeferred<readonly PromiseSettledResult<void>[]>()
+    const fetchBreadcrumbs = vi.fn().mockResolvedValue([])
+    const onChunk = vi.fn()
+    const onChunks = vi.fn().mockReturnValueOnce(acknowledgement.promise)
+      .mockResolvedValue(undefined)
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs, onChunk, onChunks, onProgress: vi.fn(),
+      shouldContinue: () => true, logger: { warn: vi.fn() },
+    })
+    reconciler.reconcile({
+      devices,
+      from: new Date('2026-04-06T00:00:00.000Z'),
+      until: new Date('2026-04-06T02:00:00.000Z'),
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reconciler.getProgress().completedChunkCount).toBe(0)
+    expect(fetchBreadcrumbs).toHaveBeenCalledTimes(3)
+
+    acknowledgement.resolve([
+      { status: 'fulfilled', value: undefined },
+      { status: 'rejected', reason: new Error('Second device checkpoint failed.') },
+      { status: 'fulfilled', value: undefined },
+    ])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reconciler.getProgress()).toMatchObject({
+      completedChunkCount: 2, failedDeviceCount: 1, complete: false,
+    })
+    expect(onChunk).not.toHaveBeenCalled()
+    expect(fetchBreadcrumbs).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(fetchBreadcrumbs.mock.calls.map(([deviceId]) => deviceId)).toEqual(['1', '2', '3', '2'])
+    expect(onChunks.mock.calls[1]?.[0]).toEqual([expect.objectContaining({ deviceId: '2' })])
+    expect(reconciler.getProgress()).toMatchObject({ completedChunkCount: 3, complete: true })
+  })
+
+  it.each([
+    { label: 'wrong length', result: [] },
+    { label: 'invalid status', result: [{ status: 'fulfilled', value: undefined }, { status: 'pending' }] },
+    { label: 'missing fulfilled value', result: [{ status: 'fulfilled' }, { status: 'fulfilled', value: undefined }] },
+    { label: 'missing rejection reason', result: [{ status: 'fulfilled', value: undefined }, { status: 'rejected' }] },
+    { label: 'sparse entries', result: new Array(2) },
+  ])('does not advance or immediately replay a malformed $label acknowledgement [DON-254]', async ({ result }) => {
+    const fetchBreadcrumbs = vi.fn().mockResolvedValue([])
+    const onChunk = vi.fn()
+    const onChunks = vi.fn().mockResolvedValueOnce(result).mockResolvedValue(undefined)
+    const logger = { warn: vi.fn() }
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs, onChunk, onChunks, onProgress: vi.fn(),
+      shouldContinue: () => true, logger,
+    })
+    reconciler.reconcile({
+      devices: [DEVICE, { ...DEVICE, device_id: '2' }],
+      from: new Date('2026-04-06T00:00:00.000Z'),
+      until: new Date('2026-04-06T02:00:00.000Z'),
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reconciler.getProgress()).toMatchObject({ completedChunkCount: 0, failedDeviceCount: 2 })
+    expect(onChunk).not.toHaveBeenCalled()
+    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      error: expect.stringMatching(/acknowledgement/iu),
+    }))
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(fetchBreadcrumbs).toHaveBeenCalledTimes(4)
+    expect(reconciler.getProgress()).toMatchObject({ completedChunkCount: 2, complete: true })
+  })
+
+  it('discards a partial acknowledgement after suspension and resumes the unadvanced windows [DON-254]', async () => {
+    const acknowledgement = createDeferred<readonly PromiseSettledResult<void>[]>()
+    const fetchBreadcrumbs = vi.fn().mockResolvedValue([])
+    const onChunk = vi.fn()
+    const onChunks = vi.fn().mockReturnValueOnce(acknowledgement.promise).mockResolvedValue(undefined)
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs, onChunk, onChunks, onProgress: vi.fn(),
+      shouldContinue: () => true, logger: { warn: vi.fn() },
+    })
+    const request = {
+      devices: [DEVICE, { ...DEVICE, device_id: '2' }],
+      from: new Date('2026-04-06T00:00:00.000Z'),
+      until: new Date('2026-04-06T02:00:00.000Z'),
+    }
+    reconciler.reconcile(request)
+    await vi.advanceTimersByTimeAsync(0)
+    reconciler.suspend()
+    acknowledgement.resolve([
+      { status: 'fulfilled', value: undefined },
+      { status: 'rejected', reason: new Error('Retired persistence failed.') },
+    ])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reconciler.getProgress()).toMatchObject({ completedChunkCount: 0, failedDeviceCount: 0 })
+    reconciler.reconcile(request)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchBreadcrumbs.mock.calls.map(([deviceId, from]) => [deviceId, from])).toEqual([
+      ['1', request.from], ['2', request.from], ['1', request.from], ['2', request.from],
+    ])
+    expect(onChunk).not.toHaveBeenCalled()
+    expect(reconciler.getProgress()).toMatchObject({ completedChunkCount: 2, complete: true })
+  })
+
   it('advances no cursor until failed-wave fallback chunks are acknowledged', async () => {
     const devices = Array.from({ length: 8 }, (_, index) => ({
       ...DEVICE,

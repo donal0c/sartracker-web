@@ -1,0 +1,26 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/polling-manager.test.ts (91 tests | 1 failed | 90 skipped) 13ms
+     × keeps an acknowledged original-mission history group out of a replacement mission [DON-254] 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/polling-manager.test.ts > polling manager > keeps an acknowledged original-mission history group out of a replacement mission [DON-254]
+AssertionError: expected [ 'original-mission-only' ] to not include 'original-mission-only'
+ ❯ tests/unit/polling-manager.test.ts:521:15
+    519|       expect(replacementSnapshots.flatMap(([snapshot]) => snapshot.bre…
+    520|         (position: NormalizedTrackingPosition) => position.id,
+    521|       ))).not.toContain(originalPosition.id)
+       |               ^
+    522|     } finally {
+    523|       originalCommit.resolve()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 90 skipped (91)
+   Start at  13:17:04
+   Duration  532ms (transform 118ms, setup 0ms, import 143ms, tests 13ms, environment 236ms)
+

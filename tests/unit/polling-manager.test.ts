@@ -9,6 +9,7 @@ import breadcrumbsFixture from '../fixtures/traccar-breadcrumbs.json'
 import type { NormalizedTrackingDevice, NormalizedTrackingPosition } from '../../src/features/tracking/tracking-types'
 import {
   createPollingManager,
+  type TrackingHistoryChunkPersistenceInput,
   type TrackingMissionEvidenceTransfer,
   type TrackingPollerClient,
 } from '../../src/features/tracking/polling-manager'
@@ -473,6 +474,56 @@ describe('polling manager', () => {
 
     expect(onSnapshot).toHaveBeenCalledTimes(1)
     poller.stop()
+  })
+
+  it('keeps an acknowledged original-mission history group out of a replacement mission [DON-254]', async () => {
+    const originalCommit = createDeferred<void>()
+    let missionId = 'mission-a'
+    const originalPosition = {
+      ...NORMALIZED_BREADCRUMBS[0]!, id: 'original-mission-only',
+      device_id: NORMALIZED_DEVICES[0]!.device_id,
+      timestamp: '2026-04-06T01:00:00.000Z',
+    }
+    const persistHistoryChunks = vi.fn().mockImplementation(
+      (inputs: readonly TrackingHistoryChunkPersistenceInput[]) =>
+        inputs[0]?.expectedMissionId === 'mission-a' ? originalCommit.promise : Promise.resolve(),
+    )
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(async () =>
+        missionId === 'mission-a' ? [originalPosition] : []),
+    }), {
+      intervalMs: 30_000, staleThresholdMs: 300_000,
+      getHistoryResetKey: () => missionId,
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      getBreadcrumbDeviceIds: () => [NORMALIZED_DEVICES[0]!.device_id],
+      persistHistoryChunks, onSnapshot, onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T02:00:00.000Z'),
+    })
+    try {
+      poller.start()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(persistHistoryChunks).toHaveBeenCalledWith([
+        expect.objectContaining({ expectedMissionId: 'mission-a', positions: [originalPosition] }),
+      ])
+      missionId = 'mission-b'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(onSnapshot).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ historyResetKey: 'mission-b' }))
+      originalCommit.resolve()
+      await vi.advanceTimersByTimeAsync(200)
+      const replacementSnapshots = onSnapshot.mock.calls.filter(([, context]) => context.historyResetKey === 'mission-b')
+      expect(replacementSnapshots.length).toBeGreaterThan(0)
+      expect(replacementSnapshots.flatMap(([snapshot]) => snapshot.breadcrumbs.map(
+        (position: NormalizedTrackingPosition) => position.id,
+      ))).not.toContain(originalPosition.id)
+    } finally {
+      originalCommit.resolve()
+      await poller.stop()
+    }
   })
 
   it('publishes current fixes before a long restart-history hydration completes [DON-260]', async () => {
@@ -1834,6 +1885,76 @@ describe('polling manager', () => {
     ]])
 
     poller.stop()
+  })
+
+  it('admits complete history groups separately and joins their original mission fence on stop', async () => {
+    const startedAt = new Date('2026-04-06T00:00:00.000Z')
+    const currentTime = new Date('2026-04-06T02:00:00.000Z')
+    const devices = Array.from({ length: 8 }, (_, index) => ({
+      ...NORMALIZED_DEVICES[0]!, device_id: `group-device-${index}`,
+    }))
+    const first = createDeferred<void>()
+    const second = createDeferred<void>()
+    const observations = new Set<object>()
+    const onSnapshot = vi.fn()
+    let waveObservations: readonly object[] = []
+    const persistHistoryChunks = vi.fn().mockImplementation(() => {
+      if (persistHistoryChunks.mock.calls.length === 1) {
+        waveObservations = [...observations]
+        return first.promise
+      }
+      return second.promise
+    })
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(async (deviceId: string) =>
+        Array.from({ length: 225 }, (_, index) => ({
+          ...NORMALIZED_BREADCRUMBS[0]!,
+          id: `${deviceId}-${index}`, device_id: deviceId,
+          timestamp: '2026-04-06T01:00:00.000Z',
+        }))),
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000, staleThresholdMs: 300_000,
+      getHistoryResetKey: () => 'original-mission',
+      getInitialBreadcrumbFrom: () => startedAt,
+      getInitialBreadcrumbs: async () => [],
+      getBreadcrumbDeviceIds: () => devices.map((device) => device.device_id),
+      beginMissionEvidenceObservation: (missionId) => {
+        const token = {}
+        observations.add(token)
+        return { missionId, complete: () => { observations.delete(token) } }
+      },
+      persistHistoryChunks, onSnapshot, onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(persistHistoryChunks).toHaveBeenCalledOnce()
+    expect(persistHistoryChunks.mock.calls[0]![0]).toHaveLength(4)
+    expect(waveObservations.length).toBeGreaterThan(0)
+    let stopped = false
+    const stop = poller.stop().then(() => { stopped = true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(stopped).toBe(false)
+    first.resolve()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(persistHistoryChunks).toHaveBeenCalledTimes(2)
+    expect(persistHistoryChunks.mock.calls[1]![0]).toHaveLength(4)
+    expect(waveObservations.some((token) => observations.has(token))).toBe(true)
+    expect(stopped).toBe(false)
+    expect(persistHistoryChunks.mock.calls.flatMap(([inputs]) => inputs).map(
+      (input) => input.expectedMissionId,
+    )).toEqual(Array(8).fill('original-mission'))
+    second.resolve()
+    await vi.advanceTimersByTimeAsync(10)
+    await stop
+    expect(stopped).toBe(true)
+    expect(observations.size).toBe(0)
+    const publicationsAtStop = onSnapshot.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(onSnapshot).toHaveBeenCalledTimes(publicationsAtStop)
   })
 
   it('publishes an initial fetch wave only after its atomic persistence acknowledgement', async () => {

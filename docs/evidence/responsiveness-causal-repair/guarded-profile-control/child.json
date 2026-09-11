@@ -1,0 +1,19 @@
+{
+  "fetches": [
+    {
+      "status": 200,
+      "body": "bootstrap fetch ok"
+    },
+    {
+      "status": 200,
+      "body": "bootstrap fetch ok"
+    },
+    {
+      "status": 200,
+      "body": "bootstrap fetch ok"
+    }
+  ],
+  "errors": [],
+  "readyAtUnixMs": 1789131870220,
+  "timerInstalled": true
+}

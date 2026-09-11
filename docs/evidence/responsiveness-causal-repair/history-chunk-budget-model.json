@@ -1,0 +1,26 @@
+{
+  "evidenceKind": "pure deterministic queue model; not measured application runtime or qualification",
+  "sourceFiles": [
+    "build/breadcrumb-36h-mock-traccar.js#createBreadcrumb36HourProfile",
+    "src/features/tracking/breadcrumb-history-reconciler.ts#reconcile-and-drain",
+    "src/features/tracking/persist-history-chunk-groups.ts#groupCompleteChunks"
+  ],
+  "method": "Sort the 33 device IDs by code unit; enqueue 18 complete two-hour jobs per device. Pop up to eight devices per fetch wave, greedily group complete chunks in that order, then requeue unfinished devices. Count each group as one atomic persistence call. No failures, retries, current writes, participant changes, anti-entropy, wall-clock costs or final short-window variation are modeled.",
+  "fixtureShape": {
+    "missionStart": "sourceFrom plus one second, matching the 279936-row proof window",
+    "rowsPerCompleteTwoHourChunk": [
+      { "devices": "1-8", "cadenceMs": 5000, "rows": 1440 },
+      { "devices": "9-24", "cadenceMs": 30000, "rows": 240 },
+      { "devices": "25-32", "cadenceMs": 300000, "rows": 24 },
+      { "devices": "33", "cadenceMs": null, "rows": 0 }
+    ],
+    "fullHistoryRows": 279936,
+    "boundaryCaveat": "Aligned inclusive endpoints can add one input row per nonempty chunk; the four-medium-chunk regression therefore uses 241 rather than 240."
+  },
+  "results": [
+    { "rowBudget": 900, "fetchWaves": 75, "groupCommits": 312, "singletonGroups": 188, "maximumGroupRows": 1440 },
+    { "rowBudget": 1024, "fetchWaves": 75, "groupCommits": 293, "singletonGroups": 181, "maximumGroupRows": 1440 },
+    { "rowBudget": "unbounded within each eight-chunk wave", "fetchWaves": 75, "groupCommits": 75, "singletonGroups": 0, "maximumGroupRows": 9120 }
+  ],
+  "conclusion": "1024 fits four medium-rate chunks, including inclusive endpoints, while splitting eight 225-row CI chunks into two 900-row groups. Both bounded budgets retain indivisible 1440-row high-rate chunks as singletons. This model does not establish the unchanged packaged 60-second throughput or 200-millisecond responsiveness gates."
+}

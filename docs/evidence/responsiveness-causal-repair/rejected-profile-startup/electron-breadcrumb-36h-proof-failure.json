@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 2,
+  "proof": "packaged-electron-36-hour-initial-breadcrumb-history",
+  "recordedAt": "2026-09-11T12:59:45.184Z",
+  "result": "error",
+  "retainedFailureProfilePath": "/tmp/sartracker-breadcrumb-36h-z8K9hZ",
+  "errorClass": "TimeoutError",
+  "errorMessage": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('participant-device-picker').locator('input[type=\"checkbox\"]').first() to be visible\n",
+  "acceptance": {
+    "reconciliationDeadlineMs": 60000,
+    "normalPollIntervalMs": 30000,
+    "mockLatencyMs": 20,
+    "postCompletionRestartCount": 3
+  },
+  "phaseTimestamps": {
+    "proofStarted": {
+      "iso": "2026-09-11T12:59:13.737Z",
+      "unixMs": 1789131553737,
+      "elapsedMs": 0
+    },
+    "mockServerStarted": {
+      "iso": "2026-09-11T12:59:13.744Z",
+      "unixMs": 1789131553744,
+      "elapsedMs": 7
+    },
+    "initialPackagedLaunchReady": {
+      "iso": "2026-09-11T12:59:14.883Z",
+      "unixMs": 1789131554883,
+      "elapsedMs": 1146
+    },
+    "failureObserved": {
+      "iso": "2026-09-11T12:59:45.048Z",
+      "unixMs": 1789131585048,
+      "elapsedMs": 31311
+    },
+    "failureRunClosed": {
+      "iso": "2026-09-11T12:59:45.183Z",
+      "unixMs": 1789131585183,
+      "elapsedMs": 31446
+    },
+    "mockRequestsSettled": {
+      "iso": "2026-09-11T12:59:45.183Z",
+      "unixMs": 1789131585183,
+      "elapsedMs": 31446
+    },
+    "mockServerClosed": {
+      "iso": "2026-09-11T12:59:45.183Z",
+      "unixMs": 1789131585183,
+      "elapsedMs": 31446
+    },
+    "failureEvidenceCompleted": {
+      "iso": "2026-09-11T12:59:45.184Z",
+      "unixMs": 1789131585184,
+      "elapsedMs": 31447
+    }
+  },
+  "packagedLaunchAttempts": [
+    {
+      "phase": "mid-backfill",
+      "remoteDebuggingPort": 43247,
+      "spawnedAtUnixMs": 1789131553748,
+      "cdpReadyAtUnixMs": 1789131554075,
+      "browserConnectedAtUnixMs": 1789131554164,
+      "pageAvailableAtUnixMs": 1789131554164,
+      "appShellAttachedAtUnixMs": 1789131554408,
+      "mapCanvasAttachedAtUnixMs": 1789131554883,
+      "failedAtUnixMs": null,
+      "failureMessage": null,
+      "exitCode": 0,
+      "signalCode": null,
+      "cleanupComplete": true
+    }
+  ],
+  "profile": {
+    "sourceFrom": "2026-09-10T00:59:13.740Z",
+    "sourceNow": "2026-09-11T12:59:13.740Z",
+    "lookbackHours": 36,
+    "deviceCount": 33,
+    "onlineDeviceCount": 32
+  },
+  "mission": null,
+  "sourceTruth": null,
+  "renderedOracle": null,
+  "exactDotOracle": null,
+  "reconciliationDeadlineEvidence": null,
+  "resilience": {
+    "midBackfillCheckpoint": null,
+    "forcedTermination": null,
+    "persistedAfterMidBackfillKill": null,
+    "recoveredMissionId": null,
+    "recoveryExactDotActivation": null
+  },
+  "partialStateAtFailure": {
+    "captureScope": "post_deadline_drain",
+    "deadlineAuthority": "reconciliationDeadlineEvidence",
+    "runtime": null,
+    "persisted": null,
+    "checkpoints": null,
+    "checkpointProgress": null,
+    "requestCoverage": null
+  },
+  "requestSummary": {
+    "requestCount": 0,
+    "successfulRequestCount": 0,
+    "failedRequestCount": 0,
+    "returnedPositionCount": 0,
+    "latencyMs": {
+      "min": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "requestStartGapMs": {
+      "min": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "elapsedMs": 0,
+    "bucketMs": 10000,
+    "byKind": {},
+    "historyStartBuckets": []
+  },
+  "retryEvidence": {
+    "failedRequestCount": 0,
+    "retriedFailureCount": 0,
+    "allFailuresRetried": false,
+    "failures": []
+  },
+  "mock": {
+    "activeRequests": 0,
+    "maximumConcurrentRequests": 0,
+    "activeHistoryRequests": 0,
+    "maximumConcurrentHistoryRequests": 0,
+    "requestLedger": []
+  }
+}

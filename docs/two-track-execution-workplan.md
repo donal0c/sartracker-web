@@ -163,37 +163,40 @@ ship or ask testers for whole Electron profile zips.
 
 ### Responsiveness causal repair — DON-254 (2026-09-11)
 
-From refreshed master `49b2e1d4`, `codex/responsiveness-causal-repair` owns the
-strict-200 causal repair. Native SQLite red control confirms GPX can start a
-background transaction while an admitted foreground write sleeps in busy retry.
-Separate native 350 ms lock control proves startup archive bookkeeping blocks
-the main loop for 355.498 ms despite only 3.988 ms CPU. Route archive bookkeeping
-through the responsive writer and join it during shutdown.
-Use the existing foreground counter at GPX write boundaries; retain atomic
-transactions, exact bytes/points, publication fences and cancellation/exit joins.
-Extend current-write measurement through import settlement and retain latency,
-main responsiveness and CPU as separate observations. No schema/coordinate or
-team-domain change; no threshold amendment is currently supported.
-Verify deterministic priority and worker wiring, exact original 50k workload
-with profiling off/on, affected native suites, full source/lint/build, package
-and Linux CI, then independent review. Historical source205.296ms and PR19/21
-packaged failures remain unresolved until their own causal evidence is adequate.
-PR20's investigation-only findings and PR19's product repairs stay separate.
-Full-tail source checks pass locally and on isolated Ubuntu; native priority,
-startup completion/shutdown and queued identity checks pass. Full 429-file source
-cycle, lint/build and eight Chromium workflows pass. macOS archive/tracking
-packages pass at `7637e936` (current-fix max 119 ms). Four source reviews clear;
-Linux CI `34585453685` passes at `6a88a65e`; its renderer 450 ms excursion remains
-unattributed. Same CI binary reference checks fail independent main timers
-(243/215 ms). Query reuse alone still fails at 206 ms. Combined query reuse and
-transaction-local device coalescing pass actual reference-package timers at
-154/137 ms with exact 8,664 positions; native 116 tests and application source
-431 files / 4,395 tests pass. The new ordinary CI verdict enforces independent
-main-loop evidence per launch, backed by an inspector-misses-block negative
-control. The corrected reference harness passes 166/152 ms with zero inspector
-errors; final CI qualification is next. PR22 stays draft
-in the [causal repair record](assurance/findings/responsiveness-causal-repair.md).
-No merge/release/deploy or field acceptance.
+From base `49b2e1d4`, `codex/responsiveness-causal-repair` / draft PR22
+finishes one incremental write repair. The 2026-09-11 scope freeze includes
+GPX foreground admission, responsive startup archive writes, SQL statement reuse
+and transaction-local device observation coalescing, whole-chunk history groups
+under one original mission/Finish fence, ordered partial acknowledgements,
+shutdown join/no late publication, and ACK-only participant persistence. The
+ordinary CI harness enforces an independent strict `<200 ms` main timer with
+negative controls; only necessary honest compatibility fixes accompany it.
+
+Current reference package `65db986f…` passes the ordinary 8,664-position workload:
+independent main 90.781/119.481 ms, exact identities/digest, restart and graceful
+shutdown. Full source passes 432 files / 4,444 tests in serial mode, lint/build
+pass, and three affected source reviews are clear. Merge acceptance additionally
+requires normal CI and independent rechecks on PR22's exact head; its live
+checks/comments retain those final receipts. Previous 210.537 ms
+CI rejection and all earlier candidates remain in the
+[causal record](assurance/findings/responsiveness-causal-repair.md).
+
+**Separate release-qualification queue, excluded from PR22 implementation:**
+
+- **DON-254 follow-up A:** bound the measured 103,626-row canonical breadcrumb
+  worker/main/IPC result without changing the exact selector snapshot or custody.
+  Targeted gaps are 316–351 ms; larger restart gaps reach 550 ms. Preserve bounded
+  transport/session WIP and red tests in `tmp/pr22-scope-freeze-20260911/`.
+- **DON-254 follow-up B:** diagnose the separate 239.509 ms legacy 50,000-object
+  reconstruction source failure. Preserve the diagnostic patch in the same
+  snapshot; the original test and strict gate remain enabled in PR22.
+
+Linear refused two new issues because its free issue limit is exhausted; the
+precise A/B records are DON-254 comments `46c986c3-a16e-48f0-b069-a1b36eeb2d62`
+and `1dfb6581-71a5-4582-9bd8-4ba0ac6173a8` and entries in the Reliability &
+Regression Ledger. Extended 36-hour exact/catch-up proof passed after live-source
+reader correction, but independent timer failures still block release/field
+qualification. No threshold relaxation, merge, release, deployment or team contact.
 
 ### Repair Train B and WAR-06 — active next work (2026-09-10)
 

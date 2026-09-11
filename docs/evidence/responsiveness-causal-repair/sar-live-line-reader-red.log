@@ -1,0 +1,237 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts (71 tests | 6 failed | 65 skipped) 15ms
+     × uses live line geometry over stale capture and serialize data: current exact=true 7ms
+     × uses live line geometry over stale capture and serialize data: current exact=false 3ms
+     × requires live exact geometry in both stability samples 1ms
+     × does not substitute stale geometry when live getData is reject 1ms
+     × does not substitute stale geometry when live getData is malformed 1ms
+     × samples after live getData completes and supports sources without that API 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > live tracking line source evidence > uses live line geometry over stale capture and serialize data: current exact=true
+AssertionError: promise rejected "Error: Timed out waiting for exact stable…" instead of resolving
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:90:29
+     88|         timeoutMs: 500, expected: createRenderedBreadcrumbEvidence(exa…
+     89|       if (currentExact) {
+     90|         await expect(stable).resolves.toMatchObject({ stable: true, ev…
+       |                             ^
+     91|           coordinateSha256: createRenderedBreadcrumbEvidence(exact).co…
+     92|         expect(getData).toHaveBeenCalledTimes(2)
+
+Caused by: Error: Timed out waiting for exact stable rendered breadcrumb evidence after completed restart.
+ ❯ Object.waitForStableSerializedTrackingEvidence tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:59:12
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:90:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > live tracking line source evidence > uses live line geometry over stale capture and serialize data: current exact=false
+AssertionError: promise resolved "{ featureCount: 1, …(20) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "coordinateCount": 2,
++   "coordinateSha256": "ef2f54cc45f5ad517b552d585402d0d1ef8d72b182a212dcb36a528a1c6405be",
++   "deviceCoordinateCounts": {
++     "1": 2,
++   },
++   "deviceCoordinateSha256": {
++     "1": "57135d9fa85c283a5a16214ff90f2a29f0b5cded14a03426c0bb61461862757b",
++   },
++   "deviceCount": 1,
++   "evidencePath": "GeoJSONSource.setData capture",
++   "featureCount": 1,
++   "firstExactMs": 0,
++   "firstExactPublicationMs": 0,
++   "firstNonEmptyMs": 0,
++   "firstObservation": {
++     "coordinateCount": 2,
++     "coordinateSha256": "ef2f54cc45f5ad517b552d585402d0d1ef8d72b182a212dcb36a528a1c6405be",
++     "deviceCoordinateCounts": {
++       "1": 2,
++     },
++     "deviceCoordinateSha256": {
++       "1": "57135d9fa85c283a5a16214ff90f2a29f0b5cded14a03426c0bb61461862757b",
++     },
++     "deviceCount": 1,
++     "featureCount": 1,
++     "sourceIdentityExposed": false,
++   },
++   "maximumReadDurationMs": 0,
++   "observedMs": 250,
++   "proofCompletedMs": 250,
++   "proofDurationMs": 250,
++   "readCount": 2,
++   "setDataCapture": {
++     "firstUpdateAtUnixMs": undefined,
++     "firstUpdateMs": NaN,
++     "installedAtUnixMs": undefined,
++     "latestUpdateAtUnixMs": 10000,
++     "latestUpdateMs": 0,
++     "updateCount": undefined,
++   },
++   "sourceIdentityExposed": false,
++   "stabilityWaitMs": 250,
++   "stable": true,
++   "stableConfirmedMs": 250,
+  }
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:94:29
+     92|         expect(getData).toHaveBeenCalledTimes(2)
+     93|       } else {
+     94|         await expect(stable).rejects.toThrow(/Timed out/)
+       |                             ^
+     95|       }
+     96|       await expect(reader.readTrackingEvidenceCollection(page)).resolv…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > live tracking line source evidence > requires live exact geometry in both stability samples
+AssertionError: promise resolved "{ featureCount: 1, …(20) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "coordinateCount": 2,
++   "coordinateSha256": "ef2f54cc45f5ad517b552d585402d0d1ef8d72b182a212dcb36a528a1c6405be",
++   "deviceCoordinateCounts": {
++     "1": 2,
++   },
++   "deviceCoordinateSha256": {
++     "1": "57135d9fa85c283a5a16214ff90f2a29f0b5cded14a03426c0bb61461862757b",
++   },
++   "deviceCount": 1,
++   "evidencePath": "GeoJSONSource.setData capture",
++   "featureCount": 1,
++   "firstExactMs": 0,
++   "firstExactPublicationMs": 0,
++   "firstNonEmptyMs": 0,
++   "firstObservation": {
++     "coordinateCount": 2,
++     "coordinateSha256": "ef2f54cc45f5ad517b552d585402d0d1ef8d72b182a212dcb36a528a1c6405be",
++     "deviceCoordinateCounts": {
++       "1": 2,
++     },
++     "deviceCoordinateSha256": {
++       "1": "57135d9fa85c283a5a16214ff90f2a29f0b5cded14a03426c0bb61461862757b",
++     },
++     "deviceCount": 1,
++     "featureCount": 1,
++     "sourceIdentityExposed": false,
++   },
++   "maximumReadDurationMs": 0,
++   "observedMs": 250,
++   "proofCompletedMs": 250,
++   "proofDurationMs": 250,
++   "readCount": 2,
++   "setDataCapture": {
++     "firstUpdateAtUnixMs": undefined,
++     "firstUpdateMs": NaN,
++     "installedAtUnixMs": undefined,
++     "latestUpdateAtUnixMs": 10000,
++     "latestUpdateMs": 0,
++     "updateCount": undefined,
++   },
++   "sourceIdentityExposed": false,
++   "stabilityWaitMs": 250,
++   "stable": true,
++   "stableConfirmedMs": 250,
+  }
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:111:78
+    109|     try {
+    110|       await expect(readers().waitForStableSerializedTrackingEvidence({…
+    111|         timeoutMs: 500, expected: createRenderedBreadcrumbEvidence(exa…
+       |                                                                              ^
+    112|       expect(getData.mock.calls.length).toBeGreaterThanOrEqual(2)
+    113|     } finally { vi.unstubAllGlobals(); vi.useRealTimers() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > live tracking line source evidence > does not substitute stale geometry when live getData is reject
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > live tracking line source evidence > does not substitute stale geometry when live getData is malformed
+AssertionError: promise resolved "{ type: 'FeatureCollection', …(1) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "features": [
++     {
++       "geometry": {
++         "coordinates": [
++           [
++             -9.7,
++             52.2,
++           ],
++           [
++             -9.6,
++             52.3,
++           ],
++         ],
++         "type": "LineString",
++       },
++       "properties": {
++         "deviceId": 1,
++         "featureKind": "breadcrumbLine",
++       },
++       "type": "Feature",
++     },
++   ],
++   "type": "FeatureCollection",
+  }
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:125:67
+    123|     })
+    124|     try {
+    125|       await expect(readers().readTrackingEvidenceCollection(page)).rej…
+       |                                                                   ^
+    126|       expect(serialize).not.toHaveBeenCalled()
+    127|     } finally { vi.unstubAllGlobals() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-36h-proof-lib.test.ts > live tracking line source evidence > samples after live getData completes and supports sources without that API
+AssertionError: expected { collection: { …(2) }, …(1) } to deeply equal { collection: { …(2) }, …(2) }
+
+- Expected
++ Received
+
+@@ -22,8 +22,7 @@
+          "type": "Feature",
+        },
+      ],
+      "type": "FeatureCollection",
+    },
+-   "evidencePath": "GeoJSONSource.getData()",
+-   "sampledAtUnixMs": 10125,
++   "sampledAtUnixMs": 10000,
+  }
+
+ ❯ tests/unit/electron-breadcrumb-36h-proof-lib.test.ts:139:76
+    137|     vi.stubGlobal('window', { __SARTRACKER_MAP__: { getSource: () => s…
+    138|     try {
+    139|       await expect(readers().readSerializedTrackingSourceObservation(p…
+       |                                                                            ^
+    140|         collection: exact, sampledAtUnixMs: 10_125, evidencePath: 'Geo…
+    141|       })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 65 skipped (71)
+   Start at  13:57:04
+   Duration  1.25s (transform 99ms, setup 0ms, import 120ms, tests 15ms, environment 690ms)
+

@@ -1,0 +1,26 @@
+{
+  "evidenceKind": "rejected reference workload with separate diagnostic observer",
+  "asarSha256": "eb0ef15cbaf1cdde2e22341aef137f8dcf510e0476e60bf2ac35eb1835d2e290",
+  "ordinaryFailure": "Timed out waiting for complete 36-hour history within the packaged acceptance deadline.",
+  "mainMaximumGapsMs": [
+    98.11668999999999,
+    394.33310000000347
+  ],
+  "mainBreachCounts": [
+    0,
+    14
+  ],
+  "finalTailCollected": false,
+  "postDeadlinePositions": 279936,
+  "postDeadlineCheckpointsComplete": true,
+  "deadlineCurrentFixMs": null,
+  "deadlineFirstBreadcrumbMs": 525,
+  "deadlineRequestCoverageComplete": true,
+  "limits": [
+    "Post-deadline exact279936rows and33checkpoints do not prove persistence before60seconds.",
+    "CurrentFixMs null reflects stale setData-only observer; updateData current markers require actual rendered-layer observation.",
+    "Independent main394.333ms/14breaches remain real diagnostic counterexamples; cause not assigned.",
+    "The old proof deletes temporary profile even on failure; structured runtime logs/SQLite cannot be recovered from this run. Future failed profiles will be retained.",
+    "Recovered UI retained evidence-health critical shutdown-loss warning; no field or release acceptance."
+  ]
+}

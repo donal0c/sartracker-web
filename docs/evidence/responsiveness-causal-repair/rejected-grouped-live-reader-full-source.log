@@ -1,0 +1,34 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run --run
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+Startup SQLite contention: {"maximumGapMs":13.832957999999962,"processCpuMs":10.111}
+Startup SQLite contention: {"maximumGapMs":13.519667000000027,"processCpuMs":6.689}
+Legacy event preparation heartbeat diagnostics: {"maximumHeartbeatGapMs":49.29133300000103,"maximumInspectionQueryMs":19.888459000001603,"largestGapProcessCpuMs":6.692,"overlappingMainThreadGc":[]}
+GPX current-write diagnostics: {"maximumWriteMs":32.12983400000667,"largestWriteProcessCpuMs":2.579,"maximumHeartbeatGapMs":18.319375000006403,"sequence":1046}
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts (74 tests | 1 failed) 103671ms
+     × reconstructs large legacy mutable-object inventories in bounded background turns [DON-277] 23886ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > reconstructs large legacy mutable-object inventories in bounded background turns [DON-277]
+AssertionError: expected 239.50912499999686 to be less than 200
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:765:35
+    763|     inspection.close()
+    764|     expect(baselineCount).toBe(50_000)
+    765|     expect(maximumHeartbeatGapMs).toBeLessThan(200)
+       |                                   ^
+    766|     await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPL…
+    767|       .resolves.toMatchObject({ mission_id: mission.id })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 431 passed (432)
+      Tests  1 failed | 4437 passed (4438)
+   Start at  13:59:15
+   Duration  105.31s (transform 22.46s, setup 0ms, import 49.15s, tests 639.51s, environment 352.84s)
+

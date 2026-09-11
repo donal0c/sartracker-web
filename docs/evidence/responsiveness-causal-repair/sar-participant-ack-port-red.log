@@ -1,0 +1,49 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/start-tracking-runtime.test.ts (90 tests | 2 failed | 87 skipped) 1081ms
+     × uses the available participant backfill acknowledgement port (both) and holds evidence until its checkpoint settles [DON-254] 11ms
+     × uses the available participant backfill acknowledgement port (acknowledgement-only) and holds evidence until its checkpoint settles [DON-254] 1010ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > uses the available participant backfill acknowledgement port (both) and holds evidence until its checkpoint settles [DON-254]
+AssertionError: expected "vi.fn()" to be called with arguments: [ { mission_id: 'mission-1', …(2) } ]
+
+Number of calls: 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:2144:33
+    2142|         ).toBe(1))
+    2143|         const selectedPersist = ports === 'legacy-only' ? persistTrack…
+    2144|         expect(selectedPersist).toHaveBeenCalledWith({
+       |                                 ^
+    2145|           mission_id: 'mission-1', checkpoints: [],
+    2146|           positions: [{
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > uses the available participant backfill acknowledgement port (acknowledgement-only) and holds evidence until its checkpoint settles [DON-254]
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:2142:11
+    2140|         await vi.waitFor(() => expect(
+    2141|           persistTrackingPositionsBulk.mock.calls.length + persistTrac…
+    2142|         ).toBe(1))
+       |           ^
+    2143|         const selectedPersist = ports === 'legacy-only' ? persistTrack…
+    2144|         expect(selectedPersist).toHaveBeenCalledWith({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed | 87 skipped (90)
+   Start at  14:14:52
+   Duration  1.72s (transform 130ms, setup 0ms, import 156ms, tests 1.08s, environment 406ms)
+
