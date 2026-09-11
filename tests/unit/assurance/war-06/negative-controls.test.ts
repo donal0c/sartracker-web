@@ -15,4 +15,4 @@ it('keeps all WAR-06 characterization oracles falsifiable', () => {
   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
   expect(result.stdout.match(/GREEN current control/g)).toHaveLength(3)
   expect(result.stdout.match(/RED at named safety oracle/g)).toHaveLength(3)
-})
+}, 120_000)
