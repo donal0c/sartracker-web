@@ -221,7 +221,7 @@ Train B until integration.
 WAR-06 PR #20 review repair is now reconciled as evidence-only work. The branch
 was rebased onto current `origin/master` `3db57a79` (merged PR #22); review
 `5175815340` covered pre-rebase head `839737e8`, and the executable evidence
-commit is `2390b57b`. Three passing characterizations cover the real polling
+commit is `dc3ea822`. Three passing characterizations cover the real polling
 manager delayed flush (`WAR-06-AUD-01`), real mission finish → idle → start plus
 runtime current-fix hydration (`WAR-06-AUD-02`), and the unkeyed cache sibling.
 The report and test cleanup are fail-safe. These remain unrepaired P1 candidate

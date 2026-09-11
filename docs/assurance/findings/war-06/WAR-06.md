@@ -3,7 +3,7 @@
 Date: 2026-09-11
 Repository: `donal0c/sartracker-web`
 Evidence base/current master: `3db57a7942b32beef0d13cc4e8484a5bb492dfa4` (`origin/master`, including merged PR #22)
-Evidence implementation commit: `2390b57bb2e2cc549c0069b80013d968d0fb36d3` (rebased WAR-06 test evidence)
+Evidence implementation commit: `dc3ea82262a18cd70409ee1d2b547de4fd81a259` (final cleanup-hardened WAR-06 test evidence)
 Original reviewed PR head: `839737e82a8736be8dea3e7104fdada16398ea31` (review `5175815340`; pre-rebase)
 Merged Repair Train A application head: `713461bfa4018f8009e51660618515f78b8e23c0`
 Scope: investigation and durable reproduction evidence only
@@ -170,7 +170,7 @@ the cache silently authoritative for exact mission evidence.
 The evidence tests are intentionally passing characterizations: they assert
 unsafe current behaviour so the reproductions are durable without committing a
 failing test or a speculative production fix. The exact executable test commit
-is `2390b57bb2e2cc549c0069b80013d968d0fb36d3`, rebased onto current master
+is `dc3ea82262a18cd70409ee1d2b547de4fd81a259`, rebased onto current master
 `3db57a7942b32beef0d13cc4e8484a5bb492dfa4`.
 
 | Evidence | Result | Claim boundary |
@@ -294,8 +294,9 @@ The prior independent review `5175815340` examined exact pre-rebase PR head
 `839737e82a8736be8dea3e7104fdada16398ea31` with parent/base
 `302bdd040976bd370271cf5866549fa2a7e05ff5`. The branch was then rebased onto
 current `origin/master` `3db57a7942b32beef0d13cc4e8484a5bb492dfa4`, which includes
-merged PR #22. The repaired characterization evidence is executable at
-`2390b57bb2e2cc549c0069b80013d968d0fb36d3`; any later documentation commit is a different final PR head and
+merged PR #22. The initial repaired characterization evidence was executable at
+`2390b57bb2e2cc549c0069b80013d968d0fb36d3`; the final cleanup-hardened test
+tree is `dc3ea82262a18cd70409ee1d2b547de4fd81a259`. Any later documentation commit is a different final PR head and
 must be checked by exact SHA before approval.
 
 The stable review IDs are dispositioned as follows: `WAR-06-AUD-01-REACHABILITY`
