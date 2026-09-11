@@ -40,10 +40,12 @@ Updated 2026-09-11. Read after `CLAUDE.md`.
   → idle → start plus the runtime current-fix callback, and the unkeyed cache
   hydration path. Local WAR-06 is 3/3, adjacent tracking/reload/runtime/poller
   is 185/185, ordinary correctness is 4,461 passed / 6 qualification-only
-  skipped, lint/build pass, and no production repair is included. New exact-head
-  CI and independent reviews remain required; strict `<200 ms` failures remain
-  qualification evidence, not a reason to weaken ordinary correctness gates.
-  PR #20 remains ahead of PR #21 and PR #19 in the locked queue.
+  skipped, lint/build pass, and no production repair is included. Exact
+  executable candidate `10781e2d` has two CLEAN read-only reviews and ordinary
+  CI `34632732266` green; PR-mode timing/replay/packaged skips remain explicit
+  gaps. Strict `<200 ms` failures remain qualification evidence, not a reason
+  to weaken ordinary correctness gates. PR #20 remains ahead of PR #21 and PR
+  #19 in the locked queue.
 
 - **Repair Train A merged**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
   at `302bdd040976bd370271cf5866549fa2a7e05ff5` on 2026-09-10. Its final

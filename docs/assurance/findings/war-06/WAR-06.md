@@ -4,6 +4,11 @@ Date: 2026-09-11
 Repository: `donal0c/sartracker-web`
 Evidence base/current master: `3db57a7942b32beef0d13cc4e8484a5bb492dfa4` (`origin/master`, including merged PR #22)
 Evidence implementation commit: `dc3ea82262a18cd70409ee1d2b547de4fd81a259` (final cleanup-hardened WAR-06 test evidence)
+Exact executable candidate head: `10781e2d74e9a8034591e47a513f0957ccd6e3f7`
+Exact ordinary CI: `34632732266` passed correctness, lint, build/bundle budgets,
+artifact/native inspection and AppImage launch; PR-mode strict timing,
+960k replay, packaged tracking and archive lifecycle steps were skipped by
+workflow policy and are not claimed as release proof.
 Original reviewed PR head: `839737e82a8736be8dea3e7104fdada16398ea31` (review `5175815340`; pre-rebase)
 Merged Repair Train A application head: `713461bfa4018f8009e51660618515f78b8e23c0`
 Scope: investigation and durable reproduction evidence only
@@ -296,8 +301,9 @@ The prior independent review `5175815340` examined exact pre-rebase PR head
 current `origin/master` `3db57a7942b32beef0d13cc4e8484a5bb492dfa4`, which includes
 merged PR #22. The initial repaired characterization evidence was executable at
 `2390b57bb2e2cc549c0069b80013d968d0fb36d3`; the final cleanup-hardened test
-tree is `dc3ea82262a18cd70409ee1d2b547de4fd81a259`. Any later documentation commit is a different final PR head and
-must be checked by exact SHA before approval.
+tree is `dc3ea82262a18cd70409ee1d2b547de4fd81a259`. Any later documentation
+commit is a different final PR head and must be checked by exact SHA before
+approval.
 
 The stable review IDs are dispositioned as follows: `WAR-06-AUD-01-REACHABILITY`
 is addressed by the real manager delayed-flush interleaving;
@@ -310,15 +316,19 @@ workplan, and coordinated ledger without changing PR #18's merged truth.
 
 The full-suite timing failures remain unresolved and are retained as a strict
 gate. They are not reclassified by these additive tests, and this PR makes no
-performance or threshold claim. A new exact-head independent review is required
-after the rebase; the prior review IDs are historical provenance, not approval
-of the rebased head.
+performance or threshold claim. The prior review IDs are historical provenance,
+not approval of the rebased head; the new exact-head reviews below are the
+current review evidence.
 
 Independent final review `5176300059` examined the pre-PR22 executable head
 `c4cda818` and returned clean after identifying one coordination-only
 contradiction. That review and CI `34575023706` are retained as historical
 evidence; they do not approve this rebased head. The live Linear state and the
-new exact-head CI/reviews must be reconciled before merge readiness is claimed.
+new exact-head CI/reviews are now reconciled on executable candidate
+`10781e2d`: two independent read-only reviews returned CLEAN, and CI
+`34632732266` passed its ordinary PR lane. The PR-mode skipped timing,
+replay, packaged tracking and archive steps remain explicit evidence gaps, not
+release qualification.
 
 ## Next action
 
@@ -326,7 +336,8 @@ Treat `WAR-06-AUD-01`, `WAR-06-AUD-02`, and `WAR-06-CACHE-SIBLING` as one
 lifecycle repair boundary. The rebased PR remains investigation-only and is
 not a production repair, release qualification, or operational-use
 recommendation: the P1 candidate hazards remain unrepaired and the strict
-`<200 ms` failures remain unresolved. Complete the new exact-head independent
-reviews and ordinary CI, then record the final receipt before calling it
-merge-ready. Do not close the findings or claim release/field safety from this
-investigation PR.
+`<200 ms` failures remain unresolved. The exact executable candidate is
+merge-ready as additive investigation evidence for Donal's review; the
+documentation-only closeout that records this receipt does not change the
+executable proof. Do not close the findings or claim release/field safety from
+this investigation PR.

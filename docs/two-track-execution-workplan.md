@@ -229,11 +229,12 @@ renderer hazards; the strict `<200 ms` full-suite timing failures remain
 unresolved. No production change, merge, release, deployment, team contact, or
 gate relaxation is claimed. Final exact-head Luna review `5176300059` is clean
 on pre-PR22 executable head `c4cda818`; it is retained as historical
-provenance, not approval of the rebased head. The new exact-head CI,
-independent reviews, and Linear status must be reconciled before merge
-readiness is claimed. PRs #19 and #21 remain draft and the latest
-qualification comment retains the 205 ms strict-gate failure. Any production
-repair remains downstream of this investigation PR.
+provenance, not approval of the rebased head. Two new exact-head read-only
+reviews are CLEAN on executable candidate `10781e2d`, and ordinary CI
+`34632732266` passes. PR-mode timing/replay/packaged skips remain explicit
+gaps; PRs #19 and #21 remain draft and the latest qualification comment
+retains the 205 ms strict-gate failure. Any production repair remains
+downstream of this investigation PR.
 
 ### Repair Train A — merged evidence boundary (2026-09-10)
 
