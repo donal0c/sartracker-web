@@ -303,7 +303,7 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
     }),
     getBreadcrumbs: vi.fn().mockResolvedValue([missionAHistory]),
   }
-  const runtime = await startCharacterizationRuntime({
+  const { notifyScopeChanged } = await startCharacterizationRuntime({
     createClient: () => client,
     applySnapshot: (nextSnapshot) => {
       applyTrackingSnapshot(
@@ -343,6 +343,7 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
       },
     ),
   })
+  expect(notifyScopeChanged).toBeTypeOf('function')
 
   await vi.advanceTimersByTimeAsync(0)
   for (let index = 0; index < 20 && !scheduledDelays.includes(100); index += 1) {
@@ -444,7 +445,7 @@ it('characterizes the unkeyed cached snapshot across finish-idle-start [WAR-06-C
     positions: cachedSnapshot.positions,
     breadcrumbs: cachedSnapshot.breadcrumbs,
   })
-  const runtime = await startCharacterizationRuntime({
+  const { notifyScopeChanged } = await startCharacterizationRuntime({
     cacheRead: vi.fn().mockResolvedValue(cachedContents),
     applySnapshot: (nextSnapshot) => {
       applyTrackingSnapshot(
@@ -469,7 +470,7 @@ it('characterizes the unkeyed cached snapshot across finish-idle-start [WAR-06-C
 
   currentScope = scopeForMission('mission-b')
   scopeStatus = 'ready'
-  runtime.notifyScopeChanged()
+  notifyScopeChanged()
 
   expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id))
     .toEqual(['mission-a-cached-fix'])

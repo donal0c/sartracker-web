@@ -218,6 +218,18 @@ an Astra retrace before implementation. Both tasks started from `302bdd04` in
 isolated worktrees; shared coordination-document ownership stays with Repair
 Train B until integration.
 
+WAR-06 PR #20 review repair is now reconciled as evidence-only work. The branch
+was rebased onto current `origin/master` `49b2e1d4` (merged PR #18); review
+`5175815340` covered pre-rebase head `839737e8`, and the executable evidence
+commit is `5ddeb6fd`. Three passing characterizations cover the real polling
+manager delayed flush (`WAR-06-AUD-01`), real mission finish → idle → start plus
+runtime current-fix hydration (`WAR-06-AUD-02`), and the unkeyed cache sibling.
+The report and test cleanup are fail-safe. These remain unrepaired P1 candidate
+renderer hazards; the strict `<200 ms` full-suite timing failures remain
+unresolved. No production change, merge, release, deployment, team contact, or
+gate relaxation is claimed. Final exact-head Luna review, Linear update, and
+any production repair remain downstream of this investigation PR.
+
 ### Repair Train A — merged evidence boundary (2026-09-10)
 
 [PR #17](https://github.com/donal0c/sartracker-web/pull/17) merged at `302bdd04`;

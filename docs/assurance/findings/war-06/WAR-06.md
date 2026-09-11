@@ -1,23 +1,28 @@
 # WAR-06 Tracking Lifecycle Investigation
 
-Date: 2026-09-10
+Date: 2026-09-11
 Repository: `donal0c/sartracker-web`
-Investigation head: `302bdd040976bd370271cf5866549fa2a7e05ff5` (`origin/master`)
+Evidence base/current master: `49b2e1d416ca2fa4ff98cfae31c4d947bc4b0a6e` (`origin/master`, including merged PR #18)
+Evidence implementation commit: `5ddeb6fd81761b0eea67e24403c7ded1c6aa012f` (rebased WAR-06 test evidence)
+Original reviewed PR head: `839737e82a8736be8dea3e7104fdada16398ea31` (review `5175815340`; pre-rebase)
 Merged Repair Train A application head: `713461bfa4018f8009e51660618515f78b8e23c0`
 Scope: investigation and durable reproduction evidence only
 
 ## Outcome
 
-The current head has two deterministic P1 lifecycle defects at the renderer
-publication boundary. A tracking snapshot carrying an older mission identity
-can reach the visible current-position snapshot after the active mission has
-changed. One route is a direct stale history publication; the other is a
-snapshot deferred while participant scope hydrates and replayed after the
-mission changes.
+The reviewed PR findings are now covered by three durable, passing
+characterizations. `AUD-01` drives the real polling manager through its
+100 ms delayed history flush while the mission changes; `AUD-02` drives the
+real mission controller through finish → idle → start and then resumes the
+runtime's current-fix callback after participant hydration; and the sibling
+cache characterization proves that the unkeyed cached snapshot can cross the
+same lifecycle boundary. These tests confirm unsafe renderer publication
+behaviour, not a production repair.
 
-Both defects are reproduced by the isolated WAR-06 characterization test. No
-production, schema, workflow, release, deployment, or shared coordination
-record was changed by this investigation.
+The branch remains investigation-only. No production, schema, workflow,
+release, deployment, or operator-manual behaviour was changed. The report and
+shared coordination records were updated only to bind the evidence, current
+base, ownership, and remaining gates.
 
 The existing Repair Train A controls remain green. This audit did not reproduce
 AUD-13's stopped-polling/false-Live behavior, AUD-02's out-and-back stationary
@@ -31,7 +36,7 @@ focused source suite.
   active mission may have changed.
 - Current positions remain the highest-priority operational surface, but an
   older mission's current position must never satisfy that priority for the
-  new mission.
+  new mission (`SAR-QA-002`, `SAR-QA-008`, `SAR-FIELD-002`).
 - A stale operational snapshot must not mutate operational-position retention
   or the stationary-attention projection for the new mission.
 - Canonical Traccar `fixTime` remains the only exact evidence clock. A valid
@@ -43,9 +48,9 @@ focused source suite.
 
 ## Confirmed findings
 
-### WAR-06-AUD-01 — stale history callback crosses the active mission boundary
+### WAR-06-AUD-01 — real delayed history flush crosses the active mission boundary
 
-Severity: P1
+Severity: P1 candidate / confirmed renderer-boundary hazard
 Repair owner: tracking lifecycle/mission-scope repair, coordinated with
 `DON-267`; candidate for the next tracking repair train.
 Reproduction: `tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts`
@@ -60,17 +65,25 @@ stale onSnapshot(snapshot, { historyResetKey: mission-a })
   -> startAppRuntime.applySnapshot reads current mission-b
 ```
 
-Deterministic interleaving:
+Deterministic interleaving exercised by the test:
 
-1. Mission B is the active renderer mission.
-2. A delayed history callback for Mission A resumes with a canonical live fix
-   and `historyResetKey: mission-a`.
-3. The runtime filters the snapshot against the currently-ready participant
-   scope, but does not require the callback key to equal the active mission.
-4. The visible publisher receives the Mission A fix while Mission B is active.
+1. Mission A starts and the real `createPollingManager` begins its initial
+   history reconciliation. A controlled second persistence promise keeps the
+   manager in the same initial poll while its real 100 ms delayed flush is
+   pending.
+2. The injected timer wrapper changes the active mission to Mission B
+   immediately after the manager's delayed flush callback schedules its
+   publication microtask, before that microtask is delivered.
+3. The runtime filters the callback against the currently-ready participant
+   scope, but does not require `historyResetKey: mission-a` to equal the active
+   mission.
+4. The visible publisher receives the Mission A breadcrumb while Mission B is
+   active.
 
-Observed result: `mission-a-fix` is applied once to the visible snapshot while
-`useMissionStore.currentMission.id` is `mission-b`.
+Observed result: the real manager's delayed flush causes `mission-a-history`
+to appear in the visible snapshot while `useMissionStore.currentMission.id`
+is `mission-b`. This is a valid event-loop interleaving characterization; it
+does not claim that every provider response reaches this ordering in the field.
 
 The downstream persistence path is safer than the visible path: when evidence
 is admitted, `persistTrackingSnapshot` checks the expected mission before
@@ -78,15 +91,16 @@ writing. That check prevents this reproduction from being silently promoted to
 Mission B durable evidence, but it does not prevent wrong current coordinates
 or derived stationary attention from being shown to the operator.
 
-Required repair shape: revalidate the operational mission identity immediately
-before the final visible publication, and make the same identity check govern
-retention and stationary projection inputs. A stale callback should be dropped
-or replaced by an explicit current-mission state; it must not be rendered under
-the new mission.
+Required repair shape (future production work): revalidate the operational
+mission identity immediately before the final visible publication, and make the
+same identity check govern retention and stationary projection inputs. A stale
+callback should be dropped or replaced by an explicit current-mission state; it
+must not be rendered under the new mission. No production repair is included in
+this PR.
 
 ### WAR-06-AUD-02 — deferred participant-hydration snapshot crosses the mission boundary
 
-Severity: P1
+Severity: P1 candidate / confirmed renderer-boundary hazard
 Repair owner: same tracking lifecycle/mission-scope repair as
 `WAR-06-AUD-01`.
 Reproduction: `tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts`
@@ -104,8 +118,12 @@ onSnapshot(snapshot-A, context mission-a)
   -> dependencies.applySnapshot(snapshot-A)
 ```
 
-Observed result: the deferred `mission-a-deferred-fix` is applied once after
-Mission B is active and its participant scope is ready.
+The characterization drives `startMissionRuntime` through a real
+finish → idle → start transition, then invokes the captured runtime
+`onCurrentSnapshot` callback while scope is loading. The callback is held by the
+runtime hydration buffer until the replacement Mission B scope is ready.
+Observed result: `mission-a-deferred-fix` is applied once after Mission B is
+active and its participant scope is ready.
 
 This route bypasses the normal poller's stale-response suppression because the
 snapshot is held by the runtime-level hydration buffer. The dynamic scope
@@ -114,22 +132,50 @@ position context is still explicitly keyed to Mission A. The result can
 contaminate the visible current marker and the stationary-attention projection
 for Mission B.
 
-Required repair shape: the hydration subscriber must compare the deferred
+Required repair shape (future production work): the hydration subscriber must
+compare the deferred
 snapshot's mission key with the current mission before filtering, retention, or
 publication. A mismatch must discard the deferred operational snapshot and
 request a fresh current poll for the active mission. The fix must preserve the
 existing behavior that waits for trustworthy participant scope before exposing
-or persisting a snapshot.
+or persisting a snapshot. No production repair is included in this PR.
+
+### WAR-06-CACHE-SIBLING — unkeyed cached snapshot crosses the same boundary
+
+Severity: P1 candidate / confirmed renderer-boundary hazard
+Repair owner: same tracking lifecycle/mission-scope repair as
+`WAR-06-AUD-01` and `WAR-06-AUD-02`.
+Reproduction: `tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts`
+
+The runtime's cold-start cache path stores a deferred snapshot with
+`historyResetKey: null` when participant scope is loading. The test serializes a
+real cache payload for Mission A, starts with scope unresolved, drives the real
+mission controller through finish → idle → start, then marks Mission B's scope
+ready. Hydration applies the cached `mission-a-cached-fix` to the visible store
+while Mission B is current.
+
+This characterizes the sibling hazard identified in review `5175815340`: the
+cache payload has no mission identity and the deferred runtime record is
+unkeyed. The scope filter can therefore authorize the old device under the new
+mission. This is local runtime evidence only; it does not claim a packaged or
+field cache migration result, and no production repair is included in this PR.
+
+Required repair shape (future production work): bind cache data to an explicit
+mission context or discard it at a mission transition before hydration. Preserve
+the existing fail-visible offline status and participant-scope gate; do not make
+the cache silently authoritative for exact mission evidence.
 
 ## Current-head characterization evidence
 
-The evidence test is intentionally a passing characterization: it asserts the
-unsafe current behavior so the reproduction is durable without committing a
-failing test or a speculative production fix.
+The evidence tests are intentionally passing characterizations: they assert
+unsafe current behaviour so the reproductions are durable without committing a
+failing test or a speculative production fix. The exact executable test commit
+is `5ddeb6fd81761b0eea67e24403c7ded1c6aa012f`, rebased onto current master
+`49b2e1d416ca2fa4ff98cfae31c4d947bc4b0a6e`.
 
 | Evidence | Result | Claim boundary |
 | --- | --- | --- |
-| WAR-06 isolated characterization | 2 tests passed | Real `startTrackingRuntime`; controlled poller, mission store and participant scope; deterministic local source evidence |
+| WAR-06 isolated characterization | 3 tests passed | Real `startTrackingRuntime`; real polling-manager delayed flush for AUD-01; real mission-controller finish/idle/start plus current-fix callback for AUD-02 and cache sibling; controlled local source evidence |
 | Existing tracking/reload custody suite | 179 tests passed | Rechecked merged Repair Train A seams; unit/integration source evidence only |
 | `AUD-13` false-Live reconnect | Not reproduced in focused current-head suite | Does not erase the historical/native limitation or prove packaged/field recovery |
 | `AUD-02` stationary route | Existing policy tests pass | Does not prove every clock, device, or field profile |
@@ -147,7 +193,7 @@ npm test
 npm test -- tests/unit/electron-mission-evidence-versioning.test.ts -t 'keeps current fixes below the hard gate while byte-bounding legacy event writer turns' --no-file-parallelism
 ```
 
-The first command passed 2/2 tests. The second passed 3/3 files and 179/179
+The first command passed 3/3 tests. The second passed 3/3 files and 179/179
 tests. The serial full source cycle passed 427/428 files and 4,378/4,379
 tests; its single failure was the unchanged strict `<200 ms` assertion at
 `tests/unit/electron-mission-evidence-versioning.test.ts:1082`, which observed
@@ -220,23 +266,50 @@ boundaries. Those are separate proof tiers from the live mission-scope defect.
 
 - The new reproductions are deterministic real-runtime unit evidence, not a
   packaged Electron, CI, multi-machine, soak, field, or release qualification.
-- The test uses controlled callback delivery to exercise an otherwise
-  asynchronous interleaving; it proves the missing guard and its consequence,
-  not the frequency of the race in field conditions.
+- `AUD-01` uses `createPollingManager` and its real 100 ms delayed flush, with a
+  controlled persistence promise and timer interleaving. `AUD-02` and the cache
+  sibling use the real mission controller and runtime callback/hydration route.
+  Controlled delivery proves the missing guard and its consequence, not the
+  frequency of the race in field conditions.
+- The runtime cleanup is fail-safe: every started runtime is registered before
+  assertions, `afterEach` resolves retained provider/persistence promises,
+  stops every active runtime while collecting failures, restores fake timers,
+  and throws an aggregate cleanup error. A failed assertion cannot leave a
+  polling runtime or timer lane running into the next test.
 - No strict `<200 ms` gate was changed or relaxed. The historical unexplained
   224 ms archive run and the remaining DON-254 qualification evidence remain
   outside this investigation.
-- No shared `handoff/HANDOFF.md`, `docs/two-track-execution-workplan.md`, or
-  `docs/assurance/coordinated-work-ledger.md` update is made in the initial
-  investigation. Those records should be reconciled only in the post-Repair
-  Train B closeout after rebasing this evidence against the then-current head.
+
+## Review and provenance reconciliation
+
+Independent review `5175815340` examined exact pre-rebase PR head
+`839737e82a8736be8dea3e7104fdada16398ea31` with parent/base
+`302bdd040976bd370271cf5866549fa2a7e05ff5`. The branch was then rebased onto
+current `origin/master` `49b2e1d416ca2fa4ff98cfae31c4d947bc4b0a6e`, which includes
+merged PR #18. The repaired characterization evidence is executable at
+`5ddeb6fd81761b0eea67e24403c7ded1c6aa012f`; any later documentation commit is a
+different final PR head and must be checked by exact SHA before approval.
+
+The stable review IDs are dispositioned as follows: `WAR-06-AUD-01-REACHABILITY`
+is addressed by the real manager delayed-flush interleaving;
+`WAR-06-AUD-02-LIFECYCLE` by the real finish/idle/start and current-fix callback
+route; `WAR-06-CACHE-SIBLING` by the unkeyed cache characterization;
+`WAR-06-CLEANUP` by fail-safe runtime teardown; and
+`WAR-06-PROVENANCE` by the exact base, reviewed head, and rebased evidence
+commit above. `WAR-06-COORDINATION` is reconciled in the current handoff,
+workplan, and coordinated ledger without changing PR #18's merged truth.
+
+The full-suite timing failures remain unresolved and are retained as a strict
+gate. They are not reclassified by these additive tests, and this PR makes no
+performance or threshold claim.
 
 ## Next action
 
-Treat `WAR-06-AUD-01` and `WAR-06-AUD-02` as one lifecycle repair boundary.
-Before implementation, obtain the requested independent Luna audit and an
-Astra retrace because the consequence is P1 and the repair will touch shared
-tracking publication architecture. Implement the smallest final-boundary
-mission identity guard, add red/green regressions, then rerun current-position,
-stationary, persistence, browser, packaged and exact-head review gates. Do not
-close the findings or claim release/field safety from this investigation PR.
+Treat `WAR-06-AUD-01`, `WAR-06-AUD-02`, and `WAR-06-CACHE-SIBLING` as one
+lifecycle repair boundary. This PR recommends **not merge-ready for release or
+operational use**: it adds only evidence, leaves the P1 candidate hazards
+unrepaired, and retains the unresolved strict `<200 ms` failures. Obtain the
+required independent Luna final review and Astra retrace before any production
+identity guard is implemented; then run current-position, stationary,
+persistence, browser, packaged, and exact-head review gates. Do not close the
+findings or claim release/field safety from this investigation PR.
