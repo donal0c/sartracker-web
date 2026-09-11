@@ -311,6 +311,7 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
   pendingCurrentPositionResolutions.add(() => pendingSecondHistoryPersistence.resolve())
   let currentPollCount = 0
   let requestPollNow: () => void = () => undefined
+  let requestPollNowCallCount = 0
   const scheduledDelays: number[] = []
   let initialHistoryPersistenceCount = 0
   const persistHistoryChunk = vi.fn((input: TrackingHistoryChunkPersistenceInput) => {
@@ -366,8 +367,11 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
           clearTimeout: globalThis.clearTimeout,
         },
       )
-      requestPollNow = poller.requestPollNow
-      return poller
+      requestPollNow = () => {
+        requestPollNowCallCount += 1
+        poller.requestPollNow()
+      }
+      return { ...poller, requestPollNow }
     },
   })
   expect(notifyScopeChanged).toBeTypeOf('function')
@@ -381,13 +385,19 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
 
   // A production wake starts a second poll while the real 100 ms history
   // publication timer is pending. The second poll blocks on the Traccar
-  // current-position response; the Mission B wake therefore hits the real
-  // pollInFlight early return before the timer publishes Mission A history.
+  // current-position response; the real finish → idle → start Mission B wake
+  // therefore hits the real pollInFlight early return before the timer
+  // publishes Mission A history.
   requestPollNow()
   await flushMicrotasks()
   expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+  await controller.finishMission()
+  await controller.startMission({ name: 'Mission B' })
   currentScope = scopeForMission('mission-b')
-  useMissionStore.setState({ phase: 'active', currentMission: mission('mission-b') })
+  expect(useMissionStore.getState().phase).toBe('active')
+  expect(useMissionStore.getState().currentMission?.id).toBe('mission-b')
+  expect(requestPollNowCallCount).toBe(3)
+  expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
   await vi.advanceTimersByTimeAsync(100)
   await flushMicrotasks()
 
@@ -407,18 +417,16 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
   let scopeStatus: 'loading' | 'ready' = 'loading'
   let currentScope = scopeForMission('mission-a')
   const missionACurrent = snapshot('mission-a-deferred-fix')
-  const pendingPollCurrentPositions = createDeferred<readonly NormalizedTrackingPosition[]>()
-  pendingCurrentPositionResolutions.add(() => pendingPollCurrentPositions.resolve([]))
-  let pollCurrentPositionCallCount = 0
+  const pendingReplacementCurrentPositions = createDeferred<readonly NormalizedTrackingPosition[]>()
+  pendingCurrentPositionResolutions.add(() => pendingReplacementCurrentPositions.resolve([]))
+  let finishRequested: Promise<Mission | null> | null = null
+  let requestPollNowCallCount = 0
   const client: TrackingPollerClient = {
     authenticate: vi.fn().mockResolvedValue(undefined),
     getDevices: vi.fn().mockResolvedValue(missionACurrent.devices),
-    getCurrentPositions: vi.fn(() => {
-      pollCurrentPositionCallCount += 1
-      return pollCurrentPositionCallCount === 1
-        ? pendingPollCurrentPositions.promise
-        : Promise.resolve([])
-    }),
+    getCurrentPositions: vi.fn()
+      .mockResolvedValueOnce(missionACurrent.positions)
+      .mockReturnValue(pendingReplacementCurrentPositions.promise),
     getBreadcrumbs: vi.fn().mockResolvedValue([]),
   }
   let replacement: Promise<Mission> | null = null
@@ -440,43 +448,57 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
       scopeStatus: () => scopeStatus,
       readScope: () => currentScope,
       subscribeScope: () => () => undefined,
-      createPoller: (pollerClient, pollerHooks) => createPollingManager(
-        pollerClient as TrackingPollerClient,
-        {
-          intervalMs: 5_000,
-          staleThresholdMs: 60 * 60 * 1000,
-          getPollingMode: () => {
-            const phase = useMissionStore.getState().phase
-            return phase === 'active' || phase === 'paused' ? phase : 'idle'
+      createPoller: (pollerClient, pollerHooks) => {
+        let poller: ReturnType<typeof createPollingManager> | null = null
+        const wrappedHooks: CapturedPollerHooks = {
+          ...pollerHooks,
+          onCurrentSnapshot: (nextSnapshot, context, observation) => {
+            pollerHooks.onCurrentSnapshot(nextSnapshot, context, observation)
+            if (finishRequested === null) {
+              // Request the replacement turn while this real poll is still
+              // in flight; the subsequent Mission A -> idle -> Mission B
+              // wakes exercise the same production coalescing path.
+              poller?.requestPollNow()
+              finishRequested = controller.finishMission()
+            }
           },
-          getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
-          getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
-          getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
-          ...withoutHistoryPersistenceHooks(pollerHooks),
-          now: () => FIXED_NOW,
-          setTimeout: globalThis.setTimeout,
-          clearTimeout: globalThis.clearTimeout,
-        },
-      ),
+        }
+        poller = createPollingManager(
+          pollerClient as TrackingPollerClient,
+          {
+            intervalMs: 5_000,
+            staleThresholdMs: 60 * 60 * 1000,
+            getPollingMode: () => {
+              const phase = useMissionStore.getState().phase
+              return phase === 'active' || phase === 'paused' ? phase : 'idle'
+            },
+            getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
+            getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+            getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
+            ...withoutHistoryPersistenceHooks(wrappedHooks),
+            now: () => FIXED_NOW,
+            setTimeout: globalThis.setTimeout,
+            clearTimeout: globalThis.clearTimeout,
+          },
+        )
+        const requestPollNow = () => {
+          requestPollNowCallCount += 1
+          poller.requestPollNow()
+        }
+        return { ...poller, requestPollNow }
+      },
     })
     await flushMicrotasks()
     expect(client.getCurrentPositions).toHaveBeenCalled()
-
-    const observation = {
-      missionId: null,
-      complete: vi.fn(),
-      claim: vi.fn(),
-    }
-    runtime.hooks.onCurrentSnapshot(
-      missionACurrent,
-      { historyResetKey: 'mission-a', missionEvidenceId: null },
-      observation,
-    )
     expect(useTrackingStore.getState().snapshot.positions).toHaveLength(0)
 
-    await controller.finishMission()
+    if (finishRequested === null) throw new Error('The real poller did not publish Mission A.')
+    await finishRequested
     if (replacement === null) throw new Error('Mission controller did not publish idle.')
     await replacement
+    await flushMicrotasks()
+    expect(requestPollNowCallCount).toBe(2)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
     expect(useMissionStore.getState().phase).toBe('active')
     expect(useMissionStore.getState().currentMission?.id).toBe('mission-b')
     currentScope = scopeForMission('mission-b')
@@ -487,7 +509,7 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
       .toEqual(['mission-a-deferred-fix'])
     expect(useStationaryAttentionStore.getState().missionId).toBe('mission-b')
 
-    pendingPollCurrentPositions.resolve([])
+    pendingReplacementCurrentPositions.resolve([])
     pendingCurrentPositionResolutions.clear()
     await flushMicrotasks()
   } finally {
@@ -495,7 +517,7 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
   }
 })
 
-it('characterizes the unkeyed cached snapshot across finish-idle-start [WAR-06-CACHE-SIBLING]', async () => {
+it('characterizes the unkeyed cached snapshot on Mission B cold start [WAR-06-CACHE-SIBLING]', async () => {
   const controller = await createMissionController()
   await controller.startMission({ name: 'Mission A' })
   await controller.finishMission()
