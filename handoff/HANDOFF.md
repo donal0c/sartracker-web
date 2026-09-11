@@ -10,8 +10,9 @@ Updated 2026-09-11. Read after `CLAUDE.md`.
   (355.498 ms heartbeat with 3.988 ms CPU). Both are repaired using the existing
   responsive writer/counter. Local and Ubuntu full-import/heartbeat gates pass;
   cancellation, startup shutdown and queued archive identity checks pass.
-  Full source (429 files), lint/build and eight Chromium flows pass. Package,
-  CI and final review remain pending in the
+  Full source (429 files), lint/build and eight Chromium flows pass. macOS
+  archive/tracking packages pass at `7637e936` (current-fix max 119 ms).
+  Linux CI and final review remain pending in the
   [causal record](../docs/assurance/findings/responsiveness-causal-repair.md).
   Historical PR19/20/21 failures remain separately recorded. DON-254 stays open;
   no merge, release, deployment or field acceptance. This is the active priority.

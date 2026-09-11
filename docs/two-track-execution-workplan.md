@@ -181,7 +181,8 @@ packaged failures remain unresolved until their own causal evidence is adequate.
 PR20's investigation-only findings and PR19's product repairs stay separate.
 Full-tail source checks pass locally and on isolated Ubuntu; native priority,
 startup completion/shutdown and queued identity checks pass. Full 429-file source
-cycle, lint/build and eight Chromium workflows pass. Package/CI and final review
+cycle, lint/build and eight Chromium workflows pass. macOS archive/tracking
+packages pass at `7637e936` (current-fix max 119 ms). Linux CI and final review
 remain pending in the [causal repair record](assurance/findings/responsiveness-causal-repair.md).
 No merge/release/deploy or field acceptance.
 

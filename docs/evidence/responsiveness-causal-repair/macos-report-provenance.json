@@ -1,0 +1,14 @@
+[
+  {
+    "file": "macos-archive.json",
+    "originalReportSha256": "7ef828d622c49e8fff54f11e0c17922690697b663b3fd9baee0f2add44e5d87a",
+    "sourceHead": "7637e93606b5da1e9c5a38a1699e0f282bce7f6b",
+    "formatting": "JSON compacted without field changes"
+  },
+  {
+    "file": "macos-tracking.json",
+    "originalReportSha256": "7777617ca946c88e88ab036a114cd256d186d16d87e33f7e08bf9c0a3a820835",
+    "sourceHead": "7637e93606b5da1e9c5a38a1699e0f282bce7f6b",
+    "formatting": "JSON compacted without field changes"
+  }
+]

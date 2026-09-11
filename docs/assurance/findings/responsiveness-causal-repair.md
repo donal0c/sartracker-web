@@ -137,5 +137,23 @@ measured 1,056 writes, 32.062 ms maximum write and 15.783 ms heartbeat; startup
 complete/shutdown measured 11.393/11.453 ms. Lint and production build/bundle
 budgets pass. All eight existing Chromium GPX/archive operator flows pass.
 The browser harness proves rendered behaviour, not native lock handling.
-Packaged/CI validation and final committed review remain pending. This document
-must not be read as merge-ready approval.
+Packaged macOS validation passes on clean source commit
+`7637e93606b5da1e9c5a38a1699e0f282bce7f6b`, tree
+`40fc7c6dce6a899190921481ec3076eb7fd2bb7e`. Archive receipt independently
+validates: two launches/two exits, 5,516 archived rows, zero remaining breadcrumb
+rows and zero plaintext residue. Maximum current-fix gap is 119 ms; archive
+main watchdog maximum is 61.435 ms and frame maximum 17.4 ms. Tracking CI-profile
+soak passes all 8,664 positions and both graceful exits: main inspector RTT
+15.351 ms, renderer 66.7 ms, external action 41.290 ms. The paired-interaction
+duration includes deliberate target stability waits; it is not action latency.
+The final tracking screenshot was inspected: rendered map, mission/status and
+tracking controls are present; this is no new layout qualification.
+
+Package executable SHA-256 is
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+application ASAR SHA-256 is
+`b387f303f39a871b315af67d3e49f96b282b8669d111148476e2d6e310b5c6a7`.
+Receipts are `macos-archive.json` and `macos-tracking.json` in the evidence
+directory. A subsequent documentation-only commit reuses this exact executable
+proof; it does not claim a freshly rebuilt artifact. Linux CI and final
+committed review remain pending. This is not merge-ready approval yet.
