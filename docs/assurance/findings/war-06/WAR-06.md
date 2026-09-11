@@ -3,15 +3,16 @@
 Date: 2026-09-11
 Repository: `donal0c/sartracker-web`
 Evidence base/current master: `3db57a7942b32beef0d13cc4e8484a5bb492dfa4` (`origin/master`, including merged PR #22)
-Evidence implementation commit: `5b533c92d23a17e3c26212d16985cce03c42ec67`
+Evidence implementation commit: `d96e51c85b6ba98642036ab31ed08e1976256bec`
 (corrected reachable-route
 characterization tests, production bridge and falsifiable negative controls)
 Prior executable predecessor: `dc3ea82262a18cd70409ee1d2b547de4fd81a2594`
 Prior documentation candidate: `10781e2d74e9a8034591e47a513f0957ccd6e3f7`
-Exact-head CI is bound through the [PR #20 checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
-and the final PR/Linear receipt; it must be refreshed after any evidence or
-documentation commit. PR-mode strict timing, 960k replay, packaged tracking
-and archive lifecycle steps remain explicit skips and are not release proof.
+Exact executable-head CI: [run 34650688441](https://github.com/donal0c/sartracker-web/actions/runs/34650688441)
+passed against `d96e51c85b6ba98642036ab31ed08e1976256bec`; the [PR #20 checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
+remain the live cross-check. PR-mode strict timing, 960k replay, packaged
+tracking and archive lifecycle steps remain explicit skips and are not release
+proof.
 Original reviewed PR head: `839737e82a8736be8dea3e7104fdada16398ea31` (review `5175815340`; pre-rebase)
 Merged Repair Train A application head: `713461bfa4018f8009e51660618515f78b8e23c0`
 Scope: investigation and durable reproduction evidence only
@@ -185,7 +186,7 @@ evidence.
 The evidence tests are intentionally passing characterizations: they assert
 unsafe current behaviour so the reproductions are durable without committing a
 failing test or a speculative production fix. The corrected executable test
-commit is `5b533c92d23a17e3c26212d16985cce03c42ec67`, based on current master
+commit is `d96e51c85b6ba98642036ab31ed08e1976256bec`, based on current master
 `3db57a7942b32beef0d13cc4e8484a5bb492dfa4`.
 
 | Evidence | Result | Claim boundary |
@@ -193,7 +194,7 @@ commit is `5b533c92d23a17e3c26212d16985cce03c42ec67`, based on current master
 | WAR-06 isolated characterization | 3 tests passed | Real `startTrackingRuntime` plus `startMissionTrackingStatusBridge`; production-derived active-device and breadcrumb-device selection; write-enabled cache configuration; real polling-manager delayed flush after a pending current poll for AUD-01; real polling manager with `pollInFlight` mission wakes plus current-fix callback for AUD-02; cold-start global-cache read for cache sibling; controlled local source evidence |
 | WAR-06 negative-control proof | 3 GREEN / 3 RED at named safety oracles | `scripts/assurance/war-06-prove-red.mjs` runs each characterization once normally and once after a test-only visible-publication erase; collection, cleanup and unrelated failures are rejected |
 | Existing tracking/reload/runtime/poller suite | 185 tests passed | Rechecked merged Repair Train A and PR22 tracking seams; unit/integration source evidence only |
-| Ordinary correctness suite on rebased tree | 434 files / 4,461 tests passed / 6 skipped | `test:correctness` explicitly excludes strict wall-clock qualification; no timing pass is claimed |
+| Ordinary correctness suite on rebased tree | 435 files / 4,462 tests passed / 6 skipped | `test:correctness` explicitly excludes strict wall-clock qualification; no timing pass is claimed |
 | `AUD-13` false-Live reconnect | Not reproduced in focused current-head suite | Does not erase the historical/native limitation or prove packaged/field recovery |
 | `AUD-02` stationary route | Existing policy tests pass | Does not prove every clock, device, or field profile |
 | `AUD-03` stationary projection | Existing source/performance controls pass in the focused suite | Does not prove the strict `<200 ms` gate at release scale |
@@ -217,7 +218,7 @@ npm run build
 The characterization command passed 3/3 tests. The negative-control command
 passed 1/1 test and recorded 3 GREEN current controls plus 3 RED named safety
 oracles. The lifecycle command passed 3/3 files and 185/185
-tests. The ordinary correctness cycle passed 434 files / 4,461 tests with 6
+tests. The ordinary correctness cycle passed 435 files / 4,462 tests with 6
 explicit qualification-only cases skipped; its banner states that strict
 wall-clock responsiveness qualification was not run. Lint and production build
 passed, including TypeScript/Vite and bundle-size budgets. The historical serial
@@ -371,9 +372,9 @@ current `origin/master` `3db57a7942b32beef0d13cc4e8484a5bb492dfa4`, which includ
 merged PR #22. The initial repaired characterization evidence was executable at
 `2390b57bb2e2cc549c0069b80013d968d0fb36d3`; the prior cleanup-hardened tree
 `dc3ea82262a18cd70409ee1d2b547de4fd81a259` is the executable predecessor.
-The corrected executable characterization is `5b533c92`. Any later
-documentation commit is a different final PR head and must be checked by
-exact SHA before approval.
+The corrected executable characterization is `d96e51c8`. Exact executable-head
+CI run `34650688441` passed the corrected tree; later documentation-only
+commits do not alter the executable evidence.
 
 The stable review IDs are dispositioned as follows: `WAR-06-AUD-01-REACHABILITY`
 is addressed by the real manager delayed-flush interleaving;
@@ -393,9 +394,9 @@ head CI record are the current evidence.
 
 Independent final review `5176300059` examined the pre-PR22 executable head
 `c4cda818`; that review and CI `34575023706` are historical evidence only.
-The current executable candidate is `5b533c92`. The receipt file records the
-bounded, re-derivable negative-control artifact and the exact pushed-head CI
-run; the live [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
+The current executable candidate is `d96e51c8`. The receipt file records the
+bounded, re-derivable negative-control artifact and CI run `34650688441` on
+that exact executable head; the live [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
 remain the external cross-check. The PR-mode skipped timing, replay, packaged
 tracking and archive steps remain explicit evidence gaps, not release
 qualification.
@@ -406,9 +407,9 @@ Treat `WAR-06-AUD-01`, `WAR-06-AUD-02`, and `WAR-06-CACHE-SIBLING` as one
 lifecycle repair boundary. The rebased PR remains investigation-only and is
 not a production repair, release qualification, or operational-use
 recommendation: the P1 candidate hazards remain unrepaired and the strict
-`<200 ms` failures remain unresolved. The corrected evidence is not final
-until the pushed head has exact-head ordinary CI and the in-repo receipt is
-updated to that SHA. Once that record is green, it is merge-ready only as additive
+`<200 ms` failures remain unresolved. Exact executable-head ordinary CI is
+recorded in the in-repo receipt; the remaining documentation-only delta does
+not change executable evidence. It is merge-ready only as additive
 investigation evidence for Donal's review; it is not a production repair or
 release qualification. Do not close the findings or claim release/field safety
 from this investigation PR.

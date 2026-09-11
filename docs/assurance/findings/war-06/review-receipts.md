@@ -1,7 +1,7 @@
 # WAR-06 evidence receipts
 
 Date: 2026-09-11
-Executable evidence commit: `5b533c92d23a17e3c26212d16985cce03c42ec67`
+Executable evidence commit: `d96e51c85b6ba98642036ab31ed08e1976256bec`
 Evidence base: `3db57a7942b32beef0d13cc4e8484a5bb492dfa4`
 Scope: route fidelity, falsifiability, cleanup and provenance. No production
 repair or release qualification is claimed.
@@ -41,8 +41,11 @@ record below.
 
 ## Exact-head CI
 
-The final pushed-head workflow run must be recorded here before this evidence
-record is treated as current. PR checks are the external cross-check:
-[PR #20 checks](https://github.com/donal0c/sartracker-web/pull/20/checks).
-PR-mode strict responsiveness, replay, packaged tracking and archive steps are
-qualification gaps even when ordinary CI is green.
+The executable-head workflow receipt is [run 34650688441](https://github.com/donal0c/sartracker-web/actions/runs/34650688441),
+bound by the workflow to `d96e51c85b6ba98642036ab31ed08e1976256bec`. It passed
+lint, 435-file/4,462-test ordinary correctness, web build and bundle budgets,
+Electron artifact build/inspection, native SQLite and Mesa checks, and AppImage
+smoke. The workflow explicitly skipped strict responsiveness, normal-envelope
+replay, packaged tracking soak and packaged archive lifecycle checks; those
+remain qualification gaps and are not release proof. PR checks remain the
+external cross-check: [PR #20 checks](https://github.com/donal0c/sartracker-web/pull/20/checks).
