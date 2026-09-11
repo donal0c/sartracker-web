@@ -1,0 +1,35 @@
+
+ RUN  v4.1.3 <checkout>
+
+ ❯ tests/unit/electron-mission-store.test.ts (103 tests | 1 failed | 102 skipped) 120ms
+     × bounds lookup compilation and device writes for a 1,800-position atomic history batch [DON-254] 119ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-mission-store.test.ts > electron mission store > bounds lookup compilation and device writes for a 1,800-position atomic history batch [DON-254]
+AssertionError: expected { count: 1800 } to deeply equal { count: 1 }
+
+- Expected
++ Received
+
+  {
+-   "count": 1,
++   "count": 1800,
+  }
+
+ ❯ tests/unit/electron-mission-store.test.ts:2819:97
+    2817|       // Compilation was a measured main-thread cost; executions must …
+    2818|       expect(legacyQueryCompilations).toBe(1)
+    2819|       expect(inspection.prepare('SELECT COUNT(*) AS count FROM bulk_de…
+       |                                                                                                 ^
+    2820|       expect(inspection.prepare('SELECT last_seen, status FROM devices…
+    2821|         last_seen: positions.at(-1)!.timestamp, status: 'online',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 102 skipped (103)
+   Start at  12:01:53
+   Duration  891ms (transform 94ms, setup 0ms, import 145ms, tests 120ms, environment 546ms)
+

@@ -1,0 +1,110 @@
+--- PR21-7a6dfb05/scripts/electron-tracking-soak.mjs
++++ combined-profile/scripts/electron-tracking-soak.mjs
+@@ -803,0 +804,26 @@
++    await mainInspector.evaluate(`(${installSQLiteBoundaryProbe.toString()})()`)
++    const profileBefore = await mainInspector.evaluate('({ nowMs: performance.now(), timeOriginMs: performance.timeOrigin })')
++    await mainInspector.send('Profiler.enable', {})
++    await mainInspector.send('Profiler.setSamplingInterval', { interval: 1000 })
++    await mainInspector.send('Profiler.start', {})
++    const profileAfter = await mainInspector.evaluate('({ nowMs: performance.now(), timeOriginMs: performance.timeOrigin })')
++    let boundaryStopPromise
++    let boundaryTimer
++    const stopBoundaries = () => {
++      boundaryStopPromise ??= (async () => {
++        clearTimeout(boundaryTimer)
++        const result = await mainInspector.evaluate('globalThis.__SAR_SQL_BOUNDARIES__.stop()')
++        await writeJson(path.join(path.resolve(options.evidenceDir), `main-launch-${number}-sqlite-boundaries.json`), result.result.value)
++        const profile = await mainInspector.send('Profiler.stop', {})
++        await writeJson(path.join(path.resolve(options.evidenceDir), `main-launch-${number}.cpuprofile`), profile.profile)
++        await writeJson(path.join(path.resolve(options.evidenceDir), `main-launch-${number}-profile-anchor.json`), { before: profileBefore, after: profileAfter })
++        for (const filename of ['runtime.log', 'runtime.log.1']) {
++          const contents = await readFile(path.join(userDataDir, 'logs', filename), 'utf8').catch(() => '')
++          await writeFile(path.join(path.resolve(options.evidenceDir), `main-launch-${number}-early-${filename}`), contents)
++        }
++      })()
++      return boundaryStopPromise
++    }
++    boundaryTimer = setTimeout(() => {
++      stopBoundaries().catch(error => console.error(`[boundaries] launch=${number} failed: ${error.message}`))
++    }, 12000)
+@@ -812,0 +839 @@
++      stopBoundaries,
+@@ -2987,0 +3015 @@
++    await launch.stopBoundaries?.()
+@@ -3315,0 +3344,63 @@
++/** Diagnostic-only main-realm transaction boundaries; no SQL parameters or disk writes. */
++function installSQLiteBoundaryProbe() {
++  const require = process.getBuiltinModule('module').createRequire(`${process.resourcesPath}/app.asar/package.json`)
++  const Database = require('better-sqlite3')
++  const original = Database.prototype.transaction
++  const transactions = []
++  const episodes = []
++  let droppedTransactions = 0
++  let droppedEpisodes = 0
++  let episode = null
++  let stopped = false
++  let sentinel = null
++  const startedAtMs = performance.now()
++  Database.prototype.transaction = function(callback) {
++    const db = this
++    let active = null
++    const transaction = original.call(db, function(...args) {
++      if (active) active.callbackStartMs = performance.now()
++      try { return callback.apply(this, args) }
++      finally { if (active) active.callbackEndMs = performance.now() }
++    })
++    const invoke = function(mode, receiver, args) {
++      if (stopped || db.inTransaction) return transaction[mode].apply(receiver, args)
++      const row = { mode, startMs: performance.now(), callbackStartMs: null, callbackEndMs: null, endMs: null, outcome: 'ok' }
++      if (episode === null) {
++        episode = { startMs: row.startMs, endMs: null, transactionCount: 0, totalTransactionMs: 0, maximumTransactionMs: 0 }
++        sentinel = setImmediate(() => {
++          episode.endMs = performance.now()
++          if (episodes.length < 10000) episodes.push(episode)
++          else droppedEpisodes++
++          episode = null
++        })
++      }
++      active = row
++      try { return transaction[mode].apply(receiver, args) }
++      catch (error) { row.outcome = error.code || error.name; throw error }
++      finally {
++        row.endMs = performance.now()
++        active = null
++        episode.transactionCount++
++        episode.totalTransactionMs += row.endMs - row.startMs
++        episode.maximumTransactionMs = Math.max(episode.maximumTransactionMs, row.endMs - row.startMs)
++        if (transactions.length < 20000) transactions.push(row)
++        else droppedTransactions++
++      }
++    }
++    const wrapped = function(...args) { return invoke('deferred', this, args) }
++    for (const mode of ['deferred', 'immediate', 'exclusive']) {
++      wrapped[mode] = function(...args) { return invoke(mode, this, args) }
++    }
++    return wrapped
++  }
++  globalThis.__SAR_SQL_BOUNDARIES__ = {
++    stop() {
++      stopped = true
++      Database.prototype.transaction = original
++      clearImmediate(sentinel)
++      return { timeOriginMs: performance.timeOrigin, startedAtMs, stoppedAtMs: performance.now(), transactions, episodes, incompleteEpisode: episode, droppedTransactions, droppedEpisodes }
++    },
++  }
++  return { installed: true, startedAtMs }
++}
++
+@@ -3365,2 +3456 @@
+-  return {
+-    evaluate: (expression) => new Promise((resolve, reject) => {
++  const send = (method, params) => new Promise((resolve, reject) => {
+@@ -3379 +3469 @@
+-        socket.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }))
++        socket.send(JSON.stringify({ id, method, params }))
+@@ -3385 +3475,4 @@
+-    }),
++    })
++  return {
++    send,
++    evaluate: (expression) => send('Runtime.evaluate', { expression, returnByValue: true }),

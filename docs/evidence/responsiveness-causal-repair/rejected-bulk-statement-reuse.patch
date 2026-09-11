@@ -1,0 +1,143 @@
+diff --git a/electron/mission-store.cjs b/electron/mission-store.cjs
+index da0f3cde..1056525d 100644
+--- a/electron/mission-store.cjs
++++ b/electron/mission-store.cjs
+@@ -8084,6 +8084,7 @@ function addPositionsBulk(
+   let skippedAmbiguousLegacyAdoptionCount = 0
+   let replayEligibilityChanged = false
+   const acceptedCoveragePositions = []
++  let legacyCandidates
+ 
+   const transaction = db.transaction(() => {
+     const receivedAt = now()
+@@ -8149,6 +8150,7 @@ function addPositionsBulk(
+           position,
+           timestamp,
+           dataOrigin,
++          legacyCandidates ??= prepareLegacyPositionCandidates(db),
+         )
+         if (adopted === AMBIGUOUS_LEGACY_ADOPTION) {
+           skippedAmbiguousLegacyAdoptionCount += 1
+@@ -8437,6 +8439,18 @@ function findPositionBySourceIdentity(db, missionId, sourcePositionId) {
+     .get(missionId, sourcePositionId)
+ }
+ 
++/** Compiles the exact candidate lookup; each execution observes preceding writes in its transaction. */
++function prepareLegacyPositionCandidates(db) {
++  return db.prepare(`SELECT * FROM positions
++       WHERE mission_id = ? AND device_id = ? AND source_position_id IS NULL
++         AND timestamp = ? AND lat = ? AND lon = ?
++         AND name IS ? AND altitude IS ? AND speed IS ? AND battery IS ?
++         AND accuracy IS ? AND source IS ? AND data_origin = ?
++       ORDER BY rowid ASC
++       LIMIT 2`)
++}
++
++/** Adopts only one exact legacy candidate, optionally reusing the batch's compiled lookup. */
+ function adoptSourceIdentityForLegacyPosition(
+   db,
+   missionId,
+@@ -8444,31 +8458,22 @@ function adoptSourceIdentityForLegacyPosition(
+   input,
+   timestamp,
+   dataOrigin,
++  candidateQuery = prepareLegacyPositionCandidates(db),
+ ) {
+-  const candidates = db
+-    .prepare(
+-      `SELECT * FROM positions
+-       WHERE mission_id = ? AND device_id = ? AND source_position_id IS NULL
+-         AND timestamp = ? AND lat = ? AND lon = ?
+-         AND name IS ? AND altitude IS ? AND speed IS ? AND battery IS ?
+-         AND accuracy IS ? AND source IS ? AND data_origin = ?
+-       ORDER BY rowid ASC
+-       LIMIT 2`,
+-    )
+-    .all(
+-      missionId,
+-      input.device_id,
+-      timestamp,
+-      input.lat,
+-      input.lon,
+-      input.name ?? null,
+-      input.altitude ?? null,
+-      input.speed ?? null,
+-      input.battery ?? null,
+-      input.accuracy ?? null,
+-      input.source ?? null,
+-      dataOrigin,
+-    )
++  const candidates = candidateQuery.all(
++    missionId,
++    input.device_id,
++    timestamp,
++    input.lat,
++    input.lon,
++    input.name ?? null,
++    input.altitude ?? null,
++    input.speed ?? null,
++    input.battery ?? null,
++    input.accuracy ?? null,
++    input.source ?? null,
++    dataOrigin,
++  )
+   if (candidates.length === 0) {
+     return undefined
+   }
+diff --git a/tests/unit/electron-mission-store.test.ts b/tests/unit/electron-mission-store.test.ts
+index 0d00c040..782de74d 100644
+--- a/tests/unit/electron-mission-store.test.ts
++++ b/tests/unit/electron-mission-store.test.ts
+@@ -2791,6 +2791,52 @@ describe('electron mission store', () => {
+     await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([])
+   })
+ 
++  it('bounds legacy lookup compilation for a 1,800-position atomic history batch [DON-254]', async () => {
++    store = await createStore()
++    const mission = await store.createMission({ name: 'Bulk Compilation Budget' })
++    await store.upsertDevice({ mission_id: mission.id, device_id: 'tracker-1', name: 'Tracker One', color: '#00AAFF', status: 'unknown' })
++    const positions = Array.from({ length: 1800 }, (_, index) => ({
++      device_id: 'tracker-1', source_position_id: `bulk-source-${index}`,
++      lat: 52.0599, lon: -9.5045,
++      timestamp: new Date(Date.parse('2026-07-28T10:00:00.000Z') + index * 1000).toISOString(),
++      timestamp_source: 'fix' as const,
++    }))
++    const prepare = vi.spyOn(Database.prototype, 'prepare')
++    try {
++      await expect(store.persistTrackingPositionsBulk({
++        mission_id: mission.id, positions,
++        checkpoints: [{ device_id: 'tracker-1', history_from: positions[0].timestamp, reconciled_until: positions.at(-1)!.timestamp }],
++      })).resolves.toMatchObject({ insertedPositionCount: 1800, changedPositionCount: 1800 })
++      const legacyQueryCompilations = prepare.mock.calls.filter(([sql]) =>
++        typeof sql === 'string' && sql.includes('source_position_id IS NULL') && sql.includes('ORDER BY rowid ASC'),
++      ).length
++      // Compilation was a measured main-thread cost; executions must still inspect every row.
++      expect(legacyQueryCompilations).toBe(1)
++      await expect(store.countPositions(mission.id)).resolves.toBe(1800)
++      await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
++        expect.objectContaining({ device_id: 'tracker-1', reconciled_until: positions.at(-1)!.timestamp }),
++      ])
++    } finally { prepare.mockRestore() }
++  })
++
++  it('rechecks legacy candidates after earlier rows adopt them in the same batch [DON-254]', async () => {
++    store = await createStore()
++    const mission = await store.createMission({ name: 'Legacy Lookup Own Writes' })
++    await store.upsertDevice({ mission_id: mission.id, device_id: 'tracker-1', name: 'Tracker One', color: '#00AAFF', status: 'unknown' })
++    const fix = { device_id: 'tracker-1', lat: 52.0599, lon: -9.5045, timestamp: '2026-07-28T10:00:00.000Z' }
++    const legacy = await store.addPosition({ mission_id: mission.id, ...fix })
++    const rows = await store.addPositionsBulk({
++      mission_id: mission.id,
++      positions: [{ ...fix, source_position_id: 'first-source' }, { ...fix, source_position_id: 'second-source' }],
++    })
++    expect(rows).toEqual([
++      expect.objectContaining({ id: legacy.id, source_position_id: 'first-source' }),
++      expect.objectContaining({ source_position_id: 'second-source' }),
++    ])
++    expect(rows[1].id).not.toBe(legacy.id)
++    await expect(store.countPositions(mission.id)).resolves.toBe(2)
++  })
++
+   it('attaches a recovered source identity to one exact legacy fix instead of duplicating it [DON-260]', async () => {
+     store = await createStore()
+     const mission = await store.createMission({ name: 'Legacy Identity Upgrade' })

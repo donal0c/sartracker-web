@@ -1,0 +1,42 @@
+--- PR21/scripts/electron-tracking-soak.mjs
++++ prepare-reuse/scripts/electron-tracking-soak.mjs
+@@ -803,0 +804,5 @@
++    await mainInspector.evaluate(`(${installLegacyLookupReuse.toString()})()`)
++    const stopLookupReuse = async () => {
++      const result = await mainInspector.evaluate('globalThis.__SAR_LEGACY_LOOKUP_REUSE__.stop()')
++      await writeJson(path.join(path.resolve(options.evidenceDir), `main-launch-${number}-lookup-reuse.json`), result.result.value)
++    }
+@@ -812,0 +818 @@
++      stopLookupReuse,
+@@ -2987,0 +2994 @@
++    await launch.stopLookupReuse?.()
+@@ -3315,0 +3323,29 @@
++/** Controlled intervention: reuse only the exact parameterized legacy lookup, executing every call. */
++function installLegacyLookupReuse() {
++  const require = process.getBuiltinModule('module').createRequire(`${process.resourcesPath}/app.asar/package.json`)
++  const Database = require('better-sqlite3')
++  const original = Database.prototype.prepare
++  const statements = new WeakMap()
++  const expected = 'SELECT * FROM positions WHERE mission_id = ? AND device_id = ? AND source_position_id IS NULL AND timestamp = ? AND lat = ? AND lon = ? AND name IS ? AND altitude IS ? AND speed IS ? AND battery IS ? AND accuracy IS ? AND source IS ? AND data_origin = ? ORDER BY rowid ASC LIMIT 2'
++  let compilations = 0
++  let reuseCount = 0
++  const startedAtMs = performance.now()
++  Database.prototype.prepare = function(sql) {
++    if (typeof sql !== 'string' || sql.replace(/\s+/gu, ' ').trim() !== expected) return original.call(this, sql)
++    let statement = statements.get(this)
++    if (statement === undefined) {
++      statement = original.call(this, sql)
++      statements.set(this, statement)
++      compilations++
++    } else reuseCount++
++    return statement
++  }
++  globalThis.__SAR_LEGACY_LOOKUP_REUSE__ = {
++    stop() {
++      Database.prototype.prepare = original
++      return { intervention: 'reuse-exact-legacy-candidate-select-per-main-database', startedAtMs, stoppedAtMs: performance.now(), compilations, reuseCount }
++    },
++  }
++  return { installed: true }
++}
++

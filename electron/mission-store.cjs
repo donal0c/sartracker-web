@@ -4,6 +4,7 @@ const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
+const { createBulkDeviceObservationWriter } = require('./bulk-device-observations.cjs')
 
 // Associates each open SQLite handle with its in-process archive-correction
 // writer fence. Mutation helpers below receive only the database handle, so a
@@ -8084,8 +8085,12 @@ function addPositionsBulk(
   let skippedAmbiguousLegacyAdoptionCount = 0
   let replayEligibilityChanged = false
   const acceptedCoveragePositions = []
+  let legacyCandidates
 
   const transaction = db.transaction(() => {
+    const deviceObservations = createBulkDeviceObservationWriter((deviceId, timestamp) => {
+      updateDevice.run(timestamp, timestamp, input.mission_id, deviceId)
+    })
     const receivedAt = now()
     for (const position of positions) {
       validateLatLon(position.lat, position.lon, 'Position')
@@ -8133,12 +8138,7 @@ function addPositionsBulk(
               const promotion = retainFixTimeProvenance.run(receivedAt, existing.id)
               replayEligibilityChanged = replayEligibilityChanged || promotion.changes > 0
             }
-            updateDevice.run(
-              timestamp,
-              timestamp,
-              input.mission_id,
-              position.device_id,
-            )
+            deviceObservations.record(position.device_id, timestamp)
           }
           continue
         }
@@ -8149,6 +8149,7 @@ function addPositionsBulk(
           position,
           timestamp,
           dataOrigin,
+          legacyCandidates ??= prepareLegacyPositionCandidates(db),
         )
         if (adopted === AMBIGUOUS_LEGACY_ADOPTION) {
           skippedAmbiguousLegacyAdoptionCount += 1
@@ -8202,12 +8203,13 @@ function addPositionsBulk(
         timestampSource,
         timestampSource === 'fix' ? receivedAt : null,
       )
-      updateDevice.run(timestamp, timestamp, input.mission_id, position.device_id)
+      deviceObservations.record(position.device_id, timestamp)
       changedPositionCount += 1
       changedIds?.push(id)
       insertedPositionCount += 1
       acceptedCoveragePositions.push({ device_id: position.device_id, timestamp })
     }
+    deviceObservations.flush()
     recordAcceptedCoveragePositions(db, {
       missionId: input.mission_id,
       positions: acceptedCoveragePositions,
@@ -8437,6 +8439,18 @@ function findPositionBySourceIdentity(db, missionId, sourcePositionId) {
     .get(missionId, sourcePositionId)
 }
 
+/** Compiles the exact candidate lookup; each execution observes preceding writes in its transaction. */
+function prepareLegacyPositionCandidates(db) {
+  return db.prepare(`SELECT * FROM positions
+       WHERE mission_id = ? AND device_id = ? AND source_position_id IS NULL
+         AND timestamp = ? AND lat = ? AND lon = ?
+         AND name IS ? AND altitude IS ? AND speed IS ? AND battery IS ?
+         AND accuracy IS ? AND source IS ? AND data_origin = ?
+       ORDER BY rowid ASC
+       LIMIT 2`)
+}
+
+/** Adopts only one exact legacy candidate, optionally reusing the batch's compiled lookup. */
 function adoptSourceIdentityForLegacyPosition(
   db,
   missionId,
@@ -8444,31 +8458,22 @@ function adoptSourceIdentityForLegacyPosition(
   input,
   timestamp,
   dataOrigin,
+  candidateQuery = prepareLegacyPositionCandidates(db),
 ) {
-  const candidates = db
-    .prepare(
-      `SELECT * FROM positions
-       WHERE mission_id = ? AND device_id = ? AND source_position_id IS NULL
-         AND timestamp = ? AND lat = ? AND lon = ?
-         AND name IS ? AND altitude IS ? AND speed IS ? AND battery IS ?
-         AND accuracy IS ? AND source IS ? AND data_origin = ?
-       ORDER BY rowid ASC
-       LIMIT 2`,
-    )
-    .all(
-      missionId,
-      input.device_id,
-      timestamp,
-      input.lat,
-      input.lon,
-      input.name ?? null,
-      input.altitude ?? null,
-      input.speed ?? null,
-      input.battery ?? null,
-      input.accuracy ?? null,
-      input.source ?? null,
-      dataOrigin,
-    )
+  const candidates = candidateQuery.all(
+    missionId,
+    input.device_id,
+    timestamp,
+    input.lat,
+    input.lon,
+    input.name ?? null,
+    input.altitude ?? null,
+    input.speed ?? null,
+    input.battery ?? null,
+    input.accuracy ?? null,
+    input.source ?? null,
+    dataOrigin,
+  )
   if (candidates.length === 0) {
     return undefined
   }

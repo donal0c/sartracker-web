@@ -1,0 +1,215 @@
+{
+  "diagnosticOnly": true,
+  "qualification": false,
+  "controlledStopAfterFirstCheckpoint": true,
+  "normalSoakExitExpected": false,
+  "candidateAsarSha256": "3f69136f2186317b8a25829062d7adb09ae580cca2beaa04e926c0ee79ef9922",
+  "missionStoreSha256": "ecf9a362edc3ec179405e44254a2b2930be0f6114ecc18fdac60605e5d310817",
+  "probeWindow": {
+    "timeOriginMs": 1789124365402.496,
+    "startedAtMs": 1197.939039,
+    "stoppedAtMs": 10097.282806,
+    "droppedTransactions": 0,
+    "droppedEpisodes": 0
+  },
+  "statementTimings": {
+    "BEGIN DEFERRED": {
+      "count": 17,
+      "totalMs": 0.06630000000086511,
+      "maximumMs": 0.008672999999816966
+    },
+    "INSERT INTO missions (id,": {
+      "count": 1,
+      "totalMs": 0.020228999999972075,
+      "maximumMs": 0.020228999999972075
+    },
+    "INSERT INTO mission_events (": {
+      "count": 41,
+      "totalMs": 16.94873499999744,
+      "maximumMs": 8.18203899999935
+    },
+    "INSERT INTO mission_replay_generations (mission_id,": {
+      "count": 166,
+      "totalMs": 16.922701999999845,
+      "maximumMs": 8.031680000000051
+    },
+    "COMMIT": {
+      "count": 762,
+      "totalMs": 2768.2820939999856,
+      "maximumMs": 34.5970580000012
+    },
+    "BEGIN IMMEDIATE": {
+      "count": 746,
+      "totalMs": 6.967017000002215,
+      "maximumMs": 0.05058499999995547
+    },
+    "SAVEPOINT ` _bs3. `": {
+      "count": 792,
+      "totalMs": 2.5077799999949093,
+      "maximumMs": 0.016626000000542263
+    },
+    "INSERT INTO coverage_missions (": {
+      "count": 309,
+      "totalMs": 7.367322000000968,
+      "maximumMs": 0.23602300000038667
+    },
+    "UPDATE coverage_missions SET enumerated": {
+      "count": 1,
+      "totalMs": 0.02852500000017244,
+      "maximumMs": 0.02852500000017244
+    },
+    "RELEASE ` _bs3. `": {
+      "count": 792,
+      "totalMs": 3.569863999985955,
+      "maximumMs": 0.09615899999971589
+    },
+    "INSERT INTO mission_participants (": {
+      "count": 32,
+      "totalMs": 0.6734019999980774,
+      "maximumMs": 0.07206600000017716
+    },
+    "INSERT INTO participant_backfill_checkpoints (": {
+      "count": 162,
+      "totalMs": 8.136303000001135,
+      "maximumMs": 0.25779099999999744
+    },
+    "UPDATE coverage_chunks SET content_rev": {
+      "count": 32,
+      "totalMs": 0.2939249999990352,
+      "maximumMs": 0.058065000000169675
+    },
+    "INSERT INTO coverage_chunks (": {
+      "count": 999,
+      "totalMs": 8.890985999983059,
+      "maximumMs": 0.09437099999922793
+    },
+    "ROLLBACK TO ` _bs3.": {
+      "count": 2,
+      "totalMs": 0.008844999999382708,
+      "maximumMs": 0.007957999999689491
+    },
+    "ROLLBACK": {
+      "count": 1,
+      "totalMs": 0.015376999999716645,
+      "maximumMs": 0.015376999999716645
+    },
+    "INSERT INTO devices (": {
+      "count": 864,
+      "totalMs": 16.52008300000898,
+      "maximumMs": 0.22065999999904307
+    },
+    "INSERT INTO positions (id,": {
+      "count": 4344,
+      "totalMs": 157.03014100003702,
+      "maximumMs": 0.9026340000000346
+    },
+    "UPDATE devices SET last_seen": {
+      "count": 14148,
+      "totalMs": 147.62923400007367,
+      "maximumMs": 1.0591319999994084
+    },
+    "INSERT INTO tracking_history_checkpoints (mission_id,": {
+      "count": 194,
+      "totalMs": 9.519890999997642,
+      "maximumMs": 0.4147539999999026
+    },
+    "UPDATE coverage_chunks SET built_rev": {
+      "count": 160,
+      "totalMs": 2.086714000000029,
+      "maximumMs": 0.05266300000039337
+    },
+    "UPDATE positions SET timestamp_source": {
+      "count": 9804,
+      "totalMs": 31.819690999938302,
+      "maximumMs": 0.26883600000019214
+    },
+    "INSERT INTO tracking_history_checkpoints (": {
+      "count": 32,
+      "totalMs": 0.3413700000028257,
+      "maximumMs": 0.024373999999625084
+    },
+    "UPDATE tracking_history_checkpoints SET requested_until": {
+      "count": 32,
+      "totalMs": 0.23576800000319054,
+      "maximumMs": 0.021101000000271597
+    }
+  },
+  "scope": "Aggregate first-checkpoint calls, not one transaction; instrumentation cost is included. Original206.463ms rejection is a different unprofiled run.",
+  "retainedRawFiles": [
+    {
+      "path": "tmp/bulk-repair-statement-cost/main-launch-1-early-runtime.log",
+      "sha256": "90293dd8a81daec533903f58dad0616ad02ec99a28b9427f397962f8f47e3ba4",
+      "bytes": 310545
+    },
+    {
+      "path": "tmp/bulk-repair-statement-cost/main-launch-1-early-runtime.log.1",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "tmp/bulk-repair-statement-cost/main-launch-1-profile-anchor.json",
+      "sha256": "44fa3665b1a7fc8db9c38210bbf1d0f3a0755277972703eff586ce8334b9258c",
+      "bytes": 326
+    },
+    {
+      "path": "tmp/bulk-repair-statement-cost/main-launch-1-sqlite-boundaries.json",
+      "sha256": "b26bcfbbd7d80fd312da794a18d0fa3ca7d0f59dfa68bbccceecd0549f644e1f",
+      "bytes": 282965
+    },
+    {
+      "path": "tmp/bulk-repair-statement-cost/main-launch-1.cpuprofile",
+      "sha256": "d5d51ae1061b5017c68ae49b604f4fbf1e2f872164ff024203632c0ab52d3fa1",
+      "bytes": 644137
+    },
+    {
+      "path": "tmp/bulk-repair-combined-profile/main-launch-1-early-runtime.log",
+      "sha256": "9285c604776e2c10e06b96bd9cab4a9358557e74634d59401ab1800fe592f812",
+      "bytes": 304175
+    },
+    {
+      "path": "tmp/bulk-repair-combined-profile/main-launch-1-early-runtime.log.1",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "tmp/bulk-repair-combined-profile/main-launch-1-profile-anchor.json",
+      "sha256": "279a3a41a2fb0bb4ea6b2148c98a46aec03da567cfa60e923064244aacfffc9c",
+      "bytes": 325
+    },
+    {
+      "path": "tmp/bulk-repair-combined-profile/main-launch-1-sqlite-boundaries.json",
+      "sha256": "8f96acbc1b5502fff58bbee7361c7973947decb2cca35a0358cea4d566a02de6",
+      "bytes": 264313
+    },
+    {
+      "path": "tmp/bulk-repair-combined-profile/main-launch-1.cpuprofile",
+      "sha256": "f4a6a1f10052df0a5cfac94e34dd739dea727309c2c84d73df996c620decfc4a",
+      "bytes": 654414
+    },
+    {
+      "path": "tmp/bulk-repair-combined-profile/main-launch-2-early-runtime.log",
+      "sha256": "3d38864a5592f3773bcdbaf659bbd563fc8b0b2ec089a0b8442b8bc18a8e65e8",
+      "bytes": 770868
+    },
+    {
+      "path": "tmp/bulk-repair-combined-profile/main-launch-2-early-runtime.log.1",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "tmp/bulk-repair-combined-profile/main-launch-2-profile-anchor.json",
+      "sha256": "7a2855a334e46829a6a7f66cc42054fbcf4d79f9753fcf7536dd0c31a68fb1be",
+      "bytes": 326
+    },
+    {
+      "path": "tmp/bulk-repair-combined-profile/main-launch-2-sqlite-boundaries.json",
+      "sha256": "2bae96954295bc2c1461596b4c1a36b8ef0eecbffc6c44cbcaf590c414b68666",
+      "bytes": 435504
+    },
+    {
+      "path": "tmp/bulk-repair-combined-profile/main-launch-2.cpuprofile",
+      "sha256": "527b3ab4f62054222d732bd864b874bf8e6754b0b4d57b059666f728b1e66616",
+      "bytes": 723295
+    }
+  ]
+}

@@ -182,8 +182,17 @@ PR20's investigation-only findings and PR19's product repairs stay separate.
 Full-tail source checks pass locally and on isolated Ubuntu; native priority,
 startup completion/shutdown and queued identity checks pass. Full 429-file source
 cycle, lint/build and eight Chromium workflows pass. macOS archive/tracking
-packages pass at `7637e936` (current-fix max 119 ms). Four source reviews clear; Linux CI
-remain pending in the [causal repair record](assurance/findings/responsiveness-causal-repair.md).
+packages pass at `7637e936` (current-fix max 119 ms). Four source reviews clear;
+Linux CI `34585453685` passes at `6a88a65e`; its renderer 450 ms excursion remains
+unattributed. Same CI binary reference checks fail independent main timers
+(243/215 ms). Query reuse alone still fails at 206 ms. Combined query reuse and
+transaction-local device coalescing pass actual reference-package timers at
+154/137 ms with exact 8,664 positions; native 116 tests and application source
+431 files / 4,395 tests pass. The new ordinary CI verdict enforces independent
+main-loop evidence per launch, backed by an inspector-misses-block negative
+control. The corrected reference harness passes 166/152 ms with zero inspector
+errors; final CI qualification is next. PR22 stays draft
+in the [causal repair record](assurance/findings/responsiveness-causal-repair.md).
 No merge/release/deploy or field acceptance.
 
 ### Repair Train B and WAR-06 — active next work (2026-09-10)

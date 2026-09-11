@@ -233,6 +233,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       unexplainedMissionEvents: 0,
       restartCheckpointsPassed: profile.restartCheckpoints.length,
       backupCycles: 2,
+      mainEventLoopLaunches: Array.from({ length: profile.restartCheckpoints.length + 1 }, () => ({ intervalMs: 50, samples: 10, startedAtMs: 0, stoppedAtMs: 600, maximumGapMs: 60 })),
       mainHeartbeatSamples: 40,
       mainHeartbeatErrors: 0,
       mainMaximumMs: 14,
@@ -280,6 +281,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       unexplainedMissionEvents: 0,
       restartCheckpointsPassed: profile.restartCheckpoints.length,
       backupCycles: 2,
+      mainEventLoopLaunches: Array.from({ length: profile.restartCheckpoints.length + 1 }, () => ({ intervalMs: 50, samples: 10, startedAtMs: 0, stoppedAtMs: 600, maximumGapMs: 60 })),
       mainHeartbeatSamples: 40,
       mainHeartbeatErrors: 0,
       mainMaximumMs: 14,
@@ -335,6 +337,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       unexplainedMissionEvents: 0,
       restartCheckpointsPassed: profile.restartCheckpoints.length,
       backupCycles: 2,
+      mainEventLoopLaunches: Array.from({ length: profile.restartCheckpoints.length + 1 }, () => ({ intervalMs: 50, samples: 10, startedAtMs: 0, stoppedAtMs: 600, maximumGapMs: 60 })),
       mainHeartbeatSamples: 40,
       mainHeartbeatErrors: 0,
       mainMaximumMs: 14,
@@ -394,6 +397,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       unexplainedMissionEvents: 1,
       restartCheckpointsPassed: 0,
       backupCycles: 0,
+      mainEventLoopLaunches: Array.from({ length: profile.restartCheckpoints.length + 1 }, () => ({ intervalMs: 50, samples: 10, startedAtMs: 0, stoppedAtMs: 600, maximumGapMs: 60 })),
       mainHeartbeatSamples: 0,
       mainHeartbeatErrors: 1,
       mainMaximumMs: 1_500,
@@ -443,6 +447,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       unexplainedMissionEvents: 0,
       restartCheckpointsPassed: profile.restartCheckpoints.length,
       backupCycles: 2,
+      mainEventLoopLaunches: Array.from({ length: profile.restartCheckpoints.length + 1 }, () => ({ intervalMs: 50, samples: 10, startedAtMs: 0, stoppedAtMs: 600, maximumGapMs: 60 })),
       mainHeartbeatSamples: 40,
       mainHeartbeatErrors: 0,
       mainMaximumMs: 14,
@@ -488,6 +493,11 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       mainStallThresholdMs: 200,
       rendererMaximumMs: 433,
     })
+    const hiddenMainStallVerdict = buildTrackingSoakVerdict({
+      ...validInput,
+      mainEventLoopLaunches: Array.from({ length: profile.restartCheckpoints.length + 1 }, () => ({ intervalMs: 50, samples: 10, startedAtMs: 0, stoppedAtMs: 600, maximumGapMs: 250 })),
+    })
+    const missingMainTimerVerdict = buildTrackingSoakVerdict({ ...validInput, mainEventLoopLaunches: undefined })
 
     expect(rendererReactionVerdict.passed).toBe(false)
     expect(rendererReactionVerdict.failureReasons.join('\n')).toMatch(/operator action/i)
@@ -497,6 +507,8 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
     expect(backendVerdict.failureReasons.join('\n')).toMatch(/WebGL renderer backend/i)
     expect(mainStallVerdict.failureReasons.join('\n')).toMatch(/main-process maximum.*200/iu)
     expect(mainStallVerdict.failureReasons.join('\n')).not.toMatch(/renderer maximum/iu)
+    expect(hiddenMainStallVerdict.failureReasons.join('\n')).toMatch(/independent main-loop.*250.*200/iu)
+    expect(missingMainTimerVerdict.failureReasons.join('\n')).toMatch(/independent main-loop/iu)
   })
 
   it('fails when the renderer itself reaches the freeze threshold [DON-260]', () => {
@@ -514,6 +526,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       unexplainedMissionEvents: 0,
       restartCheckpointsPassed: profile.restartCheckpoints.length,
       backupCycles: 2,
+      mainEventLoopLaunches: Array.from({ length: profile.restartCheckpoints.length + 1 }, () => ({ intervalMs: 50, samples: 10, startedAtMs: 0, stoppedAtMs: 600, maximumGapMs: 60 })),
       mainHeartbeatSamples: 40,
       mainHeartbeatErrors: 0,
       mainMaximumMs: 14,

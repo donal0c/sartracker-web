@@ -1,0 +1,33 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/electron-mission-store.test.ts (102 tests | 1 failed | 101 skipped) 159ms
+     × bounds legacy lookup compilation for a 1,800-position atomic history batch [DON-254] 158ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-mission-store.test.ts > electron mission store > bounds legacy lookup compilation for a 1,800-position atomic history batch [DON-254]
+AssertionError: expected 1800 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 1800
+
+ ❯ tests/unit/electron-mission-store.test.ts:2814:39
+    2812|       ).length
+    2813|       // Compilation was a measured main-thread cost; executions must …
+    2814|       expect(legacyQueryCompilations).toBe(1)
+       |                                       ^
+    2815|       await expect(store.countPositions(mission.id)).resolves.toBe(180…
+    2816|       await expect(store.listTrackingHistoryCheckpoints(mission.id)).r…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 101 skipped (102)
+   Start at  11:43:58
+   Duration  905ms (transform 88ms, setup 0ms, import 140ms, tests 159ms, environment 526ms)
+

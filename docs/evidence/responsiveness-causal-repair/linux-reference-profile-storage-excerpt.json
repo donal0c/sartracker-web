@@ -1,0 +1,27 @@
+{
+  "selection": "All durationMs >=100 in early captured runtime.log and runtime.log.1 from profile run; full files retained locally.",
+  "records": [
+    {
+      "ts": "2026-09-11T10:28:43.461Z",
+      "level": "info",
+      "event": "storage_tracking_positions_completed",
+      "durationMs": 243,
+      "insertedPositionCount": 1800,
+      "positionTelemetryEventCount": 0,
+      "skippedAmbiguousLegacyAdoptionCount": 0,
+      "cumulativeInsertedPositionCount": 4344,
+      "cumulativePositionTelemetryEventCount": 0
+    },
+    {
+      "ts": "2026-09-11T10:28:52.172Z",
+      "level": "info",
+      "event": "storage_tracking_positions_completed",
+      "durationMs": 159,
+      "insertedPositionCount": 895,
+      "positionTelemetryEventCount": 0,
+      "skippedAmbiguousLegacyAdoptionCount": 0,
+      "cumulativeInsertedPositionCount": 7037,
+      "cumulativePositionTelemetryEventCount": 0
+    }
+  ]
+}

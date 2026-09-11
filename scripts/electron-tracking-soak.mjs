@@ -22,6 +22,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { chromium } from 'playwright'
+import { collectMainEventLoopEvidence, installMainEventLoopProbe } from '../build/main-event-loop-probe.js'
 
 import { summarizeResponsiveness } from '../build/electron-map-freeze-probe-lib.js'
 import { sanitizeEvidenceText } from '../build/electron-official-map-offline-smoke-lib.js'
@@ -535,6 +536,7 @@ async function main() {
       backupCycles: databaseEvidence.events.mission_backup_synced ?? 0,
       mainHeartbeatSamples: mainStats.count,
       mainHeartbeatErrors: launches.reduce((sum, launch) => sum + launch.mainHeartbeatErrors, 0),
+      mainEventLoopLaunches: launches.map((launch) => launch.mainEventLoopEvidence),
       mainMaximumMs: mainStats.maxMs,
       mainStallThresholdMs: options.mainStallThresholdMs,
       rendererSamples: rendererStats.count,
@@ -602,6 +604,7 @@ async function main() {
       runtimeTiming,
       responsiveness: {
         mainProcess: mainStats,
+        independentMainEventLoops: launches.map((launch) => launch.mainEventLoopEvidence),
         renderer: rendererStats,
         operatorInteractions: {
           ...operatorInteractionStats,
@@ -632,6 +635,8 @@ async function main() {
         webGlRenderer: launch.webGlRenderer,
         rendererSampleCount: launch.rendererSampleCount ?? 0,
         mainHeartbeatErrors: launch.mainHeartbeatErrors,
+        mainHeartbeatFailures: launch.mainHeartbeatFailures,
+        mainEventLoopEvidence: launch.mainEventLoopEvidence,
         rendererCrashes: launch.rendererCrashes,
         processMemory: createProcessMemoryReport(launch.processMemory),
         operatorClickAuditTail: launch.operatorClickAuditTail,
@@ -765,6 +770,7 @@ async function launchPackagedApp(options, userDataDir, number) {
   appProcess.stderr.on('data', (chunk) => logChunks.push(chunk))
   let browser
   let mainInspector
+  let mainHeartbeat
   try {
     await waitForCdp(remoteDebuggingPort, appProcess)
     mainInspector = await connectMainInspector(inspectorPort, appProcess)
@@ -786,7 +792,8 @@ async function launchPackagedApp(options, userDataDir, number) {
     await installRendererProbe(page)
     await installOperatorClickAudit(page)
     rendererLifecycle.markReady()
-    const mainHeartbeat = startMainHeartbeat(mainInspector, 50)
+    mainHeartbeat = startMainHeartbeat(mainInspector, 50)
+    await mainInspector.evaluate(`globalThis.__SARTRACKER_MAIN_EVENT_LOOP_PROBE__ = (${installMainEventLoopProbe.toString()})(); true`)
 
     return {
       number,
@@ -796,6 +803,8 @@ async function launchPackagedApp(options, userDataDir, number) {
       mainInspector,
       mainHeartbeat,
       mainHeartbeatErrors: 0,
+      mainHeartbeatFailures: [],
+      mainEventLoopEvidence: null,
       webGlRenderer,
       get rendererCrashes() {
         return rendererLifecycle.snapshot().pageCrashCount
@@ -821,6 +830,7 @@ async function launchPackagedApp(options, userDataDir, number) {
     }
   } catch (error) {
     await runCleanupStep(() => mainInspector?.close(), 250)
+    await runCleanupStep(() => mainHeartbeat?.stop(), 250)
     await runCleanupStep(() => browser?.close(), 2_000)
     let cleanupFailure
     try {
@@ -2946,7 +2956,9 @@ async function collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps)
   launch.responsivenessCollected = true
   const heartbeat = await launch.mainHeartbeat.stop()
   launch.mainHeartbeatErrors = heartbeat.errors
+  launch.mainHeartbeatFailures = heartbeat.failures
   mainRoundTrips.push(...heartbeat.roundTrips)
+  launch.mainEventLoopEvidence = await collectMainEventLoopEvidence(launch.mainInspector)
   const launchRendererGaps = await collectRendererProbe(launch.page).catch(() => [])
   launch.rendererSampleCount = launchRendererGaps.length
   rendererGaps.push(...launchRendererGaps)
@@ -3247,18 +3259,23 @@ function startMainHeartbeat(mainInspector, intervalMs) {
   let stopped = false
   const roundTrips = []
   let errors = 0
+  const failures = []
   const task = (async () => {
     while (!stopped) {
       const startedAt = performance.now()
       try {
         await mainInspector.evaluate('process.uptime()')
         roundTrips.push(performance.now() - startedAt)
-      } catch {
+      } catch (error) {
         errors += 1
+        if (failures.length < 8) failures.push({
+          controllerAtMs: performance.now(),
+          reason: error.inspectorFailure ?? { kind: 'inspector_connection_failed' },
+        })
       }
       await delay(Math.max(0, intervalMs - (performance.now() - startedAt)))
     }
-    return { roundTrips, errors }
+    return { roundTrips, errors, failures }
   })()
   return {
     stop: async () => {
@@ -3310,13 +3327,20 @@ async function connectMainInspector(port, appProcess) {
     if (request === undefined) return
     pending.delete(message.id)
     if (message.error !== undefined || message.result?.exceptionDetails !== undefined) {
-      request.reject(new Error('Electron main inspector evaluation failed.'))
+      const error = new Error('Electron main inspector evaluation failed.')
+      error.inspectorFailure = {
+        kind: message.error !== undefined ? 'protocol_error' : 'runtime_exception',
+        protocolCode: Number.isFinite(message.error?.code) ? message.error.code : null,
+        exceptionClass: String(message.result?.exceptionDetails?.exception?.className ?? '').slice(0, 80),
+        exceptionText: String(message.result?.exceptionDetails?.text ?? '').slice(0, 160),
+      }
+      request.reject(error)
     } else {
       request.resolve(message.result)
     }
   })
   return {
-    evaluate: (expression) => new Promise((resolve, reject) => {
+    evaluate: (expression, { awaitPromise = false } = {}) => new Promise((resolve, reject) => {
       if (closed || socket.readyState !== 1) {
         reject(new Error('Electron main inspector is unavailable.'))
         return
@@ -3324,7 +3348,7 @@ async function connectMainInspector(port, appProcess) {
       requestId += 1
       pending.set(requestId, { resolve, reject })
       try {
-        socket.send(JSON.stringify({ id: requestId, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }))
+        socket.send(JSON.stringify({ id: requestId, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise } }))
       } catch {
         pending.delete(requestId)
         reject(new Error('Electron main inspector is unavailable.'))

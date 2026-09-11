@@ -12,7 +12,15 @@ Updated 2026-09-11. Read after `CLAUDE.md`.
   cancellation, startup shutdown and queued archive identity checks pass.
   Full source (429 files / 4,384 tests), lint/build and eight Chromium flows pass. macOS
   archive/tracking packages pass at `7637e936` (current-fix max 119 ms).
-  Four source reviews clear; Linux CI remains pending in the
+  Four source reviews clear; Linux CI `34585453685` passes at `6a88a65e`.
+  PR22 remains draft while final qualification runs. The old CI binary fails
+  independent main timers (243/215 ms); query reuse alone still fails at 206 ms.
+  Combined query reuse/device coalescing passes actual Linux reference timers
+  (154/137 ms), exact 8,664 positions and restart. Native 116 tests and full
+  final source 431 files / 4,395 tests pass; affected source reviews clear. An
+  enforced independent main timer closes the CI escape; corrected reference
+  harness passes 166/152 ms with zero inspector errors. Final CI proof
+  is pending. Prior failures stay retained in the
   [causal record](../docs/assurance/findings/responsiveness-causal-repair.md).
   Historical PR19/20/21 failures remain separately recorded. DON-254 stays open;
   no merge, release, deployment or field acceptance. This is the active priority.
