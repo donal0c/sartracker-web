@@ -1,0 +1,155 @@
+{
+  "schema": "sartracker-independent-merge-release-separation-review-v1",
+  "reviewer": "/root/renderer_review",
+  "authoredNone": true,
+  "reviewDate": "2026-09-11",
+  "result": "clear-with-scoped-limitations",
+  "baseHead": "df6bdc7d7a066280501140d21c401c7896b9d86a",
+  "scope": "Working-tree governance separation only: ordinary PR correctness, assertion/config routing, mandatory beta/tag responsiveness and release publication guard. Application source unchanged.",
+  "findings": [],
+  "files": {
+    ".github/workflows/electron-linux-validation.yml": "a91c68d8f1e1c19fd73b334208277dc0bf6fac7b4ce3e2bcc9f87ba18ba2fdf7",
+    "tests/unit/electron-linux-renderer-workflows.test.ts": "301a7d4554f8b9aef36383e8e026ab36ede2c4fa3f5d0ea4ccb1bdb94ba764bd",
+    ".github/workflows/electron-release.yml": "55c0c0f0b813fdf00aee13b22e6c621b2479412bdbea7433628f017bd414bcd5",
+    "build/beta-verify-lib.js": "ca35e35ebf89f0a04c2f3c7055870f5d1dd986ea4972e5873b982f14ca3fca7a",
+    "build/electron-release-lib.js": "7711725e1883dfe1a83666b0fbf57a22a0b7c80b7607b168fdfbcb902a62476e",
+    "scripts/beta-verify.mjs": "e7753887d46d1001a4abc6ed9ccc18ec4f246870354240772370e77151cc1a55",
+    "docs/releases/TEMPLATE.md": "fbad55e5b3c623ae5d8280102a02474b1bccfa9b92f1486f7c806536bb5d167e",
+    "tests/unit/beta-verify-lib.test.ts": "13fa9f613ef052b53daefa2662a3c23e1184bee0fd76b3629b3b0dae71d86508",
+    "tests/unit/electron-release-safety.test.ts": "c40a58f75a84befa46b0707cd22242bb5002dce26a536df1eeaf33e0935850a7",
+    "tests/support/release-responsiveness.ts": "7fb1159d06450ee1f44791d51f89a3c5503ca2d6353b94a38a29e4a499105ffd",
+    "vitest.config.ts": "24551ffdb7e8ab56f830cfd6c12627bb74ce33c714a3b128358210ff66b1438c",
+    "vitest.correctness.config.ts": "146c66303582d740d2f4a3e06dd504ee8e0093ea1223ac8c09f5f584b9493daf",
+    "vitest.responsiveness.config.ts": "a56bb3f30072478505a285b2da2382c23bfd6890cd232456f4014d528c3cac94",
+    "package.json": "b4d9cf65b63becfada0310a0c109cbed19f91ce6da28e1eebb89bb83ae04b477",
+    "tests/unit/breadcrumb-accumulator.test.ts": "8224dadd4d6471c694b6956ec5341f107390f62555b00e952d11dcb5d6cdcdd3",
+    "tests/unit/breadcrumb-pr6-qualification-script.test.ts": "5be0359bb789c3e57469db59a2780f1287699080e33c77b97d4f960eb517fcdb",
+    "tests/unit/electron-archive-family-resource-lane.test.ts": "22415421a74a0f6365886f6c6c0f5543d81582ced1b3947144b4bd0a36dcc02e",
+    "tests/unit/electron-archive-plaintext-sweep-integration.test.ts": "48a59f0319dae1c7c7de48bacbe2907d671303adfe1cbf8a1ad24264cb5af644",
+    "tests/unit/electron-archive-registry.test.ts": "093a6cf3f5e0d6de3756b8a9c082929bbe48484357519524c67ee558c84c2fa5",
+    "tests/unit/electron-cleanup-live-write-contention.test.ts": "9c5af5471736560a58ccc3e54b02e6e98bb947a4b725ee9a5a322af0b2c9ecb0",
+    "tests/unit/electron-coverage-ledger.test.ts": "9496dce53290978bc96fce9aaaf192315366521c1cd7657654558d3589f40404",
+    "tests/unit/electron-mission-evidence-versioning.test.ts": "da03f00fcaa14d43a0940dc168a9018fce549361113592eb9936e4232ca6638b",
+    "tests/unit/electron-mission-review-read-query-runner.test.ts": "e51f9fdc3ef55c7663516b6af273c1a9dc58b5200714342d8a4a1019d3d8858d",
+    "tests/unit/electron-search-operations-page.test.ts": "0f16cce02134f7b08b6ddc4513670327223d7b45d8931b5f7cf058971109ea6a",
+    "tests/unit/electron-startup-write-responsiveness.test.ts": "34ff0ca1ecf2ffa0b94bd4468280c48baf2c414e70e685c1c5fa17b062a4d031",
+    "tests/unit/ingest-anomaly-outbox.test.ts": "af015a64ab29d1416b9eac732b3f76cd09e170e3437fe645771c24e592ec760d",
+    "tests/unit/main-event-loop-probe.test.ts": "4de1edaa65a0ed15d47092ced74e082096fdf8c4264a8c1bc91161c1d7b28694",
+    "tests/unit/release-responsiveness.test.ts": "e846a858ca99b0e7e2d51bfb73816cd378e7f40661a19dc87cd6e1c873d86033",
+    "tests/unit/stationary-attention-projection.test.ts": "23c6fab770268e7989265988d45a732c7bee6266585fef3989385068ead825c7"
+  },
+  "assertionPreservationChecks": [
+    {
+      "file": "tests/unit/breadcrumb-accumulator.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 1,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/breadcrumb-pr6-qualification-script.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 0,
+      "wholeCaseWrappers": 6
+    },
+    {
+      "file": "tests/unit/electron-archive-family-resource-lane.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 3,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/electron-archive-plaintext-sweep-integration.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 1,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/electron-archive-registry.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 1,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/electron-cleanup-live-write-contention.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 1,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/electron-coverage-ledger.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 1,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/electron-mission-evidence-versioning.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 27,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/electron-mission-review-read-query-runner.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 2,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/electron-search-operations-page.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 1,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/electron-startup-write-responsiveness.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 1,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/ingest-anomaly-outbox.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 1,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/main-event-loop-probe.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 1,
+      "wholeCaseWrappers": 0
+    },
+    {
+      "file": "tests/unit/stationary-attention-projection.test.ts",
+      "unchangedAfterRoutingRemoved": true,
+      "assertionWrappers": 1,
+      "wholeCaseWrappers": 0
+    }
+  ],
+  "assertionWrapperCount": 42,
+  "wholeCaseQualificationOnlyCount": 6,
+  "conclusions": [
+    "All fourteen existing routed test files become byte-identical to the base head when only the added import, 42 assertion wrappers, and six explicit whole-case wrappers are removed. Original assertion text, strict less-than-200 thresholds, operation timing boundaries, fixtures, loop bounds and other correctness assertions are preserved.",
+    "Ordinary correctness inherits the complete unit-file include pattern. Only the 42 wall-clock assertion callbacks and six named internally timed positive qualification probe cases are omitted. Missing or unknown mode throws. Default npm test remains strict; the dedicated responsiveness command explicitly includes every routed file and its helper tests, is serial, and cannot pass with no tests.",
+    "The six whole-case exceptions are the internally timed positive probe controls for pending persistence publication, normal-cadence heartbeat separation, exactly-once teardown, durable worker drain, queue latency, and SQLite contention retry. Their original bodies run unchanged in strict qualification. Negative exact-200 and real blocked-loop rejection checks remain in ordinary correctness.",
+    "Ordinary PR CI unconditionally runs correctness units and retains build, packaging, native inspection and AppImage launch. Strict source tests, the internally timed 960k replay qualification, and packaged tracking/archive qualification are manual-dispatch-only in this workflow. The original 960k command is unchanged. The PR summary explicitly says responsiveness was not run and release remains on HOLD.",
+    "Tag release unconditionally runs correctness and strict responsiveness before artifact jobs, with existing packaged tracking qualification retained. Default beta steps require correctness then responsiveness before packaging. Skipped beta steps fail the report, and signal-terminated children fail instead of passing.",
+    "The guarded publisher requires the Strict responsiveness (<200 ms) matrix row with PASS and final evidence; missing, HOLD, TODO, FAIL, SKIP, and NOT APPLICABLE cannot clear it. The template keeps this row on HOLD and requires exact release commit and CI artifact qualification."
+  ],
+  "limitations": [
+    "Correctness green is not timing PASS. Retained timing failures remain unresolved and no performance cause or waiver is asserted.",
+    "The six named internally timed positive probe cases are explicitly qualification-only; a blanket claim that every original test case runs in ordinary correctness would be inaccurate.",
+    "960k replay is qualification-only in the manual-dispatch validation workflow; this review does not claim it runs in ordinary PR CI.",
+    "This is source and routing review only. No full suite, performance probe, packaged validation, release, or deployment was run by this reviewer.",
+    "The release matrix verifies required status and evidence text; this review does not independently validate future evidence content or artifact qualification."
+  ],
+  "verification": {
+    "testReruns": false,
+    "productionEdits": false,
+    "receiptOnlyWrite": true,
+    "readOnlyChecks": [
+      "Inspected all scoped source diffs and helper/config behavior.",
+      "Compared fourteen normalized routed files byte-for-byte with base head.",
+      "Searched unit tests for actual and deterministic 200 ms predicates.",
+      "Rechecked final routing correction and all recorded SHA256 bindings."
+    ]
+  }
+}

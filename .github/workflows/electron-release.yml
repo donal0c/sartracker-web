@@ -145,7 +145,12 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm run test
+        run: npm run test:correctness
+
+      # Merge correctness and prerelease responsiveness are separate gates.
+      # This retains every strict workload/assertion before release artifacts.
+      - name: Strict responsiveness qualification (<200 ms)
+        run: npm run test:responsiveness
 
       # NOTE: the legacy Tauri Rust backend (`npm run test:backend` / `cargo
       # test` on src-tauri) is intentionally NOT a release gate here. The
@@ -502,7 +507,7 @@ jobs:
             echo "- Build commit: \`${COMMIT}\`"
             echo "- Run: [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
             echo "- Workflow: \`.github/workflows/electron-release.yml\`"
-            echo "- Release gates: lint, unit tests, web build, standard Chromium E2E"
+            echo "- Release gates: lint, correctness tests, strict responsiveness qualification (<200 ms), web build, standard Chromium E2E"
             echo "- Linux launch smoke: passed"
           } > "$BODY_FILE"
 

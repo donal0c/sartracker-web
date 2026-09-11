@@ -1,0 +1,27 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+ ❯ tests/unit/electron-linux-renderer-workflows.test.ts (8 tests | 1 failed) 14ms
+     × separates ordinary correctness from mandatory unchanged release timing [DON-254] 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-linux-renderer-workflows.test.ts > Linux Electron renderer workflows [DON-260] > separates ordinary correctness from mandatory unchanged release timing [DON-254]
+AssertionError: Expected workflow step "Full correctness unit gate": expected undefined to be defined
+ ❯ selectStep tests/unit/electron-linux-renderer-workflows.test.ts:37:52
+     35| function selectStep(job: WorkflowJob, name: string): WorkflowStep {
+     36|   const step = job.steps.find((candidate) => candidate.name === name)
+     37|   expect(step, `Expected workflow step "${name}"`).toBeDefined()
+       |                                                    ^
+     38|   return step as WorkflowStep
+     39| }
+ ❯ tests/unit/electron-linux-renderer-workflows.test.ts:84:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 passed (8)
+   Start at  15:42:37
+   Duration  361ms (transform 20ms, setup 0ms, import 29ms, tests 14ms, environment 252ms)
+

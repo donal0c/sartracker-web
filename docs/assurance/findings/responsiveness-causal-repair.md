@@ -6,6 +6,35 @@ deployment or field acceptance. [Raw bounded evidence](../../evidence/responsive
 
 ## Frozen incremental scope and current acceptance
 
+**Later explicit governance decision (2026-09-11):** Donal permits this
+incremental PR to merge after ordinary exact-head correctness CI and independent
+reviews, retaining every timing rejection. The threshold remains **200 ms,
+not 20 ms**. Strict timing qualification moves to a dedicated mandatory
+pre-release path; release stays **HOLD**. This supersedes earlier text that made
+timing pass a PR22 merge condition. No more timing diagnosis is in PR22 scope.
+Ordinary mixed fixtures retain workloads and correctness checks; their exact
+timing assertions run in the strict qualification mode. Packaged timing scripts
+and thresholds remain unchanged and run in the explicit qualification workflow.
+
+The ordered queue is: (1) merge PR22 after ordinary exact-head checks/reviews;
+(2) reconcile PR20, then PR21, then PR19 against new master and drive them to
+merge readiness; (3) high-priority large breadcrumb IPC/query repair for 316–550
+ms stalls, then separate legacy recovery around 239 ms, then unchanged strict
+`<200 ms` qualification; (4) release HOLD until repairs and qualification pass.
+Merge permission is not release qualification.
+
+The final correctness cycle passes **433 files / 4,458 tests**, with exactly six
+named internally timed positive probes explicitly reserved for qualification
+(4,464 total; 480.56 s). Lint, TypeScript/build and bundle budgets also pass.
+The 42 original strict assertions remain intact behind
+explicit mode routing. Independent review normalized all 14 affected files back
+to their original contents after removing only imports/routing wrappers; no
+fixture, loop, correctness assertion or threshold changed. Missing/unknown mode
+fails closed, and the default full suite remains strict. Focused red/green
+routing controls also cover release HOLD/missing evidence and signal-terminated
+beta verification. [Routing review](../../evidence/responsiveness-causal-repair/merge-release-separation-review.json)
+binds the exact file hashes. Ordinary green is not timing qualification.
+
 The 2026-09-11 scope decision closes PR22 around the measured write repairs:
 GPX foreground admission, responsive startup bookkeeping, bulk SQL statement
 reuse/device coalescing, whole-chunk grouped history with the original mission
@@ -29,6 +58,47 @@ operator workflow and the manual's existing field-admission restrictions are
 unchanged, so no manual instructions require alteration.
 PR22's normal exact-head CI and commit-bound review comments complete its merge
 acceptance separately. The old 210.537 ms CI failure remains a rejection.
+
+**Exact-head CI `34606545104` rejects `df6bdc7d`:** the serial full source gate
+has three timing failures in the 74-test evidence-versioning file. Legacy event
+preparation has heartbeat 203.651 ms, inspection query maximum 2.684 ms,
+process CPU 0.622 ms and no overlapping GC. The 50k GPX control has current write
+218.824 ms, heartbeat 228.240 ms and process CPU 1.849 ms. The exact-limit 8 MiB
+GPX control has current write 221.084 ms. Packaging never started; no artifact
+or packaged pass can be inferred. The full log and run receipt are retained as
+`rejected-ci-df6bdc7d-*`. This legacy **event** control differs from the excluded
+legacy **object** 239.509 ms discovery below.
+
+Preserved test-only attribution recorded native transaction outer/body spans, largest
+write/heartbeat monotonic windows, and an external process heartbeat with Linux
+thread state and sparse host counters. Red-first controls exercise a busy main
+thread and a real SQLite lock wait; both still fail the independent 200 ms gate
+while the external observer remains responsive. Native transaction controls
+cover failed BEGIN, successful body/commit, rollback, nesting and restoration;
+observer controls cover unavailable data, deadlines and joined cleanup.
+No host time is subtracted and no timing predicate, workload or application path
+changes. The later governance decision stopped diagnosis; its seven new helper/
+test files and integration patch are removed from the active tree and preserved
+with hashes in `tmp/pr22-attribution-preserved-20260911/`. Its full source run
+completed naturally at 434 files / 4,456 tests (505.31 s) before the stop boundary.
+
+Focused macOS evidence-versioning passes 74/74 tests (69.30 s); Linux reference
+passes that file plus both diagnostic suites, 86/86 tests (116.83 s). Linux's
+largest legacy-event heartbeat is 53.649 ms, overlapping a 51.277 ms native
+transaction with a 0.200 ms body and five D-state samples; the external witness
+maximum for that window is 10.584 ms. GPX largest-write windows similarly
+overlap native outside-body waits of 27.934 ms (50k) and 20.834 ms (8 MiB).
+Independent trace inspection identifies `D / jbd2_log_wait_commit` after each
+successful outer transaction's callback: 51.050 ms for legacy events, 27.899 ms
+for GPX 50k and 20.808 ms for GPX 8 MiB. BEGIN takes under 0.1 ms. This places
+the observed waiting in SQLite COMMIT's kernel-journal work; the probe cannot
+distinguish WAL sync from checkpoint-related work. These smaller pauses support
+native waiting as a real contributor, not a scheduler-only explanation.
+They do **not** attribute or repair the historical
+CI 203–228 ms failures. Kernel schedstats are disabled on the reference host,
+so zero runnable-wait counters are not scheduling proof. Reports are bounded,
+untruncated and joined; complete raw reports remain in the local evidence
+directory. They will not be rerun as part of PR22.
 
 Two discoveries remain **release/field-qualification blockers outside PR22**:
 

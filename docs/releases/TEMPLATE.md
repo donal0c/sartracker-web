@@ -183,7 +183,8 @@ Minimum verification for an Electron official-map handoff:
 - tag-driven `.github/workflows/electron-release.yml` run green
 - local no-skip `npm run beta:verify`, including the legacy backend
   compatibility suite
-- tag workflow gates: `npm run lint`, `npm run test`, `npm run build`,
+- tag workflow gates: `npm run lint`, `npm run test:correctness`,
+  `npm run test:responsiveness`, `npm run build`,
   `npm run test:e2e:chromium`, Linux bundle/soak, and AppImage launch
 - focused or full unit tests relevant to the slice
 - Electron package build on the target OS
@@ -198,6 +199,16 @@ every packaged smoke gate below. Only the unchanged private-map-package gate may
 be marked `NOT APPLICABLE`, with a concrete reason; every other row must be
 `PASS`. Gate names are an executable contract with the guarded publisher and
 must not be renamed.
+
+Responsiveness is a mandatory prerelease qualification gate, separate from
+ordinary PR correctness checks. Keep the release on **HOLD** until the exact
+release commit passes `npm run test:responsiveness` with the retained workloads
+and unchanged `<200 ms` assertions, and the CI-built artifacts pass their strict
+packaged responsiveness checks. A green correctness or PR run is not release
+qualification. Record the exact commit, artifact identities and final evidence
+before changing the responsiveness row to `PASS`; skipped, failed or missing
+qualification cannot clear the hold. `npm run test` still runs the full strict
+source suite for compatibility.
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
@@ -214,6 +225,7 @@ must not be renamed.
 | Duplicate launch | TODO | TODO |
 | Five-day and fourteen-day packaged soak | TODO | TODO |
 | Cross-profile exact breadcrumb identity comparison | TODO | TODO |
+| Strict responsiveness (<200 ms) | HOLD | exact release commit, strict source qualification and CI artifact packaged timer evidence required |
 
 ## Rollback / Reinstall
 

@@ -33,6 +33,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:correctness": "vitest run --config vitest.correctness.config.ts",
+    "test:responsiveness": "vitest run --config vitest.responsiveness.config.ts",
     "test:contract:dots": "vitest run tests/unit/exact-breadcrumb-dots-contract.test.ts",
     "test:backend": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:e2e": "playwright test",

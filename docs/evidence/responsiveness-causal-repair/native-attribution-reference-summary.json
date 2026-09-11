@@ -1,0 +1,229 @@
+[
+  {
+    "file": "tmp/electron-validation-evidence/native-responsiveness-gpx-50k-current-346bf7f9-d251-4eec-bc44-f8bbef0bb121.json",
+    "testId": "gpx-50k-current",
+    "assertionFailed": false,
+    "availability": {
+      "mainState": "unavailable",
+      "schedstat": "unavailable",
+      "wchan": "unavailable",
+      "cpuSteal": "unavailable",
+      "cpuThrottle": "unavailable"
+    },
+    "kernelSchedstatsEnabled": null,
+    "samples": 1496,
+    "observerMaximumGapMs": 64.716625,
+    "windows": {
+      "largest-current-write": {
+        "durationMs": 32.637917,
+        "overlappingObserverMaxMs": 11.7245,
+        "states": {
+          "null": 4
+        },
+        "nativeSpans": [
+          {
+            "durationMs": 6.466958,
+            "bodyDurationMs": 6.043875,
+            "outsideBodyDurationMs": 0.4230830000000001,
+            "threadCpuMs": 3.781,
+            "processCpuMs": 3.92
+          },
+          {
+            "durationMs": 3.871333,
+            "bodyDurationMs": 3.820875,
+            "outsideBodyDurationMs": 0.05045799999999989,
+            "threadCpuMs": 1.854,
+            "processCpuMs": 1.98
+          }
+        ]
+      },
+      "largest-main-heartbeat": {
+        "durationMs": 72.250125,
+        "overlappingObserverMaxMs": 64.716625,
+        "states": {
+          "null": 2
+        },
+        "nativeSpans": []
+      }
+    }
+  },
+  {
+    "file": "tmp/electron-validation-evidence/native-responsiveness-gpx-8mib-current-33bdedf4-73b6-4367-bac1-a80a5a13a5a1.json",
+    "testId": "gpx-8mib-current",
+    "assertionFailed": false,
+    "availability": {
+      "mainState": "unavailable",
+      "schedstat": "unavailable",
+      "wchan": "unavailable",
+      "cpuSteal": "unavailable",
+      "cpuThrottle": "unavailable"
+    },
+    "kernelSchedstatsEnabled": null,
+    "samples": 21,
+    "observerMaximumGapMs": 11.127875,
+    "windows": {
+      "largest-current-write": {
+        "durationMs": 27.10825,
+        "overlappingObserverMaxMs": 11.106417,
+        "states": {
+          "null": 3
+        },
+        "nativeSpans": [
+          {
+            "durationMs": 0.960542,
+            "bodyDurationMs": 0.646416,
+            "outsideBodyDurationMs": 0.314126,
+            "threadCpuMs": 0.849,
+            "processCpuMs": 1.079
+          }
+        ]
+      }
+    }
+  },
+  {
+    "file": "tmp/electron-validation-evidence/native-responsiveness-legacy-event-preparation-7804d0e2-e844-4b14-8b59-bce3437696c7.json",
+    "testId": "legacy-event-preparation",
+    "assertionFailed": false,
+    "availability": {
+      "mainState": "unavailable",
+      "schedstat": "unavailable",
+      "wchan": "unavailable",
+      "cpuSteal": "unavailable",
+      "cpuThrottle": "unavailable"
+    },
+    "kernelSchedstatsEnabled": null,
+    "samples": 1617,
+    "observerMaximumGapMs": 14.324417,
+    "windows": {
+      "largest-main-heartbeat": {
+        "durationMs": 19.012792,
+        "overlappingObserverMaxMs": 13.415208,
+        "states": {
+          "null": 2
+        },
+        "nativeSpans": []
+      }
+    }
+  },
+  {
+    "file": "tmp/pr22-native-attribution-linux/native-responsiveness-gpx-50k-current-888050b3-ab93-4fc4-996e-d5899b07745c.json",
+    "testId": "gpx-50k-current",
+    "assertionFailed": false,
+    "availability": {
+      "mainState": "available",
+      "schedstat": "available",
+      "wchan": "available",
+      "cpuSteal": "available",
+      "cpuThrottle": "available"
+    },
+    "kernelSchedstatsEnabled": false,
+    "samples": 3668,
+    "observerMaximumGapMs": 11.853571,
+    "windows": {
+      "largest-current-write": {
+        "durationMs": 55.00218,
+        "overlappingObserverMaxMs": 10.597708,
+        "states": {
+          "S": 2,
+          "R": 2,
+          "D": 2
+        },
+        "nativeSpans": [
+          {
+            "durationMs": 29.578067,
+            "bodyDurationMs": 1.643895,
+            "outsideBodyDurationMs": 27.934172,
+            "threadCpuMs": 2.502,
+            "processCpuMs": 5.454
+          }
+        ]
+      },
+      "largest-main-heartbeat": {
+        "durationMs": 42.214783,
+        "overlappingObserverMaxMs": 10.497078,
+        "states": {
+          "S": 2,
+          "R": 3,
+          "D": 1
+        },
+        "nativeSpans": [
+          {
+            "durationMs": 31.285013,
+            "bodyDurationMs": 3.157044,
+            "outsideBodyDurationMs": 28.127969,
+            "threadCpuMs": 4.5,
+            "processCpuMs": 5.937
+          }
+        ]
+      }
+    }
+  },
+  {
+    "file": "tmp/pr22-native-attribution-linux/native-responsiveness-gpx-8mib-current-49dee2c8-6f5a-4cd4-8e16-82adba77c612.json",
+    "testId": "gpx-8mib-current",
+    "assertionFailed": false,
+    "availability": {
+      "mainState": "available",
+      "schedstat": "available",
+      "wchan": "available",
+      "cpuSteal": "available",
+      "cpuThrottle": "available"
+    },
+    "kernelSchedstatsEnabled": false,
+    "samples": 95,
+    "observerMaximumGapMs": 11.676227,
+    "windows": {
+      "largest-current-write": {
+        "durationMs": 47.156862,
+        "overlappingObserverMaxMs": 10.647082,
+        "states": {
+          "S": 3,
+          "D": 3
+        },
+        "nativeSpans": [
+          {
+            "durationMs": 21.77343,
+            "bodyDurationMs": 0.939623,
+            "outsideBodyDurationMs": 20.833807,
+            "threadCpuMs": 1.051,
+            "processCpuMs": 6.68
+          }
+        ]
+      }
+    }
+  },
+  {
+    "file": "tmp/pr22-native-attribution-linux/native-responsiveness-legacy-event-preparation-f914e8f3-780c-4c16-a8b2-e0e5d87468e3.json",
+    "testId": "legacy-event-preparation",
+    "assertionFailed": false,
+    "availability": {
+      "mainState": "available",
+      "schedstat": "available",
+      "wchan": "available",
+      "cpuSteal": "available",
+      "cpuThrottle": "available"
+    },
+    "kernelSchedstatsEnabled": false,
+    "samples": 2160,
+    "observerMaximumGapMs": 11.822734,
+    "windows": {
+      "largest-main-heartbeat": {
+        "durationMs": 53.6492,
+        "overlappingObserverMaxMs": 10.583899,
+        "states": {
+          "D": 5,
+          "S": 1
+        },
+        "nativeSpans": [
+          {
+            "durationMs": 51.277443,
+            "bodyDurationMs": 0.199734,
+            "outsideBodyDurationMs": 51.077709,
+            "threadCpuMs": 0.386,
+            "processCpuMs": 38.968
+          }
+        ]
+      }
+    }
+  }
+]

@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -75,7 +76,7 @@ it.each(['complete', 'shutdown'] as const)('keeps the main loop below 200 ms whe
     const used = process.cpuUsage(cpu)
     const evidence = { maximumGapMs, processCpuMs: (used.user + used.system) / 1000 }
     process.stdout.write(`Startup SQLite contention: ${JSON.stringify(evidence)}\n`)
-    expect(maximumGapMs, JSON.stringify(evidence)).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(maximumGapMs, JSON.stringify(evidence)).toBeLessThan(200))
   } finally {
     clearInterval(heartbeat)
     clearTimeout(shutdownTimer)

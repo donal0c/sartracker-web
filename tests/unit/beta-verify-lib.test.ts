@@ -1,4 +1,9 @@
 import { readFileSync } from 'node:fs'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { promisify } from 'node:util'
 
 import { describe, expect, it } from 'vitest'
 
@@ -19,6 +24,7 @@ describe('parseBetaStepsFlag', () => {
       'lint',
       'build',
       'test',
+      'responsiveness',
       'test-backend',
       'e2e-chromium',
       'package',
@@ -56,6 +62,33 @@ describe('parseBetaStepsFlag', () => {
   it('throws a clear error for unknown step names', () => {
     expect(() => parseBetaStepsFlag('lint,bogus')).toThrow(/unknown beta verification step/i)
     expect(() => parseBetaStepsFlag('lint,bogus')).toThrow(/bogus/)
+  })
+})
+
+describe('mandatory beta responsiveness routing [DON-254]', () => {
+  it('runs correctness and strict qualification separately before packaging', () => {
+    const source = readFileSync('scripts/beta-verify.mjs', 'utf8')
+    expect(source).toContain("test: ['npm', ['run', 'test:correctness']]")
+    expect(source).toContain("responsiveness: ['npm', ['run', 'test:responsiveness']]")
+    const steps = parseBetaStepsFlag(undefined)
+    expect(steps.indexOf('responsiveness')).toBeGreaterThan(steps.indexOf('test'))
+    expect(steps.indexOf('responsiveness')).toBeLessThan(steps.indexOf('package'))
+  })
+
+  it('records a signal-terminated real child as failed, even when running a focused subset', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'beta-signal-exit-'))
+    const reportDirectory = path.join(directory, 'reports')
+    try {
+      await writeFile(path.join(directory, 'npm'), '#!/usr/bin/env node\nprocess.kill(process.pid, "SIGTERM")\n', { mode: 0o755 })
+      await promisify(execFile)(process.execPath, [
+        'scripts/beta-verify.mjs', '--steps', 'lint', '--report-dir', reportDirectory,
+      ], { env: { ...process.env, PATH: `${directory}${path.delimiter}${process.env.PATH ?? ''}` } }).catch(() => undefined)
+      const files = await readdir(reportDirectory)
+      expect(files).toHaveLength(1)
+      const report = JSON.parse(await readFile(path.join(reportDirectory, files[0]), 'utf8')) as BetaVerifyReport
+      expect(report.results.find((result) => result.step === 'lint')).toMatchObject({ status: 'fail', exitCode: 1 })
+      expect(summarizeBetaReport(report).ok).toBe(false)
+    } finally { await rm(directory, { recursive: true, force: true }) }
   })
 })
 

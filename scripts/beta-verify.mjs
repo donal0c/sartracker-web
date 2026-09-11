@@ -45,7 +45,8 @@ const projectRoot = path.resolve(path.dirname(scriptFile), '..')
 const STEP_COMMANDS = {
   lint: ['npm', ['run', 'lint']],
   build: ['npm', ['run', 'build']],
-  test: ['npm', ['run', 'test']],
+  test: ['npm', ['run', 'test:correctness']],
+  responsiveness: ['npm', ['run', 'test:responsiveness']],
   'test-backend': ['npm', ['run', 'test:backend']],
   'e2e-chromium': ['npm', ['run', 'test:e2e:chromium']],
   package: ['npm', ['run', 'electron:pack']],
@@ -248,7 +249,7 @@ async function runStep(step) {
   const exitCode = await new Promise((resolve, reject) => {
     const child = spawn(bin, args, { cwd: projectRoot, stdio: 'inherit' })
     child.on('error', (error) => reject(error))
-    child.on('close', (code) => resolve(code ?? 0))
+    child.on('close', (code) => resolve(code ?? 1))
   })
 
   const durationMs = Date.now() - startedAt

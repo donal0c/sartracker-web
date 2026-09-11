@@ -21,6 +21,7 @@ const REQUIRED_QUALIFICATION_GATES = [
   'Duplicate launch',
   'Five-day and fourteen-day packaged soak',
   'Cross-profile exact breadcrumb identity comparison',
+  'Strict responsiveness (<200 ms)',
 ]
 
 const NOT_APPLICABLE_GATE = 'Official offline Discovery package'

@@ -5,29 +5,34 @@ Updated 2026-09-11. Read after `CLAUDE.md`.
 ## Where we are
 
 - **DON-254 incremental responsiveness repair — PR22**, base `49b2e1d4`,
-  branch `codex/responsiveness-causal-repair`; PR22 carries the exact head.
-  Frozen scope: GPX foreground priority, responsive startup bookkeeping, bulk
-  SQL/device coalescing, grouped history with original mission/Finish custody,
-  ACK-only participant backfill and strict independent main timer gate.
-  Current Linux reference ASAR `65db986f…` passes ordinary tracking: independent
-  main 90.781/119.481 ms, exact 8,664 positions, restart and two graceful exits.
-  Full source passes 432 files / 4,444 tests in normal CI serial mode (486.41 s),
-  lint/build pass; three affected source reviews clear with authorship disclosed.
-  PR22 checks/review comments are authoritative for exact-head merge readiness;
-  commit-bound receipts are retained under `tmp/pr22-final-*`. Previous CI
-  `34594872717` rejected 210.537 ms;
-  every rejected candidate remains retained. No merge/release/field acceptance.
-  **Separate release blockers:** DON-254 follow-up A is the 103,626-row canonical
-  IPC transfer (targeted 316–351 ms, extended restart up to 550 ms); follow-up B
-  is the unexplained 239.509 ms legacy 50,000-object source failure. Original
-  legacy test remains enabled and unchanged. Linear's issue limit prevented
-  new issues; precise A/B comments and the regression ledger retain both.
-  They do not expand PR22 merge acceptance. Transport WIP and legacy diagnostic
-  delta are recoverable in `tmp/pr22-scope-freeze-20260911/`, with complete
-  dirty inventory, patches, source copies, red logs and hashes. Merge requires
-  green normal CI and independent reviews on the exact PR head; Donal owns merge.
+  branch `codex/responsiveness-causal-repair`. Donal explicitly permits merge
+  after ordinary exact-head correctness CI and independent reviews, with timing
+  failures retained. **Release HOLD: the threshold remains 200 ms, not 20 ms.**
+  Merge permission is not release qualification. PR22 keeps its frozen write,
+  history-custody, ACK-only and strict main-timer repairs; no further diagnosis.
+  Ordinary tests retain mixed workloads/correctness checks. The dedicated release
+  path retains unchanged strict `<200 ms` assertions and packaged timing gates.
+  Routing is independently reviewed. Full correctness passes 433 files / 4,458
+  tests with six explicit qualification-only cases; lint/build pass. PR22's live checks/review
+  comments retain the exact-head merge receipt. No release qualification claim.
+  Previous reference ASAR `65db986f…`: exact 8,664 positions, restart, graceful
+  exits, independent main 90.781/119.481 ms. Earlier local strict source:
+  432 files / 4,444 tests, lint/build pass. CI `34606545104` at `df6bdc7d`
+  rejected event/GPX source timing at 203–228 ms before packaging; earlier
+  210.537 ms and all other failures remain preserved, causally unwaived.
+  Stopped diagnostic work is saved in `tmp/pr22-attribution-preserved-20260911/`
+  (its final 434-file/4,456-test run completed naturally). Transport/legacy WIP
+  remains in `tmp/pr22-scope-freeze-20260911/`; no diagnostic code remains active.
+  **Ordered queue:** (1) Donal merges PR22 after ordinary exact-head checks and
+  reviews; (2) reconcile PR20, then PR21, then PR19 against the new master and
+  drive each to merge readiness; (3) high-priority pre-release repair of large
+  breadcrumb IPC/query transfer (316–550 ms), then separate legacy recovery
+  (~239 ms), then rerun unchanged strict `<200 ms` release qualification;
+  (4) release remains HOLD until the repairs and qualification pass.
+  DON-254 remains open. Linear's issue limit prevented separate A/B issues;
+  comments `46c986c3…` / `1dfb6581…` and the regression ledger retain them.
   [Causal record](../docs/assurance/findings/responsiveness-causal-repair.md).
-  Historical PR19/20/21 findings stay separate; DON-254 remains open.
+  Historical PR19/20/21 findings stay separate. No merge/release/team contact.
 
 - **Repair Train A merged**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
   at `302bdd040976bd370271cf5866549fa2a7e05ff5` on 2026-09-10. Its final

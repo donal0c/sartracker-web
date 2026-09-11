@@ -163,40 +163,46 @@ ship or ask testers for whole Electron profile zips.
 
 ### Responsiveness causal repair — DON-254 (2026-09-11)
 
-From base `49b2e1d4`, `codex/responsiveness-causal-repair` / draft PR22
-finishes one incremental write repair. The 2026-09-11 scope freeze includes
-GPX foreground admission, responsive startup archive writes, SQL statement reuse
-and transaction-local device observation coalescing, whole-chunk history groups
-under one original mission/Finish fence, ordered partial acknowledgements,
-shutdown join/no late publication, and ACK-only participant persistence. The
-ordinary CI harness enforces an independent strict `<200 ms` main timer with
-negative controls; only necessary honest compatibility fixes accompany it.
+PR22 (`codex/responsiveness-causal-repair`, base `49b2e1d4`) finishes the frozen
+incremental write/history-custody/ACK-only repair. Donal explicitly permits merge
+with retained timing failures once ordinary exact-head correctness CI and
+independent reviews pass. **Merge permission is not release qualification.**
+The retained threshold is **200 ms, not 20 ms**; beta/release stays **HOLD**.
+No more timing diagnosis or architecture work belongs in PR22.
 
-Current reference package `65db986f…` passes the ordinary 8,664-position workload:
-independent main 90.781/119.481 ms, exact identities/digest, restart and graceful
-shutdown. Full source passes 432 files / 4,444 tests in serial mode, lint/build
-pass, and three affected source reviews are clear. Merge acceptance additionally
-requires normal CI and independent rechecks on PR22's exact head; its live
-checks/comments retain those final receipts. Previous 210.537 ms
-CI rejection and all earlier candidates remain in the
+Ordinary tests keep mixed workloads and correctness assertions. A dedicated
+release path retains every original strict `<200 ms` assertion and packaged
+qualification workload; no limit is raised, averaged or silently waived.
+The routing change is independently reviewed; full correctness passes 433 files /
+4,458 tests with six explicit qualification-only cases; lint/build pass. PR22's live checks and
+review comments retain its exact-head merge receipt. Previous local strict source passes
+432 files / 4,444 tests and the reference ASAR `65db986f…` passes exact 8,664
+positions/restart/graceful exit with main maxima 90.781/119.481 ms. CI
+`34606545104` at `df6bdc7d` rejected three source controls at 203–228 ms;
+previous 210.537 ms and all other failures remain in the
 [causal record](assurance/findings/responsiveness-causal-repair.md).
 
-**Separate release-qualification queue, excluded from PR22 implementation:**
+The explicit ordered queue is:
 
-- **DON-254 follow-up A:** bound the measured 103,626-row canonical breadcrumb
-  worker/main/IPC result without changing the exact selector snapshot or custody.
-  Targeted gaps are 316–351 ms; larger restart gaps reach 550 ms. Preserve bounded
-  transport/session WIP and red tests in `tmp/pr22-scope-freeze-20260911/`.
-- **DON-254 follow-up B:** diagnose the separate 239.509 ms legacy 50,000-object
-  reconstruction source failure. Preserve the diagnostic patch in the same
-  snapshot; the original test and strict gate remain enabled in PR22.
+1. Donal merges PR22 after ordinary exact-head checks and independent reviews.
+2. Reconcile PR20, then PR21, then PR19 against the new master and drive each to
+   merge readiness in that order.
+3. Execute high-priority pre-release responsiveness work: bound the large
+   breadcrumb IPC/query transfer responsible for 316–550 ms stalls; repair the
+   separate legacy-recovery path measured around 239 ms; then rerun the unchanged
+   strict `<200 ms` release-qualification suite and retained timing cases.
+4. Release remains HOLD until those repairs and qualification pass.
 
-Linear refused two new issues because its free issue limit is exhausted; the
-precise A/B records are DON-254 comments `46c986c3-a16e-48f0-b069-a1b36eeb2d62`
-and `1dfb6581-71a5-4582-9bd8-4ba0ac6173a8` and entries in the Reliability &
-Regression Ledger. Extended 36-hour exact/catch-up proof passed after live-source
-reader correction, but independent timer failures still block release/field
-qualification. No threshold relaxation, merge, release, deployment or team contact.
+Follow-up A's transport/session WIP and follow-up B's legacy diagnostic patch
+remain recoverable in `tmp/pr22-scope-freeze-20260911/`. Newer test-only native
+attribution was removed from the active tree and preserved in
+`tmp/pr22-attribution-preserved-20260911/`; its naturally completed 4,456-test
+pass does not erase the CI failures. No diagnosis continues in PR22.
+Linear's free issue limit prevented separate follow-up issues; DON-254 comments
+`46c986c3-a16e-48f0-b069-a1b36eeb2d62` and
+`1dfb6581-71a5-4582-9bd8-4ba0ac6173a8` plus the Reliability & Regression Ledger
+retain the work. DON-254 stays open. No merge, release, deployment or team contact
+has been performed by this task.
 
 ### Repair Train B and WAR-06 — active next work (2026-09-10)
 

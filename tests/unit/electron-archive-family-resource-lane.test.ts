@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -449,9 +450,9 @@ describe('mission-store shared archive-family resource lane', () => {
         status: 'rejected',
         reason: { code: 'ARCHIVE_CANCELLED' },
       })
-      expect(writeDurationMs).toBeLessThan(200)
-      expect(latestReadDurationMs).toBeLessThan(200)
-      expect(currentReadDurationMs).toBeLessThan(200)
+      assertReleaseResponsiveness(() => expect(writeDurationMs).toBeLessThan(200))
+      assertReleaseResponsiveness(() => expect(latestReadDurationMs).toBeLessThan(200))
+      assertReleaseResponsiveness(() => expect(currentReadDurationMs).toBeLessThan(200))
       expect(latest).toMatchObject([
         { device_id: 'team-live-1', lat: 52.0599 },
       ])

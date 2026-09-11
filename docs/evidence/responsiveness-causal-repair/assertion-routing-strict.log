@@ -1,0 +1,13 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:responsiveness
+> vitest run --config vitest.responsiveness.config.ts tests/unit/release-responsiveness.test.ts
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  15:45:48
+   Duration  603ms (transform 19ms, setup 0ms, import 27ms, tests 45ms, environment 452ms)
+

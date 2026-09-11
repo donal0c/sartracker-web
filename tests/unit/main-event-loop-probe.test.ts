@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { describe, expect, it, vi } from 'vitest'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -19,7 +20,7 @@ describe('independent packaged main-loop gate [DON-254]', () => {
     const { stdout } = await promisify(execFile)(process.execPath, [fixture], { timeout: 10_000 })
     const report = JSON.parse(stdout)
     expect(report.error).toBeNull()
-    expect(report.inspectorRoundTripMs).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(report.inspectorRoundTripMs).toBeLessThan(200))
     expect(report.mainEvaluatedAtMs).toBeGreaterThanOrEqual(report.blockStartedAtMs)
     expect(report.mainEvaluatedAtMs).toBeLessThan(report.blockEndedAtMs)
     expect(report.mainEventLoop.maximumGapMs).toBeGreaterThanOrEqual(350)

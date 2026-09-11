@@ -16,6 +16,8 @@ import {
 } from '../../build/electron-release-lib.js'
 
 interface WorkflowStep {
+  if?: string
+  'continue-on-error'?: boolean
   env?: Record<string, string>
   name?: string
   run?: string
@@ -24,6 +26,7 @@ interface WorkflowStep {
 }
 
 interface WorkflowJob {
+  needs?: string | string[]
   outputs?: Record<string, string>
   steps: WorkflowStep[]
 }
@@ -65,6 +68,7 @@ function qualifiedReleaseBody(): string {
     '| Duplicate launch | PASS | `evidence/duplicate-launch.json` |',
     '| Five-day and fourteen-day packaged soak | PASS | `evidence/multi-day-soak.json` |',
     '| Cross-profile exact breadcrumb identity comparison | PASS | `evidence/cross-profile.json` |',
+    '| Strict responsiveness (<200 ms) | PASS | Exact release commit source qualification and packaged strict timer evidence in `evidence/responsiveness.json` |',
     '',
     '## Regression provenance',
     '',
@@ -91,6 +95,18 @@ describe('Electron release workflow safety [DON-260]', () => {
   const workflowPath = '.github/workflows/electron-release.yml'
   const workflowSource = readFileSync(workflowPath, 'utf8')
   const workflow = load(workflowSource) as Workflow
+
+  it('requires explicit strict responsiveness before release artifacts and retains packaged timing gates [DON-254]', () => {
+    const gates = workflow.jobs.gates
+    const strict = selectStep(gates, 'Strict responsiveness qualification (<200 ms)')
+    expect(strict.run).toBe('npm run test:responsiveness')
+    expect(strict.if).toBeUndefined()
+    expect(strict['continue-on-error']).toBeUndefined()
+    expect(selectStep(gates, 'Unit tests').run).toBe('npm run test:correctness')
+    expect(workflow.jobs['bundle-linux'].needs).toBe('gates')
+    expect(selectStep(workflow.jobs['bundle-linux'], 'Packaged tracking soak (CI profile)').run)
+      .toContain('npm run electron:smoke:tracking-soak:ci')
+  })
 
   it('requires the package receipt independently of other uploaded evidence [DON-146]', () => {
     const receipt = selectStep(workflow.jobs['bundle-linux'], 'Upload package safety receipt')
@@ -172,6 +188,23 @@ describe('Electron release workflow safety [DON-260]', () => {
 })
 
 describe('release qualification body guard [DON-260]', () => {
+  it.each(['HOLD', 'TODO', 'FAIL', 'SKIP', 'NOT APPLICABLE'])(
+    'rejects responsiveness qualification result %s [DON-254]', (result) => {
+      expect(() => validateQualificationBody(qualifiedReleaseBody().replace(
+        '| Strict responsiveness (<200 ms) | PASS |',
+        `| Strict responsiveness (<200 ms) | ${result} |`,
+      ))).toThrow(/must pass/i)
+    },
+  )
+
+  it('rejects a missing responsiveness row and keeps the release template on HOLD [DON-254]', () => {
+    expect(() => validateQualificationBody(qualifiedReleaseBody().replace(
+      /^\| Strict responsiveness .*\n/mu, '',
+    ))).toThrow(/Strict responsiveness/i)
+    const template = readFileSync('docs/releases/TEMPLATE.md', 'utf8')
+    expect(template).toContain('| Strict responsiveness (<200 ms) | HOLD |')
+    expect(template).toContain('npm run test:responsiveness')
+  })
   it('accepts a complete matrix and returns distinct artifact identities', () => {
     expect(validateQualificationBody(qualifiedReleaseBody())).toEqual({
       appImage: {

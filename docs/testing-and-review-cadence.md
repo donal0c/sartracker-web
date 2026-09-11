@@ -6,6 +6,32 @@ closeout. Use for new work alongside `CLAUDE.md`, the active issue and the
 one-attempt/stop-and-ask recovery sequencing as the default cadence. It does not
 change domain rules, safety thresholds or the beta publication gates.
 
+## Merge and release timing gates (Donal, 2026-09-11)
+
+Ordinary PR CI runs `npm run test:correctness -- --no-file-parallelism`.
+Mixed fixtures still execute their workloads and correctness assertions; only
+real wall-clock responsiveness assertions belong to the explicit qualification
+mode. Six named real-clock probe cases that enforce timing internally are
+visibly excluded from correctness mode; their deterministic and error controls
+remain active. A green correctness run is not timing qualification.
+
+`npm run test:responsiveness` runs the same affected workloads and unchanged
+strict `<200 ms` assertions, serially. `npm test` remains the complete strict
+suite. Missing or unknown test mode fails closed. `beta:verify` and the tag-driven
+Electron release workflow require the named responsiveness step. The manual
+Linux validation workflow additionally runs the unchanged strict 960k replay,
+packaged tracking and archive-lifecycle qualification; ordinary PR CI retains package,
+native-module and AppImage launch/shutdown correctness checks. The guarded
+release matrix requires `Strict responsiveness (<200 ms)` evidence and defaults
+to HOLD.
+
+The retained threshold is **200 ms, not 20 ms**. PR22 may merge with all prior
+timing failures retained after ordinary exact-head CI/reviews. Release remains
+**HOLD** until the high-priority responsiveness repairs and qualification pass.
+Do not infer release qualification from PR merge or resume performance diagnosis
+merely to make ordinary PR CI green. The ordered follow-on queue is in the
+[workplan](two-track-execution-workplan.md#responsiveness-causal-repair--don-254-2026-09-11).
+
 ## Choose the checks before changing code
 
 Write a short risk statement: what changes, what must remain true, and which
@@ -38,7 +64,7 @@ to omit first-time qualification.
    stage instead of repeatedly rebuilding packages.
 3. Once stable, run the full deterministic source suite, lint and production
    build. For this repository, serial source execution avoids unrelated fixture
-   contention: `npm run test -- --no-file-parallelism`.
+   contention: `npm run test:correctness -- --no-file-parallelism`.
 4. Exercise the changed operator flows and native boundaries. Use the browser
    for shared renderer behaviour; use packaged Electron if it could pass in the
    browser but fail on desktop. Do not run heavyweight suites concurrently on
@@ -54,7 +80,7 @@ Useful commands (select the relevant suite, not every command for every edit):
 
 ```sh
 npm run test -- tests/unit/<affected>.test.ts --no-file-parallelism
-npm run test -- --no-file-parallelism
+npm run test:correctness -- --no-file-parallelism
 npm run lint
 npm run build
 npx playwright test <affected-specs> --workers=1

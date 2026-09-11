@@ -1,0 +1,9 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c98f/sartracker-web
+
+
+ Test Files  2 passed (2)
+      Tests  57 passed (57)
+   Start at  15:42:54
+   Duration  716ms (transform 63ms, setup 0ms, import 87ms, tests 343ms, environment 558ms)
+

@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -498,7 +499,7 @@ describe('schema v13 archive lifecycle migration', () => {
     try {
       expect(inspection.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
         .toEqual({ value: '13' })
-      expect(durationMs).toBeLessThan(200)
+      assertReleaseResponsiveness(() => expect(durationMs).toBeLessThan(200))
     } finally {
       inspection.close()
     }

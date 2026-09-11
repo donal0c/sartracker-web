@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { createRequire } from 'node:module'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -262,7 +263,7 @@ describe('Search Operations renderer pages [DON-279]', () => {
       timerLag,
     ])
 
-    expect(observedTimerLag).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(observedTimerLag).toBeLessThan(200))
     expect(page.entries).toHaveLength(25)
     expect(page.totalCount).toBe(50_000)
     expect(page.nextCursor).toEqual(expect.any(String))

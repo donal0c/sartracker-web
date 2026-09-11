@@ -1,3 +1,4 @@
+import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { createRequire } from 'node:module'
 import { constants } from 'node:fs'
 import { access, mkdtemp, rm } from 'node:fs/promises'
@@ -116,7 +117,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
     clearInterval(timer)
 
     expect(result.breadcrumbCount).toBe(0)
-    expect(Math.max(...timerGaps)).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(Math.max(...timerGaps)).toBeLessThan(200))
   })
 
   it('rejects an over-8 MiB details payload inside the worker before structured clone', async () => {
@@ -195,7 +196,7 @@ describe('Mission Review read worker boundary [DON-251]', () => {
       /8\s*MiB|8388608|result.*limit|payload.*limit|output.*limit/iu,
     )
     expect(timerGaps.length).toBeGreaterThan(0)
-    expect(Math.max(...timerGaps)).toBeLessThan(200)
+    assertReleaseResponsiveness(() => expect(Math.max(...timerGaps)).toBeLessThan(200))
   })
 
   it('terminates an obsolete query when its abort signal is cancelled', async () => {

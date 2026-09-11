@@ -12,7 +12,7 @@
  */
 
 /**
- * @typedef {'lint' | 'build' | 'test' | 'test-backend' | 'e2e-chromium' | 'package' | 'tracking-soak-ci' | 'smoke'} BetaStep
+ * @typedef {'lint' | 'build' | 'test' | 'responsiveness' | 'test-backend' | 'e2e-chromium' | 'package' | 'tracking-soak-ci' | 'smoke'} BetaStep
  *
  * @typedef {Object} BetaStepResult
  * @property {BetaStep} step
@@ -36,6 +36,7 @@ export const ALL_BETA_STEPS = [
   'lint',
   'build',
   'test',
+  'responsiveness',
   'test-backend',
   'e2e-chromium',
   'package',
