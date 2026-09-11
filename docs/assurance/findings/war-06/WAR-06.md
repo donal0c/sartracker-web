@@ -3,9 +3,11 @@
 Date: 2026-09-11
 Repository: `donal0c/sartracker-web`
 Evidence base/current master: `3db57a7942b32beef0d13cc4e8484a5bb492dfa4` (`origin/master`, including merged PR #22)
-Evidence implementation commit: `28bab15a6436bb8c9b8cdf08efa12b27bf3d3294`
-(corrected reachable-route characterization tests)
-Prior executable candidate: `10781e2d74e9a8034591e47a513f0957ccd6e3f7`
+Evidence implementation commit: `5b533c92d23a17e3c26212d16985cce03c42ec67`
+(corrected reachable-route
+characterization tests, production bridge and falsifiable negative controls)
+Prior executable predecessor: `dc3ea82262a18cd70409ee1d2b547de4fd81a2594`
+Prior documentation candidate: `10781e2d74e9a8034591e47a513f0957ccd6e3f7`
 Exact-head CI is bound through the [PR #20 checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
 and the final PR/Linear receipt; it must be refreshed after any evidence or
 documentation commit. PR-mode strict timing, 960k replay, packaged tracking
@@ -17,13 +19,16 @@ Scope: investigation and durable reproduction evidence only
 ## Outcome
 
 The reviewed PR findings are now covered by three durable, passing
-characterizations. `AUD-01` holds a second real poll on a pending Traccar
-current-position response while a Mission B wake returns through the
-poller's `pollInFlight` path, then lets the real 100 ms history timer publish.
-`AUD-02` uses the real polling manager in the same in-flight transition while
-the runtime's current-fix callback is deferred by participant hydration. The
-sibling cache characterization models a cold start with Mission B already
-active and reads the single global cache file. These tests confirm unsafe
+characterizations plus a six-run negative-control proof. `AUD-01` holds a
+second real poll on a pending Traccar current-position response while Mission
+B finish → idle → start wakes return through the poller's `pollInFlight` path,
+then lets the real 100 ms history timer publish. `AUD-02` uses the real
+polling manager while its current-fix callback is executing and participant
+hydration defers publication; the genuine finish → idle → start wakes are
+attempted during that in-flight window. The sibling cache characterization
+models a cold start with Mission B already active and reads the single global
+cache file. The production mission-status bridge and mission-selected
+device boundaries are present in the harness. These tests confirm unsafe
 renderer publication behaviour, not a production repair.
 
 The branch remains investigation-only. No production, schema, workflow,
@@ -69,27 +74,28 @@ stale onSnapshot(snapshot, { historyResetKey: mission-a })
   -> filterOperationalSnapshot(..., contextKey = mission-a)
   -> publishOperationalSnapshot(snapshot)
   -> dependencies.applySnapshot(snapshot)
-  -> startAppRuntime.applySnapshot reads current mission-b
+  -> characterization applySnapshot reads current mission-b
 ```
 
 Reachable interleaving exercised by the test:
 
 1. Mission A completes an initial poll and leaves the real 100 ms history
    publication timer pending.
-2. A production `requestPollNow` wake starts a second poll; its Traccar
-   current-position response remains pending.
-3. Mission B becomes active. The mission-wake subscriber calls
+2. The harness invokes the poller's wake wrapper to start a second poll; its
+   Traccar current-position response remains pending.
+3. Mission B becomes active. The production mission-wake subscriber calls
    `requestPollNow`, which reaches the real `pollInFlight` early return and
    defers the replacement poll without resetting the active history key.
 4. The real timer fires before the pending poll reaches its stale-key discard,
    and the visible publisher receives Mission A history while Mission B is
    active.
 
-Observed result: the real manager's delayed flush causes `mission-a-history`
-to appear in the visible snapshot while `useMissionStore.currentMission.id`
-is `mission-b`. This is a reachable slow-response/operator-transition
-characterization; it does not claim that every provider response reaches this
-ordering in the field.
+Observed result: the real manager's delayed flush causes Mission A history and
+the last-good Mission A current position to appear in the visible snapshot
+while `useMissionStore.currentMission.id` is `mission-b`; the same publication
+feeds the Mission B stationary-attention projection. This is a reachable
+slow-response/operator-transition characterization; it does not claim that
+every provider response reaches this ordering in the field.
 
 The downstream persistence path is safer than the visible path: when evidence
 is admitted, `persistTrackingSnapshot` checks the expected mission before
@@ -125,21 +131,21 @@ onSnapshot(snapshot-A, context mission-a)
   -> dependencies.applySnapshot(snapshot-A)
 ```
 
-The characterization starts a real polling manager whose current-position
-request remains in flight, then invokes the captured production
-`onCurrentSnapshot` callback while scope is loading. The real mission-wake
-subscriber drives `requestPollNow`, which returns through the poller's
-`pollInFlight` branch during finish → idle → start. The callback is held by the
-runtime hydration buffer until the replacement Mission B scope is ready.
-Observed result: `mission-a-deferred-fix` is applied once after Mission B is
-active and its participant scope is ready.
+The characterization starts a real polling manager and invokes the captured
+production `onCurrentSnapshot` callback while the poll is still executing and
+scope is loading. The real mission-wake subscriber drives `requestPollNow`,
+which returns through the poller's `pollInFlight` branch during finish → idle →
+start. The callback is held by the runtime hydration buffer until the
+replacement Mission B scope is ready. Observed result:
+`mission-a-deferred-fix` and its stationary projection are applied once after
+Mission B is active and its participant scope is ready.
 
 This route bypasses the normal poller's stale-response suppression because the
 snapshot is held by the runtime-level hydration buffer. The dynamic scope
 filter can make the old device look valid for Mission B, while the retained
-position context is still explicitly keyed to Mission A. The result can
-contaminate the visible current marker and the stationary-attention projection
-for Mission B.
+position context is still explicitly keyed to Mission A. The result
+contaminates the visible current marker and the stationary-attention
+projection for Mission B in this characterization.
 
 Required repair shape (future production work): the hydration subscriber must
 compare the deferred snapshot's mission key with the current mission before
@@ -179,12 +185,13 @@ evidence.
 The evidence tests are intentionally passing characterizations: they assert
 unsafe current behaviour so the reproductions are durable without committing a
 failing test or a speculative production fix. The corrected executable test
-commit is `28bab15a6436bb8c9b8cdf08efa12b27bf3d3294`, based on current master
+commit is `5b533c92d23a17e3c26212d16985cce03c42ec67`, based on current master
 `3db57a7942b32beef0d13cc4e8484a5bb492dfa4`.
 
 | Evidence | Result | Claim boundary |
 | --- | --- | --- |
-| WAR-06 isolated characterization | 3 tests passed | Real `startTrackingRuntime`; real polling-manager delayed flush after a pending current poll for AUD-01; real polling manager with `pollInFlight` mission wake plus current-fix callback for AUD-02; cold-start global-cache read for cache sibling; controlled local source evidence |
+| WAR-06 isolated characterization | 3 tests passed | Real `startTrackingRuntime` plus `startMissionTrackingStatusBridge`; production-derived active-device and breadcrumb-device selection; write-enabled cache configuration; real polling-manager delayed flush after a pending current poll for AUD-01; real polling manager with `pollInFlight` mission wakes plus current-fix callback for AUD-02; cold-start global-cache read for cache sibling; controlled local source evidence |
+| WAR-06 negative-control proof | 3 GREEN / 3 RED at named safety oracles | `scripts/assurance/war-06-prove-red.mjs` runs each characterization once normally and once after a test-only visible-publication erase; collection, cleanup and unrelated failures are rejected |
 | Existing tracking/reload/runtime/poller suite | 185 tests passed | Rechecked merged Repair Train A and PR22 tracking seams; unit/integration source evidence only |
 | Ordinary correctness suite on rebased tree | 434 files / 4,461 tests passed / 6 skipped | `test:correctness` explicitly excludes strict wall-clock qualification; no timing pass is claimed |
 | `AUD-13` false-Live reconnect | Not reproduced in focused current-head suite | Does not erase the historical/native limitation or prove packaged/field recovery |
@@ -197,6 +204,7 @@ Commands run:
 
 ```bash
 npm test -- tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts --no-file-parallelism
+npm test -- tests/unit/assurance/war-06/negative-controls.test.ts --no-file-parallelism
 npm test -- tests/unit/tracking-reload-custody.test.ts tests/unit/start-tracking-runtime.test.ts tests/unit/polling-manager.test.ts --no-file-parallelism
 npm run test:correctness -- --no-file-parallelism
 npm test -- --no-file-parallelism
@@ -206,18 +214,20 @@ npm run lint
 npm run build
 ```
 
-The first command passed 3/3 tests. The second passed 3/3 files and 185/185
+The characterization command passed 3/3 tests. The negative-control command
+passed 1/1 test and recorded 3 GREEN current controls plus 3 RED named safety
+oracles. The lifecycle command passed 3/3 files and 185/185
 tests. The ordinary correctness cycle passed 434 files / 4,461 tests with 6
 explicit qualification-only cases skipped; its banner states that strict
 wall-clock responsiveness qualification was not run. Lint and production build
 passed, including TypeScript/Vite and bundle-size budgets. The historical serial
 full source cycle passed 427/428 files and 4,378/4,379
 tests; its single failure was the unchanged strict `<200 ms` assertion at
-`tests/unit/electron-mission-evidence-versioning.test.ts:1082`, which observed
+`tests/unit/electron-mission-evidence-versioning.test.ts:1084`, which observed
 240.89 ms under full-suite load. The default-parallel full source cycle passed
 426/428 files and 4,377/4,379 tests; it failed unchanged timing assertions in
-`tests/unit/electron-archive-registry.test.ts:500` (264.88 ms) and
-`tests/unit/electron-mission-evidence-versioning.test.ts:1003` (272.54 ms).
+`tests/unit/electron-archive-registry.test.ts:502` (264.88 ms) and
+`tests/unit/electron-mission-evidence-versioning.test.ts:1005` (272.54 ms).
 The named WAR-06-adjacent timing test passed in isolation (1/1 selected test;
 72 tests skipped).
 
@@ -236,6 +246,13 @@ Existing gates missed these defects for distinct reasons:
 - Cache tests covered payload parsing, age and offline status, but not a cold
   relaunch with a different active mission reading the single global cache
   file.
+- The first evidence helper omitted the production mission-tracking status
+  bridge, hardcoded `['device-1']` instead of reading the active mission's
+  selected devices, disabled cache writes while still reading cache, and
+  omitted `getBreadcrumbDeviceIds`. All four deltas were conservative in the
+  same direction: they made the harness weaker than production. The corrected
+  helper now starts/stops the bridge, uses the active-device store for current
+  and breadcrumb selection, and runs the cache path with writes enabled.
 - Ordinary correctness intentionally excludes the strict wall-clock and
   packaged qualification lanes; neither lane was silently treated as passed.
 
@@ -306,18 +323,41 @@ boundaries. Those are separate proof tiers from the live mission-scope defect.
 
 - The new reproductions are deterministic real-runtime unit evidence, not a
   packaged Electron, CI, multi-machine, soak, field, or release qualification.
-- `AUD-01` uses `createPollingManager`, its real 100 ms delayed flush, a real
-  finish → idle → start transition, and a controlled pending current response.
-  `AUD-02` uses the real poller-to-runtime callback, a real replacement poll,
-  and the real mission-wake/participant-hydration route. The cache sibling
-  starts the runtime with Mission B already active and reads the global cache.
-  Controlled provider delivery proves the missing guard and its consequence,
-  not the frequency of the race in field conditions.
+- The four reviewed fidelity deltas were all weaker-than-production and are
+  now closed in the helper: `startMissionTrackingStatusBridge` runs alongside
+  the tracking runtime; `applyTrackingSnapshot` and breadcrumb selection read
+  `getActiveDeviceIds(missionId)`; cache writes are enabled when the cache is
+  readable; and `getBreadcrumbDeviceIds` is wired to the same production
+  selection store. The bridge's empty non-active snapshot is therefore part of
+  every finish → idle edge in all three routes.
+- `AUD-01` uses `createPollingManager`, its real 100 ms delayed flush, a
+  harness-triggered slow poll, genuine finish → idle → start mission wakes,
+  and a controlled pending current response. `AUD-02` uses the real
+  poller-to-runtime callback while the poll is still executing, the genuine
+  finish → idle → start mission wakes, and the real participant-hydration
+  route; it does not claim a second provider call when `pollInFlight` correctly
+  coalesces those wakes. The cache sibling starts the runtime with Mission B
+  already active and reads the global cache.
+- Remaining deltas are explicit and conservative: the provider is synthetic
+  and deterministically controlled rather than Traccar over a network; the
+  mission controller is a local real-runtime store rather than SQLite/IPC; the
+  publication callback calls `applyTrackingSnapshot` directly rather than
+  executing the full `startAppRuntime.applySnapshot` wrapper; and cache reads
+  are an in-memory adapter rather than an Electron relaunch against the actual
+  user-data file. These limits make the harness weaker than production for
+  frequency, packaging and integration coverage; they do not add a stronger
+  route than production or justify a release claim.
+- The negative-control runner deliberately erases the visible publication just
+  before each characterization oracle. Each route is GREEN normally and RED at
+  its named safety assertion under that control; this proves falsifiability,
+  not a production repair.
 - The runtime cleanup is fail-safe: every started runtime is registered before
   assertions, `afterEach` resolves retained provider/persistence promises,
-  stops every active runtime while collecting failures, restores fake timers,
-  and throws an aggregate cleanup error. A failed assertion cannot leave a
-  polling runtime or timer lane running into the next test.
+  clears fake timers before switching to real timers, stops every active
+  runtime while collecting failures, and throws an aggregate cleanup error. A
+  failed assertion cannot leave a polling runtime or timer lane running into
+  the next test; `describe.sequential` makes the module-level cleanup sets
+  explicit and prevents concurrent cross-cancellation.
 - No strict `<200 ms` gate was changed or relaxed. The historical unexplained
   224 ms archive run and the remaining DON-254 qualification evidence remain
   outside this investigation.
@@ -330,36 +370,35 @@ The prior independent review `5175815340` examined exact pre-rebase PR head
 current `origin/master` `3db57a7942b32beef0d13cc4e8484a5bb492dfa4`, which includes
 merged PR #22. The initial repaired characterization evidence was executable at
 `2390b57bb2e2cc549c0069b80013d968d0fb36d3`; the prior cleanup-hardened tree
-`dc3ea82262a18cd70409ee1d2b547de4fd81a259` is historical. The corrected
-executable characterization is `28bab15a6436bb8c9b8cdf08efa12b27bf3d3294`.
-Any later documentation commit is a different final PR head and must be
-checked by exact SHA before approval.
+`dc3ea82262a18cd70409ee1d2b547de4fd81a259` is the executable predecessor.
+The corrected executable characterization is `5b533c92`. Any later
+documentation commit is a different final PR head and must be checked by
+exact SHA before approval.
 
 The stable review IDs are dispositioned as follows: `WAR-06-AUD-01-REACHABILITY`
 is addressed by the real manager delayed-flush interleaving;
 `WAR-06-AUD-02-LIFECYCLE` by the real finish/idle/start and current-fix callback
 route; `WAR-06-CACHE-SIBLING` by the unkeyed cache characterization;
 `WAR-06-CLEANUP` by fail-safe runtime teardown; and
-`WAR-06-PROVENANCE` by the exact base, reviewed head, and rebased evidence
-commit above. `WAR-06-COORDINATION` is reconciled in the current handoff,
-workplan, and coordinated ledger without changing PR #18's merged truth.
+`WAR-06-PROVENANCE` by the exact base, executable commit, negative-control
+receipt and pushed-head CI record in [review-receipts.md](review-receipts.md).
+`WAR-06-COORDINATION` is reconciled in the current handoff, workplan, and
+coordinated ledger without changing PR #18's merged truth.
 
 The full-suite timing failures remain unresolved and are retained as a strict
 gate. They are not reclassified by these additive tests, and this PR makes no
-performance or threshold claim. The prior review IDs are historical provenance,
-not approval of the rebased head; fresh review receipts must bind the corrected
-executable commit below before this record is closed.
+performance or threshold claim. Earlier reviewer UUIDs are historical
+provenance only; the re-derivable local negative-control artifact and exact
+head CI record are the current evidence.
 
 Independent final review `5176300059` examined the pre-PR22 executable head
-`c4cda818` and returned clean after identifying one coordination-only
-contradiction. That review and CI `34575023706` are retained as historical
-evidence; they do not approve this rebased head. The corrected executable
-candidate is `28bab15a`; final review receipts and exact-head CI are bound
-through the live [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
-and the [read-only review receipts](review-receipts.md); exact final CI must be
-recorded after the correction is pushed. The PR-mode skipped
-timing, replay, packaged tracking and archive steps remain explicit evidence
-gaps, not release qualification.
+`c4cda818`; that review and CI `34575023706` are historical evidence only.
+The current executable candidate is `5b533c92`. The receipt file records the
+bounded, re-derivable negative-control artifact and the exact pushed-head CI
+run; the live [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
+remain the external cross-check. The PR-mode skipped timing, replay, packaged
+tracking and archive steps remain explicit evidence gaps, not release
+qualification.
 
 ## Next action
 
@@ -368,8 +407,8 @@ lifecycle repair boundary. The rebased PR remains investigation-only and is
 not a production repair, release qualification, or operational-use
 recommendation: the P1 candidate hazards remain unrepaired and the strict
 `<200 ms` failures remain unresolved. The corrected evidence is not final
-until the pushed head has fresh read-only reviews and exact-head ordinary CI.
-Once those receipts are green, it is merge-ready only as additive
+until the pushed head has exact-head ordinary CI and the in-repo receipt is
+updated to that SHA. Once that record is green, it is merge-ready only as additive
 investigation evidence for Donal's review; it is not a production repair or
 release qualification. Do not close the findings or claim release/field safety
 from this investigation PR.

@@ -34,20 +34,12 @@ Updated 2026-09-11. Read after `CLAUDE.md`.
   [Causal record](../docs/assurance/findings/responsiveness-causal-repair.md).
   Historical PR19/20/21 findings stay separate. No merge/release/team contact.
 
-- **WAR-06 PR #20 investigation-only evidence is active.** The corrected tests
-  are at `28bab15a` on base `3db57a79`: AUD-01 uses a real finish → idle →
-  start replacement poll with a pending Traccar response and delayed history
-  timer; AUD-02 uses the real poller-to-runtime current-fix callback and
-  mission-wake coalescing during participant hydration; the cache sibling is a
-  cold-start read of the global cache under Mission B. WAR-06 is 3/3, adjacent
-  tracking/reload/runtime/poller is 185/185, ordinary correctness is 4,461
-  passed / 6 qualification-only skipped, lint/build pass, and no production
-  repair is included. Fresh review receipts and exact-head CI must bind the
-  pushed correction; use the [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
-  and [WAR-06 report](../docs/assurance/findings/war-06/WAR-06.md). Strict
-  `<200 ms` failures remain qualification evidence, not a reason to weaken
-  ordinary correctness gates. PR #20 remains ahead of PR #21 and PR #19 in
-  the locked queue.
+- **WAR-06 PR #20 investigation-only evidence is active.** Current routes,
+  fidelity limits, negative-control proof and exact-head status live in the
+  [WAR-06 report](../docs/assurance/findings/war-06/WAR-06.md), [receipts](../docs/assurance/findings/war-06/review-receipts.md)
+  and [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks).
+  No production repair or release claim is included; PR #20 remains ahead of
+  PR #21 and PR #19 in the locked queue.
 
 - **Repair Train A merged**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
   at `302bdd040976bd370271cf5866549fa2a7e05ff5` on 2026-09-10. Its final

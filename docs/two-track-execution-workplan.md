@@ -221,17 +221,20 @@ Train B until integration.
 WAR-06 PR #20 review repair is now reconciled as evidence-only work. The branch
 was rebased onto current `origin/master` `3db57a79` (merged PR #22); review
 `5175815340` covered pre-rebase head `839737e8`, and the corrected executable
-characterization commit is `28bab15a`. Three passing intentional-red
-characterizations now cover the real polling-manager delayed timer during a
-finish → idle → start replacement poll (`WAR-06-AUD-01`), the real
-poller-to-runtime current-fix callback with mission-wake coalescing during
-hydration (`WAR-06-AUD-02`), and a cold-start read of the unkeyed global cache
-under Mission B. The report, escape analysis and test cleanup are fail-safe.
-These remain unrepaired P1 candidate renderer hazards; the strict `<200 ms>`
+characterization commit is `5b533c92`. Three passing intentional-red
+characterizations plus the negative-control runner cover the real
+polling-manager delayed timer during a finish → idle → start transition
+(`WAR-06-AUD-01`), the real poller-to-runtime current-fix callback with
+mission-wake coalescing during hydration (`WAR-06-AUD-02`), and a cold-start
+read of the unkeyed global cache under Mission B. The production status bridge,
+mission-selected device filters and write-enabled cache configuration are part
+of the helper; the remaining integration limits are explicit in the report.
+These remain unrepaired P1 candidate renderer hazards; the strict 200 ms
 full-suite timing failures remain unresolved. No production change, merge,
 release, deployment, team contact, or gate relaxation is claimed. Prior review
 `5176300059` is historical pre-PR22 provenance, not approval of the corrected
-head. Fresh review receipts and exact-head CI must bind the pushed correction;
+head. The in-repo negative-control receipt and exact-head CI must bind the
+pushed correction;
 the live [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
 are the source of that final receipt. PR-mode timing/replay/packaged skips
 remain explicit gaps; PRs #19 and #21 remain draft and the latest
