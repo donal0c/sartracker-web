@@ -318,7 +318,7 @@ Include both in the batch evidence, final independent reviews and CI.
 ### Coordinated three-stream safety queue
 
 **WAR-02B bounded property and mutation controls (2026-09-12, review repair
-pass in progress, current commit `4493596c`):** the branch `codex/war-02b-property-mutation` now has
+pass complete locally):** the branch `codex/war-02b-property-mutation` now has
 independent TM65/WGS84 anchors and coordinate rejection cases, an independent
 ingest-hash oracle with optional/hash/timestamp/field cases, exact cursor and
 recent-window arithmetic, and a public client-boundary fault injection for the
@@ -327,11 +327,12 @@ counterexamples, preserves cause/stack evidence, times out async predicates,
 and fails closed on interruption. WAR-02B is excluded from generic correctness
 so its serial property/mutation gate is not duplicated in either CI workflow;
 the timer adapter boundary uses `globalThis` for the browser/Node type split.
-Focused local evidence is 4 files / 18 tests, plus lint, WAR-02B type-check,
-root app/node type-check, and build/bundle budgets. The mutation receipt now
-records four killed current mutants across the same three seams; the former
-nonexistent `legacy:` survivor is removed. Clean-tree full-suite rerun, exact
-new-head CI, and fresh final review remain pending. No browser, package,
+Focused local evidence is 4 files / 18 tests, full correctness 438 files /
+4,539 passed / 6 skips, full source 442 files / 4,563 passed, plus lint,
+WAR-02B type-check, root app/node type-check, and build/bundle budgets. The
+mutation receipt now records four killed current mutants across the same three
+seams; the former nonexistent `legacy:` survivor is removed. Exact new-head CI
+and fresh final review remain pending. No browser, package,
 provider, soak, release, or field qualification is claimed; DON-254 remains
 open and release HOLD is unchanged. See [the WAR-02B records](assurance/war-02b-test-infrastructure.md)
 and [mutation receipt](assurance/war-02b-mutation-survivors.md).
