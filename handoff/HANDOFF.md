@@ -16,8 +16,9 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   The mutation receipt records three killed mutants and one intentional
   legacy-hash survivor; it is not a whole-source mutation score. No production
   runtime, browser, package, provider, soak, release, or field claim is made.
-  PR creation and exact-head CI are the next actions; stop at READY FOR DONAL
-  TO MERGE.
+  PR [#24](https://github.com/donal0c/sartracker-web/pull/24) is open at
+  executable head `1f6d4ff`; exact-head Linux CI `34703598170` passed. This
+  receipt update is documentation-only; stop at READY FOR DONAL TO MERGE.
 
 - **PR19 Claude follow-up is merged at `d20bae5f`; prior pending wording is superseded.**
   Malformed geometry now refuses the whole source explicitly; batch continuation,

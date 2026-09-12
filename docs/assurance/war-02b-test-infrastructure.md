@@ -43,7 +43,9 @@ does not infer content from the missing files.
 
 ## Evidence and limits
 
-Observed on the WAR-02B branch after the runtime predicate-contract hardening:
+Observed on executable WAR-02B source head `1f6d4ff256325766ade9f809f41292334a72deba`
+after the runtime predicate-contract hardening; this receipt update is
+documentation-only:
 
 - `npm run test:war-02b` — 4 files, 8 tests passed.
 - `npm run assurance:war-02b` — current control green; controlled DON-228
@@ -55,6 +57,11 @@ Observed on the WAR-02B branch after the runtime predicate-contract hardening:
 - `npm run build` — passed, including bundle-size budgets. Vite reported the
   repository’s existing stale Browserslist database notice; it did not fail the
   build.
+- Exact-head Linux validation run
+  [`34703598170`](https://github.com/donal0c/sartracker-web/actions/runs/34703598170)
+  passed against that executable source head, including the bounded property,
+  controlled rebreak, package, GPX and AppImage steps that are enabled in the
+  ordinary PR lane.
 
 This is local T1/T2 assurance evidence only. It is not package, provider,
 soak, power-loss, hosted, field, merge, or release qualification. The mutation

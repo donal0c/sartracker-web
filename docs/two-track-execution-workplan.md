@@ -318,8 +318,8 @@ Include both in the batch evidence, final independent reviews and CI.
 ### Coordinated three-stream safety queue
 
 **WAR-02B bounded property and mutation controls (2026-09-12, implementation
-complete; PR/CI receipt pending):** test-only infrastructure on branch
-`codex/war-02b-property-mutation`, based on exact master
+complete; PR #24 executable head and CI receipt complete):** test-only infrastructure on branch
+`codex/war-02b-property-mutation`, executable head `1f6d4ff` based on exact master
 `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`. The bounded runner fixes seeds,
 replay output, boolean-only predicates, and a maximum of 250 runs. The real
 public polling-manager probe catches the controlled DON-228 exclusive
@@ -334,6 +334,9 @@ evidence: WAR-02B 4 files / 8 tests, full source 442 files / 4,553 tests,
 lint, root type-check, build/bundle budgets, and independent Luna x-high review
 clear. No production, browser, package, provider, soak, release, or field
 qualification is claimed; DON-254 remains open and release HOLD is unchanged.
+Exact-head Linux validation run `34703598170` passed the enabled PR lane; this
+workplan update records the receipt and does not claim strict timing, soak,
+archive, release, or field qualification.
 
 **WAR-02A test foundation (2026-09-10, merged in PR #16 at `4076975d`):** additive deterministic
 scheduler, explicit completion gates and filesystem/SQLite call-boundary fault
