@@ -68,12 +68,13 @@ The focused checks for this repair pass are:
 - root app/node type-check — passed after the timer boundary cleanup.
 - ESLint — passed; `npm run build` and bundle-size budgets passed.
 
-The predecessor branch-head Linux validation receipt is recorded on PR #24;
-the final independent rejection-path repair requires a fresh exact-head
-refresh. The previous receipt passed the full correctness, dedicated WAR-02B
-property/mutation, controlled rebreak, build/budget, native inspection, GPX,
-and AppImage checks. Strict responsiveness, replay-envelope, tracking-soak,
-and archive-lifecycle stages remain explicitly skipped qualification work.
+The final executable head `961992f9770de8bd35f46d793e7fb08a3bd8c652` was bound
+by Linux validation run `34720826064`. Its assurance subset passed: full
+correctness, dedicated WAR-02B property/mutation, controlled rebreak, strict
+responsiveness test, Electron controls, production build, and Electron build.
+The run was intentionally stopped at the separate 960k release replay before
+later package inspection, tracking-soak, and archive-lifecycle stages. Those
+remain unclaimed qualification work.
 
 This is local T1/T2 assurance evidence only. It is not package, provider,
 soak, power-loss, hosted, field, merge, or release qualification. The mutation

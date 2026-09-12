@@ -19,12 +19,14 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   rebroken proof. Both independent TM65 anchors, all coordinate rejection
   cases, and all four inclusive Irish envelope corners are deterministic
   coverage. Four current semantic mutants are killed across three seams; the
-  nonexistent `legacy:` survivor is removed. Final exact-head CI and the fresh
-  Luna review found one proof-integrity gap, now repaired locally; final
-  exact-head CI and review refresh are pending. No browser, package, provider,
-  soak, release, or field claim is made; DON-254 is Done in Linear and release HOLD is
+  nonexistent `legacy:` survivor is removed. The final exact-head assurance
+  subset in CI run `34720826064` bound `961992f9` and passed; it was stopped at
+  the separate 960k release replay before later package inspection/soak/archive
+  stages. Fresh Luna xhigh review on the exact head found no executable
+  correctness or proof blocker. No browser, package, provider, soak, release,
+  or field claim is made; DON-254 is Done in Linear and release HOLD is
   unchanged. PR [#24](https://github.com/donal0c/sartracker-web/pull/24) remains
-  open; do not mark READY FOR DONAL TO MERGE until those gates are refreshed.
+  open and unmerged; GitHub mergeability/owner approval is still outstanding.
 
 - **PR19 Claude follow-up is merged at `d20bae5f`; prior pending wording is superseded.**
   Malformed geometry now refuses the whole source explicitly; batch continuation,
