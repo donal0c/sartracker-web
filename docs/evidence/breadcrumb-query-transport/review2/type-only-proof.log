@@ -1,0 +1,1 @@
+NonNullable progress annotation correction emits identical JavaScript; prior correctness evidence retained.

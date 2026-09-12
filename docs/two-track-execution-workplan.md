@@ -4,13 +4,26 @@
 
 ## Planning Rule
 
-PRs #22/#20/#21 are merged. Reconcile PR #19's GPX fidelity and import lifecycle
-against master `f4d1f321`; then stop for Donal's merge. The bounded responsiveness
-repairs and unchanged strict `<200 ms` qualification follow separately. Release
-remains HOLD. [Train B evidence](assurance/findings/repair-train-b.md).
-Claude's PR19 follow-up is repaired and locally verified; the
-[disposition](assurance/findings/repair-train-b-claude-followup.md) and terminal
-PR receipt own current readiness. No follow-on performance work starts here.
+PR19 is merged to `origin/master` at
+`d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`. Its final implementation head is
+`f203869c`; terminal CI `34694049815` passed. The [Train B evidence](assurance/findings/repair-train-b.md)
+retains the implementation proof and historical failures. No predecessor PRs
+were open at chunk start. Linear `DON-274` is verified Done and `DON-254` is In Progress.
+The active chunk is DON-254 follow-up A: bounded lossless canonical breadcrumb
+query transport on `codex/don-254-bounded-history-transport`, covering the
+103,626-row query measured at 316–351 ms and the 550 ms restart defect.
+Follow-up B, the separate ~239 ms legacy recovery path, and then unchanged strict
+`<200 ms` qualification follow in order. Release remains HOLD.
+Local transport source/browser/package proof is recorded in the
+[bounded transport receipt](evidence/breadcrumb-query-transport/receipt.md).
+The [PR23 terminal receipt](https://github.com/donal0c/sartracker-web/pull/23)
+governs exact-head CI/review readiness and Donal's merge decision. Four initial
+charters found one stale-runtime status P2, now red/green repaired (92 runtime
+tests plus rendered flow). The explicitly scoped deleted-path repository-hashing
+harness regression has red/green proof (31/31). After owner merge, follow-up B
+remains next; no new whole-candidate qualification claim is made here.
+Automatic review's total-deadline defect also has a red/green inactivity-watchdog
+repair (21 affected controls); fresh package and terminal CI/rechecks govern it.
 
 ### WAR-11A: AppImage builder boundary (merged, 2026-09-10)
 
@@ -171,47 +184,31 @@ ship or ask testers for whole Electron profile zips.
 
 ### Responsiveness causal repair — DON-254 (2026-09-12)
 
-PR22, PR20 and diagnostic-only PR21 are merged; current reconciliation base is
-`f4d1f3214ddc82b0df043c85a340b3872ba90a80`. PR21's controller,
-packaged-main, renderer, pressure, pointer, and bounded-cleanup evidence must
-remain separate from the authoritative PR22 main-event-loop probe and the
-existing strict archive/current-fix/frame predicates.
+PR19 is merged to `origin/master` at
+`d20bae5fd8156a61e92a9b8fd68c87b2ca614a37` from final implementation head
+`f203869c`; terminal CI `34694049815` passed. Its implementation evidence and
+historical proof/failures remain in the [Train B record](assurance/findings/repair-train-b.md).
+The live open-PR list is empty. Linear `DON-274` is verified Done; `DON-254`
+is In Progress.
 
-The retained threshold is **200 ms, not 20 ms**. No limit is raised, averaged,
-or waived; the dedicated strict responsiveness path remains mandatory before
-beta/release. **Release remains HOLD.** PR21 does not claim production repair,
-field acceptance, or qualification from diagnostic completeness.
+The active chunk is follow-up A: bounded lossless canonical breadcrumb query
+transport on branch `codex/don-254-bounded-history-transport`, against the
+103,626-row query measured at 316–351 ms and the 550 ms restart defect.
+Follow-up B, the separate ~239 ms legacy recovery path, follows afterward. The
+unchanged strict `<200 ms` qualification remains later; Release stays HOLD.
+The current queue does not claim implementation, test completion, or readiness.
 
-Current local evidence on the reconciled tree: focused attribution/soak tests,
-the full correctness suite (437 files / 4,478 tests, six qualification-only
-skips), lint, production build/bundle budgets, and all three real Electron
-controls pass. The correctness lane explicitly does not run strict timing.
-PR21 ordinary Linux CI `34683600517` and independent review passed; its
-historical failures remain retained. This evidence is not PR19 validation.
-
-The ordered queue is:
-
-1. Reconcile PR19 against current master; do not treat PR21 diagnostics
-   as a cause or release qualification.
-2. After Donal merges PR19, execute the smallest pre-release repairs for the large breadcrumb IPC/query
-   transfer (316–550 ms) and separate legacy-recovery path (~239 ms).
-3. Rerun the unchanged strict `<200 ms` release-qualification suite and retained
-   timing cases. Release remains HOLD until repairs and qualification pass.
-
-The detailed attribution record is
-[here](assurance/findings/responsiveness-attribution.md). DON-254 stays open;
-no deployment, release, or team contact is part of this reconciliation.
-
-### Repair Train B reconciliation and merged WAR-06 evidence
+### Repair Train B merged evidence and merged WAR-06 evidence
 
 Repair Train A merged in [PR #17](https://github.com/donal0c/sartracker-web/pull/17)
-at `302bdd040976bd370271cf5866549fa2a7e05ff5`. Repair Train B owns
+at `302bdd040976bd370271cf5866549fa2a7e05ff5`. Repair Train B covered
 `AUD-01`, `AUD-10`, and `AUD-05` under the GPX evidence-fidelity and
-import/outing lifecycle boundary. The 2026-09-12 reconciliation retains the
-original red/green evidence and verifies integration with current master;
-fresh reviews and ordinary CI govern merge readiness. WAR-06's merged
-characterizations remain investigation-only evidence, with production repairs
-outside this PR. Its hazards are not closed by Train B.
+import/outing lifecycle boundary. PR19 is merged at `d20bae5f` from final
+implementation head `f203869c`, with terminal CI `34694049815` passed. The
+[Train B record](assurance/findings/repair-train-b.md) retains its evidence and
+historical failures. WAR-06's merged characterizations remain investigation-only
+evidence, with production repairs outside this PR; its hazards are not closed
+by Train B.
 
 WAR-06 PR #20 review repair is now reconciled as evidence-only work and PR #20
 is merged at `e989e892`. The branch was previously rebased onto
@@ -233,9 +230,11 @@ head. The in-repo negative-control receipt and executable-head CI run
 `34650688441` bind the corrected evidence;
 the live [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
 are the source of that final receipt. PR-mode timing/replay/packaged skips
-remain explicit gaps; PR #19's terminal review/CI receipt governs its readiness
-and PR #21 is merged. The latest qualification comment retains the 205 ms
-strict-gate failure. Any production repair remains downstream of this evidence.
+remain explicit gaps; PR #19 is already merged at `d20bae5f` with terminal CI
+`34694049815` passed. Its implementation evidence and historical timing failures
+remain in the [Train B record](assurance/findings/repair-train-b.md). The latest
+qualification comment retains the 205 ms strict-gate failure. Any DON-254 repair
+and qualification remains downstream of this evidence.
 
 ### Repair Train A — merged evidence boundary (2026-09-10)
 
@@ -340,9 +339,10 @@ dispositions and repair groupings are in
 Team Feedback Batch 2 repaired only the two confirmed audit defects inside its
 visibility/Mission Review boundary: `AUD-07` hidden evidence selection and
 `AUD-14` false all-history wording during a known retrieval failure. Repair
-Train A subsequently repaired `AUD-13`, `AUD-02`, and `AUD-03`. The nine
-remaining confirmed findings proceed through Repair Trains B–D: GPX evidence
-fidelity/lifecycle, map interaction/rendering, and mission progress/Review.
+Train A subsequently repaired `AUD-13`, `AUD-02`, and `AUD-03`. The six
+remaining confirmed findings proceed through Repair Trains C–D: map
+interaction/rendering and mission progress/Review. Repair Train B's historical
+evidence remains in its linked record.
 Prerequisite-satisfied WAR investigation may continue around them when file and
 state ownership is disjoint.
 
@@ -374,14 +374,15 @@ browser/visual flows and 27 screenshot reviews); its full disposition is in that
 evidence file. Follow the updated PR head's CI rather than reuse ancestor CI.
 
 1. Breadcrumb PR-1 through PR-6, Team Feedback Batches 1–2, WAR-11A,
-   WAR-02A, Repair Train A, PR22, WAR-06 and PR21 are merged through master `f4d1f321`. Use
-   [Testing and review cadence](testing-and-review-cadence.md) for new work.
-   Reconcile Repair Train B first; after Donal merges PR19, the locked queue is
-   breadcrumb IPC/query transfer repair, separate legacy recovery, then strict
-   `<200 ms` qualification. Repair Trains C/D and applicable WAR remediation
-   retain their own scope; BCP-17 final qualification runs
-   only after those release-blocking repairs are dispositioned. Merge does not
-   establish release or field acceptance.
+   WAR-02A, Repair Train A, PR19, PR22, WAR-06 and PR21 are merged through
+   `origin/master` at `d20bae5f`. Use [Testing and review cadence](testing-and-review-cadence.md)
+   for new work. The active DON-254 queue is follow-up A bounded lossless
+   canonical breadcrumb query transport (103,626-row query measured at
+   316–351 ms and 550 ms restart defect), then separate follow-up B legacy
+   recovery (~239 ms), then unchanged strict `<200 ms` qualification. Repair
+   Trains C/D and applicable WAR remediation retain their own scope; BCP-17 final
+   qualification runs only after those release-blocking repairs are dispositioned.
+   Release remains HOLD.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.

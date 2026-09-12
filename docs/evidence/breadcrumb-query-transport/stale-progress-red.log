@@ -1,0 +1,37 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/start-tracking-runtime.test.ts (92 tests | 1 failed | 91 skipped) 72ms
+     × does not publish late history progress or cleanup from a superseded runtime 72ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not publish late history progress or cleanup from a superseded runtime
+AssertionError: expected { lateProgressCalls: 1, …(1) } to deeply equal { lateProgressCalls: +0, …(1) }
+
+- Expected
++ Received
+
+  {
+-   "lateCleanupCalls": 0,
+-   "lateProgressCalls": 0,
++   "lateCleanupCalls": 1,
++   "lateProgressCalls": 1,
+  }
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:3041:8
+    3039|     await rejected
+    3040|     expect({ lateProgressCalls, lateCleanupCalls: applyStatus.mock.cal…
+    3041|       .toEqual({ lateProgressCalls: 0, lateCleanupCalls: 0 })
+       |        ^
+    3042|   })
+    3043|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 91 skipped (92)
+   Start at  15:57:53
+   Duration  624ms (transform 129ms, setup 0ms, import 157ms, tests 72ms, environment 252ms)
+

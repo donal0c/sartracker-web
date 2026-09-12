@@ -133,7 +133,7 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         run: |
           echo 'PR correctness/build/launch evidence only; release HOLD.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Strict <200 ms source and packaged timing qualification is not run for PR merge. It remains mandatory before beta/release, with every retained failure unresolved until repaired and qualified.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Whole-candidate strict <200 ms source and packaged timing qualification is not run for PR merge. The bounded breadcrumb transport smoke is a targeted causal check only. Full qualification remains mandatory before beta/release, with every retained failure unresolved until repaired and qualified.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Electron responsiveness attribution controls
         run: |
@@ -244,6 +244,20 @@ jobs:
             dbus-run-session -- \
             npm run electron:smoke:gpx-fidelity -- "$PACKAGE" \
               tmp/electron-validation-evidence/gpx-fidelity-smoke
+
+      - name: Packaged bounded breadcrumb transport causal proof
+        env:
+          SARTRACKER_ELECTRON_REQUIRE_LINUX_UNPACKED: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            node scripts/electron-breadcrumb-transport-smoke.mjs \
+              tmp/electron-dist/linux-unpacked/sartracker-web \
+              tmp/electron-validation-evidence/breadcrumb-transport
 
       - name: Packaged tracking soak (CI profile)
         if: ${{ github.event_name == 'workflow_dispatch' }}

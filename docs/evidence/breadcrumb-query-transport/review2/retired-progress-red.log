@@ -1,0 +1,35 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/start-tracking-runtime.test.ts (94 tests | 1 failed | 93 skipped) 72ms
+     × does not publish late history progress or cleanup from a superseded runtime 72ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not publish late history progress or cleanup from a superseded runtime
+AssertionError: expected { receivedPositions: 32, …(1) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+{
+  "receivedPositions": 32,
+  "totalPositions": 100,
+}
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:3063:65
+    3061|       missionStore: createMissionStoreStub(), applySnapshot: vi.fn(), …
+    3062|     })
+    3063|     expect(applyStatus.mock.lastCall?.[0].savedHistoryTransfer).toBeUn…
+       |                                                                 ^
+    3064|     applyStatus.mockClear()
+    3065|     reportProgress!({ receivedPositions: 64, totalPositions: 100 })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 93 skipped (94)
+   Start at  20:15:08
+   Duration  565ms (transform 117ms, setup 0ms, import 140ms, tests 72ms, environment 227ms)

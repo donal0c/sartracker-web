@@ -1,0 +1,103 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-query-ipc.test.ts (6 tests | 3 failed) 10ms
+     × returns the registry-bound mission identity when the start query is mutated in flight 4ms
+     × preserves real registry queue-full and shutdown admission errors through IPC 1ms
+     × contains synchronous destroyed-sender cancellation failures 0ms
+ ❯ tests/unit/breadcrumb-query-session-registry.test.ts (7 tests | 1 failed) 58ms
+     × registers completion synchronously, brokers frames without aggregation and retains ownership until worker exit 4ms
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 9 passed (13)
+   Start at  17:13:41
+   Duration  638ms (transform 42ms, setup 0ms, import 54ms, tests 68ms, environment 960ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/breadcrumb-query-session-registry.test.ts > breadcrumb query session ownership and shutdown > registers completion synchronously, brokers frames without aggregation and retains ownership until worker exit
+AssertionError: expected { version: 1 } to deeply equal { version: 1, missionId: 'mission-a' }
+
+- Expected
++ Received
+
+  {
+-   "missionId": "mission-a",
+    "version": 1,
+  }
+
+ ❯ tests/unit/breadcrumb-query-session-registry.test.ts:32:29
+     30|     const terminal = registry.completion('41:query')
+     31|     const startedManifest = await start
+     32|     expect(startedManifest).toEqual({ version: 1, missionId: 'mission-…
+       |                             ^
+     33|     expect(Object.isFrozen(startedManifest)).toBe(true)
+     34|     await expect(registry.start('mission-a', 5000, '41:query')).reject…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-ipc.test.ts > Electron breadcrumb query IPC ownership > returns the registry-bound mission identity when the start query is mutated in flight
+AssertionError: expected { version: 1, positionCount: +0, …(5) } to deeply equal ObjectContaining{…}
+
+- Expected
++ Received
+
+- ObjectContaining {
+-   "missionId": "mission-bound",
+-   "snapshotId": Any<String>,
++ {
++   "deviceSelectionCount": 0,
++   "deviceTotalCount": 0,
++   "droppedPositionCount": 0,
++   "missionId": "mission-spoofed",
++   "positionCount": 0,
++   "snapshotId": "c8d5b992-8121-4526-afa5-0b3445e22491",
++   "version": 1,
+  }
+
+ ❯ tests/unit/electron-breadcrumb-query-ipc.test.ts:337:26
+    335|     startSession.resolve(worker.session)
+    336|
+    337|     await expect(started).resolves.toEqual(expect.objectContaining({
+       |                          ^
+    338|       missionId: 'mission-bound',
+    339|       snapshotId: expect.any(String),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-ipc.test.ts > Electron breadcrumb query IPC ownership > preserves real registry queue-full and shutdown admission errors through IPC
+AssertionError: expected [Function] to throw error including 'Breadcrumb query session queue is ful…' but got 'Breadcrumb query request is not activ…'
+
+Expected: "Breadcrumb query session queue is full."
+Received: "Breadcrumb query request is not active."
+
+ ❯ tests/unit/electron-breadcrumb-query-ipc.test.ts:373:8
+    371|       perDeviceLimit: 5_000,
+    372|       requestId: 'overflow',
+    373|     })).rejects.toThrow('Breadcrumb query session queue is full.')
+       |        ^
+    374|
+    375|     const shutdown = registry.shutdown()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-ipc.test.ts > Electron breadcrumb query IPC ownership > contains synchronous destroyed-sender cancellation failures
+AssertionError: expected [Function] to not throw an error but 'Error: cancel failed synchronously' was thrown
+
+- Expected:
+undefined
+
++ Received:
+"Error: cancel failed synchronously"
+
+ ❯ tests/unit/electron-breadcrumb-query-ipc.test.ts:405:72
+    403|       requestId: 'request-1',
+    404|     })
+    405|     expect(() => (event.sender as EventEmitter).emit('destroyed')).not…
+       |                                                                        ^
+    406|     await vi.waitFor(() => expect(cancelBreadcrumbQuery).toHaveBeenCal…
+    407|     completion.resolve()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+

@@ -1,0 +1,30 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-breadcrumb-query-client.test.ts -t bounds individual parse
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts (25 tests | 1 failed | 24 skipped) 8ms
+     × bounds individual parse records while preserving a large escaped string and split surrogates 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > bounds individual parse records while preserving a large escaped string and split surrogates
+AssertionError: expected 1120243 to be less than or equal to 16384
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:115:27
+    113|     const frames = [...encodeBreadcrumbFrames(expected)]
+    114|     for (const line of frames.map((frame) => frame.payload).join('').s…
+    115|       expect(line.length).toBeLessThanOrEqual(16_384)
+       |                           ^
+    116|     }
+    117|     const { store } = createHarness({ readBreadcrumbQueryFrame: vi.fn(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 24 skipped (25)
+   Start at  15:21:19
+   Duration  430ms (transform 25ms, setup 0ms, import 33ms, tests 8ms, environment 249ms)
+

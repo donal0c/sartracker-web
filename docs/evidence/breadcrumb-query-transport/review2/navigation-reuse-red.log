@@ -1,0 +1,53 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-dot-ipc.test.ts (2 tests | 1 failed) 56ms
+     × cancels a pending dot query on main-frame navigation and ignores subframe navigation 53ms
+ ❯ tests/unit/electron-breadcrumb-query-ipc.test.ts (9 tests | 1 failed) 215ms
+     × cancels a line query on main-frame navigation and ignores subframe navigation 54ms
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 9 passed (11)
+   Start at  20:18:12
+   Duration  579ms (transform 34ms, setup 0ms, import 47ms, tests 270ms, environment 535ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-dot-ipc.test.ts > Electron exact breadcrumb-dot IPC ownership > cancels a pending dot query on main-frame navigation and ignores subframe navigation
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/unit/electron-breadcrumb-dot-ipc.test.ts:126:58
+    124|     await vi.waitFor(() => expect(cancelExactBreadcrumbDotQuery)
+    125|       .toHaveBeenCalledWith('42:exact-dot:navigation'))
+    126|     expect(sender.listenerCount('did-start-navigation')).toBe(0)
+       |                                                          ^
+    127|     resolveList({ positions: [] })
+    128|     await expect(request).resolves.toEqual({ positions: [] })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-ipc.test.ts > Electron breadcrumb query IPC ownership > cancels a line query on main-frame navigation and ignores subframe navigation
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/unit/electron-breadcrumb-query-ipc.test.ts:239:58
+    237|     sender.emit('did-start-navigation', {}, 'https://example.test/relo…
+    238|     await vi.waitFor(() => expect(cancelBreadcrumbQuery).toHaveBeenCal…
+    239|     expect(sender.listenerCount('did-start-navigation')).toBe(0)
+       |                                                          ^
+    240|
+    241|     const replacement = await handler('start')(event, {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
