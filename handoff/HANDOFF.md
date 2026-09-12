@@ -6,7 +6,7 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
 
 - **WAR-02B review remediation is implemented locally on branch
   `codex/war-02b-property-mutation`, based on exact `origin/master`
-  `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`.** The slice now has independent
+  `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`, current commit `4493596c`.** The slice now has independent
   coordinate anchors and rejection cases, an independent ingest identity
   oracle, exact cursor/recent-window arithmetic, and a public client-boundary
   DON-228 fault injection with separate current-green and rebroken-red legs.
