@@ -181,7 +181,11 @@ export function createBreadcrumbQueryClient(raw: BreadcrumbQueryTransport): Requ
         return { positions: rows[0], deviceTotals: rows[1], deviceSelections: rows[2],
           droppedPositionCount: manifest.droppedPositionCount } as unknown as QueryResult
       } catch (error) {
-        await raw.cancelBreadcrumbQuery({ requestId, ...(snapshotId === undefined ? {} : { snapshotId }) })
+        try {
+          await raw.cancelBreadcrumbQuery({ requestId, ...(snapshotId === undefined ? {} : { snapshotId }) })
+        } catch {
+          // Teardown can invalidate the sender; preserve the original query failure.
+        }
         throw error
       } finally {
         if (active.get(requestId) === state) active.delete(requestId)

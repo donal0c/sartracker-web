@@ -1115,8 +1115,9 @@
             breadcrumb history transfers in bounded steps. The tracking status shows how many selected
             fixes have transferred and explicitly says history is not yet complete. A cancelled or failed
             transfer never counts as complete; partial saved history is not published as a complete trail.
-          </p>
-          <p>
+            Exact breadcrumb-dot queries can run while saved history is still transferring.
+          </div>
+          <div class="note">
             <strong>Tracking does not wait for basemap tiles:</strong> current positions and breadcrumbs
             remain available while the selected raster map is still loading or reports degraded tile
             coverage. Treat the map-health warning separately: the tracking overlay may be current even

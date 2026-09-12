@@ -1,0 +1,58 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts (31 tests | 1 failed) 173ms
+     × preserves the query failure when frame teardown also rejects cancellation 5ms
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts (14 tests | 1 failed) 490ms
+     × rejects reads after a successful clean finish 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > preserves the query failure when frame teardown also rejects cancellation
+AssertionError: expected Error: Invalid IPC sender to be Error: Canonical transfer failed // Object.is equality
+
+- Expected
++ Received
+
+  Error {
+-   "message": "Canonical transfer failed",
++   "message": "Invalid IPC sender",
+  }
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:51:81
+     49|       cancelBreadcrumbQuery: vi.fn().mockRejectedValue(new Error('Inva…
+     50|     })
+     51|     await expect(store.listBreadcrumbPositions!('mission-a', 5_000, 't…
+       |                                                                                 ^
+     52|     expect(raw.cancelBreadcrumbQuery).toHaveBeenCalledOnce()
+     53|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > rejects reads after a successful clean finish
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:123:34
+    121|     await session.read(0)
+    122|     await session.finish()
+    123|     await expect(session.read(1)).rejects.toThrow('no further frames')
+       |                                  ^
+    124|   })
+    125|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 43 passed (45)
+   Start at  17:15:43
+   Duration  876ms (transform 56ms, setup 0ms, import 79ms, tests 663ms, environment 558ms)
+

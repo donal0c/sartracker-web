@@ -16,13 +16,15 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   the 103,626-row query measured at 316–351 ms and the 550 ms restart defect.
   Follow-up B, the separate ~239 ms legacy recovery path, comes afterward; the
   unchanged strict `<200 ms` qualification follows both. Release remains HOLD.
-  Transport implementation and local source/browser/package proof are complete
-  in [PR23](https://github.com/donal0c/sartracker-web/pull/23). Its terminal receipt
-  governs final exact-head CI/review readiness; Donal retains merge authority.
-  Four reviews found one stale-runtime status P2, now red/green repaired with
-  92 runtime tests and the rendered flow. Automatic review additionally found
-  healthy transfers hitting a total deadline; the inactivity-watchdog repair
-  retains stalled-worker termination and passes 21 affected controls.
+  [PR23](https://github.com/donal0c/sartracker-web/pull/23) Claude follow-up repairs
+  mission/admission error fencing, exact-dot starvation and cancellation/late-read
+  defects. Focused red/green: 63 tests. Stable local source: 442 files / 4,605 tests,
+  six qualification-only skips, lint/build pass; corrected visual flow passes.
+  Fresh macOS package: exact 103,626/103,627 rows, dots return during paused
+  transfer in 21–23 ms, main/renderer/write below 200 ms, all closes code zero.
+  Four independent reviews clear after one test-cleanup correction. Prior R1/R2
+  generation and inactivity-watchdog repairs remain. The terminal PR receipt
+  governs fresh exact-head Linux CI/readiness; Donal retains merge authority.
   The [transport record](../docs/assurance/findings/breadcrumb-query-transport.md)
   and [receipt](../docs/evidence/breadcrumb-query-transport/receipt.md) retain the
   diagnosed source-cycle failure, focused correction and strict package measurements.

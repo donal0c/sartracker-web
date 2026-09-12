@@ -45,11 +45,23 @@ The changed native session receives a fresh package run and affected reviews.
 
 ## Evidence limits
 
+### Claude follow-up review custody
+
+Four independent review charters inspected the follow-up diff atop `b3cdc556`:
+broad correctness, concurrency/shutdown, persistence/completeness, and
+renderer/evidence. Broad, concurrency and persistence returned no actionable
+findings. Renderer found a test-cleanup edge case: a rejected query could skip
+runtime stop. The cleanup now uses `try/finally`; the reviewer rechecked and
+cleared that correction and the added packaged exact-dot starvation control.
+These are source/diff review receipts, not package or timing evidence. The
+terminal PR receipt binds the committed head and its completed checks.
+
 - The 30-second inactivity watchdog retains startup and stalled-receiver bounds;
   larger-profile qualification remains separate, with failures explicit rather
   than partial success.
-- Package digest normalizes signed zero; the focused client test independently
-  checks `Object.is(value, -0)`. Shared selector oracle proves transport equivalence,
+- Package digest now preserves signed zero; scalar digest controls establish
+  sensitivity and the focused client test independently checks `Object.is(value, -0)`.
+  Shared selector oracle proves transport equivalence,
   not independent selector correctness.
 - Package proof uses injected checkout client over real native boundaries,
   with controlled synthetic workload. Field and whole-candidate acceptance are open.

@@ -1,0 +1,41 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-dot-mission-store.test.ts (5 tests | 2 failed) 596ms
+     × releases the database query slot at ready while retaining canonical transfer custody 377ms
+     × cancels every admitted request-id length and rejects invalid cancellation asynchronously 18ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-dot-mission-store.test.ts > Electron mission-store exact breadcrumb dots > releases the database query slot at ready while retaining canonical transfer custody
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ vi.waitFor.timeout tests/unit/electron-breadcrumb-dot-mission-store.test.ts:50:68
+     48|       ready()
+     49|       await canonical
+     50|       await vi.waitFor(() => expect(runBreadcrumbDotQueryInWorker).toH…
+       |                                                                    ^
+     51|       await expect(dots).resolves.toEqual({ positions: [], nextCursor:…
+     52|       expect(startBreadcrumbQuerySession).toHaveBeenCalledOnce()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-dot-mission-store.test.ts > Electron mission-store exact breadcrumb dots > cancels every admitted request-id length and rejects invalid cancellation asynchronously
+Error: Breadcrumb query request ID is invalid.
+ ❯ normalizeBreadcrumbQueryRequestId electron/mission-store.cjs:243:11
+ ❯ Object.cancelBreadcrumbQuery electron/mission-store.cjs:2617:7
+ ❯ tests/unit/electron-breadcrumb-dot-mission-store.test.ts:76:33
+     74|     await missionStore.startBreadcrumbQuery('mission-a', 5_000, reques…
+     75|     try {
+     76|       await expect(missionStore.cancelBreadcrumbQuery(requestId)).reso…
+       |                                 ^
+     77|       let cancellation: Promise<boolean> | undefined
+     78|       expect(() => { cancellation = missionStore.cancelBreadcrumbQuery…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 passed (5)
+   Start at  17:17:07
+   Duration  988ms (transform 20ms, setup 0ms, import 58ms, tests 596ms, environment 270ms)
+

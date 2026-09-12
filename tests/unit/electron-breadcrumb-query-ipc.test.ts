@@ -4,6 +4,31 @@ import { createRequire } from 'node:module'
 import { describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const { createBreadcrumbQuerySessionRegistry } = require(
+  '../../electron/breadcrumb-query-session-registry.cjs',
+) as {
+  readonly createBreadcrumbQuerySessionRegistry: (input: {
+    readonly databasePath: string
+    readonly startSession: (input: {
+      readonly signal: AbortSignal
+      readonly missionId: string
+      readonly perDeviceLimit: number
+    }) => Promise<{
+      readonly manifest: object
+      readonly read: (sequence: number) => Promise<object>
+      readonly finish: () => Promise<void>
+      readonly cancel: () => Promise<void>
+      readonly completion: Promise<void>
+    }>
+  }) => {
+    readonly start: (missionId: string, perDeviceLimit: number, requestId: string) => Promise<object>
+    readonly read: (requestId: string, sequence: number) => Promise<object>
+    readonly finish: (requestId: string) => Promise<void>
+    readonly cancel: (requestId: string) => Promise<boolean>
+    readonly completion: (requestId: string) => Promise<void>
+    readonly shutdown: () => Promise<void>
+  }
+}
 const { registerBreadcrumbQueryIpcHandlers } = require(
   '../../electron/breadcrumb-query-ipc.cjs',
 ) as {
@@ -40,6 +65,7 @@ type IpcHandler = (event: unknown, ...args: readonly unknown[]) => unknown
 
 const manifest = {
   version: 1,
+  missionId: 'mission-a',
   positionCount: 0,
   deviceTotalCount: 0,
   deviceSelectionCount: 0,
@@ -101,6 +127,31 @@ function createHarness(missionStore: {
 /** Creates a sender event with the identity used for request scoping. */
 function eventFor(senderId: number) {
   return { sender: Object.assign(new EventEmitter(), { id: senderId }) }
+}
+
+/** Creates a worker session whose terminal completion is controlled by the test. */
+function controlledSession() {
+  let resolveCompletion!: () => void
+  const completion = new Promise<void>((resolve) => { resolveCompletion = resolve })
+  return {
+    session: {
+      manifest: {
+        version: 1,
+        positionCount: 0,
+        deviceTotalCount: 0,
+        deviceSelectionCount: 0,
+        droppedPositionCount: 0,
+      },
+      read: vi.fn(async (sequence: number) => ({ sequence, payload: '', done: true })),
+      finish: vi.fn(() => completion),
+      cancel: vi.fn(() => {
+        resolveCompletion()
+        return completion
+      }),
+      completion,
+    },
+    complete: resolveCompletion,
+  }
 }
 
 describe('Electron breadcrumb query IPC ownership', () => {
@@ -254,5 +305,105 @@ describe('Electron breadcrumb query IPC ownership', () => {
       5_000,
       '91:retryable-request',
     )
+  })
+
+  it('returns the registry-bound mission identity when the start query is mutated in flight', async () => {
+    const startSession = deferred<ReturnType<typeof controlledSession>['session']>()
+    const registry = createBreadcrumbQuerySessionRegistry({
+      databasePath: '/fixture',
+      startSession: vi.fn(() => startSession.promise),
+    })
+    const { handler } = createHarness({
+      startBreadcrumbQuery: registry.start,
+      readBreadcrumbQueryFrame: registry.read,
+      finishBreadcrumbQuery: registry.finish,
+      cancelBreadcrumbQuery: registry.cancel,
+      breadcrumbQueryCompletion: registry.completion,
+    })
+    const event = eventFor(123)
+    const query = {
+      missionId: 'mission-bound',
+      perDeviceLimit: 5_000,
+      requestId: 'request-1',
+    }
+    const started = handler('start')(event, query) as Promise<{
+      readonly missionId: string
+      readonly snapshotId: string
+    }>
+    query.missionId = 'mission-spoofed'
+    const worker = controlledSession()
+    startSession.resolve(worker.session)
+
+    await expect(started).resolves.toEqual(expect.objectContaining({
+      missionId: 'mission-bound',
+      snapshotId: expect.any(String),
+    }))
+    await expect(registry.cancel('123:request-1')).resolves.toBe(true)
+  })
+
+  it('preserves real registry queue-full and shutdown admission errors through IPC', async () => {
+    const active = controlledSession()
+    const registry = createBreadcrumbQuerySessionRegistry({
+      databasePath: '/fixture',
+      startSession: vi.fn().mockResolvedValue(active.session),
+    })
+    const { handler } = createHarness({
+      startBreadcrumbQuery: registry.start,
+      readBreadcrumbQueryFrame: registry.read,
+      finishBreadcrumbQuery: registry.finish,
+      cancelBreadcrumbQuery: registry.cancel,
+      breadcrumbQueryCompletion: registry.completion,
+    })
+    const event = eventFor(124)
+    await handler('start')(event, {
+      missionId: 'mission-a',
+      perDeviceLimit: 5_000,
+      requestId: 'active',
+    })
+    const queued = Array.from({ length: 8 }, (_, index) => handler('start')(event, {
+      missionId: 'mission-a',
+      perDeviceLimit: 5_000,
+      requestId: `queued-${index}`,
+    }))
+
+    await expect(handler('start')(event, {
+      missionId: 'mission-a',
+      perDeviceLimit: 5_000,
+      requestId: 'overflow',
+    })).rejects.toThrow('Breadcrumb query session queue is full.')
+
+    const shutdown = registry.shutdown()
+    const queuedResults = await Promise.allSettled(queued)
+    expect(queuedResults.every((result) => result.status === 'rejected')).toBe(true)
+    await shutdown
+    await expect(handler('start')(event, {
+      missionId: 'mission-a',
+      perDeviceLimit: 5_000,
+      requestId: 'after-shutdown',
+    })).rejects.toMatchObject({ name: 'AbortError' })
+    expect((event.sender as EventEmitter).eventNames()).toEqual([])
+  })
+
+  it('contains synchronous destroyed-sender cancellation failures', async () => {
+    const completion = deferred<void>()
+    const cancelBreadcrumbQuery = vi.fn(() => {
+      throw new Error('cancel failed synchronously')
+    })
+    const { handler } = createHarness({
+      startBreadcrumbQuery: vi.fn().mockResolvedValue(manifest),
+      readBreadcrumbQueryFrame: vi.fn(),
+      finishBreadcrumbQuery: vi.fn().mockResolvedValue(undefined),
+      cancelBreadcrumbQuery,
+      breadcrumbQueryCompletion: vi.fn().mockReturnValue(completion.promise),
+    })
+    const event = eventFor(125)
+    await handler('start')(event, {
+      missionId: 'mission-a',
+      perDeviceLimit: 5_000,
+      requestId: 'request-1',
+    })
+    expect(() => (event.sender as EventEmitter).emit('destroyed')).not.toThrow()
+    await vi.waitFor(() => expect(cancelBreadcrumbQuery).toHaveBeenCalledWith('125:request-1'))
+    completion.resolve()
   })
 })

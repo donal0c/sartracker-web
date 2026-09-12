@@ -28,7 +28,9 @@ describe('breadcrumb query session ownership and shutdown', () => {
     const registry = createBreadcrumbQuerySessionRegistry({ databasePath: '/fixture', startSession })
     const start = registry.start('mission-a', 5000, '41:query')
     const terminal = registry.completion('41:query')
-    await expect(start).resolves.toEqual({ version: 1 })
+    const startedManifest = await start
+    expect(startedManifest).toEqual({ version: 1, missionId: 'mission-a' })
+    expect(Object.isFrozen(startedManifest)).toBe(true)
     await expect(registry.start('mission-a', 5000, '41:query')).rejects.toThrow(/already active/i)
     const frame = await registry.read('41:query', 0)
     expect(frame).toBe(await w.session.read.mock.results[0].value)
@@ -127,7 +129,7 @@ describe('breadcrumb query session ownership and shutdown', () => {
 
     first.exit()
     await vi.waitFor(() => expect(startSession).toHaveBeenCalledTimes(2))
-    await expect(queued).resolves.toEqual({ version: 1 })
+    await expect(queued).resolves.toEqual({ version: 1, missionId: 'mission-a' })
     expect(startSession.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
       databasePath: '/fixture', missionId: 'mission-a', perDeviceLimit: 5_000,
     }))

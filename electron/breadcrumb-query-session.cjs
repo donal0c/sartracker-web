@@ -77,7 +77,8 @@ async function startBreadcrumbQuerySession(input) {
         /** Requests exactly one next frame; no second pull may be outstanding. */
         read(sequence) {
           if (failure !== null) return Promise.reject(failure)
-          if (exited || finishRequested || finalFrameRead) return rejectProgress('Breadcrumb query session has no further frames.')
+          if (exited) return Promise.reject(new Error('Breadcrumb query session has no further frames.'))
+          if (finishRequested || finalFrameRead) return rejectProgress('Breadcrumb query session has no further frames.')
           if (pendingRead !== null) return rejectProgress('Breadcrumb query session already has an outstanding read.')
           if (!Number.isSafeInteger(sequence) || sequence !== nextSequence) return rejectProgress('Breadcrumb query frame sequence is invalid.')
           return new Promise((resolve, reject) => {

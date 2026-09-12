@@ -100,7 +100,7 @@ function createBreadcrumbQuerySessionRegistry(input) {
   function settleStartSuccess(entry, manifest) {
     if (entry.startSettled) return
     entry.startSettled = true
-    entry.resolveStart(manifest)
+    entry.resolveStart(Object.freeze({ ...manifest, missionId: entry.missionId }))
   }
 
   /** Rejects a start while retaining the same error for the terminal accessor. */

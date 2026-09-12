@@ -42,6 +42,16 @@ function createHarness(overrides: Record<string, unknown> = {}) {
 describe('bounded breadcrumb client', () => {
   beforeEach(() => { Reflect.deleteProperty(window, 'sartrackerElectron') })
 
+  it('preserves the query failure when frame teardown also rejects cancellation', async () => {
+    const failure = new Error('Canonical transfer failed')
+    const { raw, store } = createHarness({
+      readBreadcrumbQueryFrame: vi.fn().mockRejectedValue(failure),
+      cancelBreadcrumbQuery: vi.fn().mockRejectedValue(new Error('Invalid IPC sender')),
+    })
+    await expect(store.listBreadcrumbPositions!('mission-a', 5_000, 'teardown')).rejects.toBe(failure)
+    expect(raw.cancelBreadcrumbQuery).toHaveBeenCalledOnce()
+  })
+
   it('assembles unchanged rows, yields between frames, and waits for clean worker finish', async () => {
     let finish!: () => void
     let taskRan = false

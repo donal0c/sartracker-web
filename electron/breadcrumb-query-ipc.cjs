@@ -20,9 +20,9 @@ function registerBreadcrumbQueryIpcHandlers(input) {
           return
         }
         cleanupRequested = true
-        void input.missionStore.cancelBreadcrumbQuery(scopedRequestId).catch(
-          () => undefined,
-        )
+        void Promise.resolve()
+          .then(() => input.missionStore.cancelBreadcrumbQuery(scopedRequestId))
+          .catch(() => undefined)
       }
       event.sender.once('destroyed', cancelDestroyedSenderQuery)
       event.sender.once('render-process-gone', cancelDestroyedSenderQuery)
@@ -37,10 +37,20 @@ function registerBreadcrumbQueryIpcHandlers(input) {
           query.perDeviceLimit,
           scopedRequestId,
         )
-        void started.catch(() => undefined)
-        void input.missionStore.breadcrumbQueryCompletion(scopedRequestId).then(cleanup, cleanup)
+        void Promise.resolve(started).catch(() => undefined)
+        let completion
+        let completionCaptured = false
+        try {
+          completion = input.missionStore.breadcrumbQueryCompletion(scopedRequestId)
+          completionCaptured = true
+        } catch {
+          // Rejected admissions have no registry entry. Let the original start
+          // error reach the renderer while cleanup follows its settlement.
+        }
+        if (completionCaptured) void Promise.resolve(completion).then(cleanup, cleanup)
+        else void Promise.resolve(started).then(cleanup, cleanup)
         const manifest = await started
-        return { ...manifest, snapshotId, missionId: query.missionId }
+        return { ...manifest, snapshotId }
       } catch (error) {
         cleanup()
         throw error
@@ -89,9 +99,9 @@ function registerExactBreadcrumbDotQueryIpcHandlers(input) {
       const cancelDestroyedSenderQuery = () => {
         if (cleanupRequested) return
         cleanupRequested = true
-        void input.missionStore.cancelExactBreadcrumbDotQuery(scopedRequestId).catch(
-          () => undefined,
-        )
+        void Promise.resolve()
+          .then(() => input.missionStore.cancelExactBreadcrumbDotQuery(scopedRequestId))
+          .catch(() => undefined)
       }
       event.sender.once('destroyed', cancelDestroyedSenderQuery)
       event.sender.once('render-process-gone', cancelDestroyedSenderQuery)

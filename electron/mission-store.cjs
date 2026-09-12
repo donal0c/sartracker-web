@@ -514,8 +514,10 @@ function createElectronMissionStore(options) {
       const previous = breadcrumbQueryTail
       const start = waitForBreadcrumbWorkerSlot(previous, input.signal).then(() =>
         (options.startBreadcrumbQuerySession ?? startBreadcrumbQuerySession)(input))
+      // Ready means the worker has closed its SQLite snapshot. The registry
+      // retains transfer/termination custody while exact-dot queries may proceed.
       breadcrumbQueryTail = Promise.all([previous,
-        start.then((session) => session.completion).catch(() => undefined),
+        start.catch(() => undefined),
       ]).then(() => undefined)
       return start
     } })
@@ -2613,9 +2615,7 @@ function createElectronMissionStore(options) {
     readBreadcrumbQueryFrame: (requestId, sequence) => breadcrumbSessions.read(requestId, sequence),
     finishBreadcrumbQuery: (requestId) => breadcrumbSessions.finish(requestId),
     breadcrumbQueryCompletion: (requestId) => breadcrumbSessions.completion(requestId),
-    cancelBreadcrumbQuery: (requestId) => breadcrumbSessions.cancel(
-      normalizeBreadcrumbQueryRequestId(requestId, true),
-    ),
+    cancelBreadcrumbQuery: async (requestId) => breadcrumbSessions.cancel(requestId),
     listExactBreadcrumbDotPage: async (input, requestId) => {
       if (storeClosed || coverageShutdownRequested) throw new Error('Mission store is closing or closed.')
       const normalizedRequestId = normalizeBreadcrumbQueryRequestId(requestId, false)

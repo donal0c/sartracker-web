@@ -113,6 +113,16 @@ describe('bounded breadcrumb worker result sessions', () => {
     await expect(session.completion).resolves.toBeUndefined()
   })
 
+  it('rejects reads after a successful clean finish', async () => {
+    const session = await controlledWorker(`parentPort.on('message', (message) => {
+      if (message.type === 'read') parentPort.postMessage({ type: 'frame', sequence: 0, payload: '', done: true })
+      if (message.type === 'finish') { parentPort.postMessage({ type: 'finished' }); parentPort.close() }
+    })`)
+    await session.read(0)
+    await session.finish()
+    await expect(session.read(1)).rejects.toThrow('no further frames')
+  })
+
   it('keeps completion pending until finish and clean worker exit', async () => {
     const session = await controlledWorker(`parentPort.on('message', message => {
       if (message.type === 'read') parentPort.postMessage({ type: 'frame', sequence: message.sequence, payload: '', done: true })

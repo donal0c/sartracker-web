@@ -36,8 +36,10 @@ question, coordinate rule, timestamp policy or persistence interpretation is int
   selected rows and order come from its single SQLite read transaction. The
   read transaction closes before transport; later writes cannot alter that result.
 - One canonical worker and at most eight queued canonical requests are owned
-  by the registry. Canonical and exact-dot workers retain their shared serial
-  admission boundary. Current-position polling and foreground writes do not
+  by the registry. Canonical and exact-dot database queries share serial
+  admission until canonical ready closes SQLite. A parked canonical transfer
+  may then overlap one exact-dot query; the registry still owns its termination.
+  Current-position polling and foreground writes do not
   wait on that boundary.
 - Each pull returns at most 32,768 UTF-16 code units. Only one read may be
   outstanding. Main retains session controls and one frame, never the result.
@@ -52,6 +54,7 @@ question, coordinate rule, timestamp policy or persistence interpretation is int
 - Sender-scoped request IDs plus per-session snapshot tokens fence reads,
   finish and cancellation. The renderer checks sequence, snapshot, mission,
   frame/record bounds, record order, counts and terminal completeness.
+  Admission mission metadata comes from the registry entry, not an IPC echo.
 - Renderer rows remain private until finish acknowledgement and clean worker
   exit. Cancellation fences late results immediately and joins actual worker
   termination. Sender destruction, timeout, failed startup, queued cancellation,
@@ -92,6 +95,50 @@ receipts are linked from the PR's terminal evidence:
   source cycle and packaged receipts govern final totals and readiness.
 
 ## Required terminal proof and residual limits
+
+### Claude follow-up review, 2026-09-12
+
+The prior `b3cdc556` readiness receipt is superseded until the follow-up's
+terminal checks complete. Confirmed defects have retained
+[IPC red](../../evidence/breadcrumb-query-transport/claude-followup/transport-findings-red.log),
+[query-slot/ID red](../../evidence/breadcrumb-query-transport/claude-followup/store-red-valid.log),
+[client/session red](../../evidence/breadcrumb-query-transport/claude-followup/client-session-red.log),
+and [focused green](../../evidence/breadcrumb-query-transport/claude-followup/focused-green.log)
+regressions: mission metadata echoed by IPC, admission errors masked by
+the completion accessor, exact-dot starvation behind renderer transfer,
+cleanup cancellation masking the original query failure, mismatched cancellation
+ID validation, and reads resolving undefined after clean worker exit.
+The registry supplies admitted mission identity; rejection causes survive;
+query admission releases at SQLite closure while transfer custody remains;
+accepted IDs remain cancellable; terminal reads reject explicitly.
+
+The packaged digest now distinguishes signed zero (its scalar controls prove
+digest sensitivity; client transport tests prove signed-zero preservation).
+Progress must contain intermediate, monotonic counts with stable totals.
+The package probe requests exact dots while canonical transfer is paused after
+frame zero, requires the new current fix, and retains the strict event-loop gates.
+The visual flow now guarantees runtime cleanup and checks specific current fixes.
+
+Claims not substantiated by current source/rendered evidence:
+
+- Runtime transfer state is local to each runtime, query execution is serialized,
+  and publication is generation-guarded. An old finally cannot clear another
+  runtime's live progress. Canonical rejection propagates; recent-position
+  fallback is for an absent canonical port, not failed transfer.
+- Invalid sequence/concurrent reads deliberately fail closed and join termination.
+  Automatic frame replay/resume is not an existing contract. The inactivity
+  watchdog preserves the prior verified fix for healthy transfers exceeding an
+  absolute deadline; stalled transfers still terminate visibly. It no longer
+  monopolizes the database query slot.
+- ONLINE remains green during ordinary incomplete-history warnings. The native
+  progress bar is visibly half-filled in the browser screenshot, although the
+  browser renders it green rather than the requested cyan accent.
+- UTF-16 fragments reassemble losslessly before parsing, including split surrogate
+  pairs and lone surrogates in existing tests. A hypothetical non-preserving hop
+  is not present. No encoding boundary was changed.
+- Same-tick finished-message/port-close loss was not reproduced in 100 Node worker
+  controls. Session tests require both acknowledgement and clean exit; actual
+  package runs exercise that handshake. This does not claim a universal race proof.
 
 The PR terminal receipt records the stable serial correctness/lint/build cycle,
 the exact tested package/source identities, the targeted native smoke, Linux
