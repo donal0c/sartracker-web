@@ -70,9 +70,10 @@ shared renderer scheduling and runtime subscriptions still require comparison.
   maxima cannot be correlated causally with storage, GC or host activity.
   The new channels retain bounded timestamped observations and dropped counts.
 - **ATTR-M04:** inspector evaluation had no request deadline; stopping the
-  heartbeat could hang while awaiting it. The diagnostic request now times out
-  after five seconds, reports an error and clears its pending entry. This is
-  an infrastructure deadline, not an application safety threshold.
+  heartbeat could hang while awaiting it. The shared inspector transport now
+  times out each original-heartbeat or diagnostic request after five seconds,
+  reports an error and clears its pending entry. This is an infrastructure
+  deadline, not an application safety threshold.
 - **ATTR-M05:** main inspector RTT, current-fix continuity, cadenced renderer
   frame availability, renderer click-to-state reaction, external action and
   target-stability waiting have different meanings. The soak's renderer/action
@@ -276,9 +277,10 @@ then 55 focused tests and lint passed; corrected packaged comparison is above.
 CI runs `34523115131` and `34523403661` were superseded by fixture and startup
 coverage corrections and are not successful qualification evidence.
 The earlier independent reviews are historical and exact-head-bound to their
-recorded executables. Current-head independent reviews must bind the final PR21
-SHA after this reconciliation; their receipts will be added alongside the
-historical [review receipt](../../evidence/responsiveness-attribution/reviews.json).
+recorded executables. Current-head reviews of `cc620d82` found no P1/P2 issue;
+the Claude review recorded the expected missing exact-head-CI evidence and a
+P3 scope note for the shared inspector timeout. The current [review receipt](../../evidence/responsiveness-attribution/current-head-reviews.md)
+is separate from the historical [review receipt](../../evidence/responsiveness-attribution/reviews.json).
 
 Historical independent reviews cleared executable `798a6fd8` against
 `302bdd04`:
