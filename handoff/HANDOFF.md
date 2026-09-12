@@ -16,7 +16,10 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   undated late names, End Outing during import, restart equality and clean close.
   The named GPX smoke now runs in ordinary Linux CI; the standard visual project
   includes all seven GPX flows and their three reviewed captures. Four affected independent
-  source charters are clear; exact final-head bindings and terminal CI readiness live on
+  source charters are clear. Linux run `34691543650` passed correctness/package
+  inspection but failed before GPX import at the outing-label control; cause is
+  not yet established. Failure diagnostics are being added; PR remains draft.
+  Exact final-head bindings and terminal CI readiness live on
   [PR19](https://github.com/donal0c/sartracker-web/pull/19); read its terminal
   receipt before merging. [Current record](../docs/assurance/findings/repair-train-b.md).
   DON-274 remains In Review; DON-270 retains its original completed history;

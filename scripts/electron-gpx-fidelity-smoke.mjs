@@ -44,6 +44,12 @@ if (process.env.SARTRACKER_ELECTRON_REQUIRE_LINUX_UNPACKED === '1') {
   assert.ok(executablePath.startsWith(unpackedRoot), 'Smoke must run the CI-built linux-unpacked executable.')
 }
 let app
+let page
+const rendererConsole = []
+const rendererPageErrors = []
+const mainStdout = []
+const mainStderr = []
+const MAX_DIAGNOSTIC_CHUNK_LENGTH = 8_192
 const report = { proofTier: `${expectedSourceSha === null ? 'local' : 'CI'} packaged Electron; synthetic profile; network blocked; native chooser automated`,
   sourceHead, sourceTree, sourceDirty, expectedSourceSha, expectedSourceTree,
   sourceFileHashes: Object.fromEntries(await Promise.all([
@@ -63,7 +69,8 @@ try {
     assert.equal(sha256(extractFile(archivePath, file)), sha256(await readFile(file)), `Packaged source mismatch: ${file}`)
     report.packagedInputHashes[file] = sha256(await readFile(file))
   }
-  const page = await app.firstWindow()
+  page = await app.firstWindow()
+  attachDiagnostics(page, app)
   await page.getByTestId('app-title').waitFor({ timeout: 30_000 })
   await page.getByTestId('mission-name-input').fill('Packaged GPX fidelity')
   await page.getByTestId('mission-start-btn').click()
@@ -99,13 +106,17 @@ try {
   await app.close()
   app = null
   app = await launch()
-  await (await app.firstWindow()).getByTestId('app-title').waitFor({ timeout: 30_000 })
+  page = await app.firstWindow()
+  attachDiagnostics(page, app)
+  await page.getByTestId('app-title').waitFor({ timeout: 30_000 })
   report.afterRestart = await inspect()
   assert.deepEqual(report.afterRestart, report.beforeRestart)
   assert.equal(sha256(await readFile(archivePath)), report.archiveSha256)
   report.passed = true
 } catch (error) {
   report.failure = error instanceof Error ? error.message : String(error)
+  try { await captureFailureDiagnostics() }
+  catch (diagnosticError) { report.failureDiagnosticsError = diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError) }
   throw error
 } finally {
   try { if (app) await app.close() }
@@ -121,6 +132,94 @@ async function launch() {
   const args = process.platform === 'linux' ? ['--no-sandbox'] : []
   return await electron.launch({ executablePath, args, env: { ...process.env,
     SARTRACKER_ELECTRON_USER_DATA_PATH: profile, SARTRACKER_ELECTRON_BLOCK_NETWORK: '1' }, timeout: 30_000 })
+}
+
+/** Retains bounded renderer and main-process diagnostics for a failed smoke. */
+function attachDiagnostics(nextPage, nextApp) {
+  nextPage.on('console', (message) => retain(rendererConsole, `${message.type()}: ${message.text()}\n`))
+  nextPage.on('pageerror', (error) => retain(rendererPageErrors, error instanceof Error ? error.stack ?? error.message : String(error)))
+  if (typeof nextApp.process !== 'function') return
+  try {
+    const process = nextApp.process()
+    process.stdout?.on('data', (chunk) => retain(mainStdout, String(chunk)))
+    process.stderr?.on('data', (chunk) => retain(mainStderr, String(chunk)))
+  } catch { /* Diagnostics must never affect the smoke. */ }
+}
+
+/** Retains only the most recent diagnostics so a failing app cannot fill CI evidence. */
+function retain(target, value) {
+  const boundedValue = value.length > MAX_DIAGNOSTIC_CHUNK_LENGTH
+    ? `[truncated ${value.length - MAX_DIAGNOSTIC_CHUNK_LENGTH} chars]\n${value.slice(-MAX_DIAGNOSTIC_CHUNK_LENGTH)}`
+    : value
+  target.push(boundedValue)
+  if (target.length > 200) target.splice(0, target.length - 200)
+}
+
+/** Captures failure state without masking the original smoke assertion. */
+async function captureFailureDiagnostics() {
+  const files = []
+  let bodyText = ''
+  let uiState = null
+  if (page) {
+    bodyText = await page.locator('body').innerText().catch((error) => `body capture failed: ${String(error)}`)
+    uiState = await page.evaluate(() => ({
+      missionControl: document.querySelector('[data-testid="mission-control"]')?.textContent?.trim() ?? null,
+      missionPhase: document.querySelector('[data-testid="mission-control"]')?.getAttribute('data-mission-phase') ?? null,
+      missionPhaseChip: document.querySelector('[data-testid="mission-phase-chip"]')?.textContent?.trim() ?? null,
+      outingSection: document.querySelector('[data-testid="outing-controls-section"]')?.textContent?.trim() ?? null,
+      outingLabelInput: Boolean(document.querySelector('[data-testid="outing-label-input"]')),
+      outingStartButton: Boolean(document.querySelector('[data-testid="outing-start-btn"]')),
+    })).catch((error) => ({ captureError: String(error) }))
+    await page.screenshot({ path: path.join(output, 'failure.png'), fullPage: true }).then(() => files.push('failure.png')).catch(() => undefined)
+  }
+  await writeFile(path.join(output, 'failure-body.txt'), bodyText)
+  files.push('failure-body.txt')
+  await writeFile(path.join(output, 'failure-ui.json'), JSON.stringify(uiState, null, 2))
+  files.push('failure-ui.json')
+  const nativeState = await inspectStartupState()
+  await writeFile(path.join(output, 'failure-native-state.json'), JSON.stringify(nativeState, null, 2))
+  files.push('failure-native-state.json')
+  await writeFile(path.join(output, 'failure-renderer-console.log'), rendererConsole.join(''))
+  files.push('failure-renderer-console.log')
+  await writeFile(path.join(output, 'failure-renderer-errors.log'), rendererPageErrors.join('\n'))
+  files.push('failure-renderer-errors.log')
+  await writeFile(path.join(output, 'failure-main-stdout.log'), mainStdout.join(''))
+  files.push('failure-main-stdout.log')
+  await writeFile(path.join(output, 'failure-main-stderr.log'), mainStderr.join(''))
+  files.push('failure-main-stderr.log')
+  const runtimeLog = await readTail(path.join(profile, 'logs', 'runtime.log'))
+  await writeFile(path.join(output, 'failure-runtime.log'), runtimeLog)
+  files.push('failure-runtime.log')
+  report.failureDiagnostics = { files, uiState, nativeState,
+    rendererConsoleEntries: rendererConsole.length, rendererPageErrorEntries: rendererPageErrors.length,
+    mainStdoutChunks: mainStdout.length, mainStderrChunks: mainStderr.length }
+}
+
+/** Reads a bounded tail of the disposable profile's runtime timeline. */
+async function readTail(file) {
+  try {
+    const value = await readFile(file, 'utf8')
+    return value.length > 64 * 1024 ? `[truncated ${value.length - 64 * 1024} chars]\n${value.slice(-64 * 1024)}` : value
+  } catch (error) {
+    return `runtime log unavailable: ${String(error)}\n`
+  }
+}
+
+/** Reads the disposable profile's mission/outings state while the failed app remains open. */
+async function inspectStartupState() {
+  if (!app) return null
+  return await app.evaluate(({ app }, userDataPath) => {
+    const { createRequire } = process.getBuiltinModule('node:module')
+    const require = createRequire(`${app.getAppPath()}/package.json`)
+    const Database = require('better-sqlite3')
+    const db = new Database(`${userDataPath}/mission-store.sqlite`, { readonly: true })
+    try {
+      return {
+        missions: db.prepare(`SELECT id, name, status, start_time, finish_time FROM missions ORDER BY start_time, id`).all(),
+        outings: db.prepare(`SELECT id, mission_id, label, started_at, ended_at FROM outings ORDER BY started_at, id`).all(),
+      }
+    } finally { db.close() }
+  }, profile).catch((error) => ({ error: String(error) }))
 }
 
 /** Automates only file selection; production UI and IPC perform import. */

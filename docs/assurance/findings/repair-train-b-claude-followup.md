@@ -88,3 +88,15 @@ All four independent affected charters are clear after targeted rechecks.
 Exact final-head bindings and terminal Linux CI readiness are recorded on
 [PR19](https://github.com/donal0c/sartracker-web/pull/19). No merge/release is
 performed here; release remains HOLD.
+
+## Linux smoke diagnosis
+
+Run `34691543650` at `61c5f551` passed ordinary correctness, Electron controls,
+build, source binding and native package inspection. The new GPX smoke failed
+before importing: `outing-label-input` did not appear within 30 seconds after
+the mission-start click. AppImage launch was consequently skipped. The original
+failure is retained; it is not a GPX fidelity pass or a confirmed application
+defect. The same package smoke passed again on macOS. Added failure diagnostics
+capture the rendered state, native mission/outings rows and bounded logs without
+changing assertions, deadlines or application code. Cause and Linux readiness
+remain pending the diagnostic run; PR19 stays draft.

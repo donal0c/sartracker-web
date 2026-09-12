@@ -1,0 +1,39 @@
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	﻿2026-09-12T12:00:04.9730649Z ##[group]Run set -euo pipefail
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9731191Z [36;1mset -euo pipefail[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9731758Z [36;1mPACKAGE="tmp/electron-dist/linux-unpacked/sartracker-web"[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9732383Z [36;1mif [ ! -x "$PACKAGE" ]; then[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9733019Z [36;1m  echo "::error::The unpacked Linux Electron executable was not found."[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9733902Z [36;1m  exit 1[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9734232Z [36;1mfi[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9734731Z [36;1mmkdir -p tmp/electron-validation-evidence/gpx-fidelity-smoke[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9735467Z [36;1mxvfb-run -a --server-args='-screen 0 1440x900x24' \[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9736061Z [36;1m  dbus-run-session -- \[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9736592Z [36;1m  npm run electron:smoke:gpx-fidelity -- "$PACKAGE" \[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9737283Z [36;1m    tmp/electron-validation-evidence/gpx-fidelity-smoke[0m
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9820504Z shell: /usr/bin/bash -e {0}
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9820797Z env:
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9821046Z   NODE_VERSION: 22
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9821367Z   EXPECTED_SOURCE_SHA: 61c5f551efa3e8a462ca53f2123c1f0e5a2b37f8
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9821727Z   LIBGL_ALWAYS_SOFTWARE: 1
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9821972Z   GALLIUM_DRIVER: llvmpipe
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9822194Z   NO_AT_BRIDGE: 1
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9822434Z   SARTRACKER_ELECTRON_REQUIRE_LINUX_UNPACKED: 1
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:04.9822747Z ##[endgroup]
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:05.1633854Z 
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:05.1634922Z > sartracker-web@0.1.0-beta.12.11 electron:smoke:gpx-fidelity
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:05.1636195Z > node scripts/electron-gpx-fidelity-smoke.mjs tmp/electron-dist/linux-unpacked/sartracker-web tmp/electron-validation-evidence/gpx-fidelity-smoke
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:05.1637008Z 
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9100125Z node:internal/modules/run_main:123
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9103362Z     triggerUncaughtException(
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9106066Z     ^
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9106493Z 
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9106855Z locator.fill: Timeout 30000ms exceeded.
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9107374Z Call log:
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9107921Z   - waiting for getByTestId('outing-label-input')
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9108349Z 
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9109003Z     at /home/runner/work/sartracker-web/sartracker-web/scripts/electron-gpx-fidelity-smoke.mjs:70:48 {
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9109915Z   name: 'TimeoutError'
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9110291Z }
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9110478Z 
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9110627Z Node.js v22.23.2
+Build and inspect Linux Electron artifacts	Packaged GPX fidelity and custody smoke	2026-09-12T12:00:36.9359972Z ##[error]Process completed with exit code 1.
