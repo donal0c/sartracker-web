@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { installRealmResponsivenessProbe, validateAttributionEvidence } from '../../build/responsiveness-attribution-lib.js'
-import { startResponsivenessAttribution } from '../../build/responsiveness-attribution-node.js'
+import { attachInspectorAttribution, startResponsivenessAttribution } from '../../build/responsiveness-attribution-node.js'
 
 describe('responsiveness attribution [DON-254]', () => {
   it('cleans already-installed observers when a later realm install fails', async () => {
@@ -16,6 +16,19 @@ describe('responsiveness attribution [DON-254]', () => {
   })
   it('rejects missing mandatory realm evidence instead of treating it as zero delay', () => {
     expect(() => validateAttributionEvidence({})).toThrow('incomplete')
+  })
+  it('retains the current inspector heartbeat shape without inventing dropped samples', () => {
+    const evidence = { collected: true, completeness: { contextEvicted: false } }
+    expect(attachInspectorAttribution(evidence, {
+      roundTrips: [12, 18],
+      errors: 1,
+      failures: [{ controllerAtMs: 42 }],
+    })).toMatchObject({
+      inspectorRoundTrips: [12, 18],
+      inspectorDroppedEventCount: 0,
+      inspectorCollection: { collected: true, errors: 1 },
+      completeness: { contextEvicted: false },
+    })
   })
   it('rejects malformed clocks and reports evicted optional context', () => {
     const realm = { timeOriginMs: 0, startedAtMs: 0, stoppedAtMs: 100, maximumGapMs: 50, samples: 2, events: [], droppedEventCount: 0 }

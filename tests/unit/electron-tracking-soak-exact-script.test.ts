@@ -11,7 +11,13 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     expect(launch.indexOf('startMainHeartbeat(mainInspector, 50)')).toBeLessThan(launch.indexOf('await startResponsivenessAttribution('))
     const cleanup = launch.slice(launch.indexOf('} catch (error)'))
     expect(cleanup).toContain('mainHeartbeat?.stop()')
-    expect(cleanup.indexOf('mainInspector?.close()')).toBeLessThan(cleanup.indexOf('mainHeartbeat?.stop()'))
+    expect(cleanup).toContain('collectAttributionEvidence(attribution)')
+    expect(cleanup.indexOf('mainHeartbeat?.stop()')).toBeLessThan(
+      cleanup.indexOf('collectAttributionEvidence(attribution)'),
+    )
+    expect(cleanup.indexOf('collectAttributionEvidence(attribution)')).toBeLessThan(
+      cleanup.indexOf('mainInspector?.close()'),
+    )
   })
 
   it('shares one recorded mission-scoped fixture clock with mock and independent oracle', () => {

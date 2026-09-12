@@ -17,10 +17,20 @@ export function attachInspectorAttribution(evidence, heartbeat) {
   if (!heartbeat) return unavailableAttribution(evidence.collected === false ? evidence.reason : 'inspector-not-collected', {
     ...evidence, inspectorCollection: { collected: false, reason: 'not-collected' },
   })
-  return { ...evidence, inspectorCollection: { collected: true }, inspectorRoundTrips: heartbeat.events,
-    inspectorDroppedEventCount: heartbeat.droppedEventCount,
+  const roundTrips = Array.isArray(heartbeat.roundTrips) ? heartbeat.roundTrips : heartbeat.events
+  const droppedEventCount = Number.isSafeInteger(heartbeat.droppedEventCount)
+    ? heartbeat.droppedEventCount
+    : 0
+  return { ...evidence,
+    inspectorCollection: {
+      collected: true,
+      errors: Number.isSafeInteger(heartbeat.errors) ? heartbeat.errors : 0,
+      failures: Array.isArray(heartbeat.failures) ? heartbeat.failures : [],
+    },
+    inspectorRoundTrips: Array.isArray(roundTrips) ? roundTrips : [],
+    inspectorDroppedEventCount: droppedEventCount,
     completeness: { ...evidence.completeness,
-      contextEvicted: evidence.completeness.contextEvicted === true || heartbeat.droppedEventCount > 0 } }
+      contextEvicted: evidence.completeness.contextEvicted === true || droppedEventCount > 0 } }
 }
 
 /** Bounds diagnostic collection independently of the unchanged operational soak verdict. */
