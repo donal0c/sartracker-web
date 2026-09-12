@@ -1,11 +1,13 @@
 // @vitest-environment node
+import * as fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 
 import {
-  coordinateGoldenAnchorArbitrary,
-  coordinateValidationArbitrary,
+  coordinateGoldenAnchorCases,
+  coordinateValidationCases,
   cursorWindowArbitrary,
   cursorWindowExtendedArbitrary,
+  irishCoordinateBoundaryCases,
   ingestCaseArbitrary,
   irishCoordinateArbitrary,
 } from './arbitraries'
@@ -41,24 +43,46 @@ describe('WAR-02B bounded safety properties', () => {
     expect(result.numRuns).toBe(100)
   })
 
-  it('holds the independent TM65 datum anchor', () => {
-    const result = runBoundedProperty(
-      'TM65 datum golden anchor',
-      coordinateGoldenAnchorArbitrary,
-      coordinateGoldenAnchorInvariant,
-      { numRuns: 1 },
-    )
-    assertBoundedProperty('TM65 datum golden anchor', result)
+  it('holds every independent TM65 datum anchor', () => {
+    for (const [index, anchor] of coordinateGoldenAnchorCases.entries()) {
+      const result = runBoundedProperty(
+        `TM65 datum golden anchor ${index + 1}`,
+        fc.constant(anchor),
+        coordinateGoldenAnchorInvariant,
+        { numRuns: 1 },
+      )
+      assertBoundedProperty(`TM65 datum golden anchor ${index + 1}`, result)
+      expect(result.numRuns).toBe(1)
+    }
+    expect(coordinateGoldenAnchorCases).toHaveLength(2)
   })
 
-  it('exercises coordinate rejection branches with non-finite and out-of-range inputs', () => {
-    const result = runBoundedProperty(
-      'coordinate input validation',
-      coordinateValidationArbitrary,
-      coordinateValidationInvariant,
-      { numRuns: 8 },
-    )
-    assertBoundedProperty('coordinate input validation', result)
+  it('exercises every coordinate rejection case, including ITM formatting', () => {
+    for (const [index, input] of coordinateValidationCases.entries()) {
+      const result = runBoundedProperty(
+        `coordinate input validation ${index + 1}`,
+        fc.constant(input),
+        coordinateValidationInvariant,
+        { numRuns: 1 },
+      )
+      assertBoundedProperty(`coordinate input validation ${index + 1}`, result)
+      expect(result.numRuns).toBe(1)
+    }
+    expect(coordinateValidationCases).toHaveLength(12)
+  })
+
+  it('holds coordinate round trips at every inclusive Irish envelope boundary', () => {
+    for (const [index, input] of irishCoordinateBoundaryCases.entries()) {
+      const result = runBoundedProperty(
+        `coordinate envelope boundary ${index + 1}`,
+        fc.constant(input),
+        coordinateRoundTripInvariant,
+        { numRuns: 1 },
+      )
+      assertBoundedProperty(`coordinate envelope boundary ${index + 1}`, result)
+      expect(result.numRuns).toBe(1)
+    }
+    expect(irishCoordinateBoundaryCases).toHaveLength(4)
   })
 
   it('holds position-ingest identity and fail-closed conflict decisions', () => {

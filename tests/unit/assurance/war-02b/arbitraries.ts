@@ -11,10 +11,18 @@ export type IrishCoordinateCase = {
 const coordinateNumber = (min: number, max: number): fc.Arbitrary<number> =>
   fc.double({ min, max, noNaN: true, noDefaultInfinity: true })
 
-/** Generates finite coordinates inside the deliberately inclusive Irish envelope. */
+/** Supplies exact corner cases for the inclusive production Irish envelope. */
+export const irishCoordinateBoundaryCases: readonly IrishCoordinateCase[] = [
+  { lat: 51.3, lon: -10.8 },
+  { lat: 51.3, lon: -5.8 },
+  { lat: 55.6, lon: -10.8 },
+  { lat: 55.6, lon: -5.8 },
+]
+
+/** Generates finite coordinates inside the inclusive production Irish envelope. */
 export const irishCoordinateArbitrary: fc.Arbitrary<IrishCoordinateCase> = fc.record({
-  lat: coordinateNumber(51.31, 55.59),
-  lon: coordinateNumber(-10.79, -5.81),
+  lat: coordinateNumber(51.3, 55.6),
+  lon: coordinateNumber(-10.8, -5.8),
 })
 
 export type CoordinateGoldenAnchorCase = {
@@ -26,7 +34,7 @@ export type CoordinateGoldenAnchorCase = {
 }
 
 /** Supplies independent published TM65/WGS84 anchors rather than self-derived round trips. */
-export const coordinateGoldenAnchorArbitrary: fc.Arbitrary<CoordinateGoldenAnchorCase> = fc.constantFrom(
+export const coordinateGoldenAnchorCases: readonly CoordinateGoldenAnchorCase[] = [
   {
     easting: 99_842,
     northing: 104_015,
@@ -41,6 +49,11 @@ export const coordinateGoldenAnchorArbitrary: fc.Arbitrary<CoordinateGoldenAncho
     lon: -9.74406,
     toleranceDegrees: 1e-5,
   },
+]
+
+/** Generates independent published TM65/WGS84 anchors. */
+export const coordinateGoldenAnchorArbitrary: fc.Arbitrary<CoordinateGoldenAnchorCase> = fc.constantFrom(
+  ...coordinateGoldenAnchorCases,
 )
 
 export type CoordinateValidationCase =
@@ -48,8 +61,8 @@ export type CoordinateValidationCase =
   | { readonly kind: 'itm'; readonly easting: number; readonly northing: number }
   | { readonly kind: 'itm-format'; readonly easting: number; readonly northing: number }
 
-/** Generates representative rejection inputs, including non-finite values. */
-export const coordinateValidationArbitrary: fc.Arbitrary<CoordinateValidationCase> = fc.constantFrom(
+/** Supplies representative rejection inputs, including non-finite values. */
+export const coordinateValidationCases: readonly CoordinateValidationCase[] = [
   { kind: 'wgs84', lat: Number.NaN, lon: -9 },
   { kind: 'wgs84', lat: Number.POSITIVE_INFINITY, lon: -9 },
   { kind: 'wgs84', lat: 95, lon: -9 },
@@ -62,6 +75,11 @@ export const coordinateValidationArbitrary: fc.Arbitrary<CoordinateValidationCas
   { kind: 'itm', easting: 600_000, northing: 490_000 },
   { kind: 'itm-format', easting: 0, northing: 0 },
   { kind: 'itm-format', easting: 528_318, northing: 361_130 },
+]
+
+/** Generates representative rejection inputs, including non-finite values. */
+export const coordinateValidationArbitrary: fc.Arbitrary<CoordinateValidationCase> = fc.constantFrom(
+  ...coordinateValidationCases,
 )
 
 export type IngestPosition = {
