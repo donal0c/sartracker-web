@@ -1,0 +1,10 @@
+{
+  "testId": "repair-train-b-gpx-settlement",
+  "testName": "GPX import settles after End Outing",
+  "severity": "critical",
+  "verdict": "pass",
+  "failedItems": [],
+  "rawReply": "{\"verdict\": \"pass\", \"failedItems\": [], \"notes\": \"1 SHOWN, Import Files label, fidelity track listed, no error banner; controls disabled per browser mode.\"}",
+  "durationMs": 7472.9514580000005,
+  "cacheHit": false
+}

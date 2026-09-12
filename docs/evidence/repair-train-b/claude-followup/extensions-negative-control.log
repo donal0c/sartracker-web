@@ -1,0 +1,29 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web
+
+ ❯ tests/unit/gpx-parser.test.ts (25 tests | 1 failed | 24 skipped) 9ms
+     × keeps extension-only time undated and resolves late track names [DON-274] 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/gpx-parser.test.ts > gpx parser > keeps extension-only time undated and resolves late track names [DON-274]
+AssertionError: expected 'partially_dated' to be 'undated' // Object.is equality
+
+Expected: "undated"
+Received: "partially_dated"
+
+ ❯ tests/unit/gpx-parser.test.ts:13:32
+     11|   it('keeps extension-only time undated and resolves late track names …
+     12|     const parsed = parseGpxFile({ contents: gpxXmlUndatedLateName, sou…
+     13|     expect(parsed.timingClass).toBe('undated')
+       |                                ^
+     14|     expect(parsed.points.map(({ trackName, timestamp, elevation }) => …
+     15|       { trackName: 'Ridge party', timestamp: null, elevation: null },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 24 skipped (25)
+   Start at  11:54:03
+   Duration  398ms (transform 24ms, setup 0ms, import 33ms, tests 9ms, environment 229ms)

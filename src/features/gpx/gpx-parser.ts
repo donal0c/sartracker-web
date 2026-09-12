@@ -52,16 +52,31 @@ export function parseGpxFile(input: ParseGpxFileInput): ParsedGpxFile {
   if (parserError !== null) {
     throw new Error(`GPX file could not be parsed: ${input.fileName}`)
   }
+  const root = document.documentElement
+  const namespace = root.namespaceURI ?? ''
+  if (document.doctype !== null) throw new Error('GPX document type is not supported.')
+  if (root.localName !== 'gpx'
+    || !['', 'http://www.topografix.com/GPX/1/0', 'http://www.topografix.com/GPX/1/1'].includes(namespace)) {
+    throw new Error('GPX document root is not supported.')
+  }
 
   const points: ParsedGpxPoint[] = []
   const rejections: GpxEvidenceRejection[] = []
   const segments: (readonly [number, number])[][] = []
 
-  for (const [segmentIndex, segment] of [...document.querySelectorAll('trkseg')].entries()) {
+  validateTrackStructure(root, namespace)
+
+  const trackSegments = directChildren(root, 'trk').flatMap((track) => {
+    readScalar(track, 'name')
+    return directChildren(track, 'trkseg')
+  })
+  for (const [segmentIndex, segment] of trackSegments.entries()) {
     const trackName = readTrackName(segment)
     const geometryPoints: (readonly [number, number])[] = []
 
-    for (const [pointIndex, point] of [...segment.querySelectorAll('trkpt')].entries()) {
+    for (const [pointIndex, point] of directChildren(segment, 'trkpt').entries()) {
+      const elevationSource = readScalar(point, 'ele')
+      const timestampSource = readScalar(point, 'time')
       const latSource = point.getAttribute('lat')
       const lonSource = point.getAttribute('lon')
       const lat = parseGpxDecimal(latSource)
@@ -77,13 +92,11 @@ export function parseGpxFile(input: ParseGpxFileInput): ParsedGpxFile {
         continue
       }
 
-      const elevationSource = point.querySelector('ele')?.textContent?.trim() ?? null
       const elevation = parseGpxDecimal(elevationSource)
       if (elevationSource !== null && elevation === null) {
         rejections.push({ kind: 'point', segmentIndex, pointIndex, reason: 'invalid_elevation', sourceValue: elevationSource })
       }
 
-      const timestampSource = point.querySelector('time')?.textContent?.trim() ?? null
       const timestamp = parseExplicitGpxTimestamp(timestampSource)
       if (timestampSource !== null && timestamp === null) {
         rejections.push({ kind: 'point', segmentIndex, pointIndex, reason: 'invalid_timestamp', sourceValue: timestampSource })
@@ -130,6 +143,36 @@ export function parseGpxFile(input: ParseGpxFileInput): ParsedGpxFile {
   }
 }
 
+/** Refuses malformed track geometry as a whole source; extensions remain opaque vendor data. */
+function validateTrackStructure(root: Element, namespace: string): void {
+  const expectedParents: Readonly<Record<string, string>> = { trk: 'gpx', trkseg: 'trk', trkpt: 'trkseg' }
+  const pending = [...root.children].reverse()
+  while (pending.length > 0) {
+    const element = pending.pop()!
+    if (element.localName === 'extensions') continue
+    const expectedParent = expectedParents[element.localName]
+    if (expectedParent !== undefined) {
+      if ((element.namespaceURI ?? '') !== namespace) {
+        throw new Error(`GPX namespace_mismatch: ${element.localName}.`)
+      }
+      let ancestor = element.parentElement
+      let expected: string | undefined = expectedParent
+      while (expected !== undefined && ancestor !== root && ancestor?.localName === expected
+        && (ancestor.namespaceURI ?? '') === namespace) {
+        expected = expectedParents[expected]
+        ancestor = ancestor.parentElement
+      }
+      if (ancestor !== root || expected !== 'gpx') {
+        throw new Error(`GPX non_canonical_structure: ${element.localName}.`)
+      }
+    }
+    for (let index = element.children.length - 1; index >= 0; index -= 1) {
+      const child = element.children.item(index)
+      if (child !== null) pending.push(child)
+    }
+  }
+}
+
 /** Returns the SHA-256 digest of the exact supplied source bytes. */
 export async function digestGpxSource(input: DigestGpxSourceInput): Promise<string> {
   if (input.contents === undefined && input.bytesBase64 === undefined) {
@@ -142,11 +185,27 @@ export async function digestGpxSource(input: DigestGpxSourceInput): Promise<stri
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('')
 }
 
+/** Reads only the owning track's direct canonical name. */
 function readTrackName(segment: Element): string | null {
-  const value = segment.closest('trk')?.querySelector('name')?.textContent?.trim() ?? ''
+  const value = segment.parentElement === null ? '' : readScalar(segment.parentElement, 'name') ?? ''
   return value.length === 0 ? null : value
 }
 
+/** Selects direct children in the parent's canonical GPX namespace. */
+function directChildren(parent: Element, name: string): Element[] {
+  return [...parent.children].filter((child) => child.localName === name && child.namespaceURI === parent.namespaceURI)
+}
+
+/** Rejects ambiguous scalars instead of flattening nested markup or choosing a duplicate. */
+function readScalar(parent: Element, name: string): string | null {
+  const children = directChildren(parent, name)
+  if (children.length > 1 || (children[0]?.children.length ?? 0) > 0) {
+    throw new Error(`GPX ${name} must be a single text value.`)
+  }
+  return children[0]?.textContent?.trim() ?? null
+}
+
+/** Removes the final filename extension for presentation only. */
 function stripFileExtension(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, '')
 }

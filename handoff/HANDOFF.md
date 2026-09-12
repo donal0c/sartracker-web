@@ -4,29 +4,39 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **DON-254 responsiveness attribution — PR21 merged** at `bac211dc` from
-  reviewed head `831c642b`, base `e989e892`. PR22 and PR20 are merged;
-  PR21 remains diagnostic-only and must not alter the independent PR22 main-loop
-  gate, existing strict `<200 ms` predicates, or release decision. **Release
-  HOLD: the threshold remains 200 ms, not 20 ms.** Historical 205 ms and
-  544.164511 ms failures remain retained qualification evidence. Local focused
-  attribution/soak tests, full correctness (437 files / 4,478 tests, six
-  qualification-only skips), lint/build/bundle budgets and three real Electron
-  controls pass. Exact-head Linux CI `34683600517` passed 437 files / 4,479 tests
-  (six qualification-only skips), three Xvfb controls, package/native inspection
-  and AppImage launch/close. Independent Astra-low review cleared `831c642b`;
-  downloaded source/tree receipts match. No production repair, deployment or
-  field acceptance is claimed. **Ordered queue:** reconcile
-  PR19; repair the large breadcrumb IPC/query transfer (316–550 ms) and separate
-  legacy path (~239 ms); rerun unchanged strict release qualification. [Current
-  record](../docs/assurance/findings/responsiveness-attribution.md).
+- **PR19 Claude follow-up is locally verified; prior readiness is superseded.**
+  Malformed geometry now refuses the whole source explicitly; batch continuation,
+  admission/watch/rescan outcomes and page/delete/error races are repaired. See the
+  [follow-up disposition](../docs/assurance/findings/repair-train-b-claude-followup.md).
+  `codex/repair-train-b` remains based on master `f4d1f321` after PRs #22/#20/#21;
+  exact custody, immutable revisions and foreground-write priority are preserved.
+  Ordinary correctness passes 438 files / 4,539 tests (six qualification-only
+  skips), lint/build/budgets, seven browser flows and three rendered reviews.
+  Native macOS package proof passes 75,004 points, malformed-source retention,
+  undated late names, End Outing during import, restart equality and clean close.
+  The named GPX smoke now runs in ordinary Linux CI; the standard visual project
+  includes all seven GPX flows and their three reviewed captures. Four affected independent
+  source charters are clear. Linux run `34691543650` passed correctness/package
+  inspection but failed before GPX import at the outing-label control. Diagnostic
+  run `34693020365` confirms a started mission followed by WebGL blocklisting
+  and an empty renderer. GPX smoke launch now matches the existing Linux
+  AppImage Mesa/ANGLE flags; Linux confirmation is pending. PR remains draft.
+  Exact final-head bindings and terminal CI readiness live on
+  [PR19](https://github.com/donal0c/sartracker-web/pull/19); read its terminal
+  receipt before merging. [Current record](../docs/assurance/findings/repair-train-b.md).
+  DON-274 remains In Review; DON-270 retains its original completed history;
+  DON-254 is In Progress. Historical timing failures remain release blockers.
+  Stop at READY FOR DONAL TO MERGE; no merge, release or performance work.
 
-  Astra-only reconciliation: rejected review superseded; fresh independent
-  Astra-low source review of `87259317` has no P1/P2 findings. Local Electron
-  repeat passes 3/3, but its first run lost the realm-control target; failure
-  remains retained and unexplained. No causal fixture fix is claimed. Strict
-  timing/replay/soak qualification was skipped in ordinary PR CI, not passed.
-  See the [receipt](../docs/evidence/responsiveness-attribution/current-head-reviews.md).
+- **DON-254 responsiveness attribution — PR21 merged** at `bac211dc`.
+  It remains diagnostic-only. CI `34683600517` passed correctness, three
+  Electron controls, package/native inspection and AppImage launch/close;
+  independent Astra review cleared the source. Local control repeat passed
+  after an unexplained lost target; that failure remains retained. Strict
+  timing/replay/soak qualification skipped in ordinary CI, not passed.
+  **Release HOLD: unchanged `<200 ms`**, including retained 205 ms and
+  544.164511 ms failures. [Record](../docs/assurance/findings/responsiveness-attribution.md)
+  and [review receipts](../docs/evidence/responsiveness-attribution/current-head-reviews.md).
 
 - **WAR-06 PR #20 investigation-only evidence is merged and remains evidence-only.** Current routes,
   fidelity limits, negative-control proof and exact-head status live in the
@@ -122,12 +132,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   fixes or explicit dispositions in the [complete ledger](../docs/breadcrumb-pr6-complete-review-ledger.md).
 - Documentation cleanup records the final testing approach below. Start new work
   from current `master`; the archive PR does not need another review cycle.
-- **Active next work (launched 2026-09-10 from master `302bdd04`):** Repair
-  Train B owns current-head reproduction and repair of `AUD-01`, `AUD-10`, and
-  `AUD-05`. In parallel, investigation-only WAR-06 audits tracking lifecycle
-  using the merged WAR-02A harness and independently rechecks Repair Train A.
-  WAR-06 must not change production code; every confirmed P1/P2 or shared-state
-  change returns for Astra retracing before implementation.
+- Repair Train B owns `AUD-01`/`AUD-10`/`AUD-05`. Merged WAR-06 remains
+  evidence-only; its open hazards are not repaired or closed by PR19.
 - Remaining Sar_4/team requests are still explicit rather than absorbed into
   these tasks: official/private map distribution and provider/grid work
   (`DON-144`/`DON-7`/`DON-76`), search-area label positioning (`DON-214`), map
@@ -137,11 +143,12 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   organization (`DON-100`). Marker Details simplification remains a later
   coordinator-confirmation item. Mission Preview/per-device visibility landed
   in PR #15; Linear `DON-215` is reconciled to Done.
-- Next programme steps: complete Repair Train B, disposition WAR-06 findings,
-  then sequence Repair Trains C/D and applicable WAR remediation before BCP-17
-  final candidate qualification and DON-255 publication. Use the
+- Locked next steps after Donal merges PR19: bounded large breadcrumb IPC/query
+  transfer repair (316–550 ms), separate legacy-recovery repair (~239 ms), then
+  unchanged strict `<200 ms` qualification. Other repair trains and WAR hazards
+  remain tracked separately before BCP-17/DON-255. Use the
   [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear
-  issues for scope. Merge is complete; release/field acceptance is not established.
+  issues for scope. PR19 merge remains pending; release/field acceptance is not established.
   DON-247 and DON-264 remain separate reliability work.
 
 ## Testing approach to carry forward

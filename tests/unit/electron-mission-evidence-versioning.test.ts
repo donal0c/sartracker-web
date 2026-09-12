@@ -1,5 +1,5 @@
 import { assertReleaseResponsiveness } from '../support/release-responsiveness'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -8,6 +8,7 @@ import { performance as nodePerformance, PerformanceObserver } from 'node:perf_h
 import { setImmediate as nextNodeTurn } from 'node:timers/promises'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { gpxXmlValidCases, gpxXmlInvalidCases, gpxXmlGeometryRefusals, gpxXmlUndatedLateName } from '../fixtures/gpx-xml-contract-cases'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as new (path: string) => {
@@ -3589,6 +3590,106 @@ describe('mission evidence versioning [DON-277]', () => {
       tracks: [expect.objectContaining({ time_authority: 'gpx_source_time' })],
       limitations: [expect.objectContaining({ code: 'undated_gpx_static' })],
     })
+  })
+
+  it.each(gpxXmlGeometryRefusals)('retains rejected malformed geometry: $name [DON-274]', async ({ source, reason }) => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Malformed track geometry' })
+    const sourcePath = path.join(userDataPath!, 'malformed.gpx')
+    await writeFile(sourcePath, source)
+    const result = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+    expect(result.imports).toEqual([])
+    expect(result.failures).toEqual([{ sourcePath, reason }])
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare('SELECT COUNT(*) AS count FROM gpx_evidence_points').get()).toEqual({ count: 0 })
+      expect(db.prepare('SELECT source_bytes_base64 FROM gpx_import_failures').get()).toEqual({ source_bytes_base64: Buffer.from(source).toString('base64') })
+    } finally { db.close() }
+  })
+
+  it('retains native undated extension-only time and late track name [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Undated vendor time' })
+    const sourcePath = path.join(userDataPath!, 'undated.gpx')
+    await writeFile(sourcePath, gpxXmlUndatedLateName)
+    const result = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+    expect(result.failures).toEqual([])
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare('SELECT track_name, source_time, elevation FROM gpx_evidence_points ORDER BY point_index').all()).toEqual([
+        { track_name: 'Ridge party', source_time: null, elevation: null },
+        { track_name: 'Ridge party', source_time: null, elevation: null },
+      ])
+      expect(db.prepare('SELECT timing_class FROM gpx_import_revisions').get()).toEqual({ timing_class: 'undated' })
+    } finally { db.close() }
+  })
+
+  it.each(gpxXmlValidCases)('retains native namespace/CDATA semantics: $name [AUD-01 AUD-10]', async ({ source }) => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX namespace fidelity' })
+    const sourcePath = path.join(userDataPath!, 'namespace.gpx')
+    await writeFile(sourcePath, source)
+    const result = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+    expect(result.failures).toEqual([])
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare('SELECT point_index, track_name, lat, lon, elevation, source_time FROM gpx_evidence_points ORDER BY point_index').all()).toEqual([
+        { point_index: 0, track_name: 'Ridge & party', lat: 52, lon: -9.7, elevation: 100, source_time: '2026-09-07T08:00:00.000Z' },
+        { point_index: 1, track_name: 'Ridge & party', lat: 52.001, lon: -9.701, elevation: null, source_time: null },
+      ])
+    } finally { db.close() }
+  })
+
+  it.each(gpxXmlInvalidCases)('retains failed source without partial evidence: $name [AUD-01]', async ({ source, reason }) => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX XML refusal' })
+    const sourcePath = path.join(userDataPath!, 'bad.gpx')
+    await writeFile(sourcePath, source)
+    const result = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+    expect(result.imports).toEqual([])
+    expect(result.failures).toHaveLength(1)
+    expect(result.failures).toEqual([{ sourcePath, reason }])
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare('SELECT COUNT(*) AS count FROM gpx_evidence_points').get()).toEqual({ count: 0 })
+      expect(db.prepare('SELECT source_bytes_base64 FROM gpx_import_failures').get()).toEqual({ source_bytes_base64: Buffer.from(source).toString('base64') })
+    } finally { db.close() }
+  })
+
+  it.each(['extensions', 'cdata'])('persists exact canonical GPX %s values [AUD-01 AUD-10]', async (variant) => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'GPX fidelity' })
+    const plain = await readFile('tests/fixtures/gpx-extension-fidelity.gpx', 'utf8')
+    const source = variant === 'extensions' ? plain : plain.replace(/>(Ridge party|100|110|2026-09-07T08:0[01]:00Z)</g, '><![CDATA[$1]]><')
+    const sourcePath = path.join(userDataPath!, `${variant}.gpx`)
+    await writeFile(sourcePath, source)
+    const result = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+    expect(result.failures).toEqual([])
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare('SELECT point_index, track_name, lat, lon, elevation, source_time FROM gpx_evidence_points ORDER BY point_index').all()).toEqual([
+        { point_index: 0, track_name: 'Ridge party', lat: 52, lon: -9.7, elevation: 100, source_time: '2026-09-07T08:00:00.000Z' },
+        { point_index: 1, track_name: 'Ridge party', lat: 52.001, lon: -9.701, elevation: 110, source_time: '2026-09-07T08:01:00.000Z' },
+      ])
+      expect(db.prepare('SELECT source_bytes_base64 FROM gpx_import_revisions').get()).toMatchObject({ source_bytes_base64: Buffer.from(source).toString('base64') })
+      expect(db.prepare('SELECT content_sha256, geometry_json FROM gpx_import_revisions').get()).toMatchObject({
+        content_sha256: createHash('sha256').update(source).digest('hex'),
+        geometry_json: JSON.stringify({ type: 'MultiLineString', coordinates: [[[-9.7, 52], [-9.701, 52.001]]] }),
+      })
+    } finally { db.close() }
+    const aliasPath = path.join(userDataPath!, 'alias.gpx')
+    await writeFile(aliasPath, source)
+    const duplicate = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [aliasPath] })
+    expect(duplicate.imports.map((entry) => entry.id)).toEqual(result.imports.map((entry) => entry.id))
+    await store.prepareClose()
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    const replay = await store.readMissionReplay({ missionId: mission.id, selectedTime: new Date().toISOString(), trackLimit: 100 })
+    expect(replay).toMatchObject({ totalTrackCount: 2, staticGpxPointCount: 0,
+      tracks: [
+        expect.objectContaining({ lat: 52, lon: -9.7, effective_at: '2026-09-07T08:00:00.000Z', time_authority: 'gpx_source_time' }),
+        expect.objectContaining({ lat: 52.001, lon: -9.701, effective_at: '2026-09-07T08:01:00.000Z', time_authority: 'gpx_source_time' }),
+      ] })
   })
 
   it('continues a GPX batch after malformed and invalid-UTF-8 files and retains explicit failure provenance [DON-274]', async () => {

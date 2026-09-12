@@ -1,0 +1,171 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts (93 tests | 4 failed | 89 skipped) 242ms
+     × retains rejected malformed geometry: 'mixed segment namespace' [DON-274] 70ms
+     × retains rejected malformed geometry: 'wrapped segment' [DON-274] 57ms
+     × retains rejected malformed geometry: 'wrapped point' [DON-274] 57ms
+     × retains native undated extension-only time and late track name [DON-274] 58ms
+ ❯ tests/unit/gpx-parser.test.ts (25 tests | 3 failed | 21 skipped) 18ms
+     × rejects incomplete geometry: 'mixed segment namespace' [DON-274] 9ms
+     × rejects incomplete geometry: 'wrapped segment' [DON-274] 3ms
+     × rejects incomplete geometry: 'wrapped point' [DON-274] 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > retains rejected malformed geometry: 'mixed segment namespace' [DON-274]
+AssertionError: expected [ { …(11) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "content_sha256": "0c921633ca25184d1eda8b01e999a5dfdc3df5800e1c0c72c18b575e15823593",
++     "display_name": "malformed",
++     "file_name": "malformed.gpx",
++     "id": "9df0d348-2e63-421b-9295-b457120f56cb",
++     "imported_at": "2026-09-12T10:52:02.496Z",
++     "mission_id": "055ad286-dc97-4753-bde2-4fd1cfe1a699",
++     "outing_id": null,
++     "revision_sequence": 1,
++     "source_path": "/var/folders/5s/21sy7jq5565f1sp1w7qw19c00000gn/T/sartracker-pr5-versioning-iaXqPa/malformed.gpx",
++     "timing_class": "undated",
++     "updated_at": "2026-09-12T10:52:02.496Z",
++   },
++ ]
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:3601:28
+    3599|     await writeFile(sourcePath, source)
+    3600|     const result = await store.importGpxEvidencePaths({ missionId: mis…
+    3601|     expect(result.imports).toEqual([])
+       |                            ^
+    3602|     expect(result.failures).toEqual([{ sourcePath, reason }])
+    3603|     const db = openDatabase(await databasePath())
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > retains rejected malformed geometry: 'wrapped segment' [DON-274]
+AssertionError: expected [ { …(11) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "content_sha256": "718be62557712f1dc5f3fab8f7be06ca8618379db359cfa727303dd4b0f3c7cd",
++     "display_name": "malformed",
++     "file_name": "malformed.gpx",
++     "id": "0fda234f-9e7c-4d93-ad01-15e94adb03db",
++     "imported_at": "2026-09-12T10:52:02.558Z",
++     "mission_id": "61c13fc2-0625-42b4-99e0-28bd15f6f7e3",
++     "outing_id": null,
++     "revision_sequence": 1,
++     "source_path": "/var/folders/5s/21sy7jq5565f1sp1w7qw19c00000gn/T/sartracker-pr5-versioning-AWHoox/malformed.gpx",
++     "timing_class": "undated",
++     "updated_at": "2026-09-12T10:52:02.558Z",
++   },
++ ]
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:3601:28
+    3599|     await writeFile(sourcePath, source)
+    3600|     const result = await store.importGpxEvidencePaths({ missionId: mis…
+    3601|     expect(result.imports).toEqual([])
+       |                            ^
+    3602|     expect(result.failures).toEqual([{ sourcePath, reason }])
+    3603|     const db = openDatabase(await databasePath())
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > retains rejected malformed geometry: 'wrapped point' [DON-274]
+AssertionError: expected [ { …(11) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "content_sha256": "4c2f9e23bfb1336eae20dbd1a7484d4350afaf39f1136cdd6f7f03d07c08e567",
++     "display_name": "malformed",
++     "file_name": "malformed.gpx",
++     "id": "411b8429-9e5a-433c-824e-90bbd0f95a2a",
++     "imported_at": "2026-09-12T10:52:02.615Z",
++     "mission_id": "a29afa25-4d02-4cba-ad16-536e411246e0",
++     "outing_id": null,
++     "revision_sequence": 1,
++     "source_path": "/var/folders/5s/21sy7jq5565f1sp1w7qw19c00000gn/T/sartracker-pr5-versioning-7MpFkn/malformed.gpx",
++     "timing_class": "undated",
++     "updated_at": "2026-09-12T10:52:02.615Z",
++   },
++ ]
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:3601:28
+    3599|     await writeFile(sourcePath, source)
+    3600|     const result = await store.importGpxEvidencePaths({ missionId: mis…
+    3601|     expect(result.imports).toEqual([])
+       |                            ^
+    3602|     expect(result.failures).toEqual([{ sourcePath, reason }])
+    3603|     const db = openDatabase(await databasePath())
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > retains native undated extension-only time and late track name [DON-274]
+AssertionError: expected [ { track_name: null, …(2) }, …(1) ] to deeply equal [ { …(3) }, { …(3) } ]
+
+- Expected
++ Received
+
+  [
+    {
+      "elevation": null,
+      "source_time": null,
+-     "track_name": "Ridge party",
++     "track_name": null,
+    },
+    {
+      "elevation": null,
+      "source_time": null,
+-     "track_name": "Ridge party",
++     "track_name": null,
+    },
+  ]
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:3619:123
+    3617|     const db = openDatabase(await databasePath())
+    3618|     try {
+    3619|       expect(db.prepare('SELECT track_name, source_time, elevation FRO…
+       |                                                                                                                           ^
+    3620|         { track_name: 'Ridge party', source_time: null, elevation: nul…
+    3621|         { track_name: 'Ridge party', source_time: null, elevation: nul…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  tests/unit/gpx-parser.test.ts > gpx parser > rejects incomplete geometry: 'mixed segment namespace' [DON-274]
+ FAIL  tests/unit/gpx-parser.test.ts > gpx parser > rejects incomplete geometry: 'wrapped segment' [DON-274]
+ FAIL  tests/unit/gpx-parser.test.ts > gpx parser > rejects incomplete geometry: 'wrapped point' [DON-274]
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/gpx-parser.test.ts:9:99
+      7| describe('gpx parser', () => {
+      8|   it.each(gpxXmlGeometryRefusals)('rejects incomplete geometry: $name …
+      9|     expect(() => parseGpxFile({ contents: source, sourcePath: '/bad.gp…
+       |                                                                                                   ^
+     10|   })
+     11|   it('keeps extension-only time undated and resolves late track names …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  7 failed | 1 passed | 110 skipped (118)
+   Start at  11:52:02
+   Duration  1.01s (transform 88ms, setup 0ms, import 128ms, tests 260ms, environment 488ms)

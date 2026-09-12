@@ -1,0 +1,28 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c1c7/sartracker-web
+
+ ❯ tests/unit/gpx-parser.test.ts (21 tests | 2 failed) 29ms
+     × fails visibly for 'ambiguous scalar on rejected point' [AUD-01] 4ms
+     × fails visibly for 'ambiguous name on empty track' [AUD-01] 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/gpx-parser.test.ts > gpx parser > fails visibly for 'ambiguous scalar on rejected point' [AUD-01]
+ FAIL  tests/unit/gpx-parser.test.ts > gpx parser > fails visibly for 'ambiguous name on empty track' [AUD-01]
+AssertionError: expected [Function] to throw an error
+ ❯ tests/unit/gpx-parser.test.ts:18:99
+     16|   })
+     17|   it.each(gpxXmlInvalidCases)('fails visibly for $name [AUD-01]', ({ s…
+     18|     expect(() => parseGpxFile({ contents: source, sourcePath: '/bad.gp…
+       |                                                                                                   ^
+     19|   })
+     20|   it('excludes legal extension collisions from canonical evidence [AUD…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 19 passed (21)
+   Start at  19:28:55
+   Duration  1.03s (transform 32ms, setup 0ms, import 43ms, tests 29ms, environment 861ms)
+

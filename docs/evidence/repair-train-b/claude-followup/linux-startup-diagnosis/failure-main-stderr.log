@@ -1,0 +1,2 @@
+[9878:0912/123157.950782:ERROR:gpu/command_buffer/service/context_group.cc:146] ContextResult::kFatalFailure: WebGL2 blocklisted
+[9878:0912/123157.952226:ERROR:gpu/command_buffer/service/context_group.cc:138] ContextResult::kFatalFailure: WebGL1 blocklisted

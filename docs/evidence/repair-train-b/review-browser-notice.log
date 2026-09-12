@@ -1,0 +1,29 @@
+
+Running 1 test using 1 worker
+
+(node:53313) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53313) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/e2e/gpx-import.spec.ts:126:3 › M22 GPX import parity › keeps a rejected competing import visible after settlement [B-BROAD-01 B-CONC-01] (30.1s)
+
+
+  1) [chromium] › tests/e2e/gpx-import.spec.ts:126:3 › M22 GPX import parity › keeps a rejected competing import visible after settlement [B-BROAD-01 B-CONC-01] 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: page.evaluate: Test timeout of 30000ms exceeded.
+
+      138 |     }, contents)
+      139 |     await expect(page.getByTestId('gpx-import-files')).toContainText('Importing')
+    > 140 |     await page.evaluate(async (source) => {
+          |                ^
+      141 |       await window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([
+      142 |         { sourcePath: '/tracks/second.gpx', fileName: 'second.gpx', contents: source },
+      143 |       ])
+        at /Users/donalocallaghan/.codex/worktrees/c1c7/sartracker-web/tests/e2e/gpx-import.spec.ts:140:16
+
+    Error Context: test-results/gpx-import-M22-GPX-import--0d33b-ement-B-BROAD-01-B-CONC-01--chromium/error-context.md
+
+  1 failed
+    [chromium] › tests/e2e/gpx-import.spec.ts:126:3 › M22 GPX import parity › keeps a rejected competing import visible after settlement [B-BROAD-01 B-CONC-01] 

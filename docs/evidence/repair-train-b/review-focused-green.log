@@ -1,0 +1,11 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/c1c7/sartracker-web
+
+Legacy event preparation heartbeat diagnostics: {"maximumHeartbeatGapMs":47.87504199999967,"maximumInspectionQueryMs":2.647499999999127,"largestGapProcessCpuMs":28.541,"overlappingMainThreadGc":[]}
+GPX current-write diagnostics: {"maximumWriteMs":79.76120800000353,"largestWriteProcessCpuMs":6.797,"maximumHeartbeatGapMs":18.00945900000079,"sequence":500}
+
+ Test Files  3 passed (3)
+      Tests  128 passed (128)
+   Start at  19:29:51
+   Duration  74.46s (transform 135ms, setup 0ms, import 205ms, tests 72.67s, environment 1.35s)
+

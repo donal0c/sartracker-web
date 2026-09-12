@@ -1,0 +1,11 @@
+Error: {"requestedAttributes":{"antialias":false,"preserveDrawingBuffer":false,"powerPreference":"high-performance","failIfMajorPerformanceCaveat":false,"desynchronized":false,"alpha":true,"depth":true,"stencil":true,"premultipliedAlpha":true},"statusMessage":"Could not create a WebGL context, VENDOR = 0xffff, DEVICE = 0xffff, GL_VENDOR = Google Inc. (Mesa), GL_RENDERER = ANGLE (Mesa, llvmpipe (LLVM 15.0.7 256 bits), OpenGL 4.5 (Core Profile) Mesa 23.2.1-1ubuntu3.1~22.04.4), GL_VERSION = 23.2.1, Sandboxed = no, Optimus = no, AMD switchable = no, Reset notification strategy = 0x8261, ErrorMessage = BindToCurrentSequence failed: .","type":"webglcontextcreationerror","message":"Failed to initialize WebGL"}
+    at no._setupPainter (file:///home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar/dist/assets/map-vendor-BTruBOlk.js:748:183701)
+    at new no (file:///home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar/dist/assets/map-vendor-BTruBOlk.js:748:162316)
+    at file:///home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar/dist/assets/map-view-DB6wWsDF.js:1:201055
+    at Kc (file:///home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar/dist/assets/react-vendor-BF3Hnweg.js:8:91672)
+    at Al (file:///home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar/dist/assets/react-vendor-BF3Hnweg.js:8:107701)
+    at Al (file:///home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar/dist/assets/react-vendor-BF3Hnweg.js:8:107687)
+    at kl (file:///home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar/dist/assets/react-vendor-BF3Hnweg.js:8:107364)
+    at Ol (file:///home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar/dist/assets/react-vendor-BF3Hnweg.js:8:106645)
+    at kl (file:///home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar/dist/assets/react-vendor-BF3Hnweg.js:8:107227)
+    at Ol (file:///home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar/dist/assets/react-vendor-BF3Hnweg.js:8:106645)

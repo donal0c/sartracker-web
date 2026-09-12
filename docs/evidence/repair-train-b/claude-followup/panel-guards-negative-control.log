@@ -1,0 +1,83 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web
+
+ ❯ tests/unit/gpx-import-panel-actions.test.tsx (3 tests | 3 failed) 29ms
+     × keeps a newer refused rescan status when an older import finishes 22ms
+     × does not dispatch a held chooser selection into another mission 3ms
+     × does not dispatch a folder read that finishes in another mission 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/gpx-import-panel-actions.test.tsx > GPX operator action results [DON-274] > keeps a newer refused rescan status when an older import finishes
+AssertionError: expected 'Imported 1 GPX file.' to contain 'Retry after it finishes'
+
+Expected: "Retry after it finishes"
+Received: "Imported 1 GPX file."
+
+ ❯ tests/unit/gpx-import-panel-actions.test.tsx:42:22
+     40|     expect(status()).toContain('Retry after it finishes')
+     41|     await act(async () => { finish({ outcome: 'imported', imports: [{ …
+     42|     expect(status()).toContain('Retry after it finishes')
+       |                      ^
+     43|     expect(status()).not.toContain('found no new')
+     44|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/unit/gpx-import-panel-actions.test.tsx > GPX operator action results [DON-274] > does not dispatch a held chooser selection into another mission
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Array [
+        "/tracks/a.gpx",
+      ],
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/gpx-import-panel-actions.test.tsx:55:29
+     53|     act(() => useGpxStore.setState({ activeMissionId: 'mission-b' }))
+     54|     await act(async () => { choose(['/tracks/a.gpx']) })
+     55|     expect(importPaths).not.toHaveBeenCalled()
+       |                             ^
+     56|     expect(status()).toContain('mission changed')
+     57|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/unit/gpx-import-panel-actions.test.tsx > GPX operator action results [DON-274] > does not dispatch a folder read that finishes in another mission
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Array [
+        "/tracks/a.gpx",
+      ],
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/gpx-import-panel-actions.test.tsx:69:29
+     67|     act(() => useGpxStore.setState({ activeMissionId: 'mission-b' }))
+     68|     await act(async () => { finishRead(['/tracks/a.gpx']) })
+     69|     expect(importPaths).not.toHaveBeenCalled()
+       |                             ^
+     70|     expect(status()).toContain('mission changed')
+     71|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  12:09:56
+   Duration  470ms (transform 37ms, setup 0ms, import 79ms, tests 29ms, environment 232ms)

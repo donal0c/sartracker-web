@@ -1,0 +1,11 @@
+TRANSCRIBED RECEIPT — tool output was captured in the task transcript and retained here for evidence indexing.
+This file is a transcription, not an unobserved raw log.
+
+Command:
+npm run visual:review -- --only repair-train-b-admission-recovery
+
+Observed result:
+PASS  [critical]  repair-train-b-admission-recovery — Competing import retry succeeds (7.15s)
+OVERALL: PASS  (1 pass, 0 fail, 0 error; failOn=high, blocking fails=0)
+Report JSON:
+test-results/visual-verification/reports/visual-review-2026-09-12T11-34-13Z.json

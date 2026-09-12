@@ -1,0 +1,47 @@
+{
+  "purpose": "Failure capture validation only; Linux cause remains unknown",
+  "negativeControl": {
+    "files": [
+      "failure.png",
+      "failure-body.txt",
+      "failure-ui.json",
+      "failure-native-state.json",
+      "failure-renderer-console.log",
+      "failure-renderer-errors.log",
+      "failure-main-stdout.log",
+      "failure-main-stderr.log",
+      "failure-runtime.log"
+    ],
+    "uiState": {
+      "missionControl": "Mission Controllifecycle and timingReviewMinimizeactiveElapsed00:00:00Active Search00:00:00Participants0 active devicesNo mission participants are currently selected.Individual deviceTraccar groupChoose\u2026Effective from (optional; defaults to now)Add participantStartPauseFinishOutingsCoordinator-defined operational periodsNo active outing \u2014 new fixes will be recorded as Unassigned.Start outingUnassignedAccepted fixes outside every explicit outing windowAccepted fixes: 0",
+      "missionPhase": "active",
+      "missionPhaseChip": "active",
+      "outingSection": "OutingsCoordinator-defined operational periodsNo active outing \u2014 new fixes will be recorded as Unassigned.Start outingUnassignedAccepted fixes outside every explicit outing windowAccepted fixes: 0",
+      "outingLabelInput": true,
+      "outingStartButton": true
+    },
+    "nativeState": {
+      "missions": [
+        {
+          "id": "5d82caad-2a4d-43a1-be8d-beed42e1ed2c",
+          "name": "Packaged GPX fidelity",
+          "status": "active",
+          "start_time": "2026-09-12T12:09:38.576Z",
+          "finish_time": null
+        }
+      ],
+      "outings": []
+    },
+    "rendererConsoleEntries": 40,
+    "rendererPageErrorEntries": 0,
+    "mainStdoutChunks": 0,
+    "mainStderrChunks": 0
+  },
+  "happy": {
+    "sourceHead": "61c5f551efa3e8a462ca53f2123c1f0e5a2b37f8",
+    "sourceDirty": true,
+    "passed": true,
+    "archiveSha256": "db928ec16bb0d32717d85d23359bfb117f9faaa54ae99d6f8bcbba10d30d7dda",
+    "importSettlementMs": 19216
+  }
+}

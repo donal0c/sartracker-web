@@ -1,0 +1,15 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:correctness
+> vitest run --config vitest.correctness.config.ts tests/unit/gpx-parser.test.ts tests/unit/start-gpx-runtime.test.ts tests/unit/electron-mission-evidence-versioning.test.ts tests/unit/electron-gpx-evidence-import-runner.test.ts tests/unit/electron-gpx-foreground-priority.test.ts --no-file-parallelism
+
+Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web
+
+Legacy event preparation heartbeat diagnostics: {"maximumHeartbeatGapMs":12.852708000002167,"maximumInspectionQueryMs":1.6527920000007725,"largestGapProcessCpuMs":8.949,"overlappingMainThreadGc":[]}
+GPX current-write diagnostics: {"maximumWriteMs":31.52362500000163,"largestWriteProcessCpuMs":6.152,"maximumHeartbeatGapMs":22.790875000006054,"sequence":1057}
+
+ Test Files  5 passed (5)
+      Tests  138 passed (138)
+   Start at  10:50:15
+   Duration  70.63s (transform 120ms, setup 0ms, import 209ms, tests 68.76s, environment 1.25s)

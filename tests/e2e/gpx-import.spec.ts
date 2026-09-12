@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { captureAndRegister } from './visual/helpers/verification-manifest'
 
 test.describe('M22 GPX import parity', () => {
   test.beforeEach(async ({ page }) => {
@@ -12,6 +14,29 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('mission-control')).toContainText('active')
     await page.getByTestId('sidebar-tab-tools').click()
     await expect(page.getByTestId('gpx-import-panel')).toBeVisible()
+  })
+
+  test('publishes successful files around a malformed source and names the failure [DON-274]', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1200 })
+    await page.evaluate(async () => {
+      await window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([
+        { sourcePath: '/tracks/before.gpx', fileName: 'before.gpx', contents: '<gpx><trk><trkseg><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg></trk></gpx>' },
+        { sourcePath: '/tracks/malformed.gpx', fileName: 'malformed.gpx', contents: '<gpx><trk><trkseg><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg><wrapper><trkseg><trkpt lat="51" lon="-8"/></trkseg></wrapper></trk></gpx>' },
+        { sourcePath: '/tracks/after.gpx', fileName: 'after.gpx', contents: '<gpx><trk><trkseg><trkpt lat="52" lon="-8"/><trkpt lat="53" lon="-8"/></trkseg></trk></gpx>' },
+      ])
+    })
+    await expect(page.getByTestId('gpx-import-list')).toContainText('before')
+    await expect(page.getByTestId('gpx-import-list')).toContainText('after')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('2 shown')
+    await expect(page.getByTestId('gpx-import-error')).toContainText('malformed.gpx')
+    await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
+    await page.getByTestId('mission-control-collapse-btn').click()
+    await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
+    await captureAndRegister(page, {
+      testId: 'repair-train-b-partial-batch', testName: 'Malformed file does not hide valid imports', area: 'layers', severity: 'critical',
+      verificationPrompt: 'Verify the GPX panel: 1. Count says 2 shown. 2. Both before and after tracks appear. 3. An error names malformed.gpx. 4. Import control no longer says Importing. Browser controls may be disabled.',
+      playwrightAssertions: ['Valid files before and after malformed source remain visible', 'Failed filename visible', 'Batch settles'],
+    })
   })
 
   test('renders imported GPX tracks in the panel, layer catalog, review workspace, and map source', async ({
@@ -82,6 +107,88 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('mission-review-workspace')).toContainText('GPX Imports')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('GPX Import Created')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('/tracks/alpha.gpx')
+  })
+
+  test('keeps exact GPX geometry and settles import when the outing ends [AUD-01 AUD-05 AUD-10]', async ({ page }) => {
+    const source = readFileSync('tests/fixtures/gpx-extension-fidelity.gpx', 'utf8')
+      .replace('>Ridge party<', '><![CDATA[Ridge party]]><')
+    await page.getByTestId('outing-label-input').fill('Import race outing')
+    await page.getByTestId('outing-start-btn').click()
+    await expect(page.getByTestId('active-outing-label')).toBeVisible()
+    await page.evaluate((contents) => {
+      const original = crypto.subtle.digest.bind(crypto.subtle)
+      let release: (() => void) | undefined
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      crypto.subtle.digest = async (...args) => { await gate; return await original(...args) }
+      const pending = window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([
+        { sourcePath: '/tracks/fidelity.gpx', fileName: 'fidelity.gpx', contents },
+      ])
+      Object.assign(window, { releaseGpxDigest: () => { crypto.subtle.digest = original; release?.() }, pendingGpxImport: pending })
+    }, source)
+    await expect(page.getByTestId('gpx-import-files')).toContainText('Importing')
+    await page.getByTestId('outing-end-btn').click()
+    await expect(page.getByTestId('outing-no-active-notice')).toBeVisible()
+    await page.evaluate(async () => {
+      const gate = window as unknown as { releaseGpxDigest(): void; pendingGpxImport: Promise<unknown> }
+      gate.releaseGpxDigest()
+      await gate.pendingGpxImport
+    })
+    await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 shown')
+    const geometry = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__!.readState().gpxImports[0].geometry_json)
+    expect(JSON.parse(geometry)).toEqual({ type: 'MultiLineString', coordinates: [[[-9.7, 52], [-9.701, 52.001]]] })
+    await page.getByTestId('mission-control-collapse-btn').click()
+    await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
+    await captureAndRegister(page, {
+      testId: 'repair-train-b-gpx-settlement', testName: 'GPX import settles after End Outing', area: 'layers', severity: 'critical',
+      verificationPrompt: 'Verify the visible GPX panel: 1. Its count says 1 shown. 2. The import control says Import Files, not Importing. 3. The imported track fidelity is visible. 4. There is no import error banner. Browser-only controls may correctly be disabled.',
+      playwrightAssertions: ['Outing ended during held import', 'Import settled', 'One import shown', 'Geometry contains exactly two canonical source points'],
+    })
+  })
+
+  test('reports competing admission and allows a clean retry after settlement [DON-274]', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1200 })
+    const contents = readFileSync('tests/fixtures/gpx-extension-fidelity.gpx', 'utf8')
+    await page.evaluate((source) => {
+      const original = crypto.subtle.digest.bind(crypto.subtle)
+      let release: (() => void) | undefined
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      crypto.subtle.digest = async (...args) => { await gate; return await original(...args) }
+      const pending = window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([
+        { sourcePath: '/tracks/first.gpx', fileName: 'first.gpx', contents: source },
+      ])
+      Object.assign(window, { releaseGpxDigest: () => { crypto.subtle.digest = original; release?.() }, pendingGpxImport: pending })
+    }, contents)
+    await expect(page.getByTestId('gpx-import-files')).toContainText('Importing')
+    await page.evaluate(async (source) => {
+      await window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([
+        { sourcePath: '/tracks/second.gpx', fileName: 'second.gpx', contents: source },
+      ])
+    }, contents)
+    await expect(page.getByTestId('gpx-import-error')).toContainText('This request was not imported')
+    await page.evaluate(async () => {
+      const gate = window as unknown as { releaseGpxDigest(): void; pendingGpxImport: Promise<unknown> }
+      gate.releaseGpxDigest()
+      await gate.pendingGpxImport
+    })
+    await expect(page.getByTestId('gpx-import-error')).toHaveCount(0)
+    await expect(page.getByTestId('gpx-import-list')).toContainText('first')
+    await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
+    await page.evaluate(async (source) => {
+      await window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([
+        { sourcePath: '/tracks/second.gpx', fileName: 'second.gpx', contents: source.replace('52.001', '52.002') },
+      ])
+    }, contents)
+    await expect(page.getByTestId('gpx-import-list')).toContainText('second')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('2 shown')
+    await expect(page.getByTestId('gpx-import-error')).toHaveCount(0)
+    await page.getByTestId('mission-control-collapse-btn').click()
+    await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
+    await captureAndRegister(page, {
+      testId: 'repair-train-b-admission-recovery', testName: 'Competing import retry succeeds', area: 'layers', severity: 'critical',
+      verificationPrompt: 'Verify the GPX panel: 1. No red import error remains. 2. Import Files is visible rather than Importing. 3. The count is 2 shown and both first and second tracks are visible.',
+      playwrightAssertions: ['Competing request visibly refused while busy', 'Temporary error clears at settlement', 'Retry imports second file successfully'],
+    })
   })
 
   test('shows retained interrupted-import provenance after runtime recovery [DON-274]', async ({ page }) => {

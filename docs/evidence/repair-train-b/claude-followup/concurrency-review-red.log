@@ -1,0 +1,63 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web
+
+ ❯ tests/unit/start-gpx-runtime.test.ts (32 tests | 2 failed | 30 skipped) 9ms
+     × does not release another import when directory enumeration fails [DON-274] 7ms
+     × retains a newer import failure when an older page rejects [DON-274] 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > does not release another import when directory enumeration fails [DON-274]
+AssertionError: expected last "vi.fn()" call to have been called with [ Array(1) ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "importing": true,
++     "activeMissionId": "mission-a",
++     "error": "Directory unavailable",
++     "hasMoreImportIssues": false,
++     "hasMoreImports": false,
++     "importIssues": [],
++     "importPageNumber": 1,
++     "importing": false,
++     "imports": [],
++     "loading": false,
++     "loadingMoreImports": false,
++     "outings": [],
++     "watchedDirectories": [
++       "/watch",
++     ],
+    },
+  ]
+
+ ❯ tests/unit/start-gpx-runtime.test.ts:537:26
+    535|     rejectScan(new Error('Directory unavailable'))
+    536|     await scan
+    537|     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContain…
+       |                          ^
+    538|     await expect(controller.importPaths(['/tracks/b.gpx'])).resolves.t…
+    539|     expect(importGpxEvidencePaths).toHaveBeenCalledOnce()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > retains a newer import failure when an older page rejects [DON-274]
+Error: No page
+ ❯ rejectPage tests/unit/start-gpx-runtime.test.ts:545:60
+    543|
+    544|   it('retains a newer import failure when an older page rejects [DON-2…
+    545|     let rejectPage: (error: Error) => void = () => { throw new Error('…
+       |                                                            ^
+    546|     const listGpxImportPage = vi.fn().mockResolvedValueOnce({ entries:…
+    547|       .mockImplementationOnce(() => new Promise((_resolve, reject) => …
+ ❯ tests/unit/start-gpx-runtime.test.ts:556:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 30 skipped (32)
+   Start at  12:12:04
+   Duration  425ms (transform 47ms, setup 0ms, import 55ms, tests 9ms, environment 233ms)

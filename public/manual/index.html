@@ -1771,14 +1771,30 @@
             outing evidence; presentation metadata and outing assignment use their dedicated controls. Track,
             segment and point order, names, elevation and source timestamps are kept. Invalid
             points or segments are retained as explicit rejections instead of disappearing silently.
+            GPX 1.0, GPX 1.1 and legacy namespace-free tracks are supported. Only standard GPX
+            elements in their proper track structure define evidence; vendor extensions remain in the
+            retained source and cannot replace coordinates, elevation or time. CDATA text is preserved.
+            Malformed XML, document types, and repeated or nested scalar fields are refused explicitly.
+            A track, segment or point in the wrong namespace or outside the GPX track structure
+            causes the whole file to be refused with a specific reason; the app does not show a
+            shortened track as a clean import. Desktop failure records retain that exact source.
+            Previously saved imports are not automatically reinterpreted. If an older import appears
+            incorrect, preserve the mission and original file for investigation; re-importing identical
+            bytes does not rewrite its evidence.
             If every point is invalid, the source still appears as a retained import issue and the
             panel states how many rejected point or segment records remain with the exact source.
             Source files are limited to 8 MiB each so exact-byte retention cannot monopolize the
             database writer or exhaust the import worker; larger files fail explicitly and should be
             split into smaller GPX files. Select at most 100 GPX files at a time. A folder containing more
             than 100 GPX files is rejected explicitly rather than returning or importing a partial list;
-            divide it into smaller operator-selected batches. Concurrent imports are serialized so identical bytes still
-            resolve to one canonical source with path aliases.
+            divide it into smaller operator-selected batches. Wait for the current import to finish before
+            starting another. If a file selection or folder scan overlaps another import, the panel keeps
+            a retry notice visible after that import finishes; select the files or folder again.
+            A refused rescan is reported as not run, never as a completed empty scan. Selecting an
+            already watched folder again performs another scan. The temporary busy error clears
+            when the running import settles; the selected action's retry status remains until
+            the next action.
+            Identical bytes still resolve to one canonical source with path aliases.
             Imports yield between database writes while current-position writes are waiting, so a busy
             tracking session may take longer to finish importing. Keep the import result visible and
             check any reported failure; an unfinished import is not complete mission evidence.
@@ -1800,6 +1816,11 @@
             to the original source evidence. A failed, malformed, empty, non-UTF-8, interrupted, or partially successful
             batch is reported explicitly. Successfully accepted files remain visible, while failed source bytes,
             digest and reason remain retained for investigation.
+            Browser testing continues past individual failed files and displays successful imports
+            plus the failed filenames; it does not provide desktop durable failure-source retention.
+            Ending an outing while an import is running does not cancel the import. The panel settles
+            to the actual import result; assign static evidence to the appropriate outing explicitly.
+            If a delayed outing refresh also fails, the panel retains both that error and any import failure.
           </p>
           <p>
             Every selected desktop file receives a durable receipt before it is read. If the app or computer

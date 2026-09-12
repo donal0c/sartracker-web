@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="SAR Tracker regression" xmlns="http://www.topografix.com/GPX/1/1" xmlns:vendor="urn:sar:vendor">
+  <trk><name>Ridge party</name><trkseg>
+    <trkpt lat="52" lon="-9.7"><ele>100</ele><time>2026-09-07T08:00:00Z</time>
+      <extensions><vendor:time>2026-09-07T19:00:00Z</vendor:time><vendor:ele>999</vendor:ele></extensions>
+    </trkpt>
+    <trkpt lat="52.001" lon="-9.701"><ele>110</ele><time>2026-09-07T08:01:00Z</time></trkpt>
+    <extensions><vendor:trkpt lat="51" lon="-8"><vendor:time>2026-09-07T08:02:00Z</vendor:time></vendor:trkpt></extensions>
+  </trkseg></trk>
+</gpx>

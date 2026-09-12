@@ -226,6 +226,25 @@ jobs:
             glxinfo -B | tee tmp/electron-validation-evidence/glxinfo.txt
           grep -qi 'llvmpipe' tmp/electron-validation-evidence/glxinfo.txt
 
+      - name: Packaged GPX fidelity and custody smoke
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+          SARTRACKER_ELECTRON_REQUIRE_LINUX_UNPACKED: '1'
+        run: |
+          set -euo pipefail
+          PACKAGE="tmp/electron-dist/linux-unpacked/sartracker-web"
+          if [ ! -x "$PACKAGE" ]; then
+            echo "::error::The unpacked Linux Electron executable was not found."
+            exit 1
+          fi
+          mkdir -p tmp/electron-validation-evidence/gpx-fidelity-smoke
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            npm run electron:smoke:gpx-fidelity -- "$PACKAGE" \
+              tmp/electron-validation-evidence/gpx-fidelity-smoke
+
       - name: Packaged tracking soak (CI profile)
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:

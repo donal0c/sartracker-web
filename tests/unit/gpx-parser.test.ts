@@ -1,8 +1,42 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 
 import { digestGpxSource, parseGpxFile } from '../../src/features/gpx/gpx-parser'
+import { gpxXmlValidCases, gpxXmlInvalidCases, gpxXmlGeometryRefusals, gpxXmlUndatedLateName } from '../fixtures/gpx-xml-contract-cases'
 
 describe('gpx parser', () => {
+  it.each(gpxXmlGeometryRefusals)('rejects incomplete geometry: $name [DON-274]', ({ source, reason }) => {
+    expect(() => parseGpxFile({ contents: source, sourcePath: '/bad.gpx', fileName: 'bad.gpx' })).toThrow(reason)
+  })
+  it('keeps extension-only time undated and resolves late track names [DON-274]', () => {
+    const parsed = parseGpxFile({ contents: gpxXmlUndatedLateName, sourcePath: '/track.gpx', fileName: 'track.gpx' })
+    expect(parsed.timingClass).toBe('undated')
+    expect(parsed.points.map(({ trackName, timestamp, elevation }) => ({ trackName, timestamp, elevation }))).toEqual([
+      { trackName: 'Ridge party', timestamp: null, elevation: null },
+      { trackName: 'Ridge party', timestamp: null, elevation: null },
+    ])
+  })
+  it.each(gpxXmlValidCases)('retains canonical namespace/CDATA semantics: $name [AUD-01 AUD-10]', ({ source }) => {
+    const parsed = parseGpxFile({ contents: source, sourcePath: '/track.gpx', fileName: 'track.gpx' })
+    expect(parsed.points).toEqual([
+      { segmentIndex: 0, pointIndex: 0, trackName: 'Ridge & party', lat: 52, lon: -9.7, elevation: 100, timestamp: '2026-09-07T08:00:00.000Z' },
+      { segmentIndex: 0, pointIndex: 1, trackName: 'Ridge & party', lat: 52.001, lon: -9.701, elevation: null, timestamp: null },
+    ])
+    expect(parsed.timingClass).toBe('partially_dated')
+    expect(parsed.rejections).toEqual([])
+  })
+  it.each(gpxXmlInvalidCases)('fails visibly for $name [AUD-01]', ({ source, reason }) => {
+    expect(() => parseGpxFile({ contents: source, sourcePath: '/bad.gpx', fileName: 'bad.gpx' })).toThrow(reason)
+  })
+  it('excludes legal extension collisions from canonical evidence [AUD-01]', () => {
+    const parsed = parseGpxFile({ fileName: 'extensions.gpx', sourcePath: '/extensions.gpx',
+      contents: readFileSync('tests/fixtures/gpx-extension-fidelity.gpx', 'utf8') })
+    expect(parsed.points).toEqual([
+      { segmentIndex: 0, pointIndex: 0, trackName: 'Ridge party', lat: 52, lon: -9.7, elevation: 100, timestamp: '2026-09-07T08:00:00.000Z' },
+      { segmentIndex: 0, pointIndex: 1, trackName: 'Ridge party', lat: 52.001, lon: -9.701, elevation: 110, timestamp: '2026-09-07T08:01:00.000Z' },
+    ])
+    expect(parsed.rejections).toEqual([])
+  })
   it('parses multiple tracks in a file into a consolidated multiline geometry', () => {
     const parsed = parseGpxFile({
       fileName: 'glen.gpx',

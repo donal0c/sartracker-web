@@ -1,0 +1,16 @@
+TRANSCRIBED RECEIPT — tool output was captured in the task transcript and retained here for evidence indexing.
+This file is a transcription, not an unobserved raw log.
+
+Command:
+npx playwright test gpx-import.spec.ts --project=visual --list
+
+Observed result after the matcher change:
+Listing tests:
+  [visual] › gpx-import.spec.ts:19:3 › M22 GPX import parity › publishes successful files around a malformed source and names the failure [DON-274]
+  [visual] › gpx-import.spec.ts:42:3 › M22 GPX import parity › renders imported GPX tracks in the panel, layer catalog, review workspace, and map source
+  [visual] › gpx-import.spec.ts:112:3 › M22 GPX import parity › keeps exact GPX geometry and settles import when the outing ends [AUD-01 AUD-05 AUD-10]
+  [visual] › gpx-import.spec.ts:149:3 › M22 GPX import parity › reports competing admission and allows a clean retry after settlement [DON-274]
+  [visual] › gpx-import.spec.ts:194:3 › M22 GPX import parity › shows retained interrupted-import provenance after runtime recovery [DON-274]
+  [visual] › gpx-import.spec.ts:221:3 › M22 GPX import parity › pages imported GPX projections without accumulating renderer evidence [DON-274]
+  [visual] › gpx-import.spec.ts:253:3 › M22 GPX import parity › DON-194: changes individual GPX colours and keeps the layer tree readable on smaller displays
+Total: 7 tests in 1 file

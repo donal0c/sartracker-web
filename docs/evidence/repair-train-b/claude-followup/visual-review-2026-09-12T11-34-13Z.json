@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "startedAt": "2026-09-12T11:34:06.087Z",
+  "finishedAt": "2026-09-12T11:34:13.241Z",
+  "manifestDir": "/Users/donalocallaghan/.codex/worktrees/f682/sartracker-web/test-results/visual-verification",
+  "model": "opus",
+  "failOn": "high",
+  "cache": true,
+  "dryRun": false,
+  "results": [
+    {
+      "testId": "repair-train-b-admission-recovery",
+      "testName": "Competing import retry succeeds",
+      "severity": "critical",
+      "verdict": "pass",
+      "failedItems": [],
+      "rawReply": "{\"verdict\": \"pass\", \"failedItems\": [], \"notes\": \"No import error; Import Files label shown; '2 SHOWN' with first and second tracks listed.\"}",
+      "durationMs": 7153.79775,
+      "cacheHit": false
+    }
+  ],
+  "summary": {
+    "ok": true,
+    "exitCode": 0,
+    "counts": {
+      "pass": 1,
+      "fail": 0,
+      "error": 0
+    }
+  }
+}

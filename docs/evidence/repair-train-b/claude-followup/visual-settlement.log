@@ -1,0 +1,18 @@
+
+> sartracker-web@0.1.0-beta.12.11 visual:review
+> node scripts/visual-review.mjs --only repair-train-b-gpx-settlement
+
+visual-review: starting
+  manifest dir: /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web/test-results/visual-verification
+  report dir:   /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web/test-results/visual-verification/reports
+  entries:      1 (filtered from 3)
+  model:        opus
+  failOn:       high
+  cache:        on
+  concurrency:  3
+  dryRun:       false
+
+PASS  [critical]  repair-train-b-gpx-settlement — GPX import settles after End Outing (6.67s)
+OVERALL: PASS  (1 pass, 0 fail, 0 error; failOn=high, blocking fails=0)
+
+report written: /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web/test-results/visual-verification/reports/visual-review-2026-09-12T11-24-14Z.json
