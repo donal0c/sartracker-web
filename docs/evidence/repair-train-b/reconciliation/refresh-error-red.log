@@ -1,0 +1,52 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:correctness
+> vitest run --config vitest.correctness.config.ts tests/unit/start-gpx-runtime.test.ts -t older outing refresh fails
+
+Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web
+
+ ❯ tests/unit/start-gpx-runtime.test.ts (20 tests | 1 failed | 19 skipped) 59ms
+     × retains the settled import error when an older outing refresh fails [DON-274] 59ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > retains the settled import error when an older outing refresh fails [DON-274]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "error": StringContaining "Import failed: source could not be retained.",
++     "activeMissionId": "mission-a",
++     "error": "Outing refresh unavailable.",
++     "hasMoreImportIssues": false,
++     "hasMoreImports": false,
++     "importIssues": [],
++     "importPageNumber": 1,
+      "importing": false,
++     "imports": [],
+      "loading": false,
++     "loadingMoreImports": false,
++     "outings": [],
++     "watchedDirectories": [],
+    },
+  ]
+
+ ❯ tests/unit/start-gpx-runtime.test.ts:412:26
+    410|     rejectRefresh?.(new Error('Outing refresh unavailable.'))
+    411|     await refresh
+    412|     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContain…
+       |                          ^
+    413|       importing: false, loading: false,
+    414|       error: expect.stringContaining('Import failed: source could not …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 19 skipped (20)
+   Start at  10:49:56
+   Duration  606ms (transform 40ms, setup 0ms, import 47ms, tests 59ms, environment 425ms)

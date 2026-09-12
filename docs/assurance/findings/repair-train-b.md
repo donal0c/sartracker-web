@@ -1,5 +1,37 @@
 # Repair Train B — GPX evidence fidelity and lifecycle
 
+## Reconciliation on current master — 2026-09-12
+
+Base: `f4d1f3214ddc82b0df043c85a340b3872ba90a80`, containing merged PRs
+#22/#20/#21. Existing PR19 branch is rebased; master foreground-write priority,
+native custody fences and correctness/strict-timing routing are retained.
+No CI machinery is added by Train B. Earlier receipts below remain historical
+and are not relabelled as this integrated package or exact-head review.
+
+One additional AUD-05 interleaving reproduced: an older outing refresh failing
+after an import failure erased the settled import error. The runtime now keeps
+both errors visible; the focused regression fails before the correction.
+Source bytes/digests, canonical coordinates/times, revisions, outings and
+worker transactions are unchanged by this correction.
+
+Current validation is in the [reconciliation receipt](../../evidence/repair-train-b/reconciliation/README.md):
+138 focused tests; 437 files / 4,515 correctness tests with six qualification
+skips; lint/build/budgets; six browser flows and fresh rendered review; native
+75,002-point import/End Outing/restart and source/hash equality. Four independent
+source charters are clear. Exact final-head review/CI bindings and readiness
+are recorded in the PR19 terminal comment. PR19 leaves draft only after both
+ordinary CI and all four independent charters clear the final head.
+Historical CI `34515489481` failed at 544.165 ms and missed a post-restart
+Devices click; downstream archive/AppImage checks skipped. The failure is
+retained, not fixed by this GPX change. Under merged PR22 policy strict timing
+is a mandatory pre-release blocker, not an ordinary PR merge blocker.
+DON-254 remains open and release remains HOLD. After Donal merges PR19, the
+locked queue is bounded 316–550 ms breadcrumb IPC/query transfer repair,
+separate ~239 ms legacy recovery repair, then unchanged strict `<200 ms`
+qualification. No performance repair, merge, release or field acceptance here.
+
+## Historical implementation and proof — 2026-09-10
+
 Starting source: `302bdd040976bd370271cf5866549fa2a7e05ff5`, fetched
 `origin/master` on 2026-09-10; clean fresh worktree, branch `codex/repair-train-b`.
 Scope: AUD-01, AUD-10, AUD-05; DON-274 with DON-270 outing boundary.
@@ -31,7 +63,7 @@ serial full source/lint/build cycle, affected browser flows and packaged native
 GPX smoke. Preserve the strict <200 ms safety assertions. Four independent
 review charters apply at the final head. No merge, release, or deployment.
 
-## Current evidence
+## Historical evidence at the named 2026-09-10 sources
 
 All three claims reproduced before production edits in
 `tmp/repair-train-b/red.log`: native extension time 08:00→19:00, elevation
@@ -66,7 +98,7 @@ is retained; the harness now obtains `createRequire` through Node's built-in
 module accessor. This is a harness evaluation correction, not a parser or
 application failure; the same archive is reused.
 
-## Independent review remediation
+## Historical independent review remediation
 
 Four independent charters reviewed `1ef5a13f`: broad safety, native persistence,
 import concurrency and renderer/input containment. Native persistence was clean
@@ -102,13 +134,14 @@ concurrency B-CONC-01 resolved, renderer B-RENDER-01 resolved, persistence no
 findings (21 unchanged native checks carried forward). Remediation rechecks are
 targeted source/evidence review, not four repeated package executions.
 Linux qualification is tracked in [PR #19 checks](https://github.com/donal0c/sartracker-web/pull/19/checks)
-and its final CI evidence comment; review readiness requires that gate to pass.
+and its final CI evidence comment. The old timing-as-merge-gate rule is
+superseded by the current reconciliation policy above.
 Superseded run `34514075105` was cancelled after the remediation push; it is
 not counted as passing. Earlier full-source proof remains attributed to the original implementation;
 the remediation changes two renderer modules and their tests, not native worker,
 schema, storage or publication transactions.
 
-## Delivery state
+## Historical delivery state before reconciliation
 
 Local remediation verification and four exact-head reviews are complete.
 [PR #19](https://github.com/donal0c/sartracker-web/pull/19) carries Linux gate

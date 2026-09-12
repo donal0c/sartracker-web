@@ -8,7 +8,11 @@ platform-services and WAR-04B release-control overlays.
 **Repair Train B overlay (2026-09-10):** `RPL-003`/`EVD-001` source-fidelity
 and `MIS-002` import/outing settlement gaps reproduce at `302bdd04` as
 AUD-01/AUD-10/AUD-05. The [repair record](findings/repair-train-b.md) owns
-current source, native, browser and package evidence; the broader hazard rows
+current source, native, browser and package evidence. The 2026-09-12
+reconciliation preserves master foreground-write priority and corrects a
+late-refresh error overwriting a settled import failure. Historical PR19 CI's
+544.165 ms failure remains a DON-254 release blocker, not an ordinary merge
+gate under the current policy; the broader hazard rows
 retain their original proof limits. No whole-hazard or field closure is claimed.
 
 **Repair Train A overlay (2026-09-10):** `TRK-001`'s overlapping settings/reconnect

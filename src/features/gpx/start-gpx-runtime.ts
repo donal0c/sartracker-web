@@ -214,7 +214,9 @@ export async function startGpxRuntime(
           importIssues: publication === importPublication ? [] : state.importIssues,
           hasMoreImportIssues: publication === importPublication ? false : state.hasMoreImportIssues,
           loading: false,
-          error: toErrorMessage(error),
+          error: publication === importPublication
+            ? toErrorMessage(error)
+            : [state.error, toErrorMessage(error)].filter(Boolean).join(' '),
         }
         publishRuntime()
       }

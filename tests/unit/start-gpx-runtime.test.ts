@@ -394,6 +394,30 @@ describe('startGpxRuntime', () => {
     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ importing: false, imports: [imported] }))
   })
 
+  it('retains the settled import error when an older outing refresh fails [DON-274]', async () => {
+    let rejectRefresh: ((reason: Error) => void) | undefined
+    const listGpxImports = vi.fn().mockResolvedValue([])
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({ gpxStore: {
+      listGpxImports, upsertGpxImport: vi.fn(), deleteGpxImport: vi.fn(),
+      importGpxEvidencePaths: vi.fn().mockRejectedValue(new Error('Import failed: source could not be retained.')),
+    }, applyRuntime })
+    await controller.refreshMission('mission-a')
+    listGpxImports.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRefresh = reject }))
+    const refresh = controller.refreshMission('mission-a')
+    await vi.waitFor(() => expect(rejectRefresh).toBeDefined())
+    await expect(controller.importPaths(['/tracks/a.gpx'])).rejects.toThrow('source could not be retained')
+    rejectRefresh?.(new Error('Outing refresh unavailable.'))
+    await refresh
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      importing: false, loading: false,
+      error: expect.stringContaining('Import failed: source could not be retained.'),
+    }))
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      error: expect.stringContaining('Outing refresh unavailable.'),
+    }))
+  })
+
   it('keeps the first import busy when another caller attempts admission [AUD-05]', async () => {
     let resolveImport: ((value: { imports: readonly { id: string }[]; dispatchDurationMs: number }) => void) | undefined
     const applyRuntime = vi.fn()

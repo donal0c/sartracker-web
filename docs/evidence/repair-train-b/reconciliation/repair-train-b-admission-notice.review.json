@@ -1,0 +1,10 @@
+{
+  "testId": "repair-train-b-admission-notice",
+  "testName": "Competing import retry notice",
+  "severity": "critical",
+  "verdict": "pass",
+  "failedItems": [],
+  "rawReply": "{\"verdict\": \"pass\", \"failedItems\": [], \"notes\": \"Retry notice, Import Files label, '1 SHOWN' count and 'first' track all present.\"}",
+  "durationMs": 7712.063041,
+  "cacheHit": false
+}
