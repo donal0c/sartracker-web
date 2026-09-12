@@ -5,11 +5,15 @@
  * can neither collide with nor cancel another renderer's worker.
  */
 function registerBreadcrumbQueryIpcHandlers(input) {
+  const sessions = new Map()
   input.ipcMain.handle(
-    input.listChannel,
-    async (event, missionId, perDeviceLimit, requestId) => {
+    input.startChannel,
+    async (event, query) => {
       input.validateIpcSender(event)
-      const scopedRequestId = scopeBreadcrumbQueryRequestId(event, requestId)
+      const scopedRequestId = scopeBreadcrumbQueryRequestId(event, query?.requestId)
+      if (sessions.has(scopedRequestId)) throw new Error('Breadcrumb query request ID is already active.')
+      const snapshotId = require('node:crypto').randomUUID()
+      sessions.set(scopedRequestId, snapshotId)
       let cleanupRequested = false
       const cancelDestroyedSenderQuery = () => {
         if (cleanupRequested) {
@@ -22,22 +26,50 @@ function registerBreadcrumbQueryIpcHandlers(input) {
       }
       event.sender.once('destroyed', cancelDestroyedSenderQuery)
       event.sender.once('render-process-gone', cancelDestroyedSenderQuery)
-      try {
-        return await input.missionStore.listBreadcrumbPositions(
-          missionId,
-          perDeviceLimit,
-          scopedRequestId,
-        )
-      } finally {
+      const cleanup = () => {
+        if (sessions.get(scopedRequestId) === snapshotId) sessions.delete(scopedRequestId)
         event.sender.removeListener('destroyed', cancelDestroyedSenderQuery)
         event.sender.removeListener('render-process-gone', cancelDestroyedSenderQuery)
       }
+      try {
+        const started = input.missionStore.startBreadcrumbQuery(
+          query.missionId,
+          query.perDeviceLimit,
+          scopedRequestId,
+        )
+        void started.catch(() => undefined)
+        void input.missionStore.breadcrumbQueryCompletion(scopedRequestId).then(cleanup, cleanup)
+        const manifest = await started
+        return { ...manifest, snapshotId, missionId: query.missionId }
+      } catch (error) {
+        cleanup()
+        throw error
+      }
     },
   )
-  input.ipcMain.handle(input.cancelChannel, (event, requestId) => {
+  /** Fences late frame/finish controls from an earlier request with the same name. */
+  function scopedSession(event, query) {
     input.validateIpcSender(event)
+    const id = scopeBreadcrumbQueryRequestId(event, query?.requestId)
+    if (typeof query.snapshotId !== 'string' || sessions.get(id) !== query.snapshotId) {
+      throw new Error('Breadcrumb query snapshot is not active for this sender.')
+    }
+    return id
+  }
+  input.ipcMain.handle(input.readChannel, async (event, query) => {
+    const id = scopedSession(event, query)
+    const frame = await input.missionStore.readBreadcrumbQueryFrame(id, query.sequence)
+    return { ...frame, snapshotId: query.snapshotId }
+  })
+  input.ipcMain.handle(input.finishChannel, (event, query) =>
+    input.missionStore.finishBreadcrumbQuery(scopedSession(event, query)))
+  input.ipcMain.handle(input.cancelChannel, (event, query) => {
+    input.validateIpcSender(event)
+    const id = scopeBreadcrumbQueryRequestId(event, query?.requestId)
+    if (!sessions.has(id)) return false
+    if (query?.snapshotId !== undefined) scopedSession(event, query)
     return input.missionStore.cancelBreadcrumbQuery(
-      scopeBreadcrumbQueryRequestId(event, requestId),
+      id,
     )
   })
 }

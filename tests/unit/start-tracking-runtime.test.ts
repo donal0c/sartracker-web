@@ -2966,6 +2966,42 @@ describe('startTrackingRuntime', () => {
     )
   })
 
+  it('keeps current tracking status live while showing incomplete saved-history transfer progress', async () => {
+    let hooks: { getCanonicalBreadcrumbs: (missionId: string, signal?: AbortSignal) => Promise<unknown>
+      onStatusChange: (status: TrackingConnectionStatus) => void } | undefined
+    let reportProgress: ((value: { receivedPositions: number; totalPositions: number }) => void) | undefined
+    let finishQuery!: (value: { positions: never[]; deviceTotals: never[] }) => void
+    const pending = new Promise<{ positions: never[]; deviceTotals: never[] }>((resolve) => { finishQuery = resolve })
+    const unsubscribe = vi.fn()
+    const applyStatus = vi.fn()
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, value) => { hooks = value; return { start: vi.fn(), stop: vi.fn() } }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({ getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listBreadcrumbPositions: vi.fn(() => pending),
+        subscribeBreadcrumbQueryProgress: vi.fn((_id, listener) => { reportProgress = listener; return unsubscribe }),
+      }),
+      applySnapshot: vi.fn(), applyStatus,
+    })
+    hooks!.onStatusChange({ mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null })
+    const controller = new AbortController()
+    const query = hooks!.getCanonicalBreadcrumbs('mission-1', controller.signal)
+    await vi.waitFor(() => expect(reportProgress).toBeDefined())
+    reportProgress!({ receivedPositions: 64, totalPositions: 100 })
+    expect(applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'online',
+      warning: expect.stringContaining('64 of 100 selected fixes transferred; history is not yet complete') }))
+    controller.abort()
+    const rejected = expect(query).rejects.toMatchObject({ name: 'AbortError' })
+    const calls = applyStatus.mock.calls.length
+    reportProgress!({ receivedPositions: 100, totalPositions: 100 })
+    expect(applyStatus).toHaveBeenCalledTimes(calls)
+    finishQuery({ positions: [], deviceTotals: [] })
+    await rejected
+    expect(unsubscribe).toHaveBeenCalledOnce()
+    expect(applyStatus.mock.lastCall?.[0].warning).toBeNull()
+  })
+
   it('cancels and drains stale canonical storage work before starting the replacement', async () => {
     let pollerHooks:
       | {

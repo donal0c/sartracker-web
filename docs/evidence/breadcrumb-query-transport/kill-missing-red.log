@@ -1,0 +1,27 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/breadcrumb-pr6-kill-matrix-lib.test.ts (31 tests | 1 failed | 30 skipped) 96ms
+     × records deleted tracked files with a stable missing workspace marker 95ms
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 30 skipped (31)
+   Start at  15:52:33
+   Duration  494ms (transform 55ms, setup 0ms, import 85ms, tests 96ms, environment 250ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/breadcrumb-pr6-kill-matrix-lib.test.ts > Breadcrumb PR6 real-process archive kill matrix helpers > records deleted tracked files with a stable missing workspace marker
+Error: ENOENT: no such file or directory, lstat '/var/folders/5s/21sy7jq5565f1sp1w7qw19c00000gn/T/sartracker-pr6-repository-state-7iIXXK/deleted.txt'
+ ❯ captureBreadcrumbPr6KillMatrixRepositoryState build/breadcrumb-pr6-kill-matrix-lib.js:314:18
+    312|     workspaceHash.update(Buffer.from(relativePath, 'utf8'))
+    313|     workspaceHash.update(Buffer.from([0]))
+    314|     const stat = lstatSync(absolutePath)
+       |                  ^
+    315|     if (stat.isSymbolicLink()) workspaceHash.update(readlinkSync(absol…
+    316|     else if (stat.isFile()) workspaceHash.update(readFileSync(absolute…
+ ❯ tests/unit/breadcrumb-pr6-kill-matrix-lib.test.ts:1475:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

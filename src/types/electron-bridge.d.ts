@@ -10,6 +10,7 @@ import type {
 } from '../infrastructure/mission-store/tauri-mission-store'
 import type { DiagnosticEvent } from '../features/diagnostics/diagnostic-event-log'
 import type { ArchiveReviewBridge } from '../infrastructure/archive-review/archive-review-types'
+import type { BreadcrumbQueryTransport } from '../infrastructure/mission-store/breadcrumb-query-client'
 
 export type ElectronTraccarHttpRequest = {
   readonly url: string
@@ -115,7 +116,7 @@ export type SarTrackerElectronBridge = {
     readonly ok: boolean
   }) => void
   readonly archiveReview: ArchiveReviewBridge
-  readonly missionStore: MissionStore
+  readonly missionStore: Omit<MissionStore, 'listBreadcrumbPositions' | 'cancelBreadcrumbQuery'> & BreadcrumbQueryTransport
   readonly layerCatalogStore: LayerCatalogStore
   readonly traccarHttpRequest: (
     input: ElectronTraccarHttpRequest,

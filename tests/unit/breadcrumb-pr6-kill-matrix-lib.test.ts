@@ -1,5 +1,5 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -12,6 +12,7 @@ import {
   ARCHIVE_LIFECYCLE_PHASES,
   buildBreadcrumbPr6KillMatrixReport,
   captureArchiveKillMatrixBaseline,
+  captureBreadcrumbPr6KillMatrixRepositoryState,
   findArchiveCreatedByOperation,
   parseBreadcrumbPr6KillMatrixArgs,
   requireArchiveInPublicProjection,
@@ -1434,6 +1435,68 @@ describe('Breadcrumb PR6 real-process archive kill matrix helpers', () => {
         passed: true,
       }],
     })
+  })
+
+  it('records deleted tracked files with a stable missing workspace marker', () => {
+    if (process.platform === 'win32') return
+    const repositoryRoot = mkdtempSync(path.join(tmpdir(), 'sartracker-pr6-repository-state-'))
+    temporaryDirectories.add(repositoryRoot)
+    const trackedFiles = {
+      'build.js': 'build\n',
+      'electron.js': 'electron\n',
+      'script.mjs': 'script\n',
+      'fixture.cjs': 'fixture\n',
+      'test.ts': 'test\n',
+      'deleted.txt': 'deleted\n',
+    }
+    for (const [relativePath, contents] of Object.entries(trackedFiles)) {
+      writeFileSync(path.join(repositoryRoot, relativePath), contents)
+    }
+    execFileSync('git', ['init', '-q'], { cwd: repositoryRoot })
+    execFileSync('git', ['add', '.'], { cwd: repositoryRoot })
+    execFileSync('git', [
+      '-c', 'user.name=Fixture',
+      '-c', 'user.email=fixture@example.invalid',
+      'commit', '-qm', 'fixture',
+    ], { cwd: repositoryRoot })
+
+    const harnessRelativePaths = [
+      'build.js',
+      'electron.js',
+      'script.mjs',
+      'fixture.cjs',
+      'test.ts',
+    ]
+    const before = captureBreadcrumbPr6KillMatrixRepositoryState({
+      projectRoot: repositoryRoot,
+      harnessRelativePaths,
+    })
+    rmSync(path.join(repositoryRoot, 'deleted.txt'))
+    const after = captureBreadcrumbPr6KillMatrixRepositoryState({
+      projectRoot: repositoryRoot,
+      harnessRelativePaths,
+    })
+    const afterRepeat = captureBreadcrumbPr6KillMatrixRepositoryState({
+      projectRoot: repositoryRoot,
+      harnessRelativePaths,
+    })
+
+    expect(after.clean).toBe(false)
+    expect(after.statusSha256).not.toBe(before.statusSha256)
+    expect(after.workspaceSha256).not.toBe(before.workspaceSha256)
+    expect(afterRepeat.workspaceSha256).toBe(after.workspaceSha256)
+
+    const expectedWorkspaceHash = createHash('sha256')
+    for (const [relativePath, contents] of Object.entries({
+      ...trackedFiles,
+      'deleted.txt': '<missing>',
+    }).sort(([left], [right]) => left.localeCompare(right))) {
+      expectedWorkspaceHash.update(Buffer.from(relativePath, 'utf8'))
+      expectedWorkspaceHash.update(Buffer.from([0]))
+      expectedWorkspaceHash.update(contents, 'utf8')
+      expectedWorkspaceHash.update(Buffer.from([0]))
+    }
+    expect(after.workspaceSha256).toBe(expectedWorkspaceHash.digest('hex'))
   })
 
   it('refuses to write qualification evidence inside the repository after final Git capture', () => {

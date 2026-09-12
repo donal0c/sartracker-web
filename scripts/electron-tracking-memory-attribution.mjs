@@ -19,6 +19,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { chromium } from 'playwright'
+import { breadcrumbClientProbeScript } from '../build/breadcrumb-client-probe.js'
 
 import {
   parseDarwinProcessTreeResidentMemory,
@@ -175,8 +176,9 @@ async function runIsolatedPhase(input) {
 
 /** Runs the exact production packaged canonical breadcrumb worker and IPC bridge. */
 async function runCanonicalQuery(page, missionId) {
+  await page.evaluate(await breadcrumbClientProbeScript())
   return page.evaluate(async ({ missionId }) => {
-    const result = await window.sartrackerElectron?.missionStore.listBreadcrumbPositions(
+    const result = await globalThis.__createTransportClient(window.sartrackerElectron.missionStore).listBreadcrumbPositions(
       missionId,
       5_000,
     )

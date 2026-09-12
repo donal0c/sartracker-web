@@ -209,6 +209,10 @@ export type TrackingRuntimeMissionStore = {
     readonly droppedPositionCount?: number
   }>
   readonly cancelBreadcrumbQuery?: (requestId: string) => Promise<boolean>
+  readonly subscribeBreadcrumbQueryProgress?: (
+    requestId: string,
+    listener: (progress: { readonly receivedPositions: number; readonly totalPositions: number }) => void,
+  ) => () => void
   readonly upsertDevice: (input: {
     readonly mission_id: string
     readonly device_id: string
@@ -366,6 +370,8 @@ export async function startTrackingRuntime(
   const logger = dependencies.logger ?? DEFAULT_TRACKING_RUNTIME_LOGGER
   let persistedPositionKeyCache: PersistedPositionKeyCache | null = null
   let latestTrackingStatus: TrackingConnectionStatus | null = null
+  let breadcrumbTransferWarning: string | null = null
+  let breadcrumbTransferProgress: { readonly receivedPositions: number; readonly totalPositions: number } | null = null
   const retirementFailures = new Map<TrackingRuntimePoller, unknown>()
   let trackingCacheWarningActive = false
   let missionPersistenceWarningActive = false
@@ -1332,6 +1338,13 @@ export async function startTrackingRuntime(
 
     const requestId =
       `tracking-breadcrumb-${breadcrumbRendererSessionId}-${runtimeGeneration}-${++nextBreadcrumbQueryRequestSequence}`
+    const queryGeneration = runtimeGeneration
+    const unsubscribeProgress = dependencies.missionStore.subscribeBreadcrumbQueryProgress?.(requestId, (progress) => {
+      if (signal?.aborted || queryGeneration !== runtimeGeneration) return
+      breadcrumbTransferProgress = progress
+      breadcrumbTransferWarning = `Loading saved breadcrumb history: ${progress.receivedPositions.toLocaleString()} of ${progress.totalPositions.toLocaleString()} selected fixes transferred; history is not yet complete.`
+      refreshTrackingStatus()
+    })
     const cancelActiveQuery = () => {
       void dependencies.missionStore.cancelBreadcrumbQuery?.(requestId).catch(
         () => undefined,
@@ -1364,6 +1377,10 @@ export async function startTrackingRuntime(
       return canonical
     } finally {
       signal?.removeEventListener('abort', cancelActiveQuery)
+      unsubscribeProgress?.()
+      breadcrumbTransferWarning = null
+      breadcrumbTransferProgress = null
+      refreshTrackingStatus()
     }
   }
 
@@ -1410,6 +1427,7 @@ export async function startTrackingRuntime(
   ): TrackingConnectionStatus {
     const warnings = [
       status.warning,
+      breadcrumbTransferWarning,
       retirementFailures.size === 0 ? null
         : 'TRACKING REPLACEMENT EVIDENCE UNSETTLED — current polling may continue, but previous evidence custody has not completed. Check diagnostics.',
       droppedPersistedBreadcrumbCount > 0
@@ -1428,6 +1446,7 @@ export async function startTrackingRuntime(
     return {
       ...status,
       warning: warnings.length === 0 ? null : warnings.join(' '),
+      ...(breadcrumbTransferProgress === null ? {} : { savedHistoryTransfer: breadcrumbTransferProgress }),
     }
   }
 

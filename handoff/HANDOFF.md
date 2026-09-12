@@ -4,29 +4,22 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **PR19 Claude follow-up is locally verified; prior readiness is superseded.**
-  Malformed geometry now refuses the whole source explicitly; batch continuation,
-  admission/watch/rescan outcomes and page/delete/error races are repaired. See the
-  [follow-up disposition](../docs/assurance/findings/repair-train-b-claude-followup.md).
-  `codex/repair-train-b` remains based on master `f4d1f321` after PRs #22/#20/#21;
-  exact custody, immutable revisions and foreground-write priority are preserved.
-  Ordinary correctness passes 438 files / 4,539 tests (six qualification-only
-  skips), lint/build/budgets, seven browser flows and three rendered reviews.
-  Native macOS package proof passes 75,004 points, malformed-source retention,
-  undated late names, End Outing during import, restart equality and clean close.
-  The named GPX smoke now runs in ordinary Linux CI; the standard visual project
-  includes all seven GPX flows and their three reviewed captures. Four affected independent
-  source charters are clear. Linux run `34691543650` passed correctness/package
-  inspection but failed before GPX import at the outing-label control. Diagnostic
-  run `34693020365` confirms a started mission followed by WebGL blocklisting
-  and an empty renderer. GPX smoke launch now matches the existing Linux
-  AppImage Mesa/ANGLE flags; Linux confirmation is pending. PR remains draft.
-  Exact final-head bindings and terminal CI readiness live on
-  [PR19](https://github.com/donal0c/sartracker-web/pull/19); read its terminal
-  receipt before merging. [Current record](../docs/assurance/findings/repair-train-b.md).
-  DON-274 remains In Review; DON-270 retains its original completed history;
-  DON-254 is In Progress. Historical timing failures remain release blockers.
-  Stop at READY FOR DONAL TO MERGE; no merge, release or performance work.
+- **PR19 is merged to `origin/master` at `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`.**
+  Its final implementation head is `f203869c`; terminal CI `34694049815` passed.
+  The [Train B record](../docs/assurance/findings/repair-train-b.md) retains the
+  implementation evidence, historical proof and failures. No predecessor PRs
+  were open at the start of this chunk. Linear `DON-274` is verified Done;
+  `DON-254` is In Progress.
+
+  The active chunk is DON-254 follow-up A: bounded lossless canonical breadcrumb
+  query transport on branch `codex/don-254-bounded-history-transport`, against
+  the 103,626-row query measured at 316–351 ms and the 550 ms restart defect.
+  Follow-up B, the separate ~239 ms legacy recovery path, comes afterward; the
+  unchanged strict `<200 ms` qualification follows both. Release remains HOLD.
+  Transport implementation and local source/browser/package proof are complete;
+  final reviews and exact-head Linux CI are pending. The [transport record](../docs/assurance/findings/breadcrumb-query-transport.md)
+  and [receipt](../docs/evidence/breadcrumb-query-transport/receipt.md) retain the
+  diagnosed source-cycle failure, focused correction and strict package measurements.
 
 - **DON-254 responsiveness attribution — PR21 merged** at `bac211dc`.
   It remains diagnostic-only. CI `34683600517` passed correctness, three
@@ -104,8 +97,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   confirmed deep-audit defects, and WAR hardening share the
   [coordinated work ledger](../docs/assurance/coordinated-work-ledger.md).
   Team Feedback Batch 2 repaired `AUD-07` and `AUD-14`; Repair Train A repaired
-  `AUD-13`, `AUD-02`, and `AUD-03`. Nine confirmed audit findings remain across
-  Repair Trains B–D. BCP-17/final
+  `AUD-13`, `AUD-02`, and `AUD-03`. Six confirmed audit findings remain across
+  Repair Trains C–D. BCP-17/final
   qualification waits for release-blocking repairs and applicable WAR-04
   remediation, then runs against one frozen exact candidate.
 
@@ -132,7 +125,7 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   fixes or explicit dispositions in the [complete ledger](../docs/breadcrumb-pr6-complete-review-ledger.md).
 - Documentation cleanup records the final testing approach below. Start new work
   from current `master`; the archive PR does not need another review cycle.
-- Repair Train B owns `AUD-01`/`AUD-10`/`AUD-05`. Merged WAR-06 remains
+- Repair Train B covered `AUD-01`/`AUD-10`/`AUD-05`. Merged WAR-06 remains
   evidence-only; its open hazards are not repaired or closed by PR19.
 - Remaining Sar_4/team requests are still explicit rather than absorbed into
   these tasks: official/private map distribution and provider/grid work
@@ -143,13 +136,14 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   organization (`DON-100`). Marker Details simplification remains a later
   coordinator-confirmation item. Mission Preview/per-device visibility landed
   in PR #15; Linear `DON-215` is reconciled to Done.
-- Locked next steps after Donal merges PR19: bounded large breadcrumb IPC/query
-  transfer repair (316–550 ms), separate legacy-recovery repair (~239 ms), then
-  unchanged strict `<200 ms` qualification. Other repair trains and WAR hazards
-  remain tracked separately before BCP-17/DON-255. Use the
-  [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear
-  issues for scope. PR19 merge remains pending; release/field acceptance is not established.
-  DON-247 and DON-264 remain separate reliability work.
+- Active next work is DON-254 follow-up A: bounded lossless canonical breadcrumb
+  query transport on `codex/don-254-bounded-history-transport`, covering the
+  103,626-row query measured at 316–351 ms and the 550 ms restart defect.
+  Follow-up B, the separate ~239 ms legacy recovery path, remains next in order,
+  followed by unchanged strict `<200 ms` qualification. Historical proof and
+  failures remain in the [Train B record](../docs/assurance/findings/repair-train-b.md).
+  Other repair trains and WAR hazards remain tracked separately before BCP-17/DON-255.
+  Release remains HOLD. DON-247 and DON-264 remain separate reliability work.
 
 ## Testing approach to carry forward
 

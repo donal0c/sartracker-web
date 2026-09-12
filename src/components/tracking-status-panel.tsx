@@ -145,6 +145,15 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </TrackingStatusMessage>
       )}
 
+      {status.savedHistoryTransfer === undefined ? null : (
+        <progress
+          aria-label="Saved breadcrumb history transfer"
+          className="mb-3 h-2 w-full accent-cyan-400"
+          value={status.savedHistoryTransfer.receivedPositions}
+          max={Math.max(1, status.savedHistoryTransfer.totalPositions)}
+        />
+      )}
+
       {ingestHealth.totalRejected === 0 ? null : (
         <p
           className="mb-4 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-xs font-medium leading-relaxed text-amber-100"

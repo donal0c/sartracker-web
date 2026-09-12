@@ -57,6 +57,53 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('saved history transfer shows incomplete progress while current fixes remain visible [DON-254]', async ({ page }) => {
+    await page.evaluate(async () => {
+      const { createBreadcrumbQueryClient } = await import('/src/infrastructure/mission-store/breadcrumb-query-client.ts')
+      const { startTrackingRuntime } = await import('/src/features/tracking/start-tracking-runtime.ts')
+      const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
+      let hooks
+      let release
+      const paused = new Promise((resolve) => { release = resolve })
+      const row = (id) => JSON.stringify({ kind: 'position', value: { id, mission_id: 'transfer-mission',
+        device_id: '1', source_position_id: id, lat: 52, lon: -9, timestamp: '2026-09-12T10:00:00.000Z',
+        timestamp_source: 'fix', data_origin: 'live' } }) + '\n'
+      const client = createBreadcrumbQueryClient({
+        startBreadcrumbQuery: async () => ({ version: 1, missionId: 'transfer-mission', snapshotId: 'visual-snapshot',
+          positionCount: 2, deviceTotalCount: 0, deviceSelectionCount: 0, droppedPositionCount: 0 }),
+        readBreadcrumbQueryFrame: async ({ sequence }) => {
+          if (sequence === 1) await paused
+          return { snapshotId: 'visual-snapshot', sequence, payload: row(String(sequence)), done: sequence === 1 }
+        },
+        finishBreadcrumbQuery: async () => undefined, cancelBreadcrumbQuery: async () => true,
+      })
+      const stop = await startTrackingRuntime({
+        config: { baseUrl: 'http://synthetic.invalid' }, createClient: () => ({}),
+        createPoller: (_client, value) => { hooks = value; return { start() {}, stop() {} } },
+        cache: { read: async () => null, write: async () => undefined },
+        missionStore: { ...client, getActiveMission: async () => ({ id: 'transfer-mission' }),
+          listPositions: async () => [], upsertDevice: async () => undefined, addPositionsBulk: async () => undefined },
+        applySnapshot: () => undefined, applyStatus: applyTrackingStatus,
+      })
+      hooks.onStatusChange({ mode: 'online', warning: null, consecutiveFailures: 0, recovered: false, lastSuccessAt: null })
+      const query = hooks.getCanonicalBreadcrumbs('transfer-mission')
+      Object.assign(window, { finishTransportVisual: async () => { release(); await query; await stop() } })
+    })
+    await expect(page.getByTestId('tracking-status')).toContainText('1 of 2 selected fixes transferred; history is not yet complete')
+    await expect(page.getByRole('progressbar', { name: 'Saved breadcrumb history transfer' })).toHaveAttribute('value', '1')
+    await expect(page.getByRole('progressbar', { name: 'Saved breadcrumb history transfer' })).toHaveAttribute('max', '2')
+    await expect(page.getByTestId('tracking-status')).toContainText('online')
+    await expect(page.getByTestId('tracking-status')).toContainText('3')
+    await captureElementAndRegister(page, 'tracking-status', {
+      testId: 'tracking-breadcrumb-transfer-progress', testName: 'Saved history transfer remains explicitly incomplete',
+      area: 'tracking', severity: 'critical',
+      verificationPrompt: 'Verify: 1. Tracking System remains ONLINE. 2. Device count and fixes are nonzero. 3. The warning clearly says 1 of 2 selected fixes transferred and history is not yet complete. 4. A visible progress bar is approximately half filled. 5. Progress text and bar are readable and not clipped.',
+      playwrightAssertions: ['Online tracking and existing current fixes remain visible', 'Partial saved-history progress explicitly says incomplete'],
+    })
+    await page.evaluate(() => window.finishTransportVisual())
+    await expect(page.getByTestId('tracking-status')).not.toContainText('selected fixes transferred')
+  })
+
   test('bounded whole-route trail is explicit about display versus storage [DON-260]', async ({
     page,
   }) => {

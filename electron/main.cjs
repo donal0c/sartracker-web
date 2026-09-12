@@ -134,7 +134,9 @@ const MISSION_STORE_CHANNELS = {
   persistTrackingHistoryBatch: 'sartracker:mission-store:persist-tracking-history-batch',
   listPositions: 'sartracker:mission-store:list-positions',
   listRecentPositions: 'sartracker:mission-store:list-recent-positions',
-  listBreadcrumbPositions: 'sartracker:mission-store:list-breadcrumb-positions',
+  startBreadcrumbQuery: 'sartracker:mission-store:start-breadcrumb-query',
+  readBreadcrumbQueryFrame: 'sartracker:mission-store:read-breadcrumb-query-frame',
+  finishBreadcrumbQuery: 'sartracker:mission-store:finish-breadcrumb-query',
   cancelBreadcrumbQuery: 'sartracker:mission-store:cancel-breadcrumb-query',
   listExactBreadcrumbDotPage: 'sartracker:mission-store:list-exact-breadcrumb-dot-page',
   cancelExactBreadcrumbDotQuery: 'sartracker:mission-store:cancel-exact-breadcrumb-dot-query',
@@ -880,7 +882,9 @@ function registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSes
   })
   registerBreadcrumbQueryIpcHandlers({
     ipcMain,
-    listChannel: MISSION_STORE_CHANNELS.listBreadcrumbPositions,
+    startChannel: MISSION_STORE_CHANNELS.startBreadcrumbQuery,
+    readChannel: MISSION_STORE_CHANNELS.readBreadcrumbQueryFrame,
+    finishChannel: MISSION_STORE_CHANNELS.finishBreadcrumbQuery,
     cancelChannel: MISSION_STORE_CHANNELS.cancelBreadcrumbQuery,
     missionStore,
     validateIpcSender,
@@ -950,7 +954,9 @@ function registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSes
     return missionStore.createMission(normalizeMissionCreateForIpc(input))
   })
   const ownedQueryMethods = new Set([
-    'listBreadcrumbPositions',
+    'startBreadcrumbQuery',
+    'readBreadcrumbQueryFrame',
+    'finishBreadcrumbQuery',
     'cancelBreadcrumbQuery',
     'listExactBreadcrumbDotPage',
     'cancelExactBreadcrumbDotQuery',
