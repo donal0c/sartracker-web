@@ -17,9 +17,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   legacy-hash survivor; it is not a whole-source mutation score. No production
   runtime, browser, package, provider, soak, release, or field claim is made.
   PR [#24](https://github.com/donal0c/sartracker-web/pull/24) is open at
-  executable head `f3a3de4f`; exact-head Linux CI `34705813451` passed. The
-  final continuity tip `73a9b8fe` is documentation-only, and exact-head Linux
-  CI `34708104728` also passed. Stop at READY FOR DONAL TO MERGE.
+  executable head `f3a3de4f`; exact-head Linux CI `34705813451` passed. This
+  receipt update is documentation-only; stop at READY FOR DONAL TO MERGE.
 
 - **PR19 Claude follow-up is merged at `d20bae5f`; prior pending wording is superseded.**
   Malformed geometry now refuses the whole source explicitly; batch continuation,

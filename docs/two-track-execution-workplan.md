@@ -335,10 +335,8 @@ lint, root type-check, build/bundle budgets, and independent Luna x-high review
 clear. No production, browser, package, provider, soak, release, or field
 qualification is claimed; DON-254 remains open and release HOLD is unchanged.
 Exact-head Linux validation run `34705813451` passed the enabled PR lane; this
-workplan update records the executable receipt. The final continuity tip
-`73a9b8fe` is documentation-only and its exact-head Linux validation run
-`34708104728` also passed the enabled PR lane. Neither receipt claims strict
-timing, soak, archive, release, or field qualification.
+workplan update records the receipt and does not claim strict timing, soak,
+archive, release, or field qualification.
 
 **WAR-02A test foundation (2026-09-10, merged in PR #16 at `4076975d`):** additive deterministic
 scheduler, explicit completion gates and filesystem/SQLite call-boundary fault
