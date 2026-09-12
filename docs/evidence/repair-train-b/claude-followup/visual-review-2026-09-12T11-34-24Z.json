@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "startedAt": "2026-09-12T11:34:16.774Z",
+  "finishedAt": "2026-09-12T11:34:24.120Z",
+  "manifestDir": "/Users/donalocallaghan/.codex/worktrees/f682/sartracker-web/test-results/visual-verification",
+  "model": "opus",
+  "failOn": "high",
+  "cache": true,
+  "dryRun": false,
+  "results": [
+    {
+      "testId": "repair-train-b-partial-batch",
+      "testName": "Malformed file does not hide valid imports",
+      "severity": "critical",
+      "verdict": "pass",
+      "failedItems": [],
+      "rawReply": "{\"verdict\": \"pass\", \"failedItems\": [], \"notes\": \"2 shown, after+before tracks listed, malformed.gpx error shown, import controls idle/disabled.\"}",
+      "durationMs": 7345.054792,
+      "cacheHit": false
+    }
+  ],
+  "summary": {
+    "ok": true,
+    "exitCode": 0,
+    "counts": {
+      "pass": 1,
+      "fail": 0,
+      "error": 0
+    }
+  }
+}

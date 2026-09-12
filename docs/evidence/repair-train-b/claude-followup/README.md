@@ -17,6 +17,8 @@ separates confirmed defects, corrected claims and deliberate boundaries.
   request/mission guards are removed; the guards were restored.
 - `visual-partial-framing-failed.log` retains the cropped-frame rejection;
   all three final `visual-*.log` reviews pass after widening that capture.
+- The visual-project routing receipt records the separate zero-to-seven discovery
+  regression, seven passing visual-project GPX flows and three passing reviews.
 
 ## Proof boundaries
 

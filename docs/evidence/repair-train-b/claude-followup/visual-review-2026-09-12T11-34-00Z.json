@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "startedAt": "2026-09-12T11:33:54.071Z",
+  "finishedAt": "2026-09-12T11:34:00.960Z",
+  "manifestDir": "/Users/donalocallaghan/.codex/worktrees/f682/sartracker-web/test-results/visual-verification",
+  "model": "opus",
+  "failOn": "high",
+  "cache": true,
+  "dryRun": false,
+  "results": [
+    {
+      "testId": "repair-train-b-gpx-settlement",
+      "testName": "GPX import settles after End Outing",
+      "severity": "critical",
+      "verdict": "pass",
+      "failedItems": [],
+      "rawReply": "{\"verdict\": \"pass\", \"failedItems\": [], \"notes\": \"1 SHOWN, Import Files label, fidelity track listed, no error banner; controls disabled per browser mode.\"}",
+      "durationMs": 6888.567583,
+      "cacheHit": false
+    }
+  ],
+  "summary": {
+    "ok": true,
+    "exitCode": 0,
+    "counts": {
+      "pass": 1,
+      "fail": 0,
+      "error": 0
+    }
+  }
+}

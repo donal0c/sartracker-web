@@ -14,7 +14,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   skips), lint/build/budgets, seven browser flows and three rendered reviews.
   Native macOS package proof passes 75,004 points, malformed-source retention,
   undated late names, End Outing during import, restart equality and clean close.
-  The named GPX smoke now runs in ordinary Linux CI. Four affected independent
+  The named GPX smoke now runs in ordinary Linux CI; the standard visual project
+  includes all seven GPX flows and their three reviewed captures. Four affected independent
   source charters are clear; exact final-head bindings and terminal CI readiness live on
   [PR19](https://github.com/donal0c/sartracker-web/pull/19); read its terminal
   receipt before merging. [Current record](../docs/assurance/findings/repair-train-b.md).

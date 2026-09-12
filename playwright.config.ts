@@ -43,7 +43,7 @@ export default defineConfig({
         viewport: { width: 1440, height: 900 },
         screenshot: 'on',
       },
-      testMatch: '**/visual/**/*.spec.ts',
+      testMatch: ['**/visual/**/*.spec.ts', '**/gpx-import.spec.ts'],
     },
   ],
 })

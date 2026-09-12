@@ -68,6 +68,14 @@ checks pass 38. Seven browser flows and three independent screenshot reviews
 pass. The first partial-batch screenshot was cropped; its failed review remains
 retained, and the wider frame passes without changing application code.
 
+GitHub review `discussion_r3995959727` identified that the visual project excluded
+the GPX spec, despite its locally reviewed captures. Its test-match list now
+includes that spec alongside the existing visual directory. The original visual
+listing found zero GPX tests; the corrected listing finds seven, all seven pass
+under `--project=visual`, and all three screenshot reviews pass. Chromium and
+Electron routing are unchanged; running all projects intentionally runs GPX in
+both browser projects. The independent broad reviewer cleared this routing fix.
+
 The unsigned local macOS package passes **75,004 retained points**, explicit
 malformed-source failure with exact bytes/digest, late track name and undated
 extension-only time, End Outing during import, identical evidence after restart

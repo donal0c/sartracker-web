@@ -1,0 +1,17 @@
+TRANSCRIBED RECEIPT — tool output was captured in the task transcript and retained here for evidence indexing.
+This file is a transcription, not an unobserved raw log.
+
+Command:
+npx playwright test gpx-import.spec.ts --project=visual --list
+
+Observed result:
+Error: No tests found.
+Make sure that arguments are regular expressions matching test files.
+You may need to escape symbols like "$" or "*" and quote the argument.
+Listing tests:
+Total: 0 tests in 0 files
+
+The surrounding zsh capture wrapper also emitted `zsh:3: read-only variable:
+status`; no Playwright result was hidden by that wrapper issue.
+
+This is the red baseline: the GPX spec was not selected by the visual project.
