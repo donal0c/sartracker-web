@@ -61,7 +61,10 @@ documentation-only:
   [`34705813451`](https://github.com/donal0c/sartracker-web/actions/runs/34705813451)
   passed against that executable source head, including the bounded property,
   controlled rebreak, package, GPX and AppImage steps that are enabled in the
-  ordinary PR lane.
+  ordinary PR lane. The final continuity tip `73a9b8fe` is documentation-only;
+  its exact-head Linux validation run
+  [`34708104728`](https://github.com/donal0c/sartracker-web/actions/runs/34708104728)
+  also passed the enabled PR lane.
 
 This is local T1/T2 assurance evidence only. It is not package, provider,
 soak, power-loss, hosted, field, merge, or release qualification. The mutation
