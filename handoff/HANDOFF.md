@@ -4,6 +4,21 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
 
 ## Where we are
 
+- **WAR-02B bounded property/mutation controls are implemented on branch
+  `codex/war-02b-property-mutation`, based on exact `origin/master`
+  `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`.** The slice is test
+  infrastructure only: deterministic `fast-check` properties, a real public
+  polling-manager cursor/window probe, an isolated ingest-policy source
+  mutation, a child-process DON-228 red proof, and exactly three approved
+  mutation seams. Local final evidence is 442 files / 4,552 tests, focused
+  WAR-02B 4 files / 7 tests, lint, root type-check, build/bundle budgets, and
+  green-current/red-rebroken proof. Independent Luna x-high review is clear.
+  The mutation receipt records three killed mutants and one intentional
+  legacy-hash survivor; it is not a whole-source mutation score. No production
+  runtime, browser, package, provider, soak, release, or field claim is made.
+  PR creation and exact-head CI are the next actions; stop at READY FOR DONAL
+  TO MERGE.
+
 - **PR19 Claude follow-up is locally verified; prior readiness is superseded.**
   Malformed geometry now refuses the whole source explicitly; batch continuation,
   admission/watch/rescan outcomes and page/delete/error races are repaired. See the

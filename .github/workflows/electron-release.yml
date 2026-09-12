@@ -147,6 +147,12 @@ jobs:
       - name: Unit tests
         run: npm run test:correctness
 
+      - name: WAR-02B bounded property and mutation gate
+        run: npm run test:war-02b
+
+      - name: WAR-02B controlled rebreak proof
+        run: npm run assurance:war-02b
+
       # Merge correctness and prerelease responsiveness are separate gates.
       # This retains every strict workload/assertion before release artifacts.
       - name: Strict responsiveness qualification (<200 ms)

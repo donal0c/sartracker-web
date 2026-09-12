@@ -319,6 +319,23 @@ Include both in the batch evidence, final independent reviews and CI.
 
 ### Coordinated three-stream safety queue
 
+**WAR-02B bounded property and mutation controls (2026-09-12, implementation
+complete pending PR/CI):** test-only infrastructure on branch
+`codex/war-02b-property-mutation`, based on exact master
+`d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`. The bounded runner fixes seeds,
+replay output, boolean-only predicates, and a maximum of 250 runs. The real
+public polling-manager probe catches the controlled DON-228 exclusive
+`+1000 ms` cursor rebreak, and both Linux validation and Electron release
+workflow gates invoke the property and red-proof commands. The semantic
+mutation baseline is limited to coordinate transforms, cursor/window
+arithmetic, and position-ingest identity; it records three killed mutants and
+one intentional legacy-hash survivor in
+[the WAR-02B records](assurance/war-02b-test-infrastructure.md). Final local
+evidence: WAR-02B 4 files / 7 tests, full source 442 files / 4,552 tests,
+lint, root type-check, build/bundle budgets, and independent Luna x-high review
+clear. No production, browser, package, provider, soak, release, or field
+qualification is claimed; DON-254 remains open and release HOLD is unchanged.
+
 **WAR-02A test foundation (2026-09-10, merged in PR #16 at `4076975d`):** additive deterministic
 scheduler, explicit completion gates and filesystem/SQLite call-boundary fault
 injection under `tests/unit/assurance/war-02a/`. The
@@ -1196,6 +1213,7 @@ This is the default order when the user says “work on the next task.”
 | Backlog | Measured indexes, bounded telemetry retention, and compaction policy | S2 Electron / Persistence | `DON-251` | The 3.7 GB PR-1 gate measured the pre-existing Review audit scan at about 7.5 s and exact count at about 1.1–1.3 s on Electron main. Query-plan-driven indexing, standing retention, interruption-safe physical compaction, and reusable-page policy remain here with `DON-250`; no O(database-size) v8 migration index or in-process multi-GB `VACUUM` is authorized. PR #10 deletes eligible archived rows logically and may leave the file size unchanged. |
 | Done | Create streamed encrypted mission archives with restore-and-replay proof | S2 Electron / Archive | `DON-252` | BCP-15 is implemented on PR #10 with bounded mission-only streaming and sealed-file exhaustive restore/verification. Merged in PR #10 on 2026-09-09; engineering evidence and limits are in the complete PR6 ledger, not release proof. |
 | Done | Add archive-backed review, visible revisions, and indefinite retention | S2 Electron / Governance | `DON-253` | BCP-16 is implemented on PR #10 with read-only archive Review, visible immutable supplements, and eligibility-gated logical cleanup. Resume is available only when an intact journal proves cleanup is in progress; invalid recovery state fails closed, and cleanup rechecks the authorized membership boundary. Cleanup may remove archived mission rows, rebuildable derived projections, four explicitly settled operational tables, and only the allowed high-volume telemetry event types from `mission_events`. It retains the mission stub, archive/supplement registry, every non-telemetry mission audit event, and unknown future audit event types. Merged in PR #10 on 2026-09-09; engineering evidence and limits are in the complete PR6 ledger, not release proof. |
+| Ready for Donal merge | WAR-02B bounded property and mutation controls | Whole application / Verification | `DON-254` | Branch `codex/war-02b-property-mutation`; exact-head PR/CI pending. Test infrastructure only; local 442 files / 4,552 tests, focused property/red proof, lint, type-check, build, and independent review clear. Release HOLD and strict timing qualification are unchanged. |
 | Backlog | Qualify the complete breadcrumb and mission-history programme | S2 Electron / Verification | `DON-254` | BCP-17 no-skip qualification of the exact final candidate after all six PRs. |
 | Backlog | Release the complete breadcrumb and mission-history programme | S2 Electron / Release | `DON-255` | One team-facing release only after BCP-17; no intermediate programme releases. |
 | Done | S1: Runtime Boot/Fault Guard | Shared | `sartracker-web-3rl` | Done 2026-05-16 |
