@@ -107,6 +107,21 @@ describe('bounded breadcrumb client', () => {
     unsubscribe()
   })
 
+  it('treats progress listener failures as advisory and keeps the transfer alive', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const progress = vi.fn(() => { throw new Error('listener-private-detail') })
+      const { raw, store } = createHarness()
+      store.subscribeBreadcrumbQueryProgress!('listener-failure', progress)
+      await expect(store.listBreadcrumbPositions!('mission-a', 5_000, 'listener-failure')).resolves.toEqual(result)
+      expect(raw.finishBreadcrumbQuery).toHaveBeenCalledWith({ requestId: 'listener-failure', snapshotId: 'snapshot-a' })
+      expect(warning).toHaveBeenCalledWith('Breadcrumb query progress listener failed; transfer continues.')
+      expect(warning.mock.calls.flat()).not.toContain('listener-private-detail')
+    } finally {
+      warning.mockRestore()
+    }
+  })
+
   it('preserves non-finite legacy optional scalars, signed zero and tag-like literal strings', async () => {
     const expected = { ...result, positions: [{ ...result.positions[0], altitude: Infinity,
       accuracy: -Infinity, speed: NaN, battery: -0, name: '{"exceptionalNumbers":[["speed","NaN"]]}' }] }
@@ -119,7 +134,7 @@ describe('bounded breadcrumb client', () => {
   })
 
   it('bounds individual parse records while preserving a large escaped string and split surrogates', async () => {
-    const name = '"\\\n🧭\ud800'.repeat(80_000)
+    const name = '"\\\n🧭\ud800'.repeat(170_000)
     const expected = { ...result, positions: [{ ...result.positions[0], name }] }
     const frames = [...encodeBreadcrumbFrames(expected)]
     for (const line of frames.map((frame) => frame.payload).join('').split('\n')) {
@@ -128,6 +143,55 @@ describe('bounded breadcrumb client', () => {
     const { store } = createHarness({ readBreadcrumbQueryFrame: vi.fn(async ({ sequence }: { sequence: number }) =>
       ({ ...frames[sequence], sequence, snapshotId: 'snapshot-a' })) })
     await expect(store.listBreadcrumbPositions!('mission-a', 5_000, 'large-string')).resolves.toEqual(expected)
+  })
+
+  it('rejects endless fragmented rows and declared oversized strings before reconstruction', () => {
+    const accept = vi.fn()
+    const decoder = createBreadcrumbRecordDecoder(accept)
+    expect(() => decoder.acceptLine(JSON.stringify({ kind: 'rowStart', rowKind: 'position', fieldCount: Number.MAX_SAFE_INTEGER }))).toThrow(/field count/i)
+
+    decoder.acceptLine(JSON.stringify({ kind: 'rowStart', rowKind: 'position', fieldCount: 1 }))
+    expect(() => decoder.acceptLine(JSON.stringify({ kind: 'stringStart', key: 'name', length: Number.MAX_SAFE_INTEGER }))).toThrow(/string field/i)
+    expect(accept).not.toHaveBeenCalled()
+  })
+
+  it('rejects declared aggregate string data before assigning the next field', () => {
+    const accept = vi.fn()
+    const decoder = createBreadcrumbRecordDecoder(accept, { maxRowStringCodeUnits: 4 })
+    decoder.acceptLine(JSON.stringify({ kind: 'rowStart', rowKind: 'position', fieldCount: 2 }))
+    decoder.acceptLine(JSON.stringify({ kind: 'stringStart', key: 'a', length: 3 }))
+    decoder.acceptLine(JSON.stringify({ kind: 'stringChunk', offset: 0, value: 'abc' }))
+    expect(() => decoder.acceptLine(JSON.stringify({ kind: 'stringStart', key: 'b', length: 2 }))).toThrow(/aggregate.*string/i)
+    expect(accept).not.toHaveBeenCalled()
+  })
+
+  it('rejects fields beyond the declared row field count before assignment', () => {
+    const accept = vi.fn()
+    const decoder = createBreadcrumbRecordDecoder(accept)
+    decoder.acceptLine(JSON.stringify({ kind: 'rowStart', rowKind: 'position', fieldCount: 1 }))
+    decoder.acceptLine(JSON.stringify({ kind: 'field', value: { first: 'value' } }))
+    expect(() => decoder.acceptLine(JSON.stringify({ kind: 'field', value: { second: 'value' } }))).toThrow(/field count/i)
+    expect(accept).not.toHaveBeenCalled()
+  })
+
+  it('enforces the aggregate string budget for direct scalar fields too', () => {
+    const accept = vi.fn()
+    const decoder = createBreadcrumbRecordDecoder(accept, { maxRowStringCodeUnits: 4 })
+    decoder.acceptLine(JSON.stringify({ kind: 'rowStart', rowKind: 'position', fieldCount: 2 }))
+    decoder.acceptLine(JSON.stringify({ kind: 'field', value: { a: 'abc' } }))
+    expect(() => decoder.acceptLine(JSON.stringify({ kind: 'field', value: { b: 'def' } }))).toThrow(/aggregate.*string/i)
+    expect(accept).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes malformed position mission identity from a valid row for another mission', async () => {
+    const malformedPosition = Object.fromEntries(Object.entries(result.positions[0]!).filter(([key]) => key !== 'mission_id'))
+    const frameFor = (position: unknown) => ({ snapshotId: 'snapshot-a', sequence: 0,
+      payload: [JSON.stringify({ kind: 'position', value: position }) + '\n', lines[1], lines[2]].join(''), done: true })
+    const malformed = createHarness({ readBreadcrumbQueryFrame: vi.fn().mockResolvedValue(frameFor(malformedPosition)) })
+    await expect(malformed.store.listBreadcrumbPositions!('mission-a', 5_000, 'missing-mission')).rejects.toThrow(/missing or invalid mission_id/i)
+
+    const wrongMission = createHarness({ readBreadcrumbQueryFrame: vi.fn().mockResolvedValue(frameFor({ ...result.positions[0], mission_id: 'mission-b' })) })
+    await expect(wrongMission.store.listBreadcrumbPositions!('mission-a', 5_000, 'wrong-mission')).rejects.toThrow(/belongs to another mission/i)
   })
 
   it.each(['missing fragment', 'duplicate fragment', 'wrong offset', 'missing field', 'unfinished row'])(
@@ -185,6 +249,18 @@ describe('bounded breadcrumb client', () => {
     deliver({ sequence: 0, payload: lines.join(''), done: true })
     await rejected
     expect(raw.finishBreadcrumbQuery).not.toHaveBeenCalled()
+  })
+
+  it('includes the active snapshot identity when public cancellation occurs after start', async () => {
+    let deliver!: (frame: unknown) => void
+    const frame = new Promise((resolve) => { deliver = resolve })
+    const { raw, store } = createHarness({ readBreadcrumbQueryFrame: vi.fn(() => frame) })
+    const query = store.listBreadcrumbPositions!('mission-a', 5_000, 'snapshot-cancel')
+    await vi.waitFor(() => expect(raw.readBreadcrumbQueryFrame).toHaveBeenCalledOnce())
+    await expect(store.cancelBreadcrumbQuery!('snapshot-cancel')).resolves.toBe(true)
+    expect(raw.cancelBreadcrumbQuery.mock.calls[0]?.[0]).toEqual({ requestId: 'snapshot-cancel', snapshotId: 'snapshot-a' })
+    deliver({ snapshotId: 'snapshot-a', sequence: 0, payload: '', done: true })
+    await expect(query).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   it('exposes raw frame reads in preload with no old whole-result escape', async () => {

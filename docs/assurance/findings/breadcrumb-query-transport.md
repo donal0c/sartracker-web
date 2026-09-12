@@ -46,6 +46,10 @@ question, coordinate rule, timestamp policy or persistence interpretation is int
 - JSON parse records are at most 16,384 code units. Oversized strings use
   1,024-unit fragments with exact offsets and lengths, plus final field counts.
   The renderer builds final values directly without a full encoded-row buffer.
+  Fragmented rows allow at most 4,096 actual fields, 8,388,608 code units per
+  string, and 67,108,864 aggregate code units for keys/string data. Declarations
+  reserve the budget before allocation; every accepted field representation
+  uses the same counter. Oversize data rejects visibly, never truncates.
   Its final canonical result necessarily scales with the unchanged selector's
   result; transport queues and parse overhead do not scale with the full reply.
 - Non-finite optional SQLite numbers and signed zero use explicit wire tags.
@@ -58,9 +62,12 @@ question, coordinate rule, timestamp policy or persistence interpretation is int
 - Renderer rows remain private until finish acknowledgement and clean worker
   exit. Cancellation fences late results immediately and joins actual worker
   termination. Sender destruction, timeout, failed startup, queued cancellation,
-  restart and store shutdown all retain explicit settlement ownership.
+  document reload/navigation and store shutdown all retain explicit settlement ownership.
   A 30-second inactivity watchdog renews only on validated manifest/frame progress;
-  it bounds stalled startup/receivers without rejecting a healthy longer transfer.
+  an independent 15-minute lifetime requests termination even during progress.
+  Acknowledged completion replaces inactivity with a five-second exit grace;
+  actual worker exit and the absolute lifetime remain required. The operational
+  window disables background timer throttling.
 - The obsolete whole-result worker runner and native store/preload entry are
   removed. Existing tests migrate to bounded sessions without dropping their
   selector, cancellation, shared-worker or shutdown assertions. The memory
@@ -128,7 +135,7 @@ Claims not substantiated by current source/rendered evidence:
 - Invalid sequence/concurrent reads deliberately fail closed and join termination.
   Automatic frame replay/resume is not an existing contract. The inactivity
   watchdog preserves the prior verified fix for healthy transfers exceeding an
-  absolute deadline; stalled transfers still terminate visibly. It no longer
+  former 30-second absolute deadline; stalled transfers still terminate visibly. It no longer
   monopolizes the database query slot.
 - ONLINE remains green during ordinary incomplete-history warnings. The native
   progress bar is visibly half-filled in the browser screenshot, although the
@@ -139,6 +146,46 @@ Claims not substantiated by current source/rendered evidence:
 - Same-tick finished-message/port-close loss was not reproduced in 100 Node worker
   controls. Session tests require both acknowledgement and clean exit; actual
   package runs exercise that handshake. This does not claim a universal race proof.
+
+### Second review: lifecycle, bounds and operator state
+
+The second review's established SQL/snapshot/order and codec results are accepted;
+the selector and encoder remain untouched. Its reported 400 randomized round-trips
+and boundary sweep are reviewer evidence, not a newly repeated qualification.
+
+New [retained regressions](../../evidence/breadcrumb-query-transport/review2/) cover minimized-window preferences, an independent total
+lifetime, delayed acknowledged exit, reload cancellation, failure retention,
+reconstruction budgets, advisory callback failure and stale/terminal progress.
+Main-frame document navigation cancels sender-owned line/dot work; subframes and
+same-document navigation do not. The registry still joins termination before
+admitting replacement work. IPC retains at most 32 snapshot-fenced terminal
+failures so the next pull gets the safe cause rather than a stale-snapshot error.
+
+`breadcrumb-query-failure.cjs` owns seven static public categories: memory,
+component loading, storage, generic worker, inactivity, absolute lifetime and
+acknowledged-exit grace. Sanitized native/bootstrap messages and stacks contain no
+private paths or raw native/SQLite text. Internal protocol errors remain fixed
+messages; ordinary cancellation is a lifecycle outcome. Public cancellation uses
+the snapshot token once admission provides it; pre-admission cancellation remains
+sender/request-owned. Progress-listener exceptions cannot abort the data query.
+
+Progress is now advisory mission-bound state, separate from connection warnings.
+The panel filters other missions, distinguishes loading/complete/failed, and
+replaces prior terminal text immediately on retry. Runtime replacement clears
+only the selected owner's advisory state. The browser flow verifies loading,
+success and failure with current fixes still visible; both screenshots received
+independent inspection. No full Position-schema validation was added: malformed
+mission identity now has an accurate error, while existing downstream normalization
+and the pre-existing QueryResult cast remain outside this transport repair.
+
+The package gate now backgrounds the actual window, checks disabled throttling,
+requires the existing large transfer within 30 seconds, and reloads twice with
+unfinished same-ID sessions. These are targeted controls, not a five-minute
+Chromium throttle simulation or a replacement for full-candidate qualification.
+
+The reviewer reported a separate unchanged DON-277 run at 210.8 ms under parallel
+agent load and 11.8 ms in isolation. Both observations are retained; the isolated
+pass does not erase the strict `<200 ms` failure or establish a causal repair.
 
 The PR terminal receipt records the stable serial correctness/lint/build cycle,
 the exact tested package/source identities, the targeted native smoke, Linux

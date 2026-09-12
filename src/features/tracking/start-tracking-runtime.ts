@@ -354,6 +354,7 @@ const breadcrumbRendererSessionId = createBreadcrumbRendererSessionId()
 let nextTrackingCacheIdentityToken = 1
 let nextTrackingRuntimeGeneration = 0
 let activeTrackingRuntimeGeneration = 0
+let clearActiveBreadcrumbTransferStatus: (() => void) | null = null
 let trackingPersistenceTail: Promise<void> = Promise.resolve()
 let trackingCacheWriteTail: Promise<unknown> = Promise.resolve()
 let breadcrumbStorageQueryTail: Promise<void> = Promise.resolve()
@@ -364,14 +365,15 @@ let breadcrumbStorageQueryTail: Promise<void> = Promise.resolve()
 export async function startTrackingRuntime(
   dependencies: StartTrackingRuntimeDependencies,
 ): Promise<TrackingRuntimeStop> {
+  clearActiveBreadcrumbTransferStatus?.()
+  clearActiveBreadcrumbTransferStatus = null
   const runtimeGeneration = ++nextTrackingRuntimeGeneration
   activeTrackingRuntimeGeneration = runtimeGeneration
   const now = dependencies.now ?? (() => new Date())
   const logger = dependencies.logger ?? DEFAULT_TRACKING_RUNTIME_LOGGER
   let persistedPositionKeyCache: PersistedPositionKeyCache | null = null
   let latestTrackingStatus: TrackingConnectionStatus | null = null
-  let breadcrumbTransferWarning: string | null = null
-  let breadcrumbTransferProgress: { readonly receivedPositions: number; readonly totalPositions: number } | null = null
+  let breadcrumbTransferProgress: NonNullable<TrackingConnectionStatus['savedHistoryTransfer']> | null = null
   const retirementFailures = new Map<TrackingRuntimePoller, unknown>()
   let trackingCacheWarningActive = false
   let missionPersistenceWarningActive = false
@@ -389,6 +391,15 @@ export async function startTrackingRuntime(
   let participantBackfillInFlight = false
   let participantBackfillTask: Promise<void> | null = null
   let acceptingRuntimeUpdates = true
+  /** Clears only this runtime's advisory status before another runtime takes ownership. */
+  const clearBreadcrumbTransferStatus = () => {
+    if (runtimeGeneration !== activeTrackingRuntimeGeneration) return
+    if (breadcrumbTransferProgress !== null) {
+      breadcrumbTransferProgress = null
+      refreshTrackingStatus()
+    }
+  }
+  clearActiveBreadcrumbTransferStatus = clearBreadcrumbTransferStatus
   const operationalPositionRetention = createOperationalPositionRetention()
   const currentTransportFreshness = createCurrentTransportFreshness()
   let deferredOperationalSnapshot: {
@@ -1089,6 +1100,8 @@ export async function startTrackingRuntime(
     retiringPollers.size === 0 && retirementFailures.size === 0
   const stop = createRuntimeCleanup([
     () => {
+      clearBreadcrumbTransferStatus()
+      if (clearActiveBreadcrumbTransferStatus === clearBreadcrumbTransferStatus) clearActiveBreadcrumbTransferStatus = null
       acceptingRuntimeUpdates = false
       unsubscribeMissionWake()
       unsubscribeDeviceSelectionWake()
@@ -1338,11 +1351,14 @@ export async function startTrackingRuntime(
 
     const requestId =
       `tracking-breadcrumb-${breadcrumbRendererSessionId}-${runtimeGeneration}-${++nextBreadcrumbQueryRequestSequence}`
+    if (acceptingRuntimeUpdates && runtimeGeneration === activeTrackingRuntimeGeneration) {
+      breadcrumbTransferProgress = { missionId: expectedMissionId, state: 'loading', receivedPositions: 0, totalPositions: 0 }
+      refreshTrackingStatus()
+    }
     const unsubscribeProgress = dependencies.missionStore.subscribeBreadcrumbQueryProgress?.(requestId, (progress) => {
       if (signal?.aborted || !acceptingRuntimeUpdates
         || runtimeGeneration !== activeTrackingRuntimeGeneration) return
-      breadcrumbTransferProgress = progress
-      breadcrumbTransferWarning = `Loading saved breadcrumb history: ${progress.receivedPositions.toLocaleString()} of ${progress.totalPositions.toLocaleString()} selected fixes transferred; history is not yet complete.`
+      breadcrumbTransferProgress = { ...progress, missionId: expectedMissionId, state: 'loading' }
       refreshTrackingStatus()
     })
     const cancelActiveQuery = () => {
@@ -1351,6 +1367,7 @@ export async function startTrackingRuntime(
       )
     }
     signal?.addEventListener('abort', cancelActiveQuery, { once: true })
+    let completed = false
     try {
       throwIfBreadcrumbQueryAborted(signal)
       let canonical: Awaited<ReturnType<typeof getInitialPersistedBreadcrumbs>>
@@ -1374,12 +1391,16 @@ export async function startTrackingRuntime(
           'Tracking history mission changed while breadcrumbs were loading.',
         )
       }
+      completed = true
       return canonical
     } finally {
       signal?.removeEventListener('abort', cancelActiveQuery)
       unsubscribeProgress?.()
-      breadcrumbTransferWarning = null
-      breadcrumbTransferProgress = null
+      breadcrumbTransferProgress = signal?.aborted ? null : {
+        receivedPositions: breadcrumbTransferProgress?.receivedPositions ?? 0,
+        totalPositions: breadcrumbTransferProgress?.totalPositions ?? 0,
+        missionId: expectedMissionId, state: completed ? 'complete' : 'failed',
+      }
       if (acceptingRuntimeUpdates && runtimeGeneration === activeTrackingRuntimeGeneration) {
         refreshTrackingStatus()
       }
@@ -1429,7 +1450,6 @@ export async function startTrackingRuntime(
   ): TrackingConnectionStatus {
     const warnings = [
       status.warning,
-      breadcrumbTransferWarning,
       retirementFailures.size === 0 ? null
         : 'TRACKING REPLACEMENT EVIDENCE UNSETTLED — current polling may continue, but previous evidence custody has not completed. Check diagnostics.',
       droppedPersistedBreadcrumbCount > 0

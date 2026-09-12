@@ -277,6 +277,7 @@ async function createWindow(
     backgroundColor: '#050505',
     title: 'SAR Tracker Electron Validation',
     webPreferences: {
+      backgroundThrottling: false,
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(__dirname, 'preload.cjs'),

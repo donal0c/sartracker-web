@@ -1,0 +1,21 @@
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+ProtocolError: Protocol error (Page.handleJavaScriptDialog): No dialog is showing
+    at /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/playwright-core/lib/server/chromium/crConnection.js:111:57
+    at new Promise (<anonymous>)
+    at CRSession.send (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/playwright-core/lib/server/chromium/crConnection.js:110:12)
+    at Dialog._onHandle (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/playwright-core/lib/server/chromium/crPage.js:669:28)
+    at Dialog.accept (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/playwright-core/lib/server/dialog.js:53:16)
+    at Dialog.close (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/playwright-core/lib/server/dialog.js:63:18)
+    at DialogManager.dialogDidOpen (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/playwright-core/lib/server/dialog.js:85:14)
+    at FrameSession._onDialog (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/playwright-core/lib/server/chromium/crPage.js:662:45)
+    at CRSession.<anonymous> (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/playwright-core/lib/server/chromium/crPage.js:343:119)
+    at CRSession.emit (node:events:519:28) {
+  type: 'error',
+  method: 'Page.handleJavaScriptDialog',
+  logs: undefined
+}
+
+Node.js v22.22.3

@@ -2,22 +2,32 @@
 
 const path = require('node:path')
 const { Worker } = require('./mission-worker.cjs')
+const { createBreadcrumbQueryFailure, sanitizeBreadcrumbQueryFailure: createWorkerError } = require('./breadcrumb-query-failure.cjs')
 const { BREADCRUMB_QUERY_TRANSPORT_VERSION, MAX_BREADCRUMB_FRAME_CODE_UNITS } = require('./breadcrumb-query-transport.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'breadcrumb-query-worker.cjs')
 const DEFAULT_SESSION_TIMEOUT_MS = 30_000
+const DEFAULT_ABSOLUTE_TIMEOUT_MS = 15 * 60_000
+const DEFAULT_EXIT_GRACE_MS = 5_000
 
 /** Starts a pull-driven result session without assembling selected rows in main. */
 async function startBreadcrumbQuerySession(input) {
   if (input.signal?.aborted) throw createAbortError()
   const timeoutMs = input.timeoutMs ?? DEFAULT_SESSION_TIMEOUT_MS
+  const absoluteTimeoutMs = input.absoluteTimeoutMs ?? DEFAULT_ABSOLUTE_TIMEOUT_MS
+  const exitGraceMs = input.exitGraceMs ?? DEFAULT_EXIT_GRACE_MS
   if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) {
     throw new Error('Breadcrumb query session timeout must be between 1 and 300000 ms.')
   }
-  const worker = new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
+  if (!Number.isFinite(absoluteTimeoutMs) || absoluteTimeoutMs < 1 || absoluteTimeoutMs > DEFAULT_ABSOLUTE_TIMEOUT_MS
+    || !Number.isFinite(exitGraceMs) || exitGraceMs < 1 || exitGraceMs > 30_000) {
+    throw new Error('Breadcrumb query lifetime or exit grace configuration is invalid.')
+  }
+  let worker
+  try { worker = new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
     workerData: { databasePath: input.databasePath, missionId: input.missionId,
       perDeviceLimit: input.perDeviceLimit, transport: 'frames-v1' },
-  })
+  }) } catch (error) { throw createWorkerError(error) }
   let exited = false
   let failure = null
   let ready = false
@@ -45,7 +55,7 @@ async function startBreadcrumbQuerySession(input) {
   }
   /** Sends only protocol controls, never an accumulated result. */
   function send(message) {
-    try { worker.postMessage(message) } catch (error) { fail(error) }
+    try { worker.postMessage(message) } catch (error) { fail(createWorkerError(error)) }
   }
   /** Rejects invalid receiver progress and prevents further worker publication. */
   function rejectProgress(message) {
@@ -54,9 +64,9 @@ async function startBreadcrumbQuerySession(input) {
     return completion
   }
   const abort = () => fail(createAbortError())
-  const timeout = setTimeout(() => fail(new Error(
-    `Breadcrumb query session timed out after ${Math.floor(timeoutMs)} ms.`,
-  )), Math.floor(timeoutMs))
+  const timeout = setTimeout(() => fail(createBreadcrumbQueryFailure('INACTIVITY')), Math.floor(timeoutMs))
+  const absoluteTimeout = setTimeout(() => fail(createBreadcrumbQueryFailure('ABSOLUTE')), Math.floor(absoluteTimeoutMs))
+  let exitGrace = null
   input.signal?.addEventListener('abort', abort, { once: true })
   if (input.signal?.aborted) abort()
 
@@ -118,6 +128,8 @@ async function startBreadcrumbQuerySession(input) {
     }
     if (ready && message?.type === 'finished' && finishRequested && !finishAcknowledged) {
       finishAcknowledged = true
+      clearTimeout(timeout)
+      exitGrace = setTimeout(() => fail(createBreadcrumbQueryFailure('EXIT_GRACE')), Math.floor(exitGraceMs))
       return
     }
     fail(new Error('Breadcrumb query worker returned an invalid frame or session message.'))
@@ -126,6 +138,8 @@ async function startBreadcrumbQuerySession(input) {
   worker.once('exit', (code) => {
     exited = true
     clearTimeout(timeout)
+    clearTimeout(absoluteTimeout)
+    clearTimeout(exitGrace)
     input.signal?.removeEventListener('abort', abort)
     const error = failure ?? (code === 0 && finishRequested && finishAcknowledged
       ? null : new Error(`Breadcrumb query worker exited without acknowledged completion (code ${code}).`))
@@ -149,15 +163,6 @@ function isManifest(value) {
     && value.version === BREADCRUMB_QUERY_TRANSPORT_VERSION
     && Object.keys(value).length === counts.length + 1
     && counts.every((key) => Number.isSafeInteger(value[key]) && value[key] >= 0)
-}
-
-/** Keeps arbitrary worker failures bounded before they reach renderer-facing logs. */
-function createWorkerError(message) {
-  const detail = String(message?.message ?? 'unknown error').replace(/[\r\n]+/gu, ' ').trim().slice(0, 500)
-  const error = new Error(`Breadcrumb query worker failed: ${detail}`)
-  const name = String(message?.name ?? '')
-  if (/^[A-Za-z][A-Za-z0-9_.-]{0,79}$/u.test(name)) error.name = name
-  return error
 }
 
 /** Identifies lifecycle cancellation without disguising it as query success. */

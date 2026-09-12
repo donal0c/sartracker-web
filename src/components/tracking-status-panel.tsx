@@ -90,6 +90,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
     null,
   )
   const criticalTrustWarning = isCriticalTrackingTrustWarning(status.warning)
+  const historyTransfer = status.savedHistoryTransfer?.missionId === missionId ? status.savedHistoryTransfer : undefined
   const modeLabel = getTrackingModeLabel(status.mode, status.warning)
   const modeChipClassName =
     status.mode === 'online' && !criticalTrustWarning
@@ -145,13 +146,21 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </TrackingStatusMessage>
       )}
 
-      {status.savedHistoryTransfer === undefined ? null : (
-        <progress
+      {historyTransfer === undefined ? null : (
+        <div className="mb-3 text-xs" role="status" data-testid="saved-history-transfer-status">
+          <p className="mb-2">
+            {historyTransfer.state === 'complete' ? 'Saved history transfer complete.'
+              : historyTransfer.state === 'failed' ? 'Saved history could not be loaded. History remains incomplete; retry the history load.'
+                : historyTransfer.totalPositions === 0 ? 'Reading saved breadcrumb history; history is not yet complete.'
+                  : `${historyTransfer.receivedPositions.toLocaleString()} of ${historyTransfer.totalPositions.toLocaleString()} selected fixes transferred; history is not yet complete.`}
+          </p>
+          {historyTransfer.state !== 'loading' ? null : <progress
           aria-label="Saved breadcrumb history transfer"
           className="mb-3 h-2 w-full accent-cyan-400"
-          value={status.savedHistoryTransfer.receivedPositions}
-          max={Math.max(1, status.savedHistoryTransfer.totalPositions)}
-        />
+          value={historyTransfer.receivedPositions}
+          max={Math.max(1, historyTransfer.totalPositions)}
+        />}
+        </div>
       )}
 
       {ingestHealth.totalRejected === 0 ? null : (

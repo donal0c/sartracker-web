@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { setTimeout as realDelay } from 'node:timers/promises'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBreadcrumbRecordDecoder } from '../../src/infrastructure/mission-store/breadcrumb-query-client'
@@ -12,7 +13,7 @@ const { listBreadcrumbPositions } = require('../../electron/breadcrumb-query.cjs
 const { startBreadcrumbQuerySession } = require('../../electron/breadcrumb-query-session.cjs') as {
   startBreadcrumbQuerySession(input: {
     databasePath: string; missionId: string; perDeviceLimit: number
-    signal?: AbortSignal; workerPath?: string; timeoutMs?: number
+    signal?: AbortSignal; workerPath?: string; timeoutMs?: number; absoluteTimeoutMs?: number; exitGraceMs?: number
   }): Promise<Session>
 }
 type Manifest = { version: 1; positionCount: number; deviceTotalCount: number
@@ -63,7 +64,7 @@ describe('bounded breadcrumb worker result sessions', () => {
   }
 
   /** Creates a worker protocol control without launching the application. */
-  async function controlledWorker(body: string, timeoutMs = 2_000) {
+  async function controlledWorker(body: string, timeoutMs = 2_000, options: { absoluteTimeoutMs?: number; exitGraceMs?: number } = {}) {
     directory = await mkdtemp(path.join(tmpdir(), 'sar-breadcrumb-session-control-'))
     const workerPath = path.join(directory, 'worker.cjs')
     await writeFile(workerPath, `const { parentPort, threadId } = require('node:worker_threads')
@@ -71,7 +72,7 @@ describe('bounded breadcrumb worker result sessions', () => {
         version: 1, positionCount: 0, deviceTotalCount: 0, deviceSelectionCount: 0, droppedPositionCount: 0
       } })\n${body}`)
     const session = await startBreadcrumbQuerySession({ databasePath: 'unused', missionId: 'mission-a',
-      perDeviceLimit: 5_000, workerPath, timeoutMs })
+      perDeviceLimit: 5_000, workerPath, timeoutMs, ...options })
     sessions.push(session)
     return session
   }
@@ -169,6 +170,7 @@ describe('bounded breadcrumb worker result sessions', () => {
   it('bounds a stalled receiver session and joins termination on timeout', async () => {
     const session = await controlledWorker(`parentPort.on('message', () => {})`, 150)
     await expect(session.completion).rejects.toThrow(/timed out/i)
+    await expect(session.completion).rejects.toMatchObject({ code: 'BREADCRUMB_QUERY_INACTIVITY' })
   })
 
   it('renews the inactivity watchdog for valid frames across a longer healthy transfer', async () => {
@@ -201,5 +203,74 @@ describe('bounded breadcrumb worker result sessions', () => {
   it('does not start an already cancelled query', async () => {
     await expect(startBreadcrumbQuerySession({ databasePath: 'unused', missionId: 'mission-a',
       perDeviceLimit: 5_000, signal: AbortSignal.abort() })).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('joins termination at an absolute ceiling despite continuing valid progress', async () => {
+    vi.useFakeTimers()
+    const session = await controlledWorker(`parentPort.on('message', message => {
+      parentPort.postMessage({ type: 'frame', sequence: message.sequence, payload: 'x', done: false })
+    })`, 100, { absoluteTimeoutMs: 250 })
+    for (let sequence = 0; sequence < 3; sequence += 1) {
+      await vi.advanceTimersByTimeAsync(80)
+      await session.read(sequence)
+    }
+    const rejection = expect(session.completion).rejects.toThrow(/absolute/i)
+    await vi.advanceTimersByTimeAsync(11)
+    await rejection
+    await expect(session.completion).rejects.toMatchObject({ code: 'BREADCRUMB_QUERY_ABSOLUTE' })
+    await session.cancel()
+  })
+
+  it('replaces inactivity with exit grace after acknowledgement while still joining exit', async () => {
+    vi.useFakeTimers()
+    const session = await controlledWorker(`parentPort.on('message', message => {
+      if (message.type === 'read') parentPort.postMessage({ type: 'frame', sequence: 0, payload: '', done: true })
+      if (message.type === 'finish') { parentPort.postMessage({ type: 'finished' }); setTimeout(() => parentPort.close(), 50) }
+    })`, 100, { exitGraceMs: 500 })
+    await session.read(0)
+    await vi.advanceTimersByTimeAsync(90)
+    const finish = session.finish()
+    // Let the real worker deliver acknowledgement before advancing main's clock.
+    await realDelay(15)
+    await vi.advanceTimersByTimeAsync(20)
+    await expect(finish).resolves.toBeUndefined()
+  })
+
+  it.each([
+    ['SQLITE_CANTOPEN', 'secret /private/mission.sqlite', 'STORAGE'],
+    ['MODULE_NOT_FOUND', 'Cannot find module /private/native.node', 'MODULE'],
+    ['ERR_WORKER_OUT_OF_MEMORY', 'secret heap details', 'MEMORY'],
+    ['UNKNOWN', 'private data and /private/path', 'WORKER'],
+  ])('sanitizes worker failure category %s', async (code, message, category) => {
+    const session = await controlledWorker(`parentPort.on('message', () => {
+      parentPort.postMessage({type:'error', code:${JSON.stringify(code)}, message:${JSON.stringify(message)}})
+    })`)
+    const error = await session.read(0).catch((failure: Error) => failure)
+    expect(error).toMatchObject({ code: `BREADCRUMB_QUERY_${category}` })
+    expect(String(error)).not.toMatch(/private|secret|native\.node/)
+    expect((error as Error).stack).toBe(`Error: ${(error as Error).message}`)
+  })
+
+  it('terminates and joins an acknowledged worker that never exits', async () => {
+    vi.useFakeTimers()
+    const session = await controlledWorker(`parentPort.on('message', message => {
+      if (message.type === 'read') parentPort.postMessage({ type: 'frame', sequence: 0, payload: '', done: true })
+      if (message.type === 'finish') parentPort.postMessage({ type: 'finished' })
+    })`, 1_000, { exitGraceMs: 100 })
+    await session.read(0)
+    const rejected = expect(session.finish()).rejects.toThrow(/grace period/)
+    await realDelay(15)
+    await vi.advanceTimersByTimeAsync(101)
+    await rejected
+    await expect(session.completion).rejects.toMatchObject({ code: 'BREADCRUMB_QUERY_EXIT_GRACE' })
+    await session.cancel()
+  })
+
+  it('sanitizes synchronous worker constructor errors', async () => {
+    const error = await startBreadcrumbQuerySession({ databasePath: '/private/mission.sqlite', missionId: 'mission-a',
+      perDeviceLimit: 5_000, workerPath: 'private-invalid-relative-path' }).catch((failure: Error) => failure)
+    expect(error).toMatchObject({ code: 'BREADCRUMB_QUERY_MODULE' })
+    expect(String(error)).not.toContain('private')
+    expect(JSON.stringify(error, Object.getOwnPropertyNames(error))).not.toMatch(/private|\.codex|\.cjs|\.ts|asar/)
   })
 })

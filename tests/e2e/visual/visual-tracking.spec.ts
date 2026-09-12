@@ -63,33 +63,47 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         const { createBreadcrumbQueryClient } = await import('/src/infrastructure/mission-store/breadcrumb-query-client.ts')
         const { startTrackingRuntime } = await import('/src/features/tracking/start-tracking-runtime.ts')
         const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
+        const { useMissionStore } = await import('/src/features/mission/mission-store.ts')
+        const missionId = useMissionStore.getState().currentMission.id
         let hooks
         let release
         let finished = false
+        let failFinish = false
         const paused = new Promise((resolve) => { release = resolve })
-        const row = (id) => JSON.stringify({ kind: 'position', value: { id, mission_id: 'transfer-mission',
+        const row = (id) => JSON.stringify({ kind: 'position', value: { id, mission_id: missionId,
           device_id: '1', source_position_id: id, lat: 52, lon: -9, timestamp: '2026-09-12T10:00:00.000Z',
           timestamp_source: 'fix', data_origin: 'live' } }) + '\n'
         const client = createBreadcrumbQueryClient({
-          startBreadcrumbQuery: async () => ({ version: 1, missionId: 'transfer-mission', snapshotId: 'visual-snapshot',
+          startBreadcrumbQuery: async () => ({ version: 1, missionId, snapshotId: 'visual-snapshot',
             positionCount: 2, deviceTotalCount: 0, deviceSelectionCount: 0, droppedPositionCount: 0 }),
           readBreadcrumbQueryFrame: async ({ sequence }) => {
             if (sequence === 1) await paused
             return { snapshotId: 'visual-snapshot', sequence, payload: row(String(sequence)), done: sequence === 1 }
           },
-          finishBreadcrumbQuery: async () => undefined, cancelBreadcrumbQuery: async () => true,
+          finishBreadcrumbQuery: async () => { if (failFinish) throw new Error('Synthetic history completion failure') },
+          cancelBreadcrumbQuery: async () => true,
         })
         const stop = await startTrackingRuntime({
           config: { baseUrl: 'http://synthetic.invalid' }, createClient: () => ({}),
           createPoller: (_client, value) => { hooks = value; return { start() {}, stop() {} } },
           cache: { read: async () => null, write: async () => undefined },
-          missionStore: { ...client, getActiveMission: async () => ({ id: 'transfer-mission' }),
+          missionStore: { ...client, getActiveMission: async () => ({ id: missionId }),
             listPositions: async () => [], upsertDevice: async () => undefined, addPositionsBulk: async () => undefined },
           applySnapshot: () => undefined, applyStatus: applyTrackingStatus,
         })
         hooks.onStatusChange({ mode: 'online', warning: null, consecutiveFailures: 0, recovered: false, lastSuccessAt: null })
-        const query = hooks.getCanonicalBreadcrumbs('transfer-mission')
+        const query = hooks.getCanonicalBreadcrumbs(missionId)
         Object.assign(window, {
+          completeTransportVisual: async () => { release(); await query },
+          failNextTransportVisual: async () => {
+            failFinish = true
+            try { await hooks.getCanonicalBreadcrumbs(missionId) }
+            catch (error) {
+              if (error instanceof Error && error.message === 'Synthetic history completion failure') return
+              throw error
+            }
+            throw new Error('Expected the synthetic history failure')
+          },
           finishTransportVisual: async () => {
             if (finished) return
             finished = true
@@ -124,14 +138,24 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       await captureElementAndRegister(page, 'tracking-status', {
         testId: 'tracking-breadcrumb-transfer-progress', testName: 'Saved history transfer remains explicitly incomplete',
         area: 'tracking', severity: 'critical',
-        verificationPrompt: 'Verify: 1. Tracking System remains ONLINE. 2. Device count and fixes are nonzero. 3. The warning clearly says 1 of 2 selected fixes transferred and history is not yet complete. 4. A visible progress bar is approximately half filled. 5. Progress text and bar are readable and not clipped.',
+        verificationPrompt: 'Verify: 1. Tracking System remains ONLINE. 2. Device count and fixes are nonzero. 3. The status clearly says 1 of 2 selected fixes transferred and history is not yet complete. 4. A visible progress bar is approximately half filled. 5. Progress text and bar are readable and not clipped.',
         playwrightAssertions: ['Online tracking and existing current fixes remain visible', 'Alpha and Bravo current fixes remain represented in the three-fix counter', 'Partial saved-history progress explicitly says incomplete'],
       })
       await page.evaluate(() => {
-        const finish = (window as Window & { finishTransportVisual?: () => Promise<void> }).finishTransportVisual
+        const finish = (window as Window & { completeTransportVisual?: () => Promise<void> }).completeTransportVisual
         return finish?.()
       })
       await expect(page.getByTestId('tracking-status')).not.toContainText('selected fixes transferred')
+      await expect(page.getByTestId('saved-history-transfer-status')).toHaveText('Saved history transfer complete.')
+      await page.evaluate(() => (window as Window & { failNextTransportVisual: () => Promise<void> }).failNextTransportVisual())
+      await expect(page.getByTestId('saved-history-transfer-status')).toContainText('Saved history could not be loaded')
+      await expect(page.getByRole('progressbar', { name: 'Saved breadcrumb history transfer' })).toHaveCount(0)
+      await captureElementAndRegister(page, 'tracking-status', {
+        testId: 'tracking-breadcrumb-transfer-failed', testName: 'Failed history transfer remains visibly incomplete',
+        area: 'tracking', severity: 'critical',
+        verificationPrompt: 'Verify: 1. Tracking remains ONLINE. 2. Saved history could not be loaded is visible. 3. The status explicitly says history remains incomplete. 4. No loading progress bar remains. 5. Device and fix counters remain nonzero.',
+        playwrightAssertions: ['Failure is distinguished from completed transfer', 'Incomplete history remains explicit', 'Progress bar is removed after terminal failure'],
+      })
     } finally {
       await page.evaluate(() => {
         const finish = (window as Window & { finishTransportVisual?: () => Promise<void> }).finishTransportVisual

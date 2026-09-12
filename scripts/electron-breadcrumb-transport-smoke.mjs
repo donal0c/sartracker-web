@@ -70,7 +70,27 @@ try {
       report.packagedInputs[file] = expected
     }
     const page = await app.firstWindow()
+    const dialogFailures = []
+    const dialogHandlers = []
+    // Electron's unload coordinator may already have closed the Chromium dialog.
+    // Own the handler so that race cannot escape Playwright as an unhandled error.
+    page.on('dialog', (dialog) => {
+      dialogHandlers.push(dialog.accept().catch((error) => {
+        if (!String(error).includes('No dialog is showing')) dialogFailures.push(String(error))
+      }))
+    })
     await page.getByTestId('app-title').waitFor({ timeout: 30_000 })
+    const background = await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      window.minimize()
+      // Xvfb may have no window manager to implement minimization. Hiding still
+      // exercises a backgrounded operational window with the same preferences.
+      if (!window.isMinimized()) window.hide()
+      return { minimized: window.isMinimized(), visible: window.isVisible(),
+        throttling: window.webContents.getBackgroundThrottling() }
+    })
+    assert.equal(background.throttling, false, 'Operational window must disable background timer throttling.')
+    assert.ok(background.minimized || !background.visible)
     const expected = await app.evaluate(({ app }, missionId) => {
       const require = process.mainModule.require.bind(process.mainModule)
       const Database = require('better-sqlite3')
@@ -133,8 +153,10 @@ try {
       const progress = []
       client.subscribeBreadcrumbQueryProgress('packaged-query', (value) => { progress.push(value) })
       let result
+      const transferStarted = performance.now()
       try { result = await client.listBreadcrumbPositions(missionId, 5000, 'packaged-query'); await new Promise((resolve) => setTimeout(resolve, 0)); sample() }
       finally { clearInterval(timer) }
+      const transferElapsedMs = performance.now() - transferStarted
       const replacer = (_key, value) => {
         if (typeof value !== 'number') return value
         if (Object.is(value, -0)) return { number: '-0' }
@@ -154,12 +176,14 @@ try {
       const progressTotalsStable = progress.every((entry) => entry.totalPositions === progress[0]?.totalPositions)
       return { count: result.positions.length, digest, maximumRendererGapMs, samples, currentWriteMs, currentVisible,
         exactDotsDuringTransfer, exactDotQueryMs,
+        transferElapsedMs,
         progressFirst: progress[0], progressLast: progress.at(-1), progressEvents: progress.length,
         progressMonotonic, progressHasIntermediate, progressTotalsStable,
         signedZeroSerialization, signedZeroDigest, positiveZeroDigest }
     }, { missionId, launchIndex })
     const main = await app.evaluate(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); return globalThis.__SARTRACKER_MAIN_EVENT_LOOP_PROBE__.stop() })
-    report.launches.push({ expected, actual, main })
+    report.launches.push({ expected, actual, main, background })
+    assert.ok(actual.transferElapsedMs < 30_000, 'Backgrounded canonical transfer must keep making timely progress.')
     assert.equal(actual.digest, expected.digest, 'Every selected field and ordered row must match the SQLite snapshot.')
     assert.equal(expected.signedZeroSerialization, '{"number":"-0"}', 'Canonical digest must preserve signed zero as an explicit tag.')
     assert.equal(actual.signedZeroSerialization, expected.signedZeroSerialization)
@@ -192,9 +216,32 @@ try {
     assert.equal(cancellation.cancelled, true)
     assert.equal(cancellation.lateRejected, true)
     assert.ok(cancellation.maximumFrameUnits <= 32_768)
+    const reloadSnapshots = []
+    for (let reloadIndex = 0; reloadIndex < 2; reloadIndex += 1) {
+      reloadSnapshots.push(await page.evaluate(async (missionId) => {
+        const raw = window.sartrackerElectron.missionStore
+        let deadline
+        try {
+          const manifest = await Promise.race([
+            raw.startBreadcrumbQuery({ missionId, perDeviceLimit: 5000, requestId: 'reload-query' }),
+            new Promise((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('Reload left canonical query ownership behind.')), 5000) }),
+          ])
+          await raw.readBreadcrumbQueryFrame({ requestId: 'reload-query', snapshotId: manifest.snapshotId, sequence: 0 })
+          return manifest.snapshotId
+        } finally { clearTimeout(deadline) }
+      }, missionId))
+      await page.reload()
+      await page.getByTestId('app-title').waitFor({ timeout: 30_000 })
+    }
+    assert.notEqual(reloadSnapshots[0], reloadSnapshots[1])
+    assert.deepEqual(dialogFailures, [], 'Unexpected reload dialog handling failure.')
+    report.launches.at(-1).reloadSnapshots = reloadSnapshots
+    await app.evaluate(({ BrowserWindow }) => { const window = BrowserWindow.getAllWindows()[0]; window.restore(); window.show() })
     await page.screenshot({ path: path.join(output, `packaged-shell-${launchIndex}.png`) })
     const processHandle = app.process()
     await app.close()
+    await Promise.all(dialogHandlers)
+    assert.deepEqual(dialogFailures, [], 'Unexpected reload or close dialog handling failure.')
     report.closes.push({ code: processHandle.exitCode, signal: processHandle.signalCode })
     assert.equal(processHandle.exitCode, 0)
     assert.equal(processHandle.signalCode, null)

@@ -45,6 +45,26 @@ The changed native session receives a fresh package run and affected reviews.
 
 ## Evidence limits
 
+### Second lifecycle review
+
+The second review's established selector/codec findings were accepted. Four
+independent follow-up charters inspected the new lifecycle/error/bounds/status
+diff: broad, concurrency/shutdown, persistence/completeness, and renderer.
+Renderer found stale terminal wording during a retry's admission; completeness
+found scalar-field strings bypassing the aggregate allocation budget. Both have
+retained red/green regressions and clear rechecks. Concurrency found a missing
+local optional-token type annotation, now corrected, and cleared the final
+explicit-cancellation cleanup delta. Broad reported no further finding.
+The final package harness recheck found an unjoined dialog-handler promise;
+handlers now join after close before the terminal failure assertion. Broad
+cleared that correction and the final same-package repeat passes.
+
+Independent screenshot inspection passes all five checks in both loading and
+failed-history captures. [Review2 receipts](review2/) retain the new causal
+controls and screenshots. Full source/package/exact-head CI completion is bound
+by the terminal PR receipt. An initial source run was interrupted for the final
+cancellation control, not recorded as green; the final stable run governs.
+
 ### Claude follow-up review custody
 
 Four independent review charters inspected the follow-up diff atop `b3cdc556`:
@@ -56,7 +76,8 @@ cleared that correction and the added packaged exact-dot starvation control.
 These are source/diff review receipts, not package or timing evidence. The
 terminal PR receipt binds the committed head and its completed checks.
 
-- The 30-second inactivity watchdog retains startup and stalled-receiver bounds;
+- The 30-second inactivity watchdog, 15-minute absolute lifetime and five-second
+  acknowledged-exit grace retain finite lifecycle controls;
   larger-profile qualification remains separate, with failures explicit rather
   than partial success.
 - Package digest now preserves signed zero; scalar digest controls establish

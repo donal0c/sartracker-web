@@ -16,14 +16,19 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   the 103,626-row query measured at 316–351 ms and the 550 ms restart defect.
   Follow-up B, the separate ~239 ms legacy recovery path, comes afterward; the
   unchanged strict `<200 ms` qualification follows both. Release remains HOLD.
-  [PR23](https://github.com/donal0c/sartracker-web/pull/23) Claude follow-up repairs
-  mission/admission error fencing, exact-dot starvation and cancellation/late-read
-  defects. Focused red/green: 63 tests. Stable local source: 442 files / 4,605 tests,
-  six qualification-only skips, lint/build pass; corrected visual flow passes.
-  Fresh macOS package: exact 103,626/103,627 rows, dots return during paused
-  transfer in 21–23 ms, main/renderer/write below 200 ms, all closes code zero.
-  Four independent reviews clear after one test-cleanup correction. Prior R1/R2
-  generation and inactivity-watchdog repairs remain. The terminal PR receipt
+  [PR23](https://github.com/donal0c/sartracker-web/pull/23) second Claude review adds
+  background throttling protection, reload cleanup, absolute/exit deadlines,
+  bounded reconstruction, safe retained failure causes and mission-bound terminal
+  progress. Earlier mission/admission and exact-dot starvation repairs remain.
+  Stable local source: 442 files / 4,634 tests, six qualification-only skips,
+  lint/build pass; loading/complete/failed browser flow and screenshot review pass.
+  Fresh macOS package: exact 103,626/103,627 rows in 1.17–1.28 s with window hidden,
+  dots during transfer in 21.7–23 ms, repeated same-ID reloads admit fresh snapshots;
+  main/renderer/write below 200 ms, all closes code zero. A Playwright unload-dialog
+  race was retained and the harness handler corrected before the passing repeat.
+  Four independent review charters clear. Reported DON-277 210.8 ms failure and
+  isolated 11.8 ms pass remain separate; no causal timing repair claimed.
+  The terminal PR receipt
   governs fresh exact-head Linux CI/readiness; Donal retains merge authority.
   The [transport record](../docs/assurance/findings/breadcrumb-query-transport.md)
   and [receipt](../docs/evidence/breadcrumb-query-transport/receipt.md) retain the

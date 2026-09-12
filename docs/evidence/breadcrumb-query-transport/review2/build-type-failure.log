@@ -1,0 +1,8 @@
+
+> sartracker-web@0.1.0-beta.12.11 build
+> node scripts/generate-app-version.mjs && tsc -b && vite build && node scripts/check-bundle-size.mjs
+
+src/features/tracking/start-tracking-runtime.ts(1468,5): error TS2375: Type '{ savedHistoryTransfer?: { readonly missionId: string; readonly state: "loading" | "complete" | "failed"; readonly receivedPositions: number; readonly totalPositions: number; }; ... 4 more ...; lastSuccessAt: string | null; }' is not assignable to type 'TrackingConnectionStatus' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'savedHistoryTransfer' are incompatible.
+    Type '{ readonly missionId: string; readonly state: "complete" | "failed" | "loading"; readonly receivedPositions: number; readonly totalPositions: number; } | undefined' is not assignable to type '{ readonly missionId: string; readonly state: "complete" | "failed" | "loading"; readonly receivedPositions: number; readonly totalPositions: number; }'.
+      Type 'undefined' is not assignable to type '{ readonly missionId: string; readonly state: "complete" | "failed" | "loading"; readonly receivedPositions: number; readonly totalPositions: number; }'.

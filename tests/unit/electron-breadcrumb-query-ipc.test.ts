@@ -180,6 +180,7 @@ describe('Electron breadcrumb query IPC ownership', () => {
       snapshotId: expect.any(String),
       missionId: 'mission-a',
     }))
+    expect(Object.isFrozen(first)).toBe(true)
     expect(startBreadcrumbQuery).toHaveBeenCalledWith(
       'mission-a',
       5_000,
@@ -211,6 +212,85 @@ describe('Electron breadcrumb query IPC ownership', () => {
       requestId: 'request-1',
     }) as { readonly snapshotId: string }
     expect(next.snapshotId).not.toBe(first.snapshotId)
+  })
+
+  it('cancels a line query on main-frame navigation and ignores subframe navigation', async () => {
+    const completion = deferred<void>()
+    const cancelBreadcrumbQuery = vi.fn().mockResolvedValue(true)
+    const { handler } = createHarness({
+      startBreadcrumbQuery: vi.fn().mockResolvedValue(manifest),
+      readBreadcrumbQueryFrame: vi.fn(),
+      finishBreadcrumbQuery: vi.fn().mockResolvedValue(undefined),
+      cancelBreadcrumbQuery,
+      breadcrumbQueryCompletion: vi.fn().mockReturnValue(completion.promise),
+    })
+    const event = eventFor(52)
+    const started = await handler('start')(event, {
+      missionId: 'mission-a',
+      perDeviceLimit: 5_000,
+      requestId: 'navigation',
+    }) as { readonly snapshotId: string }
+    const sender = event.sender as EventEmitter
+
+    sender.emit('did-start-navigation', {}, 'https://example.test/frame', false, false)
+    await Promise.resolve()
+    expect(cancelBreadcrumbQuery).not.toHaveBeenCalled()
+    sender.emit('did-start-navigation', {}, 'https://example.test/hash', true, true)
+    await Promise.resolve()
+    expect(cancelBreadcrumbQuery).not.toHaveBeenCalled()
+    sender.emit('did-start-navigation', {}, 'https://example.test/reload', false, true)
+    await vi.waitFor(() => expect(cancelBreadcrumbQuery).toHaveBeenCalledWith('52:navigation'))
+    expect(sender.listenerCount('did-start-navigation')).toBe(0)
+
+    const replacement = await handler('start')(event, {
+      missionId: 'mission-a',
+      perDeviceLimit: 5_000,
+      requestId: 'navigation',
+    }) as { readonly snapshotId: string }
+    expect(replacement.snapshotId).not.toBe(started.snapshotId)
+
+    completion.resolve()
+    await vi.waitFor(() => expect(sender.listenerCount('did-start-navigation')).toBe(0))
+  })
+
+  it('cleans explicit cancellation after worker completion without retaining an abort tombstone', async () => {
+    const completion = deferred<void>()
+    const startBreadcrumbQuery = vi.fn().mockResolvedValue(manifest)
+    const breadcrumbQueryCompletion = vi.fn().mockReturnValueOnce(completion.promise)
+      .mockResolvedValue(undefined)
+    const cancelBreadcrumbQuery = vi.fn().mockResolvedValue(true)
+    const { handler, invoke } = createHarness({
+      startBreadcrumbQuery,
+      readBreadcrumbQueryFrame: vi.fn(),
+      finishBreadcrumbQuery: vi.fn(),
+      cancelBreadcrumbQuery,
+      breadcrumbQueryCompletion,
+    })
+    const event = eventFor(53)
+    const query = {
+      missionId: 'mission-a',
+      perDeviceLimit: 5_000,
+      requestId: 'cancelled',
+    }
+    const started = await handler('start')(event, query) as { readonly snapshotId: string }
+    const cancellation = invoke('cancel', event, {
+      requestId: query.requestId,
+      snapshotId: started.snapshotId,
+    })
+    await vi.waitFor(() => expect(cancelBreadcrumbQuery).toHaveBeenCalledWith('53:cancelled'))
+    await expect(cancellation).resolves.toBe(true)
+    expect((event.sender as EventEmitter).listenerCount('destroyed')).toBe(1)
+
+    completion.reject(Object.assign(new Error('private abort detail'), { name: 'AbortError' }))
+    await vi.waitFor(() => expect((event.sender as EventEmitter).listenerCount('destroyed')).toBe(0))
+    await expect(invoke('read', event, {
+      requestId: query.requestId,
+      snapshotId: started.snapshotId,
+      sequence: 0,
+    })).rejects.toThrow(/snapshot is not active/u)
+
+    const replacement = await handler('start')(event, query) as { readonly snapshotId: string }
+    expect(replacement.snapshotId).not.toBe(started.snapshotId)
   })
 
   it('fences stale read, finish, and optional cancel snapshots while stamping valid frames', async () => {
@@ -305,6 +385,128 @@ describe('Electron breadcrumb query IPC ownership', () => {
       5_000,
       '91:retryable-request',
     )
+  })
+
+  it('retains a sanitized terminal failure for valid frame and finish snapshots', async () => {
+    const completion = deferred<void>()
+    const terminalFailure = Object.assign(
+      new Error('raw /private/mission.sqlite detail'),
+      { code: 'BREADCRUMB_QUERY_STORAGE' },
+    )
+    const { handler, invoke } = createHarness({
+      startBreadcrumbQuery: vi.fn().mockResolvedValue(manifest),
+      readBreadcrumbQueryFrame: vi.fn(),
+      finishBreadcrumbQuery: vi.fn(),
+      cancelBreadcrumbQuery: vi.fn().mockResolvedValue(true),
+      breadcrumbQueryCompletion: vi.fn().mockReturnValue(completion.promise),
+    })
+    const event = eventFor(92)
+    const started = await handler('start')(event, {
+      missionId: 'mission-a',
+      perDeviceLimit: 5_000,
+      requestId: 'failed-terminal',
+    }) as { readonly snapshotId: string }
+    completion.reject(terminalFailure)
+    await vi.waitFor(() => expect((event.sender as EventEmitter).listenerCount('destroyed')).toBe(0))
+    expect((event.sender as EventEmitter).listenerCount('render-process-gone')).toBe(0)
+    expect((event.sender as EventEmitter).listenerCount('did-start-navigation')).toBe(0)
+
+    const expectedFailure = {
+      code: 'BREADCRUMB_QUERY_STORAGE',
+      message: 'Saved breadcrumb history could not be read from mission storage. Retry; if it persists, contact support before changing mission files.',
+    }
+    const readFailure = await invoke('read', event, {
+      requestId: 'failed-terminal',
+      snapshotId: started.snapshotId,
+      sequence: 0,
+    }).catch((error: unknown) => error) as Error & { readonly code?: string }
+    expect(readFailure).toMatchObject(expectedFailure)
+    expect(readFailure.message).not.toContain('/private/mission.sqlite')
+    await expect(invoke('finish', event, {
+      requestId: 'failed-terminal',
+      snapshotId: started.snapshotId,
+    })).rejects.toMatchObject(expectedFailure)
+    await expect(invoke('read', event, {
+      requestId: 'failed-terminal',
+      snapshotId: 'stale-snapshot',
+      sequence: 0,
+    })).rejects.toThrow(/snapshot is not active/u)
+  })
+
+  it('bounds retained terminal failures while keeping the newest failure available', async () => {
+    const terminalFailure = Object.assign(
+      new Error('raw private detail'),
+      { code: 'BREADCRUMB_QUERY_WORKER' },
+    )
+    const completion = vi.fn().mockRejectedValue(terminalFailure)
+    const { handler, invoke } = createHarness({
+      startBreadcrumbQuery: vi.fn().mockResolvedValue(manifest),
+      readBreadcrumbQueryFrame: vi.fn(),
+      finishBreadcrumbQuery: vi.fn(),
+      cancelBreadcrumbQuery: vi.fn().mockResolvedValue(true),
+      breadcrumbQueryCompletion: completion,
+    })
+    const event = eventFor(93)
+    const snapshots: Array<{ readonly snapshotId: string }> = []
+    for (let index = 0; index < 33; index += 1) {
+      snapshots.push(await handler('start')(event, {
+        missionId: 'mission-a',
+        perDeviceLimit: 5_000,
+        requestId: `bounded-${index}`,
+      }) as { readonly snapshotId: string })
+      await Promise.resolve()
+    }
+
+    await expect(invoke('read', event, {
+      requestId: 'bounded-0',
+      snapshotId: snapshots[0]!.snapshotId,
+      sequence: 0,
+    })).rejects.toThrow(/snapshot is not active/u)
+    await expect(invoke('read', event, {
+      requestId: 'bounded-32',
+      snapshotId: snapshots[32]!.snapshotId,
+      sequence: 0,
+    })).rejects.toMatchObject({ code: 'BREADCRUMB_QUERY_WORKER' })
+  })
+
+  it.each([
+    ['BREADCRUMB_QUERY_INACTIVITY', 'Breadcrumb query session timed out while waiting for progress. Retry loading saved history.'],
+    ['BREADCRUMB_QUERY_ABSOLUTE', 'Breadcrumb query reached its absolute session time limit. Retry loading saved history.'],
+    ['BREADCRUMB_QUERY_EXIT_GRACE', 'Breadcrumb query worker did not exit within its completion grace period. Retry loading saved history.'],
+  ])('retains the static %s terminal category and diagnostics', async (code, message) => {
+    const completion = deferred<void>()
+    const { handler, invoke } = createHarness({
+      startBreadcrumbQuery: vi.fn().mockResolvedValue(manifest),
+      readBreadcrumbQueryFrame: vi.fn(),
+      finishBreadcrumbQuery: vi.fn(),
+      cancelBreadcrumbQuery: vi.fn().mockResolvedValue(true),
+      breadcrumbQueryCompletion: vi.fn().mockReturnValue(completion.promise),
+    })
+    const event = eventFor(94)
+    const requestId = `terminal-${code}`
+    const started = await handler('start')(event, {
+      missionId: 'mission-a',
+      perDeviceLimit: 5_000,
+      requestId,
+    }) as { readonly snapshotId: string }
+    completion.reject(Object.assign(
+      new Error('private timeout/exit detail /private/mission.sqlite'),
+      { code },
+    ))
+    await vi.waitFor(() => expect((event.sender as EventEmitter).listenerCount('destroyed')).toBe(0))
+
+    const failure = await invoke('read', event, {
+      requestId,
+      snapshotId: started.snapshotId,
+      sequence: 0,
+    }).catch((error: unknown) => error) as Error & { readonly code?: string }
+    expect(failure).toMatchObject({ code, message })
+    expect(failure.stack).toBe(`Error: ${message}`)
+    expect(failure.message).not.toContain('/private/mission.sqlite')
+    await expect(invoke('finish', event, {
+      requestId,
+      snapshotId: started.snapshotId,
+    })).rejects.toMatchObject({ code, message })
   })
 
   it('returns the registry-bound mission identity when the start query is mutated in flight', async () => {
