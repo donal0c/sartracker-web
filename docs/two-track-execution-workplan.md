@@ -393,7 +393,7 @@ browser/visual flows and 27 screenshot reviews); its full disposition is in that
 evidence file. Follow the updated PR head's CI rather than reuse ancestor CI.
 
 1. Breadcrumb PR-1 through PR-6, Team Feedback Batches 1–2, WAR-11A,
-   WAR-02A, Repair Train A, PR22, WAR-06 and PR21 are merged through master `f4d1f321`. Use
+   WAR-02A, Repair Train A, PR22, WAR-06, PR21 and Repair Train B are merged through current master `d20bae5f`. Use
    [Testing and review cadence](testing-and-review-cadence.md) for new work.
    With Repair Train B merged, the locked queue is
    breadcrumb IPC/query transfer repair, separate legacy recovery, then strict
