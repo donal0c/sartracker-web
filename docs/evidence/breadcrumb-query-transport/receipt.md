@@ -74,6 +74,18 @@ rendered flow. Combined local verified correctness count is now 4,596 plus six
 explicit correctness-mode skips. Unchanged transport/package evidence is reused;
 the UI-generation correction is validated at its affected runtime/browser boundary.
 
+Automatic GitHub review then identified R2: the total session deadline could
+reject a healthy throttled transfer. [Review disposition](reviews.md) records
+its deterministic red, inactivity-watchdog correction and 21 passing affected
+session/registry/native tests, including retained stall termination. Combined
+verified correctness count becomes 4,598 plus six correctness-mode skips.
+The changed native session receives fresh packaged proof; earlier receipts remain
+historical rather than being relabelled as validation of that change.
+[Fresh package receipt](macos-watchdog.json) passes both exact 103,626/103,627-row
+digests, progress/current-write independence, cancellation and clean closes.
+Main maxima are 53.390/54.155 ms; renderer 16.9/18.0 ms; writes 1.7/2.1 ms.
+All strict `<200 ms` assertions remain unchanged.
+
 This source receipt precedes final asynchronous CI/rechecks. Consult
 [PR23](https://github.com/donal0c/sartracker-web/pull/23) for the exact final head,
 Linux artifact receipts, broad/focused rechecks and terminal merge readiness.

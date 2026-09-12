@@ -69,7 +69,8 @@ Implementation and local source/browser/package proof are recorded in the
 The [PR23 terminal receipt](https://github.com/donal0c/sartracker-web/pull/23)
 governs final independent rechecks, exact-head Linux CI and owner merge readiness.
 Four initial charters found one stale-runtime status P2, now red/green repaired;
-no release acceptance is claimed.
+automatic review's healthy-transfer deadline defect also has a red/green
+inactivity-watchdog repair with fresh packaged proof. No release acceptance is claimed.
 
 ## Deep-audit finding disposition
 

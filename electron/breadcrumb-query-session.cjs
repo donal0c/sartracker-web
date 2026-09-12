@@ -68,6 +68,7 @@ async function startBreadcrumbQuerySession(input) {
     }
     if (!ready && message?.type === 'ready' && Number.isSafeInteger(message.workerThreadId)
       && message.workerThreadId > 0 && isManifest(message.manifest)) {
+      timeout.refresh()
       ready = true
       resolveStarted({
         workerThreadId: message.workerThreadId,
@@ -106,6 +107,7 @@ async function startBreadcrumbQuerySession(input) {
       && message.sequence === nextSequence && typeof message.payload === 'string'
       && message.payload.length <= MAX_BREADCRUMB_FRAME_CODE_UNITS && typeof message.done === 'boolean'
       && (message.payload.length > 0 || message.done)) {
+      timeout.refresh()
       const read = pendingRead
       pendingRead = null
       nextSequence += 1

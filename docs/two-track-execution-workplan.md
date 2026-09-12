@@ -22,6 +22,8 @@ charters found one stale-runtime status P2, now red/green repaired (92 runtime
 tests plus rendered flow). The explicitly scoped deleted-path repository-hashing
 harness regression has red/green proof (31/31). After owner merge, follow-up B
 remains next; no new whole-candidate qualification claim is made here.
+Automatic review's total-deadline defect also has a red/green inactivity-watchdog
+repair (21 affected controls); fresh package and terminal CI/rechecks govern it.
 
 ### WAR-11A: AppImage builder boundary (merged, 2026-09-10)
 

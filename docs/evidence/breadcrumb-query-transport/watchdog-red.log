@@ -1,0 +1,29 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts (13 tests | 1 failed | 12 skipped) 18ms
+     × renews the inactivity watchdog for valid frames across a longer healthy transfer 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > renews the inactivity watchdog for valid frames across a longer healthy transfer
+AssertionError: promise rejected "Error: Breadcrumb query session timed out…" instead of resolving
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:173:43
+    171|     for (let sequence = 0; sequence < 4; sequence += 1) {
+    172|       await vi.advanceTimersByTimeAsync(80)
+    173|       await expect(session.read(sequence)).resolves.toMatchObject({ se…
+       |                                           ^
+    174|     }
+    175|     await expect(session.finish()).resolves.toBeUndefined()
+
+Caused by: Error: Breadcrumb query session timed out after 100 ms.
+ ❯ electron/breadcrumb-query-session.cjs:57:41
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 12 skipped (13)
+   Start at  16:05:59
+   Duration  525ms (transform 25ms, setup 0ms, import 36ms, tests 18ms, environment 403ms)
+

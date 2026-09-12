@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBreadcrumbRecordDecoder } from '../../src/infrastructure/mission-store/breadcrumb-query-client'
 
 const require = createRequire(import.meta.url)
@@ -25,6 +25,7 @@ describe('bounded breadcrumb worker result sessions', () => {
   let directory: string | undefined
   const sessions: Session[] = []
   afterEach(async () => {
+    vi.useRealTimers()
     await Promise.all(sessions.splice(0).map((session) => session.cancel()))
     if (directory !== undefined) await rm(directory, { recursive: true, force: true })
   })
@@ -158,6 +159,33 @@ describe('bounded breadcrumb worker result sessions', () => {
   it('bounds a stalled receiver session and joins termination on timeout', async () => {
     const session = await controlledWorker(`parentPort.on('message', () => {})`, 150)
     await expect(session.completion).rejects.toThrow(/timed out/i)
+  })
+
+  it('renews the inactivity watchdog for valid frames across a longer healthy transfer', async () => {
+    vi.useFakeTimers()
+    const session = await controlledWorker(`parentPort.on('message', message => {
+      if (message.type === 'read') parentPort.postMessage({ type: 'frame', sequence: message.sequence,
+        payload: 'x', done: message.sequence === 3 })
+      if (message.type === 'finish') { parentPort.postMessage({ type: 'finished' }); parentPort.close() }
+    })`, 100)
+    for (let sequence = 0; sequence < 4; sequence += 1) {
+      await vi.advanceTimersByTimeAsync(80)
+      await expect(session.read(sequence)).resolves.toMatchObject({ sequence })
+    }
+    await expect(session.finish()).resolves.toBeUndefined()
+  })
+
+  it('still terminates and joins a receiver that stalls after valid progress', async () => {
+    vi.useFakeTimers()
+    const session = await controlledWorker(`parentPort.on('message', message => {
+      if (message.type === 'read') parentPort.postMessage({ type: 'frame', sequence: message.sequence, payload: 'x', done: false })
+    })`, 100)
+    await vi.advanceTimersByTimeAsync(80)
+    await session.read(0)
+    const rejected = expect(session.completion).rejects.toThrow(/timed out/i)
+    await vi.advanceTimersByTimeAsync(101)
+    await rejected
+    await session.cancel()
   })
 
   it('does not start an already cancelled query', async () => {

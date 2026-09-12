@@ -20,7 +20,10 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   in [PR23](https://github.com/donal0c/sartracker-web/pull/23). Its terminal receipt
   governs final exact-head CI/review readiness; Donal retains merge authority.
   Four reviews found one stale-runtime status P2, now red/green repaired with
-  92 runtime tests and the rendered flow. The [transport record](../docs/assurance/findings/breadcrumb-query-transport.md)
+  92 runtime tests and the rendered flow. Automatic review additionally found
+  healthy transfers hitting a total deadline; the inactivity-watchdog repair
+  retains stalled-worker termination and passes 21 affected controls.
+  The [transport record](../docs/assurance/findings/breadcrumb-query-transport.md)
   and [receipt](../docs/evidence/breadcrumb-query-transport/receipt.md) retain the
   diagnosed source-cycle failure, focused correction and strict package measurements.
 

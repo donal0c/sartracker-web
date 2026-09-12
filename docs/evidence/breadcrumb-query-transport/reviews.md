@@ -26,10 +26,28 @@ Scoped lint/typecheck pass. This changes UI status custody only: query protocol,
 worker/IPC/store/selector/client, persistence and package transport inputs remain
 unchanged. No expensive transport repeat is needed for this correction.
 
+## R2: total deadline rejects a healthy throttled transfer
+
+GitHub review [3996598078](https://github.com/donal0c/sartracker-web/pull/23#discussion_r3996598078)
+identified that the fixed total 30-second deadline included every deliberate
+renderer yield. Healthy continued pulls could therefore time out on a throttled
+renderer. Earlier broad reviews listed this only as a scale consideration; the
+new deterministic control confirms the causal defect.
+
+[Red](watchdog-red.log) advances the main watchdog clock through four valid pulls
+whose aggregate time exceeds the deadline; the original session rejects. The
+watchdog now renews only after a validated manifest or frame. A second control
+proves a receiver still times out and joins termination after progress stops.
+[All 21 session/registry/native-boundary controls pass](watchdog-green.log).
+No frame, queue, parse, cancellation or strict responsiveness bound is raised.
+This is an inactivity bound, not permission for stalled worker retention.
+The changed native session receives a fresh package run and affected reviews.
+
 ## Evidence limits
 
-- Fixed total 30-second session timeout is retained; larger-profile qualification
-  remains separate, with timeout failures explicit rather than partial success.
+- The 30-second inactivity watchdog retains startup and stalled-receiver bounds;
+  larger-profile qualification remains separate, with failures explicit rather
+  than partial success.
 - Package digest normalizes signed zero; the focused client test independently
   checks `Object.is(value, -0)`. Shared selector oracle proves transport equivalence,
   not independent selector correctness.

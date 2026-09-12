@@ -56,6 +56,8 @@ question, coordinate rule, timestamp policy or persistence interpretation is int
   exit. Cancellation fences late results immediately and joins actual worker
   termination. Sender destruction, timeout, failed startup, queued cancellation,
   restart and store shutdown all retain explicit settlement ownership.
+  A 30-second inactivity watchdog renews only on validated manifest/frame progress;
+  it bounds stalled startup/receivers without rejecting a healthy longer transfer.
 - The obsolete whole-result worker runner and native store/preload entry are
   removed. Existing tests migrate to bounded sessions without dropping their
   selector, cancellation, shared-worker or shutdown assertions. The memory
