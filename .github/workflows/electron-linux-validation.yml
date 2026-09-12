@@ -21,6 +21,7 @@ on:
       - 'package-lock.json'
       - 'electron-builder.json'
       - 'vite.config.ts'
+      - 'playwright.config.ts'
       - 'vitest*.config.ts'
       - 'tsconfig*.json'
       - 'build/**'
@@ -133,6 +134,12 @@ jobs:
         run: |
           echo 'PR correctness/build/launch evidence only; release HOLD.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Strict <200 ms source and packaged timing qualification is not run for PR merge. It remains mandatory before beta/release, with every retained failure unresolved until repaired and qualified.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Electron responsiveness attribution controls
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            npx playwright test --project=electron-controls --workers=1
 
       - name: Production web build and bundle budgets
         run: |

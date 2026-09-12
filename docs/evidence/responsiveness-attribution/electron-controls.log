@@ -1,0 +1,16 @@
+[2m[WebServer] [22m(node:2814) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+(node:2820) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:2820) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/responsiveness-attribution.spec.ts:5:1 › separates injected main, renderer and controller delays in Electron [DON-254] (3.4s)
+  ✓  2 [chromium] › tests/e2e/responsiveness-attribution.spec.ts:40:1 › records target movement after stable preflight at trusted pointer dispatch [DON-254] (682ms)
+
+  2 passed (4.9s)

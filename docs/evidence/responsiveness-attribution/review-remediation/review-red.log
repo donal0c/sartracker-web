@@ -1,0 +1,95 @@
+
+ RUN  v4.1.3 <workspace>
+
+ ❯ tests/unit/responsiveness-attribution-review.test.ts (5 tests | 5 failed) 6ms
+     × isolates Electron controls from the display-free Chromium release gate 2ms
+     × freezes both wall and monotonic stop clocks across delayed cleanup 2ms
+     × keeps diagnostic rejection and timeout explicit without throwing away original results 1ms
+     × retains whole-run pressure coverage instead of only a four-minute tail 0ms
+     × hit-tests once per pointer event and signals an unregistered preflight 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/responsiveness-attribution-review.test.ts > responsiveness review regressions [DON-254] > isolates Electron controls from the display-free Chromium release gate
+AssertionError: expected '**/visual/**' to contain '**/electron/**'
+
+Expected: "**/electron/**"
+Received: "**/visual/**"
+
+ ❯ tests/unit/responsiveness-attribution-review.test.ts:10:33
+      8|   it('isolates Electron controls from the display-free Chromium releas…
+      9|     const chromium = config.projects!.find(project => project.name ===…
+     10|     expect(chromium.testIgnore).toContain('**/electron/**')
+       |                                 ^
+     11|     const electron = config.projects!.find(project => project.name ===…
+     12|     expect(electron.testMatch).toBe('**/electron/**/*.spec.ts')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/unit/responsiveness-attribution-review.test.ts > responsiveness review regressions [DON-254] > freezes both wall and monotonic stop clocks across delayed cleanup
+AssertionError: expected { …(13) } to deeply equal { …(13) }
+
+- Expected
++ Received
+
+@@ -13,7 +13,7 @@
+    "samples": 1,
+    "startedAtMs": 100,
+    "stoppedAtMs": 100,
+    "timeOriginMs": 0,
+    "wallStartedAtMs": 1000,
+-   "wallStoppedAtMs": 1000,
++   "wallStoppedAtMs": 9000,
+  }
+
+ ❯ tests/unit/responsiveness-attribution-review.test.ts:23:28
+     21|       const first = probe.stop()
+     22|       wall.mockReturnValue(9000)
+     23|       expect(probe.stop()).toEqual(first)
+       |                            ^
+     24|     } finally { wall.mockRestore() }
+     25|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/unit/responsiveness-attribution-review.test.ts > responsiveness review regressions [DON-254] > keeps diagnostic rejection and timeout explicit without throwing away original results
+TypeError: collectAttributionEvidence is not a function
+ ❯ tests/unit/responsiveness-attribution-review.test.ts:30:42
+     28|     vi.useFakeTimers()
+     29|     try {
+     30|       const rejected = await diagnostics.collectAttributionEvidence({ …
+       |                                          ^
+     31|       expect(rejected).toMatchObject({ collected: false, reason: 'coll…
+     32|       expect(JSON.stringify(rejected)).not.toContain('private')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/unit/responsiveness-attribution-review.test.ts > responsiveness review regressions [DON-254] > retains whole-run pressure coverage instead of only a four-minute tail
+TypeError: createPressureTimeline is not a function
+ ❯ tests/unit/responsiveness-attribution-review.test.ts:40:34
+     38|
+     39|   it('retains whole-run pressure coverage instead of only a four-minut…
+     40|     const timeline = diagnostics.createPressureTimeline()
+       |                                  ^
+     41|     for (let index = 0; index < 100000; index++) timeline.add({ startM…
+     42|     const result = timeline.snapshot()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/unit/responsiveness-attribution-review.test.ts > responsiveness review regressions [DON-254] > hit-tests once per pointer event and signals an unregistered preflight
+AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times
+ ❯ tests/unit/responsiveness-attribution-review.test.ts:60:17
+     58|     const probe = installPointerAttribution(root, ['first', 'second'])
+     59|     listener({ type: 'click', composedPath: () => [], clientX: 1, clie…
+     60|     expect(hit).toHaveBeenCalledTimes(1)
+       |                 ^
+     61|     expect(probe.stop().unregisteredPreflightCount).toBe(1)
+     62|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed (5)
+   Start at  22:08:23
+   Duration  1.03s (transform 29ms, setup 0ms, import 488ms, tests 6ms, environment 456ms)

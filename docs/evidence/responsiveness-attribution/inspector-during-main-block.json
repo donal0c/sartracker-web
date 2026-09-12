@@ -1,0 +1,57 @@
+{
+  "maximumInspectorRttMs": 494.27483300000017,
+  "independentMain": {
+    "clock": "realm-performance-now",
+    "timeOriginMs": 1789070154665.288,
+    "startedAtMs": 871.641875,
+    "stoppedAtMs": 1987.482416,
+    "wallStartedAtMs": 1789070155536,
+    "wallStoppedAtMs": 1789070156652,
+    "intervalMs": 50,
+    "samples": 13,
+    "maximumGapMs": 510.45000000000005,
+    "over200Count": 1,
+    "droppedEventCount": 0,
+    "events": [
+      {
+        "startMs": 975.322375,
+        "endMs": 1485.772375,
+        "gapMs": 510.45000000000005,
+        "processCpuMs": 509.273
+      }
+    ],
+    "gc": {
+      "status": "observing",
+      "events": [
+        {
+          "startMs": 985.058083,
+          "durationMs": 0.3487499952316284
+        },
+        {
+          "startMs": 986.745625,
+          "durationMs": 0.6857500076293945
+        }
+      ],
+      "droppedEventCount": 0
+    }
+  },
+  "controller": {
+    "clock": "realm-performance-now",
+    "timeOriginMs": 1789070154449.144,
+    "startedAtMs": 1083.917542,
+    "stoppedAtMs": 2204.82275,
+    "wallStartedAtMs": 1789070155533,
+    "wallStoppedAtMs": 1789070156654,
+    "intervalMs": 50,
+    "samples": 23,
+    "maximumGapMs": 51.54879200000005,
+    "over200Count": 0,
+    "droppedEventCount": 0,
+    "events": [],
+    "gc": {
+      "status": "observing",
+      "events": [],
+      "droppedEventCount": 0
+    }
+  }
+}

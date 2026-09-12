@@ -4,6 +4,8 @@
 
 ## Planning Rule
 
+DON-254's bounded [responsiveness investigation](assurance/findings/responsiveness-attribution.md) owns PR #21 diagnostic harness remediation and unresolved main-timer attribution; it does not replace Train B/WAR-06 work or final qualification.
+
 ### WAR-11A: AppImage builder boundary (merged, 2026-09-10)
 
 WAR-04B refresh PR #12 is merged at `c51e4b35`. This slice implements builder
@@ -161,48 +163,40 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-### Responsiveness causal repair — DON-254 (2026-09-11)
+### Responsiveness causal repair — DON-254 (2026-09-12)
 
-PR22 (`codex/responsiveness-causal-repair`, base `49b2e1d4`) finishes the frozen
-incremental write/history-custody/ACK-only repair. Donal explicitly permits merge
-with retained timing failures once ordinary exact-head correctness CI and
-independent reviews pass. **Merge permission is not release qualification.**
-The retained threshold is **200 ms, not 20 ms**; beta/release stays **HOLD**.
-No more timing diagnosis or architecture work belongs in PR22.
+PR22 (`codex/responsiveness-causal-repair`) and PR20 are merged into current
+`master` at `e989e8922ea105657a18a03ca442ae88e6c9d548`. PR21 is the current
+diagnostic-only reconciliation candidate from that exact base. Its controller,
+packaged-main, renderer, pressure, pointer, and bounded-cleanup evidence must
+remain separate from the authoritative PR22 main-event-loop probe and the
+existing strict archive/current-fix/frame predicates.
 
-Ordinary tests keep mixed workloads and correctness assertions. A dedicated
-release path retains every original strict `<200 ms` assertion and packaged
-qualification workload; no limit is raised, averaged or silently waived.
-The routing change is independently reviewed; full correctness passes 433 files /
-4,458 tests with six explicit qualification-only cases; lint/build pass. PR22's live checks and
-review comments retain its exact-head merge receipt. Previous local strict source passes
-432 files / 4,444 tests and the reference ASAR `65db986f…` passes exact 8,664
-positions/restart/graceful exit with main maxima 90.781/119.481 ms. CI
-`34606545104` at `df6bdc7d` rejected three source controls at 203–228 ms;
-previous 210.537 ms and all other failures remain in the
-[causal record](assurance/findings/responsiveness-causal-repair.md).
+The retained threshold is **200 ms, not 20 ms**. No limit is raised, averaged,
+or waived; the dedicated strict responsiveness path remains mandatory before
+beta/release. **Release remains HOLD.** PR21 does not claim production repair,
+field acceptance, or qualification from diagnostic completeness.
 
-The explicit ordered queue is:
+Current local evidence on the reconciled tree: focused attribution/soak tests,
+the full correctness suite (437 files / 4,478 tests, six qualification-only
+skips), lint, production build/bundle budgets, and all three real Electron
+controls pass. The correctness lane explicitly does not run strict timing.
+Exact-head Linux CI and independent reviews remain required before merge.
 
-1. Donal merges PR22 after ordinary exact-head checks and independent reviews.
-2. Reconcile PR20, then PR21, then PR19 against the new master and drive each to
-   merge readiness in that order.
-3. Execute high-priority pre-release responsiveness work: bound the large
-   breadcrumb IPC/query transfer responsible for 316–550 ms stalls; repair the
-   separate legacy-recovery path measured around 239 ms; then rerun the unchanged
-   strict `<200 ms` release-qualification suite and retained timing cases.
-4. Release remains HOLD until those repairs and qualification pass.
+The ordered queue is:
 
-Follow-up A's transport/session WIP and follow-up B's legacy diagnostic patch
-remain recoverable in `tmp/pr22-scope-freeze-20260911/`. Newer test-only native
-attribution was removed from the active tree and preserved in
-`tmp/pr22-attribution-preserved-20260911/`; its naturally completed 4,456-test
-pass does not erase the CI failures. No diagnosis continues in PR22.
-Linear's free issue limit prevented separate follow-up issues; DON-254 comments
-`46c986c3-a16e-48f0-b069-a1b36eeb2d62` and
-`1dfb6581-71a5-4582-9bd8-4ba0ac6173a8` plus the Reliability & Regression Ledger
-retain the work. DON-254 stays open. No merge, release, deployment or team contact
-has been performed by this task.
+1. Complete exact-head review and ordinary CI for PR21, then merge it with all
+   historical timing failures retained.
+2. Reconcile PR19 against the resulting master; do not treat PR21 diagnostics
+   as a cause or release qualification.
+3. Execute the smallest pre-release repairs for the large breadcrumb IPC/query
+   transfer (316–550 ms) and separate legacy-recovery path (~239 ms).
+4. Rerun the unchanged strict `<200 ms` release-qualification suite and retained
+   timing cases. Release remains HOLD until repairs and qualification pass.
+
+The detailed attribution record is
+[here](assurance/findings/responsiveness-attribution.md). DON-254 stays open;
+no deployment, release, or team contact is part of this reconciliation.
 
 ### Repair Train B and WAR-06 — active next work (2026-09-10)
 
@@ -218,8 +212,9 @@ an Astra retrace before implementation. Both tasks started from `302bdd04` in
 isolated worktrees; shared coordination-document ownership stays with Repair
 Train B until integration.
 
-WAR-06 PR #20 review repair is now reconciled as evidence-only work. The branch
-was rebased onto current `origin/master` `3db57a79` (merged PR #22); review
+WAR-06 PR #20 review repair is now reconciled as evidence-only work and PR #20
+is merged at `e989e892`. The branch was previously rebased onto
+`3db57a79` (merged PR #22); review
 `5175815340` covered pre-rebase head `839737e8`, and the corrected executable
 characterization commit is `d96e51c8`. Three passing intentional-red
 characterizations plus the negative-control runner cover the real
@@ -237,9 +232,9 @@ head. The in-repo negative-control receipt and executable-head CI run
 `34650688441` bind the corrected evidence;
 the live [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks)
 are the source of that final receipt. PR-mode timing/replay/packaged skips
-remain explicit gaps; PRs #19 and #21 remain draft and the latest
-qualification comment retains the 205 ms strict-gate failure. Any production
-repair remains downstream of this investigation PR.
+remain explicit gaps; PR #19 remains draft and PR #21 is the current diagnostic
+reconciliation candidate. The latest qualification comment retains the 205 ms
+strict-gate failure. Any production repair remains downstream of this evidence.
 
 ### Repair Train A — merged evidence boundary (2026-09-10)
 

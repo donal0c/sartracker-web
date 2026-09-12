@@ -23,6 +23,14 @@ import { fileURLToPath } from 'node:url'
 
 import { chromium } from 'playwright'
 import { collectMainEventLoopEvidence, installMainEventLoopProbe } from '../build/main-event-loop-probe.js'
+import {
+  attachInspectorAttribution,
+  collectAttributionEvidence,
+  startResponsivenessAttribution,
+  unavailableAttribution,
+} from '../build/responsiveness-attribution-node.js'
+import { extractStoragePhaseAttribution } from '../build/responsiveness-attribution-lib.js'
+import { SOAK_INTERACTION_TARGETS } from '../build/soak-interaction-targets.js'
 
 import { summarizeResponsiveness } from '../build/electron-map-freeze-probe-lib.js'
 import { sanitizeEvidenceText } from '../build/electron-official-map-offline-smoke-lib.js'
@@ -423,7 +431,9 @@ async function main() {
       ),
     }
     const runtimeLogBytes = await combinedLogBytes(userDataDir)
-    const runtimeTiming = parseTrackingSoakRuntimeLog(await readCombinedRuntimeLog(userDataDir))
+    const runtimeContents = await readCombinedRuntimeLog(userDataDir)
+    const runtimeTiming = parseTrackingSoakRuntimeLog(runtimeContents)
+    const storagePhaseAttribution = extractStoragePhaseAttribution(runtimeContents)
     const growth = buildTrackingGrowthEvidence(growthCheckpoints)
     const supportBundleBytes = Buffer.byteLength(supportBundle, 'utf8')
     const mainStats = summarizeResponsiveness(
@@ -602,6 +612,7 @@ async function main() {
       positionTruth,
       growth,
       runtimeTiming,
+      storagePhaseAttribution,
       responsiveness: {
         mainProcess: mainStats,
         independentMainEventLoops: launches.map((launch) => launch.mainEventLoopEvidence),
@@ -637,6 +648,7 @@ async function main() {
         mainHeartbeatErrors: launch.mainHeartbeatErrors,
         mainHeartbeatFailures: launch.mainHeartbeatFailures,
         mainEventLoopEvidence: launch.mainEventLoopEvidence,
+        attribution: launch.attributionEvidence ?? unavailableAttribution('not-collected'),
         rendererCrashes: launch.rendererCrashes,
         processMemory: createProcessMemoryReport(launch.processMemory),
         operatorClickAuditTail: launch.operatorClickAuditTail,
@@ -675,6 +687,15 @@ async function main() {
         cleanupFailure = error
       }
     }
+    // Keep diagnostic availability/failure visible even when the operational report was not written.
+    await writeJson(path.join(evidenceDir, 'responsiveness-attribution.json'), {
+      schemaVersion: 1,
+      diagnosticOnly: true,
+      launches: launches.map((launch) => ({
+        number: launch.number,
+        attribution: launch.attributionEvidence ?? unavailableAttribution('not-collected'),
+      })),
+    }).catch(() => console.warn('[tracking-soak] attribution evidence file could not be written.'))
     await Promise.allSettled(
       launches.map((launch) =>
         writeFile(
@@ -771,6 +792,7 @@ async function launchPackagedApp(options, userDataDir, number) {
   let browser
   let mainInspector
   let mainHeartbeat
+  let attribution
   try {
     await waitForCdp(remoteDebuggingPort, appProcess)
     mainInspector = await connectMainInspector(inspectorPort, appProcess)
@@ -794,6 +816,12 @@ async function launchPackagedApp(options, userDataDir, number) {
     rendererLifecycle.markReady()
     mainHeartbeat = startMainHeartbeat(mainInspector, 50)
     await mainInspector.evaluate(`globalThis.__SARTRACKER_MAIN_EVENT_LOOP_PROBE__ = (${installMainEventLoopProbe.toString()})(); true`)
+    attribution = await startResponsivenessAttribution({
+      mainInspector,
+      page,
+      mainPid: appProcess.pid,
+      requireFrames: true,
+    })
 
     return {
       number,
@@ -802,6 +830,8 @@ async function launchPackagedApp(options, userDataDir, number) {
       page,
       mainInspector,
       mainHeartbeat,
+      attribution,
+      attributionEvidence: unavailableAttribution('not-collected'),
       mainHeartbeatErrors: 0,
       mainHeartbeatFailures: [],
       mainEventLoopEvidence: null,
@@ -829,8 +859,9 @@ async function launchPackagedApp(options, userDataDir, number) {
       closePromise: null,
     }
   } catch (error) {
-    await runCleanupStep(() => mainInspector?.close(), 250)
     await runCleanupStep(() => mainHeartbeat?.stop(), 250)
+    await runCleanupStep(() => attribution === undefined ? undefined : collectAttributionEvidence(attribution), 12_000)
+    await runCleanupStep(() => mainInspector?.close(), 250)
     await runCleanupStep(() => browser?.close(), 2_000)
     let cleanupFailure
     try {
@@ -980,7 +1011,7 @@ async function recordOperatorInteraction(input) {
   await focusPackagedPage(input.page, 2_000)
   const preflight = await inspectPointerTarget(
     input.page,
-    'open-devices-workspace',
+    SOAK_INTERACTION_TARGETS.open,
   ).catch(() => ({
     documentFocused: false,
     targetFound: false,
@@ -1015,15 +1046,15 @@ async function recordOperatorInteraction(input) {
       installRecorder: () =>
         installClickRecorder(
           input.page,
-          'open-devices-workspace',
-          'workspace-close-btn',
+          SOAK_INTERACTION_TARGETS.open,
+          SOAK_INTERACTION_TARGETS.close,
           'actionable',
         ),
       click: () =>
         clickActionablePointerTarget({
           page: input.page,
           preflight,
-          testId: 'open-devices-workspace',
+          testId: SOAK_INTERACTION_TARGETS.open,
           stableDurationMs: 250,
           timeoutMs: 2_000,
         }),
@@ -1035,7 +1066,7 @@ async function recordOperatorInteraction(input) {
       openAction.stateReached &&
       await waitForPointerTargetActionable(
         input.page,
-        'workspace-close-btn',
+        SOAK_INTERACTION_TARGETS.close,
         5_000,
       )
     result.openClickCompleted = openAction.clickCompleted
@@ -1057,7 +1088,7 @@ async function recordOperatorInteraction(input) {
   result.mainIpcStatus = mainIpc.status
 
   const closePreflight = result.workspaceOpened
-    ? await inspectPointerTarget(input.page, 'workspace-close-btn').catch(() => ({
+    ? await inspectPointerTarget(input.page, SOAK_INTERACTION_TARGETS.close).catch(() => ({
         documentFocused: false,
         targetFound: false,
         targetReceivesPointer: false,
@@ -1070,7 +1101,7 @@ async function recordOperatorInteraction(input) {
       installRecorder: () =>
         installClickRecorder(
           input.page,
-          'workspace-close-btn',
+          SOAK_INTERACTION_TARGETS.close,
           'devices-workspace',
           'hidden',
         ),
@@ -1078,7 +1109,7 @@ async function recordOperatorInteraction(input) {
         clickActionablePointerTarget({
           page: input.page,
           preflight: closePreflight,
-          testId: 'workspace-close-btn',
+          testId: SOAK_INTERACTION_TARGETS.close,
           stableDurationMs: 250,
           timeoutMs: 2_000,
         }),
@@ -1112,8 +1143,8 @@ async function recordOperatorInteraction(input) {
     interactionStartSequence,
   })
   const expectedInteractionTestIds = [
-    ...(result.openClickCompleted ? ['open-devices-workspace'] : []),
-    ...(result.closeClickCompleted ? ['workspace-close-btn'] : []),
+    ...(result.openClickCompleted ? [SOAK_INTERACTION_TARGETS.open] : []),
+    ...(result.closeClickCompleted ? [SOAK_INTERACTION_TARGETS.close] : []),
   ]
   const auditIssues = inspectOperatorClickAudit(
     audit,
@@ -2885,9 +2916,10 @@ async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
       500,
     )
     await runCleanupStep(
-      () => collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps),
+      () => collectOriginalLaunchResponsiveness(launch, mainRoundTrips, rendererGaps),
       2_000,
     )
+    await collectLaunchAttribution(launch)
     let gracefulFailure
     let exitEvidence
     try {
@@ -2950,11 +2982,18 @@ async function collectOperatorClickAuditTail(launch) {
  * measured window.
  */
 async function collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps) {
+  await collectOriginalLaunchResponsiveness(launch, mainRoundTrips, rendererGaps)
+  await collectLaunchAttribution(launch)
+}
+
+/** Retains the original timing probes and their operational verdict semantics. */
+async function collectOriginalLaunchResponsiveness(launch, mainRoundTrips, rendererGaps) {
   if (launch.responsivenessCollected === true) {
     return
   }
   launch.responsivenessCollected = true
   const heartbeat = await launch.mainHeartbeat.stop()
+  launch.heartbeatEvidence = heartbeat
   launch.mainHeartbeatErrors = heartbeat.errors
   launch.mainHeartbeatFailures = heartbeat.failures
   mainRoundTrips.push(...heartbeat.roundTrips)
@@ -2962,6 +3001,21 @@ async function collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps)
   const launchRendererGaps = await collectRendererProbe(launch.page).catch(() => [])
   launch.rendererSampleCount = launchRendererGaps.length
   rendererGaps.push(...launchRendererGaps)
+}
+
+/** Publishes bounded diagnostic evidence without changing the original soak verdict. */
+async function collectLaunchAttribution(launch) {
+  launch.attributionCollectionPromise ??= (async () => {
+    const evidence = attachInspectorAttribution(
+      await collectAttributionEvidence(launch.attribution),
+      launch.heartbeatEvidence,
+    )
+    launch.attributionEvidence = evidence
+    if (!evidence.collected) {
+      console.warn(`[tracking-soak] attribution launch=${launch.number} collected=false reason=${evidence.reason}`)
+    }
+  })()
+  await launch.attributionCollectionPromise
 }
 
 async function sampleProcessMemory(launch, context = {}) {
@@ -3315,6 +3369,7 @@ async function connectMainInspector(port, appProcess) {
   const rejectPending = () => {
     closed = true
     for (const request of pending.values()) {
+      clearTimeout(request.timeout)
       request.reject(new Error('Electron main inspector closed.'))
     }
     pending.clear()
@@ -3326,6 +3381,7 @@ async function connectMainInspector(port, appProcess) {
     const request = pending.get(message.id)
     if (request === undefined) return
     pending.delete(message.id)
+    clearTimeout(request.timeout)
     if (message.error !== undefined || message.result?.exceptionDetails !== undefined) {
       const error = new Error('Electron main inspector evaluation failed.')
       error.inspectorFailure = {
@@ -3346,11 +3402,18 @@ async function connectMainInspector(port, appProcess) {
         return
       }
       requestId += 1
-      pending.set(requestId, { resolve, reject })
+      const id = requestId
+      const timeout = setTimeout(() => {
+        if (!pending.has(id)) return
+        pending.delete(id)
+        reject(new Error('Electron main inspector evaluation timed out.'))
+      }, 5_000)
+      pending.set(id, { resolve, reject, timeout })
       try {
-        socket.send(JSON.stringify({ id: requestId, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise } }))
+        socket.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise } }))
       } catch {
-        pending.delete(requestId)
+        clearTimeout(timeout)
+        pending.delete(id)
         reject(new Error('Electron main inspector is unavailable.'))
       }
     }),

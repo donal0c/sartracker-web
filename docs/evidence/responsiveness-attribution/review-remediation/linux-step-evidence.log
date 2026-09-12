@@ -1,0 +1,19 @@
+Build and inspect Linux Electron artifacts	Full deterministic unit gate	2026-09-10T21:45:23.3520697Z  Test Files  429 passed (429)
+Build and inspect Linux Electron artifacts	Full deterministic unit gate	2026-09-10T21:45:23.3573375Z       Tests  4393 passed (4393)
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	﻿2026-09-10T21:45:23.4426482Z ##[group]Run set -euo pipefail
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:23.4426858Z set -euo pipefail
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:23.4427214Z xvfb-run -a --server-args='-screen 0 1440x900x24' \
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:23.4427700Z   npx playwright test --project=electron-controls --workers=1
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:23.4500270Z shell: /usr/bin/bash -e {0}
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:23.4500553Z env:
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:23.4500756Z   NODE_VERSION: 22
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:23.4501054Z   EXPECTED_SOURCE_SHA: 693b1c30275311c61c6bb9cfdc9800e78cb0408f
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:23.4501408Z ##[endgroup]
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:32.1171733Z [WebServer] Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:32.1200856Z [WebServer]   npx update-browserslist-db@latest
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:32.1202384Z [WebServer]   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:32.2511250Z Running 3 tests using 1 worker
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:39.3852755Z ···
+Build and inspect Linux Electron artifacts	Electron responsiveness attribution controls	2026-09-10T21:45:39.3857463Z   3 passed (10.8s)
+Build and inspect Linux Electron artifacts	Packaged archive lifecycle smoke	2026-09-10T21:57:12.4796439Z electron-archive-lifecycle-smoke: Archive-lifecycle external watchdog recorded an instrumentation failure (current_fix_continuity_gate_breached).
+Build and inspect Linux Electron artifacts	Packaged archive lifecycle smoke	2026-09-10T21:57:16.8115282Z ##[error]Process completed with exit code 1.

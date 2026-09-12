@@ -1,45 +1,35 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-11. Read after `CLAUDE.md`.
+Updated 2026-09-12. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **DON-254 incremental responsiveness repair — PR22**, base `49b2e1d4`,
-  branch `codex/responsiveness-causal-repair`. Donal explicitly permits merge
-  after ordinary exact-head correctness CI and independent reviews, with timing
-  failures retained. **Release HOLD: the threshold remains 200 ms, not 20 ms.**
-  Merge permission is not release qualification. PR22 keeps its frozen write,
-  history-custody, ACK-only and strict main-timer repairs; no further diagnosis.
-  Ordinary tests retain mixed workloads/correctness checks. The dedicated release
-  path retains unchanged strict `<200 ms` assertions and packaged timing gates.
-  Routing is independently reviewed. Full correctness passes 433 files / 4,458
-  tests with six explicit qualification-only cases; lint/build pass. PR22's live checks/review
-  comments retain the exact-head merge receipt. No release qualification claim.
-  Previous reference ASAR `65db986f…`: exact 8,664 positions, restart, graceful
-  exits, independent main 90.781/119.481 ms. Earlier local strict source:
-  432 files / 4,444 tests, lint/build pass. CI `34606545104` at `df6bdc7d`
-  rejected event/GPX source timing at 203–228 ms before packaging; earlier
-  210.537 ms and all other failures remain preserved, causally unwaived.
-  Stopped diagnostic work is saved in `tmp/pr22-attribution-preserved-20260911/`
-  (its final 434-file/4,456-test run completed naturally). Transport/legacy WIP
-  remains in `tmp/pr22-scope-freeze-20260911/`; no diagnostic code remains active.
-  **Ordered queue:** (1) Donal merges PR22 after ordinary exact-head checks and
-  reviews; (2) reconcile PR20, then PR21, then PR19 against the new master and
-  drive each to merge readiness; (3) high-priority pre-release repair of large
-  breadcrumb IPC/query transfer (316–550 ms), then separate legacy recovery
-  (~239 ms), then rerun unchanged strict `<200 ms` release qualification;
-  (4) release remains HOLD until the repairs and qualification pass.
-  DON-254 is In Progress. Linear's issue limit prevented separate A/B issues;
-  comments `46c986c3…` / `1dfb6581…` and the regression ledger retain them.
-  [Causal record](../docs/assurance/findings/responsiveness-causal-repair.md).
-  Historical PR19/20/21 findings stay separate. No merge/release/team contact.
+- **DON-254 responsiveness attribution — PR21 reconciliation candidate**, base
+  `e989e892`, branch `codex/responsiveness-attribution`. PR22 and PR20 are merged;
+  PR21 remains diagnostic-only and must not alter the independent PR22 main-loop
+  gate, existing strict `<200 ms` predicates, or release decision. **Release
+  HOLD: the threshold remains 200 ms, not 20 ms.** Historical 205 ms and
+  544.164511 ms failures remain retained qualification evidence. Local focused
+  attribution/soak tests, full correctness (437 files / 4,478 tests, six
+  qualification-only skips), lint/build/bundle budgets and three real Electron
+  controls pass. Exact-head Linux CI and independent reviews remain the merge
+  gate; no production repair, deployment or field acceptance is claimed.
+  **Ordered queue:** complete PR21 exact-head review/CI and merge; reconcile
+  PR19; repair the large breadcrumb IPC/query transfer (316–550 ms) and separate
+  legacy path (~239 ms); rerun unchanged strict release qualification. [Current
+  record](../docs/assurance/findings/responsiveness-attribution.md).
 
-- **WAR-06 PR #20 investigation-only evidence is active.** Current routes,
+  Astra-only reconciliation: rejected review superseded; fresh independent
+  Astra-low source review of `87259317` has no P1/P2 findings. Local Electron
+  repeat passes 3/3, but its first run lost the realm-control target; failure
+  remains retained and unexplained. No causal fixture fix is claimed. Final
+  exact-head CI/review remains pending; see the [receipt](../docs/evidence/responsiveness-attribution/current-head-reviews.md).
+
+- **WAR-06 PR #20 investigation-only evidence is merged and remains evidence-only.** Current routes,
   fidelity limits, negative-control proof and exact-head status live in the
   [WAR-06 report](../docs/assurance/findings/war-06/WAR-06.md), [receipts](../docs/assurance/findings/war-06/review-receipts.md)
   and [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks).
-  No production repair or release claim is included; PR #20 remains ahead of
-  PR #21 and PR #19 in the locked queue. Current local refresh on docs head
+  No production repair or release claim is included. Current local refresh on docs head
   `b388df0d` passed the serial full source suite (435/4,468) but the default-
   parallel suite still failed unchanged DON-277 (275.58 ms) and DON-278
   (228.95 ms) against `<200 ms`; the timing gate remains a DON-254

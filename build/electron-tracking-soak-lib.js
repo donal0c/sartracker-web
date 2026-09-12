@@ -525,6 +525,10 @@ export async function clickActionablePointerTarget(input) {
           stableSince !== null &&
           observedAt - stableSince >= stableDurationMs
         ) {
+          window.__SAR_ATTR_LAST_PREFLIGHT__ = {
+            testId: expectedTestId, atMs: observedAt, rect: currentRect,
+            x: centerX, y: centerY,
+          }
           return { x: centerX, y: centerY }
         }
         if (receivesPointer) {
@@ -717,6 +721,8 @@ export function installCadencedRendererProbeInWindow(
   windowRoot.__TRACKING_SOAK_RENDERER_PROBE_CLEANUP__?.()
   const gaps = []
   windowRoot.__TRACKING_SOAK_RENDERER_GAPS__ = gaps
+  const timedGaps = { events: [], droppedEventCount: 0, timeOriginMs: windowRoot.performance.timeOrigin }
+  windowRoot.__SAR_ATTR_FRAME_GAPS__ = timedGaps
   let previous = windowRoot.performance.now()
   let frameId
   let timerId
@@ -738,6 +744,10 @@ export function installCadencedRendererProbeInWindow(
       return
     }
     gaps.push(now - previous)
+    if (now - previous >= 100) {
+      if (timedGaps.events.length === 512) { timedGaps.events.shift(); timedGaps.droppedEventCount++ }
+      timedGaps.events.push({ startMs: previous, endMs: now, gapMs: now - previous })
+    }
     previous = now
     timerId = windowRoot.setTimeout(() => {
       if (!stopped) {

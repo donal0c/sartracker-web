@@ -1,0 +1,20 @@
+[
+  {
+    "label": "base",
+    "head": "302bdd040976bd370271cf5866549fa2a7e05ff5",
+    "asarSha256": "933a01fbf127a42e4164eeade351cbd64003f96ce0fcecd302c4909660a80dd3",
+    "asarPath": "tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/Resources/app.asar",
+    "platform": "macOS arm64",
+    "signed": false,
+    "purpose": "controlled local diagnostic comparison, not Linux CI artifact qualification"
+  },
+  {
+    "label": "pr19",
+    "head": "769669baf5d47ee9aa157c90746f6e406778d554",
+    "asarSha256": "85d43b381f5855beba02bb8dc36e9010845bb633989c15227ddb354ebae90c9e",
+    "asarPath": "tmp/responsiveness-attribution/pr19-source/tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/Resources/app.asar",
+    "platform": "macOS arm64",
+    "signed": false,
+    "purpose": "controlled local diagnostic comparison, not Linux CI artifact qualification"
+  }
+]

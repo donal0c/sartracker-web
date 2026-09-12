@@ -1,0 +1,29 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-tracking-soak-exact-script.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 <workspace>
+
+ ❯ tests/unit/electron-tracking-soak-exact-script.test.ts (15 tests | 1 failed) 8ms
+     × starts the original main gate before diagnostic setup and drains it on setup failure [DON-254] 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-tracking-soak-exact-script.test.ts > fourteen-day packaged exact-dot soak script [DON-260] > starts the original main gate before diagnostic setup and drains it on setup failure [DON-254]
+AssertionError: expected 2089 to be less than 1955
+ ❯ tests/unit/electron-tracking-soak-exact-script.test.ts:11:69
+      9|   it('starts the original main gate before diagnostic setup and drains…
+     10|     const launch = source.slice(source.indexOf('async function launchP…
+     11|     expect(launch.indexOf('startMainHeartbeat(mainInspector, 50)')).to…
+       |                                                                     ^
+     12|     const cleanup = launch.slice(launch.indexOf('} catch (error)'))
+     13|     expect(cleanup).toContain('mainHeartbeat?.stop()')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 14 passed (15)
+   Start at  21:10:40
+   Duration  641ms (transform 26ms, setup 0ms, import 34ms, tests 8ms, environment 515ms)

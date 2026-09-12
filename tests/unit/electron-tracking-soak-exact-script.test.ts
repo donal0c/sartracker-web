@@ -6,6 +6,20 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
   const source = readFileSync('scripts/electron-tracking-soak.mjs', 'utf8')
   const soakLibSource = readFileSync('build/electron-tracking-soak-lib.js', 'utf8')
 
+  it('starts the original main gate before diagnostic setup and drains it on setup failure [DON-254]', () => {
+    const launch = source.slice(source.indexOf('async function launchPackagedApp('), source.indexOf('/** Records bounded renderer/CDP'))
+    expect(launch.indexOf('startMainHeartbeat(mainInspector, 50)')).toBeLessThan(launch.indexOf('await startResponsivenessAttribution('))
+    const cleanup = launch.slice(launch.indexOf('} catch (error)'))
+    expect(cleanup).toContain('mainHeartbeat?.stop()')
+    expect(cleanup).toContain('collectAttributionEvidence(attribution)')
+    expect(cleanup.indexOf('mainHeartbeat?.stop()')).toBeLessThan(
+      cleanup.indexOf('collectAttributionEvidence(attribution)'),
+    )
+    expect(cleanup.indexOf('collectAttributionEvidence(attribution)')).toBeLessThan(
+      cleanup.indexOf('mainInspector?.close()'),
+    )
+  })
+
   it('shares one recorded mission-scoped fixture clock with mock and independent oracle', () => {
     expect(source).toContain('createTrackingSoakFixtureClock(')
     expect(source).toContain('baseTimeMs: fixtureClock.baseTimeMs')
@@ -328,7 +342,10 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     expect(closeSource).toContain('launch.closePromise ??=')
     expect(closeSource).toContain('runCleanupStep(')
     expect(closeSource).toContain('collectOperatorClickAuditTail')
-    expect(closeSource).toContain('collectLaunchResponsiveness')
+    expect(closeSource).toContain('collectOriginalLaunchResponsiveness')
+    expect(closeSource).toContain('await collectLaunchAttribution(launch)')
+    expect(source).toContain("'responsiveness-attribution.json'")
+    expect(source).toContain("attribution: launch.attributionEvidence ?? unavailableAttribution('not-collected')")
     expect(closeSource).toContain('requestGracefulElectronQuit(')
     expect(closeSource).toContain('launch.shutdownEvidence = exitEvidence')
     expect(closeSource).toContain('launch.mainInspector.close()')

@@ -1,0 +1,555 @@
+{
+  "base": "302bdd040976bd370271cf5866549fa2a7e05ff5",
+  "head": "769669baf5d47ee9aa157c90746f6e406778d554",
+  "baseTree": "0035b6ef418b4ffc8b95de74281591e5fe1220c6",
+  "headTree": "1dbca6e67642e7e4092fbb5fc9c70573e4a7d9da",
+  "diffGroups": {
+    "application": [
+      "electron/gpx-evidence-import-worker.cjs",
+      "src/features/gpx/gpx-parser.ts",
+      "src/features/gpx/start-gpx-runtime.ts"
+    ],
+    "test-harness": [
+      "scripts/electron-gpx-fidelity-smoke.mjs",
+      "tests/e2e/gpx-import.spec.ts",
+      "tests/fixtures/gpx-extension-fidelity.gpx",
+      "tests/fixtures/gpx-xml-contract-cases.ts",
+      "tests/unit/electron-mission-evidence-versioning.test.ts",
+      "tests/unit/gpx-parser.test.ts",
+      "tests/unit/start-gpx-runtime.test.ts"
+    ],
+    "workflow-environment": [],
+    "documentation": [
+      "docs/assurance/coordinated-work-ledger.md",
+      "docs/assurance/findings/repair-train-b.md",
+      "docs/assurance/hazard-register.md",
+      "docs/evidence/repair-train-b/admission-notice.png",
+      "docs/evidence/repair-train-b/admission-visual-review.json",
+      "docs/evidence/repair-train-b/browser-settled.png",
+      "docs/evidence/repair-train-b/browser-visual-review.json",
+      "docs/evidence/repair-train-b/browser-visual.log",
+      "docs/evidence/repair-train-b/browser.log",
+      "docs/evidence/repair-train-b/current-head-red.log",
+      "docs/evidence/repair-train-b/focused-source.log",
+      "docs/evidence/repair-train-b/full-source.log",
+      "docs/evidence/repair-train-b/package-receipt.json",
+      "docs/evidence/repair-train-b/package-rejected-harness.json",
+      "docs/evidence/repair-train-b/package-rejected-inspection.json",
+      "docs/evidence/repair-train-b/package-review-receipt.json",
+      "docs/evidence/repair-train-b/package-review-settled.png",
+      "docs/evidence/repair-train-b/package-settled.png",
+      "docs/evidence/repair-train-b/refresh-publication-red.log",
+      "docs/evidence/repair-train-b/renderer-review-red.log",
+      "docs/evidence/repair-train-b/replay-restart.log",
+      "docs/evidence/repair-train-b/review-browser-notice-isolated.log",
+      "docs/evidence/repair-train-b/review-browser-notice.log",
+      "docs/evidence/repair-train-b/review-browser.log",
+      "docs/evidence/repair-train-b/review-build.log",
+      "docs/evidence/repair-train-b/review-focused-green.log",
+      "docs/evidence/repair-train-b/review-lint.log",
+      "docs/evidence/repair-train-b/review-red.log",
+      "docs/evidence/repair-train-b/review-visual-final.log",
+      "docs/evidence/repair-train-b/review-visual.log",
+      "docs/two-track-execution-workplan.md",
+      "handoff/HANDOFF.md",
+      "public/manual/index.html"
+    ]
+  },
+  "boundaryBlobs": [
+    {
+      "path": "scripts/electron-tracking-soak.mjs",
+      "baseBlob": "8a446def0a1142e30069aa66db0c4ea53702a878",
+      "headBlob": "8a446def0a1142e30069aa66db0c4ea53702a878"
+    },
+    {
+      "path": "build/electron-tracking-soak-lib.js",
+      "baseBlob": "3a04d1dc9803a6a411602adfe4bfa6a2eadaca3e",
+      "headBlob": "3a04d1dc9803a6a411602adfe4bfa6a2eadaca3e"
+    },
+    {
+      "path": ".github/workflows/electron-linux-validation.yml",
+      "baseBlob": "c772a884dd7f48d1943cd83aa6f45c506e28d248",
+      "headBlob": "c772a884dd7f48d1943cd83aa6f45c506e28d248"
+    },
+    {
+      "path": "package-lock.json",
+      "baseBlob": "94c5d9f30021b15270e8ed3758cf240f9018f05e",
+      "headBlob": "94c5d9f30021b15270e8ed3758cf240f9018f05e"
+    },
+    {
+      "path": "electron/mission-store.cjs",
+      "baseBlob": "29e16fb45d797258c8e82c481ac3081045be2d5a",
+      "headBlob": "29e16fb45d797258c8e82c481ac3081045be2d5a"
+    },
+    {
+      "path": "src/features/tracking/start-tracking-runtime.ts",
+      "baseBlob": "440b67413bdeeeb3c0512fd6959edf81058b9c4c",
+      "headBlob": "440b67413bdeeeb3c0512fd6959edf81058b9c4c"
+    }
+  ],
+  "run": 34515489481,
+  "attempt": 2,
+  "artifactId": 10168590752,
+  "reportSha256": "9d6f0a992d02006945c4aa58471ac824c7316a9b510c4aea42af0aba12e13be3",
+  "mainInspectorRoundTrip": {
+    "count": 5714,
+    "maxMs": 544.1645109999808,
+    "meanMs": 2.9199093743435487,
+    "p50Ms": 1.4611239999940153,
+    "p95Ms": 7.346977000008337,
+    "p99Ms": 26.554245999999694,
+    "overThresholdCount": 2,
+    "stallThresholdMs": 200
+  },
+  "rendererCadencedFrames": {
+    "count": 4392,
+    "maxMs": 416.60000000000036,
+    "meanMs": 65.85571493624902,
+    "p50Ms": 66.60000000000582,
+    "p95Ms": 83.40000000000146,
+    "p99Ms": 133.39999999999964,
+    "overThresholdCount": 14,
+    "stallThresholdMs": 250
+  },
+  "verdict": {
+    "valid": false,
+    "passed": false,
+    "failureReasons": [
+      "Expected 0 operator interaction errors; observed 3.",
+      "Main-process maximum 544.1645109999808ms reached the 200ms stall threshold.",
+      "Operator action maximum 5143.171037ms reached the 1000ms freeze threshold.",
+      "External operator action maximum 5143.171037ms reached the 1000ms freeze threshold."
+    ],
+    "redundantTelemetrySlopeRowsPerEquivalentPoll": 0,
+    "operationalPositionSlopeRowsPerEquivalentPoll": 8.022222222222222
+  },
+  "positionTruth": {
+    "actual": {
+      "full": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "1dfd103a6911daa69516fa5ff4eba8c02dd1e3df9ae2399f9212e5ffe727a527"
+      },
+      "normalPrefix": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "1dfd103a6911daa69516fa5ff4eba8c02dd1e3df9ae2399f9212e5ffe727a527"
+      },
+      "normalPrefixBatch": 480
+    },
+    "expected": {
+      "full": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "1dfd103a6911daa69516fa5ff4eba8c02dd1e3df9ae2399f9212e5ffe727a527"
+      },
+      "normalPrefix": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "1dfd103a6911daa69516fa5ff4eba8c02dd1e3df9ae2399f9212e5ffe727a527"
+      },
+      "normalPrefixBatch": 480
+    },
+    "exactMatch": true,
+    "normalPrefixExactMatch": true
+  },
+  "interactions": [
+    {
+      "phase": "mission-started",
+      "durationMs": 1644.2299000000003,
+      "openActionDurationMs": 103.39999999990687,
+      "closeActionDurationMs": 34,
+      "openExternalActionDurationMs": 175.85659300000043,
+      "closeExternalActionDurationMs": 72.94020199999977,
+      "openClickDeliveryDurationMs": 101.93306200000006,
+      "closeClickDeliveryDurationMs": 32.03554299999814,
+      "openStateWaitDurationMs": 73.92353100000037,
+      "closeStateWaitDurationMs": 40.90465900000163,
+      "openTargetStabilityWaitMs": 465.45252900000014,
+      "closeTargetStabilityWaitMs": 336.4861200000014,
+      "passed": true,
+      "classification": "healthy",
+      "failureStages": [],
+      "preflight": {
+        "documentFocused": true,
+        "targetFound": true,
+        "targetReceivesPointer": true,
+        "centerPoint": {
+          "x": 1218,
+          "y": 875.46875
+        },
+        "hitElement": {
+          "tag": "button",
+          "testId": "open-devices-workspace",
+          "id": null
+        }
+      },
+      "closePreflight": {
+        "documentFocused": true,
+        "targetFound": true,
+        "targetReceivesPointer": true,
+        "centerPoint": {
+          "x": 1332.7265625,
+          "y": 46.25
+        },
+        "hitElement": {
+          "tag": "button",
+          "testId": "workspace-close-btn",
+          "id": null
+        }
+      },
+      "browserEvents": {
+        "openClickCompleted": true,
+        "openClickReceived": true,
+        "closeClickCompleted": true,
+        "closeClickReceived": true
+      },
+      "uiState": {
+        "workspaceOpened": true,
+        "workspaceClosed": true
+      },
+      "mainIpc": {
+        "status": "ok",
+        "errorClass": null,
+        "durationMs": 5.399999999906868
+      },
+      "errorClasses": [],
+      "clickAudit": {
+        "interSampleEvents": [],
+        "interactionEvents": [
+          {
+            "sequence": 34,
+            "atMs": 8907.899999999907,
+            "trusted": true,
+            "detail": 1,
+            "clientX": 1218,
+            "clientY": 875,
+            "pathTestIds": [
+              "open-devices-workspace",
+              "tracking-status",
+              "sidebar-tab-content",
+              "operational-sidebar",
+              "app-shell"
+            ]
+          },
+          {
+            "sequence": 35,
+            "atMs": 9597.300000000047,
+            "trusted": true,
+            "detail": 1,
+            "clientX": 1332,
+            "clientY": 46,
+            "pathTestIds": [
+              "workspace-close-btn",
+              "app-shell"
+            ]
+          }
+        ],
+        "missingEventCount": 0,
+        "lastSequence": 35,
+        "sequenceRegressed": false,
+        "issues": []
+      }
+    },
+    {
+      "phase": "checkpoint-3-before-restart",
+      "durationMs": 1898.871468999998,
+      "openActionDurationMs": 52.4000000001397,
+      "closeActionDurationMs": 111.60000000009313,
+      "openExternalActionDurationMs": 93.55792199999996,
+      "closeExternalActionDurationMs": 138.6265850000018,
+      "openClickDeliveryDurationMs": 45.42778400000316,
+      "closeClickDeliveryDurationMs": 21.43747599999915,
+      "openStateWaitDurationMs": 48.130137999996805,
+      "closeStateWaitDurationMs": 117.18910900000265,
+      "openTargetStabilityWaitMs": 341.30765299999985,
+      "closeTargetStabilityWaitMs": 619.946777000001,
+      "passed": true,
+      "classification": "healthy",
+      "failureStages": [],
+      "preflight": {
+        "documentFocused": true,
+        "targetFound": true,
+        "targetReceivesPointer": true,
+        "centerPoint": {
+          "x": 1218,
+          "y": 875.46875
+        },
+        "hitElement": {
+          "tag": "button",
+          "testId": "open-devices-workspace",
+          "id": null
+        }
+      },
+      "closePreflight": {
+        "documentFocused": true,
+        "targetFound": true,
+        "targetReceivesPointer": true,
+        "centerPoint": {
+          "x": 1332.7265625,
+          "y": 46.25
+        },
+        "hitElement": {
+          "tag": "button",
+          "testId": "workspace-close-btn",
+          "id": null
+        }
+      },
+      "browserEvents": {
+        "openClickCompleted": true,
+        "openClickReceived": true,
+        "closeClickCompleted": true,
+        "closeClickReceived": true
+      },
+      "uiState": {
+        "workspaceOpened": true,
+        "workspaceClosed": true
+      },
+      "mainIpc": {
+        "status": "ok",
+        "errorClass": null,
+        "durationMs": 39.299999999813735
+      },
+      "errorClasses": [],
+      "clickAudit": {
+        "interSampleEvents": [],
+        "interactionEvents": [
+          {
+            "sequence": 36,
+            "atMs": 16422.199999999953,
+            "trusted": true,
+            "detail": 1,
+            "clientX": 1218,
+            "clientY": 875,
+            "pathTestIds": [
+              "open-devices-workspace",
+              "tracking-status",
+              "sidebar-tab-content",
+              "operational-sidebar",
+              "app-shell"
+            ]
+          },
+          {
+            "sequence": 37,
+            "atMs": 17299.199999999953,
+            "trusted": true,
+            "detail": 1,
+            "clientX": 1332,
+            "clientY": 46,
+            "pathTestIds": [
+              "workspace-close-btn",
+              "app-shell"
+            ]
+          }
+        ],
+        "missingEventCount": 0,
+        "lastSequence": 37,
+        "sequenceRegressed": false,
+        "issues": []
+      }
+    },
+    {
+      "phase": "checkpoint-3-after-restart",
+      "durationMs": 7128.351102999997,
+      "openActionDurationMs": 5143.171037,
+      "closeActionDurationMs": null,
+      "openExternalActionDurationMs": 5143.171037,
+      "closeExternalActionDurationMs": null,
+      "openClickDeliveryDurationMs": 133.33074299999862,
+      "closeClickDeliveryDurationMs": null,
+      "openStateWaitDurationMs": 5009.840294000001,
+      "closeStateWaitDurationMs": null,
+      "openTargetStabilityWaitMs": 383.7685219999985,
+      "closeTargetStabilityWaitMs": null,
+      "passed": false,
+      "classification": "unexpected_browser_input",
+      "failureStages": [
+        "unexpected_browser_input",
+        "browser_input_not_delivered"
+      ],
+      "preflight": {
+        "documentFocused": true,
+        "targetFound": true,
+        "targetReceivesPointer": true,
+        "centerPoint": {
+          "x": 1218,
+          "y": 802.28125
+        },
+        "hitElement": {
+          "tag": "button",
+          "testId": "open-devices-workspace",
+          "id": null
+        }
+      },
+      "closePreflight": null,
+      "browserEvents": {
+        "openClickCompleted": true,
+        "openClickReceived": false,
+        "closeClickCompleted": false,
+        "closeClickReceived": false
+      },
+      "uiState": {
+        "workspaceOpened": false,
+        "workspaceClosed": false
+      },
+      "mainIpc": {
+        "status": "ok",
+        "errorClass": null,
+        "durationMs": 22.600000000093132
+      },
+      "errorClasses": [
+        "UnexpectedOperatorClickSequence"
+      ],
+      "clickAudit": {
+        "interSampleEvents": [],
+        "interactionEvents": [
+          {
+            "sequence": 2,
+            "atMs": 3258.5,
+            "trusted": true,
+            "detail": 1,
+            "clientX": 1218,
+            "clientY": 802,
+            "pathTestIds": [
+              "tracking-status",
+              "sidebar-tab-content",
+              "operational-sidebar",
+              "app-shell"
+            ]
+          }
+        ],
+        "missingEventCount": 0,
+        "lastSequence": 2,
+        "sequenceRegressed": false,
+        "issues": [
+          "UnexpectedOperatorClickSequence"
+        ]
+      }
+    },
+    {
+      "phase": "final-load",
+      "durationMs": 3466.015305000008,
+      "openActionDurationMs": 48.0999999998603,
+      "closeActionDurationMs": 43.4000000001397,
+      "openExternalActionDurationMs": 373.05722600000445,
+      "closeExternalActionDurationMs": 88.23404799995478,
+      "openClickDeliveryDurationMs": 207.35315999999875,
+      "closeClickDeliveryDurationMs": 19.310921999975108,
+      "openStateWaitDurationMs": 165.7040660000057,
+      "closeStateWaitDurationMs": 68.92312599997967,
+      "openTargetStabilityWaitMs": 400.88549100002274,
+      "closeTargetStabilityWaitMs": 398.8274720000336,
+      "passed": false,
+      "classification": "unexpected_browser_input",
+      "failureStages": [
+        "unexpected_browser_input"
+      ],
+      "preflight": {
+        "documentFocused": true,
+        "targetFound": true,
+        "targetReceivesPointer": true,
+        "centerPoint": {
+          "x": 1218,
+          "y": 802.28125
+        },
+        "hitElement": {
+          "tag": "button",
+          "testId": "open-devices-workspace",
+          "id": null
+        }
+      },
+      "closePreflight": {
+        "documentFocused": true,
+        "targetFound": true,
+        "targetReceivesPointer": true,
+        "centerPoint": {
+          "x": 1332.7265625,
+          "y": 46.25
+        },
+        "hitElement": {
+          "tag": "button",
+          "testId": "workspace-close-btn",
+          "id": null
+        }
+      },
+      "browserEvents": {
+        "openClickCompleted": true,
+        "openClickReceived": true,
+        "closeClickCompleted": true,
+        "closeClickReceived": true
+      },
+      "uiState": {
+        "workspaceOpened": true,
+        "workspaceClosed": true
+      },
+      "mainIpc": {
+        "status": "ok",
+        "errorClass": null,
+        "durationMs": 4.900000000139698
+      },
+      "errorClasses": [
+        "UnexpectedInterSampleClick"
+      ],
+      "clickAudit": {
+        "interSampleEvents": [
+          {
+            "sequence": 2,
+            "atMs": 3258.5,
+            "trusted": true,
+            "detail": 1,
+            "clientX": 1218,
+            "clientY": 802,
+            "pathTestIds": [
+              "tracking-status",
+              "sidebar-tab-content",
+              "operational-sidebar",
+              "app-shell"
+            ]
+          }
+        ],
+        "interactionEvents": [
+          {
+            "sequence": 3,
+            "atMs": 276361.8999999999,
+            "trusted": true,
+            "detail": 1,
+            "clientX": 1218,
+            "clientY": 802,
+            "pathTestIds": [
+              "open-devices-workspace",
+              "tracking-status",
+              "sidebar-tab-content",
+              "operational-sidebar",
+              "app-shell"
+            ]
+          },
+          {
+            "sequence": 4,
+            "atMs": 277239.8999999999,
+            "trusted": true,
+            "detail": 1,
+            "clientX": 1332,
+            "clientY": 46,
+            "pathTestIds": [
+              "workspace-close-btn",
+              "app-shell"
+            ]
+          }
+        ],
+        "missingEventCount": 0,
+        "lastSequence": 4,
+        "sequenceRegressed": false,
+        "issues": [
+          "UnexpectedInterSampleClick"
+        ]
+      }
+    }
+  ],
+  "gpxTableInspection": {
+    "method": "read-only SQLite inspection of downloaded live and backup databases",
+    "importSourceEvidenceBatchFailureRows": 0,
+    "legacyGpxBackfillStateRows": 1,
+    "legacyGpxRowidScanStateRows": 1,
+    "interpretation": "No GPX imports or evidence points. Migration metadata tables are not empty."
+  }
+}
