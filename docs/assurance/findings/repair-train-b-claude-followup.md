@@ -100,3 +100,12 @@ defect. The same package smoke passed again on macOS. Added failure diagnostics
 capture the rendered state, native mission/outings rows and bounded logs without
 changing assertions, deadlines or application code. Cause and Linux readiness
 remain pending the diagnostic run; PR19 stays draft.
+
+Diagnostic run `34693020365` reproduces the failure and identifies the setup
+defect: native SQLite contains the active mission, but the DOM is empty and
+renderer logs report WebGL context initialization failure. Main-process stderr
+explicitly reports `WebGL2 blocklisted` and `WebGL1 blocklisted`. The new GPX
+smoke omitted the existing AppImage smoke's attested Mesa/ANGLE launch flags.
+Its Linux launch now uses the same flags (including the software-renderer
+blocklist override); no application, assertion, deadline or release gate changed.
+The next Linux run must prove the corrected launch and complete GPX assertions.

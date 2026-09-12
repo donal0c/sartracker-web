@@ -129,7 +129,14 @@ try {
 
 /** Launches the real artifact against a disposable retained profile. */
 async function launch() {
-  const args = process.platform === 'linux' ? ['--no-sandbox'] : []
+  // Match the existing Linux AppImage smoke's attested Mesa/ANGLE setup.
+  const args = process.platform === 'linux' ? [
+    '--no-sandbox',
+    '--ignore-gpu-blocklist',
+    '--use-gl=angle',
+    '--use-angle=gl',
+    '--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE',
+  ] : []
   return await electron.launch({ executablePath, args, env: { ...process.env,
     SARTRACKER_ELECTRON_USER_DATA_PATH: profile, SARTRACKER_ELECTRON_BLOCK_NETWORK: '1' }, timeout: 30_000 })
 }
