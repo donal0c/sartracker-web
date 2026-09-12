@@ -277,9 +277,9 @@ then 55 focused tests and lint passed; corrected packaged comparison is above.
 CI runs `34523115131` and `34523403661` were superseded by fixture and startup
 coverage corrections and are not successful qualification evidence.
 The earlier independent reviews are historical and exact-head-bound to their
-recorded executables. Current-head reviews of `cc620d82` found no P1/P2 issue;
-the Claude review recorded the expected missing exact-head-CI evidence and a
-P3 scope note for the shared inspector timeout. The current [review receipt](../../evidence/responsiveness-attribution/current-head-reviews.md)
+recorded executables. The `cc620d82` review receipt is superseded: the user
+rejected the GPT-5.5 review, and neither prior review satisfies the current
+Astra-only requirement. The current [review receipt](../../evidence/responsiveness-attribution/current-head-reviews.md)
 is separate from the historical [review receipt](../../evidence/responsiveness-attribution/reviews.json).
 
 Historical independent reviews cleared executable `798a6fd8` against

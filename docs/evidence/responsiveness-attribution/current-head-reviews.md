@@ -6,6 +6,29 @@
 > A fresh GPT-6 Astra low-reasoning exact-head review and current CI are
 > required before merge. No current approval is claimed by this receipt.
 
+## Fresh Astra source review
+
+GPT-6 Astra, low reasoning, independent read-only reviewer `astra_review`,
+reviewed `872593179b88c3cbaf71ba04d1326945bd087f7f` against
+`e989e8922ea105657a18a03ca442ae88e6c9d548` on 2026-09-12. No actionable
+P1/P2 source findings. Reviewed collector bounds/cleanup, inspector deadlines,
+pointer/frame diagnostics, pressure retention, soak integration, tests, CI
+routing and evidence boundaries. The independent main-loop gate is unchanged.
+No prior model review conclusions were used. This is source review, not a
+GitHub-account approval, CI proof or release acceptance.
+
+The fresh local three-control run at that head failed the realm control with
+`Target page, context or browser has been closed`; pointer and disconnect
+controls passed. A process-logged targeted repeat passed. Five forced main
+garbage collections retained the window, so fixture lifetime causation is not
+established. The first failure remains unresolved evidence, not erased by a
+passing repeat. Logs are retained in `tmp/pr21-astra-electron*.log` and
+`tmp/pr21-fixture-gc.log` in the specified worktree.
+The complete process-logged follow-up passed all three controls (4.1 seconds).
+This confirms current execution but is not a causal repair of the first failure.
+
+## Superseded historical receipt
+
 Candidate: `cc620d82c01bc15573f3ba6040852a132098be76`
 Base: `e989e8922ea105657a18a03ca442ae88e6c9d548`
 Review date: 2026-09-12

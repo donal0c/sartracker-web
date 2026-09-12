@@ -19,6 +19,12 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   legacy path (~239 ms); rerun unchanged strict release qualification. [Current
   record](../docs/assurance/findings/responsiveness-attribution.md).
 
+  Astra-only reconciliation: rejected review superseded; fresh independent
+  Astra-low source review of `87259317` has no P1/P2 findings. Local Electron
+  repeat passes 3/3, but its first run lost the realm-control target; failure
+  remains retained and unexplained. No causal fixture fix is claimed. Final
+  exact-head CI/review remains pending; see the [receipt](../docs/evidence/responsiveness-attribution/current-head-reviews.md).
+
 - **WAR-06 PR #20 investigation-only evidence is merged and remains evidence-only.** Current routes,
   fidelity limits, negative-control proof and exact-head status live in the
   [WAR-06 report](../docs/assurance/findings/war-06/WAR-06.md), [receipts](../docs/assurance/findings/war-06/review-receipts.md)
