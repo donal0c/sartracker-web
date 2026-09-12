@@ -16,8 +16,12 @@ Follow-up B, the separate ~239 ms legacy recovery path, and then unchanged stric
 `<200 ms` qualification follow in order. Release remains HOLD.
 Local transport source/browser/package proof is recorded in the
 [bounded transport receipt](evidence/breadcrumb-query-transport/receipt.md).
-Final reviews and exact-head Linux CI remain pending. The explicitly scoped
-deleted-path repository-hashing harness regression has red/green proof (31/31).
+The [PR23 terminal receipt](https://github.com/donal0c/sartracker-web/pull/23)
+governs exact-head CI/review readiness and Donal's merge decision. Four initial
+charters found one stale-runtime status P2, now red/green repaired (92 runtime
+tests plus rendered flow). The explicitly scoped deleted-path repository-hashing
+harness regression has red/green proof (31/31). After owner merge, follow-up B
+remains next; no new whole-candidate qualification claim is made here.
 
 ### WAR-11A: AppImage builder boundary (merged, 2026-09-10)
 

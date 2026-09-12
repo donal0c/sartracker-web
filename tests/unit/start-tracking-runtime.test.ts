@@ -3002,6 +3002,45 @@ describe('startTrackingRuntime', () => {
     expect(applyStatus.mock.lastCall?.[0].warning).toBeNull()
   })
 
+  it('does not publish late history progress or cleanup from a superseded runtime', async () => {
+    let hooks: { getCanonicalBreadcrumbs: (missionId: string, signal?: AbortSignal) => Promise<unknown>
+      onStatusChange: (status: TrackingConnectionStatus) => void } | undefined
+    let reportProgress: ((value: { receivedPositions: number; totalPositions: number }) => void) | undefined
+    let finishQuery!: (value: { positions: never[]; deviceTotals: never[] }) => void
+    const pending = new Promise<{ positions: never[]; deviceTotals: never[] }>((resolve) => { finishQuery = resolve })
+    const applyStatus = vi.fn()
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, value) => { hooks = value; return { start: vi.fn(), stop: vi.fn() } }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({ getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listBreadcrumbPositions: vi.fn(() => pending),
+        subscribeBreadcrumbQueryProgress: vi.fn((_id, listener) => { reportProgress = listener; return vi.fn() }),
+      }),
+      applySnapshot: vi.fn(), applyStatus,
+    })
+    hooks!.onStatusChange({ mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null })
+    const controller = new AbortController()
+    const query = hooks!.getCanonicalBreadcrumbs('mission-1', controller.signal)
+    await vi.waitFor(() => expect(reportProgress).toBeDefined())
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(), applySnapshot: vi.fn(), applyStatus,
+    })
+    applyStatus.mockClear()
+    reportProgress!({ receivedPositions: 64, totalPositions: 100 })
+    const lateProgressCalls = applyStatus.mock.calls.length
+    applyStatus.mockClear()
+    controller.abort()
+    const rejected = expect(query).rejects.toMatchObject({ name: 'AbortError' })
+    finishQuery({ positions: [], deviceTotals: [] })
+    await rejected
+    expect({ lateProgressCalls, lateCleanupCalls: applyStatus.mock.calls.length })
+      .toEqual({ lateProgressCalls: 0, lateCleanupCalls: 0 })
+  })
+
   it('cancels and drains stale canonical storage work before starting the replacement', async () => {
     let pollerHooks:
       | {

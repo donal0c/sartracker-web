@@ -1338,9 +1338,9 @@ export async function startTrackingRuntime(
 
     const requestId =
       `tracking-breadcrumb-${breadcrumbRendererSessionId}-${runtimeGeneration}-${++nextBreadcrumbQueryRequestSequence}`
-    const queryGeneration = runtimeGeneration
     const unsubscribeProgress = dependencies.missionStore.subscribeBreadcrumbQueryProgress?.(requestId, (progress) => {
-      if (signal?.aborted || queryGeneration !== runtimeGeneration) return
+      if (signal?.aborted || !acceptingRuntimeUpdates
+        || runtimeGeneration !== activeTrackingRuntimeGeneration) return
       breadcrumbTransferProgress = progress
       breadcrumbTransferWarning = `Loading saved breadcrumb history: ${progress.receivedPositions.toLocaleString()} of ${progress.totalPositions.toLocaleString()} selected fixes transferred; history is not yet complete.`
       refreshTrackingStatus()
@@ -1380,7 +1380,9 @@ export async function startTrackingRuntime(
       unsubscribeProgress?.()
       breadcrumbTransferWarning = null
       breadcrumbTransferProgress = null
-      refreshTrackingStatus()
+      if (acceptingRuntimeUpdates && runtimeGeneration === activeTrackingRuntimeGeneration) {
+        refreshTrackingStatus()
+      }
     }
   }
 

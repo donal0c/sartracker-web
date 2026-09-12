@@ -66,8 +66,10 @@ Follow-up B, the separate ~239 ms legacy recovery path, follows afterward; the
 unchanged strict `<200 ms` qualification remains later. Release remains HOLD.
 Implementation and local source/browser/package proof are recorded in the
 [transport receipt](../evidence/breadcrumb-query-transport/receipt.md).
-Final independent reviews and exact-head Linux CI remain pending; no readiness
-or release acceptance is claimed.
+The [PR23 terminal receipt](https://github.com/donal0c/sartracker-web/pull/23)
+governs final independent rechecks, exact-head Linux CI and owner merge readiness.
+Four initial charters found one stale-runtime status P2, now red/green repaired;
+no release acceptance is claimed.
 
 ## Deep-audit finding disposition
 

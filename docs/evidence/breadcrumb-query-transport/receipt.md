@@ -3,7 +3,8 @@
 Local candidate is the accumulated diff against `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`.
 Package receipt records that base as HEAD and truthfully records dirty source;
 its packaged input hashes and client hash bind the tested implementation.
-It is not an exact-head CI claim. Linux CI and final reviews remain pending.
+It is not an exact-head CI claim. Final Linux CI/review verdicts are recorded
+on [PR23](https://github.com/donal0c/sartracker-web/pull/23).
 
 ## Source and regression controls
 
@@ -66,5 +67,14 @@ change separates the two receipts; the repeat validates strengthened harness cus
 
 ## Final PR state
 
-Independent accumulated-diff charters and exact-head Linux CI are pending.
-No READY or release claim until their receipts are inspected.
+The [four-charter review disposition](reviews.md) records one confirmed P2,
+stale progress/cleanup status from a replaced runtime. Its red reproduces both
+paths; the active-generation correction passes all 92 runtime tests and the
+rendered flow. Combined local verified correctness count is now 4,596 plus six
+explicit correctness-mode skips. Unchanged transport/package evidence is reused;
+the UI-generation correction is validated at its affected runtime/browser boundary.
+
+This source receipt precedes final asynchronous CI/rechecks. Consult
+[PR23](https://github.com/donal0c/sartracker-web/pull/23) for the exact final head,
+Linux artifact receipts, broad/focused rechecks and terminal merge readiness.
+No release acceptance is claimed.
