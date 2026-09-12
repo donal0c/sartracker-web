@@ -1,5 +1,11 @@
 # PR21 exact-head review receipt
 
+> **SUPERSEDED — NOT ACCEPTED APPROVAL (2026-09-12).** The user rejected
+> the GPT-5.5 review below. It is invalid and must not be counted. Neither
+> historical review below satisfies the current Astra-only requirement.
+> A fresh GPT-6 Astra low-reasoning exact-head review and current CI are
+> required before merge. No current approval is claimed by this receipt.
+
 Candidate: `cc620d82c01bc15573f3ba6040852a132098be76`
 Base: `e989e8922ea105657a18a03ca442ae88e6c9d548`
 Review date: 2026-09-12
