@@ -2,6 +2,8 @@ import * as fc from 'fast-check'
 
 export const WAR_02B_DEFAULT_SEED = 20260912
 export const WAR_02B_MAX_RUNS = 250
+const WAR_02B_PREDICATE_TIMEOUT_MS = 10_000
+const WAR_02B_INTERRUPT_TIMEOUT_MS = 120_000
 
 export type BoundedPropertyOptions = {
   readonly seed?: number
@@ -16,22 +18,41 @@ function boundedParameters<T>(options: BoundedPropertyOptions): fc.Parameters<[T
   if (!Number.isInteger(numRuns) || numRuns < 1 || numRuns > WAR_02B_MAX_RUNS) {
     throw new RangeError(`WAR-02B numRuns must be an integer from 1 to ${WAR_02B_MAX_RUNS}.`)
   }
+  const seed = options.seed ?? WAR_02B_DEFAULT_SEED
+  if (!Number.isSafeInteger(seed)) {
+    throw new RangeError('WAR-02B seed must be a finite integer.')
+  }
   return {
-    seed: options.seed ?? WAR_02B_DEFAULT_SEED,
+    seed,
     numRuns,
-    endOnFailure: true,
+    // Keep the run bounded while retaining fast-check's minimal counterexample.
+    timeout: WAR_02B_PREDICATE_TIMEOUT_MS,
+    interruptAfterTimeLimit: WAR_02B_INTERRUPT_TIMEOUT_MS,
+    markInterruptAsFailure: true,
+    // Any precondition skip is a missing test case, not a successful property run.
     maxSkipsPerRun: 0,
-    includeErrorInReport: true,
   }
 }
 
 /** Converts arbitrary fast-check failure values into stable one-line evidence. */
-function describeUnknown(value: unknown): string {
+function describeUnknown(value: unknown, seen = new WeakSet<object>()): string {
+  if (value !== null && typeof value === 'object') {
+    if (seen.has(value)) return '[circular]'
+    seen.add(value)
+  }
   if (value instanceof Error) {
-    return `${value.name}: ${value.message}`
+    const stack = typeof value.stack === 'string'
+      ? value.stack.replaceAll('\n', '\\n')
+      : undefined
+    const cause = 'cause' in value && value.cause !== value
+      ? `; cause=${describeUnknown(value.cause, seen)}`
+      : ''
+    return `${value.name}: ${value.message}${cause}${stack ? `; stack=${stack}` : ''}`
   }
   try {
-    return JSON.stringify(value) ?? String(value)
+    return JSON.stringify(value, (_key, nested: unknown) =>
+      typeof nested === 'number' && !Number.isFinite(nested) ? String(nested) : nested,
+    ) ?? String(value)
   } catch {
     return String(value)
   }
@@ -96,7 +117,6 @@ export function runBoundedProperty<T>(
   predicate: (value: T) => boolean,
   options: BoundedPropertyOptions = {},
 ): BoundedPropertyResult<T> {
-  void name
   const result = fc.check(
     fc.property(arbitrary, enforceSyncPredicate(name, predicate)),
     boundedParameters<T>(options),
@@ -111,7 +131,6 @@ export async function runBoundedAsyncProperty<T>(
   predicate: (value: T) => Promise<boolean>,
   options: BoundedPropertyOptions = {},
 ): Promise<BoundedPropertyResult<T>> {
-  void name
   const result = await fc.check(
     fc.asyncProperty(arbitrary, enforceAsyncPredicate(name, predicate)),
     boundedParameters<T>(options),
@@ -124,7 +143,7 @@ export function assertBoundedProperty<T>(
   name: string,
   result: BoundedPropertyResult<T>,
 ): void {
-  if (result.failed) {
+  if (result.interrupted || result.failed) {
     throw new Error(formatBoundedPropertyFailure(name, result))
   }
 }

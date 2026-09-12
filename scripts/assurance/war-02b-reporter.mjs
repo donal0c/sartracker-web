@@ -1,4 +1,4 @@
-import { JsonReporter } from 'vitest/reporters'
+import { JsonReporter } from 'vitest/node'
 
 /** Counts collection, hook, and suite errors that individual assertions do not expose. */
 function suiteErrorCount(task) {

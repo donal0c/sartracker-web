@@ -1,10 +1,23 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { cursorWindowArbitrary, ingestCaseArbitrary, irishCoordinateArbitrary } from './arbitraries'
-import { cursorWindowInvariant, observeCursorWindow } from './cursor-window-probe'
 import {
+  coordinateGoldenAnchorArbitrary,
+  coordinateValidationArbitrary,
+  cursorWindowArbitrary,
+  cursorWindowExtendedArbitrary,
+  ingestCaseArbitrary,
+  irishCoordinateArbitrary,
+} from './arbitraries'
+import {
+  cursorWindowBoundsInvariant,
+  cursorWindowInvariant,
+  observeCursorWindow,
+} from './cursor-window-probe'
+import {
+  coordinateGoldenAnchorInvariant,
   coordinateRoundTripInvariant,
+  coordinateValidationInvariant,
   loadPositionPolicy,
   positionPolicyInvariant,
 } from './property-contracts'
@@ -26,6 +39,26 @@ describe('WAR-02B bounded safety properties', () => {
     )
     assertBoundedProperty('coordinate transform round trip', result)
     expect(result.numRuns).toBe(100)
+  })
+
+  it('holds the independent TM65 datum anchor', () => {
+    const result = runBoundedProperty(
+      'TM65 datum golden anchor',
+      coordinateGoldenAnchorArbitrary,
+      coordinateGoldenAnchorInvariant,
+      { numRuns: 1 },
+    )
+    assertBoundedProperty('TM65 datum golden anchor', result)
+  })
+
+  it('exercises coordinate rejection branches with non-finite and out-of-range inputs', () => {
+    const result = runBoundedProperty(
+      'coordinate input validation',
+      coordinateValidationArbitrary,
+      coordinateValidationInvariant,
+      { numRuns: 8 },
+    )
+    assertBoundedProperty('coordinate input validation', result)
   })
 
   it('holds position-ingest identity and fail-closed conflict decisions', () => {
@@ -52,6 +85,17 @@ describe('WAR-02B bounded safety properties', () => {
       { numRuns: 25 },
     )
     assertBoundedProperty('incremental breadcrumb cursor/window arithmetic', result)
+    expect(result.numRuns).toBe(25)
+  })
+
+  it('holds the exact cursor arithmetic across the recent-window clamp boundary', async () => {
+    const result = await runBoundedAsyncProperty(
+      'bounded breadcrumb cursor/window arithmetic',
+      cursorWindowExtendedArbitrary,
+      async (input) => cursorWindowBoundsInvariant(await observeCursorWindow(input)),
+      { numRuns: 25 },
+    )
+    assertBoundedProperty('bounded breadcrumb cursor/window arithmetic', result)
     expect(result.numRuns).toBe(25)
   })
 })

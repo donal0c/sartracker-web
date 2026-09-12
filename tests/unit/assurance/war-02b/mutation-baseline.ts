@@ -1,14 +1,18 @@
-import { cursorWindowArbitrary, ingestCaseArbitrary, irishCoordinateArbitrary } from './arbitraries'
 import {
-  applyCursorWindowRebreak,
+  coordinateGoldenAnchorArbitrary,
+  cursorWindowArbitrary,
+  ingestCaseArbitrary,
+} from './arbitraries'
+import {
+  WAR_02B_CURSOR_OVERLAP_MS,
   cursorWindowInvariant,
+  cursorWindowRequestArithmeticInvariant,
   observeCursorWindow,
 } from './cursor-window-probe'
-import { tm65ToWgs84, wgs84ToTM65 } from '../../../../src/lib/coordinates'
+import { tm65ToWgs84 } from '../../../../src/lib/coordinates'
 import {
   loadPositionPolicy,
   positionPolicyInvariant,
-  type PositionPolicy,
 } from './property-contracts'
 import { runBoundedAsyncProperty, runBoundedProperty } from './property-runner'
 
@@ -30,14 +34,30 @@ export const WAR_02B_MUTATION_SEAMS: readonly MutationSeam[] = [
   'position-ingest-policy',
 ]
 
+export const WAR_02B_MUTATION_IDS: readonly string[] = [
+  'coordinate-tm65-golden-anchor-perturbation',
+  'cursor-public-boundary-fault-injection',
+  'ingest-timestamp-without-normalization',
+  'ingest-unversioned-hash-integrity',
+]
+
 /** Converts one property result into an explicit killed/survived receipt row. */
 function outcome(
   id: string,
   seam: MutationSeam,
-  result: { readonly failed: boolean; readonly seed: number; readonly numRuns: number },
+  result: {
+    readonly failed: boolean
+    readonly seed: number
+    readonly numRuns: number
+    readonly errorInstance?: unknown
+  },
   runBudget: number,
   reason: string,
 ): MutationOutcome {
+  if (result.failed && (!(result.errorInstance instanceof Error)
+    || result.errorInstance.message !== 'Property failed by returning false')) {
+    throw new Error(`WAR-02B mutation ${id} failed for an unexpected reason.`)
+  }
   return {
     id,
     seam,
@@ -54,13 +74,14 @@ export async function runWar02bMutationBaseline(): Promise<readonly MutationOutc
   const coordinateSeed = 2026091201
   const coordinateRuns = 50
   const coordinateResult = runBoundedProperty(
-    'mutation coordinate easting offset',
-    irishCoordinateArbitrary,
+    'mutation coordinate TM65 golden anchor perturbation',
+    coordinateGoldenAnchorArbitrary,
     (input) => {
-      const [easting, northing] = wgs84ToTM65(input.lat, input.lon)
-      // A one-metre easting mutation must be visible at the WGS84 boundary.
-      const [lat, lon] = tm65ToWgs84(easting + 1, northing)
-      return Math.abs(lat - input.lat) < 1e-7 && Math.abs(lon - input.lon) < 1e-7
+      // A ten-metre projected-coordinate perturbation must fail against a fixed
+      // WGS84 anchor; a self-inverse round trip cannot provide this oracle.
+      const [lat, lon] = tm65ToWgs84(input.easting + 10, input.northing)
+      return Math.abs(lat - input.lat) <= input.toleranceDegrees &&
+        Math.abs(lon - input.lon) <= input.toleranceDegrees
     },
     { seed: coordinateSeed, numRuns: coordinateRuns },
   )
@@ -68,11 +89,21 @@ export async function runWar02bMutationBaseline(): Promise<readonly MutationOutc
   const cursorSeed = 2026091202
   const cursorRuns = 25
   const cursorResult = await runBoundedAsyncProperty(
-    'mutation cursor plus one second',
+    'mutation cursor public boundary fault injection',
     cursorWindowArbitrary,
     async (input) => {
-      const current = await observeCursorWindow(input)
-      return cursorWindowInvariant(applyCursorWindowRebreak(current))
+      const baseline = await observeCursorWindow(input)
+      if (!cursorWindowInvariant(baseline)) {
+        throw new Error('WAR-02B current cursor oracle is broken before fault injection.')
+      }
+      const mutated = await observeCursorWindow(input, {
+        mutateRequestedFrom: (requestedFromMs) =>
+          requestedFromMs + WAR_02B_CURSOR_OVERLAP_MS + 1_000,
+      })
+      if (!cursorWindowRequestArithmeticInvariant(mutated)) {
+        throw new Error('WAR-02B fault injection did not preserve the manager request arithmetic.')
+      }
+      return cursorWindowInvariant(mutated)
     },
     { seed: cursorSeed, numRuns: cursorRuns },
   )
@@ -90,41 +121,33 @@ export async function runWar02bMutationBaseline(): Promise<readonly MutationOutc
     { seed: ingestSeed, numRuns: ingestRuns },
   )
 
-  const survivorSeed = 2026091204
-  const survivorRuns = 100
-  const baselinePolicy = loadPositionPolicy()
-  const legacyHashMutation: PositionPolicy = {
-    canonicalizeAcceptedPosition: baselinePolicy.canonicalizeAcceptedPosition,
-    classifyPositionIngest: (input) => {
-      const storedHash = input.existing?.content_hash
-      if (typeof storedHash === 'string' && storedHash.startsWith('legacy:')) {
-        const canonicalIncoming = baselinePolicy.canonicalizeAcceptedPosition(input.incoming)
-        return { decision: 'duplicate', contentHash: canonicalIncoming.contentHash }
-      }
-      return baselinePolicy.classifyPositionIngest(input)
-    },
-  }
-  const survivorResult = runBoundedProperty(
-    'mutation legacy hash prefix handling',
+  const hashSeed = 2026091204
+  const hashRuns = 100
+  const unversionedHashMutation = loadPositionPolicy({
+    from: "storedHash.startsWith('v1:')",
+    to: 'true',
+  })
+  const hashResult = runBoundedProperty(
+    'mutation unversioned hash integrity',
     ingestCaseArbitrary,
-    (input) => positionPolicyInvariant(legacyHashMutation, input),
-    { seed: survivorSeed, numRuns: survivorRuns },
+    (input) => positionPolicyInvariant(unversionedHashMutation, input),
+    { seed: hashSeed, numRuns: hashRuns },
   )
 
   return [
     outcome(
-      'coordinate-easting-plus-one-metre',
+      'coordinate-tm65-golden-anchor-perturbation',
       'coordinate-transform',
       coordinateResult,
       coordinateRuns,
-      'Round-trip oracle rejects a transformed easting offset.',
+      'Independent TM65/WGS84 anchor rejects a ten-metre projected-coordinate perturbation.',
     ),
     outcome(
-      'cursor-plus-one-second',
+      'cursor-public-boundary-fault-injection',
       'cursor-window-arithmetic',
       cursorResult,
       cursorRuns,
-      'Inclusive boundary oracle rejects a fetch start after the previous cursor.',
+      'A client-boundary fault after the real manager arithmetic loses the boundary and is rejected.',
     ),
     outcome(
       'ingest-timestamp-without-normalization',
@@ -134,16 +157,16 @@ export async function runWar02bMutationBaseline(): Promise<readonly MutationOutc
       'Equivalent timestamp spellings must retain duplicate identity.',
     ),
     outcome(
-      'ingest-legacy-prefix-conflict-uncovered',
+      'ingest-unversioned-hash-integrity',
       'position-ingest-policy',
-      survivorResult,
-      survivorRuns,
-      'Survives because the bounded corpus does not generate legacy: stored hashes; this is a coverage gap, not a pass claim.',
+      hashResult,
+      hashRuns,
+      'An unknown hash prefix must not bypass integrity checking when the stored hash is treated as versioned.',
     ),
   ]
 }
 
-/** Ensures the baseline catalog cannot silently grow beyond the three approved seams. */
+/** Ensures every approved seam and named current mutant remains present in the receipt. */
 export function assertExactlyThreeMutationSeams(outcomes: readonly MutationOutcome[]): void {
   const seams = new Set(outcomes.map((entry) => entry.seam))
   if (seams.size !== WAR_02B_MUTATION_SEAMS.length) {
@@ -153,5 +176,11 @@ export function assertExactlyThreeMutationSeams(outcomes: readonly MutationOutco
     if (!seams.has(seam)) {
       throw new Error(`WAR-02B mutation baseline omitted approved seam: ${seam}.`)
     }
+  }
+  const ids = outcomes.map((entry) => entry.id)
+  if (ids.length !== WAR_02B_MUTATION_IDS.length
+    || new Set(ids).size !== ids.length
+    || WAR_02B_MUTATION_IDS.some((id) => !ids.includes(id))) {
+    throw new Error('WAR-02B mutation baseline does not match the approved mutant catalog.')
   }
 }

@@ -7,6 +7,10 @@ export default defineConfig({
   ...base,
   test: {
     ...base.test,
+    exclude: [
+      ...(base.test?.exclude ?? []),
+      'tests/unit/assurance/war-02b/**',
+    ],
     provide: { releaseResponsivenessMode: 'correctness' },
   },
 })

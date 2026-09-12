@@ -4,21 +4,23 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **WAR-02B bounded property/mutation controls are implemented on branch
+- **WAR-02B review remediation is implemented locally on branch
   `codex/war-02b-property-mutation`, based on exact `origin/master`
-  `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`.** The slice is test
-  infrastructure only: deterministic `fast-check` properties, a real public
-  polling-manager cursor/window probe, an isolated ingest-policy source
-  mutation, a child-process DON-228 red proof, and exactly three approved
-  mutation seams. Local final evidence is 442 files / 4,554 tests, focused
-  WAR-02B 4 files / 9 tests, lint, root type-check, build/bundle budgets, and
-  green-current/red-rebroken proof. Independent Luna x-high review is clear.
-  The mutation receipt records three killed mutants and one intentional
-  legacy-hash survivor; it is not a whole-source mutation score. No production
-  runtime, browser, package, provider, soak, release, or field claim is made.
-  PR [#24](https://github.com/donal0c/sartracker-web/pull/24) is open at
-  executable head `f3a3de4f`; exact-head Linux CI `34705813451` passed. This
-  receipt update is documentation-only; stop at READY FOR DONAL TO MERGE.
+  `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`.** The slice now has independent
+  coordinate anchors and rejection cases, an independent ingest identity
+  oracle, exact cursor/recent-window arithmetic, and a public client-boundary
+  DON-228 fault injection with separate current-green and rebroken-red legs.
+  The runner shrinks failures, validates seeds, preserves cause/stack evidence,
+  bounds async predicates, and fails closed on interruption. WAR-02B is excluded
+  from generic correctness so CI does not execute it twice. Focused local
+  evidence is 4 files / 18 tests, lint, WAR-02B type-check, root app/node
+  type-check, build/bundle budgets, and green-current/red-rebroken proof. Four
+  current semantic mutants are killed across three seams; the nonexistent
+  `legacy:` survivor is removed. Clean-tree full-suite rerun, exact new-head
+  CI, and fresh final review are pending. No browser, package, provider, soak,
+  release, or field claim is made; DON-254 remains open and release HOLD is
+  unchanged. PR [#24](https://github.com/donal0c/sartracker-web/pull/24) remains
+  open; do not mark READY FOR DONAL TO MERGE until those gates are refreshed.
 
 - **PR19 Claude follow-up is merged at `d20bae5f`; prior pending wording is superseded.**
   Malformed geometry now refuses the whole source explicitly; batch continuation,

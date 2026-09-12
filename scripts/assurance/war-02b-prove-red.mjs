@@ -4,7 +4,7 @@ import path from 'node:path'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const testFile = 'tests/unit/assurance/war-02b/negative-controls.test.ts'
-const testName = 'DON-228 controlled rebreak: cursor/window skips boundary fixes'
+const testName = 'DON-228 controlled rebreak: public cursor boundary fault injection'
 const reporter = path.join(root, 'scripts/assurance/war-02b-reporter.mjs')
 
 /** Rejects child launch, timeout, and signal failures before reading proof output. */
@@ -46,9 +46,12 @@ function validate(report, disabled) {
       report.numFailedTests === 1 &&
       report.numPassedTests === 0 &&
       assertion.status === 'failed' &&
+      Array.isArray(assertion.failureMessages) &&
       assertion.failureMessages.length === 1 &&
       assertion.failureMessages[0].includes('WAR-02B property failed:') &&
-      assertion.failureMessages[0].includes('counterexample=') &&
+      assertion.failureMessages[0].includes('counterexample={') &&
+      !assertion.failureMessages[0].includes('counterexample=undefined') &&
+      !assertion.failureMessages[0].includes('path=<none>') &&
       assertion.failureMessages[0].includes('replay=seed=')
   }
   return report.success === true &&
@@ -77,7 +80,7 @@ for (const disabled of [false, true]) {
     cwd: root,
     env,
     encoding: 'utf8',
-    timeout: 120_000,
+    timeout: 180_000,
   })
   completed(result, `cursor-window ${disabled ? 'red' : 'green'}`)
   const report = parseReport(result)

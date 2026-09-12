@@ -2,9 +2,11 @@
 
 ## Scope and status
 
-WAR-02B adds test infrastructure only. It does not change shipped coordinate,
-tracking, persistence, or ingest behaviour. The approved mutation surface is
-exactly three safety-critical seams:
+WAR-02B adds bounded assurance infrastructure. Its only shipped-code change is
+the equivalent timer adapter boundary in the tracking modules: it uses
+`globalThis` so browser and Node test type surfaces agree; polling behavior is
+unchanged. The approved assurance surface is exactly three safety-critical
+seams:
 
 1. coordinate transforms;
 2. breadcrumb cursor/window arithmetic;
@@ -21,49 +23,52 @@ does not infer content from the missing files.
 ## Contract
 
 - `fast-check@4.10.0` is a development-only dependency. Every property uses an
-  explicit seed, `endOnFailure`, zero precondition skips, and a hard maximum of
-  250 runs. The default failure text contains the seed, shrink path,
-  counterexample, error, and replay tuple.
+  explicit replayable seed, fast-check shrinking, a 10-second async predicate
+  timeout, a 120-second interrupt bound, zero precondition skips, and a hard
+  maximum of 250 runs. The failure text contains the seed, shrink path,
+  counterexample, error/cause/stack information, and replay tuple. Interrupts
+  are failures, not silent passes.
 - Coordinate properties call the production WGS84/ITM/TM65 functions and check
   round-trip precision plus ITM displayability across the inclusive Irish
-  envelope.
+  envelope. A separate property checks both directions against independent
+  TM65/WGS84 golden anchors and exercises non-finite, global-range, Irish-range,
+  projected-range, and formatting rejection branches.
 - Cursor properties drive the production `createPollingManager` through its
-  public client boundary with fake timers. They check that the next request
-  overlaps the prior cursor, stays inside the completed `now()` window, and
-  retains a fix at the inclusive boundary.
+  public client boundary with fake timers. They check the exact five-minute
+  overlap, the two-hour recent-history clamp, completed `now()` bounds, and
+  retention of a fix at the inclusive boundary. The red control first proves
+  the unmodified manager is green, then mutates the request at the fake client
+  boundary; it no longer rewrites an observation after the fact.
 - Ingest properties load the exact `electron/position-ingest-policy.cjs` via
-  WAR-02A's isolated CommonJS loader. They cover insert, canonical duplicate,
-  content conflict, versioned hash conflict, and equivalent timestamp forms.
+  WAR-02A's isolated CommonJS loader. An independent canonical-hash oracle
+  covers insert, canonical duplicate, field and tiny-coordinate conflicts,
+  optional fields, versioned and unknown-prefix hashes, stored-hash mismatch,
+  and equivalent/different timestamp forms.
 - The red proof driver runs the named DON-228 control in a child Vitest process
   in both current (green) and deliberately rebroken (red) modes. It rejects
   collection, suite, hook, unhandled-error, timeout, and signal failures as
   proof.
-- Both the Linux validation and Electron release gate workflows invoke the
-  bounded property suite and the controlled rebreak proof as separate steps.
+- The generic correctness config excludes WAR-02B so it is not run twice; both
+  the Linux validation and Electron release gate workflows invoke the bounded
+  property/mutation suite and controlled rebreak proof as separate steps.
 
 ## Evidence and limits
 
-Observed on executable WAR-02B source head `f3a3de4f1be3865dbd6a638c80844512e38f40d2`
-after the async runtime predicate-contract coverage; this receipt update is
-documentation-only:
+The focused checks for this repair pass are:
 
-- `npm run test:war-02b` — 4 files, 9 tests passed.
+- `npm run test:war-02b` — 4 files, 18 tests passed.
 - `npm run assurance:war-02b` — current control green; controlled DON-228
   rebreak red at the named safety oracle.
-- `npm test -- --no-file-parallelism` — 442 files, 4,554 tests passed.
-- focused ESLint for all WAR-02B TypeScript and assurance scripts — passed.
-- `npx tsc -b --pretty false` — passed, including the WAR-02B Node test
-  project’s minimal timer/window ambient boundary.
-- `npm run build` — passed, including bundle-size budgets. Vite reported the
-  repository’s existing stale Browserslist database notice; it did not fail the
-  build.
-- Exact-head Linux validation run
-  [`34705813451`](https://github.com/donal0c/sartracker-web/actions/runs/34705813451)
-  passed against that executable source head, including the bounded property,
-  controlled rebreak, package, GPX and AppImage steps that are enabled in the
-  ordinary PR lane.
+- WAR-02B project type-check — passed without a fabricated `Window` ambient
+  declaration.
+- root app/node type-check — passed after the timer boundary cleanup.
+- ESLint — passed.
+
+The prior exact-head source and CI receipt remain historical until this repair
+is committed and pushed. No claim below should be read as current exact-head
+CI evidence until that refresh is recorded.
 
 This is local T1/T2 assurance evidence only. It is not package, provider,
 soak, power-loss, hosted, field, merge, or release qualification. The mutation
-receipt is diagnostic and records survivors honestly; it is not a Stryker line
-mutation score.
+receipt is diagnostic and records the named semantic mutants; it is not a
+Stryker line mutation score.
