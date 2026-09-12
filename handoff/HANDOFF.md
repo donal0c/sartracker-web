@@ -39,7 +39,11 @@ Updated 2026-09-11. Read after `CLAUDE.md`.
   [WAR-06 report](../docs/assurance/findings/war-06/WAR-06.md), [receipts](../docs/assurance/findings/war-06/review-receipts.md)
   and [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks).
   No production repair or release claim is included; PR #20 remains ahead of
-  PR #21 and PR #19 in the locked queue.
+  PR #21 and PR #19 in the locked queue. Current local refresh on docs head
+  `b388df0d` passed the serial full source suite (435/4,468) but the default-
+  parallel suite still failed unchanged DON-277 (275.58 ms) and DON-278
+  (228.95 ms) against `<200 ms`; the timing gate remains a DON-254
+  qualification blocker, not a WAR-06 documentation issue.
 
 - **Repair Train A merged**, [PR #17](https://github.com/donal0c/sartracker-web/pull/17),
   at `302bdd040976bd370271cf5866549fa2a7e05ff5` on 2026-09-10. Its final

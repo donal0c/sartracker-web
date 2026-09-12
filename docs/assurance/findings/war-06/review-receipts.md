@@ -49,3 +49,22 @@ smoke. The workflow explicitly skipped strict responsiveness, normal-envelope
 replay, packaged tracking soak and packaged archive lifecycle checks; those
 remain qualification gaps and are not release proof. PR checks remain the
 external cross-check: [PR #20 checks](https://github.com/donal0c/sartracker-web/pull/20/checks).
+
+## Current-head strict-gate refresh
+
+The documentation head `b388df0d8efd810e2aa0fa7a82107cdad83c2dee` leaves the
+executable tree unchanged from `d96e51c8`, but the strict source lanes were
+rerun locally on 2026-09-12 to disposition the live P1 review comment:
+
+```text
+npm run test:responsiveness -- --no-file-parallelism  -> 15 files / 279 tests passed
+npm test -- --no-file-parallelism                    -> 435 files / 4,468 tests passed
+npm test                                              -> 434 files / 4,466 tests passed; 2 failed
+```
+
+The default-parallel failures are the unchanged strict assertions for DON-277
+(`tests/unit/electron-mission-evidence-versioning.test.ts:766`, 275.58 ms) and
+DON-278 (line 1005, 228.95 ms), both above the unchanged 200 ms threshold. The
+serial passes do not close the load-sensitive gate, and no threshold or
+assertion was relaxed. The current result is therefore a live qualification
+gap under DON-254, not a documentation-only green result.

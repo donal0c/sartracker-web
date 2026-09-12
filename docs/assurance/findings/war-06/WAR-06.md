@@ -200,6 +200,8 @@ commit is `d96e51c85b6ba98642036ab31ed08e1976256bec`, based on current master
 | `AUD-03` stationary projection | Existing source/performance controls pass in the focused suite | Does not prove the strict `<200 ms` gate at release scale |
 | Full source cycle, serial files | 427/428 files and 4,378/4,379 tests passed; the unchanged legacy event-writer hard-gate test observed 240.89 ms under the full suite | Strict `<200 ms` remains binding; the same test passed in isolation and was not changed here |
 | Full source cycle, default parallelism | 426/428 files and 4,377/4,379 tests passed; two unchanged archive/event timing assertions observed 264.88 ms and 272.54 ms | Confirms load sensitivity; no timing gate was relaxed or changed here |
+| Current-head full source cycle, serial files (`b388df0d`) | 435/435 files and 4,468/4,468 tests passed | The current serial source run is green locally; it is not packaged or hosted qualification |
+| Current-head full source cycle, default parallelism (`b388df0d`) | 434/435 files and 4,466/4,468 tests passed; unchanged DON-277 observed 275.58 ms and DON-278 observed 228.95 ms | The strict `<200 ms` gate remains red under default parallel load; no threshold or assertion was changed |
 
 Commands run:
 
@@ -211,6 +213,7 @@ npm run test:correctness -- --no-file-parallelism
 npm test -- --no-file-parallelism
 npm test
 npm test -- tests/unit/electron-mission-evidence-versioning.test.ts -t 'keeps current fixes below the hard gate while byte-bounding legacy event writer turns' --no-file-parallelism
+npm run test:responsiveness -- --no-file-parallelism
 npm run lint
 npm run build
 ```
@@ -231,6 +234,16 @@ tests; its single failure was the unchanged strict `<200 ms` assertion at
 `tests/unit/electron-mission-evidence-versioning.test.ts:1005` (272.54 ms).
 The named WAR-06-adjacent timing test passed in isolation (1/1 selected test;
 72 tests skipped).
+
+Current-head local reruns on `b388df0d` were deliberately recorded separately
+from the historical evidence above. The dedicated strict responsiveness lane
+passed 15 files / 279 tests, and the full source suite passed 435 files /
+4,468 tests when run with `--no-file-parallelism`. The default-parallel full
+source suite remains red: 434 files / 4,466 tests passed, while the unchanged
+DON-277 assertion at `tests/unit/electron-mission-evidence-versioning.test.ts:766`
+observed 275.58 ms and the unchanged DON-278 assertion at line 1005 observed
+228.95 ms. These are current local observations, not a release qualification
+or a reason to alter the threshold.
 
 ## Escape analysis
 
@@ -386,11 +399,14 @@ receipt and pushed-head CI record in [review-receipts.md](review-receipts.md).
 `WAR-06-COORDINATION` is reconciled in the current handoff, workplan, and
 coordinated ledger without changing PR #18's merged truth.
 
-The full-suite timing failures remain unresolved and are retained as a strict
-gate. They are not reclassified by these additive tests, and this PR makes no
-performance or threshold claim. Earlier reviewer UUIDs are historical
-provenance only; the re-derivable local negative-control artifact and exact
-head CI record are the current evidence.
+The full-suite timing gate remains unresolved under default parallel load,
+despite the current serial source and dedicated strict-lane passes. It is not
+reclassified by these additive tests, and this PR makes no performance or
+threshold claim. The current local result is recorded so the live P1 review is
+not mistaken for a stale historical-only failure; the remaining red gate is a
+DON-254 qualification issue outside this investigation-only PR. Earlier
+reviewer UUIDs are historical provenance only; the re-derivable local
+negative-control artifact and exact-head CI record are the current evidence.
 
 Independent final review `5176300059` examined the pre-PR22 executable head
 `c4cda818`; that review and CI `34575023706` are historical evidence only.
@@ -406,10 +422,10 @@ qualification.
 Treat `WAR-06-AUD-01`, `WAR-06-AUD-02`, and `WAR-06-CACHE-SIBLING` as one
 lifecycle repair boundary. The rebased PR remains investigation-only and is
 not a production repair, release qualification, or operational-use
-recommendation: the P1 candidate hazards remain unrepaired and the strict
-`<200 ms` failures remain unresolved. Exact executable-head ordinary CI is
-recorded in the in-repo receipt; the remaining documentation-only delta does
-not change executable evidence. It is merge-ready only as additive
-investigation evidence for Donal's review; it is not a production repair or
-release qualification. Do not close the findings or claim release/field safety
-from this investigation PR.
+recommendation: the P1 candidate hazards remain unrepaired and the default-
+parallel strict `<200 ms` gate remains unresolved. Exact executable-head
+ordinary CI is recorded in the in-repo receipt; current local source reruns
+are recorded above but do not establish hosted, packaged or release
+qualification. This PR is additive investigation evidence only; it is not a
+production repair or release qualification. Do not close the findings or claim
+release/field safety from this investigation PR.
