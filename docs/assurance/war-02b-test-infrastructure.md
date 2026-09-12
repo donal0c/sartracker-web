@@ -43,8 +43,8 @@ does not infer content from the missing files.
 
 ## Evidence and limits
 
-Observed on executable WAR-02B source head `1f6d4ff256325766ade9f809f41292334a72deba`
-after the runtime predicate-contract hardening; this receipt update is
+Observed on executable WAR-02B source head `f3a3de4f1be3865dbd6a638c80844512e38f40d2`
+after the async runtime predicate-contract coverage; this receipt update is
 documentation-only:
 
 - `npm run test:war-02b` — 4 files, 9 tests passed.
@@ -58,7 +58,7 @@ documentation-only:
   repository’s existing stale Browserslist database notice; it did not fail the
   build.
 - Exact-head Linux validation run
-  [`34703598170`](https://github.com/donal0c/sartracker-web/actions/runs/34703598170)
+  [`34705813451`](https://github.com/donal0c/sartracker-web/actions/runs/34705813451)
   passed against that executable source head, including the bounded property,
   controlled rebreak, package, GPX and AppImage steps that are enabled in the
   ordinary PR lane.
