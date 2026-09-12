@@ -125,6 +125,12 @@ jobs:
         # Strict wall-clock qualification is a separate mandatory release gate.
         run: npm run test:correctness -- --no-file-parallelism
 
+      - name: WAR-02B bounded property and mutation gate
+        run: npm run test:war-02b
+
+      - name: WAR-02B controlled rebreak proof
+        run: npm run assurance:war-02b
+
       - name: Strict responsiveness qualification (<200 ms)
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: npm run test:responsiveness

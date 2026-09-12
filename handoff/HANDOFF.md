@@ -4,7 +4,26 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **PR19 Claude follow-up is locally verified; prior readiness is superseded.**
+- **WAR-02B review remediation is implemented locally on branch
+  `codex/war-02b-property-mutation`, based on exact `origin/master`
+  `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`.** The slice now has independent
+  coordinate anchors and rejection cases, an independent ingest identity
+  oracle, exact cursor/recent-window arithmetic, and a public client-boundary
+  DON-228 fault injection with separate current-green and rebroken-red legs.
+  The runner shrinks failures, validates seeds, preserves cause/stack evidence,
+  bounds async predicates, and fails closed on interruption. WAR-02B is excluded
+  from generic correctness so CI does not execute it twice. Focused local
+  evidence is 4 files / 18 tests, full correctness 438 files / 4,539 passed /
+  6 skips, full source 442 files / 4,563 passed, lint, WAR-02B type-check,
+  root app/node type-check, build/bundle budgets, and green-current/red-
+  rebroken proof. Four current semantic mutants are killed across three seams;
+  the nonexistent `legacy:` survivor is removed. Exact new-head CI and fresh
+  final review are pending. No browser, package, provider, soak,
+  release, or field claim is made; DON-254 remains open and release HOLD is
+  unchanged. PR [#24](https://github.com/donal0c/sartracker-web/pull/24) remains
+  open; do not mark READY FOR DONAL TO MERGE until those gates are refreshed.
+
+- **PR19 Claude follow-up is merged at `d20bae5f`; prior pending wording is superseded.**
   Malformed geometry now refuses the whole source explicitly; batch continuation,
   admission/watch/rescan outcomes and page/delete/error races are repaired. See the
   [follow-up disposition](../docs/assurance/findings/repair-train-b-claude-followup.md).
@@ -16,17 +35,15 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   undated late names, End Outing during import, restart equality and clean close.
   The named GPX smoke now runs in ordinary Linux CI; the standard visual project
   includes all seven GPX flows and their three reviewed captures. Four affected independent
-  source charters are clear. Linux run `34691543650` passed correctness/package
-  inspection but failed before GPX import at the outing-label control. Diagnostic
-  run `34693020365` confirms a started mission followed by WebGL blocklisting
-  and an empty renderer. GPX smoke launch now matches the existing Linux
-  AppImage Mesa/ANGLE flags; Linux confirmation is pending. PR remains draft.
-  Exact final-head bindings and terminal CI readiness live on
-  [PR19](https://github.com/donal0c/sartracker-web/pull/19); read its terminal
-  receipt before merging. [Current record](../docs/assurance/findings/repair-train-b.md).
+  source charters are clear. Linux runs `34691543650` and `34693020365` remain
+  retained diagnostic failures: the former stopped before GPX import and the
+  latter confirms WebGL blocklisting after mission start. The corrected GPX
+  smoke passed with the established Linux AppImage Mesa/ANGLE flags. PR19 is
+  merged; its exact final-head bindings and terminal CI receipt live on
+  [PR19](https://github.com/donal0c/sartracker-web/pull/19). [Current record](../docs/assurance/findings/repair-train-b.md).
   DON-274 remains In Review; DON-270 retains its original completed history;
   DON-254 is In Progress. Historical timing failures remain release blockers.
-  Stop at READY FOR DONAL TO MERGE; no merge, release or performance work.
+  PR19 merge is complete; no release or performance work is claimed here.
 
 - **DON-254 responsiveness attribution — PR21 merged** at `bac211dc`.
   It remains diagnostic-only. CI `34683600517` passed correctness, three
@@ -143,12 +160,12 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   organization (`DON-100`). Marker Details simplification remains a later
   coordinator-confirmation item. Mission Preview/per-device visibility landed
   in PR #15; Linear `DON-215` is reconciled to Done.
-- Locked next steps after Donal merges PR19: bounded large breadcrumb IPC/query
+- Locked next steps after PR19 merged: bounded large breadcrumb IPC/query
   transfer repair (316–550 ms), separate legacy-recovery repair (~239 ms), then
   unchanged strict `<200 ms` qualification. Other repair trains and WAR hazards
   remain tracked separately before BCP-17/DON-255. Use the
   [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear
-  issues for scope. PR19 merge remains pending; release/field acceptance is not established.
+  issues for scope. PR19 merge is complete; release/field acceptance is not established.
   DON-247 and DON-264 remain separate reliability work.
 
 ## Testing approach to carry forward
