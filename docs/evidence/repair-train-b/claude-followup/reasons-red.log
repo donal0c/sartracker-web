@@ -1,0 +1,149 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts (93 tests | 4 failed | 84 skipped) 502ms
+     × retains failed source without partial evidence: 'ambiguous name on empty track' [AUD-01] 57ms
+     × retains failed source without partial evidence: 'nested scalar' [AUD-01] 54ms
+     × retains failed source without partial evidence: 'truncated XML' [AUD-01] 58ms
+     × retains failed source without partial evidence: 'unbound prefix' [AUD-01] 56ms
+ ❯ tests/unit/gpx-parser.test.ts (25 tests | 3 failed | 16 skipped) 15ms
+     × fails visibly for 'foreign root' [AUD-01] 3ms
+     × fails visibly for 'wrapped root' [AUD-01] 1ms
+     × fails visibly for 'doctype' [AUD-01] 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > retains failed source without partial evidence: 'ambiguous name on empty track' [AUD-01]
+AssertionError: expected [ { …(2) } ] to deeply equal [ { …(2) } ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "reason": "GPX name must be a single text value.",
++     "reason": "GPX scalar must be a single text value.",
+      "sourcePath": "/var/folders/5s/21sy7jq5565f1sp1w7qw19c00000gn/T/sartracker-pr5-versioning-V9cWJA/bad.gpx",
+    },
+  ]
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:3651:29
+    3649|     expect(result.imports).toEqual([])
+    3650|     expect(result.failures).toHaveLength(1)
+    3651|     expect(result.failures).toEqual([{ sourcePath, reason }])
+       |                             ^
+    3652|     const db = openDatabase(await databasePath())
+    3653|     try {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > retains failed source without partial evidence: 'nested scalar' [AUD-01]
+AssertionError: expected [ { …(2) } ] to deeply equal [ { …(2) } ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "reason": "GPX ele must be a single text value.",
++     "reason": "GPX scalar must be a single text value.",
+      "sourcePath": "/var/folders/5s/21sy7jq5565f1sp1w7qw19c00000gn/T/sartracker-pr5-versioning-60Q3Oo/bad.gpx",
+    },
+  ]
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:3651:29
+    3649|     expect(result.imports).toEqual([])
+    3650|     expect(result.failures).toHaveLength(1)
+    3651|     expect(result.failures).toEqual([{ sourcePath, reason }])
+       |                             ^
+    3652|     const db = openDatabase(await databasePath())
+    3653|     try {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > retains failed source without partial evidence: 'truncated XML' [AUD-01]
+AssertionError: expected [ { …(2) } ] to deeply equal [ { …(2) } ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "reason": "GPX file could not be parsed: bad.gpx",
++     "reason": "1:85: unclosed tag: gpx",
+      "sourcePath": "/var/folders/5s/21sy7jq5565f1sp1w7qw19c00000gn/T/sartracker-pr5-versioning-AUgCMF/bad.gpx",
+    },
+  ]
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:3651:29
+    3649|     expect(result.imports).toEqual([])
+    3650|     expect(result.failures).toHaveLength(1)
+    3651|     expect(result.failures).toEqual([{ sourcePath, reason }])
+       |                             ^
+    3652|     const db = openDatabase(await databasePath())
+    3653|     try {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > retains failed source without partial evidence: 'unbound prefix' [AUD-01]
+AssertionError: expected [ { …(2) } ] to deeply equal [ { …(2) } ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "reason": "GPX file could not be parsed: bad.gpx",
++     "reason": "1:46: unbound namespace prefix: \"v\".",
+      "sourcePath": "/var/folders/5s/21sy7jq5565f1sp1w7qw19c00000gn/T/sartracker-pr5-versioning-eIKl0o/bad.gpx",
+    },
+  ]
+
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:3651:29
+    3649|     expect(result.imports).toEqual([])
+    3650|     expect(result.failures).toHaveLength(1)
+    3651|     expect(result.failures).toEqual([{ sourcePath, reason }])
+       |                             ^
+    3652|     const db = openDatabase(await databasePath())
+    3653|     try {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  tests/unit/gpx-parser.test.ts > gpx parser > fails visibly for 'foreign root' [AUD-01]
+ FAIL  tests/unit/gpx-parser.test.ts > gpx parser > fails visibly for 'wrapped root' [AUD-01]
+AssertionError: expected [Function] to throw error including 'GPX document root is not supported.' but got 'GPX document root or document type is…'
+
+Expected: "GPX document root is not supported."
+Received: "GPX document root or document type is not supported."
+
+ ❯ tests/unit/gpx-parser.test.ts:29:99
+     27|   })
+     28|   it.each(gpxXmlInvalidCases)('fails visibly for $name [AUD-01]', ({ s…
+     29|     expect(() => parseGpxFile({ contents: source, sourcePath: '/bad.gp…
+       |                                                                                                   ^
+     30|   })
+     31|   it('excludes legal extension collisions from canonical evidence [AUD…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  tests/unit/gpx-parser.test.ts > gpx parser > fails visibly for 'doctype' [AUD-01]
+AssertionError: expected [Function] to throw error including 'GPX document type is not supported.' but got 'GPX document root or document type is…'
+
+Expected: "GPX document type is not supported."
+Received: "GPX document root or document type is not supported."
+
+ ❯ tests/unit/gpx-parser.test.ts:29:99
+     27|   })
+     28|   it.each(gpxXmlInvalidCases)('fails visibly for $name [AUD-01]', ({ s…
+     29|     expect(() => parseGpxFile({ contents: source, sourcePath: '/bad.gp…
+       |                                                                                                   ^
+     30|   })
+     31|   it('excludes legal extension collisions from canonical evidence [AUD…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  7 failed | 11 passed | 100 skipped (118)
+   Start at  11:53:23
+   Duration  1.28s (transform 78ms, setup 0ms, import 116ms, tests 517ms, environment 463ms)

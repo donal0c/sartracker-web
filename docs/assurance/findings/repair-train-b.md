@@ -1,11 +1,14 @@
 # Repair Train B — GPX evidence fidelity and lifecycle
 
+**Current:** Claude follow-up supersedes the readiness below. See the
+[disposition and current verification](repair-train-b-claude-followup.md).
+
 ## Reconciliation on current master — 2026-09-12
 
 Base: `f4d1f3214ddc82b0df043c85a340b3872ba90a80`, containing merged PRs
 #22/#20/#21. Existing PR19 branch is rebased; master foreground-write priority,
 native custody fences and correctness/strict-timing routing are retained.
-No CI machinery is added by Train B. Earlier receipts below remain historical
+This earlier reconciliation added no CI machinery. Earlier receipts below remain historical
 and are not relabelled as this integrated package or exact-head review.
 
 One additional AUD-05 interleaving reproduced: an older outing refresh failing

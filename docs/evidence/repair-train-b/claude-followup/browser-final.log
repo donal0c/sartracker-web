@@ -1,0 +1,21 @@
+[2m[WebServer] [22m(node:85765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 7 tests using 1 worker
+
+(node:85766) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:85766) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/gpx-import.spec.ts:19:3 › M22 GPX import parity › publishes successful files around a malformed source and names the failure [DON-274] (2.3s)
+  ✓  2 [chromium] › tests/e2e/gpx-import.spec.ts:42:3 › M22 GPX import parity › renders imported GPX tracks in the panel, layer catalog, review workspace, and map source (2.4s)
+  ✓  3 [chromium] › tests/e2e/gpx-import.spec.ts:112:3 › M22 GPX import parity › keeps exact GPX geometry and settles import when the outing ends [AUD-01 AUD-05 AUD-10] (2.1s)
+  ✓  4 [chromium] › tests/e2e/gpx-import.spec.ts:149:3 › M22 GPX import parity › reports competing admission and allows a clean retry after settlement [DON-274] (2.1s)
+  ✓  5 [chromium] › tests/e2e/gpx-import.spec.ts:194:3 › M22 GPX import parity › shows retained interrupted-import provenance after runtime recovery [DON-274] (1.2s)
+  ✓  6 [chromium] › tests/e2e/gpx-import.spec.ts:221:3 › M22 GPX import parity › pages imported GPX projections without accumulating renderer evidence [DON-274] (1.4s)
+  ✓  7 [chromium] › tests/e2e/gpx-import.spec.ts:253:3 › M22 GPX import parity › DON-194: changes individual GPX colours and keeps the layer tree readable on smaller displays (1.5s)
+
+  7 passed (13.9s)

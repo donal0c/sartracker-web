@@ -1,0 +1,33 @@
+Verdict: do not merge as-is
+
+The PR body says "READY FOR DONAL TO MERGE." I disagree. The GPX fidelity work is genuinely good — the shared gpx-xml-contract-cases.ts corpus driving both parsers is excellent practice, and the Electron integration tests assert real SQLite rows and exact source bytes rather than mocks. But there are five operator-visible defects, three of them on evidence paths.
+
+I verified the targeted suites green myself: tests/unit/start-gpx-runtime.test.ts + gpx-parser.test.ts → 41 passed.
+
+Blocking
+
+1. Silently dropped track geometry with rejectionCount: 0. Both parsers now require exact canonical ancestry and namespace, and neither emits a rejection row for what it drops. A file where only some trksegs are namespace-mismatched or nested a level deeper imports successfully, with fewer points and a clean rejection ledger. A searcher's track can vanish from the map with no evidence trail. This is the most dangerous behaviour in the PR. Needs a namespace_mismatch / non_canonical_structure rejection reason so rejectionCount is never silently 0.
+
+2. Renderer path aborts the batch and leaves a partial commit. readScalar now throws where the old code recorded a rejection, but importFilesIntoRuntime (start-gpx-runtime.ts:432) has one try around the whole file loop and rethrows. One malformed file → remaining files never parsed, no failure record for them, and files already upsertGpxImport-ed earlier in the loop are durably persisted while state.imports is never refreshed. The worker path does the opposite (per-file recordGpxImportFailure, batch continues). PR19 introduced this asymmetry by adding the throw without a per-file boundary.
+
+3. The admission notice never clears on the same mission. importAdmissionNotice resets only on a mission change (:134) or the next admitted import, but publishRuntime joins it into error on every publish. After one busy rejection the red "This request was not imported" banner stays up for the rest of the incident, over successful state. The docstring says "through the admitted operation's settlement" — the implementation far exceeds that.
+
+4. Watched folder added during an import is silently dropped, and the retry instruction is a no-op. addWatchedDirectory registers the path first (:279), then admitImport() refuses the scan. The notice says "select the files or folder again" — re-picking hits the watchedDirectories.includes() early return and does nothing. The interval rescan eventually recovers it, but the operator is told to do something that provably has no effect.
+
+5. Manual Rescan lies during an import. rescanWatchedDirectories now opens if (state.importing) return [], and gpx-import-panel.tsx:272 maps [] to "Rescan complete. No new GPX files were found." That's a confident false negative on an evidence path. More broadly, return [] now conflates admission refusal, mission staleness, duplicate directory, and genuinely-empty — and every caller reports it as "nothing found."
+
+Worth fixing, not blocking
+
+- admitImport() fights the backend. mission-store.cjs already queues up to MAX_ADMITTED_GPX_IMPORT_BATCHES = 4 with its own "queue is full" error. The renderer now refuses the 2nd concurrent import outright, making that queue unreachable from the UI — which is why the manual's "Concurrent imports are serialized" line had to be deleted. Queueing was the better behaviour.
+- Track name is positional in the worker, structural in the renderer. A <trk> with <name> after <trkseg> gives null on Electron and "Ridge party" in the browser. Reachable, and it lands in gpx_evidence_points.
+- Divergent failure reason strings for identical bytes across the two paths (root/DOCTYPE/malformed-XML all differ), and worker nested-scalar errors don't name the field. The reason string is the evidence record.
+- deleteImport mutates state.imports without bumping importPublication (:354) — an in-flight loadImportPage can resurrect a just-deleted track. Conversely both catch blocks bump publication with no projection change, so a failed background rescan makes the operator's "next page" click silently do nothing.
+- Missing red-first coverage. The highest-value one: a trkpt whose only reachable <time> is inside <extensions> — the exact case where the old code invents a timestamp and flips timingClass off undated. Absent from both parsers. Every new fixture puts canonical <ele>/<time> before <extensions>, which is precisely the ordering where the old querySelector already returned the right element, so the renderer half of the extensions claim passes without the fix. Also no test that the busy latch ever releases, and the 9 invalid-XML rows use bare .toThrow() with no message.
+
+On the evidence package
+
+Claim integrity checks out — test counts, SHAs, and CI run 34687525968 all verify. Two caveats: scripts/electron-gpx-fidelity-smoke.mjs is not wired into any npm script or workflow, so the 75,002-point packaged claim rests on a manual one-off run with nothing keeping it fresh; and ~7.4MB of PNGs went permanently into git history, including near-duplicates in both docs/evidence/repair-train-b/ and its reconciliation/ subdir.
+
+One agent claim I checked and disproved: the "routine refresh erases the import-failure banner" only bites where listGpxImportIssues is unavailable (browser harness). On Electron, worker failures persist as 'failure' issue rows, so describeImportIssues returns non-null and the banner survives.
+
+Full reports: tmp/pr19-review/{parser-divergence,runtime-concurrency,test-adequacy,claims-evidence,orchestrator-findings}.md.

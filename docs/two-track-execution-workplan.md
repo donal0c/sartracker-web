@@ -8,6 +8,9 @@ PRs #22/#20/#21 are merged. Reconcile PR #19's GPX fidelity and import lifecycle
 against master `f4d1f321`; then stop for Donal's merge. The bounded responsiveness
 repairs and unchanged strict `<200 ms` qualification follow separately. Release
 remains HOLD. [Train B evidence](assurance/findings/repair-train-b.md).
+Claude's PR19 follow-up is repaired and locally verified; the
+[disposition](assurance/findings/repair-train-b-claude-followup.md) and terminal
+PR receipt own current readiness. No follow-on performance work starts here.
 
 ### WAR-11A: AppImage builder boundary (merged, 2026-09-10)
 

@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { createDesktopGpxImportSource } from '../infrastructure/gpx-import-source/desktop-gpx-import-source'
 import { getGpxImportColor } from '../features/gpx/gpx-style'
 import { useGpxStore } from '../features/gpx/gpx-store'
+import type { GpxImportOperationResult } from '../features/gpx/start-gpx-runtime'
 import { isTauriRuntimeAvailable } from '../lib/tauri-runtime'
 import { isElectronRuntimeAvailable } from '../lib/desktop-runtime'
 import { ColorPaletteInput } from './color-palette-input'
@@ -27,6 +28,7 @@ export function GpxImportPanel() {
   const error = useGpxStore((state) => state.error)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [assignmentActor, setAssignmentActor] = useState('')
+  const statusRequest = useRef(0)
 
   const desktopAvailable = isTauriRuntimeAvailable() || isElectronRuntimeAvailable()
   const canImport = controller !== null && desktopAvailable && !loading && !importing
@@ -211,19 +213,22 @@ export function GpxImportPanel() {
       return
     }
 
-    const paths = await gpxImportSource.chooseFilePaths()
-    if (paths.length === 0) {
-      return
+    const request = ++statusRequest.current
+    const missionAtRequest = useGpxStore.getState().activeMissionId
+    try {
+      const paths = await gpxImportSource.chooseFilePaths()
+      if (paths.length === 0) return
+      if (hasMissionChanged(missionAtRequest)) {
+        setStatusForRequest(request, describeImportResult({ outcome: 'stale', imports: [] }, 'GPX import'))
+        return
+      }
+      const result = isElectronRuntimeAvailable()
+        ? await controller.importPaths(paths)
+        : await importFilesForMission(paths, missionAtRequest)
+      setStatusForRequest(request, describeImportResult(result, 'GPX import'))
+    } catch (error) {
+      setStatusForRequest(request, `GPX import failed: ${toErrorMessage(error)}`)
     }
-
-    const imported = isElectronRuntimeAvailable()
-      ? await controller.importPaths(paths)
-      : await controller.importFiles(await gpxImportSource.readFiles(paths))
-    setStatusMessage(
-      imported.length === 0
-        ? 'No new GPX files were imported.'
-        : `Imported ${imported.length} GPX file${imported.length === 1 ? '' : 's'}.`,
-    )
   }
 
   async function handleImportFolder(): Promise<void> {
@@ -231,19 +236,28 @@ export function GpxImportPanel() {
       return
     }
 
-    const directoryPath = await gpxImportSource.chooseDirectoryPath()
-    if (directoryPath === null) {
-      return
+    const request = ++statusRequest.current
+    const missionAtRequest = useGpxStore.getState().activeMissionId
+    try {
+      const directoryPath = await gpxImportSource.chooseDirectoryPath()
+      if (directoryPath === null) return
+      if (hasMissionChanged(missionAtRequest)) {
+        setStatusForRequest(request, describeImportResult({ outcome: 'stale', imports: [] }, `GPX folder ${directoryPath}`))
+        return
+      }
+      let result: GpxImportOperationResult
+      if (isElectronRuntimeAvailable() && gpxImportSource.listDirectoryPaths !== undefined) {
+        result = await importPathsForMission(await gpxImportSource.listDirectoryPaths(directoryPath), missionAtRequest)
+      } else {
+        const files = await gpxImportSource.listDirectoryFiles(directoryPath)
+        result = hasMissionChanged(missionAtRequest)
+          ? { outcome: 'stale', imports: [] }
+          : await controller.importFiles(files)
+      }
+      setStatusForRequest(request, describeImportResult(result, `GPX folder ${directoryPath}`))
+    } catch (error) {
+      setStatusForRequest(request, `GPX folder import failed: ${toErrorMessage(error)}`)
     }
-
-    const imported = isElectronRuntimeAvailable() && gpxImportSource.listDirectoryPaths !== undefined
-      ? await controller.importPaths(await gpxImportSource.listDirectoryPaths(directoryPath))
-      : await controller.importFiles(await gpxImportSource.listDirectoryFiles(directoryPath))
-    setStatusMessage(
-      imported.length === 0
-        ? `No new GPX files were found in ${directoryPath}.`
-        : `Imported ${imported.length} GPX file${imported.length === 1 ? '' : 's'} from ${directoryPath}.`,
-    )
   }
 
   async function handleWatchFolder(): Promise<void> {
@@ -251,17 +265,20 @@ export function GpxImportPanel() {
       return
     }
 
-    const directoryPath = await gpxImportSource.chooseDirectoryPath()
-    if (directoryPath === null) {
-      return
+    const request = ++statusRequest.current
+    const missionAtRequest = useGpxStore.getState().activeMissionId
+    try {
+      const directoryPath = await gpxImportSource.chooseDirectoryPath()
+      if (directoryPath === null) return
+      if (hasMissionChanged(missionAtRequest)) {
+        setStatusForRequest(request, describeImportResult({ outcome: 'stale', imports: [] }, `Watching ${directoryPath}`))
+        return
+      }
+      const result = await controller.addWatchedDirectory(directoryPath)
+      setStatusForRequest(request, describeImportResult(result, `Watching ${directoryPath}`))
+    } catch (error) {
+      setStatusForRequest(request, `Watch folder failed: ${toErrorMessage(error)}`)
     }
-
-    const imported = await controller.addWatchedDirectory(directoryPath)
-    setStatusMessage(
-      imported.length === 0
-        ? `Watching ${directoryPath}. No new GPX files were imported.`
-        : `Watching ${directoryPath}. Imported ${imported.length} GPX file${imported.length === 1 ? '' : 's'}.`,
-    )
   }
 
   async function handleRescan(): Promise<void> {
@@ -269,12 +286,13 @@ export function GpxImportPanel() {
       return
     }
 
-    const imported = await controller.rescanWatchedDirectories()
-    setStatusMessage(
-      imported.length === 0
-        ? 'Rescan complete. No new GPX files were found.'
-        : `Rescan imported ${imported.length} new GPX file${imported.length === 1 ? '' : 's'}.`,
-    )
+    const request = ++statusRequest.current
+    try {
+      const result = await controller.rescanWatchedDirectories()
+      setStatusForRequest(request, describeImportResult(result, 'Rescan'))
+    } catch (error) {
+      setStatusForRequest(request, `Rescan failed: ${toErrorMessage(error)}`)
+    }
   }
 
   async function handleDeleteImport(importId: string, displayName: string): Promise<void> {
@@ -282,8 +300,9 @@ export function GpxImportPanel() {
       return
     }
 
+    const request = ++statusRequest.current
     const didDelete = await controller.deleteImport(importId)
-    setStatusMessage(
+    setStatusForRequest(request,
       didDelete
         ? `Retired GPX import ${displayName}. Its evidence remains in mission history.`
         : `GPX import ${displayName} was already retired.`,
@@ -292,11 +311,74 @@ export function GpxImportPanel() {
 
   async function handleAssignOuting(importId: string, outingId: string): Promise<void> {
     if (controller === null || outingId === '' || assignmentActor.trim() === '') return
+    const request = ++statusRequest.current
     const updated = await controller.assignImportToOuting(importId, outingId, assignmentActor)
-    setStatusMessage(updated === null
+    setStatusForRequest(request, updated === null
       ? 'GPX outing assignment was unavailable.'
       : `Assigned ${updated.display_name} to the selected outing as a new evidence revision.`)
   }
+
+  function setStatusForRequest(request: number, message: string): void {
+    if (request === statusRequest.current) setStatusMessage(message)
+  }
+
+  /** Checks that an awaited picker or file read still belongs to the active mission. */
+  function hasMissionChanged(missionAtRequest: string | null): boolean {
+    return useGpxStore.getState().activeMissionId !== missionAtRequest
+  }
+
+  /** Reads browser-selected files only while the mission selected at click time remains active. */
+  async function importFilesForMission(
+    paths: readonly string[],
+    missionAtRequest: string | null,
+  ): Promise<GpxImportOperationResult> {
+    if (hasMissionChanged(missionAtRequest)) return { outcome: 'stale', imports: [] }
+    const files = await gpxImportSource.readFiles(paths)
+    if (hasMissionChanged(missionAtRequest)) return { outcome: 'stale', imports: [] }
+    return await controller!.importFiles(files)
+  }
+
+  /** Dispatches native paths only while the mission selected at click time remains active. */
+  async function importPathsForMission(
+    paths: readonly string[],
+    missionAtRequest: string | null,
+  ): Promise<GpxImportOperationResult> {
+    if (hasMissionChanged(missionAtRequest)) return { outcome: 'stale', imports: [] }
+    return await controller!.importPaths(paths)
+  }
+}
+
+/** Produces an operator-facing status for each explicit import outcome. */
+function describeImportResult(result: GpxImportOperationResult, context: string): string {
+  switch (result.outcome) {
+    case 'imported': {
+      const imported = `${result.imports.length} GPX file${result.imports.length === 1 ? '' : 's'}`
+      const failureSuffix = result.failures === undefined || result.failures.length === 0
+        ? ''
+        : ` ${result.failures.length} file${result.failures.length === 1 ? '' : 's'} failed; review the failure details above.`
+      if (context === 'GPX import') return `Imported ${imported}.${failureSuffix}`
+      if (context === 'Rescan') return `Rescan imported ${imported}.${failureSuffix}`
+      if (context.startsWith('Watching ')) return `${context}. Imported ${imported}.${failureSuffix}`
+      return `${context} imported ${imported}.${failureSuffix}`
+    }
+    case 'empty':
+      return `${context} found no new GPX files.`
+    case 'refused':
+      return `${context} was deferred because another GPX import is in progress. Retry after it finishes.`
+    case 'stale':
+      return `${context} was not applied because the active mission changed. Select the files or folder again.`
+    case 'failed': {
+      const failed = result.failures?.length ?? 0
+      return failed === 0
+        ? `${context} could not import the selected GPX files. Review the failure details above.`
+        : `${context} could not import ${failed} GPX file${failed === 1 ? '' : 's'}. Review the failure details above.`
+    }
+  }
+}
+
+/** Converts an import failure into safe text for the status line. */
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'The operation failed.'
 }
 
 function ActionButton(props: {

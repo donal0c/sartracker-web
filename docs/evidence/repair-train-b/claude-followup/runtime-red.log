@@ -1,0 +1,112 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web
+
+ ❯ tests/unit/start-gpx-runtime.test.ts (24 tests | 4 failed) 5303ms
+     × returns an explicit refusal, clears the transient notice at settlement, and admits the next import [DON-274] 4ms
+     × returns an explicit refusal when a watched rescan overlaps an active import [DON-274] 5003ms
+     × continues a renderer batch after one file fails and reports the failed file [DON-274] 3ms
+     × does not let a delayed page restore a deleted import [DON-274] 55ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > returns an explicit refusal, clears the transient notice at settlement, and admits the next import [DON-274]
+AssertionError: expected [] to deeply equal { outcome: 'refused', imports: [] }
+
+- Expected:
+{
+  "imports": [],
+  "outcome": "refused",
+}
+
++ Received:
+[]
+
+ ❯ tests/unit/start-gpx-runtime.test.ts:451:66
+    449|     const first = controller.importPaths(['/tracks/first.gpx'])
+    450|     await vi.waitFor(() => expect(importGpxEvidencePaths).toHaveBeenCa…
+    451|     await expect(controller.importPaths(['/tracks/refused.gpx'])).reso…
+       |                                                                  ^
+    452|       outcome: 'refused', imports: [],
+    453|     })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > returns an explicit refusal when a watched rescan overlaps an active import [DON-274]
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/start-gpx-runtime.test.ts:469:3
+    467|   })
+    468|
+    469|   it('returns an explicit refusal when a watched rescan overlaps an ac…
+       |   ^
+    470|     let resolveImport: ((value: { imports: readonly { id: string }[]; …
+    471|     const importGpxEvidencePaths = vi.fn().mockImplementation(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > continues a renderer batch after one file fails and reports the failed file [DON-274]
+Error: GPX file could not be parsed: bad.gpx
+ ❯ parseGpxFile src/features/gpx/gpx-parser.ts:53:11
+     51|   const parserError = document.querySelector('parsererror')
+     52|   if (parserError !== null) {
+     53|     throw new Error(`GPX file could not be parsed: ${input.fileName}`)
+       |           ^
+     54|   }
+     55|   const root = document.documentElement
+ ❯ importFilesIntoRuntime src/features/gpx/start-gpx-runtime.ts:436:24
+ ❯ Object.importFiles src/features/gpx/start-gpx-runtime.ts:233:20
+ ❯ tests/unit/start-gpx-runtime.test.ts:512:39
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > does not let a delayed page restore a deleted import [DON-274]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining {"imports": []} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "imports": [],
++     "activeMissionId": "mission-a",
++     "error": null,
++     "hasMoreImportIssues": false,
++     "hasMoreImports": false,
++     "importIssues": [],
++     "importPageNumber": 2,
++     "importing": false,
++     "imports": [
++       {
++         "display_name": "gpx-delete",
++         "file_name": "gpx-delete.gpx",
++         "geometry_json": "{\"type\":\"MultiLineString\",\"coordinates\":[]}",
++         "id": "gpx-delete",
++         "imported_at": "2026-04-11T10:00:00.000Z",
++         "metadata_json": null,
++         "mission_id": "mission-a",
++         "source_path": "/tracks/gpx-delete.gpx",
++         "updated_at": "2026-04-11T10:00:00.000Z",
++       },
++     ],
++     "loading": false,
++     "loadingMoreImports": false,
++     "outings": [],
++     "watchedDirectories": [],
+    },
+  ]
+
+ ❯ tests/unit/start-gpx-runtime.test.ts:548:26
+    546|     await page
+    547|
+    548|     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContain…
+       |                          ^
+    549|   })
+    550|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 20 passed (24)
+   Start at  11:53:53
+   Duration  5.70s (transform 39ms, setup 0ms, import 46ms, tests 5.30s, environment 228ms)

@@ -1,0 +1,12 @@
+{
+  "testId": "repair-train-b-partial-batch",
+  "testName": "Malformed file does not hide valid imports",
+  "severity": "critical",
+  "verdict": "fail",
+  "failedItems": [
+    "Item 2: before/after track entries are not visible; the IMPORTED TRACKS list is cut off below the captured frame"
+  ],
+  "rawReply": "{\"verdict\": \"fail\", \"failedItems\": [\"Item 2: before/after track entries are not visible; the IMPORTED TRACKS list is cut off below the captured frame\"], \"notes\": \"Count '2 SHOWN', malformed.gpx error, and non-Importing controls confirmed, but track names not visible.\"}",
+  "durationMs": 9596.205083,
+  "cacheHit": false
+}

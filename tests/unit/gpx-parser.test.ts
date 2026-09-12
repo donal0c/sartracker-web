@@ -2,9 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 import { digestGpxSource, parseGpxFile } from '../../src/features/gpx/gpx-parser'
-import { gpxXmlValidCases, gpxXmlInvalidCases } from '../fixtures/gpx-xml-contract-cases'
+import { gpxXmlValidCases, gpxXmlInvalidCases, gpxXmlGeometryRefusals, gpxXmlUndatedLateName } from '../fixtures/gpx-xml-contract-cases'
 
 describe('gpx parser', () => {
+  it.each(gpxXmlGeometryRefusals)('rejects incomplete geometry: $name [DON-274]', ({ source, reason }) => {
+    expect(() => parseGpxFile({ contents: source, sourcePath: '/bad.gpx', fileName: 'bad.gpx' })).toThrow(reason)
+  })
+  it('keeps extension-only time undated and resolves late track names [DON-274]', () => {
+    const parsed = parseGpxFile({ contents: gpxXmlUndatedLateName, sourcePath: '/track.gpx', fileName: 'track.gpx' })
+    expect(parsed.timingClass).toBe('undated')
+    expect(parsed.points.map(({ trackName, timestamp, elevation }) => ({ trackName, timestamp, elevation }))).toEqual([
+      { trackName: 'Ridge party', timestamp: null, elevation: null },
+      { trackName: 'Ridge party', timestamp: null, elevation: null },
+    ])
+  })
   it.each(gpxXmlValidCases)('retains canonical namespace/CDATA semantics: $name [AUD-01 AUD-10]', ({ source }) => {
     const parsed = parseGpxFile({ contents: source, sourcePath: '/track.gpx', fileName: 'track.gpx' })
     expect(parsed.points).toEqual([
@@ -14,8 +25,8 @@ describe('gpx parser', () => {
     expect(parsed.timingClass).toBe('partially_dated')
     expect(parsed.rejections).toEqual([])
   })
-  it.each(gpxXmlInvalidCases)('fails visibly for $name [AUD-01]', ({ source }) => {
-    expect(() => parseGpxFile({ contents: source, sourcePath: '/bad.gpx', fileName: 'bad.gpx' })).toThrow()
+  it.each(gpxXmlInvalidCases)('fails visibly for $name [AUD-01]', ({ source, reason }) => {
+    expect(() => parseGpxFile({ contents: source, sourcePath: '/bad.gpx', fileName: 'bad.gpx' })).toThrow(reason)
   })
   it('excludes legal extension collisions from canonical evidence [AUD-01]', () => {
     const parsed = parseGpxFile({ fileName: 'extensions.gpx', sourcePath: '/extensions.gpx',

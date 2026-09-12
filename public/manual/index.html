@@ -1775,6 +1775,9 @@
             elements in their proper track structure define evidence; vendor extensions remain in the
             retained source and cannot replace coordinates, elevation or time. CDATA text is preserved.
             Malformed XML, document types, and repeated or nested scalar fields are refused explicitly.
+            A track, segment or point in the wrong namespace or outside the GPX track structure
+            causes the whole file to be refused with a specific reason; the app does not show a
+            shortened track as a clean import. Desktop failure records retain that exact source.
             Previously saved imports are not automatically reinterpreted. If an older import appears
             incorrect, preserve the mission and original file for investigation; re-importing identical
             bytes does not rewrite its evidence.
@@ -1787,6 +1790,10 @@
             divide it into smaller operator-selected batches. Wait for the current import to finish before
             starting another. If a file selection or folder scan overlaps another import, the panel keeps
             a retry notice visible after that import finishes; select the files or folder again.
+            A refused rescan is reported as not run, never as a completed empty scan. Selecting an
+            already watched folder again performs another scan. The temporary busy error clears
+            when the running import settles; the selected action's retry status remains until
+            the next action.
             Identical bytes still resolve to one canonical source with path aliases.
             Imports yield between database writes while current-position writes are waiting, so a busy
             tracking session may take longer to finish importing. Keep the import result visible and
@@ -1809,6 +1816,8 @@
             to the original source evidence. A failed, malformed, empty, non-UTF-8, interrupted, or partially successful
             batch is reported explicitly. Successfully accepted files remain visible, while failed source bytes,
             digest and reason remain retained for investigation.
+            Browser testing continues past individual failed files and displays successful imports
+            plus the failed filenames; it does not provide desktop durable failure-source retention.
             Ending an outing while an import is running does not cancel the import. The panel settles
             to the actual import result; assign static evidence to the appropriate outing explicitly.
             If a delayed outing refresh also fails, the panel retains both that error and any import failure.

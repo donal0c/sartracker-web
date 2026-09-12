@@ -16,6 +16,7 @@
     "electron:release:publish": "node scripts/electron-release-publish.mjs",
     "electron:smoke:official-offline": "node scripts/electron-official-map-offline-smoke.mjs",
     "electron:smoke:bad-secret": "node scripts/electron-bad-secret-smoke.mjs",
+    "electron:smoke:gpx-fidelity": "node scripts/electron-gpx-fidelity-smoke.mjs",
     "electron:smoke:map-freeze": "node scripts/electron-map-freeze-probe.mjs",
     "electron:smoke:mission-store-freeze": "node scripts/electron-mission-store-freeze-probe.mjs",
     "electron:smoke:storage-kill": "node scripts/electron-storage-diagnostics-kill-probe.mjs",

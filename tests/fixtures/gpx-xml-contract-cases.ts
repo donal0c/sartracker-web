@@ -30,4 +30,24 @@ export const gpxXmlInvalidCases = [
   ['nested scalar', '<gpx><trk><trkseg><trkpt lat="52" lon="-9"><ele>1<value>00</value></ele></trkpt><trkpt lat="53" lon="-9"/></trkseg></trk></gpx>'],
   ['truncated XML', '<gpx><trk><trkseg><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg></trk>'],
   ['unbound prefix', '<gpx><trk><trkseg><v:trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg></trk></gpx>'],
-].map(([name, source]) => ({ name, source }))
+].map(([name, source]) => ({ name, source, reason: ({
+  'ambiguous scalar on rejected point': 'GPX time must be a single text value.',
+  'ambiguous name on empty track': 'GPX name must be a single text value.',
+  'foreign root': 'GPX document root is not supported.',
+  'wrapped root': 'GPX document root is not supported.',
+  doctype: 'GPX document type is not supported.',
+  'duplicate scalar': 'GPX time must be a single text value.',
+  'nested scalar': 'GPX ele must be a single text value.',
+  'truncated XML': 'GPX file could not be parsed: bad.gpx',
+  'unbound prefix': 'GPX file could not be parsed: bad.gpx',
+} as Readonly<Record<string, string>>)[name] }))
+
+/** Malformed track geometry must reject the source, never publish a truncated clean track. */
+export const gpxXmlGeometryRefusals = [
+  { name: 'mixed segment namespace', fragment: '<trkseg xmlns="urn:wrong"><trkpt lat="51" lon="-8"/><trkpt lat="51.1" lon="-8"/></trkseg>', reason: 'GPX namespace_mismatch: trkseg.' },
+  { name: 'wrapped segment', fragment: '<wrapper><trkseg><trkpt lat="51" lon="-8"/><trkpt lat="51.1" lon="-8"/></trkseg></wrapper>', reason: 'GPX non_canonical_structure: trkseg.' },
+  { name: 'wrapped point', fragment: '<trkseg><wrapper><trkpt lat="51" lon="-8"/></wrapper></trkseg>', reason: 'GPX non_canonical_structure: trkpt.' },
+].map(({ name, fragment, reason }) => ({ name, reason, source: `<gpx><trk><trkseg><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg>${fragment}</trk></gpx>` }))
+
+/** No canonical time exists; vendor time must not turn static evidence into a dated track. */
+export const gpxXmlUndatedLateName = '<gpx><trk><trkseg><trkpt lat="52" lon="-9"><extensions><time>2026-09-07T08:00:00Z</time><ele>999</ele></extensions></trkpt><trkpt lat="53" lon="-9"/></trkseg><name>Ridge party</name></trk></gpx>'

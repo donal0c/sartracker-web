@@ -1,0 +1,47 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f682/sartracker-web
+
+ ❯ tests/unit/start-gpx-runtime.test.ts (32 tests | 1 failed | 31 skipped) 61ms
+     × retains a newer import failure when an older page rejects [DON-274] 61ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-gpx-runtime.test.ts > startGpxRuntime > retains a newer import failure when an older page rejects [DON-274]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "error": StringContaining "Import transport failed",
++     "activeMissionId": "mission-a",
++     "error": "Page unavailable",
++     "hasMoreImportIssues": false,
++     "hasMoreImports": true,
++     "importIssues": [],
++     "importPageNumber": 1,
++     "importing": false,
++     "imports": [],
++     "loading": false,
++     "loadingMoreImports": false,
++     "outings": [],
++     "watchedDirectories": [],
+    },
+  ]
+
+ ❯ tests/unit/start-gpx-runtime.test.ts:559:26
+    557|     rejectPage(new Error('Page unavailable'))
+    558|     await page
+    559|     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContain…
+       |                          ^
+    560|     expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContain…
+    561|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 31 skipped (32)
+   Start at  12:13:43
+   Duration  477ms (transform 45ms, setup 0ms, import 53ms, tests 61ms, environment 230ms)

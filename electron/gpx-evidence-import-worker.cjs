@@ -148,6 +148,7 @@ function parseGpxEvidence(contents, fileName, scalarParsers) {
   const points = []
   const rejections = []
   let trackName = null
+  let trackPointStart = 0
   let segmentIndex = -1
   let pointIndex = -1
   let segmentPoints = null
@@ -157,10 +158,15 @@ function parseGpxEvidence(contents, fileName, scalarParsers) {
   const frames = []
   let namespace = null
 
+  // Throw immediately: saxes must never recover into a partially accepted document.
+  parser.on('error', () => { throw new Error(`GPX file could not be parsed: ${fileName}`) })
   parser.on('doctype', () => { throw new Error('GPX document type is not supported.') })
   parser.on('opentag', (tag) => {
     const parent = frames.at(-1)
-    if (capture !== null) throw new Error('GPX scalar must be a single text value.')
+    if (capture !== null) {
+      const field = { 'track-name': 'name', elevation: 'ele', timestamp: 'time' }[capture]
+      throw new Error(`GPX ${field} must be a single text value.`)
+    }
     if (parent === undefined) {
       if (tag.local !== 'gpx' || !['', 'http://www.topografix.com/GPX/1/0', 'http://www.topografix.com/GPX/1/1'].includes(tag.uri)) {
         throw new Error('GPX document root is not supported.')
@@ -170,12 +176,16 @@ function parseGpxEvidence(contents, fileName, scalarParsers) {
     const expectedParent = { trk: 'gpx', trkseg: 'trk', trkpt: 'trkseg', name: 'trk', ele: 'trkpt', time: 'trkpt' }
     const name = tag.uri === namespace && (parent === undefined || parent.name === expectedParent[tag.local])
       ? tag.local : null
+    const opaqueExtension = parent?.opaqueExtension === true || tag.local === 'extensions'
+    if (!opaqueExtension && ['trk', 'trkseg', 'trkpt'].includes(tag.local) && name === null) {
+      throw new Error(`GPX ${tag.uri !== namespace ? 'namespace_mismatch' : 'non_canonical_structure'}: ${tag.local}.`)
+    }
     if (['name', 'ele', 'time'].includes(name)) {
       if (parent.scalars.has(name)) throw new Error(`GPX ${name} must be a single text value.`)
       parent.scalars.add(name)
     }
-    frames.push({ name, scalars: new Set() })
-    if (name === 'trk') trackName = null
+    frames.push({ name, scalars: new Set(), opaqueExtension })
+    if (name === 'trk') { trackName = null; trackPointStart = points.length }
     if (name === 'trkseg') {
       segmentIndex += 1
       pointIndex = -1
@@ -225,6 +235,9 @@ function parseGpxEvidence(contents, fileName, scalarParsers) {
       else rejections.push({ kind: 'segment', segment_index: segmentIndex, point_index: null, reason: 'insufficient_segment_points', source_value: String(segmentPoints.length) })
       segmentPoints = null
     }
+    if (name === 'trk') {
+      for (let index = trackPointStart; index < points.length; index += 1) points[index].track_name = trackName
+    }
   })
   try {
     parser.write(contents).close()
@@ -233,7 +246,7 @@ function parseGpxEvidence(contents, fileName, scalarParsers) {
   }
   if (segments.length === 0) {
     throw withGpxRejections(
-      new Error(`GPX file does not contain any usable track segments: ${fileName}`),
+      new Error('GPX file does not contain any track segments.'),
       rejections,
     )
   }

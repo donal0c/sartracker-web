@@ -4,15 +4,18 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **PR19 local reconciliation is complete** on `codex/repair-train-b`, based on master
-  `f4d1f321` after merged PRs #22/#20/#21. GPX parser custody and import/outing
-  behavior are retained alongside master foreground-write priority. One extra
-  late-refresh error-loss regression reproduced and is repaired; focused
-  parser/runtime/native checks pass 138 tests. Ordinary correctness passes
-  437 files / 4,515 tests (six qualification-only skips); lint/build/budgets,
-  six browser flows, rendered reviews and the 75,002-point packaged
-  import/End Outing/restart check pass. Four independent source charters are
-  clear. Exact final-head review/CI bindings and merge readiness live on
+- **PR19 Claude follow-up is locally verified; prior readiness is superseded.**
+  Malformed geometry now refuses the whole source explicitly; batch continuation,
+  admission/watch/rescan outcomes and page/delete/error races are repaired. See the
+  [follow-up disposition](../docs/assurance/findings/repair-train-b-claude-followup.md).
+  `codex/repair-train-b` remains based on master `f4d1f321` after PRs #22/#20/#21;
+  exact custody, immutable revisions and foreground-write priority are preserved.
+  Ordinary correctness passes 438 files / 4,539 tests (six qualification-only
+  skips), lint/build/budgets, seven browser flows and three rendered reviews.
+  Native macOS package proof passes 75,004 points, malformed-source retention,
+  undated late names, End Outing during import, restart equality and clean close.
+  The named GPX smoke now runs in ordinary Linux CI. Four affected independent
+  source charters are clear; exact final-head bindings and terminal CI readiness live on
   [PR19](https://github.com/donal0c/sartracker-web/pull/19); read its terminal
   receipt before merging. [Current record](../docs/assurance/findings/repair-train-b.md).
   DON-274 remains In Review; DON-270 retains its original completed history;

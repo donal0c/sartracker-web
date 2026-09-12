@@ -8,7 +8,7 @@ import { performance as nodePerformance, PerformanceObserver } from 'node:perf_h
 import { setImmediate as nextNodeTurn } from 'node:timers/promises'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { gpxXmlValidCases, gpxXmlInvalidCases } from '../fixtures/gpx-xml-contract-cases'
+import { gpxXmlValidCases, gpxXmlInvalidCases, gpxXmlGeometryRefusals, gpxXmlUndatedLateName } from '../fixtures/gpx-xml-contract-cases'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as new (path: string) => {
@@ -3592,6 +3592,38 @@ describe('mission evidence versioning [DON-277]', () => {
     })
   })
 
+  it.each(gpxXmlGeometryRefusals)('retains rejected malformed geometry: $name [DON-274]', async ({ source, reason }) => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Malformed track geometry' })
+    const sourcePath = path.join(userDataPath!, 'malformed.gpx')
+    await writeFile(sourcePath, source)
+    const result = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+    expect(result.imports).toEqual([])
+    expect(result.failures).toEqual([{ sourcePath, reason }])
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare('SELECT COUNT(*) AS count FROM gpx_evidence_points').get()).toEqual({ count: 0 })
+      expect(db.prepare('SELECT source_bytes_base64 FROM gpx_import_failures').get()).toEqual({ source_bytes_base64: Buffer.from(source).toString('base64') })
+    } finally { db.close() }
+  })
+
+  it('retains native undated extension-only time and late track name [DON-274]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Undated vendor time' })
+    const sourcePath = path.join(userDataPath!, 'undated.gpx')
+    await writeFile(sourcePath, gpxXmlUndatedLateName)
+    const result = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+    expect(result.failures).toEqual([])
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare('SELECT track_name, source_time, elevation FROM gpx_evidence_points ORDER BY point_index').all()).toEqual([
+        { track_name: 'Ridge party', source_time: null, elevation: null },
+        { track_name: 'Ridge party', source_time: null, elevation: null },
+      ])
+      expect(db.prepare('SELECT timing_class FROM gpx_import_revisions').get()).toEqual({ timing_class: 'undated' })
+    } finally { db.close() }
+  })
+
   it.each(gpxXmlValidCases)('retains native namespace/CDATA semantics: $name [AUD-01 AUD-10]', async ({ source }) => {
     store = await createStore()
     const mission = await store.createMission({ name: 'GPX namespace fidelity' })
@@ -3608,7 +3640,7 @@ describe('mission evidence versioning [DON-277]', () => {
     } finally { db.close() }
   })
 
-  it.each(gpxXmlInvalidCases)('retains failed source without partial evidence: $name [AUD-01]', async ({ source }) => {
+  it.each(gpxXmlInvalidCases)('retains failed source without partial evidence: $name [AUD-01]', async ({ source, reason }) => {
     store = await createStore()
     const mission = await store.createMission({ name: 'GPX XML refusal' })
     const sourcePath = path.join(userDataPath!, 'bad.gpx')
@@ -3616,6 +3648,7 @@ describe('mission evidence versioning [DON-277]', () => {
     const result = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
     expect(result.imports).toEqual([])
     expect(result.failures).toHaveLength(1)
+    expect(result.failures).toEqual([{ sourcePath, reason }])
     const db = openDatabase(await databasePath())
     try {
       expect(db.prepare('SELECT COUNT(*) AS count FROM gpx_evidence_points').get()).toEqual({ count: 0 })

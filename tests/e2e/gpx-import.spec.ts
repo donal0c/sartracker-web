@@ -16,6 +16,29 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('gpx-import-panel')).toBeVisible()
   })
 
+  test('publishes successful files around a malformed source and names the failure [DON-274]', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1200 })
+    await page.evaluate(async () => {
+      await window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([
+        { sourcePath: '/tracks/before.gpx', fileName: 'before.gpx', contents: '<gpx><trk><trkseg><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg></trk></gpx>' },
+        { sourcePath: '/tracks/malformed.gpx', fileName: 'malformed.gpx', contents: '<gpx><trk><trkseg><trkpt lat="52" lon="-9"/><trkpt lat="53" lon="-9"/></trkseg><wrapper><trkseg><trkpt lat="51" lon="-8"/></trkseg></wrapper></trk></gpx>' },
+        { sourcePath: '/tracks/after.gpx', fileName: 'after.gpx', contents: '<gpx><trk><trkseg><trkpt lat="52" lon="-8"/><trkpt lat="53" lon="-8"/></trkseg></trk></gpx>' },
+      ])
+    })
+    await expect(page.getByTestId('gpx-import-list')).toContainText('before')
+    await expect(page.getByTestId('gpx-import-list')).toContainText('after')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('2 shown')
+    await expect(page.getByTestId('gpx-import-error')).toContainText('malformed.gpx')
+    await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
+    await page.getByTestId('mission-control-collapse-btn').click()
+    await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
+    await captureAndRegister(page, {
+      testId: 'repair-train-b-partial-batch', testName: 'Malformed file does not hide valid imports', area: 'layers', severity: 'critical',
+      verificationPrompt: 'Verify the GPX panel: 1. Count says 2 shown. 2. Both before and after tracks appear. 3. An error names malformed.gpx. 4. Import control no longer says Importing. Browser controls may be disabled.',
+      playwrightAssertions: ['Valid files before and after malformed source remain visible', 'Failed filename visible', 'Batch settles'],
+    })
+  })
+
   test('renders imported GPX tracks in the panel, layer catalog, review workspace, and map source', async ({
     page,
   }) => {
@@ -123,7 +146,7 @@ test.describe('M22 GPX import parity', () => {
     })
   })
 
-  test('keeps a rejected competing import visible after settlement [B-BROAD-01 B-CONC-01]', async ({ page }) => {
+  test('reports competing admission and allows a clean retry after settlement [DON-274]', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1200 })
     const contents = readFileSync('tests/fixtures/gpx-extension-fidelity.gpx', 'utf8')
     await page.evaluate((source) => {
@@ -148,15 +171,23 @@ test.describe('M22 GPX import parity', () => {
       gate.releaseGpxDigest()
       await gate.pendingGpxImport
     })
-    await expect(page.getByTestId('gpx-import-error')).toContainText('Select the files or folder again')
+    await expect(page.getByTestId('gpx-import-error')).toHaveCount(0)
     await expect(page.getByTestId('gpx-import-list')).toContainText('first')
     await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
+    await page.evaluate(async (source) => {
+      await window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([
+        { sourcePath: '/tracks/second.gpx', fileName: 'second.gpx', contents: source.replace('52.001', '52.002') },
+      ])
+    }, contents)
+    await expect(page.getByTestId('gpx-import-list')).toContainText('second')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('2 shown')
+    await expect(page.getByTestId('gpx-import-error')).toHaveCount(0)
     await page.getByTestId('mission-control-collapse-btn').click()
     await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
     await captureAndRegister(page, {
-      testId: 'repair-train-b-admission-notice', testName: 'Competing import retry notice', area: 'layers', severity: 'critical',
-      verificationPrompt: 'Verify the GPX panel: 1. The retry notice says this request was not imported and instructs selecting the files or folder again. 2. Import Files is visible rather than Importing. 3. The count is 1 shown and the first track is visible.',
-      playwrightAssertions: ['Competing request resolved without dispatch', 'Notice survived first import settlement', 'First import remains visible'],
+      testId: 'repair-train-b-admission-recovery', testName: 'Competing import retry succeeds', area: 'layers', severity: 'critical',
+      verificationPrompt: 'Verify the GPX panel: 1. No red import error remains. 2. Import Files is visible rather than Importing. 3. The count is 2 shown and both first and second tracks are visible.',
+      playwrightAssertions: ['Competing request visibly refused while busy', 'Temporary error clears at settlement', 'Retry imports second file successfully'],
     })
   })
 

@@ -54,14 +54,17 @@ export function parseGpxFile(input: ParseGpxFileInput): ParsedGpxFile {
   }
   const root = document.documentElement
   const namespace = root.namespaceURI ?? ''
-  if (document.doctype !== null || root.localName !== 'gpx'
+  if (document.doctype !== null) throw new Error('GPX document type is not supported.')
+  if (root.localName !== 'gpx'
     || !['', 'http://www.topografix.com/GPX/1/0', 'http://www.topografix.com/GPX/1/1'].includes(namespace)) {
-    throw new Error('GPX document root or document type is not supported.')
+    throw new Error('GPX document root is not supported.')
   }
 
   const points: ParsedGpxPoint[] = []
   const rejections: GpxEvidenceRejection[] = []
   const segments: (readonly [number, number])[][] = []
+
+  validateTrackStructure(root, namespace)
 
   const trackSegments = directChildren(root, 'trk').flatMap((track) => {
     readScalar(track, 'name')
@@ -137,6 +140,36 @@ export function parseGpxFile(input: ParseGpxFileInput): ParsedGpxFile {
       trackCount: segments.length, pointCount: points.length, rejectionCount: rejections.length,
       timingClass, fileName: input.fileName, sourcePath: input.sourcePath,
     }),
+  }
+}
+
+/** Refuses malformed track geometry as a whole source; extensions remain opaque vendor data. */
+function validateTrackStructure(root: Element, namespace: string): void {
+  const expectedParents: Readonly<Record<string, string>> = { trk: 'gpx', trkseg: 'trk', trkpt: 'trkseg' }
+  const pending = [...root.children].reverse()
+  while (pending.length > 0) {
+    const element = pending.pop()!
+    if (element.localName === 'extensions') continue
+    const expectedParent = expectedParents[element.localName]
+    if (expectedParent !== undefined) {
+      if ((element.namespaceURI ?? '') !== namespace) {
+        throw new Error(`GPX namespace_mismatch: ${element.localName}.`)
+      }
+      let ancestor = element.parentElement
+      let expected: string | undefined = expectedParent
+      while (expected !== undefined && ancestor !== root && ancestor?.localName === expected
+        && (ancestor.namespaceURI ?? '') === namespace) {
+        expected = expectedParents[expected]
+        ancestor = ancestor.parentElement
+      }
+      if (ancestor !== root || expected !== 'gpx') {
+        throw new Error(`GPX non_canonical_structure: ${element.localName}.`)
+      }
+    }
+    for (let index = element.children.length - 1; index >= 0; index -= 1) {
+      const child = element.children.item(index)
+      if (child !== null) pending.push(child)
+    }
   }
 }
 
