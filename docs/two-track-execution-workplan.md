@@ -197,8 +197,9 @@ The ordered queue is:
    timing cases. Release remains HOLD until repairs and qualification pass.
 
 The detailed attribution record is
-[here](assurance/findings/responsiveness-attribution.md). DON-254 stays open;
-no deployment, release, or team contact is part of this reconciliation.
+[here](assurance/findings/responsiveness-attribution.md). DON-254 was open at
+the time of this historical reconciliation and is now Done in Linear; no
+deployment, release, or team contact is part of this reconciliation.
 
 ### Repair Train B reconciliation and merged WAR-06 evidence
 
