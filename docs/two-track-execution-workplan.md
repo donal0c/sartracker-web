@@ -4,10 +4,10 @@
 
 ## Planning Rule
 
-PRs #22/#20/#21 are merged. Reconcile PR #19's GPX fidelity and import lifecycle
-against master `f4d1f321`; then stop for Donal's merge. The bounded responsiveness
-repairs and unchanged strict `<200 ms` qualification follow separately. Release
-remains HOLD. [Train B evidence](assurance/findings/repair-train-b.md).
+PRs #19/#22/#20/#21 are merged; current master is `d20bae5f`. PR #19's GPX
+fidelity and import-lifecycle reconciliation is recorded in its terminal receipt.
+The bounded responsiveness repairs and unchanged strict `<200 ms` qualification
+follow separately. Release remains HOLD. [Train B evidence](assurance/findings/repair-train-b.md).
 Claude's PR19 follow-up is repaired and locally verified; the
 [disposition](assurance/findings/repair-train-b-claude-followup.md) and terminal
 PR receipt own current readiness. No follow-on performance work starts here.
@@ -191,11 +191,9 @@ historical failures remain retained. This evidence is not PR19 validation.
 
 The ordered queue is:
 
-1. Reconcile PR19 against current master; do not treat PR21 diagnostics
-   as a cause or release qualification.
-2. After Donal merges PR19, execute the smallest pre-release repairs for the large breadcrumb IPC/query
+1. Execute the smallest pre-release repairs for the large breadcrumb IPC/query
    transfer (316–550 ms) and separate legacy-recovery path (~239 ms).
-3. Rerun the unchanged strict `<200 ms` release-qualification suite and retained
+2. Rerun the unchanged strict `<200 ms` release-qualification suite and retained
    timing cases. Release remains HOLD until repairs and qualification pass.
 
 The detailed attribution record is
@@ -320,7 +318,7 @@ Include both in the batch evidence, final independent reviews and CI.
 ### Coordinated three-stream safety queue
 
 **WAR-02B bounded property and mutation controls (2026-09-12, implementation
-complete pending PR/CI):** test-only infrastructure on branch
+complete; PR/CI receipt pending):** test-only infrastructure on branch
 `codex/war-02b-property-mutation`, based on exact master
 `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`. The bounded runner fixes seeds,
 replay output, boolean-only predicates, and a maximum of 250 runs. The real
@@ -330,8 +328,9 @@ workflow gates invoke the property and red-proof commands. The semantic
 mutation baseline is limited to coordinate transforms, cursor/window
 arithmetic, and position-ingest identity; it records three killed mutants and
 one intentional legacy-hash survivor in
-[the WAR-02B records](assurance/war-02b-test-infrastructure.md). Final local
-evidence: WAR-02B 4 files / 7 tests, full source 442 files / 4,552 tests,
+[the WAR-02B records](assurance/war-02b-test-infrastructure.md) and [mutation
+survivor receipt](assurance/war-02b-mutation-survivors.md). Final local
+evidence: WAR-02B 4 files / 8 tests, full source 442 files / 4,553 tests,
 lint, root type-check, build/bundle budgets, and independent Luna x-high review
 clear. No production, browser, package, provider, soak, release, or field
 qualification is claimed; DON-254 remains open and release HOLD is unchanged.
@@ -393,7 +392,7 @@ evidence file. Follow the updated PR head's CI rather than reuse ancestor CI.
 1. Breadcrumb PR-1 through PR-6, Team Feedback Batches 1–2, WAR-11A,
    WAR-02A, Repair Train A, PR22, WAR-06 and PR21 are merged through master `f4d1f321`. Use
    [Testing and review cadence](testing-and-review-cadence.md) for new work.
-   Reconcile Repair Train B first; after Donal merges PR19, the locked queue is
+   With Repair Train B merged, the locked queue is
    breadcrumb IPC/query transfer repair, separate legacy recovery, then strict
    `<200 ms` qualification. Repair Trains C/D and applicable WAR remediation
    retain their own scope; BCP-17 final qualification runs

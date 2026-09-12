@@ -37,6 +37,41 @@ function describeUnknown(value: unknown): string {
   }
 }
 
+/** Creates the actionable error used when a runtime predicate violates its boolean contract. */
+function predicateContractError(name: string, value: unknown): TypeError {
+  return new TypeError(
+    `WAR-02B predicate "${name}" must return boolean; received ${typeof value}`,
+  )
+}
+
+/** Wraps a synchronous predicate so JavaScript callers cannot pass through a missing return value. */
+function enforceSyncPredicate<T>(
+  name: string,
+  predicate: (value: T) => boolean,
+): (value: T) => boolean {
+  return (value: T): boolean => {
+    const result = predicate(value)
+    if (typeof result !== 'boolean') {
+      throw predicateContractError(name, result)
+    }
+    return result
+  }
+}
+
+/** Wraps an asynchronous predicate with the same fail-closed runtime contract as synchronous properties. */
+function enforceAsyncPredicate<T>(
+  name: string,
+  predicate: (value: T) => Promise<boolean>,
+): (value: T) => Promise<boolean> {
+  return async (value: T): Promise<boolean> => {
+    const result = await predicate(value)
+    if (typeof result !== 'boolean') {
+      throw predicateContractError(name, result)
+    }
+    return result
+  }
+}
+
 /** Formats the exact fast-check replay information needed to reproduce a failure. */
 export function formatBoundedPropertyFailure<T>(
   name: string,
@@ -63,7 +98,7 @@ export function runBoundedProperty<T>(
 ): BoundedPropertyResult<T> {
   void name
   const result = fc.check(
-    fc.property(arbitrary, predicate),
+    fc.property(arbitrary, enforceSyncPredicate(name, predicate)),
     boundedParameters<T>(options),
   )
   return result
@@ -78,7 +113,7 @@ export async function runBoundedAsyncProperty<T>(
 ): Promise<BoundedPropertyResult<T>> {
   void name
   const result = await fc.check(
-    fc.asyncProperty(arbitrary, predicate),
+    fc.asyncProperty(arbitrary, enforceAsyncPredicate(name, predicate)),
     boundedParameters<T>(options),
   )
   return result

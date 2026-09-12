@@ -33,4 +33,21 @@ describe('WAR-02B bounded property runner', () => {
       { numRuns: WAR_02B_MAX_RUNS + 1 },
     )).toThrow(`numRuns must be an integer from 1 to ${WAR_02B_MAX_RUNS}`)
   })
+
+  it('fails closed when a runtime predicate returns a non-boolean value', () => {
+    const malformedPredicate = (() => undefined) as unknown as (value: number) => boolean
+
+    const result = runBoundedProperty(
+      'runtime predicate contract fixture',
+      fc.constant(1),
+      malformedPredicate,
+      { seed: 78, numRuns: 1 },
+    )
+
+    expect(result.failed).toBe(true)
+    expect(result.errorInstance).toMatchObject({
+      name: 'TypeError',
+      message: 'WAR-02B predicate "runtime predicate contract fixture" must return boolean; received undefined',
+    })
+  })
 })

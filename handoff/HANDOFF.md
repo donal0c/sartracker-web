@@ -10,8 +10,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   infrastructure only: deterministic `fast-check` properties, a real public
   polling-manager cursor/window probe, an isolated ingest-policy source
   mutation, a child-process DON-228 red proof, and exactly three approved
-  mutation seams. Local final evidence is 442 files / 4,552 tests, focused
-  WAR-02B 4 files / 7 tests, lint, root type-check, build/bundle budgets, and
+  mutation seams. Local final evidence is 442 files / 4,553 tests, focused
+  WAR-02B 4 files / 8 tests, lint, root type-check, build/bundle budgets, and
   green-current/red-rebroken proof. Independent Luna x-high review is clear.
   The mutation receipt records three killed mutants and one intentional
   legacy-hash survivor; it is not a whole-source mutation score. No production
@@ -19,7 +19,7 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   PR creation and exact-head CI are the next actions; stop at READY FOR DONAL
   TO MERGE.
 
-- **PR19 Claude follow-up is locally verified; prior readiness is superseded.**
+- **PR19 Claude follow-up is merged at `d20bae5f`; prior pending wording is superseded.**
   Malformed geometry now refuses the whole source explicitly; batch continuation,
   admission/watch/rescan outcomes and page/delete/error races are repaired. See the
   [follow-up disposition](../docs/assurance/findings/repair-train-b-claude-followup.md).
@@ -31,14 +31,12 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   undated late names, End Outing during import, restart equality and clean close.
   The named GPX smoke now runs in ordinary Linux CI; the standard visual project
   includes all seven GPX flows and their three reviewed captures. Four affected independent
-  source charters are clear. Linux run `34691543650` passed correctness/package
-  inspection but failed before GPX import at the outing-label control. Diagnostic
-  run `34693020365` confirms a started mission followed by WebGL blocklisting
-  and an empty renderer. GPX smoke launch now matches the existing Linux
-  AppImage Mesa/ANGLE flags; Linux confirmation is pending. PR remains draft.
-  Exact final-head bindings and terminal CI readiness live on
-  [PR19](https://github.com/donal0c/sartracker-web/pull/19); read its terminal
-  receipt before merging. [Current record](../docs/assurance/findings/repair-train-b.md).
+  source charters are clear. Linux runs `34691543650` and `34693020365` remain
+  retained diagnostic failures: the former stopped before GPX import and the
+  latter confirms WebGL blocklisting after mission start. The corrected GPX
+  smoke passed with the established Linux AppImage Mesa/ANGLE flags. PR19 is
+  merged; its exact final-head bindings and terminal CI receipt live on
+  [PR19](https://github.com/donal0c/sartracker-web/pull/19). [Current record](../docs/assurance/findings/repair-train-b.md).
   DON-274 remains In Review; DON-270 retains its original completed history;
   DON-254 is In Progress. Historical timing failures remain release blockers.
   Stop at READY FOR DONAL TO MERGE; no merge, release or performance work.
@@ -158,12 +156,12 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   organization (`DON-100`). Marker Details simplification remains a later
   coordinator-confirmation item. Mission Preview/per-device visibility landed
   in PR #15; Linear `DON-215` is reconciled to Done.
-- Locked next steps after Donal merges PR19: bounded large breadcrumb IPC/query
+- Locked next steps after PR19 merged: bounded large breadcrumb IPC/query
   transfer repair (316–550 ms), separate legacy-recovery repair (~239 ms), then
   unchanged strict `<200 ms` qualification. Other repair trains and WAR hazards
   remain tracked separately before BCP-17/DON-255. Use the
   [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear
-  issues for scope. PR19 merge remains pending; release/field acceptance is not established.
+  issues for scope. PR19 merge is complete; release/field acceptance is not established.
   DON-247 and DON-264 remain separate reliability work.
 
 ## Testing approach to carry forward

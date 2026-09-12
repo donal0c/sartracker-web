@@ -43,12 +43,12 @@ does not infer content from the missing files.
 
 ## Evidence and limits
 
-Observed on the WAR-02B branch before final base refresh:
+Observed on the WAR-02B branch after the runtime predicate-contract hardening:
 
-- `npm run test:war-02b` — 4 files, 7 tests passed.
+- `npm run test:war-02b` — 4 files, 8 tests passed.
 - `npm run assurance:war-02b` — current control green; controlled DON-228
   rebreak red at the named safety oracle.
-- `npm test -- --no-file-parallelism` — 442 files, 4,552 tests passed.
+- `npm test -- --no-file-parallelism` — 442 files, 4,553 tests passed.
 - focused ESLint for all WAR-02B TypeScript and assurance scripts — passed.
 - `npx tsc -b --pretty false` — passed, including the WAR-02B Node test
   project’s minimal timer/window ambient boundary.
