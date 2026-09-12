@@ -1,8 +1,25 @@
 # Responsiveness attribution — DON-254
 
 Investigation started 2026-09-10. This record has entry pointers in handoff and
-the workplan without replacing active Repair Train B or WAR-06 state. No gate, production behavior, release,
-merge decision, or field acceptance is changed by this harness work.
+the workplan without replacing active Repair Train B or WAR-06 state. No gate,
+production behavior, release, merge decision, or field acceptance is changed by
+this harness work.
+
+## Current PR21 reconciliation
+
+PR #22 and PR #20 are merged into current `master` at
+`e989e8922ea105657a18a03ca442ae88e6c9d548`. The PR #21 candidate is being
+reconciled from that exact base. Its richer controller/main/renderer/pressure/
+pointer evidence is diagnostic only. PR #22's independent main-event-loop
+probe and the existing archive/current-fix/frame predicates remain the
+authoritative strict timing gates; no threshold, failure, or release rule is
+changed here. Release remains **HOLD**.
+
+The candidate deliberately retains historical contradictory failures, including
+the 205 ms archive continuity breach and the 544.164511 ms PR #19 RTT, as
+qualification evidence. A diagnostic collection result is never treated as a
+release pass, and a PR-mode correctness/control pass is not beta or production
+proof.
 
 ## Current decision and provenance
 
@@ -17,8 +34,9 @@ measurement gap: inspector RTT stayed below 79 ms while the main process's own
 universal sub-200 ms acceptance. The responsible application operation and
 the scheduling contribution remain unresolved.
 
-Fetched master is `302bdd040976bd370271cf5866549fa2a7e05ff5`; PR #19 is draft
-at `769669baf5d47ee9aa157c90746f6e406778d554`, tree
+The historical PR #19 source snapshot was based on
+`302bdd040976bd370271cf5866549fa2a7e05ff5`; PR #19 is draft at
+`769669baf5d47ee9aa157c90746f6e406778d554`, tree
 `1dbca6e67642e7e4092fbb5fc9c70573e4a7d9da`. Run
 [34515489481](https://github.com/donal0c/sartracker-web/actions/runs/34515489481),
 attempt 2, artifact `10168590752`, was downloaded independently. The complete
@@ -240,13 +258,15 @@ This is an explicit remaining investigation, not a claimed production fix.
 
 ## Verification and integration
 
-Full serial source passed 428 files / 4,383 tests in 479.42 seconds. Subsequent
-affected validation passed 54 tests, including completeness and cleanup
-red/green regressions. Lint and TypeScript pass; both application packages built.
-The final two Electron control tests pass, with four separately observed stall
-injections and the pointer-movement control. Source/evidence logs are under
-`docs/evidence/responsiveness-attribution/`. No operator-visible behavior changed;
-the operator manual therefore needs no change.
+The historical executable review records above are retained as provenance, not
+as current-head approval. The current reconciled tree's local checks are
+recorded separately: the full correctness suite passed 437 files / 4,478 tests
+with six qualification-only skips; focused attribution/soak regressions passed;
+lint and the production build/bundle budgets passed; and all three real Electron
+controls passed. The strict responsiveness suite was not run by the correctness
+lane and remains a separate release gate. Source/evidence logs are under
+`docs/evidence/responsiveness-attribution/`. No operator-visible behavior
+changed; the operator manual therefore needs no change.
 
 Independent review findings ATTR-R01–R05 led to preserving the original frame
 measurement window, explicit retained-gate assertions, eviction/completeness
@@ -255,10 +275,13 @@ failure. ATTR-R06's additional wiring regression failed before correction,
 then 55 focused tests and lint passed; corrected packaged comparison is above.
 CI runs `34523115131` and `34523403661` were superseded by fixture and startup
 coverage corrections and are not successful qualification evidence.
-Both prior independent reviews are clean; exact identities and charters
-are recorded in [the review receipt](../../evidence/responsiveness-attribution/reviews.json).
+The earlier independent reviews are historical and exact-head-bound to their
+recorded executables. Current-head independent reviews must bind the final PR21
+SHA after this reconciliation; their receipts will be added alongside the
+historical [review receipt](../../evidence/responsiveness-attribution/reviews.json).
 
-Both independent reviews cleared executable `798a6fd8` against `302bdd04`:
+Historical independent reviews cleared executable `798a6fd8` against
+`302bdd04`:
 diagnostic safety/cleanup and evidence/causality. A supplementary delayed
 500 ms main-block probe initially lost its Electron execution context; that
 attempt is rejected, not timing proof. The synthetic fixture now retains its
@@ -267,22 +290,22 @@ recorded 494.27 ms inspector RTT and 510.45 ms independent main timer; both
 Electron control tests then passed again. This supports detection of that
 injected main stall, not a cause for historical CI. No application/package/
 soak-harness bytes changed in this fixture-only follow-up; earlier packaged
-comparison evidence remains applicable. Both targeted reviewers cleared
+comparison evidence remains applicable. Historical targeted reviewers cleared
 `3fe6928adab456d75e206c44bb08de8bec7167a7`, retaining their prior unchanged-harness
 reviews without restarting unrelated reviews or local suites.
 
-Both reviewers also cleared exact executable `971a07de` after ATTR-R06 and
+Historical reviewers also cleared exact executable `971a07de` after ATTR-R06 and
 independently inspected the downloaded Linux evidence. They confirmed the
 contradictory timing observations and unresolved component-level cause.
 The final evidence closeout changes documentation only. Per the testing cadence,
 it reuses the green executable CI run above; facts, JSON, links, diff and
 unchanged executable trees are checked instead of repeating runtime suites.
 
-Master was refreshed after the original implementation at `302bdd04`, the
-branch's exact base. Active PR #19 and PR #20 have overlapping coordination
-dispositions. Review remediation adds one entry pointer to handoff and the
-workplan; detailed hazard disposition still belongs to their coordination
-owners. DON-254 stays open.
+The current integration base is `e989e8922ea105657a18a03ca442ae88e6c9d548`.
+Active PR #19 and PR #20 have overlapping coordination dispositions; PR #20's
+merge is not a timing qualification. Review remediation adds entry pointers to
+handoff and the workplan; detailed hazard disposition still belongs to their
+coordination owners. DON-254 stays open.
 
 ## User review remediation
 
@@ -345,5 +368,6 @@ Soak inspector RTT maximum was 86.99 ms, independent main callback maxima
 The timing contradiction remains unresolved. The review findings are addressed;
 qualification and component-level timing causation are not. No blind rerun or
 gate change was made. [Exact receipt and retained failure](../../evidence/responsiveness-attribution/review-remediation/linux-ci-receipt.json)
-bind the evidence artifact `10175001360` and step results. Source/targeted reviews
-at `693b1c30` are clean; that is distinct from the failed whole-workflow verdict.
+bind the evidence artifact `10175001360` and step results. Historical
+source/targeted reviews at `693b1c30` were clean; that is distinct from the
+failed whole-workflow verdict and does not approve the current PR21 head.

@@ -1,6 +1,6 @@
 # Coordinated Team, Audit, and WAR Work Ledger
 
-Updated: 2026-09-10
+Updated: 2026-09-12
 
 Status: active coordination record. The canonical execution order remains
 `docs/two-track-execution-workplan.md`; this ledger prevents the three current
@@ -49,6 +49,18 @@ head.
   packaged/field confirmation still required.
 - Team-domain meaning comes only from the raw/indexed Q&A. No audit or WAR task
   may invent a new operational requirement.
+
+## Current PR21 disposition
+
+PR22 and PR20 are merged into `master` at
+`e989e8922ea105657a18a03ca442ae88e6c9d548`. PR21 is the diagnostic-only
+reconciliation candidate from that exact base. It retains the independent
+PR22 main-event-loop probe, the unchanged strict `<200 ms` release predicates,
+and every historical timing failure; its richer realm/pressure/pointer
+evidence cannot qualify or exonerate the application. Local focused/full
+correctness checks, lint/build/bundle budgets, and three real Electron controls
+pass. Exact-head Linux CI and independent review remain required before merge;
+DON-254 remains In Progress and release remains HOLD.
 
 ## Deep-audit finding disposition
 
