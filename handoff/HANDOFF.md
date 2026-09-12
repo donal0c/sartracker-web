@@ -10,8 +10,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   infrastructure only: deterministic `fast-check` properties, a real public
   polling-manager cursor/window probe, an isolated ingest-policy source
   mutation, a child-process DON-228 red proof, and exactly three approved
-  mutation seams. Local final evidence is 442 files / 4,553 tests, focused
-  WAR-02B 4 files / 8 tests, lint, root type-check, build/bundle budgets, and
+  mutation seams. Local final evidence is 442 files / 4,554 tests, focused
+  WAR-02B 4 files / 9 tests, lint, root type-check, build/bundle budgets, and
   green-current/red-rebroken proof. Independent Luna x-high review is clear.
   The mutation receipt records three killed mutants and one intentional
   legacy-hash survivor; it is not a whole-source mutation score. No production
