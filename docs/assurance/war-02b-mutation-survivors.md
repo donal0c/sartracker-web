@@ -8,10 +8,10 @@ sensitivity receipt, not a claim that every possible source mutation is covered.
 
 | Mutant | Seam | Seed | Budget / actual runs | Result |
 | --- | --- | ---: | ---: | --- |
-| `coordinate-tm65-golden-anchor-perturbation` | coordinate transform | 2026091201 | 50 / bounded | killed |
-| `cursor-public-boundary-fault-injection` | cursor/window arithmetic | 2026091202 | 25 / bounded | killed |
-| `ingest-timestamp-without-normalization` | position-ingest policy | 2026091203 | 100 / bounded | killed |
-| `ingest-unversioned-hash-integrity` | position-ingest policy | 2026091204 | 100 / bounded | killed |
+| `coordinate-tm65-golden-anchor-perturbation` | coordinate transform | 2026091201 | 50 / 1 | killed |
+| `cursor-public-boundary-fault-injection` | cursor/window arithmetic | 2026091202 | 25 / 1 | killed |
+| `ingest-timestamp-without-normalization` | position-ingest policy | 2026091203 | 100 / 1 | killed |
+| `ingest-unversioned-hash-integrity` | position-ingest policy | 2026091204 | 100 / 15 | killed |
 
 The previous `legacy:` survivor was removed because that branch does not exist
 in the current production policy. It was not a meaningful current mutant. The

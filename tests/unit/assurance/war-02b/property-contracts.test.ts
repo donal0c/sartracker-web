@@ -68,7 +68,10 @@ describe('WAR-02B bounded safety properties', () => {
       assertBoundedProperty(`coordinate input validation ${index + 1}`, result)
       expect(result.numRuns).toBe(1)
     }
-    expect(coordinateValidationCases).toHaveLength(12)
+    expect(coordinateValidationCases).toHaveLength(17)
+    expect(new Set(coordinateValidationCases.map(({ kind }) => kind))).toEqual(
+      new Set(['wgs84-itm', 'wgs84-tm65', 'itm', 'itm-format']),
+    )
   })
 
   it('holds coordinate round trips at every inclusive Irish envelope boundary', () => {

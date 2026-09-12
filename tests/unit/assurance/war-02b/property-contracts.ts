@@ -74,8 +74,9 @@ export function coordinateGoldenAnchorInvariant(input: CoordinateGoldenAnchorCas
 /** Confirms that every generated invalid coordinate is rejected by the relevant boundary. */
 export function coordinateValidationInvariant(input: CoordinateValidationCase): boolean {
   try {
-    if (input.kind === 'wgs84') {
+    if (input.kind === 'wgs84-itm') {
       wgs84ToITM(input.lat, input.lon)
+    } else if (input.kind === 'wgs84-tm65') {
       wgs84ToTM65(input.lat, input.lon)
     } else if (input.kind === 'itm') {
       itmToWgs84(input.easting, input.northing)

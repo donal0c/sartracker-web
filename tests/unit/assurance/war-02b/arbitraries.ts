@@ -57,17 +57,23 @@ export const coordinateGoldenAnchorArbitrary: fc.Arbitrary<CoordinateGoldenAncho
 )
 
 export type CoordinateValidationCase =
-  | { readonly kind: 'wgs84'; readonly lat: number; readonly lon: number }
+  | { readonly kind: 'wgs84-itm'; readonly lat: number; readonly lon: number }
+  | { readonly kind: 'wgs84-tm65'; readonly lat: number; readonly lon: number }
   | { readonly kind: 'itm'; readonly easting: number; readonly northing: number }
   | { readonly kind: 'itm-format'; readonly easting: number; readonly northing: number }
 
 /** Supplies representative rejection inputs, including non-finite values. */
 export const coordinateValidationCases: readonly CoordinateValidationCase[] = [
-  { kind: 'wgs84', lat: Number.NaN, lon: -9 },
-  { kind: 'wgs84', lat: Number.POSITIVE_INFINITY, lon: -9 },
-  { kind: 'wgs84', lat: 95, lon: -9 },
-  { kind: 'wgs84', lat: 52, lon: -190 },
-  { kind: 'wgs84', lat: 50, lon: -9 },
+  { kind: 'wgs84-itm', lat: Number.NaN, lon: -9 },
+  { kind: 'wgs84-tm65', lat: Number.NaN, lon: -9 },
+  { kind: 'wgs84-itm', lat: Number.POSITIVE_INFINITY, lon: -9 },
+  { kind: 'wgs84-tm65', lat: Number.POSITIVE_INFINITY, lon: -9 },
+  { kind: 'wgs84-itm', lat: 95, lon: -9 },
+  { kind: 'wgs84-tm65', lat: 95, lon: -9 },
+  { kind: 'wgs84-itm', lat: 52, lon: -190 },
+  { kind: 'wgs84-tm65', lat: 52, lon: -190 },
+  { kind: 'wgs84-itm', lat: 50, lon: -9 },
+  { kind: 'wgs84-tm65', lat: 50, lon: -9 },
   { kind: 'itm', easting: Number.NaN, northing: 600_000 },
   { kind: 'itm', easting: 390_000, northing: 600_000 },
   { kind: 'itm', easting: 760_000, northing: 600_000 },

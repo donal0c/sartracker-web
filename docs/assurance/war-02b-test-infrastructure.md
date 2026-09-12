@@ -31,7 +31,8 @@ does not infer content from the missing files.
 - Coordinate properties call the production WGS84/ITM/TM65 functions and check
   round-trip precision plus ITM displayability across the inclusive Irish
   envelope. A separate property checks both directions against independent
-  TM65/WGS84 golden anchors and exercises non-finite, global-range, Irish-range,
+  TM65/WGS84 golden anchors and invokes WGS84-to-ITM and WGS84-to-TM65 rejection
+  cases independently, alongside non-finite, global-range, Irish-range,
   projected-range, and formatting rejection branches.
 - Cursor properties drive the production `createPollingManager` through its
   public client boundary with fake timers. They check the exact five-minute
@@ -67,11 +68,12 @@ The focused checks for this repair pass are:
 - root app/node type-check — passed after the timer boundary cleanup.
 - ESLint — passed; `npm run build` and bundle-size budgets passed.
 
-The final branch-head Linux validation receipt is recorded on PR #24. It
-passed the full correctness, dedicated WAR-02B property/mutation, controlled
-rebreak, build/budget, native inspection, GPX, and AppImage checks. Strict
-responsiveness, replay-envelope, tracking-soak, and archive-lifecycle stages
-remain explicitly skipped qualification work.
+The predecessor branch-head Linux validation receipt is recorded on PR #24;
+the final independent rejection-path repair requires a fresh exact-head
+refresh. The previous receipt passed the full correctness, dedicated WAR-02B
+property/mutation, controlled rebreak, build/budget, native inspection, GPX,
+and AppImage checks. Strict responsiveness, replay-envelope, tracking-soak,
+and archive-lifecycle stages remain explicitly skipped qualification work.
 
 This is local T1/T2 assurance evidence only. It is not package, provider,
 soak, power-loss, hosted, field, merge, or release qualification. The mutation

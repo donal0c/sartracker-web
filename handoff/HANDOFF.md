@@ -20,8 +20,9 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   cases, and all four inclusive Irish envelope corners are deterministic
   coverage. Four current semantic mutants are killed across three seams; the
   nonexistent `legacy:` survivor is removed. Final exact-head CI and the fresh
-  Luna review are green. No browser, package, provider, soak,
-  release, or field claim is made; DON-254 is Done in Linear and release HOLD is
+  Luna review found one proof-integrity gap, now repaired locally; final
+  exact-head CI and review refresh are pending. No browser, package, provider,
+  soak, release, or field claim is made; DON-254 is Done in Linear and release HOLD is
   unchanged. PR [#24](https://github.com/donal0c/sartracker-web/pull/24) remains
   open; do not mark READY FOR DONAL TO MERGE until those gates are refreshed.
 
@@ -44,7 +45,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   merged; its exact final-head bindings and terminal CI receipt live on
   [PR19](https://github.com/donal0c/sartracker-web/pull/19). [Current record](../docs/assurance/findings/repair-train-b.md).
   DON-274 remains In Review; DON-270 retains its original completed history;
-  DON-254 is In Progress. Historical timing failures remain release blockers.
+  DON-254 was In Progress in this historical receipt and is now Done in Linear.
+  Historical timing failures remain release blockers.
   PR19 merge is complete; no release or performance work is claimed here.
 
 - **DON-254 responsiveness attribution — PR21 merged** at `bac211dc`.
@@ -82,7 +84,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   This is scoped review readiness, not reliable strict-200 or release acceptance.
   [Disposition](../docs/assurance/findings/repair-train-a-remediation.md) and
   [latest receipt](../docs/evidence/repair-train-a/github-followup/linux-ci-receipt.md)
-  bind the proof. DON-267/DON-269 are Done in Linear; DON-254 is In Progress.
+  bind the proof. DON-267/DON-269 are Done in Linear; DON-254 is now Done in
+  Linear.
   Merge does not establish release or field acceptance.
 
 - **WAR-02A test foundation merged in PR #16 at `4076975d`** from fetched master `083f5047`
