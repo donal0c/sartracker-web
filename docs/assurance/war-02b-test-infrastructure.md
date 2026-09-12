@@ -56,20 +56,22 @@ does not infer content from the missing files.
 
 The focused checks for this repair pass are:
 
-- `npm run test:war-02b` — 4 files, 18 tests passed.
+- `npm run test:war-02b` — 4 files, 19 tests passed.
 - `npm run assurance:war-02b` — current control green; controlled DON-228
   rebreak red at the named safety oracle.
 - `npm run test:correctness -- --no-file-parallelism` — 438 files, 4,539
   tests passed, 6 qualification-only skips.
-- `npm test -- --no-file-parallelism` — 442 files, 4,563 tests passed.
+- `npm test -- --no-file-parallelism` — 442 files, 4,564 tests passed.
 - WAR-02B project type-check — passed without a fabricated `Window` ambient
   declaration.
 - root app/node type-check — passed after the timer boundary cleanup.
 - ESLint — passed; `npm run build` and bundle-size budgets passed.
 
-The prior exact-head CI receipt remains historical until this repair is pushed.
-No claim below should be read as current exact-head CI evidence until that
-refresh is recorded.
+The final branch-head Linux validation receipt is recorded on PR #24. It
+passed the full correctness, dedicated WAR-02B property/mutation, controlled
+rebreak, build/budget, native inspection, GPX, and AppImage checks. Strict
+responsiveness, replay-envelope, tracking-soak, and archive-lifecycle stages
+remain explicitly skipped qualification work.
 
 This is local T1/T2 assurance evidence only. It is not package, provider,
 soak, power-loss, hosted, field, merge, or release qualification. The mutation
