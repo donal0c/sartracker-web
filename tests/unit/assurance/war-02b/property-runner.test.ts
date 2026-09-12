@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   formatBoundedPropertyFailure,
+  runBoundedAsyncProperty,
   runBoundedProperty,
   WAR_02B_MAX_RUNS,
 } from './property-runner'
@@ -48,6 +49,25 @@ describe('WAR-02B bounded property runner', () => {
     expect(result.errorInstance).toMatchObject({
       name: 'TypeError',
       message: 'WAR-02B predicate "runtime predicate contract fixture" must return boolean; received undefined',
+    })
+  })
+
+  it('fails closed when an async runtime predicate resolves to a non-boolean value', async () => {
+    const malformedPredicate = (async () => undefined) as unknown as (
+      value: number
+    ) => Promise<boolean>
+
+    const result = await runBoundedAsyncProperty(
+      'async runtime predicate contract fixture',
+      fc.constant(1),
+      malformedPredicate,
+      { seed: 79, numRuns: 1 },
+    )
+
+    expect(result.failed).toBe(true)
+    expect(result.errorInstance).toMatchObject({
+      name: 'TypeError',
+      message: 'WAR-02B predicate "async runtime predicate contract fixture" must return boolean; received undefined',
     })
   })
 })

@@ -47,10 +47,10 @@ Observed on executable WAR-02B source head `1f6d4ff256325766ade9f809f41292334a72
 after the runtime predicate-contract hardening; this receipt update is
 documentation-only:
 
-- `npm run test:war-02b` — 4 files, 8 tests passed.
+- `npm run test:war-02b` — 4 files, 9 tests passed.
 - `npm run assurance:war-02b` — current control green; controlled DON-228
   rebreak red at the named safety oracle.
-- `npm test -- --no-file-parallelism` — 442 files, 4,553 tests passed.
+- `npm test -- --no-file-parallelism` — 442 files, 4,554 tests passed.
 - focused ESLint for all WAR-02B TypeScript and assurance scripts — passed.
 - `npx tsc -b --pretty false` — passed, including the WAR-02B Node test
   project’s minimal timer/window ambient boundary.

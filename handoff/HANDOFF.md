@@ -40,7 +40,7 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   [PR19](https://github.com/donal0c/sartracker-web/pull/19). [Current record](../docs/assurance/findings/repair-train-b.md).
   DON-274 remains In Review; DON-270 retains its original completed history;
   DON-254 is In Progress. Historical timing failures remain release blockers.
-  Stop at READY FOR DONAL TO MERGE; no merge, release or performance work.
+  PR19 merge is complete; no release or performance work is claimed here.
 
 - **DON-254 responsiveness attribution — PR21 merged** at `bac211dc`.
   It remains diagnostic-only. CI `34683600517` passed correctness, three
