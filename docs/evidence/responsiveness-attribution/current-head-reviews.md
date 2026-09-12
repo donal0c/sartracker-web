@@ -1,5 +1,29 @@
 # PR21 exact-head review receipt
 
+## Completed Astra-only reconciliation
+
+Final independent Astra-low review cleared
+`831c642b90d150259b7f3f0bbd3514d33b1413a8` against
+`e989e8922ea105657a18a03ca442ae88e6c9d548`, with no P1/P2 findings. Its
+delta from the reviewed `87259317` is documentation-only. The reviewer judged
+the investigated, unreplicated target closure below nonblocking for scoped
+merge after green CI; no causal fix or release acceptance is claimed.
+
+[Linux CI 34683600517](https://github.com/donal0c/sartracker-web/actions/runs/34683600517)
+passed on that exact final head: 437 files / 4,479 tests, three Xvfb controls,
+lint/build, Linux packaging/native SQLite inspection, Mesa and AppImage
+launch/graceful close. Six qualification-only tests plus strict timing,
+960k replay and packaged tracking/archive qualification were skipped, not
+passed. Downloaded source/package receipts match source tree
+`b4284271d7f54a266367c136407832089c77e5ef` and clean prebuild source;
+native integrity is `ok`, and the launch screenshot was inspected.
+
+PR21 merged at `bac211dcbc34a80a9700882b107cffca8dfef147` on 2026-09-12.
+Fetched master verifies its parents are the reviewed base and candidate.
+This closeout changes documentation only and reuses the bound executable
+evidence. DON-254 remains open and release remains HOLD. No Linear post,
+release, deployment or production repair was performed.
+
 > **SUPERSEDED — NOT ACCEPTED APPROVAL (2026-09-12).** The user rejected
 > the GPT-5.5 review below. It is invalid and must not be counted. Neither
 > historical review below satisfies the current Astra-only requirement.

@@ -4,17 +4,19 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **DON-254 responsiveness attribution — PR21 reconciliation candidate**, base
-  `e989e892`, branch `codex/responsiveness-attribution`. PR22 and PR20 are merged;
+- **DON-254 responsiveness attribution — PR21 merged** at `bac211dc` from
+  reviewed head `831c642b`, base `e989e892`. PR22 and PR20 are merged;
   PR21 remains diagnostic-only and must not alter the independent PR22 main-loop
   gate, existing strict `<200 ms` predicates, or release decision. **Release
   HOLD: the threshold remains 200 ms, not 20 ms.** Historical 205 ms and
   544.164511 ms failures remain retained qualification evidence. Local focused
   attribution/soak tests, full correctness (437 files / 4,478 tests, six
   qualification-only skips), lint/build/bundle budgets and three real Electron
-  controls pass. Exact-head Linux CI and independent reviews remain the merge
-  gate; no production repair, deployment or field acceptance is claimed.
-  **Ordered queue:** complete PR21 exact-head review/CI and merge; reconcile
+  controls pass. Exact-head Linux CI `34683600517` passed 437 files / 4,479 tests
+  (six qualification-only skips), three Xvfb controls, package/native inspection
+  and AppImage launch/close. Independent Astra-low review cleared `831c642b`;
+  downloaded source/tree receipts match. No production repair, deployment or
+  field acceptance is claimed. **Ordered queue:** reconcile
   PR19; repair the large breadcrumb IPC/query transfer (316–550 ms) and separate
   legacy path (~239 ms); rerun unchanged strict release qualification. [Current
   record](../docs/assurance/findings/responsiveness-attribution.md).
@@ -22,8 +24,9 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   Astra-only reconciliation: rejected review superseded; fresh independent
   Astra-low source review of `87259317` has no P1/P2 findings. Local Electron
   repeat passes 3/3, but its first run lost the realm-control target; failure
-  remains retained and unexplained. No causal fixture fix is claimed. Final
-  exact-head CI/review remains pending; see the [receipt](../docs/evidence/responsiveness-attribution/current-head-reviews.md).
+  remains retained and unexplained. No causal fixture fix is claimed. Strict
+  timing/replay/soak qualification was skipped in ordinary PR CI, not passed.
+  See the [receipt](../docs/evidence/responsiveness-attribution/current-head-reviews.md).
 
 - **WAR-06 PR #20 investigation-only evidence is merged and remains evidence-only.** Current routes,
   fidelity limits, negative-control proof and exact-head status live in the
