@@ -1,4 +1,6 @@
 {
+  "historical": true,
+  "verification": "Original baseline inputs; verify at sourceHead, not against later test rewrites.",
   "sourceHead": "deedab27483ad4fe1ca998a4d68afd555f4e2337",
   "sourceTree": "54ecab87fbfa3a7921cdc14bb209b52b7eac928e",
   "platform": "darwin",

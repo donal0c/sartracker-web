@@ -238,12 +238,16 @@ PR23 follow-up A is now merged in current `origin/master`. The ordered queue is:
    onto that merge; the combined-head PR25 receipt controls merge readiness.
    Claude remediation replaces the inspector protocol with real worker completion,
    independent persisted-data checks and final-tail gating; native mutation custody
-   and CI type coverage are strengthened. [Review dispositions](assurance/findings/legacy-recovery-claude-remediation.md)
-   supersede the earlier READY verdict until final verification is recorded.
+   and CI type coverage are strengthened. [Second-review dispositions](assurance/findings/legacy-recovery-review-followup.md)
+   supersede the c93b6925 READY verdict until final verification is recorded.
+   The follow-up binds all evidence files, pins the independent custody oracle
+   to real production writes, removes GPX self-polling, separates native timer
+   intervals, and validates terminal reports on PR and relevant master pushes.
    Current causal evidence supports a test-observer repair, with unchanged
    production and strict `<200 ms` predicates. The 50k fixture and packaged
-   recovery/restart pass; full correctness is 444 files / 4,656 passed / six
-   qualification-only skips. The PR terminal receipt binds exact-head CI.
+   recovery/restart pass. The unresolved 204 ms concurrent read remains a
+   qualification gap. The PR terminal receipt binds the final source counts and
+   exact-head CI; earlier run counts are historical.
    [Finding and retained rejections](assurance/findings/legacy-object-recovery-responsiveness.md).
 3. After all release-blocking repairs and feature freeze, run unchanged strict
    `<200 ms` qualification and retained timing cases on one exact candidate.

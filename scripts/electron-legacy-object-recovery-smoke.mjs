@@ -50,7 +50,7 @@ let uiProfile
 let fixtureDir
 let observer
 const report = {
-  proofTier: 'diagnostic-only packaged Electron native mission-store recovery; no operator UI qualification',
+  proofTier: 'diagnostic-only second disposable mission store using packaged production store/runner via an injected factory; no default app wiring or operator-load qualification',
   issue: 'DON-254',
   expectedBaselineRows: EXPECTED_BASELINE_ROWS,
   passed: false,
@@ -195,11 +195,16 @@ async function main() {
   report.restart = await openDirectPackagedStore(mission.id)
   assert.ok(report.restart.openMs < 200, `Packaged restart store open took ${report.restart.openMs}ms.`)
   assert.equal(report.restart.workerCount, 0)
+  await evaluatePackaged(() => new Promise((resolve) => setTimeout(resolve, 100)))
+  report.restart.openTimer = await stopPackagedMainProbe()
+  assertTimer(report.restart.openTimer, 'restart open')
   report.restart.rowsBeforeMutation = inspectRows(path.join(fixtureDir, 'mission-store.sqlite'), mission.id)
   assert.equal(report.restart.rowsBeforeMutation.baselineDigest, report.settledBaselineDigest)
   assertRows(report.restart.rowsBeforeMutation)
   assert.equal(report.restart.rowsBeforeMutation.markerDigest, report.seededMarkerDigest)
   assert.equal(Number(report.restart.rowsBeforeMutation.totalMarkerCount), EXPECTED_BASELINE_ROWS)
+  // Bulk controller-side inspection is outside both measured main-loop intervals.
+  await installPackagedMainProbe()
   const mutation = await evaluatePackaged(async ({}, input) => {
     const state = globalThis.__DON254_LEGACY_RECOVERY__
     await new Promise((resolve) => setTimeout(resolve, 100))

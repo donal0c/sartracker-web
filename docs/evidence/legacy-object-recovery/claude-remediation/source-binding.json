@@ -1,4 +1,7 @@
 {
+  "implementationHead": "c93b692544e9a0e13e099b46f1bc59a63ae45bb4",
+  "historical": true,
+  "verification": "Verify file hashes with git show implementationHead:path; baseHead is the development parent, not the tested implementation.",
   "baseHead": "c122e51c872da655b607372a1f9b1e2a7d149223",
   "boundAt": "2026-09-13T13:42:19.400Z",
   "productionChanged": false,

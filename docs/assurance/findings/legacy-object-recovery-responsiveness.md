@@ -51,8 +51,11 @@ In the reproduced rejection, the largest heartbeat window starts at
 244.242625 ms. Measured thread CPU is 1.006 ms, process CPU 8.445 ms,
 event-loop active time 244.3175 ms and idle time 12.0055 ms. No overlapping
 main-realm GC was observed. The counterfactual preserves the slow inspection
-while removing its execution from the measured event loop. It supports a
-synthetic observer stall; it does not distinguish native I/O/locking from OS
+while removing its execution from the measured event loop. It establishes that
+the test's synchronous read contributed to the measured stall. The 204.046 ms
+read remains a real unresolved database-read latency observation, even though
+it no longer blocks the test's measured loop. No operator-facing concurrent-read
+latency gate is established by these completion tests. It does not distinguish native I/O/locking from OS
 descheduling or retroactively establish the historical 239.509125 ms cause.
 The second full run also includes three new diagnostic helper controls; this
 small additive test difference is disclosed rather than calling the two trees

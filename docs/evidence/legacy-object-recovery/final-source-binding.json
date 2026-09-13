@@ -1,4 +1,8 @@
 {
+  "implementationHead": "09710ebae22bbffd373375277aa3ef1f674c1713",
+  "historical": true,
+  "supersededBy": "claude-remediation/source-binding.json",
+  "verification": "Verify hashes against implementationHead, including the inspector files intentionally deleted by later remediation.",
   "baseHead": "deedab27483ad4fe1ca998a4d68afd555f4e2337",
   "boundAt": "2026-09-13T08:19:01.136Z",
   "productionChanged": false,

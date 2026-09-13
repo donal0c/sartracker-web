@@ -1,8 +1,11 @@
 # PR25 Claude review remediation — DON-254
 
-Reviewed head: `c122e51c872da655b607372a1f9b1e2a7d149223`, based on merged
-WAR-06 `8f93f8d1`. The earlier READY verdict is withdrawn until this changed
-test/tooling slice completes verification. Production remains unchanged.
+Review input: `c122e51c872da655b607372a1f9b1e2a7d149223`. The remediation
+described here was committed and verified at **`c93b692544e9a0e13e099b46f1bc59a63ae45bb4`**,
+based on merged WAR-06 `8f93f8d1`. Its exact-head CI is `34760655006`.
+The source binding now distinguishes implementation from development parent;
+both recorded hash sets have been verified against their actual Git commits.
+Subsequent review follow-up is recorded in [the current disposition](legacy-recovery-review-followup.md).
 
 ## Selected design
 

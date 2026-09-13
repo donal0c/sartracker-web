@@ -96,6 +96,11 @@ and removes the auxiliary inspector protocol. [Disposition](findings/legacy-reco
 Its final
 source cycle passes; the PR terminal receipt binds CI. WAR-06 PR26 merged at
 `8f93f8d1`; PR25 is reconciled onto it, with both packaged CI checks retained.
+The [second review follow-up](findings/legacy-recovery-review-followup.md) adds
+complete evidence custody, real-store audit contract controls, GPX observer
+isolation, separate native timers and an independently checked CI report.
+It supersedes the c93b6925 READY verdict until the new terminal receipt.
+The unresolved 204 ms concurrent read remains an explicit qualification gap.
 The combined-head PR receipt controls readiness; frozen-candidate qualification follows. No release
 acceptance is claimed. Older Done labels below are historical receipts,
 superseded by DON-254's reopening.

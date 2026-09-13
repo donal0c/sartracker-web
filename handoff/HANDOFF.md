@@ -2,86 +2,48 @@
 
 Updated 2026-09-13. Read after `CLAUDE.md`.
 
-## Current baseline
+## Current baseline and active work
 
-Fresh `origin/master` is `8f93f8d1cc4554178706e23401ecd496d1193195`, including
-merged PR26 WAR-06 mission-scope repair,
-merged PR23 bounded history transport and merged PR24 WAR-02B property/mutation
-controls. PR24's final head is `946545a5e807779752d5eb18090462041ef3fe5b`.
-Earlier PR1/PR4/PR17 tracking repairs remain merged and valid. PR19 GPX repairs,
-PR20 WAR-06 investigation, PR21 attribution and PR22 gate separation are merged.
-Detailed historical receipts and retained failures are in
-[the pre-repair archive](archive/pre-war06-repair-20260913.md) and their linked reports.
+Master is `8f93f8d1cc4554178706e23401ecd496d1193195`: PR26 WAR-06 mission-scope
+repair is merged, following PR23 transport and PR24 property/mutation work.
+WAR-06's implementation, retained diagnostics and remaining domain questions are
+in [its remediation record](../docs/assurance/findings/war-06/claude-review-remediation.md).
+Older history is in [the archive](archive/pre-war06-repair-20260913.md).
 
-## Active work
+PR25 / DON-254 on `codex/don-254-legacy-recovery-responsiveness` is a test/tooling
+repair. It observes real production worker completion/exit, then independently
+checks stored evidence, with strict 200 ms and final-tail gates. The latest review
+follow-up fixes recursive evidence binding, pins the audit oracle to a real store
+write in ordinary tests, removes the GPX self-poll, isolates native restart timing,
+and adds CI report validation and relevant master-push verification.
+[Current review disposition](../docs/assurance/findings/legacy-recovery-review-followup.md).
 
-- **DON-267 — WAR-06 production mission-scope repair is merged in PR26**, branch
-  `codex/don-267-war06-mission-scope-repair`, based on the fresh baseline above.
-  Only WAR-06-AUD-01, WAR-06-AUD-02 and WAR-06-CACHE-SIBLING are reopened:
-  delayed history, deferred participant hydration and global cache reuse across
-  missions. Linear is In Progress; its 2026-09-13 bookkeeping comment preserves
-  the original completed fixes. [Repair contract/evidence](../docs/assurance/findings/war-06/mission-scope-repair.md).
-- **DON-254 — legacy recovery test-observer repair, PR25**, branch
-  `codex/don-254-legacy-recovery-responsiveness`, reconciled onto `8f93f8d1`.
-  The synchronous COUNT overlapped a 256.329 ms heartbeat; off-thread inspection
-  retained a 204.046 ms query with a 14.481 ms main heartbeat. No production
-  recovery defect is demonstrated and the historical ~239 ms cause is unassigned.
-  Linear remains In Progress. [Finding and retained evidence](../docs/assurance/findings/legacy-object-recovery-responsiveness.md).
-  Claude's review supersedes the earlier READY verdict. The inspector protocol
-  is removed: both large recovery tests await real worker completion/exit,
-  independently verify persisted data, and gate the final heartbeat interval.
-  Native restart now checks the new marker's full version/audit custody.
-  [All review dispositions](../docs/assurance/findings/legacy-recovery-claude-remediation.md).
+## Verification and next action
 
-The two repair streams may proceed in parallel with disjoint production ownership.
-DON-267 merged first; DON-254 is reconciled onto that master. Donal owns the
-remaining PR25 merge. Final qualification follows
-the combined candidate and all remaining release-blocking dispositions; no release,
-deployment or SAR-team contact is authorized here. The sole queue remains
-[the two-track workplan](../docs/two-track-execution-workplan.md).
+The latest [PR25 terminal receipt](https://github.com/donal0c/sartracker-web/pull/25)
+binds the final source/CI head, native artifact, custody proof and merge readiness.
+Earlier `c93b6925` proof is historical after this follow-up; its evidence README
+and manifest distinguish source snapshots from current inputs. Do not infer
+readiness from old READY comments. Donal owns merge; no merge/release is authorized.
 
-## Next actions and verification
-
-Claude's review of `7fc4aa08` withdrew the earlier readiness verdict. Its six
-blockers and additional cache/status findings are addressed in the
-[remediation record](../docs/assurance/findings/war-06/claude-review-remediation.md),
-including a follow-up cache-age retention fix. Live coordinates win; cached rows
-and trails retain visible provenance without overwriting connection state.
-Timer publication now preserves same-mission pause while fencing mission changes.
-M1/M3b/M13 and the actual final timer guard have falsifying source-mutation proof.
-
-Stable local correctness: 4,684 tests / 444 files, six existing timing exclusions;
-focused 254 tests, three browser flows, lint/build and five-launch mac-arm64
-packaged cache smoke pass. Local package inputs are hashed, not claimed as a
-clean committed build. Earlier agent reviews were within the author-controlled
-Codex run, not external approval. Known broader baseline browser failures and
-native coverage/listener warnings remain recorded; release HOLD is unchanged.
-
-[PR26](https://github.com/donal0c/sartracker-web/pull/26) is merged; its terminal
-receipt retains final-head CI and Linux artifact inspection. PR25's earlier
-`09710eba` CI `34747643041` passed 4,656 correctness tests and packaged Linux
-50k recovery/restart with 58.624 ms maximum recovery heartbeat. Its two nonauthor
-reviews and macOS proof remain tied to unchanged recovery inputs. Reconciliation
-preserves all WAR-06 code and both independent packaged CI steps. The latest
-[PR25 receipt](https://github.com/donal0c/sartracker-web/pull/25) binds the combined
-head and controls merge readiness; old pending-WAR-06 wording is superseded.
-The Claude remediation changes those test/probe inputs, so their earlier reviews
-and CI are historical. Focused 50k/500k strict tests, tail/error controls and the
-stronger local native custody probe pass; final source/CI proof belongs to the
-new terminal PR receipt. Production and operator behavior are unchanged.
-
-Use [testing and review cadence](../docs/testing-and-review-cadence.md): retain
-failures, diagnose before repeating, serialize heavy checks, and reuse unchanged
-evidence honestly. Documentation-only reconciliation does not restart runtime gates.
+Local stable correctness passes 447 files / 4,731 tests with the same six
+qualification-only skips. Focused custody/report controls and separated native
+restart intervals pass. The terminal PR receipt records final strict affected
+timings, build/lint and exact-head CI/artifact checks; require it before READY.
+Operator behavior is unchanged; no manual edit.
+Use [testing cadence](../docs/testing-and-review-cadence.md) and the single
+[two-track queue](../docs/two-track-execution-workplan.md).
 
 ## Remaining limits
 
-Release **HOLD** remains. Strict 200 ms responsiveness, replay/soak, live-provider,
-field and final-candidate qualification are separate from ordinary PR correctness.
-Historical timing failures remain retained; no unrelated repair erases them.
-Repair Trains C/D and applicable WAR-04 remediation remain tracked in the
-[coordinated ledger](../docs/assurance/coordinated-work-ledger.md). Remaining team
-requests (maps, labels, export, external resources, evacuation, privileged settings
-and multi-outing organization) remain outside these two repairs.
-Time-unverified current positions driving stationary attention remains an unresolved
-domain question outside this mission-scope repair.
+DON-254 remains In Progress and release HOLD. The 204.046 ms concurrent SQLite
+read is unresolved; this observer repair does not establish operator-read latency
+under backfill. Historical 239.509 ms attribution remains incomplete. The native
+probe uses a second disposable store and injected production runner; it does not
+qualify default application wiring or operator load. Strict whole-candidate
+responsiveness, replay/soak, provider, field and publication remain separate.
+
+Repair Trains C/D, applicable WAR-04 remediation and remaining team requests stay
+in the [coordinated ledger](../docs/assurance/coordinated-work-ledger.md).
+Time-unverified current positions driving stationary attention is still an open
+domain question outside these changes.

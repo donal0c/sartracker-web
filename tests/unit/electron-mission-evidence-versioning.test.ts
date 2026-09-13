@@ -197,9 +197,9 @@ function captureLegacyRecovery() {
       return handle
     },
     /** Requires exactly one production worker for this opening. */
-    async observe() {
+    async observe(timeoutMs = 50_000) {
       expect(handles).toHaveLength(1)
-      const report = await observeLegacyRecoveryCompletion(handles[0]!.completion)
+      const report = await observeLegacyRecoveryCompletion(handles[0]!.completion, timeoutMs)
       process.stdout.write(`Legacy recovery completion observation: ${JSON.stringify({
         ...report, parentThreadId: threadId,
         failure: 'error' in report.outcome ? String(report.outcome.error) : null,
@@ -1726,30 +1726,19 @@ describe('mission evidence versioning [DON-277]', () => {
     `)
     settledDb.close()
 
+    const recovery = captureLegacyRecovery()
     const openedAt = performance.now()
-    store = createElectronMissionStore({ userDataPath })
+    store = createElectronMissionStore({ userDataPath, startLegacyEvidenceBackfillWorker: recovery.start })
     const openMs = performance.now() - openedAt
     assertReleaseResponsiveness(() => expect(openMs).toBeLessThan(200))
-    let lastHeartbeat = performance.now()
-    let maximumHeartbeatGapMs = 0
-    const heartbeat = setInterval(() => {
-      const current = performance.now()
-      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, current - lastHeartbeat)
-      lastHeartbeat = current
-    }, 10)
-    const inspection = openDatabase(databaseFile)
-    let scannedThroughRowid = 0
-    for (let attempt = 0; attempt < 500 && scannedThroughRowid < 500_000; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      scannedThroughRowid = Number(inspection.prepare(`SELECT scanned_through_rowid
-        FROM legacy_gpx_backfill_state WHERE singleton = 1`).get()?.scanned_through_rowid ?? 0)
-    }
-    clearInterval(heartbeat)
+    const { maximumHeartbeatGapMs } = await recovery.observe(10_000)
     assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).toBeLessThan(200))
-    expect(inspection.prepare(`SELECT scanned_through_rowid, scan_target_rowid
-      FROM legacy_gpx_backfill_state WHERE singleton = 1`).get())
-      .toMatchObject({ scanned_through_rowid: 500_000, scan_target_rowid: 500_000 })
-    inspection.close()
+    const inspection = openDatabase(databaseFile)
+    try {
+      expect(inspection.prepare(`SELECT scanned_through_rowid, scan_target_rowid
+        FROM legacy_gpx_backfill_state WHERE singleton = 1`).get())
+        .toMatchObject({ scanned_through_rowid: 500_000, scan_target_rowid: 500_000 })
+    } finally { inspection.close() }
     await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   }, 30_000)
 
