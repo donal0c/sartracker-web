@@ -1,0 +1,82 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > records the history target before transport and keeps current fixes running when admission fails
+Tracking breadcrumb reconciliation failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  retryDelayMs: 1000,
+  error: 'Checkpoint write failed'
+}
+Tracking breadcrumb reconciliation failed for device. {
+  deviceId: '2',
+  deviceName: 'Team Lead',
+  retryDelayMs: 1000,
+  error: 'Checkpoint write failed'
+}
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  error: 'Checkpoint write failed'
+}
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '2',
+  deviceName: 'Team Lead',
+  error: 'Checkpoint write failed'
+}
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > keeps live positions visible while a closed mission observation scope excludes evidence
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  error: 'Mission history evidence scope closed before transport admission.'
+}
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '2',
+  deviceName: 'Team Lead',
+  error: 'Mission history evidence scope closed before transport admission.'
+}
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > publishes current positions with last-known roster metadata when roster refresh fails [DON-267]
+Tracking device roster refresh failed; using last-known metadata. { failureKind: 'unknown' }
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > cancels unresolved admitted history transport on stop without fabricating evidence [DON-267]
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  error: 'AbortError: History request stopped.'
+}
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '2',
+  deviceName: 'Team Lead',
+  error: 'AbortError: History request stopped.'
+}
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > synthesizes bounded device rows when the first roster request fails [DON-267]
+Tracking device roster refresh failed; using last-known metadata. { failureKind: 'unknown' }
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > publishes valid current positions before safely reporting rejected rows [DON-268]
+Current-position rejection evidence delivery failed. { failureKind: 'unknown' }
+
+················································stderr | tests/unit/polling-manager.test.ts > polling manager > does not canonicalize history that failed durable persistence
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  error: 'atomic persistence failed'
+}
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > does not canonicalize history that failed durable persistence
+Tracking breadcrumb reconciliation failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  retryDelayMs: 1000,
+  error: 'atomic persistence failed'
+}
+
+·············································
+
+ Test Files  1 passed (1)
+      Tests  93 passed (93)
+   Start at  11:12:07
+   Duration  964ms (transform 112ms, setup 0ms, import 134ms, tests 467ms, environment 229ms)
+

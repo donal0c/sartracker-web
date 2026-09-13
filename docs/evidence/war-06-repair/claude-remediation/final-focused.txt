@@ -1,0 +1,259 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+······························stderr | tests/unit/polling-manager.test.ts > polling manager > records the history target before transport and keeps current fixes running when admission fails
+Tracking breadcrumb reconciliation failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  retryDelayMs: 1000,
+  error: 'Checkpoint write failed'
+}
+Tracking breadcrumb reconciliation failed for device. {
+  deviceId: '2',
+  deviceName: 'Team Lead',
+  retryDelayMs: 1000,
+  error: 'Checkpoint write failed'
+}
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  error: 'Checkpoint write failed'
+}
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '2',
+  deviceName: 'Team Lead',
+  error: 'Checkpoint write failed'
+}
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > keeps live positions visible while a closed mission observation scope excludes evidence
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  error: 'Mission history evidence scope closed before transport admission.'
+}
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '2',
+  deviceName: 'Team Lead',
+  error: 'Mission history evidence scope closed before transport admission.'
+}
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > publishes current positions with last-known roster metadata when roster refresh fails [DON-267]
+Tracking device roster refresh failed; using last-known metadata. { failureKind: 'unknown' }
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > cancels unresolved admitted history transport on stop without fabricating evidence [DON-267]
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  error: 'AbortError: History request stopped.'
+}
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '2',
+  deviceName: 'Team Lead',
+  error: 'AbortError: History request stopped.'
+}
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > warns visibly when corrupt cache cannot be recovered [Claude C4]
+Tracking cache payload was ignored. Error: Tracking cache contains invalid JSON.
+    at parseTrackingCachePayload (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/tracking-cache-payload.ts:153:11)
+    at safelyParseCachedSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:2520:12)
+    at startTrackingRuntime (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:535:28)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at startRuntime (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:237:16)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:368:21
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > synthesizes bounded device rows when the first roster request fails [DON-267]
+Tracking device roster refresh failed; using last-known metadata. { failureKind: 'unknown' }
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > never silently acknowledges queued accepted snapshot evidence after runtime replacement
+Mission persistence failed. Error: Tracking runtime changed before accepted mission evidence could be persisted.
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1907:13
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > never silently acknowledges queued accepted history evidence after runtime replacement
+Tracking history chunk persistence failed. Error: Tracking runtime changed before accepted mission evidence could be persisted.
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1907:13
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > publishes valid current positions before safely reporting rejected rows [DON-268]
+Current-position rejection evidence delivery failed. { failureKind: 'unknown' }
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > does not let a stale callback update cache or retention while accepted evidence still settles
+Deferred mission persistence failed. Error: Deferred mission evidence cannot be scoped to its accepting mission.
+    at Object.persist (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:448:15)
+    at runPump (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:211:28)
+    at startPump (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:230:23)
+    at Object.requestFlushMission (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:326:7)
+    at Object.onCurrentSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:914:35)
+    at Object.onCurrentSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1043:68)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:707:19
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+Mission evidence could not be retained. Error: Accepted tracking evidence could not be participation-scoped before release.
+    at Object.markEvidenceLoss (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:485:9)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:158:65
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+·································stderr | tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts > WAR-06 reachable lifecycle repair oracles > rejects deferred stale current-fix publication through finish-idle-start while a poll is in flight [WAR-06-AUD-02-REPAIR]
+Mission evidence could not be retained. Error: Accepted tracking evidence could not be participation-scoped before release.
+    at Object.markEvidenceLoss (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:485:9)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:158:65
+    at settleLossMarker (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:287:44)
+    at flushMission (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:309:5)
+    at async Promise.allSettled (index 0)
+    at Object.settleForStop (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:377:25)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1180:7
+    at attempt (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/runtime/runtime-cleanup.ts:22:35)
+    at stop (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:428:5)
+    at stopRuntimeWithRetry (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:42:5)
+
+·····················································stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > records admission failure without evidence loss and rejects a stopped generation
+History request target could not be saved; retrieval will retry without a completeness claim. Error: disk unavailable
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:193:51
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > does not canonicalize history that failed durable persistence
+Tracking breadcrumb fetch failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  error: 'atomic persistence failed'
+}
+
+stderr | tests/unit/polling-manager.test.ts > polling manager > does not canonicalize history that failed durable persistence
+Tracking breadcrumb reconciliation failed for device. {
+  deviceId: '1',
+  deviceName: 'Donal Phone',
+  retryDelayMs: 1000,
+  error: 'atomic persistence failed'
+}
+
+·······································stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > preserves raw tracking cache data and warns when participant scope hydration fails
+Mission persistence failed. Error: Participant selection is unavailable.
+    at Object.onSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:968:23)
+    at Object.onSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1046:48)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:719:24
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+····················stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > marks deferred accepted evidence before runtime stop releases its mission token
+Mission evidence could not be retained. Error: Accepted tracking evidence could not be participation-scoped before release.
+    at Object.markEvidenceLoss (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:485:9)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:158:65
+    at settleLossMarker (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:287:44)
+    at flushMission (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:309:5)
+    at async Promise.allSettled (index 0)
+    at Object.settleForStop (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:377:25)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1180:7
+    at attempt (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/runtime/runtime-cleanup.ts:22:35)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:941:5
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > drains transferred current evidence before runtime stop releases its guardian [DON-252]
+Mission evidence could not be retained. Error: Accepted tracking evidence could not be participation-scoped before release.
+    at Object.markEvidenceLoss (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:485:9)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:158:65
+    at settleLossMarker (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:287:44)
+    at flushMission (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:309:5)
+    at async Promise.allSettled (index 0)
+    at Object.settleForStop (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:377:25)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1180:7
+    at attempt (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/runtime/runtime-cleanup.ts:22:35)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:991:5
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > durably marks an accepted snapshot when Finish closes scope during deferred ownership transfer
+Mission persistence failed. Error: Mission evidence scope closed before deferred evidence was retained.
+    at Object.onSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:973:23)
+    at Object.onSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1046:48)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:1035:24
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not clear a persistence failure while participant scope blocks a later write
+Mission persistence failed. Error: disk unavailable
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:1200:53
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64
+
+stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not clear a persistence failure while participant scope blocks a later write
+Mission persistence failed. Error: Participant selection is unavailable.
+    at Object.onSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:968:23)
+    at Object.onSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1046:48)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:1225:24
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > keeps current-fix rendering live while bounded mission persistence drains FIFO [DON-252]
+Mission evidence could not be retained. Error: Accepted tracking evidence could not be participation-scoped before release.
+    at Object.markEvidenceLoss (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:485:9)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:158:65
+
+····························stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not let a queued snapshot cross into a different active mission [DON-260]
+Mission persistence failed. Error: Tracking mission changed before accepted evidence could be persisted.
+    at persistTrackingSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:2153:13)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1428:35
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1909:5
+
+··························stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not release a failed initial-history wave before its durable loss marker settles
+Tracking history wave persistence failed. Error: history wave write failed
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:3656:32
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64
+
+stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not release a failed initial history chunk before its durable loss marker settles
+Tracking history chunk persistence failed. Error: initial history write failed
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:3716:34
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2027:60
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+
+··stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not release a failed anti_entropy history chunk before its durable loss marker settles
+Tracking history chunk persistence failed. Error: anti_entropy history write failed
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:3716:34
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2027:60
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+
+···stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > rejects a stale initial-history write after mission replacement
+Tracking history chunk persistence failed. Error: Tracking history mission changed before the chunk could be persisted.
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:798:19
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1909:5
+
+····················
+
+ Test Files  8 passed (8)
+      Tests  254 passed (254)
+   Start at  11:18:02
+   Duration  4.98s (transform 1.05s, setup 0ms, import 1.35s, tests 7.29s, environment 2.71s)
+

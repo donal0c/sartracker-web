@@ -1109,6 +1109,16 @@
             capacity permits. On exceptionally broad histories, a trail may reappear only after Resume
             reconstructs the complete accepted history from the mission database; cache truncation never
             deletes mission evidence.
+            Restart caches belong to the mission that saved them. A matching recovery cache becomes
+            available after Resume and participant loading; a cache from another mission, or an older
+            cache without a mission identity, is not shown. Tracking reports that it is waiting for fresh
+            current positions. Starting a different mission clears the previous mission's current locations
+            and attention state while preserving its saved evidence.
+            A partial live response can show live responders alongside cached responders and restored
+            trails. The cache notice remains visible while cached data is shown; it does not mean an
+            otherwise online connection is offline. Live current coordinates take precedence for the
+            same device. An unreadable cache is reported, and an offline mission with no received current
+            positions says so rather than claiming last-known positions are displayed.
           </div>
           <div class="note">
             <strong>Saved history loads independently:</strong> current fixes remain live while saved

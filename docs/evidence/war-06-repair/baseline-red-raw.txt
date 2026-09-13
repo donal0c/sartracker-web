@@ -1,0 +1,321 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts tests/unit/war06-mission-boundary.test.ts tests/unit/tracking-cache-payload.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+ ❯ tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts (3 tests | 2 failed) 33ms
+     × rejects stale history publication at the real delayed poller flush [WAR-06-AUD-01-REPAIR] 17ms
+     × rejects the unkeyed cached snapshot on Mission B cold start [WAR-06-CACHE-SIBLING-REPAIR] 3ms
+ ❯ tests/unit/tracking-cache-payload.test.ts (21 tests | 8 failed) 14ms
+     × preserves mission_id for an active mission 2ms
+     × preserves mission_id for an explicit idle state 0ms
+     × rejects malformed mission_id values: a number 1ms
+     × rejects malformed mission_id values: a boolean 0ms
+     × rejects malformed mission_id values: an object 0ms
+     × rejects malformed mission_id values: an array 0ms
+     × rejects malformed mission_id values: an empty string 0ms
+     × rejects malformed mission_id values: a whitespace-only string 0ms
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > does not let a stale callback update cache or retention while accepted evidence still settles
+Deferred mission persistence failed. Error: Deferred mission evidence cannot be scoped to its accepting mission.
+    at Object.persist (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:436:15)
+    at runPump (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:211:28)
+    at startPump (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:230:23)
+    at Object.requestFlushMission (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:326:7)
+    at Object.onCurrentSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:877:35)
+    at Object.onCurrentSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:995:68)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:321:19
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+Mission evidence could not be retained. Error: Accepted tracking evidence could not be participation-scoped before release.
+    at Object.markEvidenceLoss (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:473:9)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:158:65
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+ ❯ tests/unit/war06-mission-boundary.test.ts (11 tests | 9 failed) 30024ms
+     × accepts cache only for an explicit identity: different active mission 2ms
+     × accepts cache only for an explicit identity: legacy cache without identity 0ms
+     × accepts cache only for an explicit identity: legacy cache while idle 0ms
+     × discards a cache read admitted for Mission A when Mission B is active before it settles 1ms
+     × clears the visible state at a direct active Mission A to Mission B switch and rejects stale callbacks 2ms
+     × does not let a stale callback update cache or retention while accepted evidence still settles 3ms
+     × keeps the original mission identity on pending cache writes and scopes dedupe by mission 10004ms
+     × does not republish Mission A current positions under Mission B after a direct switch and B fetch failure 10004ms
+     × retains a legitimate current position on a same-mission fetch failure 10002ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 19 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/tracking-cache-payload.test.ts > tracking cache payload > preserves mission_id for an active mission
+AssertionError: expected undefined to be 'mission-a' // Object.is equality
+
+- Expected:
+"mission-a"
+
++ Received:
+undefined
+
+ ❯ tests/unit/tracking-cache-payload.test.ts:111:31
+    109|       readonly mission_id?: string | null
+    110|     }
+    111|     expect(parsed.mission_id).toBe(missionId)
+       |                               ^
+    112|     expect(JSON.parse(serialized)).toHaveProperty('mission_id', missio…
+    113|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/21]⎯
+
+ FAIL  tests/unit/tracking-cache-payload.test.ts > tracking cache payload > preserves mission_id for an explicit idle state
+AssertionError: expected undefined to be null // Object.is equality
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/tracking-cache-payload.test.ts:111:31
+    109|       readonly mission_id?: string | null
+    110|     }
+    111|     expect(parsed.mission_id).toBe(missionId)
+       |                               ^
+    112|     expect(JSON.parse(serialized)).toHaveProperty('mission_id', missio…
+    113|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/21]⎯
+
+ FAIL  tests/unit/tracking-cache-payload.test.ts > tracking cache payload > rejects malformed mission_id values: a number
+ FAIL  tests/unit/tracking-cache-payload.test.ts > tracking cache payload > rejects malformed mission_id values: a boolean
+ FAIL  tests/unit/tracking-cache-payload.test.ts > tracking cache payload > rejects malformed mission_id values: an object
+ FAIL  tests/unit/tracking-cache-payload.test.ts > tracking cache payload > rejects malformed mission_id values: an array
+ FAIL  tests/unit/tracking-cache-payload.test.ts > tracking cache payload > rejects malformed mission_id values: an empty string
+ FAIL  tests/unit/tracking-cache-payload.test.ts > tracking cache payload > rejects malformed mission_id values: a whitespace-only string
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/tracking-cache-payload.test.ts:141:10
+    139|       positions: [],
+    140|       breadcrumbs: [],
+    141|     }))).toThrow(/mission_id/i)
+       |          ^
+    142|   })
+    143|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/21]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > accepts cache only for an explicit identity: different active mission
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > accepts cache only for an explicit identity: legacy cache without identity
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > accepts cache only for an explicit identity: legacy cache while idle
+AssertionError: expected "vi.fn()" to be called +0 times, but got 1 times
+ ❯ tests/unit/war06-mission-boundary.test.ts:230:27
+    228|     })
+    229|
+    230|     expect(applySnapshot).toHaveBeenCalledTimes(shouldApply ? 1 : 0)
+       |                           ^
+    231|     await runtime.stop()
+    232|     activeRuntimeStops.delete(runtime.stop)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/21]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > discards a cache read admitted for Mission A when Mission B is active before it settles
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {
+        "breadcrumbMetadata": undefined,
+        "breadcrumbs": Array [],
+        "devices": Array [
+          Object {
+            "category": "person",
+            "device_id": "1",
+            "group_id": null,
+            "last_seen": "2026-04-06T10:30:00.000Z",
+            "name": "Donal Phone",
+            "status": "online",
+            "unique_id": "872656784",
+          },
+        ],
+        "positions": Array [
+          Object {
+            "accuracy": 8,
+            "altitude": 320.5,
+            "battery": 85,
+            "cache_age_seconds": 60,
+            "data_origin": "cache",
+            "device_cache_stale": false,
+            "device_id": "1",
+            "fix_time_unverified": false,
+            "id": "100",
+            "lat": 51.9985,
+            "lon": -9.7426,
+            "source": "osmand",
+            "speed": 2.2224,
+            "timestamp": "2026-04-06T10:30:00.000Z",
+            "timestamp_source": "fix",
+          },
+        ],
+        "rawBreadcrumbsForPersistence": undefined,
+      },
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:250:31
+    248|     const runtime = await starting
+    249|
+    250|     expect(applySnapshot).not.toHaveBeenCalled()
+       |                               ^
+    251|     await runtime.stop()
+    252|     activeRuntimeStops.delete(runtime.stop)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/21]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > clears the visible state at a direct active Mission A to Mission B switch and rejects stale callbacks
+AssertionError: expected [ { id: 'mission-a-current', …(14) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "accuracy": 8,
++     "altitude": 320.5,
++     "battery": 85,
++     "cache_age_seconds": null,
++     "data_origin": "live",
++     "device_cache_stale": false,
++     "device_id": "1",
++     "fix_time_unverified": false,
++     "id": "mission-a-current",
++     "lat": 51.9985,
++     "lon": -9.7426,
++     "source": "osmand",
++     "speed": 2.2224,
++     "timestamp": "2026-04-06T10:34:00.000Z",
++     "timestamp_source": "fix",
++   },
++ ]
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:278:60
+    276|     setCurrentMission('mission-b')
+    277|     const boundaryCallCount = applySnapshot.mock.calls.length
+    278|     expect(applySnapshot.mock.calls.at(-1)?.[0].positions).toEqual([])
+       |                                                            ^
+    279|     expect(runtime.requestPollNow).toHaveBeenCalled()
+    280|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/21]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > does not let a stale callback update cache or retention while accepted evidence still settles
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "{"cached_at":"2026-04-06T10:35:00.000Z","devices":[{"device_id":"1","name":"Donal Phone","status":"online","last_seen":"2026-04-06T10:34:00.000Z","unique_id":"872656784","category":"person","group_id":null}],"positions":[{"id":"mission-a-stale","device_id":"1","lat":51.9985,"lon":-9.7426,"altitude":320.5,"speed":2.2224,"battery":85,"accuracy":8,"timestamp":"2026-04-06T10:34:00.000Z","timestamp_source":"fix","fix_time_unverified":false,"source":"osmand","data_origin":"live","cache_age_seconds":null,"device_cache_stale":false}],"breadcrumbs":[]}",
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:329:36
+    327|     await flushMicrotasks()
+    328|
+    329|     expect(runtime.cacheWrite).not.toHaveBeenCalled()
+       |                                    ^
+    330|     expect(applySnapshot.mock.calls.slice(boundaryCallCount).flatMap((…
+    331|       next.positions.map((position: NormalizedTrackingPosition) => pos…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/21]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > keeps the original mission identity on pending cache writes and scopes dedupe by mission
+AssertionError: expected undefined to be 'mission-a' // Object.is equality
+
+- Expected:
+"mission-a"
+
++ Received:
+undefined
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:355:8
+    353|     expect(cacheWrite).toHaveBeenCalledTimes(1)
+    354|     expect(JSON.parse(cacheWrite.mock.calls[0]![0] as string).mission_…
+    355|       .toBe('mission-a')
+       |        ^
+    356|
+    357|     setCurrentMission('mission-b')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/21]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > keeps the original mission identity on pending cache writes and scopes dedupe by mission
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 polling fallback boundary > does not republish Mission A current positions under Mission B after a direct switch and B fetch failure
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 polling fallback boundary > retains a legitimate current position on a same-mission fetch failure
+Error: Hook timed out in 10000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with "hookTimeout".
+ ❯ tests/unit/war06-mission-boundary.test.ts:41:1
+     39| })
+     40|
+     41| afterEach(async () => {
+       | ^
+     42|   const failures: unknown[] = []
+     43|   for (const stop of [...activeRuntimeStops]) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/21]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 polling fallback boundary > does not republish Mission A current positions under Mission B after a direct switch and B fetch failure
+AssertionError: expected [ 'mission-a-current' ] to not include 'mission-a-current'
+ ❯ tests/unit/war06-mission-boundary.test.ts:426:12
+    424|     expect(missionBPublications.flatMap(([next]) =>
+    425|       next.positions.map((position: NormalizedTrackingPosition) => pos…
+    426|       .not.toContain('mission-a-current')
+       |            ^
+    427|     await poller.stop()
+    428|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/21]⎯
+
+ FAIL  tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts > WAR-06 reachable lifecycle repair oracles > rejects stale history publication at the real delayed poller flush [WAR-06-AUD-01-REPAIR]
+AssertionError: WAR-06 AUD-01 repair safety oracle: stale Mission A current position mission-a-current remains visible under Mission B: expected [ 'mission-a-current' ] to not include 'mission-a-current'
+ ❯ assertNoMissionAUnderMissionB tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:225:12
+    223|   for (const staleId of input.stalePositionIds) {
+    224|     expect(positionIds, `${input.oracle}: stale Mission A current posi…
+    225|       .not.toContain(staleId)
+       |            ^
+    226|   }
+    227|   for (const staleId of input.staleHistoryIds) {
+ ❯ tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:577:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/21]⎯
+
+ FAIL  tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts > WAR-06 reachable lifecycle repair oracles > rejects the unkeyed cached snapshot on Mission B cold start [WAR-06-CACHE-SIBLING-REPAIR]
+AssertionError: WAR-06 CACHE-SIBLING repair safety oracle: stale Mission A current position mission-a-cached-fix was published under Mission B: expected [ 'mission-a-cached-fix' ] to not include 'mission-a-cached-fix'
+ ❯ assertNoMissionAUnderMissionB tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:244:14
+    242|       expect(publishedPositionIds,
+    243|         `${input.oracle}: stale Mission A current position ${staleId} …
+    244|         .not.toContain(staleId)
+       |              ^
+    245|     }
+    246|     for (const staleId of input.staleHistoryIds) {
+ ❯ tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:866:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/21]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  19 failed | 16 passed (35)
+   Start at  08:20:48
+   Duration  31.39s (transform 134ms, setup 0ms, import 297ms, tests 30.07s, environment 819ms)
+

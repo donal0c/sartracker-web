@@ -4,6 +4,16 @@
 
 ## Planning Rule
 
+**Current reconciliation (2026-09-13):** PR24/WAR-02B is merged at
+`deedab27483ad4fe1ca998a4d68afd555f4e2337`, following merged PR23. DON-267
+and DON-254 are both In Progress in Linear. Older Done/open-PR statements below
+are historical receipts, superseded by this current state. Two bounded repair
+streams start from this baseline: DON-267 WAR-06 mission-scope tracking/cache
+repair and DON-254 legacy recovery responsiveness repair. Intended merge order
+is DON-267 first, then DON-254 reconciled on that master, with Donal owning merge.
+Release remains HOLD; strict 200 ms and final-candidate qualification follow
+all required release-blocking dispositions. This remains the only planning queue.
+
 PRs #19/#22/#20/#21/#23 are merged through current `origin/master` at
 `1fac099a9f581448a5a607a063e2a8b77fa9b151`. PR #19's GPX fidelity and
 import-lifecycle reconciliation, and PR23's bounded lossless canonical
@@ -175,14 +185,37 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
+### WAR-06 production mission-scope repair — DON-267 (2026-09-13)
+
+Branch `codex/don-267-war06-mission-scope-repair` owns only WAR-06-AUD-01,
+WAR-06-AUD-02 and WAR-06-CACHE-SIBLING. Original DON-267 PR1/PR4/PR17 fixes
+remain merged and valid; the reopened issue is bookkeeping for these sibling
+hazards. Guard delayed history publication, deferred participant hydration and
+global cache identity before map retention/publication/stationary inputs.
+Preserve current priority, participant trust, fixTime authority and accepted
+evidence custody. Include the same-boundary wrong-mission poll fallback.
+The [repair contract](assurance/findings/war-06/mission-scope-repair.md) records
+red-first oracles, positive/negative controls, serial source checks, browser
+switching and actual packaged restart/cache proof. Claude's review of `7fc4aa08`
+withdrew the earlier readiness verdict; [remediation](assurance/findings/war-06/claude-review-remediation.md)
+now covers cache/live merge, truthful status, cache-age retention and actual timer
+mutation proof. Earlier Luna reviews were same-run Codex agent reviews, not external
+approval. Stable local checks pass 4,684 tests in 444 files (six existing timing
+exclusions), 254 focused tests, three browser flows, lint/build and five-launch
+mac-arm64 packaged cache smoke. Final committed-head Linux CI remains required;
+DON-267 and PR26 carry its live receipt and terminal artifact inspection. The
+remediation is for Donal's re-review, with no new external approval claimed.
+DON-254's separate legacy recovery stream may proceed with disjoint ownership;
+neither stream relaxes the unchanged 200 ms threshold or grants release authority.
+
 ### Responsiveness causal repair — DON-254 (2026-09-12)
 
 PR19 is merged to `origin/master` at
 `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37` from final implementation head
 `f203869c`; terminal CI `34694049815` passed. Its implementation evidence and
 historical proof/failures remain in the [Train B record](assurance/findings/repair-train-b.md).
-The live open-PR list is empty. Linear `DON-274` is verified Done; `DON-254`
-is now Done in Linear.
+At that historical snapshot the open-PR list was empty and both issues were Done.
+`DON-254` is now In Progress for the separate legacy recovery repair above.
 
 The historical active chunk was follow-up A: bounded lossless canonical
 breadcrumb query transport on branch `codex/don-254-bounded-history-transport`, against the
@@ -323,8 +356,9 @@ Include both in the batch evidence, final independent reviews and CI.
 
 ### Coordinated three-stream safety queue
 
-**WAR-02B bounded property and mutation controls (2026-09-12, review repair
-pass complete locally):** the branch `codex/war-02b-property-mutation` now has
+**WAR-02B bounded property and mutation controls (merged PR24, 2026-09-13):**
+final head `946545a5` merged at `deedab27`. The historical local receipt below
+does not imply release qualification. The branch `codex/war-02b-property-mutation` has
 independent TM65/WGS84 anchors and coordinate rejection cases, an independent
 ingest-hash oracle with optional/hash/timestamp/field cases, exact cursor and
 recent-window arithmetic, and a public client-boundary fault injection for the

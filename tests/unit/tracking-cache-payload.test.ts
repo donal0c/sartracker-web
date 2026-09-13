@@ -13,6 +13,11 @@ import {
 } from '../../src/features/tracking/traccar-normalization'
 
 describe('tracking cache payload', () => {
+  it.each(['', ' mission-a', 'mission-a '])('rejects invalid mission identity %j before serialization [Claude C3]', (missionId) => {
+    expect(() => serializeTrackingCachePayload({ mission_id: missionId,
+      cached_at: '2026-04-06T10:34:00.000Z', devices: [], positions: [], breadcrumbs: [],
+    })).toThrow(/mission_id/)
+  })
   it('shares the global breadcrumb cache budget with cooperative bounded work [DON-252]', async () => {
     const basePosition = normalizeTraccarPosition(positionsFixture[0], 'live')
     const shortTrail = Array.from({ length: 100 }, (_, index) => ({
@@ -89,6 +94,56 @@ describe('tracking cache payload', () => {
     expect(parsed.positions).toHaveLength(2)
     expect(parsed.breadcrumbs).toHaveLength(2)
     expect(parsed.positions[0]?.timestamp_source).toBe('fix')
+  })
+
+  it.each([
+    ['an active mission', 'mission-a'],
+    ['an explicit idle state', null],
+  ] as const)('preserves mission_id for %s', (_label, missionId) => {
+    const serialized = serializeTrackingCachePayload({
+      cached_at: '2026-04-06T10:35:00.000Z',
+      devices: [],
+      positions: [],
+      breadcrumbs: [],
+      mission_id: missionId,
+    } as Parameters<typeof serializeTrackingCachePayload>[0] & {
+      readonly mission_id: string | null
+    })
+
+    const parsed = parseTrackingCachePayload(serialized) as ReturnType<typeof parseTrackingCachePayload> & {
+      readonly mission_id?: string | null
+    }
+    expect(parsed.mission_id).toBe(missionId)
+    expect(JSON.parse(serialized)).toHaveProperty('mission_id', missionId)
+  })
+
+  it('preserves an absent mission_id as legacy unknown', () => {
+    const parsed = parseTrackingCachePayload(JSON.stringify({
+      cached_at: '2026-04-06T10:35:00.000Z',
+      devices: [],
+      positions: [],
+      breadcrumbs: [],
+    }))
+
+    expect((parsed as typeof parsed & { readonly mission_id?: unknown }).mission_id)
+      .toBeUndefined()
+  })
+
+  it.each([
+    ['a number', 42],
+    ['a boolean', true],
+    ['an object', {}],
+    ['an array', []],
+    ['an empty string', ''],
+    ['a whitespace-only string', '   '],
+  ])('rejects malformed mission_id values: %s', (_label, missionId) => {
+    expect(() => parseTrackingCachePayload(JSON.stringify({
+      cached_at: '2026-04-06T10:35:00.000Z',
+      mission_id: missionId,
+      devices: [],
+      positions: [],
+      breadcrumbs: [],
+    }))).toThrow(/mission_id/i)
   })
 
   it('keeps legacy cache locations visible but explicitly time-unverified [DON-267] [SAR-QA-021]', () => {

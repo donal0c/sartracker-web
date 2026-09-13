@@ -1,0 +1,140 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+ ❯ tests/unit/war06-mission-boundary.test.ts (18 tests | 5 failed) 27ms
+     × never silently acknowledges queued accepted snapshot evidence after runtime replacement 9ms
+     × never silently acknowledges queued accepted history evidence after runtime replacement 1ms
+     × preserves matching recovery positions when an empty current poll arrives during participant loading 3ms
+     × rechecks recovery cache age after waiting 600000 ms before Resume 1ms
+     × rechecks recovery cache age after waiting 18000000 ms before Resume 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > never silently acknowledges queued accepted snapshot evidence after runtime replacement
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > never silently acknowledges queued accepted history evidence after runtime replacement
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'mission-a', …(1) ]
+
+Number of calls: 0
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:268:39
+    266|     const result = await settledSecond
+    267|     expect(addPosition).toHaveBeenCalledTimes(1)
+    268|     expect(recordMissionEvidenceLoss).toHaveBeenCalledWith('mission-a'…
+       |                                       ^
+    269|     if (route === 'history') expect(result).toBe('rejected')
+    270|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > preserves matching recovery positions when an empty current poll arrives during participant loading
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "positions": [
+-       ObjectContaining {
+-         "data_origin": "cache",
+-         "id": "100",
+-       },
+-     ],
++     "breadcrumbs": [],
++     "devices": [],
++     "positions": [],
++     "unconfirmedCurrentDeviceIds": [],
+    },
+  ]
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:288:27
+    286|     status = 'ready'
+    287|     notify()
+    288|     expect(applySnapshot).toHaveBeenLastCalledWith(expect.objectContai…
+       |                           ^
+    289|       positions: [expect.objectContaining({ id: BASE_CACHE_POSITION.id…
+    290|     }))
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > rechecks recovery cache age after waiting 600000 ms before Resume
+AssertionError: expected [ Array(1) ] to deeply equal [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "cache_age_seconds": 660,
+-     "device_cache_stale": true,
++     "accuracy": 8,
++     "altitude": 320.5,
++     "battery": 85,
++     "cache_age_seconds": 60,
++     "data_origin": "cache",
++     "device_cache_stale": false,
++     "device_id": "1",
++     "fix_time_unverified": false,
++     "id": "100",
++     "lat": 51.9985,
++     "lon": -9.7426,
++     "source": "osmand",
++     "speed": 2.2224,
++     "timestamp": "2026-04-06T10:30:00.000Z",
++     "timestamp_source": "fix",
+    },
+  ]
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:304:28
+    302|     const positions = applySnapshot.mock.calls.at(-1)?.[0].positions ?…
+    303|     if (elapsed > 4 * 60 * 60_000) expect(positions).toEqual([])
+    304|     else expect(positions).toEqual([expect.objectContaining({ cache_ag…
+       |                            ^
+    305|       device_cache_stale: true })])
+    306|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > rechecks recovery cache age after waiting 18000000 ms before Resume
+AssertionError: expected [ Array(1) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "accuracy": 8,
++     "altitude": 320.5,
++     "battery": 85,
++     "cache_age_seconds": 60,
++     "data_origin": "cache",
++     "device_cache_stale": false,
++     "device_id": "1",
++     "fix_time_unverified": false,
++     "id": "100",
++     "lat": 51.9985,
++     "lon": -9.7426,
++     "source": "osmand",
++     "speed": 2.2224,
++     "timestamp": "2026-04-06T10:30:00.000Z",
++     "timestamp_source": "fix",
++   },
++ ]
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:303:54
+    301|     useMissionStore.setState({ phase: 'active', currentMission: missio…
+    302|     const positions = applySnapshot.mock.calls.at(-1)?.[0].positions ?…
+    303|     if (elapsed > 4 * 60 * 60_000) expect(positions).toEqual([])
+       |                                                      ^
+    304|     else expect(positions).toEqual([expect.objectContaining({ cache_ag…
+    305|       device_cache_stale: true })])
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 13 passed (18)
+   Start at  08:54:08
+   Duration  474ms (transform 105ms, setup 0ms, import 128ms, tests 27ms, environment 251ms)
+

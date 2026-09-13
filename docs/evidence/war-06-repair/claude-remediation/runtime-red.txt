@@ -1,0 +1,170 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > warns visibly when corrupt cache cannot be recovered [Claude C4]
+Tracking cache payload was ignored. Error: Tracking cache contains invalid JSON.
+    at parseTrackingCachePayload (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/tracking-cache-payload.ts:153:11)
+    at safelyParseCachedSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:2504:12)
+    at startTrackingRuntime (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:532:28)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at startRuntime (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:237:16)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:317:21
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > never silently acknowledges queued accepted snapshot evidence after runtime replacement
+Mission persistence failed. Error: Tracking runtime changed before accepted mission evidence could be persisted.
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1891:13
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > never silently acknowledges queued accepted history evidence after runtime replacement
+Tracking history chunk persistence failed. Error: Tracking runtime changed before accepted mission evidence could be persisted.
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1891:13
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > does not let a stale callback update cache or retention while accepted evidence still settles
+Deferred mission persistence failed. Error: Deferred mission evidence cannot be scoped to its accepting mission.
+    at Object.persist (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:445:15)
+    at runPump (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:211:28)
+    at startPump (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:230:23)
+    at Object.requestFlushMission (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:326:7)
+    at Object.onCurrentSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:909:35)
+    at Object.onCurrentSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1037:68)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:637:19
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+Mission evidence could not be retained. Error: Accepted tracking evidence could not be participation-scoped before release.
+    at Object.markEvidenceLoss (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:482:9)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:158:65
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+·xxxxx······················
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > preserves mixed cache/live breadcrumbs through participant hydration [Claude R1-R4]
+AssertionError: expected [] to include 'cached-trail'
+ ❯ tests/unit/war06-mission-boundary.test.ts:280:58
+    278|       expect(published.positions).toHaveLength(2)
+    279|     } else if (assertion === 'breadcrumbs') {
+    280|       expect(published.breadcrumbs.map((row) => row.id)).toContain('ca…
+       |                                                          ^
+    281|     } else {
+    282|       expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.obje…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > preserves mixed cache/live status through participant hydration [Claude R1-R4]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
++     "consecutiveFailures": 0,
+      "lastSuccessAt": "2026-04-06T10:45:00.000Z",
+      "mode": "online",
+-     "warning": StringMatching /last known.*cache/i,
++     "recovered": true,
++     "warning": null,
+    },
+  ]
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:282:35
+    280|       expect(published.breadcrumbs.map((row) => row.id)).toContain('ca…
+    281|     } else {
+    282|       expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.obje…
+       |                                   ^
+    283|         mode: 'online', lastSuccessAt: time.toISOString(), warning: ex…
+    284|       }))
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > does not overwrite an online empty response with offline when cached positions hydrate [Claude R4]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "lastSuccessAt": "2026-04-06T10:35:00.000Z",
+-     "mode": "online",
++     "consecutiveFailures": 0,
++     "lastSuccessAt": "2026-04-06T10:34:00.000Z",
++     "mode": "offline",
++     "recovered": false,
+      "warning": "OFFLINE MODE — showing last known positions from cache.",
+    },
+  ]
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:302:33
+    300|     status = 'ready'
+    301|     notify()
+    302|     expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.object…
+       |                                 ^
+    303|       lastSuccessAt: NOW.toISOString(), warning: expect.stringMatching…
+    304|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > clears a rejected-cache warning after a current snapshot arrives through the snapshot adapter [Claude C1]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
++     "consecutiveFailures": 0,
++     "lastSuccessAt": "2026-04-06T10:35:00.000Z",
+      "mode": "online",
+-     "warning": null,
++     "recovered": true,
++     "warning": "Tracking cache could not be matched to this mission; waiting for fresh current positions.",
+    },
+  ]
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:312:33
+    310|     runtime.hooks.onStatusChange({ mode: 'online', warning: null, cons…
+    311|       lastSuccessAt: NOW.toISOString() })
+    312|     expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.object…
+       |                                 ^
+    313|   })
+    314|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > warns visibly when corrupt cache cannot be recovered [Claude C4]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "warning": StringMatching /cache.*(invalid|read|recover)/i,
++     "consecutiveFailures": 1,
++     "lastSuccessAt": null,
++     "mode": "offline",
++     "recovered": false,
++     "warning": null,
+    },
+  ]
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:319:33
+    317|     const runtime = await startRuntime({ cacheRead: async () => '{inva…
+    318|     runtime.hooks.onStatusChange({ mode: 'offline', warning: null, con…
+    319|     expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.object…
+       |                                 ^
+    320|       warning: expect.stringMatching(/cache.*(invalid|read|recover)/i),
+    321|     }))
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 23 passed (28)
+   Start at  10:59:45
+   Duration  771ms (transform 122ms, setup 0ms, import 148ms, tests 32ms, environment 507ms)
+

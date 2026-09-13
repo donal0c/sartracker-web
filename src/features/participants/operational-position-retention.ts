@@ -27,12 +27,14 @@ export type OperationalPositionRetention = {
 export function createOperationalPositionRetention(): OperationalPositionRetention {
   const positionsByDevice = new Map<string, NormalizedTrackingPosition>()
   const devicesById = new Map<string, NormalizedTrackingDevice>()
+  const cacheWrittenAtByDevice = new Map<string, number>()
   let activeContextKey: string | null = null
 
   /** Clears all current-position state at a mission/runtime boundary. */
   function reset(): void {
     positionsByDevice.clear()
     devicesById.clear()
+    cacheWrittenAtByDevice.clear()
     activeContextKey = null
   }
 
@@ -41,6 +43,7 @@ export function createOperationalPositionRetention(): OperationalPositionRetenti
       if (activeContextKey !== contextKey) {
         positionsByDevice.clear()
         devicesById.clear()
+        cacheWrittenAtByDevice.clear()
         activeContextKey = contextKey
       }
 
@@ -50,16 +53,26 @@ export function createOperationalPositionRetention(): OperationalPositionRetenti
       }
       for (const position of filtered.positions) {
         positionsByDevice.set(position.device_id, position)
+        if (position.data_origin === 'cache' && position.cache_age_seconds !== null) {
+          cacheWrittenAtByDevice.set(position.device_id,
+            observedAt.getTime() - position.cache_age_seconds * 1000)
+        } else {
+          cacheWrittenAtByDevice.delete(position.device_id)
+        }
       }
 
-      const refreshedPositions = annotateTrackingSnapshotHealth({
-        devices: [...devicesById.values()],
-        positions: [...positionsByDevice.values()],
+      const refreshedPositions = [...positionsByDevice.values()].map((position) => annotateTrackingSnapshotHealth({
+        devices: [],
+        positions: [position],
         breadcrumbs: [],
       }, {
         now: observedAt,
         deviceStaleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
-      }).positions
+        // Per-device provenance survives omitted rows; it must not be reset to
+        // unknown age merely because a later provider poll is partial.
+        cacheAgeMs: cacheWrittenAtByDevice.has(position.device_id)
+          ? Math.max(0, observedAt.getTime() - cacheWrittenAtByDevice.get(position.device_id)!) : null,
+      }).positions[0]!)
       const incomingDeviceIds = new Set(
         filtered.positions.map((position) => position.device_id),
       )
@@ -73,6 +86,7 @@ export function createOperationalPositionRetention(): OperationalPositionRetenti
         if (position.device_cache_stale) {
           positionsByDevice.delete(position.device_id)
           devicesById.delete(position.device_id)
+          cacheWrittenAtByDevice.delete(position.device_id)
           continue
         }
         positionsByDevice.set(position.device_id, position)

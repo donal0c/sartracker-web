@@ -1,0 +1,290 @@
+[2m[WebServer] [22m(node:47927) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[2m[WebServer] [22m(node:47946) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 4 tests using 1 worker
+
+(node:47950) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:47950) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/e2e/layer-panel.spec.ts:120:3 › M17 layer tree workflows › preserves expanded tree scroll while the catalog refreshes [DON-187] (1.7s)
+(node:47960) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:47960) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m8:44:25 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:25 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:25 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:25 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+  ✘  2 [chromium] › tests/e2e/settings.spec.ts:100:3 › M12 settings workspace › DON-229: offline polling exports sanitized request and poll-cycle evidence (14.4s)
+(node:48034) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:48034) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m8:44:39 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:39 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:39 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:39 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:40 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:40 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:40 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:40 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:41 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:41 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":2000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:43 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:43 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":4000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:45 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:45 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:47 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:47 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":8000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:50 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:50 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+  ✘  3 [chromium] › tests/e2e/settings.spec.ts:144:3 › M12 settings workspace › DON-228: incremental breadcrumb polling keeps sub-second points after the cursor (16.5s)
+(node:48083) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:48083) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m8:44:56 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:56 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:56 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:56 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:57 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:57 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:57 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:57 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:44:58 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:44:58 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":2000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:45:00 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:45:00 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":4000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:45:04 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:210:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1082:3
+[2m[WebServer] [22m8:45:04 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":8000,"error":"Durable history request recording is unavailable."}
+  ✘  4 [chromium] › tests/e2e/settings.spec.ts:245:3 › M12 settings workspace › large hosted breadcrumb history does not block current tracking status or exceed browser storage cap (16.6s)
+
+
+  1) [chromium] › tests/e2e/layer-panel.spec.ts:120:3 › M17 layer tree workflows › preserves expanded tree scroll while the catalog refreshes [DON-187] 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      132 |       }
+      133 |     })
+    > 134 |     expect(before.maxScrollTop).toBeGreaterThan(0)
+          |                                 ^
+      135 |     expect(before.scrollTop).toBeGreaterThan(0)
+      136 |
+      137 |     await page.evaluate(async () => {
+        at /private/tmp/sartracker-war06-baseline.2z7YH5/tests/e2e/layer-panel.spec.ts:134:33
+
+    Error Context: test-results/layer-panel-M17-layer-tree-c766a--catalog-refreshes-DON-187--chromium/error-context.md
+
+  2) [chromium] › tests/e2e/settings.spec.ts:100:3 › M12 settings workspace › DON-229: offline polling exports sanitized request and poll-cycle evidence 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected substring: [32m"\"requestedFromEarliest\""[39m
+    Received string:    [31m"Diagnostics Report[39m
+    [31mgenerated at: 2026-09-13T07:44:33.492Z[39m
+    [31mreport file: diagnostics-report-2026-09-13T07-44-33-492Z.txt·[39m
+    [31m[environment][39m
+    [31mruntime: browser validation[39m
+    [31mapp version: 0.1.0-beta.12.11+sha.c51e4b3537c4b026f7079dd40193a894cedcdd9f[39m
+    [31muser agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.15 Safari/537.36[39m
+    [31mdependencies: maplibre=yes, proj4=yes, turf=yes, zustand=yes, terradraw=yes·[39m
+    [31m[mission][39m
+    [31mphase: active[39m
+    [31mcurrent mission: Tracking Diagnostic Mission[39m
+    [31mgovernance mission: none[39m
+    [31mtotal missions: 1[39m
+    [31mrepair target: Tracking Diagnostic Mission·[39m
+    [31m[storage][39m
+    [31mschema version: 9[39m
+    [31mdatabase path: /tmp/browser-harness/mission-store.sqlite[39m
+    [31mbackup path: /tmp/browser-harness/mission-store.backup.sqlite[39m
+    [31mevidence health: healthy[39m
+    [31mevidence failure: none[39m
+    [31mevidence pending: 0[39m
+    [31mevidence corrupt: 0[39m
+    [31mevidence conflicts: 0[39m
+    [31mevidence rejections: 0[39m
+    [31mevidence affected device count: 0[39m
+    [31mlayer metadata entries: 0[39m
+    [31mlayer catalog state: healthy·[39m
+    [31m[configuration][39m
+    [31mmission model: disabled[39m
+    [31mprovider type: traccar_http[39m
+    [31mprovider url: http://traccar.test:8082[39m
+    [31mauth mode: basic[39m
+    [31mauto connect: yes[39m
+    [31mtracking cache: yes[39m
+    [31mofficial maps: not configured[39m
+    [31mofficial map source type: none[39m
+    [31mofficial map services: 0[39m
+    [31mofficial map packages: 0[39m
+    [31mofficial map packages ready: 0[39m
+    [31mruntime tracking configured: yes[39m
+    [31mautosave interval ms: 30000[39m
+    [31mtracking poll interval ms: 5000[39m
+    [31mstationary attention window ms: 1200000[39m
+    [31mstationary heartbeat tolerance ms: 120000[39m
+    [31mstationary movement floor m: 15[39m
+    [31mstationary accuracy factor: 2[39m
+    [31mstationary outlier reject m: 500·[39m
+    [31m[tracking][39m
+    [31mtracking mode: offline[39m
+    [31mconsecutive failures: 1[39m
+    [31mlast success: never[39m
+    [31mwarning: OFFLINE MODE — showing last known positions.[39m
+    [31mdevices in snapshot: 1[39m
+    [31mpositions in snapshot: 1[39m
+    [31mbreadcrumbs in snapshot: 1[39m
+    [31mbreadcrumb render retained: 1 of 1[39m
+    [31mbreadcrumb device 1: retained=1 total=1 first=2026-07-12T09:51:09.000Z last=2026-07-12T09:51:09.000Z truncated=no·[39m
+    [31m[coverage][39m
+    [31mstate: inactive or unavailable·[39m
+    [31m[tracking-poll-ledger][39m
+    [31mretention limit: 720[39m
+    [31mretained entry count: 13[39m
+    [31mcoverage start: 2026-09-13T07:44:25.011Z[39m
+    [31mcoverage end: 2026-09-13T07:44:32.565Z[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.011Z\",\"kind\":\"poll_cycle\",\"outcome\":\"success\",\"phase\":\"current_positions\",\"durationMs\":72,\"consecutiveFailures\":0,\"retryDelayMs\":5000,\"deviceCount\":1,\"currentPositionCount\":1}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.025Z\",\"kind\":\"breadcrumb_reconciliation\",\"outcome\":\"progress\",\"reconciliationPhase\":\"initial\",\"targetFrom\":\"2026-09-13T07:44:24.938Z\",\"targetTo\":\"2026-09-13T07:44:25.025Z\",\"totalDeviceCount\":1,\"completedDeviceCount\":0,\"totalChunkCount\":1,\"completedChunkCount\":0,\"pendingDeviceCount\":1,\"failedDeviceCount\":0,\"elapsedMs\":0}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.030Z\",\"kind\":\"poll_cycle\",\"outcome\":\"failure\",\"phase\":\"breadcrumbs\",\"durationMs\":14,\"consecutiveFailures\":0,\"retryDelayMs\":5000,\"failureKind\":\"unknown\",\"deviceCount\":1,\"breadcrumbRequestedDeviceCount\":1,\"breadcrumbReturnedCount\":0,\"breadcrumbAcceptedCount\":0,\"breadcrumbDuplicateCount\":0,\"breadcrumbRejectedCount\":0,\"breadcrumbFailedDeviceCount\":1}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.032Z\",\"kind\":\"breadcrumb_reconciliation\",\"outcome\":\"progress\",\"reconciliationPhase\":\"initial\",\"targetFrom\":\"2026-09-13T07:44:24.938Z\",\"targetTo\":\"2026-09-13T07:44:25.025Z\",\"totalDeviceCount\":1,\"completedDeviceCount\":0,\"totalChunkCount\":1,\"completedChunkCount\":0,\"pendingDeviceCount\":1,\"failedDeviceCount\":1,\"elapsedMs\":7}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.536Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"devices\",\"durationMs\":8,\"attempt\":1,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.536Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"current_positions\",\"durationMs\":8,\"attempt\":1,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:26.542Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"devices\",\"durationMs\":2,\"attempt\":2,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:26.542Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"current_positions\",\"durationMs\":2,\"attempt\":2,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:28.550Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"devices\",\"durationMs\":2,\"attempt\":3,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:28.550Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"current_positions\",\"durationMs\":2,\"attempt\":3,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:32.558Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"devices\",\"durationMs\":2,\"attempt\":4,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:32.565Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"current_positions\",\"durationMs\":9,\"attempt\":4,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:32.565Z\",\"kind\":\"poll_cycle\",\"outcome\":\"failure\",\"phase\":\"current_positions\",\"durationMs\":7046,\"consecutiveFailures\":1,\"retryDelayMs\":1000,\"failureKind\":\"http_5xx\"}·[39m
+    [31m[diagnostic-breadcrumbs][39m
+    [31mevent count: 11[39m
+    [31m{\"ts\":\"2026-09-13T07:44:24.305Z\",\"level\":\"info\",\"category\":\"map\",\"event\":\"map_health_changed\",\"fields\":{\"basemapId\":\"opentopomap\",\"status\":\"loading\",\"message\":\"Loading OpenTopoMap basemap\"}}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:24.831Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_snapshot_applied\",\"fields\":{\"deviceCount\":0,\"currentPositionCount\":0,\"breadcrumbCount\":0,\"retainedBreadcrumbCount\":0,\"observedBreadcrumbCount\":0,\"truncatedDeviceCount\":0,\"degradedGeometryDeviceCount\":0,\"maximumGeometryErrorBoundMetres\":0}}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:24.831Z\",\"level\":\"warn\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"idle\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.011Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_snapshot_applied\",\"fields\":{\"deviceCount\":1,\"currentPositionCount\":1,\"breadcrumbCount\":0,\"retainedBreadcrumbCount\":0,\"observedBreadcrumbCount\":0,\"truncatedDeviceCount\":0,\"degradedGeometryDeviceCount\":0,\"maximumGeometryErrorBoundMetres\":0}}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.011Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.025Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_snapshot_applied\",\"fields\":{\"deviceCount\":1,\"currentPositionCount\":1,\"breadcrumbCount\":1,\"retainedBreadcrumbCount\":1,\"observedBreadcrumbCount\":1,\"truncatedDeviceCount\":0,\"degradedGeometryDeviceCount\":0,\"maximumGeometryErrorBoundMetres\":0}}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.025Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.030Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.032Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:25.372Z\",\"level\":\"info\",\"category\":\"map\",\"event\":\"map_health_changed\",\"fields\":{\"basemapId\":\"opentopomap\",\"status\":\"ready\",\"message\":\"OpenTopoMap basemap ready\"}}[39m
+    [31m{\"ts\":\"2026-09-13T07:44:32.565Z\",\"level\":\"warn\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"offline\",\"consecutiveFailures\":1,\"recovered\":false,\"hasWarning\":true}}·[39m
+    [31m[warnings][39m
+    [31mOFFLINE MODE — showing last known positions."[39m
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      131 |       '"kind":"request_attempt"',
+      132 |     )
+    > 133 |     await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+          |     ^
+      134 |       '"requestedFromEarliest"',
+      135 |     )
+      136 |     await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+        at /private/tmp/sartracker-war06-baseline.2z7YH5/tests/e2e/settings.spec.ts:133:5
+
+    Error Context: test-results/settings-M12-settings-work-1b214-est-and-poll-cycle-evidence-chromium/error-context.md
+
+  3) [chromium] › tests/e2e/settings.spec.ts:144:3 › M12 settings workspace › DON-228: incremental breadcrumb polling keeps sub-second points after the cursor 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: >= [32m3[39m
+    Received:    [31m0[39m
+
+    Call Log:
+    - Timeout 15000ms exceeded while waiting on the predicate
+
+      168 |     await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
+      169 |
+    > 170 |     await expect
+          |     ^
+      171 |       .poll(() => cursorScenario.breadcrumbRequests.length, { timeout: 15_000 })
+      172 |       .toBeGreaterThanOrEqual(3)
+      173 |
+        at /private/tmp/sartracker-war06-baseline.2z7YH5/tests/e2e/settings.spec.ts:170:5
+
+    Error Context: test-results/settings-M12-settings-work-ae4fe-ond-points-after-the-cursor-chromium/error-context.md
+
+  4) [chromium] › tests/e2e/settings.spec.ts:245:3 › M12 settings workspace › large hosted breadcrumb history does not block current tracking status or exceed browser storage cap 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoContainText[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByTestId('breadcrumb-display-summary')
+    Expected substring: [32m"of at least [7m14,500[27m known fixes"[39m
+    Received string:    [31m"[7mTrail display simplified: showing 1 [27mof at least [7m2[27m known fixes[7m across the full route. Displayed route error is bounded to 25 metres. Full mission history remains stored.[27m"[39m
+    Timeout: 15000ms
+
+    Call log:
+    [2m  - Expect "toContainText" with timeout 15000ms[22m
+    [2m  - waiting for getByTestId('breadcrumb-display-summary')[22m
+    [2m    17 × locator resolved to <p data-testid="breadcrumb-display-summary" class="mb-4 border-l-4 px-3 py-2 text-xs font-medium leading-relaxed border-l-sky-400 bg-sky-400/10 text-sky-100">…</p>[22m
+    [2m       - unexpected value "Trail display simplified: showing 1 of at least 2 known fixes across the full route. Displayed route error is bounded to 25 metres. Full mission history remains stored."[22m
+
+
+      282 |     await expect(page.getByTestId('tracking-status')).toContainText('1', { timeout: 15_000 })
+      283 |     if (breadcrumbCount > 5_000) {
+    > 284 |       await expect(page.getByTestId('breadcrumb-display-summary')).toContainText(
+          |                                                                    ^
+      285 |         `of at least ${breadcrumbCount.toLocaleString()} known fixes`,
+      286 |         { timeout: 15_000 },
+      287 |       )
+        at /private/tmp/sartracker-war06-baseline.2z7YH5/tests/e2e/settings.spec.ts:284:68
+
+    Error Context: test-results/settings-M12-settings-work-d25e0--exceed-browser-storage-cap-chromium/error-context.md
+
+  4 failed
+    [chromium] › tests/e2e/layer-panel.spec.ts:120:3 › M17 layer tree workflows › preserves expanded tree scroll while the catalog refreshes [DON-187] 
+    [chromium] › tests/e2e/settings.spec.ts:100:3 › M12 settings workspace › DON-229: offline polling exports sanitized request and poll-cycle evidence 
+    [chromium] › tests/e2e/settings.spec.ts:144:3 › M12 settings workspace › DON-228: incremental breadcrumb polling keeps sub-second points after the cursor 
+    [chromium] › tests/e2e/settings.spec.ts:245:3 › M12 settings workspace › large hosted breadcrumb history does not block current tracking status or exceed browser storage cap 

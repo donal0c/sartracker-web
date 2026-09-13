@@ -18,12 +18,18 @@ import type {
   NormalizedTrackingPosition,
   TrackingSnapshot,
 } from '../../../../src/features/tracking/tracking-types'
-import { serializeTrackingCachePayload } from '../../../../src/features/tracking/tracking-cache-payload'
 import { applyTrackingSnapshot, useTrackingStore } from '../../../../src/features/tracking/tracking-store'
 import { useStationaryAttentionStore } from '../../../../src/features/tracking/stationary-attention-store'
 
 type CapturedPollerHooks = Parameters<StartTrackingRuntimeDependencies['createPoller']>[1]
 type RuntimeStop = Awaited<ReturnType<typeof startTrackingRuntime>>
+type MissionStore = StartTrackingRuntimeDependencies['missionStore']
+type PersistTrackingPositionsInput = Parameters<NonNullable<MissionStore['persistTrackingPositionsBulk']>>[0]
+
+type PersistedTrackingWrite = {
+  readonly missionId: string
+  readonly positionIds: readonly string[]
+}
 
 const FIXED_NOW = new Date('2026-04-06T10:35:00.000Z')
 const activeRuntimeStops = new Set<RuntimeStop>()
@@ -174,6 +180,14 @@ function stationaryHistory(prefix: string): readonly NormalizedTrackingPosition[
   ]
 }
 
+/** Creates a stationary history with timestamps distinct from Mission A fixtures. */
+function stationaryHistoryAfterMissionA(prefix: string): readonly NormalizedTrackingPosition[] {
+  return [
+    snapshot(`${prefix}-start`, { timestamp: '2026-04-06T10:10:00.000Z' }).positions[0]!,
+    snapshot(`${prefix}-heartbeat`, { timestamp: '2026-04-06T10:30:00.000Z' }).positions[0]!,
+  ]
+}
+
 /** Applies the same mission-scoped device-selection boundary as the production app runtime. */
 function applyCharacterizationSnapshot(nextSnapshot: TrackingSnapshot): void {
   const missionId = useMissionStore.getState().currentMission?.id ?? null
@@ -184,11 +198,91 @@ function applyCharacterizationSnapshot(nextSnapshot: TrackingSnapshot): void {
   )
 }
 
-/** Erases the visible publication only for the falsifiability control subprocess. */
-function applyNegativeControlBeforeOracle(): void {
-  if (process.env.WAR06_NEGATIVE_CONTROL !== 'drop-visible-publication') return
-  useTrackingStore.setState(useTrackingStore.getInitialState())
-  useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
+/** Injects a stale publication only for the falsifiability control subprocess. */
+function applyRepairControlBeforeOracle(staleSnapshot: TrackingSnapshot): void {
+  if (process.env.WAR06_NEGATIVE_CONTROL !== 'inject-stale-publication') return
+  applyCharacterizationSnapshot(staleSnapshot)
+}
+
+/** Asserts that no Mission A evidence crossed into the visible Mission B state. */
+function assertNoMissionAUnderMissionB(input: {
+  readonly oracle: string
+  readonly stalePositionIds: readonly string[]
+  readonly staleHistoryIds: readonly string[]
+  readonly staleStationarySinceTimestamps: readonly string[]
+  readonly publishedSnapshots?: readonly TrackingSnapshot[]
+  readonly publishedStationarySinceTimestamps?: readonly (string | null)[]
+}): void {
+  const trackingSnapshot = useTrackingStore.getState().snapshot
+  const stationary = useStationaryAttentionStore.getState()
+  const positionIds = trackingSnapshot.positions.map((position) => position.id)
+  const historyIds = trackingSnapshot.breadcrumbs.map((position) => position.id)
+  expect(useMissionStore.getState().currentMission?.id, `${input.oracle}: active mission changed unexpectedly`)
+    .toBe('mission-b')
+  for (const staleId of input.stalePositionIds) {
+    expect(positionIds, `${input.oracle}: stale Mission A current position ${staleId} remains visible under Mission B`)
+      .not.toContain(staleId)
+  }
+  for (const staleId of input.staleHistoryIds) {
+    expect(historyIds, `${input.oracle}: stale Mission A history ${staleId} remains visible under Mission B`)
+      .not.toContain(staleId)
+  }
+  const stationarySinceTimestamps = Object.values(stationary.byDevice)
+    .map((evaluation) => evaluation.sinceTimestamp)
+  for (const staleTimestamp of input.staleStationarySinceTimestamps) {
+    expect(stationarySinceTimestamps,
+      `${input.oracle}: stale Mission A stationary evidence ${staleTimestamp} remains under Mission B`)
+      .not.toContain(staleTimestamp)
+  }
+  for (const published of input.publishedSnapshots ?? []) {
+    const publishedPositionIds = published.positions.map((position) => position.id)
+    const publishedHistoryIds = published.breadcrumbs.map((position) => position.id)
+    for (const staleId of input.stalePositionIds) {
+      expect(publishedPositionIds,
+        `${input.oracle}: stale Mission A current position ${staleId} was published under Mission B`)
+        .not.toContain(staleId)
+    }
+    for (const staleId of input.staleHistoryIds) {
+      expect(publishedHistoryIds,
+        `${input.oracle}: stale Mission A history ${staleId} was published under Mission B`)
+        .not.toContain(staleId)
+    }
+  }
+  for (const publishedSinceTimestamp of input.publishedStationarySinceTimestamps ?? []) {
+    for (const staleTimestamp of input.staleStationarySinceTimestamps) {
+      expect(publishedSinceTimestamp,
+        `${input.oracle}: stale Mission A stationary evidence ${staleTimestamp} was projected under Mission B`)
+        .not.toBe(staleTimestamp)
+    }
+  }
+}
+
+/** Asserts that Mission B made progress after the stale producer settled. */
+function assertFreshMissionBProgress(input: {
+  readonly positionId: string
+  readonly historyIds?: readonly string[]
+}): void {
+  const trackingSnapshot = useTrackingStore.getState().snapshot
+  expect(trackingSnapshot.positions.map((position) => position.id)).toContain(input.positionId)
+  for (const historyId of input.historyIds ?? []) {
+    expect(trackingSnapshot.breadcrumbs.map((position) => position.id)).toContain(historyId)
+  }
+  expect(useStationaryAttentionStore.getState().missionId).toBe('mission-b')
+}
+
+/** Asserts that Mission B durable writes never adopted Mission A position ids. */
+function assertNoCrossMissionPersistence(
+  writes: readonly PersistedTrackingWrite[],
+  stalePositionIds: readonly string[],
+  oracle: string,
+): void {
+  for (const write of writes.filter((candidate) => candidate.missionId === 'mission-b')) {
+    for (const staleId of stalePositionIds) {
+      expect(write.positionIds,
+        `${oracle}: stale Mission A position ${staleId} was persisted under Mission B`)
+        .not.toContain(staleId)
+    }
+  }
 }
 
 function createDeferred<T>(): {
@@ -215,6 +309,13 @@ async function flushMicrotasksUntil(
     await Promise.resolve()
   }
   throw new Error(`WAR-06 harness did not reach ${description} after ${MAX_MICROTASK_TURNS} microtask turns.`)
+}
+
+/** Drains settled publication continuations without waiting for unsafe output. */
+async function drainMicrotasks(): Promise<void> {
+  for (let index = 0; index < MAX_MICROTASK_TURNS; index += 1) {
+    await Promise.resolve()
+  }
 }
 
 async function createMissionController(): Promise<Awaited<ReturnType<typeof startMissionRuntime>>> {
@@ -261,6 +362,7 @@ async function startCharacterizationRuntime(input: {
   readonly cacheRead?: () => Promise<string | null>
   readonly createPoller?: StartTrackingRuntimeDependencies['createPoller']
   readonly createClient?: () => unknown
+  readonly missionStore?: Partial<MissionStore>
 }): Promise<{
   readonly stop: RuntimeStop
   readonly hooks: CapturedPollerHooks
@@ -301,6 +403,7 @@ async function startCharacterizationRuntime(input: {
         insertedPositionCount: 0,
         skippedAmbiguousLegacyAdoptionCount: 0,
       }),
+      ...input.missionStore,
     },
     applySnapshot: input.applySnapshot ?? vi.fn(),
     applyStatus: vi.fn(),
@@ -337,22 +440,26 @@ async function startCharacterizationRuntime(input: {
 }
 
 /**
- * These are intentionally red characterization tests, not acceptance gates.
- * When WAR-06.md is repaired, invert each defect assertion into a non-regression
- * guard rather than weakening it to an empty-result assertion. Keep the route
- * description and the repair evidence linked to docs/assurance/findings/war-06/WAR-06.md.
+ * These are repair oracles. They are expected to remain RED against the current
+ * unrepaired production routes and turn GREEN only after production rejects
+ * cross-mission publication. Keep each route description linked to
+ * docs/assurance/findings/war-06/WAR-06.md.
  */
-describe.sequential('WAR-06 reachable lifecycle characterization (intentional red)', () => {
-it('reproduces stale history publication at the real delayed poller flush [WAR-06-AUD-01]', async () => {
+describe.sequential('WAR-06 reachable lifecycle repair oracles', () => {
+it('rejects stale history publication at the real delayed poller flush [WAR-06-AUD-01-REPAIR]', async () => {
   const controller = await createMissionController()
   await controller.startMission({ name: 'Mission A' })
   useActiveMissionDevicesStore.getState().setDeviceActive('mission-a', 'device-1', true)
   let currentScope = scopeForMission('mission-a')
   const missionACurrent = snapshot('mission-a-current')
   const missionAHistory = stationaryHistory('mission-a-history')
-  const missionBCurrent = snapshot('mission-b-current')
-  const pendingMissionBCurrent = createDeferred<readonly NormalizedTrackingPosition[]>()
-  pendingDeferredResolutions.add(() => pendingMissionBCurrent.resolve(missionBCurrent.positions))
+  const missionALateCurrent = snapshot('mission-a-late-current')
+  const missionBCurrent = snapshot('mission-b-current', {
+    timestamp: '2026-04-06T10:35:00.000Z',
+  })
+  const pendingMissionALateCurrent = createDeferred<readonly NormalizedTrackingPosition[]>()
+  pendingDeferredResolutions.add(() => pendingMissionALateCurrent.resolve(missionALateCurrent.positions))
+  const missionBHistory = stationaryHistoryAfterMissionA('mission-b-history')
   const pendingSecondHistoryPersistence = createDeferred<void>()
   pendingDeferredResolutions.add(() => pendingSecondHistoryPersistence.resolve())
   let currentPollCount = 0
@@ -360,6 +467,18 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
   let requestPollNowCallCount = 0
   const scheduledDelays: number[] = []
   let initialHistoryPersistenceCount = 0
+  const persistedWrites: PersistedTrackingWrite[] = []
+  const persistTrackingPositionsBulk = vi.fn(async (input: PersistTrackingPositionsInput) => {
+    persistedWrites.push({
+      missionId: input.mission_id,
+      positionIds: input.positions.map((position) => position.source_position_id ?? ''),
+    })
+    return {
+      changedPositionCount: input.positions.length,
+      insertedPositionCount: input.positions.length,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    }
+  })
   const persistHistoryChunk = vi.fn((input: TrackingHistoryChunkPersistenceInput) => {
     if (input.phase !== 'initial') return Promise.resolve()
     initialHistoryPersistenceCount += 1
@@ -367,6 +486,7 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
       ? Promise.resolve({ changed: false })
       : pendingSecondHistoryPersistence.promise.then(() => ({ changed: false }))
   })
+  let historyFetchCount = 0
   const client: TrackingPollerClient = {
     authenticate: vi.fn().mockResolvedValue(undefined),
     getDevices: vi.fn().mockResolvedValue(missionACurrent.devices),
@@ -374,13 +494,19 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
       currentPollCount += 1
       return currentPollCount === 1
         ? Promise.resolve(missionACurrent.positions)
-        : pendingMissionBCurrent.promise
+        : currentPollCount === 2
+          ? pendingMissionALateCurrent.promise
+          : Promise.resolve(missionBCurrent.positions)
     }),
-    getBreadcrumbs: vi.fn().mockResolvedValue(missionAHistory),
+    getBreadcrumbs: vi.fn(() => {
+      historyFetchCount += 1
+      return Promise.resolve(historyFetchCount === 1 ? missionAHistory : missionBHistory)
+    }),
   }
   const { notifyScopeChanged } = await startCharacterizationRuntime({
     createClient: () => client,
     applySnapshot: applyCharacterizationSnapshot,
+    missionStore: { persistTrackingPositionsBulk },
     scopeStatus: () => 'ready',
     readScope: () => currentScope,
     subscribeScope: () => () => undefined,
@@ -443,31 +569,53 @@ it('reproduces stale history publication at the real delayed poller flush [WAR-0
   expect(requestPollNowCallCount).toBe(3)
   expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
   await vi.advanceTimersByTimeAsync(100)
-  await flushMicrotasksUntil(
-    () => useTrackingStore.getState().snapshot.breadcrumbs.some((position) => position.id === missionAHistory[0]!.id),
-    'the stale Mission A history publication',
-  )
-  applyNegativeControlBeforeOracle()
+  await drainMicrotasks()
+  const staleMissionASnapshot = {
+    ...missionACurrent,
+    breadcrumbs: missionAHistory,
+  }
+  applyRepairControlBeforeOracle(staleMissionASnapshot)
+  assertNoMissionAUnderMissionB({
+    oracle: 'WAR-06 AUD-01 repair safety oracle',
+    stalePositionIds: missionACurrent.positions.map((position) => position.id),
+    staleHistoryIds: missionAHistory.map((position) => position.id),
+    staleStationarySinceTimestamps: missionAHistory.map((position) => position.timestamp),
+  })
 
-  expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id),
-    'WAR-06 AUD-01 safety oracle: stale Mission A current coordinates remain visible under Mission B')
-    .toContain(missionACurrent.positions[0]!.id)
-  expect(useTrackingStore.getState().snapshot.breadcrumbs.map((position) => position.id),
-    'WAR-06 AUD-01 safety oracle: stale Mission A history remains visible under Mission B')
-    .toContain(missionAHistory[0]!.id)
-  expect(useStationaryAttentionStore.getState(),
-    'WAR-06 AUD-01 safety oracle: stale Mission A fix feeds Mission B stationary projection')
-    .toMatchObject({
-      missionId: 'mission-b',
-      byDevice: { 'device-1': { state: 'attention', sinceTimestamp: missionAHistory[0]!.timestamp } },
-    })
-
-  pendingMissionBCurrent.resolve(missionBCurrent.positions)
+  pendingMissionALateCurrent.resolve(missionALateCurrent.positions)
   pendingSecondHistoryPersistence.resolve()
+  await flushMicrotasksUntil(
+    () => client.getCurrentPositions.mock.calls.length >= 3,
+    'the fresh Mission B current-position request',
+  )
+  await flushMicrotasksUntil(
+    () => useTrackingStore.getState().snapshot.positions.some((position) => position.id === missionBCurrent.positions[0]!.id),
+    'the fresh Mission B current-position publication',
+  )
+  await vi.advanceTimersByTimeAsync(100)
+  await flushMicrotasksUntil(
+    () => useTrackingStore.getState().snapshot.breadcrumbs.some((position) => position.id === missionBHistory[0]!.id),
+    'the fresh Mission B history publication',
+  )
+  assertFreshMissionBProgress({
+    positionId: missionBCurrent.positions[0]!.id,
+    historyIds: missionBHistory.map((position) => position.id),
+  })
+  assertNoMissionAUnderMissionB({
+    oracle: 'WAR-06 AUD-01 repair safety oracle',
+    stalePositionIds: missionACurrent.positions.map((position) => position.id),
+    staleHistoryIds: missionAHistory.map((position) => position.id),
+    staleStationarySinceTimestamps: missionAHistory.map((position) => position.timestamp),
+  })
+  assertNoCrossMissionPersistence(
+    persistedWrites,
+    missionACurrent.positions.map((position) => position.id),
+    'WAR-06 AUD-01 repair safety oracle',
+  )
   pendingDeferredResolutions.clear()
 })
 
-it('reproduces deferred stale current-fix publication through finish-idle-start while a poll is in flight [WAR-06-AUD-02]', async () => {
+it('rejects deferred stale current-fix publication through finish-idle-start while a poll is in flight [WAR-06-AUD-02-REPAIR]', async () => {
   const controller = await createMissionController()
   await controller.startMission({ name: 'Mission A' })
   useActiveMissionDevicesStore.getState().setDeviceActive('mission-a', 'device-1', true)
@@ -475,17 +623,46 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
   let currentScope = scopeForMission('mission-a')
   const missionAHistory = stationaryHistory('mission-a-deferred-history')
   const missionACurrentFix = snapshot('mission-a-deferred-fix')
+  const missionBHistory = stationaryHistoryAfterMissionA('mission-b-deferred-history')
+  const missionBCurrentFix = snapshot('mission-b-fresh-fix', {
+    timestamp: '2026-04-06T10:35:00.000Z',
+  })
   const missionACurrent: TrackingSnapshot = {
     ...missionACurrentFix,
     positions: [...missionAHistory, ...missionACurrentFix.positions],
   }
   let finishRequested: Promise<Mission | null> | null = null
   let requestPollNowCallCount = 0
+  const persistedWrites: PersistedTrackingWrite[] = []
+  const persistTrackingPositionsBulk = vi.fn(async (input: PersistTrackingPositionsInput) => {
+    persistedWrites.push({
+      missionId: input.mission_id,
+      positionIds: input.positions.map((position) => position.source_position_id ?? ''),
+    })
+    return {
+      changedPositionCount: input.positions.length,
+      insertedPositionCount: input.positions.length,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    }
+  })
+  let currentPollCount = 0
+  const publishedSnapshots: TrackingSnapshot[] = []
+  const publishedStationarySinceTimestamps: Array<string | null> = []
+  const applySnapshot = (nextSnapshot: TrackingSnapshot): void => {
+    publishedSnapshots.push(nextSnapshot)
+    applyCharacterizationSnapshot(nextSnapshot)
+    publishedStationarySinceTimestamps.push(
+      Object.values(useStationaryAttentionStore.getState().byDevice)[0]?.sinceTimestamp ?? null,
+    )
+  }
   const client: TrackingPollerClient = {
     authenticate: vi.fn().mockResolvedValue(undefined),
     getDevices: vi.fn().mockResolvedValue(missionACurrent.devices),
-    getCurrentPositions: vi.fn().mockResolvedValue(missionACurrent.positions),
-    getBreadcrumbs: vi.fn().mockResolvedValue(missionAHistory),
+    getCurrentPositions: vi.fn(() => {
+      currentPollCount += 1
+      return Promise.resolve(currentPollCount === 1 ? missionACurrent.positions : missionBCurrentFix.positions)
+    }),
+    getBreadcrumbs: vi.fn().mockResolvedValue(missionBHistory),
   }
   let replacement: Promise<Mission> | null = null
   const unsubscribeMissionTransition = useMissionStore.subscribe((state) => {
@@ -497,7 +674,8 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
   try {
     const runtime = await startCharacterizationRuntime({
       createClient: () => client,
-      applySnapshot: applyCharacterizationSnapshot,
+      applySnapshot,
+      missionStore: { persistTrackingPositionsBulk },
       scopeStatus: () => scopeStatus,
       readScope: () => currentScope,
       subscribeScope: () => () => undefined,
@@ -559,20 +737,47 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
     scopeStatus = 'ready'
     runtime.notifyScopeChanged()
 
+    await drainMicrotasks()
+    const staleMissionASnapshot = {
+      ...missionACurrent,
+      breadcrumbs: missionAHistory,
+    }
+    applyRepairControlBeforeOracle(staleMissionASnapshot)
+    assertNoMissionAUnderMissionB({
+      oracle: 'WAR-06 AUD-02 repair safety oracle',
+      stalePositionIds: missionACurrent.positions.map((position) => position.id),
+      staleHistoryIds: missionAHistory.map((position) => position.id),
+      staleStationarySinceTimestamps: missionAHistory.map((position) => position.timestamp),
+      publishedSnapshots,
+      publishedStationarySinceTimestamps,
+    })
+
     await flushMicrotasksUntil(
-      () => useTrackingStore.getState().snapshot.positions.some((position) => position.id === 'mission-a-deferred-fix'),
-      'the deferred Mission A current-fix publication',
+      () => useTrackingStore.getState().snapshot.positions.some((position) => position.id === missionBCurrentFix.positions[0]!.id),
+      'the fresh Mission B current-fix publication',
     )
-    applyNegativeControlBeforeOracle()
-    expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id),
-      'WAR-06 AUD-02 safety oracle: deferred Mission A current fix remains visible under Mission B')
-      .toContain('mission-a-deferred-fix')
-    expect(useStationaryAttentionStore.getState(),
-      'WAR-06 AUD-02 safety oracle: deferred Mission A fix feeds Mission B stationary projection')
-      .toMatchObject({
-        missionId: 'mission-b',
-        byDevice: { 'device-1': { state: 'attention', sinceTimestamp: missionAHistory[0]!.timestamp } },
-      })
+    await vi.advanceTimersByTimeAsync(100)
+    await flushMicrotasksUntil(
+      () => useTrackingStore.getState().snapshot.breadcrumbs.some((position) => position.id === missionBHistory[0]!.id),
+      'the fresh Mission B history publication',
+    )
+    assertFreshMissionBProgress({
+      positionId: missionBCurrentFix.positions[0]!.id,
+      historyIds: missionBHistory.map((position) => position.id),
+    })
+    assertNoMissionAUnderMissionB({
+      oracle: 'WAR-06 AUD-02 repair safety oracle',
+      stalePositionIds: missionACurrent.positions.map((position) => position.id),
+      staleHistoryIds: missionAHistory.map((position) => position.id),
+      staleStationarySinceTimestamps: missionAHistory.map((position) => position.timestamp),
+      publishedSnapshots,
+      publishedStationarySinceTimestamps,
+    })
+    assertNoCrossMissionPersistence(
+      persistedWrites,
+      missionACurrent.positions.map((position) => position.id),
+      'WAR-06 AUD-02 repair safety oracle',
+    )
 
     pendingDeferredResolutions.clear()
   } finally {
@@ -580,7 +785,7 @@ it('reproduces deferred stale current-fix publication through finish-idle-start 
   }
 })
 
-it('characterizes the unkeyed cached snapshot on Mission B cold start [WAR-06-CACHE-SIBLING]', async () => {
+it('rejects the unkeyed cached snapshot on Mission B cold start [WAR-06-CACHE-SIBLING-REPAIR]', async () => {
   const controller = await createMissionController()
   await controller.startMission({ name: 'Mission A' })
   await controller.finishMission()
@@ -592,34 +797,106 @@ it('characterizes the unkeyed cached snapshot on Mission B cold start [WAR-06-CA
     timestamp: '2026-04-06T10:34:00.000Z',
     breadcrumbs: stationaryHistory('mission-a-cached-history'),
   })
-  const cachedContents = serializeTrackingCachePayload({
+  // Keep this as a literal legacy fixture. A serializer that now requires an
+  // explicit mission identity must not make the unkeyed-cache oracle disappear.
+  const cachedContents = JSON.stringify({
     cached_at: '2026-04-06T10:34:00.000Z',
     devices: cachedSnapshot.devices,
     positions: cachedSnapshot.positions,
     breadcrumbs: cachedSnapshot.breadcrumbs,
   })
+  const missionBHistory = stationaryHistoryAfterMissionA('mission-b-cache-history')
+  const missionBCurrent = snapshot('mission-b-cache-fresh-fix', {
+    timestamp: '2026-04-06T10:35:00.000Z',
+    breadcrumbs: missionBHistory,
+  })
+  const publishedSnapshots: TrackingSnapshot[] = []
+  const publishedStationarySinceTimestamps: Array<string | null> = []
+  const persistedWrites: PersistedTrackingWrite[] = []
+  const persistTrackingPositionsBulk = vi.fn(async (input: PersistTrackingPositionsInput) => {
+    persistedWrites.push({
+      missionId: input.mission_id,
+      positionIds: input.positions.map((position) => position.source_position_id ?? ''),
+    })
+    return {
+      changedPositionCount: input.positions.length,
+      insertedPositionCount: input.positions.length,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    }
+  })
+  const applySnapshot = (nextSnapshot: TrackingSnapshot): void => {
+    publishedSnapshots.push(nextSnapshot)
+    applyCharacterizationSnapshot(nextSnapshot)
+    publishedStationarySinceTimestamps.push(
+      Object.values(useStationaryAttentionStore.getState().byDevice)[0]?.sinceTimestamp ?? null,
+    )
+  }
+  const client: TrackingPollerClient = {
+    authenticate: vi.fn().mockResolvedValue(undefined),
+    getDevices: vi.fn().mockResolvedValue(missionBCurrent.devices),
+    getCurrentPositions: vi.fn().mockResolvedValue(missionBCurrent.positions),
+    getBreadcrumbs: vi.fn().mockResolvedValue(missionBHistory),
+  }
   await startCharacterizationRuntime({
     cacheRead: vi.fn().mockResolvedValue(cachedContents),
-    applySnapshot: applyCharacterizationSnapshot,
+    applySnapshot,
+    missionStore: { persistTrackingPositionsBulk },
     scopeStatus: () => 'ready',
     readScope: () => currentScope,
     subscribeScope: () => () => undefined,
+    createClient: () => client,
+    createPoller: (pollerClient, hooks) => createPollingManager(
+      pollerClient as TrackingPollerClient,
+      {
+        intervalMs: 5_000,
+        staleThresholdMs: 60 * 60 * 1000,
+        getPollingMode: () => {
+          const phase = useMissionStore.getState().phase
+          return phase === 'active' || phase === 'paused' ? phase : 'idle'
+        },
+        getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
+        getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+        getBreadcrumbDeviceIds: () => useActiveMissionDevicesStore.getState().getActiveDeviceIds(
+          useMissionStore.getState().currentMission?.id ?? null,
+        ),
+        getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
+        ...withoutHistoryPersistenceHooks(hooks),
+        now: () => FIXED_NOW,
+        setTimeout: globalThis.setTimeout,
+        clearTimeout: globalThis.clearTimeout,
+      },
+    ),
   })
 
-  // Electron has one global tracking-cache.json. A relaunch while Mission B is
-  // already active rehydrates Mission A's cached fix without any lifecycle
-  // choreography or participant-scope delay.
-  expect(useMissionStore.getState().currentMission?.id).toBe('mission-b')
-  applyNegativeControlBeforeOracle()
-
-  expect(useTrackingStore.getState().snapshot.positions.map((position) => position.id),
-    'WAR-06 CACHE-SIBLING safety oracle: Mission A cache remains visible under Mission B')
-    .toEqual(['mission-a-cached-fix'])
-  expect(useStationaryAttentionStore.getState(),
-    'WAR-06 CACHE-SIBLING safety oracle: Mission A cache feeds Mission B stationary projection')
-    .toMatchObject({
-      missionId: 'mission-b',
-      byDevice: { 'device-1': { state: 'attention', sinceTimestamp: cachedSnapshot.breadcrumbs[0]!.timestamp } },
-    })
+  // Electron has one global tracking-cache.json. This serialized payload is the
+  // legacy unkeyed form and must be discarded when Mission B is already active.
+  await flushMicrotasksUntil(
+    () => useTrackingStore.getState().snapshot.positions.some((position) => position.id === missionBCurrent.positions[0]!.id),
+    'the fresh Mission B current-position publication after cold start',
+  )
+  await vi.advanceTimersByTimeAsync(100)
+  await flushMicrotasksUntil(
+    () => useTrackingStore.getState().snapshot.breadcrumbs.some((position) => position.id === missionBHistory[0]!.id),
+    'the fresh Mission B history publication after cold start',
+  )
+  const staleMissionASnapshot = cachedSnapshot
+  applyRepairControlBeforeOracle(staleMissionASnapshot)
+  assertNoMissionAUnderMissionB({
+    oracle: 'WAR-06 CACHE-SIBLING repair safety oracle',
+    stalePositionIds: cachedSnapshot.positions.map((position) => position.id),
+    staleHistoryIds: cachedSnapshot.breadcrumbs.map((position) => position.id),
+    staleStationarySinceTimestamps: cachedSnapshot.breadcrumbs.map((position) => position.timestamp),
+    publishedSnapshots,
+    publishedStationarySinceTimestamps,
+  })
+  assertFreshMissionBProgress({
+    positionId: missionBCurrent.positions[0]!.id,
+    historyIds: missionBHistory.map((position) => position.id),
+  })
+  assertNoCrossMissionPersistence(
+    persistedWrites,
+    cachedSnapshot.positions.map((position) => position.id),
+    'WAR-06 CACHE-SIBLING repair safety oracle',
+  )
 })
 })

@@ -1,6 +1,6 @@
 # Coordinated Team, Audit, and WAR Work Ledger
 
-Updated: 2026-09-12
+Updated: 2026-09-13
 
 Status: active coordination record. The canonical execution order remains
 `docs/two-track-execution-workplan.md`; this ledger prevents the three current
@@ -52,6 +52,22 @@ head.
 
 ## Current merged disposition
 
+Current baseline is `deedab27483ad4fe1ca998a4d68afd555f4e2337`: PR24/WAR-02B
+is merged after PR23. DON-267 and DON-254 are In Progress in Linear; historical
+Done statements below describe previous receipts. Original DON-267 PR1/PR4/PR17
+fixes remain merged and valid. Only WAR-06-AUD-01/AUD-02/CACHE-SIBLING are active
+under reopened DON-267. The [production repair record](findings/war-06/mission-scope-repair.md)
+owns their new red/green evidence; the investigation report remains historical proof.
+Claude's review of PR26 at `7fc4aa08` withdrew the earlier readiness verdict.
+The [remediation record](findings/war-06/claude-review-remediation.md) now owns
+cache/live merge, truthful status, retained cache health and actual timer mutation
+proof. Earlier review/test receipts below are historical, not current acceptance.
+Two parallel streams have disjoint production ownership: mission-scope tracking/cache
+on `codex/don-267-war06-mission-scope-repair`, and separate legacy recovery on
+`codex/don-254-legacy-recovery-responsiveness`. Intended merge order is DON-267,
+then DON-254 reconciled onto that master. Donal owns merge. Release HOLD and all
+retained strict 200 ms failures remain; qualification is later on the combined candidate.
+
 PR22, PR20, diagnostic-only PR21, PR19, and PR23 are merged. PR19 merged at
 `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37` after reconciliation against
 `f4d1f3214ddc82b0df043c85a340b3872ba90a80`. It retains the independent
@@ -62,8 +78,8 @@ correctness checks, lint/build/bundle budgets, and three real Electron controls
 pass for PR21; CI `34683600517` and independent review cleared that candidate.
 PR19’s ordinary CI and four final accumulated-diff reviews are complete. Its
 [repair record](findings/repair-train-b.md) separates historical and current
-proof. DON-254 remains the final-candidate qualification owner and is now Done
-in Linear; qualification remains incomplete and release remains HOLD.
+proof. DON-254 remains the final-candidate qualification owner and is In Progress
+for the separate legacy recovery repair; qualification remains incomplete and release remains HOLD.
 PR23 is merged to `origin/master` at
 `1fac099a9f581448a5a607a063e2a8b77fa9b151` from final implementation head
 `45420208`; its terminal receipt records the bounded lossless transport,
@@ -96,7 +112,7 @@ implementation alone.
 | `AUD-13` overlapping reloads can stop tracking while Live remains shown | P1 | **Merged in PR #17 at `302bdd04`; WAR-06 recheck active** | `DON-267` Done / `DON-254`; application `713461bf` | Native reconnect/current continuity, retryable cleanup, admission and accepted-fix/rejection SQLite custody pass; four reviews and matching Linux CI pass. [Remediation](findings/repair-train-a-remediation.md) |
 | `AUD-02` out-and-back route falsely appears stationary | P2 | **Merged in PR #17 at `302bdd04`; WAR-06 recheck active** | `DON-269` Done; `TRK-004` / `WAR-06`; twenty-minute rule retained | Route, accuracy/jitter, exact elapsed and acknowledgement through noise-return pass; three rendered flows and independent review clear. [Remediation](findings/repair-train-a-remediation.md) |
 | `AUD-03` stationary projection broadly rescans mission history | P1 | **Merged in PR #17 at `302bdd04`; WAR-06 recheck active** | `DON-269` Done / `DON-254`; final qualification remains separate | Real interleaved 100×5,000 accumulator bound passes; guarded incremental renderer maximum 78.5 ms <200 with post-operation samples. Cold-load and broader soak outliers remain outside this proof. [Remediation](findings/repair-train-a-remediation.md) |
-| `WAR-06-AUD-01`, `WAR-06-AUD-02`, `WAR-06-CACHE-SIBLING` lifecycle/cache boundary | P1 candidate | **Reachable-route evidence correction in PR #20; production hazard remains open** | `DON-267` / `DON-254` (Done in Linear; qualification remains incomplete); WAR-06 branch `codex/war-06-tracking-lifecycle`; corrected characterization commit `d96e51c8` based on `3db57a79` | Three passing intentional-red characterizations plus a 3-GREEN/3-RED negative-control proof: delayed history timer during a real finish → idle → start transition, real poller-to-runtime current-fix callback with mission-wake coalescing during hydration, and cold-start read of the unkeyed global cache under Mission B. The production status bridge, mission-selected device filters and write-enabled cache configuration are included; remaining synthetic-provider/local-store/direct-publication/in-memory-cache limits are explicit. Prior reviews `5175815340` and `5176300059` are historical provenance, not current approval. No production fix or closure. Executable-head CI `34650688441` is recorded in-repo; PR-mode timing/replay/packaged skips remain explicit gaps. Require the production repair train to preserve the reachable routes, then red/green current-position/stationary/persistence/browser/package proof. Retain unresolved strict 200 ms failures; PR21 and PR19 are merged. [WAR-06 report](findings/war-06/WAR-06.md) · [Receipts](findings/war-06/review-receipts.md) · [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks) |
+| `WAR-06-AUD-01`, `WAR-06-AUD-02`, `WAR-06-CACHE-SIBLING` lifecycle/cache boundary | P1 | **Claude findings addressed locally; final-head CI and Donal re-review required** | `DON-267` In Progress; PR26 from `deedab27`; DON-254 owns separate recovery/qualification | Stable local 4,684 tests / 444 files, six existing timing exclusions; focused 254, three browser flows, lint/build and five-launch mac-arm64 cache smoke pass. M1/M3b/M13 and final timer predicate mutants fail the new observable assertions. Same-run Codex reviews are not external approval. Native coverage/listener warnings and earlier baseline browser failures remain recorded. PR26/DON-267 carry final-head CI and Linux terminal receipt; Donal owns merge, release HOLD remains. [Remediation](findings/war-06/claude-review-remediation.md) · [Historical investigation](findings/war-06/WAR-06.md) |
 | `AUD-01` legal GPX extension fields overwrite canonical evidence/add a coordinate | P1 | **Merged in PR19 at `d20bae5f`** | `DON-274` Done / `DON-254` Done in Linear; original red/green at `302bdd04`, reconciliation base `f4d1f321` | Canonical source-to-SQLite/replay, exact bytes/digest and native/browser proof in [Train B record](findings/repair-train-b.md); historical saved interpretations remain B-ADJ-01 |
 | `AUD-10` native GPX parser drops CDATA values | P2 | **Merged in PR19 at `d20bae5f`** | `DON-274` Done; same parser/source-fidelity contract as `AUD-01` | Browser/native corpus parity, exact persisted/restarted evidence; [Train B record](findings/repair-train-b.md) |
 | `AUD-05` ending an outing during successful GPX import leaves stale importing UI | P2 | **Merged in PR19 at `d20bae5f`** | `DON-274` Done / `DON-270` original completed history; generation-owned import settlement, stale-page/error containment | Red/green interleavings, truthful completion and native custody; [Train B record](findings/repair-train-b.md). Late-refresh failure now retains the settled import error |
@@ -162,7 +178,8 @@ repair train.
   `<200 ms` qualification. Current-head red reproduction still controls
   whether each remaining repair is valid.
 - WAR: WAR-01, WAR-04, WAR-04B, WAR-11A, WAR-13A, and WAR-02A are merged.
-  WAR-06 is active as an investigation-only tracking-lifecycle audit. WAR-04's nine confirmed
+  WAR-06 now has an active DON-267 production mission-scope repair; its original
+  investigation remains historical evidence. WAR-04's nine confirmed
   map/settings/privacy defects remain additional WAR-11 remediation inputs.
   Remaining WAR investigation/test slices continue according to prerequisites;
   WAR-12/final candidate qualification remains last.
