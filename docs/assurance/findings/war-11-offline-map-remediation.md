@@ -454,3 +454,13 @@ Fresh exact-head CI remains required. PR28 stays draft until Train D merges unde
 owner authority and affected integration checks finish. No further local Electron
 launch/build, merge, release or licensed/private-provider work occurred. All prior
 failures and the original native crash remain retained; release HOLD is unchanged.
+### CI-only workflow contract correction
+
+CI `34782626004` at `9134a353` failed one stale text assertion after 4,848 tests
+passed; later browser/package checks were not reached. The full local cycle
+preceded the CI-only quoting change, and validation of that delta missed the
+existing workflow contract suite. Only its expected literal is corrected to
+`git rev-parse 'HEAD^{tree}'`; workflow/runtime semantics remain unchanged.
+Local red: one failed/seven passed. Green: eight passed, actionlint and lint pass.
+[Failed run and escape analysis](../../evidence/war-11-map/linux-ci-34782626004/README.md)
+remain separate from the source repair evidence. Fresh full exact-head CI is required.

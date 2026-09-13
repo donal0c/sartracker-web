@@ -42,7 +42,11 @@ The frozen 1,174 inputs matched at completion. A separately bound CI-only delta
 adds the four browser flows before packaging; exact command, actionlint and
 independent map-safety/workflow reviews pass. Evidence and invalid mixed-run
 provenance are in the WAR-11 record. Fresh remote CI is still required.
-No further local Electron/build. Next: push this verified repair/evidence and obtain exact-head CI on draft PR28,
+CI `34782626004` at `9134a353` failed one workflow text-contract assertion after
+4,848 tests passed: quoted Git ref versus stale unquoted expectation. Only the
+expectation is corrected; local red 1/8, green 8/8, actionlint/lint pass. Runtime
+and workflow are unchanged. Fresh full CI is required; failed evidence is retained.
+No further local Electron/build. Next: push the reviewed contract correction and obtain exact-head CI on draft PR28,
 then integrate Train D after its merge and recheck affected inputs.
 The source is committed/pushed; no merge or release has been made. The manual now
 distinguishes package validation from checked-view coverage; native proof remains open.
