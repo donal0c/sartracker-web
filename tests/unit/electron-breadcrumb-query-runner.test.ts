@@ -6,38 +6,134 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
+import { createBreadcrumbRecordDecoder } from '../../src/infrastructure/mission-store/breadcrumb-query-client'
 import { normalizeTraccarPosition } from '../../src/features/tracking/traccar-normalization'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
-const { runBreadcrumbQueryInWorker } = require(
-  '../../electron/breadcrumb-query-runner.cjs',
+const { startBreadcrumbQuerySession } = require(
+  '../../electron/breadcrumb-query-session.cjs',
 ) as {
-  readonly runBreadcrumbQueryInWorker: (input: {
+  readonly startBreadcrumbQuerySession: (input: {
     readonly databasePath: string
     readonly missionId: string
     readonly perDeviceLimit: number
     readonly workerPath?: string
     readonly timeoutMs?: number
     readonly signal?: AbortSignal
-  }) => Promise<{
-    readonly positions: readonly {
-      readonly source_position_id: string | null
-    }[]
-    readonly deviceTotals: readonly {
-      readonly device_id: string
-      readonly total: number
-    }[]
-    readonly deviceSelections: readonly {
+  }) => Promise<BreadcrumbQuerySession>
+}
+
+type BreadcrumbQueryManifest = {
+  readonly version: number
+  readonly positionCount: number
+  readonly deviceTotalCount: number
+  readonly deviceSelectionCount: number
+  readonly droppedPositionCount: number
+}
+type BreadcrumbQueryFrame = {
+  readonly sequence: number
+  readonly payload: string
+  readonly done: boolean
+}
+type BreadcrumbQuerySession = {
+  readonly workerThreadId: number
+  readonly manifest: BreadcrumbQueryManifest
+  readonly read: (sequence: number) => Promise<BreadcrumbQueryFrame>
+  readonly finish: () => Promise<void>
+  readonly cancel: () => Promise<void>
+  readonly completion: Promise<void>
+}
+type BreadcrumbQueryResult = {
+  readonly positions: readonly { readonly source_position_id: string | null }[]
+  readonly deviceTotals: readonly { readonly device_id: string; readonly total: number }[]
+  readonly deviceSelections: readonly {
+    readonly device_id: string
+    readonly geometryErrorBoundMetres: number | null
+    readonly targetGeometryErrorSatisfied: boolean
+    readonly timeBucketWidthMs: number | null
+    readonly spatialBucketWidthDegrees: number | null
+  }[]
+  readonly droppedPositionCount: number
+  readonly workerThreadId: number
+}
+
+/** Pulls and decodes one bounded worker session without assembling a wire-sized result. */
+async function readBreadcrumbQuerySession(input: {
+  readonly databasePath: string
+  readonly missionId: string
+  readonly perDeviceLimit: number
+  readonly workerPath?: string
+  readonly timeoutMs?: number
+  readonly signal?: AbortSignal
+}): Promise<BreadcrumbQueryResult> {
+  const session = await startBreadcrumbQuerySession(input)
+  const positions: { readonly source_position_id: string | null }[] = []
+  const deviceTotals: { readonly device_id: string; readonly total: number }[] = []
+  const deviceSelections: {
+    readonly device_id: string
+    readonly geometryErrorBoundMetres: number | null
+    readonly targetGeometryErrorSatisfied: boolean
+    readonly timeBucketWidthMs: number | null
+    readonly spatialBucketWidthDegrees: number | null
+  }[] = []
+  let kindIndex = 0
+  let pending = ''
+  const decoder = createBreadcrumbRecordDecoder((record) => {
+    const expectedKinds = ['position', 'deviceTotal', 'deviceSelection'] as const
+    while (kindIndex < expectedKinds.length
+      && [positions.length, deviceTotals.length, deviceSelections.length][kindIndex] === [
+        session.manifest.positionCount,
+        session.manifest.deviceTotalCount,
+        session.manifest.deviceSelectionCount,
+      ][kindIndex]) kindIndex += 1
+    if (kindIndex >= expectedKinds.length || record.kind !== expectedKinds[kindIndex]) {
+      throw new Error('Breadcrumb query records are out of order or have incorrect counts.')
+    }
+    if (kindIndex === 0) positions.push(record.value as { readonly source_position_id: string | null })
+    else if (kindIndex === 1) deviceTotals.push(record.value as { readonly device_id: string; readonly total: number })
+    else deviceSelections.push(record.value as {
       readonly device_id: string
       readonly geometryErrorBoundMetres: number | null
       readonly targetGeometryErrorSatisfied: boolean
       readonly timeBucketWidthMs: number | null
       readonly spatialBucketWidthDegrees: number | null
-    }[]
-    readonly droppedPositionCount: number
-    readonly workerThreadId: number
-  }>
+    })
+  })
+  try {
+    for (let sequence = 0; ; sequence += 1) {
+      const frame = await session.read(sequence)
+      if (frame.sequence !== sequence || typeof frame.payload !== 'string') {
+        throw new Error('Breadcrumb query frame sequence or payload is invalid.')
+      }
+      pending += frame.payload
+      let end: number
+      while ((end = pending.indexOf('\n')) >= 0) {
+        decoder.acceptLine(pending.slice(0, end))
+        pending = pending.slice(end + 1)
+      }
+      if (pending.length > 16_384) throw new Error('Breadcrumb query record exceeds its bound.')
+      if (frame.done) break
+    }
+    decoder.finish()
+    if (pending.length !== 0) throw new Error('Breadcrumb query frame ended with a partial record.')
+    await session.finish()
+    if (positions.length !== session.manifest.positionCount
+      || deviceTotals.length !== session.manifest.deviceTotalCount
+      || deviceSelections.length !== session.manifest.deviceSelectionCount) {
+      throw new Error('Breadcrumb query frame counts do not match the manifest.')
+    }
+    return {
+      positions,
+      deviceTotals,
+      deviceSelections,
+      droppedPositionCount: session.manifest.droppedPositionCount,
+      workerThreadId: session.workerThreadId,
+    }
+  } catch (error) {
+    await session.cancel().catch(() => undefined)
+    throw error
+  }
 }
 const {
   listBreadcrumbPositions,
@@ -123,7 +219,7 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
     insertAll()
     database.close()
 
-    const result = await runBreadcrumbQueryInWorker({
+    const result = await readBreadcrumbQuerySession({
       databasePath,
       missionId: 'mission-1',
       perDeviceLimit: 5_000,
@@ -647,7 +743,7 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
     `)
     database.close()
 
-    const result = await runBreadcrumbQueryInWorker({
+    const result = await readBreadcrumbQuerySession({
       databasePath,
       missionId: 'mission-1',
       perDeviceLimit: 1,
@@ -703,7 +799,7 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
     database.close()
 
     await expect(
-      runBreadcrumbQueryInWorker({
+      readBreadcrumbQuerySession({
         databasePath,
         missionId: 'mission-1',
         perDeviceLimit: 5_000,
@@ -729,7 +825,7 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
     await writeFile(workerPath, 'setInterval(() => {}, 1_000)\n', 'utf8')
 
     await expect(
-      runBreadcrumbQueryInWorker({
+      readBreadcrumbQuerySession({
         databasePath: path.join(tempDirectory, 'unused.sqlite'),
         missionId: 'mission-1',
         perDeviceLimit: 5_000,
@@ -747,23 +843,38 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
     await writeFile(workerPath, `
       const { parentPort, threadId } = require('node:worker_threads')
       parentPort.postMessage({
-        type: 'complete',
+        type: 'ready',
         workerThreadId: threadId,
-        positions: [],
-        deviceTotals: [],
-        deviceSelections: [],
-        droppedPositionCount: 0,
+        manifest: {
+          version: 1,
+          positionCount: 0,
+          deviceTotalCount: 0,
+          deviceSelectionCount: 0,
+          droppedPositionCount: 0,
+        },
       })
-      setTimeout(() => parentPort.close(), 100)
+      parentPort.on('message', (message) => {
+        if (message.type === 'read' && message.sequence === 0) {
+          parentPort.postMessage({ type: 'frame', sequence: 0, payload: '', done: true })
+        } else if (message.type === 'finish') {
+          parentPort.postMessage({ type: 'finished' })
+          setTimeout(() => parentPort.close(), 100)
+        }
+      })
     `, 'utf8')
 
-    const result = runBreadcrumbQueryInWorker({
+    const session = await startBreadcrumbQuerySession({
       databasePath: path.join(tempDirectory, 'unused.sqlite'),
       missionId: 'mission-1',
       perDeviceLimit: 5_000,
       workerPath,
       timeoutMs: 1_000,
     })
+    const result = (async () => {
+      await session.read(0)
+      await session.finish()
+      return { positions: [], workerThreadId: session.workerThreadId }
+    })()
 
     await expect(Promise.race([
       result.then(() => 'resolved'),
@@ -781,7 +892,7 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
     const workerPath = path.join(tempDirectory, 'unresolved-worker.cjs')
     await writeFile(workerPath, 'setInterval(() => {}, 1_000)\n', 'utf8')
     const controller = new AbortController()
-    const result = runBreadcrumbQueryInWorker({
+    const result = readBreadcrumbQuerySession({
       databasePath: path.join(tempDirectory, 'unused.sqlite'),
       missionId: 'mission-a',
       perDeviceLimit: 5_000,

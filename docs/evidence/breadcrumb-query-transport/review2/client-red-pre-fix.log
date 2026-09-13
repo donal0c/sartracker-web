@@ -1,0 +1,151 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts (38 tests | 7 failed) 300ms
+     × treats progress listener failures as advisory and keeps the transfer alive 3ms
+     × rejects endless fragmented rows and declared oversized strings before reconstruction 1ms
+     × rejects declared aggregate string data before assigning the next field 1ms
+     × rejects fields beyond the declared row field count before assignment 0ms
+     × enforces the aggregate string budget for direct scalar fields too 0ms
+     × distinguishes malformed position mission identity from a valid row for another mission 1ms
+     × includes the active snapshot identity when public cancellation occurs after start 54ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > treats progress listener failures as advisory and keeps the transfer alive
+AssertionError: promise rejected "Error: listener-private-detail" instead of resolving
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:116:91
+    114|       const { raw, store } = createHarness()
+    115|       store.subscribeBreadcrumbQueryProgress!('listener-failure', prog…
+    116|       await expect(store.listBreadcrumbPositions!('mission-a', 5_000, …
+       |                                                                                           ^
+    117|       expect(raw.finishBreadcrumbQuery).toHaveBeenCalledWith({ request…
+    118|       expect(warning).toHaveBeenCalledWith('Breadcrumb query progress …
+
+Caused by: Error: listener-private-detail
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:113:44
+ ❯ Object.listBreadcrumbPositions src/infrastructure/mission-store/breadcrumb-query-client.ts:146:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects endless fragmented rows and declared oversized strings before reconstruction
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:151:134
+    149|     const accept = vi.fn()
+    150|     const decoder = createBreadcrumbRecordDecoder(accept)
+    151|     expect(() => decoder.acceptLine(JSON.stringify({ kind: 'rowStart',…
+       |                                                                                                                                      ^
+    152|
+    153|     decoder.acceptLine(JSON.stringify({ kind: 'rowStart', rowKind: 'po…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects declared aggregate string data before assigning the next field
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:164:100
+    162|     decoder.acceptLine(JSON.stringify({ kind: 'stringStart', key: 'a',…
+    163|     decoder.acceptLine(JSON.stringify({ kind: 'stringChunk', offset: 0…
+    164|     expect(() => decoder.acceptLine(JSON.stringify({ kind: 'stringStar…
+       |                                                                                                    ^
+    165|     expect(accept).not.toHaveBeenCalled()
+    166|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects fields beyond the declared row field count before assignment
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:173:101
+    171|     decoder.acceptLine(JSON.stringify({ kind: 'rowStart', rowKind: 'po…
+    172|     decoder.acceptLine(JSON.stringify({ kind: 'field', value: { first:…
+    173|     expect(() => decoder.acceptLine(JSON.stringify({ kind: 'field', va…
+       |                                                                                                     ^
+    174|     expect(accept).not.toHaveBeenCalled()
+    175|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > enforces the aggregate string budget for direct scalar fields too
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:182:94
+    180|     decoder.acceptLine(JSON.stringify({ kind: 'rowStart', rowKind: 'po…
+    181|     decoder.acceptLine(JSON.stringify({ kind: 'field', value: { a: 'ab…
+    182|     expect(() => decoder.acceptLine(JSON.stringify({ kind: 'field', va…
+       |                                                                                              ^
+    183|     expect(accept).not.toHaveBeenCalled()
+    184|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > distinguishes malformed position mission identity from a valid row for another mission
+AssertionError: expected [Function] to throw error matching /missing or invalid mission_id/i but got 'Breadcrumb query snapshot belongs to …'
+
+- Expected:
+/missing or invalid mission_id/i
+
++ Received:
+"Breadcrumb query snapshot belongs to another mission."
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:191:98
+    189|       payload: [JSON.stringify({ kind: 'position', value: position }) …
+    190|     const malformed = createHarness({ readBreadcrumbQueryFrame: vi.fn(…
+    191|     await expect(malformed.store.listBreadcrumbPositions!('mission-a',…
+       |                                                                                                  ^
+    192|
+    193|     const wrongMission = createHarness({ readBreadcrumbQueryFrame: vi.…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > includes the active snapshot identity when public cancellation occurs after start
+AssertionError: expected { requestId: 'snapshot-cancel' } to deeply equal { requestId: 'snapshot-cancel', …(1) }
+
+- Expected
++ Received
+
+  {
+    "requestId": "snapshot-cancel",
+-   "snapshotId": "snapshot-a",
+  }
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:261:58
+    259|     await vi.waitFor(() => expect(raw.readBreadcrumbQueryFrame).toHave…
+    260|     await expect(store.cancelBreadcrumbQuery!('snapshot-cancel')).reso…
+    261|     expect(raw.cancelBreadcrumbQuery.mock.calls[0]?.[0]).toEqual({ req…
+       |                                                          ^
+    262|     deliver({ snapshotId: 'snapshot-a', sequence: 0, payload: '', done…
+    263|     await expect(query).rejects.toMatchObject({ name: 'AbortError' })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed | 31 passed (38)
+   Start at  20:23:52
+   Duration  619ms (transform 28ms, setup 0ms, import 36ms, tests 300ms, environment 225ms)

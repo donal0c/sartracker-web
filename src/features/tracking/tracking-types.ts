@@ -78,4 +78,10 @@ export type TrackingConnectionStatus = {
   readonly recovered: boolean
   readonly lastSuccessAt: string | null
   readonly warning: string | null
+  readonly savedHistoryTransfer?: {
+    readonly missionId: string
+    readonly state: 'loading' | 'complete' | 'failed'
+    readonly receivedPositions: number
+    readonly totalPositions: number
+  }
 }

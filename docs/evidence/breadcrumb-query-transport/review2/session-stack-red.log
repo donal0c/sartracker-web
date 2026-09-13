@@ -1,0 +1,136 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts (22 tests | 5 failed) 646ms
+     × sanitizes worker failure category SQLITE_CANTOPEN 16ms
+     × sanitizes worker failure category MODULE_NOT_FOUND 13ms
+     × sanitizes worker failure category ERR_WORKER_OUT_OF_MEMORY 12ms
+     × sanitizes worker failure category UNKNOWN 13ms
+     × sanitizes synchronous worker constructor errors 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > sanitizes worker failure category SQLITE_CANTOPEN
+AssertionError: expected 'Error: Saved breadcrumb history could…' to be 'Error: Saved breadcrumb history could…' // Object.is equality
+
+- Expected
++ Received
+
+  Error: Saved breadcrumb history could not be read from mission storage. Retry; if it persists, contact support before changing mission files.
++     at createBreadcrumbQueryFailure (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-failure.cjs:16:17)
++     at sanitizeBreadcrumbQueryFailure (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-failure.cjs:31:95)
++     at Worker.<anonymous> (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-session.cjs:76:12)
++     at Worker.emit (node:events:519:28)
++     at MessagePort.<anonymous> (node:internal/worker:270:53)
++     at MessagePort.[nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)
++     at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28)
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:251:36
+    249|     expect(error).toMatchObject({ code: `BREADCRUMB_QUERY_${category}`…
+    250|     expect(String(error)).not.toMatch(/private|secret|native\.node/)
+    251|     expect((error as Error).stack).toBe(`Error: ${(error as Error).mes…
+       |                                    ^
+    252|   })
+    253|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > sanitizes worker failure category MODULE_NOT_FOUND
+AssertionError: expected 'Error: The saved-history worker could…' to be 'Error: The saved-history worker could…' // Object.is equality
+
+- Expected
++ Received
+
+  Error: The saved-history worker could not load a required application component. Restart or reinstall the application.
++     at createBreadcrumbQueryFailure (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-failure.cjs:16:17)
++     at sanitizeBreadcrumbQueryFailure (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-failure.cjs:29:12)
++     at Worker.<anonymous> (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-session.cjs:76:12)
++     at Worker.emit (node:events:519:28)
++     at MessagePort.<anonymous> (node:internal/worker:270:53)
++     at MessagePort.[nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)
++     at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28)
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:251:36
+    249|     expect(error).toMatchObject({ code: `BREADCRUMB_QUERY_${category}`…
+    250|     expect(String(error)).not.toMatch(/private|secret|native\.node/)
+    251|     expect((error as Error).stack).toBe(`Error: ${(error as Error).mes…
+       |                                    ^
+    252|   })
+    253|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > sanitizes worker failure category ERR_WORKER_OUT_OF_MEMORY
+AssertionError: expected 'Error: Saved breadcrumb history excee…' to be 'Error: Saved breadcrumb history excee…' // Object.is equality
+
+- Expected
++ Received
+
+  Error: Saved breadcrumb history exceeded available worker memory. Close unused applications and retry.
++     at createBreadcrumbQueryFailure (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-failure.cjs:16:17)
++     at sanitizeBreadcrumbQueryFailure (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-failure.cjs:27:81)
++     at Worker.<anonymous> (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-session.cjs:76:12)
++     at Worker.emit (node:events:519:28)
++     at MessagePort.<anonymous> (node:internal/worker:270:53)
++     at MessagePort.[nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)
++     at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28)
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:251:36
+    249|     expect(error).toMatchObject({ code: `BREADCRUMB_QUERY_${category}`…
+    250|     expect(String(error)).not.toMatch(/private|secret|native\.node/)
+    251|     expect((error as Error).stack).toBe(`Error: ${(error as Error).mes…
+       |                                    ^
+    252|   })
+    253|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > sanitizes worker failure category UNKNOWN
+AssertionError: expected 'Error: Saved breadcrumb history could…' to be 'Error: Saved breadcrumb history could…' // Object.is equality
+
+- Expected
++ Received
+
+  Error: Saved breadcrumb history could not be loaded. Retry; if it persists, restart the application.
++     at createBreadcrumbQueryFailure (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-failure.cjs:16:17)
++     at sanitizeBreadcrumbQueryFailure (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-failure.cjs:32:10)
++     at Worker.<anonymous> (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-session.cjs:76:12)
++     at Worker.emit (node:events:519:28)
++     at MessagePort.<anonymous> (node:internal/worker:270:53)
++     at MessagePort.[nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)
++     at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28)
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:251:36
+    249|     expect(error).toMatchObject({ code: `BREADCRUMB_QUERY_${category}`…
+    250|     expect(String(error)).not.toMatch(/private|secret|native\.node/)
+    251|     expect((error as Error).stack).toBe(`Error: ${(error as Error).mes…
+       |                                    ^
+    252|   })
+    253|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > sanitizes synchronous worker constructor errors
+AssertionError: expected '{"stack":"Error: The saved-history wo…' not to match /private|\.codex|\.cjs|\.ts|asar/
+
+- Expected:
+/private|\.codex|\.cjs|\.ts|asar/
+
++ Received:
+"{\"stack\":\"Error: The saved-history worker could not load a required application component. Restart or reinstall the application.\\n    at createBreadcrumbQueryFailure (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-failure.cjs:16:17)\\n    at sanitizeBreadcrumbQueryFailure (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-failure.cjs:29:12)\\n    at startBreadcrumbQuerySession (/Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/electron/breadcrumb-query-session.cjs:30:30)\\n    at /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/tests/unit/electron-breadcrumb-query-session.test.ts:270:25\\n    at file:///Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\\n    at file:///Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\\n    at file:///Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\\n    at new Promise (<anonymous>)\\n    at runWithCancel (file:///Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\\n    at file:///Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\",\"message\":\"The saved-history worker could not load a required application component. Restart or reinstall the application.\",\"code\":\"BREADCRUMB_QUERY_MODULE\"}"
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:274:74
+    272|     expect(error).toMatchObject({ code: 'BREADCRUMB_QUERY_MODULE' })
+    273|     expect(String(error)).not.toContain('private')
+    274|     expect(JSON.stringify(error, Object.getOwnPropertyNames(error))).n…
+       |                                                                          ^
+    275|   })
+    276| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 17 passed (22)
+   Start at  20:21:23
+   Duration  1.05s (transform 28ms, setup 0ms, import 37ms, tests 646ms, environment 235ms)

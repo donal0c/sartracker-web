@@ -1,0 +1,137 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+stderr | tests/unit/tracking-status-panel.test.ts > TrackingStatusPanel > shows distinct loading history state only for its mission
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | tests/unit/tracking-status-panel.test.ts > TrackingStatusPanel > shows distinct loading history state only for its mission
+The current testing environment is not configured to support act(...)
+
+stderr | tests/unit/tracking-status-panel.test.ts > TrackingStatusPanel > shows distinct complete history state only for its mission
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | tests/unit/tracking-status-panel.test.ts > TrackingStatusPanel > shows distinct complete history state only for its mission
+The current testing environment is not configured to support act(...)
+
+stderr | tests/unit/tracking-status-panel.test.ts > TrackingStatusPanel > shows distinct failed history state only for its mission
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | tests/unit/tracking-status-panel.test.ts > TrackingStatusPanel > shows distinct failed history state only for its mission
+The current testing environment is not configured to support act(...)
+
+ ❯ tests/unit/tracking-status-panel.test.ts (20 tests | 3 failed | 17 skipped) 24ms
+     × shows distinct loading history state only for its mission 17ms
+     × shows distinct complete history state only for its mission 3ms
+     × shows distinct failed history state only for its mission 3ms
+ ❯ tests/unit/start-tracking-runtime.test.ts (94 tests | 2 failed | 92 skipped) 126ms
+     × publishes mission-bound terminal history state (failure=false) 73ms
+     × publishes mission-bound terminal history state (failure=true) 53ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > publishes mission-bound terminal history state (failure=false)
+AssertionError: expected { mode: 'online', …(4) } to match object { warning: null, …(1) }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "savedHistoryTransfer": {
+-     "missionId": "mission-1",
+-     "state": "complete",
+-   },
+    "warning": null,
+  }
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:2993:44
+    2991|     complete()
+    2992|     await settled
+    2993|     expect(applyStatus.mock.lastCall?.[0]).toMatchObject({ warning: nu…
+       |                                            ^
+    2994|       missionId: 'mission-1', state: failed ? 'failed' : 'complete',
+    2995|     } })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > publishes mission-bound terminal history state (failure=true)
+AssertionError: expected { mode: 'online', …(4) } to match object { warning: null, …(1) }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "savedHistoryTransfer": {
+-     "missionId": "mission-1",
+-     "state": "failed",
+-   },
+    "warning": null,
+  }
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:2993:44
+    2991|     complete()
+    2992|     await settled
+    2993|     expect(applyStatus.mock.lastCall?.[0]).toMatchObject({ warning: nu…
+       |                                            ^
+    2994|       missionId: 'mission-1', state: failed ? 'failed' : 'complete',
+    2995|     } })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/unit/tracking-status-panel.test.ts > TrackingStatusPanel > shows distinct loading history state only for its mission
+AssertionError: expected 'Tracking Systemtelemetry streamonline…' to contain 'history is not yet complete'
+
+Expected: "history is not yet complete"
+Received: "Tracking Systemtelemetry streamonlineOpen DevicesDevices0Fixes0Cache0Stale0Last successN/ATelemetry stream healthy"
+
+ ❯ tests/unit/tracking-status-panel.test.ts:28:31
+     26|     expect(host!.textContent).not.toContain('Saved history')
+     27|     act(() => useMissionStore.setState({ currentMission: mission('miss…
+     28|     expect(host!.textContent).toContain(state === 'loading' ? 'history…
+       |                               ^
+     29|       : state === 'complete' ? 'Saved history transfer complete' : 'Sa…
+     30|     expect(host!.querySelector('progress') !== null).toBe(state === 'l…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/unit/tracking-status-panel.test.ts > TrackingStatusPanel > shows distinct complete history state only for its mission
+AssertionError: expected 'Tracking Systemtelemetry streamonline…' to contain 'Saved history transfer complete'
+
+Expected: "Saved history transfer complete"
+Received: "Tracking Systemtelemetry streamonlineOpen DevicesDevices0Fixes0Cache0Stale0Last successN/ATelemetry stream healthy"
+
+ ❯ tests/unit/tracking-status-panel.test.ts:28:31
+     26|     expect(host!.textContent).not.toContain('Saved history')
+     27|     act(() => useMissionStore.setState({ currentMission: mission('miss…
+     28|     expect(host!.textContent).toContain(state === 'loading' ? 'history…
+       |                               ^
+     29|       : state === 'complete' ? 'Saved history transfer complete' : 'Sa…
+     30|     expect(host!.querySelector('progress') !== null).toBe(state === 'l…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/unit/tracking-status-panel.test.ts > TrackingStatusPanel > shows distinct failed history state only for its mission
+AssertionError: expected 'Tracking Systemtelemetry streamonline…' to contain 'Saved history could not be loaded'
+
+Expected: "Saved history could not be loaded"
+Received: "Tracking Systemtelemetry streamonlineOpen DevicesDevices0Fixes0Cache0Stale0Last successN/ATelemetry stream healthy"
+
+ ❯ tests/unit/tracking-status-panel.test.ts:28:31
+     26|     expect(host!.textContent).not.toContain('Saved history')
+     27|     act(() => useMissionStore.setState({ currentMission: mission('miss…
+     28|     expect(host!.textContent).toContain(state === 'loading' ? 'history…
+       |                               ^
+     29|       : state === 'complete' ? 'Saved history transfer complete' : 'Sa…
+     30|     expect(host!.querySelector('progress') !== null).toBe(state === 'l…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  5 failed | 109 skipped (114)
+   Start at  20:14:13
+   Duration  659ms (transform 195ms, setup 0ms, import 325ms, tests 150ms, environment 524ms)

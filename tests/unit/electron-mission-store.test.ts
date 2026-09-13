@@ -37,6 +37,31 @@ type StorageDiagnosticsPort = {
     readonly skippedAmbiguousLegacyAdoptionCount: number
   }) => Promise<void>
 }
+type BreadcrumbQueryManifest = {
+  readonly version: number
+  readonly positionCount: number
+  readonly deviceTotalCount: number
+  readonly deviceSelectionCount: number
+  readonly droppedPositionCount: number
+}
+type BreadcrumbQueryFrame = {
+  readonly sequence: number
+  readonly payload: string
+  readonly done: boolean
+}
+type BreadcrumbQuerySession = {
+  readonly manifest: BreadcrumbQueryManifest
+  readonly read: (sequence: number) => Promise<BreadcrumbQueryFrame>
+  readonly finish: () => Promise<void>
+  readonly cancel: () => Promise<void>
+  readonly completion: Promise<void>
+}
+type StartBreadcrumbQuerySession = (input: {
+  readonly databasePath: string
+  readonly missionId: string
+  readonly perDeviceLimit: number
+  readonly signal?: AbortSignal
+}) => Promise<BreadcrumbQuerySession>
 const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../electron/mission-store.cjs') as {
   readonly CURRENT_SCHEMA_VERSION: number
   readonly createElectronMissionStore: (options: {
@@ -60,17 +85,7 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
     }
     readonly storageDiagnostics?: StorageDiagnosticsPort
     readonly coverageLedgerFaultInjection?: { readonly afterWrite?: boolean }
-    readonly runBreadcrumbQueryInWorker?: (input: {
-      readonly databasePath: string
-      readonly missionId: string
-      readonly perDeviceLimit: number
-      readonly signal?: AbortSignal
-    }) => Promise<{
-      readonly positions: readonly never[]
-      readonly deviceTotals: readonly never[]
-      readonly deviceSelections: readonly never[]
-      readonly droppedPositionCount: number
-    }>
+    readonly startBreadcrumbQuerySession?: StartBreadcrumbQuerySession
     readonly runMissionReviewReadQueryInWorker?: (input: {
       readonly databasePath: string
       readonly query: {
@@ -266,26 +281,17 @@ type ElectronMissionStore = {
     missionId: string,
     perDeviceLimit: number,
   ) => Promise<readonly { readonly device_id: string; readonly timestamp: string }[]>
-  readonly listBreadcrumbPositions: (
+  readonly startBreadcrumbQuery: (
     missionId: string,
     perDeviceLimit: number,
-    requestId?: string,
-  ) => Promise<{
-    readonly positions: readonly {
-      readonly id: string
-      readonly source_position_id: string | null
-      readonly device_id: string
-      readonly lat: number
-      readonly lon: number
-      readonly timestamp: string
-      readonly data_origin: 'live' | 'cache'
-    }[]
-    readonly deviceTotals: readonly {
-      readonly device_id: string
-      readonly total: number
-    }[]
-    readonly droppedPositionCount: number
-  }>
+    requestId: string,
+  ) => Promise<BreadcrumbQueryManifest>
+  readonly readBreadcrumbQueryFrame: (
+    requestId: string,
+    sequence: number,
+  ) => Promise<BreadcrumbQueryFrame>
+  readonly finishBreadcrumbQuery: (requestId: string) => Promise<void>
+  readonly breadcrumbQueryCompletion: (requestId: string) => Promise<void>
   readonly cancelBreadcrumbQuery: (requestId: string) => Promise<boolean>
   readonly readMissionReview: (
     query: {
@@ -492,6 +498,63 @@ type RejectionEnvelope = {
   readonly reasonClass: string
   readonly receivedAt: string
   readonly canonicalEvidence: Readonly<Record<string, unknown>>
+}
+
+type BreadcrumbQueryResult = {
+  readonly positions: readonly { readonly source_position_id: string | null }[]
+  readonly deviceTotals: readonly { readonly device_id: string; readonly total: number }[]
+  readonly deviceSelections: readonly Record<string, unknown>[]
+  readonly droppedPositionCount: number
+}
+
+/** Collects bounded pull frames through the Electron store transport for test assertions. */
+async function collectBreadcrumbQuery(
+  store: Pick<ElectronMissionStore, 'startBreadcrumbQuery' | 'readBreadcrumbQueryFrame' | 'finishBreadcrumbQuery' | 'cancelBreadcrumbQuery'>,
+  missionId: string,
+  perDeviceLimit: number,
+  requestId: string,
+): Promise<BreadcrumbQueryResult> {
+  let requestStarted = false
+  try {
+    const manifest = await store.startBreadcrumbQuery(missionId, perDeviceLimit, requestId)
+    requestStarted = true
+    const positions: { readonly source_position_id: string | null }[] = []
+    const deviceTotals: { readonly device_id: string; readonly total: number }[] = []
+    const deviceSelections: Record<string, unknown>[] = []
+    let pending = ''
+    for (let sequence = 0; ; sequence += 1) {
+      const frame = await store.readBreadcrumbQueryFrame(requestId, sequence)
+      if (frame.sequence !== sequence || typeof frame.payload !== 'string') {
+        throw new Error('Breadcrumb query frame sequence or payload is invalid.')
+      }
+      pending += frame.payload
+      let end: number
+      while ((end = pending.indexOf('\n')) >= 0) {
+        const record = JSON.parse(pending.slice(0, end)) as { readonly kind?: unknown; readonly value?: unknown }
+        pending = pending.slice(end + 1)
+        if (record.value === null || typeof record.value !== 'object' || Array.isArray(record.value)) {
+          throw new Error('Breadcrumb query record value is invalid.')
+        }
+        if (record.kind === 'position') positions.push(record.value as { readonly source_position_id: string | null })
+        else if (record.kind === 'deviceTotal') deviceTotals.push(record.value as { readonly device_id: string; readonly total: number })
+        else if (record.kind === 'deviceSelection') deviceSelections.push(record.value as Record<string, unknown>)
+        else throw new Error('Breadcrumb query record kind is invalid.')
+      }
+      if (frame.done) break
+    }
+    if (pending.length !== 0) throw new Error('Breadcrumb query frame ended with a partial record.')
+    await store.finishBreadcrumbQuery(requestId)
+
+    if (positions.length !== manifest.positionCount
+      || deviceTotals.length !== manifest.deviceTotalCount
+      || deviceSelections.length !== manifest.deviceSelectionCount) {
+      throw new Error('Breadcrumb query frame counts do not match the manifest.')
+    }
+    return { positions, deviceTotals, deviceSelections, droppedPositionCount: manifest.droppedPositionCount }
+  } catch (error) {
+    if (requestStarted) await store.cancelBreadcrumbQuery(requestId).catch(() => false)
+    throw error
+  }
 }
 
 describe('electron mission store', () => {
@@ -1271,7 +1334,12 @@ describe('electron mission store', () => {
       positions: inputs,
     })
 
-    const restarted = await store.listBreadcrumbPositions(mission.id, 5_000)
+    const restarted = await collectBreadcrumbQuery(
+      store,
+      mission.id,
+      5_000,
+      'restart-query',
+    )
     const live = createBreadcrumbAccumulator().append(
       inputs.map((position) => ({
         id: position.source_position_id,
@@ -1299,37 +1367,40 @@ describe('electron mission store', () => {
     expect(restarted.droppedPositionCount).toBe(0)
   })
 
-  it('cancels the main-process breadcrumb worker identified by the renderer request', async () => {
-    let workerSignal: AbortSignal | undefined
-    let rejectTerminatedWorker: (error: Error) => void = () => undefined
-    const runBreadcrumbQueryInWorker = vi.fn().mockImplementationOnce(
-      (input: { readonly signal?: AbortSignal }) => {
-        workerSignal = input.signal
-        return new Promise((_resolve, reject) => {
-          input.signal?.addEventListener('abort', () => {
-            rejectTerminatedWorker = reject
-          }, { once: true })
-        })
+  it('cancels the main-process breadcrumb session identified by the renderer request', async () => {
+    let releaseFirstCompletion = () => undefined
+    const firstCompletion = new Promise<void>((resolve) => { releaseFirstCompletion = resolve })
+    let releaseSecondCompletion = () => undefined
+    const secondCompletion = new Promise<void>((resolve) => { releaseSecondCompletion = resolve })
+    const createSession = (completion: Promise<void>) => ({
+      manifest: {
+        version: 1,
+        positionCount: 0,
+        deviceTotalCount: 0,
+        deviceSelectionCount: 0,
+        droppedPositionCount: 0,
       },
-    ).mockResolvedValueOnce({
-      positions: [],
-      deviceTotals: [],
-      deviceSelections: [],
-      droppedPositionCount: 0,
+      read: vi.fn(async (sequence: number) => ({ sequence, payload: '', done: true })),
+      finish: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+      completion,
     })
-    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-store-'))
-    store = createElectronMissionStore({
-      userDataPath,
-      runBreadcrumbQueryInWorker,
-    })
-
-    const query = store.listBreadcrumbPositions(
-      'mission-a',
-      5_000,
-      'renderer-a:request-a',
+    const firstSession = createSession(firstCompletion)
+    const secondSession = createSession(secondCompletion)
+    let sessionSignal: AbortSignal | undefined
+    const startBreadcrumbQuerySession = vi.fn(
+      async (input: { readonly signal?: AbortSignal }) => {
+        sessionSignal = input.signal
+        return startBreadcrumbQuerySession.mock.calls.length === 1
+          ? firstSession
+          : secondSession
+      },
     )
-    await vi.waitFor(() => expect(runBreadcrumbQueryInWorker).toHaveBeenCalledOnce())
+    store = await createStore({ startBreadcrumbQuerySession })
 
+    await expect(store.startBreadcrumbQuery('mission-a', 5_000, 'renderer-a:request-a'))
+      .resolves.toMatchObject({ version: 1 })
+    const firstTerminal = store.breadcrumbQueryCompletion('renderer-a:request-a')
     let cancellationSettled = false
     const cancellation = store.cancelBreadcrumbQuery('renderer-a:request-a').then(
       (result) => {
@@ -1337,29 +1408,63 @@ describe('electron mission store', () => {
         return result
       },
     )
-    const replacementQuery = store.listBreadcrumbPositions(
+    const replacementQuery = store.startBreadcrumbQuery(
       'mission-b',
       5_000,
       'renderer-b:request-a',
     )
-    const queryRejection = expect(query).rejects.toMatchObject({ name: 'AbortError' })
 
-    expect(workerSignal?.aborted).toBe(true)
+    expect(sessionSignal?.aborted).toBe(true)
     expect(cancellationSettled).toBe(false)
-    expect(runBreadcrumbQueryInWorker).toHaveBeenCalledTimes(1)
+    expect(startBreadcrumbQuerySession).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(firstSession.cancel).toHaveBeenCalledOnce())
+    expect(startBreadcrumbQuerySession).toHaveBeenCalledTimes(1)
 
-    const error = new Error('worker terminated')
-    error.name = 'AbortError'
-    rejectTerminatedWorker(error)
+    releaseFirstCompletion()
     await expect(cancellation).resolves.toBe(true)
-    await queryRejection
-    await expect(replacementQuery).resolves.toEqual(
-      expect.objectContaining({ positions: [] }),
-    )
-    expect(runBreadcrumbQueryInWorker).toHaveBeenCalledTimes(2)
-    await expect(
-      store.cancelBreadcrumbQuery('renderer-a:request-a'),
-    ).resolves.toBe(false)
+    await expect(firstTerminal).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(replacementQuery).resolves.toMatchObject({ version: 1 })
+    expect(startBreadcrumbQuerySession).toHaveBeenCalledTimes(2)
+
+    const secondTerminal = store.breadcrumbQueryCompletion('renderer-b:request-a')
+    const secondCancellation = store.cancelBreadcrumbQuery('renderer-b:request-a')
+    await vi.waitFor(() => expect(secondSession.cancel).toHaveBeenCalledOnce())
+    releaseSecondCompletion()
+    await expect(secondCancellation).resolves.toBe(true)
+    await expect(secondTerminal).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(store.cancelBreadcrumbQuery('renderer-a:request-a')).resolves.toBe(false)
+  })
+
+  it('joins a parked breadcrumb session before allowing mission-store close', async () => {
+    let releaseCompletion = () => undefined
+    const completion = new Promise<void>((resolve) => { releaseCompletion = resolve })
+    const session: BreadcrumbQuerySession = {
+      manifest: {
+        version: 1,
+        positionCount: 0,
+        deviceTotalCount: 0,
+        deviceSelectionCount: 0,
+        droppedPositionCount: 0,
+      },
+      read: vi.fn(async (sequence: number) => ({ sequence, payload: '', done: true })),
+      finish: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+      completion,
+    }
+    const startBreadcrumbQuerySession = vi.fn(async () => session)
+    store = await createStore({ startBreadcrumbQuerySession })
+    await store.startBreadcrumbQuery('mission-a', 5_000, 'renderer-a:parked')
+
+    let prepared = false
+    const prepareClose = store.prepareClose().then(() => { prepared = true })
+    await vi.waitFor(() => expect(session.cancel).toHaveBeenCalledOnce())
+    await Promise.resolve()
+    expect(prepared).toBe(false)
+    releaseCompletion()
+    await expect(prepareClose).resolves.toBeUndefined()
+    const closingStore = store
+    store = null
+    expect(() => closingStore.close()).not.toThrow()
   })
 
   it('keeps current-position persistence available while Mission Review reads in a worker [DON-251]', async () => {
@@ -4565,6 +4670,7 @@ describe('electron mission store', () => {
     }
     readonly storageDiagnostics?: StorageDiagnosticsPort
     readonly coverageLedgerFaultInjection?: { readonly afterWrite?: boolean }
+    readonly startBreadcrumbQuerySession?: StartBreadcrumbQuerySession
     readonly runOutingFixSummaryInWorker?: (input: {
       readonly databasePath: string
       readonly query: { readonly missionId: string }

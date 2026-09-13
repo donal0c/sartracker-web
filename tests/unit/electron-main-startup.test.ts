@@ -122,6 +122,18 @@ describe('Electron main startup', () => {
     )
   })
 
+  it('keeps operational window timers active when minimized', async () => {
+    process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    expect(electronMock.BrowserWindow.mock.calls[0]?.[0].webPreferences.backgroundThrottling).toBe(false)
+  })
+
   it('rejects oversized mission creation payloads at the direct main IPC boundary', async () => {
     process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
     const electronMock = createElectronMock(vi.fn(), undefined, true)

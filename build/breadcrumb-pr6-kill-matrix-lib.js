@@ -311,7 +311,15 @@ export function captureBreadcrumbPr6KillMatrixRepositoryState(input) {
     const absolutePath = resolveRepositoryFile(projectRoot, relativePath)
     workspaceHash.update(Buffer.from(relativePath, 'utf8'))
     workspaceHash.update(Buffer.from([0]))
-    const stat = lstatSync(absolutePath)
+    let stat
+    try {
+      stat = lstatSync(absolutePath)
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+      workspaceHash.update('<missing>', 'utf8')
+      workspaceHash.update(Buffer.from([0]))
+      continue
+    }
     if (stat.isSymbolicLink()) workspaceHash.update(readlinkSync(absolutePath), 'utf8')
     else if (stat.isFile()) workspaceHash.update(readFileSync(absolutePath))
     else workspaceHash.update('<non-regular>', 'utf8')

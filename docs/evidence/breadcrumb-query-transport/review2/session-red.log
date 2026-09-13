@@ -1,0 +1,155 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts (21 tests | 7 failed) 10589ms
+     × joins termination at an absolute ceiling despite continuing valid progress 5006ms
+     × replaces inactivity with exit grace after acknowledgement while still joining exit 5006ms
+     × sanitizes worker failure category SQLITE_CANTOPEN 33ms
+     × sanitizes worker failure category MODULE_NOT_FOUND 19ms
+     × sanitizes worker failure category ERR_WORKER_OUT_OF_MEMORY 16ms
+     × sanitizes worker failure category UNKNOWN 14ms
+     × sanitizes synchronous worker constructor errors 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > joins termination at an absolute ceiling despite continuing valid progress
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:206:3
+    204|   })
+    205|
+    206|   it('joins termination at an absolute ceiling despite continuing vali…
+       |   ^
+    207|     vi.useFakeTimers()
+    208|     const session = await controlledWorker(`parentPort.on('message', m…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > replaces inactivity with exit grace after acknowledgement while still joining exit
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:221:3
+    219|   })
+    220|
+    221|   it('replaces inactivity with exit grace after acknowledgement while …
+       |   ^
+    222|     vi.useFakeTimers()
+    223|     const session = await controlledWorker(`parentPort.on('message', m…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > sanitizes worker failure category SQLITE_CANTOPEN
+AssertionError: expected Error: Breadcrumb query worker failed: se… to match object { code: 'BREADCRUMB_QUERY_STORAGE' }
+
+- Expected
++ Received
+
+- {
+-   "code": "BREADCRUMB_QUERY_STORAGE",
++ Error {
++   "message": "Breadcrumb query worker failed: secret /private/mission.sqlite",
+  }
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:247:19
+    245|     })`)
+    246|     const error = await session.read(0).catch((failure: Error) => fail…
+    247|     expect(error).toMatchObject({ code: `BREADCRUMB_QUERY_${category}`…
+       |                   ^
+    248|     expect(String(error)).not.toMatch(/private|secret|native\.node/)
+    249|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > sanitizes worker failure category MODULE_NOT_FOUND
+AssertionError: expected Error: Breadcrumb query worker failed: Ca… to match object { code: 'BREADCRUMB_QUERY_MODULE' }
+
+- Expected
++ Received
+
+- {
+-   "code": "BREADCRUMB_QUERY_MODULE",
++ Error {
++   "message": "Breadcrumb query worker failed: Cannot find module /private/native.node",
+  }
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:247:19
+    245|     })`)
+    246|     const error = await session.read(0).catch((failure: Error) => fail…
+    247|     expect(error).toMatchObject({ code: `BREADCRUMB_QUERY_${category}`…
+       |                   ^
+    248|     expect(String(error)).not.toMatch(/private|secret|native\.node/)
+    249|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > sanitizes worker failure category ERR_WORKER_OUT_OF_MEMORY
+AssertionError: expected Error: Breadcrumb query worker failed: se… to match object { code: 'BREADCRUMB_QUERY_MEMORY' }
+
+- Expected
++ Received
+
+- {
+-   "code": "BREADCRUMB_QUERY_MEMORY",
++ Error {
++   "message": "Breadcrumb query worker failed: secret heap details",
+  }
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:247:19
+    245|     })`)
+    246|     const error = await session.read(0).catch((failure: Error) => fail…
+    247|     expect(error).toMatchObject({ code: `BREADCRUMB_QUERY_${category}`…
+       |                   ^
+    248|     expect(String(error)).not.toMatch(/private|secret|native\.node/)
+    249|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > sanitizes worker failure category UNKNOWN
+AssertionError: expected Error: Breadcrumb query worker failed: pr… to match object { code: 'BREADCRUMB_QUERY_WORKER' }
+
+- Expected
++ Received
+
+- {
+-   "code": "BREADCRUMB_QUERY_WORKER",
++ Error {
++   "message": "Breadcrumb query worker failed: private data and /private/path",
+  }
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:247:19
+    245|     })`)
+    246|     const error = await session.read(0).catch((failure: Error) => fail…
+    247|     expect(error).toMatchObject({ code: `BREADCRUMB_QUERY_${category}`…
+       |                   ^
+    248|     expect(String(error)).not.toMatch(/private|secret|native\.node/)
+    249|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > sanitizes synchronous worker constructor errors
+AssertionError: expected TypeError: The worker script or module fi… { code: '…' } to match object { code: 'BREADCRUMB_QUERY_MODULE' }
+
+- Expected
++ Received
+
+- {
+-   "code": "BREADCRUMB_QUERY_MODULE",
++ TypeError {
++   "code": "ERR_WORKER_PATH",
+  }
+
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts:254:19
+    252|     const error = await startBreadcrumbQuerySession({ databasePath: '/…
+    253|       perDeviceLimit: 5_000, workerPath: 'private-invalid-relative-pat…
+    254|     expect(error).toMatchObject({ code: 'BREADCRUMB_QUERY_MODULE' })
+       |                   ^
+    255|     expect(String(error)).not.toContain('private')
+    256|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed | 14 passed (21)
+   Start at  20:11:33
+   Duration  11.24s (transform 25ms, setup 0ms, import 36ms, tests 10.59s, environment 392ms)

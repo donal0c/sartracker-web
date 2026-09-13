@@ -17,6 +17,20 @@ let root: Root | null = null
 let host: HTMLDivElement | null = null
 
 describe('TrackingStatusPanel', () => {
+  it.each(['loading', 'complete', 'failed'] as const)('shows distinct %s history state only for its mission', (state) => {
+    useMissionStore.setState({ currentMission: mission('mission-2'), phase: 'active' })
+    useTrackingStore.setState({ status: { mode: 'online', consecutiveFailures: 0, recovered: false,
+      lastSuccessAt: null, warning: null, savedHistoryTransfer: { missionId: 'mission-1', state,
+        receivedPositions: 1, totalPositions: 2 } } })
+    render(React.createElement(TrackingStatusPanel))
+    expect(host!.textContent).not.toContain('Saved history')
+    expect(host!.querySelector('progress')).toBeNull()
+    act(() => useMissionStore.setState({ currentMission: mission('mission-1') }))
+    expect(host!.textContent).toContain(state === 'loading' ? 'history is not yet complete'
+      : state === 'complete' ? 'Saved history transfer complete' : 'Saved history could not be loaded')
+    expect(host!.querySelector('progress') !== null).toBe(state === 'loading')
+  })
+
   afterEach(() => {
     if (root !== null) {
       act(() => root?.unmount())

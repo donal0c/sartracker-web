@@ -1,0 +1,145 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-breadcrumb-query-session.test.ts tests/unit/electron-breadcrumb-query-client.test.ts tests/unit/breadcrumb-query-session-registry.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts (20 tests | 20 failed) 9ms
+     × assembles unchanged rows, yields between frames, and waits for clean worker finish 2ms
+     × accepts the explicit empty terminal frame and generates a request id when omitted 0ms
+     × rejects unsupported manifest without partial publication and cancels custody 0ms
+     × rejects fractional count without partial publication and cancels custody 0ms
+     × rejects negative dropped count without partial publication and cancels custody 0ms
+     × rejects duplicate frame without partial publication and cancels custody 0ms
+     × rejects missing frame without partial publication and cancels custody 0ms
+     × rejects oversized frame without partial publication and cancels custody 0ms
+     × rejects non-boolean done without partial publication and cancels custody 0ms
+     × rejects empty nonterminal frame without partial publication and cancels custody 0ms
+     × rejects truncated JSON without partial publication and cancels custody 0ms
+     × rejects missing record without partial publication and cancels custody 0ms
+     × rejects extra record without partial publication and cancels custody 0ms
+     × rejects wrong order without partial publication and cancels custody 0ms
+     × rejects unknown kind without partial publication and cancels custody 0ms
+     × rejects null row without partial publication and cancels custody 0ms
+     × rejects read failure without partial publication and cancels custody 0ms
+     × rejects finish failure without partial publication and cancels custody 0ms
+     × keeps cancellation authoritative when an outstanding frame resolves later 0ms
+     × exposes raw frame reads in preload with no old whole-result escape 3ms
+ ❯ tests/unit/electron-breadcrumb-query-session.test.ts (11 tests | 1 failed) 491ms
+     × frames the exact single-snapshot selector result, including oversized records and every stored field 101ms
+ ❯ tests/unit/breadcrumb-query-session-registry.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/breadcrumb-query-session-registry.test.ts [ tests/unit/breadcrumb-query-session-registry.test.ts ]
+Error: Cannot find module '../../electron/breadcrumb-query-session-registry.cjs'
+Require stack:
+- /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web/tests/unit/breadcrumb-query-session-registry.test.ts
+ ❯ tests/unit/breadcrumb-query-session-registry.test.ts:11:50
+      9|   cancel: (id: string) => Promise<boolean>; completion: (id: string) =…
+     10|   shutdown: () => Promise<void>; readonly activeCount: number }
+     11| const { createBreadcrumbQuerySessionRegistry } = require('../../electr…
+       |                                                  ^
+     12|   createBreadcrumbQuerySessionRegistry(input: { databasePath: string
+     13|     startSession: (input: { signal: AbortSignal; missionId: string }) …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/22]⎯
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 21 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > assembles unchanged rows, yields between frames, and waits for clean worker finish
+TypeError: store.listBreadcrumbPositions is not a function
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:56:25
+     54|     })
+     55|     let published = false
+     56|     const query = store.listBreadcrumbPositions!('mission-a', 5_000, '…
+       |                         ^
+     57|       published = true
+     58|       return value
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/22]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > accepts the explicit empty terminal frame and generates a request id when omitted
+TypeError: store.listBreadcrumbPositions is not a function
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:76:24
+     74|       readBreadcrumbQueryFrame: vi.fn().mockResolvedValue({ sequence: …
+     75|     })
+     76|     await expect(store.listBreadcrumbPositions!('mission-a', 5_000)).r…
+       |                        ^
+     77|     expect(start.mock.calls[0]?.[0].requestId).toEqual(expect.any(Stri…
+     78|     expect(start.mock.calls[0]?.[0].requestId.length).toBeGreaterThan(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/22]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects unsupported manifest without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects fractional count without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects negative dropped count without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects duplicate frame without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects missing frame without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects oversized frame without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects non-boolean done without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects empty nonterminal frame without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects truncated JSON without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects missing record without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects extra record without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects wrong order without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects unknown kind without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects null row without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects read failure without partial publication and cancels custody
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > rejects finish failure without partial publication and cancels custody
+TypeError: store.listBreadcrumbPositions is not a function
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:101:24
+     99|   ])('rejects %s without partial publication and cancels custody', asy…
+    100|     const { raw, store } = createHarness(overrides)
+    101|     await expect(store.listBreadcrumbPositions!('mission-a', 5_000, 'b…
+       |                        ^
+    102|     expect(raw.cancelBreadcrumbQuery).toHaveBeenCalledWith({ requestId…
+    103|     if (label !== 'finish failure') expect(raw.finishBreadcrumbQuery).…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/22]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > keeps cancellation authoritative when an outstanding frame resolves later
+TypeError: store.listBreadcrumbPositions is not a function
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:110:25
+    108|     const frame = new Promise((resolve) => { deliver = resolve })
+    109|     const { raw, store } = createHarness({ readBreadcrumbQueryFrame: v…
+    110|     const query = store.listBreadcrumbPositions!('mission-a', 5_000, '…
+       |                         ^
+    111|     const rejected = expect(query).rejects.toMatchObject({ name: 'Abor…
+    112|     await vi.waitFor(() => expect(raw.readBreadcrumbQueryFrame).toHave…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/22]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-client.test.ts > bounded breadcrumb client > exposes raw frame reads in preload with no old whole-result escape
+AssertionError: expected [Function] to be undefined
+
+- Expected:
+undefined
+
++ Received:
+[Function anonymous]
+
+ ❯ tests/unit/electron-breadcrumb-query-client.test.ts:129:58
+    127|       }),
+    128|     })
+    129|     expect(exposed.missionStore.listBreadcrumbPositions).toBeUndefined…
+       |                                                          ^
+    130|     for (const [method, channel, input] of [
+    131|       ['startBreadcrumbQuery', 'start-breadcrumb-query', { missionId: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/22]⎯
+
+ FAIL  tests/unit/electron-breadcrumb-query-session.test.ts > bounded breadcrumb worker result sessions > frames the exact single-snapshot selector result, including oversized records and every stored field
+Error: Breadcrumb query worker returned an invalid frame or session message.
+ ❯ Worker.<anonymous> electron/breadcrumb-query-session.cjs:119:10
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/22]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  21 failed | 10 passed (31)
+   Start at  15:05:39
+   Duration  1.78s (transform 29ms, setup 0ms, import 44ms, tests 500ms, environment 1.01s)
+

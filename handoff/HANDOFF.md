@@ -1,12 +1,14 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-12. Read after `CLAUDE.md`.
+Updated 2026-09-13. Read after `CLAUDE.md`.
 
 ## Where we are
 
 - **WAR-02B review remediation is implemented locally on branch
   `codex/war-02b-property-mutation`, based on exact `origin/master`
-  `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`.** The slice now has independent
+  `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37` before PR23; the branch now
+  includes current `origin/master` `1fac099a9f581448a5a607a063e2a8b77fa9b151`.**
+  The slice now has independent
   coordinate anchors and rejection cases, an independent ingest identity
   oracle, exact cursor/recent-window arithmetic, and a public client-boundary
   DON-228 fault injection with separate current-green and rebroken-red legs.
@@ -50,6 +52,36 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   DON-254 was In Progress in this historical receipt and is now Done in Linear.
   Historical timing failures remain release blockers.
   PR19 merge is complete; no release or performance work is claimed here.
+- **PR23 follow-up A is now merged to `origin/master` at
+  `1fac099a9f581448a5a607a063e2a8b77fa9b151` from final head `45420208`.**
+  Its final implementation head is `f203869c`; terminal CI `34694049815` passed.
+  The [Train B record](../docs/assurance/findings/repair-train-b.md) retains the
+  implementation evidence, historical proof and failures. No predecessor PRs
+  were open at the start of this chunk. Linear `DON-274` is verified Done;
+  `DON-254` is now Done in Linear.
+
+  PR23 delivered DON-254 follow-up A: bounded lossless canonical breadcrumb
+  query transport on branch `codex/don-254-bounded-history-transport`, against
+  the 103,626-row query measured at 316–351 ms and the 550 ms restart defect.
+  Follow-up B, the separate ~239 ms legacy recovery path, comes afterward; the
+  unchanged strict `<200 ms` qualification follows both. Release remains HOLD.
+  [PR23](https://github.com/donal0c/sartracker-web/pull/23) second Claude review adds
+  background throttling protection, reload cleanup, absolute/exit deadlines,
+  bounded reconstruction, safe retained failure causes and mission-bound terminal
+  progress. Earlier mission/admission and exact-dot starvation repairs remain.
+  Stable local source: 442 files / 4,634 tests, six qualification-only skips,
+  lint/build pass; loading/complete/failed browser flow and screenshot review pass.
+  Fresh macOS package: exact 103,626/103,627 rows in 1.17–1.28 s with window hidden,
+  dots during transfer in 21.7–23 ms, repeated same-ID reloads admit fresh snapshots;
+  main/renderer/write below 200 ms, all closes code zero. A Playwright unload-dialog
+  race was retained and the harness handler corrected before the passing repeat.
+  Four independent review charters clear. Reported DON-277 210.8 ms failure and
+  isolated 11.8 ms pass remain separate; no causal timing repair claimed.
+  The terminal PR receipt records its exact-head Linux CI/readiness; Donal
+  retains merge authority for the remaining qualification and release.
+  The [transport record](../docs/assurance/findings/breadcrumb-query-transport.md)
+  and [receipt](../docs/evidence/breadcrumb-query-transport/receipt.md) retain the
+  diagnosed source-cycle failure, focused correction and strict package measurements.
 
 - **DON-254 responsiveness attribution — PR21 merged** at `bac211dc`.
   It remains diagnostic-only. CI `34683600517` passed correctness, three
@@ -128,8 +160,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   confirmed deep-audit defects, and WAR hardening share the
   [coordinated work ledger](../docs/assurance/coordinated-work-ledger.md).
   Team Feedback Batch 2 repaired `AUD-07` and `AUD-14`; Repair Train A repaired
-  `AUD-13`, `AUD-02`, and `AUD-03`. Nine confirmed audit findings remain across
-  Repair Trains B–D. BCP-17/final
+  `AUD-13`, `AUD-02`, and `AUD-03`. Six confirmed audit findings remain across
+  Repair Trains C–D. BCP-17/final
   qualification waits for release-blocking repairs and applicable WAR-04
   remediation, then runs against one frozen exact candidate.
 
@@ -156,7 +188,7 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   fixes or explicit dispositions in the [complete ledger](../docs/breadcrumb-pr6-complete-review-ledger.md).
 - Documentation cleanup records the final testing approach below. Start new work
   from current `master`; the archive PR does not need another review cycle.
-- Repair Train B owns `AUD-01`/`AUD-10`/`AUD-05`. Merged WAR-06 remains
+- Repair Train B covered `AUD-01`/`AUD-10`/`AUD-05`. Merged WAR-06 remains
   evidence-only; its open hazards are not repaired or closed by PR19.
 - Remaining Sar_4/team requests are still explicit rather than absorbed into
   these tasks: official/private map distribution and provider/grid work
@@ -167,13 +199,11 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   organization (`DON-100`). Marker Details simplification remains a later
   coordinator-confirmation item. Mission Preview/per-device visibility landed
   in PR #15; Linear `DON-215` is reconciled to Done.
-- Locked next steps after PR19 merged: bounded large breadcrumb IPC/query
-  transfer repair (316–550 ms), separate legacy-recovery repair (~239 ms), then
-  unchanged strict `<200 ms` qualification. Other repair trains and WAR hazards
-  remain tracked separately before BCP-17/DON-255. Use the
-  [workplan](../docs/two-track-execution-workplan.md#next-task-order) and live Linear
-  issues for scope. PR19 merge is complete; release/field acceptance is not established.
-  DON-247 and DON-264 remain separate reliability work.
+- PR23 follow-up A is merged. The next DON-254 work is follow-up B: the separate
+  ~239 ms legacy recovery path, followed by unchanged strict `<200 ms`
+  qualification. Historical proof and failures remain in the [Train B record](../docs/assurance/findings/repair-train-b.md).
+  Other repair trains and WAR hazards remain tracked separately before BCP-17/DON-255.
+  Release remains HOLD. DON-247 and DON-264 remain separate reliability work.
 
 ## Testing approach to carry forward
 

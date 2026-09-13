@@ -1,0 +1,32 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/electron-main-startup.test.ts (39 tests | 1 failed | 38 skipped) 77ms
+     × keeps operational window timers active when minimized 77ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-main-startup.test.ts > Electron main startup > keeps operational window timers active when minimized
+AssertionError: expected undefined to be false // Object.is equality
+
+- Expected:
+false
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-main-startup.test.ts:134:95
+    132|     require('../../electron/main.cjs')
+    133|     await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBe…
+    134|     expect(electronMock.BrowserWindow.mock.calls[0]?.[0].webPreference…
+       |                                                                                               ^
+    135|   })
+    136|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 38 skipped (39)
+   Start at  20:11:45
+   Duration  490ms (transform 36ms, setup 0ms, import 45ms, tests 77ms, environment 235ms)

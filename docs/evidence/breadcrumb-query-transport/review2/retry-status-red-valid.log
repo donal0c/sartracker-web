@@ -1,0 +1,60 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+ ❯ tests/unit/start-tracking-runtime.test.ts (94 tests | 2 failed | 92 skipped) 223ms
+     × publishes mission-bound terminal history state (failure=false) 118ms
+     × publishes mission-bound terminal history state (failure=true) 104ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > publishes mission-bound terminal history state (failure=false)
+AssertionError: expected { receivedPositions: +0, …(3) } to match object { missionId: 'mission-1', …(1) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "missionId": "mission-1",
+-   "state": "loading",
++   "state": "complete",
+  }
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:3004:67
+    3002|     await vi.waitFor(() => expect(listBreadcrumbPositions).toHaveBeenC…
+    3003|     try {
+    3004|       expect(applyStatus.mock.lastCall?.[0].savedHistoryTransfer).toMa…
+       |                                                                   ^
+    3005|     } finally {
+    3006|       completeNext()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > publishes mission-bound terminal history state (failure=true)
+AssertionError: expected { receivedPositions: +0, …(3) } to match object { missionId: 'mission-1', …(1) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "missionId": "mission-1",
+-   "state": "loading",
++   "state": "failed",
+  }
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:3004:67
+    3002|     await vi.waitFor(() => expect(listBreadcrumbPositions).toHaveBeenC…
+    3003|     try {
+    3004|       expect(applyStatus.mock.lastCall?.[0].savedHistoryTransfer).toMa…
+       |                                                                   ^
+    3005|     } finally {
+    3006|       completeNext()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 92 skipped (94)
+   Start at  20:19:48
+   Duration  741ms (transform 122ms, setup 0ms, import 147ms, tests 223ms, environment 236ms)

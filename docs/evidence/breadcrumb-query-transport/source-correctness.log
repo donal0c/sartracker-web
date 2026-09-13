@@ -1,0 +1,43 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:correctness
+> vitest run --config vitest.correctness.config.ts --no-file-parallelism
+
+Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/4899/sartracker-web
+
+Legacy event preparation heartbeat diagnostics: {"maximumHeartbeatGapMs":11.906040999998368,"maximumInspectionQueryMs":1.6957079999992857,"largestGapProcessCpuMs":8.412,"overlappingMainThreadGc":[]}
+GPX current-write diagnostics: {"maximumWriteMs":30.839790999998513,"largestWriteProcessCpuMs":4.758,"maximumHeartbeatGapMs":18.613916999995126,"sequence":1069}
+ ❯ tests/unit/breadcrumb-pr6-kill-matrix-lib.test.ts (30 tests | 1 failed) 3927ms
+     × runs a fast protocol self-test through the report-writing CLI without archive claims 146ms
+Startup SQLite contention: {"maximumGapMs":12.811042000000043,"processCpuMs":11.112}
+Startup SQLite contention: {"maximumGapMs":12.755874999999946,"processCpuMs":5.456}
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/breadcrumb-pr6-kill-matrix-lib.test.ts > Breadcrumb PR6 real-process archive kill matrix helpers > runs a fast protocol self-test through the report-writing CLI without archive claims
+AssertionError: Breadcrumb PR6 kill-matrix qualification failed safely.
+: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/unit/breadcrumb-pr6-kill-matrix-lib.test.ts:1424:42
+    1422|     })
+    1423|
+    1424|     expect(result.status, result.stderr).toBe(0)
+       |                                          ^
+    1425|     expect(result.signal).toBeNull()
+    1426|     expect(JSON.parse(readFileSync(reportPath, 'utf8'))).toMatchObject…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 441 passed (442)
+      Tests  1 failed | 4593 passed | 6 skipped (4600)
+   Start at  15:38:46
+   Duration  482.97s (transform 3.47s, setup 0ms, import 11.73s, tests 333.16s, environment 111.23s)
+

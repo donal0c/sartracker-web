@@ -2966,6 +2966,126 @@ describe('startTrackingRuntime', () => {
     )
   })
 
+  it.each([false, true])('publishes mission-bound terminal history state (failure=%s)', async (failed) => {
+    let hooks!: { getCanonicalBreadcrumbs: (missionId: string) => Promise<unknown>; onStatusChange: (status: TrackingConnectionStatus) => void }
+    let reportProgress!: (value: { receivedPositions: number; totalPositions: number }) => void
+    let complete!: () => void
+    const pending = new Promise<{ positions: never[]; deviceTotals: never[] }>((resolve, reject) => {
+      complete = () => failed ? reject(new Error('Storage read failed')) : resolve({ positions: [], deviceTotals: [] })
+    })
+    let completeNext!: () => void
+    const nextPending = new Promise<{ positions: never[]; deviceTotals: never[] }>((resolve) => {
+      completeNext = () => resolve({ positions: [], deviceTotals: [] })
+    })
+    const listBreadcrumbPositions = vi.fn().mockReturnValueOnce(pending).mockReturnValueOnce(nextPending)
+    const applyStatus = vi.fn()
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, value) => { hooks = value; return { start: vi.fn(), stop: vi.fn() } }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({ getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listBreadcrumbPositions,
+        subscribeBreadcrumbQueryProgress: vi.fn((_id, listener) => { reportProgress = listener; return vi.fn() }),
+      }), applySnapshot: vi.fn(), applyStatus,
+    })
+    hooks.onStatusChange({ mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null })
+    const query = hooks.getCanonicalBreadcrumbs('mission-1')
+    const settled = failed ? expect(query).rejects.toThrow('Storage read failed') : expect(query).resolves.toBeDefined()
+    await vi.waitFor(() => expect(reportProgress).toBeDefined())
+    reportProgress({ receivedPositions: 0, totalPositions: 0 })
+    complete()
+    await settled
+    expect(applyStatus.mock.lastCall?.[0]).toMatchObject({ warning: null, savedHistoryTransfer: {
+      missionId: 'mission-1', state: failed ? 'failed' : 'complete',
+    } })
+    const nextQuery = hooks.getCanonicalBreadcrumbs('mission-1')
+    await vi.waitFor(() => expect(listBreadcrumbPositions).toHaveBeenCalledTimes(2))
+    try {
+      expect(applyStatus.mock.lastCall?.[0].savedHistoryTransfer).toMatchObject({ missionId: 'mission-1', state: 'loading' })
+    } finally {
+      completeNext()
+      await nextQuery
+    }
+    await stop()
+  })
+
+  it('keeps current tracking status live while showing incomplete saved-history transfer progress', async () => {
+    let hooks: { getCanonicalBreadcrumbs: (missionId: string, signal?: AbortSignal) => Promise<unknown>
+      onStatusChange: (status: TrackingConnectionStatus) => void } | undefined
+    let reportProgress: ((value: { receivedPositions: number; totalPositions: number }) => void) | undefined
+    let finishQuery!: (value: { positions: never[]; deviceTotals: never[] }) => void
+    const pending = new Promise<{ positions: never[]; deviceTotals: never[] }>((resolve) => { finishQuery = resolve })
+    const unsubscribe = vi.fn()
+    const applyStatus = vi.fn()
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, value) => { hooks = value; return { start: vi.fn(), stop: vi.fn() } }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({ getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listBreadcrumbPositions: vi.fn(() => pending),
+        subscribeBreadcrumbQueryProgress: vi.fn((_id, listener) => { reportProgress = listener; return unsubscribe }),
+      }),
+      applySnapshot: vi.fn(), applyStatus,
+    })
+    hooks!.onStatusChange({ mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null })
+    const controller = new AbortController()
+    const query = hooks!.getCanonicalBreadcrumbs('mission-1', controller.signal)
+    await vi.waitFor(() => expect(reportProgress).toBeDefined())
+    reportProgress!({ receivedPositions: 64, totalPositions: 100 })
+    expect(applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'online', warning: null,
+      savedHistoryTransfer: { missionId: 'mission-1', state: 'loading', receivedPositions: 64, totalPositions: 100 } }))
+    controller.abort()
+    const rejected = expect(query).rejects.toMatchObject({ name: 'AbortError' })
+    const calls = applyStatus.mock.calls.length
+    reportProgress!({ receivedPositions: 100, totalPositions: 100 })
+    expect(applyStatus).toHaveBeenCalledTimes(calls)
+    finishQuery({ positions: [], deviceTotals: [] })
+    await rejected
+    expect(unsubscribe).toHaveBeenCalledOnce()
+    expect(applyStatus.mock.lastCall?.[0].warning).toBeNull()
+  })
+
+  it('does not publish late history progress or cleanup from a superseded runtime', async () => {
+    let hooks: { getCanonicalBreadcrumbs: (missionId: string, signal?: AbortSignal) => Promise<unknown>
+      onStatusChange: (status: TrackingConnectionStatus) => void } | undefined
+    let reportProgress: ((value: { receivedPositions: number; totalPositions: number }) => void) | undefined
+    let finishQuery!: (value: { positions: never[]; deviceTotals: never[] }) => void
+    const pending = new Promise<{ positions: never[]; deviceTotals: never[] }>((resolve) => { finishQuery = resolve })
+    const applyStatus = vi.fn()
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, value) => { hooks = value; return { start: vi.fn(), stop: vi.fn() } }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({ getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listBreadcrumbPositions: vi.fn(() => pending),
+        subscribeBreadcrumbQueryProgress: vi.fn((_id, listener) => { reportProgress = listener; return vi.fn() }),
+      }),
+      applySnapshot: vi.fn(), applyStatus,
+    })
+    hooks!.onStatusChange({ mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null })
+    const controller = new AbortController()
+    const query = hooks!.getCanonicalBreadcrumbs('mission-1', controller.signal)
+    await vi.waitFor(() => expect(reportProgress).toBeDefined())
+    reportProgress!({ receivedPositions: 32, totalPositions: 100 })
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(), applySnapshot: vi.fn(), applyStatus,
+    })
+    expect(applyStatus.mock.lastCall?.[0].savedHistoryTransfer).toBeUndefined()
+    applyStatus.mockClear()
+    reportProgress!({ receivedPositions: 64, totalPositions: 100 })
+    const lateProgressCalls = applyStatus.mock.calls.length
+    applyStatus.mockClear()
+    controller.abort()
+    const rejected = expect(query).rejects.toMatchObject({ name: 'AbortError' })
+    finishQuery({ positions: [], deviceTotals: [] })
+    await rejected
+    expect({ lateProgressCalls, lateCleanupCalls: applyStatus.mock.calls.length })
+      .toEqual({ lateProgressCalls: 0, lateCleanupCalls: 0 })
+  })
+
   it('cancels and drains stale canonical storage work before starting the replacement', async () => {
     let pollerHooks:
       | {

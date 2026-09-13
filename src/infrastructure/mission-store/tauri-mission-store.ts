@@ -1112,6 +1112,10 @@ export type MissionStore = {
     readonly droppedPositionCount?: number
   }>
   readonly cancelBreadcrumbQuery?: (requestId: string) => Promise<boolean>
+  readonly subscribeBreadcrumbQueryProgress?: (
+    requestId: string,
+    listener: (progress: { readonly receivedPositions: number; readonly totalPositions: number }) => void,
+  ) => () => void
   readonly listExactBreadcrumbDotPage?: (
     input: ExactBreadcrumbDotPageQuery,
     requestId?: string,

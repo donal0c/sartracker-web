@@ -50,9 +50,9 @@ head.
 - Team-domain meaning comes only from the raw/indexed Q&A. No audit or WAR task
   may invent a new operational requirement.
 
-## Current reconciliation disposition
+## Current merged disposition
 
-PR22, PR20, diagnostic-only PR21, and PR19 are merged. PR19 merged at
+PR22, PR20, diagnostic-only PR21, PR19, and PR23 are merged. PR19 merged at
 `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37` after reconciliation against
 `f4d1f3214ddc82b0df043c85a340b3872ba90a80`. It retains the independent
 PR22 main-event-loop probe, the unchanged strict `<200 ms` release predicates,
@@ -64,6 +64,15 @@ PR19’s ordinary CI and four final accumulated-diff reviews are complete. Its
 [repair record](findings/repair-train-b.md) separates historical and current
 proof. DON-254 remains the final-candidate qualification owner and is now Done
 in Linear; qualification remains incomplete and release remains HOLD.
+PR23 is merged to `origin/master` at
+`1fac099a9f581448a5a607a063e2a8b77fa9b151` from final implementation head
+`45420208`; its terminal receipt records the bounded lossless transport,
+background-throttling, reload-cleanup and inactivity-watchdog repairs. The
+[transport receipt](../evidence/breadcrumb-query-transport/receipt.md) and
+[PR23 receipt](https://github.com/donal0c/sartracker-web/pull/23) retain its
+exact-head proof and historical limits. Follow-up B, the separate ~239 ms
+legacy recovery path, and unchanged strict `<200 ms` qualification remain
+outstanding. No release acceptance is claimed.
 
 ## Deep-audit finding disposition
 
@@ -88,9 +97,9 @@ implementation alone.
 | `AUD-02` out-and-back route falsely appears stationary | P2 | **Merged in PR #17 at `302bdd04`; WAR-06 recheck active** | `DON-269` Done; `TRK-004` / `WAR-06`; twenty-minute rule retained | Route, accuracy/jitter, exact elapsed and acknowledgement through noise-return pass; three rendered flows and independent review clear. [Remediation](findings/repair-train-a-remediation.md) |
 | `AUD-03` stationary projection broadly rescans mission history | P1 | **Merged in PR #17 at `302bdd04`; WAR-06 recheck active** | `DON-269` Done / `DON-254`; final qualification remains separate | Real interleaved 100×5,000 accumulator bound passes; guarded incremental renderer maximum 78.5 ms <200 with post-operation samples. Cold-load and broader soak outliers remain outside this proof. [Remediation](findings/repair-train-a-remediation.md) |
 | `WAR-06-AUD-01`, `WAR-06-AUD-02`, `WAR-06-CACHE-SIBLING` lifecycle/cache boundary | P1 candidate | **Reachable-route evidence correction in PR #20; production hazard remains open** | `DON-267` / `DON-254` (Done in Linear; qualification remains incomplete); WAR-06 branch `codex/war-06-tracking-lifecycle`; corrected characterization commit `d96e51c8` based on `3db57a79` | Three passing intentional-red characterizations plus a 3-GREEN/3-RED negative-control proof: delayed history timer during a real finish → idle → start transition, real poller-to-runtime current-fix callback with mission-wake coalescing during hydration, and cold-start read of the unkeyed global cache under Mission B. The production status bridge, mission-selected device filters and write-enabled cache configuration are included; remaining synthetic-provider/local-store/direct-publication/in-memory-cache limits are explicit. Prior reviews `5175815340` and `5176300059` are historical provenance, not current approval. No production fix or closure. Executable-head CI `34650688441` is recorded in-repo; PR-mode timing/replay/packaged skips remain explicit gaps. Require the production repair train to preserve the reachable routes, then red/green current-position/stationary/persistence/browser/package proof. Retain unresolved strict 200 ms failures; PR21 and PR19 are merged. [WAR-06 report](findings/war-06/WAR-06.md) · [Receipts](findings/war-06/review-receipts.md) · [PR checks](https://github.com/donal0c/sartracker-web/pull/20/checks) |
-| `AUD-01` legal GPX extension fields overwrite canonical evidence/add a coordinate | P1 | **Merged in PR19 at `d20bae5f`** | `DON-274` / `DON-254`; original red/green at `302bdd04`, reconciliation base `f4d1f321` | Canonical source-to-SQLite/replay, exact bytes/digest and native/browser proof in [Train B record](findings/repair-train-b.md); historical saved interpretations remain B-ADJ-01 |
-| `AUD-10` native GPX parser drops CDATA values | P2 | **Merged in PR19 at `d20bae5f`** | `DON-274`; same parser/source-fidelity contract as `AUD-01` | Browser/native corpus parity, exact persisted/restarted evidence; [Train B record](findings/repair-train-b.md) |
-| `AUD-05` ending an outing during successful GPX import leaves stale importing UI | P2 | **Merged in PR19 at `d20bae5f`** | `DON-274` / `DON-270`; generation-owned import settlement, stale-page/error containment | Red/green interleavings, truthful completion and native custody; [Train B record](findings/repair-train-b.md). Late-refresh failure now retains the settled import error |
+| `AUD-01` legal GPX extension fields overwrite canonical evidence/add a coordinate | P1 | **Merged in PR19 at `d20bae5f`** | `DON-274` Done / `DON-254` Done in Linear; original red/green at `302bdd04`, reconciliation base `f4d1f321` | Canonical source-to-SQLite/replay, exact bytes/digest and native/browser proof in [Train B record](findings/repair-train-b.md); historical saved interpretations remain B-ADJ-01 |
+| `AUD-10` native GPX parser drops CDATA values | P2 | **Merged in PR19 at `d20bae5f`** | `DON-274` Done; same parser/source-fidelity contract as `AUD-01` | Browser/native corpus parity, exact persisted/restarted evidence; [Train B record](findings/repair-train-b.md) |
+| `AUD-05` ending an outing during successful GPX import leaves stale importing UI | P2 | **Merged in PR19 at `d20bae5f`** | `DON-274` Done / `DON-270` original completed history; generation-owned import settlement, stale-page/error containment | Red/green interleavings, truthful completion and native custody; [Train B record](findings/repair-train-b.md). Late-refresh failure now retains the settled import error |
 | `AUD-04` equal map-style writes cause continuous idle redraw | P2 | **Repair train C — map interaction/rendering** | `DON-264` / `DON-254`; coordinate with `WAR-04` map remediation and start after the active visibility/map batch | Causal browser performance test, quiet-idle control, no lost overlay synchronization, frame-budget proof |
 | `AUD-06` repeated Go To can be ignored/lose its target during style loading | P2 | **Repair train C** | `DON-6` / `DON-254`; same map target/style lifecycle | Red/green repeated navigation and style-load tests plus rendered target verification |
 | `AUD-11` built-in no-coverage PNG is invalid | P2 | **Repair train C** | `DON-7` / `DON-76`; combine with the WAR-04 map qualification/freshness train without conflating it with imported-tile corruption | Real image-decoder oracle and fail-visible no-coverage workflow |
@@ -110,10 +119,13 @@ repair train.
 
 1. Team Feedback Batch 2 and Repair Train A are merged. Retain their exact-head
    proof limits and the unexplained timing failures for final qualification.
-2. Repair Train B is merged in PR19; merged WAR-06 remains evidence-only. The
-   locked follow-on queue is
-   breadcrumb IPC/query transfer repair (316–550 ms), separate legacy recovery
-   (~239 ms), then unchanged strict `<200 ms` qualification; release HOLD remains.
+2. Repair Train B is merged in PR19 at `d20bae5f`; its terminal CI
+   `34694049815` passed and its historical proof/failures remain in the
+   [Train B record](findings/repair-train-b.md). Merged WAR-06 remains
+   evidence-only. PR23's follow-up A bounded lossless canonical breadcrumb
+   transport is also merged at `1fac099a`; separate follow-up B legacy
+   recovery (~239 ms) and unchanged strict `<200 ms` qualification remain.
+   Release HOLD remains.
 3. Keep Repair Trains C and D tracked for the safest order on subsequent master;
    they may run in parallel only if their final file/state ownership is proven
    disjoint.
@@ -144,8 +156,11 @@ repair train.
   simplification. `DON-215` is reconciled to Done in Linear to match merged
   PR #15.
 - Deep audit: fourteen confirmed groups are triaged above; eight are repaired
-  in merged PRs #15/#17/#19 and six remain in Repair Trains C–D. Current-head
-  red reproduction still controls whether each remaining repair is valid.
+  in merged PRs #15/#17/#19 and six remain in Repair Trains C–D. Repair Train B
+  and PR23 follow-up A are merged; their historical proof and failures remain
+  linked above. The current queue is separate follow-up B and later strict
+  `<200 ms` qualification. Current-head red reproduction still controls
+  whether each remaining repair is valid.
 - WAR: WAR-01, WAR-04, WAR-04B, WAR-11A, WAR-13A, and WAR-02A are merged.
   WAR-06 is active as an investigation-only tracking-lifecycle audit. WAR-04's nine confirmed
   map/settings/privacy defects remain additional WAR-11 remediation inputs.

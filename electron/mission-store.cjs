@@ -12,7 +12,8 @@ const { createBulkDeviceObservationWriter } = require('./bulk-device-observation
 // closed stores.
 const archiveCorrectionWriterGuards = new WeakMap()
 
-const { runBreadcrumbQueryInWorker } = require('./breadcrumb-query-runner.cjs')
+const { createBreadcrumbQuerySessionRegistry } = require('./breadcrumb-query-session-registry.cjs')
+const { startBreadcrumbQuerySession } = require('./breadcrumb-query-session.cjs')
 const {
   runBreadcrumbDotQueryInWorker,
 } = require('./breadcrumb-dot-query-runner.cjs')
@@ -206,6 +207,27 @@ const MAX_GPX_ISSUE_TIMESTAMP_LENGTH = 64
 const GPX_ISSUE_TRUNCATION_SUFFIX = '… [truncated for renderer]'
 const MAX_MISSION_NAME_BYTES = 1_024
 const ARCHIVE_UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+
+/** Waits for the shared dot/line worker slot without trapping a cancelled queued session. */
+function waitForBreadcrumbWorkerSlot(previous, signal) {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      const error = new Error('Breadcrumb query was cancelled before worker admission.')
+      error.name = 'AbortError'
+      reject(error)
+    }
+    if (signal.aborted) { abort(); return }
+    signal.addEventListener('abort', abort, { once: true })
+    void previous.then(() => {
+      signal.removeEventListener('abort', abort)
+      if (signal.aborted) abort()
+      else resolve()
+    }, (error) => {
+      signal.removeEventListener('abort', abort)
+      reject(error)
+    })
+  })
+}
 
 /** Validates the opaque renderer correlation key used only for worker cancellation. */
 function normalizeBreadcrumbQueryRequestId(value, required) {
@@ -487,8 +509,18 @@ function createElectronMissionStore(options) {
   const gpxReceiptRecoveryFaultInjection = options.gpxReceiptRecoveryFaultInjection ?? {}
   const archiveCorrectionAttachmentRecoveryRunner = options.startArchiveCorrectionAttachmentRecovery
     ?? startArchiveCorrectionAttachmentRecovery
-  const breadcrumbQueryRunner =
-    options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
+  const breadcrumbSessions = createBreadcrumbQuerySessionRegistry({ databasePath,
+    startSession: (input) => {
+      const previous = breadcrumbQueryTail
+      const start = waitForBreadcrumbWorkerSlot(previous, input.signal).then(() =>
+        (options.startBreadcrumbQuerySession ?? startBreadcrumbQuerySession)(input))
+      // Ready means the worker has closed its SQLite snapshot. The registry
+      // retains transfer/termination custody while exact-dot queries may proceed.
+      breadcrumbQueryTail = Promise.all([previous,
+        start.catch(() => undefined),
+      ]).then(() => undefined)
+      return start
+    } })
   const breadcrumbDotQueryRunner =
     options.runBreadcrumbDotQueryInWorker ?? runBreadcrumbDotQueryInWorker
   const missionReviewReadQueryRunner =
@@ -513,7 +545,6 @@ function createElectronMissionStore(options) {
   const onCoverageChanged = options.onCoverageChanged ?? (() => undefined)
   const coveragePerformanceByMission = new Map()
   const activeBreadcrumbQueryControllers = new Set()
-  const breadcrumbQueryControllersByRequestId = new Map()
   const breadcrumbDotQueryControllersByRequestId = new Map()
   const missionReviewQueryControllersByRequestId = new Map()
   const missionReplayQueryControllersByRequestId = new Map()
@@ -1905,6 +1936,8 @@ function createElectronMissionStore(options) {
   return {
     prepareClose: async () => {
       coverageShutdownRequested = true
+      const breadcrumbSessionsSettled = breadcrumbSessions.shutdown()
+      for (const controller of activeBreadcrumbQueryControllers) controller.abort()
       const responsiveWritesSettled = responsiveWriter.close()
       archiveCorrectionAttachmentRecoveryShutdownRequested = true
       archiveRegistryReconciliationShutdownRequested = true
@@ -1926,6 +1959,8 @@ function createElectronMissionStore(options) {
       }
       const shutdownTasks = active.map((entry) => entry.quiesced)
       shutdownTasks.push(responsiveWritesSettled)
+      shutdownTasks.push(breadcrumbSessionsSettled)
+      shutdownTasks.push(breadcrumbQueryTail)
       if (legacyArchiveRegistryBackfillActive !== null) {
         shutdownTasks.push(legacyArchiveRegistryBackfillActive)
       }
@@ -1992,6 +2027,9 @@ function createElectronMissionStore(options) {
       }
     },
     close: () => {
+      if (breadcrumbSessions.activeCount > 0 || activeBreadcrumbQueryControllers.size > 0) {
+        throw new Error('Cannot close the mission store while breadcrumb transfers are active; call prepareClose first.')
+      }
       if (legacyArchiveRegistryBackfillActive !== null) {
         throw new Error('Cannot close the mission store while archive registry backfill is active; call prepareClose first.')
       }
@@ -2050,7 +2088,6 @@ function createElectronMissionStore(options) {
         controller.abort()
       }
       activeBreadcrumbQueryControllers.clear()
-      breadcrumbQueryControllersByRequestId.clear()
       breadcrumbDotQueryControllersByRequestId.clear()
       for (const activeQuery of missionReviewQueryControllersByRequestId.values()) {
         activeQuery.controller.abort()
@@ -2571,61 +2608,16 @@ function createElectronMissionStore(options) {
         : all(db, 'SELECT * FROM positions WHERE mission_id = ? AND device_id = ? ORDER BY timestamp ASC', missionId, deviceId),
     listRecentPositions: async (missionId, perDeviceLimit) =>
       listRecentPositions(db, missionId, perDeviceLimit),
-    listBreadcrumbPositions: async (missionId, perDeviceLimit, requestId) => {
-      const normalizedRequestId = normalizeBreadcrumbQueryRequestId(requestId, false)
-      if (
-        normalizedRequestId !== null &&
-        breadcrumbQueryControllersByRequestId.has(normalizedRequestId)
-      ) {
-        throw new Error('Breadcrumb query request ID is already active.')
-      }
-      const controller = new AbortController()
-      const query = breadcrumbQueryTail.then(() =>
-        breadcrumbQueryRunner({
-          databasePath,
-          missionId,
-          perDeviceLimit,
-          signal: controller.signal,
-        }),
-      )
-      breadcrumbQueryTail = query.then(
-        () => undefined,
-        () => undefined,
-      )
-      const activeQuery = { controller, completion: query }
-      activeBreadcrumbQueryControllers.add(controller)
-      if (normalizedRequestId !== null) {
-        breadcrumbQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
-      }
-      try {
-        const result = await query
-        return {
-          positions: result.positions,
-          deviceTotals: result.deviceTotals,
-          deviceSelections: result.deviceSelections,
-          droppedPositionCount: result.droppedPositionCount,
-        }
-      } finally {
-        activeBreadcrumbQueryControllers.delete(controller)
-        if (
-          normalizedRequestId !== null &&
-          breadcrumbQueryControllersByRequestId.get(normalizedRequestId) === activeQuery
-        ) {
-          breadcrumbQueryControllersByRequestId.delete(normalizedRequestId)
-        }
-      }
+    startBreadcrumbQuery: (missionId, perDeviceLimit, requestId) => {
+      if (storeClosed) return Promise.reject(new Error('Mission store is closed.'))
+      return breadcrumbSessions.start(missionId, perDeviceLimit, requestId)
     },
-    cancelBreadcrumbQuery: async (requestId) => {
-      const normalizedRequestId = normalizeBreadcrumbQueryRequestId(requestId, true)
-      const activeQuery = breadcrumbQueryControllersByRequestId.get(normalizedRequestId)
-      if (activeQuery === undefined) {
-        return false
-      }
-      activeQuery.controller.abort()
-      await activeQuery.completion.catch(() => undefined)
-      return true
-    },
+    readBreadcrumbQueryFrame: (requestId, sequence) => breadcrumbSessions.read(requestId, sequence),
+    finishBreadcrumbQuery: (requestId) => breadcrumbSessions.finish(requestId),
+    breadcrumbQueryCompletion: (requestId) => breadcrumbSessions.completion(requestId),
+    cancelBreadcrumbQuery: async (requestId) => breadcrumbSessions.cancel(requestId),
     listExactBreadcrumbDotPage: async (input, requestId) => {
+      if (storeClosed || coverageShutdownRequested) throw new Error('Mission store is closing or closed.')
       const normalizedRequestId = normalizeBreadcrumbQueryRequestId(requestId, false)
       if (
         normalizedRequestId !== null &&
