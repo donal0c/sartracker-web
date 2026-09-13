@@ -43,8 +43,9 @@ Actual mac-arm64 packaged restart/cache smoke passed all five launches: A cache
 recovers, B rejects A/legacy caches, and fresh B displays and persists. Four broader
 browser failures reproduce on untouched baseline; native coverage-worker warnings
 remain recorded. See the repair record for exact inputs, attempts and limits.
-Next: push the reviewed PR and require green ordinary CI on its final head. Live
-PR/head/CI receipts belong in DON-267; Donal owns merge after that gate passes.
+The reviewed repair is [PR26](https://github.com/donal0c/sartracker-web/pull/26).
+Require green ordinary CI on its final head; live head/CI receipts are in DON-267.
+Donal owns merge after that gate passes.
 
 Use [testing and review cadence](../docs/testing-and-review-cadence.md): retain
 failures, diagnose before repeating, serialize heavy checks, and reuse unchanged

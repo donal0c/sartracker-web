@@ -3,8 +3,8 @@
 Base: `deedab27483ad4fe1ca998a4d68afd555f4e2337` (fresh `origin/master`, merged PR24).
 Branch: `codex/don-267-war06-mission-scope-repair`.
 Status: local repair and two independent source reviews complete. Merge acceptance
-requires green ordinary checks on the pushed PR head; the live PR/CI receipt is
-linked from DON-267 in Linear. Release remains HOLD.
+requires green ordinary checks on [PR26](https://github.com/donal0c/sartracker-web/pull/26)'s
+final head; the live head/CI receipt is linked from DON-267 in Linear. Release remains HOLD.
 
 ## Scope and authority
 
