@@ -8,6 +8,12 @@ sources of work from being lost, duplicated, or qualified in the wrong order.
 
 ## Governing decision
 
+**PR27 follow-up:** earlier Train D readiness is withdrawn. Donal approved audited
+legacy-roster recovery (SAR-QA-022); independent native/shared and UI/IPC reviews
+are clear on the repaired working tree. Full correctness passes 4,825 tests / 458
+files (six existing exclusions); affected Chromium passes 26/26. Exact-head checks
+and reviews remain the next boundary. See [review disposition](findings/pr27-claude-review.md).
+
 SAR Tracker now has three linked delivery streams:
 
 1. confirmed SAR-team requirements and UI feedback;

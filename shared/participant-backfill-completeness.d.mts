@@ -6,6 +6,8 @@ export type BackfillParticipant = {
   effectiveFrom: string
   addedAt: string
   startingMemberDeviceIdsJson?: string | null | undefined
+  attestedMemberDeviceIdsJson?: string
+  attestationError?: string
 }
 
 export type BackfillMembershipEvent = {
@@ -26,9 +28,10 @@ export type BackfillCheckpoint = {
   completed: number
 }
 
-export type BackfillScope = 'exact' | 'inferred' | 'unknown'
+export type BackfillScope = 'exact' | 'inferred' | 'attested' | 'unknown'
 
 export type BackfillCompleteness = {
+  error?: string
   scope: BackfillScope
   memberDeviceIds: readonly string[]
   completedMemberDeviceIds: readonly string[]
@@ -36,6 +39,16 @@ export type BackfillCompleteness = {
 }
 
 export function parseStartingMemberDeviceIds(serialized: string): readonly string[]
+
+export function resolveParticipantBackfillScope(input: {
+  participant: BackfillParticipant
+  checkpoints: readonly BackfillCheckpoint[]
+  membershipEvents: readonly BackfillMembershipEvent[]
+}): {
+  scope: BackfillScope
+  memberDeviceIds: readonly string[]
+  error?: string
+}
 
 export function evaluateParticipantBackfill(input: {
   participant: BackfillParticipant

@@ -15,10 +15,11 @@ export function parseStartingMemberDeviceIds(serialized) {
 
 /** Evaluates a participant's fixed backfill coverage and legacy scope provenance. */
 export function evaluateParticipantBackfill(input) {
-  const scope = resolveParticipantScope(input)
+  const scope = resolveParticipantBackfillScope(input)
   if (scope.scope === 'unknown') {
     return {
       scope: 'unknown',
+      ...(scope.error === undefined ? {} : { error: scope.error }),
       memberDeviceIds: [],
       completedMemberDeviceIds: [],
       complete: false,
@@ -40,8 +41,11 @@ export function evaluateParticipantBackfill(input) {
 }
 
 /** Resolves exact new-row scope or a conservative, explicitly inferred legacy scope. */
-function resolveParticipantScope(input) {
+export function resolveParticipantBackfillScope(input) {
   const participant = input.participant
+  if (participant.attestationError) {
+    return { scope: 'unknown', memberDeviceIds: [], error: participant.attestationError }
+  }
   if (participant.kind === 'device') {
     if (typeof participant.deviceId !== 'string' || participant.deviceId.trim() === '') {
       return { scope: 'unknown', memberDeviceIds: [] }
@@ -51,11 +55,31 @@ function resolveParticipantScope(input) {
 
   if (participant.startingMemberDeviceIdsJson !== null
     && participant.startingMemberDeviceIdsJson !== undefined) {
-    return {
-      scope: 'exact',
-      memberDeviceIds: parseStartingMemberDeviceIds(
+    try {
+      const startingMemberDeviceIds = parseStartingMemberDeviceIds(
         participant.startingMemberDeviceIdsJson,
-      ),
+      )
+      return {
+        scope: 'exact',
+        memberDeviceIds: mergeHistoricallyRequiredMemberDeviceIds(
+          input,
+          startingMemberDeviceIds,
+        ),
+      }
+    } catch {
+      return { scope: 'unknown', memberDeviceIds: [], error: 'Stored group starting-member snapshot is invalid. Retain this mission and repair its roster before finishing.' }
+    }
+  }
+
+  if (participant.attestedMemberDeviceIdsJson !== undefined) {
+    try {
+      const start = parseTimestamp(participant.effectiveFrom)
+      const end = parseTimestamp(participant.addedAt)
+      if (start === null || end === null || start > end) throw new Error('Invalid original interval.')
+      return { scope: 'attested', memberDeviceIds: mergeHistoricallyRequiredMemberDeviceIds(input,
+        parseStartingMemberDeviceIds(participant.attestedMemberDeviceIdsJson)) }
+    } catch {
+      return { scope: 'unknown', memberDeviceIds: [], error: 'Stored roster attestation is invalid.' }
     }
   }
 
@@ -68,18 +92,7 @@ function resolveParticipantScope(input) {
   if (addedAt === null || effectiveFrom === null || effectiveFrom > addedAt) {
     return { scope: 'unknown', memberDeviceIds: [] }
   }
-  const events = input.membershipEvents
-    .filter((event) =>
-      event.missionId === participant.missionId &&
-      event.teamId === teamId &&
-      (event.change === 'member' || event.change === 'left') &&
-      parseTimestamp(event.observedAt) !== null &&
-      parseTimestamp(event.observedAt) <= addedAt)
-    .toSorted((left, right) => {
-      const timeOrder = parseTimestamp(left.observedAt) - parseTimestamp(right.observedAt)
-      if (timeOrder !== 0) return timeOrder
-      return (left.sequence ?? 0) - (right.sequence ?? 0)
-    })
+  const events = listMembershipEventsThrough(input, participant.missionId, teamId, addedAt)
 
   const latestByDevice = new Map()
   for (const event of events) latestByDevice.set(event.deviceId, event.change)
@@ -89,11 +102,14 @@ function resolveParticipantScope(input) {
       .map(([deviceId]) => deviceId),
   )
 
-  // All changes recorded at the participant boundary are retained. A legacy
-  // row cannot prove whether a same-timestamp remove preceded or followed the
-  // participant insert, so dropping either side would risk false completion.
+  // Every membership change in the backdated interval is retained. A legacy
+  // row cannot prove whether a departure preceded or followed the participant
+  // insert, so dropping an in-window departure would risk false completion.
   for (const event of events) {
-    if (parseTimestamp(event.observedAt) === addedAt) memberIds.add(event.deviceId)
+    const observedAt = parseTimestamp(event.observedAt)
+    if (observedAt >= effectiveFrom && observedAt <= addedAt) {
+      memberIds.add(event.deviceId)
+    }
   }
 
   const eventDeviceIds = new Set(events.map((event) => event.deviceId))
@@ -124,6 +140,56 @@ function resolveParticipantScope(input) {
   }
 }
 
+/** Merges a new selection's observed roster with retained history in its fixed interval. */
+function mergeHistoricallyRequiredMemberDeviceIds(input, startingMemberDeviceIds) {
+  const participant = input.participant
+  const start = parseTimestamp(participant.effectiveFrom)
+  const end = parseTimestamp(participant.addedAt)
+  if (start === null || end === null || start > end) return [...startingMemberDeviceIds]
+
+  const memberDeviceIds = new Set(startingMemberDeviceIds)
+  const events = listMembershipEventsThrough(input, participant.missionId, participant.teamId, end)
+  const historicallyKnownTeamDeviceIds = new Set()
+  for (const event of events) {
+    const observedAt = parseTimestamp(event.observedAt)
+    if (typeof event.deviceId !== 'string' || event.deviceId.trim() === '') continue
+    const deviceId = event.deviceId.trim()
+    historicallyKnownTeamDeviceIds.add(deviceId)
+    if (observedAt === null || observedAt < start || observedAt > end) continue
+    memberDeviceIds.add(deviceId)
+  }
+
+  // A retained checkpoint is evidence that a historically observed team
+  // member was required in this interval even when departure predates it.
+  for (const checkpoint of input.checkpoints) {
+    if (checkpoint.missionId !== participant.missionId) continue
+    const windowFrom = parseTimestamp(checkpoint.windowFrom)
+    const windowTo = parseTimestamp(checkpoint.windowTo)
+    if (windowFrom === null || windowTo === null || windowTo <= windowFrom) continue
+    if (windowTo <= start || windowFrom >= end) continue
+    if (typeof checkpoint.deviceId !== 'string' || checkpoint.deviceId.trim() === '') continue
+    const deviceId = checkpoint.deviceId.trim()
+    if (historicallyKnownTeamDeviceIds.has(deviceId)) memberDeviceIds.add(deviceId)
+  }
+  return [...memberDeviceIds].sort()
+}
+
+/** Returns same-team membership changes through a participant's boundary. */
+function listMembershipEventsThrough(input, missionId, teamId, end) {
+  return input.membershipEvents
+    .filter((event) =>
+      event.missionId === missionId &&
+      event.teamId === teamId &&
+      (event.change === 'member' || event.change === 'left') &&
+      parseTimestamp(event.observedAt) !== null &&
+      parseTimestamp(event.observedAt) <= end)
+    .toSorted((left, right) => {
+      const timeOrder = parseTimestamp(left.observedAt) - parseTimestamp(right.observedAt)
+      if (timeOrder !== 0) return timeOrder
+      return (left.sequence ?? 0) - (right.sequence ?? 0)
+    })
+}
+
 /** Checks that completed windows cover the full participant interval without a gap. */
 function hasContiguousCompletedCoverage(participant, deviceId, checkpoints) {
   const start = parseTimestamp(participant.effectiveFrom)
@@ -141,9 +207,9 @@ function hasContiguousCompletedCoverage(participant, deviceId, checkpoints) {
     if (windowFrom === null || windowTo === null) return false
     if (windowTo <= start || windowFrom >= end) continue
     if (windowTo <= windowFrom) return false
+    if (checkpoint.completed !== 1) continue
     const reconciledUntil = parseTimestamp(checkpoint.reconciledUntil)
     if (reconciledUntil === null) return false
-    if (checkpoint.completed !== 1) return false
     if (reconciledUntil !== windowTo) return false
     intervals.push({
       from: Math.max(start, windowFrom),

@@ -1,7 +1,9 @@
 const { randomUUID } = require('node:crypto')
+const { normalizeLegacyRosterAttestation, readLegacyRosterAttestation } = require('../shared/legacy-roster-attestation.mjs')
 const {
   evaluateParticipantBackfill,
   parseStartingMemberDeviceIds,
+  resolveParticipantBackfillScope,
 } = require('../shared/participant-backfill-completeness.mjs')
 
 /** Creates the transactional mission participant subsystem. */
@@ -109,12 +111,14 @@ function createParticipantStore(options) {
       const transaction = db.transaction(() => {
         let teamId = null
         let deviceId = null
+        let requiredMemberDeviceIds = []
         if (kind === 'group') {
           teamId = createOrGetTeam(db, mission.id, input?.ref, addedAt).id
           if (!Array.isArray(input?.ref?.member_device_ids)) {
             throw new Error('Current group member device ids are required.')
           }
           const memberDeviceIds = normalizeDeviceIdArray(input.ref.member_device_ids)
+          requiredMemberDeviceIds = memberDeviceIds
           synchronizeObservedGroupMembership(
             db,
             mission.id,
@@ -123,6 +127,21 @@ function createParticipantStore(options) {
             addedAt,
             addedAt,
           )
+          const scope = resolveParticipantBackfillScope({
+            participant: {
+              missionId: mission.id,
+              kind: 'group',
+              teamId,
+              effectiveFrom,
+              addedAt,
+              startingMemberDeviceIdsJson: serializeStartingMemberDeviceIds(memberDeviceIds),
+            },
+            ...readParticipantBackfillEvidence(db, mission.id),
+          })
+          if (scope.scope === 'unknown') {
+            throw new Error(scope.error ?? 'Participant group history scope is unavailable.')
+          }
+          requiredMemberDeviceIds = scope.memberDeviceIds
         } else {
           deviceId = normalizeIdentifier(input?.ref, 'Traccar device id')
         }
@@ -151,7 +170,7 @@ function createParticipantStore(options) {
             updatedAt: addedAt,
           })
         } else {
-          for (const memberDeviceId of normalizeDeviceIdArray(input.ref.member_device_ids)) {
+          for (const memberDeviceId of requiredMemberDeviceIds) {
             insertBackfillCheckpoint(db, {
               missionId: mission.id,
               deviceId: memberDeviceId,
@@ -175,6 +194,38 @@ function createParticipantStore(options) {
           confirmed_by: actor,
         })
         return participant
+      })
+      return transaction()
+    },
+
+    /** Appends an explicit coordinator attestation and schedules the original history interval atomically. */
+    resolveLegacyParticipantRoster(input) {
+      const details = normalizeLegacyRosterAttestation(input)
+      const timestamp = readNow()
+      const transaction = db.transaction(() => {
+        const mission = requireMutableMission(db, details.mission_id)
+        const participant = requireParticipant(db, mission.id, details.participant_id)
+        const evaluation = readParticipantBackfillEvaluations(db, mission.id, [participant]).get(participant.id)
+        if (participant.kind !== 'group' || participant.starting_member_device_ids_json != null
+          || evaluation?.scope !== 'unknown' || evaluation?.error) {
+          throw new Error('Only an unresolved legacy group roster can be attested. Already resolved rosters require a separate audited correction.')
+        }
+        validateEffectiveFrom(mission, normalizeTimestamp(participant.effective_from, 'Original interval start'),
+          normalizeTimestamp(participant.added_at, 'Original interval end'))
+        if (normalizeTimestamp(participant.added_at, 'Original interval end') > timestamp) {
+          throw new Error('Original participant interval cannot end in the future. Retain this mission for repair.')
+        }
+        insertAudit(db, mission.id, 'participant_roster_attested', timestamp, details,
+          `participant-roster-attestation:${participant.id}`)
+        const resolved = readParticipantBackfillEvaluations(db, mission.id, [participant]).get(participant.id)
+        if (resolved?.scope !== 'attested') throw new Error('Roster attestation could not be verified.')
+        for (const deviceId of resolved.memberDeviceIds) {
+          insertBackfillCheckpoint(db, { missionId: mission.id, deviceId,
+            windowFrom: participant.effective_from, windowTo: participant.added_at, updatedAt: timestamp })
+        }
+        recordCoverageChange(mission.id, timestamp)
+        failAfterMutation(faultInjection)
+        return listMissionParticipants(db, mission.id).find((row) => row.id === participant.id)
       })
       return transaction()
     },
@@ -533,7 +584,9 @@ function listMissionParticipants(db, missionId) {
         ? null
         : evaluation.completedMemberDeviceIds.length,
       backfill_scope_inferred: evaluation.scope === 'inferred',
+      backfill_scope_attested: evaluation.scope === 'attested',
       backfill_scope_unknown: evaluation.scope === 'unknown',
+      backfill_scope_error: evaluation.error ?? null,
     }
   })
 }
@@ -551,6 +604,7 @@ function assertMissionParticipantBackfillComplete(db, missionId) {
     const evaluation = evaluations.get(participant.id)
     if (evaluation === undefined) throw new Error('Participant backfill evaluation is unavailable.')
     if (evaluation.complete) continue
+    if (evaluation.error !== undefined) throw new Error(evaluation.error)
     if (evaluation.scope === 'unknown') {
       throw new Error('Mission cannot be finished because a legacy group history scope is unknown. Review retained group membership before finishing.')
     }
@@ -562,6 +616,28 @@ function assertMissionParticipantBackfillComplete(db, missionId) {
 
 /** Reads all participant backfill inputs once so projection and Finish share one evaluator. */
 function readParticipantBackfillEvaluations(db, missionId, participants) {
+  const evidence = readParticipantBackfillEvidence(db, missionId)
+  const attestations = db.prepare("SELECT id, mission_id, event_type, timestamp, details_json FROM mission_events WHERE mission_id = ? AND event_type = 'participant_roster_attested'").all(missionId)
+  return new Map(participants.map((participant) => [
+    participant.id,
+    evaluateParticipantBackfill({
+      participant: {
+        missionId: participant.mission_id ?? missionId,
+        kind: participant.kind,
+        deviceId: participant.traccar_device_id,
+        teamId: participant.mission_team_id,
+        effectiveFrom: participant.effective_from,
+        addedAt: participant.added_at,
+        startingMemberDeviceIdsJson: participant.starting_member_device_ids_json,
+        ...readLegacyRosterAttestation(attestations, missionId, participant.id),
+      },
+      ...evidence,
+    }),
+  ]))
+}
+
+/** Reads the persisted checkpoint and membership evidence shared by projection and selection. */
+function readParticipantBackfillEvidence(db, missionId) {
   const checkpoints = db.prepare(`SELECT mission_id, traccar_device_id,
       window_from, window_to, reconciled_until, completed
     FROM participant_backfill_checkpoints
@@ -584,22 +660,7 @@ function readParticipantBackfillEvaluations(db, missionId, participants) {
     observedAt: event.observed_at,
     sequence: event.sequence,
   }))
-  return new Map(participants.map((participant) => [
-    participant.id,
-    evaluateParticipantBackfill({
-      participant: {
-        missionId: participant.mission_id ?? missionId,
-        kind: participant.kind,
-        deviceId: participant.traccar_device_id,
-        teamId: participant.mission_team_id,
-        effectiveFrom: participant.effective_from,
-        addedAt: participant.added_at,
-        startingMemberDeviceIdsJson: participant.starting_member_device_ids_json,
-      },
-      checkpoints,
-      membershipEvents,
-    }),
-  ]))
+  return { checkpoints, membershipEvents }
 }
 
 /** Serializes a normalized immutable group selection snapshot. */
@@ -776,7 +837,7 @@ function normalizeArray(value, label) {
 }
 
 function normalizeDeviceIdArray(value) {
-  if (!Array.isArray(value)) throw new Error('Current group member device ids are required.')
+  if (!Array.isArray(value)) throw new Error('Group member device ids are required.')
   return value
     .map((deviceId) => normalizeIdentifier(deviceId, 'Traccar device id'))
 }
@@ -823,11 +884,11 @@ function failAfterMutation(faultInjection) {
   }
 }
 
-function insertAudit(db, missionId, eventType, timestamp, details) {
+function insertAudit(db, missionId, eventType, timestamp, details, eventId = randomUUID()) {
   db.prepare(`INSERT INTO mission_events (
     id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
   ) VALUES (?, ?, ?, ?, ?, ?, 'complete')`)
-    .run(randomUUID(), missionId, eventType, timestamp, JSON.stringify(details), timestamp)
+    .run(eventId, missionId, eventType, timestamp, JSON.stringify(details), timestamp)
 }
 
 module.exports = { assertMissionParticipantBackfillComplete, createParticipantStore }

@@ -827,14 +827,25 @@
             coordinator notice and never invents earlier group membership or
             retrospective evidence. When a coordinator explicitly backdates the initial or later selection of
             a group, each confirmed member receives the same bounded, resumable history-backfill window as an
-            individual device. The group row shows completed members out of all starting members, and keeps a
-            pending/retrying state visible until every member completes. Re-adding a group includes its
-            unchanged members in that progress count, as well as newly selected members. Older selections
+            individual device. The group row shows completed members out of all required members, including
+            an explicit zero count for an empty roster. A backdated re-add also includes members whose
+            retained same-group history places them in the selected interval, even if they have since left.
+            Pending history remains visible until the required coverage completes. Older selections
             without a saved starting roster are labelled <strong>reconstructed group members</strong>
             when retained membership and checkpoint evidence identify a conservative member set.
             Otherwise the row shows <strong>unknown historical group scope</strong> without a completion count.
             Required history must cover the whole selected time window without gaps before Finish can
             succeed. Missing checkpoints or an unknown older starting roster keep the mission open.
+            An invalid stored roster displays an error on that participant while other participants remain
+            visible; Finish remains unavailable until the roster is repaired.
+            For an unknown legacy roster, use <strong>Resolve legacy roster</strong>, including for a removed
+            group. Enter your coordinator name and the reason/evidence consulted, then explicitly choose to
+            supply historical device IDs or attest that the original roster was empty. Confirm the displayed
+            original interval before recording the attestation. The original unknown roster and membership
+            observations remain unchanged; a separate audit records your decision. Supplied members require
+            complete history for that interval before Finish. Progress is labelled
+            <strong>coordinator-attested group members</strong>. Attestations cannot be overwritten; a later
+            correction requires separate audited repair. This action does not repair corrupt stored records.
             Removing a participant ends future
             live collection but does not delete evidence already retained. The low-rate history check keeps
             revisiting that participant's earlier authorized window so a late or corrected source fix is not

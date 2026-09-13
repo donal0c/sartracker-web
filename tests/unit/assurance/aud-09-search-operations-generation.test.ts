@@ -165,4 +165,54 @@ describe('AUD-09 Search Operations generation triggers', () => {
     expect(afterDeletes?.search_operations_generation).toBeGreaterThan(previousGeneration)
     expect(afterDeletes?.generation).toBe(afterAreaInsert?.generation)
   })
+
+  it('invalidates once when a pass deletion cascades to its evidence links', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-aud-09-cascade-'))
+    store = createElectronMissionStore({ userDataPath })
+    const mission = await store.createMission({ name: 'AUD-09 cascade fence' })
+    const databasePath = (await store.info()).database_path
+    database = new Database(databasePath)
+    database.exec('PRAGMA foreign_keys = ON')
+    const writable = database as typeof database & {
+      readonly prepare: (sql: string) => {
+        readonly run: (...params: readonly unknown[]) => unknown
+        readonly get: (...params: readonly unknown[]) => Readonly<Record<string, unknown>> | undefined
+      }
+    }
+    const base = '2026-09-13T10:00:00.000Z'
+    writable.prepare(`INSERT INTO search_areas (
+      id, mission_id, name, status, geometry_json, version_sequence,
+      updated_by, created_at, updated_at
+    ) VALUES ('cascade-area', ?, 'Area', 'active', '{}', 1, 'Coordinator', ?, ?)`)
+      .run(mission.id, base, base)
+    writable.prepare(`INSERT INTO outings (
+      id, mission_id, label, started_at, created_at, updated_at
+    ) VALUES ('cascade-outing', ?, 'Outing', ?, ?, ?)`)
+      .run(mission.id, base, base, base)
+    writable.prepare(`INSERT INTO search_assignments (
+      id, mission_id, search_area_id, outing_id, team_id, participant_ids_json,
+      version_sequence, updated_by, created_at, updated_at
+    ) VALUES ('cascade-assignment', ?, 'cascade-area', 'cascade-outing',
+      'Team', '[]', 1, 'Coordinator', ?, ?)`)
+      .run(mission.id, base, base)
+    writable.prepare(`INSERT INTO search_passes (
+      id, mission_id, search_area_id, assignment_id, started_at, outcome,
+      coordinator_name, version_sequence, created_at, updated_at
+    ) VALUES ('cascade-pass', ?, 'cascade-area', 'cascade-assignment', ?,
+      'partial', 'Coordinator', 1, ?, ?)`)
+      .run(mission.id, base, base, base)
+    writable.prepare(`INSERT INTO search_pass_evidence_links (
+      pass_id, version_sequence, link_kind, target_id
+    ) VALUES ('cascade-pass', 1, 'clue', 'cascade-clue')`).run()
+
+    const before = readGenerations(database, mission.id)
+    writable.prepare(`DELETE FROM search_passes WHERE id = 'cascade-pass'`).run()
+    const after = readGenerations(database, mission.id)
+
+    expect(Number(after?.search_operations_generation))
+      .toBe(Number(before?.search_operations_generation) + 1)
+    expect(database.prepare(`SELECT COUNT(*) AS count
+      FROM search_pass_evidence_links WHERE pass_id = 'cascade-pass'`).get()?.count)
+      .toBe(0)
+  })
 })

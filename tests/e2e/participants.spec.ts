@@ -85,7 +85,7 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('mission-name-input').fill('Group Follow Mission')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('participant-backfill-status')).toContainText(
-      '1/1 starting group members',
+      '1/1 required group members',
     )
 
     await page.evaluate(async () => {

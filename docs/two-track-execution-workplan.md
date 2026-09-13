@@ -4,6 +4,12 @@
 
 ## Planning Rule
 
+**PR27 review follow-up:** earlier readiness is withdrawn. Donal approved audited
+legacy-roster recovery on 2026-09-13 (SAR-QA-022); implement it with immutable
+original evidence, explicit coordinator attestation and original-window backfill.
+The [follow-up record](assurance/findings/pr27-claude-review.md) owns current proof.
+Working-tree verification is in progress; earlier green statements below are historical.
+
 **Active reconciliation (2026-09-13):** baseline
 `2b2bf8e605e27123c9e454598828d71cb7c062aa` includes merged PR25 and PR26.
 DON-267 is Done; DON-254 is In Progress; release remains HOLD. Train D owns

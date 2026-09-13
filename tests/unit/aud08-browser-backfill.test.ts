@@ -37,7 +37,39 @@ describe('AUD-08 browser participant backfill completeness [DON-271]', () => {
       } as never],
       devices: [],
       selected_by: 'Coordinator A',
-    })).rejects.toThrow(/current group member device ids are required/i)
+    })).rejects.toThrow(/group member device ids are required/i)
+  })
+
+  it('schedules departed members required by a backdated group re-add', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T09:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Backdated departed roster', start_time: missionStart })
+    const [initial] = await store.selectMissionParticipants({ mission_id: mission.id, selected_by: 'Coordinator', devices: [],
+      groups: [{ traccar_group_id: '101', name: 'Team', member_device_ids: ['11'] }] })
+    for (const checkpoint of await store.listParticipantBackfillCheckpoints(mission.id)) {
+      await store.upsertParticipantBackfillCheckpoint({ ...checkpoint, reconciled_until: checkpoint.window_to, completed: true })
+    }
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    await store.removeMissionParticipant({ mission_id: mission.id, participant_id: initial!.id, removed_by: 'Coordinator' })
+    vi.setSystemTime(new Date('2026-08-20T11:00:00.000Z'))
+    const readded = await store.addMissionParticipant({ mission_id: mission.id, kind: 'group',
+      ref: { traccar_group_id: '101', name: 'Team', member_device_ids: ['22'] },
+      effective_from: missionStart, confirmed_by: 'Coordinator' })
+    const checkpoints = await store.listParticipantBackfillCheckpoints(mission.id)
+    expect(checkpoints).toEqual(expect.arrayContaining([expect.objectContaining({
+      traccar_device_id: '11', window_from: '2026-08-20T09:00:00.000Z', window_to: '2026-08-20T11:00:00.000Z', completed: 0,
+    })]))
+    for (const checkpoint of checkpoints.filter((row) => row.traccar_device_id === '22')) {
+      await store.upsertParticipantBackfillCheckpoint({ ...checkpoint, reconciled_until: checkpoint.window_to, completed: true })
+    }
+    expect((await store.listMissionParticipants(mission.id)).find((row) => row.id === readded.id))
+      .toMatchObject({ starting_member_device_ids_json: '["22"]', backfill_member_count: 2, backfill_completed_count: 1 })
+    await expect(store.finishMission(mission.id)).rejects.toThrow(/backfill/i)
+    for (const checkpoint of checkpoints.filter((row) => row.traccar_device_id === '11')) {
+      await store.upsertParticipantBackfillCheckpoint({ ...checkpoint, reconciled_until: checkpoint.window_to, completed: true })
+    }
+    await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   })
 
   it('accepts an explicit empty initial roster as known-empty and finishable', async () => {
@@ -69,6 +101,27 @@ describe('AUD-08 browser participant backfill completeness [DON-271]', () => {
       })]),
     )
     await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
+  })
+
+  it('keeps a corrupt roster visible and blocks Finish without hiding healthy rows', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Corrupt browser roster' })
+    const [broken, healthy] = await store.selectMissionParticipants({
+      mission_id: mission.id, selected_by: 'Coordinator', devices: [], groups: [
+        { traccar_group_id: '101', name: 'Broken', member_device_ids: [] },
+        { traccar_group_id: '102', name: 'Healthy', member_device_ids: [] },
+      ],
+    })
+    replaceHarnessState((state) => {
+      state.missionParticipants = state.missionParticipants.map((row) => row.id === broken!.id
+        ? { ...row, starting_member_device_ids_json: '[' } : row)
+    })
+    const restarted = getBrowserHarnessStore()
+    expect(await restarted.listMissionParticipants(mission.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: broken!.id, backfill_scope_unknown: true, backfill_scope_error: expect.stringMatching(/invalid/i) }),
+      expect.objectContaining({ id: healthy!.id, backfill_member_count: 0, backfill_scope_unknown: false }),
+    ]))
+    await expect(restarted.finishMission(mission.id)).rejects.toThrow(/stored group.*invalid/i)
   })
 
   it('blocks an old group row whose roster has no retained events or checkpoints', async () => {
@@ -110,7 +163,7 @@ describe('AUD-08 browser participant backfill completeness [DON-271]', () => {
     )
   })
 
-  it('keeps a legacy left-only event before participant insertion unknown and unfinishable', async () => {
+  it('retains an in-window legacy departure as required and unfinishable without coverage', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-20T09:00:00.000Z'))
     const store = getBrowserHarnessStore()
@@ -148,13 +201,13 @@ describe('AUD-08 browser participant backfill completeness [DON-271]', () => {
     const currentGroup = (await restartedStore.listMissionParticipants(mission.id))
       .find((participant) => participant.id === group!.id)
     expect(currentGroup).toMatchObject({
-      backfill_member_count: null,
-      backfill_completed_count: null,
-      backfill_scope_inferred: false,
-      backfill_scope_unknown: true,
+      backfill_member_count: 1,
+      backfill_completed_count: 0,
+      backfill_scope_inferred: true,
+      backfill_scope_unknown: false,
     })
     await expect(restartedStore.finishMission(mission.id)).rejects.toThrow(
-      /legacy group history scope is unknown/i,
+      /history backfill coverage is incomplete/i,
     )
   })
 
@@ -395,7 +448,7 @@ describe('AUD-08 browser participant backfill completeness [DON-271]', () => {
     })
   })
 
-  it('fails closed for legacy left-only history while retaining positive inferred membership', () => {
+  it('requires coverage for both in-window departures and positive legacy membership', () => {
     const participant = {
       missionId: 'mission-legacy-scope',
       kind: 'group' as const,
@@ -430,8 +483,8 @@ describe('AUD-08 browser participant backfill completeness [DON-271]', () => {
     })
 
     expect(leftOnly).toMatchObject({
-      scope: 'unknown',
-      memberDeviceIds: [],
+      scope: 'inferred',
+      memberDeviceIds: ['11'],
       complete: false,
     })
     expect(positive).toMatchObject({
@@ -441,7 +494,7 @@ describe('AUD-08 browser participant backfill completeness [DON-271]', () => {
     })
   })
 
-  it('does not report complete when an overlapping pending window remains', () => {
+  it('reports completed coverage despite a redundant overlapping pending window', () => {
     const participant = {
       missionId: 'mission-pending-overlap',
       kind: 'group' as const,
@@ -471,8 +524,8 @@ describe('AUD-08 browser participant backfill completeness [DON-271]', () => {
     })
 
     expect(evaluation).toMatchObject({
-      completedMemberDeviceIds: [],
-      complete: false,
+      completedMemberDeviceIds: ['11'],
+      complete: true,
     })
   })
 

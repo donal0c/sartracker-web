@@ -2197,6 +2197,10 @@ function createElectronMissionStore(options) {
       input.mission_id,
       () => participantStore.selectMissionParticipants(input),
     ),
+    resolveLegacyParticipantRoster: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.resolveLegacyParticipantRoster(input),
+    ),
     addMissionParticipant: async (input) => runCoverageMutation(
       input.mission_id,
       () => participantStore.addMissionParticipant(input),

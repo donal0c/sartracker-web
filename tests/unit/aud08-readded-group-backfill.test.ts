@@ -71,6 +71,28 @@ afterEach(async () => {
 })
 
 describe('AUD-08 re-added group backfill completeness [DON-271]', () => {
+  it('isolates a corrupt starting roster without hiding healthy participants', async () => {
+    vi.useFakeTimers()
+    setClock('2026-08-20T09:00:00.000Z')
+    const store = await createStore()
+    const mission = await store.createMission({ name: 'Corrupt roster isolation', start_time: missionStart })
+    const [broken, healthy] = await store.selectMissionParticipants({
+      mission_id: mission.id, selected_by: 'Coordinator', devices: [],
+      groups: [
+        { traccar_group_id: '101', name: 'Broken', member_device_ids: [] },
+        { traccar_group_id: '102', name: 'Healthy', member_device_ids: [] },
+      ],
+    })
+    const db = new Database((await store.info()).database_path)
+    try { db.prepare('UPDATE mission_participants SET starting_member_device_ids_json = ? WHERE id = ?').run('[', broken!.id) }
+    finally { db.close() }
+    await expect(store.listMissionParticipants(mission.id)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: broken!.id, backfill_scope_unknown: true, backfill_scope_error: expect.stringMatching(/invalid/i) }),
+      expect.objectContaining({ id: healthy!.id, backfill_member_count: 0, backfill_scope_unknown: false }),
+    ]))
+    await expect(store.finishMission(mission.id)).rejects.toThrow(/stored group.*invalid/i)
+  })
+
   it('rejects an omitted initial group roster instead of normalizing it to known-empty', async () => {
     vi.useFakeTimers()
     setClock('2026-08-20T09:00:00.000Z')
@@ -88,7 +110,7 @@ describe('AUD-08 re-added group backfill completeness [DON-271]', () => {
       }],
       devices: [],
       selected_by: 'Coordinator A',
-    })).rejects.toThrow(/current group member device ids are required/i)
+    })).rejects.toThrow(/group member device ids are required/i)
   })
 
   it('accepts an explicit empty initial roster as known-empty and finishable', async () => {
@@ -164,7 +186,7 @@ describe('AUD-08 re-added group backfill completeness [DON-271]', () => {
     )
   })
 
-  it('keeps a legacy left-only event before participant insertion unknown and unfinishable', async () => {
+  it('retains an in-window legacy left-only event before participant insertion', async () => {
     vi.useFakeTimers()
     setClock('2026-08-20T09:00:00.000Z')
     const store = await createStore()
@@ -206,13 +228,13 @@ describe('AUD-08 re-added group backfill completeness [DON-271]', () => {
     const currentGroup = (await restartedStore.listMissionParticipants(mission.id))
       .find((participant) => participant.id === group!.id)
     expect(currentGroup).toMatchObject({
-      backfill_member_count: null,
-      backfill_completed_count: null,
-      backfill_scope_inferred: false,
-      backfill_scope_unknown: true,
+      backfill_member_count: 1,
+      backfill_completed_count: 0,
+      backfill_scope_inferred: true,
+      backfill_scope_unknown: false,
     })
     await expect(restartedStore.finishMission(mission.id)).rejects.toThrow(
-      /legacy group history scope is unknown/i,
+      /history backfill.*incomplete|complete.*history backfill/i,
     )
   })
 
@@ -497,7 +519,7 @@ describe('AUD-08 re-added group backfill completeness [DON-271]', () => {
     })
   })
 
-  it('excludes a removed member while including a newly added member in the denominator', async () => {
+  it('retains a departed member at the re-add boundary while including a newly added member', async () => {
     vi.useFakeTimers()
     setClock('2026-08-20T09:00:00.000Z')
     const store = await createStore()
@@ -545,7 +567,7 @@ describe('AUD-08 re-added group backfill completeness [DON-271]', () => {
       .find((participant) => participant.id === readdedGroup.id)
     expect(currentGroup).toMatchObject({
       kind: 'group',
-      backfill_member_count: 2,
+      backfill_member_count: 3,
       backfill_completed_count: 1,
     })
   })
@@ -889,7 +911,10 @@ describe('AUD-08 re-added group backfill completeness [DON-271]', () => {
 
     const restartedStore = await reopenStore(directories.at(-1)!)
     await expect(restartedStore.listMissionParticipants(mission.id))
-      .rejects.toThrow(/starting-member snapshot is invalid/i)
+      .resolves.toEqual(expect.arrayContaining([expect.objectContaining({
+        backfill_scope_unknown: true,
+        backfill_scope_error: expect.stringMatching(/starting-member snapshot is invalid/i),
+      })]))
   })
 })
 

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { isMissionModelEnabled } from '../features/runtime/mission-model-flag'
 import { useParticipantStore } from '../features/participants/participant-store'
 import { useParticipantSelectionViewModel } from '../features/participants/use-participant-selection-view-model'
+import { LegacyRosterRecoveryForm } from '../features/participants/legacy-roster-recovery-form'
 
 const COORDINATOR_ACTOR = 'Mission coordinator'
 
@@ -129,6 +130,17 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
         </button>
       ) : null}
       {error !== null ? <p className="text-xs text-rose-300">{error}</p> : null}
+      {participants.filter((participant) => participant.kind === 'group'
+        && participant.starting_member_device_ids_json == null && participant.backfill_scope_unknown
+        && !participant.backfill_scope_error).map((participant) => (
+        <LegacyRosterRecoveryForm key={participant.id} participant={participant} saving={saving}
+          onConfirm={async (input) => controller?.resolveLegacyRoster(input) ?? null} />
+      ))}
+      {participants.filter((participant) => participant.removed_at !== null
+        && (participant.backfill_scope_attested || participant.backfill_scope_unknown))
+        .map((participant) => <p className="text-xs" key={participant.id}>
+          Removed group {participant.team_name ?? participant.mission_team_id}: {formatGroupBackfillStatus(participant)}
+        </p>)}
 
       <div className="space-y-2" data-testid="participant-active-list">
         {activeParticipants.length === 0 ? (
@@ -155,7 +167,7 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
                 </p>
               ) : null}
           {participant.kind === 'group' &&
-              ((participant.backfill_member_count ?? 0) > 0 ||
+              (typeof participant.backfill_member_count === 'number' ||
                 participant.backfill_scope_unknown === true) ? (
                 <p className="mt-1 text-[11px] text-stone-300" data-testid="participant-backfill-status">
                   History backfill: {formatGroupBackfillStatus(participant)}
@@ -204,10 +216,9 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
           onClick={() => {
             const group = availableGroups.find((candidate) => candidate.group_id === addRef)
             void controller?.addParticipant({
-              kind: addKind,
-              ref: addKind === 'group'
-                ? { traccar_group_id: addRef, name: group?.name ?? addRef }
-                : addRef,
+              ...(addKind === 'group'
+                ? { kind: 'group', ref: { traccar_group_id: addRef, name: group?.name ?? addRef } } as const
+                : { kind: 'device', ref: addRef } as const),
               confirmed_by: COORDINATOR_ACTOR,
               ...(effectiveFrom === '' ? {} : { effective_from: new Date(effectiveFrom).toISOString() }),
             }).then((result) => {
@@ -230,16 +241,21 @@ function formatGroupBackfillStatus(participant: {
   readonly backfill_member_count?: number | null
   readonly backfill_completed_count?: number | null
   readonly backfill_scope_inferred?: boolean | null
+  readonly backfill_scope_attested?: boolean
   readonly backfill_scope_unknown?: boolean | null
+  readonly backfill_scope_error?: string | null
 }): string {
+  if (participant.backfill_scope_error) return participant.backfill_scope_error
   if (participant.backfill_scope_unknown === true) {
     return 'unknown historical group scope; review retained membership before finishing'
   }
   const total = participant.backfill_member_count ?? 0
   const completed = participant.backfill_completed_count ?? 0
-  const memberLabel = participant.backfill_scope_inferred === true
+  const memberLabel = participant.backfill_scope_attested === true
+    ? 'coordinator-attested group members'
+    : participant.backfill_scope_inferred === true
     ? 'reconstructed group members'
-    : 'starting group members'
+    : 'required group members'
   return completed === total
     ? `complete for ${total}/${total} ${memberLabel}`
     : `pending / retrying for ${total - completed}/${total} ${memberLabel}`

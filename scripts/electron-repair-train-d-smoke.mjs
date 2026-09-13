@@ -780,7 +780,7 @@ async function runAud08({ launch, provider, evidenceDir }) {
 
   await waitForValue(
     () => page.getByTestId('participant-backfill-status').innerText(),
-    (text) => text.includes('pending / retrying for 1/2 starting group members'),
+    (text) => text.includes('pending / retrying for 1/2 required group members'),
     'packaged renderer to show the complete starting roster with one pending member',
   )
   await boundedPageAction(page,

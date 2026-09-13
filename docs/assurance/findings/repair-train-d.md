@@ -1,5 +1,9 @@
 # Repair Train D — participant completeness and Search Operations
 
+**Superseded readiness:** the [PR27 Claude follow-up](pr27-claude-review.md)
+withdraws earlier readiness and records the approved SAR-QA-022 recovery and review
+corrections. Evidence below is historical; no merge or release readiness is implied.
+
 Status: [PR27](https://github.com/donal0c/sartracker-web/pull/27) open for scoped
 merge review; implementation `cc989877a850ed349269bdf4cb562dfd7c4846dc`.
 The PR retains current exact-head CI/review receipts. Base:

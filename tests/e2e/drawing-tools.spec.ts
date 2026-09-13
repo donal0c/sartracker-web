@@ -332,11 +332,14 @@ test.describe('M8 drawing workflows', () => {
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
     await page.getByTestId('drawing-delete-btn').click()
     await expect(page.getByTestId('drawing-delete-confirmation')).toBeVisible()
+    await page.screenshot({ path: test.info().outputPath('drawing-retirement-confirmation.png'), fullPage: true })
     await page.getByTestId('drawing-delete-confirm-btn').click()
     await expect(page.getByTestId('drawing-dialog')).toBeHidden()
 
     drawings = await readMissionDrawings(page)
-    expect(drawings.some((drawing) => drawing.name === 'Edited Name')).toBe(false)
+    expect(drawings.find((drawing) => drawing.name === 'Edited Name')).toMatchObject({ retired_at: expect.any(String) })
+    await expect(page.getByTestId('layer-tree').getByRole('button', { name: 'Edited Name', exact: true })).toHaveCount(0)
+    await page.screenshot({ path: test.info().outputPath('drawing-retired.png'), fullPage: true })
   })
 
   test('does not open the marker modal while a drawing tool is active', async ({ page }) => {
@@ -425,6 +428,7 @@ async function readMissionDrawings(page: import('@playwright/test').Page) {
           label: string | null
           geometry_json: string
           metadata_json: string | null
+          retired_at?: string | null
         }>
     }
 

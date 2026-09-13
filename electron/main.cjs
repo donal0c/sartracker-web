@@ -118,6 +118,7 @@ const MISSION_STORE_CHANNELS = {
   cancelOutingFixSummary: 'sartracker:mission-store:cancel-outing-fix-summary',
   selectMissionParticipants: 'sartracker:mission-store:select-mission-participants',
   addMissionParticipant: 'sartracker:mission-store:add-mission-participant',
+  resolveLegacyParticipantRoster: 'sartracker:mission-store:resolve-legacy-participant-roster',
   removeMissionParticipant: 'sartracker:mission-store:remove-mission-participant',
   listMissionParticipants: 'sartracker:mission-store:list-mission-participants',
   recordGroupMembershipEvents: 'sartracker:mission-store:record-group-membership-events',

@@ -345,6 +345,9 @@ jobs:
       - name: Record deferred Repair Train D packaged qualification
         if: always() && !(github.event_name == 'workflow_dispatch' && inputs.run_repair_train_d_smoke == true)
         run: |
+          set -euo pipefail
+          node scripts/record-electron-repair-train-d-deferred.mjs \
+            --output tmp/electron-validation-evidence/repair-train-d/receipt.json
           echo 'Repair Train D packaged smoke: NOT RUN. Known baseline diagnostic blockers remain open under DON-254; skipped qualification is not a pass. Release remains HOLD.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Packaged legacy object recovery observer proof
@@ -597,6 +600,7 @@ jobs:
           name: electron-linux-validation-evidence-${{ env.EXPECTED_SOURCE_SHA }}
           path: |
             tmp/electron-validation-evidence
+            tmp/electron-validation-evidence/repair-train-d/receipt.json
             test-results/war06-mission-scope
             tmp/beta-artifacts/tracking-soak-ci
             tmp/breadcrumb-pr5-evidence

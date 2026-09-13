@@ -1,3 +1,4 @@
+import { normalizeLegacyRosterAttestation, readLegacyRosterAttestation, type LegacyRosterAttestationInput } from '../../../shared/legacy-roster-attestation.mjs'
 import type {
   AddPositionInput,
   CreateOutingInput,
@@ -114,6 +115,21 @@ const BROWSER_ARCHIVE_RECOVERY_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
  * mission store. It exists to exercise UI flows and hosted feedback sessions
  * without leaking Tauri APIs into the browser test lane.
  */
+type BrowserDrawing = Drawing & {
+  readonly retired_at?: string | null
+  readonly version_sequence?: number
+}
+
+type BrowserDrawingVersion = {
+  readonly mission_id: string
+  readonly object_type: 'drawing' | 'search_area'
+  readonly object_id: string
+  readonly version_sequence: number
+  readonly operation: 'created' | 'updated' | 'retired'
+  readonly recorded_at: string
+  readonly state: BrowserDrawing | SearchArea
+}
+
 type BrowserHarnessState = {
   readonly missions: readonly Mission[]
   readonly devices: readonly Device[]
@@ -124,7 +140,8 @@ type BrowserHarnessState = {
   readonly groupMembershipEvents: readonly GroupMembershipEvent[]
   readonly participantBackfillCheckpoints: readonly ParticipantBackfillCheckpoint[]
   readonly markers: readonly Marker[]
-  readonly drawings: readonly Drawing[]
+  readonly drawings: readonly BrowserDrawing[]
+  readonly drawingVersions?: readonly BrowserDrawingVersion[]
   readonly helicopters: readonly Helicopter[]
   readonly gpxImports: readonly GpxTrackImport[]
   readonly gpxEvidencePoints: readonly BrowserGpxEvidencePoint[]
@@ -207,6 +224,7 @@ const MAX_PERSISTED_TRACKING_POSITIONS = 2_000
 const EMERGENCY_PERSISTED_TRACKING_POSITIONS = 500
 
 export type BrowserHarnessStore = {
+  readonly resolveLegacyParticipantRoster: (input: LegacyRosterAttestationInput) => Promise<MissionParticipant>
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
   readonly createOuting: (input: CreateOutingInput) => Promise<Outing>
   readonly endOuting: (input: EndOutingInput) => Promise<Outing>
@@ -794,8 +812,16 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         addedAt,
         addedBy: input.confirmed_by,
       })
+      const prospectiveBackfill = readHarnessParticipantBackfillEvaluations(mission.id, {
+        ...state,
+        missionParticipants: [participant],
+        groupMembershipEvents: [...state.groupMembershipEvents, ...observedMembershipEvents],
+      }).get(participant.id)
+      if (prospectiveBackfill === undefined || prospectiveBackfill.scope === 'unknown') {
+        throw new Error(prospectiveBackfill?.error ?? 'Participant history scope is unavailable.')
+      }
       const checkpoints = deviceId === null
-        ? startingMemberDeviceIds.map((deviceId) =>
+        ? prospectiveBackfill.memberDeviceIds.map((deviceId) =>
             createHarnessBackfillCoverageCheckpoints(
               state.participantBackfillCheckpoints,
               {
@@ -842,6 +868,41 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       }
       save()
       return participant
+    },
+    resolveLegacyParticipantRoster: async (input) => {
+      const details = normalizeLegacyRosterAttestation(input)
+      const mission = requireMission(details.mission_id, state.missions)
+      if (mission.status === 'finished' || mission.status === 'finalized') {
+        throw new Error('Finished and finalized missions are read-only for participant changes.')
+      }
+      const participant = state.missionParticipants.find((row) => row.mission_id === mission.id && row.id === details.participant_id)
+      const evaluation = readHarnessParticipantBackfillEvaluations(mission.id, state).get(details.participant_id)
+      if (!participant || participant.kind !== 'group' || participant.starting_member_device_ids_json != null
+        || evaluation?.scope !== 'unknown' || evaluation.error) {
+        throw new Error('Only an unresolved legacy group roster can be attested. Already resolved rosters require a separate audited correction.')
+      }
+      const timestamp = new Date().toISOString()
+      const originalStart = Date.parse(participant.effective_from)
+      const originalEnd = Date.parse(participant.added_at)
+      if (!Number.isFinite(originalStart) || !Number.isFinite(originalEnd)
+        || originalStart < Date.parse(mission.start_time) || originalStart > originalEnd || originalEnd > Date.parse(timestamp)) {
+        throw new Error('Original participant interval is invalid. Retain this mission for repair.')
+      }
+      const next = { ...state, missionEvents: appendEvent(state.missionEvents, mission.id,
+        'participant_roster_attested', timestamp, details, `participant-roster-attestation:${participant.id}`) }
+      const resolved = readHarnessParticipantBackfillEvaluations(mission.id, next).get(participant.id)
+      if (resolved?.scope !== 'attested') throw new Error('Roster attestation could not be verified.')
+      for (const deviceId of resolved.memberDeviceIds) {
+        next.participantBackfillCheckpoints = [...next.participantBackfillCheckpoints,
+          ...createHarnessBackfillCoverageCheckpoints(next.participantBackfillCheckpoints, {
+            missionId: mission.id, deviceId, windowFrom: participant.effective_from, windowTo: participant.added_at })]
+      }
+      state = next
+      save()
+      const projected = (await getBrowserHarnessStore().listMissionParticipants(mission.id))
+        .find((row) => row.id === participant.id)
+      if (!projected) throw new Error('Recovered participant projection is unavailable.')
+      return projected
     },
     removeMissionParticipant: async (input) => {
       requireMutableParticipantMission(input.mission_id, state.missions)
@@ -907,7 +968,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
                     ? null
                     : evaluation.completedMemberDeviceIds.length,
                   backfill_scope_inferred: evaluation.scope === 'inferred',
+                  backfill_scope_attested: evaluation.scope === 'attested',
                   backfill_scope_unknown: evaluation.scope === 'unknown',
+                  backfill_scope_error: evaluation.error ?? null,
                 }),
           }
         })
@@ -2064,7 +2127,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     },
     listDrawings: async (missionId) =>
       state.drawings
-        .filter((drawing) => drawing.mission_id === missionId)
+        .filter((drawing) => drawing.mission_id === missionId && drawing.retired_at == null)
         .sort((left, right) => left.display_order - right.display_order),
     upsertDrawing: async (input) => {
       const normalizedInput = input.type === 'search_area'
@@ -2075,9 +2138,18 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         normalizedInput.id === undefined || normalizedInput.id === null
           ? null
           : state.drawings.find((drawing) => drawing.id === normalizedInput.id) ?? null
+      if (existingDrawing && existingDrawing.mission_id !== normalizedInput.mission_id) {
+        throw new Error('Cannot move a drawing between missions.')
+      }
+      if (existingDrawing?.retired_at != null) {
+        throw new Error(`Cannot update retired ${existingDrawing.type === 'search_area' ? 'search area' : 'drawing'} ${existingDrawing.id}.`)
+      }
       const retainedArea = normalizedInput.type === 'search_area'
         ? state.searchAreas.find((area) => area.id === normalizedInput.id)
         : undefined
+      if (retainedArea && retainedArea.mission_id !== normalizedInput.mission_id) {
+        throw new Error('Cannot move a search area between missions.')
+      }
       if (retainedArea?.retired_at !== null && retainedArea?.retired_at !== undefined) {
         throw new Error(`Cannot update retired search area ${retainedArea.id}.`)
       }
@@ -2098,7 +2170,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         metadata_json: normalizedInput.metadata_json ?? null,
         created_at: existingDrawing?.created_at ?? now,
         updated_at: now,
-      } satisfies Drawing
+        retired_at: null,
+        version_sequence: (existingDrawing?.version_sequence ?? 0) + 1,
+      } satisfies BrowserDrawing
       const stableArea = drawing.type === 'search_area'
         ? {
             id: drawing.id,
@@ -2118,6 +2192,16 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         drawings: upsertDrawing(state.drawings, drawing),
+        drawingVersions: [
+          ...(state.drawingVersions ?? []),
+          { mission_id: drawing.mission_id, object_type: 'drawing', object_id: drawing.id,
+            version_sequence: drawing.version_sequence, operation: existingDrawing === null ? 'created' : 'updated',
+            recorded_at: now, state: { ...drawing } },
+          ...(stableArea === null ? [] : [{ mission_id: drawing.mission_id, object_type: 'search_area' as const,
+            object_id: stableArea.id, version_sequence: stableArea.version_sequence,
+            operation: existingDrawing === null ? 'created' as const : 'updated' as const,
+            recorded_at: now, state: { ...stableArea } }]),
+        ],
         searchAreas: stableArea === null
           ? state.searchAreas
           : upsertByStableId(state.searchAreas, stableArea),
@@ -2141,7 +2225,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const normalizedDrawingId = normalizeBrowserSearchText(
         drawingId, 'Drawing identity', MAX_SEARCH_OPERATION_ID_LENGTH,
       )
-      const didDelete = state.drawings.some((drawing) => drawing.id === normalizedDrawingId)
+      const didDelete = state.drawings.some((drawing) => drawing.id === normalizedDrawingId && drawing.retired_at == null)
       if (!didDelete) {
         return false
       }
@@ -2151,24 +2235,35 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       }
 
       const retiredAt = new Date().toISOString()
+      if (drawing === undefined) return false
+      const retiredDrawing = { ...drawing, retired_at: retiredAt, updated_at: retiredAt,
+        version_sequence: (drawing.version_sequence ?? 1) + 1 }
+      const area = state.searchAreas.find((candidate) => candidate.id === drawing.id)
+      const retiredArea = drawing.type === 'search_area' && area !== undefined && area.retired_at === null
+        ? { ...area, status: 'retired' as const, retired_at: retiredAt, updated_at: retiredAt,
+            version_sequence: area.version_sequence + 1 } : null
+      const events = retiredArea === null ? state.missionEvents : appendEvent(
+        state.missionEvents, drawing.mission_id, 'search_area_retired', retiredAt,
+        { object_id: drawing.id, version_sequence: retiredArea.version_sequence },
+      )
       state = {
         ...state,
-        drawings: state.drawings.filter((drawing) => drawing.id !== normalizedDrawingId),
-        searchAreas: drawing?.type !== 'search_area'
-          ? state.searchAreas
-          : state.searchAreas.map((area) => area.id !== drawing.id || area.retired_at !== null
-            ? area
-            : {
-                ...area, status: 'retired', retired_at: retiredAt, updated_at: retiredAt,
-                version_sequence: area.version_sequence + 1,
-              }),
-        missionEvents:
-          drawing === undefined
-            ? state.missionEvents
-            : appendEvent(state.missionEvents, drawing.mission_id, 'drawing_deleted', retiredAt, {
+        drawings: state.drawings.map((candidate) => candidate.id === drawing.id ? retiredDrawing : candidate),
+        drawingVersions: [...(state.drawingVersions ?? []),
+          { mission_id: drawing.mission_id, object_type: 'drawing', object_id: drawing.id,
+            version_sequence: retiredDrawing.version_sequence, operation: 'retired', recorded_at: retiredAt, state: retiredDrawing },
+          ...(retiredArea === null ? [] : [{ mission_id: drawing.mission_id, object_type: 'search_area' as const,
+            object_id: drawing.id, version_sequence: retiredArea.version_sequence,
+            operation: 'retired' as const, recorded_at: retiredAt, state: retiredArea }]),
+        ],
+        searchAreas: retiredArea === null ? state.searchAreas
+          : state.searchAreas.map((candidate) => candidate.id === retiredArea.id ? retiredArea : candidate),
+        missionEvents: appendEvent(events, drawing.mission_id, 'drawing_deleted', retiredAt, {
                 drawing_id: drawing.id,
                 drawing_type: drawing.type,
                 name: drawing.name,
+                version_sequence: retiredDrawing.version_sequence,
+                retired: true,
               }),
       }
       save()
@@ -4069,6 +4164,7 @@ function readHarnessState(): BrowserHarnessState {
         : [],
       markers: Array.isArray(parsed.markers) ? parsed.markers : [],
       drawings: Array.isArray(parsed.drawings) ? parsed.drawings : [],
+      drawingVersions: Array.isArray(parsed.drawingVersions) ? parsed.drawingVersions : [],
       helicopters: Array.isArray(parsed.helicopters) ? parsed.helicopters : [],
       gpxImports: Array.isArray(parsed.gpxImports) ? parsed.gpxImports : [],
       gpxEvidencePoints: Array.isArray(parsed.gpxEvidencePoints) ? parsed.gpxEvidencePoints : [],
@@ -4439,6 +4535,7 @@ function assertHarnessParticipantBackfillComplete(
     const evaluation = evaluations.get(participant.id)
     if (evaluation === undefined) throw new Error('Participant backfill evaluation is unavailable.')
     if (evaluation.complete) continue
+    if (evaluation.error !== undefined) throw new Error(evaluation.error)
     if (evaluation.scope === 'unknown') {
       throw new Error(
         'Mission cannot be finished because a legacy group history scope is unknown. Review retained group membership before finishing.',
@@ -4484,6 +4581,7 @@ function readHarnessParticipantBackfillEvaluations(
           effectiveFrom: participant.effective_from,
           addedAt: participant.added_at,
           startingMemberDeviceIdsJson: participant.starting_member_device_ids_json,
+          ...readLegacyRosterAttestation(state.missionEvents, missionId, participant.id),
         },
         checkpoints,
         membershipEvents,
@@ -4495,7 +4593,7 @@ function readHarnessParticipantBackfillEvaluations(
 function normalizeHarnessGroupMemberDeviceIds(
   deviceIds: readonly string[],
 ): readonly string[] {
-  if (!Array.isArray(deviceIds)) throw new Error('Current group member device ids are required.')
+  if (!Array.isArray(deviceIds)) throw new Error('Group member device ids are required.')
   return [...new Set(deviceIds.map((deviceId) =>
     requireHarnessText(deviceId, 'Traccar device id')))].sort()
 }
@@ -4606,7 +4704,7 @@ function assertHarnessInitialParticipantSelection(
 
   const groupMemberDeviceIds = new Set(input.groups.flatMap((group) => {
     if (!Array.isArray(group.member_device_ids)) {
-      throw new Error('Current group member device ids are required.')
+      throw new Error('Group member device ids are required.')
     }
     return group.member_device_ids.map((deviceId) =>
       requireHarnessText(deviceId, 'Traccar device id'))
@@ -5310,11 +5408,12 @@ function appendEvent(
   eventType: string,
   timestamp: string,
   details: Record<string, unknown>,
+  eventId?: string,
 ): readonly MissionEvent[] {
   return [
     ...events,
     {
-      id: createId('event'),
+      id: eventId ?? createId('event'),
       mission_id: missionId,
       event_type: eventType,
       timestamp,

@@ -32,7 +32,7 @@ test('keeps a re-added group visibly pending until every selected member complet
   await page.getByTestId('participant-add-ref').selectOption('101')
   await page.getByTestId('participant-effective-from').fill(earlierLocal)
   await page.getByTestId('participant-add-btn').click()
-  await expect(page.getByTestId('participant-backfill-status')).toContainText('2/2 starting group members')
+  await expect(page.getByTestId('participant-backfill-status')).toContainText('2/2 required group members')
   await page.evaluate(async () => {
     const storePath = '/src/features/browser-validation/browser-harness-store.ts'
     const runtimePath = '/src/features/participants/participant-store.ts'
@@ -46,7 +46,7 @@ test('keeps a re-added group visibly pending until every selected member complet
     }
     await useParticipantStore.getState().controller.refreshMission(mission.id)
   })
-  await expect(page.getByTestId('participant-backfill-status')).toContainText('pending / retrying for 1/2 starting group members')
+  await expect(page.getByTestId('participant-backfill-status')).toContainText('pending / retrying for 1/2 required group members')
   await page.getByTestId('participant-backfill-status').scrollIntoViewIfNeeded()
   await page.screenshot({ path: test.info().outputPath('pending-group-progress.png'), fullPage: true })
   await page.getByTestId('mission-finish-btn').click()
