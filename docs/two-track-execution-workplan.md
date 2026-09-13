@@ -575,11 +575,20 @@ Three packaged attempts remain FAILED. The third proves replacement B with
 readiness; its final removed-package operator result assertion fails. A later
 unit/Chromium red-first repair preserves current negative results after redundant
 tile errors while keeping positive and stale-result invalidation. That repair
-has no new packaged run. No fourth native attempt or rebuild is authorized.
+was not reached by the subsequent failed Linux smoke. No further local native
+attempt or rebuild is authorized.
 
 Final frozen serial correctness passes 456 files / 4,829 tests with six existing
-qualification-only skips. Next: reconcile records, open the scoped PR and obtain
-exact-head CI/review. Keep package qualification FAILED,
+qualification-only skips. Draft [PR28](https://github.com/donal0c/sartracker-web/pull/28)
+is pushed at `bfc37b747e69267ca48d32b16c9cb48815aaa537`. CI `34776633574` failed
+the packaged map gate at initial rendering: the loaded source was at default
+zoom 12 rather than synthetic camera zoom 11. Source/build/package/SQLite/GPU
+gates passed and later packaged gates were skipped. The harness's corrected
+style-restoration/camera sequence passes 39 focused tests and exact-diff review;
+the original 10-second readiness deadline is unchanged. Missing initial red
+provenance and post-implementation sensitivity controls are retained in the
+camera receipt. Obtain fresh exact-head CI. Train D integration
+follows its owner-authorized merge. Keep package qualification FAILED,
 DON-7/DON-76 In Progress and release HOLD; no licensed/private map/provider,
 Windows, distribution, performance-threshold or BCP-17 qualification is implied.
 

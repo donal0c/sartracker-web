@@ -338,6 +338,15 @@ negative result; this cannot restore positive qualification. Actual map/package
 changes still reset state. The limit is recorded rather than silently adding
 event identity claims or redesigning the protocol.
 
+Two scoped same-root reviews are clear at committed source head
+`bfc37b747e69267ca48d32b16c9cb48815aaa537`: integrated harness/hook/evidence/CI,
+and proxy notification plus orphan raster cleanup. These are independent agent
+reviews, not external approval. The immutable manifest was created before commit
+and therefore records the then-checked-out base in its `head` field. The
+[committed-source binding](../../evidence/war-11-map/negative-result/committed-source-binding.json)
+independently matches all 1,173 recorded input hashes to the committed blobs;
+the original manifest is not relabelled or rewritten.
+
 Curated durable evidence: [packaged attempt 3](../../evidence/war-11-map/attempt-3/README.md)
 and [negative-result red/green](../../evidence/war-11-map/negative-result/README.md).
 
@@ -345,3 +354,58 @@ Code and documentation pass staged whitespace checks. Preserved raw test logs
 retain their original terminal whitespace and blank final lines; the ordinary
 unfiltered diff check reports those archival bytes. They were not rewritten to
 make a formatting check appear green. No runtime/test gate was relaxed.
+
+### Linux source-head CI failure
+
+[CI run 34776633574](https://github.com/donal0c/sartracker-web/actions/runs/34776633574)
+tested `bfc37b747e69267ca48d32b16c9cb48815aaa537` and failed the packaged map
+smoke. Earlier source correctness, assurance, build, packaging, SQLite inspection
+and llvmpipe gates passed; later packaged gates were skipped. Strict responsiveness
+and 960k release qualification did not run. This is a failed gate, not packaged
+qualification of the final negative-result repair.
+
+The captured source was loaded and the software GPU was present, but the camera
+was at default zoom 12 instead of the requested synthetic camera zoom 11. All
+289 sampled pixels were the no-coverage hatch background. The original 10-second
+render evidence deadline expired; Electron exited 0/signal null without teardown
+escalation. Forty blocked-resource messages have no retained request URLs and
+remain unclassified. The run is not diagnostically clean.
+
+An actual production-helper/MapLibre Evented reproduction demonstrates that the
+style-preservation callback can overwrite the harness's immediate target jump.
+A local Chromium trace observed the opposite, safe ordering. The failed Linux
+run did not record intermediate event order, so its exact chronology remains
+inferred. The bounded correction is confined to harness sequencing: await the
+style-restoration boundary, move and verify the synthetic camera, then start
+the unchanged 10-second readiness/source/GPU evidence window. Production camera
+behavior, synthetic fixture extent and qualification assertions remain unchanged.
+
+The [immutable Linux failure receipt](../../evidence/war-11-map/linux-ci-34776633574/README.md)
+retains the screenshot, source binding, artifact digests and evidence limits.
+No further local Electron launch or rebuild was made.
+
+### Reviewed camera harness correction
+
+The smoke now observes the selected map's `setStyle` return boundary through a
+temporary, transparent wrapper. Events inside `setStyle` cannot settle the
+observer before production registers its restoration callback; subsequent events
+are read after their synchronous listeners finish. The wrapper marks success
+only after a normal return and restores the original method only while it still
+owns that replacement. Errors and deadlines remove the listener/timer and prevent
+late capture.
+
+One absolute 15-second setup budget covers the operator menu, map selection,
+observer installation, restoration and finite target-camera verification. The
+original 10-second render/source/GPU evidence deadline begins afterward and is
+unchanged. Failure cleanup is separately bounded to one second and cannot extend
+the success deadline. Failure records now retain style-settlement diagnostics.
+
+Final focused checks pass 39/39 (27 harness and 12 hook), with TypeScript, targeted
+lint, syntax and independent exact-diff review green. Only the smoke library,
+script and their unit test differ from the prior 1,173-input source manifest;
+the other 1,170 inputs, including production behavior and fixture extent, match.
+The [source-only camera receipt](../../evidence/war-11-map/camera-harness/README.md)
+records two actual source-order red/green controls and the missing pre-fix red
+provenance for the initial camera and later selection-coordinator tests. Isolated
+post-implementation rebreaks demonstrate cleanup/deadline assertion sensitivity;
+they are not relabelled as TDD. Fresh exact-head remote CI remains required.

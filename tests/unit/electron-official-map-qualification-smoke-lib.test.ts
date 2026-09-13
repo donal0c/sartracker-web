@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import Database from 'better-sqlite3'
+import { Evented } from 'maplibre-gl'
 import { createPackage, extractFile } from '@electron/asar'
+import { applyMapStylePreservingCamera } from '../../src/features/map/apply-map-style-preserving-camera'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
@@ -14,10 +16,13 @@ import {
   comparePackagedRuntimeEntries,
   expectedOfficialMapSource,
   installOfficialMapRenderCapture,
+  installOfficialMapStyleSettlementCapture,
+  isSyntheticTargetCamera,
   resetOfficialMapsSettings,
   isCanonicalOfficialRasterTemplate,
   isOfficialRasterSourceReady,
   registerPassiveRendererDiagnostics,
+  runBoundedOfficialMapSelection,
   waitForRenderedEvidence,
   SYNTHETIC_TARGET_TILE,
 } from '../../build/electron-official-map-qualification-smoke-lib.js'
@@ -29,6 +34,400 @@ afterEach(() => {
 })
 
 describe('official map qualification smoke fixtures', () => {
+  it.each(['restoration-before-target', 'target-before-restoration'] as const)(
+    'waits for style restoration before accepting the target camera (%s)', async ordering => {
+      const evented = new Evented()
+      let camera = {
+        center: [-9.7, 51.97] as [number, number],
+        zoom: 12,
+        bearing: 0,
+        pitch: 0,
+      }
+      let style = {sources: {}}
+      const sourceStyle = {
+        sources: {
+          official_discovery_topo: {
+            type: 'raster',
+            tiles: ['sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png'],
+          },
+        },
+      }
+      const map = Object.assign(evented, {
+        getCenter: () => ({lng: camera.center[0], lat: camera.center[1]}),
+        getZoom: () => camera.zoom,
+        getBearing: () => camera.bearing,
+        getPitch: () => camera.pitch,
+        getStyle: () => style,
+        setStyle: () => { style = sourceStyle },
+        jumpTo: (next: typeof camera) => { camera = next },
+      })
+      const runtime = {window: globalThis, map}
+      const state = installOfficialMapStyleSettlementCapture({
+        key: '__SARTRACKER_STYLE_SETTLEMENT_TEST__',
+        sourceId: 'official_discovery_topo',
+        deadlineAt: Date.now() + 1_000,
+        runtime,
+      })
+      const defaultCamera = {...camera}
+      const targetCamera = {center: [-9.74406, 51.99917] as [number, number], zoom: 11, bearing: 0, pitch: 0}
+      applyMapStylePreservingCamera(map, sourceStyle)
+      if (ordering === 'target-before-restoration') map.jumpTo(targetCamera)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      if (ordering === 'restoration-before-target') {
+        map.fire('styledata')
+        await Promise.resolve()
+      } else {
+        await Promise.resolve()
+        expect(state.latest).toBeNull()
+        map.fire('styledata')
+        await Promise.resolve()
+      }
+      expect(state.latest?.camera).toEqual({center: defaultCamera.center, zoom: defaultCamera.zoom, bearing: 0, pitch: 0})
+      // The corrected smoke path always moves to the target after settlement,
+      // regardless of which side of the production callback the first jump hit.
+      map.jumpTo(targetCamera)
+      expect(camera).toEqual(targetCamera)
+      state.cleanup?.()
+      expect(state.cleaned).toBe(true)
+    },
+  )
+
+  it('does not accept an already-present source until styledata has crossed the observer', async () => {
+    const evented = new Evented()
+    const camera = {center: [-9.7, 51.97] as [number, number], zoom: 12}
+    const style = {
+      sources: {
+        official_discovery_topo: {
+          type: 'raster',
+          tiles: ['sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png'],
+        },
+      },
+    }
+    const map = Object.assign(evented, {
+      getCenter: () => ({lng: camera.center[0], lat: camera.center[1]}),
+      getZoom: () => camera.zoom,
+      getBearing: () => 0,
+      getPitch: () => 0,
+      getStyle: () => style,
+      setStyle: () => undefined,
+    })
+    const state = installOfficialMapStyleSettlementCapture({
+      key: '__SARTRACKER_STYLE_SETTLEMENT_ALREADY_PRESENT__',
+      sourceId: 'official_discovery_topo',
+      deadlineAt: Date.now() + 1_000,
+      runtime: {window: globalThis, map},
+    })
+    await Promise.resolve()
+    expect(state.latest).toBeNull()
+    map.setStyle(style)
+    await Promise.resolve()
+    expect(state.latest).toBeNull()
+    map.fire('styledata')
+    await Promise.resolve()
+    expect(state.latest?.styleDataCount).toBe(1)
+    expect(state.cleaned).toBe(true)
+  })
+
+  it('waits past a synchronous setStyle styledata event before accepting restoration', async () => {
+    const evented = new Evented()
+    let camera = {center: [-9.7, 51.97] as [number, number], zoom: 12}
+    let style = {sources: {}}
+    const sourceStyle = {
+      sources: {
+        official_discovery_topo: {
+          type: 'raster',
+          tiles: ['sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png'],
+        },
+      },
+    }
+    const map = Object.assign(evented, {
+      getCenter: () => ({lng: camera.center[0], lat: camera.center[1]}),
+      getZoom: () => camera.zoom,
+      getBearing: () => 0,
+      getPitch: () => 0,
+      getStyle: () => style,
+      setStyle: () => {
+        style = sourceStyle
+        // Countercontrols the production helper's registration order: the
+        // event occurs before its once listener is registered.
+        map.fire('styledata')
+      },
+      jumpTo: (next: typeof camera) => { camera = next },
+    })
+    const state = installOfficialMapStyleSettlementCapture({
+      key: '__SARTRACKER_STYLE_SETTLEMENT_SYNC_SET_STYLE__',
+      sourceId: 'official_discovery_topo',
+      deadlineAt: Date.now() + 1_000,
+      runtime: {window: globalThis, map},
+    })
+    const defaultCamera = {...camera}
+    const targetCamera = {center: [-9.8876953125, 52.02545042919566] as [number, number], zoom: 11}
+    try {
+      applyMapStylePreservingCamera(map, sourceStyle)
+      map.jumpTo(targetCamera)
+      await Promise.resolve()
+      expect(state.latest).toBeNull()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      map.fire('styledata')
+      await Promise.resolve()
+      expect(state.latest?.camera).toEqual({center: defaultCamera.center, zoom: defaultCamera.zoom, bearing: 0, pitch: 0})
+    } finally {
+      state.cleanup?.()
+    }
+  })
+
+  it('does not accept synchronous setStyle styledata after an install-task gap', async () => {
+    const evented = new Evented()
+    let style = {sources: {}}
+    const sourceStyle = {
+      sources: {
+        official_discovery_topo: {
+          type: 'raster',
+          tiles: ['sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png'],
+        },
+      },
+    }
+    const map = Object.assign(evented, {
+      getCenter: () => ({lng: -9.7, lat: 51.97}),
+      getZoom: () => 12,
+      getBearing: () => 0,
+      getPitch: () => 0,
+      getStyle: () => style,
+      setStyle: () => {
+        style = sourceStyle
+        map.fire('styledata')
+      },
+      jumpTo: () => undefined,
+    })
+    const state = installOfficialMapStyleSettlementCapture({
+      key: '__SARTRACKER_STYLE_SETTLEMENT_CROSS_TASK__',
+      sourceId: 'official_discovery_topo',
+      deadlineAt: Date.now() + 1_000,
+      runtime: {window: globalThis, map},
+    })
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      applyMapStylePreservingCamera(map, sourceStyle)
+      await Promise.resolve()
+      expect(state.latest).toBeNull()
+    } finally {
+      state.cleanup?.()
+    }
+  })
+
+  it('restores the owned setStyle wrapper and rejects later events after a thrown switch', async () => {
+    const evented = new Evented()
+    const style = {
+      sources: {
+        official_discovery_topo: {
+          type: 'raster',
+          tiles: ['sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png'],
+        },
+      },
+    }
+    const originalSetStyle = () => { throw new Error('synthetic setStyle failure') }
+    const map = Object.assign(evented, {
+      getCenter: () => ({lng: -9.7, lat: 51.97}),
+      getZoom: () => 12,
+      getBearing: () => 0,
+      getPitch: () => 0,
+      getStyle: () => style,
+      setStyle: originalSetStyle,
+    })
+    const state = installOfficialMapStyleSettlementCapture({
+      key: '__SARTRACKER_STYLE_SETTLEMENT_THROWN_SET_STYLE__',
+      sourceId: 'official_discovery_topo',
+      deadlineAt: Date.now() + 1_000,
+      runtime: {window: globalThis, map},
+    })
+    expect(() => map.setStyle(style)).toThrow(/synthetic setStyle failure/u)
+    expect(state.setStyleReturned).toBe(false)
+    expect(map.setStyle).toBe(originalSetStyle)
+    map.fire('styledata')
+    await Promise.resolve()
+    expect(state.latest).toBeNull()
+    state.cleanup?.()
+    expect(state.cleaned).toBe(true)
+  })
+
+  it('rejects non-finite or unexpected synthetic target cameras', () => {
+    expect(isSyntheticTargetCamera({center: [Number.NaN, 51.99917], zoom: 11})).toBe(false)
+    expect(isSyntheticTargetCamera({center: [-9.74406, 51.99917], zoom: Number.POSITIVE_INFINITY})).toBe(false)
+    expect(isSyntheticTargetCamera({center: [-9.74406, 51.99917], zoom: 12})).toBe(false)
+    expect(isSyntheticTargetCamera({center: [-9.8876953125, 52.02545042919566], zoom: 11})).toBe(true)
+  })
+
+  it('times out style settlement and removes its listener and timer', async () => {
+    const evented = new Evented()
+    const timers = new Set<ReturnType<typeof setTimeout>>()
+    const window = {
+      setTimeout(callback: () => void, delay: number) {
+        const timer = setTimeout(() => {
+          timers.delete(timer)
+          callback()
+        }, delay)
+        timers.add(timer)
+        return timer
+      },
+      clearTimeout(timer: ReturnType<typeof setTimeout>) {
+        timers.delete(timer)
+        clearTimeout(timer)
+      },
+    }
+    const map = Object.assign(evented, {
+      getStyle: () => ({sources: {}}),
+      setStyle: () => undefined,
+    })
+    const state = installOfficialMapStyleSettlementCapture({
+      key: '__SARTRACKER_STYLE_SETTLEMENT_TIMEOUT__',
+      sourceId: 'official_discovery_topo',
+      deadlineAt: Date.now() + 5,
+      runtime: {window, map},
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(state.cleaned).toBe(true)
+    expect(timers.size).toBe(0)
+    expect(state.styleDataCount).toBe(0)
+  })
+
+  it('does not admit a frame after the absolute style deadline when timer cleanup is delayed', async () => {
+    const evented = new Evented()
+    let style = {sources: {}}
+    const sourceStyle = {
+      sources: {
+        official_discovery_topo: {
+          type: 'raster',
+          tiles: ['sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png'],
+        },
+      },
+    }
+    const pendingTimers = new Set<number>()
+    const window = {
+      setTimeout: (callback: () => void) => {
+        const token = pendingTimers.size + 1
+        pendingTimers.add(token)
+        void callback
+        return token
+      },
+      clearTimeout: (token: number) => { pendingTimers.delete(token) },
+    }
+    const map = Object.assign(evented, {
+      getCenter: () => ({lng: -9.7, lat: 51.97}),
+      getZoom: () => 12,
+      getBearing: () => 0,
+      getPitch: () => 0,
+      getStyle: () => style,
+      setStyle: () => { style = sourceStyle; map.fire('styledata') },
+    })
+    const state = installOfficialMapStyleSettlementCapture({
+      key: '__SARTRACKER_STYLE_SETTLEMENT_LATE_CAPTURE__',
+      sourceId: 'official_discovery_topo',
+      deadlineAt: Date.now() + 5,
+      runtime: {window, map},
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    map.setStyle(sourceStyle)
+    await Promise.resolve()
+    expect(state.latest).toBeNull()
+    state.cleanup?.()
+    expect(pendingTimers.size).toBe(0)
+  })
+
+  it('bounds every operator-selection phase and cleans an installed observer on click failure', async () => {
+    const phases: string[] = []
+    const timeouts: number[] = []
+    await expect(runBoundedOfficialMapSelection({
+      deadlineAt: Date.now() + 500,
+      openMenu: async (timeout: number) => { phases.push('menu'); timeouts.push(timeout) },
+      waitForMapButton: async (timeout: number) => { phases.push('button'); timeouts.push(timeout) },
+      installObserver: async (timeout: number) => { phases.push('install'); timeouts.push(timeout) },
+      clickMap: async (timeout: number) => {
+        phases.push('click')
+        timeouts.push(timeout)
+        throw new Error('synthetic click failure')
+      },
+      waitForSettlement: async () => { phases.push('settlement'); return null },
+      cleanupObserver: async () => { phases.push('cleanup'); return {cleaned: true} },
+    })).rejects.toThrow(/synthetic click failure/u)
+    expect(phases).toEqual(['menu', 'button', 'install', 'click', 'cleanup'])
+    expect(timeouts.every((timeout) => timeout > 0 && timeout <= 500)).toBe(true)
+    expect(timeouts[0]).toBeGreaterThanOrEqual(timeouts[1])
+    expect(timeouts[1]).toBeGreaterThanOrEqual(timeouts[2])
+    expect(timeouts[2]).toBeGreaterThanOrEqual(timeouts[3])
+  })
+
+  it('cleans after install or settlement rejection and keeps cleanup failure visible', async () => {
+    const installPhases: string[] = []
+    await expect(runBoundedOfficialMapSelection({
+      deadlineAt: Date.now() + 500,
+      openMenu: async () => { installPhases.push('menu') },
+      waitForMapButton: async () => { installPhases.push('button') },
+      installObserver: async () => {
+        installPhases.push('install')
+        throw new Error('synthetic install failure')
+      },
+      clickMap: async () => { installPhases.push('click') },
+      waitForSettlement: async () => { installPhases.push('settlement'); return null },
+      cleanupObserver: async () => { installPhases.push('cleanup'); return {cleaned: true} },
+    })).rejects.toThrow(/synthetic install failure/u)
+    expect(installPhases).toEqual(['menu', 'button', 'install', 'cleanup'])
+
+    const settlementPhases: string[] = []
+    const settlementDeadlines: number[] = []
+    await expect(runBoundedOfficialMapSelection({
+      deadlineAt: Date.now() + 500,
+      openMenu: async () => { settlementPhases.push('menu') },
+      waitForMapButton: async () => { settlementPhases.push('button') },
+      installObserver: async (_timeout: number, deadline: number) => {
+        settlementPhases.push('install')
+        settlementDeadlines.push(deadline)
+      },
+      clickMap: async () => { settlementPhases.push('click') },
+      waitForSettlement: async (deadline: number) => {
+        settlementPhases.push('settlement')
+        settlementDeadlines.push(deadline)
+        throw new Error('synthetic settlement timeout')
+      },
+      cleanupObserver: async () => { settlementPhases.push('cleanup'); return {cleaned: true} },
+    })).rejects.toThrow(/synthetic settlement timeout/u)
+    expect(settlementPhases).toEqual(['menu', 'button', 'install', 'click', 'settlement', 'cleanup'])
+    expect(settlementDeadlines[0]).toBe(settlementDeadlines[1])
+
+    await expect(runBoundedOfficialMapSelection({
+      deadlineAt: Date.now() + 500,
+      openMenu: async () => undefined,
+      waitForMapButton: async () => undefined,
+      installObserver: async () => undefined,
+      clickMap: async () => { throw new Error('synthetic click failure') },
+      waitForSettlement: async () => null,
+      cleanupObserver: async () => ({cleaned: false}),
+    })).rejects.toThrow(/synthetic click failure; Synthetic map style settlement cleanup/u)
+
+    await expect(runBoundedOfficialMapSelection({
+      deadlineAt: Date.now() + 500,
+      openMenu: async () => undefined,
+      waitForMapButton: async () => undefined,
+      installObserver: async () => undefined,
+      clickMap: async () => { throw new Error('synthetic click timeout') },
+      waitForSettlement: async () => null,
+      cleanupObserver: async () => { throw new Error('synthetic cleanup timeout') },
+    })).rejects.toThrow(/synthetic click timeout; synthetic cleanup timeout/u)
+  })
+
+  it('rejects an expired selection before touching the operator controls', async () => {
+    const phases: string[] = []
+    await expect(runBoundedOfficialMapSelection({
+      deadlineAt: Date.now() - 1,
+      openMenu: async () => { phases.push('menu') },
+      waitForMapButton: async () => { phases.push('button') },
+      installObserver: async () => { phases.push('install') },
+      clickMap: async () => { phases.push('click') },
+      waitForSettlement: async () => { phases.push('settlement'); return null },
+      cleanupObserver: async () => { phases.push('cleanup'); return {cleaned: true} },
+    })).rejects.toThrow(/deadline/u)
+    expect(phases).toEqual([])
+  })
+
   it('creates a real SQLite MBTiles package with a bounded synthetic tile grid', () => {
     const root = mkdtempSync(path.join(tmpdir(), 'sartracker-war11-smoke-'))
     roots.push(root)

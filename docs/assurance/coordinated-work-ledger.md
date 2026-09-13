@@ -200,7 +200,13 @@ authorized. Current negative-result repair retains fail-closed output after a
 redundant tile failure; view/source/package changes and positive proof still
 invalidate. Bare tile-failure events carry no source/package-generation identity;
 do not claim event attribution. The final source cycle/review controls scoped PR
-readiness; packaged qualification and release remain HOLD.
+readiness; packaged qualification and release remain HOLD. Draft PR28's Linux
+CI `34776633574` failed initial map rendering at the wrong camera zoom after
+source/build/package/SQLite/GPU checks passed; subsequent packaged gates skipped.
+A harness-only style-restoration sequencing correction passes 39 focused tests
+and exact-diff review; fresh CI remains required. Preserve its original
+10-second readiness deadline and the separate macOS failure evidence;
+no further local Electron launch or rebuild is authorized.
 
 The audit's additional measured concerns are not silently discarded. Attachment
 base64 frame cost, Traccar oversize-response buffering, GPX hit-test cost,

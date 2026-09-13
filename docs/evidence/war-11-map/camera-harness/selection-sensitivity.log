@@ -1,0 +1,85 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tmp/war-11/selection-rebreak/no-deadline.test.ts (27 tests | 1 failed | 24 skipped) 6ms
+     × rejects an expired selection before touching the operator controls 3ms
+ ❯ tmp/war-11/selection-rebreak/no-cleanup.test.ts (27 tests | 2 failed | 24 skipped) 7ms
+     × bounds every operator-selection phase and cleans an installed observer on click failure 5ms
+     × cleans after install or settlement rejection and keeps cleanup failure visible 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tmp/war-11/selection-rebreak/no-cleanup.test.ts > official map qualification smoke fixtures > bounds every operator-selection phase and cleans an installed observer on click failure
+AssertionError: expected [ Array(4) ] to deeply equal [ 'menu', 'button', 'install', …(2) ]
+
+- Expected
++ Received
+
+  [
+    "menu",
+    "button",
+    "install",
+    "click",
+-   "cleanup",
+  ]
+
+ ❯ tmp/war-11/selection-rebreak/no-cleanup.test.ts:352:20
+    350|       cleanupObserver: async () => { phases.push('cleanup'); return {c…
+    351|     })).rejects.toThrow(/synthetic click failure/u)
+    352|     expect(phases).toEqual(['menu', 'button', 'install', 'click', 'cle…
+       |                    ^
+    353|     expect(timeouts.every((timeout) => timeout > 0 && timeout <= 500))…
+    354|     expect(timeouts[0]).toBeGreaterThanOrEqual(timeouts[1])
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tmp/war-11/selection-rebreak/no-cleanup.test.ts > official map qualification smoke fixtures > cleans after install or settlement rejection and keeps cleanup failure visible
+AssertionError: expected [ 'menu', 'button', 'install' ] to deeply equal [ 'menu', 'button', 'install', …(1) ]
+
+- Expected
++ Received
+
+  [
+    "menu",
+    "button",
+    "install",
+-   "cleanup",
+  ]
+
+ ❯ tmp/war-11/selection-rebreak/no-cleanup.test.ts:373:27
+    371|       cleanupObserver: async () => { installPhases.push('cleanup'); re…
+    372|     })).rejects.toThrow(/synthetic install failure/u)
+    373|     expect(installPhases).toEqual(['menu', 'button', 'install', 'clean…
+       |                           ^
+    374|
+    375|     const settlementPhases: string[] = []
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tmp/war-11/selection-rebreak/no-deadline.test.ts > official map qualification smoke fixtures > rejects an expired selection before touching the operator controls
+AssertionError: promise resolved "null" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+null
+
+ ❯ tmp/war-11/selection-rebreak/no-deadline.test.ts:427:8
+    425|       waitForSettlement: async () => { phases.push('settlement'); retu…
+    426|       cleanupObserver: async () => { phases.push('cleanup'); return {c…
+    427|     })).rejects.toThrow(/deadline/u)
+       |        ^
+    428|     expect(phases).toEqual([])
+    429|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  2 failed | 1 passed (3)
+      Tests  3 failed | 6 passed | 72 skipped (81)
+   Start at  20:58:00
+   Duration  481ms (transform 76ms, setup 0ms, import 267ms, tests 15ms, environment 0ms)
+

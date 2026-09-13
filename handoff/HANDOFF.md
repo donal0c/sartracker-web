@@ -11,7 +11,8 @@ in [its remediation record](../docs/assurance/findings/war-06/claude-review-reme
 Older history is in [the archive](archive/pre-war06-repair-20260913.md).
 
 Active here: WAR-11 / DON-7 / DON-76 on `codex/war-11-offline-map-freshness`.
-Uncommitted scope is WAR-04 MAP-01/02/03 and AUD-11 only: package identity and
+Draft [PR28](https://github.com/donal0c/sartracker-web/pull/28), source head
+`bfc37b747e69267ca48d32b16c9cb48815aaa537`, covers MAP-01/02/03 and AUD-11 only: package identity and
 content validation, actual required-view tile checks, reader/raster invalidation,
 and the repaired missing-coverage hatch. Train D owns mission truth; do not edit
 its production seams. Its merge and subsequent rebase precede final map PR readiness.
@@ -37,10 +38,16 @@ existing qualification-only skips. All 1,173 frozen inputs matched afterward.
 Broader browser checks are 24 passed / 3 pre-existing tracking failures, reproduced
 on clean base and retained in the WAR-11 record; do not describe that suite as green.
 
-Next: reconcile records, commit/push the scoped
-PR and obtain exact-head CI/review. Preserve
-the failed native gate and separate proven stages in any scoped PR.
-No commit, push, merge or release has been made for this map work. The manual now
+Linux CI `34776633574` failed the map smoke after source/build/package/SQLite/GPU
+gates passed: the loaded official source remained at default zoom 12 rather than
+synthetic camera zoom 11. Later packaged gates were skipped. A harness-only
+style-restoration sequencing correction passes 39 focused tests and exact-diff
+review; the original 10-second readiness deadline is unchanged. Its three harness
+inputs are bound in the WAR-11 receipt; 1,170 prior inputs match. Missing initial
+red provenance and post-implementation sensitivity controls remain explicit.
+No further local Electron/build. Next: obtain fresh exact-head CI on draft PR28,
+then integrate Train D after its merge and recheck affected inputs.
+The source is committed/pushed; no merge or release has been made. The manual now
 distinguishes package validation from checked-view coverage; native proof remains open.
 Use [testing cadence](../docs/testing-and-review-cadence.md) and the single
 [two-track queue](../docs/two-track-execution-workplan.md).

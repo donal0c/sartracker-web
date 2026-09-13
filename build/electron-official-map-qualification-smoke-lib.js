@@ -42,6 +42,149 @@ export function isOfficialRasterSourceReady(evidence, mapId = SYNTHETIC_MAP_ID) 
     && isCanonicalOfficialRasterTemplate(evidence.selectedSource.tiles[0], mapId)
 }
 
+/** Returns whether the renderer camera matches the bounded synthetic target. */
+export function isSyntheticTargetCamera(camera, targetTile = SYNTHETIC_TARGET_TILE) {
+  const bounds = xyzTileBounds(targetTile.z, targetTile.x, targetTile.y)
+  const expectedCenter = [(bounds.west + bounds.east) / 2, (bounds.south + bounds.north) / 2]
+  const center = camera?.center
+  return camera?.zoom === 11
+    && Array.isArray(center)
+    && center.length === 2
+    && center.every((value) => Number.isFinite(value))
+    && Number.isFinite(camera.zoom)
+    && Math.abs(center[0] - expectedCenter[0]) <= 1e-8
+    && Math.abs(center[1] - expectedCenter[1]) <= 1e-8
+}
+
+/** Installs a bounded observer for the production styledata restoration boundary. */
+export function installOfficialMapStyleSettlementCapture({ key, sourceId, deadlineAt, runtime }) {
+  const targetWindow = runtime?.window ?? globalThis.window
+  const map = runtime?.map ?? targetWindow.__SARTRACKER_MAP__
+  if (typeof map?.setStyle !== 'function') throw new Error('Map style settlement requires MapLibre setStyle.')
+  if (Date.now() >= deadlineAt) throw new Error('Map style settlement setup deadline was exceeded.')
+  const previous = targetWindow[key]
+  previous?.cleanup?.()
+  const state = {
+    styleDataCount: 0,
+    latest: null,
+    timer: null,
+    setStyleInProgress: false,
+    setStyleReturned: false,
+    cleanup: null,
+    cleaned: false,
+  }
+  const canonicalTemplate = `sartracker-official-map://tile/${sourceId}/{z}/{x}/{y}.png`
+  const isCanonicalTemplate = (template) => template === canonicalTemplate
+    || (typeof template === 'string'
+      && template.startsWith(`${canonicalTemplate}?revision=`)
+      && /^\d+$/u.test(template.slice(`${canonicalTemplate}?revision=`.length)))
+  const cleanup = () => {
+    map.off('styledata', onStyleData)
+    if (state.timer !== null) targetWindow.clearTimeout(state.timer)
+    state.timer = null
+    restoreSetStyle()
+    state.cleaned = true
+  }
+  const capture = () => {
+    if (Date.now() >= deadlineAt) return
+    // The source may already be present when this observer is installed, but
+    // that does not prove that a pending production styledata restoration has
+    // run. Require the observed event before accepting the camera snapshot.
+    if (state.cleaned || state.latest !== null || state.styleDataCount === 0) return
+    const style = map.getStyle?.()
+    const source = style?.sources?.[sourceId]
+    const template = source?.type === 'raster' && Array.isArray(source.tiles) ? source.tiles[0] : undefined
+    if (source?.type !== 'raster' || !isCanonicalTemplate(template)) return
+    const center = map.getCenter?.()
+    state.latest = {
+      styleDataCount: state.styleDataCount,
+      sourceId,
+      template,
+      camera: center === undefined ? null : {
+        center: [center.lng, center.lat],
+        zoom: map.getZoom?.(),
+        bearing: map.getBearing?.(),
+        pitch: map.getPitch?.(),
+      },
+    }
+    cleanup()
+  }
+  const queueCapture = () => {
+    const enqueue = targetWindow.queueMicrotask ?? ((callback) => Promise.resolve().then(callback))
+    enqueue(capture)
+  }
+  function onStyleData() {
+    state.styleDataCount += 1
+    if (!state.setStyleReturned || state.setStyleInProgress) return
+    // MapLibre's Evented listeners run synchronously. Queue the read so the
+    // production once('styledata') camera restoration has already run.
+    queueCapture()
+  }
+  state.cleanup = cleanup
+  targetWindow[key] = state
+  map.on('styledata', onStyleData)
+  const originalSetStyle = map.setStyle
+  function restoreSetStyle() {
+    if (map.setStyle === wrappedSetStyle) map.setStyle = originalSetStyle
+  }
+  function wrappedSetStyle(...args) {
+    state.setStyleInProgress = true
+    let returned = false
+    try {
+      const result = Reflect.apply(originalSetStyle, map, args)
+      returned = true
+      return result
+    } finally {
+      state.setStyleInProgress = false
+      state.setStyleReturned = returned
+      restoreSetStyle()
+    }
+  }
+  map.setStyle = wrappedSetStyle
+  state.timer = targetWindow.setTimeout(cleanup, Math.max(0, deadlineAt - Date.now()))
+  return state
+}
+
+/** Runs the operator map selection lifecycle under one absolute setup deadline. */
+export async function runBoundedOfficialMapSelection({
+  deadlineAt,
+  openMenu,
+  waitForMapButton,
+  installObserver,
+  clickMap,
+  waitForSettlement,
+  cleanupObserver,
+}) {
+  let observerAttempted = false
+  const remaining = (label) => {
+    const timeout = deadlineAt - Date.now()
+    if (timeout <= 0) throw new Error(`${label} deadline was exceeded.`)
+    return timeout
+  }
+  try {
+    await openMenu(remaining('Maps menu setup'))
+    await waitForMapButton(remaining('Synthetic map button setup'))
+    observerAttempted = true
+    await installObserver(remaining('Synthetic map style settlement setup'), deadlineAt)
+    await clickMap(remaining('Synthetic map selection'))
+    return await waitForSettlement(deadlineAt)
+  } catch (error) {
+    if (observerAttempted) {
+      try {
+        const cleanup = await cleanupObserver()
+        if (cleanup?.cleaned !== true) {
+          throw new Error('Synthetic map style settlement cleanup did not confirm listener removal.')
+        }
+      } catch (cleanupError) {
+        const bodyMessage = error instanceof Error ? error.message : String(error)
+        const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+        throw new Error(`${bodyMessage}; ${cleanupMessage}`)
+      }
+    }
+    throw error
+  }
+}
+
 /** Installs the serializable MapLibre render callback used by the packaged smoke. */
 export function installOfficialMapRenderCapture({ key, sourceId, deadlineAt, runtime }) {
   const targetWindow = runtime?.window ?? globalThis.window

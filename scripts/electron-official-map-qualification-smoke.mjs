@@ -16,7 +16,10 @@ import {
   expectedOfficialMapSource,
   isCanonicalOfficialRasterTemplate,
   isOfficialRasterSourceReady,
+  installOfficialMapStyleSettlementCapture,
   installOfficialMapRenderCapture,
+  isSyntheticTargetCamera,
+  runBoundedOfficialMapSelection,
   registerPassiveRendererDiagnostics,
   resetOfficialMapsSettings,
   SYNTHETIC_MAP_ID,
@@ -32,6 +35,8 @@ const { NO_COVERAGE_TILE_BASE64: noCoverageTileBase64 } = require(
 )
 const RENDER_EVIDENCE_KEY = '__SARTRACKER_WAR11_RENDER_EVIDENCE__'
 const RENDER_EVIDENCE_TIMEOUT_MS = 10_000
+const STYLE_SETTLEMENT_KEY = '__SARTRACKER_WAR11_STYLE_SETTLEMENT__'
+const STYLE_SETTLEMENT_TIMEOUT_MS = 15_000
 
 main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error))
@@ -104,6 +109,8 @@ async function main() {
   const rendererDiagnostics = []
   let diagnosticSequence = 0
   let cleanupRendererDiagnostics = null
+  let styleSettlement = null
+  let styleSettlementDiagnostics = null
 
   try {
     page = await app.firstWindow()
@@ -153,8 +160,10 @@ async function main() {
     }
 
     diagnosticPhase = 'initial-render'
-    await selectSyntheticMap(page)
-    await jumpToSyntheticTile(page)
+    const selection = await selectSyntheticMap(page)
+    styleSettlement = selection.settlement
+    const targetCamera = await jumpToSyntheticTile(page, selection.deadlineAt)
+    assertSyntheticTargetCamera(targetCamera, 'initial synthetic target')
     const mapEvidence = await waitForRenderedVariant(page, 'a', 'initial synthetic map render')
     assertRenderedVariant(mapEvidence, 'a', 'initial synthetic map render')
     assertOfficialSource(mapEvidence, 'initial synthetic map render')
@@ -293,6 +302,9 @@ async function main() {
         withdrawnStatus: withdrawn.officialMaps.packages[0]?.status,
         removedStatus: removed.officialMaps.packages[0]?.status,
       },
+      styleSettlement,
+      styleSettlementDiagnostics,
+      initialTargetCamera: targetCamera,
       checks: {
         complete,
         completeOperatorCheck,
@@ -319,6 +331,28 @@ async function main() {
     workflowError = error
   } finally {
     diagnosticPhase = workflowError === null ? 'teardown' : 'workflow-failure'
+    if (page !== null) {
+      try {
+        styleSettlementDiagnostics = await withTimeout(
+          page.evaluate((key) => {
+            const state = window[key]
+            if (state === undefined) return null
+            return {
+              styleDataCount: state.styleDataCount,
+              latest: state.latest,
+              cleaned: state.cleaned === true,
+              listenerActive: state.cleaned !== true,
+            }
+          }, STYLE_SETTLEMENT_KEY),
+          1_000,
+          'Style settlement diagnostics read timed out.',
+        )
+      } catch (error) {
+        styleSettlementDiagnostics = {
+          readError: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }
     if (workflowError !== null && page !== null) {
       failureScreenshotAttempted = true
       try {
@@ -392,6 +426,7 @@ async function main() {
     if (workflowError === null && summaryPayload !== null && cleanExit) {
       await writeJson(path.join(evidenceDir, 'summary.json'), {
         ...summaryPayload,
+        styleSettlementDiagnostics,
         processExit: {
           exit,
           teardownActions,
@@ -412,6 +447,7 @@ async function main() {
             ? 'No renderer window was acquired; no failure screenshot was attempted.'
             : 'Failure was detected during teardown after the workflow screenshot phase.',
         captureCleanupBoundary: 'If bounded render lifecycle cleanup fails, owned Electron app teardown is the final cleanup boundary.',
+        styleSettlementDiagnostics,
         rendererDiagnosticsArtifact: 'renderer-diagnostics.json',
         exit,
         teardownActions,
@@ -626,22 +662,103 @@ async function checkSyntheticView(page) {
 
 /** Selects the synthetic official map through the operator-facing Maps menu. */
 async function selectSyntheticMap(page) {
-  await page.getByTestId('basemap-menu-toggle').click()
-  await page.getByTestId(`basemap-btn-${SYNTHETIC_MAP_ID}`).waitFor({ timeout: 15_000 })
-  await page.getByTestId(`basemap-btn-${SYNTHETIC_MAP_ID}`).click()
+  const settlementDeadline = Date.now() + STYLE_SETTLEMENT_TIMEOUT_MS
+  const mapButton = page.getByTestId(`basemap-btn-${SYNTHETIC_MAP_ID}`)
+  const settlement = await runBoundedOfficialMapSelection({
+    deadlineAt: settlementDeadline,
+    openMenu: (timeout) => page.getByTestId('basemap-menu-toggle').click({ timeout }),
+    waitForMapButton: (timeout) => mapButton.waitFor({ timeout }),
+    installObserver: (timeout, deadlineAt) => withTimeout(
+      page.evaluate(installOfficialMapStyleSettlementCapture, {
+        key: STYLE_SETTLEMENT_KEY,
+        sourceId: SYNTHETIC_MAP_ID,
+        deadlineAt,
+      }),
+      timeout,
+      'Synthetic map style settlement setup timed out.',
+    ),
+    clickMap: (timeout) => mapButton.click({ timeout }),
+    waitForSettlement: (deadlineAt) => waitForStyleSettlement(page, deadlineAt),
+    cleanupObserver: () => cleanupStyleSettlementObserver(page),
+  })
+  return { settlement, deadlineAt: settlementDeadline }
 }
 
 /** Moves MapLibre to the target synthetic tile at the renderer's z+1 raster mapping. */
-async function jumpToSyntheticTile(page) {
+async function jumpToSyntheticTile(page, deadlineAt) {
   const bounds = xyzTileBounds(SYNTHETIC_TARGET_TILE.z, SYNTHETIC_TARGET_TILE.x, SYNTHETIC_TARGET_TILE.y)
-  await page.evaluate(({ bounds: tileBounds }) => {
-    const map = window.__SARTRACKER_MAP__
-    if (map === undefined) throw new Error('MapLibre instance is unavailable.')
-    map.jumpTo({
-      center: [(tileBounds.west + tileBounds.east) / 2, (tileBounds.south + tileBounds.north) / 2],
-      zoom: 11,
-    })
-  }, { bounds })
+  return withTimeout(
+    page.evaluate(({ bounds: tileBounds }) => {
+      const map = window.__SARTRACKER_MAP__
+      if (map === undefined) throw new Error('MapLibre instance is unavailable.')
+      map.jumpTo({
+        center: [(tileBounds.west + tileBounds.east) / 2, (tileBounds.south + tileBounds.north) / 2],
+        zoom: 11,
+      })
+      const center = map.getCenter()
+      return { center: [center.lng, center.lat], zoom: map.getZoom() }
+    }, { bounds }),
+    remainingDeadlineMs(deadlineAt, 'Synthetic target camera setup'),
+    'Synthetic target camera setup timed out.',
+  )
+}
+
+/** Waits for the source-specific styledata restoration callback with bounded cleanup. */
+async function waitForStyleSettlement(page, deadline) {
+  let latest = null
+  let bodyError = null
+  try {
+    while (Date.now() < deadline) {
+      const remaining = deadline - Date.now()
+      latest = await withTimeout(
+        page.evaluate((key) => window[key]?.latest ?? null, STYLE_SETTLEMENT_KEY),
+        remaining,
+        'Synthetic map style settlement read timed out.',
+      )
+      if (Date.now() < deadline && latest !== null) return latest
+      await new Promise((resolve) => setTimeout(resolve, Math.min(50, Math.max(1, deadline - Date.now()))))
+    }
+    bodyError = new Error(`Synthetic map style settlement did not complete: ${JSON.stringify(latest)}`)
+  } catch (error) {
+    bodyError = error
+  }
+  let cleanupError = null
+  try {
+    await cleanupStyleSettlementObserver(page)
+  } catch (error) {
+    cleanupError = error
+  }
+  if (bodyError !== null && cleanupError !== null) {
+    throw new Error(`${bodyError.message}; ${cleanupError.message}`)
+  }
+  if (bodyError !== null) throw bodyError
+  if (cleanupError !== null) throw cleanupError
+  throw new Error('Synthetic map style settlement did not complete.')
+}
+
+/** Cleans the style settlement observer with an independent bounded failure path. */
+async function cleanupStyleSettlementObserver(page) {
+  const cleanup = await withTimeout(
+    page.evaluate((key) => {
+      const state = window[key]
+      if (state === undefined) return { cleaned: true, observed: false }
+      state.cleanup?.()
+      return { cleaned: state.cleaned === true, observed: true }
+    }, STYLE_SETTLEMENT_KEY),
+    1_000,
+    'Synthetic map style settlement cleanup timed out.',
+  )
+  if (cleanup.cleaned !== true) throw new Error('Synthetic map style settlement cleanup did not confirm listener removal.')
+  return cleanup
+}
+
+/** Confirms the renderer moved to the exact synthetic target before evidence polling. */
+function assertSyntheticTargetCamera(camera, label) {
+  const bounds = xyzTileBounds(SYNTHETIC_TARGET_TILE.z, SYNTHETIC_TARGET_TILE.x, SYNTHETIC_TARGET_TILE.y)
+  const expectedCenter = [(bounds.west + bounds.east) / 2, (bounds.south + bounds.north) / 2]
+  if (!isSyntheticTargetCamera(camera)) {
+    throw new Error(`${label} camera did not match the synthetic tile target: ${JSON.stringify({ camera, expectedCenter, zoom: 11 })}`)
+  }
 }
 
 /** Installs a bounded MapLibre render callback that captures source, viewport, and GPU evidence in-frame. */
@@ -889,6 +1006,13 @@ async function withTimeout(promise, timeoutMs, message) {
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }
+}
+
+/** Returns the remaining milliseconds in one absolute bounded setup lifecycle. */
+function remainingDeadlineMs(deadline, label) {
+  const remaining = deadline - Date.now()
+  if (remaining <= 0) throw new Error(`${label} deadline was exceeded.`)
+  return remaining
 }
 
 /** Writes an evidence JSON file with stable formatting. */
