@@ -409,3 +409,48 @@ records two actual source-order red/green controls and the missing pre-fix red
 provenance for the initial camera and later selection-coordinator tests. Isolated
 post-implementation rebreaks demonstrate cleanup/deadline assertion sensitivity;
 they are not relabelled as TDD. Fresh exact-head remote CI remains required.
+
+### Second Linux failure and structural raster repair
+
+[CI 34779414995](../../evidence/war-11-map/linux-ci-34779414995/README.md)
+at `fda23be04dd27b0f26f9b10a4756ac56d64a4a6f` passed the corrected camera,
+initial rendering and replacement B checks, then failed automatic removed-package
+withdrawal. The screenshot retains B pixels with unreadable/Not field ready.
+Its exact native pending-source/event cause is unrecorded. Later packaged gates
+were skipped; the run is FAILED, not qualified.
+
+A separate real Chromium/MapLibre/GPU reproduction confirmed that an unrelated
+pending GeoJSON source makes global style readiness false while the official
+source remains loaded. Removal changed readiness but retained the old source URL
+and 289/289 sampled B pixels. Natural removal was a passing control. A clean
+durable baseline failed pending removal and replacement (two failures, one pass);
+unit red was ten failures, one pass. One earlier browser run overlapped subordinate
+edits and a transient parse error: retained but excluded from evidence. Root
+restored exact baseline production and became sole writer before clean red.
+
+The repair uses `getStyle()` structural availability, matching MapLibre's style
+mutation boundary, without global/source tile-completion gates. It removes and
+recreates only the official layer/source, verifies mutation postconditions, and
+retains camera, overlay order and pending unrelated sources. Existing hook error
+handling surfaces failure and permits retry. Three hook fixture methods now model
+an absent style; hook production and assertions are unchanged.
+
+Final proof: 23 focused controls; four real browser flows including repeated
+notifications, removal/reimport and pending A-to-B replacement; TypeScript/lint;
+independent map-safety review. Full correctness passed 456 files / 4,849 tests /
+six existing qualification skips in 502.56 seconds. All 1,174 frozen inputs
+matched at completion. Native bridge responses in Chromium are synthetic.
+
+After that cycle, a separately bound workflow/configuration delta adds the same
+four flows before Linux packaging, with isolated port/server, normal failure
+propagation and screenshot/trace/log upload. Exact CI command passed locally
+(four flows, 18.6s); actionlint and independent workflow review passed. Quoting
+`HEAD^{tree}` removes two existing shell lint warnings without changing semantics.
+Runtime/test inputs remain unchanged; no redundant full cycle was run for this
+CI-only delta. [Receipt and retained artifacts](../../evidence/war-11-map/raster-structural-repair/README.md)
+bind source hashes, clean red/green and invalid-run provenance.
+
+Fresh exact-head CI remains required. PR28 stays draft until Train D merges under
+owner authority and affected integration checks finish. No further local Electron
+launch/build, merge, release or licensed/private-provider work occurred. All prior
+failures and the original native crash remain retained; release HOLD is unchanged.

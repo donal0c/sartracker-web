@@ -1,0 +1,141 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tests/unit/official-map-raster-refresh.test.ts (11 tests | 10 failed) 8ms
+     × evicts resident raster while unrelated sources or official tiles are pending 3ms
+     × leaves another selected map untouched when the official source and layer are absent 0ms
+     × reconciles an orphaned source without retaining cached raster state 0ms
+     × reconciles an orphaned layer without retaining cached raster state 0ms
+     × repeated notifications replace only the official raster and preserve layer order 0ms
+     × surfaces a MapLibre mutation that reports failure without throwing (failRemoveLayer) 1ms
+     × surfaces a MapLibre mutation that reports failure without throwing (failRemoveSource) 0ms
+     × surfaces a MapLibre mutation that reports failure without throwing (failAddSource) 1ms
+     × surfaces a MapLibre mutation that reports failure without throwing (failAddLayer) 0ms
+     × propagates a thrown mutation error to the hook fail-visible path 0ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/official-map-raster-refresh.test.ts > official map raster freshness > evicts resident raster while unrelated sources or official tiles are pending
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/unit/official-map-raster-refresh.test.ts:35:65
+     33|   it('evicts resident raster while unrelated sources or official tiles…
+     34|     const {map, calls, state} = fixture()
+     35|     expect(refreshOfficialMapRaster(map as never, sourceId, 8)).toBe(t…
+       |                                                                 ^
+     36|     expect(calls).toEqual(['removeLayer', 'removeSource', 'addSource',…
+     37|     expect(map.isStyleLoaded).not.toHaveBeenCalled()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  tests/unit/official-map-raster-refresh.test.ts > official map raster freshness > leaves another selected map untouched when the official source and layer are absent
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/unit/official-map-raster-refresh.test.ts:54:66
+     52|     state.source = false
+     53|     state.layers = ['other-basemap', 'markers', 'pending-overlay']
+     54|     expect(refreshOfficialMapRaster(map as never, sourceId, 10)).toBe(…
+       |                                                                  ^
+     55|     expect(calls).toEqual([])
+     56|     expect(state.layers).toEqual(['other-basemap', 'markers', 'pending…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  tests/unit/official-map-raster-refresh.test.ts > official map raster freshness > reconciles an orphaned source without retaining cached raster state
+ FAIL  tests/unit/official-map-raster-refresh.test.ts > official map raster freshness > reconciles an orphaned layer without retaining cached raster state
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/unit/official-map-raster-refresh.test.ts:63:65
+     61|     state.source = orphan === 'source'
+     62|     state.layers = orphan === 'layer' ? [layerId, 'markers', 'pending-…
+     63|     expect(refreshOfficialMapRaster(map as never, sourceId, 4)).toBe(t…
+       |                                                                 ^
+     64|     expect(calls).toEqual([orphan === 'source' ? 'removeSource' : 'rem…
+     65|     expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  tests/unit/official-map-raster-refresh.test.ts > official map raster freshness > repeated notifications replace only the official raster and preserve layer order
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/unit/official-map-raster-refresh.test.ts:70:65
+     68|   it('repeated notifications replace only the official raster and pres…
+     69|     const {map, state, calls} = fixture()
+     70|     expect(refreshOfficialMapRaster(map as never, sourceId, 3)).toBe(t…
+       |                                                                 ^
+     71|     expect(refreshOfficialMapRaster(map as never, sourceId, 4)).toBe(t…
+     72|     expect(calls).toEqual(['removeLayer', 'removeSource', 'addSource',…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  tests/unit/official-map-raster-refresh.test.ts > official map raster freshness > surfaces a MapLibre mutation that reports failure without throwing (failRemoveLayer)
+ FAIL  tests/unit/official-map-raster-refresh.test.ts > official map raster freshness > surfaces a MapLibre mutation that reports failure without throwing (failRemoveSource)
+ FAIL  tests/unit/official-map-raster-refresh.test.ts > official map raster freshness > surfaces a MapLibre mutation that reports failure without throwing (failAddSource)
+ FAIL  tests/unit/official-map-raster-refresh.test.ts > official map raster freshness > surfaces a MapLibre mutation that reports failure without throwing (failAddLayer)
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/official-map-raster-refresh.test.ts:83:74
+     81|       const {map, state} = fixture()
+     82|       state[failure] = true
+     83|       expect(() => refreshOfficialMapRaster(map as never, sourceId, 11…
+       |                                                                          ^
+     84|       if (failure === 'failRemoveLayer' || failure === 'failRemoveSour…
+     85|     },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  tests/unit/official-map-raster-refresh.test.ts > official map raster freshness > propagates a thrown mutation error to the hook fail-visible path
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/official-map-raster-refresh.test.ts:91:72
+     89|     const {map} = fixture()
+     90|     map.removeLayer.mockImplementation(() => { throw new Error('MapLib…
+     91|     expect(() => refreshOfficialMapRaster(map as never, sourceId, 12))…
+       |                                                                        ^
+     92|     expect(map.addSource).not.toHaveBeenCalled()
+     93|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  10 failed | 1 passed (11)
+   Start at  21:39:46
+   Duration  399ms (transform 34ms, setup 0ms, import 81ms, tests 8ms, environment 241ms)
+

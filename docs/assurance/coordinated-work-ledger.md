@@ -208,6 +208,17 @@ and exact-diff review; fresh CI remains required. Preserve its original
 10-second readiness deadline and the separate macOS failure evidence;
 no further local Electron launch or rebuild is authorized.
 
+Subsequent Linux CI `34779414995` failed passive removal with stale replacement
+raster. A real Chromium pending-source reproduction confirmed an independent
+MAP-03 defect: global style readiness could starve official-raster eviction.
+Structural availability and explicit mutation postconditions repair it without
+waiting for other sources. Clean red/green, 23 focused controls, four browser
+flows, independent safety review and full 456-file / 4,849-test correctness pass
+(six existing qualification skips) are retained. A separately reviewed CI-only
+delta gates these flows before packaging. Fresh exact-head CI remains required;
+PR28 stays draft and DON-7/DON-76 remain In Progress. Exact native event cause
+and packaged qualification remain unproven.
+
 The audit's additional measured concerns are not silently discarded. Attachment
 base64 frame cost, Traccar oversize-response buffering, GPX hit-test cost,
 membership-scan growth, repeated-hour Search Pass selection, backup-close join,

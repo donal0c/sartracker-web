@@ -195,6 +195,13 @@ jobs:
           npx playwright install --with-deps chromium
           npx playwright test --config playwright.war06.config.ts --project=chromium --workers=1
 
+      - name: WAR-11 rendered offline map freshness regressions
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/electron-validation-evidence/war11-browser
+          npx playwright test --config playwright.war11.config.ts --project=chromium --workers=1 2>&1 \
+            | tee tmp/electron-validation-evidence/war11-browser/playwright.log
+
       - name: Build Electron Linux artifacts
         # This workflow is an internal qualification lane. Release packaging
         # deliberately omits this flag until the programme's final gate.
@@ -615,6 +622,10 @@ jobs:
             tmp/electron-validation-evidence
             tmp/electron-validation-evidence/repair-train-d/receipt.json
             test-results/war06-mission-scope
+            test-results/war11-map-freshness
+            tmp/war-11/browser-view-checked.png
+            tmp/war-11/browser-package-removed.png
+            tmp/war-11/browser-negative-result-retained.png
             tmp/beta-artifacts/tracking-soak-ci
             tmp/breadcrumb-pr5-evidence
             tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-report.json

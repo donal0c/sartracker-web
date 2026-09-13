@@ -1,0 +1,8 @@
+.github/workflows/electron-linux-validation.yml:74:9: shellcheck reported issue in this script: SC1083:warning:3:39: This { is literal. Check expression (missing ;/\n?) or quote it [shellcheck]
+   |
+74 |         run: |
+   |         ^~~~
+.github/workflows/electron-linux-validation.yml:74:9: shellcheck reported issue in this script: SC1083:warning:3:44: This } is literal. Check expression (missing ;/\n?) or quote it [shellcheck]
+   |
+74 |         run: |
+   |         ^~~~

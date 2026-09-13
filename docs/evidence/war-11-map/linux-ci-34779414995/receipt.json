@@ -1,0 +1,92 @@
+{
+  "schema": "war11-linux-ci-failure-v1",
+  "runId": 34779414995,
+  "runUrl": "https://github.com/donal0c/sartracker-web/actions/runs/34779414995",
+  "headSha": "fda23be04dd27b0f26f9b10a4756ac56d64a4a6f",
+  "outcome": "FAILED",
+  "failedStage": "Packaged official map qualification and freshness smoke",
+  "error": "Automatic removed package withdrawal evidence read timed out.",
+  "laterPackagedStages": "SKIPPED after failed map smoke",
+  "releaseQualification": "Strict <200ms and 960k NOT RUN",
+  "evidenceArtifactId": 10325126235,
+  "evidenceArtifactSha256": "769971bf2dbcf333ed4d398e51cf777dc72692d23fbda05531bab75847304bd1",
+  "packageArtifactId": 10325086132,
+  "packageArtifactSha256": "db242474c8664840e61330e5d2ff4fed1b872a33ae61a09397e5ad988c2fee74",
+  "installerArchiveDownloaded": false,
+  "exit": {
+    "code": 0,
+    "signal": null
+  },
+  "teardownActions": [],
+  "styleSettlement": {
+    "styleDataCount": 1,
+    "latest": {
+      "styleDataCount": 1,
+      "sourceId": "official_discovery_topo",
+      "template": "sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png",
+      "camera": {
+        "center": [
+          -9.7,
+          51.97
+        ],
+        "zoom": 12,
+        "bearing": 0,
+        "pitch": 0
+      }
+    },
+    "cleaned": true,
+    "listenerActive": false
+  },
+  "provenByCompletedControlFlow": [
+    "exact target camera assertion",
+    "initial A GPU rendering and native/operator checks",
+    "missing tile hatch/native negative control",
+    "invalid package/operator negative control",
+    "same-path replacement B bytes/rendering and operator Field ready"
+  ],
+  "failureScreenshotObservation": "B palette remains visible while package unreadable and Not field ready are shown.",
+  "nativeChronologyLimit": "No per-frame failure-stage source/layer state was recorded; exact cause of the CI pending source is not established.",
+  "diagnostics": {
+    "entries": 40,
+    "pageErrors": 0,
+    "blockedMessages": 38,
+    "blockedRequestUrls": "not retained; unclassified",
+    "serviceWorker": "two source-attributed file:///sw.js error/warning; not allowlisted"
+  },
+  "files": {
+    "failure.json": "7e5823d5f3f91a8338cb2a44c63c7326ab006cce408c1786a73083228b351b41",
+    "workflow-failure.png": "7d35bc143c6ee16ba091a2823b5338f5eef8dac7126e6efd2d978b1564433321",
+    "02-synthetic-replacement-map.png": "e4358bf58527dbd3ee5c7c717d717e0d1a52021138a3533cd6a539665b4691bb",
+    "source-binding.json": "e96721779eac9956c582117b8ada02de6d7acac6579a351c0e331e23b0121c91"
+  },
+  "packageSafetyReceiptSha256": "3a7462b39c80a307da4e5f0a79faf3305839b3e199d3cc1f71cbe6fff8873f5c",
+  "nativeProbe": {
+    "electron": "40.10.0",
+    "abi": "143",
+    "arch": "x64",
+    "betterSqlite3": "12.10.0",
+    "sqlite": "3.53.1",
+    "integrity": "ok",
+    "value": 42
+  },
+  "packageInventories": [
+    {
+      "format": "appimage",
+      "asarSha256": "cc2d8b827a88d5eb7972f670d36a50a3f8a36fd3fe522862082b161336f2ddae"
+    },
+    {
+      "format": "deb",
+      "asarSha256": "cc2d8b827a88d5eb7972f670d36a50a3f8a36fd3fe522862082b161336f2ddae"
+    },
+    {
+      "format": "linux-unpacked",
+      "asarSha256": "cc2d8b827a88d5eb7972f670d36a50a3f8a36fd3fe522862082b161336f2ddae"
+    }
+  ],
+  "sourceCorrectness": {
+    "files": 456,
+    "passed": 4841,
+    "existingQualificationSkips": 6,
+    "seconds": 1031.06
+  }
+}

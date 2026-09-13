@@ -1,0 +1,76 @@
+{
+  "schema": "war11-map03-structural-invalidation-v1",
+  "baseHead": "fda23be04dd27b0f26f9b10a4756ac56d64a4a6f",
+  "productionInputs": {
+    "src/features/map/official-map-raster-refresh.ts": "55e998cd5664cbd1798f4b1dce91f292f950fd559495e7602461246a1f213392",
+    "tests/unit/official-map-raster-refresh.test.ts": "30ca174047c19a635ddf8671b238ad2d3b982e992b0e59c3878a327f856c96c3",
+    "tests/unit/use-official-map-view-qualification.test.tsx": "d5f4f607a87349c2c0740d1d98a9fdfa20e6a99b28e51526d660c1bed3a7155b",
+    "tests/e2e/official-map-raster-freshness.spec.ts": "139eaecac74435b9479e5663ab1c0cfb48dc87d2e2b7b72cba00cb61564b7b35",
+    "public/manual/index.html": "fe27ac555c66ab94d4615269643014fe61d4a552b395cb515c3d7a234c871101"
+  },
+  "fullCorrectness": {
+    "command": "npm run test:correctness -- --no-file-parallelism",
+    "files": 456,
+    "passed": 4849,
+    "existingQualificationSkips": 6,
+    "seconds": 502.56,
+    "exit": 0,
+    "manifestSha256": "10cdc597a32b4c7e20fa5476e96724e112898c0d7a5e78bab8a16f377951ecb5",
+    "frozenInputs": 1174,
+    "allInputsMatchedAtCompletion": true,
+    "logSha256": "e195adb4f6e074b5e1af2025b497b60ae05b0bafe01fa089c108d05d5dece38a"
+  },
+  "red": {
+    "browser": "Clean frozen production baseline: natural removal passed; pending removal and pending A-to-B replacement failed (2 failures, 1 pass, 30.4s).",
+    "gpu": "An unrelated pending GeoJSON request left official source loaded but global style unready; removal callback changed status, old source URL remained and 289/289 sampled pixels remained variant B.",
+    "unit": "10 failures, 1 pass before structural repair."
+  },
+  "green": {
+    "focused": "11 raster controls +12 hook controls =23 passed",
+    "browser": "4 flows passed in18.6s under exact new CI command, real Chromium/MapLibre/GPU with synthetic native bridge",
+    "static": [
+      "TypeScript",
+      "targeted ESLint",
+      "actionlint",
+      "git diff --check"
+    ],
+    "review": "Independent same-root map-safety and focused workflow reviews green; not external approval."
+  },
+  "ciOnlyDeltaAfterFull": {
+    "unchangedPreviousInputs": 1173,
+    "changedWorkflow": {
+      "before": "232709257ba91f2cab5d595b13963522ed1891ce23d9aa36d04b71575ab466d1",
+      "after": "b149918adbabf7f5fad19802e9c713e0958106ebce0c52761fa8cebefb8dbe60"
+    },
+    "newConfig": {
+      "path": "playwright.war11.config.ts",
+      "sha256": "4037dbc50af5fb2f4fe4530bd5bcb4fe9e42f46fa18f3ca14d8a664c019237ae"
+    },
+    "command": "npx playwright test --config playwright.war11.config.ts --project=chromium --workers=1",
+    "previousActionlint": "Two SC1083 warnings from unquoted HEAD^{tree}; equivalent quoting fixes them.",
+    "runtimeAndTestBlobsUnchanged": true
+  },
+  "invalidEvidence": "First durable browser run overlapped subordinate production edits, including a transient duplicate-style parse error. It is retained as invalid-mixed-browser.log and excluded from red/green claims; root restored exact baseline and became sole writer before the clean baseline run.",
+  "limits": [
+    "Native package bridge is mocked in Chromium; no filesystem/native proof inferred.",
+    "Exact pending-source/event cause of CI34779414995 remains unrecorded.",
+    "No further local Electron launch or build.",
+    "Both Linux failures, three macOS failures and original decoder crash remain retained; release HOLD."
+  ],
+  "files": {
+    "actionlint-after.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actionlint-before.log": "9dec4976bf252f1f6c18bfd5a34d63eab1d6d44050a16ce88de7409578f16537",
+    "browser-baseline-red.log": "c65315060a1a0dd593ac52652deab0e475174935d4c432f2aa6fb289f4243c84",
+    "ci-command-browser-green.log": "4dd266b87dc5db9e63e6d10e6922e9f5c31c0b16729b93341f6343b6c5b9ff26",
+    "focused-green.log": "f8f47a2746f0b23fe8e33951364f57b2467378b8a46c0e20ffa4eaf3baf95a9a",
+    "full-correctness.log": "e195adb4f6e074b5e1af2025b497b60ae05b0bafe01fa089c108d05d5dece38a",
+    "invalid-mixed-browser.log": "b2e4345fb48e9fb6493d1ec5c9146fe38c2ab4ac218b4173b85fe3c9ea5d0dff",
+    "natural-removal-control.log": "cddfcb66d2d5c99e757f98a03756d6303f6ba88ed6bbe011c16ff2863ce8af5d",
+    "pending-removal-green.png": "eab53f0db66d57579b31dc295114294287a21744042f5100802ed0905607840f",
+    "pending-removal-red.json": "e6ca5e55dc57a7a9a1ae05bd91073c4ab14ec893c0a0bea4e3782cf7d2546692",
+    "pending-removal-red.png": "411bef827b2a8fbb2b97eb5f4798ba41a5c5b5caec90d84f2d000bf0a1d621b0",
+    "reimport-green.png": "823182edc30ae857f8bdc8b7bfea7bd8182b2ae7e7981d66a5bd8baf344bacbf",
+    "replacement-green.png": "dd502692fbda140fe72c7383a7ec9326c554e1347bd26c3d6a510f0ece4f8e45",
+    "unit-red.log": "d9493a84b6e67584378d84c7793be3764c936c219a6bf55eae0ab2ce54167012"
+  }
+}

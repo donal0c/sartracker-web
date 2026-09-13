@@ -1,0 +1,130 @@
+[2m[WebServer] [22m(node:18599) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 3 tests using 1 worker
+
+(node:18600) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18600) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m9:35:16 PM [vite] (client) Pre-transform error: Transform failed with 1 error:
+[2m[WebServer] [22m
+[2m[WebServer] [22m[31m[PARSE_ERROR] Error:[0m Identifier `style` has already been declared
+[2m[WebServer] [22m    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/features/map/official-map-raster-refresh.ts:8:9 [38;5;246m][0m
+[2m[WebServer] [22m    [38;5;246m│[0m
+[2m[WebServer] [22m [38;5;246m 8 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0mstyle[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249mm[0m[38;5;249ma[0m[38;5;249mp[0m[38;5;249m.[0m[38;5;249mg[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mS[0m[38;5;249mt[0m[38;5;249my[0m[38;5;249ml[0m[38;5;249me[0m[38;5;249m([0m[38;5;249m)[0m
+[2m[WebServer] [22m [38;5;240m   │[0m         ──┬──  
+[2m[WebServer] [22m [38;5;240m   │[0m           ╰──── `style` has already been declared here
+[2m[WebServer] [22m [38;5;240m   │[0m 
+[2m[WebServer] [22m [38;5;246m17 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0mstyle[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mr[0m[38;5;249me[0m[38;5;249ma[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mR[0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249mS[0m[38;5;249mt[0m[38;5;249my[0m[38;5;249ml[0m[38;5;249me[0m[38;5;249m([0m[38;5;249mm[0m[38;5;249ma[0m[38;5;249mp[0m[38;5;249mI[0m[38;5;249md[0m[38;5;249m)[0m
+[2m[WebServer] [22m [38;5;240m   │[0m         ──┬──  
+[2m[WebServer] [22m [38;5;240m   │[0m           ╰──── It can not be redeclared here
+[2m[WebServer] [22m[38;5;246m────╯[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m  Plugin: vite:oxc
+[2m[WebServer] [22m  File: /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/src/features/map/official-map-raster-refresh.ts
+[2m[WebServer] [22m9:35:16 PM [vite] Internal server error: Transform failed with 1 error:
+[2m[WebServer] [22m
+[2m[WebServer] [22m[31m[PARSE_ERROR] Error:[0m Identifier `style` has already been declared
+[2m[WebServer] [22m    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/features/map/official-map-raster-refresh.ts:8:9 [38;5;246m][0m
+[2m[WebServer] [22m    [38;5;246m│[0m
+[2m[WebServer] [22m [38;5;246m 8 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0mstyle[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249mm[0m[38;5;249ma[0m[38;5;249mp[0m[38;5;249m.[0m[38;5;249mg[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mS[0m[38;5;249mt[0m[38;5;249my[0m[38;5;249ml[0m[38;5;249me[0m[38;5;249m([0m[38;5;249m)[0m
+[2m[WebServer] [22m [38;5;240m   │[0m         ──┬──  
+[2m[WebServer] [22m [38;5;240m   │[0m           ╰──── `style` has already been declared here
+[2m[WebServer] [22m [38;5;240m   │[0m 
+[2m[WebServer] [22m [38;5;246m17 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0mstyle[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mr[0m[38;5;249me[0m[38;5;249ma[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mR[0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249mS[0m[38;5;249mt[0m[38;5;249my[0m[38;5;249ml[0m[38;5;249me[0m[38;5;249m([0m[38;5;249mm[0m[38;5;249ma[0m[38;5;249mp[0m[38;5;249mI[0m[38;5;249md[0m[38;5;249m)[0m
+[2m[WebServer] [22m [38;5;240m   │[0m         ──┬──  
+[2m[WebServer] [22m [38;5;240m   │[0m           ╰──── It can not be redeclared here
+[2m[WebServer] [22m[38;5;246m────╯[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m  Plugin: vite:oxc
+[2m[WebServer] [22m  File: /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/src/features/map/official-map-raster-refresh.ts
+[2m[WebServer] [22m      at transformWithOxc (file:///Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/node_modules/vite/dist/node/chunks/node.js:3745:19)
+[2m[WebServer] [22m      at TransformPluginContext.transform (file:///Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/node_modules/vite/dist/node/chunks/node.js:3813:26)
+[2m[WebServer] [22m      at EnvironmentPluginContainer.transform (file:///Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/node_modules/vite/dist/node/chunks/node.js:30143:51)
+[2m[WebServer] [22m      at async loadAndTransform (file:///Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/node_modules/vite/dist/node/chunks/node.js:24468:26)
+[2m[WebServer] [22m      at async viteTransformMiddleware (file:///Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/node_modules/vite/dist/node/chunks/node.js:24262:20)
+[2m[WebServer] [22m9:35:16 PM [vite] (client) [Unhandled error] TypeError: Failed to fetch dynamically imported module: http://127.0.0.1:1433/src/components/map-view.tsx
+[2m[WebServer] [22m
+[2m[WebServer] [22m9:35:16 PM [vite] (client) [console.warn] An error occurred in one of your React components.
+[2m[WebServer] [22m
+[2m[WebServer] [22mConsider adding an error boundary to your tree to customize error handling behavior.
+[2m[WebServer] [22mVisit https://react.dev/link/error-boundaries to learn more about error boundaries.
+[2m[WebServer] [22m
+  ✘  1 [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:116:3 › external removal clears resident raster and reimport recovers (loaded) (5.4s)
+(node:18641) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18641) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m9:35:21 PM [vite] Internal server error: Transform failed with 1 error:
+[2m[WebServer] [22m
+[2m[WebServer] [22m[31m[PARSE_ERROR] Error:[0m Identifier `style` has already been declared
+[2m[WebServer] [22m    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/features/map/official-map-raster-refresh.ts:8:9 [38;5;246m][0m
+[2m[WebServer] [22m    [38;5;246m│[0m
+[2m[WebServer] [22m [38;5;246m 8 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0mstyle[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249mm[0m[38;5;249ma[0m[38;5;249mp[0m[38;5;249m.[0m[38;5;249mg[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mS[0m[38;5;249mt[0m[38;5;249my[0m[38;5;249ml[0m[38;5;249me[0m[38;5;249m([0m[38;5;249m)[0m
+[2m[WebServer] [22m [38;5;240m   │[0m         ──┬──  
+[2m[WebServer] [22m [38;5;240m   │[0m           ╰──── `style` has already been declared here
+[2m[WebServer] [22m [38;5;240m   │[0m 
+[2m[WebServer] [22m [38;5;246m17 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0mstyle[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mr[0m[38;5;249me[0m[38;5;249ma[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mR[0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249mS[0m[38;5;249mt[0m[38;5;249my[0m[38;5;249ml[0m[38;5;249me[0m[38;5;249m([0m[38;5;249mm[0m[38;5;249ma[0m[38;5;249mp[0m[38;5;249mI[0m[38;5;249md[0m[38;5;249m)[0m
+[2m[WebServer] [22m [38;5;240m   │[0m         ──┬──  
+[2m[WebServer] [22m [38;5;240m   │[0m           ╰──── It can not be redeclared here
+[2m[WebServer] [22m[38;5;246m────╯[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m  Plugin: vite:oxc
+[2m[WebServer] [22m  File: /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/src/features/map/official-map-raster-refresh.ts
+[2m[WebServer] [22m      at transformWithOxc (file:///Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/node_modules/vite/dist/node/chunks/node.js:3745:19)
+[2m[WebServer] [22m      at TransformPluginContext.transform (file:///Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/node_modules/vite/dist/node/chunks/node.js:3813:26)
+[2m[WebServer] [22m      at EnvironmentPluginContainer.transform (file:///Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/node_modules/vite/dist/node/chunks/node.js:30143:51)
+[2m[WebServer] [22m      at async loadAndTransform (file:///Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/node_modules/vite/dist/node/chunks/node.js:24468:26)
+[2m[WebServer] [22m      at async viteTransformMiddleware (file:///Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/node_modules/vite/dist/node/chunks/node.js:24262:20)
+[2m[WebServer] [22m9:35:22 PM [vite] (client) [Unhandled error] TypeError: Failed to fetch dynamically imported module: http://127.0.0.1:1433/src/components/map-view.tsx
+[2m[WebServer] [22m
+[2m[WebServer] [22m9:35:22 PM [vite] (client) [console.warn] An error occurred in one of your React components.
+[2m[WebServer] [22m
+[2m[WebServer] [22mConsider adding an error boundary to your tree to customize error handling behavior.
+[2m[WebServer] [22mVisit https://react.dev/link/error-boundaries to learn more about error boundaries.
+[2m[WebServer] [22m
+  ✓  2 [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:116:3 › external removal clears resident raster and reimport recovers (pending overlay) (6.6s)
+  ✓  3 [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:142:1 › same-path A to B replacement clears old pixels while unrelated overlay is pending (2.4s)
+
+
+  1) [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:116:3 › external removal clears resident raster and reimport recovers (loaded) 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('canvas').first()
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for locator('canvas').first()[22m
+
+
+      21 |   await page.goto('/?missionHarness=1')
+      22 |   await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
+    > 23 |   await expect(page.locator('canvas').first()).toBeVisible()
+         |                                                ^
+      24 |   await page.evaluate(({defaults, a, b, initial}) => {
+      25 |     let variant: 'a' | 'b' | 'missing' = initial
+      26 |     const listeners = new Set<() => void>()
+        at openSyntheticMap (/Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/tests/e2e/official-map-raster-freshness.spec.ts:23:48)
+        at /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/tests/e2e/official-map-raster-freshness.spec.ts:117:5
+
+    Error Context: tmp/war-11/raster-freshness-red-artifacts/official-map-raster-freshn-f5ab8-d-reimport-recovers-loaded--chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    tmp/war-11/raster-freshness-red-artifacts/official-map-raster-freshn-f5ab8-d-reimport-recovers-loaded--chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace tmp/war-11/raster-freshness-red-artifacts/official-map-raster-freshn-f5ab8-d-reimport-recovers-loaded--chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:116:3 › external removal clears resident raster and reimport recovers (loaded) 
+  2 passed (16.1s)

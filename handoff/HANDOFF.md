@@ -12,7 +12,7 @@ Older history is in [the archive](archive/pre-war06-repair-20260913.md).
 
 Active here: WAR-11 / DON-7 / DON-76 on `codex/war-11-offline-map-freshness`.
 Draft [PR28](https://github.com/donal0c/sartracker-web/pull/28), source head
-`bfc37b747e69267ca48d32b16c9cb48815aaa537`, covers MAP-01/02/03 and AUD-11 only: package identity and
+parent `fda23be04dd27b0f26f9b10a4756ac56d64a4a6f`, covers MAP-01/02/03 and AUD-11 only: package identity and
 content validation, actual required-view tile checks, reader/raster invalidation,
 and the repaired missing-coverage hatch. Train D owns mission truth; do not edit
 its production seams. Its merge and subsequent rebase precede final map PR readiness.
@@ -22,30 +22,27 @@ its production seams. Its merge and subsequent rebase precede final map PR readi
 Map work is not merge-ready. Baseline defects and synthetic controls are retained
 under `docs/evidence/war-11-map/baseline/`; current findings and remaining proof are
 in [the WAR-11 record](../docs/assurance/findings/war-11-offline-map-remediation.md).
-Browser readiness/movement/removal flow passes. Native decoder recovery passed once
-with observed clean exit; the combined packaged settings/worker/SQLite/raster path
-has not been fully qualified. Two initial packaged attempts failed global
-idle/loaded harness checks. After reviewed harness corrections (15 focused tests),
-attempt 3 proved replacement B rendering, 15/15 checked tiles and Field ready,
-then passive removal withdrew raster and readiness before revalidation. It FAILED
-the final removed-package operator Check View: the mounted result remained
-Current view not checked. All three Electron exits were 0 with no new crash report.
-No fourth native attempt is authorized. Unit and Chromium red-first proof identified
-negative-result loss after a redundant tile error; the scoped repair passes
-12 focused controls and the real renderer flow, with independent review. Final
-serial correctness passes 456 files / 4,829 tests in 477.61 seconds, with six
-existing qualification-only skips. All 1,173 frozen inputs matched afterward.
-Broader browser checks are 24 passed / 3 pre-existing tracking failures, reproduced
-on clean base and retained in the WAR-11 record; do not describe that suite as green.
+Three macOS packaged attempts remain failed; attempt 3 proved replacement rendering
+and passive withdrawal but failed the final removed-package Check View. The later
+negative-result repair has unit/browser proof. All exits were clean; no fourth local
+native run is authorized. Broader browser results remain 24 passed / three tracking
+failures reproduced on the clean base. Linux CI `34776633574` failed initial rendering
+at the wrong camera; its reviewed harness correction preserves the 10-second gate.
+Prior counts, receipts and camera-test provenance gaps are in the WAR-11 record.
 
-Linux CI `34776633574` failed the map smoke after source/build/package/SQLite/GPU
-gates passed: the loaded official source remained at default zoom 12 rather than
-synthetic camera zoom 11. Later packaged gates were skipped. A harness-only
-style-restoration sequencing correction passes 39 focused tests and exact-diff
-review; the original 10-second readiness deadline is unchanged. Its three harness
-inputs are bound in the WAR-11 receipt; 1,170 prior inputs match. Missing initial
-red provenance and post-implementation sensitivity controls remain explicit.
-No further local Electron/build. Next: obtain fresh exact-head CI on draft PR28,
+Linux CI `34779414995` then failed passive removal: replacement B pixels remained
+despite withdrawn readiness. Its exact native event cause was not recorded.
+A real Chromium reproduction confirmed global style readiness can starve raster
+eviction while an unrelated source is pending. The structural repair now removes
+the official source/layer without waiting for tile completion, with explicit
+mutation postconditions. Clean red: two browser failures / one control pass;
+10 unit failures / one pass. Final green: 23 focused controls, four browser flows,
+456 files / 4,849 correctness tests / six existing qualification skips (502.56s).
+The frozen 1,174 inputs matched at completion. A separately bound CI-only delta
+adds the four browser flows before packaging; exact command, actionlint and
+independent map-safety/workflow reviews pass. Evidence and invalid mixed-run
+provenance are in the WAR-11 record. Fresh remote CI is still required.
+No further local Electron/build. Next: push this verified repair/evidence and obtain exact-head CI on draft PR28,
 then integrate Train D after its merge and recheck affected inputs.
 The source is committed/pushed; no merge or release has been made. The manual now
 distinguishes package validation from checked-view coverage; native proof remains open.

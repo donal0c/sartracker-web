@@ -11,7 +11,7 @@ describe('official view qualification lifecycle', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     const listeners = new Map<string, () => void>()
     const map = { getPitch: () => 0, getZoom: () => 11.6,
-      isStyleLoaded: () => false,
+      getStyle: () => undefined,
       getBounds: () => ({getWest: () => -10, getEast: () => -9, getSouth: () => 51, getNorth: () => 52}),
       on: (name: string, callback: () => void) => listeners.set(name, callback),
       off: (name: string) => listeners.delete(name),
@@ -59,7 +59,7 @@ describe('official view qualification lifecycle', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     const listeners = new Map<string, () => void>()
     const map = { getPitch: () => 0, getZoom: () => 11,
-      isStyleLoaded: () => false,
+      getStyle: () => undefined,
       getBounds: () => ({getWest: () => -10, getEast: () => -9, getSouth: () => 51, getNorth: () => 52}),
       on: (name: string, callback: () => void) => listeners.set(name, callback),
       off: (name: string) => listeners.delete(name),
@@ -244,7 +244,7 @@ describe('official view qualification lifecycle', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     const listeners = new Map<string, () => void>()
     const map = { getPitch: () => 0, getZoom: () => 11,
-      isStyleLoaded: () => false,
+      getStyle: () => undefined,
       getBounds: () => ({getWest: () => -10, getEast: () => -9, getSouth: () => 51, getNorth: () => 52}),
       on: (name: string, callback: () => void) => listeners.set(name, callback),
       off: (name: string) => listeners.delete(name),

@@ -592,6 +592,17 @@ follows its owner-authorized merge. Keep package qualification FAILED,
 DON-7/DON-76 In Progress and release HOLD; no licensed/private map/provider,
 Windows, distribution, performance-threshold or BCP-17 qualification is implied.
 
+Latest MAP-03 repair supersedes the source counts above: CI `34779414995` failed
+passive removal with replacement raster still visible. Real Chromium reproduced
+starvation by an unrelated pending source; the repair uses structural style
+availability and explicit mutation postconditions instead of global load completion.
+Clean red precedes repair. Final green: 23 focused, four browser flows, full
+456 files / 4,849 passed / six existing qualification skips. Independent safety
+review passed. A separately verified CI-only delta makes all four browser flows
+a pre-package gate. Push the repair and obtain fresh exact-head CI; PR28 stays
+draft pending Train D's owner-authorized merge and affected integration checks.
+The native CI failure's exact event cause remains unrecorded; no release proof.
+
 ### Breadcrumb And Mission-History Programme
 
 The locked domain model is in
