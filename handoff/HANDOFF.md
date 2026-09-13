@@ -31,6 +31,8 @@ correction, which has four fake-child red/green cases. Implementation
 `cc989877a850ed349269bdf4cb562dfd7c4846dc` is pushed in
 [PR27](https://github.com/donal0c/sartracker-web/pull/27); its current checks and
 review attestations control scoped merge readiness. Native attempt 1 remains FAILED.
+First PR CI passed 4,793 tests but failed one stale unquoted-command assertion;
+its test-only correction requires fresh exact-head CI. Application inputs are unchanged.
 Three settings failures match clean master and
 remain a separate retained candidate in the coordinated ledger.
 Source-only reproduction also proves a pre-existing coverage result-bound race:

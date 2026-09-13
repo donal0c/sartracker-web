@@ -245,3 +245,10 @@ merge readiness. Packaged re-add/backup/restart remain unverified and are
 required for native qualification, not this explicitly scoped merge decision. The strict
 <200 ms gate is unchanged. BCP-17, replay/soak, live-provider/field acceptance,
 and publication qualification are not performed by this repair train.
+
+CI run 34776427518 at `6a4dee3b` failed one workflow source assertion, with
+4,793 tests passing and six exclusions. The test expected an unquoted
+`HEAD^{tree}` argument; actionlint had required quoting it in the workflow.
+The focused local run reproduces this failure. Only the assertion is corrected
+to require the actual quoted argument; command behavior and application inputs
+are unchanged. The failed full run is retained; fresh exact-head CI is required.
