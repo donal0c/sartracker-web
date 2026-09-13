@@ -1,6 +1,8 @@
 # Repair Train D — participant completeness and Search Operations
 
-Status: implementation and verification in progress. Base:
+Status: [PR27](https://github.com/donal0c/sartracker-web/pull/27) open for scoped
+merge review; implementation `cc989877a850ed349269bdf4cb562dfd7c4846dc`.
+The PR retains current exact-head CI/review receipts. Base:
 `2b2bf8e605e27123c9e454598828d71cb7c062aa`, after merged PR25/PR26.
 Owners: DON-271 / AUD-08 and DON-279 / AUD-09; DON-254 retains qualification.
 Train D merges before parallel Train C. Donal owns merge; release HOLD remains.

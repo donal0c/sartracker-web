@@ -27,8 +27,10 @@ capture overflow. Electron exited cleanly with no new crash or residual process.
 Harness locator and diagnostic collection corrections pass 22 focused tests;
 the actual active-roster browser regression passes 2 tests after a recorded red.
 Final independent harness review cleared diagnostics/CI and the cleanup-reserve
-correction, which has four fake-child red/green cases. The branch is ready for
-commit and exact-head PR/CI review; native attempt 1 remains FAILED.
+correction, which has four fake-child red/green cases. Implementation
+`cc989877a850ed349269bdf4cb562dfd7c4846dc` is pushed in
+[PR27](https://github.com/donal0c/sartracker-web/pull/27); its current checks and
+review attestations control scoped merge readiness. Native attempt 1 remains FAILED.
 Three settings failures match clean master and
 remain a separate retained candidate in the coordinated ledger.
 Source-only reproduction also proves a pre-existing coverage result-bound race:

@@ -62,7 +62,8 @@ red/green and focused native/browser proof. Full source correctness passes
 4,785 tests, and 23 affected browser flows pass. Packaged attempt 1 remains
 FAILED; re-add, backup and restart were not reached. Corrected harness tests
 pass 22/22; independent harness recheck is clear. Exact-head CI/review attestations remain pending
-in [its record](findings/repair-train-d.md).
+in [PR27](https://github.com/donal0c/sartracker-web/pull/27) and
+[its record](findings/repair-train-d.md).
 No repair acceptance is claimed. Earlier open-PR/status statements below are
 historical receipts, superseded by this reconciliation.
 

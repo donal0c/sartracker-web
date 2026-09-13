@@ -18,7 +18,8 @@ Train D source correctness, affected browser flows and independent working-diff
 reviews are green. Packaged attempt 1 remains failed; its stale harness locator
 and diagnostic custody are corrected with 22 focused harness tests and two
 actual roster browser tests passing. Final independent harness review is clear.
-Proceed through scoped PR/CI with the native/restart qualification gap explicit.
+Proceed through [PR27](https://github.com/donal0c/sartracker-web/pull/27) CI/review
+with the native/restart qualification gap explicit.
 The new D native gate is manual opt-in; normal CI records NOT RUN, and all
 pre-existing gates remain unchanged. Before any clean native qualification,
 DON-254 must address the proven coverage metadata/snapshot race, packaged
