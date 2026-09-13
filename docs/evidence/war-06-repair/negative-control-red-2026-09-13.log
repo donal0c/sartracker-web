@@ -1,0 +1,21 @@
+WAR-06 repair-oracle falsifiability receipt
+Date: 2026-09-13
+Source: deedab27483ad4fe1ca998a4d68afd555f4e2337
+Production changes: none
+Command:
+node scripts/assurance/war-06-prove-red.mjs
+
+The runner completed with exit code 0 after requiring each child Vitest run
+to fail only at its named repair safety oracle, with no collection, suite,
+timeout, or cleanup failure.
+
+AUD-01-visible-publication: RED baseline at named repair oracle
+AUD-01-visible-publication: RED injected stale publication at named repair oracle
+AUD-02-stationary-projection: RED baseline at named repair oracle
+AUD-02-stationary-projection: RED injected stale publication at named repair oracle
+CACHE-SIBLING-stationary-projection: RED baseline at named repair oracle
+CACHE-SIBLING-stationary-projection: RED injected stale publication at named repair oracle
+
+The baseline RED is expected until production repair. The injected leg sets
+WAR06_NEGATIVE_CONTROL=inject-stale-publication and proves a future repair
+cannot make the safety assertion vacuous by hiding the stale publication.

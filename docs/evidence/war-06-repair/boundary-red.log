@@ -1,0 +1,26 @@
+WAR-06 mission-boundary red evidence
+Observed: 2026-09-13 08:22 Europe/Dublin
+Repository HEAD before the repair edits: deedab27483ad4fe1ca998a4d68afd555f4e2337
+Source state: production boundary repair was not present for this run.
+
+Command:
+  npm test -- tests/unit/tracking-cache-payload.test.ts tests/unit/war06-mission-boundary.test.ts --no-file-parallelism
+
+Result: exit 1
+  tests/unit/war06-mission-boundary.test.ts: 11 tests, 8 failed, 3 passed
+  tests/unit/tracking-cache-payload.test.ts: 21 tests, 8 failed, 13 passed
+  total: 2 files, 32 tests, 16 failed, 16 passed
+
+Expected red assertions observed:
+  - cache mission_id string/null serialization and parse preservation
+  - malformed mission_id rejection
+  - active/idle cache identity admission and legacy cache rejection
+  - cache read admitted for Mission A discarded after Mission B switch
+  - direct Mission A -> Mission B visible-state clearing and stale callback rejection
+  - stale callback cache/retention suppression with accepted evidence settlement
+  - pending cache-write mission identity and mission-scoped dedupe
+  - Mission B current-fetch failure does not republish Mission A positions
+
+The same-mission polling failure control passed, retaining the legitimate
+current position. The run completed without a deferred-write or runtime-stop
+cleanup hang.

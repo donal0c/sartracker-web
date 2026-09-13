@@ -1,5 +1,10 @@
 # WAR-06 evidence receipts
 
+Historical investigation receipt. The 2026-09-13 production repair and its
+replacement safety oracles are recorded in [mission-scope-repair.md](mission-scope-repair.md).
+Commands and approvals below belong to their named historical heads; the current
+runner instead requires repaired GREEN and injected stale-publication RED.
+
 Date: 2026-09-11
 Executable evidence commit: `d96e51c85b6ba98642036ab31ed08e1976256bec`
 Evidence base: `3db57a7942b32beef0d13cc4e8484a5bb492dfa4`

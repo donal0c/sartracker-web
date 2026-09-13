@@ -139,6 +139,8 @@ type PersistedPositionKeyCache = {
 }
 
 const MAX_RESTART_BREADCRUMBS_PER_DEVICE = 5_000
+const TRACKING_CACHE_MISSION_WARNING =
+  'Tracking cache could not be matched to this mission; waiting for fresh current positions.'
 
 export type TrackingRuntimeMissionStore = {
   readonly getActiveMission: () => Promise<{ readonly id: string } | null>
@@ -376,6 +378,7 @@ export async function startTrackingRuntime(
   let breadcrumbTransferProgress: NonNullable<TrackingConnectionStatus['savedHistoryTransfer']> | null = null
   const retirementFailures = new Map<TrackingRuntimePoller, unknown>()
   let trackingCacheWarningActive = false
+  let trackingCacheMissionWarningActive = false
   let missionPersistenceWarningActive = false
   let droppedPersistedBreadcrumbCount = 0
   let lastDroppedBreadcrumbDiagnosticKey: string | null = null
@@ -405,6 +408,12 @@ export async function startTrackingRuntime(
   let deferredOperationalSnapshot: {
     readonly snapshot: TrackingSnapshot
     readonly historyResetKey: string | null
+    readonly cachedAt?: string
+  } | null = null
+  let pendingMissionCache: {
+    readonly snapshot: TrackingSnapshot
+    readonly missionId: string | null
+    readonly cachedAt: string
   } | null = null
   const participantBackfillAbortController = new AbortController()
   let unregisterMissionEvidenceSettler: () => void = () => undefined
@@ -516,10 +525,30 @@ export async function startTrackingRuntime(
     },
   })
 
+  const cacheReadMissionId = currentOperationalMissionId() ??
+    useMissionStore.getState().recoverableMission?.id ?? null
   const cachedContents = await dependencies.cache.read()
   if (cachedContents !== null) {
     const cachedSnapshot = safelyParseCachedSnapshot(cachedContents, logger)
-    if (cachedSnapshot !== null && isTrackingCacheUsable(cachedSnapshot.cached_at, now())) {
+    const cacheMatchesMission = cachedSnapshot?.mission_id !== undefined &&
+      cachedSnapshot.mission_id === cacheReadMissionId &&
+      isOperationalMissionCurrent(cacheReadMissionId)
+    const cacheMatchesRecovery = cacheReadMissionId !== null &&
+      cachedSnapshot?.mission_id === cacheReadMissionId &&
+      isOperationalMissionCurrent(null) &&
+      useMissionStore.getState().phase === 'recovery' &&
+      useMissionStore.getState().recoverableMission?.id === cacheReadMissionId
+    if (cachedSnapshot !== null && !cacheMatchesMission && !cacheMatchesRecovery) {
+      trackingCacheMissionWarningActive = true
+      latestTrackingStatus = {
+        mode: 'offline', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+        warning: null,
+      }
+      if (runtimeGeneration === activeTrackingRuntimeGeneration) {
+        dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
+      }
+    }
+    if (cachedSnapshot !== null && (cacheMatchesMission || cacheMatchesRecovery) && isTrackingCacheUsable(cachedSnapshot.cached_at, now())) {
       const healthyCachedSnapshot = annotateTrackingSnapshotHealth(
           {
             devices: cachedSnapshot.devices,
@@ -532,12 +561,13 @@ export async function startTrackingRuntime(
             deviceStaleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
           },
         )
-      const operationalCachedSnapshot = filterOperationalSnapshot(healthyCachedSnapshot)
+      const operationalCachedSnapshot = cacheMatchesRecovery
+        ? null : filterOperationalSnapshot(healthyCachedSnapshot)
       if (operationalCachedSnapshot === null) {
-        deferredOperationalSnapshot = {
-          snapshot: healthyCachedSnapshot,
-          historyResetKey: null,
-        }
+        // Keep proven cache rows separate from live callbacks until both
+        // mission identity and participation permit operational publication.
+        pendingMissionCache = { snapshot: healthyCachedSnapshot,
+          missionId: cacheReadMissionId, cachedAt: cachedSnapshot.cached_at }
       } else {
         dependencies.applySnapshot(currentTransportFreshness.decorate(operationalCachedSnapshot))
       }
@@ -857,7 +887,9 @@ export async function startTrackingRuntime(
     waitForCurrentEvidenceCapacity: (signal) => deferredMissionEvidence.waitForCapacity(signal),
     reserveCurrentEvidenceCapacity: (signal) => deferredMissionEvidence.reserveCapacity(signal),
     onCurrentSnapshot: (snapshot, context, observation) => {
-      if (!context.suppressOperationalPublication) applyParticipantRosterWithoutBlocking(snapshot.devices, context)
+      const publishOperational = !context.suppressOperationalPublication &&
+        isOperationalMissionCurrent(context.historyResetKey)
+      if (publishOperational) applyParticipantRosterWithoutBlocking(snapshot.devices, context)
       const missionEvidenceId = context.missionEvidenceId === undefined
         ? context.historyResetKey
         : context.missionEvidenceId
@@ -878,12 +910,15 @@ export async function startTrackingRuntime(
         }
       }
 
-      if (context.suppressOperationalPublication) return
+      // Custody above is independent: a stale operational callback must still
+      // settle evidence already accepted by its original mission.
+      if (!publishOperational) return
 
+      if (snapshot.positions.length > 0) trackingCacheMissionWarningActive = false
       currentTransportFreshness.observeCurrent(snapshot)
       const operationalSnapshot = filterOperationalSnapshot(
         snapshot,
-        context.historyResetKey ?? currentOperationalContextKey(),
+        context.historyResetKey ?? 'no-active-mission',
       )
       if (operationalSnapshot === null) {
         deferredOperationalSnapshot = {
@@ -895,26 +930,30 @@ export async function startTrackingRuntime(
         publishOperationalSnapshot(operationalSnapshot)
       }
       if (dependencies.writeCache !== false && context.suppressTrackingCache !== true) {
-        void queueTrackingCacheWrite(snapshot)
+        void queueTrackingCacheWrite(snapshot, context.historyResetKey)
       }
     },
     onSnapshot: async (snapshot, context) => {
-      if (!context?.suppressOperationalPublication) applyParticipantRosterWithoutBlocking(snapshot.devices, context)
+      const snapshotMissionId = context === undefined
+        ? currentOperationalMissionId() : context.historyResetKey
+      const publishOperational = !context?.suppressOperationalPublication &&
+        isOperationalMissionCurrent(snapshotMissionId)
+      if (publishOperational) applyParticipantRosterWithoutBlocking(snapshot.devices, context)
       const missionEvidenceId = context?.missionEvidenceId === undefined
         ? context?.historyResetKey ?? null
         : context.missionEvidenceId
       const missionEvidenceAccepted = context?.missionEvidenceId !== null
       const operationalSnapshot = filterOperationalSnapshot(
         snapshot,
-        context?.historyResetKey ?? currentOperationalContextKey(),
-        context?.suppressOperationalPublication !== true,
+        snapshotMissionId ?? 'no-active-mission',
+        publishOperational,
       )
       const sideEffects: Promise<unknown>[] = []
       let missionPersistenceResultIndex: number | null = null
       if (operationalSnapshot === null) {
-        if (!context?.suppressOperationalPublication) deferredOperationalSnapshot = {
+        if (publishOperational) deferredOperationalSnapshot = {
           snapshot,
-          historyResetKey: context?.historyResetKey ?? null,
+          historyResetKey: snapshotMissionId,
         }
         if (missionEvidenceAccepted && missionEvidenceId !== null) {
           if (readParticipationScopeStatus() === 'error') {
@@ -931,9 +970,9 @@ export async function startTrackingRuntime(
             }, missionEvidenceId))
           }
         }
-        if (!context?.suppressOperationalPublication) refreshTrackingStatus()
+        if (publishOperational) refreshTrackingStatus()
       } else {
-        if (!context?.suppressOperationalPublication) {
+        if (publishOperational) {
           deferredOperationalSnapshot = null
           publishOperationalSnapshot(operationalSnapshot)
         }
@@ -950,10 +989,10 @@ export async function startTrackingRuntime(
         }
       }
       const shouldWriteTrackingCache =
-        dependencies.writeCache !== false && context?.suppressTrackingCache !== true && !context?.suppressOperationalPublication
+        dependencies.writeCache !== false && context?.suppressTrackingCache !== true && publishOperational
 
       if (shouldWriteTrackingCache) {
-        sideEffects.push(queueTrackingCacheWrite(snapshot))
+        sideEffects.push(queueTrackingCacheWrite(snapshot, snapshotMissionId))
       }
 
       await Promise.allSettled(sideEffects).then(async (results) => {
@@ -990,14 +1029,20 @@ export async function startTrackingRuntime(
     nextClient = client,
   ): TrackingRuntimePoller {
     const generation = pollerGeneration + 1
+    // Legacy adapters without per-callback context stay bound to their
+    // construction identity. Native pollers provide an explicit mission key.
+    const fallbackMissionId = currentOperationalMissionId()
     const candidate = nextDependencies.createPoller(nextClient, {
       ...hooks,
       onCurrentSnapshot: (snapshot, context, observation) => hooks.onCurrentSnapshot(snapshot, {
         ...context, suppressOperationalPublication: generation !== pollerGeneration,
       }, observation),
       onSnapshot: (snapshot, context) => hooks.onSnapshot(snapshot, {
-        historyResetKey: context?.historyResetKey ?? null,
-        ...context, suppressOperationalPublication: generation !== pollerGeneration,
+        ...context,
+        // An implicit operational identity is not evidence admission.
+        ...(context === undefined ? { missionEvidenceId: null } : {}),
+        historyResetKey: context?.historyResetKey === undefined ? fallbackMissionId : context.historyResetKey,
+        suppressOperationalPublication: generation !== pollerGeneration,
       }),
       onStatusChange: (status) => {
         if (generation === pollerGeneration) hooks.onStatusChange(status)
@@ -1030,6 +1075,21 @@ export async function startTrackingRuntime(
   const unsubscribeMissionWake = useMissionStore.subscribe((state, previousState) => {
     const missionId = state.currentMission?.id ?? null
     const previousMissionId = previousState.currentMission?.id ?? null
+    if (missionId !== previousMissionId) {
+      deferredOperationalSnapshot = null
+      operationalPositionRetention.reset()
+      currentTransportFreshness.reset()
+      if (isOperationalMissionCurrent(missionId)) {
+        dependencies.applySnapshot({ devices: [], positions: [], breadcrumbs: [] })
+      }
+    }
+    if (pendingMissionCache !== null) {
+      if (pendingMissionCache.missionId === missionId) {
+        publishDeferredOperationalSnapshot()
+      } else if (state.phase !== 'recovery' || state.recoverableMission?.id !== pendingMissionCache.missionId) {
+        pendingMissionCache = null
+      }
+    }
     if (state.phase !== previousState.phase || missionId !== previousMissionId) {
       poller.requestPollNow?.()
     }
@@ -1047,26 +1107,9 @@ export async function startTrackingRuntime(
     },
   )
   const unsubscribeParticipationScope = dependencies.subscribeParticipationScope?.(() => {
-    if (runtimeGeneration !== activeTrackingRuntimeGeneration) return
+    if (!acceptingRuntimeUpdates || runtimeGeneration !== activeTrackingRuntimeGeneration) return
     if (readParticipationScopeStatus() === 'ready') {
-      const pendingSnapshot = deferredOperationalSnapshot
-      if (pendingSnapshot !== null) {
-        const operationalSnapshot = filterOperationalSnapshot(
-          pendingSnapshot.snapshot,
-          pendingSnapshot.historyResetKey ?? currentOperationalContextKey(),
-        )
-        if (operationalSnapshot !== null) {
-          deferredOperationalSnapshot = null
-          dependencies.applySnapshot(currentTransportFreshness.decorate(operationalSnapshot))
-          scheduleParticipantBackfill()
-          void dependencies.recordDiagnosticEvent?.({
-            level: 'info',
-            category: 'tracking',
-            event: 'tracking_snapshot_applied_after_participant_hydration',
-            fields: buildTrackingSnapshotDiagnosticFields(operationalSnapshot),
-          })
-        }
-      }
+      publishDeferredOperationalSnapshot()
       const currentMissionId = useMissionStore.getState().currentMission?.id
       if (currentMissionId !== undefined) {
         void deferredMissionEvidence.flushMission(currentMissionId).catch((error) => {
@@ -1103,6 +1146,8 @@ export async function startTrackingRuntime(
       clearBreadcrumbTransferStatus()
       if (clearActiveBreadcrumbTransferStatus === clearBreadcrumbTransferStatus) clearActiveBreadcrumbTransferStatus = null
       acceptingRuntimeUpdates = false
+      pendingMissionCache = null
+      deferredOperationalSnapshot = null
       unsubscribeMissionWake()
       unsubscribeDeviceSelectionWake()
       unsubscribeParticipationScope()
@@ -1163,6 +1208,7 @@ export async function startTrackingRuntime(
     if (dependencies.config?.baseUrl !== next.config?.baseUrl) {
       // Provider-local device ids are not identities across different servers.
       operationalPositionRetention.reset()
+      pendingMissionCache = null
     }
     currentTransportFreshness.reset()
     dependencies = next
@@ -1209,12 +1255,80 @@ export async function startTrackingRuntime(
     })
   }
 
+  /** Publishes deferred live/cache positions only for their resumed, trusted mission. */
+  function publishDeferredOperationalSnapshot(): void {
+    const recovery = pendingMissionCache
+    if (recovery !== null && isOperationalMissionCurrent(recovery.missionId)) {
+      if (readParticipationScopeStatus() !== 'ready') return
+      pendingMissionCache = null
+      if (isTrackingCacheUsable(recovery.cachedAt, now())) {
+        const cached = refreshDeferredCacheHealth(recovery.snapshot, recovery.cachedAt)
+        const live = deferredOperationalSnapshot?.historyResetKey === recovery.missionId
+          ? deferredOperationalSnapshot.snapshot : null
+        // Current rows win per device, while an empty/partial poll cannot erase
+        // the proven same-mission recovery rows before participation is ready.
+        deferredOperationalSnapshot = {
+          historyResetKey: recovery.missionId,
+          snapshot: live === null ? cached : {
+            ...live,
+            devices: [...new Map([...cached.devices, ...live.devices]
+              .map((device) => [device.device_id, device])).values()],
+            positions: [...new Map([...cached.positions, ...live.positions]
+              .map((position) => [position.device_id, position])).values()],
+          },
+          ...(live === null || live.positions.length === 0 ? { cachedAt: recovery.cachedAt } : {}),
+        }
+      }
+    }
+    const pending = deferredOperationalSnapshot
+    if (pending === null) return
+    if (!isOperationalMissionCurrent(pending.historyResetKey)) {
+      deferredOperationalSnapshot = null
+      return
+    }
+    if (pending.cachedAt !== undefined && !isTrackingCacheUsable(pending.cachedAt, now())) {
+      deferredOperationalSnapshot = null
+      return
+    }
+    const candidate = pending.cachedAt === undefined ? pending.snapshot
+      : refreshDeferredCacheHealth(pending.snapshot, pending.cachedAt)
+    const snapshot = filterOperationalSnapshot(candidate, pending.historyResetKey ?? 'no-active-mission')
+    if (snapshot === null) return
+    deferredOperationalSnapshot = null
+    dependencies.applySnapshot(currentTransportFreshness.decorate(snapshot))
+    if (pending.cachedAt !== undefined) {
+      latestTrackingStatus = {
+        mode: 'offline', consecutiveFailures: 0, recovered: false, lastSuccessAt: pending.cachedAt,
+        warning: 'OFFLINE MODE — showing last known positions from cache.',
+      }
+      refreshTrackingStatus()
+    }
+    scheduleParticipantBackfill()
+    void dependencies.recordDiagnosticEvent?.({
+      level: 'info', category: 'tracking', event: 'tracking_snapshot_applied_after_participant_hydration',
+      fields: buildTrackingSnapshotDiagnosticFields(snapshot),
+    })
+  }
+
+  /** Re-evaluates cache health at publication after an operator or hydration wait. */
+  function refreshDeferredCacheHealth(snapshot: TrackingSnapshot, cachedAt: string): TrackingSnapshot {
+    const observedAt = now()
+    return annotateTrackingSnapshotHealth(snapshot, {
+      now: observedAt, cacheAgeMs: calculateCacheAgeMs(cachedAt, observedAt),
+      deviceStaleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
+    })
+  }
+
   /** Admits one latest-state cache update to the bounded cache writer. */
-  function queueTrackingCacheWrite(snapshot: TrackingSnapshot): Promise<void> {
+  function queueTrackingCacheWrite(snapshot: TrackingSnapshot, missionId: string | null): Promise<void> {
+    // An idle recovery poll must not replace the saved mission cache before
+    // the operator chooses Resume or dismisses recovery.
+    if (useMissionStore.getState().phase === 'recovery') return Promise.resolve()
     const cachedAt = now().toISOString()
     return trackingCacheWriteLane.enqueue(
-      createTrackingCacheDataKey(snapshot),
+      JSON.stringify([missionId, createTrackingCacheDataKey(snapshot)]),
       async () => serializeTrackingCachePayload({
+        mission_id: missionId,
         cached_at: cachedAt,
         devices: snapshot.devices,
         positions: snapshot.positions,
@@ -1460,6 +1574,7 @@ export async function startTrackingRuntime(
       trackingCacheWarningActive
         ? 'TRACKING FALLBACK CACHE UPDATE FAILED — live fixes remain visible, but the last-known tracking view may be unavailable after restart while Traccar is offline.'
         : null,
+      trackingCacheMissionWarningActive ? TRACKING_CACHE_MISSION_WARNING : null,
       missionPersistenceWarningActive
         ? 'MISSION BREADCRUMB STORAGE FAILED — current fixes remain visible, but new trail history may not survive restart.'
         : null,
@@ -1573,7 +1688,18 @@ export async function startTrackingRuntime(
 
   /** Keeps retained current positions isolated to one mission runtime context. */
   function currentOperationalContextKey(): string {
-    return useMissionStore.getState().currentMission?.id ?? 'no-active-mission'
+    return currentOperationalMissionId() ?? 'no-active-mission'
+  }
+
+  /** Captures mission identity without treating explicit idle as an unknown key. */
+  function currentOperationalMissionId(): string | null {
+    return useMissionStore.getState().currentMission?.id ?? null
+  }
+
+  /** Checks operational ownership before retention, freshness or publication. */
+  function isOperationalMissionCurrent(missionId: string | null): boolean {
+    return acceptingRuntimeUpdates && runtimeGeneration === activeTrackingRuntimeGeneration &&
+      missionId === currentOperationalMissionId()
   }
 
   /** Applies evidence windows independently from immediate current-position visibility. */
@@ -1762,7 +1888,7 @@ function enqueueTrackingPersistence(
 ): Promise<void> {
   const run = trackingPersistenceTail.then(async () => {
     if (runtimeGeneration !== activeTrackingRuntimeGeneration) {
-      return
+      throw new Error('Tracking runtime changed before accepted mission evidence could be persisted.')
     }
     await operation()
   })

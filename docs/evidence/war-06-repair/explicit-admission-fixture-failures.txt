@@ -1,0 +1,266 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+ ❯ tests/unit/start-tracking-runtime.test.ts (94 tests | 17 failed) 1871ms
+     × persists devices and deduplicated positions into the active mission on snapshot updates 1ms
+     × keeps time-unverified current locations visible but outside mission persistence [DON-267] [SAR-QA-021] 1ms
+     × batches all device upserts into a single upsertDevicesBulk call when available [DON-240] 0ms
+     × keeps the full roster for participant discovery while applying and persisting only selected mission participants [DON-271] 1ms
+     × grandfathers legacy tracking persistence when the mission model flag is off [DON-271] 0ms
+     × persists same-second distinct Traccar positions when their upstream ids differ [DON-233] 0ms
+     × uses acknowledgement-only tracking persistence instead of returning changed rows 0ms
+     × forwards a sourced fix to storage when only its exact legacy fallback is cached [DON-260] 0ms
+     × reuses persisted legacy coordinate keys while revalidating sourced fixes for corrections 0ms
+     × forwards a changed sourced fix even when its identity was already persisted [DON-260] 0ms
+     × uses the bounded per-device restart query instead of loading full mission history [DON-246] 0ms
+     × can cap browser-only mission persistence without trimming the live map snapshot 0ms
+     × persists no breadcrumbs when the browser-only cap is consumed by current fixes [DON-260] 0ms
+     × leaves Electron mission persistence uncapped by default [DON-159] 0ms
+     × persists raw newly fetched breadcrumbs even when the render snapshot is budgeted [DON-159] 3ms
+     × does not re-persist rendered history when the poller marks it durably accepted 3ms
+     × bulk-persists raw tracking positions instead of issuing one SQLite write per position [DON-200] 5ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 17 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > persists devices and deduplicated positions into the active mission on snapshot updates
+AssertionError: expected "vi.fn()" to be called 2 times, but got 0 times
+ ❯ tests/unit/start-tracking-runtime.test.ts:1350:26
+    1348|     await pollerHooks?.onSnapshot(SNAPSHOT)
+    1349|
+    1350|     expect(upsertDevice).toHaveBeenCalledTimes(2)
+       |                          ^
+    1351|     expect(addPosition).toHaveBeenCalledTimes(4)
+    1352|     expect(addPosition).toHaveBeenCalledWith(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > keeps time-unverified current locations visible but outside mission persistence [DON-267] [SAR-QA-021]
+AssertionError: expected undefined to deeply equal [ 'verified-history', …(1) ]
+
+- Expected:
+[
+  "verified-history",
+  "verified-current",
+]
+
++ Received:
+undefined
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:1410:26
+    1408|       (position: { readonly source_position_id: string }) => position.…
+    1409|     )
+    1410|     expect(persistedIds).toEqual(['verified-history', 'verified-curren…
+       |                          ^
+    1411|   })
+    1412|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > batches all device upserts into a single upsertDevicesBulk call when available [DON-240]
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ tests/unit/start-tracking-runtime.test.ts:1453:31
+    1451|
+    1452|     // SNAPSHOT has 2 devices; one batched call, zero per-device calls.
+    1453|     expect(upsertDevicesBulk).toHaveBeenCalledTimes(1)
+       |                               ^
+    1454|     expect(upsertDevice).not.toHaveBeenCalled()
+    1455|     const call = upsertDevicesBulk.mock.calls[0]![0]
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > keeps the full roster for participant discovery while applying and persisting only selected mission participants [DON-271]
+AssertionError: Target cannot be null or undefined.
+ ❯ tests/unit/start-tracking-runtime.test.ts:1512:58
+    1510|       (device: { readonly device_id: string }) => device.device_id,
+    1511|     )).toEqual(['1'])
+    1512|     expect(upsertDevicesBulk.mock.calls[0]?.[0].devices).toHaveLength(…
+       |                                                          ^
+    1513|     expect(addPositionsBulk.mock.calls[0]?.[0].positions.every(
+    1514|       (position: { readonly device_id: string }) => position.device_id…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > grandfathers legacy tracking persistence when the mission model flag is off [DON-271]
+AssertionError: expected undefined to be 'legacy_auto' // Object.is equality
+
+- Expected:
+"legacy_auto"
+
++ Received:
+undefined
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:2258:73
+    2256|     await pollerHooks?.onSnapshot(SNAPSHOT)
+    2257|
+    2258|     expect(upsertDevicesBulk.mock.calls[0]?.[0].participant_provenance…
+       |                                                                         ^
+    2259|   })
+    2260|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > persists same-second distinct Traccar positions when their upstream ids differ [DON-233]
+AssertionError: expected "vi.fn()" to be called with arguments: [ { mission_id: 'mission-1', …(1) } ]
+
+Number of calls: 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:2317:30
+    2315|     })
+    2316|
+    2317|     expect(addPositionsBulk).toHaveBeenCalledWith({
+       |                              ^
+    2318|       mission_id: 'mission-1',
+    2319|       positions: expect.arrayContaining([
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > uses acknowledgement-only tracking persistence instead of returning changed rows
+AssertionError: expected "vi.fn()" to be called with arguments: [ { mission_id: 'mission-1', …(2) } ]
+
+Number of calls: 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:2362:42
+    2360|     })
+    2361|
+    2362|     expect(persistTrackingPositionsBulk).toHaveBeenCalledWith({
+       |                                          ^
+    2363|       mission_id: 'mission-1',
+    2364|       positions: expect.arrayContaining([
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > forwards a sourced fix to storage when only its exact legacy fallback is cached [DON-260]
+AssertionError: expected "vi.fn()" to be called with arguments: [ { mission_id: 'mission-1', …(1) } ]
+
+Number of calls: 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:2426:30
+    2424|     })
+    2425|
+    2426|     expect(addPositionsBulk).toHaveBeenCalledWith({
+       |                              ^
+    2427|       mission_id: 'mission-1',
+    2428|       positions: [
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > reuses persisted legacy coordinate keys while revalidating sourced fixes for corrections
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ tests/unit/start-tracking-runtime.test.ts:2744:27
+    2742|     await pollerHooks?.onSnapshot(SNAPSHOT)
+    2743|
+    2744|     expect(listPositions).toHaveBeenCalledTimes(1)
+       |                           ^
+    2745|     expect(addPosition).toHaveBeenCalledTimes(8)
+    2746|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > forwards a changed sourced fix even when its identity was already persisted [DON-260]
+AssertionError: expected "vi.fn()" to be called with arguments: [ { mission_id: 'mission-1', …(1) } ]
+
+Number of calls: 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:2790:30
+    2788|     })
+    2789|
+    2790|     expect(addPositionsBulk).toHaveBeenCalledWith({
+       |                              ^
+    2791|       mission_id: 'mission-1',
+    2792|       positions: [
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > uses the bounded per-device restart query instead of loading full mission history [DON-246]
+AssertionError: expected "vi.fn()" to be called 4 times, but got 0 times
+ ❯ tests/unit/start-tracking-runtime.test.ts:3961:25
+    3959|     expect(listRecentPositions).toHaveBeenCalledWith('mission-1', 5_00…
+    3960|     expect(listPositions).not.toHaveBeenCalled()
+    3961|     expect(addPosition).toHaveBeenCalledTimes(4)
+       |                         ^
+    3962|   })
+    3963|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > can cap browser-only mission persistence without trimming the live map snapshot
+AssertionError: expected "vi.fn()" to be called 4 times, but got 0 times
+ ❯ tests/unit/start-tracking-runtime.test.ts:4536:25
+    4534|     expect(applySnapshot).toHaveBeenCalledWith(largeSnapshot)
+    4535|     expect(cacheWrite).not.toHaveBeenCalled()
+    4536|     expect(addPosition).toHaveBeenCalledTimes(SNAPSHOT.positions.lengt…
+       |                         ^
+    4537|     expect(addPosition.mock.calls.map((call) => call[0].timestamp)).to…
+    4538|       breadcrumbs[3]!.timestamp,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > persists no breadcrumbs when the browser-only cap is consumed by current fixes [DON-260]
+AssertionError: expected "vi.fn()" to be called 2 times, but got 0 times
+ ❯ tests/unit/start-tracking-runtime.test.ts:4582:25
+    4580|     })
+    4581|
+    4582|     expect(addPosition).toHaveBeenCalledTimes(SNAPSHOT.positions.lengt…
+       |                         ^
+    4583|     expect(addPosition.mock.calls.map((call) => call[0].timestamp)).to…
+    4584|       SNAPSHOT.positions.map((position) => position.timestamp),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > leaves Electron mission persistence uncapped by default [DON-159]
+AssertionError: expected "vi.fn()" to be called with arguments: [ ObjectContaining {"device_id": "2"} ]
+
+Number of calls: 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:4637:25
+    4635|     await pollerHooks?.onSnapshot(snapshot)
+    4636|
+    4637|     expect(addPosition).toHaveBeenCalledWith(expect.objectContaining({…
+       |                         ^
+    4638|     expect(addPosition).toHaveBeenCalledWith(expect.objectContaining({…
+    4639|     expect(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > persists raw newly fetched breadcrumbs even when the render snapshot is budgeted [DON-159]
+AssertionError: expected "vi.fn()" to be called 6003 times, but got 0 times
+ ❯ tests/unit/start-tracking-runtime.test.ts:4696:25
+    4694|     await pollerHooks?.onSnapshot(snapshot)
+    4695|
+    4696|     expect(addPosition).toHaveBeenCalledTimes(rawBreadcrumbs.length + …
+       |                         ^
+    4697|     expect(
+    4698|       addPosition.mock.calls.filter(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not re-persist rendered history when the poller marks it durably accepted
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ tests/unit/start-tracking-runtime.test.ts:4747:30
+    4745|     })
+    4746|
+    4747|     expect(addPositionsBulk).toHaveBeenCalledOnce()
+       |                              ^
+    4748|     expect(addPositionsBulk.mock.calls[0]?.[0].positions).toHaveLength(
+    4749|       SNAPSHOT.positions.length,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/17]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > bulk-persists raw tracking positions instead of issuing one SQLite write per position [DON-200]
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ tests/unit/start-tracking-runtime.test.ts:4807:30
+    4805|
+    4806|     expect(addPosition).not.toHaveBeenCalled()
+    4807|     expect(addPositionsBulk).toHaveBeenCalledOnce()
+       |                              ^
+    4808|     expect(addPositionsBulk).toHaveBeenCalledWith({
+    4809|       mission_id: 'mission-1',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/17]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  17 failed | 215 passed (232)
+   Start at  09:06:08
+   Duration  9.25s (transform 213ms, setup 0ms, import 380ms, tests 7.26s, environment 1.24s)
+

@@ -1109,6 +1109,11 @@
             capacity permits. On exceptionally broad histories, a trail may reappear only after Resume
             reconstructs the complete accepted history from the mission database; cache truncation never
             deletes mission evidence.
+            Restart caches belong to the mission that saved them. A matching recovery cache becomes
+            available after Resume and participant loading; a cache from another mission, or an older
+            cache without a mission identity, is not shown. Tracking reports that it is waiting for fresh
+            current positions. Starting a different mission clears the previous mission's current locations
+            and attention state while preserving its saved evidence.
           </div>
           <div class="note">
             <strong>Saved history loads independently:</strong> current fixes remain live while saved

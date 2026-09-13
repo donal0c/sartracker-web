@@ -1,0 +1,568 @@
+[2m[WebServer] [22m(node:45292) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[2m[WebServer] [22m(node:45326) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 203 tests using 1 worker
+
+(node:45333) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45333) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓    1 [chromium] › tests/e2e/archive-review-operator-flow.spec.ts:7:3 › C9 archive-backed Mission Review operator flow [DON-253 / BCP-16] › opens a verified archive read-only, keeps the residual warning visible, and closes back to live review (5.0s)
+  ✓    2 [chromium] › tests/e2e/archive-review-operator-flow.spec.ts:64:3 › C9 archive-backed Mission Review operator flow [DON-253 / BCP-16] › archives live rows only after every check, retains read-only review, and persists the archived timeline [DON-253 / BCP-16] (7.0s)
+  ✓    3 [chromium] › tests/e2e/archive-review-operator-flow.spec.ts:147:3 › C9 archive-backed Mission Review operator flow [DON-253 / BCP-16] › retries a sealed verification failure with both original credentials before review is enabled (3.5s)
+  ✓    4 [chromium] › tests/e2e/archive-review-operator-flow.spec.ts:201:3 › C9 archive-backed Mission Review operator flow [DON-253 / BCP-16] › restores a retained archive for an authorized correction and returns to live review (4.3s)
+  ✓    5 [chromium] › tests/e2e/coordinate-converter.spec.ts:13:3 › M18 coordinate converter › converts DD input, copies results, and activates a go-to target (1.0s)
+  ✓    6 [chromium] › tests/e2e/coordinate-converter.spec.ts:33:3 › M18 coordinate converter › converts IG and DMS flows with the same modal and gates W3W (1.4s)
+  ✓    7 [chromium] › tests/e2e/coordinate-converter.spec.ts:57:3 › M18 coordinate converter › converts pasted DD and DMS coordinate pairs from the first field (1.1s)
+  ✓    8 [chromium] › tests/e2e/coordinate-converter.spec.ts:75:3 › M18 coordinate converter › shows a clear instruction for incomplete pasted DD pairs (856ms)
+  ✓    9 [chromium] › tests/e2e/coordinate-converter.spec.ts:86:3 › M18 coordinate converter › shows a decimal-point instruction for decimal-comma DD input (927ms)
+  ✓   10 [chromium] › tests/e2e/coordinate-converter.spec.ts:96:3 › M18 coordinate converter › uses dialog semantics, traps focus, and returns focus on Escape (811ms)
+  ✓   11 [chromium] › tests/e2e/coverage.spec.ts:5:3 › complete mission-history coverage [DON-275] › AUD-14 uses structured completeness state instead of connection-warning wording (2.6s)
+  ✓   12 [chromium] › tests/e2e/coverage.spec.ts:35:3 › complete mission-history coverage [DON-275] › live Breadcrumbs visibility does not hide Mission History or change its checked participants (2.6s)
+  ✓   13 [chromium] › tests/e2e/coverage.spec.ts:50:3 › complete mission-history coverage [DON-275] › shows all mission history by default and keeps live positions independent of omissions (3.4s)
+  ✓   14 [chromium] › tests/e2e/coverage.spec.ts:91:3 › complete mission-history coverage [DON-275] › reports an honest decrease, retains partial coverage, retries, and resets delivery on reload (15.8s)
+  ✓   15 [chromium] › tests/e2e/coverage.spec.ts:157:3 › complete mission-history coverage [DON-275] › reattaches complete mission history after a basemap style change (2.0s)
+  ✓   16 [chromium] › tests/e2e/coverage.spec.ts:174:3 › complete mission-history coverage [DON-275] › leaves the existing browser surface unchanged while the coverage flag is off (486ms)
+  ✓   17 [chromium] › tests/e2e/devices-workspace.spec.ts:16:3 › M19 devices workspace › opens the dedicated workspace, renders the roster, and supports selection plus zoom (1.4s)
+  ✓   18 [chromium] › tests/e2e/devices-workspace.spec.ts:33:3 › M19 devices workspace › unmounts the workspace immediately when the operator closes it [DON-260] (1.2s)
+  ✓   19 [chromium] › tests/e2e/devices-workspace.spec.ts:49:3 › M19 devices workspace › stays closed while tracking status repeatedly changes layout [DON-262] (1.5s)
+  ✓   20 [chromium] › tests/e2e/devices-workspace.spec.ts:93:3 › M19 devices workspace › keeps the Open Devices pointer target fixed while tracking messages change [DON-261] (1.3s)
+  ✓   21 [chromium] › tests/e2e/devices-workspace.spec.ts:140:3 › M19 devices workspace › makes workspace controls actionable immediately when opened [DON-260] (1.2s)
+  ✓   22 [chromium] › tests/e2e/devices-workspace.spec.ts:157:3 › M19 devices workspace › preserves modal focus across a rapid close and reopen [DON-260] (1.4s)
+  ✓   23 [chromium] › tests/e2e/devices-workspace.spec.ts:185:3 › M19 devices workspace › keeps passive row clicks inside Devices instead of opening marker tools (1.4s)
+  ✓   24 [chromium] › tests/e2e/devices-workspace.spec.ts:209:3 › M19 devices workspace › keeps empty workspace clicks from opening Marker Details [DON-184] (1.3s)
+  ✓   25 [chromium] › tests/e2e/devices-workspace.spec.ts:224:3 › M19 devices workspace › toggles per-device visibility from the workspace (1.3s)
+  ✓   26 [chromium] › tests/e2e/devices-workspace.spec.ts:231:3 › M19 devices workspace › keeps selection and search scoped to the active device list [DON-190] (1.4s)
+  ✓   27 [chromium] › tests/e2e/devices-workspace.spec.ts:255:3 › M19 devices workspace › keeps selected device actions visible at constrained desktop width [DON-190] (1.2s)
+  ✓   28 [chromium] › tests/e2e/devices-workspace.spec.ts:286:3 › M19 devices workspace › updates rendered breadcrumb colour, size, and global trail mode (1.7s)
+  ✓   29 [chromium] › tests/e2e/devices-workspace.spec.ts:319:3 › M19 devices workspace › renders every retained fix as a dot even when positions are tightly grouped [DON-259] (2.3s)
+  ✓   30 [chromium] › tests/e2e/devices-workspace.spec.ts:377:3 › M19 devices workspace › renders sparse breadcrumb cadence as a connected trail [DON-189] (1.3s)
+  ✓   31 [chromium] › tests/e2e/devices-workspace.spec.ts:463:3 › Operational tracking overlay readiness [DON-263] › renders current positions and breadcrumbs while basemap tiles remain pending (1.1s)
+  ✓   32 [chromium] › tests/e2e/diagnostics.spec.ts:12:3 › M21 diagnostics workspace › opens diagnostics, copies the support report, exports it, and repairs layer metadata (890ms)
+  ✓   33 [chromium] › tests/e2e/diagnostics.spec.ts:154:3 › M21 diagnostics workspace › uses dialog semantics and returns focus to the diagnostics opener on Escape (253ms)
+  ✓   34 [chromium] › tests/e2e/diagnostics.spec.ts:169:3 › M21 diagnostics workspace › includes per-device breadcrumb render budget details in copied diagnostics [DON-159] (799ms)
+  ✓   35 [chromium] › tests/e2e/drawing-tools.spec.ts:14:3 › M8 drawing workflows › creates a line drawing from the toolbar and persists it (1.2s)
+  ✓   36 [chromium] › tests/e2e/drawing-tools.spec.ts:35:3 › M8 drawing workflows › creates a search area with metadata (1.3s)
+  ✓   37 [chromium] › tests/e2e/drawing-tools.spec.ts:68:3 › M8 drawing workflows › creates LPB range rings and bearing lines with conversion (1.4s)
+  ✓   38 [chromium] › tests/e2e/drawing-tools.spec.ts:94:3 › M8 drawing workflows › creates a search sector and supports escape cancellation (963ms)
+  ✓   39 [chromium] › tests/e2e/drawing-tools.spec.ts:117:3 › M8 drawing workflows › keeps search sector draft fields when the radius input is used [DON-188] (935ms)
+  ✓   40 [chromium] › tests/e2e/drawing-tools.spec.ts:137:3 › M8 drawing workflows › renders a visible full-circle search sector entered as 360 -> 0 (DON-170) (925ms)
+  ✓   41 [chromium] › tests/e2e/drawing-tools.spec.ts:165:3 › M8 drawing workflows › DON-196: simplifies drawing details and supports hidden search-area labels (2.2s)
+  ✓   42 [chromium] › tests/e2e/drawing-tools.spec.ts:219:3 › M8 drawing workflows › creates, edits, and exposes text labels through the layer tree (1.3s)
+  ✓   43 [chromium] › tests/e2e/drawing-tools.spec.ts:244:3 › M8 drawing workflows › DON-205: drags a long text label from visible text away from the anchor (1.3s)
+  ✓   44 [chromium] › tests/e2e/drawing-tools.spec.ts:274:3 › M8 drawing workflows › DON-205: does not drag text labels through docked workspace overlays (1.2s)
+  ✓   45 [chromium] › tests/e2e/drawing-tools.spec.ts:312:3 › M8 drawing workflows › edits and deletes an existing drawing through select mode (1.7s)
+  ✓   46 [chromium] › tests/e2e/drawing-tools.spec.ts:342:3 › M8 drawing workflows › does not open the marker modal while a drawing tool is active (866ms)
+  ✓   47 [chromium] › tests/e2e/drawing-tools.spec.ts:350:3 › M8 drawing workflows › keeps Map Tools header and chevron clicks from opening Marker Details [DON-186] (923ms)
+  ✓   48 [chromium] › tests/e2e/drawing-tools.spec.ts:369:3 › M8 drawing workflows › uses dialog semantics, traps focus, and cancels with Escape (1.1s)
+  ✓   49 [chromium] › tests/e2e/electron-tracking-soak-interaction.spec.ts:6:3 › packaged tracking soak operator interaction [DON-262] › re-resolves a trusted click target after the panel moves (73ms)
+  ✓   50 [chromium] › tests/e2e/electron-tracking-soak-interaction.spec.ts:69:3 › packaged tracking soak operator interaction [DON-262] › does not retry onto the control restored after the target unmounts (457ms)
+  ✓   51 [chromium] › tests/e2e/electron-tracking-soak-interaction.spec.ts:117:3 › packaged tracking soak operator interaction [DON-262] › waits through active layout movement before dispatching input (368ms)
+  ✓   52 [chromium] › tests/e2e/focus-mode.spec.ts:13:3 › M24 focus mode parity › enters a map-first shell, mirrors coordinates, and persists across reload (1.5s)
+  ✓   53 [chromium] › tests/e2e/focus-mode.spec.ts:53:3 › M24 focus mode parity › preserves mission recovery, tracking awareness, and drawing workflows (3.4s)
+  ✓   54 [chromium] › tests/e2e/full-mission-flow.spec.ts:6:3 › M10 full mission integration flow › runs a complete mocked SAR mission with restart recovery and persistence checks (8.5s)
+  ✓   55 [chromium] › tests/e2e/gpx-import.spec.ts:19:3 › M22 GPX import parity › publishes successful files around a malformed source and names the failure [DON-274] (1.7s)
+  ✓   56 [chromium] › tests/e2e/gpx-import.spec.ts:42:3 › M22 GPX import parity › renders imported GPX tracks in the panel, layer catalog, review workspace, and map source (1.7s)
+  ✓   57 [chromium] › tests/e2e/gpx-import.spec.ts:112:3 › M22 GPX import parity › keeps exact GPX geometry and settles import when the outing ends [AUD-01 AUD-05 AUD-10] (1.6s)
+  ✓   58 [chromium] › tests/e2e/gpx-import.spec.ts:149:3 › M22 GPX import parity › reports competing admission and allows a clean retry after settlement [DON-274] (1.9s)
+  ✓   59 [chromium] › tests/e2e/gpx-import.spec.ts:194:3 › M22 GPX import parity › shows retained interrupted-import provenance after runtime recovery [DON-274] (1.2s)
+  ✓   60 [chromium] › tests/e2e/gpx-import.spec.ts:221:3 › M22 GPX import parity › pages imported GPX projections without accumulating renderer evidence [DON-274] (1.5s)
+  ✓   61 [chromium] › tests/e2e/gpx-import.spec.ts:253:3 › M22 GPX import parity › DON-194: changes individual GPX colours and keeps the layer tree readable on smaller displays (1.5s)
+  ✓   62 [chromium] › tests/e2e/harness-no-tauri-leak.spec.ts:4:3 › browser-harness Tauri IPC isolation › starts the harness, places a marker, and never invokes Tauri IPC (1.0s)
+  ✓   63 [chromium] › tests/e2e/helicopter-panel.spec.ts:15:3 › M23 helicopter layer parity › persists helicopter slots, renders the overlay, and supports visibility toggles (1.3s)
+  ✓   64 [chromium] › tests/e2e/hit-test-priority.spec.ts:16:3 › B6 hit-test priority › marker stacked inside a polygon wins the click (priority: marker > drawing) (2.2s)
+  ✓   65 [chromium] › tests/e2e/hit-test-priority.spec.ts:59:3 › B6 hit-test priority › clicking only the polygon (no marker stacked) still selects the polygon (1.4s)
+  ✓   66 [chromium] › tests/e2e/layer-panel.spec.ts:19:3 › M17 layer tree workflows › renders the nested layer tree and inspection workspace (1.3s)
+  ✓   67 [chromium] › tests/e2e/layer-panel.spec.ts:34:3 › M17 layer tree workflows › supports search, selection, aliasing, and item visibility (1.5s)
+  ✓   68 [chromium] › tests/e2e/layer-panel.spec.ts:51:3 › M17 layer tree workflows › the inert Favorite control is gone from the tree row and inspector (1.4s)
+  ✓   69 [chromium] › tests/e2e/layer-panel.spec.ts:61:3 › M17 layer tree workflows › Move Up reorders a feature item within its layer (1.3s)
+  ✓   70 [chromium] › tests/e2e/layer-panel.spec.ts:84:3 › M17 layer tree workflows › Collapse All hides nested items and Expand All restores them (1.5s)
+  ✓   71 [chromium] › tests/e2e/layer-panel.spec.ts:97:3 › M17 layer tree workflows › expanded layer workspace fills available RHS vertical space [DON-132] (1.2s)
+  ✘   72 [chromium] › tests/e2e/layer-panel.spec.ts:120:3 › M17 layer tree workflows › preserves expanded tree scroll while the catalog refreshes [DON-187] (1.3s)
+(node:46339) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:46339) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   73 [chromium] › tests/e2e/layer-panel.spec.ts:147:3 › M17 layer tree workflows › persists tree metadata and visibility across reload within the mission harness (2.8s)
+  ✓   74 [chromium] › tests/e2e/map.spec.ts:10:3 › M2 map shell › renders the map canvas and basemap controls (707ms)
+  ✓   75 [chromium] › tests/e2e/map.spec.ts:39:3 › M2 map shell › keeps the live map container at a non-zero height (612ms)
+  ✓   76 [chromium] › tests/e2e/map.spec.ts:61:3 › M2 map shell › keeps compact map controls usable on a narrow operator viewport (713ms)
+  ✓   77 [chromium] › tests/e2e/map.spec.ts:75:3 › M2 map shell › DON-195: shows map scale and centred coordinate group on smaller desktop displays (666ms)
+  ✓   78 [chromium] › tests/e2e/map.spec.ts:144:3 › M2 map shell › keeps command mast cells distinct at compact desktop widths [DON-258] (627ms)
+  ✓   79 [chromium] › tests/e2e/map.spec.ts:183:3 › M2 map shell › persists the selected basemap (1.6s)
+  ✓   80 [chromium] › tests/e2e/map.spec.ts:197:3 › M2 map shell › preserves the map viewport when switching basemaps (732ms)
+  ✓   81 [chromium] › tests/e2e/map.spec.ts:265:3 › M2 map shell › allows navigation across Ireland instead of locking to the default mission area (597ms)
+  ✓   82 [chromium] › tests/e2e/map.spec.ts:297:3 › M2 map shell › preserves operator camera when the first tracking update arrives [DON-185] (734ms)
+  ✓   83 [chromium] › tests/e2e/map.spec.ts:378:3 › M2 map shell › updates the coordinate bar on mouse move (654ms)
+  ✓   84 [chromium] › tests/e2e/map.spec.ts:395:3 › M2 map shell › shows the operator-facing tracking status panel (599ms)
+  ✓   85 [chromium] › tests/e2e/map.spec.ts:402:3 › M2 map shell › shows the mission control panel shell (620ms)
+  ✓   86 [chromium] › tests/e2e/map.spec.ts:409:3 › M2 map shell › shows lifecycle backup failures as a persistent alert (672ms)
+  ✓   87 [chromium] › tests/e2e/map.spec.ts:429:3 › M2 map shell › keeps command mast autosave warnings visible and accessible (632ms)
+  ✓   88 [chromium] › tests/e2e/map.spec.ts:452:3 › M2 map shell › shows the runtime booting shell while startup is still preparing (634ms)
+  ✓   89 [chromium] › tests/e2e/map.spec.ts:471:3 › M2 map shell › shows runtime faults with a clean reload action (667ms)
+  ✓   90 [chromium] › tests/e2e/marker.spec.ts:13:3 › M6 marker workflows › creates a clue marker from a map click and persists it (911ms)
+  ✓   91 [chromium] › tests/e2e/marker.spec.ts:47:3 › M6 marker workflows › creates a marker from a coarse TM65 grid reference through Map Tools (1.0s)
+  ✓   92 [chromium] › tests/e2e/marker.spec.ts:80:3 › M6 marker workflows › rejects invalid marker grid references without opening the marker dialog (852ms)
+  ✓   93 [chromium] › tests/e2e/marker.spec.ts:90:3 › M6 marker workflows › edits and deletes an existing marker through the modal flow (1.4s)
+  ✓   94 [chromium] › tests/e2e/marker.spec.ts:128:3 › M6 marker workflows › uses dialog semantics, traps focus, and cancels with Escape (765ms)
+  ✓   95 [chromium] › tests/e2e/marker.spec.ts:150:3 › M6 marker workflows › blocks casualty marker save until Name, Casualty Status, and Evacuation Priority are filled (937ms)
+  ✓   96 [chromium] › tests/e2e/marker.spec.ts:212:3 › M6 marker workflows › preserves and edits an accumulated casualty treatment log beyond 2,000 bytes (1.3s)
+  ✓   97 [chromium] › tests/e2e/measurement.spec.ts:16:3 › M9 measurement workflows › creates multiple measurements and clears them manually (1.7s)
+  ✓   98 [chromium] › tests/e2e/measurement.spec.ts:49:3 › M9 measurement workflows › cancels measurement mode with escape and clears measurements on mission finish (1.5s)
+  ✓   99 [chromium] › tests/e2e/measurement.spec.ts:74:3 › M9 measurement workflows › hands map control cleanly between measurement mode and drawing tools (928ms)
+  ✓  100 [chromium] › tests/e2e/measurement.spec.ts:89:3 › M9 measurement workflows › arms measurement from the Map Tools toolbar (1.3s)
+  ✓  101 [chromium] › tests/e2e/measurement.spec.ts:103:3 › M9 measurement workflows › reveals hidden Map Tools layers before creating measurement and drawings (2.2s)
+  ✓  102 [chromium] › tests/e2e/mission-evidence-search-passes.spec.ts:37:3 › PR5 mission evidence and repeated search passes [DON-279] › records repeated coordinator outcomes without treating coverage as authority (3.8s)
+  ✓  103 [chromium] › tests/e2e/mission-review.spec.ts:18:3 › M15 mission review workspace › shows mission details, audit history, and opens archive paths (3.7s)
+  ✓  104 [chromium] › tests/e2e/mission-review.spec.ts:64:3 › M15 mission review workspace › DON-176: Review is docked and leaves active-mission controls operable (1.1s)
+  ✓  105 [chromium] › tests/e2e/mission-review.spec.ts:100:3 › M15 mission review workspace › finishing a mission while Review is open fences Search Pass entry [DON-279] (2.2s)
+  ✓  106 [chromium] › tests/e2e/mission-review.spec.ts:123:3 › M15 mission review workspace › DON-203: Escape closes only the top dialog over docked Review (848ms)
+  ✓  107 [chromium] › tests/e2e/mission-review.spec.ts:139:3 › M15 mission review workspace › DON-203: Escape closes only the active-mission confirmation over docked Review (894ms)
+  ✓  108 [chromium] › tests/e2e/mission-review.spec.ts:153:3 › M15 mission review workspace › stores tracking positions without creating new telemetry audit echoes [DON-245] (1.7s)
+  ✓  109 [chromium] › tests/e2e/mission-review.spec.ts:183:3 › M15 mission review workspace › filters marker log rows and shows selected marker detail (1.6s)
+  ✓  110 [chromium] › tests/e2e/mission-review.spec.ts:204:3 › M15 mission review workspace › DON-278: live Pause and Resume preserve an unsubmitted replay time exactly (1.5s)
+  ✓  111 [chromium] › tests/e2e/mission-review.spec.ts:228:3 › M15 mission review workspace › DON-278: replay is explicitly data-known-at-T while live controls remain operable (3.0s)
+  ✓  112 [chromium] › tests/e2e/mission-review.spec.ts:276:3 › M15 mission review workspace › DON-278: browser replay later then earlier restores the exact 500-point page (2.3s)
+  ✓  113 [chromium] › tests/e2e/mission-review.spec.ts:319:3 › M15 mission review workspace › DON-278: browser replay rejects a future selected time like packaged Electron (1.2s)
+  ✓  114 [chromium] › tests/e2e/mission-review.spec.ts:333:3 › M15 mission review workspace › DON-278: retired GPX is absent from later browser replay like packaged Electron (1.8s)
+  ✓  115 [chromium] › tests/e2e/mission-review.spec.ts:363:3 › M15 mission review workspace › shows marker evidence and audit metadata in review flows (1.4s)
+  ✓  116 [chromium] › tests/e2e/mission.spec.ts:15:3 › M5 mission control workflows › starts a mission with a back-dated offset (1.6s)
+  ✓  117 [chromium] › tests/e2e/mission.spec.ts:25:3 › M5 mission control workflows › accepts the hosted testing 48 hour start offset without native validity drift (1.6s)
+  ✓  118 [chromium] › tests/e2e/mission.spec.ts:55:3 › M5 mission control workflows › pauses and resumes while keeping elapsed time moving and active time frozen (5.2s)
+  ✓  119 [chromium] › tests/e2e/mission.spec.ts:94:3 › M5 mission control workflows › finishes a mission through confirmation and returns to idle state (898ms)
+  ✓  120 [chromium] › tests/e2e/mission.spec.ts:108:3 › M5 mission control workflows › finish confirmation is an accessible alertdialog and cancels with Escape (798ms)
+  ✓  121 [chromium] › tests/e2e/mission.spec.ts:127:3 › M5 mission control workflows › validates custody and finalizes only with a verified archive (1.5s)
+  ✓  122 [chromium] › tests/e2e/mission.spec.ts:200:3 › M5 mission control workflows › archives a known evidence gap only after permanent admin acknowledgement [DON-276] (3.1s)
+  ✓  123 [chromium] › tests/e2e/mission.spec.ts:266:3 › M5 mission control workflows › unlocks a finalized mission through the configured admin roster (2.0s)
+  ✓  124 [chromium] › tests/e2e/mission.spec.ts:295:3 › M5 mission control workflows › finishes a paused mission without letting active search time advance (3.1s)
+  ✓  125 [chromium] › tests/e2e/mission.spec.ts:344:3 › M5 mission control workflows › warns before reusing an existing mission name (1.2s)
+  ✓  126 [chromium] › tests/e2e/mission.spec.ts:360:3 › M5 mission control workflows › rejects invalid start offsets before creating a mission (685ms)
+  ✓  127 [chromium] › tests/e2e/mission.spec.ts:371:3 › M5 mission control workflows › surfaces recovery on reload and can resume the mission (920ms)
+  ✓  128 [chromium] › tests/e2e/mission.spec.ts:383:3 › M5 mission control workflows › surfaces recovery on reload and can start fresh (923ms)
+  ✓  129 [chromium] › tests/e2e/mission.spec.ts:395:3 › M5 mission control workflows › moves minimized Mission Control into the top panel without side-panel safety actions (919ms)
+  ✓  130 [chromium] › tests/e2e/mission.spec.ts:418:3 › M5 mission control workflows › does not show minimize in paused mission control (793ms)
+  ✓  131 [chromium] › tests/e2e/mission.spec.ts:432:3 › M5 mission control workflows › keeps expanded Mission Control usable when entering focus mode (784ms)
+  ✓  132 [chromium] › tests/e2e/outings.spec.ts:14:3 › BCP-03 explicit outings [DON-270] › keeps outing boundaries explicit and Unassigned visible (1.6s)
+  ✓  133 [chromium] › tests/e2e/outings.spec.ts:52:3 › BCP-03 explicit outings [DON-270] › offers but never forces ending an open outing before mission finish (914ms)
+  ✓  134 [chromium] › tests/e2e/parity-layer-console.spec.ts:102:3 › Batch 2 follow-up: layer console controls (LPV-063, LPV-064, LPV-065) › LPV-063: show-hidden toggle filters hidden items from tree (1.5s)
+  ✓  135 [chromium] › tests/e2e/parity-layer-console.spec.ts:128:3 › Batch 2 follow-up: layer console controls (LPV-063, LPV-064, LPV-065) › LPV-064: refresh button exists and triggers catalog reload (1.3s)
+  ✓  136 [chromium] › tests/e2e/parity-layer-console.spec.ts:141:3 › Batch 2 follow-up: layer console controls (LPV-063, LPV-064, LPV-065) › LPV-065: expand-all button expands all tree nodes (1.4s)
+  ✓  137 [chromium] › tests/e2e/parity-layer-console.spec.ts:156:3 › Batch 2 follow-up: layer console controls (LPV-063, LPV-064, LPV-065) › LPV-066: collapse-all button collapses all tree nodes (1.3s)
+  ✓  138 [chromium] › tests/e2e/parity-visibility.spec.ts:372:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › batch 2 global-off selected-on preserves independent current visibility (4.2s)
+  ✓  139 [chromium] › tests/e2e/parity-visibility.spec.ts:468:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › LPV-240: per-device tracking visibility toggle propagates to visibility store (1.6s)
+  ✓  140 [chromium] › tests/e2e/parity-visibility.spec.ts:495:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › DON-193: current-location and breadcrumb device toggles are independent (1.7s)
+  ✓  141 [chromium] › tests/e2e/parity-visibility.spec.ts:576:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › LPV-241: marker-type visibility toggle propagates to visibility store (1.4s)
+  ✓  142 [chromium] › tests/e2e/parity-visibility.spec.ts:597:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › LPV-242: individual marker visibility toggle propagates to visibility store (1.9s)
+  ✓  143 [chromium] › tests/e2e/parity-visibility.spec.ts:649:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › LPV-243: drawing-type visibility toggle propagates to visibility store (1.4s)
+  ✓  144 [chromium] › tests/e2e/parity-visibility.spec.ts:666:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › LPV-244: individual drawing visibility toggle propagates to visibility store (1.4s)
+  ✓  145 [chromium] › tests/e2e/parity-visibility.spec.ts:681:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › LPV-245: measurement visibility toggle propagates to visibility store (1.5s)
+  ✓  146 [chromium] › tests/e2e/parity-visibility.spec.ts:703:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › LPV-246: group visibility cascade propagates to visibility store (1.6s)
+  ✓  147 [chromium] › tests/e2e/parity-visibility.spec.ts:753:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › LPV-246a: Map Tools group visibility cascade propagates to all map-tool runtime channels (1.4s)
+  ✓  148 [chromium] › tests/e2e/parity-visibility.spec.ts:824:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › LPV-247: tree/canvas synchronization — repeated toggles maintain consistency (1.7s)
+  ✓  149 [chromium] › tests/e2e/parity-visibility.spec.ts:859:3 › Batch 1: Critical visibility parity (LPV-240 to LPV-247) › DON-85: hidden layers stay hidden after catalog refresh and tracking resync (5.1s)
+  ✓  150 [chromium] › tests/e2e/participants.spec.ts:24:3 › mission participants [DON-271] › selects at mission start, excludes non-participant evidence, then supports backdated add and removal (791ms)
+  ✓  151 [chromium] › tests/e2e/participants.spec.ts:70:3 › mission participants [DON-271] › auto-follows a selected group from observation time and shows the coordinator a notice (445ms)
+  ✓  152 [chromium] › tests/e2e/participants.spec.ts:116:3 › mission participants [DON-271] › shows a late-selected participant stale current fix without backdating mission evidence (493ms)
+  ✓  153 [chromium] › tests/e2e/participants.spec.ts:172:3 › mission participants [DON-271] › keeps the mission active and explains why finish is blocked during history backfill (505ms)
+  ✓  154 [chromium] › tests/e2e/participants.spec.ts:194:3 › mission participants [DON-271] › rejects a later group selection that would duplicate an active individual (476ms)
+  ✓  155 [chromium] › tests/e2e/participants.spec.ts:223:3 › mission participants [DON-271] › warns above 100 selected devices and still allows every device to proceed (599ms)
+  ✓  156 [chromium] › tests/e2e/performance-sweep.spec.ts:4:3 › performance sweep regressions › large tracking mission avoids unchanged tracking source updates on idle [DON-210 DON-212] (1.4s)
+  ✓  157 [chromium] › tests/e2e/settings.spec.ts:12:3 › M12 settings workspace › opens the workspace and validates Traccar provider inputs (472ms)
+  ✓  158 [chromium] › tests/e2e/settings.spec.ts:30:3 › M12 settings workspace › tests Traccar credentials against the configured server in browser validation mode (655ms)
+[2m[WebServer] [22m8:41:56 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:41:56 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:41:56 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:41:56 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:41:56 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:41:56 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:41:56 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:41:56 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+  ✓  159 [chromium] › tests/e2e/settings.spec.ts:71:3 › M12 settings workspace › save and connect starts live tracking from browser validation settings (1.3s)
+[2m[WebServer] [22m8:41:57 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:41:57 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:41:57 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:41:57 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:41:57 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:41:57 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:41:57 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:41:57 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:41:58 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:41:58 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":2000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:00 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:00 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":4000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:04 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:04 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":8000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:12 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:12 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":16000,"error":"Durable history request recording is unavailable."}
+  ✘  160 [chromium] › tests/e2e/settings.spec.ts:100:3 › M12 settings workspace › DON-229: offline polling exports sanitized request and poll-cycle evidence (19.2s)
+(node:47132) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:47132) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m8:42:17 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:17 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:17 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:17 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:17 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:17 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:17 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:17 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:18 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:18 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":2000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:20 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:20 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":4000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:22 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:22 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:24 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:24 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":8000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:27 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:27 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+  ✘  161 [chromium] › tests/e2e/settings.spec.ts:144:3 › M12 settings workspace › DON-228: incremental breadcrumb polling keeps sub-second points after the cursor (16.4s)
+(node:47205) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:47205) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22m8:42:34 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:34 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:34 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:34 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:34 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:34 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:34 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:34 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+  ✓  162 [chromium] › tests/e2e/settings.spec.ts:210:3 › M12 settings workspace › connected tracking stops advertising online telemetry after mission finish (1.6s)
+[2m[WebServer] [22m8:42:35 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:35 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:35 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:35 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:35 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:35 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:35 AM [vite] (client) [console.warn] Tracking breadcrumb fetch failed for device. {"deviceId":"1","deviceName":"S-Tab","error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:35 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":1000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:36 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:36 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":2000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:38 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:38 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":4000,"error":"Durable history request recording is unavailable."}
+[2m[WebServer] [22m8:42:42 AM [vite] (client) [console.warn] History request target could not be saved; retrieval will retry without a completeness claim. Error: Durable history request recording is unavailable.
+[2m[WebServer] [22m    at http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:238:39
+[2m[WebServer] [22m    at async http://127.0.0.1:1437/src/features/tracking/start-tracking-runtime.ts:1173:3
+[2m[WebServer] [22m8:42:42 AM [vite] (client) [console.warn] Tracking breadcrumb reconciliation failed for device. {"deviceId":"1","deviceName":"S-Tab","retryDelayMs":8000,"error":"Durable history request recording is unavailable."}
+  ✘  163 [chromium] › tests/e2e/settings.spec.ts:245:3 › M12 settings workspace › large hosted breadcrumb history does not block current tracking status or exceed browser storage cap (16.1s)
+(node:47308) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:47308) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  164 [chromium] › tests/e2e/settings.spec.ts:310:3 › M12 settings workspace › persists mission defaults and coordinate display preference in browser validation mode (1.2s)
+  ✓  165 [chromium] › tests/e2e/settings.spec.ts:331:3 › M12 settings workspace › keeps keyboard focus inside the settings dialog and returns focus on Escape (471ms)
+  ✓  166 [chromium] › tests/e2e/settings.spec.ts:350:3 › M12 settings workspace › DON-204: requires confirmation before discarding unsaved settings edits (910ms)
+  ✓  167 [chromium] › tests/e2e/stationary-attention.spec.ts:12:3 › Stationary attention [DON-269] › highlights, acknowledges, and clears attention without hiding the current fix (1.5s)
+  ✓  168 [chromium] › tests/e2e/stationary-attention.spec.ts:25:3 › Stationary attention [DON-269] › keeps an out-and-back route clear and raises a new warning only after a stationary interval [AUD-02] (1.6s)
+  ✓  169 [chromium] › tests/e2e/stationary-attention.spec.ts:53:3 › Stationary attention [DON-269] › preserves acknowledged duration through one ordinary noise fix and return [A-R15] (2.2s)
+  ✓  170 [chromium] › tests/e2e/theme-startup.spec.ts:4:3 › saved high contrast applies before the booting shell mounts (154ms)
+  ✓  171 [chromium] › tests/e2e/theme-startup.spec.ts:4:3 › saved high contrast applies before the failed shell mounts (155ms)
+  ✓  172 [chromium] › tests/e2e/tracking-ingest-health.spec.ts:15:3 › BCP-01 current-position ingest health › keeps valid fixes visible beside rejection, roster, and unverified-time warnings [DON-267] (1.7s)
+  ✓  173 [chromium] › tests/e2e/tracking-ingest-health.spec.ts:91:3 › BCP-01 current-position ingest health › clears rejection and unverified-time warnings after a clean verified poll [DON-267] (814ms)
+  ✓  174 [chromium] › tests/e2e/tracking-ingest-health.spec.ts:127:3 › BCP-01 current-position ingest health › keeps conflict and degraded evidence warnings visible while current positions stay live [DON-268] (1.2s)
+  ✓  175 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:11:1 › Focus retains tracking health on every tab and minimized mission can be reviewed and restored (1.4s)
+  ✓  176 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:48:1 › Layer collapse returns map width and keyboard restore preserves the layer search (644ms)
+  ✓  177 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:62:1 › Map Tools chevron changes expansion without opening marker placement (439ms)
+  ✓  178 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:72:1 › upgrade from a collapsed legacy layer panel retains reachable tree controls (449ms)
+  ✓  179 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:80:1 › an open End Mission decision cannot be minimized or hidden by rail collapse (519ms)
+  ✓  180 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:91:1 › pause protection clears the collapse latch instead of hiding controls again on Resume (713ms)
+  ✓  181 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:106:3 › minimization is not inherited after recovery returns to the same mission (576ms)
+  ✓  182 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:106:3 › minimization is not inherited after idle returns to the same mission (564ms)
+  ✓  183 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:126:1 › high contrast is operator accessible and survives reload (556ms)
+  ✓  184 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:133:1 › brightened secondary controls retain their hover affordance (861ms)
+  ✓  185 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:144:1 › pending pause failure survives minimization and cannot be hidden by rail collapse (828ms)
+  ✓  186 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:164:1 › archive recovery cannot be hidden by collapsing an idle rail (503ms)
+  ✓  187 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:176:1 › a rejected admin roster can be retried without leaving hide controls locked (914ms)
+  ✓  188 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:207:1 › paused alarm and Resume retain the uncapped dock at 1280x720 in both modes (576ms)
+  ✓  189 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:221:3 › reachable Devices Zoom and separate Focus scale at 1280x720 (665ms)
+  ✓  190 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:221:3 › reachable Devices Zoom and separate Focus scale at 1366x768 (629ms)
+  ✓  191 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:221:3 › reachable Devices Zoom and separate Focus scale at 1440x900 (980ms)
+  ✓  192 [chromium] › tests/e2e/ui-feedback-batch.spec.ts:221:3 › reachable Devices Zoom and separate Focus scale at 1920x1080 (1.8s)
+  ✓  193 [chromium] › tests/e2e/v1-regression.spec.ts:115:3 › V1 regression: cold-start-offline operator-visible warning › operator sees an explicit "showing last known positions" warning when only cached tracking is available (794ms)
+  ✓  194 [chromium] › tests/e2e/v1-regression.spec.ts:191:3 › V1 regression: steady tracking status remains visually stable [DON-261] › an empty breadcrumb result does not re-show the amber loading warning on the next poll (915ms)
+  ✓  195 [chromium] › tests/e2e/v1-regression.spec.ts:346:3 › Mast tracking cell never reads as a positions/stale ratio (sartracker-web-zq9) › the mast splits FIX and STALE into separate values (991ms)
+  ✓  196 [chromium] › tests/e2e/v1-regression.spec.ts:386:3 › Mast tracking cell never reads as a positions/stale ratio (sartracker-web-zq9) › idle state shows zero fix and zero stale with no ratio chrome (613ms)
+  ✓  197 [chromium] › tests/e2e/v1-regression.spec.ts:403:3 › V1 regression: tracking visibility filter through to MapLibre › hiding a single tracking device updates the MapLibre device-circle filter (1.2s)
+  ✓  198 [chromium] › tests/e2e/war06-mission-scope.spec.ts:12:3 › rejects old mission delayed history while showing fresh selected current positions [DON-267] (1.6s)
+  ✓  199 [chromium] › tests/e2e/war06-mission-scope.spec.ts:12:3 › rejects old mission participant hydration while showing fresh selected current positions [DON-267] (1.5s)
+  ✓  200 [chromium] › tests/e2e/weather.spec.ts:9:3 › A3.9 weather links menu › shows an explicit empty state when no weather links are configured (185ms)
+  ✓  201 [chromium] › tests/e2e/weather.spec.ts:17:3 › A3.9 weather links menu › rejects unsafe weather URLs in settings (271ms)
+  ✓  202 [chromium] › tests/e2e/weather.spec.ts:27:3 › A3.9 weather links menu › configures and opens a named weather link safely (855ms)
+  ✓  203 [chromium] › tests/e2e/weather.spec.ts:47:3 › A3.9 weather links menu › normalizes multiple bare weather domains (835ms)
+
+
+  1) [chromium] › tests/e2e/layer-panel.spec.ts:120:3 › M17 layer tree workflows › preserves expanded tree scroll while the catalog refreshes [DON-187] 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+      132 |       }
+      133 |     })
+    > 134 |     expect(before.maxScrollTop).toBeGreaterThan(0)
+          |                                 ^
+      135 |     expect(before.scrollTop).toBeGreaterThan(0)
+      136 |
+      137 |     await page.evaluate(async () => {
+        at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/e2e/layer-panel.spec.ts:134:33
+
+    Error Context: test-results/layer-panel-M17-layer-tree-c766a--catalog-refreshes-DON-187--chromium/error-context.md
+
+  2) [chromium] › tests/e2e/settings.spec.ts:100:3 › M12 settings workspace › DON-229: offline polling exports sanitized request and poll-cycle evidence 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected substring: [32m"\"requestedFromEarliest\""[39m
+    Received string:    [31m"Diagnostics Report[39m
+    [31mgenerated at: 2026-09-13T07:42:10.916Z[39m
+    [31mreport file: diagnostics-report-2026-09-13T07-42-10-916Z.txt·[39m
+    [31m[environment][39m
+    [31mruntime: browser validation[39m
+    [31mapp version: 0.1.0-beta.12.11+sha.c51e4b3537c4b026f7079dd40193a894cedcdd9f[39m
+    [31muser agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.15 Safari/537.36[39m
+    [31mdependencies: maplibre=yes, proj4=yes, turf=yes, zustand=yes, terradraw=yes·[39m
+    [31m[mission][39m
+    [31mphase: active[39m
+    [31mcurrent mission: Tracking Diagnostic Mission[39m
+    [31mgovernance mission: none[39m
+    [31mtotal missions: 1[39m
+    [31mrepair target: Tracking Diagnostic Mission·[39m
+    [31m[storage][39m
+    [31mschema version: 9[39m
+    [31mdatabase path: /tmp/browser-harness/mission-store.sqlite[39m
+    [31mbackup path: /tmp/browser-harness/mission-store.backup.sqlite[39m
+    [31mevidence health: healthy[39m
+    [31mevidence failure: none[39m
+    [31mevidence pending: 0[39m
+    [31mevidence corrupt: 0[39m
+    [31mevidence conflicts: 0[39m
+    [31mevidence rejections: 0[39m
+    [31mevidence affected device count: 0[39m
+    [31mlayer metadata entries: 0[39m
+    [31mlayer catalog state: healthy·[39m
+    [31m[configuration][39m
+    [31mmission model: disabled[39m
+    [31mprovider type: traccar_http[39m
+    [31mprovider url: http://traccar.test:8082[39m
+    [31mauth mode: basic[39m
+    [31mauto connect: yes[39m
+    [31mtracking cache: yes[39m
+    [31mofficial maps: not configured[39m
+    [31mofficial map source type: none[39m
+    [31mofficial map services: 0[39m
+    [31mofficial map packages: 0[39m
+    [31mofficial map packages ready: 0[39m
+    [31mruntime tracking configured: yes[39m
+    [31mautosave interval ms: 30000[39m
+    [31mtracking poll interval ms: 5000[39m
+    [31mstationary attention window ms: 1200000[39m
+    [31mstationary heartbeat tolerance ms: 120000[39m
+    [31mstationary movement floor m: 15[39m
+    [31mstationary accuracy factor: 2[39m
+    [31mstationary outlier reject m: 500·[39m
+    [31m[tracking][39m
+    [31mtracking mode: offline[39m
+    [31mconsecutive failures: 1[39m
+    [31mlast success: 2026-09-13T07:41:57.870Z[39m
+    [31mwarning: OFFLINE MODE — showing last known positions.[39m
+    [31mdevices in snapshot: 1[39m
+    [31mpositions in snapshot: 1[39m
+    [31mbreadcrumbs in snapshot: 1[39m
+    [31mbreadcrumb render retained: 1 of 2[39m
+    [31mbreadcrumb device 1: retained=1 total=2 first=2026-07-12T09:51:09.000Z last=2026-07-12T09:51:09.000Z truncated=yes·[39m
+    [31m[coverage][39m
+    [31mstate: inactive or unavailable·[39m
+    [31m[tracking-poll-ledger][39m
+    [31mretention limit: 720[39m
+    [31mretained entry count: 20[39m
+    [31mcoverage start: 2026-09-13T07:41:57.377Z[39m
+    [31mcoverage end: 2026-09-13T07:42:09.908Z[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.377Z\",\"kind\":\"poll_cycle\",\"outcome\":\"success\",\"phase\":\"current_positions\",\"durationMs\":56,\"consecutiveFailures\":0,\"retryDelayMs\":5000,\"deviceCount\":1,\"currentPositionCount\":1}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.391Z\",\"kind\":\"breadcrumb_reconciliation\",\"outcome\":\"progress\",\"reconciliationPhase\":\"initial\",\"targetFrom\":\"2026-09-13T07:41:57.321Z\",\"targetTo\":\"2026-09-13T07:41:57.390Z\",\"totalDeviceCount\":1,\"completedDeviceCount\":0,\"totalChunkCount\":1,\"completedChunkCount\":0,\"pendingDeviceCount\":1,\"failedDeviceCount\":0,\"elapsedMs\":1}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.396Z\",\"kind\":\"poll_cycle\",\"outcome\":\"failure\",\"phase\":\"breadcrumbs\",\"durationMs\":14,\"consecutiveFailures\":0,\"retryDelayMs\":5000,\"failureKind\":\"unknown\",\"deviceCount\":1,\"breadcrumbRequestedDeviceCount\":1,\"breadcrumbReturnedCount\":0,\"breadcrumbAcceptedCount\":0,\"breadcrumbDuplicateCount\":0,\"breadcrumbRejectedCount\":0,\"breadcrumbFailedDeviceCount\":1}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.398Z\",\"kind\":\"breadcrumb_reconciliation\",\"outcome\":\"progress\",\"reconciliationPhase\":\"initial\",\"targetFrom\":\"2026-09-13T07:41:57.321Z\",\"targetTo\":\"2026-09-13T07:41:57.390Z\",\"totalDeviceCount\":1,\"completedDeviceCount\":0,\"totalChunkCount\":1,\"completedChunkCount\":0,\"pendingDeviceCount\":1,\"failedDeviceCount\":1,\"elapsedMs\":8}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.870Z\",\"kind\":\"poll_cycle\",\"outcome\":\"success\",\"phase\":\"current_positions\",\"durationMs\":23,\"consecutiveFailures\":0,\"retryDelayMs\":5000,\"deviceCount\":1,\"currentPositionCount\":1}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.881Z\",\"kind\":\"breadcrumb_reconciliation\",\"outcome\":\"progress\",\"reconciliationPhase\":\"initial\",\"targetFrom\":\"2026-09-13T07:41:57.321Z\",\"targetTo\":\"2026-09-13T07:41:57.881Z\",\"totalDeviceCount\":1,\"completedDeviceCount\":0,\"totalChunkCount\":1,\"completedChunkCount\":0,\"pendingDeviceCount\":1,\"failedDeviceCount\":0,\"elapsedMs\":0}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.886Z\",\"kind\":\"poll_cycle\",\"outcome\":\"failure\",\"phase\":\"breadcrumbs\",\"durationMs\":12,\"consecutiveFailures\":0,\"retryDelayMs\":5000,\"failureKind\":\"unknown\",\"deviceCount\":1,\"breadcrumbRequestedDeviceCount\":1,\"breadcrumbReturnedCount\":0,\"breadcrumbAcceptedCount\":0,\"breadcrumbDuplicateCount\":0,\"breadcrumbRejectedCount\":0,\"breadcrumbFailedDeviceCount\":1}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.888Z\",\"kind\":\"breadcrumb_reconciliation\",\"outcome\":\"progress\",\"reconciliationPhase\":\"initial\",\"targetFrom\":\"2026-09-13T07:41:57.321Z\",\"targetTo\":\"2026-09-13T07:41:57.881Z\",\"totalDeviceCount\":1,\"completedDeviceCount\":0,\"totalChunkCount\":1,\"completedChunkCount\":0,\"pendingDeviceCount\":1,\"failedDeviceCount\":1,\"elapsedMs\":7}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:58.892Z\",\"kind\":\"breadcrumb_reconciliation\",\"outcome\":\"progress\",\"reconciliationPhase\":\"initial\",\"targetFrom\":\"2026-09-13T07:41:57.321Z\",\"targetTo\":\"2026-09-13T07:41:57.881Z\",\"totalDeviceCount\":1,\"completedDeviceCount\":0,\"totalChunkCount\":1,\"completedChunkCount\":0,\"pendingDeviceCount\":1,\"failedDeviceCount\":1,\"elapsedMs\":1011}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:00.897Z\",\"kind\":\"breadcrumb_reconciliation\",\"outcome\":\"progress\",\"reconciliationPhase\":\"initial\",\"targetFrom\":\"2026-09-13T07:41:57.321Z\",\"targetTo\":\"2026-09-13T07:41:57.881Z\",\"totalDeviceCount\":1,\"completedDeviceCount\":0,\"totalChunkCount\":1,\"completedChunkCount\":0,\"pendingDeviceCount\":1,\"failedDeviceCount\":1,\"elapsedMs\":3016}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:02.875Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"devices\",\"durationMs\":2,\"attempt\":1,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:02.875Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"current_positions\",\"durationMs\":2,\"attempt\":1,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:03.883Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"devices\",\"durationMs\":1,\"attempt\":2,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:03.890Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"current_positions\",\"durationMs\":8,\"attempt\":2,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:04.903Z\",\"kind\":\"breadcrumb_reconciliation\",\"outcome\":\"progress\",\"reconciliationPhase\":\"initial\",\"targetFrom\":\"2026-09-13T07:41:57.321Z\",\"targetTo\":\"2026-09-13T07:41:57.881Z\",\"totalDeviceCount\":1,\"completedDeviceCount\":0,\"totalChunkCount\":1,\"completedChunkCount\":0,\"pendingDeviceCount\":1,\"failedDeviceCount\":1,\"elapsedMs\":7022}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:05.887Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"devices\",\"durationMs\":2,\"attempt\":3,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:05.900Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"current_positions\",\"durationMs\":7,\"attempt\":3,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:09.891Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"devices\",\"durationMs\":2,\"attempt\":4,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:09.908Z\",\"kind\":\"request_attempt\",\"outcome\":\"failure\",\"phase\":\"current_positions\",\"durationMs\":2,\"attempt\":4,\"maxAttempts\":4,\"failureKind\":\"http_5xx\",\"httpStatus\":503}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:09.908Z\",\"kind\":\"poll_cycle\",\"outcome\":\"failure\",\"phase\":\"current_positions\",\"durationMs\":7035,\"consecutiveFailures\":1,\"retryDelayMs\":1000,\"failureKind\":\"http_5xx\"}·[39m
+    [31m[diagnostic-breadcrumbs][39m
+    [31mevent count: 21[39m
+    [31m{\"ts\":\"2026-09-13T07:41:56.874Z\",\"level\":\"info\",\"category\":\"map\",\"event\":\"map_health_changed\",\"fields\":{\"basemapId\":\"opentopomap\",\"status\":\"loading\",\"message\":\"Loading OpenTopoMap basemap\"}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.227Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_snapshot_applied\",\"fields\":{\"deviceCount\":0,\"currentPositionCount\":0,\"breadcrumbCount\":0,\"retainedBreadcrumbCount\":0,\"observedBreadcrumbCount\":0,\"truncatedDeviceCount\":0,\"degradedGeometryDeviceCount\":0,\"maximumGeometryErrorBoundMetres\":0}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.227Z\",\"level\":\"warn\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"idle\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.377Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_snapshot_applied\",\"fields\":{\"deviceCount\":1,\"currentPositionCount\":1,\"breadcrumbCount\":0,\"retainedBreadcrumbCount\":0,\"observedBreadcrumbCount\":0,\"truncatedDeviceCount\":0,\"degradedGeometryDeviceCount\":0,\"maximumGeometryErrorBoundMetres\":0}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.377Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.390Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_snapshot_applied\",\"fields\":{\"deviceCount\":1,\"currentPositionCount\":1,\"breadcrumbCount\":1,\"retainedBreadcrumbCount\":1,\"observedBreadcrumbCount\":1,\"truncatedDeviceCount\":0,\"degradedGeometryDeviceCount\":0,\"maximumGeometryErrorBoundMetres\":0}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.391Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.396Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.398Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.870Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_snapshot_applied\",\"fields\":{\"deviceCount\":1,\"currentPositionCount\":1,\"breadcrumbCount\":0,\"retainedBreadcrumbCount\":0,\"observedBreadcrumbCount\":0,\"truncatedDeviceCount\":0,\"degradedGeometryDeviceCount\":0,\"maximumGeometryErrorBoundMetres\":0}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.870Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.881Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_snapshot_applied\",\"fields\":{\"deviceCount\":1,\"currentPositionCount\":1,\"breadcrumbCount\":1,\"retainedBreadcrumbCount\":1,\"observedBreadcrumbCount\":2,\"truncatedDeviceCount\":1,\"degradedGeometryDeviceCount\":0,\"maximumGeometryErrorBoundMetres\":0}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.881Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.886Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:57.888Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:58.062Z\",\"level\":\"info\",\"category\":\"map\",\"event\":\"map_health_changed\",\"fields\":{\"basemapId\":\"opentopomap\",\"status\":\"ready\",\"message\":\"OpenTopoMap basemap ready\"}}[39m
+    [31m{\"ts\":\"2026-09-13T07:41:58.892Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:00.897Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:04.903Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"online\",\"consecutiveFailures\":0,\"recovered\":false,\"hasWarning\":true}}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:09.908Z\",\"level\":\"info\",\"category\":\"tracking\",\"event\":\"tracking_snapshot_applied\",\"fields\":{\"deviceCount\":1,\"currentPositionCount\":1,\"breadcrumbCount\":1,\"retainedBreadcrumbCount\":1,\"observedBreadcrumbCount\":2,\"truncatedDeviceCount\":1,\"degradedGeometryDeviceCount\":0,\"maximumGeometryErrorBoundMetres\":0}}[39m
+    [31m{\"ts\":\"2026-09-13T07:42:09.908Z\",\"level\":\"warn\",\"category\":\"tracking\",\"event\":\"tracking_status_changed\",\"fields\":{\"mode\":\"offline\",\"consecutiveFailures\":1,\"recovered\":false,\"hasWarning\":true}}·[39m
+    [31m[warnings][39m
+    [31mOFFLINE MODE — showing last known positions.[39m
+    [31mBreadcrumb history is render-budgeted for 1 device; exported diagnostics include per-device counts."[39m
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      131 |       '"kind":"request_attempt"',
+      132 |     )
+    > 133 |     await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+          |     ^
+      134 |       '"requestedFromEarliest"',
+      135 |     )
+      136 |     await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+        at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/e2e/settings.spec.ts:133:5
+
+    Error Context: test-results/settings-M12-settings-work-1b214-est-and-poll-cycle-evidence-chromium/error-context.md
+
+  3) [chromium] › tests/e2e/settings.spec.ts:144:3 › M12 settings workspace › DON-228: incremental breadcrumb polling keeps sub-second points after the cursor 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: >= [32m3[39m
+    Received:    [31m0[39m
+
+    Call Log:
+    - Timeout 15000ms exceeded while waiting on the predicate
+
+      168 |     await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
+      169 |
+    > 170 |     await expect
+          |     ^
+      171 |       .poll(() => cursorScenario.breadcrumbRequests.length, { timeout: 15_000 })
+      172 |       .toBeGreaterThanOrEqual(3)
+      173 |
+        at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/e2e/settings.spec.ts:170:5
+
+    Error Context: test-results/settings-M12-settings-work-ae4fe-ond-points-after-the-cursor-chromium/error-context.md
+
+  4) [chromium] › tests/e2e/settings.spec.ts:245:3 › M12 settings workspace › large hosted breadcrumb history does not block current tracking status or exceed browser storage cap 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoContainText[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByTestId('breadcrumb-display-summary')
+    Expected substring: [32m"of at least [7m14,500[27m known fixes"[39m
+    Received string:    [31m"[7mTrail display simplified: showing 1 [27mof at least [7m2[27m known fixes[7m across the full route. Displayed route error is bounded to 25 metres. Full mission history remains stored.[27m"[39m
+    Timeout: 15000ms
+
+    Call log:
+    [2m  - Expect "toContainText" with timeout 15000ms[22m
+    [2m  - waiting for getByTestId('breadcrumb-display-summary')[22m
+    [2m    19 × locator resolved to <p data-testid="breadcrumb-display-summary" class="mb-4 border-l-4 px-3 py-2 text-xs font-medium leading-relaxed border-l-sky-400 bg-sky-400/10 text-sky-100">…</p>[22m
+    [2m       - unexpected value "Trail display simplified: showing 1 of at least 2 known fixes across the full route. Displayed route error is bounded to 25 metres. Full mission history remains stored."[22m
+
+
+      282 |     await expect(page.getByTestId('tracking-status')).toContainText('1', { timeout: 15_000 })
+      283 |     if (breadcrumbCount > 5_000) {
+    > 284 |       await expect(page.getByTestId('breadcrumb-display-summary')).toContainText(
+          |                                                                    ^
+      285 |         `of at least ${breadcrumbCount.toLocaleString()} known fixes`,
+      286 |         { timeout: 15_000 },
+      287 |       )
+        at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/e2e/settings.spec.ts:284:68
+
+    Error Context: test-results/settings-M12-settings-work-d25e0--exceed-browser-storage-cap-chromium/error-context.md
+
+  4 failed
+    [chromium] › tests/e2e/layer-panel.spec.ts:120:3 › M17 layer tree workflows › preserves expanded tree scroll while the catalog refreshes [DON-187] 
+    [chromium] › tests/e2e/settings.spec.ts:100:3 › M12 settings workspace › DON-229: offline polling exports sanitized request and poll-cycle evidence 
+    [chromium] › tests/e2e/settings.spec.ts:144:3 › M12 settings workspace › DON-228: incremental breadcrumb polling keeps sub-second points after the cursor 
+    [chromium] › tests/e2e/settings.spec.ts:245:3 › M12 settings workspace › large hosted breadcrumb history does not block current tracking status or exceed browser storage cap 
+  199 passed (5.8m)

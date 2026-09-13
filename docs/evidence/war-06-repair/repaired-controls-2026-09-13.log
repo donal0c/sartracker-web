@@ -1,0 +1,24 @@
+WAR-06 repaired control receipt
+Date: 2026-09-13
+Source baseline: deedab27483ad4fe1ca998a4d68afd555f4e2337
+Production repair: working tree under focused local verification
+Command:
+node scripts/assurance/war-06-prove-red.mjs
+
+Result: exit code 0. Each normal repair oracle passed and each injected stale
+publication failed only at its named repair safety oracle.
+
+AUD-01-visible-publication: GREEN current control
+AUD-01-visible-publication: RED injected stale publication at named repair oracle
+AUD-02-stationary-projection: GREEN current control
+AUD-02-stationary-projection: RED injected stale publication at named repair oracle
+CACHE-SIBLING-stationary-projection: GREEN current control
+CACHE-SIBLING-stationary-projection: RED injected stale publication at named repair oracle
+
+Focused characterization command:
+npm test -- tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts --no-file-parallelism
+Result: 3 tests passed.
+
+Focused negative-control meta-test:
+npm test -- tests/unit/assurance/war-06/negative-controls.test.ts --no-file-parallelism
+Result: 1 test passed.

@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 
-it('keeps all WAR-06 characterization oracles falsifiable', () => {
+it('keeps all WAR-06 repair oracles falsifiable', () => {
   const root = fileURLToPath(new URL('../../../../', import.meta.url))
   const result = spawnSync(process.execPath, ['scripts/assurance/war-06-prove-red.mjs'], {
     cwd: root,
@@ -14,5 +14,5 @@ it('keeps all WAR-06 characterization oracles falsifiable', () => {
   expect(result.signal, `${result.stdout}\n${result.stderr}`).toBeNull()
   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
   expect(result.stdout.match(/GREEN current control/g)).toHaveLength(3)
-  expect(result.stdout.match(/RED at named safety oracle/g)).toHaveLength(3)
+  expect(result.stdout.match(/RED injected stale publication at named repair oracle/g)).toHaveLength(3)
 }, 120_000)

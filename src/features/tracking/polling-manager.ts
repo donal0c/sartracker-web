@@ -552,7 +552,10 @@ export function createPollingManager(
     }
     historyPublishTimer = scheduleTimeout(() => {
       historyPublishTimer = null
-      flushHistorySnapshot(false)
+      // Mission wakes can coalesce behind an in-flight current poll. Recheck
+      // here before touching the accumulator or publishing its captured state.
+      // The explicit inactive/stop flushes retain their separate custody path.
+      if (isHistoryReconciliationCurrent()) flushHistorySnapshot(false)
     }, HISTORY_PUBLISH_DELAY_MS)
   }
 
@@ -931,14 +934,9 @@ export function createPollingManager(
     let releaseEvidenceCapacity = (): void => undefined
     try {
       if (pollHistoryResetKey !== activeHistoryResetKey) {
-        const retainedCurrentSnapshot = lastGoodSnapshot === null
-          ? null
-          : {
-              devices: latestDevices,
-              positions: latestCurrentPositions,
-              breadcrumbs: [],
-              rawBreadcrumbsForPersistence: [],
-            } satisfies TrackingSnapshot
+        // Provider device metadata may be reused, but positions and fallback
+        // coordinates belong to the mission that accepted their response.
+        latestCurrentPositions = []
         initialSeedAbortController?.abort()
         initialSeedAbortController = null
         historyTransportAbortController.abort(
@@ -969,7 +967,7 @@ export function createPollingManager(
         latestRosterWarning = null
         latestBreadcrumbTimestampByDevice.clear()
         historyReconciler.reset()
-        lastGoodSnapshot = retainedCurrentSnapshot
+        lastGoodSnapshot = null
       }
 
       const pollingMode = options.getPollingMode?.() ?? 'active'

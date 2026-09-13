@@ -46,6 +46,23 @@ function createDeferred<T>(): {
   return { promise, resolve: resolvePromise }
 }
 
+function setActiveMission(missionId = 'mission-1'): void {
+  useMissionStore.setState({
+    phase: 'active',
+    currentMission: {
+      id: missionId,
+      name: 'Mission',
+      status: 'active',
+      start_time: '2026-04-06T09:00:00Z',
+      pause_time: null,
+      finish_time: null,
+      paused_seconds: 0,
+      notes: null,
+      schema_version: 1,
+    },
+  })
+}
+
 describe('startTrackingRuntime', () => {
   it('retains request diagnostics on replacement client configuration [A-R21]', async () => {
     const recordDiagnostic = vi.fn()
@@ -329,12 +346,17 @@ describe('startTrackingRuntime', () => {
   })
 
   it('uses an empty incomplete roster observation to retry failed participant hydration', async () => {
+    setActiveMission()
     const applyParticipantRoster = vi.fn()
     let pollerHooks:
       | {
           onSnapshot: (
             snapshot: TrackingSnapshot,
-            context?: { readonly participantRosterAuthoritative?: boolean },
+            context?: {
+              readonly historyResetKey?: string | null
+              readonly missionEvidenceId?: string | null
+              readonly participantRosterAuthoritative?: boolean
+            },
           ) => Promise<void>
         }
       | undefined
@@ -356,7 +378,11 @@ describe('startTrackingRuntime', () => {
 
     await pollerHooks?.onSnapshot(
       { devices: [], positions: [], breadcrumbs: [], rawBreadcrumbsForPersistence: [] },
-      { participantRosterAuthoritative: false },
+      {
+        historyResetKey: 'mission-1',
+        missionEvidenceId: null,
+        participantRosterAuthoritative: false,
+      },
     )
 
     expect(applyParticipantRoster).toHaveBeenCalledWith([], { complete: false })
@@ -525,6 +551,7 @@ describe('startTrackingRuntime', () => {
       cache: {
         read: vi.fn().mockResolvedValue(
           JSON.stringify({
+            mission_id: null,
             cached_at: '2026-04-06T10:35:00.000Z',
             devices: CACHED_SNAPSHOT.devices,
             positions: CACHED_SNAPSHOT.positions,
@@ -567,6 +594,7 @@ describe('startTrackingRuntime', () => {
       cache: {
         read: vi.fn().mockResolvedValue(
           JSON.stringify({
+            mission_id: null,
             cached_at: '2026-04-06T10:33:00.000Z',
             devices: CACHED_SNAPSHOT.devices,
             positions: CACHED_SNAPSHOT.positions,
@@ -616,6 +644,7 @@ describe('startTrackingRuntime', () => {
       }),
       cache: {
         read: vi.fn().mockResolvedValue(JSON.stringify({
+          mission_id: null,
           cached_at: '2026-04-06T10:33:00.000Z',
           devices: CACHED_SNAPSHOT.devices,
           positions: CACHED_SNAPSHOT.positions,
@@ -652,11 +681,13 @@ describe('startTrackingRuntime', () => {
   })
 
   it('preserves raw tracking cache data and warns when participant scope hydration fails', async () => {
+    setActiveMission()
     const cacheWrite = vi.fn().mockImplementation(async (contents: string) => contents)
     const applySnapshot = vi.fn()
     const applyStatus = vi.fn()
     let pollerHooks: {
       readonly onSnapshot: (snapshot: TrackingSnapshot, context?: {
+        readonly historyResetKey?: string | null
         readonly missionEvidenceId?: string | null
       }) => Promise<void>
       readonly onStatusChange: (status: TrackingConnectionStatus) => void
@@ -685,7 +716,10 @@ describe('startTrackingRuntime', () => {
       lastSuccessAt: null, warning: 'OFFLINE MODE — showing last known positions.',
     })
 
-    await pollerHooks?.onSnapshot(SNAPSHOT, { missionEvidenceId: 'mission-1' })
+    await pollerHooks?.onSnapshot(SNAPSHOT, {
+      historyResetKey: 'mission-1',
+      missionEvidenceId: 'mission-1',
+    })
 
     expect(applySnapshot).not.toHaveBeenCalled()
     expect(applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -1131,10 +1165,12 @@ describe('startTrackingRuntime', () => {
   })
 
   it('does not clear a persistence failure while participant scope blocks a later write', async () => {
+    setActiveMission()
     const applyStatus = vi.fn()
     let scopeStatus: 'ready' | 'error' = 'ready'
     let pollerHooks: {
       readonly onSnapshot: (snapshot: TrackingSnapshot, context?: {
+        readonly historyResetKey?: string | null
         readonly missionEvidenceId?: string | null
       }) => Promise<void>
       readonly onStatusChange: (status: TrackingConnectionStatus) => void
@@ -1177,13 +1213,19 @@ describe('startTrackingRuntime', () => {
       lastSuccessAt: '2026-04-06T10:35:00.000Z', warning: null,
     })
 
-    await pollerHooks?.onSnapshot(SNAPSHOT, { missionEvidenceId: 'mission-1' })
+    await pollerHooks?.onSnapshot(SNAPSHOT, {
+      historyResetKey: 'mission-1',
+      missionEvidenceId: 'mission-1',
+    })
     expect(applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({
       warning: expect.stringMatching(/mission breadcrumb storage failed/i),
     }))
 
     scopeStatus = 'error'
-    await pollerHooks?.onSnapshot(SNAPSHOT, { missionEvidenceId: 'mission-1' })
+    await pollerHooks?.onSnapshot(SNAPSHOT, {
+      historyResetKey: 'mission-1',
+      missionEvidenceId: 'mission-1',
+    })
     expect(applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({
       warning: expect.stringMatching(/mission breadcrumb storage failed.*participant selection unavailable/i),
     }))
@@ -1270,7 +1312,7 @@ describe('startTrackingRuntime', () => {
     const addPosition = vi.fn().mockResolvedValue(undefined)
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -1303,7 +1345,7 @@ describe('startTrackingRuntime', () => {
       now: () => new Date('2026-04-06T10:35:00.000Z'),
     })
 
-    await pollerHooks?.onSnapshot(SNAPSHOT)
+    await pollerHooks?.onSnapshot(SNAPSHOT, { historyResetKey: 'mission-1' })
 
     expect(upsertDevice).toHaveBeenCalledTimes(2)
     expect(addPosition).toHaveBeenCalledTimes(4)
@@ -1316,9 +1358,10 @@ describe('startTrackingRuntime', () => {
   })
 
   it('keeps time-unverified current locations visible but outside mission persistence [DON-267] [SAR-QA-021]', async () => {
+    setActiveMission()
     const addPositionsBulk = vi.fn().mockResolvedValue(undefined)
     const applySnapshot = vi.fn()
-    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => Promise<void> } | undefined
     const verifiedCurrent = { ...SNAPSHOT.positions[0]!, id: 'verified-current' }
     const unverifiedCurrent = {
       ...SNAPSHOT.positions[1]!,
@@ -1359,7 +1402,7 @@ describe('startTrackingRuntime', () => {
       breadcrumbs: [verifiedHistory, unverifiedHistory],
       rawBreadcrumbsForPersistence: [verifiedHistory, unverifiedHistory],
     }
-    await pollerHooks?.onSnapshot(operationalSnapshot)
+    await pollerHooks?.onSnapshot(operationalSnapshot, { historyResetKey: 'mission-1' })
 
     expect(applySnapshot).toHaveBeenCalledWith(operationalSnapshot)
     const persistedIds = addPositionsBulk.mock.calls[0]?.[0].positions.map(
@@ -1377,7 +1420,7 @@ describe('startTrackingRuntime', () => {
     const upsertDevicesBulk = vi.fn().mockResolvedValue(undefined)
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -1405,7 +1448,7 @@ describe('startTrackingRuntime', () => {
       now: () => new Date('2026-04-06T10:35:00.000Z'),
     })
 
-    await pollerHooks?.onSnapshot(SNAPSHOT)
+    await pollerHooks?.onSnapshot(SNAPSHOT, { historyResetKey: 'mission-1' })
 
     // SNAPSHOT has 2 devices; one batched call, zero per-device calls.
     expect(upsertDevicesBulk).toHaveBeenCalledTimes(1)
@@ -1417,11 +1460,12 @@ describe('startTrackingRuntime', () => {
   })
 
   it('keeps the full roster for participant discovery while applying and persisting only selected mission participants [DON-271]', async () => {
+    setActiveMission()
     const applySnapshot = vi.fn()
     const applyParticipantRoster = vi.fn()
     const upsertDevicesBulk = vi.fn().mockResolvedValue(undefined)
     const addPositionsBulk = vi.fn().mockResolvedValue(undefined)
-    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => Promise<void> } | undefined
 
     await startTrackingRuntime({
       config: { baseUrl: 'http://test:8082' },
@@ -1461,7 +1505,7 @@ describe('startTrackingRuntime', () => {
       writeCache: false,
     })
 
-    await pollerHooks?.onSnapshot(SNAPSHOT)
+    await pollerHooks?.onSnapshot(SNAPSHOT, { historyResetKey: 'mission-1' })
 
     expect(applyParticipantRoster).toHaveBeenCalledWith(SNAPSHOT.devices)
     expect(applySnapshot.mock.calls[0]?.[0].devices.map(
@@ -1476,7 +1520,7 @@ describe('startTrackingRuntime', () => {
   it('publishes authorized current positions before participant roster persistence settles', async () => {
     const rosterWrite = createDeferred<void>()
     const applySnapshot = vi.fn()
-    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => Promise<void> } | undefined
 
     await startTrackingRuntime({
       config: { baseUrl: 'http://test:8082' },
@@ -1978,11 +2022,16 @@ describe('startTrackingRuntime', () => {
   })
 
   it('marks a partially normalized participant roster as non-authoritative', async () => {
+    setActiveMission()
     const applyParticipantRoster = vi.fn()
     let pollerHooks: {
       onSnapshot: (
         snapshot: TrackingSnapshot,
-        context?: { readonly participantRosterAuthoritative?: boolean },
+        context?: {
+          readonly historyResetKey?: string | null
+          readonly missionEvidenceId?: string | null
+          readonly participantRosterAuthoritative?: boolean
+        },
       ) => Promise<void>
     } | undefined
 
@@ -2010,7 +2059,11 @@ describe('startTrackingRuntime', () => {
       writeCache: false,
     })
 
-    await pollerHooks?.onSnapshot(SNAPSHOT, { participantRosterAuthoritative: false })
+    await pollerHooks?.onSnapshot(SNAPSHOT, {
+      historyResetKey: 'mission-1',
+      missionEvidenceId: null,
+      participantRosterAuthoritative: false,
+    })
 
     expect(applyParticipantRoster).toHaveBeenCalledWith(
       SNAPSHOT.devices,
@@ -2019,6 +2072,7 @@ describe('startTrackingRuntime', () => {
   })
 
   it('publishes selected current positions without waiting for participant backfill [DON-271]', async () => {
+    setActiveMission()
     const backfill = createDeferred<{
       readonly accepted: readonly TrackingSnapshot['positions'][number][]
       readonly rejected: readonly never[]
@@ -2070,7 +2124,7 @@ describe('startTrackingRuntime', () => {
       writeCache: false,
     })
 
-    await pollerHooks?.onSnapshot(SNAPSHOT)
+    await pollerHooks?.onSnapshot(SNAPSHOT, { historyResetKey: 'mission-1' })
 
     expect(applySnapshot).toHaveBeenCalledWith(SNAPSHOT)
     expect(client.getBreadcrumbsWithReport).toHaveBeenCalled()
@@ -2182,7 +2236,7 @@ describe('startTrackingRuntime', () => {
 
   it('grandfathers legacy tracking persistence when the mission model flag is off [DON-271]', async () => {
     const upsertDevicesBulk = vi.fn().mockResolvedValue(undefined)
-    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => Promise<void> } | undefined
 
     await startTrackingRuntime({
       config: { baseUrl: 'http://test:8082' },
@@ -2202,7 +2256,7 @@ describe('startTrackingRuntime', () => {
       writeCache: false,
     })
 
-    await pollerHooks?.onSnapshot(SNAPSHOT)
+    await pollerHooks?.onSnapshot(SNAPSHOT, { historyResetKey: 'mission-1' })
 
     expect(upsertDevicesBulk.mock.calls[0]?.[0].participant_provenance).toBe('legacy_auto')
   })
@@ -2229,7 +2283,7 @@ describe('startTrackingRuntime', () => {
     ] satisfies readonly TrackingSnapshot['breadcrumbs'][number][]
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -2261,7 +2315,7 @@ describe('startTrackingRuntime', () => {
       breadcrumbs: sameSecondBreadcrumbs,
       rawBreadcrumbsForPersistence: sameSecondBreadcrumbs,
       positions: [],
-    })
+    }, { historyResetKey: 'mission-1' })
 
     expect(addPositionsBulk).toHaveBeenCalledWith({
       mission_id: 'mission-1',
@@ -2281,7 +2335,7 @@ describe('startTrackingRuntime', () => {
     })
     const addPositionsBulk = vi.fn()
     let pollerHooks:
-      | { onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void> }
+      | { onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void> }
       | undefined
 
     await startTrackingRuntime({
@@ -2306,7 +2360,7 @@ describe('startTrackingRuntime', () => {
       ...SNAPSHOT,
       breadcrumbs: [],
       rawBreadcrumbsForPersistence: [],
-    })
+    }, { historyResetKey: 'mission-1' })
 
     expect(persistTrackingPositionsBulk).toHaveBeenCalledWith({
       mission_id: 'mission-1',
@@ -2322,7 +2376,7 @@ describe('startTrackingRuntime', () => {
     const addPositionsBulk = vi.fn().mockResolvedValue([])
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
         }
       | undefined
     const sourceFix = {
@@ -2370,7 +2424,7 @@ describe('startTrackingRuntime', () => {
       positions: [],
       breadcrumbs: [sourceFix],
       rawBreadcrumbsForPersistence: [sourceFix],
-    })
+    }, { historyResetKey: 'mission-1' })
 
     expect(addPositionsBulk).toHaveBeenCalledWith({
       mission_id: 'mission-1',
@@ -2424,6 +2478,7 @@ describe('startTrackingRuntime', () => {
   })
 
   it('keeps a post-cutoff current fix live without admitting it to mission evidence', async () => {
+    setActiveMission()
     const addPositionsBulk = vi.fn().mockResolvedValue([])
     const applySnapshot = vi.fn()
     let pollerHooks:
@@ -2570,7 +2625,7 @@ describe('startTrackingRuntime', () => {
     const recordDiagnosticEvent = vi.fn().mockResolvedValue(undefined)
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -2660,7 +2715,7 @@ describe('startTrackingRuntime', () => {
     const addPosition = vi.fn().mockResolvedValue(undefined)
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -2686,8 +2741,8 @@ describe('startTrackingRuntime', () => {
       now: () => new Date('2026-04-06T10:35:00.000Z'),
     })
 
-    await pollerHooks?.onSnapshot(SNAPSHOT)
-    await pollerHooks?.onSnapshot(SNAPSHOT)
+    await pollerHooks?.onSnapshot(SNAPSHOT, { historyResetKey: 'mission-1' })
+    await pollerHooks?.onSnapshot(SNAPSHOT, { historyResetKey: 'mission-1' })
 
     expect(listPositions).toHaveBeenCalledTimes(1)
     expect(addPosition).toHaveBeenCalledTimes(8)
@@ -2697,7 +2752,7 @@ describe('startTrackingRuntime', () => {
     const addPositionsBulk = vi.fn().mockResolvedValue([])
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
         }
       | undefined
     const original = SNAPSHOT.positions[0]!
@@ -2733,7 +2788,7 @@ describe('startTrackingRuntime', () => {
       ...SNAPSHOT,
       breadcrumbs: [],
       positions: [corrected],
-    })
+    }, { historyResetKey: 'mission-1' })
 
     expect(addPositionsBulk).toHaveBeenCalledWith({
       mission_id: 'mission-1',
@@ -2750,7 +2805,7 @@ describe('startTrackingRuntime', () => {
     const cacheWrite = vi.fn().mockResolvedValue('/tmp/tracking-cache.json')
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -3863,7 +3918,7 @@ describe('startTrackingRuntime', () => {
     let pollerHooks:
       | {
           getInitialBreadcrumbs: () => Promise<readonly TrackingSnapshot['breadcrumbs'][number][]>
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
         }
       | undefined
     const listPositions = vi.fn().mockRejectedValue(new Error('unbounded query must not run'))
@@ -3903,7 +3958,7 @@ describe('startTrackingRuntime', () => {
     })
 
     await expect(pollerHooks?.getInitialBreadcrumbs()).resolves.toHaveLength(1)
-    await pollerHooks?.onSnapshot(SNAPSHOT)
+    await pollerHooks?.onSnapshot(SNAPSHOT, { historyResetKey: 'mission-1' })
     expect(listRecentPositions).toHaveBeenCalledWith('mission-1', 5_000)
     expect(listPositions).not.toHaveBeenCalled()
     expect(addPosition).toHaveBeenCalledTimes(4)
@@ -4206,6 +4261,7 @@ describe('startTrackingRuntime', () => {
   })
 
   it('keeps the live snapshot applied and durably marks failed accepted mission evidence', async () => {
+    setActiveMission()
     const applySnapshot = vi.fn()
     const applyStatus = vi.fn()
     const logger = { warn: vi.fn() }
@@ -4217,7 +4273,10 @@ describe('startTrackingRuntime', () => {
       .mockResolvedValue('/tmp/tracking-cache.json')
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (
+            snapshot: TrackingSnapshot,
+            context?: { readonly historyResetKey?: string | null; readonly missionEvidenceId?: string | null },
+          ) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -4257,6 +4316,7 @@ describe('startTrackingRuntime', () => {
       warning: null,
     })
     await expect(pollerHooks?.onSnapshot(SNAPSHOT, {
+      historyResetKey: 'mission-1',
       missionEvidenceId: 'mission-1',
     })).resolves.toBeUndefined()
 
@@ -4283,6 +4343,7 @@ describe('startTrackingRuntime', () => {
     )
 
     await expect(pollerHooks?.onSnapshot(SNAPSHOT, {
+      historyResetKey: 'mission-1',
       missionEvidenceId: 'mission-1',
     })).resolves.toBeUndefined()
     expect(cacheWrite).toHaveBeenCalledTimes(2)
@@ -4386,12 +4447,16 @@ describe('startTrackingRuntime', () => {
   })
 
   it('persists catch-up batches without serializing an intermediate tracking cache', async () => {
+    setActiveMission()
     const cacheWrite = vi.fn().mockResolvedValue('/tmp/tracking-cache.json')
     let pollerHooks:
       | {
           onSnapshot: (
             snapshot: TrackingSnapshot,
-            context?: { readonly suppressTrackingCache?: boolean },
+            context?: {
+              readonly historyResetKey?: string | null
+              readonly suppressTrackingCache?: boolean
+            },
           ) => void | Promise<void>
         }
       | undefined
@@ -4411,14 +4476,21 @@ describe('startTrackingRuntime', () => {
       applyStatus: vi.fn(),
     })
 
-    await pollerHooks?.onSnapshot(SNAPSHOT, { suppressTrackingCache: true })
+    await pollerHooks?.onSnapshot(SNAPSHOT, {
+      historyResetKey: 'mission-1',
+      suppressTrackingCache: true,
+    })
     expect(cacheWrite).not.toHaveBeenCalled()
 
-    await pollerHooks?.onSnapshot(SNAPSHOT, { suppressTrackingCache: false })
+    await pollerHooks?.onSnapshot(SNAPSHOT, {
+      historyResetKey: 'mission-1',
+      suppressTrackingCache: false,
+    })
     expect(cacheWrite).toHaveBeenCalledTimes(1)
   })
 
   it('can cap browser-only mission persistence without trimming the live map snapshot', async () => {
+    setActiveMission()
     const applySnapshot = vi.fn()
     const cacheWrite = vi.fn().mockResolvedValue('/tmp/tracking-cache.json')
     const addPosition = vi.fn().mockResolvedValue(undefined)
@@ -4433,7 +4505,7 @@ describe('startTrackingRuntime', () => {
     } satisfies TrackingSnapshot
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -4461,7 +4533,7 @@ describe('startTrackingRuntime', () => {
       now: () => new Date('2026-04-06T10:35:00.000Z'),
     })
 
-    await pollerHooks?.onSnapshot(largeSnapshot)
+    await pollerHooks?.onSnapshot(largeSnapshot, { historyResetKey: 'mission-1' })
 
     expect(applySnapshot).toHaveBeenCalledWith(largeSnapshot)
     expect(cacheWrite).not.toHaveBeenCalled()
@@ -4483,7 +4555,7 @@ describe('startTrackingRuntime', () => {
     }))
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
         }
       | undefined
 
@@ -4509,7 +4581,7 @@ describe('startTrackingRuntime', () => {
     await pollerHooks?.onSnapshot({
       ...SNAPSHOT,
       breadcrumbs,
-    })
+    }, { historyResetKey: 'mission-1' })
 
     expect(addPosition).toHaveBeenCalledTimes(SNAPSHOT.positions.length)
     expect(addPosition.mock.calls.map((call) => call[0].timestamp)).toEqual(
@@ -4537,7 +4609,7 @@ describe('startTrackingRuntime', () => {
     } satisfies TrackingSnapshot
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -4564,7 +4636,7 @@ describe('startTrackingRuntime', () => {
       now: () => new Date('2026-06-13T21:48:51.654Z'),
     })
 
-    await pollerHooks?.onSnapshot(snapshot)
+    await pollerHooks?.onSnapshot(snapshot, { historyResetKey: 'mission-1' })
 
     expect(addPosition).toHaveBeenCalledWith(expect.objectContaining({ device_id: '2' }))
     expect(addPosition).toHaveBeenCalledWith(expect.objectContaining({ device_id: '25' }))
@@ -4596,7 +4668,7 @@ describe('startTrackingRuntime', () => {
     } satisfies TrackingSnapshot
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -4623,7 +4695,7 @@ describe('startTrackingRuntime', () => {
       now: () => new Date('2026-06-13T21:48:51.654Z'),
     })
 
-    await pollerHooks?.onSnapshot(snapshot)
+    await pollerHooks?.onSnapshot(snapshot, { historyResetKey: 'mission-1' })
 
     expect(addPosition).toHaveBeenCalledTimes(rawBreadcrumbs.length + SNAPSHOT.positions.length)
     expect(
@@ -4648,7 +4720,7 @@ describe('startTrackingRuntime', () => {
     }))
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
         }
       | undefined
 
@@ -4674,7 +4746,7 @@ describe('startTrackingRuntime', () => {
       ...SNAPSHOT,
       breadcrumbs: renderedBreadcrumbs,
       rawBreadcrumbsForPersistence: [],
-    })
+    }, { historyResetKey: 'mission-1' })
 
     expect(addPositionsBulk).toHaveBeenCalledOnce()
     expect(addPositionsBulk.mock.calls[0]?.[0].positions).toHaveLength(
@@ -4705,7 +4777,7 @@ describe('startTrackingRuntime', () => {
     } satisfies TrackingSnapshot
     let pollerHooks:
       | {
-          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
           onStatusChange: (status: TrackingConnectionStatus) => void
         }
       | undefined
@@ -4733,7 +4805,7 @@ describe('startTrackingRuntime', () => {
       now: () => new Date('2026-06-13T21:48:51.654Z'),
     })
 
-    await pollerHooks?.onSnapshot(snapshot)
+    await pollerHooks?.onSnapshot(snapshot, { historyResetKey: 'mission-1' })
 
     expect(addPosition).not.toHaveBeenCalled()
     expect(addPositionsBulk).toHaveBeenCalledOnce()
@@ -4766,6 +4838,7 @@ function createMissionStoreStub(overrides: Record<string, unknown> = {}) {
   }
 }
  it.each([false, true])('isolates retired fallback and provider replacement=%s [A-R16]', async (switchProvider) => {
+  setActiveMission()
   const hooksByPoller: Parameters<NonNullable<Parameters<typeof startTrackingRuntime>[0]['createPoller']>>[1][] = []
   const drain = createDeferred<void>()
   const selectedDevice = SNAPSHOT.devices[0]!

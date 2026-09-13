@@ -1,0 +1,106 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+ ❯ tests/unit/war06-mission-boundary.test.ts (21 tests | 3 failed) 25ms
+     × preserves matching active cache positions when an empty current poll arrives during participant loading 3ms
+     × keeps omitted adapter context bound to its original mission-a identity 1ms
+     × keeps omitted adapter context bound to its original null identity 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > preserves matching active cache positions when an empty current poll arrives during participant loading
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "positions": [
+-       ObjectContaining {
+-         "data_origin": "cache",
+-         "id": "100",
+-       },
+-     ],
++     "breadcrumbs": [],
++     "devices": [],
++     "positions": [],
+    },
+  ]
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:289:27
+    287|     status = 'ready'
+    288|     notify()
+    289|     expect(applySnapshot).toHaveBeenLastCalledWith(expect.objectContai…
+       |                           ^
+    290|       positions: [expect.objectContaining({ id: BASE_CACHE_POSITION.id…
+    291|     }))
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > keeps omitted adapter context bound to its original mission-a identity
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > keeps omitted adapter context bound to its original null identity
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {
+        "breadcrumbs": Array [],
+        "devices": Array [
+          Object {
+            "category": "person",
+            "device_id": "1",
+            "group_id": null,
+            "last_seen": "2026-04-06T10:34:00.000Z",
+            "name": "Donal Phone",
+            "status": "unknown",
+            "unique_id": "872656784",
+          },
+        ],
+        "positions": Array [
+          Object {
+            "accuracy": 8,
+            "altitude": 320.5,
+            "battery": 85,
+            "cache_age_seconds": null,
+            "data_origin": "live",
+            "device_cache_stale": false,
+            "device_id": "1",
+            "fix_time_unverified": false,
+            "id": "late-contextless",
+            "lat": 51.9985,
+            "lon": -9.7426,
+            "source": "osmand",
+            "speed": 2.2224,
+            "timestamp": "2026-04-06T10:34:00.000Z",
+            "timestamp_source": "fix",
+          },
+        ],
+        "unconfirmedCurrentDeviceIds": Array [
+          "1",
+        ],
+      },
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:306:31
+    304|     runtime.cacheWrite.mockClear()
+    305|     await runtime.hooks.onSnapshot(snapshot('late-contextless'))
+    306|     expect(applySnapshot).not.toHaveBeenCalled()
+       |                               ^
+    307|     expect(runtime.cacheWrite).not.toHaveBeenCalled()
+    308|     await runtime.hooks.onSnapshot(snapshot('explicit-idle'), { histor…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 18 passed (21)
+   Start at  09:04:31
+   Duration  533ms (transform 104ms, setup 0ms, import 127ms, tests 25ms, environment 241ms)
+

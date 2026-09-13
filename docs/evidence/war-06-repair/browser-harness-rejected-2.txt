@@ -1,0 +1,78 @@
+[2m[WebServer] [22m(node:34866) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[2m[WebServer] [22m(node:34912) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 2 tests using 1 worker
+
+(node:34913) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:34913) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/e2e/war06-mission-scope.spec.ts:12:3 › rejects old mission delayed history while showing fresh selected current positions [DON-267] (6.5s)
+(node:34931) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:34931) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 [chromium] › tests/e2e/war06-mission-scope.spec.ts:12:3 › rejects old mission participant hydration while showing fresh selected current positions [DON-267] (6.4s)
+
+
+  1) [chromium] › tests/e2e/war06-mission-scope.spec.ts:12:3 › rejects old mission delayed history while showing fresh selected current positions [DON-267] 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveValue[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByTestId('mission-name-input')
+    Expected: [32m"WAR06 Mission B"[39m
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toHaveValue" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('mission-name-input')[22m
+
+
+      86 |     await page.getByTestId('mission-start-btn').click()
+      87 |     await expect(page.getByTestId('mission-control')).toContainText('active')
+    > 88 |     await expect(page.getByTestId('mission-name-input')).toHaveValue('WAR06 Mission B')
+         |                                                          ^
+      89 |     await page.evaluate(async (route) => {
+      90 |       const control = (window as unknown as { war06: BrowserRepairControl }).war06
+      91 |       if (route === 'delayed history') await control.deliverOld()
+        at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/e2e/war06-mission-scope.spec.ts:88:58
+
+    Error Context: test-results/war06-mission-scope-reject-43e24--current-positions-DON-267--chromium/error-context.md
+
+  2) [chromium] › tests/e2e/war06-mission-scope.spec.ts:12:3 › rejects old mission participant hydration while showing fresh selected current positions [DON-267] 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveValue[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByTestId('mission-name-input')
+    Expected: [32m"WAR06 Mission B"[39m
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toHaveValue" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('mission-name-input')[22m
+
+
+      86 |     await page.getByTestId('mission-start-btn').click()
+      87 |     await expect(page.getByTestId('mission-control')).toContainText('active')
+    > 88 |     await expect(page.getByTestId('mission-name-input')).toHaveValue('WAR06 Mission B')
+         |                                                          ^
+      89 |     await page.evaluate(async (route) => {
+      90 |       const control = (window as unknown as { war06: BrowserRepairControl }).war06
+      91 |       if (route === 'delayed history') await control.deliverOld()
+        at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/e2e/war06-mission-scope.spec.ts:88:58
+
+    Error Context: test-results/war06-mission-scope-reject-06646--current-positions-DON-267--chromium/error-context.md
+
+  2 failed
+    [chromium] › tests/e2e/war06-mission-scope.spec.ts:12:3 › rejects old mission delayed history while showing fresh selected current positions [DON-267] 
+    [chromium] › tests/e2e/war06-mission-scope.spec.ts:12:3 › rejects old mission participant hydration while showing fresh selected current positions [DON-267] 

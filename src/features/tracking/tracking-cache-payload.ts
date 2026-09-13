@@ -9,6 +9,8 @@ import type {
 import { normalizeTrackingIsoTimestamp } from './tracking-timestamp'
 
 export type TrackingCachePayload = {
+  /** Missing means legacy/unknown identity; null explicitly identifies idle. */
+  readonly mission_id?: string | null
   readonly cached_at: string
   readonly devices: readonly NormalizedTrackingDevice[]
   readonly positions: readonly NormalizedTrackingPosition[]
@@ -156,12 +158,19 @@ export function parseTrackingCachePayload(
   }
 
   const record = parsed as Record<string, unknown>
+  const missionId = record.mission_id
+  if (missionId !== undefined && missionId !== null && (
+    typeof missionId !== 'string' || missionId.trim().length === 0 || missionId.trim() !== missionId
+  )) {
+    throw new Error('Tracking cache mission_id is invalid.')
+  }
   const cachedAt = readIsoTimestamp(
     record.cached_at,
     'Tracking cache cached_at timestamp',
   )
 
   return {
+    ...(missionId === undefined ? {} : { mission_id: missionId }),
     cached_at: cachedAt,
     devices: normalizeEntries(
       record.devices,

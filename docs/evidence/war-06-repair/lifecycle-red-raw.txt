@@ -1,0 +1,72 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+stderr | tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts > WAR-06 reachable lifecycle repair oracles > rejects deferred stale current-fix publication through finish-idle-start while a poll is in flight [WAR-06-AUD-02-REPAIR]
+Mission evidence could not be retained. Error: Accepted tracking evidence could not be participation-scoped before release.
+    at Object.markEvidenceLoss (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:473:9)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:158:65
+    at settleLossMarker (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:287:44)
+    at flushMission (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:309:5)
+    at async Promise.allSettled (index 0)
+    at Object.settleForStop (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:377:25)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1127:7
+    at attempt (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/runtime/runtime-cleanup.ts:22:35)
+    at stop (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:429:5)
+    at stopRuntimeWithRetry (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:43:5)
+
+ ❯ tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts (3 tests | 3 failed) 33ms
+     × rejects stale history publication at the real delayed poller flush [WAR-06-AUD-01-REPAIR] 18ms
+     × rejects deferred stale current-fix publication through finish-idle-start while a poll is in flight [WAR-06-AUD-02-REPAIR] 12ms
+     × rejects the unkeyed cached snapshot on Mission B cold start [WAR-06-CACHE-SIBLING-REPAIR] 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts > WAR-06 reachable lifecycle repair oracles > rejects stale history publication at the real delayed poller flush [WAR-06-AUD-01-REPAIR]
+AssertionError: WAR-06 AUD-01 repair safety oracle: stale Mission A current position mission-a-current remains visible under Mission B: expected [ 'mission-a-current' ] to not include 'mission-a-current'
+ ❯ assertNoMissionAUnderMissionB tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:225:12
+    223|   for (const staleId of input.stalePositionIds) {
+    224|     expect(positionIds, `${input.oracle}: stale Mission A current posi…
+    225|       .not.toContain(staleId)
+       |            ^
+    226|   }
+    227|   for (const staleId of input.staleHistoryIds) {
+ ❯ tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:577:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts > WAR-06 reachable lifecycle repair oracles > rejects deferred stale current-fix publication through finish-idle-start while a poll is in flight [WAR-06-AUD-02-REPAIR]
+AssertionError: WAR-06 AUD-02 repair safety oracle: stale Mission A current position mission-a-deferred-history-start was published under Mission B: expected [ …(3) ] to not include 'mission-a-deferred-history-start'
+ ❯ assertNoMissionAUnderMissionB tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:244:14
+    242|       expect(publishedPositionIds,
+    243|         `${input.oracle}: stale Mission A current position ${staleId} …
+    244|         .not.toContain(staleId)
+       |              ^
+    245|     }
+    246|     for (const staleId of input.staleHistoryIds) {
+ ❯ tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:743:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts > WAR-06 reachable lifecycle repair oracles > rejects the unkeyed cached snapshot on Mission B cold start [WAR-06-CACHE-SIBLING-REPAIR]
+AssertionError: WAR-06 CACHE-SIBLING repair safety oracle: stale Mission A current position mission-a-cached-fix was published under Mission B: expected [ 'mission-a-cached-fix' ] to not include 'mission-a-cached-fix'
+ ❯ assertNoMissionAUnderMissionB tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:244:14
+    242|       expect(publishedPositionIds,
+    243|         `${input.oracle}: stale Mission A current position ${staleId} …
+    244|         .not.toContain(staleId)
+       |              ^
+    245|     }
+    246|     for (const staleId of input.staleHistoryIds) {
+ ❯ tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts:879:3
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  08:21:55
+   Duration  547ms (transform 120ms, setup 0ms, import 205ms, tests 33ms, environment 245ms)
+

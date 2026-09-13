@@ -1,0 +1,289 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/start-tracking-runtime.test.ts tests/unit/polling-manager.test.ts tests/unit/tracking-reload-custody.test.ts tests/unit/operational-position-retention.test.ts tests/unit/current-transport-freshness.test.ts tests/unit/mission-tracking-status-bridge.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > preserves raw tracking cache data and warns when participant scope hydration fails
+Mission persistence failed. Error: Participant selection is unavailable.
+    at Object.onSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:944:23)
+    at Object.onSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1019:48)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:688:24
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not clear a persistence failure while participant scope blocks a later write
+Mission persistence failed. Error: disk unavailable
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:1164:53
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64
+
+stderr | tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not clear a persistence failure while participant scope blocks a later write
+Mission persistence failed. Error: Participant selection is unavailable.
+    at Object.onSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:944:23)
+    at Object.onSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1019:48)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/start-tracking-runtime.test.ts:1186:24
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+ ❯ tests/unit/start-tracking-runtime.test.ts (94 tests | 12 failed) 1885ms
+     × uses an empty incomplete roster observation to retry failed participant hydration 1ms
+     × hydrates the UI from cache before polling starts 1ms
+     × publishes an offline warning when cold-starting from cache before the first live poll succeeds 3ms
+     × defers cached map publication until participant scope hydration then re-filters immediately 2ms
+     × preserves raw tracking cache data and warns when participant scope hydration fails 3ms
+     × does not clear a persistence failure while participant scope blocks a later write 1ms
+     × marks a partially normalized participant roster as non-authoritative 0ms
+     × keeps a post-cutoff current fix live without admitting it to mission evidence 0ms
+     × keeps the live snapshot applied and durably marks failed accepted mission evidence 0ms
+     × persists catch-up batches without serializing an intermediate tracking cache 1ms
+   × isolates retired fallback and provider replacement=false [A-R16] 1ms
+   × isolates retired fallback and provider replacement=true [A-R16] 0ms
+ ❯ tests/unit/polling-manager.test.ts (91 tests | 1 failed) 786ms
+     × republishes retained current positions when a history reset is followed by a failed poll [DON-267] 8ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/polling-manager.test.ts > polling manager > republishes retained current positions when a history reset is followed by a failed poll [DON-267]
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/unit/polling-manager.test.ts:1090:28
+    1088|
+    1089|     const resetSnapshots = onSnapshot.mock.calls.slice(callsBeforeRese…
+    1090|     expect(resetSnapshots).toHaveLength(1)
+       |                            ^
+    1091|     expect(resetSnapshots[0]?.[1]).toEqual({
+    1092|       historyResetKey: 'mission-b',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > uses an empty incomplete roster observation to retry failed participant hydration
+AssertionError: expected "vi.fn()" to be called with arguments: [ [], { complete: false } ]
+
+Number of calls: 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:362:36
+    360|     )
+    361|
+    362|     expect(applyParticipantRoster).toHaveBeenCalledWith([], { complete…
+       |                                    ^
+    363|     stop()
+    364|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > hydrates the UI from cache before polling starts
+AssertionError: expected "vi.fn()" to be called with arguments: [ ObjectContaining{…} ]
+
+Number of calls: 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:542:27
+    540|     })
+    541|
+    542|     expect(applySnapshot).toHaveBeenCalledWith(
+       |                           ^
+    543|       expect.objectContaining({
+    544|         devices: CACHED_SNAPSHOT.devices,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > publishes an offline warning when cold-starting from cache before the first live poll succeeds
+AssertionError: expected "vi.fn()" to be called with arguments: [ ObjectContaining{…} ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+-   ObjectContaining {
+-     "lastSuccessAt": "2026-04-06T10:33:00.000Z",
++   {
++     "consecutiveFailures": 0,
++     "lastSuccessAt": null,
+      "mode": "offline",
+-     "warning": StringMatching /cache|cached|last known|offline/i,
++     "recovered": false,
++     "warning": "Tracking cache could not be matched to this mission; waiting for fresh current positions.",
+    },
+  ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:584:25
+    582|     })
+    583|
+    584|     expect(applyStatus).toHaveBeenCalledWith(
+       |                         ^
+    585|       expect.objectContaining({
+    586|         mode: 'offline',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > defers cached map publication until participant scope hydration then re-filters immediately
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected:
+[
+  ObjectContaining {
+    "devices": [
+      ObjectContaining {
+        "device_id": "1",
+      },
+    ],
+    "positions": [
+      ObjectContaining {
+        "device_id": "1",
+      },
+    ],
+  },
+]
+
++ Received:
+undefined
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:647:27
+    645|     notifyScopeChanged()
+    646|
+    647|     expect(applySnapshot).toHaveBeenLastCalledWith(expect.objectContai…
+       |                           ^
+    648|       devices: [expect.objectContaining({ device_id: SNAPSHOT.devices[…
+    649|       positions: [expect.objectContaining({ device_id: SNAPSHOT.device…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > preserves raw tracking cache data and warns when participant scope hydration fails
+SyntaxError: "undefined" is not valid JSON
+ ❯ tests/unit/start-tracking-runtime.test.ts:694:32
+    692|       warning: expect.stringMatching(/participant selection.*unavailab…
+    693|     }))
+    694|     const cachedPayload = JSON.parse(String(cacheWrite.mock.calls.at(-…
+       |                                ^
+    695|       readonly devices: readonly unknown[]
+    696|       readonly positions: readonly unknown[]
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > does not clear a persistence failure while participant scope blocks a later write
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "warning": StringMatching /mission breadcrumb storage failed.*participant selection unavailable/i,
++     "consecutiveFailures": 0,
++     "lastSuccessAt": "2026-04-06T10:35:00.000Z",
++     "mode": "online",
++     "recovered": false,
++     "warning": "MISSION BREADCRUMB STORAGE FAILED — current fixes remain visible, but new trail history may not survive restart.",
+    },
+  ]
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:1187:25
+    1185|     scopeStatus = 'error'
+    1186|     await pollerHooks?.onSnapshot(SNAPSHOT, { missionEvidenceId: 'miss…
+    1187|     expect(applyStatus).toHaveBeenLastCalledWith(expect.objectContaini…
+       |                         ^
+    1188|       warning: expect.stringMatching(/mission breadcrumb storage faile…
+    1189|     }))
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > marks a partially normalized participant roster as non-authoritative
+AssertionError: expected "vi.fn()" to be called with arguments: [ …(2) ]
+
+Number of calls: 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:2015:36
+    2013|     await pollerHooks?.onSnapshot(SNAPSHOT, { participantRosterAuthori…
+    2014|
+    2015|     expect(applyParticipantRoster).toHaveBeenCalledWith(
+       |                                    ^
+    2016|       SNAPSHOT.devices,
+    2017|       { complete: false },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > keeps a post-cutoff current fix live without admitting it to mission evidence
+AssertionError: expected "vi.fn()" to be called at least once
+ ❯ tests/unit/start-tracking-runtime.test.ts:2463:27
+    2461|     })
+    2462|
+    2463|     expect(applySnapshot).toHaveBeenCalled()
+       |                           ^
+    2464|     expect(addPositionsBulk).not.toHaveBeenCalled()
+    2465|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > keeps the live snapshot applied and durably marks failed accepted mission evidence
+AssertionError: expected "vi.fn()" to be called with arguments: [ { …(3) } ]
+
+Number of calls: 0
+
+ ❯ tests/unit/start-tracking-runtime.test.ts:4263:27
+    4261|     })).resolves.toBeUndefined()
+    4262|
+    4263|     expect(applySnapshot).toHaveBeenCalledWith(SNAPSHOT)
+       |                           ^
+    4264|     expect(logger.warn).toHaveBeenCalledWith(
+    4265|       'Tracking cache update failed.',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > startTrackingRuntime > persists catch-up batches without serializing an intermediate tracking cache
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ tests/unit/start-tracking-runtime.test.ts:4418:24
+    4416|
+    4417|     await pollerHooks?.onSnapshot(SNAPSHOT, { suppressTrackingCache: f…
+    4418|     expect(cacheWrite).toHaveBeenCalledTimes(1)
+       |                        ^
+    4419|   })
+    4420|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > isolates retired fallback and provider replacement=false [A-R16]
+TypeError: Cannot read properties of undefined (reading '0')
+ ❯ tests/unit/start-tracking-runtime.test.ts:4805:66
+    4803|   await hooksByPoller[1]!.onSnapshot(snapshot([]), context)
+    4804|   if (!switchProvider) {
+    4805|     const retained = dependencies.applySnapshot.mock.calls.at(-1)![0]
+       |                                                                  ^
+    4806|     expect(buildDeviceWorkspaceRows(retained, [])[0]).toMatchObject({
+    4807|       sourceDisplay: 'Last known', status: 'unknown', latitude: oldFix…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/13]⎯
+
+ FAIL  tests/unit/start-tracking-runtime.test.ts > isolates retired fallback and provider replacement=true [A-R16]
+TypeError: Cannot read properties of undefined (reading '0')
+ ❯ tests/unit/start-tracking-runtime.test.ts:4820:56
+    4818|   await hooksByPoller[1]!.onSnapshot(snapshot([]), context)
+    4819|   try {
+    4820|     expect(dependencies.applySnapshot.mock.calls.at(-1)![0].positions.…
+       |                                                        ^
+    4821|       .toEqual(switchProvider ? [] : ['fresh'])
+    4822|   } finally { drain.resolve(); await stop() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/13]⎯
+
+
+ Test Files  2 failed | 4 passed (6)
+      Tests  13 failed | 183 passed (196)
+   Start at  08:23:47
+   Duration  7.01s (transform 1.02s, setup 0ms, import 1.21s, tests 2.70s, environment 2.40s)
+

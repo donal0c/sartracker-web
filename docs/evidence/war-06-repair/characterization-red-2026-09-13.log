@@ -1,0 +1,40 @@
+WAR-06 repair-oracle RED receipt
+Date: 2026-09-13
+Source: deedab27483ad4fe1ca998a4d68afd555f4e2337
+Production changes: none
+Command:
+npm test -- tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts --no-file-parallelism
+
+Result: exit code 1; 3 tests failed at named repair safety oracles.
+
+Raw failure excerpts:
+
+FAIL tests/unit/assurance/war-06/tracking-lifecycle-characterization.test.ts
+  Tests 3 failed (3)
+
+AssertionError: WAR-06 AUD-01 repair safety oracle: stale Mission A current position mission-a-current remains visible under Mission B: expected [ 'mission-a-current' ] to not include 'mission-a-current'
+
+AssertionError: WAR-06 AUD-02 repair safety oracle: stale Mission A current position mission-a-deferred-history-start was published under Mission B: expected [ ... ] to not include 'mission-a-deferred-history-start'
+
+AssertionError: WAR-06 CACHE-SIBLING repair safety oracle: stale Mission A current position mission-a-cached-fix was published under Mission B: expected [ 'mission-a-cached-fix' ] to not include 'mission-a-cached-fix'
+
+1. WAR-06-AUD-01-REPAIR
+   rejects stale history publication at the real delayed poller flush
+   RED: stale Mission A current position mission-a-current remains visible under Mission B.
+   Reachable route retained: real polling-manager delayed history timer, pending
+   second current poll, finish -> idle -> start mission wakes, then a distinct
+   fresh Mission B provider response after the captured Mission A response settles.
+
+2. WAR-06-AUD-02-REPAIR
+   rejects deferred stale current-fix publication through finish-idle-start while a poll is in flight
+   RED: deferred Mission A current/history evidence remains visible under Mission B.
+   Reachable route retained: real polling-manager current-fix callback, runtime
+   participant hydration deferral, finish -> idle -> start mission wakes, then a
+   distinct fresh Mission B current and history response.
+
+3. WAR-06-CACHE-SIBLING-REPAIR
+   rejects the unkeyed cached snapshot on Mission B cold start
+   RED: legacy unkeyed Mission A cache publication remains visible under Mission B.
+   Reachable route retained: runtime cold-start cache read followed by a real
+   polling-manager Mission B current/history response. No cache serialization
+   mission field was introduced in this lane.

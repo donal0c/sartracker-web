@@ -1064,7 +1064,7 @@ describe('polling manager', () => {
     poller.stop()
   })
 
-  it('republishes retained current positions when a history reset is followed by a failed poll [DON-267]', async () => {
+  it('does not republish retained current positions after a history reset and failed poll [DON-267]', async () => {
     const client = createClient()
     const onSnapshot = vi.fn()
     let historyResetKey = 'mission-a'
@@ -1087,15 +1087,10 @@ describe('polling manager', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     const resetSnapshots = onSnapshot.mock.calls.slice(callsBeforeReset)
-    expect(resetSnapshots).toHaveLength(1)
-    expect(resetSnapshots[0]?.[1]).toEqual({
-      historyResetKey: 'mission-b',
-      missionEvidenceId: null,
-    })
-    expect(resetSnapshots[0]?.[0].positions.map(
+    expect(resetSnapshots).toHaveLength(0)
+    expect(resetSnapshots.flatMap(([snapshot]) => snapshot.positions.map(
       (position: NormalizedTrackingPosition) => position.id,
-    )).toEqual(NORMALIZED_POSITIONS.map((position) => position.id))
-    expect(resetSnapshots[0]?.[0].breadcrumbs).toEqual([])
+    ))).not.toContain(NORMALIZED_POSITIONS[0]?.id)
     poller.stop()
   })
 
@@ -3989,6 +3984,60 @@ describe('polling manager', () => {
     ).not.toContain(oldMissionBreadcrumb.id)
 
     poller.stop()
+  })
+
+  it('does not flush a delayed Mission A history batch after Mission B starts a slow current poll [DON-267]', async () => {
+    const oldMissionBreadcrumb = {
+      ...NORMALIZED_BREADCRUMBS[0]!,
+      id: 'mission-a-delayed-history',
+      timestamp: '2026-04-06T07:00:00.000Z',
+    }
+    const slowCurrentPoll = createDeferred<readonly NormalizedTrackingPosition[]>()
+    const currentPositions = vi.fn()
+      .mockResolvedValueOnce(NORMALIZED_POSITIONS)
+      .mockReturnValueOnce(slowCurrentPoll.promise)
+    const onSnapshot = vi.fn()
+    const persistHistoryChunk = vi.fn().mockResolvedValue({ changed: false })
+    let historyResetKey: string | null = 'mission-a'
+    const poller = createPollingManager(createClient({
+      getCurrentPositions: currentPositions,
+      getBreadcrumbs: vi.fn().mockImplementation(
+        (_deviceId: string, from: Date, to: Date) =>
+          from.toISOString() === '2026-04-06T06:00:00.000Z' &&
+          to.toISOString() === '2026-04-06T08:00:00.000Z'
+            ? Promise.resolve([oldMissionBreadcrumb])
+            : Promise.resolve([]),
+      ),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      getHistoryResetKey: () => historyResetKey,
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T06:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      persistHistoryChunk,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.waitFor(() => expect(persistHistoryChunk).toHaveBeenCalled())
+    const callsBeforeSlowPoll = onSnapshot.mock.calls.length
+
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(currentPositions).toHaveBeenCalledTimes(2)
+    historyResetKey = 'mission-b'
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(onSnapshot.mock.calls.slice(callsBeforeSlowPoll).flatMap(([next]) =>
+      next.breadcrumbs.map((position: NormalizedTrackingPosition) => position.id),
+    )).not.toContain(oldMissionBreadcrumb.id)
+
+    slowCurrentPoll.resolve([])
+    await vi.advanceTimersByTimeAsync(0)
+    await poller.stop()
   })
 
   it('keeps fallback breadcrumb publication inside the mission evidence fence [DON-276]', async () => {
