@@ -6,6 +6,13 @@ Branch: `codex/don-254-legacy-recovery-responsiveness`.
 
 ## Finding and scope
 
+**Current review remediation:** [Claude finding dispositions](legacy-recovery-claude-remediation.md)
+supersede the worker-inspector implementation described below. Both large recovery
+tests now await real production completion/physical exit and inspect persisted
+data independently after timing; final partial intervals are gated. The former
+inspector protocol and CPU/GC diagnostics are removed. Historical comparisons
+below retain their original source identity and causal limits.
+
 The current-head reproduction identifies a blocking **test inspection**, not
 a demonstrated production reconstruction defect. The repair moves that
 read-only SQLite observer into a separate test worker. Application, archive,

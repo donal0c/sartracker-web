@@ -1,0 +1,37 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/legacy-recovery-completion.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+ ❯ tests/unit/legacy-recovery-completion.test.ts (8 tests | 1 failed) 7ms
+     × includes a blocked final partial interval even before the first timer callback 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/legacy-recovery-completion.test.ts > legacy recovery completion observation [DON-254] > includes a blocked final partial interval even before the first timer callback
+AssertionError: expected +0 to be 250 // Object.is equality
+
+- Expected
++ Received
+
+- 250
++ 0
+
+ ❯ tests/unit/legacy-recovery-completion.test.ts:27:42
+     25|     now = 250
+     26|     const report = await result
+     27|     expect(report.maximumHeartbeatGapMs).toBe(250)
+       |                                          ^
+     28|     expect(() => expect(report.maximumHeartbeatGapMs).toBeLessThan(200…
+     29|     expect(vi.getTimerCount()).toBe(0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 passed (8)
+   Start at  14:22:07
+   Duration  339ms (transform 17ms, setup 0ms, import 24ms, tests 7ms, environment 248ms)
+

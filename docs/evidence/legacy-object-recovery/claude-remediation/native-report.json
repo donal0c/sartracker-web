@@ -1,0 +1,164 @@
+{
+  "proofTier": "diagnostic-only packaged Electron native mission-store recovery; no operator UI qualification",
+  "issue": "DON-254",
+  "expectedBaselineRows": 50000,
+  "passed": true,
+  "sourceHead": "c122e51c872da655b607372a1f9b1e2a7d149223",
+  "sourceTree": "f60d458f3ba5873e16a9b69d2395cc2b50e69045",
+  "sourceDirty": true,
+  "probeSource": {
+    "scriptSha256": "75065399be1b2cab1da28675ac74b0d8f97c4afdbb33114e4400c45cd7e668fd",
+    "mainTimerSha256": "8d451fc00022e3e6fc4dce18709c20983db655f0b3bccddbbc75c3d6034b9ea1",
+    "custodyOracleSha256": "2f73d06d660385601e795fbae627d5d5c3502e9dca36f7b69164d6d4bd162346"
+  },
+  "packaged": {
+    "bindingScope": "ASAR identity and six implicated production source files; local dirty probe sources are hashed separately",
+    "executableSha256": "f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf",
+    "asarSha256": "ee7960391b023ac49a9dc8c1fefe3e98e77ff97973eadb4fc8dd33814bc2262c",
+    "files": {
+      "electron/legacy-evidence-backfill-runner.cjs": {
+        "checkoutSha256": "487a355f9c7feccff297f91da81518236d6fb55f5c701f22e9758505dfc8e61f",
+        "packagedSha256": "487a355f9c7feccff297f91da81518236d6fb55f5c701f22e9758505dfc8e61f"
+      },
+      "electron/legacy-evidence-backfill-worker.cjs": {
+        "checkoutSha256": "899e1a682180184e8272ad649232014fcee3ade5e8a7656c64d3b79124323880",
+        "packagedSha256": "899e1a682180184e8272ad649232014fcee3ade5e8a7656c64d3b79124323880"
+      },
+      "electron/mission-evidence-version-store.cjs": {
+        "checkoutSha256": "3569c9d02c57bb951f9808d3ee40297c3453112a01b66962f27b0c1e823d1e3f",
+        "packagedSha256": "3569c9d02c57bb951f9808d3ee40297c3453112a01b66962f27b0c1e823d1e3f"
+      },
+      "electron/mission-store.cjs": {
+        "checkoutSha256": "873cc4267c88f704cd6108b2ef94cf6aecbd1c4ee0f89be49b9372374245381b",
+        "packagedSha256": "873cc4267c88f704cd6108b2ef94cf6aecbd1c4ee0f89be49b9372374245381b"
+      },
+      "electron/mission-worker.cjs": {
+        "checkoutSha256": "41ab66586a783b6984ed9daefde1be8bec12549fcc59e7e6863645184f9222f1",
+        "packagedSha256": "41ab66586a783b6984ed9daefde1be8bec12549fcc59e7e6863645184f9222f1"
+      },
+      "electron/responsive-mission-writer.cjs": {
+        "checkoutSha256": "49bf317df56a0866699105b094ded240ee79e594f423949bfc84c3da81b65a17",
+        "packagedSha256": "49bf317df56a0866699105b094ded240ee79e594f423949bfc84c3da81b65a17"
+      }
+    }
+  },
+  "seededMarkerDigest": "e0ba27c1b637e700f6aa45abc5491a8b4329051607b0e0cd3a2a733c989e163a",
+  "fixture": {
+    "directoryKind": "disposable-second-direct-store-directory",
+    "missionId": "3d57f5be-d8f4-4920-bc08-4a4bccee9832",
+    "baselineMarkerRows": 50000,
+    "sqliteSha256": "f65cf9518d2213028a84bd013e67c472c8ce9077c2befc2b644d31672b958338"
+  },
+  "firstLaunch": {
+    "openMs": 12.775750000000016,
+    "workerCount": 1,
+    "currentWriteMs": 1.2451670000000377,
+    "observer": {
+      "count": 50000,
+      "samples": 1353,
+      "maximumQueryMs": 2.7875830000011774,
+      "observerRealm": "controller-process"
+    },
+    "workerCompletion": [
+      {
+        "workerThreadId": 1
+      }
+    ],
+    "mainTimer": {
+      "clock": "main-performance-now",
+      "timeOriginMs": 1789306104531.505,
+      "intervalMs": 50,
+      "startedAtMs": 1314.821708,
+      "stoppedAtMs": 16605.995875,
+      "samples": 295,
+      "maximumGapMs": 55.3558750000002
+    },
+    "rows": {
+      "markerCount": 50000,
+      "totalMarkerCount": 50000,
+      "versionCount": 50000,
+      "distinctVersionCount": 50000,
+      "baselineCount": 50000,
+      "missingCustody": 0,
+      "duplicateObjects": 0,
+      "markerDigest": "e0ba27c1b637e700f6aa45abc5491a8b4329051607b0e0cd3a2a733c989e163a",
+      "baselineDigest": "d148b9314053c9ff02b6c322abdcfcd99a53ad97d6d9a3e02fcb6640aeac75b4"
+    },
+    "close": {
+      "prepareCloseMs": 0.06841599999825121,
+      "closeMs": 8.456374999997934,
+      "timer": {
+        "clock": "main-performance-now",
+        "timeOriginMs": 1789306104531.505,
+        "intervalMs": 50,
+        "startedAtMs": 17356.670833,
+        "stoppedAtMs": 17470.003083,
+        "samples": 1,
+        "maximumGapMs": 60.1805409999979
+      }
+    },
+    "appClose": {
+      "code": 0,
+      "signal": null
+    }
+  },
+  "failClosedBeforeSettlement": {
+    "listVersions": "Legacy mutable evidence baselines are still being reconstructed in bounded background slices. Current positions remain available; retry evidence changes or Replay after preparation completes.",
+    "upsertMarker": "Legacy mutable evidence baselines are still being reconstructed in bounded background slices. Current positions remain available; retry evidence changes or Replay after preparation completes."
+  },
+  "settledBaselineDigest": "d148b9314053c9ff02b6c322abdcfcd99a53ad97d6d9a3e02fcb6640aeac75b4",
+  "restart": {
+    "openMs": 10.514291999999955,
+    "workerCount": 0,
+    "rowsBeforeMutation": {
+      "markerCount": 50000,
+      "totalMarkerCount": 50000,
+      "versionCount": 50000,
+      "distinctVersionCount": 50000,
+      "baselineCount": 50000,
+      "missingCustody": 0,
+      "duplicateObjects": 0,
+      "markerDigest": "e0ba27c1b637e700f6aa45abc5491a8b4329051607b0e0cd3a2a733c989e163a",
+      "baselineDigest": "d148b9314053c9ff02b6c322abdcfcd99a53ad97d6d9a3e02fcb6640aeac75b4"
+    },
+    "postSettlementMutation": {
+      "markerId": "a05e6d37-d133-4f10-91ca-9a43ceb6db85",
+      "timer": {
+        "clock": "main-performance-now",
+        "timeOriginMs": 1789306122112.768,
+        "intervalMs": 50,
+        "startedAtMs": 532.8525,
+        "stoppedAtMs": 1354.947916,
+        "samples": 15,
+        "maximumGapMs": 55.65312499999993
+      }
+    },
+    "rowsAfterMutation": {
+      "markerCount": 50000,
+      "totalMarkerCount": 50001,
+      "versionCount": 50000,
+      "distinctVersionCount": 50000,
+      "baselineCount": 50000,
+      "missingCustody": 0,
+      "duplicateObjects": 0,
+      "markerDigest": "e0ba27c1b637e700f6aa45abc5491a8b4329051607b0e0cd3a2a733c989e163a",
+      "baselineDigest": "d148b9314053c9ff02b6c322abdcfcd99a53ad97d6d9a3e02fcb6640aeac75b4"
+    },
+    "postSettlementCustody": {
+      "markerId": "a05e6d37-d133-4f10-91ca-9a43ceb6db85",
+      "versionId": "c71ba480-37ec-4d7e-83eb-83ed791bde4a",
+      "versionSequence": 1,
+      "operation": "created",
+      "completeness": "complete",
+      "auditEventId": "c147a1b3-532c-43cb-9946-c9ecc3721787",
+      "auditEventType": "marker_created",
+      "stateMatchesProjection": true,
+      "auditMatchesProjection": true
+    },
+    "appClose": {
+      "code": 0,
+      "signal": null
+    }
+  },
+  "cleanupFailures": []
+}

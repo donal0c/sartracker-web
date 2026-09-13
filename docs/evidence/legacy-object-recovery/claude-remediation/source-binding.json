@@ -1,0 +1,17 @@
+{
+  "baseHead": "c122e51c872da655b607372a1f9b1e2a7d149223",
+  "boundAt": "2026-09-13T13:42:19.400Z",
+  "productionChanged": false,
+  "fullSourcePrecedesFinalThreadIdentityAssertions": true,
+  "files": {
+    "tests/support/legacy-recovery-completion.ts": "86633308ce0e9af7e5c688210233d1bcbd8a0b58b4f6ea96d9d1ac6841f80e0f",
+    "tests/unit/legacy-recovery-completion.test.ts": "ec6c9fc37449cc851758b4442eb783d4499ea3787ee547185204827d4d725768",
+    "tests/support/tsconfig.legacy-recovery.json": "ab7b4f3b85b46e8c3a1512ca234164dd113bc577414089d94f6ac98e251603c6",
+    "tsconfig.json": "07bab0a4de6563a782762a4a65ed72f64c22752dca84ec7724e0a3b6906081cb",
+    "tests/unit/electron-mission-evidence-versioning.test.ts": "513358b04ab8c7bf31ecb0c856936d651ceacbce294d806756a2d2a77fd71fc5",
+    "build/electron-legacy-object-recovery-custody.js": "2f73d06d660385601e795fbae627d5d5c3502e9dca36f7b69164d6d4bd162346",
+    "tests/unit/electron-legacy-object-recovery-custody.test.ts": "7a4a3cc6364c92b912a4d7bd8e8e3dde8a2526b5a0b500a2f2237de43a15444c",
+    "scripts/electron-legacy-object-recovery-smoke.mjs": "7a68133c322f2e6f5bb1339dd7df72b53f9725ed637d4d37d40457109eb53661",
+    "docs/evidence/legacy-object-recovery/claude-remediation/real-main-stall-control.mjs": "9e2838a1e1879d13b1a7e2874b5d6b80e57faffd415660f3a5c74dcbf1397417"
+  }
+}

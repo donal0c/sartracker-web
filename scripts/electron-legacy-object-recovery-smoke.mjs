@@ -23,6 +23,9 @@ import {
   installMainEventLoopProbe,
   validateMainEventLoopEvidence,
 } from '../build/main-event-loop-probe.js'
+import {
+  assertPostSettlementMarkerCustody,
+} from '../build/electron-legacy-object-recovery-custody.js'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -83,6 +86,7 @@ async function main() {
   report.probeSource = {
     scriptSha256: await sha256File(fileURLToPath(import.meta.url)),
     mainTimerSha256: await sha256File(path.join(projectRoot, 'build/main-event-loop-probe.js')),
+    custodyOracleSha256: await sha256File(path.join(projectRoot, 'build/electron-legacy-object-recovery-custody.js')),
   }
   app = await launchPackagedApp()
   const page = await app.firstWindow()
@@ -150,6 +154,8 @@ async function main() {
   assert.equal(completion[0]?.stopped, undefined)
   assert.ok(Number.isSafeInteger(completion[0]?.workerThreadId) && completion[0].workerThreadId > 0,
     'Recovery must complete through a real production worker.')
+  assert.notEqual(completion[0].workerThreadId, report.firstLaunch.parentThreadId,
+    'Recovery completion must identify a different thread from Electron main.')
   report.firstLaunch.mainTimer = await stopPackagedMainProbe()
   assertTimer(report.firstLaunch.mainTimer, 'first launch recovery')
   await observer.close()
@@ -208,9 +214,17 @@ async function main() {
   assertTimer(mutation.timer, 'restart')
   assert.ok(mutation.timer.maximumGapMs < 200, `Restart main timer reached ${mutation.timer.maximumGapMs}ms.`)
   report.restart.rowsAfterMutation = inspectRows(path.join(fixtureDir, 'mission-store.sqlite'), mission.id)
+  assertRows(report.restart.rowsAfterMutation)
   assert.equal(report.restart.rowsAfterMutation.markerDigest, report.seededMarkerDigest)
   assert.equal(report.restart.rowsAfterMutation.baselineDigest, report.settledBaselineDigest)
   assert.equal(report.restart.rowsAfterMutation.totalMarkerCount, EXPECTED_BASELINE_ROWS + 1)
+  report.restart.postSettlementCustody = assertPostSettlementMarkerCustody(
+    inspectPostSettlementMarkerCustody(
+      path.join(fixtureDir, 'mission-store.sqlite'),
+      mission.id,
+      mutation.markerId,
+    ),
+  )
   report.restart.appClose = await closePackagedApp('restart')
   const cleanupFailures = await cleanup()
   report.cleanupFailures = cleanupFailures
@@ -265,7 +279,8 @@ async function openDirectPackagedStore(missionId) {
       },
     })
     globalThis.__DON254_LEGACY_RECOVERY__ = { store, workerCompletions, missionId: input.missionId }
-    return { openMs: performance.now() - started, workerCount: workerCompletions.length }
+    return { openMs: performance.now() - started, workerCount: workerCompletions.length,
+      parentThreadId: packagedRequire('node:worker_threads').threadId }
   }, { directory: fixtureDir, missionId })
 }
 
@@ -353,6 +368,23 @@ function inspectRows(databasePath, missionId) {
       (SELECT COUNT(*) FROM markers m LEFT JOIN mission_object_versions v ON v.mission_id = m.mission_id AND v.object_type = 'marker' AND v.object_id = m.id WHERE m.mission_id = ? AND m.id LIKE 'legacy-marker-%' AND v.object_id IS NULL) AS missingCustody,
       (SELECT COUNT(*) FROM (SELECT object_id FROM mission_object_versions WHERE mission_id = ? AND object_type = 'marker' AND object_id LIKE 'legacy-marker-%' GROUP BY object_id HAVING COUNT(*) != 1)) AS duplicateObjects`).get(missionId, missionId, missionId, missionId, missionId, missionId, missionId)
     return { ...summary, markerDigest: rowsDigest(markerRows), baselineDigest: rowsDigest(baselineRows) }
+  } finally { db.close() }
+}
+
+/** Reads one post-settlement marker with its immutable version and audit rows. */
+function inspectPostSettlementMarkerCustody(databasePath, missionId, markerId) {
+  const db = new Database(databasePath, { readonly: true, fileMustExist: true })
+  try {
+    const marker = db.prepare(
+      'SELECT * FROM markers WHERE mission_id = ? AND id = ?',
+    ).get(missionId, markerId)
+    const versions = db.prepare(`SELECT * FROM mission_object_versions
+      WHERE mission_id = ? AND object_type = 'marker' AND object_id = ?
+      ORDER BY version_sequence`).all(missionId, markerId)
+    const auditEvents = db.prepare(`SELECT * FROM mission_events
+      WHERE mission_id = ? AND event_type IN ('marker_created', 'marker_updated', 'marker_deleted')
+      ORDER BY rowid`).all(missionId)
+    return { missionId, marker, versions, auditEvents }
   } finally { db.close() }
 }
 

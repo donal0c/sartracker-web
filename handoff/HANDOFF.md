@@ -27,6 +27,11 @@ Detailed historical receipts and retained failures are in
   retained a 204.046 ms query with a 14.481 ms main heartbeat. No production
   recovery defect is demonstrated and the historical ~239 ms cause is unassigned.
   Linear remains In Progress. [Finding and retained evidence](../docs/assurance/findings/legacy-object-recovery-responsiveness.md).
+  Claude's review supersedes the earlier READY verdict. The inspector protocol
+  is removed: both large recovery tests await real worker completion/exit,
+  independently verify persisted data, and gate the final heartbeat interval.
+  Native restart now checks the new marker's full version/audit custody.
+  [All review dispositions](../docs/assurance/findings/legacy-recovery-claude-remediation.md).
 
 The two repair streams may proceed in parallel with disjoint production ownership.
 DON-267 merged first; DON-254 is reconciled onto that master. Donal owns the
@@ -60,6 +65,10 @@ reviews and macOS proof remain tied to unchanged recovery inputs. Reconciliation
 preserves all WAR-06 code and both independent packaged CI steps. The latest
 [PR25 receipt](https://github.com/donal0c/sartracker-web/pull/25) binds the combined
 head and controls merge readiness; old pending-WAR-06 wording is superseded.
+The Claude remediation changes those test/probe inputs, so their earlier reviews
+and CI are historical. Focused 50k/500k strict tests, tail/error controls and the
+stronger local native custody probe pass; final source/CI proof belongs to the
+new terminal PR receipt. Production and operator behavior are unchanged.
 
 Use [testing and review cadence](../docs/testing-and-review-cadence.md): retain
 failures, diagnose before repeating, serialize heavy checks, and reuse unchanged

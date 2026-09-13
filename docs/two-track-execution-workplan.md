@@ -236,6 +236,10 @@ PR23 follow-up A is now merged in current `origin/master`. The ordered queue is:
    ownership stays with that lane.
 2. Follow-up B on `codex/don-254-legacy-recovery-responsiveness` is reconciled
    onto that merge; the combined-head PR25 receipt controls merge readiness.
+   Claude remediation replaces the inspector protocol with real worker completion,
+   independent persisted-data checks and final-tail gating; native mutation custody
+   and CI type coverage are strengthened. [Review dispositions](assurance/findings/legacy-recovery-claude-remediation.md)
+   supersede the earlier READY verdict until final verification is recorded.
    Current causal evidence supports a test-observer repair, with unchanged
    production and strict `<200 ms` predicates. The 50k fixture and packaged
    recovery/restart pass; full correctness is 444 files / 4,656 passed / six

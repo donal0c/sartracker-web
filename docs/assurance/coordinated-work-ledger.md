@@ -89,7 +89,11 @@ background-throttling, reload-cleanup and inactivity-watchdog repairs. The
 exact-head proof and historical limits. Follow-up B, the separate ~239 ms
 legacy recovery path, and unchanged strict `<200 ms` qualification remain
 outstanding. Follow-up B's [current evidence](findings/legacy-object-recovery-responsiveness.md)
-supports an off-thread test observer, with production unchanged. Its final
+supports removing synchronous test inspection from the measured thread, with
+production unchanged. Claude remediation uses real worker completion/exit and
+post-timing persisted-data checks, closes final-tail and mutation-custody gaps,
+and removes the auxiliary inspector protocol. [Disposition](findings/legacy-recovery-claude-remediation.md).
+Its final
 source cycle passes; the PR terminal receipt binds CI. WAR-06 PR26 merged at
 `8f93f8d1`; PR25 is reconciled onto it, with both packaged CI checks retained.
 The combined-head PR receipt controls readiness; frozen-candidate qualification follows. No release
