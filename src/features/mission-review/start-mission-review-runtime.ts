@@ -88,7 +88,7 @@ export type MissionReviewRuntimeState = {
 function emptyPageState(): SearchOperationPageState {
   return {
     search: '', pageNumber: 1, visibleCount: 0, totalCount: 0,
-    hasMore: false, nextCursor: null, loading: false,
+    hasMore: false, nextCursor: null, loading: false, error: null,
   }
 }
 
@@ -102,6 +102,7 @@ function pageStateFromResult(result: SearchOperationPage): SearchOperationPageSt
     hasMore: result.nextCursor !== null,
     nextCursor: result.nextCursor,
     loading: false,
+    error: null,
   }
 }
 
@@ -175,6 +176,8 @@ function releaseSearchOperationLoading(
 }
 
 export type SearchOperationPageState = {
+  /** A failure owned by this page; successful reload clears only this error. */
+  readonly error?: string | null
   readonly search: string
   readonly pageNumber: number
   readonly visibleCount: number
@@ -378,7 +381,7 @@ export async function startMissionReviewRuntime(
     },
     returnToFirstSearchOperations: async (kind) => {
       const page = state.searchOperations.pages[kind]
-      if (page.pageNumber === 1 || page.loading) return
+      if ((page.pageNumber === 1 && !page.error) || page.loading) return
       await loadSearchOperationPage(kind, page.search, undefined, 1)
     },
     searchReplayOutingFilters: async (search) => {
@@ -725,12 +728,11 @@ export async function startMissionReviewRuntime(
         || missionId !== state.selectedMissionId || state.loading || state.refreshing) return
       state = {
         ...state,
-        error: toErrorMessage(error),
         searchOperations: {
           ...state.searchOperations,
           pages: {
             ...state.searchOperations.pages,
-            [kind]: { ...state.searchOperations.pages[kind], loading: false },
+            [kind]: { ...state.searchOperations.pages[kind], loading: false, error: toErrorMessage(error) },
           },
         },
       }

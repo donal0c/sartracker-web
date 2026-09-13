@@ -154,8 +154,9 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
                   History backfill: {participant.backfill_completed === 1 ? 'complete' : 'pending / retrying'}
                 </p>
               ) : null}
-              {participant.kind === 'group' &&
-              (participant.backfill_member_count ?? 0) > 0 ? (
+          {participant.kind === 'group' &&
+              ((participant.backfill_member_count ?? 0) > 0 ||
+                participant.backfill_scope_unknown === true) ? (
                 <p className="mt-1 text-[11px] text-stone-300" data-testid="participant-backfill-status">
                   History backfill: {formatGroupBackfillStatus(participant)}
                 </p>
@@ -228,12 +229,20 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
 function formatGroupBackfillStatus(participant: {
   readonly backfill_member_count?: number | null
   readonly backfill_completed_count?: number | null
+  readonly backfill_scope_inferred?: boolean | null
+  readonly backfill_scope_unknown?: boolean | null
 }): string {
+  if (participant.backfill_scope_unknown === true) {
+    return 'unknown historical group scope; review retained membership before finishing'
+  }
   const total = participant.backfill_member_count ?? 0
   const completed = participant.backfill_completed_count ?? 0
+  const memberLabel = participant.backfill_scope_inferred === true
+    ? 'reconstructed group members'
+    : 'starting group members'
   return completed === total
-    ? `complete for ${total}/${total} starting group members`
-    : `pending / retrying for ${total - completed}/${total} starting group members`
+    ? `complete for ${total}/${total} ${memberLabel}`
+    : `pending / retrying for ${total - completed}/${total} ${memberLabel}`
 }
 
 function ParticipantPickerList(props: {

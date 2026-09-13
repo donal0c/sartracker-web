@@ -38,6 +38,27 @@ const {
   readonly ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES: readonly string[]
   readonly readArchiveCleanupMembershipGeneration: (db: typeof Database, missionId: string) => number
 }
+const { SEARCH_OPERATIONS_TRIGGER_NAMES } = require(
+  '../../electron/search-operations-generation.cjs',
+) as {
+  readonly SEARCH_OPERATIONS_TRIGGER_NAMES: readonly string[]
+}
+
+/** Returns the exact replay day-count trigger names retained by scratch extraction. */
+const REPLAY_DAY_COUNT_TRIGGER_NAMES = Object.freeze([
+  'positions_replay_day_count_delete',
+  'positions_replay_day_count_insert',
+  'positions_replay_day_count_update',
+])
+
+/** Builds the trigger attestation expected for one source schema generation. */
+function expectedScratchTriggerNames(includeSearchOperations: boolean) {
+  return [
+    ...ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES,
+    ...(includeSearchOperations ? SEARCH_OPERATIONS_TRIGGER_NAMES : []),
+    ...REPLAY_DAY_COUNT_TRIGGER_NAMES,
+  ].sort()
+}
 const { deriveArchiveLifecycleEventId } = require(
   '../../electron/mission-finalization-boundary.cjs',
 ) as {
@@ -186,7 +207,8 @@ describe('mission-scoped archive scratch extraction', () => {
     expect(result.schemaLedger).toMatchObject({
       tableCount: 49,
       indexCount: 28,
-      triggerCount: ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES.length + 3,
+      triggerCount: ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES.length
+        + SEARCH_OPERATIONS_TRIGGER_NAMES.length + 3,
     })
     expect(result.schemaLedger.sha256).toMatch(/^[a-f0-9]{64}$/u)
     expect(progress.length).toBeGreaterThan(0)
@@ -205,6 +227,9 @@ describe('mission-scoped archive scratch extraction', () => {
         position_count: 1,
       }])
       expect(scratch.prepare('SELECT COUNT(*) AS count FROM mission_archives').get().count).toBe(0)
+      expect(scratch.prepare(`SELECT name FROM sqlite_master
+        WHERE type = 'trigger' ORDER BY name`).all().map((row: { readonly name: string }) => row.name))
+        .toEqual(expectedScratchTriggerNames(true))
       expect(scratch.prepare('SELECT key, value FROM metadata ORDER BY key').all()).toEqual([{
         key: 'schema_version',
         value: '13',
@@ -460,7 +485,78 @@ describe('mission-scoped archive scratch extraction', () => {
         WHERE type = 'index' AND name NOT LIKE 'sqlite_%'`).get().count).toBe(28)
       expect(scratch.prepare(`SELECT COUNT(*) AS count FROM sqlite_master
         WHERE type = 'trigger'`).get().count)
-        .toBe(ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES.length + 3)
+        .toBe(ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES.length
+          + SEARCH_OPERATIONS_TRIGGER_NAMES.length + 3)
+      expect(scratch.prepare(`SELECT name FROM sqlite_master
+        WHERE type = 'trigger' ORDER BY name`).all().map((row: { readonly name: string }) => row.name))
+        .toEqual(expectedScratchTriggerNames(true))
+    } finally {
+      scratch.close()
+    }
+  })
+
+  it('rejects tampered Search Operations trigger SQL on a new-generation source', () => {
+    const fixture = createTwoMissionSource()
+    const source = new Database(fixture.sourceDatabasePath)
+    source.exec(`
+      DROP TRIGGER search_operations_generation_outings_insert;
+      CREATE TRIGGER search_operations_generation_outings_insert
+      BEFORE INSERT ON outings
+      BEGIN
+        SELECT 1;
+      END;
+    `)
+    source.close()
+
+    expect(() => createMissionArchiveScratch(
+      extractionInput(fixture.sourceDatabasePath) as never,
+    )).toThrow(/Search Operations triggers do not match/iu)
+  })
+
+  it('keeps the legacy scratch trigger contract for a source without the derived counter', () => {
+    const fixture = createTwoMissionSource()
+    const source = new Database(fixture.sourceDatabasePath)
+    source.exec(`
+      PRAGMA foreign_keys = OFF;
+      DROP TRIGGER search_operations_generation_outings_delete;
+      DROP TRIGGER search_operations_generation_outings_insert;
+      DROP TRIGGER search_operations_generation_outings_update;
+      DROP TRIGGER search_operations_generation_search_areas_delete;
+      DROP TRIGGER search_operations_generation_search_areas_insert;
+      DROP TRIGGER search_operations_generation_search_areas_update;
+      DROP TRIGGER search_operations_generation_search_assignments_delete;
+      DROP TRIGGER search_operations_generation_search_assignments_insert;
+      DROP TRIGGER search_operations_generation_search_assignments_update;
+      DROP TRIGGER search_operations_generation_search_pass_evidence_links_delete;
+      DROP TRIGGER search_operations_generation_search_pass_evidence_links_insert;
+      DROP TRIGGER search_operations_generation_search_pass_evidence_links_update;
+      DROP TRIGGER search_operations_generation_search_passes_delete;
+      DROP TRIGGER search_operations_generation_search_passes_insert;
+      DROP TRIGGER search_operations_generation_search_passes_update;
+      CREATE TABLE mission_replay_generations_legacy (
+        mission_id TEXT PRIMARY KEY,
+        generation INTEGER NOT NULL CHECK(generation >= 0),
+        FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+      );
+      INSERT INTO mission_replay_generations_legacy (mission_id, generation)
+        SELECT mission_id, generation FROM mission_replay_generations;
+      DROP TABLE mission_replay_generations;
+      ALTER TABLE mission_replay_generations_legacy RENAME TO mission_replay_generations;
+      PRAGMA foreign_keys = ON;
+    `)
+    source.close()
+
+    const input = extractionInput(fixture.sourceDatabasePath)
+    createMissionArchiveScratch(input)
+
+    const scratch = new Database(input.scratchDatabasePath, { readonly: true })
+    try {
+      expect(scratch.prepare('PRAGMA table_info(mission_replay_generations)').all()
+        .some((row: { readonly name: string }) => row.name === 'search_operations_generation'))
+        .toBe(false)
+      expect(scratch.prepare(`SELECT name FROM sqlite_master
+        WHERE type = 'trigger' ORDER BY name`).all().map((row: { readonly name: string }) => row.name))
+        .toEqual(expectedScratchTriggerNames(false))
     } finally {
       scratch.close()
     }

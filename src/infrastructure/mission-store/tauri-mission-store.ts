@@ -184,11 +184,17 @@ export type MissionParticipant = {
   readonly added_by: string | null
   readonly removed_at: string | null
   readonly removed_by: string | null
+  /** Immutable JSON array of devices selected when this group window began. */
+  readonly starting_member_device_ids_json?: string | null
   readonly backfill_window_to?: string | null
   readonly backfill_reconciled_until?: string | null
   readonly backfill_completed?: number | null
   readonly backfill_member_count?: number | null
   readonly backfill_completed_count?: number | null
+  /** True when a legacy group window's starting roster was conservatively reconstructed. */
+  readonly backfill_scope_inferred?: boolean | null
+  /** True when a legacy group window has no provable historical roster. */
+  readonly backfill_scope_unknown?: boolean | null
 }
 
 export type GroupMembershipEvent = {

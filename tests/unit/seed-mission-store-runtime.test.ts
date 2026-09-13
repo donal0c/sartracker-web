@@ -65,7 +65,7 @@ describe('generateMissionStoreFixture [DON-242]', () => {
     expect(generated.manifest.bytes.byTable.positions).toBeGreaterThan(0)
     expect(generated.manifest.bytes.byTable.mission_events).toBeGreaterThan(0)
     expect(generated.manifest.database.sha256).toBe(
-      '9b4fc843fe6454da17739c089f4d5b3faed975873e54fa7655bf94f6850596c9',
+      'fbf4f7e6fed1493b46349303ccdd096568eda5696d54bab17e6fa5b5e56fa00b',
     )
     const fixtureDatabase = new Database(outputPath, { readonly: true })
     try {
@@ -74,6 +74,16 @@ describe('generateMissionStoreFixture [DON-242]', () => {
         .toEqual(expect.arrayContaining([
           expect.objectContaining({ name: 'requested_from', notnull: 0 }),
           expect.objectContaining({ name: 'requested_until', notnull: 0 }),
+        ]))
+      // Train D adds roster provenance and a derived page fence; existing
+      // evidence rows remain byte-for-byte equivalent when projected on old columns.
+      expect(fixtureDatabase.prepare('PRAGMA table_info(mission_participants)').all())
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({ name: 'starting_member_device_ids_json', type: 'TEXT', notnull: 0 }),
+        ]))
+      expect(fixtureDatabase.prepare('PRAGMA table_info(mission_replay_generations)').all())
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({ name: 'search_operations_generation', type: 'INTEGER', notnull: 1, dflt_value: '0' }),
         ]))
     } finally { fixtureDatabase.close() }
     await expect(sha256File(outputPath)).resolves.toBe(generated.manifest.database.sha256)

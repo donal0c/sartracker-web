@@ -4,33 +4,57 @@ Updated 2026-09-13. Read after `CLAUDE.md`.
 
 ## Current baseline and active work
 
-Master is `8f93f8d1cc4554178706e23401ecd496d1193195`: PR26 WAR-06 mission-scope
-repair is merged, following PR23 transport and PR24 property/mutation work.
+Master is `2b2bf8e605e27123c9e454598828d71cb7c062aa`: PR25 and PR26 are merged.
+DON-267 is Done; DON-254 remains In Progress and release remains HOLD.
+Repair Train D (`codex/repair-train-d`) owns AUD-08 / DON-271 participant
+completeness and AUD-09 / DON-279 Search Operations pagination. It merges first;
+parallel Train C map work rebases afterward. Both current-base regressions are
+reproduced and repaired. New group selections retain immutable starting rosters;
+legacy rows disclose reconstructed scope. Search pages use a durable scoped
+generation and recover locally without clearing other evidence-read errors.
+The [Train D record](../docs/assurance/findings/repair-train-d.md) owns proof.
+Stable affected browser checks passed 23 tests, then eight participant tests
+after a stricter checkpoint correction. Independent review confirms missing,
+interior and same-boundary checkpoint cases now fail closed. One legacy null
+roster with only earlier departure evidence is now unknown and unfinishable;
+30 focused and 101 adjacent tests pass with independent native rechecks.
+Browser checkpoint bounds and retired-area ID reuse now match native rejection;
+44 browser/harness tests pass and the latter guard is independently reviewed.
+Final full correctness passes 4,785 tests / 453 files with six existing exclusions;
+23 affected Chromium flows and lint pass. Fresh package builds, but native
+attempt 1 fails on a stale smoke locator after group removal and diagnostic
+capture overflow. Electron exited cleanly with no new crash or residual process.
+Harness locator and diagnostic collection corrections pass 22 focused tests;
+the actual active-roster browser regression passes 2 tests after a recorded red.
+Final independent harness review cleared diagnostics/CI and the cleanup-reserve
+correction, which has four fake-child red/green cases. The branch is ready for
+commit and exact-head PR/CI review; native attempt 1 remains FAILED.
+Three settings failures match clean master and
+remain a separate retained candidate in the coordinated ledger.
+Source-only reproduction also proves a pre-existing coverage result-bound race:
+main inventory limit 1 versus later worker inventory 2 rejects valid chunks;
+the fresh-limit control passes. DON-254 owns a high-priority bounded coverage
+repair outside Train D, with exact provenance/design options in the ledger.
+This remains a native diagnostic blocker and release HOLD.
 WAR-06's implementation, retained diagnostics and remaining domain questions are
 in [its remediation record](../docs/assurance/findings/war-06/claude-review-remediation.md).
 Older history is in [the archive](archive/pre-war06-repair-20260913.md).
 
-PR25 / DON-254 on `codex/don-254-legacy-recovery-responsiveness` is a test/tooling
-repair. It observes real production worker completion/exit, then independently
-checks stored evidence, with strict 200 ms and final-tail gates. The latest review
-follow-up fixes recursive evidence binding, pins the audit oracle to a real store
-write in ordinary tests, removes the GPX self-poll, isolates native restart timing,
-and adds CI report validation and relevant master-push verification.
-[Current review disposition](../docs/assurance/findings/legacy-recovery-review-followup.md).
+Merged PR25 is a test/tooling observer repair, not release qualification.
+Its [review disposition](../docs/assurance/findings/legacy-recovery-review-followup.md)
+and terminal PR receipt retain the source, CI and packaged evidence.
 
 ## Verification and next action
 
-The latest [PR25 terminal receipt](https://github.com/donal0c/sartracker-web/pull/25)
-binds the final source/CI head, native artifact, custody proof and merge readiness.
-Earlier `c93b6925` proof is historical after this follow-up; its evidence README
-and manifest distinguish source snapshots from current inputs. Do not infer
-readiness from old READY comments. Donal owns merge; no merge/release is authorized.
-
-Local stable correctness passes 447 files / 4,731 tests with the same six
-qualification-only skips. Focused custody/report controls and separated native
-restart intervals pass. The terminal PR receipt records final strict affected
-timings, build/lint and exact-head CI/artifact checks; require it before READY.
-Operator behavior is unchanged; no manual edit.
+Complete exact-head PR checks and review attestations; retain attempt 1
+as failed. Production hashes are unchanged since the full correctness cycle.
+Do not repeat native runs on unchanged baseline blockers.
+The scoped repair may proceed to PR with the native/release gap explicit;
+only its new packaged proof is manual opt-in, and ordinary CI records NOT RUN.
+Existing gates remain unchanged. Exact-commit reviews and CI still remain. The operator manual
+reflects the progress/recovery rules.
+Do not infer current readiness from earlier PR25 or pre-review Train D evidence.
+Donal owns merge; no merge/release is authorized here.
 Use [testing cadence](../docs/testing-and-review-cadence.md) and the single
 [two-track queue](../docs/two-track-execution-workplan.md).
 

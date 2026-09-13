@@ -52,7 +52,56 @@ head.
 
 ## Current merged disposition
 
-Current baseline is `deedab27483ad4fe1ca998a4d68afd555f4e2337`: PR24/WAR-02B
+Current baseline is `2b2bf8e605e27123c9e454598828d71cb7c062aa`: PR25 and PR26
+are merged, DON-267 is Done, DON-254 is In Progress and release remains HOLD.
+Train D owns AUD-08 / DON-271 and AUD-09 / DON-279 on `codex/repair-train-d`.
+Parallel Train C owns map repairs; intended merge order is D first, then C
+rebased onto it. Both begin with current-head red proof and retain the strict
+<200 ms gate and separate final-candidate qualification. D has current-base
+red/green and focused native/browser proof. Full source correctness passes
+4,785 tests, and 23 affected browser flows pass. Packaged attempt 1 remains
+FAILED; re-add, backup and restart were not reached. Corrected harness tests
+pass 22/22; independent harness recheck is clear. Exact-head CI/review attestations remain pending
+in [its record](findings/repair-train-d.md).
+No repair acceptance is claimed. Earlier open-PR/status statements below are
+historical receipts, superseded by this reconciliation.
+
+Separate follow-up candidate: the DON-229, DON-228 and large hosted history
+settings browser tests fail on both WAR-11's clean `2b2bf8e` baseline and D's
+working tree. D evidence: `/tmp/sar-train-d-preexisting-settings.log` and
+`test-results/train-d-preexisting-settings`; WAR-11 baseline evidence:
+`tmp/war-11/browser-baseline` in its worktree, output digest
+`fe6e6d4113f8d81ed7cada2d4d126316ac41eac5f7d4a758b9ad226515dd3636`.
+Investigate missing durable history persistence in the browser harness as a
+bounded follow-up; this is not part of either current repair or a green full
+browser/release claim. [Observed assertions](findings/repair-train-d.md).
+
+Train D packaged attempt 1 also retains separate diagnostic candidates:
+unconditional service-worker registration under `file://`, per-request coverage
+IPC lifecycle listener accumulation, and a coverage cardinality/snapshot race.
+The relevant standalone files match `2b2bf8e`; coverage sections in
+`mission-store.cjs` are unchanged. Source-only reproduction reads `maxChunks=1`,
+adds an outing before the worker reads, and obtains the exact enumeration
+rejection for two valid chunks; a fresh same-state `maxChunks=2` control passes.
+Logs: `/tmp/sar-train-d-coverage-worker-red.log` and
+`/tmp/sar-train-d-coverage-worker-green.log`.
+These diagnostics are not allowlisted or accepted. Attempt 1 remains failed,
+including capture overflow whose missing entries cannot be classified later.
+Native proof and PR readiness remain open; see the Train D record and receipt.
+
+| Retained diagnostic / owner | Exact source and provenance | Impact and next bounded action |
+| --- | --- | --- |
+| High-priority coverage result-bound race; DON-254 coverage worker follow-up | `mission-store.cjs:3549` reads limits before the worker snapshot; `coverage-query-result-attestation.cjs:63` computes cardinality; `coverage-query-result-envelope.cjs:395` rejects two valid chunks against an earlier limit of one. Coverage files match clean master `2b2bf8e`; changed mission-store coverage blocks are unchanged. Native signature: `Coverage enumeration result is invalid: item list is invalid.` | Fail-closed coverage failure, not false completion; timing race reproduced source-only with a fresh-state passing control. Evaluate a stable bounded envelope with inventory/change-sequence validation, or one consistent metadata snapshot. Do not allowlist or expand Train D scope. |
+| Packaged service-worker registration; DON-254 packaging/runtime follow-up | `src/lib/register-service-worker.ts:9` registers `/sw.js` under `file://`, producing the exact `Service worker registration failed` warning naming `file:///sw.js`; this file and `public/sw.js` match clean master. | Caught startup registration failure. No claim that separate native offline-map paths fail. Gate remains unclean; restrict registration to supported web contexts in a separately tested repair. |
+| Coverage request listener pressure; DON-254 runtime/lifecycle follow-up | `electron/coverage-ipc.cjs:228` attaches `destroyed`/`render-process-gone` listeners per in-flight request and removes them in `finally`; file matches clean master. Exact signatures report 11 listeners on each event. | Concurrent listener pressure is proven; a persistent leak is not. Review shared owner cancellation and bounded request concurrency, without raising the warning threshold. |
+| Unassigned script-fetch error and teardown cancellation; DON-254 diagnostics follow-up | Generic script-fetch error has empty URL and no timestamp; association with service-worker failure is inference only. AbortError stack matches unchanged coverage runner/IPC cancellation code, after timeout/close in retained ordering. | Preserve unassigned error separately. Cancellation is proven but teardown causality lacks per-entry timing. Capture source/phase/time before further classification. Neither explains the independently confirmed absent-locator timeout. |
+
+`tmp/train-d-native-attempt1/diagnostic-baseline-provenance.json` records exact
+baseline/current file hashes; the receipt is a dirty working-source package,
+not a clean-master packaged reproduction. The failed run's missing overflowed
+entries and absent event timestamps remain explicit evidence limits.
+
+Historical baseline is `deedab27483ad4fe1ca998a4d68afd555f4e2337`: PR24/WAR-02B
 is merged after PR23. DON-267 and DON-254 are In Progress in Linear; historical
 Done statements below describe previous receipts. Original DON-267 PR1/PR4/PR17
 fixes remain merged and valid. Only WAR-06-AUD-01/AUD-02/CACHE-SIBLING are active

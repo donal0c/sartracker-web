@@ -77,6 +77,7 @@ import {
   isTelemetryEventType,
 } from '../mission-review/audit-events'
 import { normalizeTrackingIsoTimestamp } from '../tracking/tracking-timestamp'
+import { evaluateParticipantBackfill } from '../../../shared/participant-backfill-completeness.mjs'
 
 const MAX_SEARCH_OPERATION_ID_LENGTH = 200
 const MAX_SEARCH_OPERATION_LINK_COUNT = 200
@@ -628,6 +629,8 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const mission = requireMutableParticipantMission(input.mission_id, state.missions)
       assertHarnessInitialParticipantSelection(input, state.missionParticipants)
       const timestamp = new Date().toISOString()
+      const normalizedGroupMemberIds = input.groups.map((group) =>
+        normalizeHarnessGroupMemberDeviceIds(group.member_device_ids))
       const teams = input.groups.map((group) => ({
         id: createId('team'),
         mission_id: mission.id,
@@ -635,13 +638,16 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         name: group.name,
         frozen_at: timestamp,
       } satisfies BrowserMissionTeam))
-      const groupParticipants = teams.map((team) =>
+      const groupParticipants = teams.map((team, groupIndex) =>
         createHarnessParticipant({
           missionId: mission.id,
           kind: 'group',
           missionTeamId: team.id,
           traccarGroupId: team.traccar_group_id,
           teamName: team.name,
+          startingMemberDeviceIdsJson: serializeHarnessStartingMemberDeviceIds(
+            normalizedGroupMemberIds[groupIndex] ?? [],
+          ),
           effectiveFrom: mission.start_time,
           addedAt: timestamp,
           addedBy: input.selected_by,
@@ -656,23 +662,23 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           addedBy: input.selected_by,
         }))
       let membershipSequence = nextHarnessMembershipSequence(state.groupMembershipEvents)
-      const membershipEvents = input.groups.flatMap((group, groupIndex) =>
-        group.member_device_ids.map((deviceId) => ({
+      const membershipEvents = teams.flatMap((team, groupIndex) =>
+        (normalizedGroupMemberIds[groupIndex] ?? []).map((deviceId) => ({
           id: createId('membership'),
           sequence: membershipSequence++,
           mission_id: mission.id,
-          mission_team_id: teams[groupIndex]?.id ?? '',
+          mission_team_id: team.id,
           traccar_device_id: deviceId,
           change: 'member' as const,
           observed_at: timestamp,
         })))
-      const groupBackfillCheckpoints = membershipEvents.map((event) =>
-        createHarnessBackfillCheckpoint({
+      const groupBackfillCheckpoints = normalizedGroupMemberIds.flatMap((deviceIds) =>
+        deviceIds.map((deviceId) => createHarnessBackfillCheckpoint({
           missionId: mission.id,
-          deviceId: event.traccar_device_id,
+          deviceId,
           windowFrom: mission.start_time,
           windowTo: timestamp,
-        }))
+        })))
       const deviceBackfillCheckpoints = input.devices.map((device) =>
         createHarnessBackfillCheckpoint({
           missionId: mission.id,
@@ -716,6 +722,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         addedAt,
       )
       let team: BrowserMissionTeam | null = null
+      let startingMemberDeviceIds: readonly string[] = []
       let observedMembershipEvents: readonly GroupMembershipEvent[] = []
       if (input.kind === 'group') {
         if (typeof input.ref === 'string') throw new Error('Participant group details are required.')
@@ -723,6 +730,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         if (!Array.isArray(groupRef.member_device_ids)) {
           throw new Error('Current group member device ids are required.')
         }
+        startingMemberDeviceIds = normalizeHarnessGroupMemberDeviceIds(groupRef.member_device_ids)
         team = state.missionTeams.find((candidate) =>
           candidate.mission_id === mission.id &&
           candidate.traccar_group_id === groupRef.traccar_group_id) ?? {
@@ -735,7 +743,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         observedMembershipEvents = createHarnessMembershipObservation({
           missionId: mission.id,
           teamId: team.id,
-          observedDeviceIds: groupRef.member_device_ids,
+          observedDeviceIds: startingMemberDeviceIds,
           observedAt: addedAt,
           previousEvents: state.groupMembershipEvents,
         })
@@ -779,17 +787,20 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         missionTeamId: team?.id ?? null,
         traccarGroupId: team?.traccar_group_id ?? null,
         teamName: team?.name ?? null,
+        startingMemberDeviceIdsJson: input.kind === 'group'
+          ? serializeHarnessStartingMemberDeviceIds(startingMemberDeviceIds)
+          : null,
         effectiveFrom,
         addedAt,
         addedBy: input.confirmed_by,
       })
       const checkpoints = deviceId === null
-        ? observedMembershipEvents.map((event) =>
+        ? startingMemberDeviceIds.map((deviceId) =>
             createHarnessBackfillCoverageCheckpoints(
               state.participantBackfillCheckpoints,
               {
                 missionId: mission.id,
-                deviceId: event.traccar_device_id,
+                deviceId,
                 windowFrom: effectiveFrom,
                 windowTo: addedAt,
               },
@@ -857,6 +868,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     },
     listMissionParticipants: async (missionId) => {
       requireMission(missionId, state.missions)
+      const evaluations = readHarnessParticipantBackfillEvaluations(missionId, state)
       return state.missionParticipants
         .filter((participant) => participant.mission_id === missionId)
         .map((participant) => {
@@ -872,48 +884,30 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
             .toSorted((left, right) => left.reconciled_until.localeCompare(right.reconciled_until))[0]
           const latestCheckpoint = checkpoints
             .toSorted((left, right) => right.window_to.localeCompare(left.window_to))[0]
-          const groupCheckpoints = participant.kind !== 'group'
-            ? []
-            : state.groupMembershipEvents
-                .filter((event) =>
-                  event.mission_id === participant.mission_id &&
-                  event.mission_team_id === participant.mission_team_id &&
-                  event.change === 'member' &&
-                  event.observed_at === participant.added_at)
-                .flatMap((event) => state.participantBackfillCheckpoints.filter((candidate) =>
-                  candidate.mission_id === participant.mission_id &&
-                  candidate.traccar_device_id === event.traccar_device_id &&
-                  candidate.window_from >= participant.effective_from &&
-                  candidate.window_to <= participant.added_at))
-          const groupMemberDeviceIds = participant.kind !== 'group'
-            ? []
-            : state.groupMembershipEvents
-                .filter((event) =>
-                  event.mission_id === participant.mission_id &&
-                  event.mission_team_id === participant.mission_team_id &&
-                  event.change === 'member' &&
-                  event.observed_at === participant.added_at)
-                .map((event) => event.traccar_device_id)
+          const evaluation = evaluations.get(participant.id)
+          if (evaluation === undefined) throw new Error('Participant backfill evaluation is unavailable.')
           return {
             ...participant,
-            ...(latestCheckpoint === undefined
-              ? {}
+            ...(participant.kind === 'device'
+              ? {
+                  ...(latestCheckpoint === undefined
+                    ? {}
+                    : {
+                        backfill_window_to: latestCheckpoint.window_to,
+                        backfill_reconciled_until:
+                          incompleteCheckpoint?.reconciled_until ?? latestCheckpoint.reconciled_until,
+                      }),
+                  backfill_completed: evaluation.complete ? 1 : 0,
+                }
               : {
-                  backfill_window_to: latestCheckpoint.window_to,
-                  backfill_reconciled_until:
-                    incompleteCheckpoint?.reconciled_until ?? latestCheckpoint.reconciled_until,
-                  backfill_completed: checkpoints.every((entry) => entry.completed === 1) ? 1 : 0,
-                }),
-            ...(participant.kind !== 'group'
-              ? {}
-              : {
-                  backfill_member_count: new Set(groupMemberDeviceIds).size,
-                  backfill_completed_count: new Set(groupMemberDeviceIds.filter((deviceId) => {
-                    const deviceCheckpoints = groupCheckpoints.filter((entry) =>
-                      entry.traccar_device_id === deviceId)
-                    return deviceCheckpoints.length > 0 &&
-                      deviceCheckpoints.every((entry) => entry.completed === 1)
-                  })).size,
+                  backfill_member_count: evaluation.scope === 'unknown'
+                    ? null
+                    : evaluation.memberDeviceIds.length,
+                  backfill_completed_count: evaluation.scope === 'unknown'
+                    ? null
+                    : evaluation.completedMemberDeviceIds.length,
+                  backfill_scope_inferred: evaluation.scope === 'inferred',
+                  backfill_scope_unknown: evaluation.scope === 'unknown',
                 }),
           }
         })
@@ -965,15 +959,28 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         (teamId === undefined || event.mission_team_id === teamId))
     },
     upsertParticipantBackfillCheckpoint: async (input) => {
-      requireMutableParticipantMission(input.mission_id, state.missions)
+      const mission = requireMutableParticipantMission(input.mission_id, state.missions)
+      const windowFrom = normalizeTrackingIsoTimestamp(
+        input.window_from,
+        'Backfill window start',
+      )
+      const windowTo = normalizeTrackingIsoTimestamp(
+        input.window_to,
+        'Backfill window end',
+      )
+      const reconciledUntil = normalizeTrackingIsoTimestamp(
+        input.reconciled_until,
+        'Backfill reconciled-until',
+      )
+      validateHarnessBackfillWindow(mission, windowFrom, windowTo, reconciledUntil)
       const existing = state.participantBackfillCheckpoints.find((checkpoint) =>
         checkpoint.mission_id === input.mission_id &&
         checkpoint.traccar_device_id === input.traccar_device_id &&
-        checkpoint.window_from === input.window_from)
-      if (existing !== undefined && existing.window_to !== input.window_to) {
+        checkpoint.window_from === windowFrom)
+      if (existing !== undefined && existing.window_to !== windowTo) {
         throw new Error('Participant backfill window edges are immutable.')
       }
-      if ((input.reconciled_until === input.window_to) !== input.completed) {
+      if ((reconciledUntil === windowTo) !== input.completed) {
         throw new Error(
           'Completed participant backfill must have its cursor at the fixed window end.',
         )
@@ -983,16 +990,16 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       }
       if (
         existing !== undefined &&
-        input.reconciled_until < existing.reconciled_until
+        reconciledUntil < existing.reconciled_until
       ) {
         throw new Error('Participant backfill cursor cannot decrease or rewind.')
       }
       const checkpoint: ParticipantBackfillCheckpoint = {
         mission_id: input.mission_id,
         traccar_device_id: input.traccar_device_id,
-        window_from: input.window_from,
-        window_to: input.window_to,
-        reconciled_until: input.reconciled_until,
+        window_from: windowFrom,
+        window_to: windowTo,
+        reconciled_until: reconciledUntil,
         completed: input.completed ? 1 : 0,
         updated_at: new Date().toISOString(),
       }
@@ -1144,6 +1151,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           `Mission cannot be finished while ${incompleteBackfillCount} participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.`,
         )
       }
+      assertHarnessParticipantBackfillComplete(missionId, state)
       const finishedMission = {
         ...mission,
         status: 'finished' as const,
@@ -2067,6 +2075,12 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         normalizedInput.id === undefined || normalizedInput.id === null
           ? null
           : state.drawings.find((drawing) => drawing.id === normalizedInput.id) ?? null
+      const retainedArea = normalizedInput.type === 'search_area'
+        ? state.searchAreas.find((area) => area.id === normalizedInput.id)
+        : undefined
+      if (retainedArea?.retired_at !== null && retainedArea?.retired_at !== undefined) {
+        throw new Error(`Cannot update retired search area ${retainedArea.id}.`)
+      }
       const now = new Date().toISOString()
       const drawing = {
         id: existingDrawing?.id ?? normalizedInput.id ?? createId('drawing'),
@@ -2136,13 +2150,22 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         ensureMissionMutable(drawing.mission_id, state.missions)
       }
 
+      const retiredAt = new Date().toISOString()
       state = {
         ...state,
         drawings: state.drawings.filter((drawing) => drawing.id !== normalizedDrawingId),
+        searchAreas: drawing?.type !== 'search_area'
+          ? state.searchAreas
+          : state.searchAreas.map((area) => area.id !== drawing.id || area.retired_at !== null
+            ? area
+            : {
+                ...area, status: 'retired', retired_at: retiredAt, updated_at: retiredAt,
+                version_sequence: area.version_sequence + 1,
+              }),
         missionEvents:
           drawing === undefined
             ? state.missionEvents
-            : appendEvent(state.missionEvents, drawing.mission_id, 'drawing_deleted', new Date().toISOString(), {
+            : appendEvent(state.missionEvents, drawing.mission_id, 'drawing_deleted', retiredAt, {
                 drawing_id: drawing.id,
                 drawing_type: drawing.type,
                 name: drawing.name,
@@ -2892,7 +2915,7 @@ export function buildBrowserSearchOperationPage(
     nextCursor: eligible.length <= limit || last === undefined
       ? null
       : encodeBrowserBase64Url(JSON.stringify({
-          v: 2, missionId, kind: input.kind, search, generation,
+          v: 3, missionId, kind: input.kind, search, generation,
           orderValue: last.orderValue, id: last.id,
         })),
   }
@@ -2971,7 +2994,7 @@ function decodeBrowserSearchOperationCursor(
   }
   try {
     const parsed = JSON.parse(decodeBrowserBase64Url(value)) as Record<string, unknown>
-    if (parsed.v !== 2 || parsed.missionId !== context.missionId
+    if (parsed.v !== 3 || parsed.missionId !== context.missionId
       || parsed.kind !== context.kind || parsed.search !== context.search
       || !Number.isSafeInteger(parsed.generation) || Number(parsed.generation) < 0
       || typeof parsed.orderValue !== 'string' || parsed.orderValue.length > 200
@@ -2992,7 +3015,8 @@ function decodeBrowserSearchOperationCursor(
 
 /** Derives a monotonic browser-validation generation for retained Search Operations state. */
 function browserSearchOperationGeneration(state: BrowserHarnessState, missionId: string): number {
-  const eventCount = state.missionEvents.filter((event) => event.mission_id === missionId).length
+  const eventCount = state.missionEvents.filter((event) =>
+    event.mission_id === missionId && event.event_type.startsWith('outing_')).length
   const versionTotal = [...state.searchAreas, ...state.searchAssignments, ...state.searchPasses]
     .filter((entry) => entry.mission_id === missionId)
     .reduce((total, entry) => total + entry.version_sequence, 0)
@@ -4389,6 +4413,98 @@ function requireMutableParticipantMission(
   return mission
 }
 
+/** Enforces the native participant backfill window and cursor boundaries. */
+function validateHarnessBackfillWindow(
+  mission: Mission,
+  windowFrom: string,
+  windowTo: string,
+  reconciledUntil: string,
+): void {
+  if (windowFrom < mission.start_time || windowTo < windowFrom) {
+    throw new Error('Participant backfill window is outside the mission boundary.')
+  }
+  if (reconciledUntil < windowFrom || reconciledUntil > windowTo) {
+    throw new Error('Participant backfill cursor must stay inside its fixed window.')
+  }
+}
+
+/** Rejects browser-harness mission completion when participant history is unknown or incomplete. */
+function assertHarnessParticipantBackfillComplete(
+  missionId: string,
+  state: BrowserHarnessState,
+): void {
+  const evaluations = readHarnessParticipantBackfillEvaluations(missionId, state)
+  for (const participant of state.missionParticipants.filter((candidate) =>
+    candidate.mission_id === missionId)) {
+    const evaluation = evaluations.get(participant.id)
+    if (evaluation === undefined) throw new Error('Participant backfill evaluation is unavailable.')
+    if (evaluation.complete) continue
+    if (evaluation.scope === 'unknown') {
+      throw new Error(
+        'Mission cannot be finished because a legacy group history scope is unknown. Review retained group membership before finishing.',
+      )
+    }
+    throw new Error(
+      'Mission cannot be finished while participant history backfill coverage is incomplete. Keep the mission active and retry history backfill before finishing.',
+    )
+  }
+}
+
+/** Maps browser-harness rows once for both participant projection and Finish. */
+function readHarnessParticipantBackfillEvaluations(
+  missionId: string,
+  state: BrowserHarnessState,
+): ReadonlyMap<string, ReturnType<typeof evaluateParticipantBackfill>> {
+  const checkpoints = state.participantBackfillCheckpoints.map((checkpoint) => ({
+    missionId: checkpoint.mission_id,
+    deviceId: checkpoint.traccar_device_id,
+    windowFrom: checkpoint.window_from,
+    windowTo: checkpoint.window_to,
+    reconciledUntil: checkpoint.reconciled_until,
+    completed: checkpoint.completed,
+  }))
+  const membershipEvents = state.groupMembershipEvents.map((event) => ({
+    missionId: event.mission_id,
+    teamId: event.mission_team_id,
+    deviceId: event.traccar_device_id,
+    change: event.change,
+    observedAt: event.observed_at,
+    sequence: event.sequence,
+  }))
+  return new Map(state.missionParticipants
+    .filter((participant) => participant.mission_id === missionId)
+    .map((participant) => [
+      participant.id,
+      evaluateParticipantBackfill({
+        participant: {
+          missionId: participant.mission_id,
+          kind: participant.kind,
+          deviceId: participant.traccar_device_id,
+          teamId: participant.mission_team_id,
+          effectiveFrom: participant.effective_from,
+          addedAt: participant.added_at,
+          startingMemberDeviceIdsJson: participant.starting_member_device_ids_json,
+        },
+        checkpoints,
+        membershipEvents,
+      }),
+    ]))
+}
+
+/** Normalizes a live browser group roster for its immutable selection snapshot. */
+function normalizeHarnessGroupMemberDeviceIds(
+  deviceIds: readonly string[],
+): readonly string[] {
+  if (!Array.isArray(deviceIds)) throw new Error('Current group member device ids are required.')
+  return [...new Set(deviceIds.map((deviceId) =>
+    requireHarnessText(deviceId, 'Traccar device id')))].sort()
+}
+
+/** Serializes a normalized browser group selection snapshot. */
+function serializeHarnessStartingMemberDeviceIds(deviceIds: readonly string[]): string {
+  return JSON.stringify([...new Set(deviceIds)].sort())
+}
+
 /** Creates one append-only participant window for the browser validation mirror. */
 function createHarnessParticipant(input: {
   readonly missionId: string
@@ -4397,6 +4513,7 @@ function createHarnessParticipant(input: {
   readonly missionTeamId?: string | null
   readonly traccarGroupId?: string | null
   readonly teamName?: string | null
+  readonly startingMemberDeviceIdsJson?: string | null
   readonly effectiveFrom: string
   readonly addedAt: string
   readonly addedBy: string
@@ -4415,6 +4532,7 @@ function createHarnessParticipant(input: {
     added_by: input.addedBy,
     removed_at: null,
     removed_by: null,
+    starting_member_device_ids_json: input.startingMemberDeviceIdsJson ?? null,
   }
 }
 
@@ -4486,9 +4604,13 @@ function assertHarnessInitialParticipantSelection(
     throw new Error(`Participant group ${duplicateGroupId} is selected more than once.`)
   }
 
-  const groupMemberDeviceIds = new Set(input.groups.flatMap((group) =>
-    group.member_device_ids.map((deviceId) =>
-      requireHarnessText(deviceId, 'Traccar device id'))))
+  const groupMemberDeviceIds = new Set(input.groups.flatMap((group) => {
+    if (!Array.isArray(group.member_device_ids)) {
+      throw new Error('Current group member device ids are required.')
+    }
+    return group.member_device_ids.map((deviceId) =>
+      requireHarnessText(deviceId, 'Traccar device id'))
+  }))
   const overlappingDeviceIds = directDeviceIds
     .filter((deviceId) => groupMemberDeviceIds.has(deviceId))
     .sort()

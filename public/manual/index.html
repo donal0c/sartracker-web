@@ -828,7 +828,14 @@
             retrospective evidence. When a coordinator explicitly backdates the initial or later selection of
             a group, each confirmed member receives the same bounded, resumable history-backfill window as an
             individual device. The group row shows completed members out of all starting members, and keeps a
-            pending/retrying state visible until every member completes. Removing a participant ends future
+            pending/retrying state visible until every member completes. Re-adding a group includes its
+            unchanged members in that progress count, as well as newly selected members. Older selections
+            without a saved starting roster are labelled <strong>reconstructed group members</strong>
+            when retained membership and checkpoint evidence identify a conservative member set.
+            Otherwise the row shows <strong>unknown historical group scope</strong> without a completion count.
+            Required history must cover the whole selected time window without gaps before Finish can
+            succeed. Missing checkpoints or an unknown older starting roster keep the mission open.
+            Removing a participant ends future
             live collection but does not delete evidence already retained. The low-rate history check keeps
             revisiting that participant's earlier authorized window so a late or corrected source fix is not
             lost merely because the participant has since been removed. If the coordinator later re-adds the
@@ -1891,6 +1898,13 @@
         <section id="review">
           <h2>Review And Diagnostics</h2>
           <h3>Mission Review</h3>
+          <p>
+            Routine backups do not expire Search Passes pages. If retained search evidence changes while
+            paging, the affected list shows an error and recording pauses. Use <strong>First</strong> or
+            <strong>Search</strong> on that list to reload it; First is available even on page 1 after an
+            error. Once all failed lists recover, recording resumes with your draft fields retained.
+            A separate Review error still requires a successful Review refresh.
+          </p>
           <p>
             The Review button opens the Audit Workspace. It contains a mission selector, mission details,
             marker log, layer console, and event log. Use it to inspect saved mission state and to zoom

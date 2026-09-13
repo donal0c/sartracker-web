@@ -6,6 +6,12 @@ name: Electron Linux Validation Build
 
 on:
   workflow_dispatch:
+    inputs:
+      run_repair_train_d_smoke:
+        description: 'Run strict Train D packaged proof after baseline diagnostic blockers are repaired'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [master]
     paths:
@@ -74,7 +80,7 @@ jobs:
         run: |
           set -euo pipefail
           ACTUAL_SOURCE_SHA="$(git rev-parse HEAD)"
-          SOURCE_TREE_SHA="$(git rev-parse HEAD^{tree})"
+          SOURCE_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
           SOURCE_DIRTY="$(git status --porcelain --untracked-files=all)"
           if [ "$ACTUAL_SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ]; then
             echo "::error::Checked-out source head does not match EXPECTED_SOURCE_SHA."
@@ -84,6 +90,7 @@ jobs:
             echo "::error::Checked-out source tree is not clean."
             exit 1
           fi
+          echo "EXPECTED_SOURCE_TREE=$SOURCE_TREE_SHA" >> "$GITHUB_ENV"
           mkdir -p tmp/electron-validation-evidence
           export ACTUAL_SOURCE_SHA SOURCE_TREE_SHA
           node --input-type=module <<'NODE' \
@@ -308,6 +315,37 @@ jobs:
             node scripts/electron-war06-mission-cache-smoke.mjs \
               --app tmp/electron-dist/linux-unpacked/sartracker-web \
               --evidence tmp/electron-validation-evidence/war06-mission-cache
+
+      - name: Packaged participant progress and Search Operations backup proof
+        if: github.event_name == 'workflow_dispatch' && inputs.run_repair_train_d_smoke == true
+        timeout-minutes: 5
+        env:
+          SARTRACKER_ELECTRON_REQUIRE_LINUX_UNPACKED: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            node scripts/electron-repair-train-d-smoke.mjs \
+              --app tmp/electron-dist/linux-unpacked/sartracker-web \
+              --evidence tmp/electron-validation-evidence/repair-train-d
+
+      - name: Independently validate Repair Train D packaged receipt
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_repair_train_d_smoke == true
+        timeout-minutes: 1
+        env:
+          SARTRACKER_ELECTRON_REQUIRE_LINUX_UNPACKED: '1'
+        run: |
+          set -euo pipefail
+          node scripts/validate-electron-repair-train-d-smoke.mjs \
+            --receipt tmp/electron-validation-evidence/repair-train-d/receipt.json
+
+      - name: Record deferred Repair Train D packaged qualification
+        if: always() && !(github.event_name == 'workflow_dispatch' && inputs.run_repair_train_d_smoke == true)
+        run: |
+          echo 'Repair Train D packaged smoke: NOT RUN. Known baseline diagnostic blockers remain open under DON-254; skipped qualification is not a pass. Release remains HOLD.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Packaged legacy object recovery observer proof
         id: legacy_recovery_smoke
