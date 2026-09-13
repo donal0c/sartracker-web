@@ -8,6 +8,7 @@ import {
   buildFieldReadinessChecklist,
   type FieldReadinessChecklist,
 } from './field-readiness-checklist'
+import { readOfficialMapViewRequest, type OfficialMapViewQualification } from './official-map-view-qualification'
 
 type ChecklistState = {
   readonly settings: AppSettings
@@ -34,6 +35,7 @@ function reducer(state: ChecklistState, action: ChecklistAction): ChecklistState
 export function useFieldReadinessChecklist(
   activeBasemapId: RenderableMapId,
   mapRef: RefObject<maplibregl.Map | null>,
+  qualification: OfficialMapViewQualification | null,
 ): FieldReadinessChecklist | null {
   const [state, dispatch] = useReducer(reducer, {
     settings: DEFAULT_APP_SETTINGS,
@@ -82,6 +84,7 @@ export function useFieldReadinessChecklist(
 
     const map = mapRef.current
     let viewBounds: { west: number; south: number; east: number; north: number } | null = null
+    let viewZoom: number | undefined
 
     if (map !== null) {
       try {
@@ -92,6 +95,7 @@ export function useFieldReadinessChecklist(
           east: bounds.getEast(),
           north: bounds.getNorth(),
         }
+        viewZoom = readOfficialMapViewRequest(activeBasemapId, map).zoom
       } catch {
         viewBounds = null
       }
@@ -101,9 +105,11 @@ export function useFieldReadinessChecklist(
       activeMapId: activeBasemapId,
       officialMaps: state.settings.officialMaps,
       viewBounds,
+      viewZoom,
+      qualification,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeBasemapId, state.settings, state.moveSeq, mapRef])
+  }, [activeBasemapId, state.settings, state.moveSeq, mapRef, qualification])
 
   return checklist
 }

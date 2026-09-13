@@ -561,6 +561,28 @@ integrity evidence only: the isolated probes remain deliberately red, no
 shipping repair occurred, and broad packaged, live-provider, platform-matrix,
 scale, soak, and field proof remain WAR-12 work.
 
+### WAR-11 official-map qualification and freshness repair
+
+Active under `DON-7` / `DON-76` from merged PR25 base `2b2bf8e`: only
+WAR-04 MAP-01/02/03 and AUD-11. Package content/identity validation, current-view
+tile verification, reader/raster invalidation and the valid no-coverage hatch
+are implemented; [the remediation record](assurance/findings/war-11-offline-map-remediation.md)
+owns exact evidence and unresolved qualification. Train D's mission truth changes
+remain separate and its merge precedes final integration of this map branch.
+
+Three packaged attempts remain FAILED. The third proves replacement B with
+15/15 checked tiles and Field ready, then passive removal withdraws raster and
+readiness; its final removed-package operator result assertion fails. A later
+unit/Chromium red-first repair preserves current negative results after redundant
+tile errors while keeping positive and stale-result invalidation. That repair
+has no new packaged run. No fourth native attempt or rebuild is authorized.
+
+Final frozen serial correctness passes 456 files / 4,829 tests with six existing
+qualification-only skips. Next: reconcile records, open the scoped PR and obtain
+exact-head CI/review. Keep package qualification FAILED,
+DON-7/DON-76 In Progress and release HOLD; no licensed/private map/provider,
+Windows, distribution, performance-threshold or BCP-17 qualification is implied.
+
 ### Breadcrumb And Mission-History Programme
 
 The locked domain model is in

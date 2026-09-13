@@ -1,20 +1,15 @@
 const fs = require('node:fs/promises')
 
 const Database = require('better-sqlite3')
+const { isPackageIdentityCurrent, verifyPackageAttestation } = require('./official-map-package.cjs')
+const { decodeOfficialMapTile } = require('./official-map-tile-decoder.cjs')
+const { qualifyOfficialMapView, readViewTileRange } = require('./official-map-view-qualification.cjs')
 
 const OFFICIAL_MAP_TILE_PATTERN = /^\/?tile\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.png$/
 const WEB_MERCATOR_HALF_WORLD_METRES = 20037508.342789244
 const TILE_SIZE = 256
-// Rendered for tiles that fall outside the offline package's coverage when no online fallback
-// is configured. This must be operator-visible — a fully transparent tile would leave a blank
-// map area indistinguishable from real but empty terrain, hiding a coverage gap during an
-// incident. This is a 256x256 seamless diagonal-hatch "no offline coverage" fill on a neutral
-// paper-void background (bg #E9E7E0, hatch #BCB7AA, 32px period so it tiles seamlessly). The
-// textual "outside official offline area" coverage warning still fires alongside it.
-// Regenerate: 256x256 RGBA, HATCH where (x + y) % 32 < 2, PNG optimize=true.
-const NO_COVERAGE_TILE_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAAFVklEQVR42u3QMW3YAAAFUfvzqZSpoEsgSxF0qhQC3iyjcGBkuHcEnnTn388/73Ecx6+P38dP9PX/38Hn83/Gn/l8ftc/n/t6zefzm/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/vnc12s+n9/0Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/XP575e8/n8pj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyufz739ZrP5zf9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/3zua/XfD6/6c98Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rn899vebz+U1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5Xf987us1n89v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/653Nfr/l8ftOf+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7X/wbzbxzvySpZ4AAAAABJRU5ErkJggg=='
-
+// The missing-coverage image is generated from bounded RGBA pixels and tested by real decoders.
+const { NO_COVERAGE_TILE_BASE64 } = require('./official-map-no-coverage.cjs')
 const SOURCE_NAMES = {
   official_discovery_topo: 'discovery',
   official_premium_basemap: 'basemap_premium',
@@ -31,6 +26,18 @@ function createElectronOfficialMapProxy(options) {
   let settingsLoaded = false
   let settingsLoadPromise = null
   let settingsGeneration = 0
+  let mutationDepth = 0
+  let viewCheckRunning = false
+  let notificationPending = false
+  const isCurrent = options.isPackageCurrent ?? (mapPackage =>
+    isPackageIdentityCurrent(mapPackage.packagePath, mapPackage.attestation))
+  const monitor = typeof options.onPackagesChanged === 'function' ? setInterval(() => {
+    if (notificationPending) notifyPackagesChanged()
+    if (cachedOfficialMaps?.packages?.some(mapPackage => mapPackage.status === 'ready' && !isCurrent(mapPackage))) {
+      invalidateSettings()
+    }
+  }, 1000) : null
+  monitor?.unref()
   const loadOfficialMaps = async () => {
     if (!settingsLoaded) {
       if (settingsLoadPromise === null) {
@@ -61,22 +68,84 @@ function createElectronOfficialMapProxy(options) {
   }
 
   return {
-    fetchOfficialMapTile: (url) =>
-      fetchOfficialMapTile(options, url, mbtilesReaders, loadOfficialMaps),
-    invalidateSettings: () => {
-      settingsGeneration += 1
-      cachedOfficialMaps = null
-      settingsLoaded = false
-      settingsLoadPromise = null
-      mbtilesReaders.closeAll()
+    fetchOfficialMapTile: async (url) => {
+      if (mutationDepth > 0) throw new Error('Official map packages are being updated. Wait for the update to finish.')
+      const generation = settingsGeneration
+      const result = await fetchOfficialMapTile(options, url, mbtilesReaders, loadOfficialMaps)
+      if (generation !== settingsGeneration) throw new Error('Official map package changed during the tile request. Retry the view.')
+      return result
+    },
+    checkOfficialMapView: async (input) => {
+      readViewTileRange(input)
+      if (mutationDepth > 0) throw new Error('Official map packages are being updated. Check View when the update finishes.')
+      if (viewCheckRunning) throw new Error('An offline map check is still running. Wait for it to finish, then check this view.')
+      viewCheckRunning = true
+      try {
+        const generation = settingsGeneration
+        const settings = await options.loadSettings()
+        const packages = settings?.officialMaps?.packages ?? []
+        for (const mapPackage of packages) {
+          if (mapPackage.mapId === input.mapId && mapPackage.status === 'ready' &&
+              !(await verifyPackageAttestation(mapPackage.packagePath, mapPackage.attestation))) {
+            throw new Error('Official map package no longer matches its validation. Save Settings to validate it again.')
+          }
+        }
+        if (generation !== settingsGeneration) throw new Error('Official map package changed during the check. Check View again.')
+        mbtilesReaders.synchronize(packages)
+        const result = await qualifyOfficialMapView(input, {
+          packages,
+          readTile: mbtilesReaders.readTile,
+          isCurrent,
+        })
+        if (generation !== settingsGeneration) throw new Error('Official map package changed during the check. Check View again.')
+        cachedOfficialMaps = settings.officialMaps
+        settingsLoaded = true
+        return result
+      } finally {
+        viewCheckRunning = false
+      }
+    },
+    invalidateSettings,
+    withPackageMutation: async (operation) => {
+      mutationDepth += 1
+      try {
+        invalidateSettings()
+        return await operation()
+      } finally {
+        mutationDepth -= 1
+        invalidateSettings()
+      }
     },
     close: () => {
+      if (monitor !== null) clearInterval(monitor)
       settingsGeneration += 1
       cachedOfficialMaps = null
       settingsLoaded = false
       settingsLoadPromise = null
+      notificationPending = false
       mbtilesReaders.closeAll()
     },
+  }
+
+  /** Withdraws cached readers and notifies the renderer to discard its tiles and readiness proof. */
+  function invalidateSettings() {
+    settingsGeneration += 1
+    cachedOfficialMaps = null
+    settingsLoaded = false
+    settingsLoadPromise = null
+    mbtilesReaders.closeAll()
+    notifyPackagesChanged()
+  }
+
+  /** Retries transient renderer delivery failures without misreporting a completed file mutation. */
+  function notifyPackagesChanged() {
+    try {
+      options.onPackagesChanged?.()
+      notificationPending = false
+    } catch {
+      if (!notificationPending) console.warn('Official map change notification failed; delivery will retry.')
+      notificationPending = true
+    }
   }
 }
 
@@ -84,7 +153,7 @@ async function fetchOfficialMapTile(options, url, mbtilesReaders, loadOfficialMa
   const officialMaps = await loadOfficialMaps()
   const tile = parseOfficialMapTileUrl(url)
 
-  const localTile = readLocalPackageTile(officialMaps, tile, mbtilesReaders)
+  const localTile = await readLocalPackageTile(officialMaps, tile, mbtilesReaders)
   if (localTile.status === 'hit') {
     return localTile.response
   }
@@ -164,7 +233,7 @@ async function fetchMapGenieTile(options, officialMaps, tile, hadLocalMiss) {
   }
 }
 
-function readLocalPackageTile(officialMaps, tile, mbtilesReaders) {
+async function readLocalPackageTile(officialMaps, tile, mbtilesReaders) {
   const packages = Array.isArray(officialMaps?.packages) ? officialMaps.packages : []
   const matchingPackages = packages.filter((mapPackage) => mapPackage?.mapId === tile.mapId)
   if (matchingPackages.length === 0) {
@@ -183,7 +252,7 @@ function readLocalPackageTile(officialMaps, tile, mbtilesReaders) {
   }
 
   for (const mapPackage of readyPackages) {
-    const row = mbtilesReaders.readTile(mapPackage, tile)
+    const row = await mbtilesReaders.readTile(mapPackage, tile)
     if (row.status === 'hit') {
       return {
         status: 'hit',
@@ -203,6 +272,9 @@ function readLocalPackageTile(officialMaps, tile, mbtilesReaders) {
 
 function createMbtilesReaderCache(options) {
   const createReader = options.createMbtilesReader ?? createDefaultMbtilesReader
+  const decodeTile = options.decodeOfficialMapTile ?? decodeOfficialMapTile
+  const isCurrent = options.isPackageCurrent ?? (mapPackage =>
+    isPackageIdentityCurrent(mapPackage.packagePath, mapPackage.attestation))
   const readers = new Map()
 
   return {
@@ -224,8 +296,11 @@ function createMbtilesReaderCache(options) {
         readers.delete(packagePath)
       }
     },
-    readTile: (mapPackage, tile) => {
-      if (!isReadyMbtilesPackage(mapPackage)) {
+    readTile: async (mapPackage, tile) => {
+      if (!isReadyMbtilesPackage(mapPackage) || !isCurrent(mapPackage)) {
+        const stale = readers.get(mapPackage.packagePath)
+        if (stale !== undefined) closeReader(stale.reader)
+        readers.delete(mapPackage.packagePath)
         return { status: 'package_error' }
       }
 
@@ -250,7 +325,12 @@ function createMbtilesReaderCache(options) {
       }
 
       try {
-        const row = entry.reader.readTile(tile)
+        const row = await entry.reader.readTile(tile)
+        if (row.status === 'hit' && (!(await decodeTile(row.bytes, mapPackage.tileFormat)) || !isCurrent(mapPackage))) {
+          closeReader(entry.reader)
+          readers.delete(mapPackage.packagePath)
+          return { status: 'package_error' }
+        }
         if (row.status === 'package_error') {
           closeReader(entry.reader)
           readers.delete(mapPackage.packagePath)
@@ -277,17 +357,24 @@ function createDefaultMbtilesReader(packagePath) {
   }
 
   const db = new Database(packagePath, { readonly: true, fileMustExist: true })
-  const tileStatement = db.prepare(
-    'SELECT tile_data AS tileData FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ? LIMIT 1',
-  )
+  let tileStatement
+  try {
+    tileStatement = db.prepare(
+      'SELECT CASE WHEN length(tile_data) <= 4194304 THEN tile_data ELSE NULL END AS tileData FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ? LIMIT 1',
+    )
+  } catch (error) {
+    db.close()
+    throw error
+  }
 
   return {
     readTile: (tile) => {
       try {
         const row = tileStatement.get(tile.z, tile.x, xyzToTmsY(tile.z, tile.y))
-        if (row?.tileData === undefined) {
+        if (row === undefined) {
           return { status: 'miss' }
         }
+        if (!Buffer.isBuffer(row.tileData)) return {status: 'package_error'}
         return { status: 'hit', bytes: row.tileData }
       } catch {
         return { status: 'package_error' }
@@ -319,6 +406,7 @@ function fingerprintOfficialMapPackage(mapPackage) {
     maxZoom: mapPackage.maxZoom,
     bounds: mapPackage.bounds,
     verifiedAt: mapPackage.verifiedAt,
+    attestation: mapPackage.attestation,
   })
 }
 
@@ -379,12 +467,16 @@ function parseOfficialMapTileUrl(url) {
     throw new Error(`Unknown official map id: ${mapId}`)
   }
 
-  return {
+  const tile = {
     mapId,
     z: readTileCoordinate(match[2], 'z'),
     x: readTileCoordinate(match[3], 'x'),
     y: readTileCoordinate(match[4], 'y'),
   }
+  if (tile.z > 19 || tile.x >= 2 ** tile.z || tile.y >= 2 ** tile.z) {
+    throw new Error('Official map tile coordinates are outside the supported range.')
+  }
+  return tile
 }
 
 function buildMapGenieExportRequest(input) {

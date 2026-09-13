@@ -945,11 +945,37 @@ describe('Electron main startup', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 
+  it('runs failed imports inside the official map mutation guard [DON-7]', async () => {
+    const officialMapProxy = { close: vi.fn(), fetchOfficialMapTile: vi.fn(), invalidateSettings: vi.fn(),
+      withPackageMutation: vi.fn((operation: () => Promise<unknown>) => operation()) }
+    const importPackage = vi.fn(async () => {
+      expect(officialMapProxy.withPackageMutation).toHaveBeenCalledOnce()
+      throw new Error('Synthetic import failure')
+    })
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './official-map-proxy.cjs') return { createElectronOfficialMapProxy: () => officialMapProxy }
+      if (request === './file-system.cjs') return { createElectronFileSystem: () => ({ importOfficialMapPackage: importPackage }) }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:import-official-map-package',
+    )?.[1]).toEqual(expect.any(Function)))
+    const handler = electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:import-official-map-package',
+    )?.[1]
+    await expect(handler(createPackagedSenderEvent(), {sourcePath: 'synthetic'})).rejects.toThrow('Synthetic import failure')
+    expect(officialMapProxy.withPackageMutation).toHaveBeenCalledOnce()
+  })
+
   it('invalidates the official map tile cache after saving settings [DON-240]', async () => {
     const officialMapProxy = {
       close: vi.fn(),
       fetchOfficialMapTile: vi.fn(),
       invalidateSettings: vi.fn(),
+      withPackageMutation: vi.fn((operation: () => Promise<unknown>) => operation()),
     }
     const electronMock = createElectronMock(vi.fn(), undefined, true)
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
@@ -978,7 +1004,7 @@ describe('Electron main startup', () => {
       },
     })
 
-    expect(officialMapProxy.invalidateSettings).toHaveBeenCalledOnce()
+    expect(officialMapProxy.withPackageMutation).toHaveBeenCalledOnce()
   })
 
   it('keeps renderer diagnostic fields from overriding app-owned metadata [DON-237]', async () => {

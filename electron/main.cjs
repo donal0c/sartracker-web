@@ -73,6 +73,8 @@ const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
+const CHECK_OFFICIAL_MAP_VIEW_CHANNEL = 'sartracker:check-official-map-view'
+const OFFICIAL_MAP_PACKAGES_CHANGED_CHANNEL = 'sartracker:official-map-packages-changed'
 const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
 const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
 const MAX_TRACCAR_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024
@@ -741,10 +743,7 @@ function registerIpcHandlers(
   })
   ipcMain.handle(SAVE_SETTINGS_CHANNEL, (event, input) => {
     validateIpcSender(event)
-    return settingsStore.saveAppSettings(input).then((settings) => {
-      officialMapProxy.invalidateSettings()
-      return settings
-    })
+    return officialMapProxy.withPackageMutation(() => settingsStore.saveAppSettings(input))
   })
   ipcMain.handle(TEST_TRACKING_CONNECTION_CHANNEL, (event, input) => {
     validateIpcSender(event)
@@ -826,7 +825,7 @@ function registerIpcHandlers(
     if (typeof input !== 'object' || input === null) {
       throw new Error('Official map package import payload is invalid.')
     }
-    return fileSystem.importOfficialMapPackage(input)
+    return officialMapProxy.withPackageMutation(() => fileSystem.importOfficialMapPackage(input))
   })
   ipcMain.handle(LIST_GPX_DIRECTORY_PATHS_CHANNEL, (event, directoryPath) => {
     validateIpcSender(event)
@@ -860,6 +859,10 @@ function registerIpcHandlers(
       throw new Error('Official map tile URL must be a string.')
     }
     return officialMapProxy.fetchOfficialMapTile(inputUrl)
+  })
+  ipcMain.handle(CHECK_OFFICIAL_MAP_VIEW_CHANNEL, (event, input) => {
+    validateIpcSender(event)
+    return officialMapProxy.checkOfficialMapView(input)
   })
   registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSessionManager)
   registerArchiveReviewIpcHandlers({
@@ -1367,6 +1370,11 @@ async function startElectronApp() {
   const officialMapProxy = createElectronOfficialMapProxy({
     fetch,
     loadSettings: settingsStore.loadAppSettings,
+    onPackagesChanged: () => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send(OFFICIAL_MAP_PACKAGES_CHANGED_CHANNEL)
+      }
+    },
   })
   electronRuntimeContext.officialMapProxy = officialMapProxy
   registerIpcHandlers(

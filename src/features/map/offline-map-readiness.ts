@@ -141,17 +141,30 @@ function describeReadyOfficialPackage(
   mapLabel: string,
   mapPackage: OfficialMapPackageSettings,
 ): OfflineMapReadiness {
+  if (!hasCurrentValidationAttestation(mapPackage)) {
+    return {
+      detail: `${mapLabel}: Official package requires validation. Check View before relying on this area.`,
+      label: 'Official package requires validation',
+      status: 'limited',
+      tone: 'warning',
+    }
+  }
+
   return {
-    detail: `${mapLabel}: local official package ready for ${formatZoomRange(mapPackage)}. Use Check View before relying on a specific area.`,
-    label: 'Official offline map ready',
-    status: 'ready',
-    tone: 'success',
+    detail: `${mapLabel}: Official package validated. Check View before relying on this area.`,
+    label: 'Official package validated',
+    status: 'limited',
+    tone: 'warning',
   }
 }
 
-function formatZoomRange(mapPackage: OfficialMapPackageSettings): string {
-  if (mapPackage.minZoom !== null && mapPackage.maxZoom !== null) {
-    return `z${mapPackage.minZoom}-z${mapPackage.maxZoom}`
-  }
-  return 'its stored zoom range'
+function hasCurrentValidationAttestation(mapPackage: OfficialMapPackageSettings): boolean {
+  const attestation = mapPackage.attestation
+  return (
+    attestation?.version === 1 &&
+    attestation.schemaVersion === 1 &&
+    attestation.decoderPolicy === 'native-raster-256-or-512-opaque-v1' &&
+    typeof attestation.sha256 === 'string' &&
+    /^[a-f0-9]{64}$/u.test(attestation.sha256)
+  )
 }

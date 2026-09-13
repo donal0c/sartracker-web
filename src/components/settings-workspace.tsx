@@ -1039,7 +1039,8 @@ function OfficialMapPackageStatus({
 
     try {
       const generatedAt = new Date().toISOString()
-      const certificate = buildReadinessCertificate(packages, generatedAt)
+      const currentSettings = await loadAppSettings()
+      const certificate = buildReadinessCertificate(currentSettings.officialMaps.packages, generatedAt)
       const fileName = `readiness-certificate-${generatedAt.replaceAll(':', '-').replaceAll('.', '-')}.txt`
       const exportedPath = await exportDiagnosticsReport(fileName, certificate.reportText)
       setExportFeedback(`Certificate exported: ${exportedPath}`)

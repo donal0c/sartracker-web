@@ -11,6 +11,7 @@ import type {
 import type { DiagnosticEvent } from '../features/diagnostics/diagnostic-event-log'
 import type { ArchiveReviewBridge } from '../infrastructure/archive-review/archive-review-types'
 import type { BreadcrumbQueryTransport } from '../infrastructure/mission-store/breadcrumb-query-client'
+import type { OfficialMapViewRequest, OfficialMapViewQualification } from '../features/map/official-map-view-qualification'
 
 export type ElectronTraccarHttpRequest = {
   readonly url: string
@@ -55,6 +56,8 @@ export type SupportBundleExportOptions = {
 }
 
 export type SarTrackerElectronBridge = {
+  readonly checkOfficialMapView?: (request: OfficialMapViewRequest) => Promise<OfficialMapViewQualification>
+  readonly onOfficialMapPackagesChanged?: (listener: () => void) => () => void
   readonly loadAppSettings: () => Promise<AppSettings>
   readonly saveAppSettings: (input: AppSettingsDraft) => Promise<AppSettings>
   readonly testTrackingConnection?: (input: AppSettingsDraft) => Promise<{

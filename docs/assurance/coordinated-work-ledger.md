@@ -189,10 +189,18 @@ implementation alone.
 | `AUD-05` ending an outing during successful GPX import leaves stale importing UI | P2 | **Merged in PR19 at `d20bae5f`** | `DON-274` Done / `DON-270` original completed history; generation-owned import settlement, stale-page/error containment | Red/green interleavings, truthful completion and native custody; [Train B record](findings/repair-train-b.md). Late-refresh failure now retains the settled import error |
 | `AUD-04` equal map-style writes cause continuous idle redraw | P2 | **Repair train C — map interaction/rendering** | `DON-264` / `DON-254`; coordinate with `WAR-04` map remediation and start after the active visibility/map batch | Causal browser performance test, quiet-idle control, no lost overlay synchronization, frame-budget proof |
 | `AUD-06` repeated Go To can be ignored/lose its target during style loading | P2 | **Repair train C** | `DON-6` / `DON-254`; same map target/style lifecycle | Red/green repeated navigation and style-load tests plus rendered target verification |
-| `AUD-11` built-in no-coverage PNG is invalid | P2 | **Repair train C** | `DON-7` / `DON-76`; combine with the WAR-04 map qualification/freshness train without conflating it with imported-tile corruption | Real image-decoder oracle and fail-visible no-coverage workflow |
+| `AUD-11` built-in no-coverage PNG is invalid | P2 | **WAR-11 bounded repair active; not closed** | `DON-7` / `DON-76`; only MAP-01/02/03 + AUD-11, separate from Train C's other rows | Real decoder and synthetic hatch controls pass; packaged attempt 3 proves replacement/readiness and passive removal but final Check View fails. Subsequent negative-result repair has browser/unit proof only; [exact disposition](findings/war-11-offline-map-remediation.md) |
 | `AUD-12` Clear Alias retains the alias | P3 | **Repair train C or next bounded UI batch** | `DON-6`; include only if the chosen train already owns the layer catalog, otherwise keep separately queued | Store/controller red/green test and visible cleared state |
 | `AUD-08` re-added-group backfill reports complete with a required member pending | P2 | **Repair train D — mission progress/review correctness** | `DON-271` / `DON-254`; align with `MIS-003` and do not weaken Finish refusal | Native participant/backfill regression proving progress cannot lead completion truth |
 | `AUD-09` backup invalidates Search Operations pagination and blocks recording | P2 | **Repair train D** | `DON-279` / `DON-254`; Mission Review/pagination lifecycle after Team Feedback Batch 2 | Native backup/page-generation red/green proof and rendered recovery without a full Review reset |
+
+WAR-11 preserves all three failed packaged runs and the original decoder-test crash
+whose native cause remains unconfirmed. No fourth native attempt or rebuild is
+authorized. Current negative-result repair retains fail-closed output after a
+redundant tile failure; view/source/package changes and positive proof still
+invalidate. Bare tile-failure events carry no source/package-generation identity;
+do not claim event attribution. The final source cycle/review controls scoped PR
+readiness; packaged qualification and release remain HOLD.
 
 The audit's additional measured concerns are not silently discarded. Attachment
 base64 frame cost, Traccar oversize-response buffering, GPX hit-test cost,

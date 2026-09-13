@@ -168,10 +168,10 @@ export function describeOfficialOfflineMapCoverage(
   if (isViewInsidePackageBounds(input.viewBounds, input.packageBounds)) {
     return {
       cachedTiles: null,
-      detail: `${input.basemapLabel}: current view is inside the registered official offline package at z${input.zoom}.`,
-      label: 'Current view inside official offline area',
-      status: 'complete',
-      tone: 'success',
+      detail: `${input.basemapLabel}: Bounds include view — tiles not checked. Use Maps > Check View.`,
+      label: 'Bounds include view — tiles not checked',
+      status: 'unchecked',
+      tone: 'neutral',
       totalTiles: null,
       zoom: input.zoom,
     }

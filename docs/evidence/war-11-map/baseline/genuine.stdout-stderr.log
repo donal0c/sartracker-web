@@ -1,0 +1,70 @@
+
+ RUN  v4.1.3 /private/tmp/sartracker-war11-baseline.cTbcn3
+
+stdout | tmp/war-11/map-lifecycle-genuine-png.test.ts > WAR-11 independent map lifecycle controls with decodable PNG tiles > retains the MAP01 removed-package red finding with a genuine PNG
+WAR-11 genuine MAP01 observation {
+  packageStatus: 'ready',
+  readiness: 'ready',
+  readinessLabel: 'Field ready',
+  tileError: 'Official map package is unreadable.'
+}
+
+stdout | tmp/war-11/map-lifecycle-genuine-png.test.ts > WAR-11 independent map lifecycle controls with decodable PNG tiles > retains the MAP03 stale-reader red finding with two genuine PNGs
+WAR-11 genuine MAP03 observation {
+  replacedExisting: true,
+  beforeWasOriginal: true,
+  liveReaderContainsReplacement: false
+}
+
+ ❯ tmp/war-11/map-lifecycle-genuine-png.test.ts (3 tests | 2 failed) 191ms
+     × retains the MAP01 removed-package red finding with a genuine PNG 19ms
+     × retains the MAP03 stale-reader red finding with two genuine PNGs 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tmp/war-11/map-lifecycle-genuine-png.test.ts > WAR-11 independent map lifecycle controls with decodable PNG tiles > retains the MAP01 removed-package red finding with a genuine PNG
+AssertionError: expected 'ready' to be 'not_ready' // Object.is equality
+
+Expected: "not_ready"
+Received: "ready"
+
+ ❯ tmp/war-11/map-lifecycle-genuine-png.test.ts:133:34
+    131|       console.info('WAR-11 genuine MAP01 observation', observed)
+    132|
+    133|       expect(observed.readiness).toBe('not_ready')
+       |                                  ^
+    134|       expect(observed.readinessLabel).toBe('Not field ready')
+    135|       expect(observed.tileError).toBe('Official map package is unreada…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tmp/war-11/map-lifecycle-genuine-png.test.ts > WAR-11 independent map lifecycle controls with decodable PNG tiles > retains the MAP03 stale-reader red finding with two genuine PNGs
+AssertionError: expected { replacedExisting: true, …(2) } to deeply equal { replacedExisting: true, …(2) }
+
+- Expected
++ Received
+
+  {
+    "beforeWasOriginal": true,
+-   "liveReaderContainsReplacement": true,
++   "liveReaderContainsReplacement": false,
+    "replacedExisting": true,
+  }
+
+ ❯ tmp/war-11/map-lifecycle-genuine-png.test.ts:184:24
+    182|       console.info('WAR-11 genuine MAP03 observation', observed)
+    183|
+    184|       expect(observed).toEqual({
+       |                        ^
+    185|         replacedExisting: true,
+    186|         beforeWasOriginal: true,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  17:37:02
+   Duration  442ms (transform 25ms, setup 0ms, import 159ms, tests 191ms, environment 0ms)
+
+

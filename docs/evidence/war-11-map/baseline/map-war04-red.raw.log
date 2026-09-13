@@ -1,0 +1,121 @@
+Command: npx vitest run --config scripts/assurance/war-04/maps/vitest.config.ts 2>&1
+Baseline checkout: detached HEAD 2b2bf8e605e27123c9e454598828d71cb7c062aa
+Raw exit code: 1
+
+ RUN  v4.1.3 /private/tmp/sartracker-war11-baseline.cTbcn3
+
+stdout | scripts/assurance/war-04/maps/official-map-readiness-red.test.ts > WAR-04 official-map readiness red probes > does not keep a registered package field-ready after the file disappears
+WAR-04 missing-package observation {
+  packageStatus: 'ready',
+  readiness: 'ready',
+  readinessLabel: 'Field ready',
+  tileResult: 'error',
+  tileError: 'Official map package is unreadable.'
+}
+
+stdout | scripts/assurance/war-04/maps/official-map-readiness-red.test.ts > WAR-04 official-map readiness red probes > switches a live reader to the package atomically imported at the same path
+WAR-04 same-path replacement observation {
+  replacedExisting: true,
+  beforeWasOriginal: true,
+  pathContainsReplacement: true,
+  registryStatusAfterImport: 'ready',
+  readinessAfterImport: 'ready',
+  liveReaderContainsReplacement: false,
+  invalidatedReaderContainsReplacement: true
+}
+
+stdout | scripts/assurance/war-04/maps/official-map-readiness-red.test.ts > WAR-04 official-map readiness red probes > does not label or serve a tile row whose bytes are not a decodable PNG
+WAR-04 invalid-image observation {
+  packageStatus: 'ready',
+  readiness: 'ready',
+  readinessLabel: 'Field ready',
+  tileResult: 'served',
+  contentType: 'image/png',
+  tileRejectedOrDecodable: false,
+  servedBytesAreBrowserDecodable: false,
+  servedBytesHavePngSignature: false,
+  servedBytesMatchInvalidRow: true
+}
+
+stdout | scripts/assurance/war-04/maps/official-map-readiness-red.test.ts > WAR-04 official-map readiness red probes > does not certify declared coverage when the requested in-bounds tile is absent
+WAR-04 incomplete-coverage observation {
+  packageStatus: 'ready',
+  readiness: 'ready',
+  readinessLabel: 'Field ready',
+  targetTileUsesNoCoverageHatch: true
+}
+
+ ❯ scripts/assurance/war-04/maps/official-map-readiness-red.test.ts (4 tests | 4 failed) 436ms
+     × does not keep a registered package field-ready after the file disappears 23ms
+     × switches a live reader to the package atomically imported at the same path 10ms
+     × does not label or serve a tile row whose bytes are not a decodable PNG 398ms
+     × does not certify declared coverage when the requested in-bounds tile is absent 4ms
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  scripts/assurance/war-04/maps/official-map-readiness-red.test.ts > WAR-04 official-map readiness red probes > does not keep a registered package field-ready after the file disappears
+AssertionError: expected 'ready' to be 'not_ready' // Object.is equality
+
+Expected: "not_ready"
+Received: "ready"
+
+ ❯ scripts/assurance/war-04/maps/official-map-readiness-red.test.ts:126:34
+    124|       console.info('WAR-04 missing-package observation', observed)
+    125|       expect(observed.readiness).toBe('not_ready')
+       |                                  ^
+    127|       expect(observed.readinessLabel).toBe('Not field ready')
+    128|       expect(observed.tileResult).toBe('error')
+
+ FAIL  scripts/assurance/war-04/maps/official-map-readiness-red.test.ts > WAR-04 official-map readiness red probes > switches a live reader to the package atomically imported at the same path
+AssertionError: expected { replacedExisting: true, …(6) } to deeply equal { replacedExisting: true, …(6) }
+
+- Expected
++ Received
+
+  {
+    "beforeWasOriginal": true,
+    "invalidatedReaderContainsReplacement": true,
+-   "liveReaderContainsReplacement": true,
++   "liveReaderContainsReplacement": false,
+    "pathContainsReplacement": true,
+    "readinessAfterImport": "ready",
+    "registryStatusAfterImport": "ready",
+    "replacedExisting": true,
+  }
+
+ ❯ scripts/assurance/war-04/maps/official-map-readiness-red.test.ts:189:24
+    187|       console.info('WAR-04 same-path replacement observation', observed)
+    188|       expect(observed).toEqual({
+       |                        ^
+    190|         replacedExisting: true,
+
+ FAIL  scripts/assurance/war-04/maps/official-map-readiness-red.test.ts > WAR-04 official-map readiness red probes > does not label or serve a tile row whose bytes are not a decodable PNG
+AssertionError: expected 'ready' to be 'not_ready' // Object.is equality
+
+Expected: "not_ready"
+Received: "ready"
+
+ ❯ scripts/assurance/war-04/maps/official-map-readiness-red.test.ts:234:34
+    232|       console.info('WAR-04 invalid-image observation', observed)
+    233|       expect(observed.readiness).toBe('not_ready')
+       |                                  ^
+    235|       expect(observed.readinessLabel).toBe('Not field ready')
+    236|       expect(observed.tileRejectedOrDecodable).toBe(true)
+
+ FAIL  scripts/assurance/war-04/maps/official-map-readiness-red.test.ts > WAR-04 official-map readiness red probes > does not certify declared coverage when the requested in-bounds tile is absent
+AssertionError: expected 'ready' to be 'not_ready' // Object.is equality
+
+Expected: "not_ready"
+Received: "ready"
+
+ ❯ scripts/assurance/war-04/maps/official-map-readiness-red.test.ts:263:34
+    261|       console.info('WAR-04 incomplete-coverage observation', observed)
+    262|       expect(observed.readiness).toBe('not_ready')
+       |                                  ^
+    264|       expect(observed.readinessLabel).toBe('Not field ready')
+    265|       expect(observed.targetTileUsesNoCoverageHatch).toBe(true)
+
+ Test Files  1 failed (1)
+ Tests  4 failed (4)
+ Start at  17:35:37
+ Duration  726ms (transform 26ms, setup 0ms, import 152ms, tests 436ms

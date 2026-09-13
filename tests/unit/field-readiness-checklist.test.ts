@@ -22,6 +22,7 @@ function createReadyPackage(overrides?: Partial<OfficialMapPackageSettings>): Of
     createdAt: '2026-05-15T10:30:00.000Z',
     verifiedAt: '2026-06-01T14:00:00.000Z',
     message: 'Package verified and ready.',
+    attestation: { version: 1, schemaVersion: 1, decoderPolicy: 'native-raster-256-or-512-opaque-v1', identity: 'synthetic', sha256: 'a'.repeat(64) },
     ...overrides,
   }
 }
@@ -45,11 +46,34 @@ function createInput(overrides?: Partial<FieldReadinessInput>): FieldReadinessIn
     activeMapId: 'official_discovery_topo',
     officialMaps: createOfficialMaps(),
     viewBounds: { west: -10.5, south: 51.5, east: -9.5, north: 52.0 },
+    viewZoom: 12,
+    qualification: {
+      mapId: 'official_discovery_topo',
+      bounds: { west: -10.5, south: 51.5, east: -9.5, north: 52.0 },
+      zoom: 12,
+      status: 'complete',
+      totalTiles: 10,
+      usableTiles: 10,
+      checkedAt: '2026-06-01T14:00:00.000Z',
+      packageIdentities: [{ id: 'official_discovery_topo-abc123', sha256: 'a'.repeat(64) }],
+      message: 'Every required tile checked.',
+    },
     ...overrides,
   }
 }
 
 describe('field readiness checklist', () => {
+  it('does not certify saved metadata without a fresh native current-view check', () => {
+    const result = buildFieldReadinessChecklist(createInput({ qualification: undefined }))
+    expect(result.verdict).toBe('not_ready')
+    expect(result.summaryLabel).not.toBe('Field ready')
+  })
+  it('rejects a check for another zoom or package revision', () => {
+    expect(buildFieldReadinessChecklist(createInput({viewZoom: 13})).verdict).toBe('not_ready')
+    expect(buildFieldReadinessChecklist(createInput({officialMaps: createOfficialMaps({packages: [
+      createReadyPackage({attestation: {version: 1, schemaVersion: 1, decoderPolicy: 'native-raster-256-or-512-opaque-v1', identity: 'new', sha256: 'b'.repeat(64)}}),
+    ]})})).verdict).toBe('not_ready')
+  })
   describe('all checks pass', () => {
     it('returns field ready verdict when package is ready and view is covered', () => {
       const result = buildFieldReadinessChecklist(createInput())
@@ -131,7 +155,7 @@ describe('field readiness checklist', () => {
       const coverageItem = result.items.find((i) => i.id === 'view_covered')
 
       expect(coverageItem?.passed).toBe(true)
-      expect(coverageItem?.detail).toContain('inside')
+      expect(coverageItem?.detail).toContain('Every required tile checked')
     })
 
     it('fails when view extends beyond package bounds', () => {

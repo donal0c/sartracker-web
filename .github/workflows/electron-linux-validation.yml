@@ -269,6 +269,19 @@ jobs:
             glxinfo -B | tee tmp/electron-validation-evidence/glxinfo.txt
           grep -qi 'llvmpipe' tmp/electron-validation-evidence/glxinfo.txt
 
+      - name: Packaged official map qualification and freshness smoke
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            npm run electron:smoke:official-map-qualification -- \
+              --app tmp/electron-dist/linux-unpacked/sartracker-web \
+              --evidence-dir tmp/electron-validation-evidence/official-map-qualification
+
       - name: Packaged GPX fidelity and custody smoke
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'

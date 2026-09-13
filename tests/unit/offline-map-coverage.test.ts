@@ -103,7 +103,7 @@ describe('offline map coverage', () => {
     })
   })
 
-  it('describes current view inside an official offline package area', () => {
+  it('describes metadata bounds as unchecked when the current view is inside', () => {
     expect(
       describeOfficialOfflineMapCoverage({
         basemapLabel: 'Discovery Topo',
@@ -118,10 +118,10 @@ describe('offline map coverage', () => {
       }),
     ).toEqual({
       cachedTiles: null,
-      detail: 'Discovery Topo: current view is inside the registered official offline package at z13.',
-      label: 'Current view inside official offline area',
-      status: 'complete',
-      tone: 'success',
+      detail: 'Discovery Topo: Bounds include view — tiles not checked. Use Maps > Check View.',
+      label: 'Bounds include view — tiles not checked',
+      status: 'unchecked',
+      tone: 'neutral',
       totalTiles: null,
       zoom: 13,
     })

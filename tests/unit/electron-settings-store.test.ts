@@ -20,6 +20,16 @@ type SqliteDatabase = {
   readonly close: () => void
 }
 const Database = require('better-sqlite3') as new (filename: string) => SqliteDatabase
+const { decodeOfficialMapTile } = require('../../electron/official-map-tile-decoder.cjs') as {
+  readonly decodeOfficialMapTile: (
+    bytes: Uint8Array,
+    format: string,
+    nativeImage: NativeImageApi,
+  ) => boolean
+}
+const { NO_COVERAGE_TILE_BYTES } = require('../../electron/official-map-no-coverage.cjs') as {
+  readonly NO_COVERAGE_TILE_BYTES: Buffer
+}
 const { createElectronSettingsStore } = require('../../electron/settings-store.cjs') as {
   readonly createElectronSettingsStore: (options: {
     readonly userDataPath: string
@@ -27,6 +37,7 @@ const { createElectronSettingsStore } = require('../../electron/settings-store.c
     readonly fetchFn?: typeof fetch
     readonly platform?: NodeJS.Platform
     readonly now?: () => Date
+    readonly decodeOfficialMapTile?: (bytes: Uint8Array, format: string) => boolean | Promise<boolean>
   }) => ElectronSettingsStore
 }
 
@@ -395,6 +406,13 @@ describe('electron settings store', () => {
       tileCount: 2,
       tileFormat: 'png',
       verifiedAt,
+      attestation: {
+        version: 1,
+        schemaVersion: 1,
+        decoderPolicy: 'native-raster-256-or-512-opaque-v1',
+        sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        identity: expect.any(String),
+      },
       message: 'Official Discovery Topo package is ready.',
     })
     expect(saved.officialMaps.packages[0]?.id).toMatch(/^official_discovery_topo-[a-f0-9]{12}$/u)
@@ -713,6 +731,7 @@ describe('electron settings store', () => {
     readonly fetchFn?: typeof fetch
     readonly now?: () => Date
     readonly decryptString?: (encrypted: Buffer) => string
+    readonly decodeOfficialMapTile?: (bytes: Uint8Array, format: string) => boolean | Promise<boolean>
   }): Promise<ElectronSettingsStore> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-settings-'))
     return createElectronSettingsStore({
@@ -721,6 +740,10 @@ describe('electron settings store', () => {
       fetchFn: options.fetchFn,
       platform: options.platform ?? 'linux',
       now: options.now,
+      // Existing settings tests use the deterministic opaque PNG fixture below;
+      // keep the native-image boundary explicit while the freshness tests cover
+      // malformed and replacement lifecycle behavior.
+      decodeOfficialMapTile: options.decodeOfficialMapTile ?? decodeOpaqueTile,
     })
   }
 })
@@ -746,10 +769,38 @@ function createMbtilesPackage(packagePath: string): void {
     const insertTile = db.prepare(
       'INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?, ?, ?, ?)',
     )
-    insertTile.run(9, 246, 166, Buffer.from('tile-bytes-z9', 'utf8'))
-    insertTile.run(16, 31514, 21318, Buffer.from('tile-bytes-z16', 'utf8'))
+    insertTile.run(9, 246, 166, NO_COVERAGE_TILE_BYTES)
+    insertTile.run(16, 31514, 21318, NO_COVERAGE_TILE_BYTES)
   } finally {
     db.close()
+  }
+}
+
+/** Uses the production decoder against a deterministic opaque native-image seam. */
+function decodeOpaqueTile(bytes: Uint8Array, format: string): boolean {
+  return decodeOfficialMapTile(bytes, format, createOpaqueNativeImage())
+}
+
+/** Supplies the narrow native-image shape needed by the Node settings tests. */
+function createOpaqueNativeImage(): NativeImageApi {
+  return {
+    createFromBuffer: () => ({
+      getSize: () => ({ width: 256, height: 256 }),
+      isEmpty: () => false,
+      toBitmap: () => {
+        const bitmap = Buffer.alloc(256 * 256 * 4)
+        for (let offset = 3; offset < bitmap.length; offset += 4) bitmap[offset] = 0xff
+        return bitmap
+      },
+    }),
+  }
+}
+
+type NativeImageApi = {
+  readonly createFromBuffer: (bytes: Buffer) => {
+    readonly getSize: () => { readonly width: number; readonly height: number }
+    readonly isEmpty: () => boolean
+    readonly toBitmap: () => Buffer
   }
 }
 

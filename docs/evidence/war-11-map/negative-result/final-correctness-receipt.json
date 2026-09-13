@@ -1,0 +1,12 @@
+{
+  "sourceManifestSha256": "40473e68aaa93d56baa2361ed24c09c750b710efb663c98fc06d534a2ea7fb90",
+  "command": "npm run test:correctness -- --no-file-parallelism",
+  "testFilesPassed": 456,
+  "testsPassed": 4829,
+  "existingQualificationTestsSkipped": 6,
+  "durationSeconds": 477.61,
+  "exitCode": 0,
+  "rawLogSha256": "dc773b301fd1abb9c042ea56f91f040733525b7eb6f0d559d230ae734d272ae7",
+  "unchangedInputsVerified": 1173,
+  "nativeQualification": "macOS attempt3 FAILED; artifact predates final hook repair"
+}

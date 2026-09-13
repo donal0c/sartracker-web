@@ -113,15 +113,53 @@ describe('offline map readiness', () => {
               createdAt: '2026-06-05T10:00:00.000Z',
               verifiedAt: '2026-06-05T10:11:12.000Z',
               message: 'Official Discovery Topo package is ready.',
+              attestation: {
+                version: 1,
+                schemaVersion: 1,
+                decoderPolicy: 'native-raster-256-or-512-opaque-v1',
+                sha256: 'a'.repeat(64),
+                identity: 'synthetic-identity',
+              },
             },
           ],
         },
       }),
     ).toEqual({
-      detail: 'Discovery Topo: local official package ready for z8-z16. Use Check View before relying on a specific area.',
-      label: 'Official offline map ready',
-      status: 'ready',
-      tone: 'success',
+      detail: 'Discovery Topo: Official package validated. Check View before relying on this area.',
+      label: 'Official package validated',
+      status: 'limited',
+      tone: 'warning',
+    })
+  })
+
+  it('does not treat a persisted ready package without an attestation as field-ready', () => {
+    expect(
+      describeOfficialMapReadiness({
+        activeMapId: 'official_discovery_topo',
+        officialMaps: {
+          ...DEFAULT_APP_SETTINGS.officialMaps,
+          packages: [{
+            id: 'official_discovery_topo-legacy',
+            sourceType: 'mbtiles',
+            mapId: 'official_discovery_topo',
+            packagePath: '/private/maps/reeks.mbtiles',
+            status: 'ready',
+            bounds: [-10.25, 51.85, -9.45, 52.35],
+            minZoom: 8,
+            maxZoom: 16,
+            tileCount: 31_729,
+            tileFormat: 'png',
+            createdAt: '2026-06-05T10:00:00.000Z',
+            verifiedAt: '2026-06-05T10:11:12.000Z',
+            message: 'Legacy ready package.',
+          }],
+        },
+      }),
+    ).toEqual({
+      detail: 'Discovery Topo: Official package requires validation. Check View before relying on this area.',
+      label: 'Official package requires validation',
+      status: 'limited',
+      tone: 'warning',
     })
   })
 

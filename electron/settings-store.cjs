@@ -2,7 +2,9 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
 
-const Database = require('better-sqlite3')
+const { isPackageIdentityCurrent } = require('./official-map-package.cjs')
+const { inspectOfficialMapPackageInWorker } = require('./official-map-package-inspector.cjs')
+const { decodeOfficialMapTile } = require('./official-map-tile-decoder.cjs')
 
 const SETTINGS_FILE_NAME = 'settings.json'
 // Legacy keyring-encrypted secret file (beta.5 and earlier). Read-only now:
@@ -81,6 +83,7 @@ function createElectronSettingsStore(options) {
   const fetchFn = options.fetchFn ?? fetch
   const platform = options.platform ?? process.platform
   const now = options.now ?? (() => new Date())
+  const decodeTile = options.decodeOfficialMapTile ?? decodeOfficialMapTile
   let saveTail = Promise.resolve()
 
   return {
@@ -92,6 +95,7 @@ function createElectronSettingsStore(options) {
 
   async function loadAppSettings() {
     const persisted = await readSettings(settingsPath)
+    persisted.officialMaps.packages = persisted.officialMaps.packages.map(revalidateOfficialMapPackage)
     return toView(persisted, await hasSecret(persisted.dataSource.authMode))
   }
 
@@ -111,7 +115,7 @@ function createElectronSettingsStore(options) {
     const next = {
       missionDefaults: normalizeMissionDefaults(input.missionDefaults),
       dataSource: normalizeDataSource(input.dataSource),
-      officialMaps: await normalizeOfficialMaps(input.officialMaps, now),
+      officialMaps: await normalizeOfficialMaps(input.officialMaps, now, decodeTile),
       weather: normalizeWeather(input.weather),
     }
     const history = [...previous.adminRosterHistory]
@@ -527,10 +531,10 @@ function baseUrlIncludesCredentials(baseUrl) {
   }
 }
 
-async function normalizeOfficialMaps(input, now) {
+async function normalizeOfficialMaps(input, now, decodeTile) {
   const sourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
   const sourcePath = readOptionalString(input?.sourcePath).trim()
-  const packages = await normalizeOfficialMapPackages(input?.packages, now)
+  const packages = await normalizeOfficialMapPackages(input?.packages, now, decodeTile)
 
   if (sourceType === 'none') {
     return {
@@ -601,7 +605,7 @@ function normalizePersistedOfficialMaps(input) {
   }
 }
 
-async function normalizeOfficialMapPackages(input, now) {
+async function normalizeOfficialMapPackages(input, now, decodeTile) {
   if (!Array.isArray(input)) {
     return []
   }
@@ -620,7 +624,7 @@ async function normalizeOfficialMapPackages(input, now) {
       continue
     }
     seen.add(dedupeKey)
-    output.push(await validateOfficialMapPackage({ mapId, packagePath, now }))
+    output.push(await validateOfficialMapPackage({ mapId, packagePath, now, decodeTile }))
   }
   return output
 }
@@ -655,6 +659,7 @@ function normalizePersistedOfficialMapPackages(input) {
         sizeBytes: readNonNegativeInteger(parsed.sizeBytes),
         createdAt: readOptionalString(parsed.createdAt).trim(),
         verifiedAt: readOptionalString(parsed.verifiedAt).trim(),
+        attestation: readOfficialMapAttestation(parsed.attestation),
         message:
           readOptionalString(parsed.message).trim() ||
           packageStatusMessage(mapId, status),
@@ -691,13 +696,14 @@ async function validateOfficialMapPackage(input) {
       }
     }
 
-    const metadata = readMbtilesMetadata(input.packagePath)
+    const metadata = await inspectOfficialMapPackageInWorker(input.packagePath, {
+      decodeTile: input.decodeTile,
+      now: input.now,
+    })
     return {
       ...base,
       ...metadata,
       status: 'ready',
-      sizeBytes: stats.size,
-      createdAt: toIsoTimestamp(stats.birthtime),
       message: packageStatusMessage(input.mapId, 'ready'),
     }
   } catch (error) {
@@ -737,47 +743,19 @@ function isAppOwnedOfficialMapPackagePath(packagePath, userDataPath) {
   return packagePath === libraryDirectory || packagePath.startsWith(`${libraryDirectory}${path.sep}`)
 }
 
-function readMbtilesMetadata(packagePath) {
-  const db = new Database(packagePath, { readonly: true, fileMustExist: true })
-  try {
-    const tableRows = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('metadata', 'tiles')")
-      .all()
-    const tableNames = new Set(tableRows.map((row) => row.name))
-    if (!tableNames.has('metadata') || !tableNames.has('tiles')) {
-      throw new Error('MBTiles metadata and tiles tables are required.')
-    }
-
-    const metadataRows = db.prepare('SELECT name, value FROM metadata').all()
-    const metadata = new Map(
-      metadataRows.map((row) => [String(row.name).toLowerCase(), String(row.value)]),
-    )
-    const tileCount = readNonNegativeInteger(db.prepare('SELECT COUNT(*) AS count FROM tiles').get()?.count)
-    if (tileCount === 0) {
-      throw new Error('MBTiles package has no tiles.')
-    }
-
-    const zoomRange = db
-      .prepare('SELECT MIN(zoom_level) AS minZoom, MAX(zoom_level) AS maxZoom FROM tiles')
-      .get()
-    return {
-      bounds: readOfficialMapBounds(metadata.get('bounds')),
-      minZoom: readZoomValue(metadata.get('minzoom'), zoomRange?.minZoom),
-      maxZoom: readZoomValue(metadata.get('maxzoom'), zoomRange?.maxZoom),
-      tileCount,
-      tileFormat: readOptionalString(metadata.get('format')).trim().toLowerCase(),
-    }
-  } finally {
-    db.close()
-  }
+/** Reads only an attestation issued by the current content-validation contract. */
+function readOfficialMapAttestation(input) {
+  if (input?.version !== 1 || input.schemaVersion !== 1 || input.decoderPolicy !== 'native-raster-256-or-512-opaque-v1' || typeof input.identity !== 'string' || input.identity.length === 0 ||
+      input.identity.length > 1024 || typeof input.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(input.sha256)) return undefined
+  return {version: 1, schemaVersion: 1, decoderPolicy: input.decoderPolicy, identity: input.identity, sha256: input.sha256}
 }
 
-function readZoomValue(primary, fallback) {
-  const value = Number(primary)
-  if (Number.isInteger(value) && value >= 0) {
-    return value
-  }
-  return readOptionalNumber(fallback)
+/** A persisted ready label is withdrawn as soon as its filesystem identity no longer matches. */
+function revalidateOfficialMapPackage(mapPackage) {
+  if (mapPackage.status !== 'ready') return mapPackage
+  if (isPackageIdentityCurrent(mapPackage.packagePath, mapPackage.attestation)) return mapPackage
+  return {...mapPackage, status: 'invalid', verifiedAt: '', attestation: undefined,
+    message: 'Offline package is missing, changed or unverified. Save Settings to validate it again.'}
 }
 
 function readOfficialMapBounds(input) {

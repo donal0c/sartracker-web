@@ -114,6 +114,7 @@ export type ReadinessCertificateEntry = {
   readonly bounds: string
   readonly createdAt: string
   readonly verifiedAt: string
+  readonly sha256: string
 }
 
 /**
@@ -184,10 +185,10 @@ export function checkManifestCoverage(
   if (covered) {
     return {
       packageId: packageSettings.id,
-      status: 'covered',
-      tone: 'success',
-      label: 'View covered',
-      detail: `${mapLabel}: the current operational area is fully inside this package.`,
+      status: 'unknown',
+      tone: 'neutral',
+      label: 'Bounds include view — tiles not checked',
+      detail: `${mapLabel}: Bounds include view — tiles not checked. Use Maps > Check View.`,
     }
   }
 
@@ -208,10 +209,10 @@ export function buildReadinessCertificate(
   packages: readonly OfficialMapPackageSettings[],
   generatedAt: string,
 ): ReadinessCertificate {
-  const readyCount = packages.filter((p) => p.status === 'ready').length
+  const readyCount = packages.filter(isValidatedPackage).length
   const entries: ReadinessCertificateEntry[] = packages.map((p) => ({
     mapLabel: getRenderableMapLabel(p.mapId),
-    status: formatCertificateStatus(p.status),
+    status: formatCertificateStatus(p),
     zoomRange: formatZoomRangeDisplay(p.minZoom, p.maxZoom),
     tileCount: p.tileCount > 0 ? p.tileCount.toLocaleString() : 'Unknown',
     tileFormat: formatTileFormat(p.tileFormat),
@@ -219,6 +220,7 @@ export function buildReadinessCertificate(
     bounds: formatCertificateBounds(p.bounds),
     createdAt: formatTimestampDisplay(p.createdAt),
     verifiedAt: formatTimestampDisplay(p.verifiedAt),
+    sha256: formatCertificateSha256(p),
   }))
 
   return {
@@ -237,11 +239,11 @@ function buildReadinessCertificateText(
   readyCount: number,
 ): string {
   const lines: string[] = [
-    'SAR Tracker — Official Map Readiness Certificate',
+    'SAR Tracker — Official Map Package Validation Certificate',
     `Generated: ${formatTimestampDisplay(generatedAt)}`,
     '',
     `Packages registered: ${packageCount}`,
-    `Packages ready: ${readyCount}`,
+    `Packages validated: ${readyCount}`,
     '',
     '---',
   ]
@@ -262,6 +264,7 @@ function buildReadinessCertificateText(
       `Coverage bounds: ${entry.bounds}`,
       `Created: ${entry.createdAt}`,
       `Verified: ${entry.verifiedAt}`,
+      `SHA-256: ${entry.sha256}`,
     )
   }
 
@@ -269,10 +272,10 @@ function buildReadinessCertificateText(
     '',
     '---',
     '',
-    'This certificate confirms the registered official map packages at the time of generation.',
-    'Verify coverage for your specific operational area using the in-app coverage check before deployment.',
+    'This certificate records package validation metadata at the time of generation.',
+    'It cannot establish current-view tile coverage. Use Maps > Check View before deployment.',
     '',
-    'SAFETY: This certificate does not guarantee coverage for any specific location.',
+    'SAFETY: Package validation does not guarantee coverage for any specific location.',
     'Always perform a live coverage check against the mission area before relying on offline maps.',
   )
 
@@ -356,10 +359,10 @@ function formatTimestampDisplay(timestamp: string): string {
   }
 }
 
-function formatCertificateStatus(status: OfficialMapPackageSettings['status']): string {
-  switch (status) {
+function formatCertificateStatus(packageSettings: OfficialMapPackageSettings): string {
+  switch (packageSettings.status) {
     case 'ready':
-      return 'Ready'
+      return isValidatedPackage(packageSettings) ? 'Validated package' : 'Validation required'
     case 'missing':
       return 'Missing'
     case 'invalid':
@@ -367,4 +370,20 @@ function formatCertificateStatus(status: OfficialMapPackageSettings['status']): 
     case 'pending':
       return 'Pending validation'
   }
+}
+
+function isValidatedPackage(packageSettings: OfficialMapPackageSettings): boolean {
+  const attestation = packageSettings.attestation
+  return (
+    packageSettings.status === 'ready' &&
+    attestation?.version === 1 &&
+    attestation.schemaVersion === 1 &&
+    attestation.decoderPolicy === 'native-raster-256-or-512-opaque-v1' &&
+    typeof attestation.sha256 === 'string' &&
+    /^[a-f0-9]{64}$/u.test(attestation.sha256)
+  )
+}
+
+function formatCertificateSha256(packageSettings: OfficialMapPackageSettings): string {
+  return isValidatedPackage(packageSettings) ? packageSettings.attestation!.sha256 : 'Not recorded'
 }

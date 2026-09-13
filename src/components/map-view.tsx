@@ -12,6 +12,8 @@ import { LeafletFallbackMapView } from './leaflet-fallback-map-view'
 import { getMapRendererMode } from '../features/map/map-renderer-mode'
 import { useFocusModeStore } from '../features/focus-mode/focus-mode-store'
 import { useFieldReadinessChecklist } from '../features/map/use-field-readiness-checklist'
+import { useOfficialMapViewQualification } from '../features/map/use-official-map-view-qualification'
+import { isOfficialMapId } from '../lib/map-config'
 import { useOfflineMapCoverage } from '../features/map/use-offline-map-coverage'
 import { useMapController } from '../features/map/use-map-controller'
 import { useOfflineMapReadiness } from '../features/map/use-offline-map-readiness'
@@ -48,7 +50,8 @@ function MapLibreMapView() {
     activeBasemapId,
     mapRef,
   )
-  const fieldReadiness = useFieldReadinessChecklist(activeBasemapId, mapRef)
+  const officialView = useOfficialMapViewQualification(activeBasemapId, mapRef)
+  const fieldReadiness = useFieldReadinessChecklist(activeBasemapId, mapRef, officialView.qualification)
   const catalogueGroups = useOfficialMapCatalogueGroups()
 
   return (
@@ -56,12 +59,12 @@ function MapLibreMapView() {
       <BasemapSwitcher
         activeBasemapId={activeBasemapId}
         catalogueGroups={catalogueGroups}
-        coverage={coverage}
+        coverage={isOfficialMapId(activeBasemapId) ? officialView.coverage : coverage}
         fieldReadiness={fieldReadiness ?? undefined}
         mapHealth={mapHealth}
         offlineReadiness={offlineMapReadiness}
         onBasemapChange={handleBasemapChange}
-        onCheckCoverage={checkCurrentViewCoverage}
+        onCheckCoverage={isOfficialMapId(activeBasemapId) ? officialView.check : checkCurrentViewCoverage}
       />
       <DrawingToolbar />
       <div className="h-full w-full" data-testid="map-container" ref={containerRef} />
