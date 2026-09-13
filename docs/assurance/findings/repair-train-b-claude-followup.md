@@ -1,7 +1,8 @@
 # PR19 Claude follow-up — DON-274 / DON-270
 
-The review of `8865c7a6` supersedes its merge-readiness receipt. PR19 returned to
-draft on 2026-09-12. This is GPX correctness remediation; release remains HOLD
+The review of `8865c7a6` superseded its earlier merge-readiness receipt. PR19
+completed the follow-up and merged at `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`.
+This is GPX correctness remediation; release remains HOLD
 and the separate responsiveness queue and strict `<200 ms` gates are unchanged.
 The [supplied review](../../evidence/repair-train-b/claude-followup/review.txt)
 and original failing parser controls are retained alongside this disposition.
@@ -86,8 +87,8 @@ it is not misrepresented as a clean final-head CI artifact. ASAR SHA-256 is
 
 All four independent affected charters are clear after targeted rechecks.
 Exact final-head bindings and terminal Linux CI readiness are recorded on
-[PR19](https://github.com/donal0c/sartracker-web/pull/19). No merge/release is
-performed here; release remains HOLD.
+[PR19](https://github.com/donal0c/sartracker-web/pull/19). This document does
+not perform a merge or release; PR19 is merged and release remains HOLD.
 
 ## Linux smoke diagnosis
 
@@ -98,8 +99,9 @@ the mission-start click. AppImage launch was consequently skipped. The original
 failure is retained; it is not a GPX fidelity pass or a confirmed application
 defect. The same package smoke passed again on macOS. Added failure diagnostics
 capture the rendered state, native mission/outings rows and bounded logs without
-changing assertions, deadlines or application code. Cause and Linux readiness
-remain pending the diagnostic run; PR19 stays draft.
+changing assertions, deadlines or application code. The corrected Linux launch
+was then covered by terminal ordinary CI; the earlier diagnostic failure remains
+retained, and PR19 is merged.
 
 Diagnostic run `34693020365` reproduces the failure and identifies the setup
 defect: native SQLite contains the active mission, but the DOM is empty and

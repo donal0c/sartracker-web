@@ -159,8 +159,8 @@ type PollingManagerOptions = {
   readonly logger?: PollingManagerLogger
   readonly now?: () => Date
   readonly monotonicNow?: () => number
-  readonly setTimeout?: typeof window.setTimeout
-  readonly clearTimeout?: typeof window.clearTimeout
+  readonly setTimeout?: typeof globalThis.setTimeout
+  readonly clearTimeout?: typeof globalThis.clearTimeout
 }
 
 export type TrackingSnapshotContext = {
@@ -250,8 +250,8 @@ export function createPollingManager(
 ): PollingManager {
   const now = options.now ?? (() => new Date())
   const monotonicNow = options.monotonicNow ?? (() => performance.now())
-  const scheduleTimeout = options.setTimeout ?? window.setTimeout.bind(window)
-  const clearScheduledTimeout = options.clearTimeout ?? window.clearTimeout.bind(window)
+  const scheduleTimeout = options.setTimeout ?? globalThis.setTimeout.bind(globalThis)
+  const clearScheduledTimeout = options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis)
   const maxBackoffMs = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
   const pollIntervalMs = normalizePollingIntervalMs(
     options.intervalMs,

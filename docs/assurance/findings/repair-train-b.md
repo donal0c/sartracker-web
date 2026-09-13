@@ -28,7 +28,7 @@ Historical CI `34515489481` failed at 544.165 ms and missed a post-restart
 Devices click; downstream archive/AppImage checks skipped. The failure is
 retained, not fixed by this GPX change. Under merged PR22 policy strict timing
 is a mandatory pre-release blocker, not an ordinary PR merge blocker.
-DON-254 remains open and release remains HOLD. After Donal merges PR19, the
+DON-254 is now Done in Linear and release remains HOLD. After Donal merges PR19, the
 locked queue is bounded 316–550 ms breadcrumb IPC/query transfer repair,
 separate ~239 ms legacy recovery repair, then unchanged strict `<200 ms`
 qualification. No performance repair, merge, release or field acceptance here.

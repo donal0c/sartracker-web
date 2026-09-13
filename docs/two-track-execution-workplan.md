@@ -4,26 +4,19 @@
 
 ## Planning Rule
 
-PR19 is merged to `origin/master` at
-`d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`. Its final implementation head is
-`f203869c`; terminal CI `34694049815` passed. The [Train B evidence](assurance/findings/repair-train-b.md)
-retains the implementation proof and historical failures. No predecessor PRs
-were open at chunk start. Linear `DON-274` is verified Done and `DON-254` is In Progress.
-The active chunk is DON-254 follow-up A: bounded lossless canonical breadcrumb
-query transport on `codex/don-254-bounded-history-transport`, covering the
-103,626-row query measured at 316–351 ms and the 550 ms restart defect.
-Follow-up B, the separate ~239 ms legacy recovery path, and then unchanged strict
-`<200 ms` qualification follow in order. Release remains HOLD.
-Local transport source/browser/package proof is recorded in the
-[bounded transport receipt](evidence/breadcrumb-query-transport/receipt.md).
-The [PR23 terminal receipt](https://github.com/donal0c/sartracker-web/pull/23)
-governs exact-head CI/review readiness and Donal's merge decision. Four initial
-charters found one stale-runtime status P2, now red/green repaired (92 runtime
-tests plus rendered flow). The explicitly scoped deleted-path repository-hashing
-harness regression has red/green proof (31/31). After owner merge, follow-up B
-remains next; no new whole-candidate qualification claim is made here.
-Automatic review's total-deadline defect also has a red/green inactivity-watchdog
-repair (21 affected controls); fresh package and terminal CI/rechecks govern it.
+PRs #19/#22/#20/#21/#23 are merged through current `origin/master` at
+`1fac099a9f581448a5a607a063e2a8b77fa9b151`. PR #19's GPX fidelity and
+import-lifecycle reconciliation, and PR23's bounded lossless canonical
+breadcrumb transport, are recorded in their terminal receipts. PR23's final
+implementation head was `45420208`; terminal CI `34694049815` passed. Its
+background-throttling, reload-cleanup, deadline and inactivity-watchdog repairs
+are merged. The separate ~239 ms legacy recovery path and unchanged strict
+`<200 ms` qualification remain outstanding; release remains HOLD.
+
+This branch carries the WAR-02B bounded property and mutation controls. Its
+focused receipt, exact-head CI evidence and remaining qualification boundary
+are recorded in the assurance documents below. No new whole-candidate release
+qualification claim is made here.
 
 ### WAR-11A: AppImage builder boundary (merged, 2026-09-10)
 
@@ -189,14 +182,26 @@ PR19 is merged to `origin/master` at
 `f203869c`; terminal CI `34694049815` passed. Its implementation evidence and
 historical proof/failures remain in the [Train B record](assurance/findings/repair-train-b.md).
 The live open-PR list is empty. Linear `DON-274` is verified Done; `DON-254`
-is In Progress.
+is now Done in Linear.
 
-The active chunk is follow-up A: bounded lossless canonical breadcrumb query
-transport on branch `codex/don-254-bounded-history-transport`, against the
+The historical active chunk was follow-up A: bounded lossless canonical
+breadcrumb query transport on branch `codex/don-254-bounded-history-transport`, against the
 103,626-row query measured at 316–351 ms and the 550 ms restart defect.
 Follow-up B, the separate ~239 ms legacy recovery path, follows afterward. The
 unchanged strict `<200 ms` qualification remains later; Release stays HOLD.
-The current queue does not claim implementation, test completion, or readiness.
+That follow-up is now merged in PR23; the current queue does not claim final
+qualification or release readiness.
+
+PR23 follow-up A is now merged in current `origin/master`. The ordered queue is:
+
+1. Execute the separate legacy-recovery repair (~239 ms).
+2. Rerun the unchanged strict `<200 ms` release-qualification suite and retained
+   timing cases. Release remains HOLD until repairs and qualification pass.
+
+The detailed attribution record is
+[here](assurance/findings/responsiveness-attribution.md). DON-254 was open at
+the time of this historical reconciliation and is now Done in Linear; no
+deployment, release, or team contact is part of this reconciliation.
 
 ### Repair Train B merged evidence and merged WAR-06 evidence
 
@@ -318,6 +323,28 @@ Include both in the batch evidence, final independent reviews and CI.
 
 ### Coordinated three-stream safety queue
 
+**WAR-02B bounded property and mutation controls (2026-09-12, review repair
+pass complete locally):** the branch `codex/war-02b-property-mutation` now has
+independent TM65/WGS84 anchors and coordinate rejection cases, an independent
+ingest-hash oracle with optional/hash/timestamp/field cases, exact cursor and
+recent-window arithmetic, and a public client-boundary fault injection for the
+DON-228 red proof. The bounded runner now validates replayable seeds, shrinks
+counterexamples, preserves cause/stack evidence, times out async predicates,
+and fails closed on interruption. WAR-02B is excluded from generic correctness
+so its serial property/mutation gate is not duplicated in either CI workflow;
+the timer adapter boundary uses `globalThis` for the browser/Node type split.
+Focused local evidence is 4 files / 19 tests, full correctness 438 files /
+4,539 passed / 6 skips, full source 442 files / 4,564 passed, plus lint,
+WAR-02B type-check, root app/node type-check, and build/bundle budgets. The
+mutation receipt now records four killed current mutants across the same three
+seams; the former nonexistent `legacy:` survivor is removed. Exact-head CI run
+`34720826064` bound `961992f9` and passed the assurance subset; fresh final Luna
+review found no executable correctness or proof blocker. The run was stopped
+at the separate 960k release replay before later package inspection/soak/archive
+stages. No browser, package, provider, soak, release, or field qualification
+is claimed; DON-254 is Done in Linear and release HOLD is unchanged. See [the WAR-02B records](assurance/war-02b-test-infrastructure.md)
+and [mutation receipt](assurance/war-02b-mutation-survivors.md).
+
 **WAR-02A test foundation (2026-09-10, merged in PR #16 at `4076975d`):** additive deterministic
 scheduler, explicit completion gates and filesystem/SQLite call-boundary fault
 injection under `tests/unit/assurance/war-02a/`. The
@@ -374,15 +401,14 @@ browser/visual flows and 27 screenshot reviews); its full disposition is in that
 evidence file. Follow the updated PR head's CI rather than reuse ancestor CI.
 
 1. Breadcrumb PR-1 through PR-6, Team Feedback Batches 1–2, WAR-11A,
-   WAR-02A, Repair Train A, PR19, PR22, WAR-06 and PR21 are merged through
-   `origin/master` at `d20bae5f`. Use [Testing and review cadence](testing-and-review-cadence.md)
-   for new work. The active DON-254 queue is follow-up A bounded lossless
-   canonical breadcrumb query transport (103,626-row query measured at
-   316–351 ms and 550 ms restart defect), then separate follow-up B legacy
-   recovery (~239 ms), then unchanged strict `<200 ms` qualification. Repair
-   Trains C/D and applicable WAR remediation retain their own scope; BCP-17 final
-   qualification runs only after those release-blocking repairs are dispositioned.
-   Release remains HOLD.
+   WAR-02A, Repair Train A, PR19, PR22, PR23, WAR-06, PR21 and Repair Train B
+   are merged through current `origin/master` at `1fac099a`. Use [Testing and
+   review cadence](testing-and-review-cadence.md) for new work. The active
+   DON-254 queue is separate follow-up B legacy recovery (~239 ms), then
+   unchanged strict `<200 ms` qualification. Repair Trains C/D and applicable
+   WAR remediation retain their own scope; BCP-17 final qualification runs only
+   after those release-blocking repairs are dispositioned. Release remains
+   HOLD; merge does not establish release or field acceptance.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -1197,6 +1223,7 @@ This is the default order when the user says “work on the next task.”
 | Backlog | Measured indexes, bounded telemetry retention, and compaction policy | S2 Electron / Persistence | `DON-251` | The 3.7 GB PR-1 gate measured the pre-existing Review audit scan at about 7.5 s and exact count at about 1.1–1.3 s on Electron main. Query-plan-driven indexing, standing retention, interruption-safe physical compaction, and reusable-page policy remain here with `DON-250`; no O(database-size) v8 migration index or in-process multi-GB `VACUUM` is authorized. PR #10 deletes eligible archived rows logically and may leave the file size unchanged. |
 | Done | Create streamed encrypted mission archives with restore-and-replay proof | S2 Electron / Archive | `DON-252` | BCP-15 is implemented on PR #10 with bounded mission-only streaming and sealed-file exhaustive restore/verification. Merged in PR #10 on 2026-09-09; engineering evidence and limits are in the complete PR6 ledger, not release proof. |
 | Done | Add archive-backed review, visible revisions, and indefinite retention | S2 Electron / Governance | `DON-253` | BCP-16 is implemented on PR #10 with read-only archive Review, visible immutable supplements, and eligibility-gated logical cleanup. Resume is available only when an intact journal proves cleanup is in progress; invalid recovery state fails closed, and cleanup rechecks the authorized membership boundary. Cleanup may remove archived mission rows, rebuildable derived projections, four explicitly settled operational tables, and only the allowed high-volume telemetry event types from `mission_events`. It retains the mission stub, archive/supplement registry, every non-telemetry mission audit event, and unknown future audit event types. Merged in PR #10 on 2026-09-09; engineering evidence and limits are in the complete PR6 ledger, not release proof. |
+| Done (assurance slice) | WAR-02B bounded property and mutation controls | Whole application / Verification | `DON-254` | PR #24. Focused WAR-02B 4 files / 19 tests, green-current/red-rebroken proof, lint, WAR-02B type-check, root app/node type-check, build/bundle budgets, and clean-tree full source suite pass locally. Independent anchors, inclusive envelope boundaries, separate WGS84 rejection paths, exact cursor arithmetic, public fault injection, expanded ingest cases, fail-closed runner/reporting, and non-duplicated correctness wiring are implemented. Exact-head assurance subset passed in CI `34720826064` at `961992f9`; fresh Luna final review found no executable blocker. The run stopped before separate 960k replay and later package/soak/archive qualification; release HOLD and strict timing qualification are unchanged. |
 | Backlog | Qualify the complete breadcrumb and mission-history programme | S2 Electron / Verification | `DON-254` | BCP-17 no-skip qualification of the exact final candidate after all six PRs. |
 | Backlog | Release the complete breadcrumb and mission-history programme | S2 Electron / Release | `DON-255` | One team-facing release only after BCP-17; no intermediate programme releases. |
 | Done | S1: Runtime Boot/Fault Guard | Shared | `sartracker-web-3rl` | Done 2026-05-16 |

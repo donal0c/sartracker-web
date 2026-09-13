@@ -37,8 +37,8 @@ type BreadcrumbHistoryReconcilerOptions = {
   readonly retryBaseMs?: number
   readonly maxRetryMs?: number
   readonly antiEntropyIntervalMs?: number
-  readonly setTimeout?: typeof window.setTimeout
-  readonly clearTimeout?: typeof window.clearTimeout
+  readonly setTimeout?: typeof globalThis.setTimeout
+  readonly clearTimeout?: typeof globalThis.clearTimeout
 }
 
 export type BreadcrumbHistoryChunk = {
@@ -131,9 +131,9 @@ export function createBreadcrumbHistoryReconciler(
     options.antiEntropyIntervalMs,
     DEFAULT_ANTI_ENTROPY_INTERVAL_MS,
   )
-  const scheduleTimeout = options.setTimeout ?? window.setTimeout.bind(window)
+  const scheduleTimeout = options.setTimeout ?? globalThis.setTimeout.bind(globalThis)
   const clearScheduledTimeout =
-    options.clearTimeout ?? window.clearTimeout.bind(window)
+    options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis)
 
   const jobsByDeviceId = new Map<string, DeviceReconciliationJob>()
   const completedDevicesById = new Map<string, CompletedDeviceReconciliation>()

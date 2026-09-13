@@ -1,17 +1,66 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-12. Read after `CLAUDE.md`.
+Updated 2026-09-13. Read after `CLAUDE.md`.
 
 ## Where we are
 
-- **PR19 is merged to `origin/master` at `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37`.**
+- **WAR-02B review remediation is implemented locally on branch
+  `codex/war-02b-property-mutation`, based on exact `origin/master`
+  `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37` before PR23; the branch now
+  includes current `origin/master` `1fac099a9f581448a5a607a063e2a8b77fa9b151`.**
+  The slice now has independent
+  coordinate anchors and rejection cases, an independent ingest identity
+  oracle, exact cursor/recent-window arithmetic, and a public client-boundary
+  DON-228 fault injection with separate current-green and rebroken-red legs.
+  The runner shrinks failures, validates seeds, preserves cause/stack evidence,
+  bounds async predicates, and fails closed on interruption. WAR-02B is excluded
+  from generic correctness so CI does not execute it twice. Focused local
+  evidence is 4 files / 19 tests, full correctness 438 files / 4,539 passed /
+  6 skips, full source 442 files / 4,564 passed, lint, WAR-02B type-check,
+  root app/node type-check, build/bundle budgets, and green-current/red-
+  rebroken proof. Both independent TM65 anchors, all coordinate rejection
+  cases, and all four inclusive Irish envelope corners are deterministic
+  coverage. Four current semantic mutants are killed across three seams; the
+  nonexistent `legacy:` survivor is removed. The final exact-head assurance
+  subset in CI run `34720826064` bound `961992f9` and passed; it was stopped at
+  the separate 960k release replay before later package inspection/soak/archive
+  stages. Fresh Luna xhigh review on the exact head found no executable
+  correctness or proof blocker. No browser, package, provider, soak, release,
+  or field claim is made; DON-254 is Done in Linear and release HOLD is
+  unchanged. PR [#24](https://github.com/donal0c/sartracker-web/pull/24) remains
+  open and unmerged; GitHub mergeability/owner approval is still outstanding.
+
+- **PR19 Claude follow-up is merged at `d20bae5f`; prior pending wording is superseded.**
+  Malformed geometry now refuses the whole source explicitly; batch continuation,
+  admission/watch/rescan outcomes and page/delete/error races are repaired. See the
+  [follow-up disposition](../docs/assurance/findings/repair-train-b-claude-followup.md).
+  `codex/repair-train-b` remains based on master `f4d1f321` after PRs #22/#20/#21;
+  exact custody, immutable revisions and foreground-write priority are preserved.
+  Ordinary correctness passes 438 files / 4,539 tests (six qualification-only
+  skips), lint/build/budgets, seven browser flows and three rendered reviews.
+  Native macOS package proof passes 75,004 points, malformed-source retention,
+  undated late names, End Outing during import, restart equality and clean close.
+  The named GPX smoke now runs in ordinary Linux CI; the standard visual project
+  includes all seven GPX flows and their three reviewed captures. Four affected independent
+  source charters are clear. Linux runs `34691543650` and `34693020365` remain
+  retained diagnostic failures: the former stopped before GPX import and the
+  latter confirms WebGL blocklisting after mission start. The corrected GPX
+  smoke passed with the established Linux AppImage Mesa/ANGLE flags. PR19 is
+  merged; its exact final-head bindings and terminal CI receipt live on
+  [PR19](https://github.com/donal0c/sartracker-web/pull/19). [Current record](../docs/assurance/findings/repair-train-b.md).
+  DON-274 remains In Review; DON-270 retains its original completed history;
+  DON-254 was In Progress in this historical receipt and is now Done in Linear.
+  Historical timing failures remain release blockers.
+  PR19 merge is complete; no release or performance work is claimed here.
+- **PR23 follow-up A is now merged to `origin/master` at
+  `1fac099a9f581448a5a607a063e2a8b77fa9b151` from final head `45420208`.**
   Its final implementation head is `f203869c`; terminal CI `34694049815` passed.
   The [Train B record](../docs/assurance/findings/repair-train-b.md) retains the
   implementation evidence, historical proof and failures. No predecessor PRs
   were open at the start of this chunk. Linear `DON-274` is verified Done;
-  `DON-254` is In Progress.
+  `DON-254` is now Done in Linear.
 
-  The active chunk is DON-254 follow-up A: bounded lossless canonical breadcrumb
+  PR23 delivered DON-254 follow-up A: bounded lossless canonical breadcrumb
   query transport on branch `codex/don-254-bounded-history-transport`, against
   the 103,626-row query measured at 316–351 ms and the 550 ms restart defect.
   Follow-up B, the separate ~239 ms legacy recovery path, comes afterward; the
@@ -28,8 +77,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   race was retained and the harness handler corrected before the passing repeat.
   Four independent review charters clear. Reported DON-277 210.8 ms failure and
   isolated 11.8 ms pass remain separate; no causal timing repair claimed.
-  The terminal PR receipt
-  governs fresh exact-head Linux CI/readiness; Donal retains merge authority.
+  The terminal PR receipt records its exact-head Linux CI/readiness; Donal
+  retains merge authority for the remaining qualification and release.
   The [transport record](../docs/assurance/findings/breadcrumb-query-transport.md)
   and [receipt](../docs/evidence/breadcrumb-query-transport/receipt.md) retain the
   diagnosed source-cycle failure, focused correction and strict package measurements.
@@ -69,7 +118,8 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   This is scoped review readiness, not reliable strict-200 or release acceptance.
   [Disposition](../docs/assurance/findings/repair-train-a-remediation.md) and
   [latest receipt](../docs/evidence/repair-train-a/github-followup/linux-ci-receipt.md)
-  bind the proof. DON-267/DON-269 are Done in Linear; DON-254 is In Progress.
+  bind the proof. DON-267/DON-269 are Done in Linear; DON-254 is now Done in
+  Linear.
   Merge does not establish release or field acceptance.
 
 - **WAR-02A test foundation merged in PR #16 at `4076975d`** from fetched master `083f5047`
@@ -149,12 +199,9 @@ Updated 2026-09-12. Read after `CLAUDE.md`.
   organization (`DON-100`). Marker Details simplification remains a later
   coordinator-confirmation item. Mission Preview/per-device visibility landed
   in PR #15; Linear `DON-215` is reconciled to Done.
-- Active next work is DON-254 follow-up A: bounded lossless canonical breadcrumb
-  query transport on `codex/don-254-bounded-history-transport`, covering the
-  103,626-row query measured at 316–351 ms and the 550 ms restart defect.
-  Follow-up B, the separate ~239 ms legacy recovery path, remains next in order,
-  followed by unchanged strict `<200 ms` qualification. Historical proof and
-  failures remain in the [Train B record](../docs/assurance/findings/repair-train-b.md).
+- PR23 follow-up A is merged. The next DON-254 work is follow-up B: the separate
+  ~239 ms legacy recovery path, followed by unchanged strict `<200 ms`
+  qualification. Historical proof and failures remain in the [Train B record](../docs/assurance/findings/repair-train-b.md).
   Other repair trains and WAR hazards remain tracked separately before BCP-17/DON-255.
   Release remains HOLD. DON-247 and DON-264 remain separate reliability work.
 

@@ -3,6 +3,7 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" },
-    { "path": "./tests/unit/assurance/war-02a/tsconfig.json" }
+    { "path": "./tests/unit/assurance/war-02a/tsconfig.json" },
+    { "path": "./tests/unit/assurance/war-02b/tsconfig.json" }
   ]
 }
