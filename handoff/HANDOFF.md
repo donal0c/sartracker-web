@@ -4,7 +4,8 @@ Updated 2026-09-13. Read after `CLAUDE.md`.
 
 ## Current baseline
 
-Fresh `origin/master` is `deedab27483ad4fe1ca998a4d68afd555f4e2337`, including
+Fresh `origin/master` is `8f93f8d1cc4554178706e23401ecd496d1193195`, including
+merged PR26 WAR-06 mission-scope repair,
 merged PR23 bounded history transport and merged PR24 WAR-02B property/mutation
 controls. PR24's final head is `946545a5e807779752d5eb18090462041ef3fe5b`.
 Earlier PR1/PR4/PR17 tracking repairs remain merged and valid. PR19 GPX repairs,
@@ -14,20 +15,22 @@ Detailed historical receipts and retained failures are in
 
 ## Active work
 
-- **DON-267 — WAR-06 production mission-scope repair**, branch
+- **DON-267 — WAR-06 production mission-scope repair is merged in PR26**, branch
   `codex/don-267-war06-mission-scope-repair`, based on the fresh baseline above.
   Only WAR-06-AUD-01, WAR-06-AUD-02 and WAR-06-CACHE-SIBLING are reopened:
   delayed history, deferred participant hydration and global cache reuse across
   missions. Linear is In Progress; its 2026-09-13 bookkeeping comment preserves
   the original completed fixes. [Repair contract/evidence](../docs/assurance/findings/war-06/mission-scope-repair.md).
-- **DON-254 — separate legacy recovery responsiveness repair**, branch
-  `codex/don-254-legacy-recovery-responsiveness`, also starts at `deedab27`.
-  Linear is In Progress. The ~239 ms recovery path and strict `<200 ms`
-  qualification remain distinct from the merged PR23 transport repair.
+- **DON-254 — legacy recovery test-observer repair, PR25**, branch
+  `codex/don-254-legacy-recovery-responsiveness`, reconciled onto `8f93f8d1`.
+  The synchronous COUNT overlapped a 256.329 ms heartbeat; off-thread inspection
+  retained a 204.046 ms query with a 14.481 ms main heartbeat. No production
+  recovery defect is demonstrated and the historical ~239 ms cause is unassigned.
+  Linear remains In Progress. [Finding and retained evidence](../docs/assurance/findings/legacy-object-recovery-responsiveness.md).
 
 The two repair streams may proceed in parallel with disjoint production ownership.
-Intended merge order: DON-267 mission-scope repair, then DON-254 recovery repair
-reconciled onto that master. Donal owns both merges. Final qualification follows
+DON-267 merged first; DON-254 is reconciled onto that master. Donal owns the
+remaining PR25 merge. Final qualification follows
 the combined candidate and all remaining release-blocking dispositions; no release,
 deployment or SAR-team contact is authorized here. The sole queue remains
 [the two-track workplan](../docs/two-track-execution-workplan.md).
@@ -49,10 +52,14 @@ clean committed build. Earlier agent reviews were within the author-controlled
 Codex run, not external approval. Known broader baseline browser failures and
 native coverage/listener warnings remain recorded; release HOLD is unchanged.
 
-[PR26](https://github.com/donal0c/sartracker-web/pull/26) requires green ordinary
-CI on its final committed head. DON-267 and the PR carry the live head/CI receipt
-and terminal Linux artifact inspection. Then it is ready for Donal's re-review;
-Donal owns merge. No merge, release or new external approval is claimed here.
+[PR26](https://github.com/donal0c/sartracker-web/pull/26) is merged; its terminal
+receipt retains final-head CI and Linux artifact inspection. PR25's earlier
+`09710eba` CI `34747643041` passed 4,656 correctness tests and packaged Linux
+50k recovery/restart with 58.624 ms maximum recovery heartbeat. Its two nonauthor
+reviews and macOS proof remain tied to unchanged recovery inputs. Reconciliation
+preserves all WAR-06 code and both independent packaged CI steps. The latest
+[PR25 receipt](https://github.com/donal0c/sartracker-web/pull/25) binds the combined
+head and controls merge readiness; old pending-WAR-06 wording is superseded.
 
 Use [testing and review cadence](../docs/testing-and-review-cadence.md): retain
 failures, diagnose before repeating, serialize heavy checks, and reuse unchanged

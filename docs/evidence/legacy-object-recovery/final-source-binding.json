@@ -1,0 +1,15 @@
+{
+  "baseHead": "deedab27483ad4fe1ca998a4d68afd555f4e2337",
+  "boundAt": "2026-09-13T08:19:01.136Z",
+  "productionChanged": false,
+  "files": {
+    "tests/unit/electron-mission-evidence-versioning.test.ts": "c9f06ead9f3c1b2c0d4b1eb4ac3a49df55cf660dc4b99ba33263745220e9fd3d",
+    "tests/support/legacy-object-inspection.ts": "80c7396a45041a29c82a7f773a73db5fb5cbcb9fad379a807d4405b575526a62",
+    "tests/support/legacy-object-inspection-worker.cjs": "a780502ea76ec93a2f2454a83941f0631987e88249cebe4bcff814d1b0458bd7",
+    "tests/support/legacy-object-responsiveness-diagnostics.ts": "22e94ee46754e90d130a06ce0c355f36980e1a511d273ed963a02335fdadb946",
+    "tests/unit/legacy-object-inspection.test.ts": "67483768a57f95b2ce482fef6e1027ac6913285cd28ee68d310019d168648136",
+    "tests/unit/legacy-object-responsiveness-diagnostics.test.ts": "d9a31828ee840d346c04a0241d1ce527d719f67dbf459f430e29b2b6e14b0196",
+    "scripts/electron-legacy-object-recovery-smoke.mjs": "94d05b46e8a52d8e415c6eafd21bb08f96be4a12545837d7e43c4226ecb1e208",
+    ".github/workflows/electron-linux-validation.yml": "f92158ea133450a3d6dfc4259046a2eddc3352ea9f9e49184d43df51a33821d8"
+  }
+}

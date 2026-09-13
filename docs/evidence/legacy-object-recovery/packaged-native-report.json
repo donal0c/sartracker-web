@@ -1,0 +1,152 @@
+{
+  "proofTier": "diagnostic-only packaged Electron native mission-store recovery; no operator UI qualification",
+  "issue": "DON-254",
+  "expectedBaselineRows": 50000,
+  "passed": true,
+  "sourceHead": "deedab27483ad4fe1ca998a4d68afd555f4e2337",
+  "sourceTree": "54ecab87fbfa3a7921cdc14bb209b52b7eac928e",
+  "sourceDirty": true,
+  "probeSource": {
+    "scriptSha256": "94d05b46e8a52d8e415c6eafd21bb08f96be4a12545837d7e43c4226ecb1e208",
+    "mainTimerSha256": "8d451fc00022e3e6fc4dce18709c20983db655f0b3bccddbbc75c3d6034b9ea1"
+  },
+  "packaged": {
+    "bindingScope": "ASAR identity and six implicated production source files; local dirty probe sources are hashed separately",
+    "executableSha256": "f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf",
+    "asarSha256": "ee7960391b023ac49a9dc8c1fefe3e98e77ff97973eadb4fc8dd33814bc2262c",
+    "files": {
+      "electron/legacy-evidence-backfill-runner.cjs": {
+        "checkoutSha256": "487a355f9c7feccff297f91da81518236d6fb55f5c701f22e9758505dfc8e61f",
+        "packagedSha256": "487a355f9c7feccff297f91da81518236d6fb55f5c701f22e9758505dfc8e61f"
+      },
+      "electron/legacy-evidence-backfill-worker.cjs": {
+        "checkoutSha256": "899e1a682180184e8272ad649232014fcee3ade5e8a7656c64d3b79124323880",
+        "packagedSha256": "899e1a682180184e8272ad649232014fcee3ade5e8a7656c64d3b79124323880"
+      },
+      "electron/mission-evidence-version-store.cjs": {
+        "checkoutSha256": "3569c9d02c57bb951f9808d3ee40297c3453112a01b66962f27b0c1e823d1e3f",
+        "packagedSha256": "3569c9d02c57bb951f9808d3ee40297c3453112a01b66962f27b0c1e823d1e3f"
+      },
+      "electron/mission-store.cjs": {
+        "checkoutSha256": "873cc4267c88f704cd6108b2ef94cf6aecbd1c4ee0f89be49b9372374245381b",
+        "packagedSha256": "873cc4267c88f704cd6108b2ef94cf6aecbd1c4ee0f89be49b9372374245381b"
+      },
+      "electron/mission-worker.cjs": {
+        "checkoutSha256": "41ab66586a783b6984ed9daefde1be8bec12549fcc59e7e6863645184f9222f1",
+        "packagedSha256": "41ab66586a783b6984ed9daefde1be8bec12549fcc59e7e6863645184f9222f1"
+      },
+      "electron/responsive-mission-writer.cjs": {
+        "checkoutSha256": "49bf317df56a0866699105b094ded240ee79e594f423949bfc84c3da81b65a17",
+        "packagedSha256": "49bf317df56a0866699105b094ded240ee79e594f423949bfc84c3da81b65a17"
+      }
+    }
+  },
+  "seededMarkerDigest": "5cf87227e4e10a9429a06345812af675d9d450f11ff5ebbd1dcf3b5023133ea3",
+  "fixture": {
+    "directoryKind": "disposable-second-direct-store-directory",
+    "missionId": "f7c7a596-a42b-44c8-8c59-d9ce00f5b63c",
+    "baselineMarkerRows": 50000,
+    "sqliteSha256": "9c11c156b0510329411b11fbae75729963f1850327d86b8cbc5a11be70b614e0"
+  },
+  "firstLaunch": {
+    "openMs": 13.43991600000004,
+    "workerCount": 1,
+    "currentWriteMs": 1.2415829999999914,
+    "observer": {
+      "count": 50000,
+      "samples": 1326,
+      "maximumQueryMs": 2.5911250000008295,
+      "observerRealm": "controller-process"
+    },
+    "workerCompletion": [
+      {
+        "workerThreadId": 1
+      }
+    ],
+    "mainTimer": {
+      "clock": "main-performance-now",
+      "timeOriginMs": 1789286862602.44,
+      "intervalMs": 50,
+      "startedAtMs": 1012.500792,
+      "stoppedAtMs": 16955.847167,
+      "samples": 301,
+      "maximumGapMs": 60.22379100000035
+    },
+    "rows": {
+      "markerCount": 50000,
+      "totalMarkerCount": 50000,
+      "versionCount": 50000,
+      "distinctVersionCount": 50000,
+      "baselineCount": 50000,
+      "missingCustody": 0,
+      "duplicateObjects": 0,
+      "markerDigest": "5cf87227e4e10a9429a06345812af675d9d450f11ff5ebbd1dcf3b5023133ea3",
+      "baselineDigest": "1c01e7b12065c2d2354c0d0b5bb1795ef77c9c973cba720ecf74738378d53c80"
+    },
+    "close": {
+      "prepareCloseMs": 0.07220900000174879,
+      "closeMs": 8.268208999998024,
+      "timer": {
+        "clock": "main-performance-now",
+        "timeOriginMs": 1789286862602.44,
+        "intervalMs": 50,
+        "startedAtMs": 17698.21475,
+        "stoppedAtMs": 17811.332625,
+        "samples": 1,
+        "maximumGapMs": 56.612999999997555
+      }
+    },
+    "appClose": {
+      "code": 0,
+      "signal": null
+    }
+  },
+  "failClosedBeforeSettlement": {
+    "listVersions": "Legacy mutable evidence baselines are still being reconstructed in bounded background slices. Current positions remain available; retry evidence changes or Replay after preparation completes.",
+    "upsertMarker": "Legacy mutable evidence baselines are still being reconstructed in bounded background slices. Current positions remain available; retry evidence changes or Replay after preparation completes."
+  },
+  "settledBaselineDigest": "1c01e7b12065c2d2354c0d0b5bb1795ef77c9c973cba720ecf74738378d53c80",
+  "restart": {
+    "openMs": 10.293499999999995,
+    "workerCount": 0,
+    "rowsBeforeMutation": {
+      "markerCount": 50000,
+      "totalMarkerCount": 50000,
+      "versionCount": 50000,
+      "distinctVersionCount": 50000,
+      "baselineCount": 50000,
+      "missingCustody": 0,
+      "duplicateObjects": 0,
+      "markerDigest": "5cf87227e4e10a9429a06345812af675d9d450f11ff5ebbd1dcf3b5023133ea3",
+      "baselineDigest": "1c01e7b12065c2d2354c0d0b5bb1795ef77c9c973cba720ecf74738378d53c80"
+    },
+    "postSettlementMutation": {
+      "markerId": "a82bf600-cccb-47dc-8748-86358957b1ba",
+      "timer": {
+        "clock": "main-performance-now",
+        "timeOriginMs": 1789286880520.037,
+        "intervalMs": 50,
+        "startedAtMs": 541.097958,
+        "stoppedAtMs": 1398.377917,
+        "samples": 16,
+        "maximumGapMs": 57.254375000000095
+      }
+    },
+    "rowsAfterMutation": {
+      "markerCount": 50000,
+      "totalMarkerCount": 50001,
+      "versionCount": 50000,
+      "distinctVersionCount": 50000,
+      "baselineCount": 50000,
+      "missingCustody": 0,
+      "duplicateObjects": 0,
+      "markerDigest": "5cf87227e4e10a9429a06345812af675d9d450f11ff5ebbd1dcf3b5023133ea3",
+      "baselineDigest": "1c01e7b12065c2d2354c0d0b5bb1795ef77c9c973cba720ecf74738378d53c80"
+    },
+    "appClose": {
+      "code": 0,
+      "signal": null
+    }
+  },
+  "cleanupFailures": []
+}

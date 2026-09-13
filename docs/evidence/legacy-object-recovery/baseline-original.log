@@ -1,0 +1,13 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:responsiveness
+> vitest run --config vitest.responsiveness.config.ts tests/unit/electron-mission-evidence-versioning.test.ts -t reconstructs large legacy mutable-object inventories --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 92 skipped (93)
+   Start at  08:09:32
+   Duration  16.94s (transform 75ms, setup 0ms, import 118ms, tests 16.52s, environment 247ms)
+

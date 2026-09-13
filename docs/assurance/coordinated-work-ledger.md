@@ -78,8 +78,8 @@ correctness checks, lint/build/bundle budgets, and three real Electron controls
 pass for PR21; CI `34683600517` and independent review cleared that candidate.
 PR19’s ordinary CI and four final accumulated-diff reviews are complete. Its
 [repair record](findings/repair-train-b.md) separates historical and current
-proof. DON-254 remains the final-candidate qualification owner and is In Progress
-for the separate legacy recovery repair; qualification remains incomplete and release remains HOLD.
+proof. DON-254 remains the final-candidate qualification owner and was reopened
+In Progress on 2026-09-13; qualification remains incomplete and release remains HOLD.
 PR23 is merged to `origin/master` at
 `1fac099a9f581448a5a607a063e2a8b77fa9b151` from final implementation head
 `45420208`; its terminal receipt records the bounded lossless transport,
@@ -88,7 +88,13 @@ background-throttling, reload-cleanup and inactivity-watchdog repairs. The
 [PR23 receipt](https://github.com/donal0c/sartracker-web/pull/23) retain its
 exact-head proof and historical limits. Follow-up B, the separate ~239 ms
 legacy recovery path, and unchanged strict `<200 ms` qualification remain
-outstanding. No release acceptance is claimed.
+outstanding. Follow-up B's [current evidence](findings/legacy-object-recovery-responsiveness.md)
+supports an off-thread test observer, with production unchanged. Its final
+source cycle passes; the PR terminal receipt binds CI. WAR-06 PR26 merged at
+`8f93f8d1`; PR25 is reconciled onto it, with both packaged CI checks retained.
+The combined-head PR receipt controls readiness; frozen-candidate qualification follows. No release
+acceptance is claimed. Older Done labels below are historical receipts,
+superseded by DON-254's reopening.
 
 ## Deep-audit finding disposition
 

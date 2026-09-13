@@ -1,3 +1,5 @@
+import { openLegacyObjectInspection } from '../support/legacy-object-inspection'
+import { observeHeartbeatWork } from '../support/legacy-object-responsiveness-diagnostics'
 import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -718,7 +720,12 @@ describe('mission evidence versioning [DON-277]', () => {
     const openedAt = performance.now()
     store = createElectronMissionStore({ userDataPath })
     const openMs = performance.now() - openedAt
-    assertReleaseResponsiveness(() => expect(openMs).toBeLessThan(200))
+    try {
+      assertReleaseResponsiveness(() => expect(openMs).toBeLessThan(200))
+    } catch (error) {
+      process.stdout.write(`Legacy object preparation early failure: ${JSON.stringify({ phase: 'open', openMs })}\n`)
+      throw error
+    }
     await expect(store.listMissionObjectVersions({ missionId: mission.id }))
       .rejects.toThrow(/legacy mutable evidence baselines.*background/iu)
     await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER }))
@@ -742,27 +749,55 @@ describe('mission evidence versioning [DON-277]', () => {
       received_at: currentFixTime,
       timestamp_source: 'fix',
     })
-    assertReleaseResponsiveness(() => expect(performance.now() - currentWriteStarted).toBeLessThan(200))
+    try {
+      assertReleaseResponsiveness(() => expect(performance.now() - currentWriteStarted).toBeLessThan(200))
+    } catch (error) {
+      // This later observation identifies the failed phase; Vitest retains the
+      // actual assertion value. It is not substituted into the timing gate.
+      const observedAtFailureMs = performance.now() - currentWriteStarted
+      process.stdout.write(`Legacy object preparation early failure: ${JSON.stringify({ phase: 'current-position-write', openMs, observedAtFailureMs })}\n`)
+      throw error
+    }
 
+    const diagnostics = observeHeartbeatWork()
     let lastHeartbeat = performance.now()
     let maximumHeartbeatGapMs = 0
     const heartbeat = setInterval(() => {
       const current = performance.now()
       maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, current - lastHeartbeat)
+      diagnostics.heartbeat(lastHeartbeat, current)
       lastHeartbeat = current
     }, 10)
-    const inspection = openDatabase(databaseFile)
+    let inspection: Awaited<ReturnType<typeof openLegacyObjectInspection>> | undefined
+    let maximumWorkerQueryMs: number | null = null
+    let inspectionQueryCount = 0
     let baselineCount = 0
-    // Smaller production turns retain current-position priority on slower Linux
-    // runners, so allow the same complete 50k settlement more bounded turns.
-    for (let attempt = 0; attempt < 4_500 && baselineCount < 50_000; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      baselineCount = Number(inspection.prepare(
-        'SELECT COUNT(*) AS count FROM mission_object_versions',
-      ).get()?.count ?? 0)
+    try {
+      // Observe SQLite from a separate thread: the reproduced 256 ms heartbeat
+      // gap overlapped a 244 ms synchronous test inspection.
+      inspection = await openLegacyObjectInspection(databaseFile)
+      // Keep the original complete 50k workload, count SQL and polling cadence.
+      for (let attempt = 0; attempt < 4_500 && baselineCount < 50_000; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        const result = await inspection.count()
+        baselineCount = result.count
+        inspectionQueryCount += 1
+        maximumWorkerQueryMs = Math.max(maximumWorkerQueryMs ?? 0, result.workerQueryElapsedMs)
+      }
+    } finally {
+      const unobservedTailMs = performance.now() - lastHeartbeat
+      clearInterval(heartbeat)
+      try {
+        await inspection?.close()
+      } finally {
+        const heartbeatDiagnostics = {
+          inspectionRealm: 'worker', maximumWorkerQueryMs, inspectionQueryCount,
+          baselineCount, openMs, maximumHeartbeatGapMs, unobservedTailMs,
+          ...await diagnostics.finish(),
+        }
+        process.stdout.write(`Legacy object preparation heartbeat diagnostics: ${JSON.stringify(heartbeatDiagnostics)}\n`)
+      }
     }
-    clearInterval(heartbeat)
-    inspection.close()
     expect(baselineCount).toBe(50_000)
     assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).toBeLessThan(200))
     await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER }))

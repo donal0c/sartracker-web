@@ -1,0 +1,38 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run --run
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+Legacy object preparation heartbeat diagnostics: {"openMs":124.39662500000031,"maximumHeartbeatGapMs":256.3288339999999,"unobservedTailMs":10.887166000000434,"inspectionOpenMs":0.11412500000005821,"maximumInspectionQueryMs":244.2426250000026,"largestGap":{"start":23738.240916,"duration":256.3288339999999,"threadCpuMs":1.006,"processCpuMs":8.445,"eventLoop":{"idle":12.005499999999302,"active":244.31749999892781,"utilization":0.9531626112364106},"inspections":[{"kind":"count","start":23750.309541,"duration":244.2426250000026}],"gc":[]}}
+Startup SQLite contention: {"maximumGapMs":13.167582999999922,"processCpuMs":10.683}
+Startup SQLite contention: {"maximumGapMs":14.390333000000055,"processCpuMs":6.804}
+Legacy event preparation heartbeat diagnostics: {"maximumHeartbeatGapMs":164.3324999999968,"maximumInspectionQueryMs":110.71062499999971,"largestGapProcessCpuMs":11.151,"overlappingMainThreadGc":[{"start":36269.487583,"duration":0.3566249907016754}]}
+GPX current-write diagnostics: {"maximumWriteMs":28.163667000000714,"largestWriteProcessCpuMs":1.426,"maximumHeartbeatGapMs":19.42645800000173,"sequence":1062}
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts (93 tests | 1 failed) 98560ms
+     × reconstructs large legacy mutable-object inventories in bounded background turns [DON-277] 25953ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > reconstructs large legacy mutable-object inventories in bounded background turns [DON-277]
+AssertionError: expected 256.3288339999999 to be less than 200
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:773:69
+    771|     process.stdout.write(`Legacy object preparation heartbeat diagnost…
+    772|     expect(baselineCount).toBe(50_000)
+    773|     assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).to…
+       |                                                                     ^
+    774|     await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPL…
+    775|       .resolves.toMatchObject({ mission_id: mission.id })
+ ❯ assertResponsivenessForMode tests/support/release-responsiveness.ts:21:54
+ ❯ assertReleaseResponsiveness tests/support/release-responsiveness.ts:26:3
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:773:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 445 passed (446)
+      Tests  1 failed | 4658 passed (4659)
+   Start at  08:23:19
+   Duration  100.13s (transform 28.37s, setup 0ms, import 45.89s, tests 630.39s, environment 209.82s)
+

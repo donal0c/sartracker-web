@@ -1,0 +1,80 @@
+'use strict'
+
+const { Worker } = require('node:worker_threads')
+const WORKER_SOURCE = `
+const { parentPort, workerData, threadId } = require('node:worker_threads')
+const Database = require(workerData.sqliteModule)
+const messageOf = (error) => error instanceof Error ? error.message : String(error)
+let database
+try {
+  database = new Database(workerData.databasePath, { readonly: true, fileMustExist: true })
+  parentPort.postMessage({ type: 'ready' })
+} catch (error) {
+  parentPort.postMessage({ type: 'error', message: messageOf(error) })
+  parentPort.close()
+}
+parentPort.on('message', (message) => {
+  if (message?.type === 'count') {
+    try {
+      const started = performance.now()
+      const result = database.prepare('SELECT COUNT(*) AS count FROM mission_object_versions').get()
+      parentPort.postMessage({ type: 'count', count: Number(result?.count ?? 0), workerQueryElapsedMs: performance.now() - started, threadId })
+    } catch (error) {
+      parentPort.postMessage({ type: 'error', message: messageOf(error) })
+    }
+  } else if (message?.type === 'close') {
+    database?.close()
+    parentPort.close()
+  }
+})
+`
+/** Opens a single-request-at-a-time read-only SQLite inspector worker. */
+async function openOffMainInspection(databasePath) {
+  if (typeof databasePath !== 'string' || databasePath.length === 0) {
+    throw new TypeError('A database path is required for off-main inspection.')
+  }
+  const worker = new Worker(WORKER_SOURCE, {
+    eval: true,
+    workerData: { databasePath, sqliteModule: require.resolve('better-sqlite3') },
+  })
+  let pending, pendingPromise, workerError, closed = false, exited = false
+  let readyResolve, readyReject
+  const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject })
+  const workerExit = new Promise((resolve) => worker.once('exit', (code) => { exited = true; resolve(code) }))
+  const fail = (error) => {
+    if (workerError) return
+    workerError = error instanceof Error ? error : new Error(String(error))
+    if (pending) pending.reject(workerError)
+    else readyReject(workerError)
+  }
+  worker.on('message', (message) => {
+    if (message?.type === 'ready') return readyResolve()
+    if (message?.type === 'error') return fail(new Error(String(message.message)))
+    if (message?.type === 'count' && pending) pending.resolve({ count: message.count, workerQueryElapsedMs: message.workerQueryElapsedMs, workerThreadId: message.threadId })
+  })
+  worker.on('error', fail)
+  worker.on('exit', (code) => { if (code !== 0 || pending || !closed) fail(new Error(`Inspection worker exited with code ${code}.`)) })
+  try { await ready } catch (error) { await worker.terminate(); await workerExit; throw error }
+  return {
+    /** Executes one synchronous SQLite count in the worker; the caller's 60s test budget governs timeout. */
+    async count() {
+      if (closed) throw new Error('Off-main inspection is closed.')
+      if (workerError) throw workerError
+      if (pendingPromise) throw new Error('Off-main inspection already has a request in flight.')
+      const operation = new Promise((resolve, reject) => { pending = { resolve, reject }; worker.postMessage({ type: 'count' }) })
+      pendingPromise = operation.finally(() => { pending = undefined; pendingPromise = undefined })
+      return pendingPromise
+    },
+    /** Closes the worker database before its port and joins the physical worker exit. */
+    async close() {
+      if (closed) return
+      closed = true
+      if (pendingPromise) await pendingPromise.catch(() => undefined)
+      if (!exited) { try { worker.postMessage({ type: 'close' }) } catch { /* worker already exited */ } }
+      const code = await workerExit
+      if (code !== 0) throw new Error(`Inspection worker exited with code ${code}.`)
+    },
+  }
+}
+
+module.exports = { openOffMainInspection }
