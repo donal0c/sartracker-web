@@ -1,0 +1,46 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+························stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > warns visibly when corrupt cache cannot be recovered [Claude C4]
+Tracking cache payload was ignored. Error: Tracking cache contains invalid JSON.
+    at parseTrackingCachePayload (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/tracking-cache-payload.ts:153:11)
+    at safelyParseCachedSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:2516:12)
+    at startTrackingRuntime (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:535:28)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at startRuntime (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:237:16)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:317:21
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > never silently acknowledges queued accepted snapshot evidence after runtime replacement
+Mission persistence failed. Error: Tracking runtime changed before accepted mission evidence could be persisted.
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1903:13
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > never silently acknowledges queued accepted history evidence after runtime replacement
+Tracking history chunk persistence failed. Error: Tracking runtime changed before accepted mission evidence could be persisted.
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1903:13
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > does not let a stale callback update cache or retention while accepted evidence still settles
+Deferred mission persistence failed. Error: Deferred mission evidence cannot be scoped to its accepting mission.
+    at Object.persist (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:448:15)
+    at runPump (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:211:28)
+    at startPump (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:230:23)
+    at Object.requestFlushMission (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:326:7)
+    at Object.onCurrentSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:914:35)
+    at Object.onCurrentSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:1043:68)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:637:19
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+Mission evidence could not be retained. Error: Accepted tracking evidence could not be participation-scoped before release.
+    at Object.markEvidenceLoss (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:485:9)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/deferred-mission-evidence.ts:158:65
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+····························
+
+ Test Files  2 passed (2)
+      Tests  52 passed (52)
+   Start at  11:01:28
+   Duration  540ms (transform 157ms, setup 0ms, import 190ms, tests 37ms, environment 514ms)
+

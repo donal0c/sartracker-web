@@ -1,0 +1,54 @@
+[2m[WebServer] [22m(node:86645) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[2m[WebServer] [22m(node:86684) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 3 tests using 1 worker
+
+(node:86689) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:86689) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/e2e/war06-mission-scope.spec.ts:11:1 › keeps online status and identifies cached rows after partial live hydration [DON-267 Claude review] (5.9s)
+(node:86712) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:86712) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 [chromium] › tests/e2e/war06-mission-scope.spec.ts:78:3 › rejects old mission delayed history while showing fresh selected current positions [DON-267] (1.7s)
+  ✓  3 [chromium] › tests/e2e/war06-mission-scope.spec.ts:78:3 › rejects old mission participant hydration while showing fresh selected current positions [DON-267] (1.8s)
+
+
+  1) [chromium] › tests/e2e/war06-mission-scope.spec.ts:11:1 › keeps online status and identifies cached rows after partial live hydration [DON-267 Claude review] 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoContainText[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: getByTestId('devices-workspace').getByRole('row').filter({ hasText: 'Live responder' })
+    Expected substring: [32m"Live"[39m
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toContainText" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('devices-workspace').getByRole('row').filter({ hasText: 'Live responder' })[22m
+
+
+      67 |   const liveRow = workspace.getByRole('row').filter({ hasText: 'Live responder' })
+      68 |   const cachedRow = workspace.getByRole('row').filter({ hasText: 'Cached responder' })
+    > 69 |   await expect(liveRow).toContainText('Live')
+         |                         ^
+      70 |   await expect(cachedRow).toContainText('Cache')
+      71 |   await liveRow.click()
+      72 |   await expect(workspace).toContainText('53.20000, -8.20000')
+        at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/e2e/war06-mission-scope.spec.ts:69:25
+
+    Error Context: test-results/war06-mission-scope/war06-mission-scope-keeps--de71c-tion-DON-267-Claude-review--chromium/error-context.md
+
+  1 failed
+    [chromium] › tests/e2e/war06-mission-scope.spec.ts:11:1 › keeps online status and identifies cached rows after partial live hydration [DON-267 Claude review] 
+  2 passed (11.2s)

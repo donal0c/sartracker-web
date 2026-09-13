@@ -196,12 +196,15 @@ Preserve current priority, participant trust, fixTime authority and accepted
 evidence custody. Include the same-boundary wrong-mission poll fallback.
 The [repair contract](assurance/findings/war-06/mission-scope-repair.md) records
 red-first oracles, positive/negative controls, serial source checks, browser
-switching, actual packaged restart/cache proof and two independent reviews.
-Local checks and both source reviews are complete: final focused 232 tests, two
-browser flows and five-launch mac-arm64 packaged cache smoke pass. The full source
-cycle predates the final small refinement; exact-head ordinary PR CI remains the
-merge gate. Baseline browser failures and native coverage warnings are retained
-with their limits in the repair record. DON-267 carries the live PR/CI receipt.
+switching and actual packaged restart/cache proof. Claude's review of `7fc4aa08`
+withdrew the earlier readiness verdict; [remediation](assurance/findings/war-06/claude-review-remediation.md)
+now covers cache/live merge, truthful status, cache-age retention and actual timer
+mutation proof. Earlier Luna reviews were same-run Codex agent reviews, not external
+approval. Stable local checks pass 4,684 tests in 444 files (six existing timing
+exclusions), 254 focused tests, three browser flows, lint/build and five-launch
+mac-arm64 packaged cache smoke. Final committed-head Linux CI remains required;
+DON-267 and PR26 carry its live receipt and terminal artifact inspection. The
+remediation is for Donal's re-review, with no new external approval claimed.
 DON-254's separate legacy recovery stream may proceed with disjoint ownership;
 neither stream relaxes the unchanged 200 ms threshold or grants release authority.
 

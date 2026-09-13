@@ -1,8 +1,13 @@
 # DON-267 production repair review receipts
 
-2026-09-13. Two independent, non-production-author Codex GPT-5.6 Luna x-high
-reviewers inspected the accumulated working diff. Root authored all production
-changes and dispositioned the findings. Neither review is native execution proof
+**Historical reviews, superseded by Claude's findings at `7fc4aa08`.** These reviews
+missed the cache/live merge defects and did not establish timer-guard mutation
+coverage. See [remediation](claude-review-remediation.md) for current dispositions.
+
+2026-09-13. Two separate, non-production-author Codex GPT-5.6 Luna x-high agents
+inspected the accumulated working diff within the same author-controlled Codex
+run. Root authored all production changes and dispositioned the findings. These
+are agent self-review receipts, not third-party approval, native execution proof
 or GitHub approval. Base HEAD `deedab27483ad4fe1ca998a4d68afd555f4e2337`, tree
 `54ecab87fbfa3a7921cdc14bb209b52b7eac928e`.
 

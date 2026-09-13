@@ -1,0 +1,42 @@
+[
+  {
+    "mutant": "M1",
+    "file": "src/features/tracking/start-tracking-runtime.ts",
+    "sourceSha256": "b0eec35d6fc31a28cd51c358d25ee21ec531b2e86bb43b67091e8ae4fd91104e",
+    "mutantSha256": "897df5e9a0489335637fc44ccc20951763c5901f80715ab270c57c2698f2701b",
+    "sourceDiff": "--- src/features/tracking/start-tracking-runtime.ts\n+++ M1/src/features/tracking/start-tracking-runtime.ts\n@@ -1095,7 +1095,7 @@\n       if (pendingMissionCache.missionId === missionId) {\n         publishDeferredOperationalSnapshot()\n       } else if (state.phase !== 'recovery' || state.recoverableMission?.id !== pendingMissionCache.missionId) {\n-        pendingMissionCache = null\n+        void pendingMissionCache\n       }\n     }\n     if (state.phase !== previousState.phase || missionId !== previousMissionId) {\n",
+    "scope": "Disposable source copy; original worktree unmodified"
+  },
+  {
+    "mutant": "M3b",
+    "file": "src/features/tracking/merge-deferred-tracking-cache.ts",
+    "sourceSha256": "a7fc65634ed97199a3886c2d1df6e1ab14b369bd4daa991e1dc6bff0ec03144d",
+    "mutantSha256": "7fbe5f599a47c6fe372fb804569fa7ab121b6ac229dc8fd196c8ed99b36e9876",
+    "sourceDiff": "--- src/features/tracking/merge-deferred-tracking-cache.ts\n+++ M3b/src/features/tracking/merge-deferred-tracking-cache.ts\n@@ -10,15 +10,15 @@\n   cached: TrackingSnapshot,\n   live: TrackingSnapshot,\n ): TrackingSnapshot {\n-  const breadcrumbs = [...new Map([...cached.breadcrumbs, ...live.breadcrumbs]\n+  const breadcrumbs = [...new Map([...live.breadcrumbs, ...cached.breadcrumbs]\n     .map((position) => [createTrackingPositionIdentityKey(position), position])).values()]\n     .sort((left, right) => left.timestamp.localeCompare(right.timestamp)\n       || createTrackingPositionIdentityKey(left).localeCompare(createTrackingPositionIdentityKey(right)))\n   return {\n     ...live,\n-    devices: [...new Map([...cached.devices, ...live.devices]\n+    devices: [...new Map([...live.devices, ...cached.devices]\n       .map((device) => [device.device_id, device])).values()],\n-    positions: [...new Map([...cached.positions, ...live.positions]\n+    positions: [...new Map([...live.positions, ...cached.positions]\n       .map((position) => [position.device_id, position])).values()],\n     breadcrumbs,\n     // Live-only reduction counts cannot describe a cache/live union. No new\n",
+    "scope": "Disposable source copy; original worktree unmodified"
+  },
+  {
+    "mutant": "M13",
+    "file": "src/features/tracking/start-tracking-runtime.ts",
+    "sourceSha256": "b0eec35d6fc31a28cd51c358d25ee21ec531b2e86bb43b67091e8ae4fd91104e",
+    "mutantSha256": "cfedd942ae94f222ec05ae48d6e98b3d156cbcc567e3f664f809d22875e31a8e",
+    "sourceDiff": "--- src/features/tracking/start-tracking-runtime.ts\n+++ M13/src/features/tracking/start-tracking-runtime.ts\n@@ -1714,8 +1714,7 @@\n \n   /** Checks operational ownership before retention, freshness or publication. */\n   function isOperationalMissionCurrent(missionId: string | null): boolean {\n-    return acceptingRuntimeUpdates && runtimeGeneration === activeTrackingRuntimeGeneration &&\n-      missionId === currentOperationalMissionId()\n+    return missionId === currentOperationalMissionId()\n   }\n \n   /** Applies evidence windows independently from immediate current-position visibility. */\n",
+    "scope": "Disposable source copy; original worktree unmodified"
+  },
+  {
+    "mutant": "M7",
+    "file": "src/features/tracking/polling-manager.ts",
+    "sourceSha256": "a22203ca335c32456ed3ec03e30cd7e6927c329d3edf2449ada6e2c64c0d4050",
+    "mutantSha256": "92578a2562390e794b750d684d85e251508eb4b0e974169f4f1d120c5c4cda23",
+    "sourceDiff": "--- src/features/tracking/polling-manager.ts\n+++ M7/src/features/tracking/polling-manager.ts\n@@ -552,11 +552,10 @@\n     }\n     historyPublishTimer = scheduleTimeout(() => {\n       historyPublishTimer = null\n-      // Already-persisted display history may finish publishing during pause,\n-      // without waiting for a held current request. A different mission must\n-      // never inherit this batch, even while its wake is coalesced behind I/O.\n-      if (isHistoryPublicationCurrent()) flushHistorySnapshot(false)\n-      else discardPendingHistorySnapshot()\n+      // Mission wakes can coalesce behind an in-flight current poll. Recheck\n+      // here before touching the accumulator or publishing its captured state.\n+      // The explicit inactive/stop flushes retain their separate custody path.\n+      flushHistorySnapshot(false)\n     }, HISTORY_PUBLISH_DELAY_MS)\n   }\n \n@@ -1738,19 +1737,13 @@\n     return true\n   }\n \n-  /** Permits accepted display history for this mission, including during pause. */\n-  function isHistoryPublicationCurrent(): boolean {\n+  function isHistoryReconciliationCurrent(): boolean {\n     return (\n       running &&\n       !stopping &&\n+      (options.getPollingMode?.() ?? 'active') === 'active' &&\n       (options.getHistoryResetKey?.() ?? null) === activeHistoryResetKey\n     )\n-  }\n-\n-  /** Fetches new history only while the same mission remains active. */\n-  function isHistoryReconciliationCurrent(): boolean {\n-    return isHistoryPublicationCurrent() &&\n-      (options.getPollingMode?.() ?? 'active') === 'active'\n   }\n \n   async function fetchIncrementalBreadcrumbs(\n",
+    "scope": "Disposable source copy; original worktree unmodified"
+  },
+  {
+    "mutant": "M7-final",
+    "file": "src/features/tracking/polling-manager.ts",
+    "sourceSha256": "a22203ca335c32456ed3ec03e30cd7e6927c329d3edf2449ada6e2c64c0d4050",
+    "mutantSha256": "8c801a3aef3db6b6410430caa63f016bbbb435477c1d53954b379ac33b9bcbe3",
+    "sourceDiff": "--- \n+++ \n@@ -555,8 +555,7 @@\n       // Already-persisted display history may finish publishing during pause,\n       // without waiting for a held current request. A different mission must\n       // never inherit this batch, even while its wake is coalesced behind I/O.\n-      if (isHistoryPublicationCurrent()) flushHistorySnapshot(false)\n-      else discardPendingHistorySnapshot()\n+      flushHistorySnapshot(false)\n     }, HISTORY_PUBLISH_DELAY_MS)\n   }\n \n",
+    "result": "Named stale A history assertion failed; exit1"
+  }
+]

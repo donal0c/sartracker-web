@@ -159,11 +159,7 @@ export function parseTrackingCachePayload(
 
   const record = parsed as Record<string, unknown>
   const missionId = record.mission_id
-  if (missionId !== undefined && missionId !== null && (
-    typeof missionId !== 'string' || missionId.trim().length === 0 || missionId.trim() !== missionId
-  )) {
-    throw new Error('Tracking cache mission_id is invalid.')
-  }
+  validateTrackingCacheMissionId(missionId)
   const cachedAt = readIsoTimestamp(
     record.cached_at,
     'Tracking cache cached_at timestamp',
@@ -197,7 +193,15 @@ export function parseTrackingCachePayload(
  * Serializes a tracking cache payload for persistence.
  */
 export function serializeTrackingCachePayload(payload: TrackingCachePayload): string {
+  validateTrackingCacheMissionId(payload.mission_id)
   return JSON.stringify(payload)
+}
+
+/** Enforces identical mission identity rules at both disk boundaries. */
+function validateTrackingCacheMissionId(value: unknown): asserts value is string | null | undefined {
+  if (value !== undefined && value !== null && (
+    typeof value !== 'string' || value.trim().length === 0 || value.trim() !== value
+  )) throw new Error('Tracking cache mission_id is invalid.')
 }
 
 function normalizeEntries<T>(

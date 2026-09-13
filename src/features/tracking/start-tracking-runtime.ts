@@ -1,6 +1,7 @@
 import { createDeviceColor } from './tracking-color'
 import { createRuntimeCleanup } from '../runtime/runtime-cleanup'
 import { createCurrentTransportFreshness } from './current-transport-freshness'
+import { mergeDeferredTrackingCache } from './merge-deferred-tracking-cache'
 import {
   limitTrackingCacheBreadcrumbs,
   parseTrackingCachePayload,
@@ -379,6 +380,8 @@ export async function startTrackingRuntime(
   const retirementFailures = new Map<TrackingRuntimePoller, unknown>()
   let trackingCacheWarningActive = false
   let trackingCacheMissionWarningActive = false
+  let trackingCacheReadWarningActive = false
+  let cachedOperationalDataWarning: string | null = null
   let missionPersistenceWarningActive = false
   let droppedPersistedBreadcrumbCount = 0
   let lastDroppedBreadcrumbDiagnosticKey: string | null = null
@@ -538,10 +541,11 @@ export async function startTrackingRuntime(
       isOperationalMissionCurrent(null) &&
       useMissionStore.getState().phase === 'recovery' &&
       useMissionStore.getState().recoverableMission?.id === cacheReadMissionId
-    if (cachedSnapshot !== null && !cacheMatchesMission && !cacheMatchesRecovery) {
-      trackingCacheMissionWarningActive = true
+    if (cachedSnapshot === null || (!cacheMatchesMission && !cacheMatchesRecovery)) {
+      trackingCacheReadWarningActive = cachedSnapshot === null
+      trackingCacheMissionWarningActive = cachedSnapshot !== null
       latestTrackingStatus = {
-        mode: 'offline', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+        mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
         warning: null,
       }
       if (runtimeGeneration === activeTrackingRuntimeGeneration) {
@@ -569,6 +573,7 @@ export async function startTrackingRuntime(
         pendingMissionCache = { snapshot: healthyCachedSnapshot,
           missionId: cacheReadMissionId, cachedAt: cachedSnapshot.cached_at }
       } else {
+        cachedOperationalDataWarning = describeCachedOperationalData(operationalCachedSnapshot)
         dependencies.applySnapshot(currentTransportFreshness.decorate(operationalCachedSnapshot))
       }
       // Cold-start visibility: until the first live poll succeeds, the operator
@@ -579,7 +584,7 @@ export async function startTrackingRuntime(
         consecutiveFailures: 0,
         recovered: false,
         lastSuccessAt: cachedSnapshot.cached_at,
-        warning: 'OFFLINE MODE — showing last known positions from cache.',
+        warning: null,
       }
       dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
     }
@@ -914,7 +919,7 @@ export async function startTrackingRuntime(
       // settle evidence already accepted by its original mission.
       if (!publishOperational) return
 
-      if (snapshot.positions.length > 0) trackingCacheMissionWarningActive = false
+      clearRejectedCacheWarningOnLivePositions(snapshot)
       currentTransportFreshness.observeCurrent(snapshot)
       const operationalSnapshot = filterOperationalSnapshot(
         snapshot,
@@ -938,6 +943,7 @@ export async function startTrackingRuntime(
         ? currentOperationalMissionId() : context.historyResetKey
       const publishOperational = !context?.suppressOperationalPublication &&
         isOperationalMissionCurrent(snapshotMissionId)
+      if (publishOperational) clearRejectedCacheWarningOnLivePositions(snapshot)
       if (publishOperational) applyParticipantRosterWithoutBlocking(snapshot.devices, context)
       const missionEvidenceId = context?.missionEvidenceId === undefined
         ? context?.historyResetKey ?? null
@@ -1079,6 +1085,8 @@ export async function startTrackingRuntime(
       deferredOperationalSnapshot = null
       operationalPositionRetention.reset()
       currentTransportFreshness.reset()
+      cachedOperationalDataWarning = null
+      refreshTrackingStatus()
       if (isOperationalMissionCurrent(missionId)) {
         dependencies.applySnapshot({ devices: [], positions: [], breadcrumbs: [] })
       }
@@ -1209,6 +1217,8 @@ export async function startTrackingRuntime(
       // Provider-local device ids are not identities across different servers.
       operationalPositionRetention.reset()
       pendingMissionCache = null
+      trackingCacheMissionWarningActive = false
+      trackingCacheReadWarningActive = false
     }
     currentTransportFreshness.reset()
     dependencies = next
@@ -1245,7 +1255,9 @@ export async function startTrackingRuntime(
   /** Publishes one participant-scoped map snapshot without awaiting durable work. */
   function publishOperationalSnapshot(snapshot: TrackingSnapshot): void {
     deferredOperationalSnapshot = null
+    cachedOperationalDataWarning = describeCachedOperationalData(snapshot)
     dependencies.applySnapshot(currentTransportFreshness.decorate(snapshot))
+    refreshTrackingStatus()
     scheduleParticipantBackfill()
     void dependencies.recordDiagnosticEvent?.({
       level: 'info',
@@ -1269,14 +1281,8 @@ export async function startTrackingRuntime(
         // the proven same-mission recovery rows before participation is ready.
         deferredOperationalSnapshot = {
           historyResetKey: recovery.missionId,
-          snapshot: live === null ? cached : {
-            ...live,
-            devices: [...new Map([...cached.devices, ...live.devices]
-              .map((device) => [device.device_id, device])).values()],
-            positions: [...new Map([...cached.positions, ...live.positions]
-              .map((position) => [position.device_id, position])).values()],
-          },
-          ...(live === null || live.positions.length === 0 ? { cachedAt: recovery.cachedAt } : {}),
+          snapshot: live === null ? cached : mergeDeferredTrackingCache(cached, live),
+          cachedAt: recovery.cachedAt,
         }
       }
     }
@@ -1294,16 +1300,7 @@ export async function startTrackingRuntime(
       : refreshDeferredCacheHealth(pending.snapshot, pending.cachedAt)
     const snapshot = filterOperationalSnapshot(candidate, pending.historyResetKey ?? 'no-active-mission')
     if (snapshot === null) return
-    deferredOperationalSnapshot = null
-    dependencies.applySnapshot(currentTransportFreshness.decorate(snapshot))
-    if (pending.cachedAt !== undefined) {
-      latestTrackingStatus = {
-        mode: 'offline', consecutiveFailures: 0, recovered: false, lastSuccessAt: pending.cachedAt,
-        warning: 'OFFLINE MODE — showing last known positions from cache.',
-      }
-      refreshTrackingStatus()
-    }
-    scheduleParticipantBackfill()
+    publishOperationalSnapshot(snapshot)
     void dependencies.recordDiagnosticEvent?.({
       level: 'info', category: 'tracking', event: 'tracking_snapshot_applied_after_participant_hydration',
       fields: buildTrackingSnapshotDiagnosticFields(snapshot),
@@ -1317,6 +1314,22 @@ export async function startTrackingRuntime(
       now: observedAt, cacheAgeMs: calculateCacheAgeMs(cachedAt, observedAt),
       deviceStaleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
     })
+  }
+
+  /** Clears rejected-cache advice only when an accepted live current row arrives. */
+  function clearRejectedCacheWarningOnLivePositions(snapshot: TrackingSnapshot): void {
+    if (!snapshot.positions.some((position) => position.data_origin === 'live')) return
+    trackingCacheMissionWarningActive = false
+    trackingCacheReadWarningActive = false
+  }
+
+  /** Detects cached presentation data independently of provider connectivity. */
+  function describeCachedOperationalData(snapshot: TrackingSnapshot): string | null {
+    if (snapshot.positions.some((position) => position.data_origin === 'cache')) {
+      return 'Showing last known positions from cache in this view.'
+    }
+    return snapshot.breadcrumbs.some((position) => position.data_origin === 'cache')
+      ? 'Showing restored trail history from cache in this view.' : null
   }
 
   /** Admits one latest-state cache update to the bounded cache writer. */
@@ -1575,6 +1588,9 @@ export async function startTrackingRuntime(
         ? 'TRACKING FALLBACK CACHE UPDATE FAILED — live fixes remain visible, but the last-known tracking view may be unavailable after restart while Traccar is offline.'
         : null,
       trackingCacheMissionWarningActive ? TRACKING_CACHE_MISSION_WARNING : null,
+      trackingCacheReadWarningActive
+        ? 'Tracking cache could not be read; waiting for fresh current positions.' : null,
+      cachedOperationalDataWarning,
       missionPersistenceWarningActive
         ? 'MISSION BREADCRUMB STORAGE FAILED — current fixes remain visible, but new trail history may not survive restart.'
         : null,

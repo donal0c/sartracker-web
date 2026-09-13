@@ -34,18 +34,25 @@ deployment or SAR-team contact is authorized here. The sole queue remains
 
 ## Next actions and verification
 
-DON-267 local repair and two independent source reviews are complete. Original
-three routes and review-added races retain red/green proof. Final focused checks
-pass 232 tests, both browser mission-switch flows, lint and package build. The
-serial source cycle before the last adapter/cache refinement passed 4,662 tests
-with six named timing exclusions; final-head ordinary CI remains the merge gate.
-Actual mac-arm64 packaged restart/cache smoke passed all five launches: A cache
-recovers, B rejects A/legacy caches, and fresh B displays and persists. Four broader
-browser failures reproduce on untouched baseline; native coverage-worker warnings
-remain recorded. See the repair record for exact inputs, attempts and limits.
-The reviewed repair is [PR26](https://github.com/donal0c/sartracker-web/pull/26).
-Require green ordinary CI on its final head; live head/CI receipts are in DON-267.
-Donal owns merge after that gate passes.
+Claude's review of `7fc4aa08` withdrew the earlier readiness verdict. Its six
+blockers and additional cache/status findings are addressed in the
+[remediation record](../docs/assurance/findings/war-06/claude-review-remediation.md),
+including a follow-up cache-age retention fix. Live coordinates win; cached rows
+and trails retain visible provenance without overwriting connection state.
+Timer publication now preserves same-mission pause while fencing mission changes.
+M1/M3b/M13 and the actual final timer guard have falsifying source-mutation proof.
+
+Stable local correctness: 4,684 tests / 444 files, six existing timing exclusions;
+focused 254 tests, three browser flows, lint/build and five-launch mac-arm64
+packaged cache smoke pass. Local package inputs are hashed, not claimed as a
+clean committed build. Earlier agent reviews were within the author-controlled
+Codex run, not external approval. Known broader baseline browser failures and
+native coverage/listener warnings remain recorded; release HOLD is unchanged.
+
+[PR26](https://github.com/donal0c/sartracker-web/pull/26) requires green ordinary
+CI on its final committed head. DON-267 and the PR carry the live head/CI receipt
+and terminal Linux artifact inspection. Then it is ready for Donal's re-review;
+Donal owns merge. No merge, release or new external approval is claimed here.
 
 Use [testing and review cadence](../docs/testing-and-review-cadence.md): retain
 failures, diagnose before repeating, serialize heavy checks, and reuse unchanged

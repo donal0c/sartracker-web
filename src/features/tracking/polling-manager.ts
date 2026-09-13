@@ -552,10 +552,11 @@ export function createPollingManager(
     }
     historyPublishTimer = scheduleTimeout(() => {
       historyPublishTimer = null
-      // Mission wakes can coalesce behind an in-flight current poll. Recheck
-      // here before touching the accumulator or publishing its captured state.
-      // The explicit inactive/stop flushes retain their separate custody path.
-      if (isHistoryReconciliationCurrent()) flushHistorySnapshot(false)
+      // Already-persisted display history may finish publishing during pause,
+      // without waiting for a held current request. A different mission must
+      // never inherit this batch, even while its wake is coalesced behind I/O.
+      if (isHistoryPublicationCurrent()) flushHistorySnapshot(false)
+      else discardPendingHistorySnapshot()
     }, HISTORY_PUBLISH_DELAY_MS)
   }
 
@@ -1283,7 +1284,9 @@ export function createPollingManager(
         mode: 'offline',
         warning: isAuthenticationFailure(failure.cause)
           ? 'TRACKING AUTHENTICATION FAILED — check Traccar credentials.'
-          : 'OFFLINE MODE — showing last known positions.',
+          : lastGoodSnapshot !== null && lastGoodSnapshot.positions.length > 0
+            ? 'OFFLINE MODE — showing last known positions.'
+            : 'OFFLINE MODE — no current positions received for this mission.',
       })
 
       const unboundedDelay = (options.retryBaseMs ?? 1_000) * 2 ** (consecutiveFailures - 1)
@@ -1735,13 +1738,19 @@ export function createPollingManager(
     return true
   }
 
-  function isHistoryReconciliationCurrent(): boolean {
+  /** Permits accepted display history for this mission, including during pause. */
+  function isHistoryPublicationCurrent(): boolean {
     return (
       running &&
       !stopping &&
-      (options.getPollingMode?.() ?? 'active') === 'active' &&
       (options.getHistoryResetKey?.() ?? null) === activeHistoryResetKey
     )
+  }
+
+  /** Fetches new history only while the same mission remains active. */
+  function isHistoryReconciliationCurrent(): boolean {
+    return isHistoryPublicationCurrent() &&
+      (options.getPollingMode?.() ?? 'active') === 'active'
   }
 
   async function fetchIncrementalBreadcrumbs(

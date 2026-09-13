@@ -92,13 +92,13 @@ function setCurrentMission(id: string | null): void {
 }
 
 /** Creates a mission scope that authorizes the fixture device for its mission. */
-function scopeForMission(missionId: string) {
+function scopeForMission(missionId: string, deviceIds = [BASE_DEVICE.device_id]) {
   return createParticipationScope({
-    participants: [{
-      id: `participant-${missionId}`,
+    participants: deviceIds.map((deviceId) => ({
+      id: `participant-${missionId}-${deviceId}`,
       mission_id: missionId,
       kind: 'device',
-      traccar_device_id: BASE_DEVICE.device_id,
+      traccar_device_id: deviceId,
       mission_team_id: null,
       traccar_group_id: null,
       team_name: null,
@@ -108,7 +108,7 @@ function scopeForMission(missionId: string) {
       added_by: 'WAR-06 boundary test',
       removed_at: null,
       removed_by: null,
-    }],
+    })),
     membershipEvents: [],
   })
 }
@@ -241,6 +241,167 @@ async function startRuntime(input: {
 }
 
 describe('WAR-06 mission boundary repair contract', () => {
+  it('does not revive an abandoned Mission A cache after A to B to A before hydration [Claude M1]', async () => {
+    setCurrentMission('mission-a')
+    let status: 'loading' | 'ready' = 'loading'
+    let notify = (): void => undefined
+    const applySnapshot = vi.fn()
+    await startRuntime({ cacheRead: async () => cacheContents('mission-a'), applySnapshot, missionModelEnabled: true,
+      readParticipationScope: () => scopeForMission('mission-a'), readParticipationScopeStatus: () => status,
+      subscribeParticipationScope: (listener) => { notify = listener; return () => undefined } })
+    setCurrentMission('mission-b')
+    setCurrentMission('mission-a')
+    status = 'ready'
+    notify()
+    expect(applySnapshot.mock.calls.flatMap(([next]) => next.positions)).toEqual([])
+  })
+
+  it('revokes all operational publication when another runtime takes the same mission [Claude M13]', async () => {
+    setCurrentMission('mission-a')
+    const applySnapshot = vi.fn()
+    const runtime = await startRuntime({ applySnapshot })
+    await startRuntime()
+    await runtime.hooks.onSnapshot(snapshot('retired-runtime'), { historyResetKey: 'mission-a', missionEvidenceId: null })
+    expect(applySnapshot).not.toHaveBeenCalled()
+    expect(runtime.cacheWrite).not.toHaveBeenCalled()
+  })
+
+  it('cannot publish held cache or deferred live positions after stop, even through a captured subscription [Claude M8]', async () => {
+    setCurrentMission('mission-a')
+    let status: 'loading' | 'ready' = 'loading'
+    let notify = (): void => undefined
+    const applySnapshot = vi.fn()
+    const runtime = await startRuntime({ cacheRead: async () => cacheContents('mission-a'), applySnapshot, missionModelEnabled: true,
+      readParticipationScope: () => scopeForMission('mission-a'), readParticipationScopeStatus: () => status,
+      subscribeParticipationScope: (listener) => { notify = listener; return () => undefined } })
+    await runtime.hooks.onSnapshot(snapshot('held-live'), { historyResetKey: 'mission-a', missionEvidenceId: null })
+    await runtime.stop()
+    activeRuntimeStops.delete(runtime.stop)
+    status = 'ready'
+    notify()
+    setCurrentMission('mission-b')
+    setCurrentMission('mission-a')
+    await runtime.hooks.onSnapshot(snapshot('after-stop'), { historyResetKey: 'mission-a', missionEvidenceId: null })
+    expect(applySnapshot).not.toHaveBeenCalled()
+  })
+  it.each(['positions', 'breadcrumbs', 'status', 'later-cache-age'] as const)('preserves mixed cache/live %s through participant hydration [Claude R1-R4]', async (assertion) => {
+    setCurrentMission('mission-a')
+    let scopeStatus: 'loading' | 'ready' = 'loading'
+    let notify = (): void => undefined
+    let time = NOW
+    const cached = snapshot('cached-overlap', 'cache')
+    const cachedOnly = { ...cached.positions[0]!, device_id: 'cached-device', id: 'cached-only', lat: 52.1 }
+    const trail = { ...cached.positions[0]!, id: 'cached-trail', timestamp: '2026-04-06T10:30:00.000Z' }
+    const live = snapshot('fresh-overlap')
+    const livePosition = { ...live.positions[0]!, lat: 53.2, lon: -8.2 }
+    const applySnapshot = vi.fn()
+    const runtime = await startRuntime({
+      missionModelEnabled: true, applySnapshot, now: () => time,
+      cacheRead: async () => JSON.stringify({ mission_id: 'mission-a', cached_at: '2026-04-06T10:34:00.000Z',
+        devices: [...cached.devices, { ...BASE_DEVICE, device_id: 'cached-device' }],
+        positions: [...cached.positions, cachedOnly], breadcrumbs: [trail] }),
+      readParticipationScope: () => scopeForMission('mission-a', [BASE_DEVICE.device_id, 'cached-device']),
+      readParticipationScopeStatus: () => scopeStatus,
+      subscribeParticipationScope: (listener) => { notify = listener; return () => undefined },
+    })
+    time = new Date(NOW.getTime() + (assertion === 'later-cache-age' ? 1_000 : 10 * 60_000))
+    runtime.hooks.onCurrentSnapshot({ ...live, positions: [livePosition], breadcrumbs: [] },
+      { historyResetKey: 'mission-a', missionEvidenceId: null },
+      { missionId: null, claim: vi.fn(), complete: vi.fn() })
+    runtime.hooks.onStatusChange({ mode: 'online', warning: null, consecutiveFailures: 0,
+      lastSuccessAt: time.toISOString(), recovered: true })
+    scopeStatus = 'ready'
+    notify()
+    const published = applySnapshot.mock.calls.at(-1)![0] as TrackingSnapshot
+    if (assertion === 'positions') {
+      expect(published.positions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'fresh-overlap', lat: 53.2, lon: -8.2, data_origin: 'live', cache_age_seconds: null }),
+        expect.objectContaining({ id: 'cached-only', data_origin: 'cache', cache_age_seconds: 660, device_cache_stale: true }),
+      ]))
+      expect(published.positions).toHaveLength(2)
+    } else if (assertion === 'breadcrumbs') {
+      expect(published.breadcrumbs.map((row) => row.id)).toContain('cached-trail')
+    } else if (assertion === 'later-cache-age') {
+      time = new Date(time.getTime() + 30_000)
+      runtime.hooks.onCurrentSnapshot({ ...live, positions: [livePosition], breadcrumbs: [] },
+        { historyResetKey: 'mission-a', missionEvidenceId: null },
+        { missionId: null, claim: vi.fn(), complete: vi.fn() })
+      expect(applySnapshot.mock.calls.at(-1)![0].positions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'cached-only', data_origin: 'cache', cache_age_seconds: 91 }),
+      ]))
+    } else {
+      expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({
+        mode: 'online', lastSuccessAt: time.toISOString(), warning: expect.stringMatching(/last known.*cache/i),
+      }))
+    }
+  })
+
+  it('does not overwrite an online empty response with offline when cached positions hydrate [Claude R4]', async () => {
+    setCurrentMission('mission-a')
+    let status: 'loading' | 'ready' = 'loading'
+    let notify = (): void => undefined
+    const runtime = await startRuntime({ cacheRead: async () => cacheContents('mission-a'), missionModelEnabled: true,
+      readParticipationScope: () => scopeForMission('mission-a'), readParticipationScopeStatus: () => status,
+      subscribeParticipationScope: (listener) => { notify = listener; return () => undefined } })
+    runtime.hooks.onCurrentSnapshot({ devices: [], positions: [], breadcrumbs: [] },
+      { historyResetKey: 'mission-a', missionEvidenceId: null },
+      { missionId: null, claim: vi.fn(), complete: vi.fn() })
+    runtime.hooks.onStatusChange({ mode: 'online', warning: null, consecutiveFailures: 0, recovered: true,
+      lastSuccessAt: NOW.toISOString() })
+    status = 'ready'
+    notify()
+    expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'online',
+      lastSuccessAt: NOW.toISOString(), warning: expect.stringMatching(/last known.*cache/i) }))
+  })
+
+  it('clears a rejected-cache warning after a current snapshot arrives through the snapshot adapter [Claude C1]', async () => {
+    setCurrentMission('mission-a')
+    const runtime = await startRuntime({ cacheRead: async () => cacheContents('mission-b') })
+    await runtime.hooks.onSnapshot(snapshot('adapter-fresh'), { historyResetKey: 'mission-a', missionEvidenceId: null })
+    runtime.hooks.onStatusChange({ mode: 'online', warning: null, consecutiveFailures: 0, recovered: true,
+      lastSuccessAt: NOW.toISOString() })
+    expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'online', warning: null }))
+  })
+
+  it('warns visibly when corrupt cache cannot be recovered [Claude C4]', async () => {
+    setCurrentMission('mission-a')
+    const runtime = await startRuntime({ cacheRead: async () => '{invalid' })
+    expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'idle' }))
+    runtime.hooks.onStatusChange({ mode: 'offline', warning: null, consecutiveFailures: 1, recovered: false, lastSuccessAt: null })
+    expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({
+      warning: expect.stringMatching(/cache.*(invalid|read|recover)/i),
+    }))
+  })
+
+  it('clears cache visibility advice synchronously when switching to an empty mission', async () => {
+    setCurrentMission('mission-a')
+    const runtime = await startRuntime({ cacheRead: async () => cacheContents('mission-a') })
+    expect(runtime.applyStatus.mock.calls.at(-1)?.[0].warning).toMatch(/last known positions from cache/)
+    setCurrentMission('mission-b')
+    expect(runtime.applyStatus.mock.calls.at(-1)?.[0].warning).toBeNull()
+  })
+
+  it('settles an ordinary stopped runtime before replacement without recording evidence loss [Claude C2]', async () => {
+    setCurrentMission('mission-a')
+    const loss = vi.fn().mockResolvedValue(undefined)
+    const heldWrite = createDeferred<void>()
+    const started = createDeferred<void>()
+    const addPosition = vi.fn().mockImplementationOnce(async () => { started.resolve(); await heldWrite.promise })
+      .mockResolvedValue(undefined)
+    const runtime = await startRuntime({ recordMissionEvidenceLoss: loss, missionStore: { addPosition } })
+    const observation = { missionId: 'mission-a', claim: vi.fn(), complete: vi.fn() }
+    runtime.hooks.onCurrentSnapshot(snapshot('accepted'), { historyResetKey: 'mission-a' }, observation)
+    await started.promise
+    const stopping = runtime.stop()
+    expect(observation.complete).not.toHaveBeenCalled()
+    heldWrite.resolve()
+    await stopping
+    expect(observation.complete).toHaveBeenCalledOnce()
+    activeRuntimeStops.delete(runtime.stop)
+    await startRuntime({ recordMissionEvidenceLoss: loss })
+    expect(loss).not.toHaveBeenCalled()
+  })
+
   it.each(['snapshot', 'history'] as const)('never silently acknowledges queued accepted %s evidence after runtime replacement', async (route) => {
     setCurrentMission('mission-a')
     const heldWrite = createDeferred<void>()
@@ -642,10 +803,8 @@ describe('WAR-06 polling fallback boundary', () => {
       .mockResolvedValueOnce(missionACurrent)
       .mockRejectedValueOnce(new Error('Mission B provider unavailable')))
     const onSnapshot = vi.fn()
-    const poller = createPollingManager(
-      client,
-      pollingOptions(() => missionId, onSnapshot),
-    )
+    const options = pollingOptions(() => missionId, onSnapshot)
+    const poller = createPollingManager(client, options)
     activePollers.add(poller)
 
     poller.start()
@@ -657,6 +816,9 @@ describe('WAR-06 polling fallback boundary', () => {
     const missionBPublications = onSnapshot.mock.calls.filter(([, context]) =>
       context.historyResetKey === 'mission-b')
     expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
+    expect(options.onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      warning: expect.stringMatching(/no current positions.*mission/i),
+    }))
     expect(missionBPublications.flatMap(([next]) =>
       next.positions.map((position: NormalizedTrackingPosition) => position.id)))
       .not.toContain('mission-a-current')

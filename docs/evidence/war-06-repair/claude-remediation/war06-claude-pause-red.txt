@@ -1,0 +1,25 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+------------------------------------------------------------------------------------------x--
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/polling-manager.test.ts > polling manager > flushes a same-mission delayed history batch through the explicit pause path [DON-267]
+AssertionError: expected 0 to be greater than 0
+ ❯ tests/unit/polling-manager.test.ts:4140:45
+    4138|           ),
+    4139|       )
+    4140|       expect(pausedHistorySnapshots.length).toBeGreaterThan(0)
+       |                                             ^
+    4141|
+    4142|       slowCurrentPoll.resolve([])
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 92 skipped (93)
+   Start at  11:11:42
+   Duration  501ms (transform 106ms, setup 0ms, import 129ms, tests 10ms, environment 234ms)
+

@@ -2,9 +2,10 @@
 
 Base: `deedab27483ad4fe1ca998a4d68afd555f4e2337` (fresh `origin/master`, merged PR24).
 Branch: `codex/don-267-war06-mission-scope-repair`.
-Status: local repair and two independent source reviews complete. Merge acceptance
-requires green ordinary checks on [PR26](https://github.com/donal0c/sartracker-web/pull/26)'s
-final head; the live head/CI receipt is linked from DON-267 in Linear. Release remains HOLD.
+Status: prior readiness withdrawn after Claude's review of `7fc4aa08`. Follow the
+[Claude remediation record](claude-review-remediation.md) and DON-267 for the current
+disposition of [PR26](https://github.com/donal0c/sartracker-web/pull/26). Results below
+describe the earlier repair inputs, not validation of subsequent changes. Release remains HOLD.
 
 ## Scope and authority
 

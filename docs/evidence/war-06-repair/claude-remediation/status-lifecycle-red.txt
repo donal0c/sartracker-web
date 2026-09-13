@@ -1,0 +1,69 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+stderr | tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > warns visibly when corrupt cache cannot be recovered [Claude C4]
+Tracking cache payload was ignored. Error: Tracking cache contains invalid JSON.
+    at parseTrackingCachePayload (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/tracking-cache-payload.ts:153:11)
+    at safelyParseCachedSnapshot (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:2516:12)
+    at startTrackingRuntime (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/src/features/tracking/start-tracking-runtime.ts:535:28)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at startRuntime (/Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:237:16)
+    at /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/tests/unit/war06-mission-boundary.test.ts:360:21
+    at file:///Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+--------xx----------------------
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > warns visibly when corrupt cache cannot be recovered [Claude C4]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining {"mode": "idle"} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "mode": "idle",
++     "consecutiveFailures": 0,
++     "lastSuccessAt": null,
++     "mode": "offline",
++     "recovered": false,
++     "warning": "Tracking cache could not be read; waiting for fresh current positions.",
+    },
+  ]
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:361:33
+    359|     setCurrentMission('mission-a')
+    360|     const runtime = await startRuntime({ cacheRead: async () => '{inva…
+    361|     expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.object…
+       |                                 ^
+    362|     runtime.hooks.onStatusChange({ mode: 'offline', warning: null, con…
+    363|     expect(runtime.applyStatus).toHaveBeenLastCalledWith(expect.object…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/war06-mission-boundary.test.ts > WAR-06 mission boundary repair contract > clears cache visibility advice synchronously when switching to an empty mission
+AssertionError: expected 'Showing last known positions from cac…' not to match /last known positions from cache/
+
+- Expected:
+/last known positions from cache/
+
++ Received:
+"Showing last known positions from cache in this view."
+
+ ❯ tests/unit/war06-mission-boundary.test.ts:373:68
+    371|     expect(runtime.applyStatus.mock.calls.at(-1)?.[0].warning).toMatch…
+    372|     setCurrentMission('mission-b')
+    373|     expect(runtime.applyStatus.mock.calls.at(-1)?.[0].warning).not.toM…
+       |                                                                    ^
+    374|   })
+    375|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 30 skipped (32)
+   Start at  11:04:35
+   Duration  508ms (transform 108ms, setup 0ms, import 132ms, tests 14ms, environment 235ms)
+

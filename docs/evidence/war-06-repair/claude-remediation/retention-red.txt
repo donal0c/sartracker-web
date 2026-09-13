@@ -1,0 +1,50 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/bf09/sartracker-web
+
+x---
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/operational-position-retention.test.ts > operational position retention > advances retained cache age and expires by cache age after an omitted current row [DON-267]
+AssertionError: expected [ { id: 'position-1', …(14) } ] to deeply equal [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "cache_age_seconds": 270,
++     "accuracy": null,
++     "altitude": null,
++     "battery": null,
++     "cache_age_seconds": null,
+      "data_origin": "cache",
++     "device_cache_stale": false,
++     "device_id": "device-1",
++     "fix_time_unverified": false,
++     "id": "position-1",
++     "lat": 52,
++     "lon": -9,
++     "source": "traccar",
++     "speed": null,
++     "timestamp": "2026-04-06T10:59:00.000Z",
++     "timestamp_source": "fix",
+    },
+  ]
+
+ ❯ tests/unit/operational-position-retention.test.ts:80:32
+     78|     const retained = retention.apply(EMPTY_SNAPSHOT, REMOVED_PARTICIPA…
+     79|       new Date('2026-04-06T11:00:30.000Z'), 'mission-1')
+     80|     expect(retained.positions).toEqual([expect.objectContaining({ data…
+       |                                ^
+     81|     const expired = retention.apply(EMPTY_SNAPSHOT, REMOVED_PARTICIPAN…
+     82|       new Date('2026-04-06T11:01:01.000Z'), 'mission-1')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 skipped (4)
+   Start at  11:17:13
+   Duration  338ms (transform 20ms, setup 0ms, import 27ms, tests 5ms, environment 244ms)
+

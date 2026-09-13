@@ -3993,11 +3993,25 @@ describe('polling manager', () => {
       timestamp: '2026-04-06T07:00:00.000Z',
     }
     const slowCurrentPoll = createDeferred<readonly NormalizedTrackingPosition[]>()
+    const delayedHistoryChunk = createDeferred<readonly NormalizedTrackingPosition[]>()
+    let slowCurrentPollSettled = false
+    void slowCurrentPoll.promise.then(() => {
+      slowCurrentPollSettled = true
+    })
     const currentPositions = vi.fn()
       .mockResolvedValueOnce(NORMALIZED_POSITIONS)
       .mockReturnValueOnce(slowCurrentPoll.promise)
     const onSnapshot = vi.fn()
     const persistHistoryChunk = vi.fn().mockResolvedValue({ changed: false })
+    const scheduledTimers: Array<{ readonly delay: number; fired: boolean }> = []
+    const scheduleTimeoutSpy = vi.fn((callback: () => void, delay = 0) => {
+      const timer = { delay, fired: false }
+      scheduledTimers.push(timer)
+      return window.setTimeout(() => {
+        timer.fired = true
+        callback()
+      }, delay)
+    }) as unknown as typeof window.setTimeout
     let historyResetKey: string | null = 'mission-a'
     const poller = createPollingManager(createClient({
       getCurrentPositions: currentPositions,
@@ -4006,6 +4020,9 @@ describe('polling manager', () => {
           from.toISOString() === '2026-04-06T06:00:00.000Z' &&
           to.toISOString() === '2026-04-06T08:00:00.000Z'
             ? Promise.resolve([oldMissionBreadcrumb])
+            : from.toISOString() === '2026-04-06T08:00:00.000Z' &&
+                to.toISOString() === '2026-04-06T10:00:00.000Z'
+              ? delayedHistoryChunk.promise
             : Promise.resolve([]),
       ),
     }), {
@@ -4017,19 +4034,32 @@ describe('polling manager', () => {
       getInitialBreadcrumbFrom: () => new Date('2026-04-06T06:00:00.000Z'),
       getInitialBreadcrumbs: async () => [],
       persistHistoryChunk,
+      setTimeout: scheduleTimeoutSpy,
       now: () => new Date('2026-04-06T10:35:00.000Z'),
     })
 
     poller.start()
     await vi.advanceTimersByTimeAsync(0)
-    await vi.waitFor(() => expect(persistHistoryChunk).toHaveBeenCalled())
+    expect(persistHistoryChunk).toHaveBeenCalled()
+    const historyPublishTimers = scheduledTimers.filter((timer) => timer.delay === 100)
+    expect(historyPublishTimers).toHaveLength(1)
+    expect(historyPublishTimers[0]?.fired).toBe(false)
     const callsBeforeSlowPoll = onSnapshot.mock.calls.length
 
     poller.requestPollNow()
     await vi.advanceTimersByTimeAsync(0)
     expect(currentPositions).toHaveBeenCalledTimes(2)
+    expect(slowCurrentPollSettled).toBe(false)
     historyResetKey = 'mission-b'
-    await vi.advanceTimersByTimeAsync(100)
+    await vi.advanceTimersByTimeAsync(99)
+    expect(slowCurrentPollSettled).toBe(false)
+    expect(historyPublishTimers[0]?.fired).toBe(false)
+    expect(onSnapshot.mock.calls.slice(callsBeforeSlowPoll).flatMap(([next]) =>
+      next.breadcrumbs.map((position: NormalizedTrackingPosition) => position.id),
+    )).not.toContain(oldMissionBreadcrumb.id)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(historyPublishTimers[0]?.fired).toBe(true)
 
     expect(onSnapshot.mock.calls.slice(callsBeforeSlowPoll).flatMap(([next]) =>
       next.breadcrumbs.map((position: NormalizedTrackingPosition) => position.id),
@@ -4037,7 +4067,90 @@ describe('polling manager', () => {
 
     slowCurrentPoll.resolve([])
     await vi.advanceTimersByTimeAsync(0)
+    delayedHistoryChunk.resolve([])
+    await vi.advanceTimersByTimeAsync(0)
     await poller.stop()
+  })
+
+  it('flushes a same-mission delayed history batch through the explicit pause path [DON-267]', async () => {
+    const sameMissionBreadcrumb = {
+      ...NORMALIZED_BREADCRUMBS[0]!,
+      id: 'mission-a-paused-history',
+      timestamp: '2026-04-06T07:00:00.000Z',
+    }
+    const slowCurrentPoll = createDeferred<readonly NormalizedTrackingPosition[]>()
+    const delayedHistoryChunk = createDeferred<readonly NormalizedTrackingPosition[]>()
+    let slowCurrentPollSettled = false
+    void slowCurrentPoll.promise.then(() => {
+      slowCurrentPollSettled = true
+    })
+    let pollingMode: 'active' | 'paused' = 'active'
+    const currentPositions = vi.fn()
+      .mockResolvedValueOnce(NORMALIZED_POSITIONS)
+      .mockReturnValueOnce(slowCurrentPoll.promise)
+    const onSnapshot = vi.fn()
+    const onStatusChange = vi.fn()
+    const persistHistoryChunk = vi.fn().mockResolvedValue({ changed: false })
+    const poller = createPollingManager(createClient({
+      getCurrentPositions: currentPositions,
+      getBreadcrumbs: vi.fn().mockImplementation(
+        (_deviceId: string, from: Date, to: Date) =>
+          from.toISOString() === '2026-04-06T06:00:00.000Z' &&
+          to.toISOString() === '2026-04-06T08:00:00.000Z'
+            ? Promise.resolve([sameMissionBreadcrumb])
+            : from.toISOString() === '2026-04-06T08:00:00.000Z' &&
+                to.toISOString() === '2026-04-06T10:00:00.000Z'
+              ? delayedHistoryChunk.promise
+            : Promise.resolve([]),
+      ),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange,
+      getPollingMode: () => pollingMode,
+      getHistoryResetKey: () => 'mission-a',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T06:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      persistHistoryChunk,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    try {
+      poller.start()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(persistHistoryChunk).toHaveBeenCalled()
+      const callsBeforePause = onSnapshot.mock.calls.length
+
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(currentPositions).toHaveBeenCalledTimes(2)
+
+      pollingMode = 'paused'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(slowCurrentPollSettled).toBe(false)
+      const pausedHistorySnapshots = onSnapshot.mock.calls.slice(callsBeforePause).filter(
+        ([snapshot, context]) =>
+          context?.historyResetKey === 'mission-a' &&
+          snapshot.breadcrumbs.some(
+            (position: NormalizedTrackingPosition) => position.id === sameMissionBreadcrumb.id,
+          ),
+      )
+      expect(pausedHistorySnapshots.length).toBeGreaterThan(0)
+
+      slowCurrentPoll.resolve([])
+      await vi.advanceTimersByTimeAsync(0)
+      expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({
+        mode: 'idle',
+        warning: 'Live refresh suspended while mission is paused.',
+      }))
+    } finally {
+      slowCurrentPoll.resolve([])
+      delayedHistoryChunk.resolve([])
+      await vi.advanceTimersByTimeAsync(0)
+      await poller.stop()
+    }
   })
 
   it('keeps fallback breadcrumb publication inside the mission evidence fence [DON-276]', async () => {

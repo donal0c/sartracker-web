@@ -13,6 +13,11 @@ import {
 } from '../../src/features/tracking/traccar-normalization'
 
 describe('tracking cache payload', () => {
+  it.each(['', ' mission-a', 'mission-a '])('rejects invalid mission identity %j before serialization [Claude C3]', (missionId) => {
+    expect(() => serializeTrackingCachePayload({ mission_id: missionId,
+      cached_at: '2026-04-06T10:34:00.000Z', devices: [], positions: [], breadcrumbs: [],
+    })).toThrow(/mission_id/)
+  })
   it('shares the global breadcrumb cache budget with cooperative bounded work [DON-252]', async () => {
     const basePosition = normalizeTraccarPosition(positionsFixture[0], 'live')
     const shortTrail = Array.from({ length: 100 }, (_, index) => ({

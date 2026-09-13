@@ -70,6 +70,18 @@ const REMOVED_PARTICIPANT_SCOPE = createParticipationScope({
 })
 
 describe('operational position retention', () => {
+  it('advances retained cache age and expires by cache age after an omitted current row [DON-267]', () => {
+    const retention = createOperationalPositionRetention()
+    const observedAt = new Date('2026-04-06T11:00:00.000Z')
+    retention.apply({ ...FIRST_SNAPSHOT, positions: [{ ...POSITION, data_origin: 'cache', cache_age_seconds: 240 }] },
+      REMOVED_PARTICIPANT_SCOPE, observedAt, 'mission-1')
+    const retained = retention.apply(EMPTY_SNAPSHOT, REMOVED_PARTICIPANT_SCOPE,
+      new Date('2026-04-06T11:00:30.000Z'), 'mission-1')
+    expect(retained.positions).toEqual([expect.objectContaining({ data_origin: 'cache', cache_age_seconds: 270 })])
+    const expired = retention.apply(EMPTY_SNAPSHOT, REMOVED_PARTICIPANT_SCOPE,
+      new Date('2026-04-06T11:01:01.000Z'), 'mission-1')
+    expect(expired.positions).toEqual([])
+  })
   it('keeps a removed participant last accepted marker when a later poll omits it', () => {
     const retention = createOperationalPositionRetention()
 

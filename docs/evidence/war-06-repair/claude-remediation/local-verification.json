@@ -1,0 +1,106 @@
+{
+  "claim": "Local working-tree verification, not clean exact-commit or release qualification",
+  "ancestor": "7fc4aa08aeab20eadd98229a743f75b55383c58e",
+  "productionAndTestInputs": {
+    "src/features/participants/operational-position-retention.ts": "37e92674dae36beb333a77943ad58bab17931126b65e59a3b1642fd785fd948a",
+    "src/features/tracking/polling-manager.ts": "a22203ca335c32456ed3ec03e30cd7e6927c329d3edf2449ada6e2c64c0d4050",
+    "src/features/tracking/start-tracking-runtime.ts": "b0eec35d6fc31a28cd51c358d25ee21ec531b2e86bb43b67091e8ae4fd91104e",
+    "src/features/tracking/tracking-cache-payload.ts": "c2765fb6ff12fe5f85accfe1a6ca0f750ef073b9301a9897af00cc4a2c1aa990",
+    "tests/e2e/war06-mission-scope.spec.ts": "56f5ac41561426625b4688fb2f3b55682acdbee962de27d7dd2a17a4ada26ffa",
+    "tests/unit/operational-position-retention.test.ts": "af8b9a9559d9613994707f4552062ff6f94247ee265344d6eeeebd9b0fad8e44",
+    "tests/unit/polling-manager.test.ts": "913550d805d5e45878f86b88d868a74031e8a5a0911873815ba73b084fb59ae0",
+    "tests/unit/tracking-cache-payload.test.ts": "d8e8d5a0d8e1d1bbfb5341ac8fc9ee3c2f8ba37d6772eb3080c1560093950239",
+    "tests/unit/war06-mission-boundary.test.ts": "03d1d93559e407d8b78f9f9888b33ec6a1caf83b78fc915f63a721a3872e69ce",
+    "src/features/tracking/merge-deferred-tracking-cache.ts": "a7fc65634ed97199a3886c2d1df6e1ab14b369bd4daa991e1dc6bff0ec03144d",
+    "tests/unit/merge-deferred-tracking-cache.test.ts": "a73b78a004ed2048a44fa9db7bb3e8798e1e109771ed86f58b4a98a007233fae"
+  },
+  "correctness": {
+    "files": 444,
+    "passed": 4684,
+    "excludedTimingCases": 6,
+    "exitCode": 0
+  },
+  "focused": {
+    "files": 8,
+    "passed": 254
+  },
+  "browser": {
+    "passed": 3,
+    "retries": 0,
+    "rootVisualInspection": "online mixed cache/live labels and live coordinates; native A cached and B fresh inspector"
+  },
+  "lintBuildPackage": "passed",
+  "native": {
+    "result": "pass",
+    "asarSha256": "a1ca1b7ea1e4ede0f9a1b13ee578b0069372f69f8888dd366ddbc9eac6687a77",
+    "packagedInputsMatch": true,
+    "launches": [
+      {
+        "label": "mission-a-live",
+        "graceful": true,
+        "exitCode": 0
+      },
+      {
+        "label": "mission-a-offline-restart",
+        "graceful": true,
+        "exitCode": 0
+      },
+      {
+        "label": "mission-b-setup",
+        "graceful": true,
+        "exitCode": 0
+      },
+      {
+        "label": "mission-b-keyed-a-rejected",
+        "graceful": true,
+        "exitCode": 0
+      },
+      {
+        "label": "mission-b-legacy-rejected",
+        "graceful": true,
+        "exitCode": 0
+      }
+    ]
+  },
+  "boundaries": [
+    "Same-author Codex review is not external approval",
+    "mac-arm64 native receipt is local author-run",
+    "Six existing timing exclusions; strict 200 ms unchanged; release HOLD",
+    "M8/M9 redundant cleanup/reset deletion not claimed killed"
+  ],
+  "rawEvidenceSha256": {
+    "browser-final.txt": "04ee0e2723f051d45b53dea678525edf503bd23206cc8b903c6f06b360ff5562",
+    "browser-green.txt": "b3aa4b930a6de23640e4b77dc0fa19255ae3a296ef2101c534d9e7595ea99c54",
+    "browser.txt": "43b91f57344640de98e46b395eb149c38ed98702885cad01d25449214d7bc5d1",
+    "fallback-red.txt": "0504ea12a6652ab7e2ecf90b558f08fb43757810f6af511d311cb01f002639c5",
+    "final-focused.txt": "f3c407ba3710e35f4e72ed22c2c4a7f42cf1bdfc22ef9ebda81e9b24c4a1d2bb",
+    "final-m7-mutant.txt": "4cc6dc1e8be22ae45060a8f6de60832f6beaf1264f031fd69127803420ad48c8",
+    "focused-final.txt": "57b9c5b59c25c6932a2f40b86d8827cb6be06aae429fb651a881f4caf783da56",
+    "focused.txt": "f98d2285e756d75a4755a83c42f5b4fd3503b42bf7667145d1feb4a7b6b6670f",
+    "full-correctness.txt": "d49759fe7e5bff997182bbf6c6b4792cf6d2abe6705ff155cb7b80af12e4c54a",
+    "identity-red.txt": "21e273713e16e1ddefea374991cb97e46a344ba984a870d178bb8530e4a1ce4c",
+    "lint.txt": "4f7477fabc43e8b0eb03192c1c484d77f28be3d96c130b49421528df20e3d929",
+    "mixed-cache-live.png": "186fd8683935236663b0d3e64e49a2d54934f64ab1719c61738bd42c8445eda9",
+    "mutation-inputs.json": "b640bdcce2a8c132a0075f48d13cadac592e4d5c0c5b790c12b38bf6ffd4c819",
+    "native-receipt.json": "8bf304d20ea2d4724a456136ba317fd981633ed22e363bc378104a9bcdaec0d8",
+    "retention-red.txt": "152cb5cbb2a06d86197bf4d5c7c807b8791457a0c53132964cc87b0572b40a45",
+    "retention-runtime-red.txt": "3983f436c0b3094f543ce8dc07533bb2deb148266a060f021e2ffe34ccfd8f1c",
+    "runtime-final.txt": "6e76c17eb0c8b0a816fb23665143ffa0147190b109d4446e5479edf7526e1df0",
+    "runtime-green.txt": "7ec3303f7b73a9547a5bd299266c92f7ed36f8aac2fef083d43771911a41bbda",
+    "runtime-red.txt": "31ccf18df3073079983e431d440f9d01a377d1e941fc040954effceca1c5fb36",
+    "stable-browser.txt": "7e58195f6f6e8ec4e6f1c92f87acbf991f9c24e6b863c59c325ea2af2d045515",
+    "stable-correctness.txt": "4e46782a7864549578a38d01efeda625573709bccc878b745cb7201d30d6feed",
+    "stable-lint.txt": "4f7477fabc43e8b0eb03192c1c484d77f28be3d96c130b49421528df20e3d929",
+    "stable-native.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stable-package.txt": "40d63dad9af53531cbd847e60c36c78e9509699bd5ba3b1dc9cbcf850406a659",
+    "status-lifecycle-red.txt": "cf00c0485bdd8a9650ba36b381bfbbb164f62ea3cf8871eccbcac406297caf57",
+    "types-final.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "war06-claude-pause-red.txt": "ca45751ce707e65d8be45abca0999bd148cad0a103799196ba7ab5573ff85112",
+    "war06-claude-poller-green.txt": "31f84819a2daa3c0251dfb5f44f01d4fd4196881f9e9d480d6c56a7bcfdf9234",
+    "war06-m1-mutant.txt": "a4a44dbeb94dc6b7cce1e1f35c166f8e8a53cefbcf582cd6e85e3564d1dc4925",
+    "war06-m13-mutant.txt": "98cac0289621a0239ec9fb678b74f15b2afb863763bdc1d1f2f0092391684ef2",
+    "war06-m3b-mutant.txt": "fa956eb769d443a6c95d45d273b20dcb3e0a983efbf1cc781eb98c18a0892e24",
+    "war06-poller-focused-green.txt": "c67155fc86edc3268bd0612e52dec3ed0ca4f16b4f09722e24c0a2cd2c3992ff",
+    "war06-poller-mutant-m7.txt": "c132536d1e8111551d7c78ae1231ba11bc9319ecfb022f034e96342b19b5eb18"
+  }
+}
