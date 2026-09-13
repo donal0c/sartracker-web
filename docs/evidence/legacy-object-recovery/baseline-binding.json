@@ -1,0 +1,18 @@
+{
+  "historical": true,
+  "verification": "Original baseline inputs; verify at sourceHead, not against later test rewrites.",
+  "sourceHead": "deedab27483ad4fe1ca998a4d68afd555f4e2337",
+  "sourceTree": "54ecab87fbfa3a7921cdc14bb209b52b7eac928e",
+  "platform": "darwin",
+  "arch": "arm64",
+  "release": "25.6.0",
+  "node": "v22.22.3",
+  "availableParallelism": 16,
+  "files": {
+    "tests/unit/electron-mission-evidence-versioning.test.ts": "af5c80ff4fb3155d25262496d6e2923773cc66c68131231b4698632f64bccc1e",
+    "electron/legacy-evidence-backfill-worker.cjs": "899e1a682180184e8272ad649232014fcee3ade5e8a7656c64d3b79124323880",
+    "electron/legacy-evidence-backfill-runner.cjs": "487a355f9c7feccff297f91da81518236d6fb55f5c701f22e9758505dfc8e61f",
+    "electron/mission-evidence-version-store.cjs": "3569c9d02c57bb951f9808d3ee40297c3453112a01b66962f27b0c1e823d1e3f",
+    "docs/evidence/responsiveness-causal-repair/rejected-grouped-live-reader-full-source.log": "7d85dab26468656ceb6165643259e655bd57f3ea9fe6c0bb4ead73283c234d7a"
+  }
+}

@@ -1,0 +1,331 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/legacy-object-inspection.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+ ❯ tests/unit/legacy-object-inspection.test.ts (16 tests | 13 failed) 323ms
+     × times out startup and joins a worker that never becomes ready 19ms
+     × times out a count, terminates the worker, and retains the first failure on close 17ms
+     × times out close and joins a worker that ignores close 18ms
+     × rejects malformed startup thread identity 16ms
+     × rejects unknown reply protocol replies and surfaces the first failure on close 17ms
+     × rejects wrong request id protocol replies and surfaces the first failure on close 18ms
+     × rejects wrong thread id protocol replies and surfaces the first failure on close 17ms
+     × rejects negative count protocol replies and surfaces the first failure on close 17ms
+     × rejects unsafe count protocol replies and surfaces the first failure on close 17ms
+     × rejects negative query time protocol replies and surfaces the first failure on close 17ms
+     × rejects nonfinite query time protocol replies and surfaces the first failure on close 17ms
+     × rejects a duplicate count reply after the first reply was accepted 17ms
+     × retains an idle worker error and rejects close with it 47ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > times out startup and joins a worker that never becomes ready
+AssertionError: promise resolved "{ count: [AsyncFunction count], …(1) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "close": [Function close],
++   "count": [Function count],
+  }
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:66:90
+     64|     const workerPath = await createWorker('setInterval(() => {}, 1_000…
+     65|
+     66|     await expect(openLegacyObjectInspection(databasePath, { workerPath…
+       |                                                                                          ^
+     67|       .rejects.toThrow(/startup.*timed out/i)
+     68|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > times out a count, terminates the worker, and retains the first failure on close
+AssertionError: promise resolved "{ count: +0, …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "count": 0,
++   "workerQueryElapsedMs": 0.04795900000004849,
++   "workerThreadId": 4,
+  }
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:77:37
+     75|     const inspection = await openLegacyObjectInspection(databasePath, …
+     76|
+     77|     await expect(inspection.count()).rejects.toThrow(/count request.*t…
+       |                                     ^
+     78|     await expect(inspection.close()).rejects.toThrow(/count request.*t…
+     79|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > times out close and joins a worker that ignores close
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:86:37
+     84|     const inspection = await openLegacyObjectInspection(databasePath, …
+     85|
+     86|     await expect(inspection.close()).rejects.toThrow(/close.*timed out…
+       |                                     ^
+     87|   })
+     88|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > rejects malformed startup thread identity
+AssertionError: promise resolved "{ count: [AsyncFunction count], …(1) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "close": [Function close],
++   "count": [Function count],
+  }
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:108:91
+    106|     `, false)
+    107|
+    108|     await expect(openLegacyObjectInspection(databasePath, { workerPath…
+       |                                                                                           ^
+    109|       .rejects.toThrow(/threadId/i)
+    110|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > rejects unknown reply protocol replies and surfaces the first failure on close
+AssertionError: promise resolved "{ count: +0, …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "count": 0,
++   "workerQueryElapsedMs": 0.08366699999999128,
++   "workerThreadId": 8,
+  }
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:125:37
+    123|     const inspection = await openLegacyObjectInspection(databasePath, …
+    124|
+    125|     await expect(inspection.count()).rejects.toThrow(errorPattern)
+       |                                     ^
+    126|     await expect(inspection.close()).rejects.toThrow(errorPattern)
+    127|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > rejects wrong request id protocol replies and surfaces the first failure on close
+AssertionError: promise resolved "{ count: +0, …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "count": 0,
++   "workerQueryElapsedMs": 0.07425000000000637,
++   "workerThreadId": 9,
+  }
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:125:37
+    123|     const inspection = await openLegacyObjectInspection(databasePath, …
+    124|
+    125|     await expect(inspection.count()).rejects.toThrow(errorPattern)
+       |                                     ^
+    126|     await expect(inspection.close()).rejects.toThrow(errorPattern)
+    127|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > rejects wrong thread id protocol replies and surfaces the first failure on close
+AssertionError: promise resolved "{ count: +0, …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "count": 0,
++   "workerQueryElapsedMs": 0.08066699999994853,
++   "workerThreadId": 10,
+  }
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:125:37
+    123|     const inspection = await openLegacyObjectInspection(databasePath, …
+    124|
+    125|     await expect(inspection.count()).rejects.toThrow(errorPattern)
+       |                                     ^
+    126|     await expect(inspection.close()).rejects.toThrow(errorPattern)
+    127|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > rejects negative count protocol replies and surfaces the first failure on close
+AssertionError: promise resolved "{ count: +0, …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "count": 0,
++   "workerQueryElapsedMs": 0.07341699999994944,
++   "workerThreadId": 11,
+  }
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:125:37
+    123|     const inspection = await openLegacyObjectInspection(databasePath, …
+    124|
+    125|     await expect(inspection.count()).rejects.toThrow(errorPattern)
+       |                                     ^
+    126|     await expect(inspection.close()).rejects.toThrow(errorPattern)
+    127|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > rejects unsafe count protocol replies and surfaces the first failure on close
+AssertionError: promise resolved "{ count: +0, …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "count": 0,
++   "workerQueryElapsedMs": 0.07950000000005275,
++   "workerThreadId": 12,
+  }
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:125:37
+    123|     const inspection = await openLegacyObjectInspection(databasePath, …
+    124|
+    125|     await expect(inspection.count()).rejects.toThrow(errorPattern)
+       |                                     ^
+    126|     await expect(inspection.close()).rejects.toThrow(errorPattern)
+    127|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > rejects negative query time protocol replies and surfaces the first failure on close
+AssertionError: promise resolved "{ count: +0, …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "count": 0,
++   "workerQueryElapsedMs": 0.0735419999999749,
++   "workerThreadId": 13,
+  }
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:125:37
+    123|     const inspection = await openLegacyObjectInspection(databasePath, …
+    124|
+    125|     await expect(inspection.count()).rejects.toThrow(errorPattern)
+       |                                     ^
+    126|     await expect(inspection.close()).rejects.toThrow(errorPattern)
+    127|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > rejects nonfinite query time protocol replies and surfaces the first failure on close
+AssertionError: promise resolved "{ count: +0, …(2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "count": 0,
++   "workerQueryElapsedMs": 0.07887499999992542,
++   "workerThreadId": 14,
+  }
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:125:37
+    123|     const inspection = await openLegacyObjectInspection(databasePath, …
+    124|
+    125|     await expect(inspection.count()).rejects.toThrow(errorPattern)
+       |                                     ^
+    126|     await expect(inspection.close()).rejects.toThrow(errorPattern)
+    127|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > rejects a duplicate count reply after the first reply was accepted
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:142:37
+    140|     await expect(inspection.count()).resolves.toMatchObject({ count: 0…
+    141|     await new Promise((resolve) => setImmediate(resolve))
+    142|     await expect(inspection.close()).rejects.toThrow(/duplicate|unexpe…
+       |                                     ^
+    143|   })
+    144|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/13]⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts > legacy object inspection worker boundary > retains an idle worker error and rejects close with it
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ tests/unit/legacy-object-inspection.test.ts:153:37
+    151|     await new Promise((resolve) => setTimeout(resolve, 30))
+    152|
+    153|     await expect(inspection.close()).rejects.toThrow('idle worker fail…
+       |                                     ^
+    154|   })
+    155|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/13]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  13 failed | 3 passed (16)
+   Start at  08:57:47
+   Duration  788ms (transform 19ms, setup 0ms, import 28ms, tests 323ms, environment 249ms)
+

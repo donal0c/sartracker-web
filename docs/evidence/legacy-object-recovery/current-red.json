@@ -1,0 +1,36 @@
+{
+  "status": "FAIL_FIRST",
+  "baseHead": "deedab27483ad4fe1ca998a4d68afd555f4e2337",
+  "productionUnchanged": true,
+  "command": "npm run test -- --run",
+  "thresholdMs": 200,
+  "objectCount": 50000,
+  "logSha256": "66ca609c29b5d5aaf129d0238bf3694c0ee8500644a4e4016718b0dd140b70e7",
+  "diagnostics": {
+    "openMs": 124.39662500000031,
+    "maximumHeartbeatGapMs": 256.3288339999999,
+    "unobservedTailMs": 10.887166000000434,
+    "inspectionOpenMs": 0.11412500000005821,
+    "maximumInspectionQueryMs": 244.2426250000026,
+    "largestGap": {
+      "start": 23738.240916,
+      "duration": 256.3288339999999,
+      "threadCpuMs": 1.006,
+      "processCpuMs": 8.445,
+      "eventLoop": {
+        "idle": 12.005499999999302,
+        "active": 244.31749999892781,
+        "utilization": 0.9531626112364106
+      },
+      "inspections": [
+        {
+          "kind": "count",
+          "start": 23750.309541,
+          "duration": 244.2426250000026
+        }
+      ],
+      "gc": []
+    }
+  },
+  "interpretation": "A newly reproduced heartbeat breach overlaps synchronous test inspection COUNT. Native waiting versus descheduling remains unassigned; this does not establish the cause of the historical 239.509125 ms failure."
+}

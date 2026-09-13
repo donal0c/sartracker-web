@@ -4,7 +4,11 @@
 
 ## Planning Rule
 
-**Current reconciliation (2026-09-13):** PR24/WAR-02B is merged at
+**Current reconciliation (2026-09-13):** PR26/WAR-06 is merged at
+`8f93f8d1cc4554178706e23401ecd496d1193195`. PR25's observer repair is reconciled
+onto it with unchanged recovery test inputs and both packaged CI steps retained;
+its latest PR receipt controls combined-head merge readiness. Release remains HOLD.
+The following baseline describes the original parallel work: PR24/WAR-02B merged at
 `deedab27483ad4fe1ca998a4d68afd555f4e2337`, following merged PR23. DON-267
 and DON-254 are both In Progress in Linear. Older Done/open-PR statements below
 are historical receipts, superseded by this current state. Two bounded repair
@@ -208,14 +212,15 @@ remediation is for Donal's re-review, with no new external approval claimed.
 DON-254's separate legacy recovery stream may proceed with disjoint ownership;
 neither stream relaxes the unchanged 200 ms threshold or grants release authority.
 
-### Responsiveness causal repair — DON-254 (2026-09-12)
+### Responsiveness causal repair — DON-254 (2026-09-13)
 
 PR19 is merged to `origin/master` at
 `d20bae5fd8156a61e92a9b8fd68c87b2ca614a37` from final implementation head
 `f203869c`; terminal CI `34694049815` passed. Its implementation evidence and
 historical proof/failures remain in the [Train B record](assurance/findings/repair-train-b.md).
-At that historical snapshot the open-PR list was empty and both issues were Done.
-`DON-254` is now In Progress for the separate legacy recovery repair above.
+Linear `DON-274` is Done; `DON-254` was reopened **In Progress** on
+2026-09-13. The earlier Done receipts do not close remaining repairs or
+qualification.
 
 The historical active chunk was follow-up A: bounded lossless canonical
 breadcrumb query transport on branch `codex/don-254-bounded-history-transport`, against the
@@ -227,13 +232,30 @@ qualification or release readiness.
 
 PR23 follow-up A is now merged in current `origin/master`. The ordered queue is:
 
-1. Execute the separate legacy-recovery repair (~239 ms).
-2. Rerun the unchanged strict `<200 ms` release-qualification suite and retained
-   timing cases. Release remains HOLD until repairs and qualification pass.
+1. WAR-06 production repair PR26 is merged at `8f93f8d1`. Tracking/cache/polling
+   ownership stays with that lane.
+2. Follow-up B on `codex/don-254-legacy-recovery-responsiveness` is reconciled
+   onto that merge; the combined-head PR25 receipt controls merge readiness.
+   Claude remediation replaces the inspector protocol with real worker completion,
+   independent persisted-data checks and final-tail gating; native mutation custody
+   and CI type coverage are strengthened. [Second-review dispositions](assurance/findings/legacy-recovery-review-followup.md)
+   supersede the c93b6925 READY verdict until final verification is recorded.
+   The follow-up binds all evidence files, pins the independent custody oracle
+   to real production writes, removes GPX self-polling, separates native timer
+   intervals, and validates terminal reports on PR and relevant master pushes.
+   Current causal evidence supports a test-observer repair, with unchanged
+   production and strict `<200 ms` predicates. The 50k fixture and packaged
+   recovery/restart pass. The unresolved 204 ms concurrent read remains a
+   qualification gap. The PR terminal receipt binds the final source counts and
+   exact-head CI; earlier run counts are historical.
+   [Finding and retained rejections](assurance/findings/legacy-object-recovery-responsiveness.md).
+3. After all release-blocking repairs and feature freeze, run unchanged strict
+   `<200 ms` qualification and retained timing cases on one exact candidate.
+   Release remains HOLD until repairs and qualification pass.
 
 The detailed attribution record is
-[here](assurance/findings/responsiveness-attribution.md). DON-254 was open at
-the time of this historical reconciliation and is now Done in Linear; no
+[here](assurance/findings/responsiveness-attribution.md). DON-254 remains
+In Progress after reopening; no
 deployment, release, or team contact is part of this reconciliation.
 
 ### Repair Train B merged evidence and merged WAR-06 evidence
@@ -376,7 +398,7 @@ seams; the former nonexistent `legacy:` survivor is removed. Exact-head CI run
 review found no executable correctness or proof blocker. The run was stopped
 at the separate 960k release replay before later package inspection/soak/archive
 stages. No browser, package, provider, soak, release, or field qualification
-is claimed; DON-254 is Done in Linear and release HOLD is unchanged. See [the WAR-02B records](assurance/war-02b-test-infrastructure.md)
+is claimed; DON-254 is In Progress after reopening and release HOLD is unchanged. See [the WAR-02B records](assurance/war-02b-test-infrastructure.md)
 and [mutation receipt](assurance/war-02b-mutation-survivors.md).
 
 **WAR-02A test foundation (2026-09-10, merged in PR #16 at `4076975d`):** additive deterministic

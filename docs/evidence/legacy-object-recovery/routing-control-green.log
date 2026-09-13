@@ -1,0 +1,13 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/release-responsiveness.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  09:11:51
+   Duration  371ms (transform 15ms, setup 0ms, import 22ms, tests 50ms, environment 241ms)
+

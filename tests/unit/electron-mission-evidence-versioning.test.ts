@@ -1,10 +1,11 @@
+import { observeLegacyRecoveryCompletion } from '../support/legacy-recovery-completion'
 import { assertReleaseResponsiveness } from '../support/release-responsiveness'
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
-import { performance as nodePerformance, PerformanceObserver } from 'node:perf_hooks'
+import { threadId } from 'node:worker_threads'
 import { setImmediate as nextNodeTurn } from 'node:timers/promises'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -174,6 +175,40 @@ const { backfillLegacyEventProvenance } = require(
     migrationTime: string,
     maximumRows?: number,
   ) => { readonly remaining: number }
+}
+
+type LegacyRecoveryHandle = {
+  readonly completion: Promise<Readonly<Record<string, unknown>>>
+  terminate(): Promise<void>
+}
+const { startLegacyEvidenceBackfillWorker } = require('../../electron/legacy-evidence-backfill-runner.cjs') as {
+  startLegacyEvidenceBackfillWorker(input: Readonly<Record<string, unknown>>): LegacyRecoveryHandle
+}
+
+/** Captures real handles without changing production completion or teardown ownership. */
+function captureLegacyRecovery() {
+  const handles: LegacyRecoveryHandle[] = []
+  return {
+    /** Owns early rejection until the observation awaits the actual worker exit. */
+    start(input: Readonly<Record<string, unknown>>) {
+      const handle = startLegacyEvidenceBackfillWorker(input)
+      void handle.completion.catch(() => undefined)
+      handles.push(handle)
+      return handle
+    },
+    /** Requires exactly one production worker for this opening. */
+    async observe(timeoutMs = 50_000) {
+      expect(handles).toHaveLength(1)
+      const report = await observeLegacyRecoveryCompletion(handles[0]!.completion, timeoutMs)
+      process.stdout.write(`Legacy recovery completion observation: ${JSON.stringify({
+        ...report, parentThreadId: threadId,
+        failure: 'error' in report.outcome ? String(report.outcome.error) : null,
+      })}\n`)
+      if ('error' in report.outcome) throw report.outcome.error
+      expect(report.outcome.value.workerThreadId).not.toBe(threadId)
+      return report
+    },
+  }
 }
 
 const SAMPLE_MARKER = {
@@ -715,10 +750,16 @@ describe('mission evidence versioning [DON-277]', () => {
     `)
     legacyDb.close()
 
+    const recovery = captureLegacyRecovery()
     const openedAt = performance.now()
-    store = createElectronMissionStore({ userDataPath })
+    store = createElectronMissionStore({ userDataPath, startLegacyEvidenceBackfillWorker: recovery.start })
     const openMs = performance.now() - openedAt
-    assertReleaseResponsiveness(() => expect(openMs).toBeLessThan(200))
+    try {
+      assertReleaseResponsiveness(() => expect(openMs).toBeLessThan(200))
+    } catch (error) {
+      process.stdout.write(`Legacy object preparation early failure: ${JSON.stringify({ phase: 'open', openMs })}\n`)
+      throw error
+    }
     await expect(store.listMissionObjectVersions({ missionId: mission.id }))
       .rejects.toThrow(/legacy mutable evidence baselines.*background/iu)
     await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER }))
@@ -742,29 +783,24 @@ describe('mission evidence versioning [DON-277]', () => {
       received_at: currentFixTime,
       timestamp_source: 'fix',
     })
-    assertReleaseResponsiveness(() => expect(performance.now() - currentWriteStarted).toBeLessThan(200))
-
-    let lastHeartbeat = performance.now()
-    let maximumHeartbeatGapMs = 0
-    const heartbeat = setInterval(() => {
-      const current = performance.now()
-      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, current - lastHeartbeat)
-      lastHeartbeat = current
-    }, 10)
-    const inspection = openDatabase(databaseFile)
-    let baselineCount = 0
-    // Smaller production turns retain current-position priority on slower Linux
-    // runners, so allow the same complete 50k settlement more bounded turns.
-    for (let attempt = 0; attempt < 4_500 && baselineCount < 50_000; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      baselineCount = Number(inspection.prepare(
-        'SELECT COUNT(*) AS count FROM mission_object_versions',
-      ).get()?.count ?? 0)
+    try {
+      assertReleaseResponsiveness(() => expect(performance.now() - currentWriteStarted).toBeLessThan(200))
+    } catch (error) {
+      // This later observation identifies the failed phase; Vitest retains the
+      // actual assertion value. It is not substituted into the timing gate.
+      const observedAtFailureMs = performance.now() - currentWriteStarted
+      process.stdout.write(`Legacy object preparation early failure: ${JSON.stringify({ phase: 'current-position-write', openMs, observedAtFailureMs })}\n`)
+      throw error
     }
-    clearInterval(heartbeat)
-    inspection.close()
-    expect(baselineCount).toBe(50_000)
+
+    // Completion resolves only after all backfills and physical worker exit.
+    const { maximumHeartbeatGapMs } = await recovery.observe()
     assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).toBeLessThan(200))
+    const inspection = openDatabase(databaseFile)
+    try {
+      expect(inspection.prepare('SELECT COUNT(*) AS count FROM mission_object_versions').get())
+        .toMatchObject({ count: 50_000 })
+    } finally { inspection.close() }
     await expect(store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER }))
       .resolves.toMatchObject({ mission_id: mission.id })
   }, 60_000)
@@ -911,7 +947,8 @@ describe('mission evidence versioning [DON-277]', () => {
     checkpointDb.close()
     await store.prepareClose()
     store.close()
-    store = createElectronMissionStore({ userDataPath })
+    const recovery = captureLegacyRecovery()
+    store = createElectronMissionStore({ userDataPath, startLegacyEvidenceBackfillWorker: recovery.start })
     const restartedDb = openDatabase(databaseFile)
     const restartedCursor = String(restartedDb.prepare(`SELECT scanned_through_id
       FROM legacy_event_provenance_backfill_state
@@ -926,84 +963,20 @@ describe('mission evidence versioning [DON-277]', () => {
       objectLimit: 100,
     })).rejects.toThrow(/event provenance.*background|replay.*preparation/iu)
 
-    // Retain causal timing when a shared CI host breaches the unchanged hard
-    // gate. GC uses Node's clock; align it with the test heartbeat clock once.
-    const nodeClockOffset = nodePerformance.now() - performance.now()
-    const gcEntries: { start: number; duration: number }[] = []
-    let lastHeartbeat = performance.now()
-    let maximumHeartbeatGapMs = 0
-    let largestGapStartedAt = lastHeartbeat
-    let largestGapGc: { start: number; duration: number }[] = []
-    /** Preserves GC overlapping the largest gap even after the rolling history advances. */
-    function retainGcEntries(entries: readonly { startTime: number; duration: number }[]) {
-      for (const entry of entries) {
-        const gc = { start: entry.startTime - nodeClockOffset, duration: entry.duration }
-        gcEntries.push(gc)
-        if (gc.start < largestGapStartedAt + maximumHeartbeatGapMs
-          && gc.start + gc.duration > largestGapStartedAt) largestGapGc.push(gc)
-      }
-      if (gcEntries.length > 64) gcEntries.splice(0, gcEntries.length - 64)
-    }
-    const gcObserver = new PerformanceObserver((list) => retainGcEntries(list.getEntries()))
-    gcObserver.observe({ entryTypes: ['gc'] })
-    let maximumInspectionQueryMs = 0
-    let previousCpu = process.cpuUsage()
-    let largestGapProcessCpuMs = 0
-    const heartbeat = setInterval(() => {
-      const current = performance.now()
-      const gap = current - lastHeartbeat
-      const cpu = process.cpuUsage(previousCpu)
-      if (gap > maximumHeartbeatGapMs) {
-        maximumHeartbeatGapMs = gap
-        largestGapStartedAt = lastHeartbeat
-        largestGapProcessCpuMs = (cpu.user + cpu.system) / 1_000
-        largestGapGc = gcEntries.filter((entry) =>
-          entry.start < current && entry.start + entry.duration > lastHeartbeat)
-      }
-      previousCpu = process.cpuUsage()
-      lastHeartbeat = current
-    }, 10)
-    let inspection: InstanceType<typeof Database> | undefined
-    let pending = 1
+    const { maximumHeartbeatGapMs } = await recovery.observe()
+    assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).toBeLessThan(200))
+    const inspection = openDatabase(databaseFile)
     try {
-      inspection = openDatabase(databaseFile)
-      for (let attempt = 0; attempt < 8_000 && pending > 0; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 5))
-        const queryStartedAt = performance.now()
-        pending = Number(inspection.prepare(`SELECT COUNT(*) AS count
-          FROM legacy_event_provenance_backfill_state
-          WHERE scan_target_id IS NOT NULL
-            AND (scanned_through_id IS NULL
-              OR CAST(scanned_through_id AS INTEGER) < CAST(scan_target_id AS INTEGER))`)
-          .get()?.count ?? 0)
-        maximumInspectionQueryMs = Math.max(maximumInspectionQueryMs, performance.now() - queryStartedAt)
-      }
-    } catch (error) {
-      inspection?.close()
-      throw error
-    } finally {
-      clearInterval(heartbeat)
-      // PerformanceObserver delivers GC asynchronously. Drain after stopping
-      // measurement so instrumentation cannot inflate the operator gate.
-      await nextNodeTurn()
-      await nextNodeTurn()
-      retainGcEntries(gcObserver.takeRecords())
-      gcObserver.disconnect()
-    }
-    try {
-      expect(pending).toBe(0)
+      expect(inspection.prepare(`SELECT COUNT(*) AS count
+        FROM legacy_event_provenance_backfill_state
+        WHERE scan_target_id IS NOT NULL
+          AND (scanned_through_id IS NULL
+            OR CAST(scanned_through_id AS INTEGER) < CAST(scan_target_id AS INTEGER))`)
+        .get()).toMatchObject({ count: 0 })
       expect(inspection.prepare(`SELECT COUNT(*) AS count FROM mission_events
         WHERE mission_id = ? AND (recorded_at IS NULL OR recording_completeness IS NULL)`)
         .get(mission.id)).toMatchObject({ count: 0 })
     } finally { inspection.close() }
-    const heartbeatDiagnostics = {
-      maximumHeartbeatGapMs,
-      maximumInspectionQueryMs,
-      largestGapProcessCpuMs,
-      overlappingMainThreadGc: largestGapGc,
-    }
-    process.stdout.write(`Legacy event preparation heartbeat diagnostics: ${JSON.stringify(heartbeatDiagnostics)}\n`)
-    assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs, JSON.stringify(heartbeatDiagnostics)).toBeLessThan(200))
     await expect(store.readMissionReplay({
       missionId: mission.id,
       selectedTime: '2026-08-20T10:05:00.000Z',
@@ -1753,30 +1726,19 @@ describe('mission evidence versioning [DON-277]', () => {
     `)
     settledDb.close()
 
+    const recovery = captureLegacyRecovery()
     const openedAt = performance.now()
-    store = createElectronMissionStore({ userDataPath })
+    store = createElectronMissionStore({ userDataPath, startLegacyEvidenceBackfillWorker: recovery.start })
     const openMs = performance.now() - openedAt
     assertReleaseResponsiveness(() => expect(openMs).toBeLessThan(200))
-    let lastHeartbeat = performance.now()
-    let maximumHeartbeatGapMs = 0
-    const heartbeat = setInterval(() => {
-      const current = performance.now()
-      maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, current - lastHeartbeat)
-      lastHeartbeat = current
-    }, 10)
-    const inspection = openDatabase(databaseFile)
-    let scannedThroughRowid = 0
-    for (let attempt = 0; attempt < 500 && scannedThroughRowid < 500_000; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      scannedThroughRowid = Number(inspection.prepare(`SELECT scanned_through_rowid
-        FROM legacy_gpx_backfill_state WHERE singleton = 1`).get()?.scanned_through_rowid ?? 0)
-    }
-    clearInterval(heartbeat)
+    const { maximumHeartbeatGapMs } = await recovery.observe(10_000)
     assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).toBeLessThan(200))
-    expect(inspection.prepare(`SELECT scanned_through_rowid, scan_target_rowid
-      FROM legacy_gpx_backfill_state WHERE singleton = 1`).get())
-      .toMatchObject({ scanned_through_rowid: 500_000, scan_target_rowid: 500_000 })
-    inspection.close()
+    const inspection = openDatabase(databaseFile)
+    try {
+      expect(inspection.prepare(`SELECT scanned_through_rowid, scan_target_rowid
+        FROM legacy_gpx_backfill_state WHERE singleton = 1`).get())
+        .toMatchObject({ scanned_through_rowid: 500_000, scan_target_rowid: 500_000 })
+    } finally { inspection.close() }
     await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   }, 30_000)
 

@@ -1,0 +1,32 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:responsiveness
+> vitest run --config vitest.responsiveness.config.ts tests/unit/electron-mission-evidence-versioning.test.ts -t reconstructs large legacy mutable-object inventories --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+Legacy object preparation heartbeat diagnostics: {"inspectionRealm":"worker","maximumWorkerQueryMs":5.171499999999469,"inspectionQueryCount":1373,"baselineCount":50000,"openMs":11.475958999999989,"maximumHeartbeatGapMs":13.408207999999831,"unobservedTailMs":2.0021670000023732,"inspectionOpenMs":null,"maximumInspectionQueryMs":null,"largestGap":{"start":6365.662959,"duration":13.408207999999831,"threadCpuMs":0.143,"processCpuMs":3.559,"eventLoop":{"idle":13.202040999999554,"active":0.20733399702021416,"utilization":0.015461868809418345},"inspections":[],"gc":[]}}
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts (93 tests | 1 failed | 92 skipped) 16159ms
+     × reconstructs large legacy mutable-object inventories in bounded background turns [DON-277] 16158ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-mission-evidence-versioning.test.ts > mission evidence versioning [DON-277] > reconstructs large legacy mutable-object inventories in bounded background turns [DON-277]
+Error: Legacy-object inspection worker exited with code [object Object].
+ ❯ tests/support/legacy-object-inspection.ts:149:17
+    147|         const code = await joinedExit
+    148|         if (!terminationRequested && code !== 0) {
+    149|           throw new Error(`Legacy-object inspection worker exited with…
+       |                 ^
+    150|         }
+    151|         if (failure !== undefined && failure !== failureAtClose) {
+ ❯ tests/unit/electron-mission-evidence-versioning.test.ts:778:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 92 skipped (93)
+   Start at  08:38:36
+   Duration  16.61s (transform 83ms, setup 0ms, import 118ms, tests 16.16s, environment 263ms)
+

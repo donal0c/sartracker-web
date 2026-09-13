@@ -1,0 +1,30 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/legacy-object-inspection.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+ ❯ tests/unit/legacy-object-inspection.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/legacy-object-inspection.test.ts [ tests/unit/legacy-object-inspection.test.ts ]
+TypeError: The URL must be of scheme file
+ ❯ tests/support/legacy-object-inspection.ts:4:21
+      2| import { Worker } from 'node:worker_threads'
+      3|
+      4| const WORKER_PATH = fileURLToPath(new URL('./legacy-object-inspection-…
+       |                     ^
+      5|
+      6| export interface LegacyObjectInspectionResult {
+ ❯ tests/unit/legacy-object-inspection.test.ts:8:1
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  08:35:35
+   Duration  395ms (transform 21ms, setup 0ms, import 0ms, tests 0ms, environment 233ms)
+

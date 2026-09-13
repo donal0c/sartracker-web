@@ -1,0 +1,16 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:responsiveness
+> vitest run --config vitest.responsiveness.config.ts tests/unit/electron-mission-evidence-versioning.test.ts -t reconstructs large legacy mutable-object inventories|prepares large legacy event provenance|seeks legacy GPX reconstruction
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+Legacy recovery completion observation: {"outcome":{"value":{"workerThreadId":1}},"maximumHeartbeatGapMs":11.346625000000131,"parentThreadId":0,"failure":null}
+Legacy recovery completion observation: {"outcome":{"value":{"workerThreadId":3}},"maximumHeartbeatGapMs":11.668416999997135,"parentThreadId":0,"failure":null}
+Legacy recovery completion observation: {"outcome":{"value":{"workerThreadId":5}},"maximumHeartbeatGapMs":11.084041999994952,"parentThreadId":0,"failure":null}
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 90 skipped (93)
+   Start at  16:36:50
+   Duration  36.87s (transform 71ms, setup 0ms, import 99ms, tests 36.48s, environment 225ms)
+

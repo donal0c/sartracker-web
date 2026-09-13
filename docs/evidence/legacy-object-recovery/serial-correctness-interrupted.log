@@ -1,0 +1,16 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:correctness
+> vitest run --config vitest.correctness.config.ts --no-file-parallelism
+
+Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+Legacy object preparation heartbeat diagnostics: {"inspectionRealm":"worker","maximumWorkerQueryMs":1.890333999999939,"inspectionQueryCount":1336,"baselineCount":50000,"openMs":9.759999999999991,"maximumHeartbeatGapMs":11.930999999998676,"unobservedTailMs":2.485584000000017,"inspectionOpenMs":null,"maximumInspectionQueryMs":null,"largestGap":{"start":14237.53425,"duration":11.930999999998676,"threadCpuMs":0.073,"processCpuMs":6.805,"eventLoop":{"idle":11.823873999999705,"active":0.10570899815684243,"utilization":0.008861080741311528},"inspections":[],"gc":[]}}
+Legacy event preparation heartbeat diagnostics: {"maximumHeartbeatGapMs":12.977332999998907,"maximumInspectionQueryMs":1.8789170000018203,"largestGapProcessCpuMs":43.594,"overlappingMainThreadGc":[{"start":25306.081418,"duration":0.2115830034017563},{"start":25310.970626000002,"duration":4.54637499153614}]}
+GPX current-write diagnostics: {"maximumWriteMs":28.387750000001688,"largestWriteProcessCpuMs":2.358,"maximumHeartbeatGapMs":22.235999999997148,"sequence":1033}
+Startup SQLite contention: {"maximumGapMs":12.594208999999978,"processCpuMs":6.838}
+Startup SQLite contention: {"maximumGapMs":12.634667000000036,"processCpuMs":4.202}
+Legacy inspector main-block negative control: {"maximumHeartbeatGapMs":250.236625}
+ ❯ tests/unit/release-responsiveness.test.ts (10 tests | 1 failed) 18ms
+     × keeps default and mandatory scripts strict and includes every routed assertion file 14ms

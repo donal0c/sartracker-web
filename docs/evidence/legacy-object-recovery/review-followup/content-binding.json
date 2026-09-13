@@ -1,0 +1,56 @@
+{
+  "schema": "don254-review-followup-inputs-v1",
+  "developmentParent": "c93b692544e9a0e13e099b46f1bc59a63ae45bb4",
+  "commitBinding": "The development parent is not the tested implementation commit. These hashes identify final local source bytes; exact-head CI and terminal PR receipt bind the owning commit and tree.",
+  "localNativeScope": "Dirty controller probe against reused macOS ASAR; six production file identities verified. See native-report.json. No clean combined-package claim.",
+  "files": {
+    ".github/workflows/electron-linux-validation.yml": {
+      "bytes": 22702,
+      "sha256": "81359ed2c47249d94913bb3d94c5d1e5de52fa1bc60ccbe2f4e05be0e7de79c2"
+    },
+    "package.json": {
+      "bytes": 4866,
+      "sha256": "94ed2b67ea8c4e3796d3aeb26823fe0ed05df2fa3743630373025eb89cdb3cc3"
+    },
+    "scripts/electron-legacy-object-recovery-smoke.mjs": {
+      "bytes": 27051,
+      "sha256": "6235ee4eeefbcd4ee8dd892db46196b3beed85f2857f8756eb8c4868a22409f7"
+    },
+    "scripts/verify-legacy-recovery-evidence.mjs": {
+      "bytes": 1973,
+      "sha256": "a649dc097aa0e0d8c3554812eb8cd2a09fab5af1a78bafae9ade33946a7a59e4"
+    },
+    "scripts/verify-legacy-recovery-report.mjs": {
+      "bytes": 1146,
+      "sha256": "436ab651e4fd7d3ad324753b710bf39f36bd39db9fa4774a8d58db5a13616403"
+    },
+    "build/legacy-recovery-report-validation.js": {
+      "bytes": 17982,
+      "sha256": "444c2915cb09e5100be0a3b93c104b8789e30849f05998c82591298b2b34fe8b"
+    },
+    "build/electron-legacy-object-recovery-custody.js": {
+      "bytes": 4827,
+      "sha256": "2f73d06d660385601e795fbae627d5d5c3502e9dca36f7b69164d6d4bd162346"
+    },
+    "build/main-event-loop-probe.js": {
+      "bytes": 2934,
+      "sha256": "8d451fc00022e3e6fc4dce18709c20983db655f0b3bccddbbc75c3d6034b9ea1"
+    },
+    "tests/unit/legacy-recovery-report-validation.test.ts": {
+      "bytes": 8158,
+      "sha256": "49b51d2cf688a7f28c5a9a223abb4c7edd00f2a412630e1016bd768d4f984074"
+    },
+    "tests/unit/electron-legacy-object-recovery-custody.test.ts": {
+      "bytes": 6874,
+      "sha256": "761439405eb96f3a6d09d335c6fa0d9e2a81a7ae62ca53d1db828beefd7733a6"
+    },
+    "tests/unit/electron-mission-evidence-versioning.test.ts": {
+      "bytes": 201311,
+      "sha256": "c3c9630241f1515b8382d122abb28d57d7758450f7ed347b745b46b73691095c"
+    },
+    "tests/support/legacy-recovery-completion.ts": {
+      "bytes": 1897,
+      "sha256": "86633308ce0e9af7e5c688210233d1bcbd8a0b58b4f6ea96d9d1ac6841f80e0f"
+    }
+  }
+}

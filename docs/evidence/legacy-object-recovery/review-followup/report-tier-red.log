@@ -1,0 +1,31 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+ ❯ tests/unit/legacy-recovery-report-validation.test.ts (30 tests | 2 failed) 266ms
+     × rejects missing proof tier 11ms
+     × rejects overstated proof tier 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/legacy-recovery-report-validation.test.ts > legacy recovery terminal report validation [DON-254] > rejects missing proof tier
+ FAIL  tests/unit/legacy-recovery-report-validation.test.ts > legacy recovery terminal report validation [DON-254] > rejects overstated proof tier
+AssertionError: expected [] to not deeply equal []
+
+Compared values have no visual difference.
+
+ ❯ tests/unit/legacy-recovery-report-validation.test.ts:93:90
+     91|     const report = syntheticReport()
+     92|     mutate(report)
+     93|     expect(validateLegacyRecoveryReport(report, { expectedSourceSha, p…
+       |                                                                                          ^
+     94|   })
+     95|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 28 passed (30)
+   Start at  16:28:36
+   Duration  419ms (transform 13ms, setup 0ms, import 30ms, tests 266ms, environment 0ms)
+

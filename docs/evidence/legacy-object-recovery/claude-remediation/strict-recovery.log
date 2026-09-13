@@ -1,0 +1,15 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-mission-evidence-versioning.test.ts -t reconstructs large legacy mutable-object inventories|prepares large legacy event provenance --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+Legacy recovery completion observation: {"outcome":{"value":{"workerThreadId":1}},"maximumHeartbeatGapMs":12.618625000000975,"failure":null}
+Legacy recovery completion observation: {"outcome":{"value":{"workerThreadId":3}},"maximumHeartbeatGapMs":12.655125000001135,"failure":null}
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 91 skipped (93)
+   Start at  14:24:07
+   Duration  32.57s (transform 75ms, setup 0ms, import 107ms, tests 32.09s, environment 241ms)
+

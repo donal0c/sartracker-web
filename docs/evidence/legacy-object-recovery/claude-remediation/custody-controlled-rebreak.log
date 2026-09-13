@@ -1,0 +1,77 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+ ❯ tests/unit/electron-legacy-object-recovery-custody.test.ts (6 tests | 5 failed) 5ms
+     × rejects a version linked to the wrong audit event 2ms
+     × rejects persisted state that differs from the marker projection 0ms
+     × rejects missing custody 0ms
+     × rejects duplicate custody 0ms
+     × rejects wrong sequence 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-legacy-object-recovery-custody.test.ts > packaged legacy recovery custody oracle > rejects a version linked to the wrong audit event
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-legacy-object-recovery-custody.test.ts:85:9
+     83|       versions: [{ ...version, audit_event_id: 'different-event' }],
+     84|       auditEvents: [audit],
+     85|     })).toThrow(/wrong audit event/i)
+       |         ^
+     86|   })
+     87|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/unit/electron-legacy-object-recovery-custody.test.ts > packaged legacy recovery custody oracle > rejects persisted state that differs from the marker projection
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-legacy-object-recovery-custody.test.ts:94:9
+     92|       versions: [{ ...version, state_json: JSON.stringify({ ...marker,…
+     93|       auditEvents: [audit],
+     94|     })).toThrow(/state does not match/i)
+       |         ^
+     95|   })
+     96|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/unit/electron-legacy-object-recovery-custody.test.ts > packaged legacy recovery custody oracle > rejects missing custody
+ FAIL  tests/unit/electron-legacy-object-recovery-custody.test.ts > packaged legacy recovery custody oracle > rejects duplicate custody
+ FAIL  tests/unit/electron-legacy-object-recovery-custody.test.ts > packaged legacy recovery custody oracle > rejects wrong sequence
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-legacy-object-recovery-custody.test.ts:107:9
+    105|       versions,
+    106|       auditEvents: [audit],
+    107|     })).toThrow(/exactly one|version sequence|custody/i)
+       |         ^
+    108|   })
+    109| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 1 passed (6)
+   Start at  14:26:14
+   Duration  431ms (transform 15ms, setup 0ms, import 22ms, tests 5ms, environment 254ms)
+

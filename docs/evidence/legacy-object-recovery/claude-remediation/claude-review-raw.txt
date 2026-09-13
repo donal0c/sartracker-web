@@ -1,0 +1,135 @@
+ ## Deep review — PR #25 `test(recovery): isolate legacy inventory inspection [DON-254]`
+
+  Scope reviewed: `codex/don-254-legacy-recovery-responsiveness` → `master`, 51 files, +2969/−37.
+  Ten finder angles plus a gap sweep produced ~60 candidates; 15 survived direct verification against source.
+
+  Lint and `node --check` pass on all new files. Note that `tests/support/**` is not covered by any `tsc` project reference, so the new TypeScript helpers get **no CI type-check**.
+
+  ---
+
+  ### 1. The fix is incomplete — or it was unnecessary. Both cannot hold.
+  `tests/unit/electron-mission-evidence-versioning.test.ts:1005`
+
+  The sibling legacy-event-provenance test in the same file still runs the identical synchronous main-thread SQLite poll inside its heartbeat window, behind the same strict `<200ms` release gate.
+
+  Lines 1004–1013 do `inspection = openDatabase(databaseFile)` then 8,000 iterations of `inspection.prepare(...).get()` on the main thread, gated at line 1041 by `assertReleaseResponsiveness(() => expect(maximumHeartbeatGapMs).toBeLessThan(200))`. If this PR's diagnosis is correct — that a 244ms synchronous test inspection caused a 256ms heartbeat gap — then the identical 256ms-class false failure persists here, in the same release-qualification lane. If the diagnosis is not correct, the 697-line worker harness was unnecessary.
+
+  ### 2. Moving the poll off-thread makes the `<200ms` gate near-vacuous.
+  `tests/unit/electron-mission-evidence-versioning.test.ts:802`
+
+  Production legacy backfill already runs entirely off the main thread: `electron/legacy-evidence-backfill-worker.cjs` does all the work, and `electron/legacy-evidence-backfill-runner.cjs:26` only attaches listeners on main.
+
+  After the test's own SQLite poll moved to a worker, the main thread during the 4,500-iteration loop executes nothing but `setTimeout(10)` + await. A real regression that reintroduces main-thread work — batch application moved on-thread, a synchronous IPC drain — now has ~200ms of headroom against ~0ms of measured work, and the gate stays green.
+
+  ### 3. The restart phase's custody verification is vacuous by construction.
+  `scripts/electron-legacy-object-recovery-smoke.mjs:211`
+
+  The post-settlement mutation can never appear in either digest, and `assertRows` is never re-run on `rowsAfterMutation`.
+
+  `upsertMarker` routes through `upsertVersionedById` (`electron/mission-store.cjs:2800`/`8742`) and mints its own id via `markerDefaults`, so the new "After restart" marker never matches `inspectRows`' `id LIKE 'legacy-marker-%'` / `object_id LIKE 'legacy-marker-%'` filters. Lines 211–212 therefore compare digests that are invariant to the mutation. `assertRows()` (missingCustody/duplicateObjects) is applied at 159 and 194 but not to `rowsAfterMutation`.
+
+  If post-settlement versioning regresses — no `mission_object_versions` row written for the new marker, or a duplicate/wrong `version_sequence` — only `totalMarkerCount === 50001` survives, and that reads `markers`, not custody. The proof passes regardless.
+
+  ### 4. `countTimeoutMs` and `closeTimeoutMs` are not real bounds.
+  `tests/support/legacy-object-inspection.ts:313`
+
+  After the deadline fires, the code still awaits the unbounded `joinedExit` promise: `if (!exited) await joinedExit.promise` runs after the close-timeout race already resolved, and `terminateAndJoin()` awaits it again at line 132.
+
+  `worker.terminate()` cannot interrupt a synchronous better-sqlite3 call already inside native code. On a 50k-row COUNT or a WAL checkpoint the exit event never arrives and `close()` never settles — the test dies on vitest's 60s timeout at line 805 with an unrelated message instead of the intended `close timed out after Nms`. The unit tests at lines 152–169 only pass because their fault workers are pure JS and do exit.
+
+  ### 5. `unobservedTailMs` is computed and logged but never gated.
+  `tests/unit/electron-mission-evidence-versioning.test.ts:788`
+  The loop exits on the same tick the count first reaches 50,000 — precisely when the backfill worker performs its final commit, `DELETE FROM metadata WHERE 
+
+※ recap: Deep review of PR 25 is done: 15 verified findings, the biggest being that a sibling test still has the same synchronous poll under the same 200ms gate. Next step is deciding which findings you want fixed. (disable recaps in /config)
+
+❯ so give me the review to copy and paste
+
+
+`tests/unit/electron-mission-evidence-versioning.test.ts:788`
+
+The loop exits on the same tick the count first reaches 50,000 — precisely when the backfill worker performs its final commit, `DELETE FROM metadata WHERE key='legacy_evidence_backfill_failure'` (`legacy-evidence-backfill-worker.cjs:47`) and the WAL checkpoint.
+
+A >200ms main-thread stall landing after the last `setInterval` tick and before `clearInterval(heartbeat)` at line 789 is captured in `unobservedTailMs`, printed to stdout at line 798, and never compared to anything. `assertReleaseResponsiveness` at line 802 passes.
+
+### 6. The diagnostics perturb the very gate their docstring claims not to change.
+`tests/support/legacy-object-responsiveness-diagnostics.ts:44`
+
+`heartbeat()` runs synchronously inside the caller's 10ms `setInterval` callback and performs 2× `process.threadCpuUsage`, 2× `process.cpuUsage`, 2× `eventLoopUtilization`, plus two `filter` passes over up to 128 retained spans whenever a new max is set.
+
+The caller (test line 769) stamps `lastHeartbeat = current` using the value sampled at line 766 — *before* that work — so the diagnostic's own duration falls inside the next measured gap and is added to the gated `maximumHeartbeatGapMs`. On a slow runner, the instrumentation added to diagnose the 200ms gate can itself push it red. The line-4 docstring "without changing its clock or gate" is false.
+
+### 7. Nested `finally` blocks mask the original failure with a teardown rejection.
+`tests/unit/electron-mission-evidence-versioning.test.ts:791`
+
+If the poll loop throws (assertion, count rejection, timeout) and `await inspection?.close()` at line 791 also rejects — which it will whenever a failure was latched, since `close()` rethrows the retained `failure` at `inspection.ts:324` — the finally's exception wins and the try block's error is discarded. `await diagnostics.finish()` at line 796 can mask both.
+
+CI then reports `Legacy-object inspection close timed out after 5000ms` instead of the operator-meaningful cause.
+
+### 8. `fail()`'s early return latches the generic timeout and discards the worker's real diagnosis.
+`tests/support/legacy-object-inspection.ts:140`
+
+The worker's `database.close()` triggers a WAL checkpoint over the 50k-row fixture that exceeds `closeTimeoutMs`; line 304 latches `failure = 'Legacy-object inspection close timed out after 5000ms'` and starts `terminateAndJoin` (setting `terminationRequested`). The worker then posts its real `{type:'error', message:'SQLITE_...'}`, which reaches `fail()` and returns at line 140 without touching `failure`.
+
+`close()` rejects with the generic close error, and the actual SQLite failure is unrecoverable from the test output.
+
+### 9. One transient SQLite error permanently kills the inspector, with no retry and a leaked worker.
+`tests/support/legacy-object-inspection-worker.cjs:43`
+
+A per-query error reply omits `requestId`/`threadId`, and the parent's handler at `inspection.ts:184-191` accepts `type:'error'` in any state with no identity or sequence check, routing it straight to `fail()`, which terminates the worker.
+
+A single `SQLITE_BUSY` / `SQLITE_BUSY_SNAPSHOT` from the concurrently-writing backfill worker (or a checkpoint restart) therefore aborts the whole 50k settlement instead of being retried on the next 10ms poll. On that path the worker closes neither `database` nor `parentPort`, so it survives until the parent's terminate lands.
+
+### 10. After a startup failure the worker still registers its message handler with `database` undefined.
+`tests/support/legacy-object-inspection-worker.cjs:32`
+
+If `new Database(...)` throws at line 21, the catch posts `{type:'error'}` and calls `parentPort.close()` but does not return, so `parentPort.on('message', ...)` is still registered at line 28. Any count message that reaches it hits `database.prepare(...)` at line 32 with `database === undefined`, throws a TypeError, and the catch at line 42 posts the reply on an already-closed port — a silent no-op in Node. The parent receives nothing and waits out `countTimeoutMs`.
+
+Line 50 already demonstrates the correct optional-chaining guard (`database?.close()`).
+
+### 11. `readonly: true` is an unexamined behaviour change with a platform-sensitive WAL failure mode.
+`tests/support/legacy-object-inspection-worker.cjs:21`
+
+The replaced `openDatabase()` (`tests/unit/electron-mission-evidence-versioning.test.ts:4434`) is a plain read-write `new Database(path)`.
+
+A read-only WAL reader requires write access to `<db>-shm`. SQLite's unix VFS falls back to read-only shm when it lacks that, and `walTryBeginRead` can then only read up to an existing read-mark, or returns `SQLITE_READONLY_CANTLOCK`. On a restored CI artifact, a read-only mount, a different uid, or a hot `-wal` left by a killed process, the poll either throws (fatal per finding 9) or pins to a stale snapshot and spins to the timeout reporting 0/50000 — a false failure of a life-safety recovery gate.
+
+### 12. The 4,500-attempt bound was tuned against a synchronous turn and can now exceed the 60s timeout.
+`tests/unit/electron-mission-evidence-versioning.test.ts:780`
+
+The deleted comment explicitly stated 4,500 was chosen because "smaller production turns retain current-position priority on slower Linux runners." Each attempt is now `setTimeout(10)` + postMessage + worker query + reply + microtask drain.
+
+On a loaded runner, 4,500 × (10ms + round-trip) exceeds the `60_000ms` timeout at line 805; vitest aborts mid-try, the finally diagnostics at line 798 never print, and the failure reads as a harness timeout rather than `expect(baselineCount).toBe(50_000)`.
+
+### 13. A deliberate 250ms main-thread busy-spin lands in the parallel release-qualification lane; inspectors are not torn down on failure.
+`tests/unit/legacy-object-inspection.test.ts:80`
+
+`vitest.config.ts:9` sets `provide: { releaseResponsivenessMode: 'release-qualification' }` but, unlike `vitest.responsiveness.config.ts`, omits `fileParallelism: false`. `npm run test` therefore runs the strict `<200ms` gates in sibling files concurrently with this new 250ms CPU burn, on a machine where vitest already saturates cores — a new cross-file flake source.
+
+Separately, `afterEach` (line 22) only `rm`s the temp dir. Around nine tests hold a live Worker whose `close()`/`terminate()` is on the happy path only, so one mid-test assertion failure leaves a worker thread with an open SQLite handle while its database directory is deleted underneath it.
+
+### 14. Altitude: 697 lines of new harness replace what `await handle.completion` already provides.
+`tests/unit/electron-mission-evidence-versioning.test.ts:778`
+`electron/legacy-evidence-backfill-runner.cjs:64` exposes `completion`, and `legacy-evidence-backfill-worker.cjs:49` posts `{type:'complete'}` only after every backfill reports `remaining === 0` — i.e. completion *is* the 50,000-row settlement signal. This test file already injects `startLegacyEvidenceBackfillWorker` at lines 832, 1483 and 1501.
+
+Capturing the real runner's handle and awaiting it, then doing one COUNT after `clearInterval`, deletes the 332-line protocol, the 57-line worker, the 308-line meta-test and the poll loop — and loses nothing the test asserts, since no intermediate count is checked.
+
+Likewise `monitorEventLoopDelay` — already used at `electron/main.cjs:1407` — would replace the hand-rolled heartbeat, the jsdom/Node `clockOffset` and the GC-correlation block.
+
+### 15. The extracted diagnostics module duplicates a still-present inline copy, and its `inspect()` API is dead and mistyped.
+`tests/support/legacy-object-responsiveness-diagnostics.ts:60`
+
+Lines 966–1000 of `tests/unit/electron-mission-evidence-versioning.test.ts` still contain a near-verbatim inline version (`nodeClockOffset`, `retainGcEntries`, the 64-entry cap, the overlap filter, cpuUsage deltas, the "drain GC after stopping measurement" comment). The module was extracted without collapsing its origin, so the same rule now lives in two places.
+
+Within the module, `.inspect()` has no caller outside its own unit test, so `largestGap.inspections` is permanently `[]` and `inspectionOpenMs`/`maximumInspectionQueryMs` permanently `null` — the exact attribution that identified the 244ms synchronous inspection can never fire again. It is also typed `(operation: () => T): T` and times only the synchronous portion, so wiring it to the now-async open/count operations its `'open' | 'count'` kinds are named for would silently report ~0ms.
+
+Also saved to /private/tmp/claude-501/.../scratchpad/pr25-review.md.key='legacy_evidence_backfill_failure'` (`legacy-evidence-backfill-worker.cjs:47`) and the WAL checkpoint.
+
+  A >200ms main-thread stall landing after the last `setInterval` tick and before `clearInterval(heartbeat)` at line 789 is captured in `unobservedTailMs`, printed to stdout at line 798, and never compared to anything. `assertReleaseResponsiveness` at line 802 passes.
+
+  ### 6. The diagnostics perturb the very gate their docstring claims not to change.
+  `tests/support/legacy-object-responsiveness-diagnostics.ts:44`
+
+  `heartbeat()` runs synchronously inside the caller's 10ms `setInterval` callback and performs 2× `process.threadCpuUsage`, 2× `process.cpuUsage`, 2× `eventLoopUtilization`, plus two `filter` passes over up to 128 retained spans whenever a new max is set.
+
+  The caller (test line 769) stamps `lastHeartbeat = current` using the value sampled at line 766 — *before* that work — so the diagnostic's own duration falls inside the next measured gap and is added to the gated `maximumHeartbeatGapMs`. On a slow runner, the instrumentation added to diagnose the 200ms gate can itself push it red. The line-4 docstring "without changing its clock or gate" is false.

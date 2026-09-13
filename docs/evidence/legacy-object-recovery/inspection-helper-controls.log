@@ -1,0 +1,40 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/legacy-object-inspection.test.ts tests/unit/legacy-object-responsiveness-diagnostics.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+(node:43995) PromiseRejectionHandledWarning: Promise rejection was handled asynchronously (rejection id: 4)
+(Use `node --trace-warnings ...` to show where the warning was created)
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+Error: Legacy-object inspection was closed.
+ ❯ tests/support/legacy-object-inspection.ts:143:33
+    141|         const shouldTerminate = pendingAtClose !== undefined || failur…
+    142|         if (pendingAtClose !== undefined) {
+    143|           pendingAtClose.reject(new Error('Legacy-object inspection wa…
+       |                                 ^
+    144|           pending = undefined
+    145|         }
+ ❯ Object.close tests/support/legacy-object-inspection.ts:143:6
+ ❯ tests/unit/legacy-object-inspection.test.ts:76:35
+ ❯ node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+This error originated in "tests/unit/legacy-object-inspection.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "joins concurrent close callers while cancelling a pending read cleanly". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  2 passed (2)
+      Tests  8 passed (8)
+     Errors  1 error
+   Start at  08:37:22
+   Duration  1.09s (transform 26ms, setup 0ms, import 40ms, tests 463ms, environment 478ms)
+

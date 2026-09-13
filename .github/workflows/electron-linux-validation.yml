@@ -6,6 +6,27 @@ name: Electron Linux Validation Build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/electron-linux-validation.yml'
+      - '.github/workflows/electron-release.yml'
+      - 'electron/**'
+      - 'docs/**'
+      - 'handoff/**'
+      - 'public/manual/**'
+      - 'shared/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'electron-builder.json'
+      - 'vite.config.ts'
+      - 'playwright*.config.ts'
+      - 'vitest*.config.ts'
+      - 'tsconfig*.json'
+      - 'build/**'
+      - 'scripts/**'
   pull_request:
     paths:
       - '.github/workflows/electron-linux-validation.yml'
@@ -75,6 +96,9 @@ jobs:
           }
           process.stdout.write(`${JSON.stringify(binding, null, 2)}\n`)
           NODE
+
+      - name: Verify complete legacy recovery evidence manifest
+        run: node scripts/verify-legacy-recovery-evidence.mjs
 
       - name: Install Linux Electron runtime deps
         run: |
@@ -284,6 +308,26 @@ jobs:
             node scripts/electron-war06-mission-cache-smoke.mjs \
               --app tmp/electron-dist/linux-unpacked/sartracker-web \
               --evidence tmp/electron-validation-evidence/war06-mission-cache
+
+      - name: Packaged legacy object recovery observer proof
+        id: legacy_recovery_smoke
+        timeout-minutes: 5
+        env:
+          SARTRACKER_ELECTRON_REQUIRE_LINUX_UNPACKED: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            node scripts/electron-legacy-object-recovery-smoke.mjs \
+              tmp/electron-dist/linux-unpacked/sartracker-web \
+              tmp/electron-validation-evidence/legacy-object-recovery
+
+      - name: Verify legacy recovery terminal report
+        if: ${{ always() && steps.legacy_recovery_smoke.outcome != 'skipped' }}
+        run: node scripts/verify-legacy-recovery-report.mjs tmp/electron-validation-evidence/legacy-object-recovery/report.json
 
       - name: Packaged tracking soak (CI profile)
         if: ${{ github.event_name == 'workflow_dispatch' }}

@@ -1,0 +1,14 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-mission-evidence-versioning.test.ts -t reconstructs large legacy mutable-object inventories --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/6f68/sartracker-web
+
+Legacy object preparation heartbeat diagnostics: {"inspectionRealm":"worker","maximumWorkerQueryMs":1.8580409999999574,"inspectionQueryCount":1346,"baselineCount":50000,"openMs":10.457333999999946,"maximumHeartbeatGapMs":12.845166000000972,"unobservedTailMs":0.6732909999991534,"inspectionOpenMs":null,"maximumInspectionQueryMs":null,"largestGap":{"start":12607.345334,"duration":12.845166000000972,"threadCpuMs":0.117,"processCpuMs":7.792,"eventLoop":{"idle":12.702000000001135,"active":0.13658399093037588,"utilization":0.010638555702626668},"inspections":[],"gc":[]}}
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 92 skipped (93)
+   Start at  09:13:14
+   Duration  16.43s (transform 81ms, setup 0ms, import 128ms, tests 15.92s, environment 242ms)
+
